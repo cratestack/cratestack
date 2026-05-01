@@ -646,9 +646,26 @@ where
         }
     }
 
+    pub fn with_http_client(config: ClientConfig, codec: C, http: reqwest::Client) -> Self {
+        Self {
+            http,
+            config,
+            codec,
+            state_store: Arc::new(InMemoryStateStore::default()),
+            request_authorizer: None,
+        }
+    }
+
     pub fn with_state_store(mut self, state_store: Arc<dyn ClientStateStore>) -> Self {
         self.state_store = state_store;
         self
+    }
+
+    pub fn with_optional_state_store(self, state_store: Option<Arc<dyn ClientStateStore>>) -> Self {
+        match state_store {
+            Some(state_store) => self.with_state_store(state_store),
+            None => self,
+        }
     }
 
     pub fn with_request_authorizer(

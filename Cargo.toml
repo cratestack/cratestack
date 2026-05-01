@@ -6,6 +6,7 @@ members = [
     "crates/cratestack-cli",
     "crates/cratestack-client-dart",
     "crates/cratestack-client-flutter",
+    "crates/cratestack-client-store-redis",
     "crates/cratestack-client-rust",
     "crates/cratestack-client-store-sqlite",
     "crates/cratestack-codec-cbor",
@@ -41,6 +42,7 @@ cratestack = { path = "crates/cratestack", version = "0.1.0" }
 cratestack-axum = { path = "crates/cratestack-axum", version = "0.1.0" }
 cratestack-client-dart = { path = "crates/cratestack-client-dart", version = "0.1.0" }
 cratestack-client-flutter = { path = "crates/cratestack-client-flutter", version = "0.1.0" }
+cratestack-client-store-redis = { path = "crates/cratestack-client-store-redis", version = "0.1.0" }
 cratestack-client-rust = { path = "crates/cratestack-client-rust", version = "0.1.0" }
 cratestack-client-store-sqlite = { path = "crates/cratestack-client-store-sqlite", version = "0.1.0" }
 cratestack-codec-cbor = { path = "crates/cratestack-codec-cbor", version = "0.1.0" }
@@ -54,6 +56,7 @@ cratestack-studio-generator = { path = "crates/cratestack-studio-generator", ver
 minijinja = "2"
 reqwest = { version = "0", default-features = false, features = ["rustls-tls"] }
 rusqlite = { version = "0", features = ["bundled"] }
+redis = "1.2.0"
 serde_json = "1"
 serde_urlencoded = "0.7.1"
 http = "1"

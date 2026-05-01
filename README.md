@@ -783,6 +783,24 @@ let providers = payment
 
 Use `include_client_macro!` when the crate only needs to call another CrateStack-generated HTTP API. For backend-to-backend calls, construct the runtime with `CborCodec` by default; keep JSON for debugging, tests, and compatibility exceptions. Use `include_schema!` when the crate owns that schema's database/runtime surface and needs generated SQLx delegates, generated Axum routers, procedure registries, policy helpers, custom-field resolver traits, or event subscriptions. OAuth2 protocol endpoints stay outside `.cstack` and should remain handwritten protocol integrations rather than generated CrateStack clients.
 
+Backend services that need a shared generated-client state store can use `cratestack-client-store-redis`:
+
+```rust
+use std::sync::Arc;
+use cratestack::client_rust::{CborCodec, ClientConfig, CratestackClient};
+use cratestack_client_store_redis::RedisStateStore;
+
+let base_url = url::Url::parse(&std::env::var("PAYMENT_GATEWAY_URL")?)?;
+let store = Arc::new(RedisStateStore::open(
+    std::env::var("REDIS_URL")?,
+    "cratestack:clients:payment-gateway",
+)?);
+let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec)
+    .with_state_store(store);
+```
+
+The Redis store keeps metadata in `{prefix}:meta` and appends request journal entries to `{prefix}:request_journal`.
+
 ## HTTP Examples
 
 Canonical list query examples:
