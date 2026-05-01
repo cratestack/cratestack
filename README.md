@@ -781,7 +781,7 @@ let providers = payment
     .await?;
 ```
 
-Use `include_client_macro!` when the crate only needs to call another CrateStack-generated HTTP API. Use `include_schema!` when the crate owns that schema's database/runtime surface and needs generated SQLx delegates, generated Axum routers, procedure registries, policy helpers, custom-field resolver traits, or event subscriptions.
+Use `include_client_macro!` when the crate only needs to call another CrateStack-generated HTTP API. For backend-to-backend calls, construct the runtime with `CborCodec` by default; keep JSON for debugging, tests, and compatibility exceptions. Use `include_schema!` when the crate owns that schema's database/runtime surface and needs generated SQLx delegates, generated Axum routers, procedure registries, policy helpers, custom-field resolver traits, or event subscriptions. OAuth2 protocol endpoints stay outside `.cstack` and should remain handwritten protocol integrations rather than generated CrateStack clients.
 
 ## HTTP Examples
 
