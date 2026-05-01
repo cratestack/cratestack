@@ -4,12 +4,18 @@ use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use cratestack::include_schema;
+use cratestack::{include_client_macro, include_schema};
 use cratestack_client_rust::{ClientConfig, CratestackClient, JsonCodec};
 use cratestack_core::CoolCodec;
 use std::net::SocketAddr;
 
 include_schema!("../cratestack/tests/fixtures/blog.cstack");
+
+mod client_only_schema {
+    use super::include_client_macro;
+
+    include_client_macro!("../cratestack/tests/fixtures/blog.cstack");
+}
 
 #[tokio::test]
 async fn generated_rust_client_crud_and_view_surface_round_trips() {
@@ -153,6 +159,63 @@ async fn generated_rust_client_crud_and_view_surface_round_trips() {
         selected_session.label().expect("label should decode"),
         "Primary Session"
     );
+}
+
+#[tokio::test]
+async fn client_only_macro_generates_reqwest_backed_client_surface() {
+    let (base_url, _server) = spawn_server().await;
+    let runtime = CratestackClient::new(
+        ClientConfig::new(base_url),
+        cratestack_client_rust::CborCodec,
+    );
+    let client = client_only_schema::cratestack_schema::client::Client::new(runtime);
+
+    let listed = client
+        .posts()
+        .list(&[("limit", "2")], &[])
+        .await
+        .expect("list should succeed");
+    assert_eq!(listed.len(), 2);
+    assert_eq!(listed[0].title, "Published Post");
+
+    let selected = client
+        .posts()
+        .get_view(
+            &1,
+            &client_only_schema::cratestack_schema::post::select()
+                .id()
+                .include_author_selected(
+                    client_only_schema::cratestack_schema::user::include_selection()
+                        .email()
+                        .include_profile_selected(
+                            client_only_schema::cratestack_schema::profile::include_selection()
+                                .nickname(),
+                        ),
+                ),
+            &[],
+        )
+        .await
+        .expect("projected get should succeed");
+    assert_eq!(selected.id().expect("id should decode"), 1);
+    let author = selected
+        .author()
+        .expect("author should decode")
+        .expect("author should be present");
+    assert_eq!(
+        author.email().expect("email should decode"),
+        "owner@example.com"
+    );
+
+    let feed = client
+        .procedures()
+        .get_feed(
+            &client_only_schema::cratestack_schema::procedures::get_feed::Args { limit: Some(1) },
+            &[],
+        )
+        .await
+        .expect("procedure call should succeed");
+    assert_eq!(feed.len(), 1);
+    assert_eq!(feed[0].title, "Feed Post");
 }
 
 #[tokio::test]

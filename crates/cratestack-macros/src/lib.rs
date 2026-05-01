@@ -16,3 +16,8 @@ use proc_macro::TokenStream;
 pub fn include_schema(input: TokenStream) -> TokenStream {
     include::include_schema(input)
 }
+
+#[proc_macro]
+pub fn include_client_macro(input: TokenStream) -> TokenStream {
+    include::include_client_macro(input)
+}

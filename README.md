@@ -11,7 +11,7 @@ The target shape is intentionally broader than the currently implemented bootstr
 * request authentication stays outside the framework core; applications implement `AuthProvider` so generated handlers resolve auth through one host-owned trait boundary
 * JSON and CBOR are first-class codecs, while COSE is treated as an optional envelope layer over encoded bytes
 * transport architecture is split into codec, framing, and envelope layers; `application/cbor-seq` belongs to framing rather than being treated as just another peer codec
-* Rust client generation is already available today through compile-time `include_schema!` codegen, while standalone Rust-client CLI generation remains a follow-up; Dart client generation targets Riverpod-oriented frontends
+* Rust client generation is already available today through compile-time `include_schema!` codegen for full schema consumers and `include_client_macro!` for client-only consumers, while standalone Rust-client CLI generation remains a follow-up; Dart client generation targets Riverpod-oriented frontends
 * field visibility and filterability are controlled by separate schema directives
 * custom fields are schema-declared and resolved through generated resolver traits
 
@@ -22,6 +22,7 @@ The currently implemented slice in this repo provides:
 * a `cratestack-policy` crate that now owns the canonical policy literals, predicates, expressions, and procedure-policy evaluation surface shared across the workspace
 * a parser and semantic checker for an initial `.cstack` subset
 * a compile-time `include_schema!` macro that validates schemas and emits a generated `cratestack_schema` module with summary metadata, model structs, generated procedure traits, schema-specific SQLx delegate scaffolding, generated Rust projection builders/wrappers, and generated Rust client facades
+* a compile-time `include_client_macro!` macro that validates the same schema but emits only client-facing Rust types, inputs, projection builders, procedure payloads, and the generated Rust client facade, omitting SQLx delegates, generated Axum routers, policy authorizers, procedure registries, custom-field resolver traits, and event subscriptions
 * a first-party CBOR codec crate
 * a CLI with `cratestack check`, `cratestack print-ir`, `cratestack generate-dart`, and `cratestack generate-studio`
 * a `cratestack-sqlx` crate with PostgreSQL runtime primitives plus generated delegate scaffolding for `create`, `find_many`, `find_unique`, `update`, and `delete`
@@ -37,7 +38,7 @@ The currently implemented slice in this repo provides:
 * built-in `Page<T>` procedure return support for declared model/type items, with a canonical envelope shaped as `items`, `totalCount`, and `pageInfo`
 * opt-in `@@paged` support for generated model list routes, so selected models can return `Page<Model>` from `GET /{models}` while the default list contract remains a plain array
 * generated `tracing` instrumentation for procedure wrappers, generated procedure routes, and generated model list routes, while keeping subscriber/exporter setup host-owned
-* request-authorizer hooks in `cratestack-client-rust` built around canonical request strings, so host integrations can attach signed-request headers without changing generated client APIs
+* request-authorizer hooks in `cratestack-client-rust` built around canonical request strings and encoded request body bytes, so host integrations can attach signed-request headers without changing generated client APIs
 * a first-class `RequestContext` + `AuthProvider` integration surface for generated axum routers, plus `Cratestack::bind_auth(...)` / `bind_context(...)` for bound authenticated delegate usage outside HTTP
 * a structured principal model inside `CoolContext` built around `principal.actor`, `principal.session`, `principal.tenant`, and free-form claims, while preserving legacy `auth().field` compatibility for existing schemas
 
@@ -70,7 +71,7 @@ Transport-specific current-state note:
 
 Important current-state note:
 
-* Rust client generation exists today through compile-time `include_schema!` codegen rather than a standalone `generate-rust` CLI command
+* Rust client generation exists today through compile-time `include_schema!` or client-only `include_client_macro!` codegen rather than a standalone `generate-rust` CLI command
 * Dart package generation is already automated through `cratestack generate-dart`
 * the generated Dart package still depends on an app-provided `CratestackRuntimeBridge`; the direct exported Rust ABI path is still deferred
 * auth-aware routing no longer requires per-service generated-route context resolver glue; host services can provide a single `AuthProvider` implementation and reuse `bind_auth(...)` for internal Rust callers
@@ -758,6 +759,29 @@ let projected_post = client
 let title = projected_post.title()?;
 let author_email = projected_post.author()?.and_then(|author| author.email().ok());
 ```
+
+Client-only Rust setup for backend-to-backend callers:
+
+```rust
+use cratestack::include_client_macro;
+use cratestack::client_rust::{CborCodec, ClientConfig, CratestackClient};
+
+include_client_macro!("../payment-gateway/schema/payment.cstack");
+
+let base_url = url::Url::parse(&std::env::var("PAYMENT_GATEWAY_URL")?)?;
+let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec);
+let payment = cratestack_schema::client::Client::new(runtime);
+
+let providers = payment
+    .procedures()
+    .supported_payment_providers(
+        &cratestack_schema::procedures::supported_payment_providers::Args::default(),
+        &[("authorization", authorization_header.as_str())],
+    )
+    .await?;
+```
+
+Use `include_client_macro!` when the crate only needs to call another CrateStack-generated HTTP API. Use `include_schema!` when the crate owns that schema's database/runtime surface and needs generated SQLx delegates, generated Axum routers, procedure registries, policy helpers, custom-field resolver traits, or event subscriptions.
 
 ## HTTP Examples
 

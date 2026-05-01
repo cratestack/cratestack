@@ -48,6 +48,11 @@ impl RequestAuthorizer for CanonicalAuthorizationAuthorizer {
         &self,
         request: &AuthorizationRequest,
     ) -> Result<Vec<(String, String)>, ClientError> {
+        assert_eq!(
+            request.content_type.as_deref(),
+            Some(CborCodec::CONTENT_TYPE)
+        );
+        assert!(!request.body.is_empty());
         Ok(vec![(
             "authorization".to_owned(),
             format!(

@@ -12,51 +12,30 @@ use crate::axum::{
 use crate::client::generate_generated_client_module;
 use crate::event::generate_event_module;
 use crate::model::{
-    generate_bound_model_accessor, generate_create_input_struct, generate_field_module,
-    generate_model_accessor, generate_model_descriptor, generate_model_struct,
-    generate_update_input_struct,
+    generate_bound_model_accessor, generate_client_create_input_struct,
+    generate_client_model_struct, generate_client_update_input_struct,
+    generate_create_input_struct, generate_field_module, generate_model_accessor,
+    generate_model_descriptor, generate_model_struct, generate_update_input_struct,
 };
-use crate::procedure::{generate_procedure_module, generate_procedure_registry_method};
+use crate::procedure::{
+    generate_client_procedure_module, generate_procedure_module, generate_procedure_registry_method,
+};
 use crate::shared::schema_lit;
 use crate::transport::{
     generate_model_transport_constants, generate_model_transport_entries,
     generate_procedure_transport_constants, generate_procedure_transport_entries,
 };
 use crate::types::{
-    generate_custom_field_descriptors, generate_custom_field_resolver_methods, generate_enum_type,
-    generate_type_struct,
+    generate_client_enum_type, generate_client_type_struct, generate_custom_field_descriptors,
+    generate_custom_field_resolver_methods, generate_enum_type, generate_type_struct,
 };
 
 pub(crate) fn include_schema(input: TokenStream) -> TokenStream {
     let schema_path = parse_macro_input!(input as LitStr);
-    let schema_relative = schema_path.value();
-
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_default();
-    let resolved = PathBuf::from(&manifest_dir).join(&schema_relative);
-    let source = match std::fs::read_to_string(&resolved) {
-        Ok(source) => source,
-        Err(error) => {
-            return syn::Error::new(
-                schema_path.span(),
-                format!("failed to read schema file {}: {error}", resolved.display()),
-            )
-            .to_compile_error()
-            .into();
-        }
+    let (schema_relative, resolved, schema) = match parse_schema_literal(&schema_path) {
+        Ok(parsed) => parsed,
+        Err(error) => return error,
     };
-
-    let schema =
-        match cratestack_parser::parse_schema_named(&resolved.display().to_string(), &source) {
-            Ok(schema) => schema,
-            Err(error) => {
-                return syn::Error::new(
-                    schema_path.span(),
-                    error.render(&resolved.display().to_string(), &source),
-                )
-                .to_compile_error()
-                .into();
-            }
-        };
     let resolved_literal = resolved.display().to_string();
 
     let model_names = schema.models.iter().map(|model| schema_lit(&model.name));
@@ -237,7 +216,6 @@ pub(crate) fn include_schema(input: TokenStream) -> TokenStream {
                 .into();
         }
     };
-
     let expanded = quote! {
         pub mod cratestack_schema {
             pub const SCHEMA_PATH: &str = #schema_relative;
@@ -568,4 +546,162 @@ pub(crate) fn include_schema(input: TokenStream) -> TokenStream {
     };
 
     expanded.into()
+}
+
+pub(crate) fn include_client_macro(input: TokenStream) -> TokenStream {
+    let schema_path = parse_macro_input!(input as LitStr);
+    let (schema_relative, resolved, schema) = match parse_schema_literal(&schema_path) {
+        Ok(parsed) => parsed,
+        Err(error) => return error,
+    };
+    let resolved_literal = resolved.display().to_string();
+
+    let model_names = schema.models.iter().map(|model| schema_lit(&model.name));
+    let model_name_set = schema
+        .models
+        .iter()
+        .map(|model| model.name.as_str())
+        .collect::<BTreeSet<_>>();
+    let type_names = schema.types.iter().map(|ty| schema_lit(&ty.name));
+    let enum_names = schema
+        .enums
+        .iter()
+        .map(|enum_decl| schema_lit(&enum_decl.name));
+    let enum_name_set = crate::shared::enum_name_set(&schema.enums);
+    let procedure_names = schema
+        .procedures
+        .iter()
+        .map(|procedure| schema_lit(&procedure.name));
+    let type_structs = schema.types.iter().map(generate_client_type_struct);
+    let enum_types = schema.enums.iter().map(generate_client_enum_type);
+    let model_structs = schema
+        .models
+        .iter()
+        .map(|model| generate_client_model_struct(model, &model_name_set, &enum_name_set));
+    let create_input_structs = schema
+        .models
+        .iter()
+        .map(|model| generate_client_create_input_struct(model, &model_name_set, &enum_name_set));
+    let update_input_structs = schema
+        .models
+        .iter()
+        .map(|model| generate_client_update_input_struct(model, &model_name_set, &enum_name_set));
+    let field_modules = match schema
+        .models
+        .iter()
+        .map(|model| generate_field_module(model, &model_name_set, &schema.models))
+        .collect::<Result<Vec<_>, String>>()
+    {
+        Ok(field_modules) => field_modules,
+        Err(error) => {
+            return syn::Error::new(schema_path.span(), error)
+                .to_compile_error()
+                .into();
+        }
+    };
+    let procedure_modules = match schema
+        .procedures
+        .iter()
+        .map(|procedure| generate_client_procedure_module(procedure, &schema.types, &enum_name_set))
+        .collect::<Result<Vec<_>, String>>()
+    {
+        Ok(modules) => modules,
+        Err(error) => {
+            return syn::Error::new(schema_path.span(), error)
+                .to_compile_error()
+                .into();
+        }
+    };
+    let generated_client_module =
+        match generate_generated_client_module(&schema.models, &schema.procedures) {
+            Ok(module) => module,
+            Err(error) => {
+                return syn::Error::new(schema_path.span(), error)
+                    .to_compile_error()
+                    .into();
+            }
+        };
+    let expanded = quote! {
+        pub mod cratestack_schema {
+            pub const SCHEMA_PATH: &str = #schema_relative;
+            pub const SCHEMA_SOURCE: &str = include_str!(#resolved_literal);
+            pub const MODELS: &[&str] = &[#(#model_names),*];
+            pub const TYPES: &[&str] = &[#(#type_names),*];
+            pub const ENUMS: &[&str] = &[#(#enum_names),*];
+            pub const PROCEDURES: &[&str] = &[#(#procedure_names),*];
+
+            pub const MODEL_COUNT: usize = MODELS.len();
+            pub const TYPE_COUNT: usize = TYPES.len();
+            pub const ENUM_COUNT: usize = ENUMS.len();
+            pub const PROCEDURE_COUNT: usize = PROCEDURES.len();
+
+            pub mod types {
+                use ::cratestack::serde;
+
+                #(#enum_types)*
+                #(#type_structs)*
+            }
+
+            pub use types::*;
+
+            pub mod models {
+                use ::cratestack::serde;
+
+                #(#model_structs)*
+            }
+
+            pub use models::*;
+
+            #(#field_modules)*
+
+            pub mod inputs {
+                use ::cratestack::serde;
+
+                #(#create_input_structs)*
+                #(#update_input_structs)*
+            }
+
+            pub use inputs::*;
+
+            #generated_client_module
+
+            pub mod procedures {
+                use ::cratestack::serde;
+
+                #(#procedure_modules)*
+            }
+        }
+    };
+
+    expanded.into()
+}
+
+fn parse_schema_literal(
+    schema_path: &LitStr,
+) -> Result<(String, PathBuf, cratestack_core::Schema), TokenStream> {
+    let schema_relative = schema_path.value();
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_default();
+    let resolved = PathBuf::from(&manifest_dir).join(&schema_relative);
+    let source = std::fs::read_to_string(&resolved).map_err(|error| {
+        TokenStream::from(
+            syn::Error::new(
+                schema_path.span(),
+                format!("failed to read schema file {}: {error}", resolved.display()),
+            )
+            .to_compile_error(),
+        )
+    })?;
+
+    let schema = cratestack_parser::parse_schema_named(&resolved.display().to_string(), &source)
+        .map_err(|error| {
+            TokenStream::from(
+                syn::Error::new(
+                    schema_path.span(),
+                    error.render(&resolved.display().to_string(), &source),
+                )
+                .to_compile_error(),
+            )
+        })?;
+
+    Ok((schema_relative, resolved, schema))
 }

@@ -189,6 +189,29 @@ pub(crate) fn generate_procedure_module(
     })
 }
 
+pub(crate) fn generate_client_procedure_module(
+    procedure: &Procedure,
+    types: &[TypeDecl],
+    enum_names: &BTreeSet<&str>,
+) -> Result<proc_macro2::TokenStream, String> {
+    let module_ident = ident(&to_snake_case(&procedure.name));
+    let docs = doc_attrs(&procedure.docs);
+    let procedure_name = &procedure.name;
+    let args_struct = generate_client_procedure_args_struct(procedure, types, enum_names);
+    let output_type = procedure_output_tokens(&procedure.return_type, types, enum_names);
+
+    Ok(quote! {
+        #docs
+        pub mod #module_ident {
+            pub const NAME: &str = #procedure_name;
+
+            #args_struct
+
+            pub type Output = #output_type;
+        }
+    })
+}
+
 struct ProcedureModelAuthorizer<'a> {
     model_name: &'a str,
     action: &'a str,
@@ -379,6 +402,37 @@ fn generate_procedure_args_struct(
                     #nested_arg_match
                 }
             }
+        }
+    }
+}
+
+fn generate_client_procedure_args_struct(
+    procedure: &Procedure,
+    types: &[TypeDecl],
+    enum_names: &BTreeSet<&str>,
+) -> proc_macro2::TokenStream {
+    let args_ident = ident("Args");
+    let definitions = procedure.args.iter().map(|arg| {
+        let field_ident = ident(&arg.name);
+        let field_type = procedure_type_tokens(&arg.ty, types, enum_names);
+        let docs = doc_attrs(&arg.docs);
+        quote! {
+            #docs
+            pub #field_ident: #field_type,
+        }
+    });
+
+    let default_derive = if procedure.args.is_empty() {
+        quote! { , Default }
+    } else {
+        quote! {}
+    };
+
+    quote! {
+        #[doc = "Generated argument payload for this procedure."]
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize #default_derive)]
+        pub struct #args_ident {
+            #(#definitions)*
         }
     }
 }

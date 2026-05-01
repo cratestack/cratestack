@@ -50,6 +50,27 @@ pub(crate) fn generate_model_struct(
     }
 }
 
+pub(crate) fn generate_client_model_struct(
+    model: &Model,
+    model_names: &BTreeSet<&str>,
+    enum_names: &BTreeSet<&str>,
+) -> proc_macro2::TokenStream {
+    let model_ident = ident(&model.name);
+    let docs = doc_attrs(&model.docs);
+    let scalar_fields = scalar_model_fields(model, model_names);
+    let fields = scalar_fields
+        .iter()
+        .map(|field| struct_field_definition(field, false, enum_names));
+
+    quote! {
+        #docs
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct #model_ident {
+            #(#fields)*
+        }
+    }
+}
+
 pub(crate) fn generate_create_input_struct(
     model: &Model,
     model_names: &BTreeSet<&str>,
@@ -80,6 +101,30 @@ pub(crate) fn generate_create_input_struct(
             fn sql_values(&self) -> Vec<::cratestack::SqlColumnValue> {
                 vec![#(#sql_values),*]
             }
+        }
+    }
+}
+
+pub(crate) fn generate_client_create_input_struct(
+    model: &Model,
+    model_names: &BTreeSet<&str>,
+    enum_names: &BTreeSet<&str>,
+) -> proc_macro2::TokenStream {
+    let input_ident = ident(&format!("Create{}Input", model.name));
+    let docs = generated_doc_attr(format!("Generated create input for `{}`.", model.name));
+    let fields: Vec<_> = scalar_model_fields(model, model_names)
+        .into_iter()
+        .filter(|field| !is_generated_on_create(field))
+        .collect();
+    let definitions = fields
+        .iter()
+        .map(|field| struct_field_definition(field, false, enum_names));
+
+    quote! {
+        #docs
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct #input_ident {
+            #(#definitions)*
         }
     }
 }
@@ -116,6 +161,30 @@ pub(crate) fn generate_update_input_struct(
                 #(#sql_values)*
                 values
             }
+        }
+    }
+}
+
+pub(crate) fn generate_client_update_input_struct(
+    model: &Model,
+    model_names: &BTreeSet<&str>,
+    enum_names: &BTreeSet<&str>,
+) -> proc_macro2::TokenStream {
+    let input_ident = ident(&format!("Update{}Input", model.name));
+    let docs = generated_doc_attr(format!("Generated update input for `{}`.", model.name));
+    let fields: Vec<_> = scalar_model_fields(model, model_names)
+        .into_iter()
+        .filter(|field| !is_primary_key(field))
+        .collect();
+    let definitions = fields
+        .iter()
+        .map(|field| struct_field_definition(field, true, enum_names));
+
+    quote! {
+        #docs
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]
+        pub struct #input_ident {
+            #(#definitions)*
         }
     }
 }

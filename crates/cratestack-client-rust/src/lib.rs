@@ -357,6 +357,7 @@ pub struct AuthorizationRequest {
     pub path: String,
     pub canonical_query: Option<String>,
     pub content_type: Option<String>,
+    pub body: Vec<u8>,
     pub canonical_request: String,
 }
 
@@ -887,6 +888,7 @@ where
                 path: path.to_owned(),
                 canonical_query: canonical_query.map(str::to_owned),
                 content_type: content_type.clone(),
+                body: body.clone().unwrap_or_default(),
                 canonical_request,
             };
             for (name, value) in authorizer.authorize(&authorization_request)? {
