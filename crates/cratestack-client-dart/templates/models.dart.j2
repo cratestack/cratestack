@@ -1,0 +1,169 @@
+import 'dart:typed_data';
+
+import 'runtime.dart';
+
+class PageInfo {
+  const PageInfo({
+    this.limit,
+    this.offset,
+    required this.hasNextPage,
+    required this.hasPreviousPage,
+  });
+
+  final int? limit;
+  final int? offset;
+  final bool hasNextPage;
+  final bool hasPreviousPage;
+
+  factory PageInfo.fromWire(CratestackValueMap value) {
+    return PageInfo(
+      limit: value['limit'] == null ? null : (value['limit'] as num).toInt(),
+      offset: value['offset'] == null ? null : (value['offset'] as num).toInt(),
+      hasNextPage: cratestackRequireWireValue('PageInfo', 'hasNextPage', value['hasNextPage']) as bool,
+      hasPreviousPage: cratestackRequireWireValue('PageInfo', 'hasPreviousPage', value['hasPreviousPage']) as bool,
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+      'limit': limit,
+      'offset': offset,
+      'hasNextPage': hasNextPage,
+      'hasPreviousPage': hasPreviousPage,
+    };
+  }
+}
+
+class Page<T> {
+  const Page({
+    required this.items,
+    this.totalCount,
+    required this.pageInfo,
+  });
+
+  final List<T> items;
+  final int? totalCount;
+  final PageInfo pageInfo;
+
+  factory Page.fromWire(
+    CratestackValueMap value, {
+    required T Function(Object? item) decodeItem,
+  }) {
+    return Page<T>(
+      items: cratestackAsValueList(cratestackRequireWireValue('Page', 'items', value['items']))
+          .map((item) => decodeItem(item))
+          .toList(growable: false),
+      totalCount: value['totalCount'] == null ? null : (value['totalCount'] as num).toInt(),
+      pageInfo: PageInfo.fromWire(
+        cratestackAsValueMap(cratestackRequireWireValue('Page', 'pageInfo', value['pageInfo'])),
+      ),
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+      'items': items.map((item) {
+        if (item is DateTime) return item.toUtc().toIso8601String();
+        if (item is Uint8List) return item.toList(growable: false);
+        if (item is String || item is num || item is bool || item == null) return item;
+        return (item as dynamic).toWire();
+      }).toList(growable: false),
+      'totalCount': totalCount,
+      'pageInfo': pageInfo.toWire(),
+    };
+  }
+}
+
+{% for enum_type in enum_types %}
+enum {{ enum_type.name }} {
+{% for variant in enum_type.variants %}
+  {{ variant.identifier }}('{{ variant.wire_name }}'){% if loop.last %};{% else %},{% endif %}
+{% endfor %}
+
+  const {{ enum_type.name }}(this.wireName);
+
+  final String wireName;
+
+  static {{ enum_type.name }} fromWire(Object? value) {
+    final wireName = value as String;
+    switch (wireName) {
+{% for variant in enum_type.variants %}
+      case '{{ variant.wire_name }}':
+        return {{ enum_type.name }}.{{ variant.identifier }};
+{% endfor %}
+    }
+    throw ArgumentError.value(wireName, 'value', 'Unknown {{ enum_type.name }} value');
+  }
+
+  Object toWire() => wireName;
+}
+
+{% endfor %}
+{% for data_class in data_classes %}
+class {{ data_class.name }} {
+{% if not data_class.has_fields %}
+  const {{ data_class.name }}();
+{% else %}
+  const {{ data_class.name }}({
+{% for field in data_class.fields %}
+    {% if field.required %}required {% endif %}this.{{ field.identifier }},
+{% endfor %}
+  });
+{% endif %}
+
+{% for field in data_class.fields %}
+  final {{ field.dart_type }} {{ field.identifier }};
+{% endfor %}
+{% if data_class.has_fields %}
+
+{% endif %}
+  factory {{ data_class.name }}.fromWire(CratestackValueMap value) {
+    return {{ data_class.name }}(
+{% for field in data_class.fields %}
+      {{ field.identifier }}: {{ field.from_wire_expr }},
+{% endfor %}
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+{% for field in data_class.fields %}
+      '{{ field.wire_name }}': {{ field.to_wire_expr }},
+{% endfor %}
+    };
+  }
+}
+
+{% endfor %}
+{% for selection in selection_models %}
+class {{ selection.projected_class_name }} {
+  const {{ selection.projected_class_name }}.fromWire(this._value);
+
+  final CratestackValueMap _value;
+
+{% for field in selection.scalar_fields %}
+  {{ field.dart_type }} get {{ field.identifier }} => {{ field.decode_expr }};
+
+{% endfor %}
+{% for relation in selection.relations %}
+{% if relation.is_list %}
+  List<{{ relation.target_projected_class_name }}>? get {{ relation.identifier }} {
+    final value = _value['{{ relation.wire_name }}'];
+    if (value == null) return null;
+    return cratestackAsValueList(value)
+        .map((item) => {{ relation.target_projected_class_name }}.fromWire(cratestackAsValueMap(item)))
+        .toList(growable: false);
+  }
+
+{% else %}
+  {{ relation.target_projected_class_name }}? get {{ relation.identifier }} {
+    final value = _value['{{ relation.wire_name }}'];
+    if (value == null) return null;
+    return {{ relation.target_projected_class_name }}.fromWire(cratestackAsValueMap(value));
+  }
+
+{% endif %}
+{% endfor %}
+}
+
+{% endfor %}

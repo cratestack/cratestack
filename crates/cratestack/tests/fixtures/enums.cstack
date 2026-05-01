@@ -1,0 +1,22 @@
+auth SessionUser {
+  id Int
+}
+
+enum Role {
+  admin
+  member
+}
+
+type RoleFilter {
+  role Role
+}
+
+model User {
+  id Int @id @default(autoincrement())
+  role Role
+
+  @@allow("read", auth() != null)
+}
+
+procedure resolveUser(role: Role, args: RoleFilter): User
+  @allow(auth() != null)

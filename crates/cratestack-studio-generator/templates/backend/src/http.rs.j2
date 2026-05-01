@@ -1,0 +1,37 @@
+use axum::{Router, routing::get};
+use tower_http::services::ServeDir;
+
+use crate::{config::StudioConfig, metadata, proxy, static_files};
+use {{ workspace.shared_crate_lib_name }}::{StudioMetadata, studio_metadata};
+
+#[derive(Clone)]
+pub(crate) struct AppState {
+    pub config: StudioConfig,
+    pub client: reqwest::Client,
+    pub metadata: StudioMetadata,
+}
+
+pub(crate) fn router(config: StudioConfig) -> Router {
+    let mount_path = config.mount_path.trim_end_matches('/').to_owned();
+    let api_base_path = format!("{mount_path}/api");
+    let assets_mount_path = format!("{mount_path}/assets");
+    let assets_service = ServeDir::new(config.static_dir.clone());
+    let state = AppState {
+        config,
+        client: reqwest::Client::new(),
+        metadata: studio_metadata(),
+    };
+
+    Router::new()
+        .route("/healthz", get(static_files::healthz))
+        .route("/healthz/ready", get(static_files::healthz_ready))
+        .route(&mount_path, get(static_files::index))
+        .route(&format!("{mount_path}/"), get(static_files::index))
+        .route(&format!("{api_base_path}/metadata"), get(metadata::get_metadata))
+        .route(&format!("{api_base_path}/contexts/{% raw %}{{context}}{% endraw %}/models/{% raw %}{{model}}{% endraw %}"), get(proxy::list_model))
+        .route(&format!("{api_base_path}/contexts/{% raw %}{{context}}{% endraw %}/models/{% raw %}{{model}}/{% endraw %}{% raw %}{{id}}{% endraw %}"), get(proxy::get_model))
+        .route(&format!("{api_base_path}/contexts/{% raw %}{{context}}{% endraw %}/procedures/{% raw %}{{procedure}}{% endraw %}"), axum::routing::post(proxy::invoke_procedure))
+        .nest_service(&assets_mount_path, assets_service)
+        .route(&format!("{mount_path}/{% raw %}{{*path}}{% endraw %}"), get(static_files::index))
+        .with_state(state)
+}

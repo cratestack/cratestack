@@ -1,0 +1,8 @@
+use axum::{Json, extract::State};
+
+use crate::http::AppState;
+use {{ workspace.shared_crate_lib_name }}::StudioMetadata;
+
+pub(crate) async fn get_metadata(State(state): State<AppState>) -> Json<StudioMetadata> {
+    Json(state.metadata)
+}

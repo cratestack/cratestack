@@ -1,0 +1,32 @@
+[package]
+name = "cratestack"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[features]
+default = []
+
+[dependencies]
+chrono.workspace = true
+cratestack-axum.workspace = true
+cratestack-client-rust.workspace = true
+cratestack-core.workspace = true
+cratestack-macros.workspace = true
+cratestack-parser.workspace = true
+cratestack-policy.workspace = true
+cratestack-sqlx.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+cratestack-codec-cbor = { path = "../cratestack-codec-cbor" }
+cratestack-codec-json = { path = "../cratestack-codec-json" }
+minicbor-serde.workspace = true
+tokio.workspace = true
+tower.workspace = true
+tracing-subscriber.workspace = true

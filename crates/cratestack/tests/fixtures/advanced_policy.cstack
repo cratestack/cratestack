@@ -1,0 +1,52 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth SessionUser {
+  id Int
+  role String
+  email String
+}
+
+model User {
+  id Int @id
+  email String
+  banned Boolean
+
+  @@allow("read", auth() != null)
+}
+
+model Post {
+  id Int @id
+  title String
+  published Boolean
+  authorId Int
+  author User @relation(fields:[authorId],references:[id])
+
+  @@deny("read", author.banned)
+  @@allow("read", auth() != null && published)
+  @@allow("read", author.email == auth().email)
+  @@allow("update", auth() == author && auth().role == "admin")
+}
+
+type ApprovePostInput {
+  postId Int
+  publishNow Boolean
+}
+
+type ReviewPostInput {
+  postId Int
+  publishNow Boolean
+  dryRun Boolean
+  ownerEmail String
+  mirrorEmail String
+}
+
+mutation procedure approvePost(args: ApprovePostInput): Post
+  @allow(auth() != null && auth().role == "admin" && publishNow)
+  @deny(postId == 2)
+
+mutation procedure reviewPost(args: ReviewPostInput): Post
+  @allow((auth() == null && args.dryRun) || (auth().role == "admin" && args.publishNow && args.ownerEmail == auth().email))
+  @deny(args.postId == 2 || args.ownerEmail != auth().email || args.ownerEmail != args.mirrorEmail)

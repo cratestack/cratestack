@@ -1,0 +1,9 @@
+model User {
+  id Int @id
+}
+
+model Post {
+  id Int @id
+  authorId Int
+  author User @relation(fields:[ownerId],references:[id])
+}

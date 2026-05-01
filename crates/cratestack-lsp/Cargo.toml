@@ -1,0 +1,16 @@
+[package]
+name = "cratestack-lsp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "cratestack-lsp"
+path = "src/main.rs"
+
+[dependencies]
+cratestack-core.workspace = true
+cratestack-parser.workspace = true
+tokio = { workspace = true, features = ["io-std", "sync"] }
+tower-lsp.workspace = true

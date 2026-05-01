@@ -1,0 +1,188 @@
+use yew::prelude::*;
+
+use {{ workspace.shared_crate_lib_name }}::{StudioContextMetadata, StudioMetadata};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum OverviewTab {
+    Summary,
+    Models,
+    Procedures,
+    Enums,
+}
+
+#[derive(Properties, PartialEq)]
+pub struct SchemaPageProps {
+    pub workspace: StudioMetadata,
+    pub context: StudioContextMetadata,
+}
+
+#[function_component(SchemaPage)]
+pub fn schema_page(props: &SchemaPageProps) -> Html {
+    let tab = use_state(|| OverviewTab::Summary);
+
+    html! {
+        <>
+            <div class="studio-subtabs">
+                { render_overview_subtab(&tab, OverviewTab::Summary, "Summary") }
+                { render_overview_subtab(&tab, OverviewTab::Models, "Models") }
+                { render_overview_subtab(&tab, OverviewTab::Procedures, "Procedures") }
+                { render_overview_subtab(&tab, OverviewTab::Enums, "Enums") }
+            </div>
+
+            <div class="studio-editor-toolbar">
+                <div class="studio-toolbar-title">{ "Schema Overview" }</div>
+            </div>
+
+            <div class="studio-editor-content">
+                {
+                    match *tab {
+                        OverviewTab::Summary => render_summary(&props.workspace, &props.context),
+                        OverviewTab::Models => render_models(&props.context),
+                        OverviewTab::Procedures => render_procedures(&props.context),
+                        OverviewTab::Enums => render_enums(&props.context),
+                    }
+                }
+            </div>
+        </>
+    }
+}
+
+fn render_overview_subtab(
+    current: &UseStateHandle<OverviewTab>,
+    target: OverviewTab,
+    label: &'static str,
+) -> Html {
+    let current = current.clone();
+    let active = *current == target;
+    html! {
+        <button
+            class={classes!("studio-subtab-button", active.then_some("is-active"))}
+            type="button"
+            onclick={Callback::from(move |_| current.set(target))}
+        >
+            { label }
+        </button>
+    }
+}
+
+fn render_summary(workspace: &StudioMetadata, context: &StudioContextMetadata) -> Html {
+    html! {
+        <div class="studio-summary-grid">
+            <div class="studio-summary-cards">
+                <div class="studio-surface studio-summary-card">
+                    <div class="studio-summary-label">{ "Models" }</div>
+                    <div class="studio-summary-value">{ context.models.len() }</div>
+                </div>
+                <div class="studio-surface studio-summary-card">
+                    <div class="studio-summary-label">{ "Procedures" }</div>
+                    <div class="studio-summary-value">{ context.procedures.len() }</div>
+                </div>
+                <div class="studio-surface studio-summary-card">
+                    <div class="studio-summary-label">{ "Enums" }</div>
+                    <div class="studio-summary-value">{ context.enums.len() }</div>
+                </div>
+                <div class="studio-surface studio-summary-card">
+                    <div class="studio-summary-label">{ "Mount" }</div>
+                    <div class="studio-summary-value text-[16px] leading-6">{ workspace.mount_path.clone() }</div>
+                </div>
+            </div>
+
+            <div class="studio-summary-sections">
+                <div class="studio-surface studio-card">
+                    <div class="studio-card-title">{ "Schema" }</div>
+                    <p class="studio-card-copy monospace">{ context.schema_path.clone() }</p>
+                    <div class="mt-4 studio-chip-row">
+                        <span class="studio-badge is-accent">{ context.display_name.clone() }</span>
+                        <span class="studio-soft-badge">{ workspace.mount_path.clone() }</span>
+                    </div>
+                </div>
+
+                <div class="studio-surface studio-card">
+                    <div class="studio-card-title">{ "Current shape" }</div>
+                    <p class="studio-card-copy">{ "Generated metadata drives the explorer, editor views, and studio proxy surfaces for the selected context." }</p>
+                    <div class="mt-4 studio-chip-row">
+                        <span class="studio-soft-badge">{ format!("{} tables", context.models.len()) }</span>
+                        <span class="studio-soft-badge">{ format!("{} procedures", context.procedures.len()) }</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+fn render_models(context: &StudioContextMetadata) -> Html {
+    html! {
+        <div class="studio-surface studio-card">
+            <div class="studio-card-title">{ "Tables" }</div>
+            <p class="studio-card-copy">{ "Generated model resources available in this schema context." }</p>
+            <div class="mt-4 studio-list-stack">
+                { for context.models.iter().map(|model| html! {
+                    <div class="studio-list-row">
+                        <div>
+                            <div class="studio-list-title">{ model.display_name.clone() }</div>
+                            <div class="studio-list-meta monospace">{ model.resource_path.clone() }</div>
+                        </div>
+                        <div class="studio-chip-row">
+                            <span class="studio-soft-badge">{ format!("{} fields", model.scalar_fields.len()) }</span>
+                            <span class="studio-soft-badge">{ format!("pk {}", model.primary_key) }</span>
+                        </div>
+                    </div>
+                }) }
+            </div>
+        </div>
+    }
+}
+
+fn render_procedures(context: &StudioContextMetadata) -> Html {
+    html! {
+        <div class="studio-surface studio-card">
+            <div class="studio-card-title">{ "Procedures" }</div>
+            <p class="studio-card-copy">{ "Callable operations exposed by the generated studio proxy." }</p>
+            <div class="mt-4 studio-list-stack">
+                { for context.procedures.iter().map(|procedure| html! {
+                    <div class="studio-list-row">
+                        <div>
+                            <div class="studio-list-title">{ procedure.display_name.clone() }</div>
+                            <div class="studio-list-meta monospace">{ procedure.route_path.clone() }</div>
+                        </div>
+                        <div class="studio-chip-row">
+                            <span class={if procedure.kind == "mutation" { classes!("studio-badge", "is-accent") } else { classes!("studio-soft-badge") }}>
+                                { procedure.kind.clone() }
+                            </span>
+                            <span class="studio-soft-badge">{ format!("returns {}", procedure.return_type) }</span>
+                        </div>
+                    </div>
+                }) }
+            </div>
+        </div>
+    }
+}
+
+fn render_enums(context: &StudioContextMetadata) -> Html {
+    if context.enums.is_empty() {
+        return html! {
+            <div class="studio-empty-state">{ "No enums are defined in this schema context." }</div>
+        };
+    }
+
+    html! {
+        <div class="studio-surface studio-card">
+            <div class="studio-card-title">{ "Enums" }</div>
+            <p class="studio-card-copy">{ "Named scalar sets generated into studio metadata and forms." }</p>
+            <div class="mt-4 studio-list-stack">
+                { for context.enums.iter().map(|enum_type| html! {
+                    <div class="studio-list-row">
+                        <div>
+                            <div class="studio-list-title">{ enum_type.name.clone() }</div>
+                            <div class="studio-chip-row mt-2">
+                                { for enum_type.values.iter().map(|value| html! {
+                                    <span class="studio-soft-badge monospace">{ value.clone() }</span>
+                                }) }
+                            </div>
+                        </div>
+                    </div>
+                }) }
+            </div>
+        </div>
+    }
+}

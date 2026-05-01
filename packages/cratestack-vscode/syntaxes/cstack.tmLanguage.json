@@ -1,0 +1,92 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "CrateStack",
+  "scopeName": "source.cstack",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#keywords" },
+    { "include": "#attributes" },
+    { "include": "#relationKeys" },
+    { "include": "#builtins" },
+    { "include": "#booleans" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.documentation.cstack",
+          "match": "///.*$"
+        },
+        {
+          "name": "comment.line.double-slash.cstack",
+          "match": "//.*$"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.cstack",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.cstack",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.cstack",
+          "match": "\\b\\d+(?:\\.\\d+)?\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.cstack",
+          "match": "\\b(?:datasource|auth|model|type|procedure|mutation|mcp)\\b"
+        }
+      ]
+    },
+    "attributes": {
+      "patterns": [
+        {
+          "name": "storage.modifier.cstack",
+          "match": "@@?[A-Za-z_][A-Za-z0-9_]*"
+        }
+      ]
+    },
+    "relationKeys": {
+      "patterns": [
+        {
+          "name": "support.type.property-name.cstack",
+          "match": "\\b(?:fields|references)\\b(?=\\s*:)"
+        }
+      ]
+    },
+    "builtins": {
+      "patterns": [
+        {
+          "name": "support.type.builtin.cstack",
+          "match": "\\b(?:String|Cuid|Int|Float|Boolean|DateTime|Json|Bytes|Uuid)\\b"
+        }
+      ]
+    },
+    "booleans": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.cstack",
+          "match": "\\b(?:true|false)\\b"
+        }
+      ]
+    }
+  }
+}

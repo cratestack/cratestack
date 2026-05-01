@@ -1,0 +1,45 @@
+import 'package:{{ package_name }}/{{ package_name }}.dart';
+
+void main() {
+  const fetchQuery = CratestackFetchQuery();
+{% if sample_model %}
+  final selection = {{ sample_model.model_name }}Selection();
+{% if sample_model.first_field %}
+  selection.{{ sample_model.first_field.value }}();
+{% endif %}
+{% if sample_model.first_include %}
+  selection.{{ sample_model.first_include.value }}();
+{% endif %}
+  final listQuery = selection.toListQuery(
+    sort: '-id',
+    limit: 20,
+    offset: 0,
+    where: 'published=true',
+  );
+  final projection = selection.asProjection();
+{% else %}
+  const listQuery = CratestackListQuery(
+    sort: '-id',
+    limit: 20,
+    offset: 0,
+    where: 'published=true',
+  );
+{% endif %}
+
+  // Generated model API entry points:
+{% for accessor in model_accessors %}
+  // - {{ accessor.accessor }}
+{% endfor %}
+
+  // Generated procedures:
+{% for procedure in procedures %}
+  // - {{ procedure.method_name }}(...)
+{% endfor %}
+
+  assert(listQuery.limit == 20);
+  assert(fetchQuery.toQueryParameters().isEmpty);
+{% if sample_model %}
+  assert(selection.toFetchQuery().toQueryParameters().isNotEmpty);
+  assert(projection.toFetchQuery().toQueryParameters().isNotEmpty);
+{% endif %}
+}

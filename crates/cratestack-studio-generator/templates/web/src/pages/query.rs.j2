@@ -1,0 +1,335 @@
+use wasm_bindgen_futures::spawn_local;
+use yew::prelude::*;
+
+use crate::{
+    api::{fetch_model_list, invoke_procedure},
+    components::{json_view::JsonView, table::DataTable},
+};
+use {{ workspace.shared_crate_lib_name }}::{StudioContextMetadata, StudioProxyResponse};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum QueryMode {
+    Model,
+    Procedure,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum QueryViewTab {
+    Builder,
+    Raw,
+}
+
+#[derive(Properties, PartialEq)]
+pub struct QueryPageProps {
+    pub context: StudioContextMetadata,
+    pub query_id: u32,
+}
+
+#[function_component(QueryPage)]
+pub fn query_page(props: &QueryPageProps) -> Html {
+    let query_mode = use_state(|| QueryMode::Model);
+    let selected_model = use_state(|| {
+        props
+            .context
+            .models
+            .first()
+            .map(|model| model.name.clone())
+            .unwrap_or_default()
+    });
+    let selected_procedure = use_state(|| {
+        props
+            .context
+            .procedures
+            .first()
+            .map(|procedure| procedure.name.clone())
+            .unwrap_or_default()
+    });
+    let model_query = use_state(String::new);
+    let procedure_body = use_state(|| "{}".to_owned());
+    let response_state = use_state(|| None::<Result<StudioProxyResponse, String>>);
+    let view_tab = use_state(|| QueryViewTab::Builder);
+
+    {
+        let query_mode = query_mode.clone();
+        let selected_model = selected_model.clone();
+        let selected_procedure = selected_procedure.clone();
+        let model_query = model_query.clone();
+        let procedure_body = procedure_body.clone();
+        let response_state = response_state.clone();
+        let view_tab = view_tab.clone();
+        let context = props.context.clone();
+        use_effect_with((props.query_id, props.context.key.clone()), move |_| {
+            query_mode.set(QueryMode::Model);
+            selected_model.set(
+                context
+                    .models
+                    .first()
+                    .map(|model| model.name.clone())
+                    .unwrap_or_default(),
+            );
+            selected_procedure.set(
+                context
+                    .procedures
+                    .first()
+                    .map(|procedure| procedure.name.clone())
+                    .unwrap_or_default(),
+            );
+            model_query.set(String::new());
+            procedure_body.set("{}".to_owned());
+            response_state.set(None);
+            view_tab.set(QueryViewTab::Builder);
+            || ()
+        });
+    }
+
+    let on_run = {
+        let query_mode = query_mode.clone();
+        let selected_model = selected_model.clone();
+        let selected_procedure = selected_procedure.clone();
+        let model_query = model_query.clone();
+        let procedure_body = procedure_body.clone();
+        let response_state = response_state.clone();
+        let view_tab = view_tab.clone();
+        let context_key = props.context.key.clone();
+        Callback::from(move |_| {
+            let query_mode = *query_mode;
+            let selected_model = (*selected_model).clone();
+            let selected_procedure = (*selected_procedure).clone();
+            let model_query = (*model_query).clone();
+            let procedure_body = (*procedure_body).clone();
+            let response_state = response_state.clone();
+            let view_tab = view_tab.clone();
+            let context_key = context_key.clone();
+            spawn_local(async move {
+                let result = match query_mode {
+                    QueryMode::Model => {
+                        fetch_model_list(&context_key, &selected_model, Some(&model_query)).await
+                    }
+                    QueryMode::Procedure => {
+                        let body = serde_json::from_str::<serde_json::Value>(&procedure_body)
+                            .map_err(|error| format!("Query body must be valid JSON: {error}"));
+                        match body {
+                            Ok(body) => invoke_procedure(&context_key, &selected_procedure, body).await,
+                            Err(error) => Err(error),
+                        }
+                    }
+                };
+                response_state.set(Some(result));
+                view_tab.set(QueryViewTab::Builder);
+            });
+        })
+    };
+
+    let response = response_state
+        .as_ref()
+        .and_then(|result| result.as_ref().ok())
+        .cloned();
+    let raw = response
+        .as_ref()
+        .map(|response| serde_json::to_string_pretty(response).unwrap_or_else(|_| "{}".to_owned()))
+        .or_else(|| response_state.as_ref().and_then(|result| result.as_ref().err().cloned()))
+        .unwrap_or_else(|| "{}".to_owned());
+    let on_switch_model_mode = {
+        let query_mode = query_mode.clone();
+        let view_tab = view_tab.clone();
+        Callback::from(move |_| {
+            query_mode.set(QueryMode::Model);
+            view_tab.set(QueryViewTab::Builder);
+        })
+    };
+    let on_switch_procedure_mode = {
+        let query_mode = query_mode.clone();
+        let view_tab = view_tab.clone();
+        Callback::from(move |_| {
+            query_mode.set(QueryMode::Procedure);
+            view_tab.set(QueryViewTab::Builder);
+        })
+    };
+    let on_show_raw = {
+        let view_tab = view_tab.clone();
+        Callback::from(move |_| view_tab.set(QueryViewTab::Raw))
+    };
+    let on_selected_model_change = {
+        let selected_model = selected_model.clone();
+        Callback::from(move |event: Event| {
+            selected_model.set(event.target_unchecked_into::<web_sys::HtmlSelectElement>().value());
+        })
+    };
+    let on_model_query_input = {
+        let model_query = model_query.clone();
+        Callback::from(move |event: InputEvent| {
+            model_query.set(event.target_unchecked_into::<web_sys::HtmlInputElement>().value());
+        })
+    };
+    let on_selected_procedure_change = {
+        let selected_procedure = selected_procedure.clone();
+        Callback::from(move |event: Event| {
+            selected_procedure.set(
+                event
+                    .target_unchecked_into::<web_sys::HtmlSelectElement>()
+                    .value(),
+            );
+        })
+    };
+    let on_procedure_body_input = {
+        let procedure_body = procedure_body.clone();
+        Callback::from(move |event: InputEvent| {
+            procedure_body.set(event.target_unchecked_into::<web_sys::HtmlTextAreaElement>().value());
+        })
+    };
+
+    html! {
+        <>
+            <div class="studio-subtabs">
+                <button
+                    class={classes!("studio-subtab-button", (*query_mode == QueryMode::Model).then_some("is-active"))}
+                    type="button"
+                    onclick={on_switch_model_mode}
+                >
+                    { "Model Query" }
+                </button>
+                <button
+                    class={classes!("studio-subtab-button", (*query_mode == QueryMode::Procedure).then_some("is-active"))}
+                    type="button"
+                    onclick={on_switch_procedure_mode}
+                >
+                    { "Procedure Call" }
+                </button>
+                <button
+                    class={classes!("studio-subtab-button", (*view_tab == QueryViewTab::Raw).then_some("is-active"))}
+                    type="button"
+                    onclick={on_show_raw}
+                >
+                    { "Raw" }
+                </button>
+            </div>
+
+            <div class="studio-editor-toolbar">
+                <div class="studio-toolbar-title">{ format!("Query {}", props.query_id) }</div>
+                <div class="studio-toolbar-actions">
+                    <button class="studio-toolbar-button-primary" type="button" onclick={on_run}>{ "Run Query" }</button>
+                </div>
+            </div>
+
+            <div class="studio-editor-content">
+                {
+                    match *view_tab {
+                        QueryViewTab::Builder => html! {
+                            <div class="studio-summary-grid">
+                                <div class="studio-surface studio-card">
+                                    <div class="studio-card-title">{ "Request" }</div>
+                                    <p class="studio-card-copy">{ "Use this tab to test model list queries or invoke procedures with explicit payloads." }</p>
+
+                                    {
+                                        match *query_mode {
+                                            QueryMode::Model => html! {
+                                                <div class="mt-4 studio-form-grid">
+                                                    <div class="studio-form-field">
+                                                        <div class="studio-field-label">{ "Model" }</div>
+                                                        <select
+                                                            class="studio-select"
+                                                            value={(*selected_model).clone()}
+                                                            onchange={on_selected_model_change.clone()}
+                                                        >
+                                                            { for props.context.models.iter().map(|model| html! {
+                                                                <option value={model.name.clone()}>{ model.display_name.clone() }</option>
+                                                            }) }
+                                                        </select>
+                                                    </div>
+                                                    <div class="studio-form-field">
+                                                        <div class="studio-field-label">{ "Search query" }</div>
+                                                        <input
+                                                            class="studio-input"
+                                                            type="text"
+                                                            value={(*model_query).clone()}
+                                                            placeholder="q=..."
+                                                            oninput={on_model_query_input.clone()}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            },
+                                            QueryMode::Procedure => html! {
+                                                <div class="mt-4 studio-form-grid">
+                                                    <div class="studio-form-field is-wide">
+                                                        <div class="studio-field-label">{ "Procedure" }</div>
+                                                        <select
+                                                            class="studio-select"
+                                                            value={(*selected_procedure).clone()}
+                                                            onchange={on_selected_procedure_change.clone()}
+                                                        >
+                                                            { for props.context.procedures.iter().map(|procedure| html! {
+                                                                <option value={procedure.name.clone()}>{ procedure.display_name.clone() }</option>
+                                                            }) }
+                                                        </select>
+                                                    </div>
+                                                    <div class="studio-form-field is-wide">
+                                                        <div class="studio-field-label">{ "JSON body" }</div>
+                                                        <textarea
+                                                            class="studio-textarea monospace"
+                                                            value={(*procedure_body).clone()}
+                                                            oninput={on_procedure_body_input.clone()}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            },
+                                        }
+                                    }
+                                </div>
+
+                                <div class="studio-surface studio-card">
+                                    <div class="studio-card-title">{ "Response" }</div>
+                                    <div class="mt-4">
+                                        {
+                                            if let Some(response) = &response {
+                                                let rows = rows_from_response(response.data.as_ref().unwrap_or(&serde_json::Value::Null));
+                                                let columns = columns_from_rows(&rows);
+                                                if !rows.is_empty() && !columns.is_empty() {
+                                                    html! { <DataTable columns={columns} rows={rows} /> }
+                                                } else {
+                                                    html! { <JsonView text={raw.clone()} /> }
+                                                }
+                                            } else if let Some(error) = response_state.as_ref().and_then(|result| result.as_ref().err()) {
+                                                html! { <div class="studio-empty-state">{ error.clone() }</div> }
+                                            } else {
+                                                html! { <div class="studio-empty-state">{ "Run a query to inspect the response." }</div> }
+                                            }
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        },
+                        QueryViewTab::Raw => html! { <JsonView text={raw} /> },
+                    }
+                }
+            </div>
+        </>
+    }
+}
+
+fn rows_from_response(value: &serde_json::Value) -> Vec<serde_json::Value> {
+    match value {
+        serde_json::Value::Array(rows) => rows.clone(),
+        serde_json::Value::Object(object) => object
+            .get("items")
+            .and_then(|items| items.as_array())
+            .cloned()
+            .or_else(|| {
+                if object.values().all(|value| !value.is_object()) {
+                    Some(vec![value.clone()])
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    }
+}
+
+fn columns_from_rows(rows: &[serde_json::Value]) -> Vec<String> {
+    rows.iter()
+        .filter_map(|row| row.as_object())
+        .flat_map(|object| object.keys().cloned())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}

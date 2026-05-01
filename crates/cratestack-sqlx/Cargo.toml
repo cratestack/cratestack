@@ -1,0 +1,17 @@
+[package]
+name = "cratestack-sqlx"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+chrono.workspace = true
+cratestack-core.workspace = true
+cratestack-policy.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]

@@ -1,0 +1,120 @@
+use yew::prelude::*;
+
+use crate::components::table::DataTable;
+use {{ workspace.shared_crate_lib_name }}::{StudioContextMetadata, StudioMetadata};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ApiTab {
+    Endpoints,
+    Models,
+    Procedures,
+}
+
+#[derive(Properties, PartialEq)]
+pub struct ApiPageProps {
+    pub workspace: StudioMetadata,
+    pub context: StudioContextMetadata,
+}
+
+#[function_component(ApiPage)]
+pub fn api_page(props: &ApiPageProps) -> Html {
+    let tab = use_state(|| ApiTab::Endpoints);
+
+    html! {
+        <>
+            <div class="studio-subtabs">
+                { render_api_subtab(&tab, ApiTab::Endpoints, "Endpoints") }
+                { render_api_subtab(&tab, ApiTab::Models, "Model Routes") }
+                { render_api_subtab(&tab, ApiTab::Procedures, "Procedure Routes") }
+            </div>
+
+            <div class="studio-editor-toolbar">
+                <div class="studio-toolbar-title">{ "Route Catalog" }</div>
+            </div>
+
+            <div class="studio-editor-content">
+                {
+                    match *tab {
+                        ApiTab::Endpoints => render_endpoints(&props.workspace, &props.context),
+                        ApiTab::Models => render_model_routes(&props.context),
+                        ApiTab::Procedures => render_procedure_routes(&props.context),
+                    }
+                }
+            </div>
+        </>
+    }
+}
+
+fn render_api_subtab(current: &UseStateHandle<ApiTab>, target: ApiTab, label: &'static str) -> Html {
+    let current = current.clone();
+    let active = *current == target;
+    html! {
+        <button
+            class={classes!("studio-subtab-button", active.then_some("is-active"))}
+            type="button"
+            onclick={Callback::from(move |_| current.set(target))}
+        >
+            { label }
+        </button>
+    }
+}
+
+fn render_endpoints(workspace: &StudioMetadata, context: &StudioContextMetadata) -> Html {
+    let rows = vec![
+        serde_json::json!({ "path": "/healthz", "method": "GET", "purpose": "Health check" }),
+        serde_json::json!({ "path": format!("{}/api/metadata", workspace.mount_path), "method": "GET", "purpose": "Studio metadata" }),
+        serde_json::json!({ "path": format!("{}/api/contexts/{}/models/{{model}}", workspace.mount_path, context.key), "method": "GET", "purpose": "Model proxy" }),
+        serde_json::json!({ "path": format!("{}/api/contexts/{}/models/{{model}}/{{id}}", workspace.mount_path, context.key), "method": "GET", "purpose": "Single record proxy" }),
+        serde_json::json!({ "path": format!("{}/api/contexts/{}/procedures/{{procedure}}", workspace.mount_path, context.key), "method": "POST", "purpose": "Procedure proxy" }),
+    ];
+
+    html! {
+        <div class="studio-surface studio-card">
+            <div class="studio-card-title">{ "Built-in endpoints" }</div>
+            <p class="studio-card-copy">{ "Generated backend routes that serve metadata and forward model or procedure requests upstream." }</p>
+            <div class="mt-4">
+                <DataTable columns={vec!["path".to_owned(), "method".to_owned(), "purpose".to_owned()]} rows={rows} />
+            </div>
+        </div>
+    }
+}
+
+fn render_model_routes(context: &StudioContextMetadata) -> Html {
+    let rows = context.models.iter().map(|model| {
+        serde_json::json!({
+            "model": model.display_name,
+            "resource": model.resource_path,
+            "primary_key": model.primary_key,
+        })
+    }).collect::<Vec<_>>();
+
+    html! {
+        <div class="studio-surface studio-card">
+            <div class="studio-card-title">{ "Model routes" }</div>
+            <p class="studio-card-copy">{ "Resource endpoints exposed for model browsing and row access in the selected schema context." }</p>
+            <div class="mt-4">
+                <DataTable columns={vec!["model".to_owned(), "resource".to_owned(), "primary_key".to_owned()]} rows={rows} />
+            </div>
+        </div>
+    }
+}
+
+fn render_procedure_routes(context: &StudioContextMetadata) -> Html {
+    let rows = context.procedures.iter().map(|procedure| {
+        serde_json::json!({
+            "procedure": procedure.display_name,
+            "kind": procedure.kind,
+            "route": procedure.route_path,
+        })
+    }).collect::<Vec<_>>();
+
+    html! {
+        <div class="studio-surface studio-card">
+            <div class="studio-card-title">{ "Procedure routes" }</div>
+            <p class="studio-card-copy">{ "Callable operations available through the studio proxy." }</p>
+            <div class="mt-4">
+                <DataTable columns={vec!["procedure".to_owned(), "kind".to_owned(), "route".to_owned()]} rows={rows} />
+            </div>
+        </div>
+    }
+}

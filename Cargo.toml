@@ -1,0 +1,81 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/cratestack",
+    "crates/cratestack-axum",
+    "crates/cratestack-cli",
+    "crates/cratestack-client-dart",
+    "crates/cratestack-client-flutter",
+    "crates/cratestack-client-rust",
+    "crates/cratestack-client-store-sqlite",
+    "crates/cratestack-codec-cbor",
+    "crates/cratestack-codec-json",
+    "crates/cratestack-core",
+    "crates/cratestack-lsp",
+    "crates/cratestack-macros",
+    "crates/cratestack-parser",
+    "crates/cratestack-policy",
+    "crates/cratestack-sqlx",
+    "crates/cratestack-studio-generator",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+authors = [
+    "Stephane Segning <selastlambou@gmail.com>",
+]
+
+[workspace.dependencies]
+anyhow = "1"
+ariadne = "0.6.0"
+axum = "0"
+bytes = "1"
+chumsky = "0"
+minicbor = "2.2.1"
+minicbor-serde = { version = "0.6.2", features = ["std"] }
+chrono = { version = "0", features = ["serde"] }
+clap = { version = "4", features = ["derive"] }
+cratestack = { path = "crates/cratestack", version = "0.1.0" }
+cratestack-axum = { path = "crates/cratestack-axum", version = "0.1.0" }
+cratestack-client-dart = { path = "crates/cratestack-client-dart", version = "0.1.0" }
+cratestack-client-flutter = { path = "crates/cratestack-client-flutter", version = "0.1.0" }
+cratestack-client-rust = { path = "crates/cratestack-client-rust", version = "0.1.0" }
+cratestack-client-store-sqlite = { path = "crates/cratestack-client-store-sqlite", version = "0.1.0" }
+cratestack-codec-cbor = { path = "crates/cratestack-codec-cbor", version = "0.1.0" }
+cratestack-codec-json = { path = "crates/cratestack-codec-json", version = "0.1.0" }
+cratestack-core = { path = "crates/cratestack-core", version = "0.1.0" }
+cratestack-macros = { path = "crates/cratestack-macros", version = "0.1.0" }
+cratestack-parser = { path = "crates/cratestack-parser", version = "0.1.0" }
+cratestack-policy = { path = "crates/cratestack-policy", version = "0.1.0" }
+cratestack-sqlx = { path = "crates/cratestack-sqlx", version = "0.1.0" }
+cratestack-studio-generator = { path = "crates/cratestack-studio-generator", version = "0.1.0" }
+minijinja = "2"
+reqwest = { version = "0", default-features = false, features = ["rustls-tls"] }
+rusqlite = { version = "0", features = ["bundled"] }
+serde_json = "1"
+serde_urlencoded = "0.7.1"
+http = "1"
+proc-macro2 = "1"
+quote = "1"
+serde = { version = "1.0.228", features = ["derive"] }
+sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "uuid", "json"] }
+syn = { version = "2.0.108", features = ["full"] }
+thiserror = "2.0.17"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tower = { version = "0.5", features = ["util"] }
+tower-lsp = "0.20.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["registry", "std"] }
+url = "2"
+uuid = { version = "1", features = ["serde", "v4"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[profile.release]
+lto = true
+opt-level = "z"
+codegen-units = 1
+incremental = false

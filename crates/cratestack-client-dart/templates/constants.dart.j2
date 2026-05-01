@@ -1,0 +1,18 @@
+{% for group in selection_groups %}
+abstract final class {{ group.field_group_name }} {
+{% for field in group.fields %}
+  static const String {{ field.const_name }} = '{{ field.value }}';
+{% endfor %}
+}
+
+abstract final class {{ group.include_group_name }} {
+{% if group.includes | length == 0 %}
+  static const List<String> values = <String>[];
+{% else %}
+{% for include in group.includes %}
+  static const String {{ include.const_name }} = '{{ include.value }}';
+{% endfor %}
+{% endif %}
+}
+
+{% endfor %}

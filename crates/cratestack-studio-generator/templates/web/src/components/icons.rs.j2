@@ -1,0 +1,213 @@
+use yew::prelude::*;
+
+#[derive(Clone, PartialEq)]
+pub enum IconName {
+    Activity,
+    Check,
+    ChevronDown,
+    ChevronRight,
+    Code2,
+    Database,
+    Dashboard,
+    FileCode,
+    FolderOpen,
+    GripVertical,
+    History,
+    Key,
+    MoreHorizontal,
+    Plus,
+    Search,
+    Server,
+    Settings,
+    Sliders,
+    Table,
+    TerminalSquare,
+    Trash2,
+    X,
+}
+
+#[derive(Properties, PartialEq)]
+pub struct IconProps {
+    pub name: IconName,
+    #[prop_or_else(|| AttrValue::from("h-4 w-4"))]
+    pub class: AttrValue,
+}
+
+#[function_component(Icon)]
+pub fn icon(props: &IconProps) -> Html {
+    html! {
+        <svg
+            aria-hidden="true"
+            class={props.class.clone()}
+            fill="none"
+            focusable="false"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="1.8"
+            viewBox="0 0 24 24"
+        >
+            { icon_paths(&props.name) }
+        </svg>
+    }
+}
+
+fn icon_paths(name: &IconName) -> Html {
+    match name {
+        IconName::Activity => html! {
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+        },
+        IconName::Check => html! {
+            <polyline points="20 6 9 17 4 12" />
+        },
+        IconName::ChevronDown => html! {
+            <polyline points="6 9 12 15 18 9" />
+        },
+        IconName::ChevronRight => html! {
+            <polyline points="9 6 15 12 9 18" />
+        },
+        IconName::Code2 => html! {
+            <>
+                <polyline points="8 9 4 12 8 15" />
+                <polyline points="16 9 20 12 16 15" />
+                <line x1="14" x2="10" y1="4" y2="20" />
+            </>
+        },
+        IconName::Database => html! {
+            <>
+                <ellipse cx="12" cy="5" rx="7" ry="3" />
+                <path d="M5 5v14c0 1.7 3.1 3 7 3s7-1.3 7-3V5" />
+                <path d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3" />
+            </>
+        },
+        IconName::Dashboard => html! {
+            <>
+                <rect height="7" rx="1.5" width="7" x="3" y="3" />
+                <rect height="7" rx="1.5" width="11" x="10" y="3" />
+                <rect height="11" rx="1.5" width="7" x="3" y="10" />
+                <rect height="11" rx="1.5" width="11" x="10" y="10" />
+            </>
+        },
+        IconName::FileCode => html! {
+            <>
+                <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 3 14 8 19 8" />
+                <polyline points="10 13 8 15 10 17" />
+                <polyline points="14 13 16 15 14 17" />
+            </>
+        },
+        IconName::FolderOpen => html! {
+            <>
+                <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1" />
+                <path d="M3 10h18l-2 8a2 2 0 0 1-2 2H7a2 2 0 0 1-2-1.6z" />
+            </>
+        },
+        IconName::GripVertical => html! {
+            <>
+                <circle cx="9" cy="6" r="1" />
+                <circle cx="15" cy="6" r="1" />
+                <circle cx="9" cy="12" r="1" />
+                <circle cx="15" cy="12" r="1" />
+                <circle cx="9" cy="18" r="1" />
+                <circle cx="15" cy="18" r="1" />
+            </>
+        },
+        IconName::History => html! {
+            <>
+                <path d="M3 12a9 9 0 1 0 3-6.7" />
+                <polyline points="3 4 3 10 9 10" />
+                <polyline points="12 7 12 12 16 14" />
+            </>
+        },
+        IconName::Key => html! {
+            <>
+                <circle cx="8" cy="15" r="4" />
+                <path d="M12 15h9" />
+                <path d="M18 12v6" />
+                <path d="M21 13v4" />
+            </>
+        },
+        IconName::MoreHorizontal => html! {
+            <>
+                <circle cx="6" cy="12" r="1.5" />
+                <circle cx="12" cy="12" r="1.5" />
+                <circle cx="18" cy="12" r="1.5" />
+            </>
+        },
+        IconName::Plus => html! {
+            <>
+                <line x1="12" x2="12" y1="5" y2="19" />
+                <line x1="5" x2="19" y1="12" y2="12" />
+            </>
+        },
+        IconName::Search => html! {
+            <>
+                <circle cx="11" cy="11" r="7" />
+                <line x1="20" x2="16.65" y1="20" y2="16.65" />
+            </>
+        },
+        IconName::Server => html! {
+            <>
+                <rect height="6" rx="1.5" width="16" x="4" y="4" />
+                <rect height="6" rx="1.5" width="16" x="4" y="14" />
+                <line x1="8" x2="8.01" y1="7" y2="7" />
+                <line x1="8" x2="8.01" y1="17" y2="17" />
+                <line x1="12" x2="16" y1="7" y2="7" />
+                <line x1="12" x2="16" y1="17" y2="17" />
+            </>
+        },
+        IconName::Settings => html! {
+            <>
+                <circle cx="12" cy="12" r="3" />
+                <path d="M12 2v3" />
+                <path d="M12 19v3" />
+                <path d="m4.93 4.93 2.12 2.12" />
+                <path d="m16.95 16.95 2.12 2.12" />
+                <path d="M2 12h3" />
+                <path d="M19 12h3" />
+                <path d="m4.93 19.07 2.12-2.12" />
+                <path d="m16.95 7.05 2.12-2.12" />
+            </>
+        },
+        IconName::Sliders => html! {
+            <>
+                <line x1="4" x2="20" y1="6" y2="6" />
+                <line x1="4" x2="20" y1="12" y2="12" />
+                <line x1="4" x2="20" y1="18" y2="18" />
+                <circle cx="9" cy="6" r="2" />
+                <circle cx="15" cy="12" r="2" />
+                <circle cx="11" cy="18" r="2" />
+            </>
+        },
+        IconName::Table => html! {
+            <>
+                <rect height="16" rx="1.5" width="18" x="3" y="4" />
+                <line x1="3" x2="21" y1="10" y2="10" />
+                <line x1="9" x2="9" y1="10" y2="20" />
+                <line x1="15" x2="15" y1="10" y2="20" />
+            </>
+        },
+        IconName::TerminalSquare => html! {
+            <>
+                <rect height="18" rx="2" width="18" x="3" y="3" />
+                <polyline points="8 9 11 12 8 15" />
+                <line x1="13" x2="16" y1="15" y2="15" />
+            </>
+        },
+        IconName::Trash2 => html! {
+            <>
+                <path d="M3 6h18" />
+                <path d="M8 6V4h8v2" />
+                <path d="M19 6l-1 14H6L5 6" />
+                <line x1="10" x2="10" y1="10" y2="16" />
+                <line x1="14" x2="14" y1="10" y2="16" />
+            </>
+        },
+        IconName::X => html! {
+            <>
+                <line x1="18" x2="6" y1="6" y2="18" />
+                <line x1="6" x2="18" y1="6" y2="18" />
+            </>
+        },
+    }
+}

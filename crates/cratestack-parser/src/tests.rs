@@ -1,0 +1,551 @@
+use super::{parse_relation_attribute, parse_schema};
+
+#[test]
+fn parses_and_validates_initial_schema_subset() {
+    let schema = parse_schema(
+        r#"
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth UserAuth {
+  id Int
+  role String
+}
+
+model User {
+  id Int @id
+  email String @unique
+  role String
+
+  @@allow("read", auth() != null)
+}
+
+type PublishPostInput {
+  postId Int
+}
+
+mutation procedure publishPost(args: PublishPostInput): User
+  @allow(auth().role == "admin")
+"#,
+    )
+    .expect("schema should parse");
+
+    assert_eq!(schema.models.len(), 1);
+    assert_eq!(schema.types.len(), 1);
+    assert_eq!(schema.procedures.len(), 1);
+}
+
+#[test]
+fn parses_enums_and_allows_enum_type_references() {
+    let schema = parse_schema(
+        r#"
+enum Role {
+  admin
+  member
+}
+
+auth SessionUser {
+  role Role
+}
+
+model User {
+  id Int @id
+  role Role
+}
+
+type PublicUser {
+  role Role
+}
+
+procedure getUsers(role: Role?): User
+"#,
+    )
+    .expect("schema with enums should parse");
+
+    assert_eq!(schema.enums.len(), 1);
+    assert_eq!(schema.enums[0].name, "Role");
+    assert_eq!(
+        schema.enums[0]
+            .variants
+            .iter()
+            .map(|variant| variant.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["admin", "member"]
+    );
+    assert_eq!(
+        schema.auth.as_ref().expect("auth block").fields[0].ty.name,
+        "Role"
+    );
+    assert_eq!(schema.models[0].fields[1].ty.name, "Role");
+    assert_eq!(schema.types[0].fields[0].ty.name, "Role");
+    assert_eq!(schema.procedures[0].args[0].ty.name, "Role");
+}
+
+#[test]
+fn rejects_models_without_primary_keys() {
+    let error = parse_schema(
+        r#"
+model User {
+  email String
+}
+"#,
+    )
+    .expect_err("schema should fail validation");
+
+    assert!(error.to_string().contains("missing an @id field"));
+}
+
+#[test]
+fn rejects_relation_fields_without_explicit_relation_metadata() {
+    let error = parse_schema(
+        r#"
+model User {
+  id Int @id
+}
+
+model Post {
+  id Int @id
+  authorId Int
+  author User
+}
+"#,
+    )
+    .expect_err("schema should fail validation");
+
+    assert!(error.to_string().contains("must declare @relation"));
+}
+
+#[test]
+fn rejects_relations_with_unknown_local_fields() {
+    let error = parse_schema(
+        r#"
+model User {
+  id Int @id
+}
+
+model Post {
+  id Int @id
+  authorId Int
+  author User @relation(fields:[ownerId],references:[id])
+}
+"#,
+    )
+    .expect_err("schema should fail validation");
+
+    assert!(error.to_string().contains("unknown local field `ownerId`"));
+}
+
+#[test]
+fn rejects_relations_with_unknown_target_fields() {
+    let error = parse_schema(
+        r#"
+model User {
+  id Int @id
+}
+
+model Post {
+  id Int @id
+  authorId Int
+  author User @relation(fields:[authorId],references:[userId])
+}
+"#,
+    )
+    .expect_err("schema should fail validation");
+
+    assert!(error.to_string().contains("unknown target field `userId`"));
+}
+
+#[test]
+fn rejects_relations_with_incompatible_scalar_reference_types() {
+    let error = parse_schema(
+        r#"
+model User {
+  id String @id
+}
+
+model Post {
+  id Int @id
+  authorId Int
+  author User @relation(fields:[authorId],references:[id])
+}
+"#,
+    )
+    .expect_err("schema should fail validation");
+
+    assert!(
+        error
+            .to_string()
+            .contains("links incompatible scalar types")
+    );
+}
+
+#[test]
+fn accepts_custom_fields_on_types() {
+    let schema = parse_schema(
+        r#"
+type Image {
+  storageKey String
+  thumbnailUrl String @custom
+}
+"#,
+    )
+    .expect("type custom fields should parse");
+
+    assert_eq!(schema.types[0].fields[1].attributes[0].raw, "@custom");
+}
+
+#[test]
+fn rejects_duplicate_enum_variants() {
+    let error = parse_schema(
+        r#"
+enum Role {
+  admin
+  admin
+}
+"#,
+    )
+    .expect_err("duplicate enum variants should fail validation");
+
+    assert!(
+        error
+            .to_string()
+            .contains("duplicate variant `admin` on enum `Role`")
+    );
+}
+
+#[test]
+fn accepts_model_emit_attribute() {
+    let schema = parse_schema(
+        r#"
+model Session {
+  id Cuid @id
+
+  @@emit(created, deleted)
+}
+"#,
+    )
+    .expect("model emit attribute should parse");
+
+    assert_eq!(
+        schema.models[0].attributes[0].raw,
+        "@@emit(created, deleted)"
+    );
+}
+
+#[test]
+fn rejects_invalid_model_emit_attribute_operation() {
+    let error = parse_schema(
+        r#"
+model Session {
+  id Cuid @id
+
+  @@emit(created, archived)
+}
+"#,
+    )
+    .expect_err("unknown event operation should fail validation");
+
+    assert!(
+        error
+            .to_string()
+            .contains("unsupported event operation `archived`")
+    );
+}
+
+#[test]
+fn preserves_leading_doc_comments_on_declarations_and_fields() {
+    let schema = parse_schema(
+        r#"
+/// User docs
+model User {
+  /// Identifier docs
+  id Int @id
+  /// Email docs
+  email String
+}
+
+/// Feed docs
+procedure getFeed(): User
+"#,
+    )
+    .expect("schema with docs should parse");
+
+    assert_eq!(schema.models[0].docs, vec!["User docs".to_owned()]);
+    assert_eq!(
+        schema.models[0].fields[0].docs,
+        vec!["Identifier docs".to_owned()]
+    );
+    assert_eq!(
+        schema.models[0].fields[1].docs,
+        vec!["Email docs".to_owned()]
+    );
+    assert_eq!(schema.procedures[0].docs, vec!["Feed docs".to_owned()]);
+}
+
+#[test]
+fn attaches_param_docs_and_precise_spans_to_procedure_args() {
+    let source = r#"
+/// Feed docs
+/// @param limit Maximum items to fetch
+procedure getFeed(limit: Int): Int
+"#;
+    let schema = parse_schema(source).expect("schema with parameter docs should parse");
+    let arg = &schema.procedures[0].args[0];
+
+    assert_eq!(schema.procedures[0].docs, vec!["Feed docs".to_owned()]);
+    assert_eq!(arg.docs, vec!["Maximum items to fetch".to_owned()]);
+    assert_eq!(&source[arg.span.start..arg.span.end], "limit: Int");
+}
+
+#[test]
+fn parses_built_in_page_return_type() {
+    let source = r#"
+model Post {
+  id Int @id
+}
+
+procedure getFeedPage(): Page<Post>
+"#;
+    let schema = parse_schema(source).expect("schema with Page<T> return should parse");
+    let return_type = &schema.procedures[0].return_type;
+
+    assert_eq!(return_type.name, "Page");
+    assert_eq!(return_type.generic_args.len(), 1);
+    assert_eq!(return_type.generic_args[0].name, "Post");
+    assert_eq!(
+        &source[return_type.name_span.start..return_type.name_span.end],
+        "Page"
+    );
+    assert_eq!(
+        &source[return_type.generic_args[0].name_span.start
+            ..return_type.generic_args[0].name_span.end],
+        "Post"
+    );
+}
+
+#[test]
+fn rejects_page_return_types_outside_procedure_returns() {
+    let error = parse_schema(
+        r#"
+type Feed {
+  posts Page<Post>
+}
+
+model Post {
+  id Int @id
+}
+"#,
+    )
+    .expect_err("Page<T> fields should fail validation");
+
+    assert!(
+        error
+            .to_string()
+            .contains("only supported as a procedure return type")
+    );
+}
+
+#[test]
+fn rejects_page_returns_with_scalar_items() {
+    let error = parse_schema(
+        r#"
+procedure getCounts(): Page<Int>
+"#,
+    )
+    .expect_err("Page<T> with scalar item should fail validation");
+
+    assert!(
+        error
+            .to_string()
+            .contains("only supports declared model or type items")
+    );
+}
+
+#[test]
+fn accepts_bare_model_paged_attribute() {
+    let schema = parse_schema(
+        r#"
+model Session {
+  id Cuid @id
+
+  @@paged
+}
+"#,
+    )
+    .expect("bare @@paged should parse");
+
+    assert_eq!(schema.models[0].attributes[0].raw, "@@paged");
+}
+
+#[test]
+fn rejects_invalid_model_paged_attribute_forms() {
+    let error = parse_schema(
+        r#"
+model Session {
+  id Cuid @id
+
+  @@paged(mode: "offset")
+}
+"#,
+    )
+    .expect_err("configured @@paged should fail validation");
+
+    assert!(error.to_string().contains("use bare `@@paged`"));
+}
+
+#[test]
+fn preserves_precise_name_spans_for_relations_and_type_references() {
+    let source = r#"
+model User {
+  id Int @id
+}
+
+model Post {
+  id Int @id
+  authorId Int
+  author User @relation(fields:[authorId],references:[id])
+}
+"#;
+    let schema = parse_schema(source).expect("schema should parse");
+    let post = &schema.models[1];
+    let author = &post.fields[2];
+    let relation =
+        parse_relation_attribute(&author.attributes[0].raw).expect("relation should parse");
+
+    assert_eq!(&source[post.name_span.start..post.name_span.end], "Post");
+    assert_eq!(
+        &source[author.name_span.start..author.name_span.end],
+        "author"
+    );
+    assert_eq!(
+        &source[author.ty.name_span.start..author.ty.name_span.end],
+        "User"
+    );
+    assert_eq!(relation.fields, vec!["authorId".to_owned()]);
+    assert_eq!(relation.references, vec!["id".to_owned()]);
+}
+
+#[test]
+fn preserves_recursive_relation_policy_attributes() {
+    let schema = parse_schema(
+        r#"
+auth SessionUser {
+  email String
+  orgSlug String
+}
+
+model Organization {
+  id Int @id
+  slug String
+}
+
+model User {
+  id Int @id
+  email String
+  banned Boolean
+}
+
+model Project {
+  id Int @id
+  organizationId Int
+  organization Organization @relation(fields:[organizationId],references:[id])
+  memberships Membership[] @relation(fields:[id],references:[projectId])
+}
+
+model Membership {
+  id Int @id
+  projectId Int
+  userId Int
+  active Boolean
+  blocked Boolean
+  project Project @relation(fields:[projectId],references:[id])
+  user User @relation(fields:[userId],references:[id])
+}
+
+model Task {
+  id Int @id
+  projectId Int
+  project Project @relation(fields:[projectId],references:[id])
+
+  @@deny("read", project.memberships.some.user.banned)
+  @@allow("read", project.organization.slug == auth().orgSlug && project.memberships.some.user.email == auth().email)
+  @@allow("delete", project.memberships.every.active)
+  @@allow("create", project.memberships.none.blocked)
+}
+"#,
+    )
+    .expect("recursive policy schema should parse");
+
+    let task = schema
+        .models
+        .iter()
+        .find(|model| model.name == "Task")
+        .expect("task model should parse");
+    assert_eq!(task.attributes.len(), 4);
+    assert!(
+        task.attributes[0]
+            .raw
+            .contains("project.memberships.some.user.banned")
+    );
+    assert!(
+        task.attributes[1]
+            .raw
+            .contains("project.organization.slug == auth().orgSlug")
+    );
+    assert!(
+        task.attributes[2]
+            .raw
+            .contains("project.memberships.every.active")
+    );
+    assert!(
+        task.attributes[3]
+            .raw
+            .contains("project.memberships.none.blocked")
+    );
+}
+
+#[test]
+fn tracks_field_type_span_from_token_position_not_first_substring_match() {
+    let source = r#"
+model Group {
+  id Int @id
+}
+
+model User {
+  id Int @id
+  groupId Int
+  GroupLabel Group @relation(fields:[groupId],references:[id])
+}
+"#;
+    let schema = parse_schema(source).expect("schema should parse");
+    let field = &schema.models[1].fields[2];
+
+    assert_eq!(
+        &source[field.name_span.start..field.name_span.end],
+        "GroupLabel"
+    );
+    assert_eq!(
+        &source[field.ty.name_span.start..field.ty.name_span.end],
+        "Group"
+    );
+}
+
+#[test]
+fn rejects_custom_fields_on_models() {
+    let error = parse_schema(
+        r#"
+model Image {
+  id Int @id
+  storageKey String
+  thumbnailUrl String @custom
+}
+"#,
+    )
+    .expect_err("model custom fields should fail validation");
+
+    assert!(error.to_string().contains(
+        "resolver-backed custom fields are currently only supported on `type` declarations"
+    ));
+}

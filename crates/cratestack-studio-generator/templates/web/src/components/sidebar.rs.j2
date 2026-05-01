@@ -1,0 +1,203 @@
+use yew::prelude::*;
+
+use crate::components::icons::{Icon, IconName};
+use {{ workspace.shared_crate_lib_name }}::StudioContextMetadata;
+
+#[derive(Clone, PartialEq)]
+pub enum NavItem {
+    Overview,
+    Model(String),
+    Procedure(String),
+    Query(u32),
+    Api,
+}
+
+#[derive(Properties, PartialEq)]
+pub struct SidebarProps {
+    pub context: StudioContextMetadata,
+    pub selected: NavItem,
+    pub on_select: Callback<NavItem>,
+    pub filter_text: AttrValue,
+    pub on_filter_input: Callback<InputEvent>,
+    pub search_input_ref: NodeRef,
+}
+
+#[function_component(Sidebar)]
+pub fn sidebar(props: &SidebarProps) -> Html {
+    let tables_open = use_state(|| true);
+    let procedures_open = use_state(|| true);
+    let enums_open = use_state(|| true);
+    let filter = props.filter_text.to_lowercase();
+
+    let matches_filter = |text: &str| filter.is_empty() || text.to_lowercase().contains(&filter);
+
+    let visible_models = props
+        .context
+        .models
+        .iter()
+        .filter(|model| matches_filter(&model.display_name) || matches_filter(&model.name))
+        .collect::<Vec<_>>();
+    let visible_procedures = props
+        .context
+        .procedures
+        .iter()
+        .filter(|procedure| matches_filter(&procedure.display_name) || matches_filter(&procedure.name))
+        .collect::<Vec<_>>();
+    let visible_enums = props
+        .context
+        .enums
+        .iter()
+        .filter(|enum_type| matches_filter(&enum_type.name))
+        .collect::<Vec<_>>();
+
+    html! {
+        <aside class="studio-object-explorer" aria-label="Object explorer">
+            <div class="studio-explorer-header">
+                <span>{ "Explorer" }</span>
+                <button class="studio-icon-button" type="button" aria-label="Explorer options">
+                    <Icon name={IconName::MoreHorizontal} class="h-4 w-4" />
+                </button>
+            </div>
+
+            <div class="studio-explorer-search">
+                <label class="studio-search-input" aria-label="Filter objects">
+                    <Icon name={IconName::Search} class="h-3.5 w-3.5 text-[var(--muted-foreground)]" />
+                    <input
+                        ref={props.search_input_ref.clone()}
+                        type="text"
+                        value={props.filter_text.clone()}
+                        placeholder="Filter objects..."
+                        oninput={props.on_filter_input.clone()}
+                    />
+                </label>
+            </div>
+
+            <div class="studio-tree-scroll">
+                <button class={tree_node_class(matches!(props.selected, NavItem::Overview))} type="button" onclick={emit_nav(&props.on_select, NavItem::Overview)}>
+                    <span class="studio-tree-icon"><Icon name={IconName::FolderOpen} class="h-3.5 w-3.5 text-[var(--primary)]" /></span>
+                    <span>{ schema_label(&props.context.schema_path) }</span>
+                </button>
+
+                { render_section_header("Tables", visible_models.len(), *tables_open, {
+                    let tables_open = tables_open.clone();
+                    Callback::from(move |_| tables_open.set(!*tables_open))
+                }) }
+                {
+                    if *tables_open {
+                        html! {
+                            <>
+                                { for visible_models.iter().map(|model| {
+                                    let active = props.selected == NavItem::Model(model.name.clone());
+                                    let nav_item = NavItem::Model(model.name.clone());
+                                    html! {
+                                        <button class={tree_node_class(active)} type="button" onclick={emit_nav(&props.on_select, nav_item)}>
+                                            <span class="studio-tree-indent"></span>
+                                            <span class="studio-tree-icon"><Icon name={IconName::Table} class="h-3.5 w-3.5" /></span>
+                                            <span>{ model.display_name.clone() }</span>
+                                        </button>
+                                    }
+                                }) }
+                            </>
+                        }
+                    } else {
+                        html! {}
+                    }
+                }
+
+                <div class="studio-tree-node studio-tree-node-section">
+                    <span class="studio-tree-indent"></span>
+                    <span class="studio-tree-icon"><Icon name={IconName::ChevronRight} class="h-3.5 w-3.5" /></span>
+                    <span>{ "Views" }</span>
+                    <span class="studio-tree-badge">{ "0" }</span>
+                </div>
+
+                { render_section_header("Procedures", visible_procedures.len(), *procedures_open, {
+                    let procedures_open = procedures_open.clone();
+                    Callback::from(move |_| procedures_open.set(!*procedures_open))
+                }) }
+                {
+                    if *procedures_open {
+                        html! {
+                            <>
+                                { for visible_procedures.iter().map(|procedure| {
+                                    let active = props.selected == NavItem::Procedure(procedure.name.clone());
+                                    let nav_item = NavItem::Procedure(procedure.name.clone());
+                                    html! {
+                                        <button class={tree_node_class(active)} type="button" onclick={emit_nav(&props.on_select, nav_item)}>
+                                            <span class="studio-tree-indent"></span>
+                                            <span class="studio-tree-icon"><Icon name={IconName::TerminalSquare} class="h-3.5 w-3.5" /></span>
+                                            <span>{ procedure.display_name.clone() }</span>
+                                        </button>
+                                    }
+                                }) }
+                            </>
+                        }
+                    } else {
+                        html! {}
+                    }
+                }
+
+                { render_section_header("Types & Enums", visible_enums.len(), *enums_open, {
+                    let enums_open = enums_open.clone();
+                    Callback::from(move |_| enums_open.set(!*enums_open))
+                }) }
+                {
+                    if *enums_open {
+                        html! {
+                            <>
+                                { for visible_enums.iter().map(|enum_type| html! {
+                                    <div class="studio-tree-node studio-tree-node-passive">
+                                        <span class="studio-tree-indent"></span>
+                                        <span class="studio-tree-icon"><Icon name={IconName::Code2} class="h-3.5 w-3.5" /></span>
+                                        <span>{ enum_type.name.clone() }</span>
+                                    </div>
+                                }) }
+                            </>
+                        }
+                    } else {
+                        html! {}
+                    }
+                }
+            </div>
+        </aside>
+    }
+}
+
+fn render_section_header(
+    label: &'static str,
+    count: usize,
+    open: bool,
+    on_click: Callback<MouseEvent>,
+) -> Html {
+    html! {
+        <button class="studio-tree-node studio-tree-node-section" type="button" onclick={on_click}>
+            <span class="studio-tree-indent"></span>
+            <span class="studio-tree-icon">
+                <Icon name={if open { IconName::ChevronDown } else { IconName::ChevronRight }} class="h-3.5 w-3.5" />
+            </span>
+            <span>{ label }</span>
+            <span class="studio-tree-badge">{ count }</span>
+        </button>
+    }
+}
+
+fn emit_nav(callback: &Callback<NavItem>, item: NavItem) -> Callback<MouseEvent> {
+    let callback = callback.clone();
+    Callback::from(move |_| callback.emit(item.clone()))
+}
+
+fn tree_node_class(active: bool) -> Classes {
+    if active {
+        classes!("studio-tree-node", "is-active")
+    } else {
+        classes!("studio-tree-node")
+    }
+}
+
+fn schema_label(schema_path: &str) -> String {
+    std::path::Path::new(schema_path)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("schema")
+        .to_owned()
+}

@@ -1,0 +1,19 @@
+[package]
+name = "cratestack-client-flutter"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+cratestack-client-rust.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+cratestack-codec-cbor.workspace = true
+cratestack-core.workspace = true
+serde.workspace = true
+tokio.workspace = true
+url.workspace = true

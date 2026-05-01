@@ -1,0 +1,29 @@
+use axum::{
+    extract::State,
+    response::{Html, IntoResponse},
+};
+
+use crate::http::AppState;
+
+pub(crate) async fn healthz() -> impl IntoResponse {
+    "ok"
+}
+
+pub(crate) async fn healthz_ready() -> impl IntoResponse {
+    "ok"
+}
+
+pub(crate) async fn index(State(state): State<AppState>) -> impl IntoResponse {
+    let index_path = format!("{}/index.html", state.config.static_dir.trim_end_matches('/'));
+    match tokio::fs::read_to_string(index_path).await {
+        Ok(contents) => Html(contents).into_response(),
+        Err(error) => (
+            axum::http::StatusCode::NOT_FOUND,
+            format!(
+                "studio frontend not built yet: {}. Run `cd web && trunk build --release`.",
+                error
+            ),
+        )
+            .into_response(),
+    }
+}

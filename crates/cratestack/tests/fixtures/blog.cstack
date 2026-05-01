@@ -1,0 +1,70 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth SessionUser {
+  id Int
+  role String
+}
+
+model User {
+  id Int @id
+  email String @unique
+  role String
+  profileId Int
+  profile Profile @relation(fields:[profileId],references:[id])
+  sessions Session[] @relation(fields:[id],references:[userId])
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}
+
+model Profile {
+  id Int @id
+  nickname String
+}
+
+model Post {
+  id Int @id
+  title String
+  subtitle String?
+  published Boolean
+  authorId Int
+  author User @relation(fields:[authorId],references:[id])
+
+  @@allow("list", published)
+  @@allow("detail", published || authorId == auth().id)
+  @@allow("create", auth() != null)
+  @@allow("update", authorId == auth().id)
+  @@allow("delete", authorId == auth().id)
+  @@emit(created, updated, deleted)
+}
+
+model Session {
+  id Cuid @id
+  externalId Uuid
+  label String
+  createdAt DateTime
+  revokedAt DateTime?
+  userId Int
+  user User @relation(fields:[userId],references:[id])
+
+  @@paged
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@emit(created, deleted)
+}
+
+type PublishPostInput {
+  postId Int
+}
+
+procedure getFeed(limit: Int?): Post[]
+  @allow(auth() != null)
+
+procedure getFeedPage(limit: Int?, offset: Int?): Page<Post>
+  @allow(auth() != null)
+
+mutation procedure publishPost(args: PublishPostInput): Post
+  @allow(auth().role == "admin")

@@ -1,0 +1,71 @@
+{
+  "name": "cratestack-vscode",
+  "displayName": "CrateStack",
+  "description": "VS Code support for CrateStack .cstack schemas",
+  "version": "0.1.0",
+  "publisher": "vaam-store",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:cstack"
+  ],
+  "main": "./extension.js",
+  "scripts": {
+    "stage-server": "node ./scripts/stage-server.mjs",
+    "package:vsix": "pnpm run stage-server && npx @vscode/vsce package --no-dependencies",
+    "test:smoke": "node --test ./test/*.test.js",
+    "test:vscode-smoke": "cargo build -p cratestack-lsp --manifest-path ../../Cargo.toml && node ./test/run-vscode-smoke.js"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "cstack",
+        "aliases": [
+          "CrateStack",
+          "cstack"
+        ],
+        "extensions": [
+          ".cstack"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "cstack",
+        "scopeName": "source.cstack",
+        "path": "./syntaxes/cstack.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "CrateStack",
+      "properties": {
+        "cratestack.lsp.path": {
+          "type": "string",
+          "default": "cratestack-lsp",
+          "description": "Path to the cratestack-lsp binary."
+        },
+        "cratestack.lsp.args": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "Additional arguments passed to the cratestack-lsp binary."
+        }
+      }
+    }
+  },
+  "devDependencies": {
+    "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.6.2"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}

@@ -1,0 +1,62 @@
+use gloo_net::http::Request;
+use {{ workspace.shared_crate_lib_name }}::{StudioMetadata, StudioProxyResponse};
+use web_sys::UrlSearchParams;
+
+const METADATA_PATH: &str = {{ web.metadata_path|tojson }};
+const API_BASE_PATH: &str = {{ app.api_mount_path|tojson }};
+
+pub async fn fetch_metadata() -> Result<StudioMetadata, String> {
+    let response = Request::get(METADATA_PATH)
+        .send()
+        .await
+        .map_err(|error| error.to_string())?;
+    response
+        .json::<StudioMetadata>()
+        .await
+        .map_err(|error| error.to_string())
+}
+
+pub async fn fetch_model_list(
+    context: &str,
+    model: &str,
+    search_query: Option<&str>,
+) -> Result<StudioProxyResponse, String> {
+    let mut path = format!("{API_BASE_PATH}/contexts/{context}/models/{model}");
+    if let Some(search_query) = search_query.filter(|query| !query.trim().is_empty()) {
+        let params = UrlSearchParams::new().map_err(|error| format!("failed to build search params: {error:?}"))?;
+        params.append("q", search_query);
+        path.push('?');
+        let query: String = params.to_string().into();
+        path.push_str(&query);
+    }
+
+    let response = Request::get(&path)
+        .send()
+        .await
+        .map_err(|error| error.to_string())?;
+    response
+        .json::<StudioProxyResponse>()
+        .await
+        .map_err(|error| error.to_string())
+}
+
+pub async fn invoke_procedure(
+    context: &str,
+    procedure: &str,
+    body: serde_json::Value,
+) -> Result<StudioProxyResponse, String> {
+    let response = Request::post(&format!("{API_BASE_PATH}/contexts/{context}/procedures/{procedure}"))
+        .header("content-type", "application/json")
+        .body(
+            serde_json::to_string(&body)
+                .map_err(|error| error.to_string())?,
+        )
+        .map_err(|error| error.to_string())?
+        .send()
+        .await
+        .map_err(|error| error.to_string())?;
+    response
+        .json::<StudioProxyResponse>()
+        .await
+        .map_err(|error| error.to_string())
+}

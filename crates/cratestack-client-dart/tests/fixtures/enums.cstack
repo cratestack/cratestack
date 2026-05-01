@@ -1,0 +1,20 @@
+enum Role {
+  admin
+  member
+}
+
+type RoleFilters {
+  requiredRole Role
+  maybeRole Role?
+  roles Role[]
+}
+
+model User {
+  id Int @id
+  role Role
+  maybeRole Role?
+  roles Role[]
+}
+
+procedure resolveRole(filter: RoleFilters): Role
+procedure listRoles(): Role[]

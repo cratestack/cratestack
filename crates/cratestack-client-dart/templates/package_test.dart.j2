@@ -1,0 +1,45 @@
+import 'package:{{ package_name }}/{{ package_name }}.dart';
+
+void main() {
+  const fetchQuery = CratestackFetchQuery();
+{% if sample_model %}
+  final selection = {{ sample_model.model_name }}Selection();
+{% if sample_model.first_field %}
+  selection.{{ sample_model.first_field.value }}();
+{% endif %}
+{% if sample_model.first_include %}
+  selection.{{ sample_model.first_include.value }}();
+{% endif %}
+  final listQuery = selection.toListQuery(
+    sort: '-id',
+    limit: 20,
+    offset: 0,
+    where: 'published=true',
+    orFilters: ['published=true', 'published=false'],
+    filters: {'status': 'active'},
+  );
+  final projection = selection.asProjection();
+{% else %}
+  const listQuery = CratestackListQuery(
+    sort: '-id',
+    limit: 20,
+    offset: 0,
+    where: 'published=true',
+    orFilters: ['published=true', 'published=false'],
+    filters: {'status': 'active'},
+  );
+{% endif %}
+
+  assert(listQuery.toQueryParameters()['sort'] == '-id');
+  assert(listQuery.toQueryParameters()['limit'] == 20);
+  assert(listQuery.toQueryParameters()['offset'] == 0);
+  assert(listQuery.toQueryParameters()['where'] == 'published=true');
+  assert(listQuery.toQueryParameters()['or'] == 'published=true|published=false');
+  assert(listQuery.toQueryParameters()['status'] == 'active');
+  assert(fetchQuery.toQueryParameters().isEmpty);
+{% if sample_model %}
+  assert(listQuery.toQueryParameters()['fields'] != null);
+  assert(selection.toFetchQuery().toQueryParameters().isNotEmpty);
+  assert(projection.toFetchQuery().toQueryParameters().isNotEmpty);
+{% endif %}
+}

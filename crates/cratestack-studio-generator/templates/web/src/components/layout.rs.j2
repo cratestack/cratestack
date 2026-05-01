@@ -1,0 +1,158 @@
+use yew::prelude::*;
+
+use crate::components::{
+    icons::{Icon, IconName},
+    sidebar::{NavItem, Sidebar},
+};
+use {{ workspace.shared_crate_lib_name }}::{StudioContextMetadata, StudioMetadata};
+
+#[derive(Clone, PartialEq)]
+pub enum RailMode {
+    Overview,
+    Explorer,
+    Query,
+    Api,
+}
+
+#[derive(Properties, PartialEq)]
+pub struct LayoutProps {
+    pub workspace: StudioMetadata,
+    pub context: StudioContextMetadata,
+    pub selected_nav: NavItem,
+    pub rail_mode: RailMode,
+    pub title: AttrValue,
+    pub subtitle: AttrValue,
+    pub explorer_filter: AttrValue,
+    pub on_explorer_filter: Callback<InputEvent>,
+    pub search_input_ref: NodeRef,
+    pub metadata_panel: Html,
+    pub editor_tabs: Html,
+    pub on_select_nav: Callback<NavItem>,
+    pub on_select_context: Callback<String>,
+    pub on_focus_search: Callback<MouseEvent>,
+    pub on_toggle_metadata: Callback<MouseEvent>,
+    pub on_new_query: Callback<MouseEvent>,
+    #[prop_or_default]
+    pub children: Children,
+}
+
+#[function_component(Layout)]
+pub fn layout(props: &LayoutProps) -> Html {
+    let on_context_change = {
+        let on_select_context = props.on_select_context.clone();
+        Callback::from(move |event: Event| {
+            let value = event
+                .target_unchecked_into::<web_sys::HtmlSelectElement>()
+                .value();
+            on_select_context.emit(value);
+        })
+    };
+
+    html! {
+        <div class="studio-app" data-theme="cratestack-studio">
+            <nav class="studio-global-sidebar" aria-label="Primary studio navigation">
+                <div class="studio-brand-mark" aria-hidden="true">
+                    <Icon name={IconName::Database} class="h-7 w-7" />
+                </div>
+
+                <button class={global_nav_class(props.rail_mode == RailMode::Overview)} type="button" aria-label="Overview" onclick={emit_nav(&props.on_select_nav, NavItem::Overview)}>
+                    <Icon name={IconName::Dashboard} class="h-5 w-5" />
+                </button>
+                <button class={global_nav_class(props.rail_mode == RailMode::Explorer)} type="button" aria-label="Explorer" onclick={emit_nav(&props.on_select_nav, preferred_explorer_nav(&props.context, &props.selected_nav))}>
+                    <Icon name={IconName::Table} class="h-5 w-5" />
+                </button>
+                <button class={global_nav_class(props.rail_mode == RailMode::Query)} type="button" aria-label="New query" onclick={props.on_new_query.clone()}>
+                    <Icon name={IconName::Code2} class="h-5 w-5" />
+                </button>
+                <button class={global_nav_class(props.rail_mode == RailMode::Api)} type="button" aria-label="API explorer" onclick={emit_nav(&props.on_select_nav, NavItem::Api)}>
+                    <Icon name={IconName::Activity} class="h-5 w-5" />
+                </button>
+            </nav>
+
+            <main class="studio-main-shell">
+                <header class="studio-topbar">
+                    <div class="studio-breadcrumbs">
+                        <div class="studio-project-selector" aria-label="Current schema">
+                            <Icon name={IconName::Server} class="h-4 w-4" />
+                            <select
+                                class="bg-transparent text-sm font-medium outline-none"
+                                value={props.context.key.clone()}
+                                onchange={on_context_change}
+                            >
+                                { for props.workspace.contexts.iter().map(|context| html! {
+                                    <option value={context.key.clone()}>{ context.display_name.clone() }</option>
+                                }) }
+                            </select>
+                        </div>
+                        <span class="studio-breadcrumb-separator">{ "/" }</span>
+                        <span class="truncate">{ props.title.clone() }</span>
+                    </div>
+
+                    <div class="studio-top-actions">
+                        <button class="studio-action-button" type="button" onclick={props.on_focus_search.clone()}>
+                            <Icon name={IconName::Search} class="h-4 w-4" />
+                            <span>{ "Search" }</span>
+                        </button>
+                        <button class="studio-action-button" type="button" onclick={props.on_toggle_metadata.clone()}>
+                            <Icon name={IconName::Settings} class="h-4 w-4" />
+                            <span>{ "Schema" }</span>
+                        </button>
+                        <button class="studio-primary-button" type="button" onclick={props.on_new_query.clone()}>
+                            <Icon name={IconName::Plus} class="h-4 w-4" />
+                            <span>{ "New Query" }</span>
+                        </button>
+                    </div>
+                </header>
+
+                <div class="studio-workspace">
+                    <Sidebar
+                        context={props.context.clone()}
+                        selected={props.selected_nav.clone()}
+                        on_select={props.on_select_nav.clone()}
+                        filter_text={props.explorer_filter.clone()}
+                        on_filter_input={props.on_explorer_filter.clone()}
+                        search_input_ref={props.search_input_ref.clone()}
+                    />
+
+                    <section class="studio-editor-view" aria-label={props.subtitle.clone()}>
+                        { props.editor_tabs.clone() }
+                        { for props.children.iter() }
+                    </section>
+                </div>
+
+                { props.metadata_panel.clone() }
+            </main>
+        </div>
+    }
+}
+
+fn emit_nav(callback: &Callback<NavItem>, item: NavItem) -> Callback<MouseEvent> {
+    let callback = callback.clone();
+    Callback::from(move |_| callback.emit(item.clone()))
+}
+
+fn global_nav_class(active: bool) -> Classes {
+    if active {
+        classes!("studio-global-nav-button", "is-active")
+    } else {
+        classes!("studio-global-nav-button")
+    }
+}
+
+fn preferred_explorer_nav(context: &StudioContextMetadata, selected_nav: &NavItem) -> NavItem {
+    match selected_nav {
+        NavItem::Model(name) => NavItem::Model(name.clone()),
+        NavItem::Procedure(name) => NavItem::Procedure(name.clone()),
+        _ => context
+            .models
+            .first()
+            .map(|model| NavItem::Model(model.name.clone()))
+            .or_else(|| {
+                context
+                    .procedures
+                    .first()
+                    .map(|procedure| NavItem::Procedure(procedure.name.clone()))
+            })
+            .unwrap_or(NavItem::Overview),
+    }
+}

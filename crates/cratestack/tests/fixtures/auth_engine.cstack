@@ -1,0 +1,68 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+type OrganizationScope {
+  id String
+}
+
+type TenantScope {
+  id String
+}
+
+auth SessionUser {
+  id String
+  userId String
+  role String
+  organization OrganizationScope
+  organizationRole String
+  tenant TenantScope
+}
+
+model Post {
+  id String @id @default(dbgenerated())
+  title String
+  published Boolean
+  authorId String
+
+  @@allow('all', auth() != null && auth().id == authorId)
+  @@allow('read', auth() != null && published)
+}
+
+model Todo {
+  id String @id @default(dbgenerated())
+  ownerId String
+  title String
+  organizationId String? @default(auth().organization.id)
+
+  @@deny('all', auth().organization.id != organizationId)
+  @@allow('all', auth().userId == ownerId || auth().organizationRole == 'owner' || auth().organizationRole == 'admin')
+}
+
+model ScopedNote {
+  id String @id @default(dbgenerated())
+  ownerId String @default(auth().userId)
+  body String
+
+  @@allow('create', auth() != null)
+  @@allow('read', auth() != null && auth().userId == ownerId)
+}
+
+model AdminPanel {
+  id String @id @default(dbgenerated())
+  title String
+
+  @@allow('read', hasRole('admin') && inTenant('tenant_1'))
+}
+
+type InspectPostInput {
+  postId String
+}
+
+procedure inspectPost(args: InspectPostInput): Post
+  @allow(auth() != null)
+  @authorize(Post, detail, args.postId)
+
+procedure adminPulse(args: InspectPostInput): Post
+  @allow(hasRole('admin') && inTenant('tenant_1'))

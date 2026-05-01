@@ -1,0 +1,4 @@
+type Image {
+  storageKey String
+  thumbnailUrl String @custom
+}

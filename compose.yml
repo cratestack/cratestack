@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:18
+    container_name: cratestack-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cratestack
+      POSTGRES_PASSWORD: cratestack
+      POSTGRES_DB: cratestack_test
+    ports:
+      - "55432:5432"
+    volumes:
+      - cratestack-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cratestack -d cratestack_test"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  cratestack-postgres-data:

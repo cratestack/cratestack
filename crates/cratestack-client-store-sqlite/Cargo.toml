@@ -1,0 +1,19 @@
+[package]
+name = "cratestack-client-store-sqlite"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+chrono.workspace = true
+cratestack-client-rust.workspace = true
+rusqlite.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+cratestack-codec-cbor.workspace = true
+cratestack-core.workspace = true
+serde.workspace = true
+tokio.workspace = true
+url.workspace = true
