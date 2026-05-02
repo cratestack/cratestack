@@ -282,11 +282,13 @@ fn completion_items(schema: Option<&Schema>) -> Vec<CompletionItem> {
     let keywords = [
         "datasource",
         "auth",
+        "mixin",
         "model",
         "type",
         "procedure",
         "mutation procedure",
         "mcp",
+        "@use",
         "@id",
         "@unique",
         "@default",
@@ -316,6 +318,22 @@ fn completion_items(schema: Option<&Schema>) -> Vec<CompletionItem> {
 
     let mut seen = BTreeSet::new();
     if let Some(schema) = schema {
+        for mixin in &schema.mixins {
+            if seen.insert(mixin.name.clone()) {
+                items.push(CompletionItem {
+                    label: mixin.name.clone(),
+                    kind: Some(CompletionItemKind::CLASS),
+                    detail: Some("schema mixin".to_owned()),
+                    documentation: (!mixin.docs.is_empty()).then(|| {
+                        tower_lsp::lsp_types::Documentation::MarkupContent(MarkupContent {
+                            kind: MarkupKind::Markdown,
+                            value: mixin.docs.join("\n"),
+                        })
+                    }),
+                    ..CompletionItem::default()
+                });
+            }
+        }
         for model in &schema.models {
             if seen.insert(model.name.clone()) {
                 items.push(CompletionItem {

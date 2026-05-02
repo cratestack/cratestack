@@ -14,6 +14,21 @@ The implementation is still pre-1.0. The current slice focuses on:
 * generated Rust, Dart, and TypeScript client surfaces
 * a standalone `.cstack` language server and VS Code extension package
 * Studio scaffold generation for one or more schemas
+* mixin declarations and model `@use(...)` expansion
+
+## Support Matrix
+
+| `.cstack` capability | Status | Notes |
+| --- | --- | --- |
+| `datasource` | Supported | `provider` currently expects `postgresql` |
+| `auth` | Supported | Single auth block |
+| `mixin` | Supported | Reusable field sets for models |
+| `model` | Supported | Includes relation and policy attributes in current slice |
+| `type` | Supported | Supports `@custom` fields |
+| `enum` | Supported | Enum values are untyped identifiers |
+| `procedure` / `mutation procedure` | Supported | Typed args + return type |
+| `mcp` | Supported | Parsed as config block |
+| `@use(...)` on model | Supported | Expands mixin fields before validation; model-local fields win name conflicts |
 
 ## Workspace
 

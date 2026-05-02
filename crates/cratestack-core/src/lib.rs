@@ -21,6 +21,7 @@ pub struct Schema {
     pub datasource: Option<Datasource>,
     pub auth: Option<AuthBlock>,
     pub config_blocks: Vec<ConfigBlock>,
+    pub mixins: Vec<MixinDecl>,
     pub models: Vec<Model>,
     pub types: Vec<TypeDecl>,
     pub enums: Vec<EnumDecl>,
@@ -30,6 +31,7 @@ pub struct Schema {
 impl Schema {
     pub fn summary(&self) -> OwnedSchemaSummary {
         OwnedSchemaSummary {
+            mixins: self.mixins.iter().map(|mixin| mixin.name.clone()).collect(),
             models: self.models.iter().map(|model| model.name.clone()).collect(),
             types: self.types.iter().map(|ty| ty.name.clone()).collect(),
             enums: self
@@ -48,6 +50,7 @@ impl Schema {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SchemaSummary {
+    pub mixins: &'static [&'static str],
     pub models: &'static [&'static str],
     pub types: &'static [&'static str],
     pub enums: &'static [&'static str],
@@ -56,6 +59,7 @@ pub struct SchemaSummary {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OwnedSchemaSummary {
+    pub mixins: Vec<String>,
     pub models: Vec<String>,
     pub types: Vec<String>,
     pub enums: Vec<String>,
@@ -99,6 +103,15 @@ pub struct Model {
     pub name_span: SourceSpan,
     pub fields: Vec<Field>,
     pub attributes: Vec<Attribute>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MixinDecl {
+    pub docs: Vec<String>,
+    pub name: String,
+    pub name_span: SourceSpan,
+    pub fields: Vec<Field>,
     pub span: SourceSpan,
 }
 

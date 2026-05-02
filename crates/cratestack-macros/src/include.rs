@@ -38,6 +38,7 @@ pub(crate) fn include_schema(input: TokenStream) -> TokenStream {
     };
     let resolved_literal = resolved.display().to_string();
 
+    let mixin_names = schema.mixins.iter().map(|mixin| schema_lit(&mixin.name));
     let model_names = schema.models.iter().map(|model| schema_lit(&model.name));
     let model_name_set = schema
         .models
@@ -220,11 +221,13 @@ pub(crate) fn include_schema(input: TokenStream) -> TokenStream {
         pub mod cratestack_schema {
             pub const SCHEMA_PATH: &str = #schema_relative;
             pub const SCHEMA_SOURCE: &str = include_str!(#resolved_literal);
+            pub const MIXINS: &[&str] = &[#(#mixin_names),*];
             pub const MODELS: &[&str] = &[#(#model_names),*];
             pub const TYPES: &[&str] = &[#(#type_names),*];
             pub const ENUMS: &[&str] = &[#(#enum_names),*];
             pub const PROCEDURES: &[&str] = &[#(#procedure_names),*];
 
+            pub const MIXIN_COUNT: usize = MIXINS.len();
             pub const MODEL_COUNT: usize = MODELS.len();
             pub const TYPE_COUNT: usize = TYPES.len();
             pub const ENUM_COUNT: usize = ENUMS.len();
@@ -536,6 +539,7 @@ pub(crate) fn include_schema(input: TokenStream) -> TokenStream {
 
             pub fn schema_summary() -> ::cratestack::SchemaSummary {
                 ::cratestack::SchemaSummary {
+                    mixins: MIXINS,
                     models: MODELS,
                     types: TYPES,
                     enums: ENUMS,

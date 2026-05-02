@@ -48,6 +48,16 @@ pub(crate) fn validate_schema(
             path,
         )?;
     }
+    for mixin in &schema.mixins {
+        ensure_unique(
+            &mut type_names,
+            &mixin.name,
+            mixin.span,
+            "duplicate mixin name",
+            source,
+            path,
+        )?;
+    }
     if let Some(auth) = &schema.auth {
         ensure_unique(
             &mut type_names,
@@ -269,6 +279,57 @@ pub(crate) fn validate_schema(
                 format!("model `{}` is missing an @id field", model.name),
                 model.span,
             ));
+        }
+    }
+
+    for mixin in &schema.mixins {
+        let mut fields = BTreeMap::new();
+        for field in &mixin.fields {
+            if fields.insert(field.name.clone(), field.span).is_some() {
+                return Err(span_error(
+                    format!("duplicate field `{}` on mixin `{}`", field.name, mixin.name),
+                    field.span,
+                ));
+            }
+            if field
+                .attributes
+                .iter()
+                .any(|attribute| attribute.raw.starts_with("@id"))
+            {
+                return Err(span_error(
+                    format!(
+                        "field `{}` on mixin `{}` cannot declare @id",
+                        field.name, mixin.name
+                    ),
+                    field.span,
+                ));
+            }
+            if field
+                .attributes
+                .iter()
+                .any(|attribute| attribute.raw.starts_with("@@"))
+            {
+                return Err(span_error(
+                    format!(
+                        "field `{}` on mixin `{}` cannot declare model-level attributes",
+                        field.name, mixin.name
+                    ),
+                    field.span,
+                ));
+            }
+            validate_custom_field_attribute(
+                field,
+                "mixin",
+                &mixin.name,
+                CustomFieldSupport::Rejected,
+            )?;
+            validate_type_ref(
+                &type_names,
+                &page_item_type_names,
+                &field.ty,
+                field.span,
+                false,
+            )?;
         }
     }
 
