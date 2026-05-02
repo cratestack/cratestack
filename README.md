@@ -122,6 +122,32 @@ type FeedArgs {
 procedure getFeed(args: FeedArgs): Post[]
 ```
 
+## Mixins
+
+Mixins let you reuse field sets across models without introducing a new runtime type. Declare a
+top-level `mixin` block, then apply it inside a model with `@use(...)`.
+
+```cstack
+mixin AuditFields {
+  createdAt DateTime @default(dbgenerated())
+  updatedAt DateTime @default(dbgenerated())
+}
+
+model Post {
+  @use(AuditFields)
+
+  id Int @id
+  title String
+}
+```
+
+Current mixin rules in this slice:
+
+* mixins are field-only reusable fragments for models
+* `@use(...)` expands mixin fields before validation and code generation
+* model-local fields win on name conflicts with mixin fields
+* mixins must not declare `@id`
+
 Validate a schema:
 
 ```sh
