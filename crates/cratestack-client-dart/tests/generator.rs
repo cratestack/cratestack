@@ -282,6 +282,7 @@ fn generates_real_dart_enums_for_schema_enum_fields_and_procedures() {
     assert!(models.contains("required this.requiredRole,"));
     assert!(models.contains("final Role requiredRole;"));
     assert!(models.contains("final Role? maybeRole;"));
+    assert!(models.contains("required this.roles,"));
     assert!(models.contains("final List<Role> roles;"));
     assert!(!models.contains("final String role;"));
     assert!(!models.contains("final String? role;"));

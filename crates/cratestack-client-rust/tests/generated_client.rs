@@ -363,7 +363,7 @@ async fn handle_list_sessions(uri: Uri, headers: HeaderMap) -> Response {
             },
         )
         .with_total_count(Some(2));
-        return cbor_response(StatusCode::OK, &payload);
+        return projected_response(&headers, StatusCode::OK, &payload);
     }
 
     if query != "limit=1" {
@@ -380,7 +380,7 @@ async fn handle_list_sessions(uri: Uri, headers: HeaderMap) -> Response {
         },
     )
     .with_total_count(Some(2));
-    cbor_response(StatusCode::OK, &payload)
+    projected_response(&headers, StatusCode::OK, &payload)
 }
 
 async fn handle_get_post(uri: Uri, headers: HeaderMap) -> Response {
@@ -403,7 +403,7 @@ async fn handle_get_post(uri: Uri, headers: HeaderMap) -> Response {
             }
         }
     });
-    cbor_response(StatusCode::OK, &payload)
+    projected_response(&headers, StatusCode::OK, &payload)
 }
 
 async fn handle_get_post_json(headers: HeaderMap) -> Response {
@@ -553,6 +553,7 @@ fn accept_header_ok(headers: &HeaderMap) -> bool {
         .and_then(|value| value.to_str().ok())
         .unwrap_or_default();
     accept.contains(cratestack_client_rust::CborCodec::CONTENT_TYPE)
+        || accept.contains(JsonCodec::CONTENT_TYPE)
 }
 
 fn codec_headers_ok(headers: &HeaderMap) -> bool {
@@ -605,6 +606,22 @@ fn json_response<T: serde::Serialize>(status: StatusCode, value: &T) -> Response
         body,
     )
         .into_response()
+}
+
+fn projected_response<T: serde::Serialize>(
+    headers: &HeaderMap,
+    status: StatusCode,
+    value: &T,
+) -> Response {
+    let accept = headers
+        .get(axum::http::header::ACCEPT)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default();
+    if accept.contains(JsonCodec::CONTENT_TYPE) {
+        json_response(status, value)
+    } else {
+        cbor_response(status, value)
+    }
 }
 
 fn cbor_seq_response<T: serde::Serialize>(status: StatusCode, values: &[T]) -> Response {

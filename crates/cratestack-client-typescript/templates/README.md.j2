@@ -10,14 +10,130 @@ const client = new {{ client_class_name }}("https://api.example.com");
 
 The generated client uses `{{ base_path }}` as its API base path by default.
 
+## Runtime Setup
+
+```ts
+const client = new {{ client_class_name }}("https://api.example.com", {
+  basePath: "{{ base_path }}",
+  headers: async () => ({
+    authorization: `Bearer ${await tokenStore.getAccessToken()}`,
+    "x-request-id": crypto.randomUUID(),
+  }),
+});
+```
+
+Per-call headers are also supported:
+
+```ts
+const headers = {
+  authorization: `Bearer ${accessToken}`,
+  "idempotency-key": idempotencyKey,
+};
+```
+
 ## Models
 
 {% for model in models %}
 - `client.{{ model.accessor }}`
 {% endfor %}
 
+{% if models %}
+### List
+
+```ts
+const pageOrItems = await client.{{ models[0].accessor }}.list({
+  query: {
+    fields: ["id"],
+    include: [],
+    includeFields: {},
+    limit: 20,
+    offset: 0,
+    sort: ["-id"],
+  },
+});
+```
+
+### Detail
+
+```ts
+const item = await client.{{ models[0].accessor }}.get(id, {
+  query: {
+    fields: ["id"],
+  },
+  headers,
+});
+```
+
+### Create, Update, Delete
+
+```ts
+const created = await client.{{ models[0].accessor }}.create(input, { headers });
+const updated = await client.{{ models[0].accessor }}.update(created.id, patch, { headers });
+await client.{{ models[0].accessor }}.delete(updated.id, { headers });
+```
+{% endif %}
+
 ## Procedures
 
 {% for procedure in procedures %}
 - `client.procedures.{{ procedure.method_name }}`
 {% endfor %}
+
+{% if procedures %}
+```ts
+const result = await client.procedures.{{ procedures[0].method_name }}(args, {
+  headers,
+});
+```
+{% endif %}
+
+## TanStack Query
+
+{% if models %}
+```tsx
+import {
+  {{ client_class_name }},
+  use{{ models[0].name }}ListQuery,
+  useCreate{{ models[0].name }}Mutation,
+} from "{{ package_name }}";
+
+function {{ models[0].name }}List({ client }: { client: {{ client_class_name }} }) {
+  const list = use{{ models[0].name }}ListQuery(client, {
+    query: {
+      fields: ["id"],
+      limit: 20,
+    },
+    queryOptions: {
+      staleTime: 30_000,
+    },
+  });
+
+  const create = useCreate{{ models[0].name }}Mutation(client);
+
+  if (list.isPending) {
+    return null;
+  }
+  if (list.isError) {
+    return <ErrorState error={list.error} />;
+  }
+
+  return <ListView data={list.data} onCreate={(input) => create.mutate(input)} />;
+}
+```
+{% endif %}
+
+## React Native
+
+React Native app runtimes provide `fetch`; pass the mobile API origin and keep auth token lookup in your app layer.
+
+```ts
+export function createClient(accessToken: string | null) {
+  return new {{ client_class_name }}(process.env.EXPO_PUBLIC_API_ORIGIN!, {
+    basePath: "{{ base_path }}",
+    headers: {
+      ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
+      "x-client": "vaam-mobile",
+    },
+  });
+}
+```

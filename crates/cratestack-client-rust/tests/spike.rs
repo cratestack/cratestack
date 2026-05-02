@@ -9,7 +9,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Router, body::Bytes};
 use cratestack_client_rust::{
-    AuthorizationRequest, ClientConfig, ClientError, ClientStateStore, CratestackClient,
+    AuthorizationRequest, ClientConfig, ClientError, ClientStateStore, CratestackClient, JsonCodec,
     JsonFileStateStore, RequestAuthorizer, RuntimeCodecConfig, RuntimeConfigWire,
     RuntimeEnvelopeConfig, RuntimeHandle, RuntimeRequestWire, RuntimeStateStoreConfig,
     RuntimeTransportConfig,
@@ -148,6 +148,7 @@ async fn cbor_client_spike_fetches_projected_record() {
 
     assert_eq!(value["id"], serde_json::json!(1));
     assert_eq!(value["title"], serde_json::json!("Published Post"));
+    assert_eq!(value["subtitle"], serde_json::Value::Null);
     assert_eq!(
         value["author"]["email"],
         serde_json::json!("owner@example.com")
@@ -375,11 +376,12 @@ async fn handle_get_post(uri: Uri, headers: HeaderMap) -> Response {
     let payload = serde_json::json!({
         "id": 1,
         "title": "Published Post",
+        "subtitle": null,
         "author": {
             "email": "owner@example.com"
         }
     });
-    cbor_response(StatusCode::OK, &payload)
+    projected_response(&headers, StatusCode::OK, &payload)
 }
 
 async fn handle_list_posts(uri: Uri, headers: HeaderMap) -> Response {
@@ -393,14 +395,16 @@ async fn handle_list_posts(uri: Uri, headers: HeaderMap) -> Response {
     let payload = serde_json::json!([
         {
             "id": 1,
-            "title": "Published Post"
+            "title": "Published Post",
+            "subtitle": null
         },
         {
             "id": 2,
-            "title": "Second Post"
+            "title": "Second Post",
+            "subtitle": null
         }
     ]);
-    cbor_response(StatusCode::OK, &payload)
+    projected_response(&headers, StatusCode::OK, &payload)
 }
 
 async fn handle_get_feed_json(headers: HeaderMap, body: Bytes) -> Response {
@@ -446,7 +450,23 @@ fn accept_header_ok(headers: &HeaderMap) -> bool {
         .get(axum::http::header::ACCEPT)
         .and_then(|value| value.to_str().ok())
         .unwrap_or_default()
-        .contains(CborCodec::CONTENT_TYPE)
+        .contains(JsonCodec::CONTENT_TYPE)
+}
+
+fn projected_response<T: serde::Serialize>(
+    headers: &HeaderMap,
+    status: StatusCode,
+    value: &T,
+) -> Response {
+    let accept = headers
+        .get(axum::http::header::ACCEPT)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default();
+    if accept.contains(JsonCodec::CONTENT_TYPE) {
+        json_response(status, value)
+    } else {
+        cbor_response(status, value)
+    }
 }
 
 fn hex_string(bytes: &[u8]) -> String {
@@ -458,6 +478,16 @@ fn cbor_response<T: Serialize>(status: StatusCode, value: &T) -> Response {
     (
         status,
         [(axum::http::header::CONTENT_TYPE, CborCodec::CONTENT_TYPE)],
+        body,
+    )
+        .into_response()
+}
+
+fn json_response<T: Serialize>(status: StatusCode, value: &T) -> Response {
+    let body = JsonCodec.encode(value).expect("response should encode");
+    (
+        status,
+        [(axum::http::header::CONTENT_TYPE, JsonCodec::CONTENT_TYPE)],
         body,
     )
         .into_response()

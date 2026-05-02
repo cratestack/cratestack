@@ -1000,6 +1000,228 @@ const client = new CatalogClientClient("https://api.test", {
 await client.products.list();
 ```
 
+## Multiple `.cstack` Files In One Frontend
+
+Generate one package per service schema. Do not merge service schemas into a single generated frontend package unless those schemas are owned by one backend boundary. Separate generated packages preserve service ownership, procedure names, base paths, error domains, and release cadence.
+
+Example frontend layout:
+
+```text
+frontends/vaam-mobile/
+  packages/
+    gen_auth_client/
+    gen_catalog_client/
+    gen_vendor_client/
+    gen_order_client/
+    gen_payment_client/
+    gen_delivery_client/
+    gen_auth_ts/
+    gen_catalog_ts/
+    gen_vendor_ts/
+    gen_order_ts/
+    gen_payment_ts/
+    gen_delivery_ts/
+```
+
+Example generation commands from `cratestack/`:
+
+```bash
+cargo run -p cratestack-cli -- generate-dart \
+  --schema "../vaam-backends/services/catalog-service/schema/catalog.cstack" \
+  --out "../frontends/vaam-mobile/packages/gen_catalog_client" \
+  --library-name gen_catalog_client \
+  --base-path "/cstack/catalog"
+
+cargo run -p cratestack-cli -- generate-dart \
+  --schema "../vaam-backends/services/order-service/schema/order.cstack" \
+  --out "../frontends/vaam-mobile/packages/gen_order_client" \
+  --library-name gen_order_client \
+  --base-path "/cstack/order"
+
+cargo run -p cratestack-cli -- generate-typescript \
+  --schema "../vaam-backends/services/catalog-service/schema/catalog.cstack" \
+  --out "../frontends/vaam-mobile/packages/gen_catalog_ts" \
+  --package-name "@vaam/catalog-client" \
+  --base-path "/cstack/catalog"
+
+cargo run -p cratestack-cli -- generate-typescript \
+  --schema "../vaam-backends/services/order-service/schema/order.cstack" \
+  --out "../frontends/vaam-mobile/packages/gen_order_ts" \
+  --package-name "@vaam/order-client" \
+  --base-path "/cstack/order"
+```
+
+Use one base path per backend service. A reverse proxy can map those paths to separate services:
+
+```text
+/cstack/auth      -> auth-service
+/cstack/catalog   -> catalog-service
+/cstack/vendor    -> vendor-service
+/cstack/order     -> order-service
+/cstack/payment   -> payment-gateway
+/cstack/delivery  -> delivery-gateway
+```
+
+### Multiple Dart Packages
+
+Add each generated Dart package as a path dependency:
+
+```yaml
+dependencies:
+  gen_auth_client:
+    path: packages/gen_auth_client
+  gen_catalog_client:
+    path: packages/gen_catalog_client
+  gen_order_client:
+    path: packages/gen_order_client
+  gen_payment_client:
+    path: packages/gen_payment_client
+```
+
+Override each package's generated providers with the same app-owned bridge and a service-specific base path:
+
+```dart
+ProviderScope(
+  overrides: [
+    authClientRuntimeBridgeProvider.overrideWith((ref) => ref.watch(vaamRuntimeBridgeProvider)),
+    authClientBasePathProvider.overrideWith((ref) => '/cstack/auth'),
+
+    catalogClientRuntimeBridgeProvider.overrideWith((ref) => ref.watch(vaamRuntimeBridgeProvider)),
+    catalogClientBasePathProvider.overrideWith((ref) => '/cstack/catalog'),
+
+    orderClientRuntimeBridgeProvider.overrideWith((ref) => ref.watch(vaamRuntimeBridgeProvider)),
+    orderClientBasePathProvider.overrideWith((ref) => '/cstack/order'),
+
+    paymentClientRuntimeBridgeProvider.overrideWith((ref) => ref.watch(vaamRuntimeBridgeProvider)),
+    paymentClientBasePathProvider.overrideWith((ref) => '/cstack/payment'),
+  ],
+  child: const VaamApp(),
+);
+```
+
+Compose generated clients in app services instead of making generated packages import each other:
+
+```dart
+class CheckoutFlow {
+  CheckoutFlow({
+    required this.catalog,
+    required this.order,
+    required this.payment,
+  });
+
+  final GenCatalogClient catalog;
+  final GenOrderClient order;
+  final GenPaymentClient payment;
+
+  Future<void> buyProduct(String productId) async {
+    final product = await catalog.products.get(productId);
+    final checkout = await order.procedures.beginCheckoutSession(
+      BeginCheckoutSessionArgs(
+        productId: product.id,
+        region: product.region,
+        currency: product.currency,
+      ),
+    );
+
+    await payment.procedures.createPaymentSession(
+      CreatePaymentSessionArgs(
+        orderId: checkout.orderId,
+        provider: 'manual',
+      ),
+    );
+  }
+}
+```
+
+### Multiple TypeScript Packages
+
+Install or reference each generated TypeScript package from the frontend workspace:
+
+```json
+{
+  "dependencies": {
+    "@vaam/catalog-client": "workspace:*",
+    "@vaam/order-client": "workspace:*",
+    "@vaam/payment-client": "workspace:*"
+  }
+}
+```
+
+Create one app-level API object that owns the shared origin, auth headers, and service-specific generated clients:
+
+```ts
+import { CatalogClientClient } from "@vaam/catalog-client";
+import { OrderClientClient } from "@vaam/order-client";
+import { PaymentClientClient } from "@vaam/payment-client";
+
+export interface VaamApi {
+  catalog: CatalogClientClient;
+  order: OrderClientClient;
+  payment: PaymentClientClient;
+}
+
+export function createVaamApi(accessToken: string | null): VaamApi {
+  const origin = process.env.EXPO_PUBLIC_API_ORIGIN!;
+  const headers = {
+    ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
+    "x-client": "vaam-mobile",
+  };
+
+  return {
+    catalog: new CatalogClientClient(origin, {
+      basePath: "/cstack/catalog",
+      headers,
+    }),
+    order: new OrderClientClient(origin, {
+      basePath: "/cstack/order",
+      headers,
+    }),
+    payment: new PaymentClientClient(origin, {
+      basePath: "/cstack/payment",
+      headers,
+    }),
+  };
+}
+```
+
+Use the composed API in React or React Native:
+
+```tsx
+function CheckoutButton({
+  api,
+  productId,
+}: {
+  api: VaamApi;
+  productId: string;
+}) {
+  const placeOrder = usePlaceOrderMutation(api.order);
+  const createPaymentSession = useCreatePaymentSessionMutation(api.payment);
+
+  async function onPress() {
+    const product = await api.catalog.products.get(productId, {
+      query: {
+        fields: ["id", "region", "currency", "priceMinor"],
+      },
+    });
+
+    const order = await placeOrder.mutateAsync({
+      productId: product.id,
+      region: product.region,
+      currency: product.currency,
+    });
+
+    await createPaymentSession.mutateAsync({
+      orderId: order.id,
+      provider: "manual",
+    });
+  }
+
+  return <Button title="Buy" onPress={onPress} />;
+}
+```
+
+Rule of thumb: generated packages should stay service-local; cross-service workflows belong in frontend application services, React hooks, Riverpod notifiers, or backend procedures.
+
 ## Schema Enums
 
 Short version: enums work for generated Rust and Dart clients now. 🎉
@@ -1160,6 +1382,155 @@ This path is usable now because the generated package already exposes:
 * typed procedure APIs
 * Riverpod providers
 * query helpers and generated constants
+
+### Dart Runtime Bridge Example
+
+The generated Dart package expects the app to provide a runtime bridge. The bridge is the app-owned boundary for base URLs, auth headers, token refresh, and future Rust-backed transport behavior.
+
+In app bootstrap:
+
+```dart
+ProviderScope(
+  overrides: [
+    catalogClientBasePathProvider.overrideWith((ref) => '/cstack/catalog'),
+    catalogClientRuntimeBridgeProvider.overrideWith((ref) {
+      return VaamRuntimeBridge(
+        origin: Uri.parse(const String.fromEnvironment('VAAM_API_ORIGIN')),
+        accessToken: () => ref.read(authSessionProvider).accessToken,
+      );
+    }),
+  ],
+  child: const VaamApp(),
+);
+```
+
+### Dart CRUD
+
+```dart
+final client = ref.read(catalogClientClientProvider);
+
+final product = await client.products.create(
+  CreateProductInput(
+    title: form.title,
+    description: form.description,
+    priceMinor: form.priceMinor,
+    currency: form.currency,
+    region: form.region,
+    vendorId: vendorId,
+  ),
+);
+
+final updated = await client.products.update(
+  product.id,
+  UpdateProductInput(
+    title: 'Updated title',
+    priceMinor: 15000,
+  ),
+);
+
+await client.products.delete(updated.id);
+```
+
+### Dart Dynamic Query Constants
+
+Use generated constants when the query shape is assembled dynamically from UI state:
+
+```dart
+final fields = <String>[
+  ProductFieldNames.id,
+  ProductFieldNames.title,
+  ProductFieldNames.priceMinor,
+  ProductFieldNames.currency,
+];
+
+if (showVendor) {
+  fields.add(ProductFieldNames.vendorId);
+}
+
+final products = await client.products.list(
+  query: CratestackListQuery(
+    fields: fields,
+    include: showAssets ? [ProductIncludeNames.assets] : const [],
+    includeFields: {
+      if (showAssets)
+        ProductIncludeNames.assets: [
+          AssetFieldNames.id,
+          AssetFieldNames.thumbnailUrl,
+        ],
+    },
+    sort: '-createdAt',
+    limit: 20,
+    where: 'published=true,currency=XAF',
+  ),
+);
+```
+
+### Dart Procedures
+
+```dart
+final checkout = await client.procedures.beginCheckoutSession(
+  BeginCheckoutSessionArgs(
+    buyerId: buyerId,
+    region: 'CM',
+    currency: 'XAF',
+  ),
+);
+
+await client.procedures.updateCheckoutDelivery(
+  UpdateCheckoutDeliveryArgs(
+    checkoutId: checkout.id,
+    deliveryZoneId: selectedZone.id,
+  ),
+);
+
+final order = await client.procedures.placeOrder(
+  PlaceOrderArgs(
+    checkoutId: checkout.id,
+    idempotencyKey: idempotencyKey,
+  ),
+);
+```
+
+### Dart Riverpod Mutation Flow
+
+```dart
+final publishProductControllerProvider =
+    AutoDisposeAsyncNotifierProvider<PublishProductController, void>(
+  PublishProductController.new,
+);
+
+class PublishProductController extends AutoDisposeAsyncNotifier<void> {
+  @override
+  Future<void> build() async {}
+
+  Future<void> publish(String productId) async {
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(() async {
+      final client = ref.read(catalogClientClientProvider);
+      await client.procedures.publishProduct(
+        PublishProductArgs(productId: productId),
+      );
+      ref.invalidate(productDetailProvider(productId));
+    });
+  }
+}
+```
+
+### Dart Paged Lists
+
+```dart
+final sessionsPageProvider =
+    FutureProvider.family<Page<Session>, int>((ref, offset) async {
+  final client = ref.watch(authClientClientProvider);
+  return client.sessions.list(
+    query: CratestackListQuery(
+      limit: 50,
+      offset: offset,
+      sort: '-createdAt',
+    ),
+  );
+});
+```
 
 ### 2. Intended long-term path
 

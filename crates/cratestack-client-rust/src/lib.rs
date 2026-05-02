@@ -707,9 +707,16 @@ where
         let selection = projection.selection_query();
         let canonical_query = canonical_query_from_selection(&selection, &[])?;
         let response = self
-            .request_raw_with_query(Method::GET, path, None, canonical_query.as_deref(), headers)
+            .request_raw_with_query_and_accept(
+                Method::GET,
+                path,
+                None,
+                canonical_query.as_deref(),
+                headers,
+                Some(JsonCodec::CONTENT_TYPE),
+            )
             .await?;
-        let value = decode_json_value_response(&self.codec, &response)?;
+        let value = decode_json_value_response(&JsonCodec, &response)?;
         projection.decode_one(value).map_err(ClientError::from)
     }
 
@@ -726,9 +733,16 @@ where
         let selection = projection.selection_query();
         let canonical_query = canonical_query_from_selection(&selection, extra_query)?;
         let response = self
-            .request_raw_with_query(Method::GET, path, None, canonical_query.as_deref(), headers)
+            .request_raw_with_query_and_accept(
+                Method::GET,
+                path,
+                None,
+                canonical_query.as_deref(),
+                headers,
+                Some(JsonCodec::CONTENT_TYPE),
+            )
             .await?;
-        let value = decode_json_value_response(&self.codec, &response)?;
+        let value = decode_json_value_response(&JsonCodec, &response)?;
         projection.decode_many(value).map_err(ClientError::from)
     }
 
@@ -745,9 +759,16 @@ where
         let selection = projection.selection_query();
         let canonical_query = canonical_query_from_selection(&selection, extra_query)?;
         let response = self
-            .request_raw_with_query(Method::GET, path, None, canonical_query.as_deref(), headers)
+            .request_raw_with_query_and_accept(
+                Method::GET,
+                path,
+                None,
+                canonical_query.as_deref(),
+                headers,
+                Some(JsonCodec::CONTENT_TYPE),
+            )
             .await?;
-        let value = decode_json_value_response(&self.codec, &response)?;
+        let value = decode_json_value_response(&JsonCodec, &response)?;
         projection.decode_page(value).map_err(ClientError::from)
     }
 

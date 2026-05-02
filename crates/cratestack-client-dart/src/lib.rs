@@ -523,7 +523,7 @@ fn build_data_class(
                 wire_name: field.name.clone(),
                 dart_type: dart_field_type(field, kind),
                 required: matches!(kind, DataClassKind::Plain)
-                    && field.ty.arity == TypeArity::Required,
+                    && matches!(field.ty.arity, TypeArity::Required | TypeArity::List),
                 from_wire_expr: decode_value_expr(
                     &format!("value['{}']", field.name),
                     &field.ty,
