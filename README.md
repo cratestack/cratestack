@@ -792,14 +792,14 @@ use cratestack_client_store_redis::RedisStateStore;
 
 let base_url = url::Url::parse(&std::env::var("PAYMENT_GATEWAY_URL")?)?;
 let store = Arc::new(RedisStateStore::open(
-    std::env::var("REDIS_URL")?,
-    "cratestack:clients:payment-gateway",
+    std::env::var("VAAM_REDIS_URL")?,
+    "vaam:cratestack-client:vendor-service:payment-gateway",
 )?);
 let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec)
     .with_state_store(store);
 ```
 
-The Redis store keeps metadata in `{prefix}:meta` and appends request journal entries to `{prefix}:request_journal`.
+The Redis store keeps metadata in `{prefix}:meta` and appends request journal entries to `{prefix}:request_journal`. Use one prefix per caller/target pair, for example `vaam:cratestack-client:order-service:payment-gateway`, so horizontally scaled service instances share state without mixing journals for unrelated downstream services.
 
 ## HTTP Examples
 
