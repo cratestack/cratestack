@@ -6,3 +6,4 @@
 *.vsix
 packages/*/node_modules/
 packages/*/.vscode-test/
+.idea
