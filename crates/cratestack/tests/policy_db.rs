@@ -142,7 +142,12 @@ async fn db_backed_policy_enforcement() {
     let typed_relation_order_posts = cool
         .post()
         .find_many()
-        .order_by(cratestack_schema::post::author().profile().nickname().desc())
+        .order_by(
+            cratestack_schema::post::author()
+                .profile()
+                .nickname()
+                .desc(),
+        )
         .run(&owner)
         .await
         .expect("typed relation order should succeed");

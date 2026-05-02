@@ -69,7 +69,8 @@ fn generates_vendor_service_studio_scaffold() {
 
 #[test]
 fn generates_enum_metadata_for_schema_enums() {
-    let schema_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/studio.cstack");
+    let schema_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/studio.cstack");
     let schema =
         cratestack_parser::parse_schema_file(&schema_path).expect("fixture schema should parse");
 
@@ -103,7 +104,8 @@ fn generates_enum_metadata_for_schema_enums() {
 
 #[test]
 fn prefers_template_override_directory_when_provided() {
-    let schema_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/studio.cstack");
+    let schema_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/studio.cstack");
     let schema =
         cratestack_parser::parse_schema_file(&schema_path).expect("fixture schema should parse");
     let temp_dir = tempfile::tempdir().expect("temp dir should create");

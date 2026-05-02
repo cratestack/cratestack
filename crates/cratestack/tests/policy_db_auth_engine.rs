@@ -190,10 +190,12 @@ async fn db_backed_auth_engine_supports_all_deny_and_auth_defaults() {
     .execute(&pool)
     .await
     .expect("todos should seed");
-    cratestack::sqlx::query("INSERT INTO admin_panels (id, title) VALUES ('panel_1', 'Operations')")
-        .execute(&pool)
-        .await
-        .expect("admin panels should seed");
+    cratestack::sqlx::query(
+        "INSERT INTO admin_panels (id, title) VALUES ('panel_1', 'Operations')",
+    )
+    .execute(&pool)
+    .await
+    .expect("admin panels should seed");
 
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
 

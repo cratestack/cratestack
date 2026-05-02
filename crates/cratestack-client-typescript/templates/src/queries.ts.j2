@@ -1,0 +1,60 @@
+export interface CratestackFetchQuery {
+  fields?: string[];
+  include?: string[];
+  includeFields?: Record<string, string[]>;
+  sort?: string[];
+  limit?: number;
+  offset?: number;
+  where?: Record<string, unknown>;
+  filters?: Record<string, unknown>[];
+  orFilters?: Record<string, unknown>[];
+}
+
+export interface CratestackRequestConfig {
+  signal?: AbortSignal;
+  headers?: HeadersInit;
+}
+
+export interface CratestackQueryRequestConfig extends CratestackRequestConfig {
+  query?: CratestackFetchQuery;
+}
+
+export function toSearchQuery(query?: CratestackFetchQuery): Record<string, unknown> | undefined {
+  if (!query) {
+    return undefined;
+  }
+
+  const output: Record<string, unknown> = {};
+  if (query.fields?.length) {
+    output.fields = query.fields.join(",");
+  }
+  if (query.include?.length) {
+    output.include = query.include.join(",");
+  }
+  if (query.sort?.length) {
+    output.sort = query.sort.join(",");
+  }
+  if (query.limit !== undefined) {
+    output.limit = query.limit;
+  }
+  if (query.offset !== undefined) {
+    output.offset = query.offset;
+  }
+  if (query.where) {
+    output.where = query.where;
+  }
+  if (query.filters?.length) {
+    output.filters = query.filters;
+  }
+  if (query.orFilters?.length) {
+    output.orFilters = query.orFilters;
+  }
+
+  for (const [path, fields] of Object.entries(query.includeFields ?? {})) {
+    if (fields.length > 0) {
+      output[`includeFields[${path}]`] = fields.join(",");
+    }
+  }
+
+  return output;
+}

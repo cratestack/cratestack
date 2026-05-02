@@ -11,7 +11,7 @@ The target shape is intentionally broader than the currently implemented bootstr
 * request authentication stays outside the framework core; applications implement `AuthProvider` so generated handlers resolve auth through one host-owned trait boundary
 * JSON and CBOR are first-class codecs, while COSE is treated as an optional envelope layer over encoded bytes
 * transport architecture is split into codec, framing, and envelope layers; `application/cbor-seq` belongs to framing rather than being treated as just another peer codec
-* Rust client generation is already available today through compile-time `include_schema!` codegen for full schema consumers and `include_client_macro!` for client-only consumers, while standalone Rust-client CLI generation remains a follow-up; Dart client generation targets Riverpod-oriented frontends
+* Rust client generation is already available today through compile-time `include_schema!` codegen for full schema consumers and `include_client_macro!` for client-only consumers, while standalone Rust-client CLI generation remains a follow-up; Dart client generation targets Riverpod-oriented frontends, and TypeScript generation targets fetch plus TanStack Query consumers
 * field visibility and filterability are controlled by separate schema directives
 * custom fields are schema-declared and resolved through generated resolver traits
 
@@ -24,7 +24,7 @@ The currently implemented slice in this repo provides:
 * a compile-time `include_schema!` macro that validates schemas and emits a generated `cratestack_schema` module with summary metadata, model structs, generated procedure traits, schema-specific SQLx delegate scaffolding, generated Rust projection builders/wrappers, and generated Rust client facades
 * a compile-time `include_client_macro!` macro that validates the same schema but emits only client-facing Rust types, inputs, projection builders, procedure payloads, and the generated Rust client facade, omitting SQLx delegates, generated Axum routers, policy authorizers, procedure registries, custom-field resolver traits, and event subscriptions
 * a first-party CBOR codec crate
-* a CLI with `cratestack check`, `cratestack print-ir`, `cratestack generate-dart`, and `cratestack generate-studio`
+* a CLI with `cratestack check`, `cratestack print-ir`, `cratestack generate-dart`, `cratestack generate-typescript`, and `cratestack generate-studio`
 * a `cratestack-sqlx` crate with PostgreSQL runtime primitives plus generated delegate scaffolding for `create`, `find_many`, `find_unique`, `update`, and `delete`
 * generated model and procedure policy enforcement for the current supported policy subset, with canonical policy types now shared through `cratestack-policy`
 * a `cratestack-axum` crate with generated procedure routes plus generated model CRUD routes
@@ -34,7 +34,7 @@ The currently implemented slice in this repo provides:
 * generated typed relation filter/order DSL support in Rust delegates, including quantified to-many filters (`some`, `every`, `none`) and builder-style `FilterExpr` composition with `.and(...)`, `.or(...)`, and `.not()`
 * generated nested projection builders in Rust via `cratestack_schema::{model}::select()` and `include_selection()`, with typed selected-payload wrappers for root resources and nested included relations
 * a generated schema-native Rust client facade over `cratestack-client-rust`, covering typed model CRUD, procedures, and selected `get/list` helpers while still serializing the canonical HTTP projection contract
-* generated client slices for Rust, Dart, and Flutter bridge/runtime experiments, with generated Dart now emitting a Flutter-shaped package, exposing canonical query params such as `fields`, `include`, `includeFields[path]`, `sort`, `limit`, `offset`, `where`, and legacy `or`, plus generated selection builders and projection-driven `getView` / `listView` helpers
+* generated client slices for Rust, Dart, TypeScript, and Flutter bridge/runtime experiments, with generated Dart now emitting a Flutter-shaped package, exposing canonical query params such as `fields`, `include`, `includeFields[path]`, `sort`, `limit`, `offset`, `where`, and legacy `or`, plus generated selection builders and projection-driven `getView` / `listView` helpers; generated TypeScript emits a framework-neutral fetch client plus TanStack Query hooks for React and React Native apps
 * built-in `Page<T>` procedure return support for declared model/type items, with a canonical envelope shaped as `items`, `totalCount`, and `pageInfo`
 * opt-in `@@paged` support for generated model list routes, so selected models can return `Page<Model>` from `GET /{models}` while the default list contract remains a plain array
 * generated `tracing` instrumentation for procedure wrappers, generated procedure routes, and generated model list routes, while keeping subscriber/exporter setup host-owned
@@ -122,7 +122,7 @@ Current recommendation:
 
 Current repo reality:
 
-* `cratestack-cli` supports `check`, `check --format json`, `print-ir`, and `generate-dart`
+* `cratestack-cli` supports `check`, `check --format json`, `print-ir`, `generate-dart`, `generate-typescript`, and `generate-studio`
 * `crates/cratestack-lsp` now provides a standalone `.cstack` language server binary with diagnostics, hover, go-to-definition, document symbols, and basic completion, including relation-aware definition jumps from `@relation(fields:[...],references:[...])`
 * `packages/cratestack-vscode` now provides the thin VS Code extension wrapper that launches `cratestack-lsp`, preferring a bundled server binary when present
 * `packages/cratestack-vscode` also contributes basic `.cstack` syntax highlighting through a bundled TextMate grammar
@@ -485,6 +485,67 @@ For `@@paged` models:
 - `client.posts.listView(...)` returns `Future<Page<ProjectedPost>>`
 - the stable paging envelope is `items`, `totalCount`, and `pageInfo`
 - only `items` changes shape between full-model and projection flows
+
+## Generated TypeScript Package
+
+The TypeScript generator emits a small package for React and React Native consumers:
+
+```bash
+cratestack generate-typescript \
+  --schema services/catalog-service/schema/catalog.cstack \
+  --out frontends/vaam-mobile/packages/gen_catalog_ts \
+  --package-name @vaam/catalog-client \
+  --base-path /cstack/catalog
+```
+
+Generated files:
+
+* `package.json`
+* `tsconfig.json`
+* `README.md`
+* `src/runtime.ts`
+* `src/queries.ts`
+* `src/models.ts`
+* `src/client.ts`
+* `src/react-query.ts`
+* `src/index.ts`
+
+The generated client has two layers:
+
+* `src/client.ts` exposes a framework-neutral fetch client for model CRUD and procedures
+* `src/react-query.ts` exposes TanStack Query hooks over the same client
+
+Example usage:
+
+```ts
+import { CatalogClientClient, useProductListQuery } from "@vaam/catalog-client";
+
+const client = new CatalogClientClient("https://api.example.com", {
+  basePath: "/cstack/catalog",
+});
+
+const products = await client.products.list({
+  query: {
+    fields: ["id", "title", "price"],
+    include: ["assets"],
+    limit: 20,
+    sort: ["-createdAt"],
+  },
+});
+```
+
+React or React Native usage:
+
+```ts
+const products = useProductListQuery(client, {
+  query: {
+    fields: ["id", "title", "price"],
+    limit: 20,
+  },
+});
+```
+
+Generated model list methods return `Page<Model>` for models marked `@@paged`; other models return `Model[]`. Procedures are generated under `client.procedures` and are sent to the canonical `/$procs/{name}` route.
 
 ## Schema Enums
 

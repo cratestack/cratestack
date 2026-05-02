@@ -69,15 +69,19 @@ fn generates_runtime_based_and_riverpod_client_for_blog_schema() {
     assert!(runtime.contains("import 'package:dio/dio.dart';"));
     assert!(runtime.contains("abstract interface class CratestackClientAdapter {"));
     assert!(runtime.contains("class CratestackDioAdapter implements CratestackClientAdapter {"));
-    assert!(runtime.contains("class CratestackCborDioAdapter implements CratestackClientAdapter {"));
     assert!(
-        runtime.contains("const cratestackUseRustTransportExtraKey = 'cratestackUseRustTransport';")
+        runtime.contains("class CratestackCborDioAdapter implements CratestackClientAdapter {")
+    );
+    assert!(
+        runtime
+            .contains("const cratestackUseRustTransportExtraKey = 'cratestackUseRustTransport';")
     );
     assert!(queries.contains("class CratestackFetchQuery {"));
     assert!(queries.contains("abstract interface class CratestackProjection<T> {"));
     assert!(
-        queries
-            .contains("class CratestackSelectionProjection<T> implements CratestackProjection<T> {")
+        queries.contains(
+            "class CratestackSelectionProjection<T> implements CratestackProjection<T> {"
+        )
     );
     assert!(queries.contains("class CratestackSelectionNode {"));
     assert!(queries.contains(
@@ -121,7 +125,9 @@ fn generates_runtime_based_and_riverpod_client_for_blog_schema() {
     assert!(apis.contains("Future<Page<Post>> getFeedPage(GetFeedPageArgs args, {"));
     assert!(apis.contains("Future<Post> publishPost(PublishPostArgs args, {"));
     assert!(
-        apis.contains("final blogClientAdapterProvider = Provider<CratestackClientAdapter>((ref) {")
+        apis.contains(
+            "final blogClientAdapterProvider = Provider<CratestackClientAdapter>((ref) {"
+        )
     );
     assert!(
         apis.contains(

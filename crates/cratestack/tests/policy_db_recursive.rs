@@ -57,10 +57,12 @@ async fn db_backed_recursive_relation_policies_cover_quantifiers_and_create_chec
     .await
     .expect("tasks table should exist");
 
-    cratestack::sqlx::query("INSERT INTO organizations (id, slug) VALUES (1, 'alpha'), (2, 'beta')")
-        .execute(&pool)
-        .await
-        .expect("organizations should seed");
+    cratestack::sqlx::query(
+        "INSERT INTO organizations (id, slug) VALUES (1, 'alpha'), (2, 'beta')",
+    )
+    .execute(&pool)
+    .await
+    .expect("organizations should seed");
     cratestack::sqlx::query(
         "INSERT INTO users (id, email, banned) VALUES (1, 'owner@example.com', FALSE), (2, 'other@example.com', FALSE), (3, 'banned@example.com', TRUE)",
     )

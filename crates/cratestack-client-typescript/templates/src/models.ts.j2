@@ -1,0 +1,34 @@
+import type { JsonValue } from "./runtime";
+
+export interface PageInfo {
+  limit?: number;
+  offset?: number;
+  hasNext?: boolean;
+  nextOffset?: number | null;
+  total?: number | null;
+}
+
+export interface Page<T> {
+  items: T[];
+  pageInfo?: PageInfo;
+}
+
+{% for enum in enums %}
+export type {{ enum.name }} = {{ enum.union }};
+export const {{ enum.name }}Values = [
+{% for value in enum.values %}
+  "{{ value }}",
+{% endfor %}
+] as const satisfies readonly {{ enum.name }}[];
+
+{% endfor %}
+{% for interface in interfaces %}
+export interface {{ interface.name }} {
+{% if interface.has_fields %}
+{% for field in interface.fields %}
+  {{ field.property }}{% if field.optional %}?{% endif %}: {{ field.type_name }};
+{% endfor %}
+{% endif %}
+}
+
+{% endfor %}

@@ -1,0 +1,117 @@
+import {
+  useMutation,
+  useQuery,
+  type UseMutationOptions,
+  type UseQueryOptions,
+} from "@tanstack/react-query";
+import type { {{ client_class_name }} } from "./client";
+import type {
+{% for interface in interfaces %}
+  {{ interface.name }},
+{% endfor %}
+{% for enum in enums %}
+  {{ enum.name }},
+{% endfor %}
+  Page,
+} from "./models";
+import type { CratestackQueryRequestConfig, CratestackRequestConfig } from "./queries";
+
+export const cratestackQueryKeys = {
+{% for model in models %}
+  {{ model.list_query_key }}: (options?: CratestackQueryRequestConfig) => ["{{ model.route }}", "list", options?.query] as const,
+  {{ model.get_query_key }}: (id: {{ model.primary_key_type }}, options?: CratestackQueryRequestConfig) => ["{{ model.route }}", "detail", id, options?.query] as const,
+{% endfor %}
+{% for procedure in query_procedures %}
+  {{ procedure.query_key }}: (args: {{ procedure.args_name }}) => ["{{ procedure.route }}", args] as const,
+{% endfor %}
+};
+
+{% for model in models %}
+export function use{{ model.name }}ListQuery(
+  client: {{ client_class_name }},
+  options: CratestackQueryRequestConfig & {
+    queryOptions?: Omit<UseQueryOptions<{{ model.list_return_type }}>, "queryKey" | "queryFn">;
+  } = {},
+) {
+  return useQuery({
+    ...options.queryOptions,
+    queryKey: cratestackQueryKeys.{{ model.list_query_key }}(options),
+    queryFn: ({ signal }) => client.{{ model.accessor }}.list({ ...options, signal }),
+  });
+}
+
+export function use{{ model.name }}Query(
+  client: {{ client_class_name }},
+  id: {{ model.primary_key_type }},
+  options: CratestackQueryRequestConfig & {
+    queryOptions?: Omit<UseQueryOptions<{{ model.name }}>, "queryKey" | "queryFn">;
+  } = {},
+) {
+  return useQuery({
+    ...options.queryOptions,
+    queryKey: cratestackQueryKeys.{{ model.get_query_key }}(id, options),
+    queryFn: ({ signal }) => client.{{ model.accessor }}.get(id, { ...options, signal }),
+  });
+}
+
+export function useCreate{{ model.name }}Mutation(
+  client: {{ client_class_name }},
+  options?: UseMutationOptions<{{ model.name }}, Error, {{ model.create_input_name }}>,
+) {
+  return useMutation({
+    ...options,
+    mutationKey: ["{{ model.create_mutation_key }}"],
+    mutationFn: (input) => client.{{ model.accessor }}.create(input),
+  });
+}
+
+export function useUpdate{{ model.name }}Mutation(
+  client: {{ client_class_name }},
+  options?: UseMutationOptions<{{ model.name }}, Error, { id: {{ model.primary_key_type }}; input: {{ model.update_input_name }} }>,
+) {
+  return useMutation({
+    ...options,
+    mutationKey: ["{{ model.update_mutation_key }}"],
+    mutationFn: ({ id, input }) => client.{{ model.accessor }}.update(id, input),
+  });
+}
+
+export function useDelete{{ model.name }}Mutation(
+  client: {{ client_class_name }},
+  options?: UseMutationOptions<void, Error, { id: {{ model.primary_key_type }} }>,
+) {
+  return useMutation({
+    ...options,
+    mutationKey: ["{{ model.delete_mutation_key }}"],
+    mutationFn: ({ id }) => client.{{ model.accessor }}.delete(id),
+  });
+}
+
+{% endfor %}
+{% for procedure in query_procedures %}
+export function use{{ procedure.hook_name }}Query(
+  client: {{ client_class_name }},
+  args: {{ procedure.args_name }},
+  options?: Omit<UseQueryOptions<{{ procedure.return_type }}>, "queryKey" | "queryFn">,
+) {
+  return useQuery({
+    ...options,
+    queryKey: cratestackQueryKeys.{{ procedure.query_key }}(args),
+    queryFn: () => client.procedures.{{ procedure.method_name }}(args),
+  });
+}
+
+{% endfor %}
+{% for procedure in mutation_procedures %}
+export function use{{ procedure.hook_name }}Mutation(
+  client: {{ client_class_name }},
+  options?: UseMutationOptions<{{ procedure.return_type }}, Error, {{ procedure.args_name }}>,
+) {
+  return useMutation({
+    ...options,
+    mutationKey: ["{{ procedure.mutation_key }}"],
+    mutationFn: (args) => client.procedures.{{ procedure.method_name }}(args),
+  });
+}
+
+{% endfor %}

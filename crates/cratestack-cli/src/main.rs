@@ -32,6 +32,19 @@ enum Command {
         #[arg(long)]
         template_dir: Option<PathBuf>,
     },
+    #[command(name = "generate-typescript", alias = "generate-ts")]
+    GenerateTypeScript {
+        #[arg(long)]
+        schema: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
+        #[arg(long, default_value = "cratestack-client")]
+        package_name: String,
+        #[arg(long, default_value = "/api")]
+        base_path: String,
+        #[arg(long)]
+        template_dir: Option<PathBuf>,
+    },
     GenerateStudio {
         #[arg(long, required = true)]
         schema: Vec<PathBuf>,
@@ -161,6 +174,37 @@ fn main() -> Result<()> {
                     .collect(),
             )?;
             println!("generated Dart client package: {}", out.display());
+        }
+        Command::GenerateTypeScript {
+            schema,
+            out,
+            package_name,
+            base_path,
+            template_dir,
+        } => {
+            let parsed = parse_schema_or_render(&schema)?;
+
+            let package = cratestack_client_typescript::generate_package(
+                &parsed,
+                &cratestack_client_typescript::TypeScriptGeneratorConfig {
+                    package_name,
+                    base_path,
+                    template_dir,
+                },
+            )?;
+
+            write_generated_files(
+                &out,
+                package
+                    .files
+                    .into_iter()
+                    .map(|file| GeneratedFile {
+                        file_name: file.file_name,
+                        contents: file.contents,
+                    })
+                    .collect(),
+            )?;
+            println!("generated TypeScript client package: {}", out.display());
         }
         Command::GenerateStudio {
             schema,
@@ -481,6 +525,35 @@ mod tests {
                 assert_eq!(profile, StudioProfileArg::Dev);
             }
             _ => panic!("expected generate-studio command"),
+        }
+    }
+
+    #[test]
+    fn generate_typescript_clap_defaults() {
+        let cli = Cli::parse_from([
+            "cratestack",
+            "generate-typescript",
+            "--schema",
+            "schema.cstack",
+            "--out",
+            "out",
+        ]);
+
+        match cli.command {
+            Command::GenerateTypeScript {
+                schema,
+                out,
+                package_name,
+                base_path,
+                template_dir,
+            } => {
+                assert_eq!(schema, PathBuf::from("schema.cstack"));
+                assert_eq!(out, PathBuf::from("out"));
+                assert_eq!(package_name, "cratestack-client");
+                assert_eq!(base_path, "/api");
+                assert_eq!(template_dir, None);
+            }
+            _ => panic!("expected generate-typescript command"),
         }
     }
 

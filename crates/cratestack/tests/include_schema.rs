@@ -568,7 +568,10 @@ impl cratestack_schema::procedures::ProcedureRegistry for TestProcedures {
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::get_feed_page::Args,
     ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::get_feed_page::Output, cratestack::CoolError>,
+        Output = Result<
+            cratestack_schema::procedures::get_feed_page::Output,
+            cratestack::CoolError,
+        >,
     > + Send {
         async move {
             let limit = args.limit.unwrap_or(1);

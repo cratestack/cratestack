@@ -27,8 +27,9 @@ pub(crate) fn generate_procedure_policy(
     let expr = generate_policy_ast_tokens(
         &ast,
         &|term| {
-            parse_procedure_policy_term(term, procedure, types, auth)
-                .map(|predicate| quote! { ::cratestack::ProcedurePolicyExpr::Predicate(#predicate) })
+            parse_procedure_policy_term(term, procedure, types, auth).map(
+                |predicate| quote! { ::cratestack::ProcedurePolicyExpr::Predicate(#predicate) },
+            )
         },
         quote! { ::cratestack::ProcedurePolicyExpr::And },
         quote! { ::cratestack::ProcedurePolicyExpr::Or },

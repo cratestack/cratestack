@@ -1,0 +1,78 @@
+import { CratestackRuntime, type CratestackClientOptions } from "./runtime";
+import type {
+{% for interface in interfaces %}
+  {{ interface.name }},
+{% endfor %}
+{% for enum in enums %}
+  {{ enum.name }},
+{% endfor %}
+  Page,
+} from "./models";
+import { toSearchQuery, type CratestackQueryRequestConfig, type CratestackRequestConfig } from "./queries";
+
+export class {{ client_class_name }} {
+  readonly runtime: CratestackRuntime;
+  readonly procedures: ProceduresApi;
+{% for model in models %}
+  readonly {{ model.accessor }}: {{ model.api_name }};
+{% endfor %}
+
+  constructor(originOrRuntime: string | CratestackRuntime, options: CratestackClientOptions = {}) {
+    this.runtime = typeof originOrRuntime === "string"
+      ? new CratestackRuntime(originOrRuntime, options)
+      : originOrRuntime;
+    this.procedures = new ProceduresApi(this.runtime);
+{% for model in models %}
+    this.{{ model.accessor }} = new {{ model.api_name }}(this.runtime);
+{% endfor %}
+  }
+}
+
+{% for model in models %}
+export class {{ model.api_name }} {
+  constructor(private readonly runtime: CratestackRuntime) {}
+
+  list(options: CratestackQueryRequestConfig = {}): Promise<{{ model.list_return_type }}> {
+    return this.runtime.get<{{ model.list_return_type }}>("{{ model.route }}", {
+      headers: options.headers,
+      query: toSearchQuery(options.query),
+      signal: options.signal,
+    });
+  }
+
+  get(id: {{ model.primary_key_type }}, options: CratestackQueryRequestConfig = {}): Promise<{{ model.name }}> {
+    return this.runtime.get<{{ model.name }}>(`{{ model.route }}/${encodeURIComponent(String(id))}`, {
+      headers: options.headers,
+      query: toSearchQuery(options.query),
+      signal: options.signal,
+    });
+  }
+
+  create(input: {{ model.create_input_name }}, options: CratestackRequestConfig = {}): Promise<{{ model.name }}> {
+    return this.runtime.post<{{ model.name }}>("{{ model.route }}", input, options);
+  }
+
+  update(
+    id: {{ model.primary_key_type }},
+    input: {{ model.update_input_name }},
+    options: CratestackRequestConfig = {},
+  ): Promise<{{ model.name }}> {
+    return this.runtime.patch<{{ model.name }}>(`{{ model.route }}/${encodeURIComponent(String(id))}`, input, options);
+  }
+
+  delete(id: {{ model.primary_key_type }}, options: CratestackRequestConfig = {}): Promise<void> {
+    return this.runtime.delete<void>(`{{ model.route }}/${encodeURIComponent(String(id))}`, options);
+  }
+}
+
+{% endfor %}
+export class ProceduresApi {
+  constructor(private readonly runtime: CratestackRuntime) {}
+
+{% for procedure in procedures %}
+  {{ procedure.method_name }}(args: {{ procedure.args_name }}, options: CratestackRequestConfig = {}): Promise<{{ procedure.return_type }}> {
+    return this.runtime.post<{{ procedure.return_type }}>("{{ procedure.route }}", args, options);
+  }
+
+{% endfor %}
+}

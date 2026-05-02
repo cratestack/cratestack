@@ -446,6 +446,7 @@ dependencies = [
  "anyhow",
  "clap",
  "cratestack-client-dart",
+ "cratestack-client-typescript",
  "cratestack-core",
  "cratestack-parser",
  "cratestack-studio-generator",
@@ -523,6 +524,17 @@ dependencies = [
  "serde",
  "tokio",
  "url",
+]
+
+[[package]]
+name = "cratestack-client-typescript"
+version = "0.1.0"
+dependencies = [
+ "cratestack-core",
+ "cratestack-parser",
+ "minijinja",
+ "serde",
+ "thiserror",
 ]
 
 [[package]]

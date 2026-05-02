@@ -1,7 +1,9 @@
 use std::fmt::Write;
 use std::marker::PhantomData;
 
-use cratestack_core::{CoolError, CoolEventBus, CoolEventEnvelope, CoolEventFuture, ModelEventKind};
+use cratestack_core::{
+    CoolError, CoolEventBus, CoolEventEnvelope, CoolEventFuture, ModelEventKind,
+};
 use cratestack_policy::ReadPolicy;
 
 #[derive(Debug, Clone)]

@@ -6,6 +6,7 @@ members = [
     "crates/cratestack-cli",
     "crates/cratestack-client-dart",
     "crates/cratestack-client-flutter",
+    "crates/cratestack-client-typescript",
     "crates/cratestack-client-store-redis",
     "crates/cratestack-client-rust",
     "crates/cratestack-client-store-sqlite",
@@ -42,6 +43,7 @@ cratestack = { path = "crates/cratestack", version = "0.1.0" }
 cratestack-axum = { path = "crates/cratestack-axum", version = "0.1.0" }
 cratestack-client-dart = { path = "crates/cratestack-client-dart", version = "0.1.0" }
 cratestack-client-flutter = { path = "crates/cratestack-client-flutter", version = "0.1.0" }
+cratestack-client-typescript = { path = "crates/cratestack-client-typescript", version = "0.1.0" }
 cratestack-client-store-redis = { path = "crates/cratestack-client-store-redis", version = "0.1.0" }
 cratestack-client-rust = { path = "crates/cratestack-client-rust", version = "0.1.0" }
 cratestack-client-store-sqlite = { path = "crates/cratestack-client-store-sqlite", version = "0.1.0" }

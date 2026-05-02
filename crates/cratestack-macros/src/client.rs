@@ -218,7 +218,10 @@ fn generate_generated_procedure_client_method(
     let method_ident = ident(&to_snake_case(&procedure.name));
     let module_ident = ident(&to_snake_case(&procedure.name));
     let route_path = format!("/$procs/{}", procedure.name);
-    let call = if matches!(procedure.return_type.arity, cratestack_core::TypeArity::List) {
+    let call = if matches!(
+        procedure.return_type.arity,
+        cratestack_core::TypeArity::List
+    ) {
         let item_type = procedure_client_output_item_tokens(&procedure.return_type);
         quote! { self.runtime.post_list::<_, #item_type>(#route_path, args, headers).await }
     } else {

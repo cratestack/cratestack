@@ -13,6 +13,7 @@ path = "src/main.rs"
 anyhow.workspace = true
 clap.workspace = true
 cratestack-client-dart.workspace = true
+cratestack-client-typescript.workspace = true
 cratestack-core.workspace = true
 cratestack-studio-generator.workspace = true
 cratestack-parser.workspace = true

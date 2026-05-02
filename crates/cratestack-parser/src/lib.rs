@@ -18,7 +18,10 @@ pub fn parse_schema(source: &str) -> Result<cratestack_core::Schema, SchemaError
     parse_schema_named("<schema>", source)
 }
 
-pub fn parse_schema_named(path: &str, source: &str) -> Result<cratestack_core::Schema, SchemaError> {
+pub fn parse_schema_named(
+    path: &str,
+    source: &str,
+) -> Result<cratestack_core::Schema, SchemaError> {
     let schema = parse::parse_schema_only(source)?;
     validate::validate_schema(path, source, &schema)?;
     Ok(schema)

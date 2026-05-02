@@ -1,0 +1,155 @@
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
+
+export interface CratestackClientOptions {
+  basePath?: string;
+  fetch?: typeof fetch;
+  headers?: HeadersInit | (() => HeadersInit | Promise<HeadersInit>);
+}
+
+export interface CratestackRequestOptions {
+  body?: unknown;
+  headers?: HeadersInit;
+  query?: Record<string, unknown>;
+  signal?: AbortSignal;
+}
+
+export class CratestackHttpError extends Error {
+  readonly status: number;
+  readonly response: Response;
+  readonly payload: unknown;
+
+  constructor(response: Response, payload: unknown) {
+    super(`CrateStack request failed with status ${response.status}`);
+    this.name = "CratestackHttpError";
+    this.status = response.status;
+    this.response = response;
+    this.payload = payload;
+  }
+}
+
+export class CratestackRuntime {
+  readonly origin: string;
+  readonly basePath: string;
+  readonly fetchFn: typeof fetch;
+  readonly defaultHeaders?: HeadersInit | (() => HeadersInit | Promise<HeadersInit>);
+
+  constructor(origin: string, options: CratestackClientOptions = {}) {
+    this.origin = origin.replace(/\/+$/, "");
+    this.basePath = options.basePath ?? "{{ base_path }}";
+    this.fetchFn = options.fetch ?? fetch;
+    this.defaultHeaders = options.headers;
+  }
+
+  async request<T>(
+    method: string,
+    path: string,
+    options: CratestackRequestOptions = {},
+  ): Promise<T> {
+    const headers = new Headers(await resolveHeaders(this.defaultHeaders));
+    headers.set("Accept", "application/json");
+
+    let body: BodyInit | undefined;
+    if (options.body !== undefined) {
+      headers.set("Content-Type", "application/json");
+      body = JSON.stringify(options.body);
+    }
+
+    for (const [key, value] of new Headers(options.headers)) {
+      headers.set(key, value);
+    }
+
+    const response = await this.fetchFn(this.url(path, options.query), {
+      method,
+      headers,
+      body,
+      signal: options.signal,
+    });
+
+    const payload = await readResponsePayload(response);
+    if (!response.ok) {
+      throw new CratestackHttpError(response, payload);
+    }
+    return payload as T;
+  }
+
+  get<T>(path: string, options: Omit<CratestackRequestOptions, "body"> = {}): Promise<T> {
+    return this.request<T>("GET", path, options);
+  }
+
+  post<T>(path: string, body: unknown, options: Omit<CratestackRequestOptions, "body"> = {}): Promise<T> {
+    return this.request<T>("POST", path, { ...options, body });
+  }
+
+  patch<T>(path: string, body: unknown, options: Omit<CratestackRequestOptions, "body"> = {}): Promise<T> {
+    return this.request<T>("PATCH", path, { ...options, body });
+  }
+
+  delete<T>(path: string, options: Omit<CratestackRequestOptions, "body"> = {}): Promise<T> {
+    return this.request<T>("DELETE", path, options);
+  }
+
+  private url(path: string, query?: Record<string, unknown>): string {
+    const normalizedBase = this.basePath === "/" ? "" : this.basePath.replace(/\/+$/, "");
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+    const url = new URL(`${normalizedBase}${normalizedPath}`, `${this.origin}/`);
+    appendQuery(url.searchParams, query);
+    return url.toString();
+  }
+}
+
+async function resolveHeaders(
+  headers: HeadersInit | (() => HeadersInit | Promise<HeadersInit>) | undefined,
+): Promise<HeadersInit | undefined> {
+  if (typeof headers === "function") {
+    return headers();
+  }
+  return headers;
+}
+
+async function readResponsePayload(response: Response): Promise<unknown> {
+  if (response.status === 204) {
+    return undefined;
+  }
+
+  const text = await response.text();
+  if (text.length === 0) {
+    return undefined;
+  }
+
+  const contentType = response.headers.get("Content-Type") ?? "";
+  if (contentType.includes("application/json")) {
+    return JSON.parse(text);
+  }
+  return text;
+}
+
+function appendQuery(searchParams: URLSearchParams, query?: Record<string, unknown>): void {
+  if (!query) {
+    return;
+  }
+
+  for (const [key, value] of Object.entries(query)) {
+    appendQueryValue(searchParams, key, value);
+  }
+}
+
+function appendQueryValue(searchParams: URLSearchParams, key: string, value: unknown): void {
+  if (value === undefined || value === null) {
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      appendQueryValue(searchParams, key, item);
+    }
+    return;
+  }
+
+  if (typeof value === "object") {
+    searchParams.set(key, JSON.stringify(value));
+    return;
+  }
+
+  searchParams.append(key, String(value));
+}

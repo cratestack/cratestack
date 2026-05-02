@@ -1,0 +1,23 @@
+# {{ package_name }}
+
+Generated CrateStack TypeScript client with a fetch transport and TanStack Query hooks.
+
+```ts
+import { {{ client_class_name }} } from "{{ package_name }}";
+
+const client = new {{ client_class_name }}("https://api.example.com");
+```
+
+The generated client uses `{{ base_path }}` as its API base path by default.
+
+## Models
+
+{% for model in models %}
+- `client.{{ model.accessor }}`
+{% endfor %}
+
+## Procedures
+
+{% for procedure in procedures %}
+- `client.procedures.{{ procedure.method_name }}`
+{% endfor %}
