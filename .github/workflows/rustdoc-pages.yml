@@ -35,19 +35,19 @@ jobs:
           touch target/doc/.nojekyll
           echo "rust-doc.cratestack.dev" > target/doc/CNAME
           if [ ! -f target/doc/index.html ]; then
-            cat > target/doc/index.html <<'HTML'
-            <!doctype html>
-            <html lang="en">
-            <head>
-              <meta charset="utf-8" />
-              <meta http-equiv="refresh" content="0; url=./cratestack/" />
-              <title>Rust Docs</title>
-            </head>
-            <body>
-              <p>Redirecting to <a href="./cratestack/">cratestack docs</a>...</p>
-            </body>
-            </html>
-            HTML
+            printf '%s\n' \
+              '<!doctype html>' \
+              '<html lang="en">' \
+              '<head>' \
+              '  <meta charset="utf-8" />' \
+              '  <meta http-equiv="refresh" content="0; url=./cratestack/" />' \
+              '  <title>Rust Docs</title>' \
+              '</head>' \
+              '<body>' \
+              '  <p>Redirecting to <a href="./cratestack/">cratestack docs</a>...</p>' \
+              '</body>' \
+              '</html>' \
+              > target/doc/index.html
           fi
 
       - name: Configure Pages
