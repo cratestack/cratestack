@@ -8,7 +8,7 @@ fn generates_fetch_client_and_tanstack_hooks_for_blog_schema() {
     let package = generate_package(
         &schema,
         &TypeScriptGeneratorConfig {
-            package_name: "@vaam/blog-client".to_owned(),
+            package_name: "@example/blog-client".to_owned(),
             base_path: "/cstack".to_owned(),
             template_dir: None,
         },
@@ -26,7 +26,7 @@ fn generates_fetch_client_and_tanstack_hooks_for_blog_schema() {
     let react_query = package_file(&package, "src/react-query.ts");
     let index = package_file(&package, "src/index.ts");
 
-    assert!(package_json.contains("\"name\": \"@vaam/blog-client\""));
+    assert!(package_json.contains("\"name\": \"@example/blog-client\""));
     assert!(package_json.contains("\"@tanstack/react-query\": \"^5.0.0\""));
     assert!(readme.contains("Generated CrateStack TypeScript client"));
     assert!(readme.contains("client.procedures.publishPost"));
@@ -44,7 +44,7 @@ fn generates_fetch_client_and_tanstack_hooks_for_blog_schema() {
     assert!(models.contains("title?: string;"));
     assert!(models.contains("export interface GetFeedArgs"));
     assert!(models.contains("limit?: number | null;"));
-    assert!(client.contains("export class VaamBlogClientClient"));
+    assert!(client.contains("export class ExampleBlogClientClient"));
     assert!(client.contains("readonly posts: PostApi;"));
     assert!(client.contains("list(options: CratestackQueryRequestConfig = {}): Promise<Post[]>"));
     assert!(

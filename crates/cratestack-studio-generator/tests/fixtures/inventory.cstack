@@ -1,0 +1,28 @@
+model Inventory {
+  id String @id
+  name String
+  status String
+
+  memberships InventoryMembership[] @relation(fields:[id],references:[inventoryId])
+
+  @@allow("read", auth() != null)
+}
+
+model InventoryMembership {
+  id String @id
+  inventoryId String
+  userId String
+  role String
+  status String
+
+  inventory Inventory? @relation(fields:[inventoryId],references:[id])
+
+  @@allow("read", auth() != null)
+}
+
+type ListInventoryArgs {
+  q String?
+  limit Int?
+}
+
+procedure queryInventory(args: ListInventoryArgs): Inventory[]

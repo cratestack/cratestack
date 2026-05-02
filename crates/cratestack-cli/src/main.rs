@@ -504,7 +504,7 @@ mod tests {
             "--out",
             "out",
             "--name",
-            "vendor-studio",
+            "inventory-studio",
             "--service-url",
             "http://127.0.0.1:8082",
         ]);
@@ -571,7 +571,7 @@ mod tests {
 
     #[test]
     fn validate_service_url_rejects_relative_url() {
-        let error = validate_service_url("vendor-service:8082")
+        let error = validate_service_url("inventory-service:8082")
             .expect_err("relative service url should fail");
         assert!(error.to_string().contains("must be absolute"));
     }
@@ -593,7 +593,7 @@ mod tests {
 
     #[test]
     fn validate_context_key_rejects_spaces() {
-        let error = validate_context_key("vendor admin")
+        let error = validate_context_key("inventory admin")
             .expect_err("spaces should fail context key validation");
         assert!(error.to_string().contains("not URL-safe"));
     }
@@ -602,19 +602,19 @@ mod tests {
     fn resolve_context_keys_derives_unique_defaults() {
         let keys = resolve_context_keys(
             &[
-                PathBuf::from("services/vendor-service/schema/vendor.cstack"),
-                PathBuf::from("services/auth-service/schema/auth.cstack"),
+                PathBuf::from("services/inventory-service/schema/inventory.cstack"),
+                PathBuf::from("services/accounts-service/schema/accounts.cstack"),
             ],
             &[],
         )
         .expect("context keys should derive");
 
-        assert_eq!(keys, vec!["vendor".to_owned(), "auth".to_owned()]);
+        assert_eq!(keys, vec!["inventory".to_owned(), "accounts".to_owned()]);
     }
 
     #[test]
     fn validate_studio_name_rejects_invalid_chars() {
-        let error = validate_studio_name("vendor studio")
+        let error = validate_studio_name("inventory studio")
             .expect_err("spaces should fail studio name validation");
         assert!(
             error

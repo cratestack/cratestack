@@ -6,29 +6,29 @@ use cratestack_studio_generator::{
 };
 
 #[test]
-fn generates_vendor_service_studio_scaffold() {
+fn generates_inventory_service_studio_scaffold() {
     let schema_path =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/vendor.cstack");
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/inventory.cstack");
     let schema =
-        cratestack_parser::parse_schema_file(&schema_path).expect("vendor schema should parse");
+        cratestack_parser::parse_schema_file(&schema_path).expect("inventory schema should parse");
 
     let package = generate_package(
         &[StudioGeneratorContext {
-            key: "vendor".to_owned(),
-            display_name: "vendor-service".to_owned(),
-            service_name: "vendor-service".to_owned(),
+            key: "inventory".to_owned(),
+            display_name: "inventory-service".to_owned(),
+            service_name: "inventory-service".to_owned(),
             schema_path: schema_path.clone(),
             service_url: "http://127.0.0.1:8082".to_owned(),
             schema: &schema,
         }],
         &StudioGeneratorConfig {
-            name: "vendor-service-studio".to_owned(),
+            name: "inventory-service-studio".to_owned(),
             mount_path: "/studio".to_owned(),
             profile: StudioProfile::Dev,
             template_dir: None,
         },
     )
-    .expect("vendor studio package should generate");
+    .expect("inventory studio package should generate");
 
     assert!(
         package
@@ -57,12 +57,12 @@ fn generates_vendor_service_studio_scaffold() {
     assert!(shared.contains("pub struct StudioMetadata"));
     assert!(shared.contains("pub struct StudioContextMetadata"));
     assert!(shared.contains("include_str!(\"metadata.json\")"));
-    assert!(metadata_json.contains("\"default_context\": \"vendor\""));
-    assert!(metadata_json.contains("\"key\": \"vendor\""));
-    assert!(metadata_json.contains("\"name\": \"Vendor\""));
-    assert!(metadata_json.contains("\"name\": \"VendorMembership\""));
-    assert!(metadata_json.contains("\"name\": \"queryVendors\""));
-    assert!(readme.contains("vendor-service"));
+    assert!(metadata_json.contains("\"default_context\": \"inventory\""));
+    assert!(metadata_json.contains("\"key\": \"inventory\""));
+    assert!(metadata_json.contains("\"name\": \"Inventory\""));
+    assert!(metadata_json.contains("\"name\": \"InventoryMembership\""));
+    assert!(metadata_json.contains("\"name\": \"queryInventory\""));
+    assert!(readme.contains("inventory-service"));
     assert!(readme.contains("http://127.0.0.1:8082"));
     assert!(web_app.contains("ModelListPage"));
 }
@@ -144,36 +144,36 @@ fn prefers_template_override_directory_when_provided() {
 
 #[test]
 fn generates_multi_context_metadata_and_readme() {
-    let vendor_schema_path =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/vendor.cstack");
-    let auth_schema_path =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/auth.cstack");
-    let vendor_schema = cratestack_parser::parse_schema_file(&vendor_schema_path)
-        .expect("vendor schema should parse");
-    let auth_schema =
-        cratestack_parser::parse_schema_file(&auth_schema_path).expect("auth schema should parse");
+    let inventory_schema_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/inventory.cstack");
+    let accounts_schema_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/accounts.cstack");
+    let inventory_schema = cratestack_parser::parse_schema_file(&inventory_schema_path)
+        .expect("inventory schema should parse");
+    let accounts_schema = cratestack_parser::parse_schema_file(&accounts_schema_path)
+        .expect("accounts schema should parse");
 
     let package = generate_package(
         &[
             StudioGeneratorContext {
-                key: "vendor".to_owned(),
-                display_name: "vendor-service".to_owned(),
-                service_name: "vendor-service".to_owned(),
-                schema_path: vendor_schema_path.clone(),
+                key: "inventory".to_owned(),
+                display_name: "inventory-service".to_owned(),
+                service_name: "inventory-service".to_owned(),
+                schema_path: inventory_schema_path.clone(),
                 service_url: "http://127.0.0.1:8082".to_owned(),
-                schema: &vendor_schema,
+                schema: &inventory_schema,
             },
             StudioGeneratorContext {
-                key: "auth".to_owned(),
-                display_name: "auth-service".to_owned(),
-                service_name: "auth-service".to_owned(),
-                schema_path: auth_schema_path.clone(),
+                key: "accounts".to_owned(),
+                display_name: "accounts-service".to_owned(),
+                service_name: "accounts-service".to_owned(),
+                schema_path: accounts_schema_path.clone(),
                 service_url: "http://127.0.0.1:8081".to_owned(),
-                schema: &auth_schema,
+                schema: &accounts_schema,
             },
         ],
         &StudioGeneratorConfig {
-            name: "vaam-studio".to_owned(),
+            name: "sample-studio".to_owned(),
             mount_path: "/studio".to_owned(),
             profile: StudioProfile::Dev,
             template_dir: None,
@@ -185,10 +185,10 @@ fn generates_multi_context_metadata_and_readme() {
     let readme = package_file(&package, "README.md");
 
     assert!(metadata_json.contains("\"contexts\":"));
-    assert!(metadata_json.contains("\"key\": \"vendor\""));
-    assert!(metadata_json.contains("\"key\": \"auth\""));
-    assert!(readme.contains("vendor-service"));
-    assert!(readme.contains("auth-service"));
+    assert!(metadata_json.contains("\"key\": \"inventory\""));
+    assert!(metadata_json.contains("\"key\": \"accounts\""));
+    assert!(readme.contains("inventory-service"));
+    assert!(readme.contains("accounts-service"));
 }
 
 fn package_file<'a>(

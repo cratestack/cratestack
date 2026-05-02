@@ -132,7 +132,7 @@ export function createClient(accessToken: string | null) {
     basePath: "{{ base_path }}",
     headers: {
       ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
-      "x-client": "vaam-mobile",
+      "x-client": "sample-mobile",
     },
   });
 }

@@ -187,11 +187,14 @@ mod tests {
 
     #[test]
     fn config_normalizes_keys() {
-        let config = RedisStateStoreConfig::new(":vaam:orders:");
+        let config = RedisStateStoreConfig::new(":example:orders:");
 
-        assert_eq!(config.key_prefix, "vaam:orders");
-        assert_eq!(config.meta_key(), "vaam:orders:meta");
-        assert_eq!(config.request_journal_key(), "vaam:orders:request_journal");
+        assert_eq!(config.key_prefix, "example:orders");
+        assert_eq!(config.meta_key(), "example:orders:meta");
+        assert_eq!(
+            config.request_journal_key(),
+            "example:orders:request_journal"
+        );
     }
 
     #[test]
