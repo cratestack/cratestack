@@ -7,8 +7,8 @@ use cratestack_studio_generator::{
 
 #[test]
 fn generates_vendor_service_studio_scaffold() {
-    let schema_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../vaam-backends/services/vendor-service/schema/vendor.cstack");
+    let schema_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/vendor.cstack");
     let schema =
         cratestack_parser::parse_schema_file(&schema_path).expect("vendor schema should parse");
 
@@ -144,10 +144,10 @@ fn prefers_template_override_directory_when_provided() {
 
 #[test]
 fn generates_multi_context_metadata_and_readme() {
-    let vendor_schema_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../vaam-backends/services/vendor-service/schema/vendor.cstack");
-    let auth_schema_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../vaam-backends/services/auth-service/schema/auth.cstack");
+    let vendor_schema_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/vendor.cstack");
+    let auth_schema_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/auth.cstack");
     let vendor_schema = cratestack_parser::parse_schema_file(&vendor_schema_path)
         .expect("vendor schema should parse");
     let auth_schema =

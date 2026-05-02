@@ -25,6 +25,13 @@ members = [
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
+description = "Rust-native schema-first framework for typed HTTP APIs, generated clients, and backend services."
+repository = "https://github.com/vaam-store/cratestack"
+homepage = "https://github.com/vaam-store/cratestack"
+documentation = "https://docs.rs/cratestack"
+readme = "README.md"
+keywords = ["api", "schema", "codegen", "axum", "sqlx"]
+categories = ["web-programming", "development-tools"]
 authors = [
     "Stephane Segning <selastlambou@gmail.com>",
 ]

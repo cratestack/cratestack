@@ -1,0 +1,28 @@
+model Vendor {
+  id String @id
+  name String
+  status String
+
+  memberships VendorMembership[] @relation(fields:[id],references:[vendorId])
+
+  @@allow("read", auth() != null)
+}
+
+model VendorMembership {
+  id String @id
+  vendorId String
+  userId String
+  role String
+  status String
+
+  vendor Vendor? @relation(fields:[vendorId],references:[id])
+
+  @@allow("read", auth() != null)
+}
+
+type ListVendorsArgs {
+  q String?
+  limit Int?
+}
+
+procedure queryVendors(args: ListVendorsArgs): Vendor[]

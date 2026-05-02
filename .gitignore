@@ -1,0 +1,8 @@
+/target/
+/tmp/
+/.env
+.env.local
+*.log
+*.vsix
+packages/*/node_modules/
+packages/*/.vscode-test/

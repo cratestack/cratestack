@@ -42,24 +42,24 @@ The currently implemented slice in this repo provides:
 * a first-class `RequestContext` + `AuthProvider` integration surface for generated axum routers, plus `Cratestack::bind_auth(...)` / `bind_context(...)` for bound authenticated delegate usage outside HTTP
 * a structured principal model inside `CoolContext` built around `principal.actor`, `principal.session`, `principal.tenant`, and free-form claims, while preserving legacy `auth().field` compatibility for existing schemas
 
-The source of truth today is `README.md` plus the standalone docs project under `../cratestack-docs/`, with site navigation configured in `../cratestack-docs/mint.json`.
+The source of truth today is `README.md` plus the standalone docs repository at `git@github.com:vaam-store/cratestack-docs.git`.
 
 Studio-specific current-state note:
 
 * `cratestack generate-studio` now supports one or more `.cstack` files in a single Yew + Rust Studio app by repeating `--schema` and `--service-url`
-* the verified implementation snapshot lives in `../cratestack-docs/docs/studio/current-state.md`
+* the verified implementation snapshot lives in `cratestack-docs/docs/studio/current-state.md`
 * manifest-driven Studio generation is not implemented yet
 
 Repo-specific adoption guide:
 
-* `../cratestack-docs/docs/adoption/vaam-catalog.md` documents the first end-to-end path for using CrateStack with `vaam-backends/services/catalog-service` and `frontends/vaam-mobile`, including:
+* `cratestack-docs/docs/adoption/vaam-catalog.md` documents the first end-to-end path for using CrateStack with `vaam-backends/services/catalog-service` and `frontends/vaam-mobile`, including:
   * the shared `catalog.cstack` schema location
   * the generated Dart package path under `frontends/vaam-mobile/packages/gen_*`
   * the mobile Rust runtime path under `frontends/vaam-mobile/rust/vaam_runtime`, which now owns generic request execution/signing helpers rather than schema-typed catalog APIs
-* `../cratestack-docs/docs/guides/auth-provider.md` documents the current host-auth boundary around `AuthProvider`, `RequestContext`, and `bind_auth(...)`
-* `../cratestack-docs/docs/guides/telemetry.md` documents the current generated `tracing` coverage, emitted fields, and host-owned subscriber boundary
-* `../cratestack-docs/docs/architecture/transport-architecture.md` is the canonical transport design reference for codec, framing, and envelope boundaries
-* `../cratestack-docs/docs/architecture/http-transport-contract.md` is the canonical HTTP-wire contract for request and response negotiation behavior
+* `cratestack-docs/docs/guides/auth-provider.md` documents the current host-auth boundary around `AuthProvider`, `RequestContext`, and `bind_auth(...)`
+* `cratestack-docs/docs/guides/telemetry.md` documents the current generated `tracing` coverage, emitted fields, and host-owned subscriber boundary
+* `cratestack-docs/docs/architecture/transport-architecture.md` is the canonical transport design reference for codec, framing, and envelope boundaries
+* `cratestack-docs/docs/architecture/http-transport-contract.md` is the canonical HTTP-wire contract for request and response negotiation behavior
 
 The implementation is still narrower than the target-state ADR and PRD. COSE runtime integration, production-ready non-Rust selection typing, ZenStack-like exposure controls, runtime custom-field resolution, and negotiated multi-transport routing remain in progress.
 
@@ -135,7 +135,7 @@ Minimal local workflow:
 3. point the VS Code extension at the built binary through `cratestack.lsp.path` if it is not already on `PATH` and not already bundled in the extension package
 4. use `cratestack check --format json --schema path/to/schema.cstack` for CI or editor-fallback diagnostics
 
-Canonical editor-tooling documentation lives in `../cratestack-docs/docs/tooling/editor-tooling.md`.
+Canonical editor-tooling documentation lives in `cratestack-docs/docs/tooling/editor-tooling.md`.
 
 Near-term follow-up work is:
 
@@ -172,7 +172,7 @@ This gives one documentation source for:
 * Rust users consuming generated APIs
 * future hover text inside the `.cstack` language server
 
-For the full current-state writeup and future roadmap, see `../cratestack-docs/docs/tooling/editor-tooling.md`.
+For the full current-state writeup and future roadmap, see `cratestack-docs/docs/tooling/editor-tooling.md`.
 
 ## How It Fits Together
 

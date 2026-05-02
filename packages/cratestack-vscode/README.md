@@ -46,4 +46,4 @@ Current limitations:
 
 The package command uses `vsce --no-dependencies` because this extension ships a thin wrapper plus the staged language-server binary rather than relying on npm-style production dependency discovery.
 
-See `../../../cratestack-docs/docs/tooling/editor-tooling.md` for the fuller current-state writeup, testing coverage, and future improvements roadmap.
+See `cratestack-docs/docs/tooling/editor-tooling.md` in the standalone docs repository for the fuller current-state writeup, testing coverage, and future improvements roadmap.

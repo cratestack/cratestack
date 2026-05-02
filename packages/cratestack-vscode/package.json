@@ -5,6 +5,22 @@
   "version": "0.1.0",
   "publisher": "vaam-store",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vaam-store/cratestack.git",
+    "directory": "packages/cratestack-vscode"
+  },
+  "homepage": "https://github.com/vaam-store/cratestack/tree/main/packages/cratestack-vscode#readme",
+  "bugs": {
+    "url": "https://github.com/vaam-store/cratestack/issues"
+  },
+  "keywords": [
+    "cratestack",
+    "cstack",
+    "schema",
+    "language-server",
+    "rust"
+  ],
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -18,6 +34,8 @@
   "scripts": {
     "stage-server": "node ./scripts/stage-server.mjs",
     "package:vsix": "pnpm run stage-server && npx @vscode/vsce package --no-dependencies",
+    "publish:vscode-marketplace": "pnpm run stage-server && npx @vscode/vsce publish --no-dependencies",
+    "publish:open-vsx": "pnpm run stage-server && npx ovsx publish --packagePath *.vsix",
     "test:smoke": "node --test ./test/*.test.js",
     "test:vscode-smoke": "cargo build -p cratestack-lsp --manifest-path ../../Cargo.toml && node ./test/run-vscode-smoke.js"
   },
