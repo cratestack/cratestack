@@ -1,10 +1,14 @@
+use std::collections::BTreeSet;
+
 use cratestack_core::{Field, Model, TypeArity};
 use quote::quote;
 
 use crate::shared::{
     find_model, ident, is_relation_field, model_name_set, pluralize, relation_model_fields,
-    rust_type_tokens, scalar_model_fields, supports_comparison, to_snake_case,
+    rust_type_tokens, scalar_model_fields, to_snake_case,
 };
+
+mod filter_builders;
 
 #[derive(Clone)]
 pub(crate) struct RelationLink {
@@ -28,6 +32,8 @@ struct RelationPathSegment {
     link: RelationLink,
     kind: RelationFilterWrapperKind,
 }
+
+type RelationModuleEntry = (proc_macro2::TokenStream, proc_macro2::TokenStream);
 
 pub(crate) struct ParsedRelationAttribute {
     pub(crate) fields: Vec<String>,
@@ -595,144 +601,44 @@ fn generate_relation_order_module_recursive(
 ) -> Result<proc_macro2::TokenStream, String> {
     let module_ident = ident(&relation_field.name);
     let model_names = model_name_set(models);
-    let allow_ordering = wrappers
-        .iter()
-        .all(|segment| matches!(segment.kind, RelationFilterWrapperKind::ToOne));
-    let scalar_fns = if wrappers
-        .iter()
-        .all(|segment| matches!(segment.kind, RelationFilterWrapperKind::ToOne))
-    {
-        scalar_model_fields(current_model, &model_names)
-            .into_iter()
-            .map(|field| {
-                let asc_ident = ident(&format!("{}_asc", field.name));
-                let desc_ident = ident(&format!("{}_desc", field.name));
-                let mut path = path_prefix.to_vec();
-                path.push(field.name.clone());
-                let value_sql =
-                    relation_order_value_sql_for_path(root_model, models, root_table, &path)?;
-                let parent_table = root_link.parent_table.as_str();
-                let parent_column = root_link.parent_column.as_str();
-                let related_table = root_link.related_table.as_str();
-                let related_column = root_link.related_column.as_str();
-
-                Ok(quote! {
-                    #[allow(non_snake_case)]
-                    pub fn #asc_ident() -> ::cratestack::OrderClause {
-                        ::cratestack::OrderClause::relation_scalar(
-                            #parent_table,
-                            #parent_column,
-                            #related_table,
-                            #related_column,
-                            #value_sql,
-                            ::cratestack::SortDirection::Asc,
-                        )
-                    }
-
-                    #[allow(non_snake_case)]
-                    pub fn #desc_ident() -> ::cratestack::OrderClause {
-                        ::cratestack::OrderClause::relation_scalar(
-                            #parent_table,
-                            #parent_column,
-                            #related_table,
-                            #related_column,
-                            #value_sql,
-                            ::cratestack::SortDirection::Desc,
-                        )
-                    }
-                })
-            })
-            .collect::<Result<Vec<_>, String>>()?
-    } else {
-        Vec::new()
-    };
+    let allow_ordering = wrappers_allow_ordering(wrappers);
+    let scalar_fns = generate_relation_scalar_order_functions(
+        current_model,
+        &model_names,
+        root_link,
+        root_model,
+        root_table,
+        path_prefix,
+        models,
+        allow_ordering,
+    )?;
     let scalar_filter_fns = generate_relation_filter_functions(current_model, wrappers, models)?;
-    let scalar_builder_modules = scalar_model_fields(current_model, &model_names)
-        .into_iter()
-        .map(|field| {
-            generate_scalar_relation_builder_module(
-                field,
-                wrappers,
-                allow_ordering,
-                root_link,
-                root_model,
-                root_table,
-                path_prefix,
-                models,
-            )
-        })
-        .collect::<Result<Vec<_>, String>>()?;
+    let scalar_builder_modules = generate_relation_scalar_builder_modules(
+        current_model,
+        &model_names,
+        wrappers,
+        allow_ordering,
+        root_link,
+        root_model,
+        root_table,
+        path_prefix,
+        models,
+    )?;
     let scalar_path_methods = scalar_model_fields(current_model, &model_names)
         .into_iter()
         .map(generate_scalar_relation_path_method)
         .collect::<Vec<_>>();
-    let relation_entries = relation_model_fields(current_model, &model_names)
-        .into_iter()
-        .map(|nested_relation| {
-            let nested_link = relation_link(current_model, nested_relation, models)?;
-            let nested_key = relation_visit_key(current_model, nested_relation);
-            if visited.contains(&nested_key) {
-                return Ok(None);
-            }
-            if nested_link.is_to_many {
-                return generate_relation_quantifier_container_module(
-                    current_model,
-                    find_model(models, &nested_relation.ty.name).ok_or_else(|| {
-                        format!(
-                            "relation field `{}` on `{}` references unknown model `{}`",
-                            nested_relation.name, current_model.name, nested_relation.ty.name,
-                        )
-                    })?,
-                    nested_relation,
-                    wrappers,
-                    visited,
-                    models,
-                )
-                .map(|module| {
-                    Some((
-                        generate_nested_relation_path_method(nested_relation),
-                        module,
-                    ))
-                });
-            }
-            let nested_model = find_model(models, &nested_relation.ty.name).ok_or_else(|| {
-                format!(
-                    "relation field `{}` on `{}` references unknown model `{}`",
-                    nested_relation.name, current_model.name, nested_relation.ty.name,
-                )
-            })?;
-            let mut nested_path = path_prefix.to_vec();
-            nested_path.push(nested_relation.name.clone());
-            let mut nested_wrappers = wrappers.to_vec();
-            nested_wrappers.push(RelationPathSegment {
-                link: nested_link,
-                kind: RelationFilterWrapperKind::ToOne,
-            });
-            let mut nested_visited = visited.to_vec();
-            nested_visited.push(nested_key);
-
-            generate_relation_order_module_recursive(
-                root_link,
-                root_model,
-                nested_model,
-                root_table,
-                &nested_path,
-                nested_relation,
-                &nested_wrappers,
-                &nested_visited,
-                models,
-            )
-            .map(|module| {
-                Some((
-                    generate_nested_relation_path_method(nested_relation),
-                    module,
-                ))
-            })
-        })
-        .collect::<Result<Vec<_>, String>>()?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
+    let relation_entries = collect_recursive_relation_entries(
+        current_model,
+        &model_names,
+        visited,
+        wrappers,
+        path_prefix,
+        root_link,
+        root_model,
+        root_table,
+        models,
+    )?;
     let relation_path_methods = relation_entries
         .iter()
         .map(|(method, _)| method.clone())
@@ -758,6 +664,201 @@ fn generate_relation_order_module_recursive(
             #(#scalar_builder_modules)*
             #(#relation_modules)*
         }
+    })
+}
+
+fn wrappers_allow_ordering(wrappers: &[RelationPathSegment]) -> bool {
+    wrappers
+        .iter()
+        .all(|segment| matches!(segment.kind, RelationFilterWrapperKind::ToOne))
+}
+
+fn generate_relation_scalar_order_functions(
+    current_model: &Model,
+    model_names: &BTreeSet<&str>,
+    root_link: &RelationLink,
+    root_model: &Model,
+    root_table: &str,
+    path_prefix: &[String],
+    models: &[Model],
+    allow_ordering: bool,
+) -> Result<Vec<proc_macro2::TokenStream>, String> {
+    if !allow_ordering {
+        return Ok(Vec::new());
+    }
+
+    scalar_model_fields(current_model, model_names)
+        .into_iter()
+        .map(|field| {
+            let asc_ident = ident(&format!("{}_asc", field.name));
+            let desc_ident = ident(&format!("{}_desc", field.name));
+            let mut path = path_prefix.to_vec();
+            path.push(field.name.clone());
+            let value_sql =
+                relation_order_value_sql_for_path(root_model, models, root_table, &path)?;
+            let parent_table = root_link.parent_table.as_str();
+            let parent_column = root_link.parent_column.as_str();
+            let related_table = root_link.related_table.as_str();
+            let related_column = root_link.related_column.as_str();
+
+            Ok(quote! {
+                #[allow(non_snake_case)]
+                pub fn #asc_ident() -> ::cratestack::OrderClause {
+                    ::cratestack::OrderClause::relation_scalar(
+                        #parent_table,
+                        #parent_column,
+                        #related_table,
+                        #related_column,
+                        #value_sql,
+                        ::cratestack::SortDirection::Asc,
+                    )
+                }
+
+                #[allow(non_snake_case)]
+                pub fn #desc_ident() -> ::cratestack::OrderClause {
+                    ::cratestack::OrderClause::relation_scalar(
+                        #parent_table,
+                        #parent_column,
+                        #related_table,
+                        #related_column,
+                        #value_sql,
+                        ::cratestack::SortDirection::Desc,
+                    )
+                }
+            })
+        })
+        .collect()
+}
+
+fn generate_relation_scalar_builder_modules(
+    current_model: &Model,
+    model_names: &BTreeSet<&str>,
+    wrappers: &[RelationPathSegment],
+    allow_ordering: bool,
+    root_link: &RelationLink,
+    root_model: &Model,
+    root_table: &str,
+    path_prefix: &[String],
+    models: &[Model],
+) -> Result<Vec<proc_macro2::TokenStream>, String> {
+    scalar_model_fields(current_model, model_names)
+        .into_iter()
+        .map(|field| {
+            generate_scalar_relation_builder_module(
+                field,
+                wrappers,
+                allow_ordering,
+                root_link,
+                root_model,
+                root_table,
+                path_prefix,
+                models,
+            )
+        })
+        .collect()
+}
+
+fn collect_recursive_relation_entries(
+    current_model: &Model,
+    model_names: &BTreeSet<&str>,
+    visited: &[String],
+    wrappers: &[RelationPathSegment],
+    path_prefix: &[String],
+    root_link: &RelationLink,
+    root_model: &Model,
+    root_table: &str,
+    models: &[Model],
+) -> Result<Vec<RelationModuleEntry>, String> {
+    relation_model_fields(current_model, model_names)
+        .into_iter()
+        .map(|nested_relation| {
+            build_recursive_relation_entry(
+                current_model,
+                nested_relation,
+                visited,
+                wrappers,
+                path_prefix,
+                root_link,
+                root_model,
+                root_table,
+                models,
+            )
+        })
+        .collect::<Result<Vec<_>, String>>()
+        .map(|entries| entries.into_iter().flatten().collect())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_recursive_relation_entry(
+    current_model: &Model,
+    nested_relation: &Field,
+    visited: &[String],
+    wrappers: &[RelationPathSegment],
+    path_prefix: &[String],
+    root_link: &RelationLink,
+    root_model: &Model,
+    root_table: &str,
+    models: &[Model],
+) -> Result<Option<RelationModuleEntry>, String> {
+    let nested_link = relation_link(current_model, nested_relation, models)?;
+    let nested_key = relation_visit_key(current_model, nested_relation);
+    if visited.contains(&nested_key) {
+        return Ok(None);
+    }
+
+    if nested_link.is_to_many {
+        let nested_model = find_model_or_err(current_model, nested_relation, models)?;
+        let module = generate_relation_quantifier_container_module(
+            current_model,
+            nested_model,
+            nested_relation,
+            wrappers,
+            visited,
+            models,
+        )?;
+        return Ok(Some((
+            generate_nested_relation_path_method(nested_relation),
+            module,
+        )));
+    }
+
+    let nested_model = find_model_or_err(current_model, nested_relation, models)?;
+    let mut nested_path = path_prefix.to_vec();
+    nested_path.push(nested_relation.name.clone());
+    let mut nested_wrappers = wrappers.to_vec();
+    nested_wrappers.push(RelationPathSegment {
+        link: nested_link,
+        kind: RelationFilterWrapperKind::ToOne,
+    });
+    let mut nested_visited = visited.to_vec();
+    nested_visited.push(nested_key);
+    let module = generate_relation_order_module_recursive(
+        root_link,
+        root_model,
+        nested_model,
+        root_table,
+        &nested_path,
+        nested_relation,
+        &nested_wrappers,
+        &nested_visited,
+        models,
+    )?;
+    Ok(Some((
+        generate_nested_relation_path_method(nested_relation),
+        module,
+    )))
+}
+
+fn find_model_or_err<'a>(
+    current_model: &Model,
+    relation_field: &Field,
+    models: &'a [Model],
+) -> Result<&'a Model, String> {
+    find_model(models, &relation_field.ty.name).ok_or_else(|| {
+        format!(
+            "relation field `{}` on `{}` references unknown model `{}`",
+            relation_field.name, current_model.name, relation_field.ty.name,
+        )
     })
 }
 
@@ -863,83 +964,13 @@ fn generate_relation_quantifier_module(
         .into_iter()
         .map(generate_scalar_relation_path_method)
         .collect::<Vec<_>>();
-    let relation_entries = relation_model_fields(target_model, &model_names)
-        .into_iter()
-        .map(|nested_relation| {
-            let nested_link = relation_link(target_model, nested_relation, models)?;
-            if nested_link.is_to_many {
-                let nested_model =
-                    find_model(models, &nested_relation.ty.name).ok_or_else(|| {
-                        format!(
-                            "relation field `{}` on `{}` references unknown model `{}`",
-                            nested_relation.name, target_model.name, nested_relation.ty.name,
-                        )
-                    })?;
-                let nested_key = relation_visit_key(target_model, nested_relation);
-                if visited.contains(&nested_key) {
-                    return Ok(None);
-                }
-                let mut nested_visited = visited.to_vec();
-                nested_visited.push(nested_key);
-                generate_relation_quantifier_container_module(
-                    target_model,
-                    nested_model,
-                    nested_relation,
-                    &wrappers,
-                    &nested_visited,
-                    models,
-                )
-                .map(|module| {
-                    Some((
-                        generate_nested_relation_path_method(nested_relation),
-                        module,
-                    ))
-                })
-            } else {
-                let nested_model =
-                    find_model(models, &nested_relation.ty.name).ok_or_else(|| {
-                        format!(
-                            "relation field `{}` on `{}` references unknown model `{}`",
-                            nested_relation.name, target_model.name, nested_relation.ty.name,
-                        )
-                    })?;
-                let nested_key = relation_visit_key(target_model, nested_relation);
-                if visited.contains(&nested_key) {
-                    return Ok(None);
-                }
-                let mut nested_visited = visited.to_vec();
-                nested_visited.push(nested_key);
-                let root_link = wrappers[0].link.clone();
-                generate_relation_order_module_recursive(
-                    &root_link,
-                    target_model,
-                    nested_model,
-                    root_link.related_table.as_str(),
-                    &[nested_relation.name.clone()],
-                    nested_relation,
-                    &{
-                        let mut nested_wrappers = wrappers.clone();
-                        nested_wrappers.push(RelationPathSegment {
-                            link: nested_link,
-                            kind: RelationFilterWrapperKind::ToOne,
-                        });
-                        nested_wrappers
-                    },
-                    &nested_visited,
-                    models,
-                )
-                .map(|module| {
-                    Some((
-                        generate_nested_relation_path_method(nested_relation),
-                        module,
-                    ))
-                })
-            }
-        })
-        .collect::<Result<Vec<_>, String>>()?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
+    let relation_entries = collect_quantifier_relation_entries(
+        target_model,
+        &model_names,
+        visited,
+        &wrappers,
+        models,
+    )?;
     let relation_path_methods = relation_entries
         .iter()
         .map(|(method, _)| method.clone())
@@ -965,6 +996,82 @@ fn generate_relation_quantifier_module(
             #(#relation_modules)*
         }
     })
+}
+
+fn collect_quantifier_relation_entries(
+    target_model: &Model,
+    model_names: &BTreeSet<&str>,
+    visited: &[String],
+    wrappers: &[RelationPathSegment],
+    models: &[Model],
+) -> Result<Vec<RelationModuleEntry>, String> {
+    relation_model_fields(target_model, model_names)
+        .into_iter()
+        .map(|nested_relation| {
+            build_quantifier_relation_entry(
+                target_model,
+                nested_relation,
+                visited,
+                wrappers,
+                models,
+            )
+        })
+        .collect::<Result<Vec<_>, String>>()
+        .map(|entries| entries.into_iter().flatten().collect())
+}
+
+fn build_quantifier_relation_entry(
+    target_model: &Model,
+    nested_relation: &Field,
+    visited: &[String],
+    wrappers: &[RelationPathSegment],
+    models: &[Model],
+) -> Result<Option<RelationModuleEntry>, String> {
+    let nested_key = relation_visit_key(target_model, nested_relation);
+    if visited.contains(&nested_key) {
+        return Ok(None);
+    }
+    let mut nested_visited = visited.to_vec();
+    nested_visited.push(nested_key);
+    let nested_model = find_model_or_err(target_model, nested_relation, models)?;
+    let nested_link = relation_link(target_model, nested_relation, models)?;
+
+    if nested_link.is_to_many {
+        let module = generate_relation_quantifier_container_module(
+            target_model,
+            nested_model,
+            nested_relation,
+            wrappers,
+            &nested_visited,
+            models,
+        )?;
+        return Ok(Some((
+            generate_nested_relation_path_method(nested_relation),
+            module,
+        )));
+    }
+
+    let root_link = wrappers[0].link.clone();
+    let mut nested_wrappers = wrappers.to_vec();
+    nested_wrappers.push(RelationPathSegment {
+        link: nested_link,
+        kind: RelationFilterWrapperKind::ToOne,
+    });
+    let module = generate_relation_order_module_recursive(
+        &root_link,
+        target_model,
+        nested_model,
+        root_link.related_table.as_str(),
+        &[nested_relation.name.clone()],
+        nested_relation,
+        &nested_wrappers,
+        &nested_visited,
+        models,
+    )?;
+    Ok(Some((
+        generate_nested_relation_path_method(nested_relation),
+        module,
+    )))
 }
 
 fn generate_scalar_relation_path_method(field: &Field) -> proc_macro2::TokenStream {
@@ -1006,163 +1113,41 @@ fn generate_scalar_relation_builder_module(
     let column = to_snake_case(&field.name);
     let mut methods = Vec::new();
 
-    if field.ty.arity == TypeArity::Required {
-        let eq_expr = wrap_filter_expr_tokens(
-            quote! { ::cratestack::FilterExpr::from(::cratestack::FieldRef::<(), #field_type>::new(#column).eq(value)) },
-            wrappers,
-        );
-        let ne_expr = wrap_filter_expr_tokens(
-            quote! { ::cratestack::FilterExpr::from(::cratestack::FieldRef::<(), #field_type>::new(#column).ne(value)) },
-            wrappers,
-        );
-        let in_expr = wrap_filter_expr_tokens(
-            quote! { ::cratestack::FilterExpr::from(::cratestack::FieldRef::<(), #field_type>::new(#column).in_(values)) },
-            wrappers,
-        );
-        methods.push(quote! {
-            pub fn eq<V: ::cratestack::IntoSqlValue>(self, value: V) -> ::cratestack::FilterExpr {
-                #eq_expr
-            }
-        });
-        methods.push(quote! {
-            pub fn ne<V: ::cratestack::IntoSqlValue>(self, value: V) -> ::cratestack::FilterExpr {
-                #ne_expr
-            }
-        });
-        methods.push(quote! {
-            pub fn in_<I, V>(self, values: I) -> ::cratestack::FilterExpr
-            where
-                I: ::core::iter::IntoIterator<Item = V>,
-                V: ::cratestack::IntoSqlValue,
-            {
-                #in_expr
-            }
-        });
-
-        if supports_comparison(field) {
-            let lt_expr = wrap_filter_expr_tokens(
-                quote! { ::cratestack::FilterExpr::from(::cratestack::FieldRef::<(), #field_type>::new(#column).lt(value)) },
-                wrappers,
-            );
-            let lte_expr = wrap_filter_expr_tokens(
-                quote! { ::cratestack::FilterExpr::from(::cratestack::FieldRef::<(), #field_type>::new(#column).lte(value)) },
-                wrappers,
-            );
-            let gt_expr = wrap_filter_expr_tokens(
-                quote! { ::cratestack::FilterExpr::from(::cratestack::FieldRef::<(), #field_type>::new(#column).gt(value)) },
-                wrappers,
-            );
-            let gte_expr = wrap_filter_expr_tokens(
-                quote! { ::cratestack::FilterExpr::from(::cratestack::FieldRef::<(), #field_type>::new(#column).gte(value)) },
-                wrappers,
-            );
-            methods.push(quote! {
-                pub fn lt<V: ::cratestack::IntoSqlValue>(self, value: V) -> ::cratestack::FilterExpr {
-                    #lt_expr
-                }
-            });
-            methods.push(quote! {
-                pub fn lte<V: ::cratestack::IntoSqlValue>(self, value: V) -> ::cratestack::FilterExpr {
-                    #lte_expr
-                }
-            });
-            methods.push(quote! {
-                pub fn gt<V: ::cratestack::IntoSqlValue>(self, value: V) -> ::cratestack::FilterExpr {
-                    #gt_expr
-                }
-            });
-            methods.push(quote! {
-                pub fn gte<V: ::cratestack::IntoSqlValue>(self, value: V) -> ::cratestack::FilterExpr {
-                    #gte_expr
-                }
-            });
-        }
-    }
-
-    if field.ty.name == "Boolean" && field.ty.arity == TypeArity::Required {
-        let true_expr = wrap_filter_expr_tokens(
-            quote! { ::cratestack::FilterExpr::from(::cratestack::FieldRef::<(), #field_type>::new(#column).is_true()) },
-            wrappers,
-        );
-        let false_expr = wrap_filter_expr_tokens(
-            quote! { ::cratestack::FilterExpr::from(::cratestack::FieldRef::<(), #field_type>::new(#column).is_false()) },
-            wrappers,
-        );
-        methods.push(quote! {
-            pub fn is_true(self) -> ::cratestack::FilterExpr {
-                #true_expr
-            }
-        });
-        methods.push(quote! {
-            pub fn is_false(self) -> ::cratestack::FilterExpr {
-                #false_expr
-            }
-        });
-    }
-
-    if matches!(field.ty.name.as_str(), "String" | "Cuid") && field.ty.arity == TypeArity::Required
-    {
-        let contains_expr = wrap_filter_expr_tokens(
-            quote! { ::cratestack::FilterExpr::from(::cratestack::FieldRef::<(), #field_type>::new(#column).contains(value)) },
-            wrappers,
-        );
-        let starts_with_expr = wrap_filter_expr_tokens(
-            quote! { ::cratestack::FilterExpr::from(::cratestack::FieldRef::<(), #field_type>::new(#column).starts_with(value)) },
-            wrappers,
-        );
-        methods.push(quote! {
-            pub fn contains(self, value: impl ::core::convert::Into<String>) -> ::cratestack::FilterExpr {
-                #contains_expr
-            }
-        });
-        methods.push(quote! {
-            pub fn starts_with(self, value: impl ::core::convert::Into<String>) -> ::cratestack::FilterExpr {
-                #starts_with_expr
-            }
-        });
-    }
-
-    if field.ty.arity == TypeArity::Optional {
-        let null_expr = wrap_filter_expr_tokens(
-            quote! { ::cratestack::FilterExpr::from(::cratestack::FieldRef::<(), #field_type>::new(#column).is_null()) },
-            wrappers,
-        );
-        let not_null_expr = wrap_filter_expr_tokens(
-            quote! { ::cratestack::FilterExpr::from(::cratestack::FieldRef::<(), #field_type>::new(#column).is_not_null()) },
-            wrappers,
-        );
-        methods.push(quote! {
-            pub fn is_null(self) -> ::cratestack::FilterExpr {
-                #null_expr
-            }
-        });
-        methods.push(quote! {
-            pub fn is_not_null(self) -> ::cratestack::FilterExpr {
-                #not_null_expr
-            }
-        });
-    }
-
-    if field.ty.name == "String" && field.ty.arity == TypeArity::Optional {
-        let contains_expr = wrap_filter_expr_tokens(
-            quote! { ::cratestack::FilterExpr::from(::cratestack::FieldRef::<(), #field_type>::new(#column).contains(value)) },
-            wrappers,
-        );
-        let starts_with_expr = wrap_filter_expr_tokens(
-            quote! { ::cratestack::FilterExpr::from(::cratestack::FieldRef::<(), #field_type>::new(#column).starts_with(value)) },
-            wrappers,
-        );
-        methods.push(quote! {
-            pub fn contains(self, value: impl ::core::convert::Into<String>) -> ::cratestack::FilterExpr {
-                #contains_expr
-            }
-        });
-        methods.push(quote! {
-            pub fn starts_with(self, value: impl ::core::convert::Into<String>) -> ::cratestack::FilterExpr {
-                #starts_with_expr
-            }
-        });
-    }
+    filter_builders::append_required_builder_methods(
+        &mut methods,
+        field,
+        wrappers,
+        &field_type,
+        &column,
+    );
+    filter_builders::append_boolean_builder_methods(
+        &mut methods,
+        field,
+        wrappers,
+        &field_type,
+        &column,
+    );
+    filter_builders::append_required_text_builder_methods(
+        &mut methods,
+        field,
+        wrappers,
+        &field_type,
+        &column,
+    );
+    filter_builders::append_optional_builder_methods(
+        &mut methods,
+        field,
+        wrappers,
+        &field_type,
+        &column,
+    );
+    filter_builders::append_optional_string_builder_methods(
+        &mut methods,
+        field,
+        wrappers,
+        &field_type,
+        &column,
+    );
 
     if allow_ordering {
         let mut path = path_prefix.to_vec();
@@ -1232,193 +1217,41 @@ fn generate_scalar_relation_filter_functions(
     let column = to_snake_case(&field.name);
     let mut fns = Vec::new();
 
-    if field.ty.arity == TypeArity::Required {
-        let eq_ident = ident(&format!("{}_eq", field.name));
-        let ne_ident = ident(&format!("{}_ne", field.name));
-        let in_ident = ident(&format!("{}_in", field.name));
-        let eq_expr = wrap_filter_expr_tokens(
-            quote! { ::cratestack::FilterExpr::from(::cratestack::FieldRef::<(), #field_type>::new(#column).eq(value)) },
-            wrappers,
-        );
-        let ne_expr = wrap_filter_expr_tokens(
-            quote! { ::cratestack::FilterExpr::from(::cratestack::FieldRef::<(), #field_type>::new(#column).ne(value)) },
-            wrappers,
-        );
-        let in_expr = wrap_filter_expr_tokens(
-            quote! { ::cratestack::FilterExpr::from(::cratestack::FieldRef::<(), #field_type>::new(#column).in_(values)) },
-            wrappers,
-        );
-        fns.push(quote! {
-            #[allow(non_snake_case)]
-            pub fn #eq_ident<V: ::cratestack::IntoSqlValue>(value: V) -> ::cratestack::FilterExpr {
-                #eq_expr
-            }
-        });
-        fns.push(quote! {
-            #[allow(non_snake_case)]
-            pub fn #ne_ident<V: ::cratestack::IntoSqlValue>(value: V) -> ::cratestack::FilterExpr {
-                #ne_expr
-            }
-        });
-        fns.push(quote! {
-            #[allow(non_snake_case)]
-            pub fn #in_ident<I, V>(values: I) -> ::cratestack::FilterExpr
-            where
-                I: ::core::iter::IntoIterator<Item = V>,
-                V: ::cratestack::IntoSqlValue,
-            {
-                #in_expr
-            }
-        });
-
-        if supports_comparison(field) {
-            let lt_ident = ident(&format!("{}_lt", field.name));
-            let lte_ident = ident(&format!("{}_lte", field.name));
-            let gt_ident = ident(&format!("{}_gt", field.name));
-            let gte_ident = ident(&format!("{}_gte", field.name));
-            let lt_expr = wrap_filter_expr_tokens(
-                quote! { ::cratestack::FilterExpr::from(::cratestack::FieldRef::<(), #field_type>::new(#column).lt(value)) },
-                wrappers,
-            );
-            let lte_expr = wrap_filter_expr_tokens(
-                quote! { ::cratestack::FilterExpr::from(::cratestack::FieldRef::<(), #field_type>::new(#column).lte(value)) },
-                wrappers,
-            );
-            let gt_expr = wrap_filter_expr_tokens(
-                quote! { ::cratestack::FilterExpr::from(::cratestack::FieldRef::<(), #field_type>::new(#column).gt(value)) },
-                wrappers,
-            );
-            let gte_expr = wrap_filter_expr_tokens(
-                quote! { ::cratestack::FilterExpr::from(::cratestack::FieldRef::<(), #field_type>::new(#column).gte(value)) },
-                wrappers,
-            );
-            fns.push(quote! {
-                #[allow(non_snake_case)]
-                pub fn #lt_ident<V: ::cratestack::IntoSqlValue>(value: V) -> ::cratestack::FilterExpr {
-                    #lt_expr
-                }
-            });
-            fns.push(quote! {
-                #[allow(non_snake_case)]
-                pub fn #lte_ident<V: ::cratestack::IntoSqlValue>(value: V) -> ::cratestack::FilterExpr {
-                    #lte_expr
-                }
-            });
-            fns.push(quote! {
-                #[allow(non_snake_case)]
-                pub fn #gt_ident<V: ::cratestack::IntoSqlValue>(value: V) -> ::cratestack::FilterExpr {
-                    #gt_expr
-                }
-            });
-            fns.push(quote! {
-                #[allow(non_snake_case)]
-                pub fn #gte_ident<V: ::cratestack::IntoSqlValue>(value: V) -> ::cratestack::FilterExpr {
-                    #gte_expr
-                }
-            });
-        }
-    }
-
-    if field.ty.name == "Boolean" && field.ty.arity == TypeArity::Required {
-        let true_ident = ident(&format!("{}_is_true", field.name));
-        let false_ident = ident(&format!("{}_is_false", field.name));
-        let true_expr = wrap_filter_expr_tokens(
-            quote! { ::cratestack::FilterExpr::from(::cratestack::FieldRef::<(), #field_type>::new(#column).is_true()) },
-            wrappers,
-        );
-        let false_expr = wrap_filter_expr_tokens(
-            quote! { ::cratestack::FilterExpr::from(::cratestack::FieldRef::<(), #field_type>::new(#column).is_false()) },
-            wrappers,
-        );
-        fns.push(quote! {
-            #[allow(non_snake_case)]
-            pub fn #true_ident() -> ::cratestack::FilterExpr {
-                #true_expr
-            }
-        });
-        fns.push(quote! {
-            #[allow(non_snake_case)]
-            pub fn #false_ident() -> ::cratestack::FilterExpr {
-                #false_expr
-            }
-        });
-    }
-
-    if matches!(field.ty.name.as_str(), "String" | "Cuid") && field.ty.arity == TypeArity::Required
-    {
-        let contains_ident = ident(&format!("{}_contains", field.name));
-        let starts_with_ident = ident(&format!("{}_starts_with", field.name));
-        let contains_expr = wrap_filter_expr_tokens(
-            quote! { ::cratestack::FilterExpr::from(::cratestack::FieldRef::<(), #field_type>::new(#column).contains(value)) },
-            wrappers,
-        );
-        let starts_with_expr = wrap_filter_expr_tokens(
-            quote! { ::cratestack::FilterExpr::from(::cratestack::FieldRef::<(), #field_type>::new(#column).starts_with(value)) },
-            wrappers,
-        );
-        fns.push(quote! {
-            #[allow(non_snake_case)]
-            pub fn #contains_ident(value: impl ::core::convert::Into<String>) -> ::cratestack::FilterExpr {
-                #contains_expr
-            }
-        });
-        fns.push(quote! {
-            #[allow(non_snake_case)]
-            pub fn #starts_with_ident(value: impl ::core::convert::Into<String>) -> ::cratestack::FilterExpr {
-                #starts_with_expr
-            }
-        });
-    }
-
-    if field.ty.arity == TypeArity::Optional {
-        let null_ident = ident(&format!("{}_is_null", field.name));
-        let not_null_ident = ident(&format!("{}_is_not_null", field.name));
-        let null_expr = wrap_filter_expr_tokens(
-            quote! { ::cratestack::FilterExpr::from(::cratestack::FieldRef::<(), #field_type>::new(#column).is_null()) },
-            wrappers,
-        );
-        let not_null_expr = wrap_filter_expr_tokens(
-            quote! { ::cratestack::FilterExpr::from(::cratestack::FieldRef::<(), #field_type>::new(#column).is_not_null()) },
-            wrappers,
-        );
-        fns.push(quote! {
-            #[allow(non_snake_case)]
-            pub fn #null_ident() -> ::cratestack::FilterExpr {
-                #null_expr
-            }
-        });
-        fns.push(quote! {
-            #[allow(non_snake_case)]
-            pub fn #not_null_ident() -> ::cratestack::FilterExpr {
-                #not_null_expr
-            }
-        });
-    }
-
-    if field.ty.name == "String" && field.ty.arity == TypeArity::Optional {
-        let contains_ident = ident(&format!("{}_contains", field.name));
-        let starts_with_ident = ident(&format!("{}_starts_with", field.name));
-        let contains_expr = wrap_filter_expr_tokens(
-            quote! { ::cratestack::FilterExpr::from(::cratestack::FieldRef::<(), #field_type>::new(#column).contains(value)) },
-            wrappers,
-        );
-        let starts_with_expr = wrap_filter_expr_tokens(
-            quote! { ::cratestack::FilterExpr::from(::cratestack::FieldRef::<(), #field_type>::new(#column).starts_with(value)) },
-            wrappers,
-        );
-        fns.push(quote! {
-            #[allow(non_snake_case)]
-            pub fn #contains_ident(value: impl ::core::convert::Into<String>) -> ::cratestack::FilterExpr {
-                #contains_expr
-            }
-        });
-        fns.push(quote! {
-            #[allow(non_snake_case)]
-            pub fn #starts_with_ident(value: impl ::core::convert::Into<String>) -> ::cratestack::FilterExpr {
-                #starts_with_expr
-            }
-        });
-    }
+    filter_builders::append_required_filter_functions(
+        &mut fns,
+        field,
+        wrappers,
+        &field_type,
+        &column,
+    );
+    filter_builders::append_boolean_filter_functions(
+        &mut fns,
+        field,
+        wrappers,
+        &field_type,
+        &column,
+    );
+    filter_builders::append_required_text_filter_functions(
+        &mut fns,
+        field,
+        wrappers,
+        &field_type,
+        &column,
+    );
+    filter_builders::append_optional_filter_functions(
+        &mut fns,
+        field,
+        wrappers,
+        &field_type,
+        &column,
+    );
+    filter_builders::append_optional_string_filter_functions(
+        &mut fns,
+        field,
+        wrappers,
+        &field_type,
+        &column,
+    );
 
     Ok(fns)
 }
@@ -1608,4 +1441,87 @@ fn relation_order_value_sql_for_path(
         current_table,
         relation_link.parent_column,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use cratestack_core::{Attribute, Field, SourceSpan, TypeRef};
+
+    use super::{
+        RelationFilterWrapperKind, RelationLink, RelationPathSegment, parse_relation_attribute,
+        split_top_level, wrappers_allow_ordering,
+    };
+
+    fn span() -> SourceSpan {
+        SourceSpan {
+            start: 0,
+            end: 0,
+            line: 1,
+        }
+    }
+
+    fn field_with_relation(raw: &str) -> Field {
+        Field {
+            docs: Vec::new(),
+            name: "author".to_owned(),
+            name_span: span(),
+            ty: TypeRef {
+                name: "User".to_owned(),
+                name_span: span(),
+                arity: cratestack_core::TypeArity::Required,
+                generic_args: Vec::new(),
+            },
+            attributes: vec![Attribute {
+                raw: raw.to_owned(),
+                span: span(),
+            }],
+            span: span(),
+        }
+    }
+
+    fn segment(kind: RelationFilterWrapperKind) -> RelationPathSegment {
+        RelationPathSegment {
+            link: RelationLink {
+                parent_table: "posts".to_owned(),
+                parent_column: "author_id".to_owned(),
+                related_table: "users".to_owned(),
+                related_column: "id".to_owned(),
+                is_to_many: false,
+            },
+            kind,
+        }
+    }
+
+    #[test]
+    fn split_top_level_ignores_nested_brackets() {
+        let items = split_top_level("fields:[userId], references:[id], map:[a,b(c,d)]", ',');
+        assert_eq!(
+            items,
+            vec!["fields:[userId]", "references:[id]", "map:[a,b(c,d)]"]
+        );
+    }
+
+    #[test]
+    fn parse_relation_attribute_extracts_fields_and_references() {
+        let field = field_with_relation("@relation(fields:[userId], references:[id])");
+        let parsed = parse_relation_attribute(&field).expect("relation attribute should parse");
+        assert_eq!(parsed.fields, vec!["userId".to_owned()]);
+        assert_eq!(parsed.references, vec!["id".to_owned()]);
+    }
+
+    #[test]
+    fn parse_relation_attribute_rejects_unknown_keys() {
+        let field = field_with_relation("@relation(fields:[userId], ref:[id])");
+        assert!(parse_relation_attribute(&field).is_none());
+    }
+
+    #[test]
+    fn wrappers_allow_ordering_only_for_to_one_paths() {
+        assert!(wrappers_allow_ordering(&[segment(
+            RelationFilterWrapperKind::ToOne
+        )]));
+        assert!(!wrappers_allow_ordering(&[segment(
+            RelationFilterWrapperKind::Some
+        )]));
+    }
 }
