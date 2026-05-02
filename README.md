@@ -205,6 +205,232 @@ It is not yet the right fit for:
 * highly customized non-REST transport protocols
 * production-stable exact typed non-Rust client generation across arbitrary projection shapes
 
+## Generated Rust Clients
+
+Rust client generation currently happens through macros, not a standalone CLI command.
+
+Use `include_schema!` in the service that owns the schema and database:
+
+```rust
+use cratestack::include_schema;
+
+include_schema!("schema.cstack");
+```
+
+Use `include_client_macro!` in a caller that only needs to consume another service's generated HTTP API:
+
+```rust
+use cratestack::include_client_macro;
+
+include_client_macro!("../payment-gateway/schema/payment.cstack");
+```
+
+### Backend-To-Backend Client
+
+```rust
+use cratestack::client_rust::{CborCodec, ClientConfig, CratestackClient};
+use cratestack::include_client_macro;
+
+include_client_macro!("../payment-gateway/schema/payment.cstack");
+
+async fn payment_client() -> anyhow::Result<cratestack_schema::client::Client<CborCodec>> {
+    let base_url = url::Url::parse(&std::env::var("PAYMENT_GATEWAY_URL")?)?;
+    let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec);
+
+    Ok(cratestack_schema::client::Client::new(runtime))
+}
+```
+
+### Model CRUD
+
+```rust
+let created = client
+    .payment_intents()
+    .create(
+        &cratestack_schema::CreatePaymentIntentInput {
+            orderId: "ord_123".to_owned(),
+            amountMinor: 12_500,
+            currency: "XAF".to_owned(),
+            provider: "manual".to_owned(),
+        },
+        &[("authorization", bearer.as_str())],
+    )
+    .await?;
+
+let current = client
+    .payment_intents()
+    .get(&created.id, &[], &[("authorization", bearer.as_str())])
+    .await?;
+
+let updated = client
+    .payment_intents()
+    .update(
+        &current.id,
+        &cratestack_schema::UpdatePaymentIntentInput {
+            status: Some("requires_capture".to_owned()),
+            providerSessionId: None,
+            providerPaymentId: None,
+            lastErrorCode: None,
+            lastErrorMessage: None,
+        },
+        &[("authorization", bearer.as_str())],
+    )
+    .await?;
+
+let deleted = client
+    .payment_intents()
+    .delete(&updated.id, &[("authorization", bearer.as_str())])
+    .await?;
+```
+
+### List Queries
+
+Generated Rust clients accept canonical query params as `(&str, &str)` pairs. That keeps the wire contract explicit while the response type stays schema-native.
+
+```rust
+let products = client
+    .products()
+    .list(
+        &[
+            ("fields", "id,title,priceMinor,currency"),
+            ("include", "assets,vendor"),
+            ("includeFields[assets]", "id,thumbnailUrl"),
+            ("includeFields[vendor]", "id,displayName"),
+            ("sort", "-createdAt"),
+            ("limit", "20"),
+            ("offset", "0"),
+            ("where", "published=true,currency=XAF"),
+        ],
+        &[("authorization", bearer.as_str())],
+    )
+    .await?;
+```
+
+### Projection Builders
+
+Use generated selection builders when you want typed projected wrappers instead of manually assembling `fields`, `include`, and `includeFields[path]`.
+
+```rust
+let selection = cratestack_schema::product::select()
+    .id()
+    .title()
+    .priceMinor()
+    .currency()
+    .include_vendor_selected(
+        cratestack_schema::vendor::include_selection()
+            .id()
+            .displayName(),
+    )
+    .include_assets_selected(
+        cratestack_schema::asset::include_selection()
+            .id()
+            .thumbnailUrl(),
+    );
+
+let projected = client
+    .products()
+    .get_view(&product_id, &selection, &[("authorization", bearer.as_str())])
+    .await?;
+
+let title = projected.title()?;
+let vendor_name = projected
+    .vendor()?
+    .and_then(|vendor| vendor.displayName().ok());
+```
+
+### Paged Models
+
+Models marked `@@paged` return `Page<Model>` from generated list methods.
+
+```rust
+let page = client
+    .sessions()
+    .list(
+        &[("limit", "50"), ("offset", "0"), ("sort", "-createdAt")],
+        &[("authorization", bearer.as_str())],
+    )
+    .await?;
+
+for session in page.items {
+    println!("{} {}", session.id, session.label);
+}
+
+if page.page_info.has_next_page {
+    let next_offset = page
+        .page_info
+        .offset
+        .unwrap_or_default()
+        + page.page_info.limit.unwrap_or_default();
+    println!("fetch next page from offset {next_offset}");
+}
+```
+
+### Procedures
+
+Procedures live under `client.procedures()`. Query and mutation procedures both use generated typed argument structs.
+
+```rust
+let providers = client
+    .procedures()
+    .supported_payment_providers(
+        &cratestack_schema::procedures::supported_payment_providers::Args {
+            region: Some("CM".to_owned()),
+            currency: Some("XAF".to_owned()),
+        },
+        &[("authorization", bearer.as_str())],
+    )
+    .await?;
+
+let checkout = client
+    .procedures()
+    .create_payment_session(
+        &cratestack_schema::procedures::create_payment_session::Args {
+            orderId: "ord_123".to_owned(),
+            returnUrl: "vaam://checkout/return".to_owned(),
+            cancelUrl: "vaam://checkout/cancel".to_owned(),
+        },
+        &[("authorization", bearer.as_str())],
+    )
+    .await?;
+```
+
+### Request Signing Or Auth Headers
+
+Generated methods accept per-call headers. That is the right place for bearer tokens in local/dev or for custom request signatures if a service still uses signed requests.
+
+```rust
+let headers = [
+    ("authorization", bearer.as_str()),
+    ("x-request-id", request_id.as_str()),
+    ("idempotency-key", idempotency_key.as_str()),
+];
+
+let order = client
+    .orders()
+    .get(&order_id, &[], &headers)
+    .await?;
+```
+
+### Redis Client State Store
+
+Backend services that need a shared generated-client state store can use `cratestack-client-store-redis`:
+
+```rust
+use std::sync::Arc;
+use cratestack::client_rust::{CborCodec, ClientConfig, CratestackClient};
+use cratestack_client_store_redis::RedisStateStore;
+
+let base_url = url::Url::parse(&std::env::var("PAYMENT_GATEWAY_URL")?)?;
+let store = Arc::new(RedisStateStore::open(
+    std::env::var("VAAM_REDIS_URL")?,
+    "vaam:cratestack-client:order-service:payment-gateway",
+)?);
+let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec)
+    .with_state_store(store);
+```
+
+The Redis store keeps metadata in `{prefix}:meta` and appends request journal entries to `{prefix}:request_journal`. Use one prefix per caller/target pair so horizontally scaled service instances share state without mixing journals for unrelated downstream services.
+
 ## Generated Dart Package
 
 The current Dart generator emits multiple sibling files rather than one monolithic file.
@@ -515,37 +741,264 @@ The generated client has two layers:
 * `src/client.ts` exposes a framework-neutral fetch client for model CRUD and procedures
 * `src/react-query.ts` exposes TanStack Query hooks over the same client
 
-Example usage:
+### Plain TypeScript Client
 
 ```ts
-import { CatalogClientClient, useProductListQuery } from "@vaam/catalog-client";
+import { CatalogClientClient } from "@vaam/catalog-client";
 
 const client = new CatalogClientClient("https://api.example.com", {
   basePath: "/cstack/catalog",
 });
+```
 
+### Auth Headers
+
+Headers can be provided globally through the runtime options:
+
+```ts
+const client = new CatalogClientClient("https://api.example.com", {
+  basePath: "/cstack/catalog",
+  headers: async () => ({
+    authorization: `Bearer ${await tokenStore.getAccessToken()}`,
+    "x-region": "CM",
+  }),
+});
+```
+
+Headers can also be passed per call:
+
+```ts
+const product = await client.products.get(productId, {
+  headers: {
+    authorization: `Bearer ${accessToken}`,
+    "x-request-id": requestId,
+  },
+});
+```
+
+### Model List Queries
+
+```ts
 const products = await client.products.list({
   query: {
     fields: ["id", "title", "price"],
     include: ["assets"],
+    includeFields: {
+      assets: ["id", "thumbnailUrl"],
+    },
     limit: 20,
     sort: ["-createdAt"],
   },
 });
 ```
 
-React or React Native usage:
+Filter and paging query:
 
 ```ts
-const products = useProductListQuery(client, {
+const germanProducts = await client.products.list({
   query: {
-    fields: ["id", "title", "price"],
-    limit: 20,
+    fields: ["id", "title", "priceMinor", "currency", "region"],
+    where: {
+      published: true,
+      region: "DE",
+      currency: "EUR",
+    },
+    limit: 50,
+    offset: 0,
+    sort: ["title"],
   },
 });
 ```
 
-Generated model list methods return `Page<Model>` for models marked `@@paged`; other models return `Model[]`. Procedures are generated under `client.procedures` and are sent to the canonical `/$procs/{name}` route.
+### Model Create, Update, Delete
+
+```ts
+const created = await client.products.create({
+  title: "Handmade bag",
+  description: "Cotton bag from Douala",
+  priceMinor: 12500,
+  currency: "XAF",
+  region: "CM",
+  vendorId,
+});
+
+const updated = await client.products.update(created.id, {
+  title: "Handmade market bag",
+  priceMinor: 15000,
+});
+
+await client.products.delete(updated.id);
+```
+
+### Paged Models
+
+Generated model list methods return `Page<Model>` for models marked `@@paged`; other models return `Model[]`.
+
+```ts
+const sessions = await client.sessions.list({
+  query: {
+    limit: 20,
+    offset: 0,
+    sort: ["-createdAt"],
+  },
+});
+
+for (const session of sessions.items) {
+  console.log(session.id, session.label);
+}
+
+if (sessions.pageInfo?.hasNext) {
+  const nextOffset =
+    (sessions.pageInfo.offset ?? 0) + (sessions.pageInfo.limit ?? 20);
+  await client.sessions.list({ query: { limit: 20, offset: nextOffset } });
+}
+```
+
+### Procedures
+
+Procedures are generated under `client.procedures` and are sent to the canonical `/$procs/{name}` route.
+
+```ts
+const checkout = await client.procedures.beginCheckoutSession({
+  buyerId,
+  region: "CM",
+  currency: "XAF",
+});
+
+const validated = await client.procedures.validateCheckout({
+  checkoutId: checkout.id,
+});
+
+const order = await client.procedures.placeOrder({
+  checkoutId: checkout.id,
+  idempotencyKey,
+});
+```
+
+### React Query Lists
+
+```tsx
+import { useProductListQuery } from "@vaam/catalog-client";
+
+function ProductGrid({ client }: { client: CatalogClientClient }) {
+  const products = useProductListQuery(client, {
+    query: {
+      fields: ["id", "title", "priceMinor", "currency"],
+      include: ["assets"],
+      includeFields: {
+        assets: ["id", "thumbnailUrl"],
+      },
+      limit: 20,
+      sort: ["-createdAt"],
+    },
+  });
+
+  if (products.isPending) {
+    return <LoadingGrid />;
+  }
+  if (products.isError) {
+    return <ErrorState error={products.error} />;
+  }
+
+  return <Grid products={products.data} />;
+}
+```
+
+### React Query Detail
+
+```tsx
+import { useProductQuery } from "@vaam/catalog-client";
+
+function ProductScreen({
+  client,
+  productId,
+}: {
+  client: CatalogClientClient;
+  productId: string;
+}) {
+  const product = useProductQuery(client, productId, {
+    query: {
+      include: ["assets", "vendor"],
+      includeFields: {
+        assets: ["id", "url", "thumbnailUrl"],
+        vendor: ["id", "displayName"],
+      },
+    },
+    queryOptions: {
+      staleTime: 30_000,
+    },
+  });
+
+  if (!product.data) {
+    return null;
+  }
+
+  return <ProductDetail product={product.data} />;
+}
+```
+
+### React Query Mutations
+
+```tsx
+import {
+  useCreateProductMutation,
+  usePublishProductMutation,
+} from "@vaam/catalog-client";
+
+function ProductEditor({ client }: { client: CatalogClientClient }) {
+  const createProduct = useCreateProductMutation(client);
+  const publishProduct = usePublishProductMutation(client);
+
+  async function saveDraft(form: ProductFormState) {
+    const product = await createProduct.mutateAsync({
+      title: form.title,
+      description: form.description,
+      priceMinor: form.priceMinor,
+      currency: form.currency,
+      region: form.region,
+      vendorId: form.vendorId,
+    });
+
+    await publishProduct.mutateAsync({
+      productId: product.id,
+    });
+  }
+
+  return <Editor onSubmit={saveDraft} />;
+}
+```
+
+### React Native Setup
+
+React Native already provides `fetch` in normal app runtimes. Keep the base URL environment-specific and pass the generated client through app dependency injection or React context.
+
+```ts
+export function createCatalogClient(accessToken: string | null) {
+  return new CatalogClientClient(process.env.EXPO_PUBLIC_API_ORIGIN!, {
+    basePath: "/cstack/catalog",
+    headers: {
+      ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
+      "x-client": "vaam-mobile",
+    },
+  });
+}
+```
+
+For tests, inject a custom fetch implementation:
+
+```ts
+const client = new CatalogClientClient("https://api.test", {
+  fetch: async (input, init) => {
+    expect(String(input)).toContain("/cstack/catalog/products");
+    return new Response(JSON.stringify([]), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  },
+});
+
+await client.products.list();
+```
 
 ## Schema Enums
 
