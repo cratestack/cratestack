@@ -482,6 +482,31 @@ pub(crate) async fn authorize_record_action<M, PK>(
 where
     PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
 {
+    authorize_record_action_with_executor(
+        runtime.pool(),
+        descriptor,
+        id,
+        allow_policies,
+        deny_policies,
+        ctx,
+        action_name,
+    )
+    .await
+}
+
+pub(crate) async fn authorize_record_action_with_executor<'e, E, M, PK>(
+    executor: E,
+    descriptor: &'static ModelDescriptor<M, PK>,
+    id: PK,
+    allow_policies: &[ReadPolicy],
+    deny_policies: &[ReadPolicy],
+    ctx: &CoolContext,
+    action_name: &str,
+) -> Result<(), CoolError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
+{
     let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT 1 FROM ");
     query
         .push(descriptor.table_name)
@@ -495,7 +520,7 @@ where
 
     let authorized = query
         .build_query_scalar::<i32>()
-        .fetch_optional(runtime.pool())
+        .fetch_optional(executor)
         .await
         .map_err(|error| CoolError::Database(error.to_string()))?
         .is_some();
@@ -507,32 +532,6 @@ where
             "{action_name} policy denied this operation"
         )))
     }
-}
-
-pub(crate) async fn evaluate_create_policies(
-    pool: &sqlx::PgPool,
-    allow_policies: &[ReadPolicy],
-    deny_policies: &[ReadPolicy],
-    values: &[SqlColumnValue],
-    ctx: &CoolContext,
-) -> Result<bool, CoolError> {
-    if allow_policies.is_empty() {
-        return Ok(false);
-    }
-
-    for policy in deny_policies {
-        if evaluate_create_policy_expr(pool, policy.expr, values, ctx).await? {
-            return Ok(false);
-        }
-    }
-
-    for policy in allow_policies {
-        if evaluate_create_policy_expr(pool, policy.expr, values, ctx).await? {
-            return Ok(true);
-        }
-    }
-
-    Ok(false)
 }
 
 pub(crate) fn apply_create_defaults(
@@ -592,15 +591,6 @@ pub(crate) fn find_column_value<'a>(
         .iter()
         .find(|value| value.column == column)
         .map(|value| &value.value)
-}
-
-pub(crate) fn sql_value_matches_literal(value: &SqlValue, literal: PolicyLiteral) -> bool {
-    match (value, literal) {
-        (SqlValue::Bool(left), PolicyLiteral::Bool(right)) => *left == right,
-        (SqlValue::Int(left), PolicyLiteral::Int(right)) => *left == right,
-        (SqlValue::String(left), PolicyLiteral::String(right)) => left == right,
-        _ => false,
-    }
 }
 
 pub(crate) fn value_matches_auth_literal(value: &Value, literal: PolicyLiteral) -> bool {
@@ -689,155 +679,4 @@ fn push_grouped_policy_query(
         push_policy_expr_query(query, *expr, ctx);
     }
     query.push(")");
-}
-
-fn evaluate_input_predicate(
-    predicate: ReadPredicate,
-    values: &[SqlColumnValue],
-    ctx: &CoolContext,
-) -> bool {
-    match predicate {
-        ReadPredicate::AuthNotNull => ctx.is_authenticated(),
-        ReadPredicate::AuthIsNull => !ctx.is_authenticated(),
-        ReadPredicate::HasRole { role } => context_has_role(ctx, role),
-        ReadPredicate::InTenant { tenant_id } => context_in_tenant(ctx, tenant_id),
-        ReadPredicate::AuthFieldEqLiteral { auth_field, value } => ctx
-            .auth_field(auth_field)
-            .is_some_and(|candidate| value_matches_auth_literal(candidate, value)),
-        ReadPredicate::AuthFieldNeLiteral { auth_field, value } => ctx
-            .auth_field(auth_field)
-            .is_some_and(|candidate| !value_matches_auth_literal(candidate, value)),
-        ReadPredicate::FieldIsTrue { column } => {
-            find_column_value(values, column) == Some(&SqlValue::Bool(true))
-        }
-        ReadPredicate::FieldEqLiteral { column, value } => find_column_value(values, column)
-            .is_some_and(|candidate| sql_value_matches_literal(candidate, value)),
-        ReadPredicate::FieldNeLiteral { column, value } => find_column_value(values, column)
-            .is_some_and(|candidate| !sql_value_matches_literal(candidate, value)),
-        ReadPredicate::FieldEqAuth { column, auth_field } => {
-            match (
-                find_column_value(values, column),
-                auth_value_to_sql(ctx, auth_field),
-            ) {
-                (Some(candidate), Some(auth_value)) => candidate == &auth_value,
-                _ => false,
-            }
-        }
-        ReadPredicate::FieldNeAuth { column, auth_field } => {
-            match (
-                find_column_value(values, column),
-                auth_value_to_sql(ctx, auth_field),
-            ) {
-                (Some(candidate), Some(auth_value)) => candidate != &auth_value,
-                _ => false,
-            }
-        }
-        ReadPredicate::Relation { .. } => false,
-    }
-}
-
-fn evaluate_create_policy_expr<'a>(
-    pool: &'a sqlx::PgPool,
-    expr: PolicyExpr,
-    values: &'a [SqlColumnValue],
-    ctx: &'a CoolContext,
-) -> core::pin::Pin<Box<dyn core::future::Future<Output = Result<bool, CoolError>> + Send + 'a>> {
-    Box::pin(async move {
-        match expr {
-            PolicyExpr::Predicate(predicate) => {
-                evaluate_create_predicate(pool, predicate, values, ctx).await
-            }
-            PolicyExpr::And(exprs) => {
-                for expr in exprs.iter().copied() {
-                    if !evaluate_create_policy_expr(pool, expr, values, ctx).await? {
-                        return Ok(false);
-                    }
-                }
-                Ok(true)
-            }
-            PolicyExpr::Or(exprs) => {
-                for expr in exprs.iter().copied() {
-                    if evaluate_create_policy_expr(pool, expr, values, ctx).await? {
-                        return Ok(true);
-                    }
-                }
-                Ok(false)
-            }
-        }
-    })
-}
-
-fn evaluate_create_predicate<'a>(
-    pool: &'a sqlx::PgPool,
-    predicate: ReadPredicate,
-    values: &'a [SqlColumnValue],
-    ctx: &'a CoolContext,
-) -> core::pin::Pin<Box<dyn core::future::Future<Output = Result<bool, CoolError>> + Send + 'a>> {
-    Box::pin(async move {
-        match predicate {
-            ReadPredicate::Relation {
-                quantifier,
-                parent_column,
-                related_table,
-                related_column,
-                expr,
-                ..
-            } => {
-                let Some(parent_value) = find_column_value(values, parent_column) else {
-                    return Ok(false);
-                };
-
-                let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT ");
-                match quantifier {
-                    RelationQuantifier::ToOne | RelationQuantifier::Some => {
-                        query.push("EXISTS (SELECT 1 FROM ");
-                        query.push(related_table);
-                        query.push(" WHERE ");
-                        query.push(related_table);
-                        query.push(".");
-                        query.push(related_column);
-                        query.push(" = ");
-                        push_bind_value(&mut query, parent_value);
-                        query.push(" AND ");
-                        push_policy_expr_query(&mut query, *expr, ctx);
-                        query.push(")");
-                    }
-                    RelationQuantifier::None => {
-                        query.push("NOT EXISTS (SELECT 1 FROM ");
-                        query.push(related_table);
-                        query.push(" WHERE ");
-                        query.push(related_table);
-                        query.push(".");
-                        query.push(related_column);
-                        query.push(" = ");
-                        push_bind_value(&mut query, parent_value);
-                        query.push(" AND ");
-                        push_policy_expr_query(&mut query, *expr, ctx);
-                        query.push(")");
-                    }
-                    RelationQuantifier::Every => {
-                        query.push("NOT EXISTS (SELECT 1 FROM ");
-                        query.push(related_table);
-                        query.push(" WHERE ");
-                        query.push(related_table);
-                        query.push(".");
-                        query.push(related_column);
-                        query.push(" = ");
-                        push_bind_value(&mut query, parent_value);
-                        query.push(" AND NOT (");
-                        push_policy_expr_query(&mut query, *expr, ctx);
-                        query.push("))");
-                    }
-                }
-
-                let result: (bool,) = query
-                    .build_query_as::<(bool,)>()
-                    .fetch_one(pool)
-                    .await
-                    .map_err(|error| CoolError::Database(error.to_string()))?;
-                Ok(result.0)
-            }
-            _ => Ok(evaluate_input_predicate(predicate, values, ctx)),
-        }
-    })
 }

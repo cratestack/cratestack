@@ -58,3 +58,12 @@ model Task {
   @@allow("delete", project.memberships.every.active)
   @@allow("create", project.organization.slug == auth().orgSlug && project.memberships.some.user.email == auth().email && project.memberships.none.blocked)
 }
+
+model AutoTask {
+  id Int @id @default(dbgenerated())
+  title String
+  projectId Int @default(dbgenerated())
+  project Project @relation(fields:[projectId],references:[id])
+
+  @@allow("create", project.organization.slug == auth().orgSlug && project.memberships.some.user.email == auth().email && project.memberships.none.blocked)
+}

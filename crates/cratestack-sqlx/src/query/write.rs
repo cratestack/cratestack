@@ -1,12 +1,12 @@
 use cratestack_core::{CoolContext, CoolError, ModelEventKind};
 
 use crate::{
-    CreateModelInput, ModelDescriptor, SqlxRuntime, UpdateModelInput,
+    CreateModelInput, ModelDescriptor, SqlValue, SqlxRuntime, UpdateModelInput,
     descriptor::{enqueue_event_outbox, ensure_event_outbox_table},
 };
 
 use super::support::{
-    apply_create_defaults, evaluate_create_policies, push_action_policy_query, push_bind_value,
+    apply_create_defaults, push_action_policy_query, push_bind_value,
 };
 
 #[derive(Debug, Clone)]
@@ -46,22 +46,18 @@ where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
     {
         let emits_event = self.descriptor.emits(ModelEventKind::Created);
-        let record = if emits_event {
-            let mut tx = self
-                .runtime
-                .pool()
-                .begin()
-                .await
-                .map_err(|error| CoolError::Database(error.to_string()))?;
+        let mut tx = self
+            .runtime
+            .pool()
+            .begin()
+            .await
+            .map_err(|error| CoolError::Database(error.to_string()))?;
+        if emits_event {
             ensure_event_outbox_table(&mut *tx).await?;
-            let record = create_record_with_executor(
-                &mut *tx,
-                self.runtime.pool(),
-                self.descriptor,
-                self.input,
-                ctx,
-            )
-            .await?;
+        }
+        let record =
+            create_record_with_executor(&mut *tx, self.descriptor, self.input, ctx).await?;
+        if emits_event {
             enqueue_event_outbox(
                 &mut *tx,
                 self.descriptor.schema_name,
@@ -69,20 +65,10 @@ where
                 &record,
             )
             .await?;
-            tx.commit()
-                .await
-                .map_err(|error| CoolError::Database(error.to_string()))?;
-            record
-        } else {
-            create_record_with_executor(
-                self.runtime.pool(),
-                self.runtime.pool(),
-                self.descriptor,
-                self.input,
-                ctx,
-            )
-            .await?
-        };
+        }
+        tx.commit()
+            .await
+            .map_err(|error| CoolError::Database(error.to_string()))?;
 
         if emits_event {
             let _ = self.runtime.drain_event_outbox().await;
@@ -244,15 +230,13 @@ impl<'a, M: 'static, PK: 'static> DeleteRecord<'a, M, PK> {
     }
 }
 
-pub async fn create_record_with_executor<'e, E, M, PK, I>(
-    executor: E,
-    policy_pool: &sqlx::PgPool,
+pub async fn create_record_with_executor<M, PK, I>(
+    connection: &mut sqlx::PgConnection,
     descriptor: &'static ModelDescriptor<M, PK>,
     input: I,
     ctx: &CoolContext,
 ) -> Result<M, CoolError>
 where
-    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     I: CreateModelInput<M>,
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
 {
@@ -262,21 +246,9 @@ where
             "create input must contain at least one column".to_owned(),
         ));
     }
-    if !evaluate_create_policies(
-        policy_pool,
-        descriptor.create_allow_policies,
-        descriptor.create_deny_policies,
-        &values,
-        ctx,
-    )
-    .await?
-    {
-        return Err(CoolError::Forbidden(
-            "create policy denied this operation".to_owned(),
-        ));
-    }
-
-    insert_returning_record(executor, descriptor, &values).await
+    let record = insert_returning_record(&mut *connection, descriptor, &values).await?;
+    authorize_created_record_with_executor(&mut *connection, descriptor, &record, ctx).await?;
+    Ok(record)
 }
 
 pub async fn update_record_with_executor<'e, E, M, PK, I>(
@@ -335,6 +307,101 @@ where
         .fetch_one(executor)
         .await
         .map_err(|error| CoolError::Database(error.to_string()))
+}
+
+async fn authorize_created_record_with_executor<'e, E, M, PK>(
+    executor: E,
+    descriptor: &'static ModelDescriptor<M, PK>,
+    record: &M,
+    ctx: &CoolContext,
+) -> Result<(), CoolError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    M: serde::Serialize,
+{
+    let id = created_record_primary_key(descriptor, record)?;
+    let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT 1 FROM ");
+    query
+        .push(descriptor.table_name)
+        .push(" WHERE ")
+        .push(descriptor.primary_key)
+        .push(" = ");
+    push_bind_value(&mut query, &id);
+    query.push(" AND ");
+    push_action_policy_query(
+        &mut query,
+        descriptor.create_allow_policies,
+        descriptor.create_deny_policies,
+        ctx,
+    );
+    query.push(" LIMIT 1");
+
+    let authorized = query
+        .build_query_scalar::<i32>()
+        .fetch_optional(executor)
+        .await
+        .map_err(|error| CoolError::Database(error.to_string()))?
+        .is_some();
+
+    if authorized {
+        Ok(())
+    } else {
+        Err(CoolError::Forbidden(
+            "create policy denied this operation".to_owned(),
+        ))
+    }
+}
+
+fn created_record_primary_key<M, PK>(
+    descriptor: &'static ModelDescriptor<M, PK>,
+    record: &M,
+) -> Result<SqlValue, CoolError>
+where
+    M: serde::Serialize,
+{
+    let rust_field = descriptor
+        .columns
+        .iter()
+        .find(|column| column.sql_name == descriptor.primary_key)
+        .map(|column| column.rust_name)
+        .ok_or_else(|| {
+            CoolError::Validation(format!(
+                "model descriptor `{}` is missing primary key column `{}`",
+                descriptor.schema_name, descriptor.primary_key
+            ))
+        })?;
+
+    let serde_json::Value::Object(fields) =
+        serde_json::to_value(record).map_err(|error| CoolError::Validation(error.to_string()))?
+    else {
+        return Err(CoolError::Validation(format!(
+            "created `{}` record did not serialize to an object",
+            descriptor.schema_name
+        )));
+    };
+
+    let value = fields.get(rust_field).cloned().ok_or_else(|| {
+        CoolError::Validation(format!(
+            "created `{}` record is missing primary key field `{}`",
+            descriptor.schema_name, rust_field
+        ))
+    })?;
+
+    sql_value_from_json(value).ok_or_else(|| {
+        CoolError::Validation(format!(
+            "failed to convert primary key field `{}` on created `{}` record into a SQL bind value",
+            rust_field, descriptor.schema_name
+        ))
+    })
+}
+
+fn sql_value_from_json(value: serde_json::Value) -> Option<SqlValue> {
+    match value {
+        serde_json::Value::Bool(value) => Some(SqlValue::Bool(value)),
+        serde_json::Value::Number(value) => value.as_i64().map(SqlValue::Int),
+        serde_json::Value::String(value) => Some(SqlValue::String(value)),
+        _ => None,
+    }
 }
 
 async fn update_returning_record<'e, E, M, PK>(

@@ -21,7 +21,7 @@ async fn db_backed_recursive_relation_policies_cover_quantifiers_and_create_chec
     };
 
     cratestack::sqlx::query(
-        "DROP TABLE IF EXISTS tasks, memberships, projects, users, organizations",
+        "DROP TABLE IF EXISTS auto_tasks, tasks, memberships, projects, users, organizations",
     )
     .execute(&pool)
     .await
@@ -56,6 +56,12 @@ async fn db_backed_recursive_relation_policies_cover_quantifiers_and_create_chec
     .execute(&pool)
     .await
     .expect("tasks table should exist");
+    cratestack::sqlx::query(
+        "CREATE TABLE auto_tasks (id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY, title TEXT NOT NULL, project_id BIGINT NOT NULL DEFAULT 1)",
+    )
+    .execute(&pool)
+    .await
+    .expect("auto_tasks table should exist");
 
     cratestack::sqlx::query(
         "INSERT INTO organizations (id, slug) VALUES (1, 'alpha'), (2, 'beta')",
@@ -203,4 +209,29 @@ async fn db_backed_recursive_relation_policies_cover_quantifiers_and_create_chec
         .await
         .expect_err("org mismatch should deny create");
     assert!(matches!(wrong_org_create, CoolError::Forbidden(_)));
+
+    let created_from_db_default = cool
+        .auto_task()
+        .create(cratestack_schema::CreateAutoTaskInput {
+            title: "Default project task".to_owned(),
+        })
+        .run(&owner)
+        .await
+        .expect("create should authorize against DB-defaulted relation values");
+    assert_eq!(created_from_db_default.projectId, 1);
+
+    cratestack::sqlx::query("ALTER TABLE auto_tasks ALTER COLUMN project_id SET DEFAULT 3")
+        .execute(&pool)
+        .await
+        .expect("auto_tasks default should update");
+
+    let denied_from_db_default = cool
+        .auto_task()
+        .create(cratestack_schema::CreateAutoTaskInput {
+            title: "Wrong default project".to_owned(),
+        })
+        .run(&owner)
+        .await
+        .expect_err("org mismatch from DB default should deny create");
+    assert!(matches!(denied_from_db_default, CoolError::Forbidden(_)));
 }
