@@ -53,7 +53,8 @@ pub(crate) fn generate_procedure_axum_handler(
             let started = ::std::time::Instant::now();
 
             if let Err(error) = ::cratestack::validate_transport_request_headers_for(&state.codec, &headers, &CAPABILITIES) {
-                ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = #route_path, cratestack_procedure = #procedure_name, cratestack_operation = "procedure", cratestack_error = error.code(), "cratestack procedure preflight failed");
+                ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = #route_path, cratestack_procedure = #procedure_name, cratestack_operation = "procedure", cratestack_error = error.code(),
+                    cratestack_detail = error.detail().unwrap_or(""), "cratestack procedure preflight failed");
                 let result: Result<super::procedures::#module_ident::Output, ::cratestack::CoolError> = Err(error);
                 return #result_encoder;
             }
@@ -62,7 +63,8 @@ pub(crate) fn generate_procedure_axum_handler(
                 Ok(ctx) => ctx,
                 Err(error) => {
                     let error: ::cratestack::CoolError = error.into();
-                    ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = #route_path, cratestack_procedure = #procedure_name, cratestack_operation = "procedure", cratestack_error = error.code(), "cratestack procedure auth failed");
+                    ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = #route_path, cratestack_procedure = #procedure_name, cratestack_operation = "procedure", cratestack_error = error.code(),
+                    cratestack_detail = error.detail().unwrap_or(""), "cratestack procedure auth failed");
                     let result: Result<super::procedures::#module_ident::Output, ::cratestack::CoolError> = Err(error);
                     return #result_encoder;
                 }
@@ -70,7 +72,8 @@ pub(crate) fn generate_procedure_axum_handler(
             let args = match ::cratestack::decode_transport_request_for::<_, super::procedures::#module_ident::Args>(&state.codec, &headers, &CAPABILITIES, &body) {
                 Ok(args) => args,
                 Err(error) => {
-                    ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = #route_path, cratestack_procedure = #procedure_name, cratestack_operation = "procedure", cratestack_error = error.code(), "cratestack procedure decode failed");
+                    ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = #route_path, cratestack_procedure = #procedure_name, cratestack_operation = "procedure", cratestack_error = error.code(),
+                    cratestack_detail = error.detail().unwrap_or(""), "cratestack procedure decode failed");
                     let result: Result<super::procedures::#module_ident::Output, ::cratestack::CoolError> = Err(error);
                     return #result_encoder;
                 }
@@ -102,6 +105,7 @@ pub(crate) fn generate_procedure_axum_handler(
                     cratestack_operation = "procedure",
                     cratestack_authenticated = ctx.is_authenticated(),
                     cratestack_error = error.code(),
+                    cratestack_detail = error.detail().unwrap_or(""),
                     cratestack_duration_ms = started.elapsed().as_millis() as u64,
                     "cratestack procedure route failed",
                 ),
@@ -271,6 +275,11 @@ pub(crate) fn generate_model_axum_handlers(
     model: &Model,
     models: &[Model],
 ) -> Result<proc_macro2::TokenStream, String> {
+    let version_field_name: Option<String> = model
+        .fields
+        .iter()
+        .find(|field| field.attributes.iter().any(|a| a.raw == "@version"))
+        .map(|field| field.name.clone());
     let list_handler_ident = ident(&format!(
         "handle_list_{}",
         pluralize(&to_snake_case(&model.name))
@@ -371,6 +380,76 @@ pub(crate) fn generate_model_axum_handlers(
             );
         }
     };
+    let (
+        update_if_match_decl,
+        update_if_match_apply,
+        update_etag_extract,
+        update_etag_apply,
+        get_etag_extract_decl,
+        get_etag_capture,
+        get_etag_apply,
+    ) = match version_field_name.as_deref() {
+        Some(name) => {
+            let version_field_ident = ident(name);
+            (
+                quote! {
+                    let if_match_version = match ::cratestack::parse_if_match_version(&headers) {
+                        Ok(Some(v)) => Some(v),
+                        Ok(None) => {
+                            return ::cratestack::encode_transport_result_with_status_for::<_, super::models::#model_ident>(
+                                &state.codec,
+                                &headers,
+                                &CAPABILITIES,
+                                axum::http::StatusCode::OK,
+                                Err(CoolError::PreconditionFailed("If-Match header required".to_owned())),
+                            );
+                        }
+                        Err(error) => {
+                            return ::cratestack::encode_transport_result_with_status_for::<_, super::models::#model_ident>(
+                                &state.codec,
+                                &headers,
+                                &CAPABILITIES,
+                                axum::http::StatusCode::OK,
+                                Err(error),
+                            );
+                        }
+                    };
+                },
+                quote! { .if_match(if_match_version.unwrap()) },
+                quote! {
+                    let etag_version: Option<i64> = match &result {
+                        Ok(record) => Some(record.#version_field_ident),
+                        Err(_) => None,
+                    };
+                },
+                quote! {
+                    if let Some(v) = etag_version {
+                        ::cratestack::set_version_etag(&mut response, v);
+                    }
+                },
+                quote! {
+                    let mut etag_version: Option<i64> = None;
+                },
+                quote! {
+                    etag_version = Some(record.#version_field_ident);
+                },
+                quote! {
+                    if let Some(v) = etag_version {
+                        ::cratestack::set_version_etag(&mut response, v);
+                    }
+                },
+            )
+        }
+        None => (
+            quote! {},
+            quote! {},
+            quote! {},
+            quote! {},
+            quote! {},
+            quote! {},
+            quote! {},
+        ),
+    };
     let total_count_block = if paged {
         quote! {
             let total_count = {
@@ -431,6 +510,7 @@ pub(crate) fn generate_model_axum_handlers(
                     cratestack_operation = "list",
                     cratestack_paged = true,
                     cratestack_error = error.code(),
+                    cratestack_detail = error.detail().unwrap_or(""),
                     cratestack_duration_ms = started.elapsed().as_millis() as u64,
                     "cratestack model list failed",
                 ),
@@ -458,6 +538,7 @@ pub(crate) fn generate_model_axum_handlers(
                     cratestack_operation = "list",
                     cratestack_paged = false,
                     cratestack_error = error.code(),
+                    cratestack_detail = error.detail().unwrap_or(""),
                     cratestack_duration_ms = started.elapsed().as_millis() as u64,
                     "cratestack model list failed",
                 ),
@@ -799,6 +880,7 @@ pub(crate) fn generate_model_axum_handlers(
                     cratestack_model = #model_name,
                     cratestack_operation = "list",
                     cratestack_error = error.code(),
+                    cratestack_detail = error.detail().unwrap_or(""),
                     "cratestack model list preflight failed",
                 );
                 return #list_header_error_encoder;
@@ -814,6 +896,7 @@ pub(crate) fn generate_model_axum_handlers(
                         cratestack_model = #model_name,
                         cratestack_operation = "list",
                         cratestack_error = error.code(),
+                    cratestack_detail = error.detail().unwrap_or(""),
                         "cratestack model list auth failed",
                     );
                     return ::cratestack::encode_transport_result_with_status_for::<_, #list_response_type>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error));
@@ -828,6 +911,7 @@ pub(crate) fn generate_model_axum_handlers(
                         cratestack_model = #model_name,
                         cratestack_operation = "list",
                         cratestack_error = error.code(),
+                    cratestack_detail = error.detail().unwrap_or(""),
                         "cratestack model list query parsing failed",
                     );
                     return ::cratestack::encode_transport_result_with_status_for::<_, #list_response_type>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error));
@@ -842,7 +926,8 @@ pub(crate) fn generate_model_axum_handlers(
                 return ::cratestack::encode_transport_result_with_status_for::<_, #list_response_type>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(CoolError::BadRequest("offset must be greater than or equal to 0".to_owned())));
             }
             if let Err(error) = #validate_selection_ident(&query.selection, state.db.#accessor_ident().descriptor()) {
-                ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = #list_route_path, cratestack_model = #model_name, cratestack_operation = "list", cratestack_error = error.code(), "cratestack model list selection validation failed");
+                ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = #list_route_path, cratestack_model = #model_name, cratestack_operation = "list", cratestack_error = error.code(),
+                    cratestack_detail = error.detail().unwrap_or(""), "cratestack model list selection validation failed");
                 return ::cratestack::encode_transport_result_with_status_for::<_, #list_response_type>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error));
             }
 
@@ -945,13 +1030,19 @@ pub(crate) fn generate_model_axum_handlers(
             if let Err(error) = #validate_selection_ident(&query.selection, state.db.#accessor_ident().descriptor()) {
                 return ::cratestack::encode_transport_result_with_status_for::<_, ::cratestack::serde_json::Value>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error));
             }
+            #get_etag_extract_decl
             let result = match state.db.#accessor_ident().find_unique(id).run(&ctx).await {
-                Ok(Some(record)) => #serialize_model_value_ident(&state.db, &ctx, &record, &query.selection).await,
+                Ok(Some(record)) => {
+                    #get_etag_capture
+                    #serialize_model_value_ident(&state.db, &ctx, &record, &query.selection).await
+                }
                 Ok(None) => Err(CoolError::NotFound(format!("{} not found", #model_name))),
                 Err(error) => Err(error),
             };
 
-            ::cratestack::encode_transport_result_with_status_for(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, result)
+            let mut response = ::cratestack::encode_transport_result_with_status_for(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, result);
+            #get_etag_apply
+            response
         }
 
         async fn #update_handler_ident<C, Auth>(
@@ -985,9 +1076,14 @@ pub(crate) fn generate_model_axum_handlers(
             };
             #update_empty_patch_preflight
 
-            let result = state.db.#accessor_ident().update(id).set(input).run(&ctx).await;
+            #update_if_match_decl
 
-            ::cratestack::encode_transport_result_with_status_for(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, result)
+            let result = state.db.#accessor_ident().update(id).set(input)#update_if_match_apply.run(&ctx).await;
+
+            #update_etag_extract
+            let mut response = ::cratestack::encode_transport_result_with_status_for(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, result);
+            #update_etag_apply
+            response
         }
 
         async fn #delete_handler_ident<C, Auth>(

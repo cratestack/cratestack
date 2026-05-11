@@ -625,6 +625,7 @@ pub(crate) fn push_bind_value(
         SqlValue::Uuid(value) => query.push_bind(*value),
         SqlValue::DateTime(value) => query.push_bind(*value),
         SqlValue::Json(value) => query.push_bind(sqlx::types::Json(value.clone())),
+        SqlValue::Decimal(value) => query.push_bind(*value),
         SqlValue::NullBool => query.push_bind(Option::<bool>::None),
         SqlValue::NullInt => query.push_bind(Option::<i64>::None),
         SqlValue::NullFloat => query.push_bind(Option::<f64>::None),
@@ -633,6 +634,7 @@ pub(crate) fn push_bind_value(
         SqlValue::NullUuid => query.push_bind(Option::<uuid::Uuid>::None),
         SqlValue::NullDateTime => query.push_bind(Option::<chrono::DateTime<chrono::Utc>>::None),
         SqlValue::NullJson => query.push_bind(Option::<sqlx::types::Json<Value>>::None),
+        SqlValue::NullDecimal => query.push_bind(Option::<cratestack_core::Decimal>::None),
     };
 }
 

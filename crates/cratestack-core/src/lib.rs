@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
@@ -5,6 +6,32 @@ use std::sync::{Arc, RwLock};
 
 use http::StatusCode;
 use serde::{Deserialize, Serialize};
+
+// -----------------------------------------------------------------------------
+// Decimal scalar
+//
+// Selected at compile time via mutually-exclusive Cargo features. Generated
+// code references `cratestack::Decimal` regardless of backend, so swapping
+// backends is a workspace-feature flip rather than a code change.
+// -----------------------------------------------------------------------------
+
+#[cfg(all(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
+compile_error!(
+    "cratestack: features `decimal-rust-decimal` and `decimal-bigdecimal` are mutually exclusive"
+);
+
+#[cfg(not(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal")))]
+compile_error!(
+    "cratestack: enable exactly one Decimal backend feature (`decimal-rust-decimal` or `decimal-bigdecimal`)"
+);
+
+#[cfg(feature = "decimal-rust-decimal")]
+pub type Decimal = rust_decimal::Decimal;
+
+#[cfg(feature = "decimal-bigdecimal")]
+compile_error!(
+    "cratestack: the `decimal-bigdecimal` backend is reserved but not yet implemented; use `decimal-rust-decimal` for now"
+);
 
 pub type CoolBody = bytes::Bytes;
 pub type CoolEventFuture = Pin<Box<dyn Future<Output = Result<(), CoolError>> + Send + 'static>>;
@@ -806,6 +833,85 @@ mod tests {
             Some(&Value::String("admin".to_owned()))
         );
     }
+
+    #[test]
+    fn internal_error_public_message_does_not_leak_detail() {
+        let secret = "SELECT * FROM accounts WHERE pan = '4111-1111-1111-1111'";
+        let err = CoolError::Internal(secret.to_owned());
+        let response = err.into_response();
+        assert_eq!(response.code, "INTERNAL_ERROR");
+        assert_eq!(response.message, "internal error");
+        assert!(
+            !response.message.contains("SELECT"),
+            "5xx public message must not echo internal detail",
+        );
+        assert!(
+            !response.message.contains("4111"),
+            "5xx public message must not echo any sensitive substring",
+        );
+        assert!(response.details.is_none());
+    }
+
+    #[test]
+    fn database_error_public_message_is_canned() {
+        let err = CoolError::Database("FATAL: connection refused at db.internal:5432".to_owned());
+        assert_eq!(err.public_message(), "internal error");
+        assert_eq!(
+            err.detail(),
+            Some("FATAL: connection refused at db.internal:5432")
+        );
+    }
+
+    #[test]
+    fn codec_error_public_message_is_canned() {
+        let err = CoolError::Codec("malformed CBOR major type 7 at offset 42".to_owned());
+        assert_eq!(err.public_message(), "invalid request payload");
+        assert_eq!(
+            err.detail(),
+            Some("malformed CBOR major type 7 at offset 42")
+        );
+    }
+
+    #[test]
+    fn client_error_public_message_passes_through_caller_string() {
+        let err = CoolError::BadRequest("missing query parameter 'limit'".to_owned());
+        let response = err.into_response();
+        assert_eq!(response.code, "BAD_REQUEST");
+        assert_eq!(response.message, "missing query parameter 'limit'");
+    }
+
+    #[test]
+    fn precondition_failed_maps_to_412() {
+        let err = CoolError::PreconditionFailed("stale ETag".to_owned());
+        assert_eq!(err.status_code(), StatusCode::PRECONDITION_FAILED);
+        assert_eq!(err.code(), "PRECONDITION_FAILED");
+        let response = err.into_response();
+        assert_eq!(response.message, "stale ETag");
+    }
+
+    #[test]
+    fn detail_is_none_for_empty_string() {
+        let err = CoolError::Internal(String::new());
+        assert_eq!(err.detail(), None);
+    }
+
+    #[test]
+    fn into_response_never_populates_details_field() {
+        for err in [
+            CoolError::BadRequest("x".to_owned()),
+            CoolError::Validation("y".to_owned()),
+            CoolError::Internal("z".to_owned()),
+            CoolError::Database("w".to_owned()),
+            CoolError::Codec("v".to_owned()),
+            CoolError::PreconditionFailed("u".to_owned()),
+        ] {
+            let response = err.into_response();
+            assert!(
+                response.details.is_none(),
+                "details field must remain None until structured details are introduced",
+            );
+        }
+    }
 }
 
 pub fn parse_cuid(value: &str) -> Result<String, CoolError> {
@@ -839,6 +945,7 @@ pub struct CoolErrorResponse {
 
 #[derive(Debug, thiserror::Error)]
 pub enum CoolError {
+    /// 4xx — `String` is the public message returned to the client.
     #[error("bad request: {0}")]
     BadRequest(String),
     #[error("not acceptable: {0}")]
@@ -855,6 +962,10 @@ pub enum CoolError {
     Conflict(String),
     #[error("validation: {0}")]
     Validation(String),
+    #[error("precondition failed: {0}")]
+    PreconditionFailed(String),
+    /// 5xx — `String` is operator-only detail. Never returned to clients;
+    /// the public message is a fixed canned string per variant.
     #[error("codec: {0}")]
     Codec(String),
     #[error("database: {0}")]
@@ -874,6 +985,7 @@ impl CoolError {
             Self::NotFound(_) => "NOT_FOUND",
             Self::Conflict(_) => "CONFLICT",
             Self::Validation(_) => "VALIDATION_ERROR",
+            Self::PreconditionFailed(_) => "PRECONDITION_FAILED",
             Self::Codec(_) => "CODEC_ERROR",
             Self::Database(_) => "DATABASE_ERROR",
             Self::Internal(_) => "INTERNAL_ERROR",
@@ -890,16 +1002,68 @@ impl CoolError {
             Self::NotFound(_) => StatusCode::NOT_FOUND,
             Self::Conflict(_) => StatusCode::CONFLICT,
             Self::Validation(_) => StatusCode::UNPROCESSABLE_ENTITY,
+            Self::PreconditionFailed(_) => StatusCode::PRECONDITION_FAILED,
             Self::Codec(_) => StatusCode::BAD_REQUEST,
             Self::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 
+    /// Public, safe-to-expose message returned in HTTP responses.
+    ///
+    /// For 4xx variants this is the caller-supplied string. For 5xx variants
+    /// this is a fixed canned message; the caller-supplied string flows to
+    /// `detail` instead and is recorded via tracing only.
+    pub fn public_message(&self) -> Cow<'_, str> {
+        match self {
+            Self::BadRequest(s)
+            | Self::NotAcceptable(s)
+            | Self::Unauthorized(s)
+            | Self::UnsupportedMediaType(s)
+            | Self::Forbidden(s)
+            | Self::NotFound(s)
+            | Self::Conflict(s)
+            | Self::Validation(s)
+            | Self::PreconditionFailed(s) => Cow::Borrowed(s.as_str()),
+            Self::Codec(_) => Cow::Borrowed("invalid request payload"),
+            Self::Database(_) => Cow::Borrowed("internal error"),
+            Self::Internal(_) => Cow::Borrowed("internal error"),
+        }
+    }
+
+    /// Operator-only detail string. For 5xx variants this is the message
+    /// supplied at construction time; for 4xx variants this returns the same
+    /// string as `public_message` (callers are expected to pre-redact 4xx
+    /// messages they emit).
+    pub fn detail(&self) -> Option<&str> {
+        match self {
+            Self::BadRequest(s)
+            | Self::NotAcceptable(s)
+            | Self::Unauthorized(s)
+            | Self::UnsupportedMediaType(s)
+            | Self::Forbidden(s)
+            | Self::NotFound(s)
+            | Self::Conflict(s)
+            | Self::Validation(s)
+            | Self::PreconditionFailed(s)
+            | Self::Codec(s)
+            | Self::Database(s)
+            | Self::Internal(s) => {
+                if s.is_empty() {
+                    None
+                } else {
+                    Some(s.as_str())
+                }
+            }
+        }
+    }
+
     pub fn into_response(self) -> CoolErrorResponse {
+        let code = self.code().to_owned();
+        let message = self.public_message().into_owned();
         CoolErrorResponse {
-            code: self.code().to_owned(),
-            message: self.to_string(),
+            code,
+            message,
             details: None,
         }
     }
@@ -941,5 +1105,177 @@ impl CoolEnvelope for NoEnvelope {
 
     fn seal_response(&self, bytes: &[u8], _ctx: &CoolContext) -> Result<Vec<u8>, CoolError> {
         Ok(bytes.to_vec())
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Field-level validators
+//
+// Standalone helpers invoked from generated `validate` methods on Create/Update
+// input structs. Each returns `Ok(())` on success or a redacted
+// `CoolError::Validation` whose public message names the field but never
+// echoes the rejected value (so PII does not leak via 422 bodies).
+// -----------------------------------------------------------------------------
+
+pub fn validate_length(
+    field: &'static str,
+    value: &str,
+    min: Option<usize>,
+    max: Option<usize>,
+) -> Result<(), CoolError> {
+    let len = value.chars().count();
+    if let Some(min) = min {
+        if len < min {
+            return Err(CoolError::Validation(format!(
+                "field '{field}' length {len} is below minimum {min}",
+            )));
+        }
+    }
+    if let Some(max) = max {
+        if len > max {
+            return Err(CoolError::Validation(format!(
+                "field '{field}' length {len} exceeds maximum {max}",
+            )));
+        }
+    }
+    Ok(())
+}
+
+pub fn validate_range_i64(
+    field: &'static str,
+    value: i64,
+    min: Option<i64>,
+    max: Option<i64>,
+) -> Result<(), CoolError> {
+    if let Some(min) = min {
+        if value < min {
+            return Err(CoolError::Validation(format!(
+                "field '{field}' is below minimum {min}",
+            )));
+        }
+    }
+    if let Some(max) = max {
+        if value > max {
+            return Err(CoolError::Validation(format!(
+                "field '{field}' exceeds maximum {max}",
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Pragmatic email check: requires exactly one `@`, non-empty local and domain
+/// parts, at least one `.` in the domain, and no whitespace. Not a full RFC
+/// 5322 grammar — that grammar admits forms (quoted local parts, IP literals)
+/// banks rarely accept anyway. Reject early; let real KYC flows do deeper
+/// validation.
+pub fn validate_email(field: &'static str, value: &str) -> Result<(), CoolError> {
+    let trimmed = value.trim();
+    if trimmed.is_empty()
+        || trimmed.chars().any(char::is_whitespace)
+        || trimmed.chars().filter(|c| *c == '@').count() != 1
+    {
+        return Err(CoolError::Validation(format!(
+            "field '{field}' is not a valid email address",
+        )));
+    }
+    let (local, domain) = trimmed.split_once('@').unwrap();
+    if local.is_empty() || domain.is_empty() || !domain.contains('.') {
+        return Err(CoolError::Validation(format!(
+            "field '{field}' is not a valid email address",
+        )));
+    }
+    Ok(())
+}
+
+pub fn validate_uri(field: &'static str, value: &str) -> Result<(), CoolError> {
+    if url::Url::parse(value).is_err() {
+        return Err(CoolError::Validation(format!(
+            "field '{field}' is not a valid URI",
+        )));
+    }
+    Ok(())
+}
+
+/// ISO 4217 currency codes are 3 ASCII uppercase letters. We do not enforce
+/// the registered set here — that table churns and is downstream policy.
+/// Banks typically pin allowed currencies via a separate allow-list anyway.
+pub fn validate_iso4217(field: &'static str, value: &str) -> Result<(), CoolError> {
+    if value.len() != 3 || !value.chars().all(|c| c.is_ascii_uppercase()) {
+        return Err(CoolError::Validation(format!(
+            "field '{field}' must be a 3-letter uppercase ISO 4217 code",
+        )));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod validator_tests {
+    use super::*;
+
+    #[test]
+    fn length_rejects_below_min_and_above_max() {
+        assert!(validate_length("name", "ab", Some(3), None).is_err());
+        assert!(validate_length("name", "abcd", None, Some(3)).is_err());
+        assert!(validate_length("name", "abc", Some(3), Some(3)).is_ok());
+    }
+
+    #[test]
+    fn email_accepts_simple_form_and_rejects_bad_shapes() {
+        assert!(validate_email("e", "alice@example.com").is_ok());
+        assert!(validate_email("e", "alice@example").is_err());
+        assert!(validate_email("e", "alice@@example.com").is_err());
+        assert!(validate_email("e", "alice example.com").is_err());
+        assert!(validate_email("e", "@example.com").is_err());
+    }
+
+    #[test]
+    fn iso4217_requires_three_uppercase_letters() {
+        assert!(validate_iso4217("currency", "USD").is_ok());
+        assert!(validate_iso4217("currency", "usd").is_err());
+        assert!(validate_iso4217("currency", "USDX").is_err());
+        assert!(validate_iso4217("currency", "U1D").is_err());
+    }
+
+    #[test]
+    fn range_i64_enforces_inclusive_bounds() {
+        assert!(validate_range_i64("n", 5, Some(0), Some(10)).is_ok());
+        assert!(validate_range_i64("n", -1, Some(0), None).is_err());
+        assert!(validate_range_i64("n", 11, None, Some(10)).is_err());
+    }
+
+    #[test]
+    fn validation_error_does_not_echo_value() {
+        let err = validate_email("primary_email", "not-an-email").unwrap_err();
+        let msg = err.public_message().into_owned();
+        assert!(
+            !msg.contains("not-an-email"),
+            "validation message must not echo the rejected value: {msg}",
+        );
+    }
+
+    #[cfg(feature = "decimal-rust-decimal")]
+    #[test]
+    fn decimal_alias_round_trips_through_json_as_string() {
+        use std::str::FromStr;
+        let value = Decimal::from_str("1234.56").unwrap();
+        let encoded = serde_json::to_string(&value).unwrap();
+        // `serde-str` makes Decimal serialize as a JSON string. Critical so
+        // amounts never round-trip through f64.
+        assert_eq!(encoded, "\"1234.56\"");
+        let decoded: Decimal = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded, value);
+    }
+
+    #[cfg(feature = "decimal-rust-decimal")]
+    #[test]
+    fn decimal_supports_precise_arithmetic() {
+        use std::str::FromStr;
+        // 0.1 + 0.2 — the canonical demonstration that f64 cannot represent
+        // monetary arithmetic precisely.
+        let a = Decimal::from_str("0.1").unwrap();
+        let b = Decimal::from_str("0.2").unwrap();
+        let sum = a + b;
+        assert_eq!(sum, Decimal::from_str("0.3").unwrap());
     }
 }

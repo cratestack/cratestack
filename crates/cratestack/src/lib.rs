@@ -16,9 +16,11 @@ pub use cratestack_sqlx::{
     Filter, FilterExpr, FindMany, FindUnique, IntoSqlValue, ModelColumn, ModelDelegate,
     ModelDescriptor, OrderClause, RelationFilter, ScopedCreateRecord, ScopedDeleteRecord,
     ScopedFindMany, ScopedFindUnique, ScopedModelDelegate, ScopedUpdateRecord,
-    ScopedUpdateRecordSet, SortDirection, SqlColumnValue, SqlValue, UpdateModelInput, UpdateRecord,
-    UpdateRecordSet, create_record_with_executor, update_record_with_executor,
+    ScopedUpdateRecordSet, SortDirection, SqlColumnValue, SqlValue, SqlxIdempotencyStore,
+    UpdateModelInput, UpdateRecord, UpdateRecordSet, create_record_with_executor,
+    update_record_with_executor,
 };
+pub use regex;
 pub use serde;
 pub use serde_json;
 pub use tracing;

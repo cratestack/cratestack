@@ -1,5 +1,7 @@
 pub use axum;
 
+pub mod idempotency;
+
 use axum::body::Body;
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::Response;
@@ -884,11 +886,93 @@ where
 }
 
 fn fallback_error_response(error: CoolError) -> Response {
-    let mut response = Response::new(Body::from(error.to_string()));
+    let mut response = Response::new(Body::from(error.public_message().into_owned()));
     *response.status_mut() = error.status_code();
     response.headers_mut().insert(
         header::CONTENT_TYPE,
         HeaderValue::from_static("text/plain; charset=utf-8"),
     );
     response
+}
+
+/// Parse an `If-Match` header carrying a strong ETag of the form `"<int>"`.
+/// Returns `None` if the header is absent. Returns an error if the header
+/// is present but malformed (weak validators, non-integer payloads, etc.).
+pub fn parse_if_match_version(headers: &HeaderMap) -> Result<Option<i64>, CoolError> {
+    let Some(value) = headers.get(header::IF_MATCH) else {
+        return Ok(None);
+    };
+    let raw = value
+        .to_str()
+        .map_err(|_| CoolError::BadRequest("If-Match header must be ASCII".to_owned()))?
+        .trim();
+    if raw == "*" {
+        return Err(CoolError::BadRequest(
+            "If-Match: * is not supported on versioned models".to_owned(),
+        ));
+    }
+    let stripped = raw
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .ok_or_else(|| {
+            CoolError::BadRequest(
+                "If-Match must be a strong ETag of the form \"<integer>\"".to_owned(),
+            )
+        })?;
+    stripped
+        .parse::<i64>()
+        .map(Some)
+        .map_err(|_| CoolError::BadRequest("If-Match ETag must be an integer".to_owned()))
+}
+
+/// Insert an `ETag` header onto a response, formatted as a strong validator
+/// over the integer optimistic-locking version.
+pub fn set_version_etag(response: &mut Response, version: i64) {
+    if let Ok(value) = HeaderValue::from_str(&format!("\"{version}\"")) {
+        response.headers_mut().insert(header::ETAG, value);
+    }
+}
+
+#[cfg(test)]
+mod if_match_tests {
+    use super::*;
+
+    fn header_map_with_if_match(value: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::IF_MATCH, HeaderValue::from_str(value).unwrap());
+        headers
+    }
+
+    #[test]
+    fn returns_none_when_header_absent() {
+        let headers = HeaderMap::new();
+        assert_eq!(parse_if_match_version(&headers).unwrap(), None);
+    }
+
+    #[test]
+    fn parses_strong_quoted_integer() {
+        let headers = header_map_with_if_match("\"42\"");
+        assert_eq!(parse_if_match_version(&headers).unwrap(), Some(42));
+    }
+
+    #[test]
+    fn rejects_unquoted_payload() {
+        let headers = header_map_with_if_match("42");
+        let error = parse_if_match_version(&headers).unwrap_err();
+        assert_eq!(error.code(), "BAD_REQUEST");
+    }
+
+    #[test]
+    fn rejects_wildcard() {
+        let headers = header_map_with_if_match("*");
+        let error = parse_if_match_version(&headers).unwrap_err();
+        assert_eq!(error.code(), "BAD_REQUEST");
+    }
+
+    #[test]
+    fn rejects_non_integer_payload() {
+        let headers = header_map_with_if_match("\"v42\"");
+        let error = parse_if_match_version(&headers).unwrap_err();
+        assert_eq!(error.code(), "BAD_REQUEST");
+    }
 }

@@ -66,6 +66,11 @@ minijinja = "2"
 reqwest = { version = "0", default-features = false, features = ["rustls-tls"] }
 rusqlite = { version = "0", features = ["bundled"] }
 redis = "1.2.0"
+regex = "1"
+rust_decimal = { version = "1", default-features = false, features = ["serde-str"] }
+bigdecimal = { version = "0.4", default-features = false, features = ["serde"] }
+sha2 = "0.10"
+async-trait = "0.1"
 serde_json = "1"
 serde_urlencoded = "0.7.1"
 http = "1"

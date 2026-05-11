@@ -185,6 +185,10 @@ pub struct ModelDescriptor<M, PK> {
     pub delete_deny_policies: &'static [ReadPolicy],
     pub create_defaults: &'static [CreateDefault],
     pub emitted_events: &'static [ModelEventKind],
+    /// Column name of the optimistic-locking version field, set when the
+    /// model declares an `@version` field. `None` for non-versioned models,
+    /// which keeps update semantics unchanged.
+    pub version_column: Option<&'static str>,
     _marker: PhantomData<fn() -> (M, PK)>,
 }
 
@@ -224,6 +228,7 @@ impl<M, PK> ModelDescriptor<M, PK> {
         delete_deny_policies: &'static [ReadPolicy],
         create_defaults: &'static [CreateDefault],
         emitted_events: &'static [ModelEventKind],
+        version_column: Option<&'static str>,
     ) -> Self {
         Self {
             schema_name,
@@ -245,6 +250,7 @@ impl<M, PK> ModelDescriptor<M, PK> {
             delete_deny_policies,
             create_defaults,
             emitted_events,
+            version_column,
             _marker: PhantomData,
         }
     }

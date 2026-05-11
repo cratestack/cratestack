@@ -34,7 +34,7 @@ pub(crate) fn supports_comparison(field: &Field) -> bool {
     field.ty.arity == TypeArity::Required
         && matches!(
             field.ty.name.as_str(),
-            "String" | "Cuid" | "Int" | "Float" | "DateTime" | "Uuid"
+            "String" | "Cuid" | "Int" | "Float" | "DateTime" | "Decimal" | "Uuid"
         )
 }
 
@@ -159,6 +159,11 @@ pub(crate) fn query_scalar_parser_tokens(
                     CoolError::BadRequest(format!("invalid value '{}' for {}: {error}", #value_expr, #field_name))
                 })
         },
+        "Decimal" => quote! {
+            (#value_expr).parse::<::cratestack::Decimal>().map_err(|error| {
+                CoolError::BadRequest(format!("invalid value '{}' for {}: {error}", #value_expr, #field_name))
+            })
+        },
         _ => return None,
     })
 }
@@ -209,6 +214,7 @@ pub(crate) fn rust_type_tokens_with_scope(
         "Float" => quote! { f64 },
         "Boolean" => quote! { bool },
         "DateTime" => quote! { ::cratestack::chrono::DateTime<::cratestack::chrono::Utc> },
+        "Decimal" => quote! { ::cratestack::Decimal },
         "Json" => quote! { ::cratestack::sqlx::types::Json<::cratestack::Value> },
         "Bytes" => quote! { Vec<u8> },
         "Uuid" => quote! { ::cratestack::uuid::Uuid },
@@ -363,6 +369,13 @@ pub(crate) fn sql_value_tokens(
             match #value {
                 Some(value) => ::cratestack::SqlValue::Json(value.0),
                 None => ::cratestack::SqlValue::NullJson,
+            }
+        },
+        ("Decimal", TypeArity::Required) => quote! { ::cratestack::SqlValue::Decimal(#value) },
+        ("Decimal", TypeArity::Optional) => quote! {
+            match #value {
+                Some(value) => ::cratestack::SqlValue::Decimal(value),
+                None => ::cratestack::SqlValue::NullDecimal,
             }
         },
         _ => panic!("unsupported SQLx value type for this slice"),

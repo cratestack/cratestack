@@ -13,7 +13,12 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
+async-trait.workspace = true
 axum.workspace = true
+bytes.workspace = true
 cratestack-core.workspace = true
+http.workspace = true
 serde.workspace = true
+sha2.workspace = true
+tower.workspace = true
 url.workspace = true

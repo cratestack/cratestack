@@ -15,6 +15,7 @@ use crate::shared::{
     rust_type_tokens, rust_type_tokens_with_scope, scalar_model_fields, to_snake_case,
     update_sql_value,
 };
+use crate::validators::generate_input_validate_body;
 
 mod selection;
 
@@ -91,6 +92,15 @@ pub(crate) fn generate_create_input_struct(
         .iter()
         .map(|field| create_sql_value(field, enum_names));
     let model_ident = ident(&model.name);
+    let field_refs: Vec<&Field> = fields.iter().copied().collect();
+    let validate_impl = match generate_input_validate_body(&field_refs, false) {
+        Some(body) => quote! {
+            fn validate(&self) -> ::std::result::Result<(), ::cratestack::CoolError> {
+                #body
+            }
+        },
+        None => quote! {},
+    };
 
     quote! {
         #docs
@@ -103,6 +113,7 @@ pub(crate) fn generate_create_input_struct(
             fn sql_values(&self) -> Vec<::cratestack::SqlColumnValue> {
                 vec![#(#sql_values),*]
             }
+            #validate_impl
         }
     }
 }
@@ -149,6 +160,15 @@ pub(crate) fn generate_update_input_struct(
         .iter()
         .map(|field| update_sql_value(field, enum_names));
     let model_ident = ident(&model.name);
+    let field_refs: Vec<&Field> = fields.iter().copied().collect();
+    let validate_impl = match generate_input_validate_body(&field_refs, true) {
+        Some(body) => quote! {
+            fn validate(&self) -> ::std::result::Result<(), ::cratestack::CoolError> {
+                #body
+            }
+        },
+        None => quote! {},
+    };
 
     quote! {
         #docs
@@ -163,6 +183,7 @@ pub(crate) fn generate_update_input_struct(
                 #(#sql_values)*
                 values
             }
+            #validate_impl
         }
     }
 }
@@ -391,6 +412,14 @@ pub(crate) fn generate_model_descriptor(
         .map(|field| quote! { #field })
         .collect::<Vec<_>>();
 
+    let version_column_tokens = match version_field(model) {
+        Some(field) => {
+            let column = to_snake_case(&field.name);
+            quote! { Some(#column) }
+        }
+        None => quote! { None },
+    };
+
     Ok(quote! {
         pub const #descriptor_ident: ::cratestack::ModelDescriptor<#model_ident, #primary_key_type> =
             ::cratestack::ModelDescriptor::new(
@@ -413,8 +442,16 @@ pub(crate) fn generate_model_descriptor(
                 &[#(#delete_deny_policies),*],
                 &[#(#create_defaults),*],
                 &[#(#emitted_events),*],
+                #version_column_tokens,
             );
     })
+}
+
+fn version_field(model: &Model) -> Option<&Field> {
+    model
+        .fields
+        .iter()
+        .find(|field| field.attributes.iter().any(|a| a.raw == "@version"))
 }
 
 pub(crate) fn generate_field_module(

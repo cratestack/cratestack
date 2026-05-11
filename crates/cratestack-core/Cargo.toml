@@ -12,6 +12,14 @@ readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
 
+[features]
+default = ["decimal-rust-decimal"]
+# Use rust_decimal (128-bit fixed-precision) as the workspace Decimal backend.
+decimal-rust-decimal = ["dep:rust_decimal"]
+# Reserved for the alternative arbitrary-precision backend; not yet wired
+# end-to-end. Selecting this feature today will fail compilation.
+decimal-bigdecimal = ["dep:bigdecimal"]
+
 [dependencies]
 bytes.workspace = true
 chrono.workspace = true
@@ -19,4 +27,7 @@ http.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+url.workspace = true
 uuid.workspace = true
+rust_decimal = { workspace = true, optional = true }
+bigdecimal = { workspace = true, optional = true }

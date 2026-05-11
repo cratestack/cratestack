@@ -9,6 +9,46 @@ use super::support::{
     apply_create_defaults, evaluate_create_policies, push_action_policy_query, push_bind_value,
 };
 
+/// Render the SQL string for an update. Pure helper, no I/O — separated
+/// so the version-aware branch can be unit-tested without a runtime.
+pub fn render_update_preview_sql(
+    table_name: &str,
+    primary_key: &str,
+    version_column: Option<&str>,
+    columns: &[&str],
+    select_projection: &str,
+) -> String {
+    let assignments = columns
+        .iter()
+        .enumerate()
+        .map(|(index, column)| format!("{column} = ${}", index + 1))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    match version_column {
+        Some(version_col) => format!(
+            "UPDATE {} SET {}, {} = {} + 1 WHERE {} = ${} AND {} = ${} RETURNING {}",
+            table_name,
+            assignments,
+            version_col,
+            version_col,
+            primary_key,
+            columns.len() + 1,
+            version_col,
+            columns.len() + 2,
+            select_projection,
+        ),
+        None => format!(
+            "UPDATE {} SET {} WHERE {} = ${} RETURNING {}",
+            table_name,
+            assignments,
+            primary_key,
+            columns.len() + 1,
+            select_projection,
+        ),
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct CreateRecord<'a, M: 'static, PK: 'static, I> {
     pub(crate) runtime: &'a SqlxRuntime,
@@ -106,6 +146,7 @@ impl<'a, M: 'static, PK: 'static> UpdateRecord<'a, M, PK> {
             descriptor: self.descriptor,
             id: self.id,
             input,
+            if_match: None,
         }
     }
 }
@@ -116,36 +157,43 @@ pub struct UpdateRecordSet<'a, M: 'static, PK: 'static, I> {
     pub(crate) descriptor: &'static ModelDescriptor<M, PK>,
     pub(crate) id: PK,
     pub(crate) input: I,
+    pub(crate) if_match: Option<i64>,
 }
 
 impl<'a, M: 'static, PK: 'static, I> UpdateRecordSet<'a, M, PK, I>
 where
     I: UpdateModelInput<M>,
 {
+    /// Attach an expected version for optimistic locking. The update will only
+    /// succeed if the row's current `@version` field matches `expected`.
+    /// Required on models that declare `@version`; ignored otherwise.
+    pub fn if_match(mut self, expected: i64) -> Self {
+        self.if_match = Some(expected);
+        self
+    }
+
     pub fn preview_sql(&self) -> String {
         let values = self.input.sql_values();
-        let assignments = values
-            .iter()
-            .enumerate()
-            .map(|(index, value)| format!("{} = ${}", value.column, index + 1))
-            .collect::<Vec<_>>()
-            .join(", ");
-
-        format!(
-            "UPDATE {} SET {} WHERE {} = ${} RETURNING {}",
+        let columns: Vec<&str> = values.iter().map(|v| v.column).collect();
+        render_update_preview_sql(
             self.descriptor.table_name,
-            assignments,
             self.descriptor.primary_key,
-            values.len() + 1,
-            self.descriptor.select_projection(),
+            self.descriptor.version_column,
+            &columns,
+            &self.descriptor.select_projection(),
         )
     }
 
     pub async fn run(self, ctx: &CoolContext) -> Result<M, CoolError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
-        PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
+        PK: Send + Clone + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
+        if self.descriptor.version_column.is_some() && self.if_match.is_none() {
+            return Err(CoolError::PreconditionFailed(
+                "If-Match header required for versioned model".to_owned(),
+            ));
+        }
         let emits_event = self.descriptor.emits(ModelEventKind::Updated);
         let record = if emits_event {
             let mut tx = self
@@ -155,9 +203,16 @@ where
                 .await
                 .map_err(|error| CoolError::Database(error.to_string()))?;
             ensure_event_outbox_table(&mut *tx).await?;
-            let record =
-                update_record_with_executor(&mut *tx, self.descriptor, self.id, self.input, ctx)
-                    .await?;
+            let record = update_record_with_executor(
+                &mut *tx,
+                self.runtime.pool(),
+                self.descriptor,
+                self.id,
+                self.input,
+                ctx,
+                self.if_match,
+            )
+            .await?;
             enqueue_event_outbox(
                 &mut *tx,
                 self.descriptor.schema_name,
@@ -172,10 +227,12 @@ where
         } else {
             update_record_with_executor(
                 self.runtime.pool(),
+                self.runtime.pool(),
                 self.descriptor,
                 self.id,
                 self.input,
                 ctx,
+                self.if_match,
             )
             .await?
         };
@@ -256,6 +313,7 @@ where
     I: CreateModelInput<M>,
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
 {
+    input.validate()?;
     let values = apply_create_defaults(input.sql_values(), descriptor.create_defaults, ctx)?;
     if values.is_empty() {
         return Err(CoolError::Validation(
@@ -281,17 +339,20 @@ where
 
 pub async fn update_record_with_executor<'e, E, M, PK, I>(
     executor: E,
+    policy_pool: &sqlx::PgPool,
     descriptor: &'static ModelDescriptor<M, PK>,
     id: PK,
     input: I,
     ctx: &CoolContext,
+    if_match: Option<i64>,
 ) -> Result<M, CoolError>
 where
     E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     I: UpdateModelInput<M>,
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
-    PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
+    PK: Send + Clone + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
 {
+    input.validate()?;
     let values = input.sql_values();
     if values.is_empty() {
         return Err(CoolError::Validation(
@@ -299,7 +360,16 @@ where
         ));
     }
 
-    update_returning_record(executor, descriptor, id, &values, ctx).await
+    update_returning_record(
+        executor,
+        policy_pool,
+        descriptor,
+        id,
+        &values,
+        ctx,
+        if_match,
+    )
+    .await
 }
 
 async fn insert_returning_record<'e, E, M, PK>(
@@ -339,16 +409,19 @@ where
 
 async fn update_returning_record<'e, E, M, PK>(
     executor: E,
+    policy_pool: &sqlx::PgPool,
     descriptor: &'static ModelDescriptor<M, PK>,
     id: PK,
     values: &[crate::SqlColumnValue],
     ctx: &CoolContext,
+    if_match: Option<i64>,
 ) -> Result<M, CoolError>
 where
     E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
-    PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
+    PK: Send + Clone + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
 {
+    let version_column = descriptor.version_column;
     let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("UPDATE ");
     query.push(descriptor.table_name).push(" SET ");
     for (index, value) in values.iter().enumerate() {
@@ -358,11 +431,24 @@ where
         query.push(value.column).push(" = ");
         push_bind_value(&mut query, &value.value);
     }
+    if let Some(version_col) = version_column {
+        query
+            .push(", ")
+            .push(version_col)
+            .push(" = ")
+            .push(version_col)
+            .push(" + 1");
+    }
     query
         .push(" WHERE ")
         .push(descriptor.primary_key)
         .push(" = ");
+    let id_for_probe = id.clone();
     query.push_bind(id);
+    if let (Some(version_col), Some(expected)) = (version_column, if_match) {
+        query.push(" AND ").push(version_col).push(" = ");
+        query.push_bind(expected);
+    }
     query.push(" AND ");
     push_action_policy_query(
         &mut query,
@@ -374,12 +460,74 @@ where
         .push(" RETURNING ")
         .push(descriptor.select_projection());
 
-    query
+    let outcome = query
         .build_query_as::<M>()
         .fetch_optional(executor)
         .await
-        .map_err(|error| CoolError::Database(error.to_string()))?
-        .ok_or_else(|| CoolError::Forbidden("update policy denied this operation".to_owned()))
+        .map_err(|error| CoolError::Database(error.to_string()))?;
+    match outcome {
+        Some(record) => Ok(record),
+        None => {
+            // No row matched. If this is a versioned update we want to
+            // distinguish "stale version" from a true policy denial. The
+            // probe applies the read policy: if the caller cannot see the
+            // row, we keep returning Forbidden so policy denials remain
+            // indistinguishable from missing rows.
+            if let (Some(version_col), Some(expected)) = (version_column, if_match) {
+                if let Some(current) =
+                    probe_current_version(policy_pool, descriptor, id_for_probe, version_col, ctx)
+                        .await?
+                {
+                    if current != expected {
+                        return Err(CoolError::PreconditionFailed(format!(
+                            "version mismatch: expected {expected}, found {current}",
+                        )));
+                    }
+                }
+            }
+            Err(CoolError::Forbidden(
+                "update policy denied this operation".to_owned(),
+            ))
+        }
+    }
+}
+
+/// Read the current version of a row using the read policy. Returns `None` if
+/// the caller cannot see the row (so the outer code preserves the existing
+/// Forbidden-on-no-row semantics — readers can't tell a denied row from a
+/// missing one).
+async fn probe_current_version<M, PK>(
+    policy_pool: &sqlx::PgPool,
+    descriptor: &'static ModelDescriptor<M, PK>,
+    id: PK,
+    version_col: &'static str,
+    ctx: &CoolContext,
+) -> Result<Option<i64>, CoolError>
+where
+    PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
+{
+    let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT ");
+    query.push(version_col);
+    query.push(" FROM ").push(descriptor.table_name);
+    query
+        .push(" WHERE ")
+        .push(descriptor.primary_key)
+        .push(" = ");
+    query.push_bind(id);
+    query.push(" AND ");
+    push_action_policy_query(
+        &mut query,
+        descriptor.read_allow_policies,
+        descriptor.read_deny_policies,
+        ctx,
+    );
+
+    let row: Option<(i64,)> = query
+        .build_query_as::<(i64,)>()
+        .fetch_optional(policy_pool)
+        .await
+        .map_err(|error| CoolError::Database(error.to_string()))?;
+    Ok(row.map(|(v,)| v))
 }
 
 async fn delete_returning_record<'e, E, M, PK>(

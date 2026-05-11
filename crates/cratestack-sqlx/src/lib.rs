@@ -1,12 +1,15 @@
 mod delegate;
 mod descriptor;
 mod filter;
+mod idempotency;
 mod order;
 mod query;
 mod render;
 #[cfg(test)]
 mod tests;
 mod values;
+
+pub use idempotency::{SqlxIdempotencyStore, expiry_from};
 
 pub use cratestack_policy::{PolicyExpr, PolicyLiteral, ReadPolicy, ReadPredicate};
 pub use delegate::{
