@@ -1,0 +1,15 @@
+datasource db {
+  provider = "sqlite"
+  url = env("DATABASE_URL")
+}
+
+auth Anonymous {
+  id Int
+}
+
+model Todo {
+  id Uuid @id
+  title String
+  completed Boolean
+  createdAt DateTime
+}
