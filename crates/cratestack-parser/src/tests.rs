@@ -599,7 +599,10 @@ model Post {
     let post = &schema.models[0];
     assert_eq!(post.fields.len(), 2);
     assert_eq!(post.fields[1].name, "createdAt");
-    assert_eq!(post.fields[1].ty.arity, cratestack_core::TypeArity::Optional);
+    assert_eq!(
+        post.fields[1].ty.arity,
+        cratestack_core::TypeArity::Optional
+    );
 }
 
 #[test]
@@ -634,4 +637,619 @@ model Post {
     .expect_err("mixin @id should fail");
 
     assert!(error.to_string().contains("cannot declare @id"));
+}
+
+#[test]
+fn parses_version_attribute_on_int_field() {
+    let schema = parse_schema(
+        r#"
+model Account {
+  id Int @id
+  balance Int
+  version Int @version
+}
+"#,
+    )
+    .expect("schema with @version should parse");
+
+    let version_field = &schema.models[0].fields[2];
+    assert_eq!(version_field.name, "version");
+    assert!(
+        version_field.attributes.iter().any(|a| a.raw == "@version"),
+        "@version attribute should be present"
+    );
+}
+
+#[test]
+fn rejects_two_version_fields_per_model() {
+    let error = parse_schema(
+        r#"
+model Account {
+  id Int @id
+  v1 Int @version
+  v2 Int @version
+}
+"#,
+    )
+    .expect_err("two @version fields should fail");
+
+    assert!(
+        error.to_string().contains("more than one @version"),
+        "error message mentions duplicate @version: {error}",
+    );
+}
+
+#[test]
+fn rejects_version_on_non_int_field() {
+    let error = parse_schema(
+        r#"
+model Account {
+  id Int @id
+  version String @version
+}
+"#,
+    )
+    .expect_err("@version on String should fail");
+
+    assert!(
+        error.to_string().contains("must be a required `Int`"),
+        "error message mentions Int requirement: {error}",
+    );
+}
+
+#[test]
+fn rejects_version_on_optional_int() {
+    let error = parse_schema(
+        r#"
+model Account {
+  id Int @id
+  version Int? @version
+}
+"#,
+    )
+    .expect_err("@version on Int? should fail");
+
+    assert!(
+        error.to_string().contains("must be a required `Int`"),
+        "error message mentions Int requirement: {error}",
+    );
+}
+
+#[test]
+fn rejects_version_on_primary_key() {
+    let error = parse_schema(
+        r#"
+model Account {
+  id Int @id @version
+}
+"#,
+    )
+    .expect_err("@version on @id should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("must not also be the primary key"),
+        "error message: {error}",
+    );
+}
+
+#[test]
+fn accepts_string_validators() {
+    parse_schema(
+        r#"
+model Account {
+  id Int @id
+  email String @email
+  name String @length(min: 1, max: 200)
+  currency String @iso4217
+  website String @uri
+  slug String @regex("^[a-z0-9-]+$")
+}
+"#,
+    )
+    .expect("validator-decorated schema should parse");
+}
+
+#[test]
+fn rejects_length_on_int_field() {
+    let error = parse_schema(
+        r#"
+model Account {
+  id Int @id
+  count Int @length(min: 1)
+}
+"#,
+    )
+    .expect_err("@length on Int should fail");
+
+    assert!(
+        error.to_string().contains("only valid on String or Bytes"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn rejects_email_on_int_field() {
+    let error = parse_schema(
+        r#"
+model Account {
+  id Int @id
+  count Int @email
+}
+"#,
+    )
+    .expect_err("@email on Int should fail");
+
+    assert!(
+        error.to_string().contains("only valid on String"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn rejects_invalid_regex_pattern() {
+    let error = parse_schema(
+        r#"
+model Account {
+  id Int @id
+  bad String @regex("[unterminated")
+}
+"#,
+    )
+    .expect_err("invalid regex should fail at parse time");
+
+    assert!(
+        error.to_string().contains("not a valid regex"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn rejects_length_with_min_above_max() {
+    let error = parse_schema(
+        r#"
+model Account {
+  id Int @id
+  name String @length(min: 10, max: 5)
+}
+"#,
+    )
+    .expect_err("min > max should fail");
+
+    assert!(
+        error.to_string().contains("min (10) must be <= max"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn rejects_range_on_string_field() {
+    let error = parse_schema(
+        r#"
+model Account {
+  id Int @id
+  name String @range(min: 0)
+}
+"#,
+    )
+    .expect_err("@range on String should fail");
+
+    assert!(
+        error.to_string().contains("only valid on Int or Decimal"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn accepts_decimal_scalar_in_models_and_procedures() {
+    let schema = parse_schema(
+        r#"
+model Account {
+  id Int @id
+  balance Decimal
+  available Decimal?
+}
+
+type CreditInput {
+  accountId Int
+  amount Decimal
+}
+
+mutation procedure credit(args: CreditInput): Account
+"#,
+    )
+    .expect("schema with Decimal should parse");
+
+    let balance = &schema.models[0].fields[1];
+    assert_eq!(balance.name, "balance");
+    assert_eq!(balance.ty.name, "Decimal");
+    let amount = &schema.types[0].fields[1];
+    assert_eq!(amount.ty.name, "Decimal");
+}
+
+#[test]
+fn decimal_field_can_carry_range_validator() {
+    parse_schema(
+        r#"
+model Account {
+  id Int @id
+  balance Decimal @range(min: 0)
+}
+"#,
+    )
+    .expect("@range on Decimal should be accepted at parse time");
+}
+
+#[test]
+fn accepts_soft_delete_and_retain_attributes() {
+    let schema = parse_schema(
+        r#"
+model Customer {
+  id Int @id
+  email String
+
+  @@soft_delete
+  @@retain(days: 2555)
+}
+"#,
+    )
+    .expect("model with soft-delete + retain should parse");
+
+    let attrs = &schema.models[0].attributes;
+    assert!(attrs.iter().any(|a| a.raw == "@@soft_delete"));
+    assert!(attrs.iter().any(|a| a.raw == "@@retain(days: 2555)"));
+}
+
+#[test]
+fn rejects_retain_without_days_argument() {
+    let error = parse_schema(
+        r#"
+model Customer {
+  id Int @id
+
+  @@retain(weeks: 12)
+}
+"#,
+    )
+    .expect_err("@@retain(weeks: 12) should fail");
+
+    assert!(
+        error.to_string().contains("`@@retain` requires `days: N`"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn rejects_soft_delete_with_args() {
+    let error = parse_schema(
+        r#"
+model Customer {
+  id Int @id
+
+  @@soft_delete(column: "deleted")
+}
+"#,
+    )
+    .expect_err("@@soft_delete(...) should fail");
+
+    assert!(
+        error.to_string().contains("does not take arguments"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn accepts_audit_attribute_on_model() {
+    let schema = parse_schema(
+        r#"
+model Account {
+  id Int @id
+  balance Decimal
+
+  @@audit
+}
+"#,
+    )
+    .expect("model with @@audit should parse");
+
+    assert!(
+        schema.models[0]
+            .attributes
+            .iter()
+            .any(|a| a.raw == "@@audit"),
+        "expected @@audit in attributes",
+    );
+}
+
+#[test]
+fn rejects_audit_with_arguments() {
+    let error = parse_schema(
+        r#"
+model Account {
+  id Int @id
+
+  @@audit(level: "full")
+}
+"#,
+    )
+    .expect_err("@@audit with args should fail");
+
+    assert!(
+        error.to_string().contains("does not take arguments"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn accepts_readonly_and_server_only_field_attributes() {
+    let schema = parse_schema(
+        r#"
+model Account {
+  id Int @id
+  balance Decimal @readonly
+  internalScore Int @server_only
+}
+"#,
+    )
+    .expect("schema with field-policy attributes should parse");
+
+    let fields = &schema.models[0].fields;
+    assert!(
+        fields[1].attributes.iter().any(|a| a.raw == "@readonly"),
+        "expected @readonly on balance",
+    );
+    assert!(
+        fields[2].attributes.iter().any(|a| a.raw == "@server_only"),
+        "expected @server_only on internalScore",
+    );
+}
+
+#[test]
+fn rejects_readonly_on_primary_key() {
+    let error = parse_schema(
+        r#"
+model Account {
+  id Int @id @readonly
+}
+"#,
+    )
+    .expect_err("@readonly on @id should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("primary key and must not declare @readonly"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn rejects_server_only_on_primary_key() {
+    let error = parse_schema(
+        r#"
+model Account {
+  id Int @id @server_only
+}
+"#,
+    )
+    .expect_err("@server_only on @id should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("primary key and must not declare @server_only"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn rejects_readonly_and_server_only_together() {
+    let error = parse_schema(
+        r#"
+model Account {
+  id Int @id
+  balance Decimal @readonly @server_only
+}
+"#,
+    )
+    .expect_err("combining @readonly + @server_only should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("declares both @readonly and @server_only"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn accepts_pii_and_sensitive_field_attributes() {
+    let schema = parse_schema(
+        r#"
+model Customer {
+  id Int @id
+  email String @pii
+  riskScore Int @sensitive
+}
+"#,
+    )
+    .expect("schema with @pii and @sensitive should parse");
+
+    let fields = &schema.models[0].fields;
+    assert!(fields[1].attributes.iter().any(|a| a.raw == "@pii"));
+    assert!(fields[2].attributes.iter().any(|a| a.raw == "@sensitive"));
+}
+
+#[test]
+fn accepts_isolation_attribute_on_procedure() {
+    let schema = parse_schema(
+        r#"
+type TransferInput {
+  from Int
+  to Int
+}
+
+mutation procedure transfer(args: TransferInput): TransferInput
+  @isolation("serializable")
+"#,
+    )
+    .expect("procedure with @isolation should parse");
+
+    let attrs = &schema.procedures[0].attributes;
+    assert!(
+        attrs
+            .iter()
+            .any(|a| a.raw == "@isolation(\"serializable\")"),
+        "expected @isolation in attributes: {attrs:?}",
+    );
+}
+
+#[test]
+fn accepts_isolation_repeatable_read() {
+    parse_schema(
+        r#"
+type Ping {
+  nonce String
+}
+
+procedure read_only(args: Ping): Ping
+  @isolation("repeatable_read")
+"#,
+    )
+    .expect("repeatable_read isolation should parse");
+}
+
+#[test]
+fn rejects_invalid_isolation_level() {
+    let error = parse_schema(
+        r#"
+type Ping {
+  nonce String
+}
+
+procedure broken(args: Ping): Ping
+  @isolation("snapshot")
+"#,
+    )
+    .expect_err("unknown isolation level should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("unknown transaction isolation level"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn rejects_isolation_missing_argument() {
+    let error = parse_schema(
+        r#"
+type Ping {
+  nonce String
+}
+
+procedure broken(args: Ping): Ping
+  @isolation
+"#,
+    )
+    .expect_err("@isolation without args should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("@isolation requires a quoted level argument"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn accepts_api_version_and_deprecated_on_procedure() {
+    let schema = parse_schema(
+        r#"
+type Ping {
+  nonce String
+}
+
+procedure healthcheck(args: Ping): Ping
+  @api_version("v1")
+  @deprecated("use healthcheck_v2")
+"#,
+    )
+    .expect("procedure with @api_version + @deprecated should parse");
+
+    let attrs = &schema.procedures[0].attributes;
+    assert!(
+        attrs.iter().any(|a| a.raw == "@api_version(\"v1\")"),
+        "expected @api_version: {attrs:?}",
+    );
+    assert!(
+        attrs
+            .iter()
+            .any(|a| a.raw == "@deprecated(\"use healthcheck_v2\")"),
+        "expected @deprecated",
+    );
+}
+
+#[test]
+fn rejects_empty_api_version() {
+    let error = parse_schema(
+        r#"
+type Ping {
+  nonce String
+}
+
+procedure healthcheck(args: Ping): Ping
+  @api_version("")
+"#,
+    )
+    .expect_err("empty @api_version should fail");
+
+    assert!(
+        error.to_string().contains("@api_version must not be empty"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn rejects_api_version_with_invalid_characters() {
+    let error = parse_schema(
+        r#"
+type Ping {
+  nonce String
+}
+
+procedure healthcheck(args: Ping): Ping
+  @api_version("v 1")
+"#,
+    )
+    .expect_err("@api_version with space should fail");
+
+    assert!(
+        error.to_string().contains("must contain only alphanumeric"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn parses_no_idempotency_attribute_on_procedure() {
+    let schema = parse_schema(
+        r#"
+type Ping {
+  nonce String
+}
+
+mutation procedure healthcheck(args: Ping): Ping
+  @no_idempotency
+"#,
+    )
+    .expect("procedure with @no_idempotency should parse");
+
+    let attrs = &schema.procedures[0].attributes;
+    assert!(
+        attrs.iter().any(|a| a.raw == "@no_idempotency"),
+        "procedure attributes should include @no_idempotency: {:?}",
+        attrs,
+    );
 }

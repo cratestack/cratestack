@@ -1,0 +1,22 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+  role String
+}
+
+model Account {
+  id Int @id
+  customerEmail String @pii
+  riskScore Int @sensitive
+  balance Int
+
+  @@audit
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}

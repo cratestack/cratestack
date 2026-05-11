@@ -13,7 +13,21 @@ keywords.workspace = true
 categories.workspace = true
 
 [features]
-default = []
+default = ["decimal-rust-decimal"]
+decimal-rust-decimal = [
+    "cratestack-core/decimal-rust-decimal",
+    "cratestack-sqlx/decimal-rust-decimal",
+]
+decimal-bigdecimal = [
+    "cratestack-core/decimal-bigdecimal",
+    "cratestack-sqlx/decimal-bigdecimal",
+]
+# Replace the default `ring`-backed rustls provider with `aws-lc-rs`, which
+# is the only provider with current FIPS 140-3 validation among the
+# pure-Rust rustls backends. Selecting this feature does not make a build
+# "FIPS-certified" — that requires the vendor's validated binary; it lets
+# you compile and ship a binary that uses the validated crypto module.
+crypto-aws-lc-rs = []
 
 [dependencies]
 chrono.workspace = true
@@ -24,6 +38,7 @@ cratestack-macros.workspace = true
 cratestack-parser.workspace = true
 cratestack-policy.workspace = true
 cratestack-sqlx.workspace = true
+regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true

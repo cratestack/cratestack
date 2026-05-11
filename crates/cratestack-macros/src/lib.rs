@@ -9,6 +9,7 @@ mod relation;
 mod shared;
 mod transport;
 mod types;
+mod validators;
 
 use proc_macro::TokenStream;
 

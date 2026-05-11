@@ -304,9 +304,16 @@ where
     pub async fn run(self) -> Result<M, CoolError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
-        PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
+        PK: Send + Clone + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
         self.request.run(&self.ctx).await
+    }
+
+    /// Attach an expected version for optimistic locking. See
+    /// [`UpdateRecordSet::if_match`].
+    pub fn if_match(mut self, expected: i64) -> Self {
+        self.request = self.request.if_match(expected);
+        self
     }
 }
 

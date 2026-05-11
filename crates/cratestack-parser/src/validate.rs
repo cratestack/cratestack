@@ -6,7 +6,8 @@ use crate::diagnostics::{SchemaError, span_error};
 use crate::relation_helpers::{parse_relation_attribute, validate_relation_scalar_compatibility};
 
 const BUILTIN_TYPES: &[&str] = &[
-    "String", "Cuid", "Int", "Float", "Boolean", "DateTime", "Json", "Bytes", "Uuid", "Page",
+    "String", "Cuid", "Int", "Float", "Boolean", "DateTime", "Decimal", "Json", "Bytes", "Uuid",
+    "Page",
 ];
 
 pub(crate) fn validate_schema(
@@ -140,6 +141,8 @@ pub(crate) fn validate_schema(
                 field.span,
                 false,
             )?;
+            validate_validator_attributes(&model.name, field)?;
+            validate_field_policy_attributes(&model.name, field)?;
 
             let relation_attribute = field
                 .attributes
@@ -271,6 +274,53 @@ pub(crate) fn validate_schema(
                     ));
                 }
                 saw_paged_attribute = true;
+            } else if attribute.raw == "@@audit" {
+                // recognised; no further validation needed at parse time
+            } else if attribute.raw.starts_with("@@audit(") {
+                return Err(span_error(
+                    format!(
+                        "model `{}` `@@audit` does not take arguments; use bare `@@audit`",
+                        model.name,
+                    ),
+                    attribute.span,
+                ));
+            } else if attribute.raw == "@@soft_delete" {
+                // recognised; descriptor wiring lives in the macro
+            } else if attribute.raw.starts_with("@@soft_delete(") {
+                return Err(span_error(
+                    format!(
+                        "model `{}` `@@soft_delete` does not take arguments",
+                        model.name,
+                    ),
+                    attribute.span,
+                ));
+            } else if attribute.raw.starts_with("@@retain(") {
+                let inner = attribute
+                    .raw
+                    .strip_prefix("@@retain(")
+                    .and_then(|s| s.strip_suffix(')'))
+                    .ok_or_else(|| {
+                        span_error(
+                            format!("model `{}` `@@retain` is malformed", model.name),
+                            attribute.span,
+                        )
+                    })?
+                    .trim();
+                let days_str = inner.strip_prefix("days:").map(str::trim).ok_or_else(|| {
+                    span_error(
+                        format!("model `{}` `@@retain` requires `days: N`", model.name,),
+                        attribute.span,
+                    )
+                })?;
+                days_str.parse::<u32>().map_err(|_| {
+                    span_error(
+                        format!(
+                            "model `{}` `@@retain(days: ...)` must be a non-negative integer",
+                            model.name,
+                        ),
+                        attribute.span,
+                    )
+                })?;
             }
         }
 
@@ -279,6 +329,47 @@ pub(crate) fn validate_schema(
                 format!("model `{}` is missing an @id field", model.name),
                 model.span,
             ));
+        }
+
+        let version_fields: Vec<&cratestack_core::Field> = model
+            .fields
+            .iter()
+            .filter(|field| field.attributes.iter().any(|a| a.raw == "@version"))
+            .collect();
+        if version_fields.len() > 1 {
+            return Err(span_error(
+                format!(
+                    "model `{}` declares more than one @version field",
+                    model.name,
+                ),
+                version_fields[1].span,
+            ));
+        }
+        if let Some(version) = version_fields.first() {
+            if version.ty.name != "Int"
+                || !matches!(version.ty.arity, cratestack_core::TypeArity::Required)
+            {
+                return Err(span_error(
+                    format!(
+                        "@version field `{}.{}` must be a required `Int`",
+                        model.name, version.name,
+                    ),
+                    version.span,
+                ));
+            }
+            if version
+                .attributes
+                .iter()
+                .any(|attribute| attribute.raw.starts_with("@id"))
+            {
+                return Err(span_error(
+                    format!(
+                        "@version field `{}.{}` must not also be the primary key",
+                        model.name, version.name,
+                    ),
+                    version.span,
+                ));
+            }
         }
     }
 
@@ -413,6 +504,9 @@ pub(crate) fn validate_schema(
             procedure.span,
             true,
         )?;
+        validate_procedure_isolation_attribute(procedure)?;
+        validate_procedure_api_version_attribute(procedure)?;
+        validate_procedure_deprecated_attribute(procedure)?;
     }
 
     let _ = (path, source);
@@ -551,6 +645,438 @@ fn validate_type_ref(
         return Err(span_error(
             format!("unknown type `{}`", type_ref.name),
             span,
+        ));
+    }
+    Ok(())
+}
+
+/// Recognise the validation attribute family (`@length`, `@range`, `@regex`,
+/// `@email`, `@uri`, `@iso4217`) and reject combinations that don't match the
+/// field's scalar type. This is parse-time only — runtime enforcement happens
+/// in generated `validate` impls on Create/Update inputs.
+fn validate_validator_attributes(
+    model_name: &str,
+    field: &cratestack_core::Field,
+) -> Result<(), SchemaError> {
+    let scalar = field.ty.name.as_str();
+    for attribute in &field.attributes {
+        let raw = attribute.raw.as_str();
+        let (name, has_args) = if let Some(open) = raw.find('(') {
+            (&raw[1..open], true)
+        } else {
+            (&raw[1..], false)
+        };
+        match name {
+            "length" => {
+                if !has_args {
+                    return Err(span_error(
+                        format!(
+                            "field `{}.{}` @length requires arguments like @length(min: 1, max: 200)",
+                            model_name, field.name,
+                        ),
+                        field.span,
+                    ));
+                }
+                if scalar != "String" && scalar != "Bytes" {
+                    return Err(span_error(
+                        format!(
+                            "@length on `{}.{}` is only valid on String or Bytes fields",
+                            model_name, field.name,
+                        ),
+                        field.span,
+                    ));
+                }
+                parse_length_args(raw).map_err(|message| {
+                    span_error(
+                        format!("field `{}.{}`: {message}", model_name, field.name,),
+                        field.span,
+                    )
+                })?;
+            }
+            "range" => {
+                if !has_args {
+                    return Err(span_error(
+                        format!(
+                            "field `{}.{}` @range requires arguments like @range(min: 0, max: 100)",
+                            model_name, field.name,
+                        ),
+                        field.span,
+                    ));
+                }
+                if scalar != "Int" && scalar != "Decimal" {
+                    return Err(span_error(
+                        format!(
+                            "@range on `{}.{}` is only valid on Int or Decimal fields",
+                            model_name, field.name,
+                        ),
+                        field.span,
+                    ));
+                }
+                parse_range_args(raw).map_err(|message| {
+                    span_error(
+                        format!("field `{}.{}`: {message}", model_name, field.name,),
+                        field.span,
+                    )
+                })?;
+            }
+            "regex" => {
+                if !has_args {
+                    return Err(span_error(
+                        format!(
+                            "field `{}.{}` @regex requires a string argument",
+                            model_name, field.name,
+                        ),
+                        field.span,
+                    ));
+                }
+                if scalar != "String" {
+                    return Err(span_error(
+                        format!(
+                            "@regex on `{}.{}` is only valid on String fields",
+                            model_name, field.name,
+                        ),
+                        field.span,
+                    ));
+                }
+                parse_regex_arg(raw).map_err(|message| {
+                    span_error(
+                        format!("field `{}.{}`: {message}", model_name, field.name,),
+                        field.span,
+                    )
+                })?;
+            }
+            "email" | "uri" | "iso4217" => {
+                if has_args {
+                    return Err(span_error(
+                        format!(
+                            "field `{}.{}` @{name} does not take arguments",
+                            model_name, field.name,
+                        ),
+                        field.span,
+                    ));
+                }
+                if scalar != "String" {
+                    return Err(span_error(
+                        format!(
+                            "@{name} on `{}.{}` is only valid on String fields",
+                            model_name, field.name,
+                        ),
+                        field.span,
+                    ));
+                }
+            }
+            _ => {} // unknown attribute; left to other validators
+        }
+    }
+    Ok(())
+}
+
+/// Parse `@length(min: N, max: N)` into `(min, max)` with both bounds optional.
+pub(crate) fn parse_length_args(raw: &str) -> Result<(Option<u32>, Option<u32>), String> {
+    let inner = strip_attribute_parens(raw, "length")?;
+    let (mut min, mut max) = (None, None);
+    for part in split_kv_args(&inner) {
+        let (key, value) = split_kv(&part)?;
+        let parsed: u32 = value
+            .parse()
+            .map_err(|_| format!("@length expects non-negative integer, got `{value}`"))?;
+        match key.as_str() {
+            "min" => min = Some(parsed),
+            "max" => max = Some(parsed),
+            other => return Err(format!("@length: unknown argument `{other}`")),
+        }
+    }
+    if let (Some(lo), Some(hi)) = (min, max) {
+        if lo > hi {
+            return Err(format!("@length: min ({lo}) must be <= max ({hi})"));
+        }
+    }
+    Ok((min, max))
+}
+
+/// Parse `@range(min: N, max: N)` into `(min, max)` with both bounds optional
+/// and signed.
+pub(crate) fn parse_range_args(raw: &str) -> Result<(Option<i64>, Option<i64>), String> {
+    let inner = strip_attribute_parens(raw, "range")?;
+    let (mut min, mut max) = (None, None);
+    for part in split_kv_args(&inner) {
+        let (key, value) = split_kv(&part)?;
+        let parsed: i64 = value
+            .parse()
+            .map_err(|_| format!("@range expects integer, got `{value}`"))?;
+        match key.as_str() {
+            "min" => min = Some(parsed),
+            "max" => max = Some(parsed),
+            other => return Err(format!("@range: unknown argument `{other}`")),
+        }
+    }
+    if let (Some(lo), Some(hi)) = (min, max) {
+        if lo > hi {
+            return Err(format!("@range: min ({lo}) must be <= max ({hi})"));
+        }
+    }
+    Ok((min, max))
+}
+
+/// Parse `@regex("pattern")` into the pattern string. Validates the regex
+/// compiles so we fail at schema-load time rather than first request.
+pub(crate) fn parse_regex_arg(raw: &str) -> Result<String, String> {
+    let inner = strip_attribute_parens(raw, "regex")?;
+    let trimmed = inner.trim();
+    let stripped = trimmed
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .ok_or_else(|| "@regex argument must be a quoted string literal".to_owned())?;
+    regex::Regex::new(stripped).map_err(|e| format!("@regex pattern is not a valid regex: {e}"))?;
+    Ok(stripped.to_owned())
+}
+
+fn strip_attribute_parens(raw: &str, name: &str) -> Result<String, String> {
+    let prefix = format!("@{name}(");
+    let trimmed = raw
+        .strip_prefix(&prefix)
+        .ok_or_else(|| format!("@{name} attribute is malformed"))?;
+    let inner = trimmed
+        .strip_suffix(')')
+        .ok_or_else(|| format!("@{name} attribute is missing closing paren"))?;
+    Ok(inner.to_owned())
+}
+
+fn split_kv_args(input: &str) -> Vec<String> {
+    input
+        .split(',')
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+fn split_kv(part: &str) -> Result<(String, String), String> {
+    let (key, value) = part
+        .split_once(':')
+        .ok_or_else(|| format!("expected `key: value`, got `{part}`"))?;
+    Ok((key.trim().to_owned(), value.trim().to_owned()))
+}
+
+/// Parse and validate the `@isolation("...")` procedure attribute. At most
+/// one is permitted per procedure; the level string must be one of the
+/// values [`cratestack_core::TransactionIsolation::parse`] accepts.
+fn validate_procedure_isolation_attribute(
+    procedure: &cratestack_core::Procedure,
+) -> Result<(), SchemaError> {
+    let matches: Vec<&cratestack_core::Attribute> = procedure
+        .attributes
+        .iter()
+        .filter(|a| a.raw.starts_with("@isolation"))
+        .collect();
+    if matches.is_empty() {
+        return Ok(());
+    }
+    if matches.len() > 1 {
+        return Err(span_error(
+            format!(
+                "procedure `{}` declares more than one @isolation attribute",
+                procedure.name,
+            ),
+            matches[1].span,
+        ));
+    }
+    let attr = matches[0];
+    let inner = attr
+        .raw
+        .strip_prefix("@isolation(")
+        .and_then(|s| s.strip_suffix(')'))
+        .ok_or_else(|| {
+            span_error(
+                format!(
+                    "procedure `{}` @isolation requires a quoted level argument like @isolation(\"serializable\")",
+                    procedure.name,
+                ),
+                attr.span,
+            )
+        })?
+        .trim();
+    let level = inner
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .ok_or_else(|| {
+            span_error(
+                format!(
+                    "procedure `{}` @isolation argument must be a quoted string",
+                    procedure.name,
+                ),
+                attr.span,
+            )
+        })?;
+    cratestack_core::TransactionIsolation::parse(level).map_err(|error| {
+        span_error(
+            format!(
+                "procedure `{}` @isolation: {}",
+                procedure.name,
+                error.public_message(),
+            ),
+            attr.span,
+        )
+    })?;
+    Ok(())
+}
+
+/// Validate `@api_version("v1")` on procedures. The value is opaque to the
+/// parser — banks pick their own scheme (semver, calver, mvX). We only
+/// enforce non-empty and ASCII-printable so it can safely flow into URL
+/// route segments.
+fn validate_procedure_api_version_attribute(
+    procedure: &cratestack_core::Procedure,
+) -> Result<(), SchemaError> {
+    let matches: Vec<&cratestack_core::Attribute> = procedure
+        .attributes
+        .iter()
+        .filter(|a| a.raw.starts_with("@api_version"))
+        .collect();
+    if matches.len() > 1 {
+        return Err(span_error(
+            format!(
+                "procedure `{}` declares more than one @api_version attribute",
+                procedure.name,
+            ),
+            matches[1].span,
+        ));
+    }
+    let Some(attr) = matches.first() else {
+        return Ok(());
+    };
+    let inner = attr
+        .raw
+        .strip_prefix("@api_version(")
+        .and_then(|s| s.strip_suffix(')'))
+        .ok_or_else(|| {
+            span_error(
+                format!(
+                    "procedure `{}` @api_version requires a quoted version argument",
+                    procedure.name,
+                ),
+                attr.span,
+            )
+        })?
+        .trim();
+    let stripped = inner
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .ok_or_else(|| {
+            span_error(
+                format!(
+                    "procedure `{}` @api_version argument must be a quoted string",
+                    procedure.name,
+                ),
+                attr.span,
+            )
+        })?;
+    if stripped.is_empty() {
+        return Err(span_error(
+            format!(
+                "procedure `{}` @api_version must not be empty",
+                procedure.name,
+            ),
+            attr.span,
+        ));
+    }
+    if !stripped
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_')
+    {
+        return Err(span_error(
+            format!(
+                "procedure `{}` @api_version must contain only alphanumeric, '.', '-', or '_' characters",
+                procedure.name,
+            ),
+            attr.span,
+        ));
+    }
+    Ok(())
+}
+
+/// Validate `@deprecated("use foo v2")` on procedures. Message is optional;
+/// when present, the macro emits a `Deprecation: true` and `X-Deprecation`
+/// header carrying the rationale.
+fn validate_procedure_deprecated_attribute(
+    procedure: &cratestack_core::Procedure,
+) -> Result<(), SchemaError> {
+    let matches: Vec<&cratestack_core::Attribute> = procedure
+        .attributes
+        .iter()
+        .filter(|a| a.raw == "@deprecated" || a.raw.starts_with("@deprecated("))
+        .collect();
+    if matches.len() > 1 {
+        return Err(span_error(
+            format!(
+                "procedure `{}` declares more than one @deprecated attribute",
+                procedure.name,
+            ),
+            matches[1].span,
+        ));
+    }
+    let Some(attr) = matches.first() else {
+        return Ok(());
+    };
+    if attr.raw == "@deprecated" {
+        return Ok(());
+    }
+    let inner = attr
+        .raw
+        .strip_prefix("@deprecated(")
+        .and_then(|s| s.strip_suffix(')'))
+        .ok_or_else(|| {
+            span_error(
+                format!(
+                    "procedure `{}` @deprecated must be either bare or `@deprecated(\"message\")`",
+                    procedure.name,
+                ),
+                attr.span,
+            )
+        })?
+        .trim();
+    if !inner.starts_with('"') || !inner.ends_with('"') {
+        return Err(span_error(
+            format!(
+                "procedure `{}` @deprecated argument must be a quoted string",
+                procedure.name,
+            ),
+            attr.span,
+        ));
+    }
+    Ok(())
+}
+
+/// Reject `@readonly` / `@server_only` declared on the primary-key field —
+/// PKs are server-controlled anyway and the combination is a likely typo.
+fn validate_field_policy_attributes(
+    model_name: &str,
+    field: &cratestack_core::Field,
+) -> Result<(), SchemaError> {
+    let is_id = field.attributes.iter().any(|a| a.raw.starts_with("@id"));
+    let has_readonly = field.attributes.iter().any(|a| a.raw == "@readonly");
+    let has_server_only = field.attributes.iter().any(|a| a.raw == "@server_only");
+
+    if is_id && (has_readonly || has_server_only) {
+        let attr = if has_readonly {
+            "@readonly"
+        } else {
+            "@server_only"
+        };
+        return Err(span_error(
+            format!(
+                "field `{}.{}` is the primary key and must not declare {attr}",
+                model_name, field.name,
+            ),
+            field.span,
+        ));
+    }
+    if has_readonly && has_server_only {
+        return Err(span_error(
+            format!(
+                "field `{}.{}` declares both @readonly and @server_only; use @server_only alone",
+                model_name, field.name,
+            ),
+            field.span,
         ));
     }
     Ok(())

@@ -10,6 +10,7 @@ pub enum SqlValue {
     Uuid(uuid::Uuid),
     DateTime(chrono::DateTime<chrono::Utc>),
     Json(Value),
+    Decimal(cratestack_core::Decimal),
     NullBool,
     NullInt,
     NullFloat,
@@ -18,6 +19,7 @@ pub enum SqlValue {
     NullUuid,
     NullDateTime,
     NullJson,
+    NullDecimal,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -35,10 +37,18 @@ pub struct SqlColumnValue {
 
 pub trait CreateModelInput<M> {
     fn sql_values(&self) -> Vec<SqlColumnValue>;
+    /// Run schema-derived validators (`@length`, `@email`, `@regex`, ...) on
+    /// the input. Default impl is a no-op for inputs without validators.
+    fn validate(&self) -> Result<(), cratestack_core::CoolError> {
+        Ok(())
+    }
 }
 
 pub trait UpdateModelInput<M> {
     fn sql_values(&self) -> Vec<SqlColumnValue>;
+    fn validate(&self) -> Result<(), cratestack_core::CoolError> {
+        Ok(())
+    }
 }
 
 pub trait IntoSqlValue {
@@ -90,5 +100,11 @@ impl IntoSqlValue for chrono::DateTime<chrono::Utc> {
 impl IntoSqlValue for Value {
     fn into_sql_value(self) -> SqlValue {
         SqlValue::Json(self)
+    }
+}
+
+impl IntoSqlValue for cratestack_core::Decimal {
+    fn into_sql_value(self) -> SqlValue {
+        SqlValue::Decimal(self)
     }
 }

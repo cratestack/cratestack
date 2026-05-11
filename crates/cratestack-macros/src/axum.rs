@@ -23,7 +23,8 @@ pub(crate) fn generate_procedure_axum_handler(
     let method_ident = ident(&to_snake_case(&procedure.name));
     let module_ident = ident(&to_snake_case(&procedure.name));
     let procedure_name = &procedure.name;
-    let route_path = format!("/$procs/{}", procedure.name);
+    let route_path = procedure_route_path(procedure);
+    let deprecation_header = procedure_deprecation_header_tokens(procedure);
     let procedure_capabilities = procedure_transport_capabilities_tokens(procedure);
     let result_encoder = if matches!(procedure.return_type.arity, TypeArity::List) {
         quote! { ::cratestack::encode_transport_sequence_result_with_status_for(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, result) }
@@ -53,16 +54,18 @@ pub(crate) fn generate_procedure_axum_handler(
             let started = ::std::time::Instant::now();
 
             if let Err(error) = ::cratestack::validate_transport_request_headers_for(&state.codec, &headers, &CAPABILITIES) {
-                ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = #route_path, cratestack_procedure = #procedure_name, cratestack_operation = "procedure", cratestack_error = error.code(), "cratestack procedure preflight failed");
+                ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = #route_path, cratestack_procedure = #procedure_name, cratestack_operation = "procedure", cratestack_error = error.code(),
+                    cratestack_detail = error.detail().unwrap_or(""), "cratestack procedure preflight failed");
                 let result: Result<super::procedures::#module_ident::Output, ::cratestack::CoolError> = Err(error);
                 return #result_encoder;
             }
             let request = request_context("POST", #route_path, None, &headers, body.as_ref());
             let ctx = match state.auth_provider.authenticate(&request).await {
-                Ok(ctx) => ctx,
+                Ok(ctx) => ::cratestack::enrich_context_from_headers(ctx, &headers),
                 Err(error) => {
                     let error: ::cratestack::CoolError = error.into();
-                    ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = #route_path, cratestack_procedure = #procedure_name, cratestack_operation = "procedure", cratestack_error = error.code(), "cratestack procedure auth failed");
+                    ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = #route_path, cratestack_procedure = #procedure_name, cratestack_operation = "procedure", cratestack_error = error.code(),
+                    cratestack_detail = error.detail().unwrap_or(""), "cratestack procedure auth failed");
                     let result: Result<super::procedures::#module_ident::Output, ::cratestack::CoolError> = Err(error);
                     return #result_encoder;
                 }
@@ -70,7 +73,8 @@ pub(crate) fn generate_procedure_axum_handler(
             let args = match ::cratestack::decode_transport_request_for::<_, super::procedures::#module_ident::Args>(&state.codec, &headers, &CAPABILITIES, &body) {
                 Ok(args) => args,
                 Err(error) => {
-                    ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = #route_path, cratestack_procedure = #procedure_name, cratestack_operation = "procedure", cratestack_error = error.code(), "cratestack procedure decode failed");
+                    ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = #route_path, cratestack_procedure = #procedure_name, cratestack_operation = "procedure", cratestack_error = error.code(),
+                    cratestack_detail = error.detail().unwrap_or(""), "cratestack procedure decode failed");
                     let result: Result<super::procedures::#module_ident::Output, ::cratestack::CoolError> = Err(error);
                     return #result_encoder;
                 }
@@ -93,6 +97,7 @@ pub(crate) fn generate_procedure_axum_handler(
                     cratestack_operation = "procedure",
                     cratestack_authenticated = ctx.is_authenticated(),
                     cratestack_duration_ms = started.elapsed().as_millis() as u64,
+                    cratestack_request_id = ctx.request_id().unwrap_or(""),
                     "cratestack procedure route completed",
                 ),
                 Err(error) => ::cratestack::tracing::warn!(
@@ -102,20 +107,78 @@ pub(crate) fn generate_procedure_axum_handler(
                     cratestack_operation = "procedure",
                     cratestack_authenticated = ctx.is_authenticated(),
                     cratestack_error = error.code(),
+                    cratestack_detail = error.detail().unwrap_or(""),
                     cratestack_duration_ms = started.elapsed().as_millis() as u64,
+                    cratestack_request_id = ctx.request_id().unwrap_or(""),
                     "cratestack procedure route failed",
                 ),
             }
 
-            #result_encoder
+            let mut response = #result_encoder;
+            #deprecation_header
+            response
         }
     })
 }
 
 pub(crate) fn generate_procedure_axum_route(procedure: &Procedure) -> proc_macro2::TokenStream {
-    let route_path = format!("/$procs/{}", procedure.name);
+    let route_path = procedure_route_path(procedure);
     let handler_ident = ident(&format!("handle_{}", to_snake_case(&procedure.name)));
     quote! { .route(#route_path, axum::routing::post(#handler_ident)) }
+}
+
+/// Compute the HTTP route path for a procedure, applying any `@api_version`
+/// prefix the schema declared. The shape is `/<version>/$procs/<name>` for
+/// versioned procedures and `/$procs/<name>` for unversioned ones, so banks
+/// can run v1 + v2 of the same procedure side by side.
+fn procedure_route_path(procedure: &Procedure) -> String {
+    if let Some(version) = procedure_api_version(procedure) {
+        format!("/{}/$procs/{}", version, procedure.name)
+    } else {
+        format!("/$procs/{}", procedure.name)
+    }
+}
+
+fn procedure_api_version(procedure: &Procedure) -> Option<String> {
+    procedure.attributes.iter().find_map(|attribute| {
+        attribute
+            .raw
+            .strip_prefix("@api_version(\"")
+            .and_then(|rest| rest.strip_suffix("\")"))
+            .map(|s| s.to_owned())
+    })
+}
+
+/// Token stream that, given a `response` in scope, applies the
+/// `Deprecation`/`X-Deprecation` headers when the procedure declared
+/// `@deprecated`. Emits empty tokens for non-deprecated procedures.
+fn procedure_deprecation_header_tokens(procedure: &Procedure) -> proc_macro2::TokenStream {
+    let deprecated = procedure
+        .attributes
+        .iter()
+        .find(|a| a.raw == "@deprecated" || a.raw.starts_with("@deprecated("));
+    let Some(attribute) = deprecated else {
+        return quote! {};
+    };
+    let message: Option<String> = attribute
+        .raw
+        .strip_prefix("@deprecated(\"")
+        .and_then(|s| s.strip_suffix("\")"))
+        .map(|s| s.to_owned());
+    let message_block = match message {
+        Some(m) => quote! {
+            if let Ok(value) = ::cratestack::axum::http::HeaderValue::from_str(#m) {
+                response.headers_mut().insert("X-Deprecation", value);
+            }
+        },
+        None => quote! {},
+    };
+    quote! {
+        response
+            .headers_mut()
+            .insert("Deprecation", ::cratestack::axum::http::HeaderValue::from_static("true"));
+        #message_block
+    }
 }
 
 pub(crate) fn generate_axum_shared_support() -> proc_macro2::TokenStream {
@@ -271,6 +334,11 @@ pub(crate) fn generate_model_axum_handlers(
     model: &Model,
     models: &[Model],
 ) -> Result<proc_macro2::TokenStream, String> {
+    let version_field_name: Option<String> = model
+        .fields
+        .iter()
+        .find(|field| field.attributes.iter().any(|a| a.raw == "@version"))
+        .map(|field| field.name.clone());
     let list_handler_ident = ident(&format!(
         "handle_list_{}",
         pluralize(&to_snake_case(&model.name))
@@ -371,6 +439,76 @@ pub(crate) fn generate_model_axum_handlers(
             );
         }
     };
+    let (
+        update_if_match_decl,
+        update_if_match_apply,
+        update_etag_extract,
+        update_etag_apply,
+        get_etag_extract_decl,
+        get_etag_capture,
+        get_etag_apply,
+    ) = match version_field_name.as_deref() {
+        Some(name) => {
+            let version_field_ident = ident(name);
+            (
+                quote! {
+                    let if_match_version = match ::cratestack::parse_if_match_version(&headers) {
+                        Ok(Some(v)) => Some(v),
+                        Ok(None) => {
+                            return ::cratestack::encode_transport_result_with_status_for::<_, super::models::#model_ident>(
+                                &state.codec,
+                                &headers,
+                                &CAPABILITIES,
+                                axum::http::StatusCode::OK,
+                                Err(CoolError::PreconditionFailed("If-Match header required".to_owned())),
+                            );
+                        }
+                        Err(error) => {
+                            return ::cratestack::encode_transport_result_with_status_for::<_, super::models::#model_ident>(
+                                &state.codec,
+                                &headers,
+                                &CAPABILITIES,
+                                axum::http::StatusCode::OK,
+                                Err(error),
+                            );
+                        }
+                    };
+                },
+                quote! { .if_match(if_match_version.unwrap()) },
+                quote! {
+                    let etag_version: Option<i64> = match &result {
+                        Ok(record) => Some(record.#version_field_ident),
+                        Err(_) => None,
+                    };
+                },
+                quote! {
+                    if let Some(v) = etag_version {
+                        ::cratestack::set_version_etag(&mut response, v);
+                    }
+                },
+                quote! {
+                    let mut etag_version: Option<i64> = None;
+                },
+                quote! {
+                    etag_version = Some(record.#version_field_ident);
+                },
+                quote! {
+                    if let Some(v) = etag_version {
+                        ::cratestack::set_version_etag(&mut response, v);
+                    }
+                },
+            )
+        }
+        None => (
+            quote! {},
+            quote! {},
+            quote! {},
+            quote! {},
+            quote! {},
+            quote! {},
+            quote! {},
+        ),
+    };
     let total_count_block = if paged {
         quote! {
             let total_count = {
@@ -422,6 +560,7 @@ pub(crate) fn generate_model_axum_handlers(
                     cratestack_count = page.items.len(),
                     cratestack_total_count = ?page.total_count,
                     cratestack_duration_ms = started.elapsed().as_millis() as u64,
+                    cratestack_request_id = ctx.request_id().unwrap_or(""),
                     "cratestack model list completed",
                 ),
                 Err(error) => ::cratestack::tracing::warn!(
@@ -431,7 +570,9 @@ pub(crate) fn generate_model_axum_handlers(
                     cratestack_operation = "list",
                     cratestack_paged = true,
                     cratestack_error = error.code(),
+                    cratestack_detail = error.detail().unwrap_or(""),
                     cratestack_duration_ms = started.elapsed().as_millis() as u64,
+                    cratestack_request_id = ctx.request_id().unwrap_or(""),
                     "cratestack model list failed",
                 ),
             }
@@ -449,6 +590,7 @@ pub(crate) fn generate_model_axum_handlers(
                     cratestack_offset = ?query.offset,
                     cratestack_count = values.len(),
                     cratestack_duration_ms = started.elapsed().as_millis() as u64,
+                    cratestack_request_id = ctx.request_id().unwrap_or(""),
                     "cratestack model list completed",
                 ),
                 Err(error) => ::cratestack::tracing::warn!(
@@ -458,7 +600,9 @@ pub(crate) fn generate_model_axum_handlers(
                     cratestack_operation = "list",
                     cratestack_paged = false,
                     cratestack_error = error.code(),
+                    cratestack_detail = error.detail().unwrap_or(""),
                     cratestack_duration_ms = started.elapsed().as_millis() as u64,
+                    cratestack_request_id = ctx.request_id().unwrap_or(""),
                     "cratestack model list failed",
                 ),
             }
@@ -674,9 +818,15 @@ pub(crate) fn generate_model_axum_handlers(
         ) -> Result<::cratestack::serde_json::Map<String, ::cratestack::serde_json::Value>, CoolError> {
             let value = ::cratestack::serde_json::to_value(record)
                 .map_err(|error| CoolError::Internal(format!("failed to serialize {}: {error}", #model_name)))?;
-            let object = value.as_object().cloned().ok_or_else(|| {
+            let mut object = value.as_object().cloned().ok_or_else(|| {
                 CoolError::Internal(format!("generated {} serialization must be a JSON object", #model_name))
             })?;
+            // Strip `null` entries. minicbor-serde (our CBOR backend) encodes
+            // `serde_json::Value::Null` as a CBOR empty array, which would
+            // corrupt every nullable column on the wire. The model struct's
+            // `Option<T>` fields are marked `#[serde(default)]` so the
+            // client recovers `None` from the absent key on decode.
+            object.retain(|_, v| !v.is_null());
 
             let Some(fields) = fields else {
                 return Ok(object);
@@ -684,14 +834,12 @@ pub(crate) fn generate_model_axum_handlers(
 
             let mut projected = ::cratestack::serde_json::Map::new();
             for field in fields {
-                let value = object.get(field).cloned().ok_or_else(|| {
-                    CoolError::Internal(format!(
-                        "generated {} serialization is missing field '{}'",
-                        #model_name,
-                        field,
-                    ))
-                })?;
-                projected.insert(field.clone(), value);
+                if let Some(value) = object.get(field).cloned() {
+                    projected.insert(field.clone(), value);
+                }
+                // Field absent from `object` means the row's column was
+                // NULL and we stripped it above. Skip silently — the
+                // client struct's `#[serde(default)]` restores `None`.
             }
             Ok(projected)
         }
@@ -799,13 +947,14 @@ pub(crate) fn generate_model_axum_handlers(
                     cratestack_model = #model_name,
                     cratestack_operation = "list",
                     cratestack_error = error.code(),
+                    cratestack_detail = error.detail().unwrap_or(""),
                     "cratestack model list preflight failed",
                 );
                 return #list_header_error_encoder;
             }
             let request = request_context("GET", #list_route_path, raw_query.as_deref(), &headers, &[]);
             let ctx = match state.auth_provider.authenticate(&request).await {
-                Ok(ctx) => ctx,
+                Ok(ctx) => ::cratestack::enrich_context_from_headers(ctx, &headers),
                 Err(error) => {
                     let error: CoolError = error.into();
                     ::cratestack::tracing::warn!(
@@ -814,6 +963,7 @@ pub(crate) fn generate_model_axum_handlers(
                         cratestack_model = #model_name,
                         cratestack_operation = "list",
                         cratestack_error = error.code(),
+                    cratestack_detail = error.detail().unwrap_or(""),
                         "cratestack model list auth failed",
                     );
                     return ::cratestack::encode_transport_result_with_status_for::<_, #list_response_type>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error));
@@ -828,6 +978,7 @@ pub(crate) fn generate_model_axum_handlers(
                         cratestack_model = #model_name,
                         cratestack_operation = "list",
                         cratestack_error = error.code(),
+                    cratestack_detail = error.detail().unwrap_or(""),
                         "cratestack model list query parsing failed",
                     );
                     return ::cratestack::encode_transport_result_with_status_for::<_, #list_response_type>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error));
@@ -842,7 +993,8 @@ pub(crate) fn generate_model_axum_handlers(
                 return ::cratestack::encode_transport_result_with_status_for::<_, #list_response_type>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(CoolError::BadRequest("offset must be greater than or equal to 0".to_owned())));
             }
             if let Err(error) = #validate_selection_ident(&query.selection, state.db.#accessor_ident().descriptor()) {
-                ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = #list_route_path, cratestack_model = #model_name, cratestack_operation = "list", cratestack_error = error.code(), "cratestack model list selection validation failed");
+                ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = #list_route_path, cratestack_model = #model_name, cratestack_operation = "list", cratestack_error = error.code(),
+                    cratestack_detail = error.detail().unwrap_or(""), "cratestack model list selection validation failed");
                 return ::cratestack::encode_transport_result_with_status_for::<_, #list_response_type>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error));
             }
 
@@ -895,7 +1047,7 @@ pub(crate) fn generate_model_axum_handlers(
             }
             let request = request_context("POST", #list_route_path, None, &headers, body.as_ref());
             let ctx = match state.auth_provider.authenticate(&request).await {
-                Ok(ctx) => ctx,
+                Ok(ctx) => ::cratestack::enrich_context_from_headers(ctx, &headers),
                 Err(error) => {
                     return ::cratestack::encode_transport_result_with_status_for::<_, super::models::#model_ident>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error.into()));
                 }
@@ -931,7 +1083,7 @@ pub(crate) fn generate_model_axum_handlers(
             let request_path = format!("{}/{}", #list_route_path, id);
             let request = request_context("GET", &request_path, raw_query.as_deref(), &headers, &[]);
             let ctx = match state.auth_provider.authenticate(&request).await {
-                Ok(ctx) => ctx,
+                Ok(ctx) => ::cratestack::enrich_context_from_headers(ctx, &headers),
                 Err(error) => {
                     return ::cratestack::encode_transport_result_with_status_for::<_, ::cratestack::serde_json::Value>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error.into()));
                 }
@@ -945,13 +1097,19 @@ pub(crate) fn generate_model_axum_handlers(
             if let Err(error) = #validate_selection_ident(&query.selection, state.db.#accessor_ident().descriptor()) {
                 return ::cratestack::encode_transport_result_with_status_for::<_, ::cratestack::serde_json::Value>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error));
             }
+            #get_etag_extract_decl
             let result = match state.db.#accessor_ident().find_unique(id).run(&ctx).await {
-                Ok(Some(record)) => #serialize_model_value_ident(&state.db, &ctx, &record, &query.selection).await,
+                Ok(Some(record)) => {
+                    #get_etag_capture
+                    #serialize_model_value_ident(&state.db, &ctx, &record, &query.selection).await
+                }
                 Ok(None) => Err(CoolError::NotFound(format!("{} not found", #model_name))),
                 Err(error) => Err(error),
             };
 
-            ::cratestack::encode_transport_result_with_status_for(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, result)
+            let mut response = ::cratestack::encode_transport_result_with_status_for(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, result);
+            #get_etag_apply
+            response
         }
 
         async fn #update_handler_ident<C, Auth>(
@@ -972,7 +1130,7 @@ pub(crate) fn generate_model_axum_handlers(
             let request_path = format!("{}/{}", #list_route_path, id);
             let request = request_context("PATCH", &request_path, None, &headers, body.as_ref());
             let ctx = match state.auth_provider.authenticate(&request).await {
-                Ok(ctx) => ctx,
+                Ok(ctx) => ::cratestack::enrich_context_from_headers(ctx, &headers),
                 Err(error) => {
                     return ::cratestack::encode_transport_result_with_status_for::<_, super::models::#model_ident>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error.into()));
                 }
@@ -985,9 +1143,14 @@ pub(crate) fn generate_model_axum_handlers(
             };
             #update_empty_patch_preflight
 
-            let result = state.db.#accessor_ident().update(id).set(input).run(&ctx).await;
+            #update_if_match_decl
 
-            ::cratestack::encode_transport_result_with_status_for(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, result)
+            let result = state.db.#accessor_ident().update(id).set(input)#update_if_match_apply.run(&ctx).await;
+
+            #update_etag_extract
+            let mut response = ::cratestack::encode_transport_result_with_status_for(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, result);
+            #update_etag_apply
+            response
         }
 
         async fn #delete_handler_ident<C, Auth>(
@@ -1007,7 +1170,7 @@ pub(crate) fn generate_model_axum_handlers(
             let request_path = format!("{}/{}", #list_route_path, id);
             let request = request_context("DELETE", &request_path, None, &headers, &[]);
             let ctx = match state.auth_provider.authenticate(&request).await {
-                Ok(ctx) => ctx,
+                Ok(ctx) => ::cratestack::enrich_context_from_headers(ctx, &headers),
                 Err(error) => {
                     return ::cratestack::encode_transport_result_with_status_for::<_, super::models::#model_ident>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error.into()));
                 }

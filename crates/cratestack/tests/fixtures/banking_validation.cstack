@@ -1,0 +1,34 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Member {
+  id Int @id
+  email String @email @length(min: 3, max: 254)
+  currency String @iso4217
+  slug String @regex("^[a-z0-9-]+$")
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
+
+// Decimal `@range` enforcement — `amount` must be a non-negative monetary
+// value within the daily ceiling. Pre-fix the validator silently emitted
+// nothing for non-Int scalars, so a Decimal of -100 would slip through to
+// the database.
+model Reserve {
+  id Int @id
+  amount Decimal @range(min: 0, max: 1000000)
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}

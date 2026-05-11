@@ -16,3 +16,6 @@ categories.workspace = true
 cratestack-core.workspace = true
 minicbor-serde.workspace = true
 serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

@@ -20,7 +20,17 @@ pub(crate) fn push_scoped_conditions<'a, M, PK, Id>(
     query.push(" WHERE ");
 
     let mut wrote_clause = false;
+    // Soft-delete filter: hide tombstoned rows from every read. Banks treat
+    // the audit log as the source of truth for what changed; this just
+    // prevents deleted rows from leaking back into list/get responses.
+    if let Some(col) = descriptor.soft_delete_column {
+        query.push(col).push(" IS NULL");
+        wrote_clause = true;
+    }
     if !filters.is_empty() {
+        if wrote_clause {
+            query.push(" AND ");
+        }
         push_filter_query(query, filters);
         wrote_clause = true;
     }
@@ -625,6 +635,7 @@ pub(crate) fn push_bind_value(
         SqlValue::Uuid(value) => query.push_bind(*value),
         SqlValue::DateTime(value) => query.push_bind(*value),
         SqlValue::Json(value) => query.push_bind(sqlx::types::Json(value.clone())),
+        SqlValue::Decimal(value) => query.push_bind(*value),
         SqlValue::NullBool => query.push_bind(Option::<bool>::None),
         SqlValue::NullInt => query.push_bind(Option::<i64>::None),
         SqlValue::NullFloat => query.push_bind(Option::<f64>::None),
@@ -633,6 +644,7 @@ pub(crate) fn push_bind_value(
         SqlValue::NullUuid => query.push_bind(Option::<uuid::Uuid>::None),
         SqlValue::NullDateTime => query.push_bind(Option::<chrono::DateTime<chrono::Utc>>::None),
         SqlValue::NullJson => query.push_bind(Option::<sqlx::types::Json<Value>>::None),
+        SqlValue::NullDecimal => query.push_bind(Option::<cratestack_core::Decimal>::None),
     };
 }
 

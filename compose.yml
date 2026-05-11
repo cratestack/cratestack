@@ -10,7 +10,10 @@ services:
     ports:
       - "55432:5432"
     volumes:
-      - cratestack-postgres-data:/var/lib/postgresql/data
+      # PG 18+ stores cluster data under a major-version subdirectory of
+      # /var/lib/postgresql, so the mount lives one level above the legacy
+      # /var/lib/postgresql/data path (docker-library/postgres#1259).
+      - cratestack-postgres-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U cratestack -d cratestack_test"]
       interval: 10s

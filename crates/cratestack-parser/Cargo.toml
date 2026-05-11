@@ -16,4 +16,5 @@ categories.workspace = true
 ariadne.workspace = true
 chumsky.workspace = true
 cratestack-core.workspace = true
+regex.workspace = true
 thiserror.workspace = true

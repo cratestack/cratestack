@@ -405,7 +405,10 @@ fn parse_model_use_attribute(attribute: &Attribute) -> Result<Vec<String>, Schem
         .collect::<Vec<_>>();
     if names.is_empty() {
         return Err(SchemaError::new(
-            format!("model use attribute `{}` must list at least one mixin", attribute.raw),
+            format!(
+                "model use attribute `{}` must list at least one mixin",
+                attribute.raw
+            ),
             attribute.span.start..attribute.span.end,
             attribute.span.line,
         ));

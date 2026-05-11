@@ -185,6 +185,33 @@ pub struct ModelDescriptor<M, PK> {
     pub delete_deny_policies: &'static [ReadPolicy],
     pub create_defaults: &'static [CreateDefault],
     pub emitted_events: &'static [ModelEventKind],
+    /// Column name of the optimistic-locking version field, set when the
+    /// model declares an `@version` field. `None` for non-versioned models,
+    /// which keeps update semantics unchanged.
+    pub version_column: Option<&'static str>,
+    /// `true` when the model declared `@@audit`. Mutations on audit-enabled
+    /// models capture before/after snapshots and persist them into
+    /// `cratestack_audit` inside the same transaction.
+    pub audit_enabled: bool,
+    /// SQL column names of fields declared `@pii`. The audit-log writer
+    /// replaces these values with `"[redacted-pii]"` in the persisted JSON
+    /// snapshots; a follow-up will extend the same redaction to error
+    /// detail and tracing.
+    pub pii_columns: &'static [&'static str],
+    /// SQL column names of fields declared `@sensitive`. Redacted in audit
+    /// snapshots as `"[redacted-sensitive]"`.
+    pub sensitive_columns: &'static [&'static str],
+    /// Column name for the soft-delete timestamp. When `Some`, DELETE
+    /// operations become UPDATE-of-`deleted_at` and every SELECT through
+    /// `push_scoped_conditions` filters out rows where the column is
+    /// non-null. Defaults to `Some("deleted_at")` when `@@soft_delete` is
+    /// declared.
+    pub soft_delete_column: Option<&'static str>,
+    /// Retention window in days for soft-deleted rows. The runtime does
+    /// not auto-GC; banks run their own scheduled job that deletes rows
+    /// where `deleted_at < NOW() - retention`. Surfaced here so the GC
+    /// can read the policy from one place.
+    pub retention_days: Option<u32>,
     _marker: PhantomData<fn() -> (M, PK)>,
 }
 
@@ -224,6 +251,12 @@ impl<M, PK> ModelDescriptor<M, PK> {
         delete_deny_policies: &'static [ReadPolicy],
         create_defaults: &'static [CreateDefault],
         emitted_events: &'static [ModelEventKind],
+        version_column: Option<&'static str>,
+        audit_enabled: bool,
+        pii_columns: &'static [&'static str],
+        sensitive_columns: &'static [&'static str],
+        soft_delete_column: Option<&'static str>,
+        retention_days: Option<u32>,
     ) -> Self {
         Self {
             schema_name,
@@ -245,6 +278,12 @@ impl<M, PK> ModelDescriptor<M, PK> {
             delete_deny_policies,
             create_defaults,
             emitted_events,
+            version_column,
+            audit_enabled,
+            pii_columns,
+            sensitive_columns,
+            soft_delete_column,
+            retention_days,
             _marker: PhantomData,
         }
     }

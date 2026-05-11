@@ -34,7 +34,7 @@ pub(crate) fn supports_comparison(field: &Field) -> bool {
     field.ty.arity == TypeArity::Required
         && matches!(
             field.ty.name.as_str(),
-            "String" | "Cuid" | "Int" | "Float" | "DateTime" | "Uuid"
+            "String" | "Cuid" | "Int" | "Float" | "DateTime" | "Decimal" | "Uuid"
         )
 }
 
@@ -100,6 +100,44 @@ pub(crate) fn is_paged_model(model: &Model) -> bool {
         .any(|attribute| attribute.raw == "@@paged")
 }
 
+/// Field carries `@readonly` — must not be settable via Create or Update
+/// inputs. Server code can still write the column directly via SQL.
+pub(crate) fn is_readonly_field(field: &Field) -> bool {
+    field
+        .attributes
+        .iter()
+        .any(|attribute| attribute.raw == "@readonly")
+}
+
+/// Field carries `@server_only` — never accepted on input AND stripped
+/// from client-facing responses. Use for fields like internal scoring,
+/// risk flags, or hashed secrets that the server owns end-to-end.
+pub(crate) fn is_server_only_field(field: &Field) -> bool {
+    field
+        .attributes
+        .iter()
+        .any(|attribute| attribute.raw == "@server_only")
+}
+
+/// Field carries `@pii` — personally identifiable. Values are redacted in
+/// the audit log JSON and (in a follow-up) in tracing/error detail.
+pub(crate) fn is_pii_field(field: &Field) -> bool {
+    field
+        .attributes
+        .iter()
+        .any(|attribute| attribute.raw == "@pii")
+}
+
+/// Field carries `@sensitive` — application-defined sensitive data that
+/// doesn't fit PII (internal risk scores, dispute notes). Redacted in the
+/// audit log JSON.
+pub(crate) fn is_sensitive_field(field: &Field) -> bool {
+    field
+        .attributes
+        .iter()
+        .any(|attribute| attribute.raw == "@sensitive")
+}
+
 fn has_default(field: &Field) -> bool {
     field
         .attributes
@@ -121,6 +159,18 @@ pub(crate) fn auth_default_field(field: &Field) -> Option<&str> {
 
 pub(crate) fn is_generated_on_create(field: &Field) -> bool {
     has_default(field)
+}
+
+/// Field carries `@version` — the optimistic-lock column. The SQL builder
+/// emits `version = version + 1` on every update, and seeds the column on
+/// create, so it must never appear in Create or Update input structs.
+/// Letting it through would either let clients seed the initial version
+/// (create) or produce duplicate `version = ...` SQL assignments (update).
+pub(crate) fn is_version_field(field: &Field) -> bool {
+    field
+        .attributes
+        .iter()
+        .any(|attribute| attribute.raw == "@version")
 }
 
 pub(crate) fn query_scalar_parser_tokens(
@@ -158,6 +208,11 @@ pub(crate) fn query_scalar_parser_tokens(
                 .map_err(|error| {
                     CoolError::BadRequest(format!("invalid value '{}' for {}: {error}", #value_expr, #field_name))
                 })
+        },
+        "Decimal" => quote! {
+            (#value_expr).parse::<::cratestack::Decimal>().map_err(|error| {
+                CoolError::BadRequest(format!("invalid value '{}' for {}: {error}", #value_expr, #field_name))
+            })
         },
         _ => return None,
     })
@@ -209,6 +264,7 @@ pub(crate) fn rust_type_tokens_with_scope(
         "Float" => quote! { f64 },
         "Boolean" => quote! { bool },
         "DateTime" => quote! { ::cratestack::chrono::DateTime<::cratestack::chrono::Utc> },
+        "Decimal" => quote! { ::cratestack::Decimal },
         "Json" => quote! { ::cratestack::sqlx::types::Json<::cratestack::Value> },
         "Bytes" => quote! { Vec<u8> },
         "Uuid" => quote! { ::cratestack::uuid::Uuid },
@@ -363,6 +419,13 @@ pub(crate) fn sql_value_tokens(
             match #value {
                 Some(value) => ::cratestack::SqlValue::Json(value.0),
                 None => ::cratestack::SqlValue::NullJson,
+            }
+        },
+        ("Decimal", TypeArity::Required) => quote! { ::cratestack::SqlValue::Decimal(#value) },
+        ("Decimal", TypeArity::Optional) => quote! {
+            match #value {
+                Some(value) => ::cratestack::SqlValue::Decimal(value),
+                None => ::cratestack::SqlValue::NullDecimal,
             }
         },
         _ => panic!("unsupported SQLx value type for this slice"),
