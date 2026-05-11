@@ -88,7 +88,7 @@ impl IdempotencyStore for SqlxIdempotencyStore {
             Vec<u8>,
             uuid::Uuid,
             Option<i32>,
-            Option<String>,
+            Option<Vec<u8>>,
             Option<Vec<u8>>,
             chrono::DateTime<chrono::Utc>,
             chrono::DateTime<chrono::Utc>,
@@ -101,12 +101,12 @@ impl IdempotencyStore for SqlxIdempotencyStore {
                 request_hash = EXCLUDED.request_hash,
                 reservation_id = EXCLUDED.reservation_id,
                 response_status = NULL,
-                response_content_type = NULL,
+                response_headers = NULL,
                 response_body = NULL,
                 created_at = NOW(),
                 expires_at = EXCLUDED.expires_at
              WHERE cratestack_idempotency.expires_at <= NOW()
-             RETURNING request_hash, reservation_id, response_status, response_content_type,
+             RETURNING request_hash, reservation_id, response_status, response_headers,
                        response_body, created_at, expires_at, (xmax = 0) AS was_inserted",
         )
         .bind(principal)
@@ -131,12 +131,12 @@ impl IdempotencyStore for SqlxIdempotencyStore {
         let existing: Option<(
             Vec<u8>,
             Option<i32>,
-            Option<String>,
+            Option<Vec<u8>>,
             Option<Vec<u8>>,
             chrono::DateTime<chrono::Utc>,
             chrono::DateTime<chrono::Utc>,
         )> = sqlx::query_as(
-            "SELECT request_hash, response_status, response_content_type,
+            "SELECT request_hash, response_status, response_headers,
                     response_body, created_at, expires_at
              FROM cratestack_idempotency
              WHERE principal_fingerprint = $1 AND key = $2",
@@ -147,8 +147,7 @@ impl IdempotencyStore for SqlxIdempotencyStore {
         .await
         .map_err(|error| CoolError::Database(error.to_string()))?;
 
-        let Some((stored_hash, status, content_type, body, created_at, existing_expires_at)) =
-            existing
+        let Some((stored_hash, status, headers, body, created_at, existing_expires_at)) = existing
         else {
             // Vanished between the upsert and the read (a concurrent GC
             // could do this in theory). Surface as InFlight so the
@@ -173,7 +172,7 @@ impl IdempotencyStore for SqlxIdempotencyStore {
                     key: key.to_owned(),
                     request_hash: stored,
                     response_status,
-                    response_content_type: content_type,
+                    response_headers: headers.unwrap_or_default(),
                     response_body: b,
                     created_at: created_at.into(),
                     expires_at: existing_expires_at.into(),
@@ -189,7 +188,7 @@ impl IdempotencyStore for SqlxIdempotencyStore {
         key: &str,
         token: uuid::Uuid,
         status: u16,
-        content_type: Option<&str>,
+        headers: &[u8],
         body: &[u8],
     ) -> Result<(), CoolError> {
         // Only completes the row we actually reserved. `reservation_id =
@@ -200,7 +199,7 @@ impl IdempotencyStore for SqlxIdempotencyStore {
         sqlx::query(
             "UPDATE cratestack_idempotency
              SET response_status = $1,
-                 response_content_type = $2,
+                 response_headers = $2,
                  response_body = $3
              WHERE principal_fingerprint = $4
                AND key = $5
@@ -208,7 +207,7 @@ impl IdempotencyStore for SqlxIdempotencyStore {
                AND response_body IS NULL",
         )
         .bind(status as i32)
-        .bind(content_type)
+        .bind(headers)
         .bind(body)
         .bind(principal)
         .bind(key)

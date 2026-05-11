@@ -63,12 +63,26 @@ where
             .map_err(|error| CoolError::Database(error.to_string()))?;
 
         match body(tx).await {
-            Ok((value, tx)) => {
-                tx.commit()
-                    .await
-                    .map_err(|error| CoolError::Database(error.to_string()))?;
-                return Ok(value);
-            }
+            Ok((value, tx)) => match tx.commit().await {
+                Ok(()) => return Ok(value),
+                Err(commit_error) => {
+                    // PG can defer a serialization anomaly all the way to
+                    // COMMIT: the body's SQL runs cleanly, then the engine
+                    // detects the conflict during the predicate-lock check
+                    // at commit and rolls the transaction back with
+                    // SQLSTATE 40001 (the docs are explicit that the
+                    // *entire* transaction must be retried). Without this
+                    // branch we'd advertise automatic retries but still
+                    // leak a transient 40001 to callers when the conflict
+                    // is detected at the commit boundary.
+                    let promoted = CoolError::Database(commit_error.to_string());
+                    if attempts <= max_retries && is_retriable(&promoted) {
+                        tokio::task::yield_now().await;
+                        continue;
+                    }
+                    return Err(promoted);
+                }
+            },
             Err(error) => {
                 if attempts <= max_retries && is_retriable(&error) {
                     // Backoff is intentionally trivial — banks running this
@@ -152,5 +166,20 @@ mod tests {
             "duplicate key value violates unique constraint \"accounts_pkey\"".to_owned(),
         );
         assert!(!is_retriable(&err));
+    }
+
+    #[test]
+    fn retriable_when_serialization_failure_is_raised_at_commit_time() {
+        // PG SSI can defer the 40001 to COMMIT. The sqlx error surfaced
+        // by `tx.commit()` carries the same SQLSTATE; the loop now
+        // promotes that into `CoolError::Database` and feeds it through
+        // `is_retriable` so the commit-time path is no longer leaked to
+        // callers despite the API advertising automatic retries.
+        let err = CoolError::Database(
+            "Database(PgDatabaseError { severity: ERROR, code: \"40001\", \
+             message: \"could not serialize access due to read/write dependencies among transactions\" })"
+                .to_owned(),
+        );
+        assert!(is_retriable(&err));
     }
 }

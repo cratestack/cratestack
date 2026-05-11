@@ -98,6 +98,92 @@ async fn concurrent_increments_under_serializable_observe_both_writes() {
 }
 
 #[tokio::test]
+async fn write_skew_anomaly_surfaces_at_commit_time_and_is_retried_to_success() {
+    // Classic SSI write-skew: two tasks read the same predicate, write
+    // disjoint rows, and neither observes the other during execution.
+    // PG only detects the read/write dependency cycle when the second
+    // transaction tries to COMMIT, surfacing SQLSTATE 40001 from
+    // `tx.commit()` rather than from any statement in the body. Before
+    // the commit-time-retry fix this would leak a transient 40001 out
+    // to the caller; with the fix in place both tasks must succeed.
+    let _guard = serial_guard().await;
+    let Some(pool) = connect_or_skip().await else {
+        return;
+    };
+    query("DROP TABLE IF EXISTS bank_accounts_write_skew")
+        .execute(&pool)
+        .await
+        .expect("drop");
+    query("CREATE TABLE bank_accounts_write_skew (id INT PRIMARY KEY, balance BIGINT NOT NULL)")
+        .execute(&pool)
+        .await
+        .expect("create");
+    query("INSERT INTO bank_accounts_write_skew VALUES (1, 100), (2, 100)")
+        .execute(&pool)
+        .await
+        .expect("seed");
+
+    async fn withdraw_if_combined_balance_allows(
+        pool: cratestack::sqlx::PgPool,
+        target: i64,
+    ) -> Result<(), CoolError> {
+        run_in_isolated_tx(
+            &pool,
+            TransactionIsolation::Serializable,
+            move |mut tx| async move {
+                let row: (i64,) = cratestack::sqlx::query_as(
+                    "SELECT COALESCE(SUM(balance), 0)::BIGINT FROM bank_accounts_write_skew",
+                )
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| CoolError::Database(e.to_string()))?;
+                // Yield so the two tasks both observe the pre-write
+                // snapshot before either writes. This is what makes the
+                // anomaly visible — both see total >= 100 and decide
+                // to withdraw, even though running them serially would
+                // only allow one withdrawal.
+                tokio::task::yield_now().await;
+                if row.0 >= 100 {
+                    cratestack::sqlx::query(
+                        "UPDATE bank_accounts_write_skew SET balance = balance - 100 WHERE id = $1",
+                    )
+                    .bind(target)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| CoolError::Database(e.to_string()))?;
+                }
+                Ok(((), tx))
+            },
+        )
+        .await
+    }
+
+    let a = tokio::spawn(withdraw_if_combined_balance_allows(pool.clone(), 1));
+    let b = tokio::spawn(withdraw_if_combined_balance_allows(pool.clone(), 2));
+    let (ra, rb) = tokio::join!(a, b);
+    ra.expect("task a panicked")
+        .expect("task a must not leak commit-time 40001");
+    rb.expect("task b panicked")
+        .expect("task b must not leak commit-time 40001");
+
+    // After both run, the retry of whichever one lost at commit must
+    // have seen the updated state and made a serialisable decision —
+    // the final total is well-defined (a single withdrawal succeeded,
+    // or both did if the predicate still held on retry).
+    let total: (i64,) = cratestack::sqlx::query_as(
+        "SELECT COALESCE(SUM(balance), 0)::BIGINT FROM bank_accounts_write_skew",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("read");
+    assert!(
+        total.0 == 0 || total.0 == 100,
+        "after retry the total must reflect a serialisable history (0 or 100); got {}",
+        total.0,
+    );
+}
+
+#[tokio::test]
 async fn read_committed_can_lose_an_update_when_no_retry_is_configured() {
     // Companion negative: under READ COMMITTED the same workload exhibits
     // the lost-update anomaly (two readers both see 0, both write 1, final

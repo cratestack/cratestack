@@ -38,13 +38,20 @@ const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 /// Persisted idempotency record returned on a replay. Banks need an
 /// invariant view of the captured response — the store rebuilds this from
 /// its persisted columns when the second caller asks to replay.
+///
+/// `response_headers` is an opaque blob produced by [`encode_headers`] at
+/// capture time and consumed by [`decode_headers`] on replay. The blob
+/// carries every end-to-end header the handler returned, including
+/// `Location`, `ETag`, cache directives, and `Content-Type` — replaying
+/// only the status + body would silently drop these and give a retry
+/// different observable behaviour from the original execution.
 #[derive(Debug, Clone)]
 pub struct IdempotencyRecord {
     pub key: String,
     pub principal_fingerprint: String,
     pub request_hash: [u8; 32],
     pub response_status: u16,
-    pub response_content_type: Option<String>,
+    pub response_headers: Vec<u8>,
     pub response_body: Vec<u8>,
     pub created_at: SystemTime,
     pub expires_at: SystemTime,
@@ -105,13 +112,17 @@ pub trait IdempotencyStore: Send + Sync + 'static {
     /// when this caller claimed the key; mismatched tokens are
     /// silently no-ops so a stale handler whose reservation has been
     /// reclaimed cannot overwrite a newer execution's response.
+    ///
+    /// `headers` is the encoded blob from [`encode_headers`] — replays
+    /// rebuild the response with the same `Location`, `ETag`, `Cache-
+    /// Control`, `Content-Type`, etc. that the original handler set.
     async fn complete(
         &self,
         principal: &str,
         key: &str,
         token: uuid::Uuid,
         status: u16,
-        content_type: Option<&str>,
+        headers: &[u8],
         body: &[u8],
     ) -> Result<(), CoolError>;
 
@@ -147,9 +158,12 @@ pub fn parse_idempotency_key(headers: &http::HeaderMap) -> Result<Option<String>
     Ok(Some(raw.to_owned()))
 }
 
-/// Stable fingerprint of a request: SHA-256 over method, path, content-type,
-/// and body bytes. Used to detect when a duplicate key is reused with a
-/// different payload (the conflict case the draft spec calls out).
+/// Stable fingerprint of a request: SHA-256 over method, path + query,
+/// content-type, and body bytes. Used to detect when a duplicate key is
+/// reused with a different payload (the conflict case the draft spec
+/// calls out). The `path` argument should include the query string so
+/// modifier-style flags (`?dry_run=true`, `?confirm=true`) don't collide
+/// — the middleware passes `Uri::path_and_query` for that reason.
 pub fn hash_request(
     method: &Method,
     path: &str,
@@ -165,6 +179,96 @@ pub fn hash_request(
     hasher.update(b"\0");
     hasher.update(body);
     hasher.finalize().into()
+}
+
+/// Headers excluded from the replay blob. `Date` should always reflect
+/// when the response is actually emitted; `Content-Length` is recomputed
+/// by the framework from the buffered body so capturing it would risk
+/// mismatch with `Vec<u8>::len()` on the path back out. `Connection` and
+/// `Transfer-Encoding` are hop-by-hop and meaningless to replay.
+const HEADERS_NEVER_REPLAYED: &[&str] =
+    &["content-length", "connection", "transfer-encoding", "date"];
+
+fn is_replayable_header(name: &http::HeaderName) -> bool {
+    !HEADERS_NEVER_REPLAYED.contains(&name.as_str())
+}
+
+/// Encode a response's headers into the opaque blob that the store
+/// persists. Format: little-endian length-prefixed `(name, value)` pairs.
+/// Header values can carry arbitrary bytes (per RFC 9110 they may include
+/// any opaque-data octet, with the exception of CR/LF), so a binary blob
+/// is the only correct representation — JSON would force lossy UTF-8
+/// coercion on values like opaque `ETag` tokens that may already be
+/// quoted-string blobs.
+pub fn encode_headers(headers: &http::HeaderMap) -> Vec<u8> {
+    let mut iter = headers
+        .iter()
+        .filter(|(name, _)| is_replayable_header(name));
+    // Two passes so we can write the count up front; HeaderMap iter
+    // doesn't expose a stable count that excludes filtered entries.
+    let pairs: Vec<_> = iter.by_ref().collect();
+    let mut blob = Vec::with_capacity(4 + pairs.len() * 16);
+    let count = pairs.len() as u32;
+    blob.extend_from_slice(&count.to_le_bytes());
+    for (name, value) in pairs {
+        let name_bytes = name.as_str().as_bytes();
+        let value_bytes = value.as_bytes();
+        blob.extend_from_slice(&(name_bytes.len() as u32).to_le_bytes());
+        blob.extend_from_slice(name_bytes);
+        blob.extend_from_slice(&(value_bytes.len() as u32).to_le_bytes());
+        blob.extend_from_slice(value_bytes);
+    }
+    blob
+}
+
+/// Decode a blob produced by [`encode_headers`] back into a `HeaderMap`.
+/// Returns an empty map on malformed input rather than failing the
+/// replay — a corrupt headers blob is a recoverable curiosity, not a
+/// reason to drop the response status and body the caller is waiting
+/// for.
+pub fn decode_headers(blob: &[u8]) -> http::HeaderMap {
+    let mut headers = http::HeaderMap::new();
+    if blob.is_empty() {
+        return headers;
+    }
+    let mut cursor = 0;
+    let read_u32 = |bytes: &[u8], offset: usize| -> Option<usize> {
+        bytes
+            .get(offset..offset + 4)
+            .map(|b| u32::from_le_bytes(b.try_into().expect("4-byte slice")) as usize)
+    };
+    let Some(count) = read_u32(blob, cursor) else {
+        return headers;
+    };
+    cursor += 4;
+    for _ in 0..count {
+        let Some(name_len) = read_u32(blob, cursor) else {
+            return headers;
+        };
+        cursor += 4;
+        let Some(name_bytes) = blob.get(cursor..cursor + name_len) else {
+            return headers;
+        };
+        cursor += name_len;
+        let Some(value_len) = read_u32(blob, cursor) else {
+            return headers;
+        };
+        cursor += 4;
+        let Some(value_bytes) = blob.get(cursor..cursor + value_len) else {
+            return headers;
+        };
+        cursor += value_len;
+        let Ok(name) = http::HeaderName::from_bytes(name_bytes) else {
+            continue;
+        };
+        let Ok(value) = http::HeaderValue::from_bytes(value_bytes) else {
+            continue;
+        };
+        // `append`, not `insert`: preserves multi-valued headers like
+        // `Set-Cookie` exactly as the handler emitted them.
+        headers.append(name, value);
+    }
+    headers
 }
 
 /// Returns true if the HTTP method is one we'd guard with idempotency. We
@@ -277,7 +381,19 @@ where
                 Err(error) => return Ok(error_response(error)),
             };
             let principal = (principal_fp)(&req);
-            let path = req.uri().path().to_owned();
+            // Hash the full path + query string. Skipping the query
+            // makes `POST /transfer?dry_run=true` collide with
+            // `POST /transfer?dry_run=false` under the same key, so a
+            // dry-run preview would replay the live execution's
+            // response (or vice versa). Banks routinely encode
+            // operation modifiers like `?confirm=true` or
+            // `?settlement=instant` in the query string — those must
+            // produce distinct idempotency hashes.
+            let path = req
+                .uri()
+                .path_and_query()
+                .map(|pq| pq.as_str().to_owned())
+                .unwrap_or_else(|| req.uri().path().to_owned());
             let content_type = req
                 .headers()
                 .get(header::CONTENT_TYPE)
@@ -361,11 +477,15 @@ where
                     return Ok(e);
                 }
             };
-            let content_type_header = rparts
-                .headers
-                .get(header::CONTENT_TYPE)
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.to_owned());
+            // Capture the full header set so the replay reproduces the
+            // original handler's `Location`, `ETag`, cache directives,
+            // `Content-Type`, etc. Hop-by-hop and framework-computed
+            // headers are filtered inside `encode_headers`. Pre-fix
+            // the middleware only persisted `Content-Type`, so a
+            // `201 Created` with a `Location` header replayed as
+            // `201 Created` with no `Location` — different observable
+            // behaviour from the original execution.
+            let headers_blob = encode_headers(&rparts.headers);
 
             // Persist the completion. Best-effort: on store failure we
             // still return the live response so the caller observes the
@@ -380,7 +500,7 @@ where
                     &key,
                     token,
                     rparts.status.as_u16(),
-                    content_type_header.as_deref(),
+                    &headers_blob,
                     &rbytes,
                 )
                 .await;
@@ -390,15 +510,22 @@ where
 }
 
 fn replay_response(record: &IdempotencyRecord) -> Response {
-    let mut builder = Response::builder()
-        .status(StatusCode::from_u16(record.response_status).unwrap_or(StatusCode::OK))
-        .header("Idempotency-Replayed", "true");
-    if let Some(ct) = &record.response_content_type {
-        builder = builder.header(header::CONTENT_TYPE, ct.as_str());
+    let mut response = Response::new(Body::from(record.response_body.clone()));
+    *response.status_mut() = StatusCode::from_u16(record.response_status).unwrap_or(StatusCode::OK);
+    // Restore every header the handler originally set (Location,
+    // ETag, Cache-Control, Content-Type, Set-Cookie, …). The
+    // replay marker is appended after so downstream clients can
+    // still distinguish a replay from a live execution.
+    let restored = decode_headers(&record.response_headers);
+    let response_headers = response.headers_mut();
+    for (name, value) in restored.iter() {
+        response_headers.append(name.clone(), value.clone());
     }
-    builder
-        .body(Body::from(record.response_body.clone()))
-        .expect("static headers must produce a valid response")
+    response_headers.append(
+        http::HeaderName::from_static("idempotency-replayed"),
+        http::HeaderValue::from_static("true"),
+    );
+    response
 }
 
 /// 409 Conflict response when another request holds the reservation.
@@ -440,7 +567,7 @@ CREATE TABLE IF NOT EXISTS cratestack_idempotency (
     request_hash BYTEA NOT NULL,
     reservation_id UUID NOT NULL,
     response_status INT,
-    response_content_type TEXT,
+    response_headers BYTEA,
     response_body BYTEA,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     expires_at TIMESTAMPTZ NOT NULL,
@@ -500,12 +627,96 @@ mod tests {
     }
 
     #[test]
+    fn hash_changes_with_query_string() {
+        // Same method, same body, same content-type, different query —
+        // must hash differently. Pre-fix the middleware fed only
+        // `Uri::path` into the hasher and `?dry_run=true` collided
+        // with `?dry_run=false`.
+        let a = hash_request(
+            &Method::POST,
+            "/transfer?dry_run=true",
+            Some("application/json"),
+            b"{}",
+        );
+        let b = hash_request(
+            &Method::POST,
+            "/transfer?dry_run=false",
+            Some("application/json"),
+            b"{}",
+        );
+        assert_ne!(a, b);
+    }
+
+    #[test]
     fn hash_changes_with_method_or_path() {
         let a = hash_request(&Method::POST, "/transfer", None, b"payload");
         let b = hash_request(&Method::PATCH, "/transfer", None, b"payload");
         let c = hash_request(&Method::POST, "/credit", None, b"payload");
         assert_ne!(a, b);
         assert_ne!(a, c);
+    }
+
+    #[test]
+    fn encode_then_decode_round_trips_headers_with_multi_values() {
+        let mut headers = http::HeaderMap::new();
+        headers.insert("location", http::HeaderValue::from_static("/accounts/42"));
+        headers.insert("etag", http::HeaderValue::from_static("\"v1\""));
+        headers.insert("cache-control", http::HeaderValue::from_static("no-store"));
+        // Multi-valued header: both Set-Cookie lines must round-trip.
+        headers.append("set-cookie", http::HeaderValue::from_static("a=1"));
+        headers.append("set-cookie", http::HeaderValue::from_static("b=2"));
+        // Filtered headers — must NOT appear after round trip.
+        headers.insert(
+            "date",
+            http::HeaderValue::from_static("Mon, 01 Jan 2024 00:00:00 GMT"),
+        );
+        headers.insert("content-length", http::HeaderValue::from_static("42"));
+        headers.insert("connection", http::HeaderValue::from_static("close"));
+        headers.insert(
+            "transfer-encoding",
+            http::HeaderValue::from_static("chunked"),
+        );
+
+        let blob = encode_headers(&headers);
+        let restored = decode_headers(&blob);
+
+        assert_eq!(
+            restored.get("location").unwrap().as_bytes(),
+            b"/accounts/42"
+        );
+        assert_eq!(restored.get("etag").unwrap().as_bytes(), b"\"v1\"");
+        assert_eq!(
+            restored.get("cache-control").unwrap().as_bytes(),
+            b"no-store"
+        );
+        let cookies: Vec<_> = restored.get_all("set-cookie").iter().collect();
+        assert_eq!(cookies.len(), 2, "multi-valued Set-Cookie must round-trip");
+
+        assert!(restored.get("date").is_none(), "Date is filtered");
+        assert!(
+            restored.get("content-length").is_none(),
+            "Content-Length is recomputed by the framework",
+        );
+        assert!(restored.get("connection").is_none(), "hop-by-hop");
+        assert!(restored.get("transfer-encoding").is_none(), "hop-by-hop");
+    }
+
+    #[test]
+    fn decode_headers_of_empty_blob_returns_empty_map() {
+        let map = decode_headers(&[]);
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn decode_headers_tolerates_truncated_blob_without_panicking() {
+        // The middleware treats a corrupt headers blob as a recoverable
+        // curiosity — the replay still returns the right status and
+        // body. If a future change made `decode_headers` panic on
+        // partial input, a single corrupted row would crash every
+        // replay against that key.
+        let truncated = [42u8, 0, 0, 0, 5, 0, 0, 0, b'x']; // claims 42 entries, 5-byte name, only 1 byte present
+        let map = decode_headers(&truncated);
+        assert!(map.is_empty());
     }
 
     #[test]

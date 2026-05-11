@@ -306,17 +306,21 @@ async fn expired_reservation_can_be_replaced_on_reuse() {
     cratestack::sqlx::query(
         "INSERT INTO cratestack_idempotency (
             principal_fingerprint, key, request_hash, reservation_id,
-            response_status, response_content_type, response_body,
+            response_status, response_headers, response_body,
             created_at, expires_at
         ) VALUES (
             'fingerprint-static', 'recycled', $1, $2,
-            201, 'application/json', $3,
+            201, $3, $4,
             NOW() - INTERVAL '2 hours',
             NOW() - INTERVAL '1 hour'
         )",
     )
     .bind(vec![0u8; 32])
     .bind(uuid::Uuid::new_v4())
+    // Empty header blob — the seeded row's content-type info no
+    // longer lives in a dedicated column; the replay path tolerates
+    // an empty blob by emitting just the status + body.
+    .bind(Vec::<u8>::new())
     .bind(br#"{"stale":true}"#.to_vec())
     .execute(&pool)
     .await
@@ -451,7 +455,9 @@ async fn stale_handler_after_ttl_overrun_cannot_overwrite_newer_reservation() {
             key,
             token_retry,
             201,
-            Some("application/json"),
+            // No header replay needed for this token-guard test; the
+            // headers blob is exercised separately via the HTTP layer.
+            &[],
             br#"{"owner":"retry"}"#,
         )
         .await
@@ -467,7 +473,7 @@ async fn stale_handler_after_ttl_overrun_cannot_overwrite_newer_reservation() {
             key,
             token_original,
             500,
-            Some("application/json"),
+            &[],
             br#"{"owner":"stale"}"#,
         )
         .await
@@ -512,6 +518,169 @@ async fn stale_handler_after_ttl_overrun_cannot_overwrite_newer_reservation() {
     assert_eq!(
         row_count.0, 1,
         "the retry's row must still be present after the stale release",
+    );
+}
+
+#[tokio::test]
+async fn replay_preserves_response_headers_emitted_by_the_handler() {
+    use cratestack::axum::Router;
+    use cratestack::axum::response::IntoResponse;
+    use cratestack::axum::routing::post;
+
+    let _guard = serial_guard().await;
+    let Some(pool) = connect_or_skip().await else {
+        return;
+    };
+    cratestack::sqlx::query("DROP TABLE IF EXISTS cratestack_idempotency")
+        .execute(&pool)
+        .await
+        .expect("drop");
+    cratestack::SqlxIdempotencyStore::new(pool.clone())
+        .ensure_schema()
+        .await
+        .expect("ensure schema");
+
+    // Build a tiny route whose handler returns 201 with the kind of
+    // headers banking flows actually emit — Location for the created
+    // resource, ETag for optimistic locking, Cache-Control to forbid
+    // intermediate caching. Pre-fix the replay path only restored
+    // `Content-Type`, so a retry would see a different response
+    // shape from the original — exactly the bug we're fixing.
+    let handler = move || async move {
+        let mut response = (StatusCode::CREATED, "{\"transfer_id\":\"abc\"}").into_response();
+        let headers = response.headers_mut();
+        headers.insert(
+            "location",
+            cratestack::axum::http::HeaderValue::from_static("/transfers/abc"),
+        );
+        headers.insert(
+            "etag",
+            cratestack::axum::http::HeaderValue::from_static("\"v7\""),
+        );
+        headers.insert(
+            "cache-control",
+            cratestack::axum::http::HeaderValue::from_static("no-store"),
+        );
+        response
+    };
+    let store = Arc::new(cratestack::SqlxIdempotencyStore::new(pool.clone()));
+    let router: Router = Router::new()
+        .route("/transfers", post(handler))
+        .layer(IdempotencyLayer::new(store, Duration::from_secs(60)));
+
+    let body = r#"{"amount":100}"#;
+    let send = |router: Router| async move {
+        router
+            .oneshot(
+                Request::post("/transfers")
+                    .header("content-type", "application/json")
+                    .header("idempotency-key", "replay-headers-001")
+                    .body(Body::from(body))
+                    .expect("req"),
+            )
+            .await
+            .expect("send")
+    };
+
+    let first = send(router.clone()).await;
+    assert_eq!(first.status(), StatusCode::CREATED);
+    let first_location = first
+        .headers()
+        .get("location")
+        .expect("first response must carry Location")
+        .clone();
+    let first_etag = first
+        .headers()
+        .get("etag")
+        .expect("first response must carry ETag")
+        .clone();
+
+    let second = send(router.clone()).await;
+    assert_eq!(second.status(), StatusCode::CREATED);
+    assert_eq!(
+        second
+            .headers()
+            .get("idempotency-replayed")
+            .map(|v| v.as_bytes()),
+        Some(b"true".as_slice()),
+    );
+    assert_eq!(
+        second.headers().get("location"),
+        Some(&first_location),
+        "replay must preserve Location so clients dereference the same resource",
+    );
+    assert_eq!(
+        second.headers().get("etag"),
+        Some(&first_etag),
+        "replay must preserve ETag so optimistic-lock validators still match",
+    );
+    assert_eq!(
+        second.headers().get("cache-control").map(|v| v.as_bytes()),
+        Some(b"no-store".as_slice()),
+        "replay must preserve Cache-Control directives the handler set",
+    );
+}
+
+#[tokio::test]
+async fn same_key_with_different_query_string_does_not_replay() {
+    // Pre-fix the middleware hashed only `Uri::path`, so
+    // `POST /vouchers?dry_run=true` and `POST /vouchers?dry_run=false`
+    // collided under the same key — the second call would silently
+    // replay the first response despite advertising a different
+    // operation mode. With path-and-query in the hash, the second call
+    // sees a different request_hash and the store reports
+    // idempotency_key_conflict (422).
+    let _guard = serial_guard().await;
+    let Some(pool) = connect_or_skip().await else {
+        return;
+    };
+    reset_schema(&pool).await;
+    cratestack::SqlxIdempotencyStore::new(pool.clone())
+        .ensure_schema()
+        .await
+        .expect("ensure schema");
+    let router = build_router(pool.clone());
+    let body = r#"{"id":501,"code":"V-501","amount":1}"#;
+
+    let first = router
+        .clone()
+        .oneshot(
+            Request::post("/vouchers?dry_run=true")
+                .header("content-type", JsonCodec::CONTENT_TYPE)
+                .header("accept", JsonCodec::CONTENT_TYPE)
+                .header("idempotency-key", "qs-501")
+                .body(Body::from(body))
+                .expect("first req"),
+        )
+        .await
+        .expect("first send");
+    assert_eq!(first.status(), StatusCode::CREATED);
+
+    let second = router
+        .clone()
+        .oneshot(
+            Request::post("/vouchers?dry_run=false")
+                .header("content-type", JsonCodec::CONTENT_TYPE)
+                .header("accept", JsonCodec::CONTENT_TYPE)
+                .header("idempotency-key", "qs-501")
+                .body(Body::from(body))
+                .expect("second req"),
+        )
+        .await
+        .expect("second send");
+
+    // The differing query string must produce a fresh request hash,
+    // which the existing-row classifier resolves as
+    // idempotency_key_conflict (422). Crucially it must NOT be a 201
+    // replay — that would prove the query string was discarded.
+    assert_eq!(
+        second.status(),
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "different query string under same key must conflict, not replay",
+    );
+    assert!(
+        second.headers().get("idempotency-replayed").is_none(),
+        "conflict response must not carry the replay marker",
     );
 }
 
