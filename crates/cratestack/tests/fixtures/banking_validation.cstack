@@ -1,0 +1,20 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Member {
+  id Int @id
+  email String @email @length(min: 3, max: 254)
+  currency String @iso4217
+  slug String @regex("^[a-z0-9-]+$")
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}

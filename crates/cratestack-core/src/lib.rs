@@ -1024,14 +1024,21 @@ impl CoolContext {
         }
     }
 
-    /// Convenience accessor for the principal's actor id, as a string.
-    /// Used by audit-log construction to stamp the `actor` column without
-    /// every call site re-implementing the lookup.
+    /// Convenience accessor for the principal's actor id. Falls back from
+    /// the structured `principal.actor.id` facet to `principal.claims.id`
+    /// and `auth.fields.id` so audit rows capture an identity regardless of
+    /// which CoolContext builder the caller used.
     pub fn principal_actor_id(&self) -> Option<&str> {
-        self.principal
+        let from_facet = self
+            .principal
             .as_ref()
             .and_then(|p| p.actor.as_ref())
-            .and_then(|facet| facet.fields.get("id"))
+            .and_then(|facet| facet.fields.get("id"));
+        let from_claims = self.principal.as_ref().and_then(|p| p.claims.get("id"));
+        let from_auth = self.auth.as_ref().and_then(|auth| auth.fields.get("id"));
+        from_facet
+            .or(from_claims)
+            .or(from_auth)
             .and_then(|v| match v {
                 Value::String(s) => Some(s.as_str()),
                 _ => None,

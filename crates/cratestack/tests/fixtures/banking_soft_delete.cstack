@@ -1,0 +1,20 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Customer {
+  id Int @id
+  name String
+  email String
+
+  @@soft_delete
+  @@retain(days: 365)
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("delete", auth() != null)
+}

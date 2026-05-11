@@ -21,6 +21,10 @@ pub use cratestack_sqlx::{
     UpdateModelInput, UpdateRecord, UpdateRecordSet, create_record_with_executor,
     update_record_with_executor,
 };
+pub use cratestack_sqlx::{
+    MIGRATIONS_TABLE_DDL, Migration, MigrationState, MigrationStatus, apply_pending,
+    ensure_migrations_table, status,
+};
 pub use cratestack_sqlx::{run_in_isolated_tx, run_in_isolated_tx_with_retries};
 pub use regex;
 pub use serde;

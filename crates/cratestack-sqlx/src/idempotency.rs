@@ -25,11 +25,19 @@ impl SqlxIdempotencyStore {
     /// Ensure the table exists. Banks typically run this via their own
     /// migration tooling; we expose it here for convenience.
     pub async fn ensure_schema(&self) -> Result<(), CoolError> {
-        sqlx::query(IDEMPOTENCY_TABLE_DDL)
-            .execute(&self.pool)
-            .await
-            .map(|_| ())
-            .map_err(|error| CoolError::Database(error.to_string()))
+        // Multi-statement DDL (table + index) — prepared statements only
+        // accept one statement at a time, so split + execute sequentially.
+        for statement in IDEMPOTENCY_TABLE_DDL
+            .split(';')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            sqlx::query(statement)
+                .execute(&self.pool)
+                .await
+                .map_err(|error| CoolError::Database(error.to_string()))?;
+        }
+        Ok(())
     }
 
     /// Delete expired rows. Run periodically (e.g. via a scheduled task or

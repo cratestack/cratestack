@@ -58,11 +58,17 @@ pub struct MigrationState {
 }
 
 pub async fn ensure_migrations_table(pool: &sqlx::PgPool) -> Result<(), CoolError> {
-    sqlx::query(MIGRATIONS_TABLE_DDL)
-        .execute(pool)
-        .await
-        .map(|_| ())
-        .map_err(|error| CoolError::Database(error.to_string()))
+    for statement in MIGRATIONS_TABLE_DDL
+        .split(';')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        sqlx::query(statement)
+            .execute(pool)
+            .await
+            .map_err(|error| CoolError::Database(error.to_string()))?;
+    }
+    Ok(())
 }
 
 /// Inspect each migration in `migrations` against `cratestack_migrations`

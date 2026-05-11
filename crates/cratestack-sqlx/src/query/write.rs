@@ -100,7 +100,7 @@ where
                 ensure_event_outbox_table(&mut *tx).await?;
             }
             if audit_enabled {
-                ensure_audit_table(&mut *tx).await?;
+                ensure_audit_table(self.runtime.pool()).await?;
             }
             let record = create_record_with_executor(
                 &mut *tx,
@@ -224,7 +224,7 @@ where
                 ensure_event_outbox_table(&mut *tx).await?;
             }
             if audit_enabled {
-                ensure_audit_table(&mut *tx).await?;
+                ensure_audit_table(self.runtime.pool()).await?;
             }
             // Capture the BEFORE snapshot under a row-level lock so concurrent
             // mutations can't race the audit.
@@ -327,7 +327,7 @@ impl<'a, M: 'static, PK: 'static> DeleteRecord<'a, M, PK> {
                 ensure_event_outbox_table(&mut *tx).await?;
             }
             if audit_enabled {
-                ensure_audit_table(&mut *tx).await?;
+                ensure_audit_table(self.runtime.pool()).await?;
             }
 
             let record = delete_returning_record(&mut *tx, self.descriptor, self.id, ctx).await?;

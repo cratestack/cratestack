@@ -43,15 +43,22 @@ CREATE INDEX IF NOT EXISTS cratestack_audit_undelivered_idx
     WHERE delivered_at IS NULL;
 "#;
 
-pub(crate) async fn ensure_audit_table<'e, E>(executor: E) -> Result<(), CoolError>
-where
-    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
-{
-    sqlx::query(AUDIT_TABLE_DDL)
-        .execute(executor)
-        .await
-        .map(|_| ())
-        .map_err(|error| CoolError::Database(error.to_string()))
+pub(crate) async fn ensure_audit_table(pool: &sqlx::PgPool) -> Result<(), CoolError> {
+    // sqlx prepared statements accept only one statement per query, so the
+    // multi-statement DDL (table + indexes) is split on `;` and executed
+    // sequentially. Sub-statements are idempotent (`CREATE ... IF NOT
+    // EXISTS`), so this stays safe under concurrent first-runs.
+    for statement in AUDIT_TABLE_DDL
+        .split(';')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        sqlx::query(statement)
+            .execute(pool)
+            .await
+            .map_err(|error| CoolError::Database(error.to_string()))?;
+    }
+    Ok(())
 }
 
 /// Persist an audit event into the `cratestack_audit` table. Designed to run
