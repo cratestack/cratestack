@@ -1285,9 +1285,14 @@ async fn read_policies_scope_find_many_for_anonymous_context() {
         .where_(cratestack_schema::post::title().contains("Hel"))
         .preview_scoped_sql(&ctx);
 
+    // blog.cstack's Post `@@allow("list", ...)` now matches `published
+    // || authorId == auth().id` (the policy was widened so owners can
+    // see their own drafts via list — see the related fix in
+    // policy_db.rs). Anonymous context has no `auth().id`, so the
+    // second disjunct collapses to `FALSE`.
     assert_eq!(
         sql,
-        "SELECT id AS \"id\", title AS \"title\", subtitle AS \"subtitle\", published AS \"published\", author_id AS \"authorId\" FROM posts WHERE title LIKE $1 AND (published = TRUE)"
+        "SELECT id AS \"id\", title AS \"title\", subtitle AS \"subtitle\", published AS \"published\", author_id AS \"authorId\" FROM posts WHERE title LIKE $1 AND ((published = TRUE OR FALSE))"
     );
 }
 
@@ -1301,9 +1306,11 @@ async fn read_policies_scope_find_many_for_authenticated_context() {
 
     let sql = cool.post().find_many().preview_scoped_sql(&ctx);
 
+    // Authenticated context binds `auth().id` into the second disjunct
+    // of the widened `@@allow("list", ...)` policy.
     assert_eq!(
         sql,
-        "SELECT id AS \"id\", title AS \"title\", subtitle AS \"subtitle\", published AS \"published\", author_id AS \"authorId\" FROM posts WHERE published = TRUE"
+        "SELECT id AS \"id\", title AS \"title\", subtitle AS \"subtitle\", published AS \"published\", author_id AS \"authorId\" FROM posts WHERE (published = TRUE OR author_id = $1)"
     );
 }
 

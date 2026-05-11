@@ -33,7 +33,7 @@ model Post {
   authorId Int
   author User @relation(fields:[authorId],references:[id])
 
-  @@allow("list", published)
+  @@allow("list", published || authorId == auth().id)
   @@allow("detail", published || authorId == auth().id)
   @@allow("create", auth() != null)
   @@allow("update", authorId == auth().id)

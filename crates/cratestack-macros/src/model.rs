@@ -301,6 +301,14 @@ fn struct_field_definition(
     // it's a defence-in-depth seam.
     let serde_attr = if is_server_only_field(field) {
         quote! { #[serde(skip_serializing, default)] }
+    } else if matches!(field.ty.arity, TypeArity::Optional) && !wrap_for_patch {
+        // Generated model structs declare Optional fields as `Option<T>`,
+        // but the wire projection strips `null` map entries before the
+        // codec sees them (CBOR/minicbor-serde encodes `Value::Null` as an
+        // empty array, which would corrupt round-trips). `#[serde(default)]`
+        // lets the client struct accept "missing field" as `None`,
+        // restoring the round-trip without changing the wire format.
+        quote! { #[serde(default)] }
     } else {
         quote! {}
     };

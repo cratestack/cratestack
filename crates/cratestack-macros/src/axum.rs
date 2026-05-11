@@ -818,9 +818,15 @@ pub(crate) fn generate_model_axum_handlers(
         ) -> Result<::cratestack::serde_json::Map<String, ::cratestack::serde_json::Value>, CoolError> {
             let value = ::cratestack::serde_json::to_value(record)
                 .map_err(|error| CoolError::Internal(format!("failed to serialize {}: {error}", #model_name)))?;
-            let object = value.as_object().cloned().ok_or_else(|| {
+            let mut object = value.as_object().cloned().ok_or_else(|| {
                 CoolError::Internal(format!("generated {} serialization must be a JSON object", #model_name))
             })?;
+            // Strip `null` entries. minicbor-serde (our CBOR backend) encodes
+            // `serde_json::Value::Null` as a CBOR empty array, which would
+            // corrupt every nullable column on the wire. The model struct's
+            // `Option<T>` fields are marked `#[serde(default)]` so the
+            // client recovers `None` from the absent key on decode.
+            object.retain(|_, v| !v.is_null());
 
             let Some(fields) = fields else {
                 return Ok(object);
@@ -828,14 +834,12 @@ pub(crate) fn generate_model_axum_handlers(
 
             let mut projected = ::cratestack::serde_json::Map::new();
             for field in fields {
-                let value = object.get(field).cloned().ok_or_else(|| {
-                    CoolError::Internal(format!(
-                        "generated {} serialization is missing field '{}'",
-                        #model_name,
-                        field,
-                    ))
-                })?;
-                projected.insert(field.clone(), value);
+                if let Some(value) = object.get(field).cloned() {
+                    projected.insert(field.clone(), value);
+                }
+                // Field absent from `object` means the row's column was
+                // NULL and we stripped it above. Skip silently — the
+                // client struct's `#[serde(default)]` restores `None`.
             }
             Ok(projected)
         }

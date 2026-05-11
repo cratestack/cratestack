@@ -640,6 +640,7 @@ dependencies = [
  "cratestack-core",
  "minicbor-serde",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

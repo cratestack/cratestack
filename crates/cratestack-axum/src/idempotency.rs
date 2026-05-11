@@ -35,8 +35,9 @@ use tower::{Layer, Service};
 /// request beyond this returns 413 rather than risking unbounded memory.
 const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 
-/// Persisted idempotency record. The middleware writes one of these on the
-/// first successful execution and replays it on duplicate-key requests.
+/// Persisted idempotency record returned on a replay. Banks need an
+/// invariant view of the captured response — the store rebuilds this from
+/// its persisted columns when the second caller asks to replay.
 #[derive(Debug, Clone)]
 pub struct IdempotencyRecord {
     pub key: String,
@@ -49,22 +50,65 @@ pub struct IdempotencyRecord {
     pub expires_at: SystemTime,
 }
 
+/// Outcome of an atomic `reserve_or_fetch` call.
+///
+/// The middleware uses this state machine to decide whether to run the
+/// handler, replay a cached response, or reject. Exactly one caller per
+/// `(principal, key)` ever gets `Reserved` — that's the contract banking
+/// flows like transfers rely on.
+#[derive(Debug, Clone)]
+pub enum ReservationOutcome {
+    /// This caller claimed the key. It MUST run the handler and then
+    /// invoke `complete` (success) or `release` (give up the
+    /// reservation so a retry can re-acquire).
+    Reserved,
+    /// Another caller already completed an execution with the same
+    /// request hash. The middleware returns the cached response.
+    Replay(IdempotencyRecord),
+    /// Another caller is currently executing under the same key + hash.
+    /// The middleware returns `409 Conflict` with `Retry-After: 1` so
+    /// the client retries shortly.
+    InFlight,
+    /// Same key was claimed by a different request body — the IETF
+    /// draft's `idempotency_key_conflict` (422).
+    Conflict,
+}
+
 #[async_trait]
 pub trait IdempotencyStore: Send + Sync + 'static {
-    /// Look up a record by `(principal, key)`. Returns `Ok(None)` if absent
-    /// or expired. Implementations should treat reads as best-effort: if the
-    /// backing store is down we return an error and let the caller decide
-    /// whether to fail open or closed (this middleware fails closed).
-    async fn fetch(
+    /// Atomically reserve `(principal, key)` for the caller, or report
+    /// the outcome of an existing reservation. Implementations MUST be
+    /// concurrent-safe: two simultaneous callers seeing the same key and
+    /// hash must observe exactly one `Reserved` and one `InFlight`,
+    /// never two `Reserved`. The `expires_at` argument bounds the
+    /// reservation's lifetime so a forgotten release doesn't pin the key
+    /// forever.
+    async fn reserve_or_fetch(
         &self,
         principal: &str,
         key: &str,
-    ) -> Result<Option<IdempotencyRecord>, CoolError>;
+        request_hash: [u8; 32],
+        expires_at: SystemTime,
+    ) -> Result<ReservationOutcome, CoolError>;
 
-    /// Persist a freshly-computed record. Must enforce uniqueness on
-    /// `(principal, key)` so two concurrent callers cannot both store
-    /// distinct responses.
-    async fn put(&self, record: &IdempotencyRecord) -> Result<(), CoolError>;
+    /// Persist the captured response for a previously-reserved key so
+    /// subsequent attempts replay it. Banks treat the IETF idempotency
+    /// contract as "freeze the outcome": if the handler returned 5xx,
+    /// retries see the same 5xx unless they use a fresh key.
+    async fn complete(
+        &self,
+        principal: &str,
+        key: &str,
+        status: u16,
+        content_type: Option<&str>,
+        body: &[u8],
+    ) -> Result<(), CoolError>;
+
+    /// Release a reservation without recording a completion (e.g. the
+    /// inner service panicked or the middleware itself errored before
+    /// the response was ready). Subsequent attempts with the same key
+    /// can re-reserve.
+    async fn release(&self, principal: &str, key: &str) -> Result<(), CoolError>;
 }
 
 /// Parse the `Idempotency-Key` request header. Returns `Ok(None)` if absent.
@@ -227,8 +271,8 @@ where
                 .and_then(|v| v.to_str().ok())
                 .map(|s| s.to_owned());
 
-            // Buffer the request body so we can both hash it and replay it
-            // into the inner handler.
+            // Buffer the request body so we can both hash it and replay
+            // it into the inner handler.
             let (parts, body) = req.into_parts();
             let bytes = match axum::body::to_bytes(body, MAX_BODY_BYTES).await {
                 Ok(b) => b,
@@ -240,26 +284,59 @@ where
             };
             let hash = hash_request(&method, &path, content_type.as_deref(), &bytes);
 
-            match store.fetch(&principal, &key).await {
-                Ok(Some(record)) => {
-                    if record.request_hash == hash {
-                        return Ok(replay_response(&record));
-                    }
+            // Atomic reservation: exactly one caller gets `Reserved`,
+            // and only then do we let the handler run. Concurrent
+            // callers with the same key + same hash see `InFlight`;
+            // different-body conflicts see `Conflict`. This is the
+            // banking-grade duplicate-execution guarantee that the
+            // previous fetch-then-put pattern could not provide.
+            let expires_at = SystemTime::now() + ttl;
+            let outcome = match store
+                .reserve_or_fetch(&principal, &key, hash, expires_at)
+                .await
+            {
+                Ok(outcome) => outcome,
+                Err(error) => return Ok(error_response(error)),
+            };
+
+            match outcome {
+                ReservationOutcome::Replay(record) => {
+                    return Ok(replay_response(&record));
+                }
+                ReservationOutcome::Conflict => {
                     return Ok(error_response(CoolError::Validation(
                         "idempotency_key_conflict: key reused with a different request body"
                             .to_owned(),
                     )));
                 }
-                Ok(None) => {}
-                Err(error) => return Ok(error_response(error)),
+                ReservationOutcome::InFlight => {
+                    return Ok(in_flight_response());
+                }
+                ReservationOutcome::Reserved => {}
             }
 
-            let req2 = Request::from_parts(parts, Body::from(bytes.clone()));
-            let response = inner.call(req2).await?;
+            // We hold the reservation. Run the handler.
+            let req2 = Request::from_parts(parts, Body::from(bytes));
+            let response_result = inner.call(req2).await;
+            let response = match response_result {
+                Ok(response) => response,
+                Err(_) => {
+                    // `Service::Error = Infallible` so this branch is
+                    // unreachable in practice. The release-on-error path
+                    // is still here for if/when a fallible inner service
+                    // is plugged in.
+                    let _ = store.release(&principal, &key).await;
+                    return Ok(error_response(CoolError::Internal(
+                        "handler returned an unrecoverable error".to_owned(),
+                    )));
+                }
+            };
             let (rparts, rbody) = response.into_parts();
             let rbytes = match axum::body::to_bytes(rbody, MAX_BODY_BYTES).await {
                 Ok(b) => b,
                 Err(_) => {
+                    // Drop the reservation so retries can attempt again.
+                    let _ = store.release(&principal, &key).await;
                     let mut e = error_response(CoolError::Internal(
                         "response body exceeded idempotency buffer".to_owned(),
                     ));
@@ -267,25 +344,25 @@ where
                     return Ok(e);
                 }
             };
-            let now = SystemTime::now();
-            let record = IdempotencyRecord {
-                key,
-                principal_fingerprint: principal,
-                request_hash: hash,
-                response_status: rparts.status.as_u16(),
-                response_content_type: rparts
-                    .headers
-                    .get(header::CONTENT_TYPE)
-                    .and_then(|v| v.to_str().ok())
-                    .map(|s| s.to_owned()),
-                response_body: rbytes.to_vec(),
-                created_at: now,
-                expires_at: now + ttl,
-            };
-            // Best-effort store: log on failure but still return the live
-            // response. Banking workflows would prefer to fail closed; expose
-            // this as a strict-mode toggle in a follow-up.
-            let _ = store.put(&record).await;
+            let content_type_header = rparts
+                .headers
+                .get(header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_owned());
+
+            // Persist the completion. Best-effort: on store failure we
+            // still return the live response so the caller observes the
+            // mutation that DID happen; banks running strict mode can
+            // wrap the store in a fail-closed adapter.
+            let _ = store
+                .complete(
+                    &principal,
+                    &key,
+                    rparts.status.as_u16(),
+                    content_type_header.as_deref(),
+                    &rbytes,
+                )
+                .await;
             Ok(Response::from_parts(rparts, Body::from(rbytes)))
         })
     }
@@ -301,6 +378,24 @@ fn replay_response(record: &IdempotencyRecord) -> Response {
     builder
         .body(Body::from(record.response_body.clone()))
         .expect("static headers must produce a valid response")
+}
+
+/// 409 Conflict response when another request holds the reservation.
+/// Banks that need a deterministic outcome should retry; `Retry-After: 1`
+/// is conservative so the caller doesn't busy-loop the server.
+fn in_flight_response() -> Response {
+    let mut response = Response::new(Body::from(
+        "another request with this Idempotency-Key is still in flight",
+    ));
+    *response.status_mut() = StatusCode::CONFLICT;
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        http::HeaderValue::from_static("text/plain; charset=utf-8"),
+    );
+    response
+        .headers_mut()
+        .insert(header::RETRY_AFTER, http::HeaderValue::from_static("1"));
+    response
 }
 
 fn error_response(error: CoolError) -> Response {
@@ -322,9 +417,9 @@ CREATE TABLE IF NOT EXISTS cratestack_idempotency (
     principal_fingerprint TEXT NOT NULL,
     key TEXT NOT NULL,
     request_hash BYTEA NOT NULL,
-    response_status INT NOT NULL,
+    response_status INT,
     response_content_type TEXT,
-    response_body BYTEA NOT NULL,
+    response_body BYTEA,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     expires_at TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (principal_fingerprint, key)
