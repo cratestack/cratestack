@@ -1,5 +1,5 @@
 [package]
-name = "cratestack-sqlx"
+name = "cratestack-sql"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -16,31 +16,19 @@ categories.workspace = true
 default = ["decimal-rust-decimal"]
 decimal-rust-decimal = [
     "cratestack-core/decimal-rust-decimal",
-    "cratestack-sql/decimal-rust-decimal",
     "dep:rust_decimal",
-    "sqlx/rust_decimal",
 ]
 decimal-bigdecimal = [
     "cratestack-core/decimal-bigdecimal",
-    "cratestack-sql/decimal-bigdecimal",
     "dep:bigdecimal",
-    "sqlx/bigdecimal",
 ]
 
 [dependencies]
-async-trait.workspace = true
 chrono.workspace = true
-cratestack-axum.workspace = true
 cratestack-core.workspace = true
 cratestack-policy.workspace = true
-cratestack-sql.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-sha2.workspace = true
-sqlx.workspace = true
-tokio.workspace = true
 uuid.workspace = true
 rust_decimal = { workspace = true, optional = true }
 bigdecimal = { workspace = true, optional = true }
-
-[dev-dependencies]

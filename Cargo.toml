@@ -17,6 +17,8 @@ members = [
     "crates/cratestack-macros",
     "crates/cratestack-parser",
     "crates/cratestack-policy",
+    "crates/cratestack-rusqlite",
+    "crates/cratestack-sql",
     "crates/cratestack-sqlx",
     "crates/cratestack-studio-generator",
 ]
@@ -60,6 +62,8 @@ cratestack-core = { path = "crates/cratestack-core", version = "0.1.0" }
 cratestack-macros = { path = "crates/cratestack-macros", version = "0.1.0" }
 cratestack-parser = { path = "crates/cratestack-parser", version = "0.1.0" }
 cratestack-policy = { path = "crates/cratestack-policy", version = "0.1.0" }
+cratestack-rusqlite = { path = "crates/cratestack-rusqlite", version = "0.1.0" }
+cratestack-sql = { path = "crates/cratestack-sql", version = "0.1.0" }
 cratestack-sqlx = { path = "crates/cratestack-sqlx", version = "0.1.0" }
 cratestack-studio-generator = { path = "crates/cratestack-studio-generator", version = "0.1.0" }
 minijinja = "2"

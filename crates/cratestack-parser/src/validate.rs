@@ -89,9 +89,12 @@ pub(crate) fn validate_schema(
 
         if let Some(provider) = provider
             && provider != "postgresql"
+            && provider != "sqlite"
         {
             return Err(span_error(
-                format!("unsupported datasource provider `{provider}`; expected `postgresql`"),
+                format!(
+                    "unsupported datasource provider `{provider}`; expected `postgresql` or `sqlite`"
+                ),
                 datasource.span,
             ));
         }

@@ -23,7 +23,7 @@ pub enum SqlValue {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum FilterValue {
+pub enum FilterValue {
     None,
     Single(SqlValue),
     Many(Vec<SqlValue>),

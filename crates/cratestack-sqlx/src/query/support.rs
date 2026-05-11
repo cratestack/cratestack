@@ -1,11 +1,12 @@
 use cratestack_core::{CoolContext, CoolError, Value};
 use cratestack_policy::{context_has_role, context_in_tenant};
 
+use cratestack_sql::{FilterOp, FilterValue, OrderTarget};
+
 use crate::{
     CreateDefault, CreateDefaultType, FilterExpr, ModelDescriptor, OrderClause, PolicyExpr,
     PolicyLiteral, ReadPolicy, ReadPredicate, RelationFilter, RelationQuantifier, SortDirection,
-    SqlColumnValue, SqlValue, SqlxRuntime, filter::FilterOp, order::OrderTarget,
-    values::FilterValue,
+    SqlColumnValue, SqlValue, SqlxRuntime,
 };
 
 pub(crate) fn push_scoped_conditions<'a, M, PK, Id>(

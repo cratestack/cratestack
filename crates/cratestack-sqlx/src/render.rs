@@ -3,10 +3,12 @@ use std::fmt::Write;
 use cratestack_core::CoolContext;
 use cratestack_policy::{context_has_role, context_in_tenant};
 
+use cratestack_sql::{FilterOp, FilterValue, OrderTarget};
+
 use crate::{
     FilterExpr, ModelDescriptor, OrderClause, PolicyExpr, ReadPolicy, ReadPredicate,
-    RelationFilter, RelationQuantifier, SortDirection, filter::FilterOp, order::OrderTarget,
-    query::auth_value_to_sql, query::value_matches_auth_literal, values::FilterValue,
+    RelationFilter, RelationQuantifier, SortDirection,
+    query::auth_value_to_sql, query::value_matches_auth_literal,
 };
 
 pub(crate) fn render_scoped_select_sql<M, PK>(

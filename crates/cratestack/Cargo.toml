@@ -16,10 +16,12 @@ categories.workspace = true
 default = ["decimal-rust-decimal"]
 decimal-rust-decimal = [
     "cratestack-core/decimal-rust-decimal",
+    "cratestack-rusqlite/decimal-rust-decimal",
     "cratestack-sqlx/decimal-rust-decimal",
 ]
 decimal-bigdecimal = [
     "cratestack-core/decimal-bigdecimal",
+    "cratestack-rusqlite/decimal-bigdecimal",
     "cratestack-sqlx/decimal-bigdecimal",
 ]
 # Replace the default `ring`-backed rustls provider with `aws-lc-rs`, which
@@ -37,6 +39,7 @@ cratestack-core.workspace = true
 cratestack-macros.workspace = true
 cratestack-parser.workspace = true
 cratestack-policy.workspace = true
+cratestack-rusqlite.workspace = true
 cratestack-sqlx.workspace = true
 regex.workspace = true
 serde.workspace = true
