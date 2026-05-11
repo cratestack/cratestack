@@ -60,7 +60,7 @@ pub(crate) fn generate_procedure_axum_handler(
             }
             let request = request_context("POST", #route_path, None, &headers, body.as_ref());
             let ctx = match state.auth_provider.authenticate(&request).await {
-                Ok(ctx) => ctx,
+                Ok(ctx) => ::cratestack::enrich_context_from_headers(ctx, &headers),
                 Err(error) => {
                     let error: ::cratestack::CoolError = error.into();
                     ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = #route_path, cratestack_procedure = #procedure_name, cratestack_operation = "procedure", cratestack_error = error.code(),
@@ -96,6 +96,7 @@ pub(crate) fn generate_procedure_axum_handler(
                     cratestack_operation = "procedure",
                     cratestack_authenticated = ctx.is_authenticated(),
                     cratestack_duration_ms = started.elapsed().as_millis() as u64,
+                    cratestack_request_id = ctx.request_id().unwrap_or(""),
                     "cratestack procedure route completed",
                 ),
                 Err(error) => ::cratestack::tracing::warn!(
@@ -107,6 +108,7 @@ pub(crate) fn generate_procedure_axum_handler(
                     cratestack_error = error.code(),
                     cratestack_detail = error.detail().unwrap_or(""),
                     cratestack_duration_ms = started.elapsed().as_millis() as u64,
+                    cratestack_request_id = ctx.request_id().unwrap_or(""),
                     "cratestack procedure route failed",
                 ),
             }
@@ -501,6 +503,7 @@ pub(crate) fn generate_model_axum_handlers(
                     cratestack_count = page.items.len(),
                     cratestack_total_count = ?page.total_count,
                     cratestack_duration_ms = started.elapsed().as_millis() as u64,
+                    cratestack_request_id = ctx.request_id().unwrap_or(""),
                     "cratestack model list completed",
                 ),
                 Err(error) => ::cratestack::tracing::warn!(
@@ -512,6 +515,7 @@ pub(crate) fn generate_model_axum_handlers(
                     cratestack_error = error.code(),
                     cratestack_detail = error.detail().unwrap_or(""),
                     cratestack_duration_ms = started.elapsed().as_millis() as u64,
+                    cratestack_request_id = ctx.request_id().unwrap_or(""),
                     "cratestack model list failed",
                 ),
             }
@@ -529,6 +533,7 @@ pub(crate) fn generate_model_axum_handlers(
                     cratestack_offset = ?query.offset,
                     cratestack_count = values.len(),
                     cratestack_duration_ms = started.elapsed().as_millis() as u64,
+                    cratestack_request_id = ctx.request_id().unwrap_or(""),
                     "cratestack model list completed",
                 ),
                 Err(error) => ::cratestack::tracing::warn!(
@@ -540,6 +545,7 @@ pub(crate) fn generate_model_axum_handlers(
                     cratestack_error = error.code(),
                     cratestack_detail = error.detail().unwrap_or(""),
                     cratestack_duration_ms = started.elapsed().as_millis() as u64,
+                    cratestack_request_id = ctx.request_id().unwrap_or(""),
                     "cratestack model list failed",
                 ),
             }
@@ -887,7 +893,7 @@ pub(crate) fn generate_model_axum_handlers(
             }
             let request = request_context("GET", #list_route_path, raw_query.as_deref(), &headers, &[]);
             let ctx = match state.auth_provider.authenticate(&request).await {
-                Ok(ctx) => ctx,
+                Ok(ctx) => ::cratestack::enrich_context_from_headers(ctx, &headers),
                 Err(error) => {
                     let error: CoolError = error.into();
                     ::cratestack::tracing::warn!(
@@ -980,7 +986,7 @@ pub(crate) fn generate_model_axum_handlers(
             }
             let request = request_context("POST", #list_route_path, None, &headers, body.as_ref());
             let ctx = match state.auth_provider.authenticate(&request).await {
-                Ok(ctx) => ctx,
+                Ok(ctx) => ::cratestack::enrich_context_from_headers(ctx, &headers),
                 Err(error) => {
                     return ::cratestack::encode_transport_result_with_status_for::<_, super::models::#model_ident>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error.into()));
                 }
@@ -1016,7 +1022,7 @@ pub(crate) fn generate_model_axum_handlers(
             let request_path = format!("{}/{}", #list_route_path, id);
             let request = request_context("GET", &request_path, raw_query.as_deref(), &headers, &[]);
             let ctx = match state.auth_provider.authenticate(&request).await {
-                Ok(ctx) => ctx,
+                Ok(ctx) => ::cratestack::enrich_context_from_headers(ctx, &headers),
                 Err(error) => {
                     return ::cratestack::encode_transport_result_with_status_for::<_, ::cratestack::serde_json::Value>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error.into()));
                 }
@@ -1063,7 +1069,7 @@ pub(crate) fn generate_model_axum_handlers(
             let request_path = format!("{}/{}", #list_route_path, id);
             let request = request_context("PATCH", &request_path, None, &headers, body.as_ref());
             let ctx = match state.auth_provider.authenticate(&request).await {
-                Ok(ctx) => ctx,
+                Ok(ctx) => ::cratestack::enrich_context_from_headers(ctx, &headers),
                 Err(error) => {
                     return ::cratestack::encode_transport_result_with_status_for::<_, super::models::#model_ident>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error.into()));
                 }
@@ -1103,7 +1109,7 @@ pub(crate) fn generate_model_axum_handlers(
             let request_path = format!("{}/{}", #list_route_path, id);
             let request = request_context("DELETE", &request_path, None, &headers, &[]);
             let ctx = match state.auth_provider.authenticate(&request).await {
-                Ok(ctx) => ctx,
+                Ok(ctx) => ::cratestack::enrich_context_from_headers(ctx, &headers),
                 Err(error) => {
                     return ::cratestack::encode_transport_result_with_status_for::<_, super::models::#model_ident>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error.into()));
                 }

@@ -40,6 +40,9 @@ fn select_projection_aliases_sql_columns_to_rust_fields() {
         &[],
         &[],
         None,
+        false,
+        &[],
+        &[],
     );
 
     assert_eq!(

@@ -11,9 +11,9 @@ use crate::policy::{
 use crate::relation::{collect_allowed_sort_keys, generate_relation_order_module};
 use crate::shared::{
     auth_default_field, create_sql_value, doc_attrs, generated_doc_attr, ident,
-    is_generated_on_create, is_primary_key, model_name_set, pluralize, relation_model_fields,
-    rust_type_tokens, rust_type_tokens_with_scope, scalar_model_fields, to_snake_case,
-    update_sql_value,
+    is_generated_on_create, is_pii_field, is_primary_key, is_readonly_field, is_sensitive_field,
+    is_server_only_field, model_name_set, pluralize, relation_model_fields, rust_type_tokens,
+    rust_type_tokens_with_scope, scalar_model_fields, to_snake_case, update_sql_value,
 };
 use crate::validators::generate_input_validate_body;
 
@@ -84,6 +84,8 @@ pub(crate) fn generate_create_input_struct(
     let fields: Vec<_> = scalar_model_fields(model, model_names)
         .into_iter()
         .filter(|field| !is_generated_on_create(field))
+        .filter(|field| !is_readonly_field(field))
+        .filter(|field| !is_server_only_field(field))
         .collect();
     let definitions = fields
         .iter()
@@ -128,6 +130,8 @@ pub(crate) fn generate_client_create_input_struct(
     let fields: Vec<_> = scalar_model_fields(model, model_names)
         .into_iter()
         .filter(|field| !is_generated_on_create(field))
+        .filter(|field| !is_readonly_field(field))
+        .filter(|field| !is_server_only_field(field))
         .collect();
     let definitions = fields
         .iter()
@@ -152,6 +156,8 @@ pub(crate) fn generate_update_input_struct(
     let fields: Vec<_> = scalar_model_fields(model, model_names)
         .into_iter()
         .filter(|field| !is_primary_key(field))
+        .filter(|field| !is_readonly_field(field))
+        .filter(|field| !is_server_only_field(field))
         .collect();
     let definitions = fields
         .iter()
@@ -198,6 +204,8 @@ pub(crate) fn generate_client_update_input_struct(
     let fields: Vec<_> = scalar_model_fields(model, model_names)
         .into_iter()
         .filter(|field| !is_primary_key(field))
+        .filter(|field| !is_readonly_field(field))
+        .filter(|field| !is_server_only_field(field))
         .collect();
     let definitions = fields
         .iter()
@@ -286,9 +294,20 @@ fn struct_field_definition(
     } else {
         base_type
     };
+    // `@server_only` fields stay readable inside server code (SQLx populates
+    // them via FromRow, which doesn't go through serde) but are masked from
+    // both outbound JSON and inbound deserialization. The default value is
+    // used if a client somehow sends one — banks shouldn't rely on that;
+    // it's a defence-in-depth seam.
+    let serde_attr = if is_server_only_field(field) {
+        quote! { #[serde(skip_serializing, default)] }
+    } else {
+        quote! {}
+    };
 
     quote! {
         #docs
+        #serde_attr
         pub #field_ident: #field_type,
     }
 }
@@ -395,6 +414,7 @@ pub(crate) fn generate_model_descriptor(
         });
     let allowed_fields = scalar_model_fields(model, &model_names)
         .into_iter()
+        .filter(|field| !is_server_only_field(field))
         .map(|field| {
             let name = &field.name;
             quote! { #name }
@@ -419,6 +439,26 @@ pub(crate) fn generate_model_descriptor(
         }
         None => quote! { None },
     };
+    let audit_enabled = model
+        .attributes
+        .iter()
+        .any(|attribute| attribute.raw == "@@audit");
+    let pii_columns = scalar_model_fields(model, &model_names)
+        .into_iter()
+        .filter(|field| is_pii_field(field))
+        .map(|field| {
+            let column = to_snake_case(&field.name);
+            quote! { #column }
+        })
+        .collect::<Vec<_>>();
+    let sensitive_columns = scalar_model_fields(model, &model_names)
+        .into_iter()
+        .filter(|field| is_sensitive_field(field))
+        .map(|field| {
+            let column = to_snake_case(&field.name);
+            quote! { #column }
+        })
+        .collect::<Vec<_>>();
 
     Ok(quote! {
         pub const #descriptor_ident: ::cratestack::ModelDescriptor<#model_ident, #primary_key_type> =
@@ -443,6 +483,9 @@ pub(crate) fn generate_model_descriptor(
                 &[#(#create_defaults),*],
                 &[#(#emitted_events),*],
                 #version_column_tokens,
+                #audit_enabled,
+                &[#(#pii_columns),*],
+                &[#(#sensitive_columns),*],
             );
     })
 }

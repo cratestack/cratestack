@@ -1,7 +1,9 @@
+mod audit;
 mod delegate;
 mod descriptor;
 mod filter;
 mod idempotency;
+mod isolation;
 mod order;
 mod query;
 mod render;
@@ -9,7 +11,9 @@ mod render;
 mod tests;
 mod values;
 
+pub use audit::{AUDIT_TABLE_DDL, primary_key_from_snapshot, snapshot_model};
 pub use idempotency::{SqlxIdempotencyStore, expiry_from};
+pub use isolation::{run_in_isolated_tx, run_in_isolated_tx_with_retries};
 
 pub use cratestack_policy::{PolicyExpr, PolicyLiteral, ReadPolicy, ReadPredicate};
 pub use delegate::{

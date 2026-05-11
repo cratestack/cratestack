@@ -142,6 +142,7 @@ pub(crate) fn validate_schema(
                 false,
             )?;
             validate_validator_attributes(&model.name, field)?;
+            validate_field_policy_attributes(&model.name, field)?;
 
             let relation_attribute = field
                 .attributes
@@ -273,6 +274,16 @@ pub(crate) fn validate_schema(
                     ));
                 }
                 saw_paged_attribute = true;
+            } else if attribute.raw == "@@audit" {
+                // recognised; no further validation needed at parse time
+            } else if attribute.raw.starts_with("@@audit(") {
+                return Err(span_error(
+                    format!(
+                        "model `{}` `@@audit` does not take arguments; use bare `@@audit`",
+                        model.name,
+                    ),
+                    attribute.span,
+                ));
             }
         }
 
@@ -456,6 +467,7 @@ pub(crate) fn validate_schema(
             procedure.span,
             true,
         )?;
+        validate_procedure_isolation_attribute(procedure)?;
     }
 
     let _ = (path, source);
@@ -804,4 +816,103 @@ fn split_kv(part: &str) -> Result<(String, String), String> {
         .split_once(':')
         .ok_or_else(|| format!("expected `key: value`, got `{part}`"))?;
     Ok((key.trim().to_owned(), value.trim().to_owned()))
+}
+
+/// Parse and validate the `@isolation("...")` procedure attribute. At most
+/// one is permitted per procedure; the level string must be one of the
+/// values [`cratestack_core::TransactionIsolation::parse`] accepts.
+fn validate_procedure_isolation_attribute(
+    procedure: &cratestack_core::Procedure,
+) -> Result<(), SchemaError> {
+    let matches: Vec<&cratestack_core::Attribute> = procedure
+        .attributes
+        .iter()
+        .filter(|a| a.raw.starts_with("@isolation"))
+        .collect();
+    if matches.is_empty() {
+        return Ok(());
+    }
+    if matches.len() > 1 {
+        return Err(span_error(
+            format!(
+                "procedure `{}` declares more than one @isolation attribute",
+                procedure.name,
+            ),
+            matches[1].span,
+        ));
+    }
+    let attr = matches[0];
+    let inner = attr
+        .raw
+        .strip_prefix("@isolation(")
+        .and_then(|s| s.strip_suffix(')'))
+        .ok_or_else(|| {
+            span_error(
+                format!(
+                    "procedure `{}` @isolation requires a quoted level argument like @isolation(\"serializable\")",
+                    procedure.name,
+                ),
+                attr.span,
+            )
+        })?
+        .trim();
+    let level = inner
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .ok_or_else(|| {
+            span_error(
+                format!(
+                    "procedure `{}` @isolation argument must be a quoted string",
+                    procedure.name,
+                ),
+                attr.span,
+            )
+        })?;
+    cratestack_core::TransactionIsolation::parse(level).map_err(|error| {
+        span_error(
+            format!(
+                "procedure `{}` @isolation: {}",
+                procedure.name,
+                error.public_message(),
+            ),
+            attr.span,
+        )
+    })?;
+    Ok(())
+}
+
+/// Reject `@readonly` / `@server_only` declared on the primary-key field —
+/// PKs are server-controlled anyway and the combination is a likely typo.
+fn validate_field_policy_attributes(
+    model_name: &str,
+    field: &cratestack_core::Field,
+) -> Result<(), SchemaError> {
+    let is_id = field.attributes.iter().any(|a| a.raw.starts_with("@id"));
+    let has_readonly = field.attributes.iter().any(|a| a.raw == "@readonly");
+    let has_server_only = field.attributes.iter().any(|a| a.raw == "@server_only");
+
+    if is_id && (has_readonly || has_server_only) {
+        let attr = if has_readonly {
+            "@readonly"
+        } else {
+            "@server_only"
+        };
+        return Err(span_error(
+            format!(
+                "field `{}.{}` is the primary key and must not declare {attr}",
+                model_name, field.name,
+            ),
+            field.span,
+        ));
+    }
+    if has_readonly && has_server_only {
+        return Err(span_error(
+            format!(
+                "field `{}.{}` declares both @readonly and @server_only; use @server_only alone",
+                model_name, field.name,
+            ),
+            field.span,
+        ));
+    }
+    Ok(())
 }

@@ -100,6 +100,44 @@ pub(crate) fn is_paged_model(model: &Model) -> bool {
         .any(|attribute| attribute.raw == "@@paged")
 }
 
+/// Field carries `@readonly` — must not be settable via Create or Update
+/// inputs. Server code can still write the column directly via SQL.
+pub(crate) fn is_readonly_field(field: &Field) -> bool {
+    field
+        .attributes
+        .iter()
+        .any(|attribute| attribute.raw == "@readonly")
+}
+
+/// Field carries `@server_only` — never accepted on input AND stripped
+/// from client-facing responses. Use for fields like internal scoring,
+/// risk flags, or hashed secrets that the server owns end-to-end.
+pub(crate) fn is_server_only_field(field: &Field) -> bool {
+    field
+        .attributes
+        .iter()
+        .any(|attribute| attribute.raw == "@server_only")
+}
+
+/// Field carries `@pii` — personally identifiable. Values are redacted in
+/// the audit log JSON and (in a follow-up) in tracing/error detail.
+pub(crate) fn is_pii_field(field: &Field) -> bool {
+    field
+        .attributes
+        .iter()
+        .any(|attribute| attribute.raw == "@pii")
+}
+
+/// Field carries `@sensitive` — application-defined sensitive data that
+/// doesn't fit PII (internal risk scores, dispute notes). Redacted in the
+/// audit log JSON.
+pub(crate) fn is_sensitive_field(field: &Field) -> bool {
+    field
+        .attributes
+        .iter()
+        .any(|attribute| attribute.raw == "@sensitive")
+}
+
 fn has_default(field: &Field) -> bool {
     field
         .attributes

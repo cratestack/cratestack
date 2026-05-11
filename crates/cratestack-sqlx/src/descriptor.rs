@@ -189,6 +189,18 @@ pub struct ModelDescriptor<M, PK> {
     /// model declares an `@version` field. `None` for non-versioned models,
     /// which keeps update semantics unchanged.
     pub version_column: Option<&'static str>,
+    /// `true` when the model declared `@@audit`. Mutations on audit-enabled
+    /// models capture before/after snapshots and persist them into
+    /// `cratestack_audit` inside the same transaction.
+    pub audit_enabled: bool,
+    /// SQL column names of fields declared `@pii`. The audit-log writer
+    /// replaces these values with `"[redacted-pii]"` in the persisted JSON
+    /// snapshots; a follow-up will extend the same redaction to error
+    /// detail and tracing.
+    pub pii_columns: &'static [&'static str],
+    /// SQL column names of fields declared `@sensitive`. Redacted in audit
+    /// snapshots as `"[redacted-sensitive]"`.
+    pub sensitive_columns: &'static [&'static str],
     _marker: PhantomData<fn() -> (M, PK)>,
 }
 
@@ -229,6 +241,9 @@ impl<M, PK> ModelDescriptor<M, PK> {
         create_defaults: &'static [CreateDefault],
         emitted_events: &'static [ModelEventKind],
         version_column: Option<&'static str>,
+        audit_enabled: bool,
+        pii_columns: &'static [&'static str],
+        sensitive_columns: &'static [&'static str],
     ) -> Self {
         Self {
             schema_name,
@@ -251,6 +266,9 @@ impl<M, PK> ModelDescriptor<M, PK> {
             create_defaults,
             emitted_events,
             version_column,
+            audit_enabled,
+            pii_columns,
+            sensitive_columns,
             _marker: PhantomData,
         }
     }

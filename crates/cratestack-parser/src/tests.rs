@@ -882,6 +882,231 @@ model Account {
 }
 
 #[test]
+fn accepts_audit_attribute_on_model() {
+    let schema = parse_schema(
+        r#"
+model Account {
+  id Int @id
+  balance Decimal
+
+  @@audit
+}
+"#,
+    )
+    .expect("model with @@audit should parse");
+
+    assert!(
+        schema.models[0]
+            .attributes
+            .iter()
+            .any(|a| a.raw == "@@audit"),
+        "expected @@audit in attributes",
+    );
+}
+
+#[test]
+fn rejects_audit_with_arguments() {
+    let error = parse_schema(
+        r#"
+model Account {
+  id Int @id
+
+  @@audit(level: "full")
+}
+"#,
+    )
+    .expect_err("@@audit with args should fail");
+
+    assert!(
+        error.to_string().contains("does not take arguments"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn accepts_readonly_and_server_only_field_attributes() {
+    let schema = parse_schema(
+        r#"
+model Account {
+  id Int @id
+  balance Decimal @readonly
+  internalScore Int @server_only
+}
+"#,
+    )
+    .expect("schema with field-policy attributes should parse");
+
+    let fields = &schema.models[0].fields;
+    assert!(
+        fields[1].attributes.iter().any(|a| a.raw == "@readonly"),
+        "expected @readonly on balance",
+    );
+    assert!(
+        fields[2].attributes.iter().any(|a| a.raw == "@server_only"),
+        "expected @server_only on internalScore",
+    );
+}
+
+#[test]
+fn rejects_readonly_on_primary_key() {
+    let error = parse_schema(
+        r#"
+model Account {
+  id Int @id @readonly
+}
+"#,
+    )
+    .expect_err("@readonly on @id should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("primary key and must not declare @readonly"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn rejects_server_only_on_primary_key() {
+    let error = parse_schema(
+        r#"
+model Account {
+  id Int @id @server_only
+}
+"#,
+    )
+    .expect_err("@server_only on @id should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("primary key and must not declare @server_only"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn rejects_readonly_and_server_only_together() {
+    let error = parse_schema(
+        r#"
+model Account {
+  id Int @id
+  balance Decimal @readonly @server_only
+}
+"#,
+    )
+    .expect_err("combining @readonly + @server_only should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("declares both @readonly and @server_only"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn accepts_pii_and_sensitive_field_attributes() {
+    let schema = parse_schema(
+        r#"
+model Customer {
+  id Int @id
+  email String @pii
+  riskScore Int @sensitive
+}
+"#,
+    )
+    .expect("schema with @pii and @sensitive should parse");
+
+    let fields = &schema.models[0].fields;
+    assert!(fields[1].attributes.iter().any(|a| a.raw == "@pii"));
+    assert!(fields[2].attributes.iter().any(|a| a.raw == "@sensitive"));
+}
+
+#[test]
+fn accepts_isolation_attribute_on_procedure() {
+    let schema = parse_schema(
+        r#"
+type TransferInput {
+  from Int
+  to Int
+}
+
+mutation procedure transfer(args: TransferInput): TransferInput
+  @isolation("serializable")
+"#,
+    )
+    .expect("procedure with @isolation should parse");
+
+    let attrs = &schema.procedures[0].attributes;
+    assert!(
+        attrs
+            .iter()
+            .any(|a| a.raw == "@isolation(\"serializable\")"),
+        "expected @isolation in attributes: {attrs:?}",
+    );
+}
+
+#[test]
+fn accepts_isolation_repeatable_read() {
+    parse_schema(
+        r#"
+type Ping {
+  nonce String
+}
+
+procedure read_only(args: Ping): Ping
+  @isolation("repeatable_read")
+"#,
+    )
+    .expect("repeatable_read isolation should parse");
+}
+
+#[test]
+fn rejects_invalid_isolation_level() {
+    let error = parse_schema(
+        r#"
+type Ping {
+  nonce String
+}
+
+procedure broken(args: Ping): Ping
+  @isolation("snapshot")
+"#,
+    )
+    .expect_err("unknown isolation level should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("unknown transaction isolation level"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn rejects_isolation_missing_argument() {
+    let error = parse_schema(
+        r#"
+type Ping {
+  nonce String
+}
+
+procedure broken(args: Ping): Ping
+  @isolation
+"#,
+    )
+    .expect_err("@isolation without args should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("@isolation requires a quoted level argument"),
+        "error: {error}",
+    );
+}
+
+#[test]
 fn parses_no_idempotency_attribute_on_procedure() {
     let schema = parse_schema(
         r#"

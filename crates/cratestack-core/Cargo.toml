@@ -21,6 +21,7 @@ decimal-rust-decimal = ["dep:rust_decimal"]
 decimal-bigdecimal = ["dep:bigdecimal"]
 
 [dependencies]
+async-trait.workspace = true
 bytes.workspace = true
 chrono.workspace = true
 http.workspace = true

@@ -10,6 +10,7 @@ pub use cratestack_policy::{
     ProcedurePolicyLiteral, ProcedurePredicate, ReadPolicy, ReadPredicate, RelationQuantifier,
     authorize_procedure,
 };
+pub use cratestack_sqlx::AUDIT_TABLE_DDL;
 pub use cratestack_sqlx::sqlx;
 pub use cratestack_sqlx::{
     CreateDefault, CreateDefaultType, CreateModelInput, CreateRecord, DeleteRecord, FieldRef,
@@ -20,6 +21,7 @@ pub use cratestack_sqlx::{
     UpdateModelInput, UpdateRecord, UpdateRecordSet, create_record_with_executor,
     update_record_with_executor,
 };
+pub use cratestack_sqlx::{run_in_isolated_tx, run_in_isolated_tx_with_retries};
 pub use regex;
 pub use serde;
 pub use serde_json;

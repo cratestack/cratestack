@@ -1,7 +1,8 @@
-use cratestack_core::{CoolContext, CoolError, ModelEventKind};
+use cratestack_core::{AuditOperation, CoolContext, CoolError, ModelEventKind};
 
 use crate::{
     CreateModelInput, ModelDescriptor, SqlxRuntime, UpdateModelInput,
+    audit::{build_audit_event, enqueue_audit_event, ensure_audit_table, fetch_for_audit},
     descriptor::{enqueue_event_outbox, ensure_event_outbox_table},
 };
 
@@ -86,14 +87,21 @@ where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
     {
         let emits_event = self.descriptor.emits(ModelEventKind::Created);
-        let record = if emits_event {
+        let audit_enabled = self.descriptor.audit_enabled;
+        let needs_tx = emits_event || audit_enabled;
+        let record = if needs_tx {
             let mut tx = self
                 .runtime
                 .pool()
                 .begin()
                 .await
                 .map_err(|error| CoolError::Database(error.to_string()))?;
-            ensure_event_outbox_table(&mut *tx).await?;
+            if emits_event {
+                ensure_event_outbox_table(&mut *tx).await?;
+            }
+            if audit_enabled {
+                ensure_audit_table(&mut *tx).await?;
+            }
             let record = create_record_with_executor(
                 &mut *tx,
                 self.runtime.pool(),
@@ -102,13 +110,21 @@ where
                 ctx,
             )
             .await?;
-            enqueue_event_outbox(
-                &mut *tx,
-                self.descriptor.schema_name,
-                ModelEventKind::Created,
-                &record,
-            )
-            .await?;
+            if emits_event {
+                enqueue_event_outbox(
+                    &mut *tx,
+                    self.descriptor.schema_name,
+                    ModelEventKind::Created,
+                    &record,
+                )
+                .await?;
+            }
+            if audit_enabled {
+                let after = serde_json::to_value(&record).ok();
+                let event =
+                    build_audit_event(self.descriptor, AuditOperation::Create, None, after, ctx);
+                enqueue_audit_event(&mut *tx, &event).await?;
+            }
             tx.commit()
                 .await
                 .map_err(|error| CoolError::Database(error.to_string()))?;
@@ -195,14 +211,31 @@ where
             ));
         }
         let emits_event = self.descriptor.emits(ModelEventKind::Updated);
-        let record = if emits_event {
+        let audit_enabled = self.descriptor.audit_enabled;
+        let needs_tx = emits_event || audit_enabled;
+        let record = if needs_tx {
             let mut tx = self
                 .runtime
                 .pool()
                 .begin()
                 .await
                 .map_err(|error| CoolError::Database(error.to_string()))?;
-            ensure_event_outbox_table(&mut *tx).await?;
+            if emits_event {
+                ensure_event_outbox_table(&mut *tx).await?;
+            }
+            if audit_enabled {
+                ensure_audit_table(&mut *tx).await?;
+            }
+            // Capture the BEFORE snapshot under a row-level lock so concurrent
+            // mutations can't race the audit.
+            let before_record = if audit_enabled {
+                fetch_for_audit(&mut *tx, self.descriptor, self.id.clone()).await?
+            } else {
+                None
+            };
+            let before_snapshot = before_record
+                .as_ref()
+                .and_then(|m| serde_json::to_value(m).ok());
             let record = update_record_with_executor(
                 &mut *tx,
                 self.runtime.pool(),
@@ -213,13 +246,26 @@ where
                 self.if_match,
             )
             .await?;
-            enqueue_event_outbox(
-                &mut *tx,
-                self.descriptor.schema_name,
-                ModelEventKind::Updated,
-                &record,
-            )
-            .await?;
+            if emits_event {
+                enqueue_event_outbox(
+                    &mut *tx,
+                    self.descriptor.schema_name,
+                    ModelEventKind::Updated,
+                    &record,
+                )
+                .await?;
+            }
+            if audit_enabled {
+                let after = serde_json::to_value(&record).ok();
+                let event = build_audit_event(
+                    self.descriptor,
+                    AuditOperation::Update,
+                    before_snapshot,
+                    after,
+                    ctx,
+                );
+                enqueue_audit_event(&mut *tx, &event).await?;
+            }
             tx.commit()
                 .await
                 .map_err(|error| CoolError::Database(error.to_string()))?;
@@ -268,23 +314,40 @@ impl<'a, M: 'static, PK: 'static> DeleteRecord<'a, M, PK> {
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
         let emits_event = self.descriptor.emits(ModelEventKind::Deleted);
-        let record = if emits_event {
+        let audit_enabled = self.descriptor.audit_enabled;
+        let needs_tx = emits_event || audit_enabled;
+        let record = if needs_tx {
             let mut tx = self
                 .runtime
                 .pool()
                 .begin()
                 .await
                 .map_err(|error| CoolError::Database(error.to_string()))?;
-            ensure_event_outbox_table(&mut *tx).await?;
+            if emits_event {
+                ensure_event_outbox_table(&mut *tx).await?;
+            }
+            if audit_enabled {
+                ensure_audit_table(&mut *tx).await?;
+            }
 
             let record = delete_returning_record(&mut *tx, self.descriptor, self.id, ctx).await?;
-            enqueue_event_outbox(
-                &mut *tx,
-                self.descriptor.schema_name,
-                ModelEventKind::Deleted,
-                &record,
-            )
-            .await?;
+            if emits_event {
+                enqueue_event_outbox(
+                    &mut *tx,
+                    self.descriptor.schema_name,
+                    ModelEventKind::Deleted,
+                    &record,
+                )
+                .await?;
+            }
+            if audit_enabled {
+                // DELETE ... RETURNING yields the row's pre-delete state, so
+                // it doubles as the audit `before` snapshot.
+                let before = serde_json::to_value(&record).ok();
+                let event =
+                    build_audit_event(self.descriptor, AuditOperation::Delete, before, None, ctx);
+                enqueue_audit_event(&mut *tx, &event).await?;
+            }
             tx.commit()
                 .await
                 .map_err(|error| CoolError::Database(error.to_string()))?;
