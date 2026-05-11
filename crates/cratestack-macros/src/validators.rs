@@ -107,11 +107,6 @@ fn emit_field_validators(
             }
         }
         FieldValidator::Range { min, max } => {
-            // Only Int is plumbed through Phase 1 — Decimal range is wired
-            // when the Decimal scalar lands.
-            if scalar != "Int" {
-                return quote! {};
-            }
             let min_tok = match min {
                 Some(n) => {
                     let n: i64 = *n;
@@ -126,8 +121,26 @@ fn emit_field_validators(
                 }
                 None => quote! { None },
             };
-            quote! {
-                ::cratestack::validate_range_i64(#field_name, *value, #min_tok, #max_tok)?;
+            match scalar {
+                "Int" => quote! {
+                    ::cratestack::validate_range_i64(#field_name, *value, #min_tok, #max_tok)?;
+                },
+                // Decimal bounds in `.cstack` are specified as integers
+                // (the parser only accepts i64 literals); the runtime
+                // helper promotes them to Decimal for comparison. That's
+                // enough for banking use cases like `amount Decimal
+                // @range(min: 0)` — fractional bounds need a separate
+                // syntax change, tracked outside this PR.
+                "Decimal" => quote! {
+                    ::cratestack::validate_range_decimal(#field_name, value, #min_tok, #max_tok)?;
+                },
+                // Unknown scalar: the parser shouldn't have accepted the
+                // attribute in the first place, but if it slipped
+                // through (e.g. a future scalar lands without a
+                // validator wiring) we'd rather emit nothing than a
+                // type-confused call. The compile failure on the next
+                // round of macro work surfaces the gap.
+                _ => quote! {},
             }
         }
         FieldValidator::Regex { pattern } => {

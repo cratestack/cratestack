@@ -141,10 +141,26 @@ pub async fn apply_pending(
             .begin()
             .await
             .map_err(|error| CoolError::Database(error.to_string()))?;
-        sqlx::query(&migration.up)
-            .execute(&mut *tx)
-            .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+        // PG prepared statements only carry one command per round-trip,
+        // so a multi-statement migration like
+        //   CREATE TABLE foo (...);
+        //   CREATE INDEX bar ON foo (id);
+        // would fail before being recorded. Other DDL helpers in this
+        // crate (audit::ensure_audit_table, idempotency ensure_schema)
+        // already split on `;`; this loop does the same inside the
+        // migration's transaction so partial state can't survive a
+        // mid-script failure.
+        for statement in migration
+            .up
+            .split(';')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            sqlx::query(statement)
+                .execute(&mut *tx)
+                .await
+                .map_err(|error| CoolError::Database(error.to_string()))?;
+        }
         sqlx::query(
             "INSERT INTO cratestack_migrations (id, description, checksum) VALUES ($1, $2, $3)",
         )

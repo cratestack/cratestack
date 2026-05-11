@@ -7,7 +7,8 @@ use crate::{
 };
 
 use super::support::{
-    apply_create_defaults, evaluate_create_policies, push_action_policy_query, push_bind_value,
+    apply_create_defaults, evaluate_create_policies, find_column_value, push_action_policy_query,
+    push_bind_value,
 };
 
 /// Render the SQL string for an update. Pure helper, no I/O — separated
@@ -377,7 +378,22 @@ where
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
 {
     input.validate()?;
-    let values = apply_create_defaults(input.sql_values(), descriptor.create_defaults, ctx)?;
+    let mut values = apply_create_defaults(input.sql_values(), descriptor.create_defaults, ctx)?;
+    // Seed the optimistic-lock column server-side. `@version` is excluded
+    // from the generated Create input so clients can't pick the initial
+    // value, and the column has no SQL `DEFAULT`. If we didn't write it
+    // here, the INSERT would either skip the column (only valid when the
+    // DB-level default is set, which we don't require) or fail under
+    // `NOT NULL`. Done after `apply_create_defaults` so @default-driven
+    // overrides still win if a schema ever lands one.
+    if let Some(version_col) = descriptor.version_column
+        && find_column_value(&values, version_col).is_none()
+    {
+        values.push(crate::SqlColumnValue {
+            column: version_col,
+            value: crate::SqlValue::Int(0),
+        });
+    }
     if values.is_empty() {
         return Err(CoolError::Validation(
             "create input must contain at least one column".to_owned(),

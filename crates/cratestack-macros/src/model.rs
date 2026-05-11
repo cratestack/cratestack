@@ -12,8 +12,9 @@ use crate::relation::{collect_allowed_sort_keys, generate_relation_order_module}
 use crate::shared::{
     auth_default_field, create_sql_value, doc_attrs, generated_doc_attr, ident,
     is_generated_on_create, is_pii_field, is_primary_key, is_readonly_field, is_sensitive_field,
-    is_server_only_field, model_name_set, pluralize, relation_model_fields, rust_type_tokens,
-    rust_type_tokens_with_scope, scalar_model_fields, to_snake_case, update_sql_value,
+    is_server_only_field, is_version_field, model_name_set, pluralize, relation_model_fields,
+    rust_type_tokens, rust_type_tokens_with_scope, scalar_model_fields, to_snake_case,
+    update_sql_value,
 };
 use crate::validators::generate_input_validate_body;
 
@@ -86,6 +87,7 @@ pub(crate) fn generate_create_input_struct(
         .filter(|field| !is_generated_on_create(field))
         .filter(|field| !is_readonly_field(field))
         .filter(|field| !is_server_only_field(field))
+        .filter(|field| !is_version_field(field))
         .collect();
     let definitions = fields
         .iter()
@@ -132,6 +134,7 @@ pub(crate) fn generate_client_create_input_struct(
         .filter(|field| !is_generated_on_create(field))
         .filter(|field| !is_readonly_field(field))
         .filter(|field| !is_server_only_field(field))
+        .filter(|field| !is_version_field(field))
         .collect();
     let definitions = fields
         .iter()
@@ -158,6 +161,7 @@ pub(crate) fn generate_update_input_struct(
         .filter(|field| !is_primary_key(field))
         .filter(|field| !is_readonly_field(field))
         .filter(|field| !is_server_only_field(field))
+        .filter(|field| !is_version_field(field))
         .collect();
     let definitions = fields
         .iter()
@@ -206,6 +210,7 @@ pub(crate) fn generate_client_update_input_struct(
         .filter(|field| !is_primary_key(field))
         .filter(|field| !is_readonly_field(field))
         .filter(|field| !is_server_only_field(field))
+        .filter(|field| !is_version_field(field))
         .collect();
     let definitions = fields
         .iter()

@@ -70,6 +70,12 @@ impl IdempotencyStore for SqlxIdempotencyStore {
         expires_at: SystemTime,
     ) -> Result<ReservationOutcome, CoolError> {
         let expires_at: chrono::DateTime<chrono::Utc> = expires_at.into();
+        // Generate a fresh reservation token. If our INSERT or expired-
+        // row UPDATE wins, this token identifies our reservation. A
+        // handler that runs past the TTL and gets reclaimed by a retry
+        // will see its token replaced in-row, and any later complete/
+        // release from the stale handler becomes a no-op.
+        let new_token = uuid::Uuid::new_v4();
         // Single upsert that:
         //   - inserts a fresh pending row if the key is absent;
         //   - takes over the row if the existing one has expired (the
@@ -80,6 +86,7 @@ impl IdempotencyStore for SqlxIdempotencyStore {
         // transaction id on an UPDATE; pristine inserts read xmax = 0.
         let row: Option<(
             Vec<u8>,
+            uuid::Uuid,
             Option<i32>,
             Option<String>,
             Option<Vec<u8>>,
@@ -88,32 +95,35 @@ impl IdempotencyStore for SqlxIdempotencyStore {
             bool,
         )> = sqlx::query_as(
             "INSERT INTO cratestack_idempotency (
-                principal_fingerprint, key, request_hash, expires_at
-             ) VALUES ($1, $2, $3, $4)
+                principal_fingerprint, key, request_hash, reservation_id, expires_at
+             ) VALUES ($1, $2, $3, $4, $5)
              ON CONFLICT (principal_fingerprint, key) DO UPDATE SET
                 request_hash = EXCLUDED.request_hash,
+                reservation_id = EXCLUDED.reservation_id,
                 response_status = NULL,
                 response_content_type = NULL,
                 response_body = NULL,
                 created_at = NOW(),
                 expires_at = EXCLUDED.expires_at
              WHERE cratestack_idempotency.expires_at <= NOW()
-             RETURNING request_hash, response_status, response_content_type,
+             RETURNING request_hash, reservation_id, response_status, response_content_type,
                        response_body, created_at, expires_at, (xmax = 0) AS was_inserted",
         )
         .bind(principal)
         .bind(key)
         .bind(request_hash.as_slice())
+        .bind(new_token)
         .bind(expires_at)
         .fetch_optional(&self.pool)
         .await
         .map_err(|error| CoolError::Database(error.to_string()))?;
 
-        if row.is_some() {
+        if let Some((_, token, _, _, _, _, _, _)) = row {
             // Either a fresh insert (was_inserted = true) or an expired
             // row we just reclaimed (was_inserted = false but UPDATE
-            // happened). In both cases the caller owns the reservation.
-            return Ok(ReservationOutcome::Reserved);
+            // happened). In both cases the caller owns the reservation
+            // and the row carries the token we just generated.
+            return Ok(ReservationOutcome::Reserved { token });
         }
 
         // ON CONFLICT WHERE evaluated to false (existing row is live).
@@ -177,13 +187,16 @@ impl IdempotencyStore for SqlxIdempotencyStore {
         &self,
         principal: &str,
         key: &str,
+        token: uuid::Uuid,
         status: u16,
         content_type: Option<&str>,
         body: &[u8],
     ) -> Result<(), CoolError> {
-        // Only completes our own pending row — `response_body IS NULL`
-        // is the proof that another caller hasn't already overtaken us
-        // (e.g. after a clock-skew-induced expiry replacement).
+        // Only completes the row we actually reserved. `reservation_id =
+        // $token` is the proof; `response_body IS NULL` keeps us from
+        // double-writing a finished slot. A handler that ran past its
+        // TTL will find the row's `reservation_id` rotated out by the
+        // retry that reclaimed it, and this UPDATE matches zero rows.
         sqlx::query(
             "UPDATE cratestack_idempotency
              SET response_status = $1,
@@ -191,6 +204,7 @@ impl IdempotencyStore for SqlxIdempotencyStore {
                  response_body = $3
              WHERE principal_fingerprint = $4
                AND key = $5
+               AND reservation_id = $6
                AND response_body IS NULL",
         )
         .bind(status as i32)
@@ -198,23 +212,32 @@ impl IdempotencyStore for SqlxIdempotencyStore {
         .bind(body)
         .bind(principal)
         .bind(key)
+        .bind(token)
         .execute(&self.pool)
         .await
         .map(|_| ())
         .map_err(|error| CoolError::Database(error.to_string()))
     }
 
-    async fn release(&self, principal: &str, key: &str) -> Result<(), CoolError> {
+    async fn release(
+        &self,
+        principal: &str,
+        key: &str,
+        token: uuid::Uuid,
+    ) -> Result<(), CoolError> {
         // Only drop our own pending row — never delete a completed one,
-        // even if a concurrent caller raced past us in the meantime.
+        // and never delete a row whose reservation has been rotated to
+        // a different owner.
         sqlx::query(
             "DELETE FROM cratestack_idempotency
              WHERE principal_fingerprint = $1
                AND key = $2
+               AND reservation_id = $3
                AND response_body IS NULL",
         )
         .bind(principal)
         .bind(key)
+        .bind(token)
         .execute(&self.pool)
         .await
         .map(|_| ())

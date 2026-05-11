@@ -18,3 +18,17 @@ model Member {
   @@allow("update", auth() != null)
   @@allow("delete", auth() != null)
 }
+
+// Decimal `@range` enforcement — `amount` must be a non-negative monetary
+// value within the daily ceiling. Pre-fix the validator silently emitted
+// nothing for non-Int scalars, so a Decimal of -100 would slip through to
+// the database.
+model Reserve {
+  id Int @id
+  amount Decimal @range(min: 0, max: 1000000)
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}

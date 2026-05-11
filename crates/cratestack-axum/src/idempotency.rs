@@ -60,8 +60,12 @@ pub struct IdempotencyRecord {
 pub enum ReservationOutcome {
     /// This caller claimed the key. It MUST run the handler and then
     /// invoke `complete` (success) or `release` (give up the
-    /// reservation so a retry can re-acquire).
-    Reserved,
+    /// reservation so a retry can re-acquire). The `token` uniquely
+    /// identifies THIS reservation — `complete` and `release` only
+    /// write when the row still carries the same token, so a handler
+    /// that overran the TTL and had its row reclaimed by a retry
+    /// can't poison the newer reservation.
+    Reserved { token: uuid::Uuid },
     /// Another caller already completed an execution with the same
     /// request hash. The middleware returns the cached response.
     Replay(IdempotencyRecord),
@@ -81,8 +85,10 @@ pub trait IdempotencyStore: Send + Sync + 'static {
     /// concurrent-safe: two simultaneous callers seeing the same key and
     /// hash must observe exactly one `Reserved` and one `InFlight`,
     /// never two `Reserved`. The `expires_at` argument bounds the
-    /// reservation's lifetime so a forgotten release doesn't pin the key
-    /// forever.
+    /// reservation's lifetime so a forgotten release doesn't pin the
+    /// key forever; when a retry reclaims an expired row the store
+    /// MUST rotate the reservation token so `complete`/`release` from
+    /// the original handler can no longer touch the newer slot.
     async fn reserve_or_fetch(
         &self,
         principal: &str,
@@ -94,11 +100,16 @@ pub trait IdempotencyStore: Send + Sync + 'static {
     /// Persist the captured response for a previously-reserved key so
     /// subsequent attempts replay it. Banks treat the IETF idempotency
     /// contract as "freeze the outcome": if the handler returned 5xx,
-    /// retries see the same 5xx unless they use a fresh key.
+    /// retries see the same 5xx unless they use a fresh key. The
+    /// `token` must match the value returned by `reserve_or_fetch`
+    /// when this caller claimed the key; mismatched tokens are
+    /// silently no-ops so a stale handler whose reservation has been
+    /// reclaimed cannot overwrite a newer execution's response.
     async fn complete(
         &self,
         principal: &str,
         key: &str,
+        token: uuid::Uuid,
         status: u16,
         content_type: Option<&str>,
         body: &[u8],
@@ -107,8 +118,10 @@ pub trait IdempotencyStore: Send + Sync + 'static {
     /// Release a reservation without recording a completion (e.g. the
     /// inner service panicked or the middleware itself errored before
     /// the response was ready). Subsequent attempts with the same key
-    /// can re-reserve.
-    async fn release(&self, principal: &str, key: &str) -> Result<(), CoolError>;
+    /// can re-reserve. As with `complete`, the `token` must match the
+    /// active reservation.
+    async fn release(&self, principal: &str, key: &str, token: uuid::Uuid)
+    -> Result<(), CoolError>;
 }
 
 /// Parse the `Idempotency-Key` request header. Returns `Ok(None)` if absent.
@@ -299,7 +312,7 @@ where
                 Err(error) => return Ok(error_response(error)),
             };
 
-            match outcome {
+            let token = match outcome {
                 ReservationOutcome::Replay(record) => {
                     return Ok(replay_response(&record));
                 }
@@ -312,8 +325,8 @@ where
                 ReservationOutcome::InFlight => {
                     return Ok(in_flight_response());
                 }
-                ReservationOutcome::Reserved => {}
-            }
+                ReservationOutcome::Reserved { token } => token,
+            };
 
             // We hold the reservation. Run the handler.
             let req2 = Request::from_parts(parts, Body::from(bytes));
@@ -324,8 +337,11 @@ where
                     // `Service::Error = Infallible` so this branch is
                     // unreachable in practice. The release-on-error path
                     // is still here for if/when a fallible inner service
-                    // is plugged in.
-                    let _ = store.release(&principal, &key).await;
+                    // is plugged in. Guarding on `token` ensures a
+                    // handler whose reservation has already been
+                    // reclaimed (TTL ran out) doesn't drop the new
+                    // owner's row.
+                    let _ = store.release(&principal, &key, token).await;
                     return Ok(error_response(CoolError::Internal(
                         "handler returned an unrecoverable error".to_owned(),
                     )));
@@ -335,8 +351,9 @@ where
             let rbytes = match axum::body::to_bytes(rbody, MAX_BODY_BYTES).await {
                 Ok(b) => b,
                 Err(_) => {
-                    // Drop the reservation so retries can attempt again.
-                    let _ = store.release(&principal, &key).await;
+                    // Drop the reservation so retries can attempt
+                    // again — but only if our token still holds.
+                    let _ = store.release(&principal, &key, token).await;
                     let mut e = error_response(CoolError::Internal(
                         "response body exceeded idempotency buffer".to_owned(),
                     ));
@@ -353,11 +370,15 @@ where
             // Persist the completion. Best-effort: on store failure we
             // still return the live response so the caller observes the
             // mutation that DID happen; banks running strict mode can
-            // wrap the store in a fail-closed adapter.
+            // wrap the store in a fail-closed adapter. The `token`
+            // guard means a handler whose reservation got reclaimed
+            // (TTL expired, retry took over) silently fails this
+            // write rather than poisoning the newer reservation's row.
             let _ = store
                 .complete(
                     &principal,
                     &key,
+                    token,
                     rparts.status.as_u16(),
                     content_type_header.as_deref(),
                     &rbytes,
@@ -417,6 +438,7 @@ CREATE TABLE IF NOT EXISTS cratestack_idempotency (
     principal_fingerprint TEXT NOT NULL,
     key TEXT NOT NULL,
     request_hash BYTEA NOT NULL,
+    reservation_id UUID NOT NULL,
     response_status INT,
     response_content_type TEXT,
     response_body BYTEA,

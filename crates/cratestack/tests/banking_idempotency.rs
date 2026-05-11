@@ -16,7 +16,7 @@ use cratestack::{AuthProvider, CoolCodec, CoolContext, CoolError, RequestContext
 use cratestack_axum::idempotency::IdempotencyLayer;
 use cratestack_codec_json::JsonCodec;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use tower::ServiceBuilder;
 use tower::util::ServiceExt;
 
@@ -209,14 +209,19 @@ async fn concurrent_requests_with_same_key_execute_handler_exactly_once() {
     let Some(pool) = connect_or_skip().await else {
         return;
     };
+    // Drop the idempotency table outright so its schema matches the
+    // current shape — a stale row left over from a previous test-binary
+    // run could otherwise lack `reservation_id`, and `ensure_schema`'s
+    // `CREATE TABLE IF NOT EXISTS` is a no-op against an existing
+    // table.
+    cratestack::sqlx::query("DROP TABLE IF EXISTS cratestack_idempotency")
+        .execute(&pool)
+        .await
+        .expect("drop idempotency");
     cratestack::SqlxIdempotencyStore::new(pool.clone())
         .ensure_schema()
         .await
         .expect("ensure schema");
-    cratestack::sqlx::query("DELETE FROM cratestack_idempotency")
-        .execute(&pool)
-        .await
-        .expect("drain");
 
     // Use a tiny custom router with a deliberately slow handler so the
     // race window stays open long enough for both requests to reach
@@ -300,17 +305,18 @@ async fn expired_reservation_can_be_replaced_on_reuse() {
     // duplicate would never establish a fresh idempotency window.
     cratestack::sqlx::query(
         "INSERT INTO cratestack_idempotency (
-            principal_fingerprint, key, request_hash,
+            principal_fingerprint, key, request_hash, reservation_id,
             response_status, response_content_type, response_body,
             created_at, expires_at
         ) VALUES (
-            'fingerprint-static', 'recycled', $1,
-            201, 'application/json', $2,
+            'fingerprint-static', 'recycled', $1, $2,
+            201, 'application/json', $3,
             NOW() - INTERVAL '2 hours',
             NOW() - INTERVAL '1 hour'
         )",
     )
     .bind(vec![0u8; 32])
+    .bind(uuid::Uuid::new_v4())
     .bind(br#"{"stale":true}"#.to_vec())
     .execute(&pool)
     .await
@@ -374,6 +380,138 @@ async fn expired_reservation_can_be_replaced_on_reuse() {
     assert!(
         expires_at > chrono::Utc::now(),
         "the new row's TTL must be in the future, not the stale '1 hour ago' value",
+    );
+}
+
+#[tokio::test]
+async fn stale_handler_after_ttl_overrun_cannot_overwrite_newer_reservation() {
+    use cratestack_axum::idempotency::{IdempotencyStore, ReservationOutcome};
+
+    let _guard = serial_guard().await;
+    let Some(pool) = connect_or_skip().await else {
+        return;
+    };
+    reset_schema(&pool).await;
+    let store = cratestack::SqlxIdempotencyStore::new(pool.clone());
+    store.ensure_schema().await.expect("ensure schema");
+
+    let principal = "stale-fp";
+    let key = "transfer-stale";
+    let hash = [7u8; 32];
+    let far_future = SystemTime::now() + Duration::from_secs(3600);
+
+    // First caller — original handler — claims the reservation. We hang
+    // onto its token to simulate the handler still running when the TTL
+    // expires.
+    let token_original = match store
+        .reserve_or_fetch(principal, key, hash, far_future)
+        .await
+        .expect("first reservation")
+    {
+        ReservationOutcome::Reserved { token } => token,
+        other => panic!("expected fresh reservation, got {other:?}"),
+    };
+
+    // Simulate the TTL elapsing while the original handler is still
+    // running. Banks have seen this in practice when an upstream RPC
+    // hangs longer than the idempotency window.
+    cratestack::sqlx::query(
+        "UPDATE cratestack_idempotency
+         SET expires_at = NOW() - INTERVAL '1 second'
+         WHERE principal_fingerprint = $1 AND key = $2",
+    )
+    .bind(principal)
+    .bind(key)
+    .execute(&pool)
+    .await
+    .expect("expire row");
+
+    // Retry arrives, sees the expired row, reclaims it with a fresh
+    // token. The new token must differ from the original — otherwise
+    // the guard collapses to the same row identity and we're back to
+    // the pre-fix behaviour.
+    let token_retry = match store
+        .reserve_or_fetch(principal, key, hash, far_future)
+        .await
+        .expect("retry reservation")
+    {
+        ReservationOutcome::Reserved { token } => token,
+        other => panic!("expected reclaim of expired row, got {other:?}"),
+    };
+    assert_ne!(
+        token_retry, token_original,
+        "reclaim must rotate the reservation token, otherwise stale handlers can still poison the row",
+    );
+
+    // Retry handler completes — this is the response that real callers
+    // should observe on subsequent replays.
+    store
+        .complete(
+            principal,
+            key,
+            token_retry,
+            201,
+            Some("application/json"),
+            br#"{"owner":"retry"}"#,
+        )
+        .await
+        .expect("retry completion");
+
+    // Now the original handler finally finishes (it was hung the whole
+    // time). It tries to write its own response. With the token guard
+    // in place this must be a silent no-op: the row's reservation_id
+    // no longer matches.
+    store
+        .complete(
+            principal,
+            key,
+            token_original,
+            500,
+            Some("application/json"),
+            br#"{"owner":"stale"}"#,
+        )
+        .await
+        .expect("stale completion call must not surface an error");
+
+    // The retry's response survived. If the stale completion had won,
+    // the persisted body would say "stale".
+    let body: Vec<u8> = cratestack::sqlx::query_scalar(
+        "SELECT response_body FROM cratestack_idempotency
+         WHERE principal_fingerprint = $1 AND key = $2",
+    )
+    .bind(principal)
+    .bind(key)
+    .fetch_one(&pool)
+    .await
+    .expect("read body");
+    let body_str = std::str::from_utf8(&body).expect("utf8");
+    assert!(
+        body_str.contains("retry"),
+        "the retry's completion must remain — got: {body_str}",
+    );
+    assert!(
+        !body_str.contains("stale"),
+        "the stale handler must not be able to overwrite the newer reservation's body",
+    );
+
+    // The same guard applies to release: a stale release must not
+    // delete the newer reservation's row either.
+    store
+        .release(principal, key, token_original)
+        .await
+        .expect("stale release call must not surface an error");
+    let row_count: (i64,) = cratestack::sqlx::query_as(
+        "SELECT COUNT(*)::BIGINT FROM cratestack_idempotency
+         WHERE principal_fingerprint = $1 AND key = $2",
+    )
+    .bind(principal)
+    .bind(key)
+    .fetch_one(&pool)
+    .await
+    .expect("count");
+    assert_eq!(
+        row_count.0, 1,
+        "the retry's row must still be present after the stale release",
     );
 }
 

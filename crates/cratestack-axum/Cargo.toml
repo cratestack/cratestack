@@ -22,6 +22,7 @@ serde.workspace = true
 sha2.workspace = true
 tower.workspace = true
 url.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }

@@ -187,3 +187,123 @@ async fn status_reports_drift_without_changing_state() {
     assert_eq!(states.len(), 1);
     assert_eq!(states[0].status, MigrationStatus::ChecksumMismatch);
 }
+
+#[tokio::test]
+async fn apply_pending_runs_multi_statement_migrations_atomically() {
+    let _guard = serial_guard().await;
+    let Some(pool) = connect_or_skip().await else {
+        return;
+    };
+    // Clean up artefacts from this test in addition to the standard
+    // reset — `reset` only knows about migration_test_{one,two}.
+    cratestack::sqlx::query("DROP TABLE IF EXISTS cratestack_migrations, migration_multi_stmt")
+        .execute(&pool)
+        .await
+        .expect("drop");
+
+    // Pre-fix this entire `.up` was sent as a single `sqlx::query` call,
+    // which Postgres rejects (prepared statements only accept one
+    // command). Banks routinely ship multi-statement migrations like
+    // `CREATE TABLE …; CREATE INDEX …; INSERT INTO seed …;` — split
+    // execution inside the migration's own transaction lets the whole
+    // bundle land atomically.
+    let multi_stmt = migration(
+        "20260201000000_multi_stmt",
+        "CREATE TABLE migration_multi_stmt (id INT PRIMARY KEY, label TEXT NOT NULL);\n\
+         CREATE INDEX migration_multi_stmt_label_idx ON migration_multi_stmt (label);\n\
+         INSERT INTO migration_multi_stmt (id, label) VALUES (1, 'seed');",
+    );
+
+    let applied = cratestack::apply_pending(&pool, &[multi_stmt])
+        .await
+        .expect("multi-statement migration should apply");
+    assert_eq!(applied, vec!["20260201000000_multi_stmt".to_owned()]);
+
+    // Table, index, and seed row must all have landed.
+    let table_count: (i64,) = cratestack::sqlx::query_as(
+        "SELECT COUNT(*)::BIGINT FROM information_schema.tables
+         WHERE table_name = 'migration_multi_stmt'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("table check");
+    assert_eq!(table_count.0, 1);
+
+    let index_count: (i64,) = cratestack::sqlx::query_as(
+        "SELECT COUNT(*)::BIGINT FROM pg_indexes
+         WHERE indexname = 'migration_multi_stmt_label_idx'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("index check");
+    assert_eq!(
+        index_count.0, 1,
+        "the second statement of the script must run"
+    );
+
+    let seed: (i64,) =
+        cratestack::sqlx::query_as("SELECT COUNT(*)::BIGINT FROM migration_multi_stmt")
+            .fetch_one(&pool)
+            .await
+            .expect("seed check");
+    assert_eq!(seed.0, 1, "the third statement of the script must run");
+
+    // Cleanup so subsequent test runs reset cleanly.
+    cratestack::sqlx::query("DROP TABLE migration_multi_stmt")
+        .execute(&pool)
+        .await
+        .expect("teardown");
+}
+
+#[tokio::test]
+async fn apply_pending_rolls_back_when_a_later_statement_in_a_multi_stmt_fails() {
+    let _guard = serial_guard().await;
+    let Some(pool) = connect_or_skip().await else {
+        return;
+    };
+    cratestack::sqlx::query("DROP TABLE IF EXISTS cratestack_migrations, migration_partial_apply")
+        .execute(&pool)
+        .await
+        .expect("drop");
+
+    // The second statement is intentionally invalid (references a column
+    // that doesn't exist). If we executed statements outside a tx, the
+    // CREATE TABLE in the first statement would leak. Inside the tx,
+    // the failure must roll the entire migration back and the
+    // `cratestack_migrations` row must NOT be recorded.
+    let bad = migration(
+        "20260202000000_partial",
+        "CREATE TABLE migration_partial_apply (id INT PRIMARY KEY);\n\
+         CREATE INDEX bad_idx ON migration_partial_apply (column_that_does_not_exist);",
+    );
+
+    let result = cratestack::apply_pending(&pool, &[bad]).await;
+    assert!(
+        result.is_err(),
+        "a broken later statement must surface as a migration error",
+    );
+
+    let leaked: (i64,) = cratestack::sqlx::query_as(
+        "SELECT COUNT(*)::BIGINT FROM information_schema.tables
+         WHERE table_name = 'migration_partial_apply'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("table check");
+    assert_eq!(
+        leaked.0, 0,
+        "the first statement must roll back when the second fails",
+    );
+
+    let recorded: (i64,) = cratestack::sqlx::query_as(
+        "SELECT COUNT(*)::BIGINT FROM cratestack_migrations
+         WHERE id = '20260202000000_partial'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("ledger check");
+    assert_eq!(
+        recorded.0, 0,
+        "a failed multi-statement migration must NOT be recorded as applied",
+    );
+}

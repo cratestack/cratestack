@@ -161,6 +161,18 @@ pub(crate) fn is_generated_on_create(field: &Field) -> bool {
     has_default(field)
 }
 
+/// Field carries `@version` — the optimistic-lock column. The SQL builder
+/// emits `version = version + 1` on every update, and seeds the column on
+/// create, so it must never appear in Create or Update input structs.
+/// Letting it through would either let clients seed the initial version
+/// (create) or produce duplicate `version = ...` SQL assignments (update).
+pub(crate) fn is_version_field(field: &Field) -> bool {
+    field
+        .attributes
+        .iter()
+        .any(|attribute| attribute.raw == "@version")
+}
+
 pub(crate) fn query_scalar_parser_tokens(
     ty: &TypeRef,
     value_expr: proc_macro2::TokenStream,

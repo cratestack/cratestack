@@ -1665,6 +1665,38 @@ pub fn validate_range_i64(
     Ok(())
 }
 
+/// Decimal-typed `@range` enforcement. The parser accepts integer bounds
+/// (`@range(min: 0, max: 100)`) on both Int and Decimal fields; the i64
+/// bounds are promoted to Decimal here so monetary fields can declare the
+/// same shape as integer counters. Banks routinely write things like
+/// `amount Decimal @range(min: 0)` to forbid negative amounts at the
+/// framework layer — without this, the validator silently no-ops and
+/// out-of-range values reach the database.
+pub fn validate_range_decimal(
+    field: &'static str,
+    value: &Decimal,
+    min: Option<i64>,
+    max: Option<i64>,
+) -> Result<(), CoolError> {
+    if let Some(min) = min {
+        let bound = Decimal::from(min);
+        if *value < bound {
+            return Err(CoolError::Validation(format!(
+                "field '{field}' is below minimum {min}",
+            )));
+        }
+    }
+    if let Some(max) = max {
+        let bound = Decimal::from(max);
+        if *value > bound {
+            return Err(CoolError::Validation(format!(
+                "field '{field}' exceeds maximum {max}",
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Pragmatic email check: requires exactly one `@`, non-empty local and domain
 /// parts, at least one `.` in the domain, and no whitespace. Not a full RFC
 /// 5322 grammar — that grammar admits forms (quoted local parts, IP literals)
@@ -1743,6 +1775,22 @@ mod validator_tests {
         assert!(validate_range_i64("n", 5, Some(0), Some(10)).is_ok());
         assert!(validate_range_i64("n", -1, Some(0), None).is_err());
         assert!(validate_range_i64("n", 11, None, Some(10)).is_err());
+    }
+
+    #[cfg(feature = "decimal-rust-decimal")]
+    #[test]
+    fn range_decimal_enforces_inclusive_bounds_after_promoting_i64_to_decimal() {
+        use core::str::FromStr;
+        let zero = Decimal::from(0);
+        let mid = Decimal::from_str("4.5").unwrap();
+        let just_below_zero = Decimal::from_str("-0.01").unwrap();
+        let too_big = Decimal::from_str("10.01").unwrap();
+        assert!(validate_range_decimal("amount", &zero, Some(0), Some(10)).is_ok());
+        assert!(validate_range_decimal("amount", &mid, Some(0), Some(10)).is_ok());
+        // Fractionally below the integer minimum still rejects — the
+        // Decimal comparison must NOT silently round.
+        assert!(validate_range_decimal("amount", &just_below_zero, Some(0), None).is_err());
+        assert!(validate_range_decimal("amount", &too_big, None, Some(10)).is_err());
     }
 
     #[test]

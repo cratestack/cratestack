@@ -33,7 +33,7 @@ async fn connect_or_skip() -> Option<cratestack::sqlx::PgPool> {
 }
 
 async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
-    query("DROP TABLE IF EXISTS cratestack_event_outbox, members")
+    query("DROP TABLE IF EXISTS cratestack_event_outbox, members, reserves")
         .execute(pool)
         .await
         .expect("drop");
@@ -48,6 +48,15 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     .execute(pool)
     .await
     .expect("create customer");
+    query(
+        "CREATE TABLE reserves (
+            id BIGINT PRIMARY KEY,
+            amount NUMERIC NOT NULL
+        )",
+    )
+    .execute(pool)
+    .await
+    .expect("create reserve");
 }
 
 fn ctx() -> CoolContext {
@@ -226,5 +235,84 @@ async fn validation_errors_surface_as_422_over_http_with_redacted_message() {
     assert!(
         !text.contains("super-secret"),
         "422 body must not echo PII from the rejected value: {text}",
+    );
+}
+
+#[tokio::test]
+async fn decimal_range_rejects_below_min() {
+    use core::str::FromStr;
+    let _guard = serial_guard().await;
+    let Some(pool) = connect_or_skip().await else {
+        return;
+    };
+    reset_schema(&pool).await;
+    let cool = cratestack_schema::Cratestack::builder(pool).build();
+
+    let result = cool
+        .reserve()
+        .create(cratestack_schema::CreateReserveInput {
+            id: 1,
+            amount: cratestack::Decimal::from_str("-0.01").expect("parse"),
+        })
+        .run(&ctx())
+        .await;
+
+    // Pre-fix the validator silently no-op'd on Decimal, so the row
+    // would land in the DB. The reservation should now be denied at
+    // the framework boundary with VALIDATION_ERROR.
+    let err = result.expect_err("Decimal below @range(min: 0) must be rejected");
+    assert_eq!(err.code(), "VALIDATION_ERROR");
+}
+
+#[tokio::test]
+async fn decimal_range_rejects_above_max() {
+    use core::str::FromStr;
+    let _guard = serial_guard().await;
+    let Some(pool) = connect_or_skip().await else {
+        return;
+    };
+    reset_schema(&pool).await;
+    let cool = cratestack_schema::Cratestack::builder(pool).build();
+
+    let result = cool
+        .reserve()
+        .create(cratestack_schema::CreateReserveInput {
+            id: 2,
+            // The ceiling is 1_000_000; a fractional excess must still
+            // reject (the i64 bound is promoted to Decimal, not the
+            // input rounded to i64).
+            amount: cratestack::Decimal::from_str("1000000.01").expect("parse"),
+        })
+        .run(&ctx())
+        .await;
+
+    let err = result.expect_err("Decimal above @range(max) must be rejected");
+    assert_eq!(err.code(), "VALIDATION_ERROR");
+}
+
+#[tokio::test]
+async fn decimal_range_accepts_in_range_value() {
+    use core::str::FromStr;
+    let _guard = serial_guard().await;
+    let Some(pool) = connect_or_skip().await else {
+        return;
+    };
+    reset_schema(&pool).await;
+    let cool = cratestack_schema::Cratestack::builder(pool).build();
+
+    let created = cool
+        .reserve()
+        .create(cratestack_schema::CreateReserveInput {
+            id: 3,
+            amount: cratestack::Decimal::from_str("123.45").expect("parse"),
+        })
+        .run(&ctx())
+        .await
+        .expect("in-range Decimal must round-trip");
+
+    assert_eq!(created.id, 3);
+    assert_eq!(
+        created.amount,
+        cratestack::Decimal::from_str("123.45").unwrap()
     );
 }

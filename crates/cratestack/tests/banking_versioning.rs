@@ -82,7 +82,6 @@ async fn delegate_update_without_if_match_returns_precondition_failed() {
         .set(cratestack_schema::UpdateLedgerInput {
             label: None,
             balance: Some(100),
-            version: None,
         })
         .run(&ctx())
         .await;
@@ -110,7 +109,6 @@ async fn delegate_update_with_stale_if_match_returns_412_and_keeps_row_intact() 
         .set(cratestack_schema::UpdateLedgerInput {
             label: None,
             balance: Some(99),
-            version: None,
         })
         .if_match(3) // stale: real version is 7
         .run(&ctx())
@@ -149,7 +147,6 @@ async fn delegate_update_with_fresh_if_match_increments_version_and_returns_new_
         .set(cratestack_schema::UpdateLedgerInput {
             label: None,
             balance: Some(42),
-            version: None,
         })
         .if_match(0)
         .run(&ctx())
@@ -166,7 +163,6 @@ async fn delegate_update_with_fresh_if_match_increments_version_and_returns_new_
         .set(cratestack_schema::UpdateLedgerInput {
             label: None,
             balance: Some(99),
-            version: None,
         })
         .if_match(0)
         .run(&ctx())
@@ -264,4 +260,35 @@ async fn http_patch_round_trips_etag_and_rejects_stale_if_match() {
         .expect("ascii")
         .to_owned();
     assert_eq!(new_etag, "\"1\"");
+}
+
+#[tokio::test]
+async fn create_seeds_version_to_zero_even_when_input_omits_it() {
+    let _guard = serial_guard().await;
+    let Some(pool) = connect_or_skip().await else {
+        return;
+    };
+    reset_schema(&pool).await;
+
+    // The Create input struct is generated without a `version` field
+    // (see the @version exclusion in cratestack-macros). If a future
+    // change re-added it, this test would not compile — that's the
+    // primary line of defence. The runtime assertion below additionally
+    // verifies that the server seeds the column to 0 so the INSERT
+    // succeeds against a NOT NULL column without a DB default.
+    let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
+    let created = cool
+        .ledger()
+        .create(cratestack_schema::CreateLedgerInput {
+            id: 42,
+            label: "fresh".to_owned(),
+            balance: 0,
+        })
+        .run(&ctx())
+        .await
+        .expect("create should succeed without version in input");
+    assert_eq!(
+        created.version, 0,
+        "newly created row must start at version 0"
+    );
 }
