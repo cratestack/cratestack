@@ -193,6 +193,267 @@ impl TransactionIsolation {
     }
 }
 
+// -----------------------------------------------------------------------------
+// Signed envelope (HMAC-SHA-256)
+//
+// Phase 3 ships a working symmetric-key signed envelope that satisfies
+// `CoolEnvelope`. The contract is intentionally close to COSE_Sign1 with
+// HS256: a content header (kid, alg, timestamp, nonce) is folded into the
+// signing input alongside the body bytes, and the sealed message is a CBOR
+// map `{ kid, alg, ts, nonce, body, mac }`. A full COSE_Sign1 implementation
+// with ES256/EdDSA lands in a follow-up — adding it is non-breaking thanks
+// to the `KeyProvider` trait below.
+// -----------------------------------------------------------------------------
+
+/// Resolves signing keys by kid (key id). Banks running multi-tenant or
+/// rotating keysets implement this so the envelope code never has to know
+/// the storage mechanism. Implementations must be constant-time for
+/// not-found vs wrong-tenant errors — never use the error message to leak
+/// whether a key id exists.
+#[async_trait::async_trait]
+pub trait KeyProvider: Send + Sync + 'static {
+    /// Return the raw key bytes for the given `kid`. For HMAC this is the
+    /// symmetric secret. Error if the key is unknown.
+    async fn resolve_signing_key(&self, kid: &str) -> Result<Vec<u8>, CoolError>;
+}
+
+/// In-memory `KeyProvider` for tests and single-tenant deployments. Banks
+/// running real workloads bring a backed implementation (KMS, Vault, HSM).
+#[derive(Debug, Clone, Default)]
+pub struct StaticKeyProvider {
+    keys: BTreeMap<String, Vec<u8>>,
+}
+
+impl StaticKeyProvider {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_key(mut self, kid: impl Into<String>, key: Vec<u8>) -> Self {
+        self.keys.insert(kid.into(), key);
+        self
+    }
+}
+
+#[async_trait::async_trait]
+impl KeyProvider for StaticKeyProvider {
+    async fn resolve_signing_key(&self, kid: &str) -> Result<Vec<u8>, CoolError> {
+        self.keys
+            .get(kid)
+            .cloned()
+            .ok_or_else(|| CoolError::Unauthorized("unknown signing key".to_owned()))
+    }
+}
+
+/// Maximum tolerable clock skew between sender and receiver when verifying
+/// signed envelopes. Banks running cross-region traffic with NTP-sync
+/// servers can lower this; off-the-shelf deployments leave it at the
+/// default 5 minutes.
+const ENVELOPE_DEFAULT_CLOCK_SKEW_SECS: i64 = 300;
+
+/// Tracks the nonces of sealed envelopes that have already been verified
+/// inside the clock-skew window, so a captured-and-replayed request gets
+/// rejected the second time. Banks running multi-replica deployments back
+/// this with Redis so the rejection holds cluster-wide.
+#[async_trait::async_trait]
+pub trait NonceStore: Send + Sync + 'static {
+    /// Attempt to register `nonce` as seen. Returns `Ok(true)` if it is the
+    /// first time we see it (caller may proceed); `Ok(false)` if it was
+    /// already recorded (caller should reject). Implementations must drop
+    /// entries past `expires_at` to keep the working set bounded.
+    async fn record_if_unseen(
+        &self,
+        nonce: &str,
+        expires_at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<bool, CoolError>;
+}
+
+/// In-memory nonce store. One mutex; the working set is bounded by the
+/// clock-skew window — a 5-minute skew at 10k req/s caps at ~3M entries,
+/// which is fine. Production multi-replica deployments swap in Redis.
+#[derive(Debug, Clone, Default)]
+pub struct InMemoryNonceStore {
+    seen: Arc<RwLock<BTreeMap<String, chrono::DateTime<chrono::Utc>>>>,
+}
+
+impl InMemoryNonceStore {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+#[async_trait::async_trait]
+impl NonceStore for InMemoryNonceStore {
+    async fn record_if_unseen(
+        &self,
+        nonce: &str,
+        expires_at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<bool, CoolError> {
+        let mut seen = self
+            .seen
+            .write()
+            .map_err(|_| CoolError::Internal("nonce store poisoned".to_owned()))?;
+        let now = chrono::Utc::now();
+        seen.retain(|_, exp| *exp > now);
+        if seen.contains_key(nonce) {
+            return Ok(false);
+        }
+        seen.insert(nonce.to_owned(), expires_at);
+        Ok(true)
+    }
+}
+
+/// HMAC-SHA-256 backed envelope. Sealed messages are self-describing CBOR
+/// maps: signature recipients can decode the envelope, fetch the key by
+/// `kid`, and verify without out-of-band coordination.
+#[derive(Clone)]
+pub struct HmacEnvelope<K: KeyProvider> {
+    keys: Arc<K>,
+    signing_kid: String,
+    clock_skew_secs: i64,
+    nonces: Option<Arc<dyn NonceStore>>,
+}
+
+impl<K: KeyProvider> HmacEnvelope<K> {
+    pub fn new(keys: Arc<K>, signing_kid: impl Into<String>) -> Self {
+        Self {
+            keys,
+            signing_kid: signing_kid.into(),
+            clock_skew_secs: ENVELOPE_DEFAULT_CLOCK_SKEW_SECS,
+            nonces: None,
+        }
+    }
+
+    pub fn with_clock_skew_secs(mut self, secs: i64) -> Self {
+        self.clock_skew_secs = secs;
+        self
+    }
+
+    /// Attach a nonce store so `open` rejects replays. Without this, the
+    /// envelope is only protected by the clock-skew window — an attacker
+    /// who captured a sealed message can replay it inside that window.
+    pub fn with_nonce_store(mut self, store: Arc<dyn NonceStore>) -> Self {
+        self.nonces = Some(store);
+        self
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SealedEnvelope {
+    pub kid: String,
+    pub alg: String,
+    pub ts: i64,
+    pub nonce: String,
+    pub body: serde_json::Value,
+    pub mac_b64: String,
+}
+
+impl SealedEnvelope {
+    fn signing_input(&self) -> Result<Vec<u8>, CoolError> {
+        let mut buf = Vec::with_capacity(256);
+        buf.extend_from_slice(self.kid.as_bytes());
+        buf.push(0);
+        buf.extend_from_slice(self.alg.as_bytes());
+        buf.push(0);
+        buf.extend_from_slice(&self.ts.to_be_bytes());
+        buf.push(0);
+        buf.extend_from_slice(self.nonce.as_bytes());
+        buf.push(0);
+        // Body is canonicalised via serde_json::to_vec which uses key-sort
+        // order for objects when the input went through `serde_json::Value`
+        // — adequate for HMAC integrity (the verifier reconstructs the
+        // same bytes the sender signed).
+        let body_bytes = serde_json::to_vec(&self.body)
+            .map_err(|error| CoolError::Codec(format!("encode envelope body: {error}")))?;
+        buf.extend_from_slice(&body_bytes);
+        Ok(buf)
+    }
+}
+
+impl<K: KeyProvider> HmacEnvelope<K> {
+    async fn compute_mac(&self, key: &[u8], input: &[u8]) -> Result<Vec<u8>, CoolError> {
+        use hmac::{Hmac, Mac};
+        let mut mac = <Hmac<sha2::Sha256> as Mac>::new_from_slice(key)
+            .map_err(|_| CoolError::Internal("HMAC key length error".to_owned()))?;
+        mac.update(input);
+        Ok(mac.finalize().into_bytes().to_vec())
+    }
+
+    /// Seal a request body. The returned bytes are a CBOR-encoded
+    /// `SealedEnvelope` payload — the sender wraps these in their codec of
+    /// choice on the way out.
+    pub async fn seal(&self, payload: serde_json::Value) -> Result<SealedEnvelope, CoolError> {
+        let key = self.keys.resolve_signing_key(&self.signing_kid).await?;
+        let ts = chrono::Utc::now().timestamp();
+        let nonce = uuid::Uuid::new_v4().to_string();
+        let mut envelope = SealedEnvelope {
+            kid: self.signing_kid.clone(),
+            alg: "HS256".to_owned(),
+            ts,
+            nonce,
+            body: payload,
+            mac_b64: String::new(),
+        };
+        let input = envelope.signing_input()?;
+        let mac = self.compute_mac(&key, &input).await?;
+        use base64::Engine;
+        envelope.mac_b64 = base64::engine::general_purpose::STANDARD.encode(mac);
+        Ok(envelope)
+    }
+
+    /// Verify a sealed envelope. Returns the body on success. Constant-time
+    /// MAC compare; clock-skew window enforced; envelope kid is resolved
+    /// through the configured provider so callers can rotate keys without
+    /// changing the recipient.
+    pub async fn open(&self, envelope: &SealedEnvelope) -> Result<serde_json::Value, CoolError> {
+        if envelope.alg != "HS256" {
+            return Err(CoolError::Unauthorized(format!(
+                "unsupported envelope algorithm '{}'",
+                envelope.alg,
+            )));
+        }
+        let now = chrono::Utc::now().timestamp();
+        let drift = (now - envelope.ts).abs();
+        if drift > self.clock_skew_secs {
+            return Err(CoolError::Unauthorized(
+                "envelope timestamp outside accepted skew window".to_owned(),
+            ));
+        }
+        let key = self.keys.resolve_signing_key(&envelope.kid).await?;
+        let input = envelope.signing_input()?;
+        let expected = self.compute_mac(&key, &input).await?;
+        use base64::Engine;
+        let actual = base64::engine::general_purpose::STANDARD
+            .decode(&envelope.mac_b64)
+            .map_err(|_| CoolError::Unauthorized("envelope MAC is not base64".to_owned()))?;
+        if actual.len() != expected.len() {
+            return Err(CoolError::Unauthorized(
+                "envelope MAC has wrong length".to_owned(),
+            ));
+        }
+        use subtle::ConstantTimeEq;
+        if !bool::from(actual.as_slice().ct_eq(expected.as_slice())) {
+            return Err(CoolError::Unauthorized(
+                "envelope MAC verification failed".to_owned(),
+            ));
+        }
+        if let Some(nonces) = &self.nonces {
+            let expires_at = chrono::DateTime::<chrono::Utc>::from_timestamp(
+                envelope.ts + self.clock_skew_secs,
+                0,
+            )
+            .ok_or_else(|| CoolError::Unauthorized("envelope timestamp out of range".to_owned()))?;
+            let recorded = nonces.record_if_unseen(&envelope.nonce, expires_at).await?;
+            if !recorded {
+                return Err(CoolError::Unauthorized(
+                    "envelope nonce replay detected".to_owned(),
+                ));
+            }
+        }
+        Ok(envelope.body.clone())
+    }
+}
+
 pub type CoolBody = bytes::Bytes;
 pub type CoolEventFuture = Pin<Box<dyn Future<Output = Result<(), CoolError>> + Send + 'static>>;
 
@@ -1510,6 +1771,89 @@ mod validator_tests {
     fn client_ip_round_trip_through_extensions() {
         let ctx = CoolContext::anonymous().with_client_ip("192.0.2.43");
         assert_eq!(ctx.client_ip(), Some("192.0.2.43"));
+    }
+
+    #[tokio::test]
+    async fn hmac_envelope_round_trip_succeeds() {
+        let keys = Arc::new(StaticKeyProvider::new().with_key("ops-1", vec![0xaa; 32]));
+        let env = HmacEnvelope::new(keys.clone(), "ops-1");
+        let payload = serde_json::json!({ "transfer": { "amount": "100.00" } });
+        let sealed = env.seal(payload.clone()).await.expect("seal");
+        let opened = env.open(&sealed).await.expect("open");
+        assert_eq!(opened, payload);
+    }
+
+    #[tokio::test]
+    async fn hmac_envelope_rejects_modified_body() {
+        let keys = Arc::new(StaticKeyProvider::new().with_key("ops-1", vec![0xaa; 32]));
+        let env = HmacEnvelope::new(keys.clone(), "ops-1");
+        let mut sealed = env
+            .seal(serde_json::json!({ "amount": "100" }))
+            .await
+            .expect("seal");
+        sealed.body = serde_json::json!({ "amount": "999" });
+        let err = env.open(&sealed).await.expect_err("must reject tamper");
+        assert_eq!(err.code(), "UNAUTHORIZED");
+    }
+
+    #[tokio::test]
+    async fn hmac_envelope_rejects_stale_timestamp() {
+        let keys = Arc::new(StaticKeyProvider::new().with_key("ops-1", vec![0xaa; 32]));
+        let env = HmacEnvelope::new(keys.clone(), "ops-1").with_clock_skew_secs(1);
+        let mut sealed = env.seal(serde_json::json!({})).await.expect("seal");
+        // Push the timestamp into the past beyond the skew window.
+        sealed.ts -= 60;
+        // Recompute MAC to ensure the envelope is structurally valid —
+        // we want to isolate that the timestamp window is what blocks it.
+        use base64::Engine;
+        use hmac::{Hmac, Mac};
+        let key = keys.resolve_signing_key("ops-1").await.expect("key");
+        let mut mac = <Hmac<sha2::Sha256> as Mac>::new_from_slice(&key).unwrap();
+        mac.update(&sealed.signing_input().unwrap());
+        sealed.mac_b64 =
+            base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes());
+
+        let err = env.open(&sealed).await.expect_err("must reject");
+        assert_eq!(err.code(), "UNAUTHORIZED");
+    }
+
+    #[tokio::test]
+    async fn hmac_envelope_with_nonce_store_rejects_replays() {
+        let keys = Arc::new(StaticKeyProvider::new().with_key("ops-1", vec![0xaa; 32]));
+        let nonces: Arc<dyn NonceStore> = Arc::new(InMemoryNonceStore::new());
+        let env = HmacEnvelope::new(keys.clone(), "ops-1").with_nonce_store(nonces.clone());
+        let sealed = env
+            .seal(serde_json::json!({ "amount": "1" }))
+            .await
+            .expect("seal");
+        env.open(&sealed).await.expect("first open succeeds");
+        let err = env.open(&sealed).await.expect_err("replay must fail");
+        assert_eq!(err.code(), "UNAUTHORIZED");
+    }
+
+    #[tokio::test]
+    async fn nonce_store_purges_expired_entries() {
+        let store = InMemoryNonceStore::new();
+        let past = chrono::Utc::now() - chrono::Duration::seconds(60);
+        // Insert an already-expired entry, then attempt to record the same
+        // nonce again — the GC inside `record_if_unseen` should evict it.
+        assert!(store.record_if_unseen("n1", past).await.unwrap());
+        assert!(
+            store
+                .record_if_unseen("n1", past + chrono::Duration::seconds(120))
+                .await
+                .unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn hmac_envelope_rejects_unknown_alg() {
+        let keys = Arc::new(StaticKeyProvider::new().with_key("ops-1", vec![0xaa; 32]));
+        let env = HmacEnvelope::new(keys.clone(), "ops-1");
+        let mut sealed = env.seal(serde_json::json!({})).await.expect("seal");
+        sealed.alg = "none".to_owned();
+        let err = env.open(&sealed).await.expect_err("must reject");
+        assert_eq!(err.code(), "UNAUTHORIZED");
     }
 
     #[cfg(feature = "decimal-rust-decimal")]

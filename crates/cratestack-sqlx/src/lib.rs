@@ -4,6 +4,7 @@ mod descriptor;
 mod filter;
 mod idempotency;
 mod isolation;
+mod migrations;
 mod order;
 mod query;
 mod render;
@@ -14,6 +15,10 @@ mod values;
 pub use audit::{AUDIT_TABLE_DDL, primary_key_from_snapshot, snapshot_model};
 pub use idempotency::{SqlxIdempotencyStore, expiry_from};
 pub use isolation::{run_in_isolated_tx, run_in_isolated_tx_with_retries};
+pub use migrations::{
+    MIGRATIONS_TABLE_DDL, Migration, MigrationState, MigrationStatus, apply_pending,
+    ensure_migrations_table, status,
+};
 
 pub use cratestack_policy::{PolicyExpr, PolicyLiteral, ReadPolicy, ReadPredicate};
 pub use delegate::{

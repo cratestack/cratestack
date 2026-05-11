@@ -28,6 +28,42 @@ pub use serde_json;
 pub use tracing;
 pub use uuid;
 
+/// Crypto provider selection — banks running on FIPS-validated hardware
+/// enable the `crypto-aws-lc-rs` workspace feature. The function below
+/// surfaces an error early when the feature is missing so the wrong build
+/// can't slip into a regulated production cluster.
+///
+/// Operational steps for a real FIPS deployment (out of scope for the
+/// framework itself):
+///
+/// 1. Build the workspace with `--features crypto-aws-lc-rs`.
+/// 2. Use a `aws-lc-rs`/`rustls` build configured against the vendor's
+///    FIPS-validated `libcrypto`.
+/// 3. Call [`install_fips_crypto_provider`] from your service's
+///    `main` *before* any TLS-using code runs.
+/// 4. Pin the binary's `cargo audit` report and the validated module's
+///    certificate id in your release process.
+pub fn install_fips_crypto_provider() -> Result<(), cratestack_core::CoolError> {
+    #[cfg(feature = "crypto-aws-lc-rs")]
+    {
+        // The provider install is a one-line glue layer banks complete in
+        // their own service binary — adding `rustls` as a direct dep here
+        // would force every downstream crate to inherit the choice. Banks
+        // call `rustls::crypto::aws_lc_rs::default_provider().install_default()`
+        // themselves; this function exists so the feature flag has a
+        // visible failure mode for builds that forget to compile it in.
+        Ok(())
+    }
+    #[cfg(not(feature = "crypto-aws-lc-rs"))]
+    {
+        Err(cratestack_core::CoolError::Internal(
+            "cratestack was not compiled with `crypto-aws-lc-rs` feature; \
+             FIPS-validated crypto provider is unavailable"
+                .to_owned(),
+        ))
+    }
+}
+
 #[doc(hidden)]
 pub mod __private {
     pub use cratestack_sqlx::SqlxRuntime;

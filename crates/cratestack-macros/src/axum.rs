@@ -23,7 +23,8 @@ pub(crate) fn generate_procedure_axum_handler(
     let method_ident = ident(&to_snake_case(&procedure.name));
     let module_ident = ident(&to_snake_case(&procedure.name));
     let procedure_name = &procedure.name;
-    let route_path = format!("/$procs/{}", procedure.name);
+    let route_path = procedure_route_path(procedure);
+    let deprecation_header = procedure_deprecation_header_tokens(procedure);
     let procedure_capabilities = procedure_transport_capabilities_tokens(procedure);
     let result_encoder = if matches!(procedure.return_type.arity, TypeArity::List) {
         quote! { ::cratestack::encode_transport_sequence_result_with_status_for(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, result) }
@@ -113,15 +114,71 @@ pub(crate) fn generate_procedure_axum_handler(
                 ),
             }
 
-            #result_encoder
+            let mut response = #result_encoder;
+            #deprecation_header
+            response
         }
     })
 }
 
 pub(crate) fn generate_procedure_axum_route(procedure: &Procedure) -> proc_macro2::TokenStream {
-    let route_path = format!("/$procs/{}", procedure.name);
+    let route_path = procedure_route_path(procedure);
     let handler_ident = ident(&format!("handle_{}", to_snake_case(&procedure.name)));
     quote! { .route(#route_path, axum::routing::post(#handler_ident)) }
+}
+
+/// Compute the HTTP route path for a procedure, applying any `@api_version`
+/// prefix the schema declared. The shape is `/<version>/$procs/<name>` for
+/// versioned procedures and `/$procs/<name>` for unversioned ones, so banks
+/// can run v1 + v2 of the same procedure side by side.
+fn procedure_route_path(procedure: &Procedure) -> String {
+    if let Some(version) = procedure_api_version(procedure) {
+        format!("/{}/$procs/{}", version, procedure.name)
+    } else {
+        format!("/$procs/{}", procedure.name)
+    }
+}
+
+fn procedure_api_version(procedure: &Procedure) -> Option<String> {
+    procedure.attributes.iter().find_map(|attribute| {
+        attribute
+            .raw
+            .strip_prefix("@api_version(\"")
+            .and_then(|rest| rest.strip_suffix("\")"))
+            .map(|s| s.to_owned())
+    })
+}
+
+/// Token stream that, given a `response` in scope, applies the
+/// `Deprecation`/`X-Deprecation` headers when the procedure declared
+/// `@deprecated`. Emits empty tokens for non-deprecated procedures.
+fn procedure_deprecation_header_tokens(procedure: &Procedure) -> proc_macro2::TokenStream {
+    let deprecated = procedure
+        .attributes
+        .iter()
+        .find(|a| a.raw == "@deprecated" || a.raw.starts_with("@deprecated("));
+    let Some(attribute) = deprecated else {
+        return quote! {};
+    };
+    let message: Option<String> = attribute
+        .raw
+        .strip_prefix("@deprecated(\"")
+        .and_then(|s| s.strip_suffix("\")"))
+        .map(|s| s.to_owned());
+    let message_block = match message {
+        Some(m) => quote! {
+            if let Ok(value) = ::cratestack::axum::http::HeaderValue::from_str(#m) {
+                response.headers_mut().insert("X-Deprecation", value);
+            }
+        },
+        None => quote! {},
+    };
+    quote! {
+        response
+            .headers_mut()
+            .insert("Deprecation", ::cratestack::axum::http::HeaderValue::from_static("true"));
+        #message_block
+    }
 }
 
 pub(crate) fn generate_axum_shared_support() -> proc_macro2::TokenStream {

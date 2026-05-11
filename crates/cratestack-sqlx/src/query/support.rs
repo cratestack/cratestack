@@ -20,7 +20,17 @@ pub(crate) fn push_scoped_conditions<'a, M, PK, Id>(
     query.push(" WHERE ");
 
     let mut wrote_clause = false;
+    // Soft-delete filter: hide tombstoned rows from every read. Banks treat
+    // the audit log as the source of truth for what changed; this just
+    // prevents deleted rows from leaking back into list/get responses.
+    if let Some(col) = descriptor.soft_delete_column {
+        query.push(col).push(" IS NULL");
+        wrote_clause = true;
+    }
     if !filters.is_empty() {
+        if wrote_clause {
+            query.push(" AND ");
+        }
         push_filter_query(query, filters);
         wrote_clause = true;
     }

@@ -530,6 +530,7 @@ dependencies = [
  "http",
  "serde",
  "sha2",
+ "tokio",
  "tower 0.5.3",
  "url",
 ]
@@ -655,14 +656,19 @@ name = "cratestack-core"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64",
  "bigdecimal",
  "bytes",
  "chrono",
+ "hmac",
  "http",
  "rust_decimal",
  "serde",
  "serde_json",
+ "sha2",
+ "subtle",
  "thiserror",
+ "tokio",
  "url",
  "uuid",
 ]
@@ -721,6 +727,7 @@ dependencies = [
  "rust_decimal",
  "serde",
  "serde_json",
+ "sha2",
  "sqlx",
  "tokio",
  "uuid",

@@ -459,6 +459,28 @@ pub(crate) fn generate_model_descriptor(
             quote! { #column }
         })
         .collect::<Vec<_>>();
+    let soft_delete_enabled = model
+        .attributes
+        .iter()
+        .any(|attribute| attribute.raw == "@@soft_delete");
+    let soft_delete_column_tokens = if soft_delete_enabled {
+        quote! { Some("deleted_at") }
+    } else {
+        quote! { None }
+    };
+    let retention_days_tokens = model
+        .attributes
+        .iter()
+        .find_map(|attribute| {
+            attribute
+                .raw
+                .strip_prefix("@@retain(days:")
+                .and_then(|rest| rest.strip_suffix(')'))
+                .map(str::trim)
+                .and_then(|raw| raw.parse::<u32>().ok())
+        })
+        .map(|n| quote! { Some(#n) })
+        .unwrap_or_else(|| quote! { None });
 
     Ok(quote! {
         pub const #descriptor_ident: ::cratestack::ModelDescriptor<#model_ident, #primary_key_type> =
@@ -486,6 +508,8 @@ pub(crate) fn generate_model_descriptor(
                 #audit_enabled,
                 &[#(#pii_columns),*],
                 &[#(#sensitive_columns),*],
+                #soft_delete_column_tokens,
+                #retention_days_tokens,
             );
     })
 }

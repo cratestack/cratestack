@@ -604,10 +604,33 @@ where
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
     PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
 {
-    let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("DELETE FROM ");
-    query.push(descriptor.table_name).push(" WHERE ");
-    query.push(descriptor.primary_key).push(" = ");
-    query.push_bind(id);
+    let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("");
+    match descriptor.soft_delete_column {
+        Some(col) => {
+            // Soft-delete: tombstone the row and bump version (if any) so
+            // optimistic-lock semantics on subsequent updates stay coherent.
+            query.push("UPDATE ").push(descriptor.table_name);
+            query.push(" SET ").push(col).push(" = NOW()");
+            if let Some(version_col) = descriptor.version_column {
+                query
+                    .push(", ")
+                    .push(version_col)
+                    .push(" = ")
+                    .push(version_col)
+                    .push(" + 1");
+            }
+            query.push(" WHERE ");
+            query.push(col).push(" IS NULL AND ");
+            query.push(descriptor.primary_key).push(" = ");
+            query.push_bind(id);
+        }
+        None => {
+            query.push("DELETE FROM ").push(descriptor.table_name);
+            query.push(" WHERE ");
+            query.push(descriptor.primary_key).push(" = ");
+            query.push_bind(id);
+        }
+    }
     query.push(" AND ");
     push_action_policy_query(
         &mut query,

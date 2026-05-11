@@ -882,6 +882,64 @@ model Account {
 }
 
 #[test]
+fn accepts_soft_delete_and_retain_attributes() {
+    let schema = parse_schema(
+        r#"
+model Customer {
+  id Int @id
+  email String
+
+  @@soft_delete
+  @@retain(days: 2555)
+}
+"#,
+    )
+    .expect("model with soft-delete + retain should parse");
+
+    let attrs = &schema.models[0].attributes;
+    assert!(attrs.iter().any(|a| a.raw == "@@soft_delete"));
+    assert!(attrs.iter().any(|a| a.raw == "@@retain(days: 2555)"));
+}
+
+#[test]
+fn rejects_retain_without_days_argument() {
+    let error = parse_schema(
+        r#"
+model Customer {
+  id Int @id
+
+  @@retain(weeks: 12)
+}
+"#,
+    )
+    .expect_err("@@retain(weeks: 12) should fail");
+
+    assert!(
+        error.to_string().contains("`@@retain` requires `days: N`"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn rejects_soft_delete_with_args() {
+    let error = parse_schema(
+        r#"
+model Customer {
+  id Int @id
+
+  @@soft_delete(column: "deleted")
+}
+"#,
+    )
+    .expect_err("@@soft_delete(...) should fail");
+
+    assert!(
+        error.to_string().contains("does not take arguments"),
+        "error: {error}",
+    );
+}
+
+#[test]
 fn accepts_audit_attribute_on_model() {
     let schema = parse_schema(
         r#"
@@ -1102,6 +1160,74 @@ procedure broken(args: Ping): Ping
         error
             .to_string()
             .contains("@isolation requires a quoted level argument"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn accepts_api_version_and_deprecated_on_procedure() {
+    let schema = parse_schema(
+        r#"
+type Ping {
+  nonce String
+}
+
+procedure healthcheck(args: Ping): Ping
+  @api_version("v1")
+  @deprecated("use healthcheck_v2")
+"#,
+    )
+    .expect("procedure with @api_version + @deprecated should parse");
+
+    let attrs = &schema.procedures[0].attributes;
+    assert!(
+        attrs.iter().any(|a| a.raw == "@api_version(\"v1\")"),
+        "expected @api_version: {attrs:?}",
+    );
+    assert!(
+        attrs
+            .iter()
+            .any(|a| a.raw == "@deprecated(\"use healthcheck_v2\")"),
+        "expected @deprecated",
+    );
+}
+
+#[test]
+fn rejects_empty_api_version() {
+    let error = parse_schema(
+        r#"
+type Ping {
+  nonce String
+}
+
+procedure healthcheck(args: Ping): Ping
+  @api_version("")
+"#,
+    )
+    .expect_err("empty @api_version should fail");
+
+    assert!(
+        error.to_string().contains("@api_version must not be empty"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn rejects_api_version_with_invalid_characters() {
+    let error = parse_schema(
+        r#"
+type Ping {
+  nonce String
+}
+
+procedure healthcheck(args: Ping): Ping
+  @api_version("v 1")
+"#,
+    )
+    .expect_err("@api_version with space should fail");
+
+    assert!(
+        error.to_string().contains("must contain only alphanumeric"),
         "error: {error}",
     );
 }
