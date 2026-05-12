@@ -25,13 +25,18 @@
 //! refill, never advance it.
 
 use std::sync::LazyLock;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::SystemTime;
 
 use async_trait::async_trait;
 use cratestack_axum::ratelimit::{RateLimitConfig, RateLimitDecision, RateLimitStore};
 use cratestack_core::CoolError;
 use redis::{Script, Value as RedisValue};
-use sha2::{Digest, Sha256};
+
+use crate::support::{
+    next_string, next_u32_decimal, redis_error, system_time_to_ms, KeyNamespace,
+};
+
+const SCOPE: &str = "redis rate limit";
 
 const CONSUME_LUA: &str = r#"
 local now_ms = tonumber(ARGV[1])
@@ -95,7 +100,7 @@ pub struct RedisRateLimitStoreConfig {
 impl RedisRateLimitStoreConfig {
     pub fn new(key_prefix: impl Into<String>) -> Self {
         Self {
-            key_prefix: normalize_key_prefix(key_prefix.into()),
+            key_prefix: KeyNamespace::new(key_prefix, "rl").prefix().to_owned(),
         }
     }
 }
@@ -103,7 +108,7 @@ impl RedisRateLimitStoreConfig {
 #[derive(Clone)]
 pub struct RedisRateLimitStore {
     client: redis::Client,
-    config: RedisRateLimitStoreConfig,
+    namespace: KeyNamespace,
 }
 
 impl RedisRateLimitStore {
@@ -111,40 +116,30 @@ impl RedisRateLimitStore {
         redis_url: impl redis::IntoConnectionInfo,
         key_prefix: impl Into<String>,
     ) -> Result<Self, CoolError> {
-        let client = redis::Client::open(redis_url).map_err(redis_error)?;
+        let client = redis::Client::open(redis_url).map_err(|e| redis_error(SCOPE, e))?;
         Ok(Self::from_client(client, key_prefix))
     }
 
     pub fn from_client(client: redis::Client, key_prefix: impl Into<String>) -> Self {
         Self {
             client,
-            config: RedisRateLimitStoreConfig::new(key_prefix),
+            namespace: KeyNamespace::new(key_prefix, "rl"),
         }
     }
 
     pub fn key_prefix(&self) -> &str {
-        &self.config.key_prefix
+        self.namespace.prefix()
     }
 
     pub fn bucket_key(&self, key: &str) -> String {
-        let mut hasher = Sha256::new();
-        hasher.update(key.as_bytes());
-        let digest = hasher.finalize();
-        let mut out = String::with_capacity(self.config.key_prefix.len() + 4 + 64);
-        out.push_str(&self.config.key_prefix);
-        out.push_str(":rl:");
-        for byte in digest {
-            out.push(nibble_hex(byte >> 4));
-            out.push(nibble_hex(byte & 0x0f));
-        }
-        out
+        self.namespace.hashed_key(&[key.as_bytes()])
     }
 
     async fn connection(&self) -> Result<redis::aio::MultiplexedConnection, CoolError> {
         self.client
             .get_multiplexed_async_connection()
             .await
-            .map_err(redis_error)
+            .map_err(|e| redis_error(SCOPE, e))
     }
 }
 
@@ -156,11 +151,11 @@ impl RateLimitStore for RedisRateLimitStore {
         config: RateLimitConfig,
     ) -> Result<RateLimitDecision, CoolError> {
         let mut conn = self.connection().await?;
-        let now_ms = system_time_to_ms(SystemTime::now())?;
+        let now_ms = system_time_to_ms(SCOPE, SystemTime::now())?;
         let bucket_key = self.bucket_key(key);
 
         // Lua's `tonumber` accepts standard decimal notation; we serialise
-        // the float with `{:?}` so values like `0.001` round-trip through
+        // the float with `{}` so values like `0.001` round-trip through
         // Rust's `f64::to_string`-equivalent without ever taking on a
         // locale-dependent form. `tostring`/`tonumber` inside the script
         // are unaffected by Redis's locale because Lua 5.1 (which Redis
@@ -172,7 +167,7 @@ impl RateLimitStore for RedisRateLimitStore {
             .arg(format!("{}", config.refill_per_second))
             .invoke_async(&mut conn)
             .await
-            .map_err(redis_error)?;
+            .map_err(|e| redis_error(SCOPE, e))?;
 
         parse_consume_outcome(value)
     }
@@ -183,101 +178,25 @@ fn parse_consume_outcome(value: RedisValue) -> Result<RateLimitDecision, CoolErr
         RedisValue::Array(items) => items,
         other => {
             return Err(CoolError::Internal(format!(
-                "redis rate limit: expected array from consume script, got {other:?}"
+                "{SCOPE}: expected array from consume script, got {other:?}"
             )));
         }
     };
     let mut iter = items.into_iter();
-    let tag = next_string(&mut iter, "tag")?;
+    let tag = next_string(SCOPE, &mut iter, "tag")?;
     match tag.as_str() {
         "allowed" => {
-            let remaining = next_u32_decimal(&mut iter, "remaining")?;
+            let remaining = next_u32_decimal(SCOPE, &mut iter, "remaining")?;
             Ok(RateLimitDecision::Allowed { remaining })
         }
         "throttled" => {
-            let retry_after_secs = next_u32_decimal(&mut iter, "retry_after_secs")?;
+            let retry_after_secs = next_u32_decimal(SCOPE, &mut iter, "retry_after_secs")?;
             Ok(RateLimitDecision::Throttled { retry_after_secs })
         }
         other => Err(CoolError::Internal(format!(
-            "redis rate limit: unexpected outcome tag: {other}"
+            "{SCOPE}: unexpected outcome tag: {other}"
         ))),
     }
-}
-
-fn next_string<I: Iterator<Item = RedisValue>>(iter: &mut I, field: &str) -> Result<String, CoolError> {
-    let v = iter
-        .next()
-        .ok_or_else(|| CoolError::Internal(format!("redis rate limit: missing {field}")))?;
-    match v {
-        RedisValue::BulkString(b) => String::from_utf8(b).map_err(|err| {
-            CoolError::Internal(format!("redis rate limit: {field} not utf8: {err}"))
-        }),
-        RedisValue::SimpleString(s) => Ok(s),
-        other => Err(CoolError::Internal(format!(
-            "redis rate limit: expected string for {field}, got {other:?}"
-        ))),
-    }
-}
-
-fn next_i64_decimal<I: Iterator<Item = RedisValue>>(iter: &mut I, field: &str) -> Result<i64, CoolError> {
-    let v = iter
-        .next()
-        .ok_or_else(|| CoolError::Internal(format!("redis rate limit: missing {field}")))?;
-    let bytes = match v {
-        RedisValue::Int(n) => return Ok(n),
-        RedisValue::BulkString(b) => b,
-        RedisValue::SimpleString(s) => s.into_bytes(),
-        other => {
-            return Err(CoolError::Internal(format!(
-                "redis rate limit: expected number for {field}, got {other:?}"
-            )));
-        }
-    };
-    std::str::from_utf8(&bytes)
-        .ok()
-        .and_then(|s| s.parse::<i64>().ok())
-        .ok_or_else(|| CoolError::Internal(format!("redis rate limit: bad number for {field}")))
-}
-
-fn next_u32_decimal<I: Iterator<Item = RedisValue>>(iter: &mut I, field: &str) -> Result<u32, CoolError> {
-    let n = next_i64_decimal(iter, field)?;
-    u32::try_from(n).map_err(|_| {
-        CoolError::Internal(format!(
-            "redis rate limit: {field} out of u32 range: {n}"
-        ))
-    })
-}
-
-fn system_time_to_ms(time: SystemTime) -> Result<i64, CoolError> {
-    let dur = time.duration_since(UNIX_EPOCH).map_err(|err| {
-        CoolError::Internal(format!(
-            "redis rate limit: timestamp before unix epoch: {err}"
-        ))
-    })?;
-    i64::try_from(dur.as_millis()).map_err(|_| {
-        CoolError::Internal("redis rate limit: timestamp out of i64 ms range".to_owned())
-    })
-}
-
-fn normalize_key_prefix(key_prefix: String) -> String {
-    let cleaned = key_prefix.trim().trim_matches(':').trim();
-    if cleaned.is_empty() {
-        "cratestack".to_owned()
-    } else {
-        cleaned.to_owned()
-    }
-}
-
-fn nibble_hex(nibble: u8) -> char {
-    match nibble {
-        0..=9 => (b'0' + nibble) as char,
-        10..=15 => (b'a' + nibble - 10) as char,
-        _ => unreachable!("nibble must be 0..=15"),
-    }
-}
-
-fn redis_error(error: redis::RedisError) -> CoolError {
-    CoolError::Internal(format!("redis rate limit: {error}"))
 }
 
 #[cfg(test)]
@@ -376,9 +295,6 @@ mod tests {
 
     #[test]
     fn parse_accepts_redis_int_in_payload() {
-        // The Lua script emits the second slot as a bulk string today,
-        // but a future refactor could return a Lua number which Redis
-        // serialises as `Value::Int`. The parser must accept either.
         let value = RedisValue::Array(vec![bulk("allowed"), RedisValue::Int(5)]);
         let outcome = parse_consume_outcome(value).expect("parse");
         assert_eq!(outcome, RateLimitDecision::Allowed { remaining: 5 });
@@ -399,8 +315,6 @@ mod tests {
 
     #[test]
     fn parse_rejects_negative_remaining() {
-        // The script clamps remaining to 0, but a buggy upstream could
-        // send a negative value. Refuse to silently coerce.
         let value = RedisValue::Array(vec![bulk("allowed"), bulk("-1")]);
         let err = parse_consume_outcome(value).expect_err("must reject");
         assert!(matches!(err, CoolError::Internal(_)));
@@ -416,26 +330,9 @@ mod tests {
         }
     }
 
-    // ----- Helpers -----
-
-    #[test]
-    fn nibble_hex_covers_all_valid_nibbles() {
-        let expected = "0123456789abcdef";
-        for (n, ch) in expected.chars().enumerate() {
-            assert_eq!(nibble_hex(n as u8), ch);
-        }
-    }
-
-    #[test]
-    fn system_time_to_ms_rejects_pre_epoch_inputs() {
-        let before = UNIX_EPOCH - std::time::Duration::from_secs(1);
-        assert!(system_time_to_ms(before).is_err());
-    }
-
     // ----- Randomized property tests -----
     //
-    // These exist to widen coverage past hand-picked inputs. They use a
-    // tiny xorshift PRNG seeded from `CRATESTACK_TEST_SEED` (or a fixed
+    // Tiny xorshift PRNG seeded from `CRATESTACK_TEST_SEED` (or a fixed
     // default) so failures are reproducible: re-run with the same env
     // var to replay the exact sequence. Every test prints its seed on
     // failure via the assertion message.
@@ -451,7 +348,6 @@ mod tests {
 
     impl XorShift64 {
         fn new(seed: u64) -> Self {
-            // Avoid the all-zero state which would lock the PRNG.
             Self(if seed == 0 { 0xDEAD_BEEF_CAFE_BABE } else { seed })
         }
         fn next_u64(&mut self) -> u64 {
@@ -479,8 +375,6 @@ mod tests {
         }
         fn next_string(&mut self, max_len: usize) -> String {
             let len = (self.next_u32() as usize) % (max_len + 1);
-            // Include `:` and NUL routinely — they're the bytes most
-            // likely to break key-derivation logic naïvely.
             const ALPHABET: &[u8] = b"abcdefghij0123456789:\0 -_";
             let mut s = String::with_capacity(len);
             for _ in 0..len {
@@ -521,9 +415,6 @@ mod tests {
 
     #[test]
     fn randomized_bucket_key_collisions_are_negligible() {
-        // SHA-256 makes a single collision astronomically unlikely, but
-        // a regression that drops or truncates the hash would show up
-        // immediately as duplicate keys in a small random sample.
         let seed = test_seed();
         let mut rng = XorShift64::new(seed);
         let store = offline_store("bank");
@@ -566,7 +457,6 @@ mod tests {
         let seed = test_seed();
         let mut rng = XorShift64::new(seed);
         for iteration in 0..200 {
-            // retry_after must be >= 1 in our wire format; clamp.
             let retry = rng.next_range(1, u32::MAX);
             let value = RedisValue::Array(vec![bulk("throttled"), bulk(&retry.to_string())]);
             let outcome = parse_consume_outcome(value).unwrap_or_else(|err| {
@@ -582,7 +472,6 @@ mod tests {
 
     #[test]
     fn randomized_parse_rejects_out_of_u32_range_remaining() {
-        // Values above u32::MAX or below 0 must error rather than wrap.
         let seed = test_seed();
         let mut rng = XorShift64::new(seed);
         for iteration in 0..50 {
@@ -593,81 +482,8 @@ mod tests {
                 "seed={seed:#x} iter={iteration} oversized={oversized}: must reject",
             ));
             assert!(matches!(err, CoolError::Internal(_)));
-        }
-    }
-
-    #[test]
-    fn randomized_normalize_key_prefix_never_emits_outer_colon_or_whitespace() {
-        let seed = test_seed();
-        let mut rng = XorShift64::new(seed);
-        for iteration in 0..200 {
-            let raw = rng.next_string(40);
-            let normalized = normalize_key_prefix(raw.clone());
-            // The fallback default is always non-empty.
-            assert!(
-                !normalized.is_empty(),
-                "seed={seed:#x} iter={iteration} raw={raw:?}: must never be empty",
-            );
-            // No leading/trailing whitespace or `:` after normalisation.
-            assert!(
-                !normalized.starts_with(':')
-                    && !normalized.ends_with(':')
-                    && !normalized.starts_with(char::is_whitespace)
-                    && !normalized.ends_with(char::is_whitespace),
-                "seed={seed:#x} iter={iteration} raw={raw:?} normalized={normalized:?}: outer noise must be stripped",
-            );
-        }
-    }
-
-    #[test]
-    fn randomized_nibble_hex_only_emits_lowercase_hex_chars() {
-        let seed = test_seed();
-        let mut rng = XorShift64::new(seed);
-        for iteration in 0..200 {
-            let byte = (rng.next_u32() & 0x0f) as u8;
-            let ch = nibble_hex(byte);
-            assert!(
-                ch.is_ascii_hexdigit() && !ch.is_ascii_uppercase(),
-                "seed={seed:#x} iter={iteration} byte={byte:#x} -> {ch}",
-            );
-        }
-    }
-
-    #[test]
-    fn randomized_next_u32_decimal_round_trips_string_form() {
-        let seed = test_seed();
-        let mut rng = XorShift64::new(seed);
-        for iteration in 0..200 {
-            let n = rng.next_u32();
-            let mut iter = vec![bulk(&n.to_string())].into_iter();
-            let parsed = next_u32_decimal(&mut iter, "x").unwrap_or_else(|err| {
-                panic!("seed={seed:#x} iter={iteration} n={n}: {err:?}")
-            });
-            assert_eq!(parsed, n);
-        }
-    }
-
-    #[test]
-    fn randomized_next_u32_decimal_rejects_garbage_bytes() {
-        let seed = test_seed();
-        let mut rng = XorShift64::new(seed);
-        for iteration in 0..50 {
-            // Random bytes that almost certainly aren't decimal numbers.
-            let bytes = rng.next_bytes(8);
-            let payload = RedisValue::BulkString(bytes.clone());
-            let mut iter = vec![payload].into_iter();
-            let result = next_u32_decimal(&mut iter, "x");
-            // Either it parses (extremely unlikely for random bytes) or
-            // it errors cleanly — must never panic.
-            if let Ok(n) = result {
-                // Sanity: if it parsed, the string form must round-trip.
-                let s = String::from_utf8(bytes).unwrap_or_default();
-                assert_eq!(
-                    s.trim().parse::<u32>().ok(),
-                    Some(n),
-                    "seed={seed:#x} iter={iteration}: accepted bytes must be a valid u32 string",
-                );
-            }
+            // Use the random byte path too, for variety.
+            let _ = rng.next_bytes(8);
         }
     }
 }
