@@ -1,16 +1,16 @@
 # cratestack-codec-json
 
-JSON codec implementation for CrateStack HTTP transport.
+JSON codec for CrateStack HTTP transport.
 
 ## Overview
 
-`cratestack-codec-json` implements the `CoolCodec` trait for JSON encoding/decoding. Useful for development, debugging, and clients that don't support CBOR.
+`cratestack-codec-json` exposes `JsonCodec`, a zero-state implementation of the `CoolCodec` trait built on `serde_json`. It is the right choice for human-readable interop and browser clients that do not negotiate CBOR.
 
 ## Installation
 
 ```toml
 [dependencies]
-cratestack-codec-json = "0.2"
+cratestack-codec-json = "0.2.2"
 ```
 
 ## Usage
@@ -20,55 +20,31 @@ use cratestack_codec_json::JsonCodec;
 use cratestack_core::CoolCodec;
 
 let codec = JsonCodec;
+let bytes = codec.encode(&("cool", "stack"))?;
+let value: (String, String) = codec.decode(&bytes)?;
 
-// Encode
-let bytes = codec.encode(&my_struct)?;
-
-// Decode
-let value: MyStruct = codec.decode(&bytes)?;
-
-// Content type
 assert_eq!(JsonCodec::CONTENT_TYPE, "application/json");
 ```
 
-## Codec Trait
-
-Implements `CoolCodec` from `cratestack-core`:
+### With generated routes
 
 ```rust
-pub trait CoolCodec {
-    const CONTENT_TYPE: &'static str;
-    fn encode<T: Serialize>(&self, value: &T) -> Result<Vec<u8>, CoolError>;
-    fn decode<T: DeserializeOwned>(&self, bytes: &[u8]) -> Result<T, CoolError>;
-}
+let router = cratestack_schema::axum::model_router(cool, JsonCodec, AppAuthProvider);
 ```
 
-## Transport Integration
-
-Use with generated routes for JSON support:
+### With the Rust client
 
 ```rust
-use cratestack_codec_json::JsonCodec;
+use cratestack_client_rust::{ClientConfig, CratestackClient, JsonCodec};
 
-let router = cratestack_schema::axum::model_router(
-    cool,
-    JsonCodec,
-    AppAuthProvider,
-);
+let base_url = url::Url::parse("https://api.example.com")?;
+let client = CratestackClient::new(ClientConfig::new(base_url), JsonCodec);
 ```
-
-## When to Use
-
-- **Development/Debugging**: JSON is human-readable
-- **Interoperability**: Clients without CBOR support
-- **Browser Clients**: Direct fetch API compatibility
-
-For production internal services, prefer `CborCodec` for better performance and smaller payloads.
 
 ## See Also
 
 - [Transport Architecture](https://cratestack.dev/architecture/transport-architecture)
-- `cratestack-codec-cbor` - CBOR codec
+- `cratestack-codec-cbor` — CBOR codec, preferred for production internal traffic
 
 ## License
 

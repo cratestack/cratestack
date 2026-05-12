@@ -1,83 +1,54 @@
 # cratestack-client-flutter
 
-Flutter integration for CrateStack clients.
+Flutter bridge runtime for CrateStack clients.
 
 ## Overview
 
-`cratestack-client-flutter` provides Flutter-specific widgets and state management integration for CrateStack clients, including offline support and FFI bridging.
+`cratestack-client-flutter` is a thin Rust crate that exposes the `cratestack-client-rust` `RuntimeHandle` through `flutter_rust_bridge`-friendly types. It is the Rust side of the architecture documented in [Offline-First with SQLite](https://cratestack.dev/guides/offline-first-sqlite): Rust owns state, persistence, and business logic; Flutter is UI only.
+
+The public surface is purely `FlutterRuntime` plus wire-shaped POD structs (`FlutterRequest`, `FlutterResponse`, `FlutterRuntimeConfig`, `FlutterStateStoreConfig`, `FlutterRuntimeError`, etc.) — no Flutter widgets, no Dart code, and no schema-specific surface. Use this crate from a host-app cdylib that exports the bridge bindings.
 
 ## Installation
 
 ```toml
 [dependencies]
-cratestack-client-flutter = "0.2"
+cratestack-client-flutter = "0.2.2"
 ```
 
-## Note
-
-This crate is designed for Flutter-over-FFI architectures where Rust handles state and business logic while Flutter is UI-only. See [Offline-First with SQLite](https://cratestack.dev/guides/offline-first-sqlite) for the architecture.
-
-## Widget Integration
-
-```dart
-import 'package:cratestack_client_flutter/cratestack_client_flutter.dart';
-
-class UserListWidget extends StatefulWidget {
-  @override
-  _UserListWidgetState createState() => _UserListWidgetState();
-}
-
-class _UserListWidgetState extends State<UserListWidget> {
-  final client = CratestackClient(
-    baseUrl: 'https://api.example.com',
-    codec: CborCodec(),
-  );
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<List<User>>(
-      future: client.users.list(limit: 10),
-      builder: (context, snapshot) {
-        if (snapshot.hasData) {
-          return ListView(
-            children: snapshot.data!
-                .map((user) => ListTile(title: Text(user.email)))
-                .toList(),
-          );
-        }
-        if (snapshot.hasError) {
-          return Text('Error: ${snapshot.error}');
-        }
-        return CircularProgressIndicator();
-      },
-    );
-  }
-}
-```
-
-## FFI Integration
-
-For on-device SQLite, use `cratestack-rusqlite` with a sync API:
+## Usage
 
 ```rust
-// Rust side (FFI)
-use cratestack::RusqliteRuntime;
-use cratestack_rusqlite::ModelDelegate;
+use cratestack_client_flutter::{
+    FlutterRuntime, FlutterRuntimeConfig, FlutterRuntimeCodec, FlutterRuntimeEnvelope,
+    FlutterRuntimeTransportConfig, FlutterStateStoreConfig, FlutterRequest,
+};
 
-#[no_mangle]
-pub extern "C" fn ffi_create_user(runtime: *mut RusqliteRuntime, input: *const c_char) -> *mut c_char {
-    // Sync API, no tokio
-    let notes = ModelDelegate::new(runtime, &NOTE_MODEL);
-    let created = notes.create(input).run()?;
-    json_response_into(&created)
-}
+let runtime = FlutterRuntime::new(FlutterRuntimeConfig {
+    base_url: "https://api.example.com".to_owned(),
+    state_store: FlutterStateStoreConfig::JsonFile { path: "/app/state.json".to_owned() },
+    transport: FlutterRuntimeTransportConfig {
+        codec: FlutterRuntimeCodec::Cbor,
+        envelope: FlutterRuntimeEnvelope::None,
+    },
+})?;
+
+let response = runtime.execute(FlutterRequest {
+    method: "GET".to_owned(),
+    path: "/api/users".to_owned(),
+    canonical_query: None,
+    headers: vec![],
+    body: vec![],
+})?;
 ```
+
+Codec options are `Cbor` and `Json`. Envelope options are `None` and `CoseSign1` (envelope wiring lives in `cratestack-client-rust`).
 
 ## See Also
 
+- `cratestack-client-rust` — underlying runtime
+- `cratestack-client-dart` — generated Dart surface
 - [Offline-First with SQLite](https://cratestack.dev/guides/offline-first-sqlite)
-- `cratestack-rusqlite` - Sync SQLite backend
-- `cratestack-client-dart` - Generated Dart client
+- [Client Runtime](https://cratestack.dev/architecture/client-runtime)
 
 ## License
 

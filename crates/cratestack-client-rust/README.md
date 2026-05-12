@@ -4,69 +4,47 @@ Rust HTTP client runtime for CrateStack services.
 
 ## Overview
 
-`cratestack-client-rust` provides a typed HTTP client for calling CrateStack services. Use `include_schema!` or `include_client_macro!` to generate the client surface.
+`cratestack-client-rust` provides the typed client runtime that `include_schema!` and `include_client_macro!` build their generated `client::Client` surfaces on top of. It owns the HTTP transport, codec negotiation, request authorization hook, and optional offline state journaling.
+
+The CBOR and JSON codecs are re-exported as `CborCodec` and `JsonCodec`.
 
 ## Installation
 
 ```toml
 [dependencies]
-cratestack-client-rust = "0.2"
+cratestack-client-rust = "0.2.2"
 tokio = { version = "1", features = ["rt-multi-thread"] }
+url = "2"
 ```
 
 ## Usage
 
-### With include_schema!
+### With `include_schema!`
 
 ```rust
 use cratestack::include_schema;
-use cratestack_client_rust::{CratestackClient, ClientConfig, CborCodec};
+use cratestack_client_rust::{CborCodec, ClientConfig, CratestackClient};
 
 include_schema!("../schemas/api.cstack");
 
-// Create client
-let runtime = CratestackClient::new(
-    ClientConfig::new("https://api.example.com"),
-    CborCodec,
-);
-
-// Generated client
+let base_url = url::Url::parse("https://api.example.com")?;
+let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec);
 let client = cratestack_schema::client::Client::new(runtime);
-
-// CRUD operations
-let users = client.users().list(&[("limit", "10")], &[]).await?;
-
-let user = client.users().get_view(
-    &user_id,
-    &User::select()
-        .id()
-        .email()
-        .include_posts(Post::include_selection().id().title()),
-    &[],
-).await?;
-
-let created = client.users().create(&CreateUserInput {
-    email: "user@example.com".to_owned(),
-    name: "Alice".to_owned(),
-}, &[]).await?;
 ```
 
-### With include_client_macro!
+### With `include_client_macro!`
 
-For standalone client packages:
+For consumer-only crates that do not own the schema's database:
 
 ```rust
 use cratestack::include_client_macro;
-use cratestack_client_rust::{CratestackClient, ClientConfig, CborCodec};
+use cratestack_client_rust::{CborCodec, ClientConfig, CratestackClient};
 
 include_client_macro!("../schemas/api.cstack");
 
-let client = cratestack_schema::client::Client::new(
-    CratestackClient::new(
-        ClientConfig::new("https://api.example.com"),
-        CborCodec,
-    )
-);
+let base_url = url::Url::parse("https://api.example.com")?;
+let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec);
+let client = cratestack_schema::client::Client::new(runtime);
 ```
 
 ## Codecs
@@ -74,31 +52,26 @@ let client = cratestack_schema::client::Client::new(
 ```rust
 use cratestack_client_rust::{CborCodec, JsonCodec};
 
-// CBOR (recommended for production)
-let client = CratestackClient::new(config, CborCodec);
-
-// JSON (for development/interop)
-let client = CratestackClient::new(config, JsonCodec);
+let cbor_client = CratestackClient::new(config.clone(), CborCodec);
+let json_client = CratestackClient::new(config, JsonCodec);
 ```
 
 ## Request Authorization
 
-Sign requests with canonical request strings:
+`with_request_authorizer` attaches an implementation of `RequestAuthorizer` that returns extra headers per call. The trait gets a canonical-request string the implementer can sign:
 
 ```rust
-use cratestack_client_rust::{RequestAuthorizer, AuthorizationRequest, ClientError};
 use std::sync::Arc;
+use cratestack_client_rust::{AuthorizationRequest, ClientError, RequestAuthorizer};
 
-struct HmacAuthorizer {
-    key: Vec<u8>,
-}
+struct HmacAuthorizer { key: Vec<u8> }
 
 impl RequestAuthorizer for HmacAuthorizer {
     fn authorize(
         &self,
         request: &AuthorizationRequest,
     ) -> Result<Vec<(String, String)>, ClientError> {
-        let sig = hmac_sha256(&self.key, request.canonical_request);
+        let sig = sign(&self.key, &request.canonical_request_string());
         Ok(vec![(
             "authorization".to_owned(),
             format!("Signature {}", hex::encode(sig)),
@@ -106,55 +79,33 @@ impl RequestAuthorizer for HmacAuthorizer {
     }
 }
 
-let client = client.with_request_authorizer(Arc::new(HmacAuthorizer::new(key)));
+let client = runtime.with_request_authorizer(Arc::new(HmacAuthorizer { key }));
 ```
 
 ## State Persistence
 
-Journal requests for offline retry:
+Journal requests for replay or offline recovery. The bundled implementations are `InMemoryStateStore` and `JsonFileStateStore`; the trait is `ClientStateStore`.
 
 ```rust
-use cratestack_client_rust::{JsonFileStateStore, ClientStateStore};
 use std::sync::Arc;
+use cratestack_client_rust::{ClientStateStore, JsonFileStateStore};
 
-let store = Arc::new(JsonFileStateStore::new("./client_state.json"));
-let client = client.with_state_store(store);
-
-// Requests are journaled; you can replay after offline recovery
+let store: Arc<dyn ClientStateStore> = Arc::new(JsonFileStateStore::new("./client_state.json"));
+let runtime = runtime.with_state_store(store);
 ```
 
-## Custom Endpoints
+`with_optional_state_store(None)` is a no-op convenience for configuration-driven setup.
 
-```rust
-// Direct HTTP calls
-let response: MyType = client
-    .get("/custom/endpoint", &[("filter", "active")], &[])
-    .await?;
-
-let response: MyType = client
-    .post("/custom/endpoint", &input, &[("x-custom", "value")])
-    .await?;
-```
-
-## Projections
-
-```rust
-// Select specific fields
-let user = client.users().get_view(
-    &user_id,
-    &User::select()
-        .id()
-        .email()
-        .include_profile(Profile::include_selection().nickname()),
-    &[],
-).await?;
-```
+For a Redis-backed store, see `cratestack-client-store-redis`. For a SQLite-backed store, see `cratestack-client-store-sqlite`.
 
 ## See Also
 
+- [Client Runtime](https://cratestack.dev/architecture/client-runtime)
 - [Transport Architecture](https://cratestack.dev/architecture/transport-architecture)
-- `cratestack-codec-cbor` - CBOR codec
-- `cratestack-codec-json` - JSON codec
+- `cratestack-codec-cbor` — CBOR codec
+- `cratestack-codec-json` — JSON codec
+- `cratestack-client-store-redis` — Redis-backed `ClientStateStore`
+- `cratestack-client-store-sqlite` — SQLite-backed `ClientStateStore`
 
 ## License
 

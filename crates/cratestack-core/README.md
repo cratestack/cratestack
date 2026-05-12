@@ -1,72 +1,71 @@
 # cratestack-core
 
-Core types, traits, and error handling shared across the CrateStack framework.
+Core types, traits, and error handling shared across the CrateStack workspace.
 
 ## Overview
 
-`cratestack-core` provides the foundational types that all other CrateStack crates depend on:
+`cratestack-core` provides the foundational types that the rest of the workspace depends on:
 
-- **Error handling**: `CoolError` with typed HTTP status codes
-- **Auth context**: `CoolContext`, `PrincipalContext`, `AuthProvider`
-- **Schema AST**: `Schema`, `Model`, `Field`, `Procedure`, etc.
-- **Audit**: `AuditEvent`, `AuditSink`, `AuditOperation`
-- **Signed envelope**: `HmacEnvelope` for request authentication
-- **Decimal**: Selectable backend (`rust_decimal` or `bigdecimal`)
-- **Event bus**: `CoolEventBus` for model lifecycle events
+- **Error handling**: `CoolError` with HTTP status mapping and operator vs. public message split
+- **Auth context**: `CoolContext`, `PrincipalContext`, `CoolAuthIdentity`, `AuthProvider`
+- **Schema AST**: `Schema`, `Model`, `Field`, `Procedure`, `MixinDecl`, `TypeDecl`, `EnumDecl`
+- **Audit**: `AuditEvent`, `AuditOperation`, `AuditActor`, `AuditSink`, `NoopAuditSink`, `MulticastAuditSink`
+- **Signed envelope**: `HmacEnvelope` (HS256), `KeyProvider`, `StaticKeyProvider`, `NonceStore`, `InMemoryNonceStore`
+- **Codec/envelope traits**: `CoolCodec`, `CoolEnvelope`, `NoEnvelope`
+- **Event bus**: `CoolEventBus`, `ModelEvent<T>`, `ModelEventKind`, `CoolEventEnvelope`
+- **Transaction isolation**: `TransactionIsolation`
+- **Decimal scalar**: `Decimal` (compile-time backend)
+- **Validators**: `validate_length`, `validate_range_i64`, `validate_range_decimal`, `validate_email`, `validate_uri`, `validate_iso4217`
 
 ## Installation
 
 ```toml
 [dependencies]
-cratestack-core = "0.2"
-
-[features]
-default = ["decimal-rust-decimal"]
+cratestack-core = "0.2.2"
 ```
+
+A `Decimal` backend feature must be selected. `decimal-rust-decimal` is the default; `decimal-bigdecimal` is reserved and not yet implemented (selecting it today is a compile error).
 
 ## Error Handling
 
-`CoolError` provides typed HTTP errors with safe public messages:
+`CoolError` returns a safe public message to clients while keeping operator-only detail for tracing.
 
 ```rust
 use cratestack_core::CoolError;
 use http::StatusCode;
 
-// 4xx - message is returned to clients
 let err = CoolError::BadRequest("missing query parameter".to_owned());
 assert_eq!(err.status_code(), StatusCode::BAD_REQUEST);
 assert_eq!(err.public_message(), "missing query parameter");
 
-// 5xx - only canned message returned, detail logged
+// 5xx variants return a fixed canned public message; the inner string flows to `detail` only.
 let err = CoolError::Database("connection refused".to_owned());
-assert_eq!(err.public_message(), "internal error"); // safe for clients
-let detail = err.detail(); // "connection refused" - operator only
+assert_eq!(err.public_message(), "internal error");
+assert_eq!(err.detail(), Some("connection refused"));
 ```
+
+Variants: `BadRequest`, `NotAcceptable`, `Unauthorized`, `UnsupportedMediaType`, `Forbidden`, `NotFound`, `Conflict`, `Validation`, `PreconditionFailed`, `Codec`, `Database`, `Internal`. The codec/database/internal variants are 5xx-mapped.
 
 ## Auth Context
 
-`CoolContext` carries the authenticated principal:
+`CoolContext` carries the authenticated principal and arbitrary host-provided extensions.
 
 ```rust
-use cratestack_core::{CoolContext, AuthProvider, RequestContext, Value};
-use http::HeaderMap;
+use cratestack_core::{CoolContext, Value};
 
-// Anonymous context
 let ctx = CoolContext::anonymous();
 
-// Authenticated from principal
-let ctx = CoolContext::from_principal(serde_json::json!({
+let ctx = CoolContext::from_principal(Some(serde_json::json!({
     "id": "usr_123",
     "role": "admin",
     "tenant": { "id": "org_456" }
-}));
+})))?;
 
-// Access claims
 assert_eq!(ctx.auth_field("id"), Some(&Value::String("usr_123".to_owned())));
 assert_eq!(ctx.tenant_id(), Some("org_456"));
 ```
 
-### AuthProvider Trait
+### AuthProvider
 
 Host applications implement `AuthProvider` to resolve auth from HTTP requests:
 
@@ -80,39 +79,19 @@ impl AuthProvider for MyAuthProvider {
     type Error = CoolError;
 
     async fn authenticate(&self, request: &RequestContext<'_>) -> Result<CoolContext, Self::Error> {
-        // Resolve from headers, cookies, bearer tokens, etc.
         let token = request.headers
             .get("authorization")
             .and_then(|v| v.to_str().ok())
             .ok_or_else(|| CoolError::Unauthorized("missing token".to_owned()))?;
-        
-        // Validate token and build context
-        let principal = validate_token(token)?;
-        Ok(CoolContext::from_principal(Some(principal))?)
+        // Validate and project into CoolContext...
+        Ok(CoolContext::anonymous())
     }
 }
 ```
 
-## Schema AST
-
-Parsed `.cstack` representation:
-
-```rust
-use cratestack_core::Schema;
-
-let schema: Schema = /* parsed from cratestack-parser */;
-
-for model in &schema.models {
-    println!("model {}", model.name);
-    for field in &model.fields {
-        println!("  {}: {:?}", field.name, field.ty);
-    }
-}
-```
+`AuthProvider` is also implemented blanket for any `Fn(&HeaderMap) -> Result<CoolContext, E>` closure.
 
 ## Audit Events
-
-Record model mutations for compliance:
 
 ```rust
 use cratestack_core::{AuditEvent, AuditOperation, AuditActor};
@@ -137,14 +116,13 @@ let event = AuditEvent {
 };
 ```
 
+`AuditSink` is an async trait. The bundled implementations are `NoopAuditSink` and `MulticastAuditSink`. The in-database table written by `cratestack-sqlx` is treated as the canonical record; sinks are best-effort projections.
+
 ## Decimal Backend
 
-Select at compile time:
-
 ```toml
-[features]
-default = ["decimal-rust-decimal"]  # 128-bit fixed precision
-# decimal-bigdecimal = ["cratestack-core/decimal-bigdecimal"]  # arbitrary precision
+[dependencies]
+cratestack-core = { version = "0.2.2", features = ["decimal-rust-decimal"] }
 ```
 
 ```rust
@@ -155,14 +133,25 @@ let amount: Decimal = "123.45".parse()?;
 
 ## Transaction Isolation
 
-PostgreSQL isolation levels for procedures:
-
 ```rust
 use cratestack_core::TransactionIsolation;
 
 let isolation = TransactionIsolation::parse("serializable")?;
 assert_eq!(isolation.as_sql(), "SERIALIZABLE");
 ```
+
+Accepts `read_committed` / `read committed`, `repeatable_read` / `repeatable read`, and `serializable`.
+
+## Signed Envelope (HMAC-SHA-256)
+
+`HmacEnvelope<K: KeyProvider>` implements `CoolEnvelope` for HS256-signed messages. Production multi-replica deployments back the `NonceStore` with Redis so replay rejection holds cluster-wide.
+
+## See Also
+
+- [Auth Provider guide](https://cratestack.dev/guides/auth-provider)
+- [Audit Log guide](https://cratestack.dev/guides/audit-log)
+- [Transaction Isolation guide](https://cratestack.dev/guides/transaction-isolation)
+- [Validators guide](https://cratestack.dev/guides/validators)
 
 ## License
 

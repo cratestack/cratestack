@@ -1,137 +1,73 @@
 # cratestack-client-typescript
 
-TypeScript client generator for CrateStack services.
+TypeScript package generator for CrateStack services.
 
 ## Overview
 
-`cratestack-client-typescript` generates a complete TypeScript package from a `.cstack` schema, including typed models, fetch-based client, and React Query hooks.
+`cratestack-client-typescript` renders a TypeScript package from a parsed `.cstack` schema. It exposes a single `generate_package` entry point used by `cratestack-cli`'s `generate-typescript` subcommand (alias `generate-ts`).
+
+The generator uses `minijinja` templates. A custom `template_dir` overrides individual templates; missing files fall back to the bundled defaults.
 
 ## Installation
 
-This is a build-time dependency used by the CLI:
+This is a build-time crate. End users typically invoke it through the CLI:
 
 ```bash
-cratestack generate-typescript --schema schema.cstack --out ./ts_client --name my-api-client
+cratestack generate-typescript \
+  --schema schemas/catalog.cstack \
+  --out packages/catalog-client \
+  --package-name @example/catalog-client \
+  --base-path /api
 ```
 
-## Generated Package Structure
+To call the generator from Rust:
 
-```
-my-api-client/
-├── package.json
-├── tsconfig.json
-├── src/
-│   ├── index.ts
-│   ├── runtime.ts       # Fetch wrapper, codec support
-│   ├── models.ts        # Generated interfaces
-│   ├── client.ts        # API client
-│   ├── queries.ts       # Selection builders
-│   └── react-query.ts   # React Query hooks
-└── README.md
+```toml
+[dependencies]
+cratestack-client-typescript = "0.2.2"
+cratestack-parser = "0.2.2"
 ```
 
-## Generated Types
+```rust
+use cratestack_client_typescript::{TypeScriptGeneratorConfig, generate_package};
 
-```typescript
-export interface User {
-  id: string;
-  email: string;
-  name?: string;
-  createdAt: string;
-}
-
-export interface CreateUserInput {
-  email: string;
-  name?: string;
-}
-
-export interface UserSelect {
-  id?: boolean;
-  email?: boolean;
-  name?: boolean;
-  includePosts?: PostInclude;
-}
+let schema = cratestack_parser::parse_schema_file("schema.cstack")?;
+let package = generate_package(&schema, &TypeScriptGeneratorConfig {
+    package_name: "@example/catalog-client".to_owned(),
+    base_path: "/api".to_owned(),
+    template_dir: None,
+})?;
 ```
 
-## Client Usage
+## Generated Package Layout
 
-```typescript
-import { createClient } from 'my-api-client';
-import { CborCodec } from 'my-api-client/runtime';
-
-const client = createClient({
-  baseUrl: 'https://api.example.com',
-  codec: new CborCodec(),
-});
-
-// List
-const users = await client.users.list({ limit: 10 });
-
-// Get with projection
-const user = await client.users.getView('usr_123', {
-  id: true,
-  email: true,
-  includePosts: { id: true, title: true },
-});
-
-// Create
-const created = await client.users.create({
-  email: 'user@example.com',
-  name: 'Alice',
-});
+```
+package.json
+tsconfig.json
+README.md
+src/
+  index.ts
+  runtime.ts
+  models.ts
+  client.ts
+  queries.ts
+  react-query.ts
 ```
 
-## React Query Hooks
+Generated content covers:
 
-```typescript
-import { useUsersList, useUserGet } from 'my-api-client/react-query';
-
-function UserList() {
-  const { data, isLoading, error } = useUsersList({ limit: 10 });
-
-  if (isLoading) return <div>Loading...</div>;
-  if (error) return <div>Error: {error.message}</div>;
-
-  return (
-    <ul>
-      {data.map(user => <li key={user.id}>{user.email}</li>)}
-    </ul>
-  );
-}
-
-function UserDetail({ id }: { id: string }) {
-  const { data: user } = useUserGet(id, {
-    id: true,
-    email: true,
-    includePosts: { id: true, title: true },
-  });
-
-  return <div>{user?.email}</div>;
-}
-```
-
-## Codecs
-
-```typescript
-import { CborCodec, JsonCodec } from 'my-api-client/runtime';
-
-// CBOR (recommended for production)
-const client = createClient({
-  baseUrl: 'https://api.example.com',
-  codec: new CborCodec(),
-});
-
-// JSON (for development/debugging)
-const client = createClient({
-  baseUrl: 'https://api.example.com',
-  codec: new JsonCodec(),
-});
-```
+- model and input types
+- enum types
+- a framework-neutral fetch client
+- selection / include builders for projection
+- TanStack Query hooks for React and React Native consumers
+- projection helpers for the generated route query params
 
 ## See Also
 
-- `cratestack-client-rust` - Rust client
-- `cratestack-cli` - CLI for code generation
+- `cratestack-cli` — `generate-typescript` command
+- `cratestack-client-rust` — Rust client runtime
+- [Transport Architecture](https://cratestack.dev/architecture/transport-architecture)
 
 ## License
 

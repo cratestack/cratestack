@@ -1,36 +1,31 @@
 # cratestack
 
-Schema-first Rust framework for typed HTTP APIs, generated clients, and backend services.
+Schema-first Rust framework for typed HTTP APIs, generated clients, and backend services. This is the public facade crate that re-exports the workspace's runtime crates and proc-macros under a single entry point.
 
 ## Overview
 
 CrateStack turns a single `.cstack` schema file into a fully-typed server and optional on-device storage layer:
 
-- **Compile-time schema validation** via `include_schema!`
-- **Generated delegates** for SQLx (Postgres) and rusqlite (SQLite on-device)
-- **Generated Axum routes** for CRUD and custom procedures
-- **Generated clients** for Rust, Dart, and TypeScript
-- **Banking-grade primitives**: idempotency, audit log, optimistic locking, rate limiting, soft delete
+- compile-time schema validation via `include_schema!`
+- generated delegates over SQLx (Postgres, async) and rusqlite (SQLite, sync, on-device)
+- generated Axum routes for model CRUD and procedures
+- generated Rust, Dart, and TypeScript clients
+- opt-in primitives for banking-style workloads: idempotency, audit log, optimistic locking, rate limiting, soft delete, transaction isolation
 
 ## Installation
 
 ```toml
 [dependencies]
-cratestack = "0.2"
+cratestack = "0.2.2"
 ```
 
-Select a Decimal backend (required):
+A `Decimal` backend feature must be selected. `decimal-rust-decimal` is the default; `decimal-bigdecimal` is reserved and not yet implemented.
 
-```toml
-[features]
-default = ["decimal-rust-decimal"]
-# or for arbitrary precision:
-# decimal-bigdecimal = ["cratestack/decimal-bigdecimal"]
-```
+For FIPS-validated TLS, enable `crypto-aws-lc-rs` (the binding glue still lives in the host service — `install_fips_crypto_provider()` surfaces a clear error when the feature is missing).
 
 ## Quickstart
 
-### 1. Define a schema
+### Define a schema
 
 ```cstack
 auth Principal {
@@ -45,18 +40,18 @@ mixin AuditFields {
 
 model Post {
   @use(AuditFields)
-  
+
   id String @id
   title String
   published Boolean @default(false)
   authorId String
-  
+
   @@allow("read", auth() != null)
   @@allow("update", auth().id == authorId)
 }
 ```
 
-### 2. Include the schema
+### Include the schema
 
 ```rust
 use cratestack::include_schema;
@@ -64,17 +59,20 @@ use cratestack::include_schema;
 include_schema!("schema.cstack");
 ```
 
-### 3. Build the runtime
+### Build the runtime
 
 ```rust
 let pool = sqlx::PgPool::connect(&std::env::var("DATABASE_URL")?).await?;
-let cool = cratestack_schema::CrateStack::builder(pool).build();
+let cool = cratestack_schema::Cratestack::builder(pool).build();
 ```
 
-### 4. Use delegates directly
+### Use delegates
 
 ```rust
-// Query with filters
+use cratestack::CoolContext;
+
+let ctx = CoolContext::anonymous();
+
 let posts = cool
     .post()
     .find_many()
@@ -88,9 +86,14 @@ let posts = cool
     .await?;
 ```
 
-### 5. Mount generated routes (optional)
+`bind_auth` / `bind_context` produce a `BoundCratestack` that captures the auth context once and drops the trailing `ctx` argument on each call.
+
+### Mount generated routes
 
 ```rust
+use cratestack::axum;
+use cratestack_codec_cbor::CborCodec;
+
 let app = axum::Router::new().nest(
     "/api",
     cratestack_schema::axum::model_router(cool.clone(), CborCodec, AppAuthProvider),
@@ -99,52 +102,60 @@ let app = axum::Router::new().nest(
 
 ## Two Backends
 
-| Backend | Crate | Use Case |
-|---------|-------|----------|
-| Postgres | `cratestack-sqlx` | Server-side, async, policy enforcement |
-| SQLite | `cratestack-rusqlite` | On-device, sync, offline-first mobile |
+| Backend  | Crate                  | Use case                                    |
+|----------|------------------------|---------------------------------------------|
+| Postgres | `cratestack-sqlx`      | Server-side, async, full policy enforcement |
+| SQLite   | `cratestack-rusqlite`  | On-device, sync, offline-first mobile       |
 
-Both consume the same `.cstack` schema and shared primitives from `cratestack-sql`.
+Both consume the same `.cstack` schema and share the primitives in `cratestack-sql`.
 
 ## Banking-Grade Primitives
 
 All opt-in:
 
-- **Idempotency**: `IdempotencyLayer` prevents duplicate execution under retries
-- **Optimistic locking**: `@version` field with ETag/If-Match round-trip
-- **Audit log**: `@@audit` model attribute with pluggable `AuditSink`
-- **Rate limiting**: `RateLimitLayer` per principal
-- **Soft delete**: `@@soft_delete` model attribute
-- **Transaction isolation**: `@isolation("serializable")` on procedures
+- **Idempotency** — `IdempotencyLayer` (cratestack-axum) plus `SqlxIdempotencyStore` for at-most-once execution under retries
+- **Optimistic locking** — `@version` field with `If-Match` / `ETag` round-trip and `if_match(...)` on update builders
+- **Audit log** — `@@audit` on a model, written inside the same transaction as the mutation; fan-out via `AuditSink`
+- **Rate limiting** — `RateLimitLayer` per principal (cratestack-axum)
+- **Soft delete** — `@@soft_delete` model attribute
+- **Transaction isolation** — `@isolation("serializable")` on procedures, plus `run_in_isolated_tx` / `run_in_isolated_tx_with_retries`
 
 ## Offline-First Mobile
 
-The same schema compiles for on-device SQLite:
+The same schema compiles for on-device SQLite. `cratestack-rusqlite` is a sync API with no `tokio` and no policy enforcement (the device is single-user):
 
 ```rust
-let runtime = cratestack::RusqliteRuntime::open("app.db")?;
-let notes = ModelDelegate::new(&runtime, &cratestack_schema::NOTE_MODEL);
+use cratestack::{RusqliteRuntime, rusqlite_backend::ddl::create_table_sql};
+use cratestack_rusqlite::ModelDelegate;
 
-let created = notes.create(input).run()?; // sync, no tokio
+let runtime = RusqliteRuntime::open("app.db")?;
+runtime.with_connection(|conn| {
+    conn.execute_batch(&create_table_sql(&cratestack_schema::NOTE_MODEL))?;
+    Ok(())
+})?;
+
+let notes = ModelDelegate::new(&runtime, &cratestack_schema::NOTE_MODEL);
+let created = notes.create(/* CreateNoteInput { ... } */).run()?;
 ```
 
 ## Workspace Crates
 
-| Crate | Purpose |
-|-------|---------|
-| `cratestack-core` | Core types: `CoolError`, `CoolContext`, `Schema`, etc. |
-| `cratestack-parser` | `.cstack` parser and validator |
-| `cratestack-macros` | `include_schema!` proc-macro |
-| `cratestack-policy` | Policy predicate types |
-| `cratestack-sql` | Dialect-agnostic SQL primitives |
-| `cratestack-sqlx` | Postgres delegates (async) |
-| `cratestack-rusqlite` | SQLite delegates (sync, on-device) |
-| `cratestack-axum` | Axum route generation |
-| `cratestack-codec-cbor` | CBOR codec |
-| `cratestack-codec-json` | JSON codec |
-| `cratestack-client-rust` | Rust HTTP client runtime |
-| `cratestack-client-dart` | Dart package generator |
-| `cratestack-client-typescript` | TypeScript package generator |
+| Crate                            | Purpose                                                    |
+|----------------------------------|------------------------------------------------------------|
+| `cratestack-core`                | Core types: `CoolError`, `CoolContext`, `Schema`, audit    |
+| `cratestack-parser`              | `.cstack` parser and semantic checker                      |
+| `cratestack-macros`              | `include_schema!`, `include_client_macro!`                 |
+| `cratestack-policy`              | Policy literal/predicate types and procedure evaluation    |
+| `cratestack-sql`                 | Dialect-agnostic SQL primitives shared by both backends    |
+| `cratestack-sqlx`                | Postgres delegates (async)                                 |
+| `cratestack-rusqlite`            | SQLite delegates (sync, on-device)                         |
+| `cratestack-axum`                | Axum route generation, idempotency/ratelimit middleware    |
+| `cratestack-codec-cbor`          | CBOR codec                                                 |
+| `cratestack-codec-json`          | JSON codec                                                 |
+| `cratestack-client-rust`         | Rust HTTP client runtime                                   |
+| `cratestack-client-dart`         | Dart package generator                                     |
+| `cratestack-client-typescript`   | TypeScript package generator                               |
+| `cratestack-redis`               | Redis-backed idempotency store                             |
 
 ## Documentation
 
@@ -153,6 +164,7 @@ let created = notes.create(input).run()?; // sync, no tokio
 - [Banking Readiness](https://cratestack.dev/overview/banking-readiness)
 - [Auth Provider](https://cratestack.dev/guides/auth-provider)
 - [Transport Architecture](https://cratestack.dev/architecture/transport-architecture)
+- [Offline-First SQLite](https://cratestack.dev/guides/offline-first-sqlite)
 
 ## License
 
