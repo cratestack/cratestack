@@ -23,7 +23,6 @@ use axum::extract::Request;
 use axum::response::Response;
 use cratestack_core::CoolError;
 use http::{HeaderValue, StatusCode, header};
-use sha2::{Digest, Sha256};
 use tower::{Layer, Service};
 
 /// Configuration for a single bucket: capacity (max burst) and refill rate
@@ -148,15 +147,10 @@ impl RateLimitLayer {
 }
 
 fn default_key_fn(req: &Request) -> String {
-    req.headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .map(|s| {
-            let mut h = Sha256::new();
-            h.update(s.as_bytes());
-            format!("auth:{:x}", h.finalize())
-        })
-        .unwrap_or_else(|| "anonymous".to_owned())
+    // `auth:` prefix keeps the rate-limit bucket keyspace distinct from
+    // any future per-tenant / per-IP keyspace that callers might layer on
+    // via `with_key_fn`.
+    crate::principal_fingerprint(req, "auth")
 }
 
 impl<S> Layer<S> for RateLimitLayer {

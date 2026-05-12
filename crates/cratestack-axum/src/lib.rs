@@ -3,6 +3,38 @@ pub use axum;
 pub mod idempotency;
 pub mod ratelimit;
 
+use sha2::{Digest, Sha256};
+
+/// Derive a stable, namespaced fingerprint of the caller from the
+/// `Authorization` header. Both the idempotency and rate-limit middlewares
+/// scope per-principal state and used to maintain byte-identical
+/// SHA-256-of-Authorization functions that differed only in their string
+/// prefix. This single helper takes the prefix as a parameter so each
+/// caller's keyspace stays distinct.
+///
+/// Layout: `"<prefix>:<sha256_hex(authorization)>"` when the header is
+/// present (or just the hex digest if `prefix` is empty), and the bare
+/// string `"anonymous"` when it's absent. The anonymous fallback is
+/// intentionally NOT prefixed — both pre-extraction implementations
+/// returned plain `"anonymous"` for the no-auth case, and that is the
+/// keyspace contract callers rely on.
+pub fn principal_fingerprint(req: &axum::extract::Request, prefix: &str) -> String {
+    let Some(value) = req
+        .headers()
+        .get(http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+    else {
+        return "anonymous".to_owned();
+    };
+    let mut hasher = Sha256::new();
+    hasher.update(value.as_bytes());
+    if prefix.is_empty() {
+        format!("{:x}", hasher.finalize())
+    } else {
+        format!("{prefix}:{:x}", hasher.finalize())
+    }
+}
+
 use axum::body::Body;
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::Response;
@@ -237,44 +269,6 @@ where
     C: CoolCodec,
 {
     validate_accept_header::<C>(headers)
-}
-
-pub fn validate_transport_request_headers<T>(
-    transport: &T,
-    headers: &HeaderMap,
-) -> Result<(), CoolError>
-where
-    T: HttpTransport,
-{
-    validate_transport_request_headers_for(
-        transport,
-        headers,
-        &RouteTransportCapabilities {
-            request_types: &[],
-            response_types: &[],
-            default_response_type: "",
-            supports_sequence_response: false,
-        },
-    )
-}
-
-pub fn validate_transport_response_headers<T>(
-    transport: &T,
-    headers: &HeaderMap,
-) -> Result<(), CoolError>
-where
-    T: HttpTransport,
-{
-    validate_transport_response_headers_for(
-        transport,
-        headers,
-        &RouteTransportCapabilities {
-            request_types: &[],
-            response_types: &[],
-            default_response_type: "",
-            supports_sequence_response: false,
-        },
-    )
 }
 
 pub fn validate_transport_request_headers_for<T>(
@@ -665,53 +659,6 @@ where
     encode_codec_result_with_status(codec, StatusCode::OK, result)
 }
 
-pub fn encode_transport_result<TTransport, TValue>(
-    transport: &TTransport,
-    headers: &HeaderMap,
-    result: Result<TValue, CoolError>,
-) -> Response
-where
-    TTransport: HttpTransport,
-    TValue: Serialize,
-{
-    encode_transport_result_with_status_for(
-        transport,
-        headers,
-        &RouteTransportCapabilities {
-            request_types: &[],
-            response_types: &[],
-            default_response_type: "",
-            supports_sequence_response: false,
-        },
-        StatusCode::OK,
-        result,
-    )
-}
-
-pub fn encode_transport_result_with_status<TTransport, TValue>(
-    transport: &TTransport,
-    headers: &HeaderMap,
-    success_status: StatusCode,
-    result: Result<TValue, CoolError>,
-) -> Response
-where
-    TTransport: HttpTransport,
-    TValue: Serialize,
-{
-    encode_transport_result_with_status_for(
-        transport,
-        headers,
-        &RouteTransportCapabilities {
-            request_types: &[],
-            response_types: &[],
-            default_response_type: "",
-            supports_sequence_response: false,
-        },
-        success_status,
-        result,
-    )
-}
-
 pub fn encode_transport_result_with_status_for<TTransport, TValue>(
     transport: &TTransport,
     headers: &HeaderMap,
@@ -743,53 +690,6 @@ where
                 .unwrap_or_else(fallback_error_response)
         }
     }
-}
-
-pub fn encode_transport_sequence_result<TTransport, TValue>(
-    transport: &TTransport,
-    headers: &HeaderMap,
-    result: Result<Vec<TValue>, CoolError>,
-) -> Response
-where
-    TTransport: HttpTransport,
-    TValue: Serialize,
-{
-    encode_transport_sequence_result_with_status_for(
-        transport,
-        headers,
-        &RouteTransportCapabilities {
-            request_types: &[],
-            response_types: &[],
-            default_response_type: "",
-            supports_sequence_response: false,
-        },
-        StatusCode::OK,
-        result,
-    )
-}
-
-pub fn encode_transport_sequence_result_with_status<TTransport, TValue>(
-    transport: &TTransport,
-    headers: &HeaderMap,
-    success_status: StatusCode,
-    result: Result<Vec<TValue>, CoolError>,
-) -> Response
-where
-    TTransport: HttpTransport,
-    TValue: Serialize,
-{
-    encode_transport_sequence_result_with_status_for(
-        transport,
-        headers,
-        &RouteTransportCapabilities {
-            request_types: &[],
-            response_types: &[],
-            default_response_type: "",
-            supports_sequence_response: false,
-        },
-        success_status,
-        result,
-    )
 }
 
 pub fn encode_transport_sequence_result_with_status_for<TTransport, TValue>(

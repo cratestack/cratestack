@@ -31,6 +31,10 @@ use http::{Method, StatusCode, header};
 use sha2::{Digest, Sha256};
 use tower::{Layer, Service};
 
+// `Digest` is still in scope: `hash_request` builds its own SHA-256 hasher
+// directly. The shared `principal_fingerprint` helper in `crate::` handles
+// the Authorization-header hashing that used to live in this module.
+
 /// Maximum body size the middleware will buffer when computing the hash. A
 /// request beyond this returns 413 rather than risking unbounded memory.
 const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
@@ -313,15 +317,9 @@ impl IdempotencyLayer {
 }
 
 fn default_principal_fingerprint(req: &Request) -> String {
-    req.headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .map(|s| {
-            let mut h = Sha256::new();
-            h.update(s.as_bytes());
-            format!("{:x}", h.finalize())
-        })
-        .unwrap_or_else(|| "anonymous".to_owned())
+    // No prefix: the idempotency store treats each `(principal_fingerprint,
+    // key)` pair as unique on its own, no namespacing needed.
+    crate::principal_fingerprint(req, "")
 }
 
 impl<S> Layer<S> for IdempotencyLayer {
