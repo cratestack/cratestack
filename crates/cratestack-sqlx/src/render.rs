@@ -29,7 +29,7 @@ pub(crate) fn render_scoped_select_sql<M, PK>(
     let mut sql = format!(
         "SELECT {} FROM {}",
         descriptor.select_projection(),
-        descriptor.table_name,
+        descriptor.table.table_name,
     );
     let dialect = PostgresDialect;
 
@@ -44,16 +44,16 @@ pub(crate) fn render_scoped_select_sql<M, PK>(
             render_filter_exprs(&mut sink, filters);
         }
         let has_user_clause = !filters.is_empty();
-        let has_policy = !descriptor.read_allow_policies.is_empty()
-            || !descriptor.read_deny_policies.is_empty();
+        let has_policy = !descriptor.auth.read_allow_policies.is_empty()
+            || !descriptor.auth.read_deny_policies.is_empty();
         if has_user_clause && has_policy {
             sink.push_sql(" AND (");
         }
         if has_policy {
             render_action_policy(
                 &mut sink,
-                descriptor.read_allow_policies,
-                descriptor.read_deny_policies,
+                descriptor.auth.read_allow_policies,
+                descriptor.auth.read_deny_policies,
                 ctx,
             );
         }

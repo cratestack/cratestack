@@ -81,8 +81,8 @@ impl<'a, M: 'static, PK: 'static> ModelDelegate<'a, M, PK> {
             self.runtime,
             self.descriptor,
             id,
-            self.descriptor.detail_allow_policies,
-            self.descriptor.detail_deny_policies,
+            self.descriptor.auth.detail_allow_policies,
+            self.descriptor.auth.detail_deny_policies,
             ctx,
             "detail",
         )
@@ -97,8 +97,8 @@ impl<'a, M: 'static, PK: 'static> ModelDelegate<'a, M, PK> {
             self.runtime,
             self.descriptor,
             id,
-            self.descriptor.update_allow_policies,
-            self.descriptor.update_deny_policies,
+            self.descriptor.auth.update_allow_policies,
+            self.descriptor.auth.update_deny_policies,
             ctx,
             "update",
         )
@@ -113,8 +113,8 @@ impl<'a, M: 'static, PK: 'static> ModelDelegate<'a, M, PK> {
             self.runtime,
             self.descriptor,
             id,
-            self.descriptor.delete_allow_policies,
-            self.descriptor.delete_deny_policies,
+            self.descriptor.auth.delete_allow_policies,
+            self.descriptor.auth.delete_deny_policies,
             ctx,
             "delete",
         )

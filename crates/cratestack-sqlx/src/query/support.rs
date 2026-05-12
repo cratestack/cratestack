@@ -51,7 +51,7 @@ pub(crate) fn push_scoped_conditions<'a, M, PK, Id>(
     // Soft-delete filter: hide tombstoned rows from every read. Banks treat
     // the audit log as the source of truth for what changed; this just
     // prevents deleted rows from leaking back into list/get responses.
-    if let Some(col) = descriptor.soft_delete_column {
+    if let Some(col) = descriptor.lifecycle.soft_delete_column {
         query.push(col).push(" IS NULL");
         wrote_clause = true;
     }
@@ -77,8 +77,8 @@ pub(crate) fn push_scoped_conditions<'a, M, PK, Id>(
     }
     push_action_policy_query(
         query,
-        descriptor.read_allow_policies,
-        descriptor.read_deny_policies,
+        descriptor.auth.read_allow_policies,
+        descriptor.auth.read_deny_policies,
         ctx,
     );
 }
@@ -168,9 +168,9 @@ where
 {
     let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT 1 FROM ");
     query
-        .push(descriptor.table_name)
+        .push(descriptor.table.table_name)
         .push(" WHERE ")
-        .push(descriptor.primary_key)
+        .push(descriptor.table.primary_key)
         .push(" = ");
     query.push_bind(id);
     query.push(" AND ");

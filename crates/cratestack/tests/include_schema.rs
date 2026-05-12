@@ -853,14 +853,15 @@ fn generated_model_descriptor_exposes_query_contract_metadata() {
     let descriptor = &cratestack_schema::models::POST_MODEL;
 
     assert_eq!(
-        descriptor.allowed_fields,
+        descriptor.query.allowed_fields,
         &["id", "title", "subtitle", "published", "authorId"]
     );
-    assert_eq!(descriptor.allowed_includes, &["author"]);
-    assert!(descriptor.allowed_sorts.contains(&"id"));
-    assert!(descriptor.allowed_sorts.contains(&"author.email"));
+    assert_eq!(descriptor.query.allowed_includes, &["author"]);
+    assert!(descriptor.query.allowed_sorts.contains(&"id"));
+    assert!(descriptor.query.allowed_sorts.contains(&"author.email"));
     assert!(
         descriptor
+            .query
             .allowed_sorts
             .contains(&"author.profile.nickname")
     );

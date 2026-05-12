@@ -76,7 +76,7 @@ where
 
         format!(
             "INSERT INTO {} ({}) VALUES ({}) RETURNING {}",
-            self.descriptor.table_name,
+            self.descriptor.table.table_name,
             columns,
             placeholders,
             self.descriptor.select_projection(),
@@ -88,7 +88,7 @@ where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
     {
         let emits_event = self.descriptor.emits(ModelEventKind::Created);
-        let audit_enabled = self.descriptor.audit_enabled;
+        let audit_enabled = self.descriptor.audit.audit_enabled;
         let needs_tx = emits_event || audit_enabled;
         let record = if needs_tx {
             let mut tx = self
@@ -114,7 +114,7 @@ where
             if emits_event {
                 enqueue_event_outbox(
                     &mut *tx,
-                    self.descriptor.schema_name,
+                    self.descriptor.table.schema_name,
                     ModelEventKind::Created,
                     &record,
                 )
@@ -193,9 +193,9 @@ where
         let values = self.input.sql_values();
         let columns: Vec<&str> = values.iter().map(|v| v.column).collect();
         render_update_preview_sql(
-            self.descriptor.table_name,
-            self.descriptor.primary_key,
-            self.descriptor.version_column,
+            self.descriptor.table.table_name,
+            self.descriptor.table.primary_key,
+            self.descriptor.lifecycle.version_column,
             &columns,
             &self.descriptor.select_projection(),
         )
@@ -206,13 +206,13 @@ where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
         PK: Send + Clone + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
-        if self.descriptor.version_column.is_some() && self.if_match.is_none() {
+        if self.descriptor.lifecycle.version_column.is_some() && self.if_match.is_none() {
             return Err(CoolError::PreconditionFailed(
                 "If-Match header required for versioned model".to_owned(),
             ));
         }
         let emits_event = self.descriptor.emits(ModelEventKind::Updated);
-        let audit_enabled = self.descriptor.audit_enabled;
+        let audit_enabled = self.descriptor.audit.audit_enabled;
         let needs_tx = emits_event || audit_enabled;
         let record = if needs_tx {
             let mut tx = self
@@ -250,7 +250,7 @@ where
             if emits_event {
                 enqueue_event_outbox(
                     &mut *tx,
-                    self.descriptor.schema_name,
+                    self.descriptor.table.schema_name,
                     ModelEventKind::Updated,
                     &record,
                 )
@@ -303,8 +303,8 @@ impl<'a, M: 'static, PK: 'static> DeleteRecord<'a, M, PK> {
     pub fn preview_sql(&self) -> String {
         format!(
             "DELETE FROM {} WHERE {} = $1 RETURNING {}",
-            self.descriptor.table_name,
-            self.descriptor.primary_key,
+            self.descriptor.table.table_name,
+            self.descriptor.table.primary_key,
             self.descriptor.select_projection(),
         )
     }
@@ -315,7 +315,7 @@ impl<'a, M: 'static, PK: 'static> DeleteRecord<'a, M, PK> {
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
         let emits_event = self.descriptor.emits(ModelEventKind::Deleted);
-        let audit_enabled = self.descriptor.audit_enabled;
+        let audit_enabled = self.descriptor.audit.audit_enabled;
         let needs_tx = emits_event || audit_enabled;
         let record = if needs_tx {
             let mut tx = self
@@ -335,7 +335,7 @@ impl<'a, M: 'static, PK: 'static> DeleteRecord<'a, M, PK> {
             if emits_event {
                 enqueue_event_outbox(
                     &mut *tx,
-                    self.descriptor.schema_name,
+                    self.descriptor.table.schema_name,
                     ModelEventKind::Deleted,
                     &record,
                 )
@@ -378,7 +378,7 @@ where
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
 {
     input.validate()?;
-    let mut values = apply_create_defaults(input.sql_values(), descriptor.create_defaults, ctx)?;
+    let mut values = apply_create_defaults(input.sql_values(), descriptor.lifecycle.create_defaults, ctx)?;
     // Seed the optimistic-lock column server-side. `@version` is excluded
     // from the generated Create input so clients can't pick the initial
     // value, and the column has no SQL `DEFAULT`. If we didn't write it
@@ -386,7 +386,7 @@ where
     // DB-level default is set, which we don't require) or fail under
     // `NOT NULL`. Done after `apply_create_defaults` so @default-driven
     // overrides still win if a schema ever lands one.
-    if let Some(version_col) = descriptor.version_column
+    if let Some(version_col) = descriptor.lifecycle.version_column
         && find_column_value(&values, version_col).is_none()
     {
         values.push(crate::SqlColumnValue {
@@ -401,8 +401,8 @@ where
     }
     if !evaluate_create_policies(
         policy_pool,
-        descriptor.create_allow_policies,
-        descriptor.create_deny_policies,
+        descriptor.auth.create_allow_policies,
+        descriptor.auth.create_deny_policies,
         &values,
         ctx,
     )
@@ -461,7 +461,7 @@ where
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
 {
     let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("INSERT INTO ");
-    query.push(descriptor.table_name).push(" (");
+    query.push(descriptor.table.table_name).push(" (");
     for (index, value) in values.iter().enumerate() {
         if index > 0 {
             query.push(", ");
@@ -500,9 +500,9 @@ where
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
     PK: Send + Clone + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
 {
-    let version_column = descriptor.version_column;
+    let version_column = descriptor.lifecycle.version_column;
     let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("UPDATE ");
-    query.push(descriptor.table_name).push(" SET ");
+    query.push(descriptor.table.table_name).push(" SET ");
     for (index, value) in values.iter().enumerate() {
         if index > 0 {
             query.push(", ");
@@ -520,7 +520,7 @@ where
     }
     query
         .push(" WHERE ")
-        .push(descriptor.primary_key)
+        .push(descriptor.table.primary_key)
         .push(" = ");
     let id_for_probe = id.clone();
     query.push_bind(id);
@@ -531,8 +531,8 @@ where
     query.push(" AND ");
     push_action_policy_query(
         &mut query,
-        descriptor.update_allow_policies,
-        descriptor.update_deny_policies,
+        descriptor.auth.update_allow_policies,
+        descriptor.auth.update_deny_policies,
         ctx,
     );
     query
@@ -587,17 +587,17 @@ where
 {
     let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT ");
     query.push(version_col);
-    query.push(" FROM ").push(descriptor.table_name);
+    query.push(" FROM ").push(descriptor.table.table_name);
     query
         .push(" WHERE ")
-        .push(descriptor.primary_key)
+        .push(descriptor.table.primary_key)
         .push(" = ");
     query.push_bind(id);
     query.push(" AND ");
     push_action_policy_query(
         &mut query,
-        descriptor.read_allow_policies,
-        descriptor.read_deny_policies,
+        descriptor.auth.read_allow_policies,
+        descriptor.auth.read_deny_policies,
         ctx,
     );
 
@@ -621,13 +621,13 @@ where
     PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
 {
     let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("");
-    match descriptor.soft_delete_column {
+    match descriptor.lifecycle.soft_delete_column {
         Some(col) => {
             // Soft-delete: tombstone the row and bump version (if any) so
             // optimistic-lock semantics on subsequent updates stay coherent.
-            query.push("UPDATE ").push(descriptor.table_name);
+            query.push("UPDATE ").push(descriptor.table.table_name);
             query.push(" SET ").push(col).push(" = NOW()");
-            if let Some(version_col) = descriptor.version_column {
+            if let Some(version_col) = descriptor.lifecycle.version_column {
                 query
                     .push(", ")
                     .push(version_col)
@@ -637,21 +637,21 @@ where
             }
             query.push(" WHERE ");
             query.push(col).push(" IS NULL AND ");
-            query.push(descriptor.primary_key).push(" = ");
+            query.push(descriptor.table.primary_key).push(" = ");
             query.push_bind(id);
         }
         None => {
-            query.push("DELETE FROM ").push(descriptor.table_name);
+            query.push("DELETE FROM ").push(descriptor.table.table_name);
             query.push(" WHERE ");
-            query.push(descriptor.primary_key).push(" = ");
+            query.push(descriptor.table.primary_key).push(" = ");
             query.push_bind(id);
         }
     }
     query.push(" AND ");
     push_action_policy_query(
         &mut query,
-        descriptor.delete_allow_policies,
-        descriptor.delete_deny_policies,
+        descriptor.auth.delete_allow_policies,
+        descriptor.auth.delete_deny_policies,
         ctx,
     );
     query

@@ -52,7 +52,7 @@ impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
         let mut sql = format!(
             "SELECT {} FROM {}",
             self.descriptor.select_projection(),
-            self.descriptor.table_name,
+            self.descriptor.table.table_name,
         );
         let order_by = self.effective_order_by();
 
@@ -114,7 +114,7 @@ impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
         query
             .push(self.descriptor.select_projection())
             .push(" FROM ")
-            .push(self.descriptor.table_name);
+            .push(self.descriptor.table.table_name);
 
         push_scoped_conditions(
             &mut query,
@@ -144,12 +144,12 @@ impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
 
         if order_by
             .iter()
-            .any(|clause| clause.targets_column(self.descriptor.primary_key))
+            .any(|clause| clause.targets_column(self.descriptor.table.primary_key))
         {
             return order_by;
         }
 
-        order_by.push(OrderClause::column(self.descriptor.primary_key, direction));
+        order_by.push(OrderClause::column(self.descriptor.table.primary_key, direction));
         order_by
     }
 }
@@ -166,8 +166,8 @@ impl<'a, M: 'static, PK: 'static> FindUnique<'a, M, PK> {
         format!(
             "SELECT {} FROM {} WHERE {} = $1 LIMIT 1",
             self.descriptor.select_projection(),
-            self.descriptor.table_name,
-            self.descriptor.primary_key,
+            self.descriptor.table.table_name,
+            self.descriptor.table.primary_key,
         )
     }
 
@@ -175,23 +175,23 @@ impl<'a, M: 'static, PK: 'static> FindUnique<'a, M, PK> {
         let mut sql = format!(
             "SELECT {} FROM {}",
             self.descriptor.select_projection(),
-            self.descriptor.table_name,
+            self.descriptor.table.table_name,
         );
         let mut bind_index = 1usize;
         if let Some(policy_clause) = render_read_policy_sql(
-            self.descriptor.detail_allow_policies,
-            self.descriptor.detail_deny_policies,
+            self.descriptor.auth.detail_allow_policies,
+            self.descriptor.auth.detail_deny_policies,
             ctx,
             &mut bind_index,
         ) {
             sql.push_str(&format!(
                 " WHERE ({policy_clause}) AND {} = ${bind_index} LIMIT 1",
-                self.descriptor.primary_key
+                self.descriptor.table.primary_key
             ));
         } else {
             sql.push_str(&format!(
                 " WHERE {} = ${bind_index} LIMIT 1",
-                self.descriptor.primary_key
+                self.descriptor.table.primary_key
             ));
         }
         sql
@@ -206,12 +206,12 @@ impl<'a, M: 'static, PK: 'static> FindUnique<'a, M, PK> {
         query
             .push(self.descriptor.select_projection())
             .push(" FROM ")
-            .push(self.descriptor.table_name);
+            .push(self.descriptor.table.table_name);
         push_scoped_conditions(
             &mut query,
             self.descriptor,
             &[],
-            Some((self.descriptor.primary_key, self.id)),
+            Some((self.descriptor.table.primary_key, self.id)),
             ctx,
         );
         query.push(" LIMIT 1");

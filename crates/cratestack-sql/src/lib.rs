@@ -21,7 +21,10 @@ pub mod policy_render;
 pub mod render;
 mod values;
 
-pub use descriptor::{CreateDefault, CreateDefaultType, ModelColumn, ModelDescriptor};
+pub use descriptor::{
+    AuditConfig, AuthPolicies, CreateDefault, CreateDefaultType, LifecycleConfig, ModelColumn,
+    ModelDescriptor, QueryCapabilities, TableMeta,
+};
 pub use dialect::{Dialect, PostgresDialect, SqliteDialect};
 pub use filter::{
     FieldRef, Filter, FilterExpr, FilterOp, RelationFilter, RelationQuantifier,

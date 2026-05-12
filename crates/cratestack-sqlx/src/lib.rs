@@ -19,9 +19,10 @@ pub use migrations::{
 
 pub use cratestack_policy::{PolicyExpr, PolicyLiteral, ReadPolicy, ReadPredicate};
 pub use cratestack_sql::{
-    CreateDefault, CreateDefaultType, CreateModelInput, FieldRef, Filter, FilterExpr,
-    IntoSqlValue, ModelColumn, ModelDescriptor, OrderClause, RelationFilter, RelationQuantifier,
-    SortDirection, SqlColumnValue, SqlValue, UpdateModelInput,
+    AuditConfig, AuthPolicies, CreateDefault, CreateDefaultType, CreateModelInput, FieldRef,
+    Filter, FilterExpr, IntoSqlValue, LifecycleConfig, ModelColumn, ModelDescriptor, OrderClause,
+    QueryCapabilities, RelationFilter, RelationQuantifier, SortDirection, SqlColumnValue,
+    SqlValue, TableMeta, UpdateModelInput,
 };
 pub use delegate::{
     ModelDelegate, ScopedCreateRecord, ScopedDeleteRecord, ScopedFindMany, ScopedFindUnique,

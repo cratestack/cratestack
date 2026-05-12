@@ -34,13 +34,13 @@ pub fn render_select<M, PK>(
     let mut sql = format!(
         "SELECT {} FROM {}",
         descriptor.select_projection(),
-        descriptor.table_name,
+        descriptor.table.table_name,
     );
     let mut binds: Vec<SqlValue> = Vec::new();
     let mut where_sql = String::new();
     let mut soft_delete_active = false;
 
-    if let Some(deleted_at) = descriptor.soft_delete_column {
+    if let Some(deleted_at) = descriptor.lifecycle.soft_delete_column {
         let _ = write!(&mut where_sql, "{deleted_at} IS NULL");
         soft_delete_active = true;
     }
@@ -74,11 +74,11 @@ pub fn render_select_by_pk<M, PK>(
     let mut sql = format!(
         "SELECT {} FROM {} WHERE {} = ",
         descriptor.select_projection(),
-        descriptor.table_name,
-        descriptor.primary_key,
+        descriptor.table.table_name,
+        descriptor.table.primary_key,
     );
     dialect.write_placeholder(&mut sql, 1);
-    if let Some(deleted_at) = descriptor.soft_delete_column {
+    if let Some(deleted_at) = descriptor.lifecycle.soft_delete_column {
         let _ = write!(&mut sql, " AND {deleted_at} IS NULL");
     }
     (sql, vec![id])
@@ -92,7 +92,7 @@ pub fn render_insert<M, PK>(
     descriptor: &ModelDescriptor<M, PK>,
     values: &[SqlColumnValue],
 ) -> (String, Vec<SqlValue>) {
-    let mut sql = format!("INSERT INTO {} (", descriptor.table_name);
+    let mut sql = format!("INSERT INTO {} (", descriptor.table.table_name);
     for (idx, value) in values.iter().enumerate() {
         if idx > 0 {
             sql.push_str(", ");
@@ -121,7 +121,7 @@ pub fn render_update<M, PK>(
     set: &[SqlColumnValue],
     id: SqlValue,
 ) -> (String, Vec<SqlValue>) {
-    let mut sql = format!("UPDATE {} SET ", descriptor.table_name);
+    let mut sql = format!("UPDATE {} SET ", descriptor.table.table_name);
     let mut binds = Vec::with_capacity(set.len() + 1);
     let mut bind_index = 1usize;
     for (idx, value) in set.iter().enumerate() {
@@ -133,7 +133,7 @@ pub fn render_update<M, PK>(
         bind_index += 1;
         binds.push(value.value.clone());
     }
-    let _ = write!(&mut sql, " WHERE {} = ", descriptor.primary_key);
+    let _ = write!(&mut sql, " WHERE {} = ", descriptor.table.primary_key);
     dialect.write_placeholder(&mut sql, bind_index);
     binds.push(id);
     sql.push_str(" RETURNING ");
@@ -149,10 +149,10 @@ pub fn render_delete<M, PK>(
     id: SqlValue,
     now: chrono::DateTime<chrono::Utc>,
 ) -> (String, Vec<SqlValue>) {
-    if let Some(deleted_at) = descriptor.soft_delete_column {
-        let mut sql = format!("UPDATE {} SET {deleted_at} = ", descriptor.table_name);
+    if let Some(deleted_at) = descriptor.lifecycle.soft_delete_column {
+        let mut sql = format!("UPDATE {} SET {deleted_at} = ", descriptor.table.table_name);
         dialect.write_placeholder(&mut sql, 1);
-        let _ = write!(&mut sql, " WHERE {} = ", descriptor.primary_key);
+        let _ = write!(&mut sql, " WHERE {} = ", descriptor.table.primary_key);
         dialect.write_placeholder(&mut sql, 2);
         sql.push_str(" RETURNING ");
         sql.push_str(&descriptor.select_projection());
@@ -161,7 +161,7 @@ pub fn render_delete<M, PK>(
 
     let mut sql = format!(
         "DELETE FROM {} WHERE {} = ",
-        descriptor.table_name, descriptor.primary_key,
+        descriptor.table.table_name, descriptor.table.primary_key,
     );
     dialect.write_placeholder(&mut sql, 1);
     sql.push_str(" RETURNING ");
@@ -172,7 +172,10 @@ pub fn render_delete<M, PK>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cratestack_sql::{FieldRef, FilterExpr, ModelColumn, SortDirection, SqliteDialect};
+    use cratestack_sql::{
+        AuditConfig, AuthPolicies, FieldRef, FilterExpr, LifecycleConfig, ModelColumn,
+        QueryCapabilities, SortDirection, SqliteDialect, TableMeta,
+    };
 
     fn fixture_descriptor() -> ModelDescriptor<(), i64> {
         const COLUMNS: &[ModelColumn] = &[
@@ -181,37 +184,47 @@ mod tests {
             ModelColumn { rust_name: "published", sql_name: "published" },
         ];
         ModelDescriptor::new(
-            "Post",
-            "posts",
-            COLUMNS,
-            "id",
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            None,
-            false,
-            &[],
-            &[],
-            None,
-            None,
+            TableMeta {
+                schema_name: "Post",
+                table_name: "posts",
+                columns: COLUMNS,
+                primary_key: "id",
+            },
+            QueryCapabilities {
+                allowed_fields: &[],
+                allowed_includes: &[],
+                allowed_sorts: &[],
+            },
+            AuthPolicies {
+                read_allow_policies: &[],
+                read_deny_policies: &[],
+                detail_allow_policies: &[],
+                detail_deny_policies: &[],
+                create_allow_policies: &[],
+                create_deny_policies: &[],
+                update_allow_policies: &[],
+                update_deny_policies: &[],
+                delete_allow_policies: &[],
+                delete_deny_policies: &[],
+            },
+            AuditConfig {
+                audit_enabled: false,
+                pii_columns: &[],
+                sensitive_columns: &[],
+            },
+            LifecycleConfig {
+                create_defaults: &[],
+                emitted_events: &[],
+                version_column: None,
+                soft_delete_column: None,
+                retention_days: None,
+            },
         )
     }
 
     fn soft_delete_descriptor() -> ModelDescriptor<(), i64> {
         let mut d = fixture_descriptor();
-        d.soft_delete_column = Some("deleted_at");
+        d.lifecycle.soft_delete_column = Some("deleted_at");
         d
     }
 

@@ -12,7 +12,10 @@ use cratestack_rusqlite::{
         OperationKind, OperationRequest, OperationResponse, json_request_from, json_response_into,
     },
 };
-use cratestack_sql::{ModelColumn, ModelDescriptor};
+use cratestack_sql::{
+    AuditConfig, AuthPolicies, LifecycleConfig, ModelColumn, ModelDescriptor, QueryCapabilities,
+    TableMeta,
+};
 use rusqlite::Row;
 use serde::{Deserialize, Serialize};
 
@@ -88,8 +91,41 @@ const COLUMNS: &[ModelColumn] = &[
 ];
 
 static TAG_DESCRIPTOR: ModelDescriptor<Tag, String> = ModelDescriptor::new(
-    "Tag", "tags", COLUMNS, "id", &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[],
-    &[], &[], None, false, &[], &[], None, None,
+    TableMeta {
+        schema_name: "Tag",
+        table_name: "tags",
+        columns: COLUMNS,
+        primary_key: "id",
+    },
+    QueryCapabilities {
+        allowed_fields: &[],
+        allowed_includes: &[],
+        allowed_sorts: &[],
+    },
+    AuthPolicies {
+        read_allow_policies: &[],
+        read_deny_policies: &[],
+        detail_allow_policies: &[],
+        detail_deny_policies: &[],
+        create_allow_policies: &[],
+        create_deny_policies: &[],
+        update_allow_policies: &[],
+        update_deny_policies: &[],
+        delete_allow_policies: &[],
+        delete_deny_policies: &[],
+    },
+    AuditConfig {
+        audit_enabled: false,
+        pii_columns: &[],
+        sensitive_columns: &[],
+    },
+    LifecycleConfig {
+        create_defaults: &[],
+        emitted_events: &[],
+        version_column: None,
+        soft_delete_column: None,
+        retention_days: None,
+    },
 );
 
 // --- the dispatcher --------------------------------------------------------

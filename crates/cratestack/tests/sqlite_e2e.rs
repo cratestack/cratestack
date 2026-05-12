@@ -201,7 +201,7 @@ fn descriptor_columns_match_model_field_order() {
     // the same columns the FromRusqliteRow impl reads, in the same order.
     // If someone reshuffles either side, this test catches it.
     let projection = ACCOUNT_MODEL.select_projection();
-    for column in ACCOUNT_MODEL.columns {
+    for column in ACCOUNT_MODEL.table.columns {
         assert!(
             projection.contains(column.sql_name),
             "projection {projection} missing column {}",

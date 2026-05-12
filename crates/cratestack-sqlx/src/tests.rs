@@ -1,4 +1,7 @@
-use cratestack_sql::{FilterValue, OrderTarget};
+use cratestack_sql::{
+    AuditConfig, AuthPolicies, FilterValue, LifecycleConfig, OrderTarget, QueryCapabilities,
+    TableMeta,
+};
 
 use crate::{
     FieldRef, FilterExpr, ModelColumn, ModelDescriptor, OrderClause, PolicyExpr, ReadPolicy,
@@ -11,40 +14,50 @@ use cratestack_core::{CoolContext, Value};
 #[test]
 fn select_projection_aliases_sql_columns_to_rust_fields() {
     let descriptor = ModelDescriptor::<(), i64>::new(
-        "Post",
-        "posts",
-        &[
-            ModelColumn {
-                rust_name: "id",
-                sql_name: "id",
-            },
-            ModelColumn {
-                rust_name: "authorId",
-                sql_name: "author_id",
-            },
-        ],
-        "id",
-        &["id", "authorId"],
-        &["author"],
-        &["id", "authorId", "author.email"],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        None,
-        false,
-        &[],
-        &[],
-        None,
-        None,
+        TableMeta {
+            schema_name: "Post",
+            table_name: "posts",
+            columns: &[
+                ModelColumn {
+                    rust_name: "id",
+                    sql_name: "id",
+                },
+                ModelColumn {
+                    rust_name: "authorId",
+                    sql_name: "author_id",
+                },
+            ],
+            primary_key: "id",
+        },
+        QueryCapabilities {
+            allowed_fields: &["id", "authorId"],
+            allowed_includes: &["author"],
+            allowed_sorts: &["id", "authorId", "author.email"],
+        },
+        AuthPolicies {
+            read_allow_policies: &[],
+            read_deny_policies: &[],
+            detail_allow_policies: &[],
+            detail_deny_policies: &[],
+            create_allow_policies: &[],
+            create_deny_policies: &[],
+            update_allow_policies: &[],
+            update_deny_policies: &[],
+            delete_allow_policies: &[],
+            delete_deny_policies: &[],
+        },
+        AuditConfig {
+            audit_enabled: false,
+            pii_columns: &[],
+            sensitive_columns: &[],
+        },
+        LifecycleConfig {
+            create_defaults: &[],
+            emitted_events: &[],
+            version_column: None,
+            soft_delete_column: None,
+            retention_days: None,
+        },
     );
 
     assert_eq!(

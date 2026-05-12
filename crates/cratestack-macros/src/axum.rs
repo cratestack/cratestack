@@ -690,7 +690,7 @@ pub(crate) fn generate_model_axum_handlers(
         ) -> Result<(), CoolError> {
             if let Some(fields) = &selection.fields {
                 for field in fields {
-                    if !descriptor.allowed_fields.contains(&field.as_str()) {
+                    if !descriptor.query.allowed_fields.contains(&field.as_str()) {
                         return Err(CoolError::Validation(format!(
                             "unsupported fields selection '{}' for {}",
                             field,
@@ -728,7 +728,7 @@ pub(crate) fn generate_model_axum_handlers(
                 .split_once('.')
                 .map(|(direct, rest)| (direct, Some(rest)))
                 .unwrap_or((include, None));
-            if !descriptor.allowed_includes.contains(&direct) {
+            if !descriptor.query.allowed_includes.contains(&direct) {
                 return Err(CoolError::Validation(format!(
                     "unsupported include selection '{}' for {}",
                     include,
@@ -751,7 +751,7 @@ pub(crate) fn generate_model_axum_handlers(
                 .split_once('.')
                 .map(|(direct, rest)| (direct, Some(rest)))
                 .unwrap_or((include, None));
-            if !descriptor.allowed_includes.contains(&direct) {
+            if !descriptor.query.allowed_includes.contains(&direct) {
                 return Err(CoolError::Validation(format!(
                     "unsupported includeFields selection '{}' for {}",
                     include,
@@ -892,7 +892,7 @@ pub(crate) fn generate_model_axum_handlers(
                         None => (false, raw_term),
                     };
 
-                    if !descriptor.allowed_sorts.contains(&field_name) {
+                    if !descriptor.query.allowed_sorts.contains(&field_name) {
                         return Err(CoolError::Validation(format!(
                             "unsupported sort field '{}' for {}",
                             field_name,

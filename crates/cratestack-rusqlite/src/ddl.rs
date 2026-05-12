@@ -36,19 +36,20 @@ use cratestack_sql::ModelDescriptor;
 pub fn create_table_sql<M, PK>(descriptor: &ModelDescriptor<M, PK>) -> String {
     let mut sql = format!(
         "CREATE TABLE IF NOT EXISTS {} (\n",
-        descriptor.table_name
+        descriptor.table.table_name
     );
-    for (idx, column) in descriptor.columns.iter().enumerate() {
+    for (idx, column) in descriptor.table.columns.iter().enumerate() {
         if idx > 0 {
             sql.push_str(",\n");
         }
         let _ = write!(&mut sql, "    {} BLOB", column.sql_name);
-        if column.sql_name == descriptor.primary_key {
+        if column.sql_name == descriptor.table.primary_key {
             sql.push_str(" PRIMARY KEY");
         }
     }
-    if let Some(deleted_at) = descriptor.soft_delete_column {
+    if let Some(deleted_at) = descriptor.lifecycle.soft_delete_column {
         if !descriptor
+            .table
             .columns
             .iter()
             .any(|c| c.sql_name == deleted_at)
@@ -65,7 +66,9 @@ pub fn create_table_sql<M, PK>(descriptor: &ModelDescriptor<M, PK>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cratestack_sql::ModelColumn;
+    use cratestack_sql::{
+        AuditConfig, AuthPolicies, LifecycleConfig, ModelColumn, QueryCapabilities, TableMeta,
+    };
 
     fn descriptor() -> ModelDescriptor<(), i64> {
         const COLUMNS: &[ModelColumn] = &[
@@ -73,31 +76,41 @@ mod tests {
             ModelColumn { rust_name: "title", sql_name: "title" },
         ];
         ModelDescriptor::new(
-            "Post",
-            "posts",
-            COLUMNS,
-            "id",
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            None,
-            false,
-            &[],
-            &[],
-            None,
-            None,
+            TableMeta {
+                schema_name: "Post",
+                table_name: "posts",
+                columns: COLUMNS,
+                primary_key: "id",
+            },
+            QueryCapabilities {
+                allowed_fields: &[],
+                allowed_includes: &[],
+                allowed_sorts: &[],
+            },
+            AuthPolicies {
+                read_allow_policies: &[],
+                read_deny_policies: &[],
+                detail_allow_policies: &[],
+                detail_deny_policies: &[],
+                create_allow_policies: &[],
+                create_deny_policies: &[],
+                update_allow_policies: &[],
+                update_deny_policies: &[],
+                delete_allow_policies: &[],
+                delete_deny_policies: &[],
+            },
+            AuditConfig {
+                audit_enabled: false,
+                pii_columns: &[],
+                sensitive_columns: &[],
+            },
+            LifecycleConfig {
+                create_defaults: &[],
+                emitted_events: &[],
+                version_column: None,
+                soft_delete_column: None,
+                retention_days: None,
+            },
         )
     }
 
@@ -111,7 +124,7 @@ mod tests {
     #[test]
     fn soft_delete_column_is_added_when_not_in_columns() {
         let mut d = descriptor();
-        d.soft_delete_column = Some("deleted_at");
+        d.lifecycle.soft_delete_column = Some("deleted_at");
         let sql = create_table_sql(&d);
         assert!(sql.contains("deleted_at BLOB"), "got: {sql}");
     }

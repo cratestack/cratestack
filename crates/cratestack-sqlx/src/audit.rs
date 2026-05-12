@@ -120,21 +120,21 @@ pub(crate) fn build_audit_event<M, PK>(
     let primary_key = after
         .as_ref()
         .or(before.as_ref())
-        .map(|snapshot| primary_key_from_snapshot(snapshot, descriptor.primary_key))
+        .map(|snapshot| primary_key_from_snapshot(snapshot, descriptor.table.primary_key))
         .unwrap_or(serde_json::Value::Null);
     let before = before.map(|mut snapshot| {
         redact_snapshot(
             &mut snapshot,
-            descriptor.pii_columns,
-            descriptor.sensitive_columns,
+            descriptor.audit.pii_columns,
+            descriptor.audit.sensitive_columns,
         );
         snapshot
     });
     let after = after.map(|mut snapshot| {
         redact_snapshot(
             &mut snapshot,
-            descriptor.pii_columns,
-            descriptor.sensitive_columns,
+            descriptor.audit.pii_columns,
+            descriptor.audit.sensitive_columns,
         );
         snapshot
     });
@@ -144,7 +144,7 @@ pub(crate) fn build_audit_event<M, PK>(
         // ident; we surface it as `model`. A separate `schema_name` will be
         // wired in when the parser exposes a schema-wide label.
         schema_name: String::new(),
-        model: descriptor.schema_name.to_owned(),
+        model: descriptor.table.schema_name.to_owned(),
         operation,
         primary_key,
         actor: actor_from_context(ctx),
@@ -208,10 +208,10 @@ where
 {
     let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT ");
     query.push(descriptor.select_projection());
-    query.push(" FROM ").push(descriptor.table_name);
+    query.push(" FROM ").push(descriptor.table.table_name);
     query
         .push(" WHERE ")
-        .push(descriptor.primary_key)
+        .push(descriptor.table.primary_key)
         .push(" = ");
     query.push_bind(id);
     query.push(" FOR UPDATE");

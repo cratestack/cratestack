@@ -10,7 +10,10 @@ use cratestack_rusqlite::{
     CreateModelInput, FromRusqliteRow, ModelDelegate, RusqliteRuntime, SqlColumnValue, SqlValue,
     UpdateModelInput, ddl::create_table_sql,
 };
-use cratestack_sql::{FieldRef, ModelColumn, ModelDescriptor};
+use cratestack_sql::{
+    AuditConfig, AuthPolicies, FieldRef, LifecycleConfig, ModelColumn, ModelDescriptor,
+    QueryCapabilities, TableMeta,
+};
 use rusqlite::Row;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -92,31 +95,41 @@ const COLUMNS: &[ModelColumn] = &[
 ];
 
 static POST_DESCRIPTOR: ModelDescriptor<Post, i64> = ModelDescriptor::new(
-    "Post",
-    "posts",
-    COLUMNS,
-    "id",
-    &[],
-    &[],
-    &[],
-    &[],
-    &[],
-    &[],
-    &[],
-    &[],
-    &[],
-    &[],
-    &[],
-    &[],
-    &[],
-    &[],
-    &[],
-    None,
-    false,
-    &[],
-    &[],
-    None,
-    None,
+    TableMeta {
+        schema_name: "Post",
+        table_name: "posts",
+        columns: COLUMNS,
+        primary_key: "id",
+    },
+    QueryCapabilities {
+        allowed_fields: &[],
+        allowed_includes: &[],
+        allowed_sorts: &[],
+    },
+    AuthPolicies {
+        read_allow_policies: &[],
+        read_deny_policies: &[],
+        detail_allow_policies: &[],
+        detail_deny_policies: &[],
+        create_allow_policies: &[],
+        create_deny_policies: &[],
+        update_allow_policies: &[],
+        update_deny_policies: &[],
+        delete_allow_policies: &[],
+        delete_deny_policies: &[],
+    },
+    AuditConfig {
+        audit_enabled: false,
+        pii_columns: &[],
+        sensitive_columns: &[],
+    },
+    LifecycleConfig {
+        create_defaults: &[],
+        emitted_events: &[],
+        version_column: None,
+        soft_delete_column: None,
+        retention_days: None,
+    },
 );
 
 fn setup() -> RusqliteRuntime {
