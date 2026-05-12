@@ -1,11 +1,11 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OrderClause {
-    pub(crate) target: OrderTarget,
-    pub(crate) direction: SortDirection,
+    pub target: OrderTarget,
+    pub direction: SortDirection,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum OrderTarget {
+pub enum OrderTarget {
     Column(&'static str),
     RelationScalar {
         parent_table: &'static str,
@@ -44,15 +44,15 @@ impl OrderClause {
         }
     }
 
-    pub(crate) fn is_relation_scalar(&self) -> bool {
+    pub fn is_relation_scalar(&self) -> bool {
         matches!(self.target, OrderTarget::RelationScalar { .. })
     }
 
-    pub(crate) fn targets_column(&self, column: &str) -> bool {
+    pub fn targets_column(&self, column: &str) -> bool {
         matches!(self.target, OrderTarget::Column(candidate) if candidate == column)
     }
 
-    pub(crate) fn direction(&self) -> SortDirection {
+    pub fn direction(&self) -> SortDirection {
         self.direction
     }
 }

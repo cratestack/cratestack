@@ -26,6 +26,17 @@ pub use cratestack_sqlx::{
     ensure_migrations_table, status,
 };
 pub use cratestack_sqlx::{run_in_isolated_tx, run_in_isolated_tx_with_retries};
+
+// On-device SQLite backend. Always compiled in for now — Phase 4's choice
+// (keep both backends always available) trades binary size on the server
+// for a single uniform API across server and device. A future feature flag
+// can hide rusqlite for size-sensitive builds.
+pub use cratestack_rusqlite::{
+    DateTimeColumn, DecimalColumn, FromRusqliteRow, JsonColumn, RusqliteError, RusqliteRuntime,
+    SqlValueParam, UuidColumn, rusqlite,
+};
+pub use cratestack_rusqlite as rusqlite_backend;
+
 pub use regex;
 pub use serde;
 pub use serde_json;

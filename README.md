@@ -8,6 +8,9 @@ The implementation is still pre-1.0. The current slice focuses on:
 * compile-time Rust code generation through `include_schema!`
 * client-only Rust code generation through `include_client_macro!`
 * SQLx-backed PostgreSQL delegate scaffolding
+* on-device SQLite backend (`cratestack-rusqlite`) for offline-first
+  mobile/embedded apps over FFI — same `.cstack` schemas, sync API,
+  no policy enforcement on device
 * generated Axum model and procedure routes
 * generated model and procedure policy enforcement
 * first-party CBOR and JSON codecs
@@ -20,7 +23,7 @@ The implementation is still pre-1.0. The current slice focuses on:
 
 | `.cstack` capability | Status | Notes |
 | --- | --- | --- |
-| `datasource` | Supported | `provider` currently expects `postgresql` |
+| `datasource` | Supported | `provider` accepts `postgresql` (server) or `sqlite` (on-device) |
 | `auth` | Supported | Single auth block |
 | `mixin` | Supported | Reusable field sets for models |
 | `model` | Supported | Includes relation and policy attributes in current slice |
@@ -39,7 +42,9 @@ The Rust workspace contains these main packages:
 * `cratestack-parser`: `.cstack` parser and semantic checker
 * `cratestack-policy`: canonical policy literals, predicates, and procedure-policy evaluation types
 * `cratestack-macros`: compile-time schema and client generation
-* `cratestack-sqlx`: SQLx runtime and query/delegate primitives
+* `cratestack-sql`: dialect-agnostic SQL primitives shared by both backends
+* `cratestack-sqlx`: SQLx-backed Postgres runtime and query/delegate primitives
+* `cratestack-rusqlite`: on-device SQLite backend (sync, no tokio, no policies)
 * `cratestack-axum`: generated route integration helpers
 * `cratestack-client-rust`: generated Rust client runtime
 * `cratestack-client-dart`: Dart package generator
@@ -184,6 +189,44 @@ let client = cratestack_schema::client::Client::new(runtime);
 ```
 
 Generated Rust clients serialize the same HTTP projection contract used by generated routes, including `fields`, `include`, `includeFields[path]`, `sort`, `limit`, `offset`, and grouped `where` expressions.
+
+## On-Device SQLite (Offline-First)
+
+The same `.cstack` schema that drives the server can also drive an on-device SQLite database. This is built for offline-first mobile/embedded apps where the architecture is "Rust as real frontend, Flutter (or another UI toolkit) as UI only" — Rust handles state, persistence, and business logic; the UI talks to Rust over FFI.
+
+What's different from the server path:
+
+* **Sync API** — `cratestack-rusqlite` uses `rusqlite` with bundled SQLite, no `tokio`, no async. Smaller mobile binaries and friendlier FFI bridging.
+* **No policy enforcement** — the device is single-user; authorization is the app's concern, not the storage layer's. The renderer skips the policy clauses your `.cstack` declares.
+* **Bundled SQLite** — works on iOS and Android out of the box; no system SQLite version to wrangle.
+
+Minimal usage:
+
+```rust
+use cratestack::include_schema;
+use cratestack::{RusqliteRuntime, rusqlite_backend::ddl::create_table_sql};
+use cratestack_rusqlite::ModelDelegate;
+
+include_schema!("schema.cstack");
+
+let runtime = RusqliteRuntime::open("app.db")?;
+runtime.with_connection(|conn| {
+    conn.execute_batch(&create_table_sql(&cratestack_schema::NOTE_MODEL))?;
+    Ok(())
+})?;
+
+let notes = ModelDelegate::new(&runtime, &cratestack_schema::NOTE_MODEL);
+let created = notes.create(/* CreateNoteInput { ... } */).run()?;
+let row = notes.find_unique(created.id).run()?;
+```
+
+Worked examples (all runnable via `cargo run --example <name> -p cratestack`):
+
+* `sqlite_quickstart` — open in-memory DB, single model, full CRUD
+* `sqlite_offline_first` — file-backed DB, two models, `Decimal` money, filtering & ordering
+* `sqlite_ffi_dispatch` — JSON-bytes FFI boundary, the dispatcher template to copy into your `flutter_rust_bridge` glue
+
+The Flutter side is per-app — `cratestack-rusqlite` provides the storage layer and an `OperationRequest`/`OperationResponse` envelope; the actual cdylib + FFI bindings live in your mobile app crate.
 
 ## Generated HTTP Routes
 

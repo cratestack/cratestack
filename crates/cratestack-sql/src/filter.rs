@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 pub use cratestack_policy::RelationQuantifier;
 
-use crate::{IntoSqlValue, SqlValue, order::OrderTarget, values::FilterValue};
+use crate::{IntoSqlValue, OrderClause, SortDirection, SqlValue, order::OrderTarget, values::FilterValue};
 
 #[derive(Debug, Clone, Copy)]
 pub struct FieldRef<M, T> {
@@ -18,17 +18,17 @@ impl<M, T> FieldRef<M, T> {
         }
     }
 
-    pub fn asc(self) -> crate::OrderClause {
-        crate::OrderClause {
+    pub fn asc(self) -> OrderClause {
+        OrderClause {
             target: OrderTarget::Column(self.column),
-            direction: crate::SortDirection::Asc,
+            direction: SortDirection::Asc,
         }
     }
 
-    pub fn desc(self) -> crate::OrderClause {
-        crate::OrderClause {
+    pub fn desc(self) -> OrderClause {
+        OrderClause {
             target: OrderTarget::Column(self.column),
-            direction: crate::SortDirection::Desc,
+            direction: SortDirection::Desc,
         }
     }
 }
@@ -144,9 +144,9 @@ impl<M> FieldRef<M, Option<String>> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Filter {
-    pub(crate) column: &'static str,
-    pub(crate) op: FilterOp,
-    pub(crate) value: FilterValue,
+    pub column: &'static str,
+    pub op: FilterOp,
+    pub value: FilterValue,
 }
 
 impl Filter {
@@ -177,12 +177,12 @@ impl Filter {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RelationFilter {
-    pub(crate) quantifier: RelationQuantifier,
-    pub(crate) parent_table: &'static str,
-    pub(crate) parent_column: &'static str,
-    pub(crate) related_table: &'static str,
-    pub(crate) related_column: &'static str,
-    pub(crate) filter: Box<FilterExpr>,
+    pub quantifier: RelationQuantifier,
+    pub parent_table: &'static str,
+    pub parent_column: &'static str,
+    pub related_table: &'static str,
+    pub related_column: &'static str,
+    pub filter: Box<FilterExpr>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -344,7 +344,7 @@ impl FilterExpr {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FilterOp {
+pub enum FilterOp {
     Eq,
     Ne,
     Lt,

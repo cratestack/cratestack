@@ -1,10 +1,10 @@
+use cratestack_sql::{FilterValue, OrderTarget};
+
 use crate::{
     FieldRef, FilterExpr, ModelColumn, ModelDescriptor, OrderClause, PolicyExpr, ReadPolicy,
     ReadPredicate, SortDirection, SqlColumnValue, SqlValue,
-    order::OrderTarget,
     query::render_update_preview_sql,
     render::{render_filter_expr_sql, render_order_clause_sql, render_read_policy_sql},
-    values::FilterValue,
 };
 use cratestack_core::{CoolContext, Value};
 

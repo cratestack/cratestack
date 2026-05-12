@@ -1,0 +1,24 @@
+datasource db {
+  provider = "sqlite"
+  url = env("DATABASE_URL")
+}
+
+auth Anonymous {
+  id Int
+}
+
+model Account {
+  id Uuid @id
+  ownerName String
+  balance Decimal
+  active Boolean
+  openedAt DateTime
+}
+
+model Transfer {
+  id Uuid @id
+  accountId Uuid
+  amount Decimal
+  memo String
+  createdAt DateTime
+}

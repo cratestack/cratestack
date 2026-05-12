@@ -507,6 +507,7 @@ dependencies = [
  "cratestack-macros",
  "cratestack-parser",
  "cratestack-policy",
+ "cratestack-rusqlite",
  "cratestack-sqlx",
  "minicbor-serde",
  "regex",
@@ -717,6 +718,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "cratestack-rusqlite"
+version = "0.1.0"
+dependencies = [
+ "bigdecimal",
+ "chrono",
+ "cratestack-core",
+ "cratestack-sql",
+ "rusqlite",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
+name = "cratestack-sql"
+version = "0.1.0"
+dependencies = [
+ "bigdecimal",
+ "chrono",
+ "cratestack-core",
+ "cratestack-policy",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
 name = "cratestack-sqlx"
 version = "0.2.0"
 dependencies = [
@@ -726,6 +756,7 @@ dependencies = [
  "cratestack-axum",
  "cratestack-core",
  "cratestack-policy",
+ "cratestack-sql",
  "rust_decimal",
  "serde",
  "serde_json",
