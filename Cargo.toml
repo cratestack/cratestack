@@ -12,6 +12,7 @@ members = [
     "crates/cratestack-client-store-sqlite",
     "crates/cratestack-codec-cbor",
     "crates/cratestack-codec-json",
+    "crates/cratestack-codegen-template",
     "crates/cratestack-core",
     "crates/cratestack-lsp",
     "crates/cratestack-macros",
@@ -59,6 +60,7 @@ cratestack-client-rust = { path = "crates/cratestack-client-rust", version = "0.
 cratestack-client-store-sqlite = { path = "crates/cratestack-client-store-sqlite", version = "0.2.3" }
 cratestack-codec-cbor = { path = "crates/cratestack-codec-cbor", version = "0.2.3" }
 cratestack-codec-json = { path = "crates/cratestack-codec-json", version = "0.2.3" }
+cratestack-codegen-template = { path = "crates/cratestack-codegen-template", version = "0.2.3" }
 cratestack-core = { path = "crates/cratestack-core", version = "0.2.3" }
 cratestack-macros = { path = "crates/cratestack-macros", version = "0.2.3" }
 cratestack-parser = { path = "crates/cratestack-parser", version = "0.2.3" }

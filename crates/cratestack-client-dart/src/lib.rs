@@ -1,11 +1,12 @@
 use std::collections::BTreeSet;
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use minijinja::Environment;
-use serde::Serialize;
-
+use cratestack_codegen_template::{
+    build_environment, render_package, GeneratedFile, GeneratedPackage, TemplateError,
+    TemplateSpec,
+};
 use cratestack_core::{EnumDecl, Field, Model, Procedure, Schema, TypeArity, TypeRef};
+use serde::Serialize;
 
 fn synthetic_span() -> cratestack_core::SourceSpan {
     cratestack_core::SourceSpan {
@@ -95,99 +96,29 @@ impl Default for DartGeneratorConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GeneratedDartFile {
-    pub file_name: String,
-    pub contents: String,
-}
+/// Alias for the shared `GeneratedFile` shape — preserved so downstream
+/// consumers don't have to change their imports.
+pub type GeneratedDartFile = GeneratedFile;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GeneratedDartPackage {
-    pub files: Vec<GeneratedDartFile>,
-}
+/// Alias for the shared `GeneratedPackage` shape.
+pub type GeneratedDartPackage = GeneratedPackage;
 
-#[derive(Debug, Clone, Copy)]
-struct TemplateSpec {
-    template_name: &'static str,
-    output_path: &'static str,
-    default_source: &'static str,
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum DartGeneratorError {
-    #[error("failed to read template '{template_name}' from {path}: {source}")]
-    TemplateRead {
-        path: String,
-        template_name: &'static str,
-        #[source]
-        source: std::io::Error,
-    },
-    #[error("failed to register template '{0}': {1}")]
-    TemplateRegistration(&'static str, #[source] minijinja::Error),
-    #[error("failed to render template '{0}': {1}")]
-    TemplateRender(&'static str, #[source] minijinja::Error),
-}
+/// Alias for the shared `TemplateError`; kept for callers that match on it.
+pub type DartGeneratorError = TemplateError;
 
 pub fn generate_package(
     schema: &Schema,
     config: &DartGeneratorConfig,
 ) -> Result<GeneratedDartPackage, DartGeneratorError> {
-    let environment = build_environment(config.template_dir.as_deref())?;
+    let environment = build_environment(TEMPLATE_SPECS, config.template_dir.as_deref(), |_| {})?;
     let context = build_template_context(schema, config);
-    let files = TEMPLATE_SPECS
-        .iter()
-        .map(|spec| {
-            let template = environment
-                .get_template(spec.template_name)
-                .map_err(|error| DartGeneratorError::TemplateRender(spec.template_name, error))?;
-            let contents = template
-                .render(&context)
-                .map_err(|error| DartGeneratorError::TemplateRender(spec.template_name, error))?;
-            Ok(GeneratedDartFile {
-                file_name: spec
-                    .output_path
-                    .replace("{{ package_name }}", &context.package_name),
-                contents,
-            })
-        })
-        .collect::<Result<Vec<_>, DartGeneratorError>>()?;
-
-    Ok(GeneratedDartPackage { files })
-}
-
-fn build_environment(
-    template_dir: Option<&Path>,
-) -> Result<Environment<'static>, DartGeneratorError> {
-    let mut environment = Environment::new();
-    environment.set_trim_blocks(true);
-    environment.set_lstrip_blocks(true);
-
-    for spec in TEMPLATE_SPECS {
-        let source = load_template_source(template_dir, spec)?;
-        environment
-            .add_template_owned(spec.template_name.to_owned(), source)
-            .map_err(|error| DartGeneratorError::TemplateRegistration(spec.template_name, error))?;
-    }
-
-    Ok(environment)
-}
-
-fn load_template_source(
-    template_dir: Option<&Path>,
-    spec: &TemplateSpec,
-) -> Result<String, DartGeneratorError> {
-    let Some(template_dir) = template_dir else {
-        return Ok(spec.default_source.to_owned());
-    };
-    let path = template_dir.join(spec.template_name);
-    if !path.exists() {
-        return Ok(spec.default_source.to_owned());
-    }
-
-    fs::read_to_string(&path).map_err(|source| DartGeneratorError::TemplateRead {
-        path: path.display().to_string(),
-        template_name: spec.template_name,
-        source,
+    // Some Dart template paths contain `{{ package_name }}` as a literal —
+    // it's substituted into the output filename so the published package
+    // ends up at `lib/<package_name>.dart`. The minijinja environment
+    // never sees these placeholders; they're handled here.
+    let package_name = context.package_name.clone();
+    render_package(TEMPLATE_SPECS, &environment, &context, |path| {
+        path.replace("{{ package_name }}", &package_name)
     })
 }
 

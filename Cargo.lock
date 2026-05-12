@@ -561,6 +561,7 @@ dependencies = [
  "clap",
  "cratestack-client-dart",
  "cratestack-client-typescript",
+ "cratestack-codegen-template",
  "cratestack-core",
  "cratestack-parser",
  "cratestack-studio-generator",
@@ -573,6 +574,7 @@ dependencies = [
 name = "cratestack-client-dart"
 version = "0.2.3"
 dependencies = [
+ "cratestack-codegen-template",
  "cratestack-core",
  "cratestack-parser",
  "minijinja",
@@ -643,6 +645,7 @@ dependencies = [
 name = "cratestack-client-typescript"
 version = "0.2.3"
 dependencies = [
+ "cratestack-codegen-template",
  "cratestack-core",
  "cratestack-parser",
  "minijinja",
@@ -667,6 +670,15 @@ dependencies = [
  "cratestack-core",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "cratestack-codegen-template"
+version = "0.2.3"
+dependencies = [
+ "minijinja",
+ "serde",
+ "thiserror",
 ]
 
 [[package]]
@@ -801,6 +813,7 @@ dependencies = [
 name = "cratestack-studio-generator"
 version = "0.2.3"
 dependencies = [
+ "cratestack-codegen-template",
  "cratestack-core",
  "cratestack-parser",
  "minijinja",

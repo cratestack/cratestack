@@ -1,11 +1,13 @@
 use std::collections::BTreeSet;
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
+use cratestack_codegen_template::{
+    build_environment, render_package, GeneratedFile, GeneratedPackage, TemplateError,
+    TemplateSpec,
+};
 use cratestack_core::{
     EnumDecl, Field, Model, Procedure, ProcedureKind, Schema, TypeArity, TypeRef,
 };
-use minijinja::Environment;
 use serde::Serialize;
 
 const TEMPLATE_SPECS: &[TemplateSpec] = &[
@@ -73,101 +75,24 @@ impl Default for TypeScriptGeneratorConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GeneratedTypeScriptFile {
-    pub file_name: String,
-    pub contents: String,
-}
+/// Alias for the shared `GeneratedFile` shape — preserved so downstream
+/// consumers don't have to change their imports.
+pub type GeneratedTypeScriptFile = GeneratedFile;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GeneratedTypeScriptPackage {
-    pub files: Vec<GeneratedTypeScriptFile>,
-}
+/// Alias for the shared `GeneratedPackage` shape.
+pub type GeneratedTypeScriptPackage = GeneratedPackage;
 
-#[derive(Debug, Clone, Copy)]
-struct TemplateSpec {
-    template_name: &'static str,
-    output_path: &'static str,
-    default_source: &'static str,
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum TypeScriptGeneratorError {
-    #[error("failed to read template '{template_name}' from {path}: {source}")]
-    TemplateRead {
-        path: String,
-        template_name: &'static str,
-        #[source]
-        source: std::io::Error,
-    },
-    #[error("failed to register template '{0}': {1}")]
-    TemplateRegistration(&'static str, #[source] minijinja::Error),
-    #[error("failed to render template '{0}': {1}")]
-    TemplateRender(&'static str, #[source] minijinja::Error),
-}
+/// Alias for the shared `TemplateError`; kept for callers that match on it.
+pub type TypeScriptGeneratorError = TemplateError;
 
 pub fn generate_package(
     schema: &Schema,
     config: &TypeScriptGeneratorConfig,
 ) -> Result<GeneratedTypeScriptPackage, TypeScriptGeneratorError> {
-    let environment = build_environment(config.template_dir.as_deref())?;
+    let environment = build_environment(TEMPLATE_SPECS, config.template_dir.as_deref(), |_| {})?;
     let context = build_template_context(schema, config);
-    let files = TEMPLATE_SPECS
-        .iter()
-        .map(|spec| {
-            let template = environment
-                .get_template(spec.template_name)
-                .map_err(|error| {
-                    TypeScriptGeneratorError::TemplateRender(spec.template_name, error)
-                })?;
-            let contents = template.render(&context).map_err(|error| {
-                TypeScriptGeneratorError::TemplateRender(spec.template_name, error)
-            })?;
-            Ok(GeneratedTypeScriptFile {
-                file_name: spec.output_path.to_owned(),
-                contents,
-            })
-        })
-        .collect::<Result<Vec<_>, TypeScriptGeneratorError>>()?;
-
-    Ok(GeneratedTypeScriptPackage { files })
-}
-
-fn build_environment(
-    template_dir: Option<&Path>,
-) -> Result<Environment<'static>, TypeScriptGeneratorError> {
-    let mut environment = Environment::new();
-    environment.set_trim_blocks(true);
-    environment.set_lstrip_blocks(true);
-
-    for spec in TEMPLATE_SPECS {
-        let source = load_template_source(template_dir, spec)?;
-        environment
-            .add_template_owned(spec.template_name.to_owned(), source)
-            .map_err(|error| {
-                TypeScriptGeneratorError::TemplateRegistration(spec.template_name, error)
-            })?;
-    }
-
-    Ok(environment)
-}
-
-fn load_template_source(
-    template_dir: Option<&Path>,
-    spec: &TemplateSpec,
-) -> Result<String, TypeScriptGeneratorError> {
-    let Some(template_dir) = template_dir else {
-        return Ok(spec.default_source.to_owned());
-    };
-    let path = template_dir.join(spec.template_name);
-    if !path.exists() {
-        return Ok(spec.default_source.to_owned());
-    }
-
-    fs::read_to_string(&path).map_err(|source| TypeScriptGeneratorError::TemplateRead {
-        path: path.display().to_string(),
-        template_name: spec.template_name,
-        source,
+    render_package(TEMPLATE_SPECS, &environment, &context, |path| {
+        path.to_owned()
     })
 }
 

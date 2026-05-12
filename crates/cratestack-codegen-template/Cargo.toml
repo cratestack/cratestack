@@ -1,23 +1,17 @@
 [package]
-name = "cratestack-client-typescript"
+name = "cratestack-codegen-template"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description.workspace = true
+description = "Shared minijinja-template scaffolding for cratestack client and studio generators."
 repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
-readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-cratestack-codegen-template.workspace = true
-cratestack-core.workspace = true
 minijinja.workspace = true
 serde.workspace = true
 thiserror.workspace = true
-
-[dev-dependencies]
-cratestack-parser.workspace = true

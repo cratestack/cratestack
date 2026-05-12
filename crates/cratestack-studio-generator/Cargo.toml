@@ -13,6 +13,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
+cratestack-codegen-template.workspace = true
 cratestack-core.workspace = true
 minijinja.workspace = true
 serde.workspace = true

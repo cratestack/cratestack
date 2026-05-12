@@ -209,25 +209,10 @@ pub(crate) trait GeneratedFileLike {
     fn into_generated_file(self) -> GeneratedFile;
 }
 
-impl GeneratedFileLike for cratestack_client_dart::GeneratedDartFile {
-    fn into_generated_file(self) -> GeneratedFile {
-        GeneratedFile {
-            file_name: self.file_name,
-            contents: self.contents,
-        }
-    }
-}
-
-impl GeneratedFileLike for cratestack_client_typescript::GeneratedTypeScriptFile {
-    fn into_generated_file(self) -> GeneratedFile {
-        GeneratedFile {
-            file_name: self.file_name,
-            contents: self.contents,
-        }
-    }
-}
-
-impl GeneratedFileLike for cratestack_studio_generator::GeneratedStudioFile {
+// All three generators now produce the shared
+// `cratestack_codegen_template::GeneratedFile`, so one trait impl
+// covers Dart, TypeScript, and Studio outputs.
+impl GeneratedFileLike for cratestack_codegen_template::GeneratedFile {
     fn into_generated_file(self) -> GeneratedFile {
         GeneratedFile {
             file_name: self.file_name,
