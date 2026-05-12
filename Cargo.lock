@@ -719,7 +719,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-rusqlite"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bigdecimal",
  "chrono",
@@ -734,7 +734,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-sql"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bigdecimal",
  "chrono",
