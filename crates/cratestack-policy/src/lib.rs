@@ -182,6 +182,19 @@ pub fn authorize_procedure<A: ProcedureArgs + ?Sized>(
     }
 }
 
+/// Test whether a `Value` from a `CoolContext` matches a compile-time
+/// `PolicyLiteral`. Lifted out of `cratestack-sqlx` so the shared SQL
+/// renderer can fold context-only predicates to `TRUE` / `FALSE` without
+/// pulling in a backend.
+pub fn value_matches_policy_literal(value: &Value, literal: PolicyLiteral) -> bool {
+    match (value, literal) {
+        (Value::Bool(left), PolicyLiteral::Bool(right)) => *left == right,
+        (Value::Int(left), PolicyLiteral::Int(right)) => *left == right,
+        (Value::String(left), PolicyLiteral::String(right)) => left == right,
+        _ => false,
+    }
+}
+
 pub fn context_has_role(ctx: &CoolContext, role: &str) -> bool {
     ctx.auth_field("role")
         .or_else(|| ctx.auth_field("actor.role"))

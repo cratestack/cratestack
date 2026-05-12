@@ -1,15 +1,22 @@
+//! Preview-mode SQL rendering for the Postgres backend.
+//!
+//! Used by the `preview_sql` / `preview_scoped_sql` helpers — the actual
+//! `.run()` path goes through `query/support.rs` and pushes into a
+//! `sqlx::QueryBuilder`. The traversal logic itself lives in
+//! [`cratestack_sql::render`] (filter + order) and
+//! [`cratestack_sql::policy_render`] (policy expressions); this module
+//! glues a `PostgresDialect`-backed `StringSink` to those entry points.
+
 use std::fmt::Write;
 
 use cratestack_core::CoolContext;
-use cratestack_policy::{context_has_role, context_in_tenant};
-
-use cratestack_sql::{FilterOp, FilterValue, OrderTarget};
-
-use crate::{
-    FilterExpr, ModelDescriptor, OrderClause, PolicyExpr, ReadPolicy, ReadPredicate,
-    RelationFilter, RelationQuantifier, SortDirection,
-    query::auth_value_to_sql, query::value_matches_auth_literal,
+use cratestack_sql::{
+    policy_render::render_action_policy,
+    render::{render_filter_expr, render_filter_exprs, render_order_clause, SqlSink},
+    OrderClause, PostgresDialect, StringSink,
 };
+
+use crate::{FilterExpr, ModelDescriptor, ReadPolicy};
 
 pub(crate) fn render_scoped_select_sql<M, PK>(
     descriptor: &ModelDescriptor<M, PK>,
@@ -24,26 +31,41 @@ pub(crate) fn render_scoped_select_sql<M, PK>(
         descriptor.select_projection(),
         descriptor.table_name,
     );
-    let mut bind_index = 1usize;
-    let user_clause = render_filter_sql(filters, &mut bind_index);
-    let policy_clause = render_read_policy_sql(
-        descriptor.read_allow_policies,
-        descriptor.read_deny_policies,
-        ctx,
-        &mut bind_index,
-    );
+    let dialect = PostgresDialect;
 
-    match (user_clause, policy_clause) {
-        (Some(user_clause), Some(policy_clause)) => {
-            let _ = write!(sql, " WHERE {user_clause} AND ({policy_clause})");
+    // Render the WHERE clause into a temp buffer with its own bind counter
+    // so we can decide whether to emit `WHERE` at all without committing to
+    // a layout up front. Bind numbering picks up where this leaves off.
+    let mut where_sql = String::new();
+    let mut bind_index = 1usize;
+    {
+        let mut sink = StringSink::new(&mut where_sql, &dialect, bind_index);
+        if !filters.is_empty() {
+            render_filter_exprs(&mut sink, filters);
         }
-        (Some(user_clause), None) => {
-            let _ = write!(sql, " WHERE {user_clause}");
+        let has_user_clause = !filters.is_empty();
+        let has_policy = !descriptor.read_allow_policies.is_empty()
+            || !descriptor.read_deny_policies.is_empty();
+        if has_user_clause && has_policy {
+            sink.push_sql(" AND (");
         }
-        (None, Some(policy_clause)) => {
-            let _ = write!(sql, " WHERE {policy_clause}");
+        if has_policy {
+            render_action_policy(
+                &mut sink,
+                descriptor.read_allow_policies,
+                descriptor.read_deny_policies,
+                ctx,
+            );
         }
-        (None, None) => {}
+        if has_user_clause && has_policy {
+            sink.push_sql(")");
+        }
+        bind_index = sink.bind_index();
+    }
+
+    if !where_sql.is_empty() {
+        sql.push_str(" WHERE ");
+        sql.push_str(&where_sql);
     }
 
     if !order_by.is_empty() {
@@ -52,7 +74,9 @@ pub(crate) fn render_scoped_select_sql<M, PK>(
             if index > 0 {
                 sql.push_str(", ");
             }
-            render_order_clause_sql(clause, &mut sql);
+            let mut sink = StringSink::new(&mut sql, &dialect, bind_index);
+            render_order_clause(&mut sink, clause);
+            bind_index = sink.bind_index();
         }
     }
 
@@ -72,121 +96,6 @@ pub(crate) fn render_scoped_select_sql<M, PK>(
     sql
 }
 
-pub(crate) fn render_filter_sql(filters: &[FilterExpr], bind_index: &mut usize) -> Option<String> {
-    if filters.is_empty() {
-        return None;
-    }
-
-    let mut sql = String::new();
-    for (index, filter) in filters.iter().enumerate() {
-        if index > 0 {
-            sql.push_str(" AND ");
-        }
-        render_filter_expr_sql(filter, &mut sql, bind_index);
-    }
-
-    Some(sql)
-}
-
-pub(crate) fn render_filter_expr_sql(
-    filter: &FilterExpr,
-    sql: &mut String,
-    bind_index: &mut usize,
-) {
-    match filter {
-        FilterExpr::Filter(filter) => match filter.op {
-            FilterOp::Eq => render_binary_filter_sql(filter.column, "=", sql, bind_index),
-            FilterOp::Ne => render_binary_filter_sql(filter.column, "!=", sql, bind_index),
-            FilterOp::Lt => render_binary_filter_sql(filter.column, "<", sql, bind_index),
-            FilterOp::Lte => render_binary_filter_sql(filter.column, "<=", sql, bind_index),
-            FilterOp::Gt => render_binary_filter_sql(filter.column, ">", sql, bind_index),
-            FilterOp::Gte => render_binary_filter_sql(filter.column, ">=", sql, bind_index),
-            FilterOp::In => {
-                let FilterValue::Many(values) = &filter.value else {
-                    unreachable!();
-                };
-                sql.push_str(filter.column);
-                sql.push_str(" IN (");
-                for (value_index, _) in values.iter().enumerate() {
-                    if value_index > 0 {
-                        sql.push_str(", ");
-                    }
-                    let _ = write!(sql, "${bind_index}");
-                    *bind_index += 1;
-                }
-                sql.push(')');
-            }
-            FilterOp::Contains | FilterOp::StartsWith => {
-                render_binary_filter_sql(filter.column, "LIKE", sql, bind_index)
-            }
-            FilterOp::IsNull => {
-                let _ = write!(sql, "{} IS NULL", filter.column);
-            }
-            FilterOp::IsNotNull => {
-                let _ = write!(sql, "{} IS NOT NULL", filter.column);
-            }
-        },
-        FilterExpr::All(filters) => render_grouped_filter_sql(filters, " AND ", sql, bind_index),
-        FilterExpr::Any(filters) => render_grouped_filter_sql(filters, " OR ", sql, bind_index),
-        FilterExpr::Not(filter) => {
-            sql.push_str("NOT (");
-            render_filter_expr_sql(filter, sql, bind_index);
-            sql.push(')');
-        }
-        FilterExpr::Relation(relation) => {
-            render_relation_filter_sql(relation, sql, bind_index);
-        }
-    }
-}
-
-pub(crate) fn render_relation_filter_sql(
-    relation: &RelationFilter,
-    sql: &mut String,
-    bind_index: &mut usize,
-) {
-    match relation.quantifier {
-        RelationQuantifier::ToOne | RelationQuantifier::Some => {
-            let _ = write!(
-                sql,
-                "EXISTS (SELECT 1 FROM {} WHERE {}.{} = {}.{} AND ",
-                relation.related_table,
-                relation.related_table,
-                relation.related_column,
-                relation.parent_table,
-                relation.parent_column,
-            );
-            render_filter_expr_sql(&relation.filter, sql, bind_index);
-            sql.push(')');
-        }
-        RelationQuantifier::None => {
-            let _ = write!(
-                sql,
-                "NOT EXISTS (SELECT 1 FROM {} WHERE {}.{} = {}.{} AND ",
-                relation.related_table,
-                relation.related_table,
-                relation.related_column,
-                relation.parent_table,
-                relation.parent_column,
-            );
-            render_filter_expr_sql(&relation.filter, sql, bind_index);
-            sql.push(')');
-        }
-        RelationQuantifier::Every => {
-            let _ = write!(
-                sql,
-                "NOT EXISTS (SELECT 1 FROM {} WHERE {}.{} = {}.{} AND NOT (",
-                relation.related_table,
-                relation.related_table,
-                relation.related_column,
-                relation.parent_table,
-                relation.parent_column,
-            );
-            render_filter_expr_sql(&relation.filter, sql, bind_index);
-            sql.push_str("))");
-        }
-    }
-}
-
 pub(crate) fn render_read_policy_sql(
     allow_policies: &[ReadPolicy],
     deny_policies: &[ReadPolicy],
@@ -196,291 +105,30 @@ pub(crate) fn render_read_policy_sql(
     if allow_policies.is_empty() {
         return Some("FALSE".to_owned());
     }
-
-    let allow_sql = render_allow_policy_sql(allow_policies, ctx, bind_index)?;
-    if deny_policies.is_empty() {
-        return Some(allow_sql);
-    }
-
-    let deny_sql = render_allow_policy_sql(deny_policies, ctx, bind_index)?;
-    Some(format!("NOT ({deny_sql}) AND ({allow_sql})"))
-}
-
-fn render_allow_policy_sql(
-    policies: &[ReadPolicy],
-    ctx: &CoolContext,
-    bind_index: &mut usize,
-) -> Option<String> {
-    if policies.is_empty() {
-        return None;
-    }
-
+    let dialect = PostgresDialect;
     let mut sql = String::new();
-    for (policy_index, policy) in policies.iter().enumerate() {
-        if policy_index > 0 {
-            sql.push_str(" OR ");
-        }
-        render_policy_expr_sql(policy.expr, ctx, &mut sql, bind_index);
-    }
-
+    let mut sink = StringSink::new(&mut sql, &dialect, *bind_index);
+    render_action_policy(&mut sink, allow_policies, deny_policies, ctx);
+    *bind_index = sink.bind_index();
     Some(sql)
 }
 
-pub(crate) fn render_policy_expr_sql(
-    expr: PolicyExpr,
-    ctx: &CoolContext,
+/// Render a filter sub-expression into an existing SQL buffer using the
+/// caller's running bind index. Used by `FindMany::preview_sql` to build
+/// its WHERE clause without re-implementing the traversal.
+pub(crate) fn render_filter_expr_sql(
+    filter: &FilterExpr,
     sql: &mut String,
     bind_index: &mut usize,
 ) {
-    match expr {
-        PolicyExpr::Predicate(predicate) => match predicate {
-            ReadPredicate::AuthNotNull => {
-                sql.push_str(if ctx.is_authenticated() {
-                    "TRUE"
-                } else {
-                    "FALSE"
-                });
-            }
-            ReadPredicate::AuthIsNull => {
-                sql.push_str(if ctx.is_authenticated() {
-                    "FALSE"
-                } else {
-                    "TRUE"
-                });
-            }
-            ReadPredicate::HasRole { role } => {
-                sql.push_str(if context_has_role(ctx, role) {
-                    "TRUE"
-                } else {
-                    "FALSE"
-                });
-            }
-            ReadPredicate::InTenant { tenant_id } => {
-                sql.push_str(if context_in_tenant(ctx, tenant_id) {
-                    "TRUE"
-                } else {
-                    "FALSE"
-                });
-            }
-            ReadPredicate::AuthFieldEqLiteral { auth_field, value } => {
-                sql.push_str(
-                    if ctx
-                        .auth_field(auth_field)
-                        .is_some_and(|candidate| value_matches_auth_literal(candidate, value))
-                    {
-                        "TRUE"
-                    } else {
-                        "FALSE"
-                    },
-                );
-            }
-            ReadPredicate::AuthFieldNeLiteral { auth_field, value } => {
-                sql.push_str(
-                    if ctx
-                        .auth_field(auth_field)
-                        .is_some_and(|candidate| !value_matches_auth_literal(candidate, value))
-                    {
-                        "TRUE"
-                    } else {
-                        "FALSE"
-                    },
-                );
-            }
-            ReadPredicate::FieldIsTrue { column } => {
-                let _ = write!(sql, "{column} = TRUE");
-            }
-            ReadPredicate::FieldEqLiteral { column, .. } => {
-                let _ = write!(sql, "{column} = ${bind_index}");
-                *bind_index += 1;
-            }
-            ReadPredicate::FieldNeLiteral { column, .. } => {
-                let _ = write!(sql, "{column} != ${bind_index}");
-                *bind_index += 1;
-            }
-            ReadPredicate::FieldEqAuth { column, auth_field } => {
-                if auth_value_to_sql(ctx, auth_field).is_some() {
-                    let _ = write!(sql, "{column} = ${bind_index}");
-                    *bind_index += 1;
-                } else {
-                    sql.push_str("FALSE");
-                }
-            }
-            ReadPredicate::FieldNeAuth { column, auth_field } => {
-                if auth_value_to_sql(ctx, auth_field).is_some() {
-                    let _ = write!(sql, "{column} != ${bind_index}");
-                    *bind_index += 1;
-                } else {
-                    sql.push_str("FALSE");
-                }
-            }
-            ReadPredicate::Relation {
-                quantifier,
-                parent_table,
-                parent_column,
-                related_table,
-                related_column,
-                expr,
-            } => {
-                render_relation_policy_sql(
-                    quantifier,
-                    parent_table,
-                    parent_column,
-                    related_table,
-                    related_column,
-                    expr,
-                    ctx,
-                    sql,
-                    bind_index,
-                );
-            }
-        },
-        PolicyExpr::And(exprs) => render_grouped_policy_sql(exprs, " AND ", ctx, sql, bind_index),
-        PolicyExpr::Or(exprs) => render_grouped_policy_sql(exprs, " OR ", ctx, sql, bind_index),
-    }
-}
-
-fn render_relation_policy_sql(
-    quantifier: RelationQuantifier,
-    parent_table: &'static str,
-    parent_column: &'static str,
-    related_table: &'static str,
-    related_column: &'static str,
-    expr: &'static PolicyExpr,
-    ctx: &CoolContext,
-    sql: &mut String,
-    bind_index: &mut usize,
-) {
-    match quantifier {
-        RelationQuantifier::ToOne | RelationQuantifier::Some => {
-            render_relation_policy_exists_sql(
-                sql,
-                bind_index,
-                parent_table,
-                parent_column,
-                related_table,
-                related_column,
-                &|sql, bind_index| render_policy_expr_sql(*expr, ctx, sql, bind_index),
-            );
-        }
-        RelationQuantifier::None => {
-            let _ = write!(
-                sql,
-                "NOT EXISTS (SELECT 1 FROM {} WHERE {}.{} = {}.{} AND ",
-                related_table, related_table, related_column, parent_table, parent_column,
-            );
-            render_policy_expr_sql(*expr, ctx, sql, bind_index);
-            sql.push(')');
-        }
-        RelationQuantifier::Every => {
-            let _ = write!(
-                sql,
-                "NOT EXISTS (SELECT 1 FROM {} WHERE {}.{} = {}.{} AND NOT (",
-                related_table, related_table, related_column, parent_table, parent_column,
-            );
-            render_policy_expr_sql(*expr, ctx, sql, bind_index);
-            sql.push_str("))");
-        }
-    }
-}
-
-fn render_relation_policy_exists_sql<Render>(
-    sql: &mut String,
-    bind_index: &mut usize,
-    parent_table: &'static str,
-    parent_column: &'static str,
-    related_table: &'static str,
-    related_column: &'static str,
-    render_predicate: &Render,
-) where
-    Render: Fn(&mut String, &mut usize),
-{
-    let _ = write!(
-        sql,
-        "EXISTS (SELECT 1 FROM {} WHERE {}.{} = {}.{} AND ",
-        related_table, related_table, related_column, parent_table, parent_column,
-    );
-    render_predicate(sql, bind_index);
-    sql.push(')');
+    let dialect = PostgresDialect;
+    let mut sink = StringSink::new(sql, &dialect, *bind_index);
+    render_filter_expr(&mut sink, filter);
+    *bind_index = sink.bind_index();
 }
 
 pub(crate) fn render_order_clause_sql(clause: &OrderClause, sql: &mut String) {
-    match &clause.target {
-        OrderTarget::Column(column) => {
-            let _ = write!(sql, "{} {}", column, sort_direction_sql(clause.direction));
-        }
-        OrderTarget::RelationScalar {
-            parent_table,
-            parent_column,
-            related_table,
-            related_column,
-            value_sql,
-        } => {
-            let _ = write!(
-                sql,
-                "(SELECT {} FROM {} WHERE {}.{} = {}.{} LIMIT 1) {} {}",
-                value_sql,
-                related_table,
-                related_table,
-                related_column,
-                parent_table,
-                parent_column,
-                sort_direction_sql(clause.direction),
-                null_order_sql(),
-            );
-        }
-    }
-}
-
-fn render_binary_filter_sql(
-    column: &str,
-    operator: &str,
-    sql: &mut String,
-    bind_index: &mut usize,
-) {
-    let _ = write!(sql, "{column} {operator} ${bind_index}");
-    *bind_index += 1;
-}
-
-fn render_grouped_filter_sql(
-    filters: &[FilterExpr],
-    joiner: &str,
-    sql: &mut String,
-    bind_index: &mut usize,
-) {
-    sql.push('(');
-    for (index, filter) in filters.iter().enumerate() {
-        if index > 0 {
-            sql.push_str(joiner);
-        }
-        render_filter_expr_sql(filter, sql, bind_index);
-    }
-    sql.push(')');
-}
-
-fn render_grouped_policy_sql(
-    exprs: &[PolicyExpr],
-    joiner: &str,
-    ctx: &CoolContext,
-    sql: &mut String,
-    bind_index: &mut usize,
-) {
-    sql.push('(');
-    for (index, expr) in exprs.iter().enumerate() {
-        if index > 0 {
-            sql.push_str(joiner);
-        }
-        render_policy_expr_sql(*expr, ctx, sql, bind_index);
-    }
-    sql.push(')');
-}
-
-fn sort_direction_sql(direction: SortDirection) -> &'static str {
-    match direction {
-        SortDirection::Asc => "ASC",
-        SortDirection::Desc => "DESC",
-    }
-}
-
-fn null_order_sql() -> &'static str {
-    "NULLS LAST"
+    let dialect = PostgresDialect;
+    let mut sink = StringSink::new(sql, &dialect, 1);
+    render_order_clause(&mut sink, clause);
 }
