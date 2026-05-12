@@ -1,0 +1,27 @@
+[package]
+name = "cratestack-redis"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+cratestack-axum.workspace = true
+cratestack-core.workspace = true
+redis = { workspace = true, features = ["aio", "tokio-comp", "script"] }
+sha2.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+http.workspace = true
+tokio.workspace = true
+tower.workspace = true
