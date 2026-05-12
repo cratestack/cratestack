@@ -516,6 +516,7 @@ dependencies = [
  "tower 0.5.3",
  "tracing",
  "tracing-subscriber",
+ "url",
  "uuid",
 ]
 
@@ -584,7 +585,6 @@ dependencies = [
  "axum",
  "bytes",
  "chrono",
- "cratestack",
  "cratestack-codec-cbor",
  "cratestack-codec-json",
  "cratestack-core",

@@ -29,7 +29,6 @@ url.workspace = true
 
 [dev-dependencies]
 axum.workspace = true
-cratestack.workspace = true
 cratestack-core.workspace = true
 serde.workspace = true
 tokio.workspace = true
