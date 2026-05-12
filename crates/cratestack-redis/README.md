@@ -4,9 +4,10 @@ Redis-backed server-side infrastructure for CrateStack.
 
 ## Overview
 
-`cratestack-redis` provides Redis implementations of the server-side traits CrateStack defines. Today the crate ships a single store:
+`cratestack-redis` provides Redis implementations of the server-side traits CrateStack defines. The crate ships two stores:
 
 - `RedisIdempotencyStore` — implements the `IdempotencyStore` trait from `cratestack-axum::idempotency`, the Redis equivalent of `SqlxIdempotencyStore` for deployments that prefer Redis to a Postgres `idempotency_keys` table.
+- `RedisRateLimitStore` — implements the `RateLimitStore` trait from `cratestack-axum::ratelimit`, sharing token-bucket state across replicas so a multi-instance deployment enforces a single global rate limit per key.
 
 ## Installation
 
@@ -42,7 +43,26 @@ let store = RedisIdempotencyStore::from_client(client, "myapp");
 
 `RedisIdempotencyStoreConfig` exposes a single `key_prefix` field; the prefix is normalised (leading/trailing colons stripped) and falls back to a built-in default when empty. TTL is owned by the layer (via `IdempotencyLayer::new(..., ttl)`), not the store, and is applied per record through `PEXPIREAT`.
 
+### Rate limit store
+
+```rust
+use std::sync::Arc;
+use cratestack_axum::ratelimit::{RateLimitConfig, RateLimitLayer, RateLimitStore};
+use cratestack_redis::RedisRateLimitStore;
+
+let store: Arc<dyn RateLimitStore> =
+    Arc::new(RedisRateLimitStore::open("redis://127.0.0.1:6379", "myapp")?);
+
+let app = axum::Router::new()
+    .nest("/api", router)
+    .layer(RateLimitLayer::new(store, RateLimitConfig::new(100, 10.0)));
+```
+
+`RedisRateLimitStoreConfig` mirrors the idempotency config — a single normalised `key_prefix` field. Each bucket is stored under `<prefix>:rl:<sha256(key)>` and refreshes its TTL on every `consume`, so idle buckets evict themselves and memory stays bounded.
+
 ## How It Works
+
+### Idempotency
 
 Each `(principal, key)` pair maps to a Redis hash keyed by `<prefix>:idem:<sha256(principal || 0x00 || key)>`. SHA-256 hashing keeps Redis keys bounded regardless of input size and avoids escaping concerns around `:` in user-supplied values.
 
@@ -54,10 +74,16 @@ Atomicity is provided by three Lua scripts:
 
 Eviction uses `PEXPIREAT` based on the `expires_at` derived from the layer's TTL.
 
+### Rate limiting
+
+Each rate-limit key maps to a Redis hash at `<prefix>:rl:<sha256(key)>` carrying two fields: `tokens` (current bucket fill) and `last_refill_ms` (the wall-clock timestamp of the most recent refill). A single Lua script does the entire read-refill-decrement-write cycle in one round-trip, so concurrent replicas can never grant more than one token's worth of overshoot.
+
+Eviction uses a relative `EXPIRE` derived from the time required to refill a full bucket (clamped to 24h), refreshed on every `consume`. This keeps memory bounded even for tenant-scoped keyspaces with churn.
+
 ## See Also
 
 - [Idempotency guide](https://cratestack.dev/guides/idempotency)
-- `cratestack-axum` — `IdempotencyLayer`, `IdempotencyStore`, table DDL helper
+- `cratestack-axum` — `IdempotencyLayer`, `IdempotencyStore`, `RateLimitLayer`, `RateLimitStore`, table DDL helper
 - `cratestack-sqlx` — Postgres-backed `SqlxIdempotencyStore`
 - `cratestack-client-store-redis` — Redis state store for the client runtime (unrelated trait)
 
