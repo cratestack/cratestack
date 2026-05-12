@@ -85,6 +85,7 @@ cargo publish -p cratestack-sql
 cargo publish -p cratestack-rusqlite
 cargo publish -p cratestack
 cargo publish -p cratestack-lsp
+cargo publish -p cratestack-redis
 cargo publish -p cratestack-cli
 ```
 
