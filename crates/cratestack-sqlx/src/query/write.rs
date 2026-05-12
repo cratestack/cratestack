@@ -1,3 +1,5 @@
+use crate::sqlx;
+
 use cratestack_core::{AuditOperation, CoolContext, CoolError, ModelEventKind};
 
 use crate::{

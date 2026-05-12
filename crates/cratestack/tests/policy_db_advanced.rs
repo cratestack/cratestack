@@ -1,12 +1,12 @@
 use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::http::{Request, StatusCode};
-use cratestack::include_schema;
+use cratestack::include_server_schema;
 use cratestack::sqlx::postgres::PgPoolOptions;
 use cratestack::{AuthProvider, CoolCodec, CoolContext, RequestContext, Value};
 use cratestack_codec_cbor::CborCodec;
 use tower::util::ServiceExt;
 
-include_schema!("tests/fixtures/advanced_policy.cstack");
+include_server_schema!("tests/fixtures/advanced_policy.cstack", db = Postgres);
 
 #[derive(Clone)]
 struct AdvancedPolicyAuthProvider;

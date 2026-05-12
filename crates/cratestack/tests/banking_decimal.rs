@@ -4,13 +4,13 @@
 //! `numeric` without precision loss, and that the JSON projection through
 //! the codec emits strings rather than floats.
 
-use cratestack::include_schema;
+use cratestack::include_server_schema;
 use cratestack::sqlx::postgres::PgPoolOptions;
 use cratestack::sqlx::{Row, query};
 use cratestack::{CoolContext, Decimal, Value};
 use std::str::FromStr;
 
-include_schema!("tests/fixtures/banking_decimal.cstack");
+include_server_schema!("tests/fixtures/banking_decimal.cstack", db = Postgres);
 
 async fn serial_guard() -> tokio::sync::MutexGuard<'static, ()> {
     static M: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());

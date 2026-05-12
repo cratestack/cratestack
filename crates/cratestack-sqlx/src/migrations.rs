@@ -6,6 +6,8 @@
 //! today. Banks running zero-downtime migrations write their migrations by
 //! hand (the contract under regulation is "the change is reviewable as a
 //! SQL diff") — schema-diff-driven generation is out of scope here.
+use crate::sqlx;
+
 
 use cratestack_core::CoolError;
 use sha2::{Digest, Sha256};

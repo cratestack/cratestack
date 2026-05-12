@@ -9,7 +9,7 @@
 
 use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::http::{Request, StatusCode};
-use cratestack::include_schema;
+use cratestack::include_server_schema;
 use cratestack::sqlx::postgres::PgPoolOptions;
 use cratestack::sqlx::query;
 use cratestack::{AuthProvider, CoolCodec, CoolContext, CoolError, RequestContext, Value};
@@ -20,7 +20,7 @@ use std::time::{Duration, SystemTime};
 use tower::ServiceBuilder;
 use tower::util::ServiceExt;
 
-include_schema!("tests/fixtures/banking_idempotency.cstack");
+include_server_schema!("tests/fixtures/banking_idempotency.cstack", db = Postgres);
 
 async fn serial_guard() -> tokio::sync::MutexGuard<'static, ()> {
     static M: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());

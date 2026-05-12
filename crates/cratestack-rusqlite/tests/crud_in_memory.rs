@@ -3,7 +3,7 @@
 //! + create/update inputs, then exercises every delegate verb.
 //!
 //! This is the contract test for the on-device storage layer: anything
-//! `include_schema!(target = "sqlite", ...)` emits must satisfy the same
+//! `include_embedded_schema!(...)` emits must satisfy the same
 //! interfaces this file uses by hand.
 
 use cratestack_rusqlite::{

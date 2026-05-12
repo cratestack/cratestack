@@ -5,12 +5,12 @@
 //! physically present in PG (so banks can run their retention GC against
 //! the recorded `retention_days` policy).
 
-use cratestack::include_schema;
+use cratestack::include_server_schema;
 use cratestack::sqlx::postgres::PgPoolOptions;
 use cratestack::sqlx::{Row, query};
 use cratestack::{CoolContext, Value};
 
-include_schema!("tests/fixtures/banking_soft_delete.cstack");
+include_server_schema!("tests/fixtures/banking_soft_delete.cstack", db = Postgres);
 
 async fn serial_guard() -> tokio::sync::MutexGuard<'static, ()> {
     static M: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());

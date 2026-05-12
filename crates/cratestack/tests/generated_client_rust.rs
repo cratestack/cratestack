@@ -4,17 +4,17 @@ use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use cratestack::{include_client_macro, include_schema};
+use cratestack::{include_client_schema, include_server_schema};
 use cratestack_client_rust::{ClientConfig, CratestackClient, JsonCodec};
 use cratestack_core::CoolCodec;
 use std::net::SocketAddr;
 
-include_schema!("../cratestack/tests/fixtures/blog.cstack");
+include_server_schema!("../cratestack/tests/fixtures/blog.cstack", db = Postgres);
 
 mod client_only_schema {
-    use super::include_client_macro;
+    use super::include_client_schema;
 
-    include_client_macro!("../cratestack/tests/fixtures/blog.cstack");
+    include_client_schema!("../cratestack/tests/fixtures/blog.cstack");
 }
 
 #[tokio::test]

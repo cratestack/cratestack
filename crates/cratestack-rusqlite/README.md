@@ -1,28 +1,74 @@
 # cratestack-rusqlite
 
-On-device SQLite backend for offline-first applications.
+Embedded SQLite backend for offline-first applications. Works on **native (mobile, desktop)** and on **`wasm32-unknown-unknown` (browser via OPFS)**.
 
 ## Overview
 
-`cratestack-rusqlite` is the sync, on-device counterpart of `cratestack-sqlx`. The same `.cstack` schema that drives a Postgres service can also drive a SQLite database living on the device — phone, embedded box, or desktop app. The crate uses `rusqlite` with bundled SQLite (no system library required), no `tokio`, and no policy enforcement.
+`cratestack-rusqlite` is the sync, embedded counterpart of `cratestack-sqlx`. The same `.cstack` schema that drives a Postgres service can also drive a SQLite database living on the device — phone, embedded box, desktop app, **or browser tab**. The crate uses `rusqlite 0.39` with bundled SQLite (no system library required), no `tokio`, and no policy enforcement.
 
-The architecture is "Rust as real frontend, Flutter (or any UI toolkit) as UI only": Rust owns state, persistence, and business logic; the UI talks to Rust over FFI. The `ffi` module ships the envelope types needed for that boundary.
+Since `rusqlite 0.39`, the same crate transparently swaps its FFI backend per target:
 
-`@@allow` / `@@deny` policies are **not enforced** by this backend. The device is single-user; authorization is the host app's concern.
+- **Native** (Linux/macOS/Windows/iOS/Android): `libsqlite3-sys` with bundled SQLite.
+- **`wasm32-unknown-unknown`**: `sqlite-wasm-rs` with sync-access OPFS persistence.
+
+`@@allow` / `@@deny` policies are **not enforced** by this backend. Clients are untrusted; authorization is the server's concern.
+
+The architecture is "Rust as real frontend, UI layer is UI only": Rust owns state, persistence, and business logic; the UI talks to Rust over FFI or `wasm-bindgen`. The `ffi` module ships the JSON envelope types needed for that boundary.
 
 ## Installation
 
 ```toml
 [dependencies]
-cratestack-rusqlite = "0.2.2"
+cratestack-rusqlite = "0.3"
+cratestack-macros = "0.3"  # for include_embedded_schema!
 ```
 
 Or via the facade crate (recommended when sharing schema with the server):
 
 ```toml
 [dependencies]
-cratestack = "0.2.2"
+cratestack = "0.3"
 ```
+
+### Building for the browser (`wasm32-unknown-unknown`)
+
+`sqlite-wasm-rs` compiles SQLite's C source to WebAssembly via `cc-rs`, which requires a wasm-capable clang on `PATH`. Apple's stock Xcode clang does **not** include the wasm32 backend.
+
+**macOS:**
+
+```bash
+brew install llvm
+export CC=/opt/homebrew/opt/llvm/bin/clang   # Apple Silicon
+# export CC=/usr/local/opt/llvm/bin/clang    # Intel
+```
+
+**Linux:**
+
+```bash
+sudo apt-get install clang lld   # Clang 14+
+```
+
+Or use the Emscripten SDK (`emsdk`) and point `CC` at `emcc`.
+
+Then:
+
+```bash
+cargo build -p cratestack-rusqlite --target wasm32-unknown-unknown
+```
+
+### Browser persistence via OPFS
+
+OPFS `SyncAccessHandle` is **only available inside a Dedicated Worker** per the spec — install the VFS there before opening the connection:
+
+```rust
+// Inside a Dedicated Worker context
+use cratestack_rusqlite::{RusqliteRuntime, opfs};
+
+opfs::install_opfs_vfs(&opfs::OpfsOptions::default()).await?;
+let runtime = RusqliteRuntime::open("app.db")?;
+```
+
+Main-thread code can still use `RusqliteRuntime::open_in_memory()` for ephemeral state.
 
 ## Schema
 
@@ -46,10 +92,10 @@ model Note {
 ## Runtime
 
 ```rust
-use cratestack::{RusqliteRuntime, include_schema, rusqlite_backend::ddl::create_table_sql};
+use cratestack::{RusqliteRuntime, include_embedded_schema, rusqlite_backend::ddl::create_table_sql};
 use cratestack_rusqlite::ModelDelegate;
 
-include_schema!("schema.cstack");
+include_embedded_schema!("schema.cstack");
 
 let runtime = RusqliteRuntime::open("app.db")?;
 runtime.with_connection(|conn| {

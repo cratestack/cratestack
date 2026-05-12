@@ -10,10 +10,10 @@
 //! open an in-memory database, bootstrap the schema, insert a row,
 //! read it back. Everything the on-device runtime needs is here.
 
-use cratestack::include_schema;
+use cratestack::include_embedded_schema;
 use cratestack::{RusqliteRuntime, rusqlite_backend::ddl::create_table_sql};
 
-include_schema!("examples/sqlite_quickstart.cstack");
+include_embedded_schema!("examples/sqlite_quickstart.cstack");
 
 use cratestack_rusqlite::ModelDelegate;
 use cratestack_schema::models::Note;

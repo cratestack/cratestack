@@ -32,7 +32,7 @@ model Post {
 }
 ```
 
-`include_schema!` lowers each `@@allow` clause into a `ReadPolicy { expr: PolicyExpr }` constant.
+`include_server_schema!` lowers each `@@allow` clause into a `ReadPolicy { expr: PolicyExpr }` constant. The embedded macro silently drops policy clauses — the device/browser is single-user and authorization is the server's responsibility.
 
 ## Literals
 

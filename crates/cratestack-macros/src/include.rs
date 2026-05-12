@@ -1,9 +1,28 @@
+//! Schema-include composers.
+//!
+//! Three top-level proc-macros target three deployment shapes (see the
+//! 0.3.0 CHANGELOG for context):
+//!
+//! - [`include_server_schema`] — full server: sqlx Postgres backend,
+//!   `Cratestack` runtime, axum router, procedure handlers, events. No
+//!   rusqlite anywhere in the output.
+//! - [`include_embedded_schema`] — embedded ORM only: rusqlite backend
+//!   (works on mobile/desktop and on `wasm32-unknown-unknown` via
+//!   `sqlite-wasm-rs`). No sqlx, no axum, no procedures.
+//! - [`include_client_schema`] — HTTP client surface: model/input/procedure
+//!   stubs for talking to a server over the wire. No DB at all.
+//!
+//! All three emit a `cratestack_schema` module — the schemas are
+//! mutually-exclusive within a single crate. Pick one per crate based on its
+//! role.
+
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{LitStr, parse_macro_input};
+use syn::parse::{Parse, ParseStream};
+use syn::{LitStr, Token, parse_macro_input};
 
 use crate::axum::{
     generate_axum_shared_support, generate_model_axum_handlers, generate_model_axum_routes,
@@ -15,7 +34,8 @@ use crate::model::{
     generate_bound_model_accessor, generate_client_create_input_struct,
     generate_client_model_struct, generate_client_update_input_struct,
     generate_create_input_struct, generate_field_module, generate_model_accessor,
-    generate_model_descriptor, generate_model_struct, generate_update_input_struct,
+    generate_model_descriptor, generate_model_struct_only, generate_pg_from_row_impl,
+    generate_rusqlite_from_row_impl, generate_update_input_struct,
 };
 use crate::procedure::{
     generate_client_procedure_module, generate_procedure_module, generate_procedure_registry_method,
@@ -30,9 +50,68 @@ use crate::types::{
     generate_custom_field_resolver_methods, generate_enum_type, generate_type_struct,
 };
 
-pub(crate) fn include_schema(input: TokenStream) -> TokenStream {
+/// Supported sqlx database backends for [`include_server_schema`].
+///
+/// Today only `Postgres` is accepted; the parser is wired so adding `MySql` /
+/// `Sqlite`-via-sqlx (when we want them) is a non-breaking change at call sites
+/// that already pass `db = Postgres`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ServerDb {
+    Postgres,
+}
+
+/// Parsed arguments for `include_server_schema!("schema.cstack", db = Postgres)`.
+struct ServerSchemaArgs {
+    schema_path: LitStr,
+    db: ServerDb,
+}
+
+impl Parse for ServerSchemaArgs {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+        let schema_path: LitStr = input.parse()?;
+        input.parse::<Token![,]>()?;
+        let key: syn::Ident = input.parse()?;
+        if key != "db" {
+            return Err(syn::Error::new(
+                key.span(),
+                "expected `db = Postgres` (only the `db` argument is recognised)",
+            ));
+        }
+        input.parse::<Token![=]>()?;
+        let value: syn::Ident = input.parse()?;
+        let db = match value.to_string().as_str() {
+            "Postgres" => ServerDb::Postgres,
+            other => {
+                return Err(syn::Error::new(
+                    value.span(),
+                    format!(
+                        "unsupported db backend `{other}`. supported: Postgres. (MySql / sqlite-via-sqlx will land in a future release.)"
+                    ),
+                ));
+            }
+        };
+        Ok(Self { schema_path, db })
+    }
+}
+
+pub(crate) fn include_server_schema(input: TokenStream) -> TokenStream {
+    let args = parse_macro_input!(input as ServerSchemaArgs);
+    let _ = args.db; // Postgres-only today; reserved for future backends.
+    compose_server_schema(&args.schema_path)
+}
+
+pub(crate) fn include_embedded_schema(input: TokenStream) -> TokenStream {
     let schema_path = parse_macro_input!(input as LitStr);
-    let (schema_relative, resolved, schema) = match parse_schema_literal(&schema_path) {
+    compose_embedded_schema(&schema_path)
+}
+
+pub(crate) fn include_client_schema(input: TokenStream) -> TokenStream {
+    let schema_path = parse_macro_input!(input as LitStr);
+    compose_client_schema(&schema_path)
+}
+
+fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
+    let (schema_relative, resolved, schema) = match parse_schema_literal(schema_path) {
         Ok(parsed) => parsed,
         Err(error) => return error,
     };
@@ -71,7 +150,11 @@ pub(crate) fn include_schema(input: TokenStream) -> TokenStream {
     let model_structs = schema
         .models
         .iter()
-        .map(|model| generate_model_struct(model, &model_name_set, &enum_name_set));
+        .map(|model| generate_model_struct_only(model, &model_name_set, &enum_name_set));
+    let pg_from_row_impls = schema
+        .models
+        .iter()
+        .map(|model| generate_pg_from_row_impl(model, &model_name_set, &enum_name_set));
     let auth = schema.auth.as_ref();
     let model_descriptors = match schema
         .models
@@ -217,6 +300,7 @@ pub(crate) fn include_schema(input: TokenStream) -> TokenStream {
                 .into();
         }
     };
+
     let expanded = quote! {
         pub mod cratestack_schema {
             pub const SCHEMA_PATH: &str = #schema_relative;
@@ -247,6 +331,7 @@ pub(crate) fn include_schema(input: TokenStream) -> TokenStream {
                 use ::cratestack::sqlx;
 
                 #(#model_structs)*
+                #(#pg_from_row_impls)*
                 #(#model_descriptors)*
             }
 
@@ -552,9 +637,124 @@ pub(crate) fn include_schema(input: TokenStream) -> TokenStream {
     expanded.into()
 }
 
-pub(crate) fn include_client_macro(input: TokenStream) -> TokenStream {
-    let schema_path = parse_macro_input!(input as LitStr);
-    let (schema_relative, resolved, schema) = match parse_schema_literal(&schema_path) {
+fn compose_embedded_schema(schema_path: &LitStr) -> TokenStream {
+    let (schema_relative, resolved, schema) = match parse_schema_literal(schema_path) {
+        Ok(parsed) => parsed,
+        Err(error) => return error,
+    };
+    let resolved_literal = resolved.display().to_string();
+
+    let mixin_names = schema.mixins.iter().map(|mixin| schema_lit(&mixin.name));
+    let model_names = schema.models.iter().map(|model| schema_lit(&model.name));
+    let model_name_set = schema
+        .models
+        .iter()
+        .map(|model| model.name.as_str())
+        .collect::<BTreeSet<_>>();
+    let type_names = schema.types.iter().map(|ty| schema_lit(&ty.name));
+    let enum_names = schema
+        .enums
+        .iter()
+        .map(|enum_decl| schema_lit(&enum_decl.name));
+    let enum_name_set = crate::shared::enum_name_set(&schema.enums);
+    let type_structs = schema
+        .types
+        .iter()
+        .map(|ty| generate_type_struct(ty, &enum_name_set));
+    let enum_types = schema.enums.iter().map(generate_enum_type);
+    let model_structs = schema
+        .models
+        .iter()
+        .map(|model| generate_model_struct_only(model, &model_name_set, &enum_name_set));
+    let rusqlite_from_row_impls = schema
+        .models
+        .iter()
+        .map(|model| generate_rusqlite_from_row_impl(model, &model_name_set, &enum_name_set));
+    let auth = schema.auth.as_ref();
+    let model_descriptors = match schema
+        .models
+        .iter()
+        .map(|model| generate_model_descriptor(model, &schema.models, &schema.types, auth))
+        .collect::<Result<Vec<_>, String>>()
+    {
+        Ok(descriptors) => descriptors,
+        Err(error) => {
+            return syn::Error::new(schema_path.span(), error)
+                .to_compile_error()
+                .into();
+        }
+    };
+    let field_modules = match schema
+        .models
+        .iter()
+        .map(|model| generate_field_module(model, &model_name_set, &schema.models))
+        .collect::<Result<Vec<_>, String>>()
+    {
+        Ok(field_modules) => field_modules,
+        Err(error) => {
+            return syn::Error::new(schema_path.span(), error)
+                .to_compile_error()
+                .into();
+        }
+    };
+    let create_input_structs = schema
+        .models
+        .iter()
+        .map(|model| generate_create_input_struct(model, &model_name_set, &enum_name_set));
+    let update_input_structs = schema
+        .models
+        .iter()
+        .map(|model| generate_update_input_struct(model, &model_name_set, &enum_name_set));
+
+    // Procedures are skipped on the embedded path — local apps don't have an
+    // RPC surface to call. `@@audit` and `@@emit` directives are silently
+    // ignored for v1; see CHANGELOG for the follow-up plan.
+
+    let expanded = quote! {
+        pub mod cratestack_schema {
+            pub const SCHEMA_PATH: &str = #schema_relative;
+            pub const SCHEMA_SOURCE: &str = include_str!(#resolved_literal);
+            pub const MIXINS: &[&str] = &[#(#mixin_names),*];
+            pub const MODELS: &[&str] = &[#(#model_names),*];
+            pub const TYPES: &[&str] = &[#(#type_names),*];
+            pub const ENUMS: &[&str] = &[#(#enum_names),*];
+
+            pub const MIXIN_COUNT: usize = MIXINS.len();
+            pub const MODEL_COUNT: usize = MODELS.len();
+            pub const TYPE_COUNT: usize = TYPES.len();
+            pub const ENUM_COUNT: usize = ENUMS.len();
+
+            pub mod types {
+                #(#enum_types)*
+                #(#type_structs)*
+            }
+
+            pub use types::*;
+
+            pub mod models {
+                #(#model_structs)*
+                #(#rusqlite_from_row_impls)*
+                #(#model_descriptors)*
+            }
+
+            pub use models::*;
+
+            #(#field_modules)*
+
+            pub mod inputs {
+                #(#create_input_structs)*
+                #(#update_input_structs)*
+            }
+
+            pub use inputs::*;
+        }
+    };
+
+    expanded.into()
+}
+
+fn compose_client_schema(schema_path: &LitStr) -> TokenStream {
+    let (schema_relative, resolved, schema) = match parse_schema_literal(schema_path) {
         Ok(parsed) => parsed,
         Err(error) => return error,
     };
@@ -625,6 +825,7 @@ pub(crate) fn include_client_macro(input: TokenStream) -> TokenStream {
                     .into();
             }
         };
+
     let expanded = quote! {
         pub mod cratestack_schema {
             pub const SCHEMA_PATH: &str = #schema_relative;

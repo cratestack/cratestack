@@ -20,7 +20,9 @@ use crate::validators::generate_input_validate_body;
 
 mod selection;
 
-pub(crate) fn generate_model_struct(
+/// Emit just the model `struct` (with serde derives) — no backend-specific
+/// `FromRow` impls. Used by every composer.
+pub(crate) fn generate_model_struct_only(
     model: &Model,
     model_names: &BTreeSet<&str>,
     enum_names: &BTreeSet<&str>,
@@ -31,12 +33,6 @@ pub(crate) fn generate_model_struct(
     let fields = scalar_fields
         .iter()
         .map(|field| struct_field_definition(field, false, enum_names));
-    let row_fields = scalar_fields
-        .iter()
-        .map(|field| row_field_tokens(field, enum_names));
-    let sqlite_row_fields = scalar_fields
-        .iter()
-        .map(|field| sqlite_row_field_tokens(field, enum_names));
 
     quote! {
         #docs
@@ -44,7 +40,23 @@ pub(crate) fn generate_model_struct(
         pub struct #model_ident {
             #(#fields)*
         }
+    }
+}
 
+/// Emit `impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for Model` only.
+/// **Server-side composer use only — must not appear in embedded output.**
+pub(crate) fn generate_pg_from_row_impl(
+    model: &Model,
+    model_names: &BTreeSet<&str>,
+    enum_names: &BTreeSet<&str>,
+) -> proc_macro2::TokenStream {
+    let model_ident = ident(&model.name);
+    let scalar_fields = scalar_model_fields(model, model_names);
+    let row_fields = scalar_fields
+        .iter()
+        .map(|field| row_field_tokens(field, enum_names));
+
+    quote! {
         impl<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> for #model_ident {
             fn from_row(row: &'r sqlx::postgres::PgRow) -> Result<Self, sqlx::Error> {
                 use sqlx::Row;
@@ -54,11 +66,27 @@ pub(crate) fn generate_model_struct(
                 })
             }
         }
+    }
+}
 
-        impl ::cratestack::FromRusqliteRow for #model_ident {
+/// Emit `impl FromRusqliteRow for Model` only.
+/// **Embedded-side composer use only — must not appear in server output.**
+pub(crate) fn generate_rusqlite_from_row_impl(
+    model: &Model,
+    model_names: &BTreeSet<&str>,
+    enum_names: &BTreeSet<&str>,
+) -> proc_macro2::TokenStream {
+    let model_ident = ident(&model.name);
+    let scalar_fields = scalar_model_fields(model, model_names);
+    let sqlite_row_fields = scalar_fields
+        .iter()
+        .map(|field| sqlite_row_field_tokens(field, enum_names));
+
+    quote! {
+        impl ::cratestack_rusqlite::FromRusqliteRow for #model_ident {
             fn from_rusqlite_row(
-                row: &::cratestack::rusqlite::Row<'_>,
-            ) -> ::cratestack::rusqlite::Result<Self> {
+                row: &::cratestack_rusqlite::rusqlite::Row<'_>,
+            ) -> ::cratestack_rusqlite::rusqlite::Result<Self> {
                 Ok(Self {
                     #(#sqlite_row_fields)*
                 })

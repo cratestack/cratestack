@@ -5,6 +5,8 @@
 //! entry didn't also commit. Downstream fan-out (Kafka, Redis pubsub) goes
 //! through [`cratestack_core::AuditSink`]; this module handles the canonical
 //! database record.
+use crate::sqlx;
+
 
 use cratestack_core::{AuditActor, AuditEvent, AuditOperation, CoolContext, CoolError};
 

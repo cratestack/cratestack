@@ -35,3 +35,13 @@ serde_json.workspace = true
 uuid.workspace = true
 rust_decimal = { workspace = true, optional = true }
 bigdecimal = { workspace = true, optional = true }
+
+# wasm32-only deps: rusqlite 0.39 swaps its FFI to sqlite-wasm-rs on this target
+# (memory VFS by default). For OPFS-backed persistence in the browser, the
+# `install_opfs_vfs()` helper below uses `sqlite-wasm-vfs::sahpool`. The helper
+# must run **inside a Dedicated Worker** — OPFS SyncAccessHandle is worker-only.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+sqlite-wasm-rs = { version = "0.5", default-features = false }
+sqlite-wasm-vfs = "0.2"
+uuid = { workspace = true, features = ["js"] }
+wasm-bindgen = "0.2"

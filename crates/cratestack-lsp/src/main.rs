@@ -3,17 +3,17 @@ use std::sync::Arc;
 
 use cratestack_core::{Attribute, ProcedureKind, Schema, SourceSpan, TypeRef};
 use tokio::sync::RwLock;
-use tower_lsp::jsonrpc::Result;
-use tower_lsp::lsp_types::{
+use tower_lsp_server::jsonrpc::Result;
+use tower_lsp_server::ls_types::{
     CompletionItem, CompletionItemKind, CompletionOptions, CompletionParams, CompletionResponse,
     Diagnostic, DiagnosticSeverity, DidChangeTextDocumentParams, DidOpenTextDocumentParams,
     DocumentSymbol, DocumentSymbolParams, DocumentSymbolResponse, GotoDefinitionParams,
     GotoDefinitionResponse, Hover, HoverContents, HoverParams, HoverProviderCapability,
     InitializeParams, InitializeResult, InitializedParams, Location, MarkupContent, MarkupKind,
     MessageType, OneOf, Position, Range, ServerCapabilities, ServerInfo, SymbolKind,
-    TextDocumentSyncCapability, TextDocumentSyncKind, Url,
+    TextDocumentSyncCapability, TextDocumentSyncKind, Uri,
 };
-use tower_lsp::{Client, LanguageServer, LspService, Server};
+use tower_lsp_server::{Client, LanguageServer, LspService, Server};
 
 #[derive(Clone)]
 struct DocumentState {
@@ -43,7 +43,7 @@ struct ParsedRelationAttributeSpans {
 
 struct Backend {
     client: Client,
-    documents: Arc<RwLock<HashMap<Url, DocumentState>>>,
+    documents: Arc<RwLock<HashMap<Uri, DocumentState>>>,
 }
 
 impl Backend {
@@ -54,7 +54,7 @@ impl Backend {
         }
     }
 
-    async fn update_document(&self, uri: Url, text: String) {
+    async fn update_document(&self, uri: Uri, text: String) {
         let (schema, diagnostics) = analyze_document(&uri, &text);
         self.documents
             .write()
@@ -66,7 +66,6 @@ impl Backend {
     }
 }
 
-#[tower_lsp::async_trait]
 impl LanguageServer for Backend {
     async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
         Ok(InitializeResult {
@@ -84,6 +83,7 @@ impl LanguageServer for Backend {
                 document_symbol_provider: Some(OneOf::Left(true)),
                 ..ServerCapabilities::default()
             },
+            offset_encoding: None,
         })
     }
 
@@ -198,10 +198,9 @@ impl LanguageServer for Backend {
     }
 }
 
-fn analyze_document(uri: &Url, text: &str) -> (Option<Schema>, Vec<Diagnostic>) {
+fn analyze_document(uri: &Uri, text: &str) -> (Option<Schema>, Vec<Diagnostic>) {
     let label = uri
         .to_file_path()
-        .ok()
         .map(|path| path.display().to_string())
         .unwrap_or_else(|| uri.to_string());
 
@@ -325,7 +324,7 @@ fn completion_items(schema: Option<&Schema>) -> Vec<CompletionItem> {
                     kind: Some(CompletionItemKind::CLASS),
                     detail: Some("schema mixin".to_owned()),
                     documentation: (!mixin.docs.is_empty()).then(|| {
-                        tower_lsp::lsp_types::Documentation::MarkupContent(MarkupContent {
+                        tower_lsp_server::ls_types::Documentation::MarkupContent(MarkupContent {
                             kind: MarkupKind::Markdown,
                             value: mixin.docs.join("\n"),
                         })
@@ -341,7 +340,7 @@ fn completion_items(schema: Option<&Schema>) -> Vec<CompletionItem> {
                     kind: Some(CompletionItemKind::STRUCT),
                     detail: Some("schema model".to_owned()),
                     documentation: (!model.docs.is_empty()).then(|| {
-                        tower_lsp::lsp_types::Documentation::MarkupContent(MarkupContent {
+                        tower_lsp_server::ls_types::Documentation::MarkupContent(MarkupContent {
                             kind: MarkupKind::Markdown,
                             value: model.docs.join("\n"),
                         })
@@ -357,7 +356,7 @@ fn completion_items(schema: Option<&Schema>) -> Vec<CompletionItem> {
                         kind: Some(CompletionItemKind::FIELD),
                         detail: Some(detail),
                         documentation: (!field.docs.is_empty()).then(|| {
-                            tower_lsp::lsp_types::Documentation::MarkupContent(MarkupContent {
+                            tower_lsp_server::ls_types::Documentation::MarkupContent(MarkupContent {
                                 kind: MarkupKind::Markdown,
                                 value: field.docs.join("\n"),
                             })
@@ -375,7 +374,7 @@ fn completion_items(schema: Option<&Schema>) -> Vec<CompletionItem> {
                     kind: Some(CompletionItemKind::CLASS),
                     detail: Some("schema type".to_owned()),
                     documentation: (!ty.docs.is_empty()).then(|| {
-                        tower_lsp::lsp_types::Documentation::MarkupContent(MarkupContent {
+                        tower_lsp_server::ls_types::Documentation::MarkupContent(MarkupContent {
                             kind: MarkupKind::Markdown,
                             value: ty.docs.join("\n"),
                         })
@@ -395,7 +394,7 @@ fn completion_items(schema: Option<&Schema>) -> Vec<CompletionItem> {
                         ProcedureKind::Mutation => "mutation procedure".to_owned(),
                     }),
                     documentation: (!procedure.docs.is_empty()).then(|| {
-                        tower_lsp::lsp_types::Documentation::MarkupContent(MarkupContent {
+                        tower_lsp_server::ls_types::Documentation::MarkupContent(MarkupContent {
                             kind: MarkupKind::Markdown,
                             value: procedure.docs.join("\n"),
                         })
@@ -410,7 +409,7 @@ fn completion_items(schema: Option<&Schema>) -> Vec<CompletionItem> {
                         kind: Some(CompletionItemKind::VARIABLE),
                         detail: Some(render_type_ref(&arg.ty)),
                         documentation: (!arg.docs.is_empty()).then(|| {
-                            tower_lsp::lsp_types::Documentation::MarkupContent(MarkupContent {
+                            tower_lsp_server::ls_types::Documentation::MarkupContent(MarkupContent {
                                 kind: MarkupKind::Markdown,
                                 value: arg.docs.join("\n"),
                             })
@@ -545,7 +544,7 @@ fn locate_symbol(schema: &Schema, offset: usize) -> Option<SymbolInfo> {
     None
 }
 
-fn definition_location(uri: &Url, text: &str, schema: &Schema, offset: usize) -> Option<Location> {
+fn definition_location(uri: &Uri, text: &str, schema: &Schema, offset: usize) -> Option<Location> {
     let span = relation_target_span(schema, offset)
         .or_else(|| type_reference_target_span(schema, offset))
         .or_else(|| word_at_offset(text, offset).and_then(|word| declaration_span(schema, word)))?;
@@ -1120,7 +1119,8 @@ mod tests {
         analyze_document, declaration_span, document_symbols, locate_symbol, offset_to_position,
         position_to_offset, relation_target_span, type_reference_target_span, word_at_offset,
     };
-    use tower_lsp::lsp_types::{Position, SymbolKind, Url};
+    use std::str::FromStr;
+    use tower_lsp_server::ls_types::{Position, SymbolKind, Uri};
 
     #[test]
     fn converts_utf16_positions_round_trip() {
@@ -1146,7 +1146,7 @@ mod tests {
     #[test]
     fn returns_hoverable_symbol_docs_from_schema() {
         let text = "/// User docs\nmodel User {\n  /// Email docs\n  email String @id\n}\n";
-        let uri = Url::parse("file:///schema.cstack").expect("uri should parse");
+        let uri = Uri::from_str("file:///schema.cstack").expect("uri should parse");
         let (schema, diagnostics) = analyze_document(&uri, text);
 
         assert!(diagnostics.is_empty());
@@ -1170,7 +1170,7 @@ mod tests {
     fn resolves_declaration_span_by_name() {
         let text =
             "type FeedInput {\n  limit Int\n}\nprocedure getFeed(args: FeedInput): FeedInput\n";
-        let uri = Url::parse("file:///schema.cstack").expect("uri should parse");
+        let uri = Uri::from_str("file:///schema.cstack").expect("uri should parse");
         let (schema, diagnostics) = analyze_document(&uri, text);
 
         assert!(diagnostics.is_empty());
@@ -1183,7 +1183,7 @@ mod tests {
     #[test]
     fn builds_hierarchical_document_symbols() {
         let text = "model User {\n  id Int @id\n}\n";
-        let uri = Url::parse("file:///schema.cstack").expect("uri should parse");
+        let uri = Uri::from_str("file:///schema.cstack").expect("uri should parse");
         let (schema, diagnostics) = analyze_document(&uri, text);
 
         assert!(diagnostics.is_empty());
@@ -1198,7 +1198,7 @@ mod tests {
     #[test]
     fn resolves_relation_fields_and_references_to_the_correct_field_names() {
         let text = "model User {\n  id Int @id\n}\n\nmodel Post {\n  id Int @id\n  authorId Int\n  author User @relation(fields:[authorId],references:[id])\n}\n";
-        let uri = Url::parse("file:///schema.cstack").expect("uri should parse");
+        let uri = Uri::from_str("file:///schema.cstack").expect("uri should parse");
         let (schema, diagnostics) = analyze_document(&uri, text);
 
         assert!(diagnostics.is_empty());
@@ -1223,7 +1223,7 @@ mod tests {
     fn resolves_type_reference_to_declaration_name_span() {
         let text =
             "type FeedInput {\n  limit Int\n}\nprocedure getFeed(args: FeedInput): FeedInput\n";
-        let uri = Url::parse("file:///schema.cstack").expect("uri should parse");
+        let uri = Uri::from_str("file:///schema.cstack").expect("uri should parse");
         let (schema, diagnostics) = analyze_document(&uri, text);
 
         assert!(diagnostics.is_empty());
@@ -1243,7 +1243,7 @@ mod tests {
     #[test]
     fn narrows_unknown_relation_field_diagnostic_to_the_relation_name() {
         let text = "model User {\n  id Int @id\n}\n\nmodel Post {\n  id Int @id\n  authorId Int\n  author User @relation(fields:[ownerId],references:[id])\n}\n";
-        let uri = Url::parse("file:///schema.cstack").expect("uri should parse");
+        let uri = Uri::from_str("file:///schema.cstack").expect("uri should parse");
         let (_schema, diagnostics) = analyze_document(&uri, text);
 
         assert_eq!(diagnostics.len(), 1);
@@ -1258,7 +1258,7 @@ mod tests {
     fn includes_procedure_args_as_document_symbol_children() {
         let text =
             "/// Feed docs\n/// @param limit Maximum items\nprocedure getFeed(limit: Int): Int\n";
-        let uri = Url::parse("file:///schema.cstack").expect("uri should parse");
+        let uri = Uri::from_str("file:///schema.cstack").expect("uri should parse");
         let (schema, diagnostics) = analyze_document(&uri, text);
 
         assert!(diagnostics.is_empty());

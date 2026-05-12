@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 // --- model & schema --------------------------------------------------------
 //
-// In a real app these would be emitted by `include_schema!`. Here we declare
+// In a real app these would be emitted by `include_embedded_schema!`. Here we declare
 // them by hand so the test stays self-contained and exercises the FFI types
 // independently of the macro.
 

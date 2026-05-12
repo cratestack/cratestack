@@ -19,7 +19,7 @@
 //! to know your specific model types. Treat this file as the template
 //! to copy.
 
-use cratestack::include_schema;
+use cratestack::include_embedded_schema;
 use cratestack::{RusqliteRuntime, rusqlite_backend::ddl::create_table_sql};
 use cratestack_rusqlite::ffi::{
     OperationKind, OperationRequest, OperationResponse, json_request_from, json_response_into,
@@ -27,7 +27,7 @@ use cratestack_rusqlite::ffi::{
 use cratestack_rusqlite::{ModelDelegate, RusqliteError};
 use serde::Deserialize;
 
-include_schema!("examples/sqlite_ffi_dispatch.cstack");
+include_embedded_schema!("examples/sqlite_ffi_dispatch.cstack");
 
 use cratestack_schema::models::Todo;
 use cratestack_schema::{CreateTodoInput, TODO_MODEL, UpdateTodoInput};

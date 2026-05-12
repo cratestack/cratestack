@@ -1,3 +1,5 @@
+use crate::sqlx;
+
 use cratestack_core::{CoolContext, CoolError, Value};
 use cratestack_policy::{context_has_role, context_in_tenant};
 

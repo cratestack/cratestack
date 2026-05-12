@@ -20,4 +20,4 @@ path = "src/main.rs"
 cratestack-core.workspace = true
 cratestack-parser.workspace = true
 tokio = { workspace = true, features = ["io-std", "sync"] }
-tower-lsp.workspace = true
+tower-lsp-server.workspace = true
