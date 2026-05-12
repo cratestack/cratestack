@@ -31,7 +31,7 @@ description = "Rust-native schema-first framework for typed HTTP APIs, generated
 repository = "https://github.com/vaam-store/cratestack"
 homepage = "https://cratestack.dev"
 documentation = "https://rust-doc.cratestack.dev/cratestack"
-readme = "README.md"
+# readme set per-package
 keywords = ["api", "schema", "codegen", "axum", "sqlx"]
 categories = ["web-programming", "development-tools"]
 authors = [

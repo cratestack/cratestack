@@ -8,7 +8,7 @@ description = "On-device SQLite backend for the CrateStack ORM. Sync API, bundle
 repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
-readme.workspace = true
+readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 

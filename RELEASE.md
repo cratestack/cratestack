@@ -81,6 +81,8 @@ cargo publish -p cratestack-client-store-sqlite
 cargo publish -p cratestack-client-store-redis
 cargo publish -p cratestack-studio-generator
 cargo publish -p cratestack-macros
+cargo publish -p cratestack-sql
+cargo publish -p cratestack-rusqlite
 cargo publish -p cratestack
 cargo publish -p cratestack-lsp
 cargo publish -p cratestack-cli
