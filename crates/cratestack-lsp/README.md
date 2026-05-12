@@ -4,69 +4,58 @@ Language Server Protocol implementation for `.cstack` schema files.
 
 ## Overview
 
-`cratestack-lsp` provides IDE support for CrateStack schema files, including diagnostics, completions, hover documentation, and navigation.
+`cratestack-lsp` is a `tower-lsp` binary that surfaces parse and semantic diagnostics from `cratestack-parser`, plus a few editor conveniences. It is the language server bundled by `packages/cratestack-vscode`.
 
 ## Installation
 
-The LSP is typically bundled with editor extensions:
-
 ```bash
-cargo install cratestack-lsp
+cargo install cratestack-lsp --version 0.2.2
 ```
 
-## Features
+Or build from the workspace:
 
-### Diagnostics
+```bash
+cargo build --release -p cratestack-lsp
+```
 
-Real-time error detection for:
-- Syntax errors
-- Undefined references
-- Invalid attribute values
-- Missing required fields
-- Circular dependencies
+The binary speaks LSP over stdio.
 
-### Completions
+## Capabilities
 
-Context-aware suggestions for:
-- Model and type names
-- Field names
-- Attribute names and values
-- Relation references
-- Enum values
+| Capability                | Status              |
+|---------------------------|---------------------|
+| Text document sync        | Full                |
+| `textDocument/hover`      | Supported           |
+| `textDocument/completion` | Supported (defaults)|
+| `textDocument/definition` | Supported           |
+| `textDocument/documentSymbol` | Supported       |
+| `textDocument/publishDiagnostics` | Supported (on open and change) |
 
-### Hover
-
-Documentation on hover for:
-- Model definitions
-- Field types
-- Attributes and their meanings
-
-### Navigation
-
-- Go to definition
-- Find references
-- Document symbols outline
+Find-references, rename, and code-action capabilities are not implemented today.
 
 ## Editor Integration
 
 ### VS Code
 
-Install the `cratestack-vscode` extension which bundles this LSP.
+Use `packages/cratestack-vscode`, which bundles this binary.
 
 ### Neovim
 
 ```lua
+local lspconfig = require('lspconfig')
 local configs = require('lspconfig.configs')
 
-configs.cratestack = {
-  default_config = {
-    cmd = {'cratestack-lsp'},
-    filetypes = {'cstack'},
-    root_dir = lspconfig.util.root_pattern('.git', '*.cstack'),
-  },
-}
+if not configs.cratestack then
+  configs.cratestack = {
+    default_config = {
+      cmd = { 'cratestack-lsp' },
+      filetypes = { 'cstack' },
+      root_dir = lspconfig.util.root_pattern('.git', '*.cstack'),
+    },
+  }
+end
 
-require('lspconfig').cratestack.setup{}
+lspconfig.cratestack.setup{}
 ```
 
 ### Emacs
@@ -82,39 +71,10 @@ require('lspconfig').cratestack.setup{}
     :server-id 'cratestack)))
 ```
 
-## Protocol Support
-
-| Capability | Status |
-|------------|--------|
-| Diagnostics | ✓ |
-| Completion | ✓ |
-| Hover | ✓ |
-| Go to Definition | ✓ |
-| Find References | ✓ |
-| Document Symbols | ✓ |
-| Rename | Partial |
-
-## File Type
-
-The LSP handles `.cstack` files:
-
-```
-datasource db {
-  provider = "postgresql"
-  url = env("DATABASE_URL")
-}
-
-model User {
-  id String @id
-  email String @unique
-  name String?
-}
-```
-
 ## See Also
 
 - [Editor Tooling](https://cratestack.dev/tooling/editor-tooling)
-- `cratestack-parser` - Underlying parser
+- `cratestack-parser` — underlying parser and semantic checker
 
 ## License
 

@@ -4,101 +4,62 @@ Redis-backed server-side infrastructure for CrateStack.
 
 ## Overview
 
-`cratestack-redis` provides Redis implementations of CrateStack server-side interfaces. Currently it provides `RedisIdempotencyStore` - a Redis-backed implementation of the `IdempotencyStore` trait used by `IdempotencyLayer` for duplicate execution protection.
+`cratestack-redis` provides Redis implementations of the server-side traits CrateStack defines. Today the crate ships a single store:
 
-This is the Redis equivalent of the Postgres-backed `SqlxIdempotencyStore` in `cratestack-sqlx`.
+- `RedisIdempotencyStore` — implements the `IdempotencyStore` trait from `cratestack-axum::idempotency`, the Redis equivalent of `SqlxIdempotencyStore` for deployments that prefer Redis to a Postgres `idempotency_keys` table.
 
 ## Installation
 
 ```toml
 [dependencies]
-cratestack-redis = "0.2"
-redis = { version = "0.24", features = ["aio", "tokio-comp", "script"] }
+cratestack-redis = "0.2.2"
+cratestack-axum = "0.2.2"
+redis = "1"
 ```
 
 ## Usage
 
-### Idempotency Store
-
-Use with `IdempotencyLayer` for duplicate execution protection:
-
 ```rust
+use std::sync::Arc;
+use std::time::Duration;
+use cratestack_axum::idempotency::{IdempotencyLayer, IdempotencyStore};
 use cratestack_redis::RedisIdempotencyStore;
-use cratestack_axum::idempotency::IdempotencyLayer;
 
-let store = RedisIdempotencyStore::open(
-    "redis://127.0.0.1:6379",
-    "myapp:idem"
-)?;
-
-let layer = IdempotencyLayer::new(store);
+let store: Arc<dyn IdempotencyStore> =
+    Arc::new(RedisIdempotencyStore::open("redis://127.0.0.1:6379", "myapp")?);
 
 let app = axum::Router::new()
-    .route("/api", handler)
-    .layer(layer);
+    .nest("/api", router)
+    .layer(IdempotencyLayer::new(store, Duration::from_secs(24 * 60 * 60)));
 ```
 
-### Configuration
+To reuse an existing `redis::Client` (typical for connection pooling and Cluster setups):
 
 ```rust
-use cratestack_redis::RedisIdempotencyStoreConfig;
-
-let config = RedisIdempotencyStoreConfig::new("bank:au:idem");
-// Or use from_client for connection pooling
-
 let client = redis::Client::open("redis://cluster:6379")?;
-let store = RedisIdempotencyStore::from_client(client, "bank");
+let store = RedisIdempotencyStore::from_client(client, "myapp");
 ```
+
+`RedisIdempotencyStoreConfig` exposes a single `key_prefix` field; the prefix is normalised (leading/trailing colons stripped) and falls back to a built-in default when empty. TTL is owned by the layer (via `IdempotencyLayer::new(..., ttl)`), not the store, and is applied per record through `PEXPIREAT`.
 
 ## How It Works
 
-### Key Structure
+Each `(principal, key)` pair maps to a Redis hash keyed by `<prefix>:idem:<sha256(principal || 0x00 || key)>`. SHA-256 hashing keeps Redis keys bounded regardless of input size and avoids escaping concerns around `:` in user-supplied values.
 
-Each `(principal, key)` pair maps to a Redis hash:
+Atomicity is provided by three Lua scripts:
 
-```
-<prefix>:idem:<sha256(principal || 0x00 || key)>
-```
+- `RESERVE_LUA` — atomically checks for an existing entry, creates a new reservation, or returns the cached response.
+- `COMPLETE_LUA` — stores the response with a token check so a stale completer cannot overwrite a fresh record.
+- `RELEASE_LUA` — drops a pending reservation if its status is still `in_flight`.
 
-SHA-256 hashing keeps Redis keys bounded regardless of input size and avoids escaping concerns around `:` in user-supplied values.
-
-### Atomicity
-
-Three Lua scripts provide atomicity:
-
-1. **RESERVE_LUA** - Atomically checks for existing entry, creates new reservation, or returns cached response
-2. **COMPLETE_LUA** - Stores response with token validation
-3. **RELEASE_LUA** - Drops pending reservation if status is `in_flight`
-
-Redis handles `EVALSHA` plus `NOSCRIPT` fallback automatically via the `redis` crate.
-
-### Eviction
-
-Keys are evicted via `PEXPIREAT` based on the provided `expires_at`. When TTL passes:
-- Redis drops the hash
-- Next reservation starts fresh
-- Late `complete/release` from previous reservation becomes silent no-op
-
-## Use Cases
-
-- **Multi-instance deployments**: Redis as durable store shared across replicas
-- **Banking-grade idempotency**: Same protection as Postgres store, for Redis-preferring deployments
-- **Existing infrastructure**: Leverage existing Redis clusters instead of adding Postgres
-
-## Comparison with Postgres Store
-
-| Feature | `SqlxIdempotencyStore` | `RedisIdempotencyStore` |
-|---------|------------------------|-------------------------|
-| Backend | Postgres table | Redis hash |
-| Transactions | Participates in existing tx | Independent |
-| Cluster support | Postgres replication | Redis Cluster/replication |
-| Use case | Transactional audit coupling | Existing Redis infra |
+Eviction uses `PEXPIREAT` based on the `expires_at` derived from the layer's TTL.
 
 ## See Also
 
-- [Idempotency Guide](https://cratestack.dev/guides/idempotency)
-- `cratestack-axum::idempotency` - Idempotency Layer
-- `cratestack-client-store-redis` - Client-side Redis state store (different use case)
+- [Idempotency guide](https://cratestack.dev/guides/idempotency)
+- `cratestack-axum` — `IdempotencyLayer`, `IdempotencyStore`, table DDL helper
+- `cratestack-sqlx` — Postgres-backed `SqlxIdempotencyStore`
+- `cratestack-client-store-redis` — Redis state store for the client runtime (unrelated trait)
 
 ## License
 

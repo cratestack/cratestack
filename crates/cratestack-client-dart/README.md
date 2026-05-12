@@ -1,116 +1,78 @@
 # cratestack-client-dart
 
-Dart/Flutter client generator for CrateStack services.
+Dart package generator for CrateStack services.
 
 ## Overview
 
-`cratestack-client-dart` generates a complete Dart package from a `.cstack` schema, including typed models, client API, and optional Flutter integration.
+`cratestack-client-dart` renders a complete Dart package from a parsed `.cstack` schema. It exposes a single `generate_package` entry point used by `cratestack-cli`'s `generate-dart` subcommand; downstream tools can also call it directly.
+
+The generator uses `minijinja` templates. A custom `template_dir` overrides individual templates; missing files fall back to the bundled defaults.
 
 ## Installation
 
-This is a build-time dependency used by the CLI:
+This is a build-time crate. End users typically invoke it through the CLI:
 
 ```bash
-cratestack generate-dart --schema schema.cstack --out ./dart_client --name my_api_client
+cratestack generate-dart \
+  --schema schemas/catalog.cstack \
+  --out packages/catalog_client \
+  --library-name catalog_client \
+  --base-path /api
 ```
 
-## Generated Package Structure
+To call the generator from Rust:
 
-```
-my_api_client/
-├── pubspec.yaml
-├── lib/
-│   ├── my_api_client.dart
-│   └── src/
-│       ├── runtime.dart      # HTTP client, codec support
-│       ├── models.dart       # Generated model classes
-│       ├── client.dart       # API client
-│       └── queries.dart      # Selection builders
-├── test/
-│   └── client_test.dart
-└── analysis_options.yaml
+```toml
+[dependencies]
+cratestack-client-dart = "0.2.2"
+cratestack-parser = "0.2.2"
 ```
 
-## Generated Models
+```rust
+use cratestack_client_dart::{DartGeneratorConfig, generate_package};
 
-```dart
-class User {
-  final String id;
-  final String email;
-  final String? name;
-  final DateTime createdAt;
+let schema = cratestack_parser::parse_schema_file("schema.cstack")?;
+let package = generate_package(&schema, &DartGeneratorConfig {
+    library_name: "catalog_client".to_owned(),
+    base_path: "/api".to_owned(),
+    template_dir: None,
+})?;
 
-  User({
-    required this.id,
-    required this.email,
-    this.name,
-    required this.createdAt,
-  });
-
-  factory User.fromJson(Map<String, dynamic> json) => /* ... */;
-  Map<String, dynamic> toJson() => /* ... */;
-}
-
-class CreateUserInput {
-  final String email;
-  final String? name;
-
-  CreateUserInput({required this.email, this.name});
-  Map<String, dynamic> toJson() => /* ... */;
+for file in package.files {
+    std::fs::write(out_dir.join(&file.file_name), &file.contents)?;
 }
 ```
 
-## Client Usage
+## Generated Package Layout
 
-```dart
-import 'package:my_api_client/my_api_client.dart';
+The generator emits files for these template specs:
 
-void main() async {
-  final client = CratestackClient(
-    baseUrl: 'https://api.example.com',
-    codec: CborCodec(),
-  );
+- `pubspec.yaml`
+- `analysis_options.yaml`
+- `CHANGELOG.md`
+- `README.md`
+- `lib/<library_name>.dart` (library entry point)
+- `lib/src/constants.dart`
+- `lib/src/runtime.dart`
+- `lib/src/models.dart`
+- `lib/src/queries.dart`
+- `lib/src/apis.dart`
+- `example/main.dart`
+- `test/<library_name>_test.dart`
 
-  final api = MyApiClient(client);
+Generated content covers:
 
-  // List
-  final users = await api.users.list(limit: 10);
-
-  // Get with projection
-  final user = await api.users.getView(
-    id: 'usr_123',
-    selection: UserSelect()
-      ..id = true
-      ..email = true
-      ..includePosts = (PostInclude()..id = true ..title = true),
-  );
-
-  // Create
-  final created = await api.users.create(CreateUserInput(
-    email: 'user@example.com',
-    name: 'Alice',
-  ));
-}
-```
-
-## Flutter Integration
-
-For Flutter apps, use with `cratestack-client-flutter` for state persistence and offline support.
-
-## Codecs
-
-```dart
-// CBOR (recommended)
-final codec = CborCodec();
-
-// JSON (development/debugging)
-final codec = JsonCodec();
-```
+- model and input types
+- enum types
+- selection / include builders
+- model and procedure API facades
+- a runtime bridge boundary the host app implements
 
 ## See Also
 
-- `cratestack-client-flutter` - Flutter-specific integrations
-- `cratestack-cli` - CLI for code generation
+- `cratestack-cli` — `generate-dart` command
+- `cratestack-client-flutter` — Flutter bridge runtime
+- [Quickstart](https://cratestack.dev/getting-started/quickstart)
 
 ## License
 

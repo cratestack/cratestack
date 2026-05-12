@@ -1,33 +1,30 @@
 # cratestack-rusqlite
 
-SQLite backend for on-device, offline-first applications.
+On-device SQLite backend for offline-first applications.
 
 ## Overview
 
-`cratestack-rusqlite` provides a synchronous SQLite backend for CrateStack, designed for mobile and embedded applications that run the same `.cstack` schema on-device. It uses a sync API suitable for FFI bridges to Flutter and other UI toolkits.
+`cratestack-rusqlite` is the sync, on-device counterpart of `cratestack-sqlx`. The same `.cstack` schema that drives a Postgres service can also drive a SQLite database living on the device — phone, embedded box, or desktop app. The crate uses `rusqlite` with bundled SQLite (no system library required), no `tokio`, and no policy enforcement.
+
+The architecture is "Rust as real frontend, Flutter (or any UI toolkit) as UI only": Rust owns state, persistence, and business logic; the UI talks to Rust over FFI. The `ffi` module ships the envelope types needed for that boundary.
+
+`@@allow` / `@@deny` policies are **not enforced** by this backend. The device is single-user; authorization is the host app's concern.
 
 ## Installation
 
 ```toml
 [dependencies]
-cratestack-rusqlite = "0.2"
+cratestack-rusqlite = "0.2.2"
 ```
 
-For mobile builds without the server stack:
+Or via the facade crate (recommended when sharing schema with the server):
 
 ```toml
 [dependencies]
-cratestack-rusqlite = "0.2"
-cratestack-sql = "0.2"
+cratestack = "0.2.2"
 ```
 
-## Note
-
-Auth policies (`@@allow`, `@@deny`) are **not enforced** at the SQL layer on-device. The device is single-user; authorization is the app's concern.
-
-## Usage
-
-### Schema
+## Schema
 
 Use `provider = "sqlite"`:
 
@@ -46,103 +43,107 @@ model Note {
 }
 ```
 
-### Runtime
+## Runtime
 
 ```rust
-use cratestack::include_schema;
-use cratestack::{RusqliteRuntime, rusqlite_backend::ddl::create_table_sql};
+use cratestack::{RusqliteRuntime, include_schema, rusqlite_backend::ddl::create_table_sql};
 use cratestack_rusqlite::ModelDelegate;
 
 include_schema!("schema.cstack");
 
-fn open_store() -> Result<RusqliteRuntime, Box<dyn std::error::Error>> {
-    let runtime = RusqliteRuntime::open("app.db")?;
-
-    // Bootstrap tables
-    runtime.with_connection(|conn| {
-        conn.execute_batch(&create_table_sql(&cratestack_schema::NOTE_MODEL))?;
-        Ok(())
-    })?;
-
-    Ok(runtime)
-}
+let runtime = RusqliteRuntime::open("app.db")?;
+runtime.with_connection(|conn| {
+    conn.execute_batch(&create_table_sql(&cratestack_schema::NOTE_MODEL))?;
+    Ok(())
+})?;
 ```
 
-### CRUD Operations
+## CRUD
 
 ```rust
-fn example(runtime: &RusqliteRuntime) -> Result<(), Box<dyn std::error::Error>> {
-    let notes = ModelDelegate::new(runtime, &cratestack_schema::NOTE_MODEL);
+use cratestack_schema::note;
 
-    // Create (sync API, no tokio)
-    let created = notes.create(CreateNoteInput {
-        id: uuid::Uuid::new_v4(),
-        title: "First note".into(),
-        body: "Hello.".into(),
-        pinned: true,
-        createdAt: chrono::Utc::now(),
-    }).run()?;
+let notes = ModelDelegate::new(&runtime, &cratestack_schema::NOTE_MODEL);
 
-    // Find with filters
-    let pinned = notes
-        .find_many()
-        .where_(note::pinned().is_true())
-        .order_by(note::createdAt().desc())
-        .limit(20)
-        .run()?;
+// Create
+let created = notes
+    .create(CreateNoteInput { /* ... */ })
+    .run()?;
 
-    // Update
-    notes.update(created.id, UpdateNoteInput {
-        title: Some("Updated".into()),
-        ..Default::default()
-    }).run()?;
+// Find with filters and ordering
+let pinned = notes
+    .find_many()
+    .where_expr(note::pinned().is_true())
+    .order_by(note::createdAt().desc())
+    .limit(20)
+    .run()?;
 
-    // Delete
-    notes.delete(created.id).run()?;
+// Find one
+let row = notes.find_unique(created.id.clone()).run()?;
 
-    Ok(())
-}
+// Update
+notes
+    .update(created.id.clone())
+    .set(UpdateNoteInput { title: Some("Updated".into()), ..Default::default() })
+    .run()?;
+
+// Delete
+notes.delete(created.id).run()?;
 ```
 
-## Storage Classes
+`where_(Filter)` accepts a single filter; `where_expr(FilterExpr)` accepts the grouped AST emitted by generated field helpers.
 
-SQLite columns use BLOB affinity to preserve precision:
+## Storage Mapping
 
-| Type | Stored As |
-|------|-----------|
-| String, Cuid | TEXT |
-| Int | INTEGER |
-| Float | REAL |
-| Bool | INTEGER (0/1) |
-| Bytes | BLOB |
-| Uuid | TEXT (canonical hyphenated) |
-| DateTime | TEXT (RFC 3339 UTC) |
-| Json | TEXT (compact serde JSON) |
-| Decimal | TEXT (canonical string, exact precision) |
+| Scalar     | SQLite storage                                  |
+|------------|-------------------------------------------------|
+| `String`   | TEXT                                            |
+| `Int`      | INTEGER                                         |
+| `Float`    | REAL                                            |
+| `Bool`     | INTEGER (0/1)                                   |
+| `Bytes`    | BLOB                                            |
+| `Uuid`     | TEXT (canonical hyphenated)                     |
+| `DateTime` | TEXT (RFC 3339 UTC)                             |
+| `Json`     | TEXT (compact `serde_json`)                     |
+| `Decimal`  | TEXT (canonical string, exact precision)        |
 
-## Soft Delete
-
-`@@soft_delete` works on device - DELETE becomes UPDATE, find queries filter soft-deleted rows.
+`@@soft_delete` is supported — DELETE rewrites to UPDATE, and `find_*` filters out soft-deleted rows.
 
 ## FFI Bridge
 
-```rust
-use cratestack_rusqlite::ffi::{OperationRequest, OperationResponse, json_request_from, json_response_into};
+The `ffi` module provides the request/response envelope used at the FFI boundary:
 
-fn ffi_call(runtime: &RusqliteRuntime, bytes: &[u8]) -> Vec<u8> {
-    let request = match json_request_from(bytes) {
+```rust
+use cratestack_rusqlite::ffi::{
+    OperationRequest, OperationResponse, json_request_from, json_response_into,
+};
+
+fn ffi_call(runtime: &cratestack::RusqliteRuntime, bytes: &[u8]) -> Vec<u8> {
+    let request: OperationRequest = match json_request_from(bytes) {
         Ok(req) => req,
-        Err(err) => return json_response_into(&OperationResponse::err("bad_request", err.to_string())),
+        Err(error) => {
+            let response = OperationResponse::err("bad_request", error.to_string());
+            return json_response_into(&response);
+        }
     };
-    json_response_into(&dispatch(runtime, request))
+    // Dispatch `request.model` + `request.kind` against your generated delegates,
+    // then return either OperationResponse::ok(&value)? or
+    // OperationResponse::err("code", "message").
+    json_response_into(&OperationResponse::ok(&serde_json::json!({}))
+        .unwrap_or_else(|err| OperationResponse::err("serialize", err.to_string())))
 }
 ```
+
+`OperationKind` variants: `FindMany`, `FindUnique`, `Create`, `Update`, `Delete`. `OperationResponse::ok(value)` JSON-encodes `value` into the `Ok { data }` variant; the `RusqliteError` `From` impl maps the storage-layer errors (`NotFound`, `Locked`, `Sqlite`) to typed `Err` codes.
+
+The actual cdylib and `flutter_rust_bridge` glue live in the host mobile app — `cratestack-rusqlite` only owns the storage layer and the envelope.
 
 ## See Also
 
 - [Offline-First with SQLite](https://cratestack.dev/guides/offline-first-sqlite)
-- `cratestack-sqlx` - Postgres backend (server)
-- `cratestack-sql` - Shared SQL primitives
+- `cratestack-sqlx` — Postgres backend (server)
+- `cratestack-sql` — shared SQL primitives
+- `cratestack-client-flutter` — Rust-side Flutter runtime bridge
 
 ## License
 

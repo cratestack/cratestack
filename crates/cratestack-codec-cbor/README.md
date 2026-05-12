@@ -1,16 +1,16 @@
 # cratestack-codec-cbor
 
-CBOR codec implementation for CrateStack HTTP transport.
+CBOR codec for CrateStack HTTP transport.
 
 ## Overview
 
-`cratestack-codec-cbor` implements the `CoolCodec` trait for CBOR (Concise Binary Object Representation) encoding/decoding.
+`cratestack-codec-cbor` is a single-type crate exposing `CborCodec`, a zero-state implementation of the `CoolCodec` trait built on `minicbor-serde`.
 
 ## Installation
 
 ```toml
 [dependencies]
-cratestack-codec-cbor = "0.2"
+cratestack-codec-cbor = "0.2.2"
 ```
 
 ## Usage
@@ -20,75 +20,37 @@ use cratestack_codec_cbor::CborCodec;
 use cratestack_core::CoolCodec;
 
 let codec = CborCodec;
+let bytes = codec.encode(&("cool", "stack"))?;
+let value: (String, String) = codec.decode(&bytes)?;
 
-// Encode
-let bytes = codec.encode(&my_struct)?;
-
-// Decode
-let value: MyStruct = codec.decode(&bytes)?;
-
-// Content type
 assert_eq!(CborCodec::CONTENT_TYPE, "application/cbor");
 ```
 
-## Codec Trait
-
-Implements `CoolCodec` from `cratestack-core`:
+### With generated routes
 
 ```rust
-pub trait CoolCodec {
-    const CONTENT_TYPE: &'static str;
-    fn encode<T: Serialize>(&self, value: &T) -> Result<Vec<u8>, CoolError>;
-    fn decode<T: DeserializeOwned>(&self, bytes: &[u8]) -> Result<T, CoolError>;
-}
+let router = cratestack_schema::axum::model_router(cool, CborCodec, AppAuthProvider);
 ```
 
-## Transport Integration
-
-Use with generated Axum routes:
+### With the Rust client
 
 ```rust
-use cratestack_codec_cbor::CborCodec;
+use cratestack_client_rust::{CborCodec, ClientConfig, CratestackClient};
 
-let router = cratestack_schema::axum::model_router(
-    cool,
-    CborCodec,
-    AppAuthProvider,
-);
+let base_url = url::Url::parse("https://api.example.com")?;
+let client = CratestackClient::new(ClientConfig::new(base_url), CborCodec);
 ```
 
-Or with the Rust client:
+## Notes
 
-```rust
-use cratestack_client_rust::{CratestackClient, ClientConfig, CborCodec};
+`minicbor-serde` reports `is_human_readable() = true`, which keeps wire compatibility for types whose serde implementations branch on that hint (uuid, chrono). The macro-emitted projection strips `Value::Null` map entries before reaching this codec, so the non-RFC-8949 "Null = empty array" quirk of this backend never lands on the wire.
 
-let client = CratestackClient::new(
-    ClientConfig::new("https://api.example.com"),
-    CborCodec,
-);
-```
-
-## CBOR Sequence
-
-For streaming responses, use `application/cbor-seq`:
-
-```rust
-use cratestack_codec_cbor::CborCodec;
-
-// Encode sequence
-let mut bytes = Vec::new();
-for item in items {
-    bytes.extend(codec.encode(&item)?);
-}
-
-// Decode sequence
-let items: Vec<Item> = codec.decode_sequence(&bytes)?;
-```
+The `application/cbor-seq` framing is reserved for streaming responses (`CBOR_SEQUENCE_CONTENT_TYPE` in `cratestack-axum`), but the codec itself does not implement a sequence decoder — generated routers currently emit single-item responses only.
 
 ## See Also
 
 - [Transport Architecture](https://cratestack.dev/architecture/transport-architecture)
-- `cratestack-codec-json` - JSON codec
+- `cratestack-codec-json` — JSON codec
 
 ## License
 
