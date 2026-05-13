@@ -23,8 +23,13 @@ export const viewport: Viewport = {
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
+  // suppressHydrationWarning on <html>: browser extensions commonly inject
+  // attributes (analytics opt-out flags, theme detectors, etc.) onto the
+  // root element before React hydrates. Suppressing here keeps those
+  // benign extension diffs from drowning out real hydration errors deeper
+  // in the tree — those still warn normally.
   return (
-    <html lang="en" data-theme="emerald">
+    <html lang="en" data-theme="emerald" suppressHydrationWarning>
       <body className="bg-base-200 text-base-content">{children}</body>
     </html>
   );

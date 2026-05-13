@@ -22,7 +22,11 @@ import init, {
 } from '../public/pkg/react_nextjs_daisyui_wasm';
 import type { WorkerRequest, WorkerResponse } from './protocol';
 
-const ctx = self as DedicatedWorkerGlobalScope;
+// Cast through unknown because the project's tsconfig keeps `dom` and
+// `WebWorker` libs side-by-side (we want both at the project level), so
+// `self` is inferred as `Window & DedicatedWorkerGlobalScope` instead of
+// the narrower worker shape we know we're running in here.
+const ctx = self as unknown as DedicatedWorkerGlobalScope;
 
 let persistent = false;
 

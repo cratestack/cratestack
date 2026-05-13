@@ -18,13 +18,20 @@ import type { NoteView } from './protocol';
 //   - pending count: rows the wasm side reports as "newer than cursor"
 //
 // Auto-sync triggers:
-//   - mount (if online)
-//   - online event firing
+//   - first mount once a client is ready and we're online (one-shot)
+//   - online event firing (offline → online transition)
 //   - explicit user button
 //   - 30s interval (only while tab is visible & online)
 //
 // Conflict resolution: last-write-wins by updatedAt. Both sides perform
 // the same logic so a "newer local" is preserved and re-pushed next round.
+//
+// Why the ref dance: `push` legitimately needs to read the latest
+// `cursor` / `client`, so if it were a useCallback keyed on those, every
+// sync would change its identity. Any useEffect that listed `push` in
+// its deps would then refire after each sync — calling push again, in
+// an infinite loop. We keep a single stable `push` and feed it the
+// latest state via refs.
 
 const SYNC_INTERVAL_MS = 30_000;
 const CURSOR_KEY = 'cratestack:sync:cursor';
@@ -40,9 +47,11 @@ export type SyncState = {
 };
 
 export function useSync(client: LocalClient | null): SyncState {
-  const [online, setOnline] = useState(
-    typeof navigator === 'undefined' ? true : navigator.onLine,
-  );
+  // Default to `true` on both server and client first render — reading
+  // `navigator.onLine` here would risk a hydration mismatch if the
+  // browser flips that flag between SSR and hydration. The post-mount
+  // effect below pulls the real value and wires up listeners.
+  const [online, setOnline] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
   const [pending, setPending] = useState(0);
@@ -50,16 +59,23 @@ export function useSync(client: LocalClient | null): SyncState {
   const [error, setError] = useState<string | null>(null);
 
   const inFlightRef = useRef(false);
+  const clientRef = useRef<LocalClient | null>(client);
+  const cursorRef = useRef<string>('');
+  clientRef.current = client;
+  cursorRef.current = cursor;
 
-  // Restore the cursor from localStorage on first mount; means a refresh
-  // doesn't re-pull the entire server-side history.
+  // Hydrate online + cursor from the browser environment after mount.
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const stored = window.localStorage.getItem(CURSOR_KEY) ?? '';
-    setCursor(stored);
+    if (typeof navigator !== 'undefined') {
+      setOnline(navigator.onLine);
+    }
+    if (typeof window !== 'undefined') {
+      const stored = window.localStorage.getItem(CURSOR_KEY) ?? '';
+      if (stored) setCursor(stored);
+    }
   }, []);
 
-  // Track navigator online state so the UI can show offline banners.
+  // Track navigator online state.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const handler = () => setOnline(navigator.onLine);
@@ -86,8 +102,13 @@ export function useSync(client: LocalClient | null): SyncState {
     };
   }, [client, cursor, lastSyncAt]);
 
+  // Stable push: empty deps, reads latest client/cursor through refs.
+  // Returning the latest identity from useCallback would re-trigger any
+  // effect that listed `push` as a dep — and the auto-sync effect below
+  // would loop. Anchoring on [] keeps the effect graph quiet.
   const push = useCallback(async (): Promise<void> => {
-    if (!client) return;
+    const currentClient = clientRef.current;
+    if (!currentClient) return;
     if (inFlightRef.current) return;
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       setError('offline — sync deferred');
@@ -97,11 +118,12 @@ export function useSync(client: LocalClient | null): SyncState {
     setSyncing(true);
     setError(null);
     try {
-      const pushes = await client.since(cursor);
+      const currentCursor = cursorRef.current;
+      const pushes = await currentClient.since(currentCursor);
       const response = await fetch('/api/notes/sync', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ cursor, pushes }),
+        body: JSON.stringify({ cursor: currentCursor, pushes }),
       });
       if (!response.ok) {
         const text = await response.text();
@@ -112,7 +134,7 @@ export function useSync(client: LocalClient | null): SyncState {
         remote: NoteView[];
       };
       for (const note of data.remote) {
-        await client.upsertRemote(note);
+        await currentClient.upsertRemote(note);
       }
       setCursor(data.cursor);
       if (typeof window !== 'undefined') {
@@ -125,15 +147,22 @@ export function useSync(client: LocalClient | null): SyncState {
       inFlightRef.current = false;
       setSyncing(false);
     }
-  }, [client, cursor]);
+  }, []);
 
-  // Trigger an initial sync once the worker is up and we're online.
+  // One-shot initial sync once we have a client AND we know we're online.
+  // The ref guards against firing again if React re-runs the effect for
+  // some other reason (e.g. strict mode double-invoke in development).
+  const didInitialSyncRef = useRef(false);
   useEffect(() => {
     if (!client || !online) return;
+    if (didInitialSyncRef.current) return;
+    didInitialSyncRef.current = true;
     void push();
   }, [client, online, push]);
 
-  // Background sync while tab visible.
+  // Background sync while tab visible. Effect deps are stable so the
+  // interval is set up once per client transition; the body reads the
+  // latest push via its closed-over (stable) reference.
   useEffect(() => {
     if (!client) return;
     const interval = setInterval(() => {
