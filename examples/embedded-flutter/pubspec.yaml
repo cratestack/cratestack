@@ -1,0 +1,32 @@
+name: embedded_flutter_example
+description: cratestack embedded SQLite from Flutter via flutter_rust_bridge.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+  flutter: ">=3.27.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # flutter_rust_bridge pulls in the Dart-side runtime helpers that the
+  # generated bindings under lib/src/rust/ depend on. Keep the version
+  # in lock-step with `native/Cargo.toml`'s flutter_rust_bridge dep.
+  flutter_rust_bridge: 2.12.0
+
+  # Standard pre-app-data-dir helper for resolving where to put the
+  # SQLite file on each platform.
+  path_provider: ^2.1.5
+  path: ^1.9.0
+  embedded_flutter_native:
+    path: rust_builder
+
+dev_dependencies:
+  flutter_lints: ^5.0.0
+  # The codegen package runs `flutter_rust_bridge_codegen` to regenerate
+  # `lib/src/rust/` from the Rust API surface.
+  ffigen: ^14.0.0
+
+flutter:
+  uses-material-design: true

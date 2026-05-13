@@ -34,6 +34,11 @@ members = [
     "examples/react-nextjs-daisyui/napi",
     "examples/tauri-web",
     "examples/tauri-web/src-tauri",
+    "examples/tauri-native/src-tauri",
+    # Note: this crate's [package] name is `embedded_flutter_native` (underscore,
+    # not hyphen) — flutter_rust_bridge's cargokit demands it.
+    "examples/embedded-flutter/native",
+    "examples/embedded-expo/native",
 ]
 
 [workspace.package]

@@ -1,0 +1,13 @@
+# Configuration consumed by `flutter_rust_bridge_codegen generate`.
+#
+# Run from this directory after `flutter pub get`:
+#   flutter_rust_bridge_codegen generate
+#
+# The codegen scans `rust_input` for `pub fn`s under `api/`, generates
+# the Dart bindings under `dart_output`, and writes the Rust glue at
+# `rust_output`.
+
+rust_input: crate::api
+rust_root: native/
+dart_output: lib/src/rust/
+rust_output: native/src/frb_generated.rs

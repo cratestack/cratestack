@@ -1,0 +1,33 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "cratestack-tauri-native",
+  "version": "0.1.0",
+  "identifier": "dev.cratestack.examples.tauri-native",
+  "build": {
+    "beforeDevCommand": "pnpm --filter ./web run dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "pnpm --filter ./web run build",
+    "frontendDist": "../web/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "cratestack — Tauri x native",
+        "width": 1024,
+        "height": 720,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false,
+    "targets": "all",
+    "icon": [
+      "icons/icon.png"
+    ]
+  }
+}

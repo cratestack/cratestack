@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cratestack — Tauri x native</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      body {
+        margin: 0;
+        padding: 1.25rem;
+        background: #0f172a;
+        color: #f8fafc;
+        line-height: 1.45;
+      }
+      header { display: flex; align-items: baseline; gap: 0.75rem; margin-bottom: 1rem; }
+      header h1 { font-size: 1.1rem; margin: 0; font-weight: 600; }
+      header .tag { font-size: 0.8rem; opacity: 0.6; }
+      section { background: #1e293b; padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem; }
+      section h2 { margin-top: 0; font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.04em; color: #94a3b8; }
+      form { display: grid; grid-template-columns: 1fr auto auto; gap: 0.5rem; margin-bottom: 0.75rem; }
+      input[type="text"], input[type="url"] {
+        padding: 0.45rem 0.65rem; border-radius: 0.35rem; border: 1px solid #334155;
+        background: #0f172a; color: inherit; font-size: 0.95rem;
+      }
+      label { display: flex; align-items: center; gap: 0.35rem; font-size: 0.85rem; }
+      button {
+        padding: 0.45rem 0.85rem; border-radius: 0.35rem; border: none;
+        background: #14b8a6; color: #0f172a; font-weight: 600; cursor: pointer;
+      }
+      button:hover { background: #2dd4bf; }
+      ul { list-style: none; padding: 0; margin: 0; }
+      li.note, li.article {
+        padding: 0.6rem 0.75rem; border: 1px solid #334155;
+        border-radius: 0.4rem; margin-bottom: 0.5rem; background: #0b1220;
+      }
+      li.note .title { font-weight: 600; }
+      li.note .pinned { color: #fbbf24; font-size: 0.78rem; margin-right: 0.4rem; }
+      li.note .done { color: #34d399; font-size: 0.78rem; margin-right: 0.4rem; }
+      li.note .actions { float: right; }
+      li.note .actions button { background: transparent; color: #94a3b8; padding: 0.15rem 0.4rem; }
+      li.note .actions button:hover { color: #f8fafc; }
+      .meta { font-size: 0.75rem; opacity: 0.55; margin-top: 0.25rem; }
+      .error { background: #7f1d1d; padding: 0.55rem 0.75rem; border-radius: 0.35rem; margin-bottom: 0.75rem; }
+      .empty { opacity: 0.55; font-style: italic; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>cratestack · Tauri × native</h1>
+      <span class="tag">renderer is a pure view layer; data ops go through Tauri IPC</span>
+    </header>
+
+    <section id="notes-section">
+      <h2>Local notes — embedded SQLite (native rusqlite)</h2>
+      <form id="note-form">
+        <input name="title" type="text" required placeholder="Title" maxlength="200" />
+        <label><input name="pinned" type="checkbox" /> pinned</label>
+        <button type="submit">Add</button>
+      </form>
+      <label style="margin-bottom: 0.5rem; display: inline-flex;">
+        <input id="only-open" type="checkbox" /> hide completed
+      </label>
+      <div id="note-error" class="error" hidden></div>
+      <ul id="note-list"></ul>
+    </section>
+
+    <section id="remote-section">
+      <h2>Remote articles — typed HTTP client (include_client_schema!)</h2>
+      <form id="remote-form">
+        <input
+          name="url"
+          type="url"
+          required
+          placeholder="https://articles.example.com"
+          value="http://localhost:8080"
+          style="grid-column: 1 / span 2"
+        />
+        <button type="submit">Fetch</button>
+      </form>
+      <div id="remote-error" class="error" hidden></div>
+      <ul id="remote-list"></ul>
+    </section>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

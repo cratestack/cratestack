@@ -1,0 +1,32 @@
+[package]
+# Underscore (not hyphen) because flutter_rust_bridge's cargokit reads
+# Cargo's [package] name verbatim when looking up
+# `lib<package_name>.{a,dylib,...}` build artifacts, and cargo's actual
+# output uses underscores. Keep these aligned.
+name = "embedded_flutter_native"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Native cdylib for the embedded-flutter example. Hosts include_embedded_schema! and exposes a small API surface for flutter_rust_bridge to bridge into Dart. The Flutter side imports the generated Dart bindings under lib/src/rust/."
+
+[lib]
+name = "embedded_flutter_native"
+# cdylib for Android/iOS/macOS/Linux/Windows targets; rlib so cargo test
+# can exercise the API as a normal Rust library.
+crate-type = ["cdylib", "rlib", "staticlib"]
+
+[dependencies]
+chrono = { workspace = true }
+# The `cratestack` facade is needed because `include_embedded_schema!`
+# expands to `::cratestack::*` paths. On non-wasm hosts the facade
+# transitively pulls in `cratestack-sqlx` → `sqlx-postgres` → `whoami`,
+# which needs macOS's `SystemConfiguration.framework`; the `build.rs`
+# next to this manifest emits the appropriate `rustc-link-lib` so the
+# Flutter app links cleanly on macOS / iOS. None of the server-side
+# code actually runs from the Flutter dylib.
+cratestack = { path = "../../../crates/cratestack", version = "0.3.0" }
+cratestack-macros = { path = "../../../crates/cratestack-macros", version = "0.3.0" }
+cratestack-rusqlite = { path = "../../../crates/cratestack-rusqlite", version = "0.3.0" }
+flutter_rust_bridge = "=2.12.0"
+serde = { workspace = true }
+uuid = { workspace = true }
