@@ -1,0 +1,20 @@
+{
+  "name": "tauri-web-frontend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "wasm:build": "node ../../../examples/scripts/wasm-build.mjs --target web --out-dir web/pkg",
+    "wasm:build:dev": "node ../../../examples/scripts/wasm-build.mjs --target web --out-dir web/pkg --dev",
+    "dev": "pnpm run wasm:build:dev && vite",
+    "build": "pnpm run wasm:build && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.11.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^8.0.12"
+  }
+}

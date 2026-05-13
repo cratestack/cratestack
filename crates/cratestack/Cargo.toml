@@ -33,19 +33,30 @@ crypto-aws-lc-rs = []
 
 [dependencies]
 chrono.workspace = true
-cratestack-axum.workspace = true
-cratestack-client-rust.workspace = true
 cratestack-core.workspace = true
 cratestack-macros.workspace = true
 cratestack-parser.workspace = true
 cratestack-policy.workspace = true
 cratestack-rusqlite.workspace = true
-cratestack-sqlx.workspace = true
+cratestack-sql.workspace = true
 regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 uuid.workspace = true
+
+# Server- and host-network-only crates — target-gated off on
+# `wasm32-unknown-unknown` so the embedded path
+# (`include_embedded_schema!`) can compile to WebAssembly without dragging
+# `mio` / `tokio-net` / `sqlx-postgres` / hyper along for the ride.
+#
+# A future wasm-native HTTP client (over the JS `fetch` API, presumably) can
+# expose `cratestack::client_rust` on `wasm32` too; for now embedded crates
+# that need HTTP can call JS directly via `wasm-bindgen`.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+cratestack-axum.workspace = true
+cratestack-client-rust.workspace = true
+cratestack-sqlx.workspace = true
 
 [dev-dependencies]
 axum.workspace = true

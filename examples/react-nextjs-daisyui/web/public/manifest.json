@@ -1,0 +1,17 @@
+{
+  "name": "cratestack notes",
+  "short_name": "cratestack",
+  "description": "Offline-first notes powered by cratestack's wasm + napi-rs stacks.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ecfdf5",
+  "theme_color": "#0f766e",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

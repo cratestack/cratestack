@@ -265,7 +265,7 @@ pub(crate) fn rust_type_tokens_with_scope(
         "Boolean" => quote! { bool },
         "DateTime" => quote! { ::cratestack::chrono::DateTime<::cratestack::chrono::Utc> },
         "Decimal" => quote! { ::cratestack::Decimal },
-        "Json" => quote! { ::cratestack::sqlx::types::Json<::cratestack::Value> },
+        "Json" => quote! { ::cratestack::Json<::cratestack::Value> },
         "Bytes" => quote! { Vec<u8> },
         "Uuid" => quote! { ::cratestack::uuid::Uuid },
         other => {

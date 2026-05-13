@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cratestack — embedded SQLite in the browser</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+      body {
+        max-width: 720px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+        line-height: 1.5;
+      }
+      h1 {
+        margin-bottom: 0.25rem;
+      }
+      .status {
+        font-family: ui-monospace, SFMono-Regular, monospace;
+        font-size: 0.9rem;
+        padding: 0.5rem 0.75rem;
+        background: rgba(127, 127, 127, 0.12);
+        border-radius: 4px;
+        margin-bottom: 1rem;
+      }
+      form {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+        flex-wrap: wrap;
+      }
+      input[type='text'] {
+        flex: 1 1 240px;
+        padding: 0.4rem 0.6rem;
+        font: inherit;
+      }
+      button {
+        padding: 0.4rem 0.8rem;
+        font: inherit;
+        cursor: pointer;
+      }
+      ul {
+        padding: 0;
+        list-style: none;
+      }
+      li {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        padding: 0.4rem 0;
+        border-bottom: 1px solid rgba(127, 127, 127, 0.25);
+      }
+      li.done .title {
+        text-decoration: line-through;
+        opacity: 0.6;
+      }
+      .pin {
+        font-size: 0.85rem;
+      }
+      .title {
+        flex: 1;
+      }
+      .body {
+        flex: 2;
+        font-size: 0.85rem;
+        opacity: 0.75;
+      }
+      .actions {
+        display: flex;
+        gap: 0.25rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>cratestack — embedded SQLite in the browser</h1>
+    <p>
+      Every note below is persisted in your browser's OPFS via
+      <code>cratestack-rusqlite</code> compiled to <code>wasm32-unknown-unknown</code>.
+      Refresh the page and the data is still there.
+    </p>
+    <div class="status" id="status">starting worker…</div>
+    <form id="add">
+      <input id="title" type="text" placeholder="Title" required />
+      <input id="body" type="text" placeholder="Body (optional)" />
+      <label>
+        <input id="pinned" type="checkbox" /> pinned
+      </label>
+      <button type="submit">add</button>
+    </form>
+    <ul id="list"></ul>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

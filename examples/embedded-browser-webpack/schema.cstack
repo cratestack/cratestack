@@ -1,0 +1,14 @@
+datasource db {
+  provider = "sqlite"
+  url = env("DATABASE_URL")
+}
+
+model Note {
+  id Uuid @id
+  title String
+  body String
+  pinned Boolean
+  completed Boolean
+  createdAt DateTime
+  updatedAt DateTime
+}

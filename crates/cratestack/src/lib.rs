@@ -1,6 +1,5 @@
 pub use chrono;
-pub use cratestack_axum::axum;
-pub use cratestack_axum::*;
+#[cfg(not(target_arch = "wasm32"))]
 pub use cratestack_client_rust as client_rust;
 pub use cratestack_core::*;
 pub use cratestack_macros::{
@@ -12,38 +11,83 @@ pub use cratestack_policy::{
     ProcedurePolicyLiteral, ProcedurePredicate, ReadPolicy, ReadPredicate, RelationQuantifier,
     authorize_procedure,
 };
-pub use cratestack_sqlx::AUDIT_TABLE_DDL;
-pub use cratestack_sqlx::sqlx;
-pub use cratestack_sqlx::{
-    CreateDefault, CreateDefaultType, CreateModelInput, CreateRecord, DeleteRecord, FieldRef,
-    Filter, FilterExpr, FindMany, FindUnique, IntoSqlValue, ModelColumn, ModelDelegate,
-    ModelDescriptor, OrderClause, RelationFilter, ScopedCreateRecord, ScopedDeleteRecord,
-    ScopedFindMany, ScopedFindUnique, ScopedModelDelegate, ScopedUpdateRecord,
-    ScopedUpdateRecordSet, SortDirection, SqlColumnValue, SqlValue, SqlxIdempotencyStore,
-    UpdateModelInput, UpdateRecord, UpdateRecordSet, create_record_with_executor,
-    update_record_with_executor,
-};
-pub use cratestack_sqlx::{
-    MIGRATIONS_TABLE_DDL, Migration, MigrationState, MigrationStatus, apply_pending,
-    ensure_migrations_table, status,
-};
-pub use cratestack_sqlx::{run_in_isolated_tx, run_in_isolated_tx_with_retries};
 
-// On-device SQLite backend. Always compiled in for now — Phase 4's choice
-// (keep both backends always available) trades binary size on the server
-// for a single uniform API across server and device. A future feature flag
-// can hide rusqlite for size-sensitive builds.
+// SQL primitives shared by every backend — re-exported directly from
+// `cratestack-sql` so consumers don't transit through `cratestack-sqlx`. This
+// is the load-bearing change that lets `include_embedded_schema!`-generated
+// code resolve `::cratestack::FilterExpr` etc. on `wasm32-unknown-unknown`,
+// where sqlx can't compile.
+pub use cratestack_sql::{
+    CreateDefault, CreateDefaultType, CreateModelInput, FieldRef, Filter, FilterExpr,
+    IntoSqlValue, ModelColumn, ModelDescriptor, OrderClause, RelationFilter, SortDirection,
+    SqlColumnValue, SqlValue, UpdateModelInput,
+};
+
+// Embedded SQLite backend — wasm32-compatible alongside native (mobile,
+// desktop), via `rusqlite 0.39`'s transparent FFI switch to `sqlite-wasm-rs`.
+pub use cratestack_rusqlite as rusqlite_backend;
 pub use cratestack_rusqlite::{
     DateTimeColumn, DecimalColumn, FromRusqliteRow, JsonColumn, RusqliteError, RusqliteRuntime,
     SqlValueParam, UuidColumn, rusqlite,
 };
-pub use cratestack_rusqlite as rusqlite_backend;
 
 pub use regex;
 pub use serde;
 pub use serde_json;
 pub use tracing;
 pub use uuid;
+
+// -----------------------------------------------------------------------------
+// `Json<T>` resolution per target.
+//
+// The schema macro emits model fields as `::cratestack::Json<T>` so the same
+// `cratestack_schema::Model` struct compiles on every target:
+//
+// - On native (server), it resolves to `sqlx::types::Json<T>` so `sqlx::FromRow`
+//   decodes Postgres `jsonb` columns into it directly. Existing server code is
+//   bit-identical to 0.3.0.
+//
+// - On `wasm32-unknown-unknown` (browser), it resolves to a serde-only newtype
+//   `cratestack_core::Json<T>` — sqlx isn't in the dep graph at all on this
+//   target, so the model struct can be assembled and read by the rusqlite-side
+//   `FromRusqliteRow` decoder without pulling tokio-net.
+// -----------------------------------------------------------------------------
+
+#[cfg(not(target_arch = "wasm32"))]
+pub use cratestack_sqlx::sqlx::types::Json;
+
+#[cfg(target_arch = "wasm32")]
+pub use cratestack_core::Json;
+
+// -----------------------------------------------------------------------------
+// Server-only surface — sqlx, axum, audit/idempotency/migrations/isolation.
+// Target-gated off on `wasm32-unknown-unknown` so embedded builds don't pull
+// in `mio` / `tokio-net` / `sqlx-postgres`.
+// -----------------------------------------------------------------------------
+
+#[cfg(not(target_arch = "wasm32"))]
+pub use cratestack_axum::axum;
+#[cfg(not(target_arch = "wasm32"))]
+pub use cratestack_axum::*;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub use cratestack_sqlx::AUDIT_TABLE_DDL;
+#[cfg(not(target_arch = "wasm32"))]
+pub use cratestack_sqlx::sqlx;
+#[cfg(not(target_arch = "wasm32"))]
+pub use cratestack_sqlx::{
+    CreateRecord, DeleteRecord, FindMany, FindUnique, ModelDelegate, ScopedCreateRecord,
+    ScopedDeleteRecord, ScopedFindMany, ScopedFindUnique, ScopedModelDelegate, ScopedUpdateRecord,
+    ScopedUpdateRecordSet, SqlxIdempotencyStore, UpdateRecord, UpdateRecordSet,
+    create_record_with_executor, update_record_with_executor,
+};
+#[cfg(not(target_arch = "wasm32"))]
+pub use cratestack_sqlx::{
+    MIGRATIONS_TABLE_DDL, Migration, MigrationState, MigrationStatus, apply_pending,
+    ensure_migrations_table, status,
+};
+#[cfg(not(target_arch = "wasm32"))]
+pub use cratestack_sqlx::{run_in_isolated_tx, run_in_isolated_tx_with_retries};
 
 /// Crypto provider selection — banks running on FIPS-validated hardware
 /// enable the `crypto-aws-lc-rs` workspace feature. The function below
@@ -81,6 +125,7 @@ pub fn install_fips_crypto_provider() -> Result<(), cratestack_core::CoolError> 
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[doc(hidden)]
 pub mod __private {
     pub use cratestack_sqlx::SqlxRuntime;

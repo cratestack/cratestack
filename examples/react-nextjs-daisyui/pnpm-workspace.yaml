@@ -1,0 +1,6 @@
+# The Next.js example is itself a small pnpm monorepo: the Next.js app
+# under `web/` depends on the napi-rs addon package under `napi/` (which
+# is the JS shim around the native `.node` binary).
+packages:
+  - 'napi'
+  - 'web'

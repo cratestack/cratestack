@@ -22,19 +22,62 @@ All examples build and run under `cargo build --workspace` / `cargo test --works
 | [`client-multi-service/`](client-multi-service) | Two `include_client_schema!` calls | BFF / orchestrator that fans out to two upstream services concurrently |
 | [`microservice-pair/`](microservice-pair) | `include_server_schema!` + `include_client_schema!` | Service that owns its own database AND calls an upstream — the canonical microservice shape |
 
-## Phase B — Browser / wasm32 (next release)
+## Phase B — Browser / wasm32 + desktop shell
 
-Coming in a follow-up PR:
+| Example | Macro(s) | Shape |
+|---|---|---|
+| [`embedded-browser-vite/`](embedded-browser-vite) | `include_embedded_schema!` | `wasm32-unknown-unknown` + Vite + TypeScript, OPFS persistence inside a Dedicated Worker |
+| [`embedded-browser-webpack/`](embedded-browser-webpack) | `include_embedded_schema!` | Same Rust crate as Vite, Webpack 5 + ts-loader config delta |
+| [`embedded-browser-vite-pwa/`](embedded-browser-vite-pwa) | `include_embedded_schema!` | Same Rust crate, Vite + `vite-plugin-pwa` — installable PWA with Workbox-generated service worker precaching the wasm bundle |
+| [`react-vite-daisyui/`](react-vite-daisyui) | `include_embedded_schema!` | React 19 + Vite 8 + Tailwind 4 + DaisyUI 5 — same wasm/OPFS shape with a real component library on top |
+| [`react-nextjs-daisyui/`](react-nextjs-daisyui) | `include_embedded_schema!` (×2) **and** `include_client_schema!` | Next.js 16 App Router with three CrateStack surfaces: wasm/OPFS in the browser, napi-rs `.node` addon on the Node side, typed HTTP client to upstream services. Serwist PWA + offline-first sync engine reconciling OPFS ↔ napi over a delta protocol. |
+| [`tauri-web/`](tauri-web) | `include_embedded_schema!` **and** `include_client_schema!` | Tauri 2 desktop shell. Webview hosts the embedded wasm (OPFS); native shell hosts the typed HTTP client called via Tauri commands. |
 
-- `embedded-browser-vite/` — `include_embedded_schema!` + `wasm32-unknown-unknown` + Vite + TypeScript, with OPFS persistence inside a Dedicated Worker
-- `embedded-browser-webpack/` — same Rust crate as Vite, Webpack 5 config delta
+Build prerequisites for all four:
 
-## Phase C — Mobile (next release)
+```bash
+rustup target add wasm32-unknown-unknown
+cargo install wasm-pack
+brew install llvm                    # macOS — sqlite-wasm-rs needs wasm-capable clang
+# (Linux: distro clang 14+ works directly)
+```
+
+`tauri-web` additionally needs the Tauri 2 platform deps — see [tauri.app/start/prerequisites](https://tauri.app/start/prerequisites/) (macOS: Xcode CLI; Linux: GTK + WebKit; Windows: MSVC + WebView2).
+
+Run any browser example:
+
+```bash
+cd examples/embedded-browser-vite/web      # or -webpack/web, -vite-pwa/web, or react-vite-daisyui/web
+pnpm install
+pnpm run dev                                # auto-runs wasm-pack first
+```
+
+Run the Tauri example:
+
+```bash
+cd examples/tauri-web                       # project root — tauri-cli walks down for the conf
+pnpm install
+pnpm tauri dev                              # spawns Vite + the Tauri shell
+```
+
+Run the Next.js example (pnpm workspace with napi-rs addon):
+
+```bash
+cd examples/react-nextjs-daisyui
+pnpm install                                # installs both web/ and napi/
+pnpm --filter react-nextjs-daisyui-example run dev
+                                            # builds wasm + napi, then next dev
+```
+
+The bundled `examples/scripts/wasm-build.mjs` helper detects Homebrew LLVM at `/opt/homebrew/opt/llvm/bin/clang` (or the Intel-Mac equivalent) and points `cc-rs` at it so `pnpm run dev` works out of the box on macOS.
+
+## Phase C — Mobile + native desktop (next release)
 
 Coming in a follow-up PR:
 
 - `embedded-flutter/` — `flutter_rust_bridge` glue around `include_embedded_schema!` with a minimal Flutter screen
 - `embedded-expo/` — Expo native module wrapping the Rust cdylib for React Native (iOS + Android)
+- `tauri-native/` — sibling to `tauri-web` where the **embedded** side also moves to native Rust delegates over Tauri IPC (no wasm in the webview; the renderer becomes a pure view layer)
 
 ## How to run every example at once
 
@@ -62,4 +105,6 @@ cargo run -p microservice-pair-example
 | Call another CrateStack service from Rust | [`client-stub-rust`](client-stub-rust) |
 | Aggregate calls to multiple services | [`client-multi-service`](client-multi-service) |
 | Build a microservice that talks to other microservices | [`microservice-pair`](microservice-pair) |
-| Run the schema in a browser tab (OPFS) | Phase B (see `guides/offline-first-sqlite` in the docs site for the manual setup until the example lands) |
+| Run the schema in a browser tab (OPFS) | [`embedded-browser-vite`](embedded-browser-vite) — or `embedded-browser-webpack` if your shop uses Webpack |
+| Run the schema in React + a real component library | [`react-vite-daisyui`](react-vite-daisyui) |
+| Run all three CrateStack surfaces in one app with offline-first sync | [`react-nextjs-daisyui`](react-nextjs-daisyui) |

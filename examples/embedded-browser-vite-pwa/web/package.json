@@ -1,0 +1,19 @@
+{
+  "name": "embedded-browser-vite-pwa-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "wasm:build": "node ../../../examples/scripts/wasm-build.mjs --target web --out-dir web/pkg",
+    "wasm:build:dev": "node ../../../examples/scripts/wasm-build.mjs --target web --out-dir web/pkg --dev",
+    "dev": "pnpm run wasm:build:dev && vite",
+    "build": "pnpm run wasm:build && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^8.0.12",
+    "vite-plugin-pwa": "^1.3.0",
+    "workbox-window": "^7.3.0"
+  }
+}

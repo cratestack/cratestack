@@ -1,0 +1,27 @@
+{
+  "name": "react-vite-daisyui-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "wasm:build": "node ../../../examples/scripts/wasm-build.mjs --target web --out-dir web/pkg",
+    "wasm:build:dev": "node ../../../examples/scripts/wasm-build.mjs --target web --out-dir web/pkg --dev",
+    "dev": "pnpm run wasm:build:dev && vite",
+    "build": "pnpm run wasm:build && tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b --noEmit"
+  },
+  "dependencies": {
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "daisyui": "^5.5.19",
+    "tailwindcss": "^4.3.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.0.12"
+  }
+}

@@ -1,0 +1,9 @@
+@import "tailwindcss";
+@plugin "daisyui" {
+  themes: emerald --default, dark;
+}
+
+/* Tighten up the card stack a touch — DaisyUI's default gap is generous */
+.note-card + .note-card {
+  margin-top: 0.5rem;
+}

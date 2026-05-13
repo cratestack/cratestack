@@ -1,0 +1,10 @@
+/node_modules
+/.next
+/out
+/public/pkg
+/public/sw.js
+/public/swe-worker-*.js
+/public/workbox-*.js
+/data
+*.tsbuildinfo
+next-env.d.ts.bak
