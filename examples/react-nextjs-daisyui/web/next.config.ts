@@ -15,10 +15,41 @@ const withSerwist = withSerwistInit({
   disable: process.env.NODE_ENV === 'development',
 });
 
+const NAPI_PACKAGE = 'react-nextjs-daisyui-napi';
+
 const nextConfig: NextConfig = {
-  // The napi addon is a native .node binary; tell Next not to try to bundle
-  // it (it must be loaded with require() at runtime from disk).
-  serverExternalPackages: ['react-nextjs-daisyui-napi'],
+  // Tell Next's tracer to leave the napi addon out of the bundle — it's a
+  // native .node binary that must be loaded with require() at runtime.
+  serverExternalPackages: [NAPI_PACKAGE],
+
+  // Defense in depth: under pnpm workspace symlinks `serverExternalPackages`
+  // doesn't always catch the addon before webpack starts parsing it. The
+  // webpack callback below makes the externalization explicit on the
+  // server, and bans the client from resolving the package at all.
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      const existing = Array.isArray(config.externals)
+        ? config.externals
+        : config.externals
+          ? [config.externals]
+          : [];
+      // A string entry tells webpack "treat this import as a bare CJS
+      // require() at runtime" — no resolution, no parse, no follow-through
+      // into the .node binary.
+      config.externals = [...existing, NAPI_PACKAGE];
+    } else {
+      // The addon is Node-only; aliasing to `false` makes any accidental
+      // client-side import resolve to an empty module instead of pulling
+      // the binary into the client bundle.
+      config.resolve = config.resolve ?? {};
+      config.resolve.alias = {
+        ...(config.resolve.alias ?? {}),
+        [NAPI_PACKAGE]: false,
+      };
+    }
+    return config;
+  },
+
   // Cross-Origin Isolation lets OPFS-backed sqlite-wasm-rs use the SAH-pool
   // VFS reliably. Without these headers, some browsers refuse the worker's
   // SyncAccessHandle requests.

@@ -1,5 +1,6 @@
 import 'server-only';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 
 // Loader for the napi-rs native addon.
 //
@@ -9,8 +10,17 @@ import path from 'node:path';
 // — the addon stores the runtime in a Rust `OnceLock`, so repeated init
 // calls are no-ops.
 //
+// Why `createRequire` instead of a top-level `require()`: webpack would
+// statically analyze `require('react-nextjs-daisyui-napi')`, follow the
+// pnpm workspace symlink into `napi/index.js`, and then try to parse the
+// `.node` binary as JavaScript and choke. `createRequire(import.meta.url)`
+// is a runtime call that webpack treats opaquely — the `.node` resolution
+// happens at run time via Node.js's own loader, exactly as intended.
+//
 // `process.env.CRATESTACK_NEXT_DB` lets you point the SQLite file
 // anywhere; defaults to `./data/notes.db` at the project root.
+
+const requireFromHere = createRequire(import.meta.url);
 
 type NoteRow = {
   id: string;
@@ -42,10 +52,7 @@ let cached: Addon | null = null;
 
 export function loadAddon(): Addon {
   if (cached) return cached;
-  // Resolve at runtime — Next's serverExternalPackages keeps this out of
-  // the bundle. The require call sees the real `index.js` shim on disk.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const addon = require('react-nextjs-daisyui-napi') as Addon;
+  const addon = requireFromHere('react-nextjs-daisyui-napi') as Addon;
   const dbPath =
     process.env.CRATESTACK_NEXT_DB ?? path.resolve(process.cwd(), 'data/notes.db');
   addon.init(dbPath);
