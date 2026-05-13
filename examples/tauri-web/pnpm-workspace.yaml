@@ -1,0 +1,6 @@
+# The Tauri shell and the Vite frontend are sibling packages. tauri-cli
+# walks subfolders from cwd to find tauri.conf.json — running from this
+# directory finds src-tauri/tauri.conf.json, and `pnpm tauri dev`'s
+# beforeDevCommand can dispatch into `web/` via `pnpm --filter ./web`.
+packages:
+  - 'web'

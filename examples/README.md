@@ -53,7 +53,7 @@ pnpm run dev                                # auto-runs wasm-pack first
 Run the Tauri example:
 
 ```bash
-cd examples/tauri-web/web
+cd examples/tauri-web                       # project root — tauri-cli walks down for the conf
 pnpm install
 pnpm tauri dev                              # spawns Vite + the Tauri shell
 ```

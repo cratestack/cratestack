@@ -11,12 +11,14 @@ This is the "thick desktop client" pattern: trusted operations (HTTP with cert p
 
 ```
 tauri-web/
+├── package.json               # ROOT: @tauri-apps/cli + tauri scripts
+├── pnpm-workspace.yaml        # web/ is the workspace member
 ├── Cargo.toml                 # WASM cdylib for the webview (embedded ORM)
 ├── schema.cstack              # Note schema (local data)
 ├── src/lib.rs                 # include_embedded_schema! + wasm-bindgen exports
 ├── src-tauri/
 │   ├── Cargo.toml             # native Tauri binary
-│   ├── tauri.conf.json
+│   ├── tauri.conf.json        # tauri-cli finds this by walking from project root
 │   ├── build.rs
 │   ├── icons/icon.png
 │   ├── schema.cstack          # Article schema (REMOTE service contract)
@@ -24,7 +26,7 @@ tauri-web/
 │       ├── lib.rs             # include_client_schema! + Tauri commands
 │       └── main.rs            # thin entry: tauri_web_shell_example_lib::run()
 ├── web/
-│   ├── package.json           # vite + @tauri-apps/{api,cli}
+│   ├── package.json           # vite + @tauri-apps/api (NOT cli)
 │   ├── vite.config.ts
 │   ├── tsconfig.json
 │   ├── index.html             # two panels: local notes + remote articles
@@ -35,6 +37,8 @@ tauri-web/
 └── README.md
 ```
 
+Why the root `package.json`: tauri-cli's `tauri.conf.json` discovery walks **down** through subfolders from its cwd. If you run `pnpm tauri dev` from `web/`, it cannot see `src-tauri/` (a sibling). The root `package.json` puts the `tauri` command at the right cwd so the conf is reachable.
+
 ## Prerequisites
 
 - Everything from [`embedded-browser-vite`](../embedded-browser-vite#prerequisites) — Rust + `wasm32-unknown-unknown` target + `wasm-pack` + a wasm-capable clang.
@@ -44,19 +48,21 @@ tauri-web/
 ## Run
 
 ```bash
-cd examples/tauri-web/web
-pnpm install
+cd examples/tauri-web         # ← project root, NOT web/
+pnpm install                  # installs both the root and the web/ workspace package
 
 # Run the desktop app (Vite dev server + Tauri shell, hot-reloading both):
 pnpm tauri dev
+# or equivalently:
+pnpm run dev
 
-# Or package a release build:
+# Package a release build:
 pnpm tauri build
 ```
 
 Internally `pnpm tauri dev` runs:
 
-1. `pnpm run dev` in `web/` (Vite + the `wasm:build:dev` prelude)
+1. `pnpm --filter ./web run dev` (per `tauri.conf.json#build.beforeDevCommand`) — Vite + the `wasm:build:dev` prelude
 2. `cargo run -p tauri-web-shell-example` once the dev server is up
 3. Opens a native window pointed at `http://localhost:5173`
 

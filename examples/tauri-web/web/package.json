@@ -1,5 +1,5 @@
 {
-  "name": "tauri-web-example",
+  "name": "tauri-web-frontend",
   "private": true,
   "type": "module",
   "scripts": {
@@ -14,7 +14,6 @@
     "@tauri-apps/api": "^2.11.0"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.11.1",
     "typescript": "^5.9.3",
     "vite": "^8.0.12"
   }
