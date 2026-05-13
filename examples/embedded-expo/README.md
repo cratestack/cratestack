@@ -29,9 +29,20 @@ The Rust dispatcher in `native/src/lib.rs` is testable in isolation (`cargo test
 
 - Rust + cargo. For real iOS/Android builds:
   - Android: `cargo-ndk` (`cargo install cargo-ndk`) + Android Studio + NDK
-  - iOS / macOS: Xcode + Xcode CLI tools
+  - iOS / macOS: Xcode + Xcode CLI tools + an installed iOS Simulator runtime (Xcode → Settings → Components)
 - Node.js 20+ and pnpm.
 - The Expo CLI tooling: `npx create-expo-module@latest` is invoked at bootstrap time; `npx expo` runs your dev builds.
+
+**Environment variables for Android.** Gradle's Android plugin needs `ANDROID_HOME` exported in the shell that runs `npx expo run:android`. If it's not set, you'll see `SDK location not found. Define a valid SDK location with an ANDROID_HOME environment variable...`. Easiest fix is in your `~/.zshrc`:
+
+```bash
+export ANDROID_HOME=$HOME/Library/Android/sdk
+export PATH=$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH
+# Optional: pin Java for Gradle compatibility
+# export JAVA_HOME=$HOME/.sdkman/candidates/java/21.0.2-graalce
+```
+
+Then `source ~/.zshrc` (or open a fresh terminal) before running the Expo commands below.
 
 ## Bootstrap (one-time per checkout)
 
