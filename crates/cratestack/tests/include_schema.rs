@@ -1666,6 +1666,17 @@ async fn procedure_route_can_return_paged_output() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn generated_routes_emit_tracing_events() {
+    // Scope the subscriber to the request future via `WithSubscriber`
+    // instead of `set_default`. `set_default` installs a thread-local
+    // default and returns a `!Send` guard; holding it across the await
+    // happens to work on a current-thread runtime, but tests under high
+    // parallel load have surfaced as flaky because the polling thread
+    // can run other tasks between yields. `WithSubscriber` attaches the
+    // dispatch to the future itself — events emitted while polling
+    // *this* future see *this* subscriber, regardless of which thread
+    // or runtime polls it.
+    use cratestack::tracing::instrument::WithSubscriber;
+
     let codec = CborCodec;
     let router = test_procedure_router(codec.clone());
     let body = codec
@@ -1676,7 +1687,6 @@ async fn generated_routes_emit_tracing_events() {
         .expect("request body should encode");
     let capture = EventCaptureLayer::default();
     let subscriber = tracing_subscriber::registry().with(capture.clone());
-    let _guard = cratestack::tracing::subscriber::set_default(subscriber);
 
     let response = router
         .oneshot(
@@ -1687,6 +1697,7 @@ async fn generated_routes_emit_tracing_events() {
                 .body(Body::from(body))
                 .expect("request should build"),
         )
+        .with_subscriber(subscriber)
         .await
         .expect("request should succeed");
 
