@@ -1,0 +1,24 @@
+{
+  "name": "embedded-expo-example-app",
+  "version": "0.1.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "expo": "^55.0.24",
+    "expo-modules-core": "^55.0.25",
+    "expo-file-system": "^19.0.0",
+    "react": "19.2.6",
+    "react-native": "0.85.3",
+    "cratestack-notes": "file:../modules/cratestack-notes"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "typescript": "^5.9.3"
+  }
+}

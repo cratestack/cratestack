@@ -1,0 +1,11 @@
+/native/target
+/app/node_modules
+/app/.expo
+/app/dist
+/app/web-build
+/app/ios
+/app/android
+/modules/cratestack-notes/node_modules
+/modules/cratestack-notes/ios
+/modules/cratestack-notes/android
+/modules/cratestack-notes/build

@@ -1650,6 +1650,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "embedded-expo-native"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "cratestack",
+ "cratestack-macros",
+ "cratestack-rusqlite",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
 name = "embedded-flutter-native"
 version = "0.1.0"
 dependencies = [

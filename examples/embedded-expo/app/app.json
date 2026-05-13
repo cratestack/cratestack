@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "name": "cratestack notes",
+    "slug": "cratestack-embedded-expo",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "ios": {
+      "bundleIdentifier": "dev.cratestack.examples.embeddedExpo"
+    },
+    "android": {
+      "package": "dev.cratestack.examples.embeddedExpo"
+    },
+    "platforms": ["ios", "android"]
+  }
+}
