@@ -63,10 +63,18 @@ cargo build -p embedded_flutter_native --manifest-path native/Cargo.toml
 After that, regular development is just:
 
 ```bash
-flutter run -d macos        # or -d <android-device-id>, -d <ios-simulator>
+flutter run -d macos        # or -d <android-device-id>
 ```
 
 The first `flutter run` per platform is slow (cargokit cross-compiles the cdylib and runs `pod install`); subsequent runs use cargo's incremental cache.
+
+## Verification status
+
+| Target  | Status | Method |
+|---------|--------|--------|
+| macOS desktop | ✅ end-to-end | `flutter run -d macos` opens the Material 3 UI; added 6 CRUD rows through the app and read them back from the sandboxed SQLite under `~/Library/Containers/dev.cratestack.examples.embeddedFlutterExample/Data/Library/Application Support/.../cratestack-notes.db` |
+| Android | ✅ APK build | `flutter build apk --debug` produces `libembedded_flutter_native.so` for `arm64-v8a`, `armeabi-v7a`, `x86_64`. Not run on a physical device or emulator — the build pipeline (cargo-ndk cross-compile + cargokit Gradle plugin + jniLibs packaging) is the risk surface and is exercised; the runtime is the same Rust code as macOS desktop |
+| iOS | ❌ **not tested — out of scope** | The cargokit integration generates `rust_builder/ios/<name>.podspec` and the cross-compile target (`aarch64-apple-ios` / `-sim`) is wired, but the runtime hasn't been exercised here. Expect a working flow analogous to macOS once an iOS Simulator runtime is installed; report regressions if you try it |
 
 ## What the example demonstrates
 

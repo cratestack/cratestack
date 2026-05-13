@@ -118,7 +118,14 @@ Two tests:
 - `note_crud_round_trip` — opens an in-memory SQLite, exercises create + find_many through `ModelDelegate`, asserts the JS-facing `JsNote` view matches.
 - `macro_metadata_surface_is_distinct_per_module` — sanity check that the two `cratestack_schema` modules don't shadow each other.
 
-Full end-to-end (the Tauri window) is exercised manually via `pnpm tauri dev`.
+## Verification status
+
+| Layer | Status | Method |
+|-------|--------|--------|
+| Rust shell crate | ✅ | `cargo test` passes; `cargo check --workspace` clean |
+| Frontend production build | ✅ | `pnpm --filter ./web run build` → 4 KB JS bundle (no wasm) |
+| Tauri config discovery | ✅ | `pnpm exec tauri info` finds `src-tauri/tauri.conf.json` and reports correct `frontendDist` + `devUrl` |
+| Live `pnpm tauri dev` window | ⚠ **build-only** — full developer-machine smoke deferred. The Rust commands and the renderer have been individually tested; only the full Tauri shell launch (which lands a window on your screen) hasn't been exercised here. Run it on your machine when you want the end-to-end signal |
 
 ## See also
 

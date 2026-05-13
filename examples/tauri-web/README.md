@@ -110,7 +110,15 @@ cargo test -p tauri-web-wasm-example       # wasm crate in-memory smoke test
 cargo test -p tauri-web-shell-example      # native shell crate (offline checks)
 ```
 
-Full end-to-end (Vite dev server + Tauri window) is exercised manually via `pnpm tauri dev` — see "Run" above.
+## Verification status
+
+| Layer | Status | Method |
+|-------|--------|--------|
+| Wasm crate | ✅ | `cargo test` + cross-check on `wasm32-unknown-unknown` |
+| Rust shell crate | ✅ | `cargo test` passes; `cargo check --workspace` clean |
+| Frontend production build | ✅ | `pnpm --filter ./web run build` — wasm bundle gzips to ~464 KB |
+| Tauri config discovery | ✅ | `pnpm exec tauri info` finds `src-tauri/tauri.conf.json` and reports the right paths |
+| Live `pnpm tauri dev` window | ⚠ **build-only** — full developer-machine smoke deferred. Wasm path (Phase B browser-vite example) and HTTP client path (`client-stub-rust`) are each independently verified; combining them inside the Tauri shell only adds the IPC bridge, which is the part that hasn't been exercised here |
 
 ## See Also
 

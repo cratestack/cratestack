@@ -120,15 +120,20 @@ JS-level testing on the device happens once you run `npx expo run:ios` — there
 
 ## Verification status
 
-**Android: verified end-to-end on a Pixel_10_Pro emulator (API 36).** The full chain works:
+| Target  | Status | Method |
+|---------|--------|--------|
+| Android | ✅ end-to-end | `npx expo run:android` on a Pixel_10_Pro emulator: added 6 notes (one pinned) through the React Native UI; rows persist in `/data/data/dev.cratestack.examples.embeddedExpo/files/cratestack-notes.db` (verified via `adb exec-out cat … \| sqlite3`). The full chain — JS → Expo bridge → Kotlin `nativeDispatch` → Rust JNI shim → `dispatch_against` → `ModelDelegate` → SQLite WAL — is exercised |
+| iOS     | ❌ **not tested — out of scope** | The build path is set up: Swift module uses `@_silgen_name` against the same C ABI, podspec vendors `libembedded_expo_native.a` (built by `cargo build --target aarch64-apple-ios-sim`) and declares `SystemConfiguration.framework`. **Requires an iOS Simulator runtime install** (Xcode → Settings → Components → iOS 26.x) before `expo run:ios` works; macOS host alone isn't sufficient. Build pipeline mirrors Android and should work analogously when run — but it hasn't been run here |
 
-```
-React Native UI → Expo bridge → Kotlin nativeDispatch
-  → Rust JNI shim → dispatch_against(runtime, bytes)
-  → ModelDelegate.create → SQLite (WAL mode)
-```
+### Android pipeline checkpoints
 
-Confirmed by adding 6 notes (one pinned) through the UI and reading them back out of `/data/data/dev.cratestack.examples.embeddedExpo/files/cratestack-notes.db` with `sqlite3`:
+- `cargo-ndk` cross-compiles for all 4 ABIs (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`); `.so` files end up under `app/modules/cratestack-notes/android/src/main/jniLibs/<abi>/`.
+- Gradle's `:cratestack-notes:mergeDebugNativeLibs` picks them up and packages them into the APK.
+- Expo's autolinker discovers the local module (`cratestack-notes (0.7.10)` in the configure phase).
+- `System.loadLibrary("embedded_expo_native")` resolves the JNI-mangled symbols (`Java_..._nativeInit`, `Java_..._nativeDispatch`); no `UnsatisfiedLinkError`.
+- `cratestack-rusqlite` opens the SQLite file with WAL mode; rows visible via WAL journal until checkpoint, persist after process exit.
+
+### Reference row dump (for sanity comparison)
 
 ```
 title                pinned  completed  created_at
@@ -140,16 +145,6 @@ kkdf                 0       0          2026-05-13 20:19:23
 Miaou!               0       0          2026-05-13 20:19:25
 Akdsjf dskddmf sf    1       0          2026-05-13 20:19:29
 ```
-
-Pipeline checkpoints:
-
-- `cargo-ndk` cross-compiles for all 4 ABIs (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`); `.so` files end up under `app/modules/cratestack-notes/android/src/main/jniLibs/<abi>/`.
-- Gradle's `:cratestack-notes:mergeDebugNativeLibs` picks them up and packages them into the APK.
-- Expo's autolinker discovers the local module (`cratestack-notes (0.7.10)` in the configure phase).
-- `System.loadLibrary("embedded_expo_native")` resolves the JNI-mangled symbols (`Java_..._nativeInit`, `Java_..._nativeDispatch`); no `UnsatisfiedLinkError`.
-- `cratestack-rusqlite` opens the SQLite file with WAL mode; rows visible via WAL journal until checkpoint, persist after process exit.
-
-**iOS: setup but not run end-to-end here.** The Rust crate cross-compiles to `aarch64-apple-ios-sim` and the Swift module uses `@_silgen_name` to bind the same C ABI. The podspec vendors `libembedded_expo_native.a` and declares `SystemConfiguration.framework` + `CoreFoundation`. **Requires an iOS Simulator runtime install** (Xcode → Settings → Components) before `expo run:ios` works; macOS host alone isn't sufficient.
 
 The Rust dispatcher itself is `cargo test`-verified — `cargo test -p embedded-expo-native` exercises three envelope round-trips (create + find_unique, unknown_model error, not_initialized error).
 
