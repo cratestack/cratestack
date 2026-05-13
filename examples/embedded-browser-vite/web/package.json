@@ -1,0 +1,17 @@
+{
+  "name": "embedded-browser-vite-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "wasm:build": "node ../../../examples/scripts/wasm-build.mjs --target web --out-dir web/pkg",
+    "wasm:build:dev": "node ../../../examples/scripts/wasm-build.mjs --target web --out-dir web/pkg --dev",
+    "dev": "pnpm run wasm:build:dev && vite",
+    "build": "pnpm run wasm:build && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10"
+  }
+}

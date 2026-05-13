@@ -22,12 +22,31 @@ All examples build and run under `cargo build --workspace` / `cargo test --works
 | [`client-multi-service/`](client-multi-service) | Two `include_client_schema!` calls | BFF / orchestrator that fans out to two upstream services concurrently |
 | [`microservice-pair/`](microservice-pair) | `include_server_schema!` + `include_client_schema!` | Service that owns its own database AND calls an upstream — the canonical microservice shape |
 
-## Phase B — Browser / wasm32 (next release)
+## Phase B — Browser / wasm32
 
-Coming in a follow-up PR:
+| Example | Macro(s) | Shape |
+|---|---|---|
+| [`embedded-browser-vite/`](embedded-browser-vite) | `include_embedded_schema!` | `wasm32-unknown-unknown` + Vite + TypeScript, OPFS persistence inside a Dedicated Worker |
+| [`embedded-browser-webpack/`](embedded-browser-webpack) | `include_embedded_schema!` | Same Rust crate as Vite, Webpack 5 + ts-loader config delta |
 
-- `embedded-browser-vite/` — `include_embedded_schema!` + `wasm32-unknown-unknown` + Vite + TypeScript, with OPFS persistence inside a Dedicated Worker
-- `embedded-browser-webpack/` — same Rust crate as Vite, Webpack 5 config delta
+Build prerequisites for both:
+
+```bash
+rustup target add wasm32-unknown-unknown
+cargo install wasm-pack
+brew install llvm                    # macOS — sqlite-wasm-rs needs wasm-capable clang
+# (Linux: distro clang 14+ works directly)
+```
+
+Run either example:
+
+```bash
+cd examples/embedded-browser-vite/web      # or -webpack/web
+pnpm install
+pnpm run dev                                # auto-runs wasm-pack first
+```
+
+The bundled `examples/scripts/wasm-build.mjs` helper detects Homebrew LLVM at `/opt/homebrew/opt/llvm/bin/clang` (or the Intel-Mac equivalent) and points `cc-rs` at it so `pnpm run dev` works out of the box on macOS.
 
 ## Phase C — Mobile (next release)
 
@@ -62,4 +81,4 @@ cargo run -p microservice-pair-example
 | Call another CrateStack service from Rust | [`client-stub-rust`](client-stub-rust) |
 | Aggregate calls to multiple services | [`client-multi-service`](client-multi-service) |
 | Build a microservice that talks to other microservices | [`microservice-pair`](microservice-pair) |
-| Run the schema in a browser tab (OPFS) | Phase B (see `guides/offline-first-sqlite` in the docs site for the manual setup until the example lands) |
+| Run the schema in a browser tab (OPFS) | [`embedded-browser-vite`](embedded-browser-vite) — or `embedded-browser-webpack` if your shop uses Webpack |

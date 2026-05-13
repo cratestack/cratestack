@@ -1,0 +1,20 @@
+{
+  "name": "embedded-browser-webpack-example",
+  "private": true,
+  "scripts": {
+    "wasm:build": "node ../../../examples/scripts/wasm-build.mjs --target bundler --out-dir web/pkg",
+    "wasm:build:dev": "node ../../../examples/scripts/wasm-build.mjs --target bundler --out-dir web/pkg --dev",
+    "dev": "pnpm run wasm:build:dev && webpack serve --mode development",
+    "build": "pnpm run wasm:build && webpack --mode production",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.4",
+    "html-webpack-plugin": "^5.6.3",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.6.3",
+    "webpack": "^5.95.0",
+    "webpack-cli": "^5.1.4",
+    "webpack-dev-server": "^5.1.0"
+  }
+}

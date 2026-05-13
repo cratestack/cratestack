@@ -26,6 +26,8 @@ members = [
     "examples/client-stub-rust",
     "examples/client-multi-service",
     "examples/microservice-pair",
+    "examples/embedded-browser-vite",
+    "examples/embedded-browser-webpack",
 ]
 
 [workspace.package]
