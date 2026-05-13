@@ -123,6 +123,8 @@ Triggers for auto-sync: initial mount when online, the browser `online` event, a
 
 [Serwist](https://serwist.pages.dev) wraps Workbox with a Next.js-aware build plugin. `next.config.ts` wires `app/sw.ts` as the source and `public/sw.js` as the output. The build inlines a precache manifest covering HTML/CSS/JS/wasm and registers runtime caches for fonts/images/api responses.
 
+> **Webpack, not Turbopack.** `@serwist/next` is a webpack plugin and there is no Turbopack equivalent yet. Next.js 16 turns Turbopack on by default, so under a bare `next dev` the Serwist hooks would silently no-op and you'd get no service worker. The `dev` and `build` scripts in `web/package.json` pass `--webpack` explicitly to keep Serwist in the build graph. When Serwist ships a Turbopack adapter (or when a maintained alternative does), drop the flag.
+
 Test it: `pnpm run build && pnpm run start`, then in DevTools → Application → Service Workers, you should see the worker registered and the wasm bundle pre-cached. Throw the browser into offline mode and reload — the Local tab still works (OPFS + cached wasm). The Server and Remote tabs surface the request failure cleanly.
 
 To install: visit the page in Chrome/Edge and use **Install app**. The manifest at `/manifest.json` and the icon at `/icon.svg` cover the rest.
