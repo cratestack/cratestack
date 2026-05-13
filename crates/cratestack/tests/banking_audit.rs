@@ -5,12 +5,12 @@
 //! `cratestack_audit` carry the right operation tag, request id, and
 //! redact `@pii` / `@sensitive` columns.
 
-use cratestack::include_schema;
+use cratestack::include_server_schema;
 use cratestack::sqlx::postgres::PgPoolOptions;
 use cratestack::sqlx::{Row, query};
 use cratestack::{CoolContext, Value};
 
-include_schema!("tests/fixtures/banking_audit.cstack");
+include_server_schema!("tests/fixtures/banking_audit.cstack", db = Postgres);
 
 /// Tests in this file all touch the `account` table, so cargo's default
 /// in-binary parallelism would race them on `DROP/CREATE TABLE`. This

@@ -1,3 +1,5 @@
+use crate::sqlx;
+
 use cratestack_core::{CoolContext, CoolError};
 
 use crate::{

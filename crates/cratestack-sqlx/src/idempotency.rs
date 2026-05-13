@@ -10,6 +10,8 @@
 //! the `ON CONFLICT DO UPDATE WHERE cratestack_idempotency.expires_at <=
 //! NOW()` clause lets the new caller take over a stale row in the same
 //! statement that would otherwise have hit the unique-key wall.
+use crate::sqlx;
+
 
 use std::time::SystemTime;
 

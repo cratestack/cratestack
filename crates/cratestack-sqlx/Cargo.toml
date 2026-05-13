@@ -18,13 +18,15 @@ decimal-rust-decimal = [
     "cratestack-core/decimal-rust-decimal",
     "cratestack-sql/decimal-rust-decimal",
     "dep:rust_decimal",
-    "sqlx/rust_decimal",
+    "sqlx-core/rust_decimal",
+    "sqlx-postgres/rust_decimal",
 ]
 decimal-bigdecimal = [
     "cratestack-core/decimal-bigdecimal",
     "cratestack-sql/decimal-bigdecimal",
     "dep:bigdecimal",
-    "sqlx/bigdecimal",
+    "sqlx-core/bigdecimal",
+    "sqlx-postgres/bigdecimal",
 ]
 
 [dependencies]
@@ -37,7 +39,8 @@ cratestack-sql.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
-sqlx.workspace = true
+sqlx-core.workspace = true
+sqlx-postgres.workspace = true
 tokio.workspace = true
 uuid.workspace = true
 rust_decimal = { workspace = true, optional = true }

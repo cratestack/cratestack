@@ -6,8 +6,8 @@ Schema-first Rust framework for typed HTTP APIs, generated clients, and backend 
 
 CrateStack turns a single `.cstack` schema file into a fully-typed server and optional on-device storage layer:
 
-- compile-time schema validation via `include_schema!`
-- generated delegates over SQLx (Postgres, async) and rusqlite (SQLite, sync, on-device)
+- compile-time schema validation via three role-specific macros: `include_server_schema!`, `include_embedded_schema!`, `include_client_schema!`
+- generated delegates over SQLx (Postgres, async) and rusqlite (SQLite, sync — native and `wasm32-unknown-unknown` via OPFS)
 - generated Axum routes for model CRUD and procedures
 - generated Rust, Dart, and TypeScript clients
 - opt-in primitives for banking-style workloads: idempotency, audit log, optimistic locking, rate limiting, soft delete, transaction isolation
@@ -16,7 +16,7 @@ CrateStack turns a single `.cstack` schema file into a fully-typed server and op
 
 ```toml
 [dependencies]
-cratestack = "0.2.2"
+cratestack = "0.3"
 ```
 
 A `Decimal` backend feature must be selected. `decimal-rust-decimal` is the default; `decimal-bigdecimal` is reserved and not yet implemented.
@@ -53,11 +53,27 @@ model Post {
 
 ### Include the schema
 
-```rust
-use cratestack::include_schema;
+Pick the macro that matches your deployment:
 
-include_schema!("schema.cstack");
+```rust
+// Server (Postgres via sqlx) — full ORM, axum routes, procedures, events
+use cratestack::include_server_schema;
+include_server_schema!("schema.cstack", db = Postgres);
 ```
+
+```rust
+// Embedded (rusqlite) — works native AND on `wasm32-unknown-unknown` via OPFS
+use cratestack::include_embedded_schema;
+include_embedded_schema!("schema.cstack");
+```
+
+```rust
+// HTTP client — model/input stubs only, no DB
+use cratestack::include_client_schema;
+include_client_schema!("schema.cstack");
+```
+
+The three macros emit a `cratestack_schema` module each — mutually exclusive within a single crate. Pick one per crate based on the crate's role.
 
 ### Build the runtime
 
@@ -102,12 +118,12 @@ let app = axum::Router::new().nest(
 
 ## Two Backends
 
-| Backend  | Crate                  | Use case                                    |
-|----------|------------------------|---------------------------------------------|
-| Postgres | `cratestack-sqlx`      | Server-side, async, full policy enforcement |
-| SQLite   | `cratestack-rusqlite`  | On-device, sync, offline-first mobile       |
+| Backend  | Crate                  | Use case                                                          |
+|----------|------------------------|-------------------------------------------------------------------|
+| Postgres | `cratestack-sqlx`      | Server-side, async, full policy enforcement                       |
+| SQLite   | `cratestack-rusqlite`  | On-device sync (mobile/desktop) AND in-browser via OPFS (wasm32)  |
 
-Both consume the same `.cstack` schema and share the primitives in `cratestack-sql`.
+Both consume the same `.cstack` schema and share the primitives in `cratestack-sql`. `cratestack-rusqlite 0.3+` compiles to `wasm32-unknown-unknown` via [`sqlite-wasm-rs`](https://crates.io/crates/sqlite-wasm-rs); call `cratestack_rusqlite::opfs::install_opfs_vfs(...)` inside a Dedicated Worker before opening the connection.
 
 ## Banking-Grade Primitives
 
@@ -144,7 +160,7 @@ let created = notes.create(/* CreateNoteInput { ... } */).run()?;
 |----------------------------------|------------------------------------------------------------|
 | `cratestack-core`                | Core types: `CoolError`, `CoolContext`, `Schema`, audit    |
 | `cratestack-parser`              | `.cstack` parser and semantic checker                      |
-| `cratestack-macros`              | `include_schema!`, `include_client_macro!`                 |
+| `cratestack-macros`              | `include_server_schema!`, `include_embedded_schema!`, `include_client_schema!` |
 | `cratestack-policy`              | Policy literal/predicate types and procedure evaluation    |
 | `cratestack-sql`                 | Dialect-agnostic SQL primitives shared by both backends    |
 | `cratestack-sqlx`                | Postgres delegates (async)                                 |

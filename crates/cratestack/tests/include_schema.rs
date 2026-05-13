@@ -1,6 +1,6 @@
 use cratestack::axum::body::Body;
 use cratestack::axum::http::{Request, StatusCode};
-use cratestack::include_schema;
+use cratestack::include_server_schema;
 use cratestack::sqlx::postgres::PgPoolOptions;
 use cratestack::tracing::Subscriber;
 use cratestack::{AuthProvider, CodecSet, CoolCodec, CoolContext, RequestContext, Value};
@@ -10,12 +10,12 @@ use tower::util::ServiceExt;
 use tracing_subscriber::layer::{Context, Layer};
 use tracing_subscriber::prelude::*;
 
-include_schema!("tests/fixtures/blog.cstack");
+include_server_schema!("tests/fixtures/blog.cstack", db = Postgres);
 
 mod advanced_policy_schema {
     use super::*;
 
-    include_schema!("tests/fixtures/advanced_policy.cstack");
+    include_server_schema!("tests/fixtures/advanced_policy.cstack", db = Postgres);
 
     fn advanced_test_db() -> cratestack_schema::Cratestack {
         let pool = PgPoolOptions::new()
@@ -374,7 +374,7 @@ mod enum_schema {
     use super::*;
     use cratestack::{CreateModelInput, ProcedureArgs, SqlValue};
 
-    include_schema!("tests/fixtures/enums.cstack");
+    include_server_schema!("tests/fixtures/enums.cstack", db = Postgres);
 
     #[test]
     fn macro_generates_enum_summary_constants() {
@@ -435,7 +435,7 @@ mod enum_schema {
 mod auth_engine_schema {
     use super::*;
 
-    include_schema!("tests/fixtures/auth_engine.cstack");
+    include_server_schema!("tests/fixtures/auth_engine.cstack", db = Postgres);
 
     fn tenant_scope(id: &str) -> cratestack::Value {
         cratestack::Value::Map(std::collections::BTreeMap::from([(
@@ -1727,7 +1727,7 @@ mod custom_fields_schema {
     use self::cratestack_schema::CustomFieldResolver;
     use super::*;
 
-    include_schema!("tests/fixtures/custom_fields.cstack");
+    include_server_schema!("tests/fixtures/custom_fields.cstack", db = Postgres);
 
     #[derive(Clone)]
     struct TestCustomFieldResolver;

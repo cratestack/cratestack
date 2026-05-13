@@ -6,6 +6,8 @@
 //! handler code can wrap its body in [`run_in_isolated_tx`] to actually
 //! enforce it. A follow-up will auto-wrap procedure dispatch so opting in
 //! requires only the attribute.
+use crate::sqlx;
+
 
 use std::future::Future;
 

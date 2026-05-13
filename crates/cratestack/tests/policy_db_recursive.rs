@@ -1,8 +1,8 @@
-use cratestack::include_schema;
+use cratestack::include_server_schema;
 use cratestack::sqlx::postgres::PgPoolOptions;
 use cratestack::{CoolContext, CoolError, Value};
 
-include_schema!("tests/fixtures/recursive_policy.cstack");
+include_server_schema!("tests/fixtures/recursive_policy.cstack", db = Postgres);
 
 // Two pre-existing issues in this test, both verified against pristine
 // `origin/main`:

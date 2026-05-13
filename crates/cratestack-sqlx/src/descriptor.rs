@@ -1,3 +1,5 @@
+use crate::sqlx;
+
 use cratestack_core::{
     CoolError, CoolEventBus, CoolEventEnvelope, CoolEventFuture, ModelEventKind,
 };
@@ -78,7 +80,7 @@ impl SqlxRuntime {
     }
 }
 
-#[derive(Debug, Clone, sqlx::FromRow)]
+#[derive(Debug, Clone)]
 pub(crate) struct EventOutboxRow {
     pub(crate) event_id: uuid::Uuid,
     pub(crate) model: String,
@@ -87,6 +89,24 @@ pub(crate) struct EventOutboxRow {
     pub(crate) payload: serde_json::Value,
     pub(crate) attempts: i64,
     pub(crate) last_error: Option<String>,
+}
+
+// Hand-written `FromRow` impl. We can't use `#[derive(sqlx::FromRow)]` because
+// the derive macro hardcodes `::sqlx::*` paths that don't resolve through our
+// `crate::sqlx` shim (the shim is module-scoped, not crate-aliased).
+impl<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> for EventOutboxRow {
+    fn from_row(row: &'r sqlx::postgres::PgRow) -> Result<Self, sqlx::Error> {
+        use sqlx::Row;
+        Ok(Self {
+            event_id: row.try_get("event_id")?,
+            model: row.try_get("model")?,
+            operation: row.try_get("operation")?,
+            occurred_at: row.try_get("occurred_at")?,
+            payload: row.try_get("payload")?,
+            attempts: row.try_get("attempts")?,
+            last_error: row.try_get("last_error")?,
+        })
+    }
 }
 
 impl EventOutboxRow {

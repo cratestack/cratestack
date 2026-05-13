@@ -1,6 +1,6 @@
 use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::http::{Request, StatusCode};
-use cratestack::include_schema;
+use cratestack::include_server_schema;
 use cratestack::sqlx::postgres::PgPoolOptions;
 use cratestack::{AuthProvider, CoolCodec, CoolContext, CoolError, RequestContext, Value};
 use cratestack_codec_cbor::CborCodec;
@@ -10,7 +10,7 @@ use std::sync::{
 };
 use tower::util::ServiceExt;
 
-include_schema!("tests/fixtures/blog.cstack");
+include_server_schema!("tests/fixtures/blog.cstack", db = Postgres);
 
 #[derive(Clone)]
 struct PolicyDbAuthProvider;

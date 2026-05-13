@@ -6,7 +6,7 @@
 //! both backends and the on-device ORM accepts the macro-generated
 //! `ModelDescriptor` and decoder unchanged.
 
-use cratestack::include_schema;
+use cratestack::include_embedded_schema;
 use cratestack::rusqlite;
 use cratestack::{
     Decimal, FromRusqliteRow as _, ModelDescriptor, RusqliteRuntime, SqlColumnValue, SqlValue,
@@ -14,7 +14,7 @@ use cratestack::{
 };
 use cratestack_rusqlite::{ModelDelegate, ddl::create_table_sql};
 
-include_schema!("tests/fixtures/sqlite_e2e.cstack");
+include_embedded_schema!("tests/fixtures/sqlite_e2e.cstack");
 
 use cratestack_schema::models::{Account, Tag};
 use cratestack_schema::{ACCOUNT_MODEL, TAG_MODEL};
