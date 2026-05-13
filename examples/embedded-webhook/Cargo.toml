@@ -1,0 +1,34 @@
+[package]
+name = "embedded-webhook-example"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Single-binary HTTP webhook receiver on top of include_embedded_schema! + cratestack-rusqlite. Owns its own SQLite — the inverted twin of the Postgres-backed include_server_schema! example."
+
+[[bin]]
+name = "cratestack-webhook"
+path = "src/main.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+axum = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+# NOTE(0.3.x): macro emits `::cratestack::*` paths, so embedded consumers
+# transitively pull in the facade.
+cratestack = { path = "../../crates/cratestack", version = "0.3.0" }
+cratestack-macros = { path = "../../crates/cratestack-macros", version = "0.3.0" }
+cratestack-rusqlite = { path = "../../crates/cratestack-rusqlite", version = "0.3.0" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+uuid = { workspace = true }
+
+[dev-dependencies]
+http-body-util = "0.1"
+tower = { workspace = true }

@@ -1,0 +1,12 @@
+datasource db {
+  provider = "sqlite"
+  url = env("DATABASE_URL")
+}
+
+model WebhookEvent {
+  id Uuid @id
+  source String
+  payload String
+  receivedAt DateTime
+  status String
+}

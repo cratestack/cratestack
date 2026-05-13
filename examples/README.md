@@ -18,6 +18,8 @@ All examples build and run under `cargo build --workspace` / `cargo test --works
 | [`crates/cratestack/examples/sqlite_ffi_dispatch.rs`](../crates/cratestack/examples/sqlite_ffi_dispatch.rs) | `include_embedded_schema!` | JSON FFI envelope dispatcher you'd wrap with `flutter_rust_bridge` |
 | [`crates/cratestack/examples/server_basic.rs`](../crates/cratestack/examples/server_basic.rs) | `include_server_schema!` | Postgres + axum router + procedure registry + host auth provider |
 | [`embedded-cli/`](embedded-cli) | `include_embedded_schema!` | `clap`-driven note-taking CLI against a file-backed SQLite database |
+| [`embedded-daemon/`](embedded-daemon) | `include_embedded_schema!` | Long-running tokio + `notify` daemon: debounces filesystem events, persists through `spawn_blocking`. The canonical "async I/O on the outside, sync `ModelDelegate` on the inside" example |
+| [`embedded-webhook/`](embedded-webhook) | `include_embedded_schema!` | Single-binary axum HTTP webhook receiver with its own SQLite — the inverted twin of `server_basic`'s Postgres setup, for edge / single-tenant deployments |
 | [`client-stub-rust/`](client-stub-rust) | `include_client_schema!` | Standalone HTTP client; the "Rust service that calls another Rust service" shape |
 | [`client-multi-service/`](client-multi-service) | Two `include_client_schema!` calls | BFF / orchestrator that fans out to two upstream services concurrently |
 | [`microservice-pair/`](microservice-pair) | `include_server_schema!` + `include_client_schema!` | Service that owns its own database AND calls an upstream — the canonical microservice shape |
@@ -96,6 +98,8 @@ Snapshot of what's been actually exercised end-to-end against a real runtime, vs
 | Example | `cargo test` | End-to-end | Verified surface |
 |---|---|---|---|
 | `embedded-cli` | ✅ | ✅ | `cargo run`: add / list / count / mark-done / delete persist to a file-backed SQLite |
+| `embedded-daemon` | ✅ | ✅ | Watched `/tmp/cratestack-daemon-test` while bursting writes; rows persisted with `bursts > 1` confirming the debouncer collapsed them |
+| `embedded-webhook` | ✅ | ✅ | `curl` POST / GET / list / mark-processed round-trips against a real `127.0.0.1` bind, rows persisted to the file-backed SQLite |
 | `client-stub-rust` | ✅ | ✅ | `cargo run` prints the typed client surface (live HTTP call requires a remote service) |
 | `client-multi-service` | ✅ | ✅ | `cargo run` prints both upstream surfaces |
 | `microservice-pair` | ✅ | ✅ | `cargo run` prints server + client surfaces |
@@ -148,5 +152,7 @@ cargo run -p microservice-pair-example
 | Run the schema in React + a real component library | [`react-vite-daisyui`](react-vite-daisyui) |
 | Run all three CrateStack surfaces in one app with offline-first sync | [`react-nextjs-daisyui`](react-nextjs-daisyui) |
 | Build a thick desktop app with everything in native Rust | [`tauri-native`](tauri-native) |
+| Run a long-running async daemon that persists locally | [`embedded-daemon`](embedded-daemon) |
+| Stand up a small HTTP service with its own SQLite | [`embedded-webhook`](embedded-webhook) |
 | Drive the schema from Flutter (iOS + Android + desktop) | [`embedded-flutter`](embedded-flutter) |
 | Drive the schema from React Native + Expo | [`embedded-expo`](embedded-expo) |

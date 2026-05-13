@@ -23,6 +23,8 @@ members = [
     "crates/cratestack-sqlx",
     "crates/cratestack-studio-generator",
     "examples/embedded-cli",
+    "examples/embedded-daemon",
+    "examples/embedded-webhook",
     "examples/client-stub-rust",
     "examples/client-multi-service",
     "examples/microservice-pair",
