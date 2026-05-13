@@ -526,6 +526,7 @@ dependencies = [
  "cratestack-parser",
  "cratestack-policy",
  "cratestack-rusqlite",
+ "cratestack-sql",
  "cratestack-sqlx",
  "minicbor-serde",
  "regex",

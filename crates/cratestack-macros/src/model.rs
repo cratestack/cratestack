@@ -429,7 +429,7 @@ fn sqlite_row_field_tokens(
                         ::cratestack::rusqlite::types::Type::Text,
                         Box::new(error),
                     ))?;
-                ::cratestack::sqlx::types::Json(value)
+                ::cratestack::Json(value)
             },
         },
         ("Json", TypeArity::Optional) => quote! {
@@ -443,7 +443,7 @@ fn sqlite_row_field_tokens(
                                 ::cratestack::rusqlite::types::Type::Text,
                                 Box::new(error),
                             ))?;
-                        Some(::cratestack::sqlx::types::Json(value))
+                        Some(::cratestack::Json(value))
                     }
                     None => None,
                 }
@@ -758,15 +758,26 @@ pub(crate) fn generate_field_module(
 
             #(#field_fns)*
             #(#relation_root_fns)*
+
+            // Projection / selection helpers depend on
+            // `cratestack::client_rust::Projection`, which only exists when
+            // `cratestack` is built for a non-wasm32 target. Gate the
+            // emission so `include_embedded_schema!` output compiles cleanly
+            // on `wasm32-unknown-unknown` without these helpers — they
+            // aren't part of the embedded delegate API anyway.
+            #[cfg(not(target_arch = "wasm32"))]
             pub fn select() -> self::selection::Selection {
                 self::selection::Selection::default()
             }
 
+            #[cfg(not(target_arch = "wasm32"))]
             pub fn include_selection() -> self::selection::IncludeSelection {
                 self::selection::IncludeSelection::default()
             }
 
             #(#relation_modules)*
+
+            #[cfg(not(target_arch = "wasm32"))]
             #selection_module
         }
     })
