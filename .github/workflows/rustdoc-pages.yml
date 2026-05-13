@@ -28,7 +28,36 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build rustdoc
-        run: cargo doc --workspace --no-deps
+        # Restrict to the framework crates under `crates/`. The workspace
+        # also contains `examples/*` members; one of them (tauri-web's
+        # src-tauri) transitively depends on glib-sys / webkit2gtk-sys
+        # via Tauri's Linux backend, which would require us to install
+        # GTK system packages on the Ubuntu runner. Example crates are
+        # applications, not libraries — their rustdoc isn't useful on
+        # the docs site, so we just skip them.
+        run: |
+          cargo doc --no-deps \
+            -p cratestack \
+            -p cratestack-axum \
+            -p cratestack-cli \
+            -p cratestack-client-dart \
+            -p cratestack-client-flutter \
+            -p cratestack-client-typescript \
+            -p cratestack-client-store-redis \
+            -p cratestack-client-rust \
+            -p cratestack-client-store-sqlite \
+            -p cratestack-codec-cbor \
+            -p cratestack-codec-json \
+            -p cratestack-core \
+            -p cratestack-lsp \
+            -p cratestack-macros \
+            -p cratestack-parser \
+            -p cratestack-policy \
+            -p cratestack-redis \
+            -p cratestack-rusqlite \
+            -p cratestack-sql \
+            -p cratestack-sqlx \
+            -p cratestack-studio-generator
 
       - name: Prepare Pages content
         run: |
