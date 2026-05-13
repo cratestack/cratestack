@@ -120,20 +120,38 @@ JS-level testing on the device happens once you run `npx expo run:ios` — there
 
 ## Verification status
 
-Built and launched on an Android emulator (Pixel_10_Pro, API 36) and confirmed:
+**Android: verified end-to-end on a Pixel_10_Pro emulator (API 36).** The full chain works:
 
-- ✅ `cargo-ndk` cross-compiles for all 4 ABIs (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`); `.so` files end up under `app/modules/cratestack-notes/android/src/main/jniLibs/<abi>/`.
-- ✅ Gradle picks up the `.so` via `:cratestack-notes:mergeDebugNativeLibs` and packages them into the APK.
-- ✅ APK installs cleanly on the emulator.
-- ✅ Expo's autolinker discovers the local module (`cratestack-notes (0.7.10)` in the configure phase).
-- ✅ App launches, JS bundle (708 modules) bundles via Metro and is delivered to the device.
-- ✅ React Native's `Running "main" with {...fabric: true}` confirms the app entered the React root.
-- ✅ `System.loadLibrary("embedded_expo_native")` succeeds (no `UnsatisfiedLinkError` in logcat).
-- ⚠ Full JS-driven CRUD round-trip not yet snapshot-verified — `expo-file-system@55` moved `documentDirectory` to `expo-file-system/legacy`, fixed in `App.tsx` import; the HMR delta + reload cycle on a heavy first-launch emulator surfaced enough latency that I didn't get a clean confirmation here. Should work cleanly on a warm-cached subsequent run.
+```
+React Native UI → Expo bridge → Kotlin nativeDispatch
+  → Rust JNI shim → dispatch_against(runtime, bytes)
+  → ModelDelegate.create → SQLite (WAL mode)
+```
 
-iOS path: same Rust crate, same C ABI exported via Swift's `@_silgen_name` in `app/modules/cratestack-notes/ios/CratestackNotesModule.swift`. The podspec vendors `libembedded_expo_native.a` (built by `cargo build --target aarch64-apple-ios-sim`) and declares `SystemConfiguration.framework`. **iOS Simulator runtime install required** (Xcode → Settings → Components → iOS 26.x) before `expo run:ios` works; macOS host alone isn't sufficient.
+Confirmed by adding 6 notes (one pinned) through the UI and reading them back out of `/data/data/dev.cratestack.examples.embeddedExpo/files/cratestack-notes.db` with `sqlite3`:
 
-The Rust dispatcher itself is fully `cargo test`-verified — `cargo test -p embedded-expo-native` exercises the three envelope round-trips.
+```
+title                pinned  completed  created_at
+-------------------  ------  ---------  -------------------
+Kjasdks ds           0       0          2026-05-13 20:19:18
+sm fsm, fsd,mf sd    0       0          2026-05-13 20:19:19
+Sldmf s,mf sdmf smf  0       0          2026-05-13 20:19:21
+kkdf                 0       0          2026-05-13 20:19:23
+Miaou!               0       0          2026-05-13 20:19:25
+Akdsjf dskddmf sf    1       0          2026-05-13 20:19:29
+```
+
+Pipeline checkpoints:
+
+- `cargo-ndk` cross-compiles for all 4 ABIs (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`); `.so` files end up under `app/modules/cratestack-notes/android/src/main/jniLibs/<abi>/`.
+- Gradle's `:cratestack-notes:mergeDebugNativeLibs` picks them up and packages them into the APK.
+- Expo's autolinker discovers the local module (`cratestack-notes (0.7.10)` in the configure phase).
+- `System.loadLibrary("embedded_expo_native")` resolves the JNI-mangled symbols (`Java_..._nativeInit`, `Java_..._nativeDispatch`); no `UnsatisfiedLinkError`.
+- `cratestack-rusqlite` opens the SQLite file with WAL mode; rows visible via WAL journal until checkpoint, persist after process exit.
+
+**iOS: setup but not run end-to-end here.** The Rust crate cross-compiles to `aarch64-apple-ios-sim` and the Swift module uses `@_silgen_name` to bind the same C ABI. The podspec vendors `libembedded_expo_native.a` and declares `SystemConfiguration.framework` + `CoreFoundation`. **Requires an iOS Simulator runtime install** (Xcode → Settings → Components) before `expo run:ios` works; macOS host alone isn't sufficient.
+
+The Rust dispatcher itself is `cargo test`-verified — `cargo test -p embedded-expo-native` exercises three envelope round-trips (create + find_unique, unknown_model error, not_initialized error).
 
 ## See also
 

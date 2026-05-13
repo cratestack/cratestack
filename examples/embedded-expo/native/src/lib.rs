@@ -305,6 +305,11 @@ mod android_jni {
     /// Matches Kotlin's
     /// `private external fun nativeInit(dbPath: String): Int`
     /// on class `dev.cratestack.examples.cratestacknotes.CratestackNotesModule`.
+    ///
+    /// Returns 0 on success. On failure, throws a `java.lang.RuntimeException`
+    /// with the underlying error message before returning -1; the Kotlin
+    /// caller then propagates that exception to the JS side instead of the
+    /// previous silent "code -1" placeholder.
     #[unsafe(no_mangle)]
     pub extern "system" fn Java_dev_cratestack_examples_cratestacknotes_CratestackNotesModule_nativeInit<'local>(
         mut env: JNIEnv<'local>,
@@ -313,11 +318,23 @@ mod android_jni {
     ) -> jint {
         let path: String = match env.get_string(&db_path) {
             Ok(s) => s.into(),
-            Err(_) => return -1,
+            Err(error) => {
+                let _ = env.throw_new(
+                    "java/lang/RuntimeException",
+                    format!("decode dbPath failed: {error}"),
+                );
+                return -1;
+            }
         };
         match init_database(&path) {
             Ok(()) => 0,
-            Err(_) => -1,
+            Err(message) => {
+                let _ = env.throw_new(
+                    "java/lang/RuntimeException",
+                    format!("cratestack_init failed: {message}"),
+                );
+                -1
+            }
         }
     }
 

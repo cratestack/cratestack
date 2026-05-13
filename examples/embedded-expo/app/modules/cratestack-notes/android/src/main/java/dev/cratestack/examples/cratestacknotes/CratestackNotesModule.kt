@@ -13,9 +13,14 @@ class CratestackNotesModule : Module() {
   }
 
   // `external` declares a JNI-bound function. The matching native
-  // symbol is registered by `RegisterNatives` below — we don't use the
-  // auto-mangled "Java_..." names because the Rust side is plain
-  // `extern "C"` rather than #[no_mangle] JNI-named.
+  // symbols are exported from `native/src/lib.rs`'s `android_jni`
+  // module using the canonical `Java_<dotted_class>_<methodName>` name
+  // mangling, so no `RegisterNatives` call is needed.
+  //
+  // On failure, the Rust side throws a `java.lang.RuntimeException`
+  // with the underlying error message before returning -1, so any
+  // caller-side `try { ... }` block sees the real cause instead of a
+  // bare "code -1" placeholder.
   private external fun nativeInit(dbPath: String): Int
   private external fun nativeDispatch(request: ByteArray): ByteArray
 
@@ -23,9 +28,14 @@ class CratestackNotesModule : Module() {
     Name("CratestackNotes")
 
     AsyncFunction("initDatabase") { dbPath: String ->
+      // The Rust side throws a RuntimeException on failure; we just
+      // call through and let it propagate. The Int return is only
+      // checked as a belt-and-suspenders guard for the
+      // unreachable-in-practice case where Rust returned -1 without
+      // raising a JVM exception.
       val code = nativeInit(dbPath)
       if (code != 0) {
-        throw RuntimeException("cratestack_init failed (code $code)")
+        throw RuntimeException("cratestack_init returned $code without throwing")
       }
     }
 

@@ -54,9 +54,13 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        // Expo's documentDirectory is per-app sandbox; on iOS it's
-        // ~/Documents, on Android the app's internal storage.
-        const dir = FileSystem.documentDirectory ?? '';
+        // Expo's documentDirectory is per-app sandbox: on iOS it's
+        // `file:///.../Documents/`, on Android it's
+        // `file:///data/user/0/<pkg>/files/`. Rust's `PathBuf` and
+        // SQLite expect a plain filesystem path, so strip the
+        // `file://` scheme before crossing the FFI boundary.
+        const documentUri = FileSystem.documentDirectory ?? '';
+        const dir = documentUri.replace(/^file:\/\//, '');
         const path = `${dir}cratestack-notes.db`;
         await initDatabase(path);
         await refresh();
