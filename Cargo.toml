@@ -35,6 +35,7 @@ members = [
     "examples/tauri-web",
     "examples/tauri-web/src-tauri",
     "examples/tauri-native/src-tauri",
+    "examples/embedded-flutter/native",
 ]
 
 [workspace.package]

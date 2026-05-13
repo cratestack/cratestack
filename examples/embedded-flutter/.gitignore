@@ -1,0 +1,23 @@
+# Generated bindings — they regenerate from `flutter_rust_bridge_codegen`.
+/lib/src/rust/
+
+# Native build output.
+/native/target
+
+# Standard Flutter ignores.
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+*.iml
+
+# Platform scaffolds — users run `flutter create .` to materialize them.
+/android/
+/ios/
+/linux/
+/macos/
+/windows/
+/web/

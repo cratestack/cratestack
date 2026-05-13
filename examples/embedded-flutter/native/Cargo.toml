@@ -1,0 +1,21 @@
+[package]
+name = "embedded-flutter-native"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Native cdylib for the embedded-flutter example. Hosts include_embedded_schema! and exposes a small API surface for flutter_rust_bridge to bridge into Dart. The Flutter side imports the generated Dart bindings under lib/src/rust/."
+
+[lib]
+name = "embedded_flutter_native"
+# cdylib for Android/iOS/macOS/Linux/Windows targets; rlib so cargo test
+# can exercise the API as a normal Rust library.
+crate-type = ["cdylib", "rlib", "staticlib"]
+
+[dependencies]
+chrono = { workspace = true }
+cratestack = { path = "../../../crates/cratestack", version = "0.3.0" }
+cratestack-macros = { path = "../../../crates/cratestack-macros", version = "0.3.0" }
+cratestack-rusqlite = { path = "../../../crates/cratestack-rusqlite", version = "0.3.0" }
+flutter_rust_bridge = "2"
+serde = { workspace = true }
+uuid = { workspace = true }
