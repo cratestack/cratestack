@@ -41,27 +41,32 @@ Two directories are NOT committed and **must be created** when bootstrapping the
 ```bash
 cd examples/embedded-flutter
 
-# 1) Have Flutter create the platform scaffolds (android/, ios/, macos/, ...).
+# 1) Flutter scaffolds the platform folders (android/, ios/, macos/, ...).
 #    `.` keeps the existing pubspec.yaml + lib/.
-flutter create .
+flutter create . --org dev.cratestack.examples --platforms=macos,ios,android
 
-# 2) Install Dart/Flutter deps.
+# 2) flutter_rust_bridge wires cargokit into each platform: podspecs for
+#    iOS/macOS, a Gradle plugin for Android, CMake for Linux/Windows. It
+#    also injects a `mod frb_generated;` line into native/src/lib.rs.
+#    Re-running this is safe — it's idempotent.
+flutter_rust_bridge_codegen integrate --rust-crate-name embedded_flutter_native --rust-crate-dir native --no-write-lib --no-integration-test
+
+# 3) Generate the Dart-side bindings from native/src/api/. Re-run this
+#    whenever you change a `pub fn` in `native/src/api/`.
+flutter_rust_bridge_codegen generate
+
+# 4) Install Dart deps + sanity-check the Rust side builds.
 flutter pub get
-
-# 3) Generate the Dart-side bindings from native/src/api/.
-dart run flutter_rust_bridge_codegen generate
-
-# 4) Make sure the Rust side builds with the cratestack workspace.
-cargo build -p embedded-flutter-native
+cargo build -p embedded_flutter_native --manifest-path native/Cargo.toml
 ```
 
 After that, regular development is just:
 
 ```bash
-flutter run         # launch on the current target (simulator / device / desktop)
+flutter run -d macos        # or -d <android-device-id>, -d <ios-simulator>
 ```
 
-When you change any `pub fn` in `native/src/api/`, re-run step 3 to refresh the Dart bindings.
+The first `flutter run` per platform is slow (cargokit cross-compiles the cdylib and runs `pod install`); subsequent runs use cargo's incremental cache.
 
 ## What the example demonstrates
 
@@ -87,9 +92,13 @@ cargo test -p embedded-flutter-native       # Rust API surface, in-memory smoke
 
 Dart-level testing (widget tests against the bindings) lives in a future PR — it would need either a mocked native lib or a real one loaded into `flutter test`.
 
-## Caveats / honesty notes
+## Things to know about the integration
 
-This example was scaffolded without running `flutter pub get` or `flutter run` here on the build machine (no Flutter SDK installed at scaffold time). The Rust side is fully tested via `cargo test`; the Dart code is hand-written and follows the FRB 2.x conventions but you'll likely hit small adjustments on first `flutter run` (a deprecation rename, an SDK constraint nudge — that's the cost of moving fast on a SDK-heavy front-end). Send a PR if you spot one.
+A few non-obvious bits that this repo bakes in:
+
+- **`[package] name = "embedded_flutter_native"` (underscore)** — flutter_rust_bridge's cargokit reads the package name verbatim when looking up `lib<name>.a` / `lib<name>.dylib` artifacts. It doesn't normalize hyphens. Match cargo's actual output filename and the cargokit-driven Xcode/Gradle expectations stay aligned.
+- **`build.rs` emits `cargo:rustc-link-lib=framework=SystemConfiguration`** on Apple targets — `whoami` (transitive via the `cratestack` facade → sqlx-postgres) needs that. The framework is *also* declared in the generated `rust_builder/macos/embedded_flutter_native.podspec` (`s.frameworks = 'SystemConfiguration', 'CoreFoundation'`) because Xcode does the final link of the staticlib, and `rustc-link-lib` from a staticlib doesn't propagate through.
+- **`mod frb_generated;` goes AFTER inner attributes** in `native/src/lib.rs`. The codegen injects it at the very top by default, which Rust rejects (inner attributes must precede items). It's been moved manually here; if `flutter_rust_bridge_codegen generate` re-injects at the top, reorder.
 
 ## See also
 

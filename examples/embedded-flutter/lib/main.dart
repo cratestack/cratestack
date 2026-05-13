@@ -5,6 +5,8 @@
 // example root, fed by `flutter_rust_bridge.yaml`. Until you run the
 // generator, the imports below will be red — that's expected.
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';

@@ -1,8 +1,14 @@
 # Generated bindings — they regenerate from `flutter_rust_bridge_codegen`.
 /lib/src/rust/
 
+# Auto-injected Rust glue (regenerated from `flutter_rust_bridge_codegen generate`).
+/native/src/frb_generated.rs
+/native/src/frb_generated.io.rs
+/native/src/frb_generated.web.rs
+
 # Native build output.
 /native/target
+/native/Cargo.lock
 
 # Standard Flutter ignores.
 .dart_tool/
@@ -13,6 +19,7 @@
 .pub/
 build/
 *.iml
+pubspec.lock
 
 # Platform scaffolds — users run `flutter create .` to materialize them.
 /android/
@@ -21,3 +28,7 @@ build/
 /macos/
 /windows/
 /web/
+# rust_builder/ is materialized by `flutter_rust_bridge_codegen integrate`.
+# Includes per-platform podspec, cargokit, and build hooks. Treat the same
+# as flutter create scaffolds — generated, not committed.
+/rust_builder/

@@ -10,6 +10,11 @@
 //!
 //! [frb]: https://cjycode.com/flutter_rust_bridge/
 
+// `mod frb_generated;` is added by `flutter_rust_bridge_codegen generate`.
+// It pulls in the auto-generated Rust glue under `frb_generated.rs` that
+// wraps each `pub fn` in `api/` with a C-ABI export the Dart side calls.
+mod frb_generated;
+
 pub mod api;
 pub mod schema;
 
