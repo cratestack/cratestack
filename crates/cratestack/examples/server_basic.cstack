@@ -1,0 +1,27 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Principal {
+  id Int
+  role String?
+}
+
+mixin AuditFields {
+  createdAt DateTime @default(dbgenerated())
+  updatedAt DateTime @default(dbgenerated())
+}
+
+model Article {
+  @use(AuditFields)
+
+  id Int @id
+  title String
+  body String
+  published Boolean @default(false)
+  authorId Int
+
+  @@allow("read", auth() != null)
+  @@allow("update", auth().id == authorId)
+}

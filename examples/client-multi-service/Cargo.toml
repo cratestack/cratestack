@@ -1,0 +1,21 @@
+[package]
+name = "client-multi-service-example"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "BFF / orchestrator that fans out to two CrateStack services. Demonstrates multiple include_client_schema! invocations in one binary, each isolated in its own module."
+
+[[bin]]
+name = "bff"
+path = "src/main.rs"
+
+[dependencies]
+cratestack = { path = "../../crates/cratestack", version = "0.3.0" }
+cratestack-client-rust = { path = "../../crates/cratestack-client-rust", version = "0.3.0" }
+cratestack-codec-cbor = { path = "../../crates/cratestack-codec-cbor", version = "0.3.0" }
+serde = { workspace = true }
+tokio = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

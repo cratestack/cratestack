@@ -1,0 +1,18 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Principal {
+  id Int
+  role String?
+}
+
+model Post {
+  id Int @id
+  title String
+  published Boolean
+  authorId Int
+
+  @@allow("read", auth() != null)
+}

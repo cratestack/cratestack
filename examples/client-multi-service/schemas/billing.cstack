@@ -1,0 +1,15 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Principal {
+  id Int
+}
+
+model Invoice {
+  id Int @id
+  customerId Int
+  amountCents Int
+  paid Boolean
+}

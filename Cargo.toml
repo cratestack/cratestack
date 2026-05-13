@@ -22,6 +22,10 @@ members = [
     "crates/cratestack-sql",
     "crates/cratestack-sqlx",
     "crates/cratestack-studio-generator",
+    "examples/embedded-cli",
+    "examples/client-stub-rust",
+    "examples/client-multi-service",
+    "examples/microservice-pair",
 ]
 
 [workspace.package]

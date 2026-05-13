@@ -1,0 +1,20 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Principal {
+  id Int
+  role String?
+}
+
+model Order {
+  id Int @id
+  customerId Int
+  productId Int
+  quantity Int
+  status String
+
+  @@allow("read", auth() != null)
+  @@allow("update", auth().id == customerId)
+}

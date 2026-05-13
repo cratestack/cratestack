@@ -1,0 +1,65 @@
+# CrateStack Examples
+
+Runnable, end-to-end examples covering the three deployment shapes CrateStack supports as of 0.3.0. Each example is a self-contained Cargo workspace member with its own README, schema, and tests.
+
+Two homes for examples in this repository:
+
+- **`crates/cratestack/examples/`** — cargo-native examples that live inside the `cratestack` facade crate. Run via `cargo run --example <name> -p cratestack`. Use these when the example is small enough to fit one file and only needs the facade's dev-dependencies.
+- **`examples/`** (this directory) — standalone workspace members with their own `Cargo.toml`, dependencies, tests, and binary entry. Use these when the example needs its own dependency surface (`clap` for a CLI, dev-dependencies for mock servers, etc.) or when the example is itself a multi-file template.
+
+All examples build and run under `cargo build --workspace` / `cargo test --workspace`.
+
+## Phase A — Pure Rust (shipped in this release)
+
+| Example | Macro(s) | Shape |
+|---|---|---|
+| [`crates/cratestack/examples/sqlite_quickstart.rs`](../crates/cratestack/examples/sqlite_quickstart.rs) | `include_embedded_schema!` | Smallest embedded program — in-memory DB, one model, CRUD |
+| [`crates/cratestack/examples/sqlite_offline_first.rs`](../crates/cratestack/examples/sqlite_offline_first.rs) | `include_embedded_schema!` | File-backed DB, two models, exact-precision `Decimal` |
+| [`crates/cratestack/examples/sqlite_ffi_dispatch.rs`](../crates/cratestack/examples/sqlite_ffi_dispatch.rs) | `include_embedded_schema!` | JSON FFI envelope dispatcher you'd wrap with `flutter_rust_bridge` |
+| [`crates/cratestack/examples/server_basic.rs`](../crates/cratestack/examples/server_basic.rs) | `include_server_schema!` | Postgres + axum router + procedure registry + host auth provider |
+| [`embedded-cli/`](embedded-cli) | `include_embedded_schema!` | `clap`-driven note-taking CLI against a file-backed SQLite database |
+| [`client-stub-rust/`](client-stub-rust) | `include_client_schema!` | Standalone HTTP client; the "Rust service that calls another Rust service" shape |
+| [`client-multi-service/`](client-multi-service) | Two `include_client_schema!` calls | BFF / orchestrator that fans out to two upstream services concurrently |
+| [`microservice-pair/`](microservice-pair) | `include_server_schema!` + `include_client_schema!` | Service that owns its own database AND calls an upstream — the canonical microservice shape |
+
+## Phase B — Browser / wasm32 (next release)
+
+Coming in a follow-up PR:
+
+- `embedded-browser-vite/` — `include_embedded_schema!` + `wasm32-unknown-unknown` + Vite + TypeScript, with OPFS persistence inside a Dedicated Worker
+- `embedded-browser-webpack/` — same Rust crate as Vite, Webpack 5 config delta
+
+## Phase C — Mobile (next release)
+
+Coming in a follow-up PR:
+
+- `embedded-flutter/` — `flutter_rust_bridge` glue around `include_embedded_schema!` with a minimal Flutter screen
+- `embedded-expo/` — Expo native module wrapping the Rust cdylib for React Native (iOS + Android)
+
+## How to run every example at once
+
+```bash
+cargo test --workspace        # tests for every example
+cargo build --workspace       # builds every example binary
+
+# Run a specific cargo example:
+cargo run --example sqlite_quickstart -p cratestack
+cargo run --example server_basic       -p cratestack
+
+# Run a specific standalone example:
+cargo run -p embedded-cli-example -- --db /tmp/notes.db add "First"
+cargo run -p client-stub-rust-example
+cargo run -p client-multi-service-example
+cargo run -p microservice-pair-example
+```
+
+## Picking an example
+
+| If you want to… | Read this |
+|---|---|
+| Stand up a CrateStack server quickly | [`server_basic`](../crates/cratestack/examples/server_basic.rs) |
+| Build an offline-first mobile/desktop app | [`embedded-cli`](embedded-cli) (start here) → `sqlite_offline_first` → `sqlite_ffi_dispatch` |
+| Call another CrateStack service from Rust | [`client-stub-rust`](client-stub-rust) |
+| Aggregate calls to multiple services | [`client-multi-service`](client-multi-service) |
+| Build a microservice that talks to other microservices | [`microservice-pair`](microservice-pair) |
+| Run the schema in a browser tab (OPFS) | Phase B (see `guides/offline-first-sqlite` in the docs site for the manual setup until the example lands) |

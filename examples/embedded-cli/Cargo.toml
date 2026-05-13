@@ -1,0 +1,24 @@
+[package]
+name = "embedded-cli-example"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Desktop note-taking CLI built on cratestack-rusqlite via include_embedded_schema!. Demonstrates the file-backed-SQLite use case (Linux/macOS/Windows) — same code compiles to wasm32 / mobile."
+
+[[bin]]
+name = "notes"
+path = "src/main.rs"
+
+[dependencies]
+chrono = { workspace = true }
+clap = { workspace = true }
+# NOTE(0.3.x): the macro currently emits `::cratestack::*` paths for shared
+# helpers (IntoSqlValue, FilterExpr, ...). Until that is fixed to emit
+# `::cratestack_core::*` + `::cratestack_sql::*` directly (tracked as a
+# follow-up), embedded consumers transitively pull in the facade.
+cratestack = { path = "../../crates/cratestack", version = "0.3.0" }
+cratestack-macros = { path = "../../crates/cratestack-macros", version = "0.3.0" }
+cratestack-rusqlite = { path = "../../crates/cratestack-rusqlite", version = "0.3.0" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
