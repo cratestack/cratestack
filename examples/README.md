@@ -22,14 +22,16 @@ All examples build and run under `cargo build --workspace` / `cargo test --works
 | [`client-multi-service/`](client-multi-service) | Two `include_client_schema!` calls | BFF / orchestrator that fans out to two upstream services concurrently |
 | [`microservice-pair/`](microservice-pair) | `include_server_schema!` + `include_client_schema!` | Service that owns its own database AND calls an upstream — the canonical microservice shape |
 
-## Phase B — Browser / wasm32
+## Phase B — Browser / wasm32 + desktop shell
 
 | Example | Macro(s) | Shape |
 |---|---|---|
 | [`embedded-browser-vite/`](embedded-browser-vite) | `include_embedded_schema!` | `wasm32-unknown-unknown` + Vite + TypeScript, OPFS persistence inside a Dedicated Worker |
 | [`embedded-browser-webpack/`](embedded-browser-webpack) | `include_embedded_schema!` | Same Rust crate as Vite, Webpack 5 + ts-loader config delta |
+| [`embedded-browser-vite-pwa/`](embedded-browser-vite-pwa) | `include_embedded_schema!` | Same Rust crate, Vite + `vite-plugin-pwa` — installable PWA with Workbox-generated service worker precaching the wasm bundle |
+| [`tauri-web/`](tauri-web) | `include_embedded_schema!` **and** `include_client_schema!` | Tauri 2 desktop shell. Webview hosts the embedded wasm (OPFS); native shell hosts the typed HTTP client called via Tauri commands. |
 
-Build prerequisites for both:
+Build prerequisites for all four:
 
 ```bash
 rustup target add wasm32-unknown-unknown
@@ -38,22 +40,33 @@ brew install llvm                    # macOS — sqlite-wasm-rs needs wasm-capab
 # (Linux: distro clang 14+ works directly)
 ```
 
-Run either example:
+`tauri-web` additionally needs the Tauri 2 platform deps — see [tauri.app/start/prerequisites](https://tauri.app/start/prerequisites/) (macOS: Xcode CLI; Linux: GTK + WebKit; Windows: MSVC + WebView2).
+
+Run any browser example:
 
 ```bash
-cd examples/embedded-browser-vite/web      # or -webpack/web
+cd examples/embedded-browser-vite/web      # or -webpack/web, or -vite-pwa/web
 pnpm install
 pnpm run dev                                # auto-runs wasm-pack first
 ```
 
+Run the Tauri example:
+
+```bash
+cd examples/tauri-web/web
+pnpm install
+pnpm tauri dev                              # spawns Vite + the Tauri shell
+```
+
 The bundled `examples/scripts/wasm-build.mjs` helper detects Homebrew LLVM at `/opt/homebrew/opt/llvm/bin/clang` (or the Intel-Mac equivalent) and points `cc-rs` at it so `pnpm run dev` works out of the box on macOS.
 
-## Phase C — Mobile (next release)
+## Phase C — Mobile + native desktop (next release)
 
 Coming in a follow-up PR:
 
 - `embedded-flutter/` — `flutter_rust_bridge` glue around `include_embedded_schema!` with a minimal Flutter screen
 - `embedded-expo/` — Expo native module wrapping the Rust cdylib for React Native (iOS + Android)
+- `tauri-native/` — sibling to `tauri-web` where the **embedded** side also moves to native Rust delegates over Tauri IPC (no wasm in the webview; the renderer becomes a pure view layer)
 
 ## How to run every example at once
 

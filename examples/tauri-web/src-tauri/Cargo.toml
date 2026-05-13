@@ -1,0 +1,27 @@
+[package]
+name = "tauri-web-shell-example"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Tauri 2 desktop shell for the tauri-web example. Hosts a webview that loads the wasm cdylib (sibling crate); separately drives the include_client_schema!-generated typed HTTP client to call remote CrateStack services from the trusted native side."
+
+[lib]
+name = "tauri_web_shell_example_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "tauri-web-shell"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2.6", features = [] }
+
+[dependencies]
+cratestack = { path = "../../../crates/cratestack", version = "0.3.0" }
+cratestack-client-rust = { path = "../../../crates/cratestack-client-rust", version = "0.3.0" }
+cratestack-codec-cbor = { path = "../../../crates/cratestack-codec-cbor", version = "0.3.0" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tauri = { version = "2.11", features = [] }
+tokio = { workspace = true }
+url = { workspace = true }

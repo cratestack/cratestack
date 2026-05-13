@@ -1,5 +1,5 @@
 {
-  "name": "embedded-browser-vite-example",
+  "name": "tauri-web-example",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,7 +10,11 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "@tauri-apps/api": "^2.11.0"
+  },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.11.1",
     "typescript": "^5.9.3",
     "vite": "^8.0.12"
   }

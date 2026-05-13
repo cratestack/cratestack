@@ -1,0 +1,5 @@
+/web/pkg
+/web/dist
+/web/node_modules
+/src-tauri/target
+/src-tauri/gen

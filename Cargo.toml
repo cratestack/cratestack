@@ -27,7 +27,10 @@ members = [
     "examples/client-multi-service",
     "examples/microservice-pair",
     "examples/embedded-browser-vite",
+    "examples/embedded-browser-vite-pwa",
     "examples/embedded-browser-webpack",
+    "examples/tauri-web",
+    "examples/tauri-web/src-tauri",
 ]
 
 [workspace.package]
