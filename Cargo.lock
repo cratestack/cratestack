@@ -1657,6 +1657,7 @@ dependencies = [
  "cratestack",
  "cratestack-macros",
  "cratestack-rusqlite",
+ "jni",
  "serde",
  "serde_json",
  "uuid",

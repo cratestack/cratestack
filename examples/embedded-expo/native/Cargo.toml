@@ -23,3 +23,8 @@ cratestack-rusqlite = { path = "../../../crates/cratestack-rusqlite", version = 
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
+
+# JNI bindings for the Android path. iOS doesn't need this — Swift just
+# `@_silgen_name`s the C ABI symbols below.
+[target.'cfg(target_os = "android")'.dependencies]
+jni = { version = "0.21", default-features = false }

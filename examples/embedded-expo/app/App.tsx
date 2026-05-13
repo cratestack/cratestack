@@ -17,7 +17,11 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import * as FileSystem from 'expo-file-system';
+// `expo-file-system@55` moved `documentDirectory` / `cacheDirectory`
+// behind the `/legacy` import — the top-level package exports the new
+// `Paths` / `File` API. We only need the directory string, so the
+// legacy import is the cheapest fix.
+import * as FileSystem from 'expo-file-system/legacy';
 import {
   createNote,
   deleteNote,
@@ -25,7 +29,7 @@ import {
   listNotes,
   updateNote,
   type NoteView,
-} from 'cratestack-notes';
+} from './modules/cratestack-notes';
 
 // "Mark done" is just `updateNote(id, { completed: true })`; pulled out
 // here so each UI handler reads as one verb.

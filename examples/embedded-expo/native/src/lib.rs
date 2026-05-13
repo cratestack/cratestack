@@ -288,6 +288,59 @@ pub unsafe extern "C" fn cratestack_free(ptr: *mut u8, len: usize) {
     }
 }
 
+// -----------------------------------------------------------------------------
+// JNI bindings for the Android path. iOS uses the C ABI above directly via
+// Swift `@_silgen_name`. Android's `System.loadLibrary` resolves Java methods
+// against symbols of the form `Java_<dotted_class>_<methodName>`, so we
+// expose two such symbols that thin-wrap `init_database` + `dispatch`.
+// -----------------------------------------------------------------------------
+
+#[cfg(target_os = "android")]
+mod android_jni {
+    use super::{dispatch, init_database};
+    use jni::objects::{JByteArray, JClass, JString};
+    use jni::sys::{jbyteArray, jint};
+    use jni::JNIEnv;
+
+    /// Matches Kotlin's
+    /// `private external fun nativeInit(dbPath: String): Int`
+    /// on class `dev.cratestack.examples.cratestacknotes.CratestackNotesModule`.
+    #[unsafe(no_mangle)]
+    pub extern "system" fn Java_dev_cratestack_examples_cratestacknotes_CratestackNotesModule_nativeInit<'local>(
+        mut env: JNIEnv<'local>,
+        _class: JClass<'local>,
+        db_path: JString<'local>,
+    ) -> jint {
+        let path: String = match env.get_string(&db_path) {
+            Ok(s) => s.into(),
+            Err(_) => return -1,
+        };
+        match init_database(&path) {
+            Ok(()) => 0,
+            Err(_) => -1,
+        }
+    }
+
+    /// Matches Kotlin's
+    /// `private external fun nativeDispatch(request: ByteArray): ByteArray`.
+    #[unsafe(no_mangle)]
+    pub extern "system" fn Java_dev_cratestack_examples_cratestacknotes_CratestackNotesModule_nativeDispatch<'local>(
+        mut env: JNIEnv<'local>,
+        _class: JClass<'local>,
+        request: JByteArray<'local>,
+    ) -> jbyteArray {
+        let bytes = match env.convert_byte_array(&request) {
+            Ok(b) => b,
+            Err(_) => Vec::new(),
+        };
+        let response = dispatch(&bytes);
+        match env.byte_array_from_slice(&response) {
+            Ok(arr) => arr.into_raw(),
+            Err(_) => std::ptr::null_mut(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -107,9 +107,22 @@ Three tests:
 
 JS-level testing on the device happens once you run `npx expo run:ios` — there's no shortcut for that without the Expo runtime present.
 
-## Caveats / honesty notes
+## Verification status
 
-The Rust side is fully tested. The TypeScript side (the `cratestack-notes` module + `App.tsx`) is hand-written without running through `npx expo` here — I didn't have the Expo CLI / Xcode / Android NDK available at scaffold time. Expect minor naming / import adjustments on first `expo run` (an Expo SDK 55 API rename, a Metro config nudge, etc.). The error path in `modules/cratestack-notes/src/index.ts` is deliberately loud about the "native module not linked" case so the failure mode is clear if you skip step 2.
+Built and launched on an Android emulator (Pixel_10_Pro, API 36) and confirmed:
+
+- ✅ `cargo-ndk` cross-compiles for all 4 ABIs (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`); `.so` files end up under `app/modules/cratestack-notes/android/src/main/jniLibs/<abi>/`.
+- ✅ Gradle picks up the `.so` via `:cratestack-notes:mergeDebugNativeLibs` and packages them into the APK.
+- ✅ APK installs cleanly on the emulator.
+- ✅ Expo's autolinker discovers the local module (`cratestack-notes (0.7.10)` in the configure phase).
+- ✅ App launches, JS bundle (708 modules) bundles via Metro and is delivered to the device.
+- ✅ React Native's `Running "main" with {...fabric: true}` confirms the app entered the React root.
+- ✅ `System.loadLibrary("embedded_expo_native")` succeeds (no `UnsatisfiedLinkError` in logcat).
+- ⚠ Full JS-driven CRUD round-trip not yet snapshot-verified — `expo-file-system@55` moved `documentDirectory` to `expo-file-system/legacy`, fixed in `App.tsx` import; the HMR delta + reload cycle on a heavy first-launch emulator surfaced enough latency that I didn't get a clean confirmation here. Should work cleanly on a warm-cached subsequent run.
+
+iOS path: same Rust crate, same C ABI exported via Swift's `@_silgen_name` in `app/modules/cratestack-notes/ios/CratestackNotesModule.swift`. The podspec vendors `libembedded_expo_native.a` (built by `cargo build --target aarch64-apple-ios-sim`) and declares `SystemConfiguration.framework`. **iOS Simulator runtime install required** (Xcode → Settings → Components → iOS 26.x) before `expo run:ios` works; macOS host alone isn't sufficient.
+
+The Rust dispatcher itself is fully `cargo test`-verified — `cargo test -p embedded-expo-native` exercises the three envelope round-trips.
 
 ## See also
 
