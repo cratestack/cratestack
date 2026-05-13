@@ -1,0 +1,15 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Principal {
+  id Int
+}
+
+model Product {
+  id Int @id
+  name String
+  price Int
+  inStock Boolean
+}
