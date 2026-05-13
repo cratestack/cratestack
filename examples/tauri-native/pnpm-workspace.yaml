@@ -1,0 +1,5 @@
+# Same layout as tauri-web — Tauri shell + Vite frontend are sibling
+# packages, and the root hosts the @tauri-apps/cli + scripts so
+# tauri-cli's downward-from-cwd scan can find src-tauri/tauri.conf.json.
+packages:
+  - 'web'

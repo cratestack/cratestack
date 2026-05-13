@@ -5163,6 +5163,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "tauri-native-shell-example"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "cratestack",
+ "cratestack-client-rust",
+ "cratestack-codec-cbor",
+ "cratestack-macros",
+ "cratestack-rusqlite",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tokio",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "tauri-runtime"
 version = "2.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
