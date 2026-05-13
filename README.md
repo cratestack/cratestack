@@ -2,20 +2,23 @@
 
 CrateStack is a Rust-native, schema-first framework workspace for building typed HTTP APIs, generated clients, and backend services from `.cstack` files.
 
-The implementation is still pre-1.0. The current slice focuses on:
+The implementation is still pre-1.0. As of `0.3.0` the framework is organized around three role-specific schema macros — pick the one that matches the deployment shape of the crate that's consuming the schema:
+
+* **`include_server_schema!("schema.cstack", db = Postgres)`** — sqlx + axum + procedures + events. Server-side, owns the Postgres database.
+* **`include_embedded_schema!("schema.cstack")`** — `cratestack-rusqlite` only. Native mobile/desktop **and** `wasm32-unknown-unknown` (browser, OPFS-backed) from the same source. No sqlx, no axum.
+* **`include_client_schema!("schema.cstack")`** — HTTP client stubs only. Treats another service's `.cstack` as a contract; owns no database.
+
+What the current slice covers, across those three shapes:
 
 * schema parsing and semantic validation
-* compile-time Rust code generation through `include_schema!`
-* client-only Rust code generation through `include_client_macro!`
-* SQLx-backed PostgreSQL delegate scaffolding
-* on-device SQLite backend (`cratestack-rusqlite`) for offline-first
-  mobile/embedded apps over FFI — same `.cstack` schemas, sync API,
-  no policy enforcement on device
-* generated Axum model and procedure routes
-* generated model and procedure policy enforcement
+* compile-time Rust code generation through the three macros above
+* SQLx-backed PostgreSQL delegate scaffolding (server)
+* embedded SQLite backend via `cratestack-rusqlite`: same `.cstack` schemas, sync API, **same code compiles to native and to `wasm32-unknown-unknown`** via `sqlite-wasm-rs`; no policy enforcement on the client
+* generated Axum model and procedure routes (server)
+* generated model and procedure policy enforcement (server)
 * first-party CBOR and JSON codecs
 * generated Rust, Dart, and TypeScript client surfaces
-* a standalone `.cstack` language server and VS Code extension package
+* a standalone `.cstack` language server (`tower-lsp-server` 0.23) and VS Code extension package
 * Studio scaffold generation for one or more schemas
 * mixin declarations and model `@use(...)` expansion
 
@@ -23,7 +26,7 @@ The implementation is still pre-1.0. The current slice focuses on:
 
 | `.cstack` capability | Status | Notes |
 | --- | --- | --- |
-| `datasource` | Supported | `provider` accepts `postgresql` (server) or `sqlite` (on-device) |
+| `datasource` | Supported | `provider` accepts `postgresql` (server) or `sqlite` (embedded — native and `wasm32`) |
 | `auth` | Supported | Single auth block |
 | `mixin` | Supported | Reusable field sets for models |
 | `model` | Supported | Includes relation and policy attributes in current slice |
@@ -44,7 +47,7 @@ The Rust workspace contains these main packages:
 * `cratestack-macros`: compile-time schema and client generation
 * `cratestack-sql`: dialect-agnostic SQL primitives shared by both backends
 * `cratestack-sqlx`: SQLx-backed Postgres runtime and query/delegate primitives
-* `cratestack-rusqlite`: on-device SQLite backend (sync, no tokio, no policies)
+* `cratestack-rusqlite`: embedded SQLite backend (sync, no tokio, no policies; native and `wasm32-unknown-unknown` via `sqlite-wasm-rs`)
 * `cratestack-axum`: generated route integration helpers
 * `cratestack-client-rust`: generated Rust client runtime
 * `cratestack-client-dart`: Dart package generator
@@ -52,6 +55,7 @@ The Rust workspace contains these main packages:
 * `cratestack-client-flutter`: Flutter bridge/runtime experiments
 * `cratestack-client-store-sqlite`: SQLite-backed client state store
 * `cratestack-client-store-redis`: Redis-backed client state store
+* `cratestack-redis`: server-side Redis-backed idempotency and rate-limit stores
 * `cratestack-codec-cbor`: CBOR codec
 * `cratestack-codec-json`: JSON codec
 * `cratestack-cli`: `cratestack` command-line tool
@@ -162,23 +166,35 @@ cargo run -p cratestack-cli -- check --schema path/to/schema.cstack --format jso
 
 ## Rust Generation
 
-Use `include_schema!` in the service that owns the schema and database:
+Three macros, one schema. Each emits a `cratestack_schema` module shaped for one deployment role — pick **one per crate** based on what that crate is.
+
+### Server (owns the database)
 
 ```rust
-use cratestack::include_schema;
+use cratestack::include_server_schema;
 
-include_schema!("schema.cstack");
+include_server_schema!("schema.cstack", db = Postgres);
 ```
 
-Use `include_client_macro!` in callers that only need to consume another service's generated HTTP API:
+Emits sqlx-backed `FromRow<PgRow>` impls, model descriptors, `Cratestack` runtime over `sqlx::PgPool`, generated axum CRUD + procedure routes, host-owned auth wiring, and `events::Subscriptions` for `@@emit`. `db = Postgres` is currently the only accepted value; the parser is wired so future `db = MySql` / `db = Sqlite`-via-sqlx is non-breaking at call sites that already pass `Postgres`.
+
+### Embedded (owns a local SQLite)
 
 ```rust
-use cratestack::include_client_macro;
+use cratestack::include_embedded_schema;
 
-include_client_macro!("../schemas/billing.cstack");
+include_embedded_schema!("schema.cstack");
 ```
 
-Create a generated Rust client:
+Emits `cratestack-rusqlite`-backed `FromRusqliteRow` impls, model descriptors, and CRUD inputs. No sqlx, no axum, no procedures. Same code compiles for native (mobile via FFI, desktop) **and** for `wasm32-unknown-unknown` (browser via OPFS) — the runtime open path is the only target-specific bit.
+
+### Client (consumes another service)
+
+```rust
+use cratestack::include_client_schema;
+
+include_client_schema!("../schemas/billing.cstack");
+```
 
 ```rust
 use cratestack::client_rust::{CborCodec, ClientConfig, CratestackClient};
@@ -188,26 +204,38 @@ let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec);
 let client = cratestack_schema::client::Client::new(runtime);
 ```
 
+Emits model + input types, generated typed procedure clients, and a reqwest-backed `Client` facade. No DB, no FromRow impls. The schema is treated purely as a contract.
+
 Generated Rust clients serialize the same HTTP projection contract used by generated routes, including `fields`, `include`, `includeFields[path]`, `sort`, `limit`, `offset`, and grouped `where` expressions.
 
-## On-Device SQLite (Offline-First)
+### Strict split
 
-The same `.cstack` schema that drives the server can also drive an on-device SQLite database. This is built for offline-first mobile/embedded apps where the architecture is "Rust as real frontend, Flutter (or another UI toolkit) as UI only" — Rust handles state, persistence, and business logic; the UI talks to Rust over FFI.
+The three macros are **strictly disjoint** on backend types: `include_server_schema!` never emits rusqlite items, `include_embedded_schema!` never emits sqlx items, `include_client_schema!` never emits either. Each crate pays only for its own surface — no transitive sqlx in mobile builds, no rusqlite in server builds.
+
+## Embedded SQLite (Offline-First, Native + Browser)
+
+The same `.cstack` schema that drives the server can also drive an embedded SQLite database. As of 0.3.0 the embedded backend ships from one source to **three targets**:
+
+* **Native mobile** (iOS, Android via FFI / `flutter_rust_bridge`)
+* **Native desktop** (Linux, macOS, Windows)
+* **Browser** via `wasm32-unknown-unknown` with **OPFS-backed persistence** (`sqlite-wasm-rs` + `sqlite-wasm-vfs`)
+
+This is the "Rust as real frontend, UI as UI-only" architecture — Rust owns state, persistence, and business logic; the UI layer (Flutter, React, Solid…) talks to Rust over FFI or `wasm-bindgen`.
 
 What's different from the server path:
 
-* **Sync API** — `cratestack-rusqlite` uses `rusqlite` with bundled SQLite, no `tokio`, no async. Smaller mobile binaries and friendlier FFI bridging.
-* **No policy enforcement** — the device is single-user; authorization is the app's concern, not the storage layer's. The renderer skips the policy clauses your `.cstack` declares.
-* **Bundled SQLite** — works on iOS and Android out of the box; no system SQLite version to wrangle.
+* **Sync API** — `cratestack-rusqlite` uses `rusqlite` with bundled SQLite, no `tokio`, no async on the data path. Smaller binaries and friendlier FFI/JS bridging.
+* **No policy enforcement** — clients are untrusted; authorization is the server's concern. `@@allow` / `@@deny` parse but don't gate reads or writes.
+* **Bundled SQLite** — works on every target without a system SQLite to wrangle. On `wasm32-unknown-unknown`, `rusqlite 0.39` swaps its FFI backend to `sqlite-wasm-rs` transparently.
 
-Minimal usage:
+Minimal native usage:
 
 ```rust
-use cratestack::include_schema;
+use cratestack::include_embedded_schema;
 use cratestack::{RusqliteRuntime, rusqlite_backend::ddl::create_table_sql};
 use cratestack_rusqlite::ModelDelegate;
 
-include_schema!("schema.cstack");
+include_embedded_schema!("schema.cstack");
 
 let runtime = RusqliteRuntime::open("app.db")?;
 runtime.with_connection(|conn| {
@@ -220,13 +248,38 @@ let created = notes.create(/* CreateNoteInput { ... } */).run()?;
 let row = notes.find_unique(created.id).run()?;
 ```
 
-Worked examples (all runnable via `cargo run --example <name> -p cratestack`):
+Minimal browser usage (inside a Dedicated Worker — OPFS `SyncAccessHandle` is worker-only):
 
-* `sqlite_quickstart` — open in-memory DB, single model, full CRUD
-* `sqlite_offline_first` — file-backed DB, two models, `Decimal` money, filtering & ordering
-* `sqlite_ffi_dispatch` — JSON-bytes FFI boundary, the dispatcher template to copy into your `flutter_rust_bridge` glue
+```rust
+use cratestack::include_embedded_schema;
+use cratestack::{RusqliteRuntime, rusqlite_backend};
 
-The Flutter side is per-app — `cratestack-rusqlite` provides the storage layer and an `OperationRequest`/`OperationResponse` envelope; the actual cdylib + FFI bindings live in your mobile app crate.
+include_embedded_schema!("schema.cstack");
+
+rusqlite_backend::opfs::install_opfs_vfs(&rusqlite_backend::opfs::OpfsOptions::default()).await?;
+let runtime = RusqliteRuntime::open("app.db")?;
+```
+
+The wasm32 build needs a wasm-capable clang on `PATH` (`brew install llvm` on macOS; `apt-get install clang lld` on Debian/Ubuntu) — Apple's stock Xcode clang does not include the wasm32 backend. See `crates/cratestack-rusqlite/README.md` for the full build recipe.
+
+## Examples
+
+Runnable, end-to-end examples covering each macro live under [`examples/`](examples) and `crates/cratestack/examples/`. Full index in [`examples/README.md`](examples/README.md).
+
+Pure-Rust (all run under `cargo test --workspace`):
+
+| Use case | Run |
+|---|---|
+| Smallest embedded program (in-memory DB) | `cargo run --example sqlite_quickstart -p cratestack` |
+| Embedded with `Decimal` + filtering | `cargo run --example sqlite_offline_first -p cratestack` |
+| JSON FFI envelope dispatcher | `cargo run --example sqlite_ffi_dispatch -p cratestack` |
+| Postgres server + axum + procedures | `cargo run --example server_basic -p cratestack` |
+| Note-taking CLI on file-backed SQLite | `cargo run -p embedded-cli-example -- --db /tmp/notes.db add "First"` |
+| Rust service calling another Rust service | `cargo run -p client-stub-rust-example` |
+| BFF / orchestrator (two upstreams) | `cargo run -p client-multi-service-example` |
+| Microservice: server + upstream client | `cargo run -p microservice-pair-example` |
+
+Browser (wasm + Vite/Webpack) and mobile (Flutter, Expo) examples land in follow-up PRs.
 
 ## Generated HTTP Routes
 
@@ -302,10 +355,10 @@ cargo run -p cratestack-cli -- generate-studio \
 
 CrateStack has two editor surfaces:
 
-* Rust files that consume `cratestack::include_schema!(...)`
+* Rust files that consume one of the role-specific schema macros: `cratestack::include_server_schema!`, `cratestack::include_embedded_schema!`, or `cratestack::include_client_schema!`
 * `.cstack` schema files
 
-Rust-side editor support is project-dependent because `include_schema!` expands relative to a real Cargo project and a real schema path.
+Rust-side editor support is project-dependent because the macros expand relative to a real Cargo project and a real schema path.
 
 Recommended VS Code settings for a consuming project:
 
