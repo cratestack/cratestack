@@ -1,0 +1,12 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model Article {
+  id Int @id
+  title String
+  body String
+  published Boolean
+  createdAt DateTime
+}

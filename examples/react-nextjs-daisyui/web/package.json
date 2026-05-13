@@ -1,0 +1,35 @@
+{
+  "name": "react-nextjs-daisyui-example",
+  "private": true,
+  "scripts": {
+    "wasm:build": "node ../../scripts/wasm-build-nextjs.mjs --release",
+    "wasm:build:dev": "node ../../scripts/wasm-build-nextjs.mjs --dev",
+    "napi:build": "pnpm --filter react-nextjs-daisyui-napi run build",
+    "napi:build:debug": "pnpm --filter react-nextjs-daisyui-napi run build:debug",
+    "prebuild": "pnpm run wasm:build && pnpm run napi:build",
+    "predev": "pnpm run wasm:build:dev && pnpm run napi:build:debug",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "^16.2.6",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "react-nextjs-daisyui-napi": "workspace:*"
+  },
+  "devDependencies": {
+    "@serwist/next": "^9.5.11",
+    "@tailwindcss/postcss": "^4.3.0",
+    "@types/node": "^25.7.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "daisyui": "^5.5.19",
+    "postcss": "^8.5.14",
+    "serwist": "^9.5.11",
+    "tailwindcss": "^4.3.0",
+    "typescript": "^5.9.3"
+  }
+}

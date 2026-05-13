@@ -29,6 +29,8 @@ All examples build and run under `cargo build --workspace` / `cargo test --works
 | [`embedded-browser-vite/`](embedded-browser-vite) | `include_embedded_schema!` | `wasm32-unknown-unknown` + Vite + TypeScript, OPFS persistence inside a Dedicated Worker |
 | [`embedded-browser-webpack/`](embedded-browser-webpack) | `include_embedded_schema!` | Same Rust crate as Vite, Webpack 5 + ts-loader config delta |
 | [`embedded-browser-vite-pwa/`](embedded-browser-vite-pwa) | `include_embedded_schema!` | Same Rust crate, Vite + `vite-plugin-pwa` — installable PWA with Workbox-generated service worker precaching the wasm bundle |
+| [`react-vite-daisyui/`](react-vite-daisyui) | `include_embedded_schema!` | React 19 + Vite 8 + Tailwind 4 + DaisyUI 5 — same wasm/OPFS shape with a real component library on top |
+| [`react-nextjs-daisyui/`](react-nextjs-daisyui) | `include_embedded_schema!` (×2) **and** `include_client_schema!` | Next.js 16 App Router with three CrateStack surfaces: wasm/OPFS in the browser, napi-rs `.node` addon on the Node side, typed HTTP client to upstream services. Serwist PWA + offline-first sync engine reconciling OPFS ↔ napi over a delta protocol. |
 | [`tauri-web/`](tauri-web) | `include_embedded_schema!` **and** `include_client_schema!` | Tauri 2 desktop shell. Webview hosts the embedded wasm (OPFS); native shell hosts the typed HTTP client called via Tauri commands. |
 
 Build prerequisites for all four:
@@ -45,7 +47,7 @@ brew install llvm                    # macOS — sqlite-wasm-rs needs wasm-capab
 Run any browser example:
 
 ```bash
-cd examples/embedded-browser-vite/web      # or -webpack/web, or -vite-pwa/web
+cd examples/embedded-browser-vite/web      # or -webpack/web, -vite-pwa/web, or react-vite-daisyui/web
 pnpm install
 pnpm run dev                                # auto-runs wasm-pack first
 ```
@@ -56,6 +58,15 @@ Run the Tauri example:
 cd examples/tauri-web                       # project root — tauri-cli walks down for the conf
 pnpm install
 pnpm tauri dev                              # spawns Vite + the Tauri shell
+```
+
+Run the Next.js example (pnpm workspace with napi-rs addon):
+
+```bash
+cd examples/react-nextjs-daisyui
+pnpm install                                # installs both web/ and napi/
+pnpm --filter react-nextjs-daisyui-example run dev
+                                            # builds wasm + napi, then next dev
 ```
 
 The bundled `examples/scripts/wasm-build.mjs` helper detects Homebrew LLVM at `/opt/homebrew/opt/llvm/bin/clang` (or the Intel-Mac equivalent) and points `cc-rs` at it so `pnpm run dev` works out of the box on macOS.
@@ -95,3 +106,5 @@ cargo run -p microservice-pair-example
 | Aggregate calls to multiple services | [`client-multi-service`](client-multi-service) |
 | Build a microservice that talks to other microservices | [`microservice-pair`](microservice-pair) |
 | Run the schema in a browser tab (OPFS) | [`embedded-browser-vite`](embedded-browser-vite) — or `embedded-browser-webpack` if your shop uses Webpack |
+| Run the schema in React + a real component library | [`react-vite-daisyui`](react-vite-daisyui) |
+| Run all three CrateStack surfaces in one app with offline-first sync | [`react-nextjs-daisyui`](react-nextjs-daisyui) |

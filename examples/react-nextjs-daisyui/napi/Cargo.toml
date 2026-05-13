@@ -1,0 +1,35 @@
+[package]
+name = "react-nextjs-daisyui-napi"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Server-side N-API addon for the Next.js example. Hosts include_embedded_schema! against a Node-owned SQLite file AND include_client_schema! against an upstream CrateStack service. Loaded by Next.js Route Handlers; never reaches the renderer."
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[lints.rust]
+# napi-derive expands to unsafe extern "C" trampolines for the JS interop.
+# That's exactly the boundary unsafe is *for*; lift the workspace forbid.
+unsafe_code = "allow"
+
+[dependencies]
+chrono = { workspace = true }
+cratestack = { path = "../../../crates/cratestack", version = "0.3.0" }
+cratestack-client-rust = { path = "../../../crates/cratestack-client-rust", version = "0.3.0" }
+cratestack-codec-cbor = { path = "../../../crates/cratestack-codec-cbor", version = "0.3.0" }
+cratestack-macros = { path = "../../../crates/cratestack-macros", version = "0.3.0" }
+cratestack-rusqlite = { path = "../../../crates/cratestack-rusqlite", version = "0.3.0" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+url = { workspace = true }
+uuid = { workspace = true }
+
+# napi-rs is host-only — the wasm sibling crate handles browser builds.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+napi = { version = "3", default-features = false, features = ["napi9", "async", "serde-json", "chrono_date", "tokio_rt"] }
+napi-derive = "3"
+tokio = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.build-dependencies]
+napi-build = "2"

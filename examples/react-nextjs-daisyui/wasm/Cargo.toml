@@ -1,0 +1,25 @@
+[package]
+name = "react-nextjs-daisyui-wasm"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Browser-side wasm crate for the React + Next.js + DaisyUI example. Hosts include_embedded_schema! compiled to wasm32-unknown-unknown; the Next.js client persists notes via OPFS and reconciles with the server-side napi addon over fetch."
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+chrono = { workspace = true }
+cratestack = { path = "../../../crates/cratestack", version = "0.3.0" }
+cratestack-macros = { path = "../../../crates/cratestack-macros", version = "0.3.0" }
+cratestack-rusqlite = { path = "../../../crates/cratestack-rusqlite", version = "0.3.0" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true, features = ["js"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+console_error_panic_hook = "0.1"
+js-sys = "0.3"
+serde-wasm-bindgen = "0.6"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"

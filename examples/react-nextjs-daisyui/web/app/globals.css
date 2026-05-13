@@ -1,0 +1,11 @@
+@import "tailwindcss";
+@plugin "daisyui" {
+  themes: emerald --default, dark;
+}
+
+/* Stretch the body so the offline-status footer pins to viewport bottom */
+html, body { height: 100%; }
+body { display: flex; flex-direction: column; min-height: 100dvh; }
+.app-shell { flex: 1; display: flex; flex-direction: column; }
+
+.note-row + .note-row { margin-top: 0.5rem; }

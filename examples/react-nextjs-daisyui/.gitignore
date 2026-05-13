@@ -1,0 +1,8 @@
+/target
+/wasm/target
+/napi/target
+/napi/node_modules
+/napi/index.js
+/napi/index.d.ts
+/napi/*.node
+/web/node_modules

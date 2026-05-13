@@ -53,9 +53,25 @@ const env = {
 // parent (the Cargo crate root).
 const __filename = fileURLToPath(import.meta.url);
 const scriptDir = dirname(__filename); // .../examples/scripts
-const crateDir = resolve(process.cwd(), '..'); // .../examples/<name>
 
-const args = process.argv.slice(2);
+// `--crate <relative-or-absolute>` overrides the default. Default assumes
+// the caller is running from a `web/` folder that lives directly inside
+// the crate root (matches embedded-browser-vite, react-vite-daisyui, ...).
+// Multi-package examples like react-nextjs-daisyui pass an explicit path.
+const rawArgs = process.argv.slice(2);
+const args = [];
+let crateOverride = null;
+for (let i = 0; i < rawArgs.length; i++) {
+  const arg = rawArgs[i];
+  if (arg === '--crate') {
+    crateOverride = rawArgs[++i];
+  } else {
+    args.push(arg);
+  }
+}
+const crateDir = crateOverride
+  ? resolve(process.cwd(), crateOverride)
+  : resolve(process.cwd(), '..');
 
 console.log(`[wasm-build] CC=${cc}`);
 console.log(`[wasm-build] crate=${crateDir}`);
