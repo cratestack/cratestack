@@ -24,5 +24,46 @@ full design.
 
 ## Current scope
 
-Slice 1 — snapshot serialization only. The diff engine, emitters, and
-CLI commands land in subsequent slices.
+The crate ships these surfaces:
+
+- **Snapshot** (`Snapshot`, `read_snapshot`, `write_snapshot`,
+  `read_or_empty`) — committable JSON form of a parsed `.cstack`.
+- **Diff** (`diff`) — produces a backend-agnostic `Op` list given
+  two parsed schemas.
+- **IR** (`ir::Op`) — CreateTable / DropTable / Add+Drop Column /
+  Add+Drop Index / AlterColumn (type/nullability/default) /
+  Rename Table+Column / CreateEnum / AlterEnumAddVariant / DropEnum /
+  AddCheck / DropCheck.
+- **Emitters** (`emit::postgres`, `emit::sqlite`) — render the IR
+  to per-dialect SQL with up/down bodies, has_lossy /
+  has_blocking flags, and explicit error stubs for destructive
+  reversal.
+
+Driven from the CLI by:
+
+```
+cratestack migrate diff \
+  --schema schema.cstack \
+  --out-dir migrations \
+  --backend both \
+  --name <slug> \
+  [--allow-destructive]
+```
+
+### Not yet implemented
+
+The following items from [ADR 0004] remain follow-up work:
+
+- `cratestack migrate verify` — replay generated migrations against
+  an ephemeral Postgres / SQLite and compare to the snapshot.
+- `cratestack migrate drift` — introspect a live database and
+  report differences from the snapshot.
+- View IR ops (`CreateView` / `ReplaceView` / `DropView`,
+  `CreateMaterializedView` / `DropMaterializedView`). The view
+  block ([ADR 0003]) needs parser, AST, validator, and macro work
+  before these ops have anything to consume.
+- `DropEnumVariant` — needs the Postgres swap-dance and a backfill
+  plan for referencing rows.
+
+[ADR 0004]: https://cratestack.dev/internals/schema-diff-adr
+[ADR 0003]: https://cratestack.dev/internals/views-adr
