@@ -79,6 +79,8 @@ impl From<crate::RusqliteError> for OperationResponse {
             crate::RusqliteError::NotFound => "not_found",
             crate::RusqliteError::Locked => "locked",
             crate::RusqliteError::Sqlite(_) => "sqlite",
+            crate::RusqliteError::BatchTooLarge { .. } => "batch_too_large",
+            crate::RusqliteError::DuplicateBatchKey { .. } => "duplicate_batch_key",
         };
         Self::err(code, error.to_string())
     }

@@ -6,6 +6,7 @@
 //! surface mirrors `cratestack-sqlx`'s ergonomics so the same `.cstack`
 //! schemas drive both backends.
 
+mod batch;
 mod delegate;
 mod render;
 mod row;
@@ -19,10 +20,14 @@ pub mod opfs;
 
 pub use cratestack_sql::{
     CreateDefault, CreateDefaultType, CreateModelInput, FieldRef, Filter, FilterExpr,
-    IntoSqlValue, ModelColumn, ModelDescriptor, OrderClause, RelationFilter, RelationQuantifier,
-    SortDirection, SqlColumnValue, SqlValue, SqliteDialect, UpdateModelInput, UpsertModelInput,
+    IntoSqlValue, ModelColumn, ModelDescriptor, ModelPrimaryKey, OrderClause, RelationFilter,
+    RelationQuantifier, SortDirection, SqlColumnValue, SqlValue, SqliteDialect, UpdateModelInput,
+    UpsertModelInput,
 };
 
+pub use batch::{
+    BatchCreate, BatchDelete, BatchGet, BatchUpdate, BatchUpdateItem, BatchUpsert,
+};
 pub use delegate::{
     CreateRecord, DeleteRecord, FindMany, FindUnique, ModelDelegate, UpdateRecord, UpdateRecordSet,
     UpsertRecord,

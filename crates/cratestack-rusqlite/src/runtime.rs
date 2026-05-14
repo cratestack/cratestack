@@ -21,6 +21,18 @@ pub enum RusqliteError {
     NotFound,
     /// Locked or poisoned mutex around the connection.
     Locked,
+    /// Batch request exceeded the documented per-call item cap.
+    BatchTooLarge {
+        actual: usize,
+        maximum: usize,
+    },
+    /// Batch request contained the same primary key twice. The first/duplicate
+    /// indices are surfaced so callers can immediately pinpoint the offender
+    /// in their input list.
+    DuplicateBatchKey {
+        first: usize,
+        duplicate: usize,
+    },
 }
 
 impl std::fmt::Display for RusqliteError {
@@ -29,6 +41,14 @@ impl std::fmt::Display for RusqliteError {
             Self::Sqlite(error) => write!(f, "sqlite error: {error}"),
             Self::NotFound => write!(f, "not found"),
             Self::Locked => write!(f, "connection mutex poisoned"),
+            Self::BatchTooLarge { actual, maximum } => write!(
+                f,
+                "batch size {actual} exceeds maximum of {maximum}",
+            ),
+            Self::DuplicateBatchKey { first, duplicate } => write!(
+                f,
+                "duplicate primary key in batch at positions {first} and {duplicate}",
+            ),
         }
     }
 }

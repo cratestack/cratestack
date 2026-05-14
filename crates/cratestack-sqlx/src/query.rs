@@ -1,7 +1,9 @@
+mod batch;
 mod read;
 mod support;
 mod write;
 
+pub use batch::{BatchCreate, BatchDelete, BatchGet, BatchUpdate, BatchUpdateItem, BatchUpsert};
 pub use read::{FindMany, FindUnique};
 #[allow(unused_imports)]
 pub(crate) use support::{

@@ -3,6 +3,7 @@ use crate::sqlx;
 use cratestack_core::{CoolContext, CoolError};
 
 use crate::{
+    BatchCreate, BatchDelete, BatchGet, BatchUpdate, BatchUpdateItem, BatchUpsert,
     CreateModelInput, CreateRecord, DeleteRecord, Filter, FilterExpr, FindMany, FindUnique,
     ModelDescriptor, OrderClause, SqlxRuntime, UpdateModelInput, UpdateRecord, UpdateRecordSet,
     UpsertModelInput, UpsertRecord,
@@ -84,6 +85,62 @@ impl<'a, M: 'static, PK: 'static> ModelDelegate<'a, M, PK> {
             runtime: self.runtime,
             descriptor: self.descriptor,
             id,
+        }
+    }
+
+    /// Fetch many rows by primary key in a single round-trip; missing rows
+    /// surface as per-item `NotFound` in the envelope rather than aborting.
+    pub fn batch_get(&self, ids: Vec<PK>) -> BatchGet<'a, M, PK> {
+        BatchGet {
+            runtime: self.runtime,
+            descriptor: self.descriptor,
+            ids,
+        }
+    }
+
+    /// Insert many rows in one outer transaction; each input runs under a
+    /// nested SAVEPOINT, so a per-item failure (validation, policy, unique
+    /// conflict) doesn't take down the rest of the batch.
+    pub fn batch_create<I>(&self, inputs: Vec<I>) -> BatchCreate<'a, M, PK, I> {
+        BatchCreate {
+            runtime: self.runtime,
+            descriptor: self.descriptor,
+            inputs,
+        }
+    }
+
+    /// Update many rows in one outer transaction with per-item patches and
+    /// optional `if_match` versions. Per-item failures roll back at the
+    /// savepoint; successful items commit together.
+    pub fn batch_update<I>(
+        &self,
+        items: Vec<BatchUpdateItem<PK, I>>,
+    ) -> BatchUpdate<'a, M, PK, I> {
+        BatchUpdate {
+            runtime: self.runtime,
+            descriptor: self.descriptor,
+            items,
+        }
+    }
+
+    /// Delete many rows by primary key in a single statement; rows that
+    /// don't exist (or that policy hid) surface as per-item `NotFound`.
+    pub fn batch_delete(&self, ids: Vec<PK>) -> BatchDelete<'a, M, PK> {
+        BatchDelete {
+            runtime: self.runtime,
+            descriptor: self.descriptor,
+            ids,
+        }
+    }
+
+    /// Insert-or-update many rows in one outer transaction with per-item
+    /// savepoints. Eligible only for models whose `@id` is client-supplied
+    /// — same compile-time gate as the single-row `.upsert(...)`.
+    pub fn batch_upsert<I>(&self, inputs: Vec<I>) -> BatchUpsert<'a, M, PK, I> {
+        BatchUpsert {
+            runtime: self.runtime,
+            descriptor: self.descriptor,
+            inputs,
         }
     }
 
@@ -189,6 +246,44 @@ impl<'a, M: 'static, PK: 'static> ScopedModelDelegate<'a, M, PK> {
     pub fn delete(&self, id: PK) -> ScopedDeleteRecord<'a, M, PK> {
         ScopedDeleteRecord {
             request: self.delegate.delete(id),
+            ctx: self.ctx.clone(),
+        }
+    }
+
+    pub fn batch_get(&self, ids: Vec<PK>) -> ScopedBatchGet<'a, M, PK> {
+        ScopedBatchGet {
+            request: self.delegate.batch_get(ids),
+            ctx: self.ctx.clone(),
+        }
+    }
+
+    pub fn batch_create<I>(&self, inputs: Vec<I>) -> ScopedBatchCreate<'a, M, PK, I> {
+        ScopedBatchCreate {
+            request: self.delegate.batch_create(inputs),
+            ctx: self.ctx.clone(),
+        }
+    }
+
+    pub fn batch_update<I>(
+        &self,
+        items: Vec<BatchUpdateItem<PK, I>>,
+    ) -> ScopedBatchUpdate<'a, M, PK, I> {
+        ScopedBatchUpdate {
+            request: self.delegate.batch_update(items),
+            ctx: self.ctx.clone(),
+        }
+    }
+
+    pub fn batch_delete(&self, ids: Vec<PK>) -> ScopedBatchDelete<'a, M, PK> {
+        ScopedBatchDelete {
+            request: self.delegate.batch_delete(ids),
+            ctx: self.ctx.clone(),
+        }
+    }
+
+    pub fn batch_upsert<I>(&self, inputs: Vec<I>) -> ScopedBatchUpsert<'a, M, PK, I> {
+        ScopedBatchUpsert {
+            request: self.delegate.batch_upsert(inputs),
             ctx: self.ctx.clone(),
         }
     }
@@ -373,6 +468,125 @@ impl<'a, M: 'static, PK: 'static> ScopedDeleteRecord<'a, M, PK> {
     }
 
     pub async fn run(self) -> Result<M, CoolError>
+    where
+        for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
+        PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
+    {
+        self.request.run(&self.ctx).await
+    }
+}
+
+// ───── Scoped batch wrappers ────────────────────────────────────────────────
+//
+// Thin lifetime-and-context shims around the unscoped batch builders. The
+// shape mirrors the existing `ScopedCreateRecord` / `ScopedUpdateRecord`
+// pairs: capture the request-bound `CoolContext` once at `.bind(ctx)` time,
+// thread it into `.run()` automatically.
+
+use std::hash::Hash;
+
+use cratestack_core::BatchResponse;
+
+#[derive(Debug, Clone)]
+pub struct ScopedBatchGet<'a, M: 'static, PK: 'static> {
+    request: BatchGet<'a, M, PK>,
+    ctx: CoolContext,
+}
+
+impl<'a, M: 'static, PK: 'static> ScopedBatchGet<'a, M, PK> {
+    pub async fn run(self) -> Result<BatchResponse<M>, CoolError>
+    where
+        for<'r> M:
+            Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + crate::ModelPrimaryKey<PK>,
+        PK: Clone
+            + Eq
+            + Hash
+            + Send
+            + sqlx::Type<sqlx::Postgres>
+            + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
+    {
+        self.request.run(&self.ctx).await
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ScopedBatchCreate<'a, M: 'static, PK: 'static, I> {
+    request: BatchCreate<'a, M, PK, I>,
+    ctx: CoolContext,
+}
+
+impl<'a, M: 'static, PK: 'static, I> ScopedBatchCreate<'a, M, PK, I>
+where
+    I: CreateModelInput<M> + Send,
+{
+    pub async fn run(self) -> Result<BatchResponse<M>, CoolError>
+    where
+        for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
+    {
+        self.request.run(&self.ctx).await
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ScopedBatchUpdate<'a, M: 'static, PK: 'static, I> {
+    request: BatchUpdate<'a, M, PK, I>,
+    ctx: CoolContext,
+}
+
+impl<'a, M: 'static, PK: 'static, I> ScopedBatchUpdate<'a, M, PK, I>
+where
+    I: UpdateModelInput<M> + Send,
+{
+    pub async fn run(self) -> Result<BatchResponse<M>, CoolError>
+    where
+        for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
+        PK: Clone
+            + Eq
+            + Hash
+            + Send
+            + sqlx::Type<sqlx::Postgres>
+            + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
+    {
+        self.request.run(&self.ctx).await
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ScopedBatchDelete<'a, M: 'static, PK: 'static> {
+    request: BatchDelete<'a, M, PK>,
+    ctx: CoolContext,
+}
+
+impl<'a, M: 'static, PK: 'static> ScopedBatchDelete<'a, M, PK> {
+    pub async fn run(self) -> Result<BatchResponse<M>, CoolError>
+    where
+        for<'r> M: Send
+            + Unpin
+            + sqlx::FromRow<'r, sqlx::postgres::PgRow>
+            + crate::ModelPrimaryKey<PK>
+            + serde::Serialize,
+        PK: Clone
+            + Eq
+            + Hash
+            + Send
+            + sqlx::Type<sqlx::Postgres>
+            + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
+    {
+        self.request.run(&self.ctx).await
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ScopedBatchUpsert<'a, M: 'static, PK: 'static, I> {
+    request: BatchUpsert<'a, M, PK, I>,
+    ctx: CoolContext,
+}
+
+impl<'a, M: 'static, PK: 'static, I> ScopedBatchUpsert<'a, M, PK, I>
+where
+    I: UpsertModelInput<M>,
+{
+    pub async fn run(self) -> Result<BatchResponse<M>, CoolError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,

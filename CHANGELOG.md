@@ -1,5 +1,82 @@
 # Changelog
 
+## 0.3.2 (unreleased)
+
+### Batch primitives — tRPC-style per-item envelope
+
+Five new ORM methods on every model delegate, on both the sqlx (server) and rusqlite (embedded) backends:
+
+```rust
+cool.account().batch_get(vec![1, 2, 999]).run(&ctx).await?
+cool.account().batch_create(vec![input_a, input_b]).run(&ctx).await?
+cool.account().batch_update(vec![(1, patch_a, Some(0)), (2, patch_b, None)]).run(&ctx).await?
+cool.account().batch_delete(vec![1, 2]).run(&ctx).await?
+cool.account().batch_upsert(vec![input_a, input_b]).run(&ctx).await?
+```
+
+Every batch call returns `Result<BatchResponse<M>, CoolError>`. The outer `Result` is reserved for whole-batch infrastructure failures (size cap exceeded, duplicate input keys, DB connection lost). Per-item failures (validation, policy denial, NotFound, stale `if_match`, PK conflict) ride inside the envelope as `BatchItemStatus::Error { error: BatchItemError { code, message } }`, with `index` preserved so callers can pair results back to their input position.
+
+```json
+{
+  "results": [
+    { "index": 0, "status": "ok", "value": { ... } },
+    { "index": 1, "status": "error", "error": { "code": "POLICY_DENIED", "message": "..." } },
+    { "index": 2, "status": "ok", "value": { ... } }
+  ],
+  "summary": { "total": 3, "ok": 2, "err": 1 }
+}
+```
+
+### Transactional model
+
+- **Two single-statement ops** (`batch_get`, `batch_delete`) issue one `SELECT … WHERE pk IN (…)` or `DELETE … WHERE pk IN (…) RETURNING …`. Policy predicates merge into the WHERE; rows that don't match (because they don't exist, were already tombstoned, or the read/delete policy hid them) surface as per-item `NOT_FOUND`.
+- **Three savepointed ops** (`batch_create`, `batch_update`, `batch_upsert`) run all items in one outer transaction with a per-item `SAVEPOINT`. A per-item failure rolls back its savepoint only — successful items in the same batch still commit. The audit log records one row per successful item, with the outer commit timestamp; failed items leave no audit row, no event outbox entry, no row mutation.
+- The cap is `1000` items per call (`cratestack_core::BATCH_MAX_ITEMS`); over-sized batches are rejected before any SQL runs.
+
+### Loud-fail on duplicate input keys
+
+The framework refuses batches with duplicate primary keys at the outer guard, returning `CoolError::Validation` (or `RusqliteError::DuplicateBatchKey` on the embedded side) with the indices of the first and duplicate occurrences. Silently collapsing duplicates would break the per-item `index` mapping the envelope promises and hide caller bugs; we want callers to dedupe at the boundary they own.
+
+Detection runs on:
+
+- the PK list for `batch_get` / `batch_delete`
+- the per-item PK in `batch_update` items
+- `UpsertModelInput::primary_key_value()` for `batch_upsert`
+
+`batch_create` skips the check — `CreateModelInput` doesn't expose the PK generically, and duplicate client-supplied PKs already trip the database's unique constraint per-item (surfacing as `CoolError::Conflict` in that item's envelope, while the rest of the batch commits cleanly via savepoint isolation).
+
+### Internal
+
+- New types in `cratestack-core`: `BatchItemResult<T>`, `BatchItemStatus<T>`, `BatchItemError`, `BatchSummary`, `BatchResponse<T>`, `BatchRequest<I>`, `BATCH_MAX_ITEMS`, `find_duplicate_position`.
+- New trait in `cratestack-sql`: `ModelPrimaryKey<PK>`, emitted by the macro on every generated model struct. Used by `batch_get` / `batch_delete` to pair returned rows back to their input position.
+- New helper in `cratestack-sql`: `find_duplicate_sql_value` for upsert-side dedup, since `SqlValue::Float` / `SqlValue::Decimal` don't admit a sound `Hash` impl.
+- New `RusqliteError` variants: `BatchTooLarge { actual, maximum }` and `DuplicateBatchKey { first, duplicate }`.
+
+### Worked example
+
+The `examples/embedded-cli` notes app gains three batch subcommands that walk through the envelope in real terminal output:
+
+```text
+$ notes import bulk-load.json
+OK  [0] 11111111-…  first
+OK  [1] 22222222-…  second
+summary: 2 total, 2 ok, 0 err
+
+$ notes bulk-done 11111111-… 99999999-…
+OK  [0] 11111111-…  first
+ERR [1] NOT_FOUND: no row matched
+summary: 2 total, 1 ok, 1 err
+```
+
+- `notes import <file.json>` — `batch_upsert` over a JSON file; replays converge.
+- `notes bulk-done <id> [id...]` — `batch_update` to mark complete.
+- `notes bulk-delete <id> [id...]` — `batch_delete`.
+
+### Deferred
+
+- **Auto-generated `POST /<model>/batch-*` axum routes**: the wire envelope types (`BatchRequest<I>` / `BatchResponse<T>`) are stable in `cratestack-core` so apps can hand-roll a thin handler against the ORM today. Macro-driven route emission per model lands in a follow-up.
+- **Per-item `if_match` on the embedded `batch_update`**: the rusqlite layer doesn't enforce `@version` for single rows either; consistency over surprise.
+
 ## 0.3.1 (unreleased)
 
 ### Upsert primitive

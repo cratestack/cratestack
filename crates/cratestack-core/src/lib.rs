@@ -1296,9 +1296,239 @@ fn take_principal_facet(claims: &mut BTreeMap<String, Value>, key: &str) -> Opti
     }
 }
 
+// ───── Batch envelope ──────────────────────────────────────────────────────
+//
+// tRPC-style per-item envelope for batch operations. The HTTP response is
+// always `200 OK` carrying a `BatchResponse<T>`; whole-batch infrastructure
+// failures (bad request shape, size cap exceeded, DB connection lost) still
+// flow through the outer `Result<_, CoolError>` and map to their usual
+// status codes via the standard handler.
+//
+// Per-item failures (validation, policy denial, not-found, stale `if_match`,
+// PK conflict) ride inside `BatchItemStatus::Err` and DO NOT abort the
+// batch — successful items in the same request still commit. The
+// transactional model used by the server backends is one outer transaction
+// with a per-item SAVEPOINT, so failed items leave no audit row, no event
+// outbox entry, and no row mutation.
+
+/// Per-item result inside a [`BatchResponse`]. The `index` is the item's
+/// position in the original request, so clients can pair results with
+/// inputs even after server-side reordering (e.g. parallel `batch_get`
+/// fetches in the future).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BatchItemResult<T> {
+    pub index: usize,
+    #[serde(flatten)]
+    pub status: BatchItemStatus<T>,
+}
+
+/// Either a successful per-item outcome (`Ok`) or a per-item failure
+/// (`Err`). Serializes as a tagged enum with the discriminant in `status`:
+///
+/// ```json
+/// { "status": "ok",    "value": { ... } }
+/// { "status": "error", "error": { "code": "POLICY_DENIED", "message": "…" } }
+/// ```
+///
+/// The `code` field maps 1:1 to [`CoolError::code`], so consumers can share
+/// error-code constants across single and batch routes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "lowercase")]
+pub enum BatchItemStatus<T> {
+    Ok {
+        value: T,
+    },
+    Error {
+        error: BatchItemError,
+    },
+}
+
+/// Public, safe-to-expose shape of a per-item failure. Mirrors
+/// [`CoolErrorResponse`] without the optional `details` field — batch
+/// callers asking for per-item detail can repeat the operation singly
+/// against the failed item to get the full error envelope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BatchItemError {
+    pub code: String,
+    pub message: String,
+}
+
+impl BatchItemError {
+    /// Project a [`CoolError`] into the public per-item shape, using the
+    /// same `code()` / `public_message()` mapping the standard HTTP error
+    /// handler uses for single-route responses.
+    pub fn from_cool(error: &CoolError) -> Self {
+        Self {
+            code: error.code().to_owned(),
+            message: error.public_message().into_owned(),
+        }
+    }
+}
+
+/// Summary counts attached to every [`BatchResponse`] so callers can
+/// branch on aggregate status without scanning the result list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BatchSummary {
+    pub total: usize,
+    pub ok: usize,
+    pub err: usize,
+}
+
+/// Wire envelope returned by every batch route. Always `200 OK` at the
+/// HTTP layer; inspect `summary.err` (or scan `results`) to surface
+/// per-item failures to the user.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BatchResponse<T> {
+    pub results: Vec<BatchItemResult<T>>,
+    pub summary: BatchSummary,
+}
+
+impl<T> BatchResponse<T> {
+    /// Build a [`BatchResponse`] from an in-order `Vec<Result<T, CoolError>>`.
+    /// The `index` of each result matches its position in the input.
+    pub fn from_results(per_item: Vec<Result<T, CoolError>>) -> Self {
+        let total = per_item.len();
+        let mut ok = 0usize;
+        let mut err = 0usize;
+        let results = per_item
+            .into_iter()
+            .enumerate()
+            .map(|(index, outcome)| match outcome {
+                Ok(value) => {
+                    ok += 1;
+                    BatchItemResult {
+                        index,
+                        status: BatchItemStatus::Ok { value },
+                    }
+                }
+                Err(error) => {
+                    err += 1;
+                    BatchItemResult {
+                        index,
+                        status: BatchItemStatus::Error {
+                            error: BatchItemError::from_cool(&error),
+                        },
+                    }
+                }
+            })
+            .collect();
+        Self {
+            results,
+            summary: BatchSummary { total, ok, err },
+        }
+    }
+}
+
+/// Wire envelope for `POST /<model>/batch-*` request bodies. Holds the
+/// items in a single field so we can extend the envelope (e.g. with a
+/// future `client_request_id`) without breaking deserialization. The same
+/// shape works for `batch_get` / `batch_delete` (where `I` is `PK`) and
+/// for `batch_create` / `batch_upsert` (where `I` is `CreateXInput`).
+///
+/// `batch_update`'s wire shape uses `BatchUpdateItem<PK, I>` as its `items`
+/// type — see `cratestack-sqlx`'s `BatchUpdateItem` type alias.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BatchRequest<I> {
+    pub items: Vec<I>,
+}
+
+/// Default upper bound on items in a single batch request. Server backends
+/// enforce this before any SQL runs and surface `CoolError::Validation` on
+/// the outer `Result` when exceeded. The cap is identical for all five
+/// batch operations; deviating per-op would invite footguns where
+/// `batch_get` accepts a list that `batch_create` of the same length
+/// rejects.
+pub const BATCH_MAX_ITEMS: usize = 1000;
+
+/// Detect duplicate keys in a batch input, loud-failing the whole request
+/// when found. Returns the first duplicate (by position) so the surfaced
+/// error can name a specific offending index. Linear-time, allocation-only
+/// in proportion to the input length.
+///
+/// Used by all five batch primitives — `batch_get`, `batch_delete`,
+/// `batch_update`, `batch_create` (when the input carries a client-supplied
+/// PK), and `batch_upsert`. The dedup posture is deliberate: silently
+/// collapsing duplicates would break the per-item `index` mapping the
+/// envelope promises and hide caller bugs. The right place to dedup is at
+/// the caller, before the request hits the wire.
+pub fn find_duplicate_position<K: Eq + std::hash::Hash>(
+    keys: impl IntoIterator<Item = K>,
+) -> Option<(usize, usize)> {
+    let mut seen: std::collections::HashMap<K, usize> = std::collections::HashMap::new();
+    for (index, key) in keys.into_iter().enumerate() {
+        if let Some(&first) = seen.get(&key) {
+            return Some((first, index));
+        }
+        seen.insert(key, index);
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn find_duplicate_position_returns_first_collision() {
+        assert_eq!(find_duplicate_position::<i32>([]), None);
+        assert_eq!(find_duplicate_position([1, 2, 3]), None);
+        // First occurrence index, then duplicate's index.
+        assert_eq!(find_duplicate_position([1, 2, 1]), Some((0, 2)));
+        assert_eq!(find_duplicate_position([5, 5]), Some((0, 1)));
+        // Multiple duplicates — report the first pair encountered.
+        assert_eq!(find_duplicate_position([1, 2, 3, 2, 1]), Some((1, 3)));
+    }
+
+    #[test]
+    fn batch_response_summary_counts_ok_and_err() {
+        let response: BatchResponse<i64> = BatchResponse::from_results(vec![
+            Ok(10),
+            Err(CoolError::NotFound("missing".to_owned())),
+            Ok(20),
+            Err(CoolError::Forbidden("nope".to_owned())),
+        ]);
+        assert_eq!(response.summary.total, 4);
+        assert_eq!(response.summary.ok, 2);
+        assert_eq!(response.summary.err, 2);
+        // Index preservation is the whole contract.
+        assert_eq!(response.results[0].index, 0);
+        assert_eq!(response.results[3].index, 3);
+        // Error projection rides CoolError::code().
+        match &response.results[1].status {
+            BatchItemStatus::Error { error } => assert_eq!(error.code, "NOT_FOUND"),
+            BatchItemStatus::Ok { .. } => panic!("expected per-item error"),
+        }
+    }
+
+    #[test]
+    fn batch_item_status_wire_shape_is_tagged_lowercase() {
+        // Lock the JSON shape so future serde edits can't silently change
+        // it — clients depend on `status: "ok" | "error"` discriminants.
+        let ok = BatchItemResult {
+            index: 0,
+            status: BatchItemStatus::Ok { value: 42i64 },
+        };
+        let ok_json = serde_json::to_string(&ok).unwrap();
+        assert!(ok_json.contains("\"status\":\"ok\""), "got: {ok_json}");
+        assert!(ok_json.contains("\"value\":42"), "got: {ok_json}");
+
+        let err = BatchItemResult::<i64> {
+            index: 7,
+            status: BatchItemStatus::Error {
+                error: BatchItemError {
+                    code: "VALIDATION_ERROR".to_owned(),
+                    message: "bad input".to_owned(),
+                },
+            },
+        };
+        let err_json = serde_json::to_string(&err).unwrap();
+        assert!(err_json.contains("\"status\":\"error\""), "got: {err_json}");
+        assert!(err_json.contains("\"index\":7"), "got: {err_json}");
+        assert!(
+            err_json.contains("\"code\":\"VALIDATION_ERROR\""),
+            "got: {err_json}",
+        );
+    }
 
     #[test]
     fn auth_field_prefers_exact_key_before_dotted_lookup() {

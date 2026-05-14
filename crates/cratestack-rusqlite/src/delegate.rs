@@ -92,6 +92,62 @@ impl<'a, M: 'static, PK: 'static> ModelDelegate<'a, M, PK> {
             id,
         }
     }
+
+    /// Fetch many rows by primary key in one round-trip. Missing rows
+    /// surface as per-item `NOT_FOUND` in the envelope; the call as a
+    /// whole only fails on outer infra errors (size cap, dup keys, DB
+    /// lock).
+    pub fn batch_get(&self, ids: Vec<PK>) -> crate::BatchGet<'a, M, PK> {
+        crate::BatchGet {
+            runtime: self.runtime,
+            descriptor: self.descriptor,
+            ids,
+        }
+    }
+
+    /// Insert many rows in one transaction with per-item SAVEPOINTs.
+    pub fn batch_create<I>(&self, inputs: Vec<I>) -> crate::BatchCreate<'a, M, PK, I> {
+        crate::BatchCreate {
+            runtime: self.runtime,
+            descriptor: self.descriptor,
+            inputs,
+        }
+    }
+
+    /// Update many rows with per-item patches. No `if_match` on the embedded
+    /// layer in v1 — the on-device runtime doesn't enforce `@version`.
+    pub fn batch_update<I>(
+        &self,
+        items: Vec<crate::BatchUpdateItem<PK, I>>,
+    ) -> crate::BatchUpdate<'a, M, PK, I> {
+        crate::BatchUpdate {
+            runtime: self.runtime,
+            descriptor: self.descriptor,
+            items,
+        }
+    }
+
+    /// Delete many rows by primary key in one statement. Missing rows
+    /// (and already-tombstoned rows on soft-delete models) surface as
+    /// per-item `NOT_FOUND`.
+    pub fn batch_delete(&self, ids: Vec<PK>) -> crate::BatchDelete<'a, M, PK> {
+        crate::BatchDelete {
+            runtime: self.runtime,
+            descriptor: self.descriptor,
+            ids,
+        }
+    }
+
+    /// Insert-or-update many rows in one transaction with per-item
+    /// SAVEPOINTs. Eligible only for models whose `@id` is client-supplied
+    /// — same compile-time gate as the single-row `.upsert(...)`.
+    pub fn batch_upsert<I>(&self, inputs: Vec<I>) -> crate::BatchUpsert<'a, M, PK, I> {
+        crate::BatchUpsert {
+            runtime: self.runtime,
+            descriptor: self.descriptor,
+            inputs,
+        }
+    }
 }
 
 pub struct FindMany<'a, M: 'static, PK: 'static> {

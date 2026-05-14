@@ -133,3 +133,30 @@ impl IntoSqlValue for cratestack_core::Decimal {
         SqlValue::Decimal(self)
     }
 }
+
+/// Accessor for a model's primary key. Implemented by the macro on every
+/// generated model struct so the batch operations can pair returned rows
+/// back to the position of their input PK in the request, producing a
+/// `BatchItemResult` with the right `index` and a `NotFound` entry for any
+/// requested PK that didn't come back.
+pub trait ModelPrimaryKey<PK> {
+    fn primary_key(&self) -> PK;
+}
+
+/// Detect the first duplicate value in a list of `SqlValue`s, used for
+/// batch_upsert input deduplication. Linear-scan with `PartialEq` rather
+/// than the hashed variant in `cratestack-core` because `SqlValue::Float`
+/// and `SqlValue::Decimal` don't admit a sound `Hash` impl.
+///
+/// At the documented batch cap (≤ 1000 items) the O(N²) cost is on the
+/// order of a million `PartialEq` comparisons, which dominates nothing
+/// next to a single round-trip to Postgres. Returns `(first_index,
+/// duplicate_index)` on collision, matching `cratestack_core::find_duplicate_position`.
+pub fn find_duplicate_sql_value(values: &[SqlValue]) -> Option<(usize, usize)> {
+    for (index, value) in values.iter().enumerate() {
+        if let Some(earlier) = values[..index].iter().position(|prior| prior == value) {
+            return Some((earlier, index));
+        }
+    }
+    None
+}
