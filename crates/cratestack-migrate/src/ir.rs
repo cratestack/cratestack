@@ -109,6 +109,32 @@ pub struct DropIndex {
     pub table: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AlterColumnType {
+    pub table: String,
+    pub column: String,
+    pub from: ColumnType,
+    pub from_arity: ColumnArity,
+    pub to: ColumnType,
+    pub to_arity: ColumnArity,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AlterColumnNullability {
+    pub table: String,
+    pub column: String,
+    pub from: ColumnArity,
+    pub to: ColumnArity,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AlterColumnDefault {
+    pub table: String,
+    pub column: String,
+    pub from: Option<ColumnDefault>,
+    pub to: Option<ColumnDefault>,
+}
+
 /// One migration operation. See [module docs](self) for context.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Op {
@@ -118,6 +144,9 @@ pub enum Op {
     DropColumn(DropColumn),
     AddIndex(AddIndex),
     DropIndex(DropIndex),
+    AlterColumnType(AlterColumnType),
+    AlterColumnNullability(AlterColumnNullability),
+    AlterColumnDefault(AlterColumnDefault),
 }
 
 impl Op {
@@ -129,6 +158,22 @@ impl Op {
             Op::DropColumn(_) => Destructiveness::Lossy,
             Op::AddIndex(_) => Destructiveness::Safe,
             Op::DropIndex(_) => Destructiveness::Safe,
+            // Type changes are conservatively Lossy. The IR has no
+            // dialect-aware view on widening vs narrowing — Postgres
+            // will reject a narrowing cast at runtime, but the diff
+            // engine must not silently emit one as Safe.
+            Op::AlterColumnType(_) => Destructiveness::Lossy,
+            Op::AlterColumnNullability(alter) => match (alter.from, alter.to) {
+                // Loosening (Required → Optional) is always Safe.
+                (ColumnArity::Required, ColumnArity::Optional) => Destructiveness::Safe,
+                // Tightening (Optional → Required) cannot succeed on
+                // existing NULL rows — Blocking until backfilled.
+                (ColumnArity::Optional, ColumnArity::Required) => Destructiveness::Blocking,
+                // List ↔ scalar arity flips reshape data — Lossy.
+                _ => Destructiveness::Lossy,
+            },
+            // Default-value changes don't touch existing rows.
+            Op::AlterColumnDefault(_) => Destructiveness::Safe,
         }
     }
 }

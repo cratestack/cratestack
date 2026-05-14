@@ -20,7 +20,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use cratestack_core::Schema;
 
 use crate::convert::{TableProjection, project_model};
-use crate::ir::{AddColumn, DropColumn, DropIndex, DropTable, Op};
+use crate::ir::{
+    AddColumn, AlterColumnDefault, AlterColumnNullability, AlterColumnType, Column, DropColumn,
+    DropIndex, DropTable, Op,
+};
 
 /// Compute the migration that turns `prev` into `next`.
 ///
@@ -50,6 +53,7 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
     let mut drop_tables: Vec<Op> = Vec::new();
     let mut create_tables: Vec<Op> = Vec::new();
     let mut add_columns: Vec<Op> = Vec::new();
+    let mut alter_columns: Vec<Op> = Vec::new();
     let mut add_indexes: Vec<Op> = Vec::new();
 
     // Tables removed entirely.
@@ -107,6 +111,14 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
             }
         }
 
+        // Columns present in both — emit alter ops for shape changes.
+        for (column_name, prev_column) in &prev_columns {
+            let Some(next_column) = next_columns.get(column_name) else {
+                continue;
+            };
+            alter_columns.extend(column_alter_ops(name, prev_column, next_column));
+        }
+
         let prev_indexes: BTreeSet<&str> = prev_projection
             .indexes
             .iter()
@@ -139,7 +151,56 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
     ops.append(&mut drop_tables);
     ops.append(&mut create_tables);
     ops.append(&mut add_columns);
+    ops.append(&mut alter_columns);
     ops.append(&mut add_indexes);
+    ops
+}
+
+/// Compare a column's previous and next definitions and emit the
+/// alter ops required to bring `prev` into `next` shape. Order
+/// inside the returned vector is intentional: type changes before
+/// nullability before defaults, so each subsequent op can rely on
+/// the previous one having landed.
+fn column_alter_ops(table: &str, prev: &Column, next: &Column) -> Vec<Op> {
+    let mut ops = Vec::new();
+
+    if prev.ty != next.ty || prev.arity != next.arity {
+        // Only emit AlterColumnType when the *type itself* or the
+        // list-vs-scalar shape changes. A pure Required ↔ Optional
+        // flip is handled by AlterColumnNullability below.
+        let type_changed = prev.ty != next.ty;
+        let shape_changed = matches!(prev.arity, crate::ir::ColumnArity::List)
+            != matches!(next.arity, crate::ir::ColumnArity::List);
+        if type_changed || shape_changed {
+            ops.push(Op::AlterColumnType(AlterColumnType {
+                table: table.to_owned(),
+                column: prev.name.clone(),
+                from: prev.ty.clone(),
+                from_arity: prev.arity,
+                to: next.ty.clone(),
+                to_arity: next.arity,
+            }));
+        }
+    }
+
+    if prev.arity != next.arity {
+        ops.push(Op::AlterColumnNullability(AlterColumnNullability {
+            table: table.to_owned(),
+            column: prev.name.clone(),
+            from: prev.arity,
+            to: next.arity,
+        }));
+    }
+
+    if prev.default != next.default {
+        ops.push(Op::AlterColumnDefault(AlterColumnDefault {
+            table: table.to_owned(),
+            column: prev.name.clone(),
+            from: prev.default.clone(),
+            to: next.default.clone(),
+        }));
+    }
+
     ops
 }
 

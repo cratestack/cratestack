@@ -25,8 +25,8 @@ use std::fmt::Write as _;
 
 use crate::emit::EmittedMigration;
 use crate::ir::{
-    AddColumn, AddIndex, Column, ColumnArity, ColumnDefault, CreateTable, Destructiveness,
-    DropColumn, DropIndex, Op,
+    AddColumn, AddIndex, AlterColumnDefault, AlterColumnNullability, AlterColumnType, Column,
+    ColumnArity, ColumnDefault, CreateTable, Destructiveness, DropColumn, DropIndex, Op,
 };
 
 pub fn emit(ops: &[Op]) -> EmittedMigration {
@@ -98,7 +98,49 @@ fn emit_up_op(sql: &mut String, op: &Op) {
         Op::DropColumn(drop) => emit_drop_column(sql, drop),
         Op::AddIndex(index) => emit_add_index(sql, index),
         Op::DropIndex(drop) => emit_drop_index(sql, drop),
+        Op::AlterColumnType(alter) => emit_alter_column_type(sql, alter),
+        Op::AlterColumnNullability(alter) => emit_alter_column_nullability(sql, alter),
+        Op::AlterColumnDefault(alter) => emit_alter_column_default(sql, alter),
     }
+}
+
+fn emit_alter_column_type(sql: &mut String, alter: &AlterColumnType) {
+    // BLOB affinity covers every `.cstack` scalar on SQLite. Pure
+    // type changes (Int → String) are storage-no-ops because both
+    // round-trip through BLOB. Only the list-vs-scalar shape change
+    // would matter, and the IR routes that through `AlterColumnType`
+    // alongside the type — we surface a comment so the developer
+    // notices and can hand-write a table rebuild if needed.
+    writeln!(
+        sql,
+        "-- SQLite: column {}.{} type changes from {:?} to {:?}. \
+         All scalars share BLOB affinity, so this is a no-op at the\n\
+         -- storage layer. If the shape changed (scalar ↔ list), \
+         hand-write the rebuild in up.pre.sql.",
+        alter.table, alter.column, alter.from, alter.to
+    )
+    .unwrap();
+}
+
+fn emit_alter_column_nullability(sql: &mut String, alter: &AlterColumnNullability) {
+    writeln!(
+        sql,
+        "-- SQLite has no ALTER COLUMN for nullability. Changing\n\
+         -- {}.{} from {:?} to {:?} requires a table rebuild — \
+         hand-write the migration in up.pre.sql / up.sql.",
+        alter.table, alter.column, alter.from, alter.to
+    )
+    .unwrap();
+}
+
+fn emit_alter_column_default(sql: &mut String, alter: &AlterColumnDefault) {
+    writeln!(
+        sql,
+        "-- SQLite has no ALTER COLUMN for defaults. To change the\n\
+         -- default on {}.{} to {:?}, rebuild the table in up.pre.sql.",
+        alter.table, alter.column, alter.to
+    )
+    .unwrap();
 }
 
 fn emit_down_op(sql: &mut String, op: &Op) {
@@ -114,10 +156,16 @@ fn emit_down_op(sql: &mut String, op: &Op) {
         )
         .unwrap(),
         Op::AddIndex(index) => writeln!(sql, "DROP INDEX {};", quote_ident(&index.name)).unwrap(),
-        Op::DropTable(_) | Op::DropColumn(_) | Op::DropIndex(_) => {
-            // Routed through the error stub above when lossy; drop
-            // index is treated as one-way at the migration boundary
-            // (slice 8+ will track index definitions in the snapshot).
+        Op::AlterColumnNullability(_) | Op::AlterColumnDefault(_) => {
+            // Both already require a hand-written table rebuild on
+            // SQLite. The reverse direction needs the same rebuild,
+            // so we emit a comment pointer rather than fake SQL.
+            sql.push_str(
+                "-- SQLite alter reversal requires the same table rebuild as the forward op.\n",
+            );
+        }
+        Op::DropTable(_) | Op::DropColumn(_) | Op::DropIndex(_) | Op::AlterColumnType(_) => {
+            // Routed through the error stub above when lossy.
         }
     }
 }
@@ -234,6 +282,10 @@ fn describe_lossy(op: &Op) -> String {
     match op {
         Op::DropTable(drop) => format!("DropTable {}", drop.name),
         Op::DropColumn(drop) => format!("DropColumn {}.{}", drop.table, drop.column),
+        Op::AlterColumnType(alter) => format!(
+            "AlterColumnType {}.{} ({:?} -> {:?})",
+            alter.table, alter.column, alter.from, alter.to
+        ),
         _ => format!("{op:?}"),
     }
 }

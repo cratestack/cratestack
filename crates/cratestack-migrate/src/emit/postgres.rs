@@ -15,8 +15,9 @@ use std::fmt::Write as _;
 
 use crate::emit::EmittedMigration;
 use crate::ir::{
-    AddColumn, AddIndex, Column, ColumnArity, ColumnDefault, ColumnType, CreateTable,
-    Destructiveness, DropColumn, DropIndex, Op,
+    AddColumn, AddIndex, AlterColumnDefault, AlterColumnNullability, AlterColumnType, Column,
+    ColumnArity, ColumnDefault, ColumnType, CreateTable, Destructiveness, DropColumn, DropIndex,
+    Op,
 };
 
 pub fn emit(ops: &[Op]) -> EmittedMigration {
@@ -89,6 +90,9 @@ fn emit_up_op(sql: &mut String, op: &Op) {
         Op::DropColumn(drop) => emit_drop_column(sql, drop),
         Op::AddIndex(index) => emit_add_index(sql, index),
         Op::DropIndex(drop) => emit_drop_index(sql, drop),
+        Op::AlterColumnType(alter) => emit_alter_column_type(sql, alter),
+        Op::AlterColumnNullability(alter) => emit_alter_column_nullability(sql, alter),
+        Op::AlterColumnDefault(alter) => emit_alter_column_default(sql, alter),
     }
 }
 
@@ -106,9 +110,29 @@ fn emit_down_op(sql: &mut String, op: &Op) {
         )
         .unwrap(),
         Op::AddIndex(index) => writeln!(sql, "DROP INDEX {};", quote_ident(&index.name)).unwrap(),
-        Op::DropTable(_) | Op::DropColumn(_) => {
-            // Should be unreachable: lossy ops route to the error
-            // stub above. Defensive: emit nothing rather than lie.
+        Op::AlterColumnNullability(alter) => {
+            // Reverse a nullability flip by setting the previous arity back.
+            let reverse = AlterColumnNullability {
+                table: alter.table.clone(),
+                column: alter.column.clone(),
+                from: alter.to,
+                to: alter.from,
+            };
+            emit_alter_column_nullability(sql, &reverse);
+        }
+        Op::AlterColumnDefault(alter) => {
+            let reverse = AlterColumnDefault {
+                table: alter.table.clone(),
+                column: alter.column.clone(),
+                from: alter.to.clone(),
+                to: alter.from.clone(),
+            };
+            emit_alter_column_default(sql, &reverse);
+        }
+        Op::DropTable(_) | Op::DropColumn(_) | Op::AlterColumnType(_) => {
+            // Lossy — routed through the error stub above. AlterColumnType
+            // is conservatively lossy because the diff engine has no
+            // widening/narrowing view.
         }
         Op::DropIndex(_) => {
             // Dropping an index is recoverable in principle but we
@@ -117,6 +141,68 @@ fn emit_down_op(sql: &mut String, op: &Op) {
             // requires snapshot lookup. Punt: drop is treated as
             // one-way at the migration boundary.
         }
+    }
+}
+
+fn emit_alter_column_type(sql: &mut String, alter: &AlterColumnType) {
+    let rendered = render_type(&alter.to, alter.to_arity);
+    writeln!(
+        sql,
+        "ALTER TABLE {} ALTER COLUMN {} TYPE {} USING ({}::{});",
+        quote_ident(&alter.table),
+        quote_ident(&alter.column),
+        rendered,
+        quote_ident(&alter.column),
+        rendered
+    )
+    .unwrap();
+}
+
+fn emit_alter_column_nullability(sql: &mut String, alter: &AlterColumnNullability) {
+    match (alter.from, alter.to) {
+        (ColumnArity::Required, ColumnArity::Optional) => writeln!(
+            sql,
+            "ALTER TABLE {} ALTER COLUMN {} DROP NOT NULL;",
+            quote_ident(&alter.table),
+            quote_ident(&alter.column)
+        )
+        .unwrap(),
+        (ColumnArity::Optional, ColumnArity::Required) => writeln!(
+            sql,
+            "ALTER TABLE {} ALTER COLUMN {} SET NOT NULL;",
+            quote_ident(&alter.table),
+            quote_ident(&alter.column)
+        )
+        .unwrap(),
+        // List ↔ scalar flips reshape data and ride along with
+        // AlterColumnType — no standalone nullability statement.
+        _ => {}
+    }
+}
+
+fn emit_alter_column_default(sql: &mut String, alter: &AlterColumnDefault) {
+    match &alter.to {
+        Some(default) => {
+            let rendered = match default {
+                ColumnDefault::Literal(value) => value.as_str(),
+                ColumnDefault::Function(call) => call.as_str(),
+            };
+            writeln!(
+                sql,
+                "ALTER TABLE {} ALTER COLUMN {} SET DEFAULT {};",
+                quote_ident(&alter.table),
+                quote_ident(&alter.column),
+                rendered
+            )
+            .unwrap();
+        }
+        None => writeln!(
+            sql,
+            "ALTER TABLE {} ALTER COLUMN {} DROP DEFAULT;",
+            quote_ident(&alter.table),
+            quote_ident(&alter.column)
+        )
+        .unwrap(),
     }
 }
 
@@ -268,6 +354,10 @@ fn describe_lossy(op: &Op) -> String {
     match op {
         Op::DropTable(drop) => format!("DropTable {}", drop.name),
         Op::DropColumn(drop) => format!("DropColumn {}.{}", drop.table, drop.column),
+        Op::AlterColumnType(alter) => format!(
+            "AlterColumnType {}.{} ({:?} -> {:?})",
+            alter.table, alter.column, alter.from, alter.to
+        ),
         _ => format!("{op:?}"),
     }
 }
@@ -467,6 +557,163 @@ model Tag {
         let migration = emit(&diff(&prev, &next));
         assert!(
             migration.up.contains("names TEXT[] NOT NULL"),
+            "up was: {}",
+            migration.up
+        );
+    }
+
+    #[test]
+    fn loosening_required_to_optional_is_safe() {
+        let prev = schema(&with_models(
+            r#"
+model Account {
+  id Int @id
+  status String
+}
+"#,
+        ));
+        let next = schema(&with_models(
+            r#"
+model Account {
+  id Int @id
+  status String?
+}
+"#,
+        ));
+        let migration = emit(&diff(&prev, &next));
+        assert!(!migration.has_lossy);
+        assert!(!migration.has_blocking);
+        assert!(
+            migration
+                .up
+                .contains("ALTER TABLE accounts ALTER COLUMN status DROP NOT NULL;"),
+            "up was: {}",
+            migration.up
+        );
+        assert!(
+            migration
+                .down
+                .contains("ALTER TABLE accounts ALTER COLUMN status SET NOT NULL;"),
+            "down was: {}",
+            migration.down
+        );
+    }
+
+    #[test]
+    fn tightening_optional_to_required_is_blocking() {
+        let prev = schema(&with_models(
+            r#"
+model Account {
+  id Int @id
+  status String?
+}
+"#,
+        ));
+        let next = schema(&with_models(
+            r#"
+model Account {
+  id Int @id
+  status String
+}
+"#,
+        ));
+        let migration = emit(&diff(&prev, &next));
+        assert!(migration.has_blocking);
+        assert!(
+            migration
+                .up
+                .contains("ALTER TABLE accounts ALTER COLUMN status SET NOT NULL;"),
+        );
+        assert!(migration.up.contains("WARNING"));
+    }
+
+    #[test]
+    fn type_change_is_lossy_and_uses_using_cast() {
+        let prev = schema(&with_models(
+            r#"
+model Account {
+  id Int @id
+  amount Int
+}
+"#,
+        ));
+        let next = schema(&with_models(
+            r#"
+model Account {
+  id Int @id
+  amount Decimal
+}
+"#,
+        ));
+        let migration = emit(&diff(&prev, &next));
+        assert!(migration.has_lossy);
+        assert!(
+            migration
+                .up
+                .contains("ALTER TABLE accounts ALTER COLUMN amount TYPE NUMERIC USING (amount::NUMERIC);"),
+            "up was: {}",
+            migration.up
+        );
+        assert!(migration.down.contains("destructive migration"));
+    }
+
+    #[test]
+    fn default_change_emits_set_and_drop_default() {
+        let prev = schema(&with_models(
+            r#"
+model Order {
+  id Int @id
+  status String @default('pending')
+}
+"#,
+        ));
+        let next = schema(&with_models(
+            r#"
+model Order {
+  id Int @id
+  status String @default('submitted')
+}
+"#,
+        ));
+        let migration = emit(&diff(&prev, &next));
+        assert!(!migration.has_lossy);
+        assert!(
+            migration
+                .up
+                .contains("ALTER TABLE orders ALTER COLUMN status SET DEFAULT 'submitted';"),
+            "up was: {}",
+            migration.up
+        );
+        assert!(
+            migration
+                .down
+                .contains("ALTER TABLE orders ALTER COLUMN status SET DEFAULT 'pending';"),
+        );
+    }
+
+    #[test]
+    fn dropping_default_emits_drop_default() {
+        let prev = schema(&with_models(
+            r#"
+model Order {
+  id Int @id
+  status String @default('pending')
+}
+"#,
+        ));
+        let next = schema(&with_models(
+            r#"
+model Order {
+  id Int @id
+  status String
+}
+"#,
+        ));
+        let migration = emit(&diff(&prev, &next));
+        assert!(
+            migration
+                .up
+                .contains("ALTER TABLE orders ALTER COLUMN status DROP DEFAULT;"),
             "up was: {}",
             migration.up
         );
