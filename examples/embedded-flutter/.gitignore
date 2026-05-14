@@ -32,3 +32,6 @@ pubspec.lock
 # Includes per-platform podspec, cargokit, and build hooks. Treat the same
 # as flutter create scaffolds — generated, not committed.
 /rust_builder/
+
+test
+.metadata

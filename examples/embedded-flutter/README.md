@@ -1,6 +1,9 @@
 # embedded-flutter
 
-CrateStack's embedded shape bridged into a Flutter app via [`flutter_rust_bridge`](https://cjycode.com/flutter_rust_bridge/). Same `include_embedded_schema!` + `ModelDelegate` + file-backed SQLite path as every other Phase A/B/C embedded example — what changes is the front-end binding: instead of wasm-bindgen + a Worker, it's `flutter_rust_bridge_codegen` producing Dart-callable function bindings.
+CrateStack's embedded shape bridged into a Flutter app via [
+`flutter_rust_bridge`](https://cjycode.com/flutter_rust_bridge/). Same `include_embedded_schema!` + `ModelDelegate` +
+file-backed SQLite path as every other Phase A/B/C embedded example — what changes is the front-end binding: instead of
+wasm-bindgen + a Worker, it's `flutter_rust_bridge_codegen` producing Dart-callable function bindings.
 
 ## Layout
 
@@ -26,14 +29,16 @@ embedded-flutter/
 Two directories are NOT committed and **must be created** when bootstrapping the example on your machine:
 
 1. `lib/src/rust/` — generated Dart bindings (regenerate at any time).
-2. Per-platform scaffolds: `android/`, `ios/`, `macos/`, `linux/`, `windows/`, `web/`. These come from `flutter create .` and are platform-toolchain specific; checking them in would bloat the repo and lock platform versions. See "Bootstrap" below.
+2. Per-platform scaffolds: `android/`, `ios/`, `macos/`, `linux/`, `windows/`, `web/`. These come from
+   `flutter create .` and are platform-toolchain specific; checking them in would bloat the repo and lock platform
+   versions. See "Bootstrap" below.
 
 ## Prerequisites
 
 - **Flutter SDK 3.27+** with Dart 3.5+ — install via [docs.flutter.dev/install](https://docs.flutter.dev/install).
 - **Rust** + the host toolchain. For Android/iOS targets you'll additionally need:
-  - Android: NDK + `cargo-ndk` (`cargo install cargo-ndk`) + Android Studio
-  - iOS / macOS: Xcode + Xcode CLI tools
+    - Android: NDK + `cargo-ndk` (`cargo install cargo-ndk`) + Android Studio
+    - iOS / macOS: Xcode + Xcode CLI tools
 - **flutter_rust_bridge_codegen 2.x** — install once: `cargo install flutter_rust_bridge_codegen`.
 
 ## Bootstrap (one-time per checkout)
@@ -66,21 +71,24 @@ After that, regular development is just:
 flutter run -d macos        # or -d <android-device-id>
 ```
 
-The first `flutter run` per platform is slow (cargokit cross-compiles the cdylib and runs `pod install`); subsequent runs use cargo's incremental cache.
+The first `flutter run` per platform is slow (cargokit cross-compiles the cdylib and runs `pod install`); subsequent
+runs use cargo's incremental cache.
 
 ## Verification status
 
-| Target  | Status | Method |
-|---------|--------|--------|
-| macOS desktop | ✅ end-to-end | `flutter run -d macos` opens the Material 3 UI; added 6 CRUD rows through the app and read them back from the sandboxed SQLite under `~/Library/Containers/dev.cratestack.examples.embeddedFlutterExample/Data/Library/Application Support/.../cratestack-notes.db` |
-| Android | ✅ APK build | `flutter build apk --debug` produces `libembedded_flutter_native.so` for `arm64-v8a`, `armeabi-v7a`, `x86_64`. Not run on a physical device or emulator — the build pipeline (cargo-ndk cross-compile + cargokit Gradle plugin + jniLibs packaging) is the risk surface and is exercised; the runtime is the same Rust code as macOS desktop |
-| iOS | ❌ **not tested — out of scope** | The cargokit integration generates `rust_builder/ios/<name>.podspec` and the cross-compile target (`aarch64-apple-ios` / `-sim`) is wired, but the runtime hasn't been exercised here. Expect a working flow analogous to macOS once an iOS Simulator runtime is installed; report regressions if you try it |
+| Target        | Status                          | Method                                                                                                                                                                                                                                                                                                                                       |
+|---------------|---------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| macOS desktop | ✅ end-to-end                    | `flutter run -d macos` opens the Material 3 UI; added 6 CRUD rows through the app and read them back from the sandboxed SQLite under `~/Library/Containers/dev.cratestack.examples.embeddedFlutterExample/Data/Library/Application Support/.../cratestack-notes.db`                                                                          |
+| Android       | ✅ APK build                     | `flutter build apk --debug` produces `libembedded_flutter_native.so` for `arm64-v8a`, `armeabi-v7a`, `x86_64`. Not run on a physical device or emulator — the build pipeline (cargo-ndk cross-compile + cargokit Gradle plugin + jniLibs packaging) is the risk surface and is exercised; the runtime is the same Rust code as macOS desktop |
+| iOS           | ❌ **not tested — out of scope** | The cargokit integration generates `rust_builder/ios/<name>.podspec` and the cross-compile target (`aarch64-apple-ios` / `-sim`) is wired, but the runtime hasn't been exercised here. Expect a working flow analogous to macOS once an iOS Simulator runtime is installed; report regressions if you try it                                 |
 
 ## What the example demonstrates
 
-The Rust API surface in `native/src/api/notes.rs` is **byte-for-byte the same logic** as every other embedded example — a `OnceLock<RusqliteRuntime>` plus a `ModelDelegate` for the Note model. flutter_rust_bridge handles the rest:
+The Rust API surface in `native/src/api/notes.rs` is **byte-for-byte the same logic** as every other embedded example —
+a `OnceLock<RusqliteRuntime>` plus a `ModelDelegate` for the Note model. flutter_rust_bridge handles the rest:
 
-- `Future<void> initDatabase({required String dbPath})` — pass an OS-appropriate path (resolved by `path_provider`'s `getApplicationSupportDirectory`).
+- `Future<void> initDatabase({required String dbPath})` — pass an OS-appropriate path (resolved by `path_provider`'s
+  `getApplicationSupportDirectory`).
 - `Future<NoteView> addNote({required NewNote input})`
 - `Future<List<NoteView>> listNotes({required bool onlyOpen})`
 - `Future<NoteView> markDone({required String id})`
@@ -90,7 +98,10 @@ The Rust API surface in `native/src/api/notes.rs` is **byte-for-byte the same lo
 
 ## Why a non-wasm path matters for Flutter
 
-Flutter's runtime is its own embedder (Skia + Dart VM); it doesn't host a webview, so the Phase B wasm-in-the-browser story doesn't apply. flutter_rust_bridge links the Rust cdylib directly into the Flutter app via platform-specific glue (JNI on Android, Dart FFI on everything else). The same `ModelDelegate` you'd call from a desktop CLI is what the Flutter UI is calling, just over a generated Dart facade.
+Flutter's runtime is its own embedder (Skia + Dart VM); it doesn't host a webview, so the Phase B wasm-in-the-browser
+story doesn't apply. flutter_rust_bridge links the Rust cdylib directly into the Flutter app via platform-specific
+glue (JNI on Android, Dart FFI on everything else). The same `ModelDelegate` you'd call from a desktop CLI is what the
+Flutter UI is calling, just over a generated Dart facade.
 
 ## Tests
 
@@ -98,18 +109,28 @@ Flutter's runtime is its own embedder (Skia + Dart VM); it doesn't host a webvie
 cargo test -p embedded-flutter-native       # Rust API surface, in-memory smoke
 ```
 
-Dart-level testing (widget tests against the bindings) lives in a future PR — it would need either a mocked native lib or a real one loaded into `flutter test`.
+Dart-level testing (widget tests against the bindings) lives in a future PR — it would need either a mocked native lib
+or a real one loaded into `flutter test`.
 
 ## Things to know about the integration
 
 A few non-obvious bits that this repo bakes in:
 
-- **`[package] name = "embedded_flutter_native"` (underscore)** — flutter_rust_bridge's cargokit reads the package name verbatim when looking up `lib<name>.a` / `lib<name>.dylib` artifacts. It doesn't normalize hyphens. Match cargo's actual output filename and the cargokit-driven Xcode/Gradle expectations stay aligned.
-- **`build.rs` emits `cargo:rustc-link-lib=framework=SystemConfiguration`** on Apple targets — `whoami` (transitive via the `cratestack` facade → sqlx-postgres) needs that. The framework is *also* declared in the generated `rust_builder/macos/embedded_flutter_native.podspec` (`s.frameworks = 'SystemConfiguration', 'CoreFoundation'`) because Xcode does the final link of the staticlib, and `rustc-link-lib` from a staticlib doesn't propagate through.
-- **`mod frb_generated;` goes AFTER inner attributes** in `native/src/lib.rs`. The codegen injects it at the very top by default, which Rust rejects (inner attributes must precede items). It's been moved manually here; if `flutter_rust_bridge_codegen generate` re-injects at the top, reorder.
+- **`[package] name = "embedded_flutter_native"` (underscore)** — flutter_rust_bridge's cargokit reads the package name
+  verbatim when looking up `lib<name>.a` / `lib<name>.dylib` artifacts. It doesn't normalize hyphens. Match cargo's
+  actual output filename and the cargokit-driven Xcode/Gradle expectations stay aligned.
+- **`build.rs` emits `cargo:rustc-link-lib=framework=SystemConfiguration`** on Apple targets — `whoami` (transitive via
+  the `cratestack` facade → sqlx-postgres) needs that. The framework is *also* declared in the generated
+  `rust_builder/macos/embedded_flutter_native.podspec` (`s.frameworks = 'SystemConfiguration', 'CoreFoundation'`)
+  because Xcode does the final link of the staticlib, and `rustc-link-lib` from a staticlib doesn't propagate through.
+- **`mod frb_generated;` goes AFTER inner attributes** in `native/src/lib.rs`. The codegen injects it at the very top by
+  default, which Rust rejects (inner attributes must precede items). It's been moved manually here; if
+  `flutter_rust_bridge_codegen generate` re-injects at the top, reorder.
 
 ## See also
 
 - [`embedded-cli`](../embedded-cli) — same Rust API, exposed via `clap` instead of FRB.
-- [`embedded-expo`](../embedded-expo) — the React Native sibling, wrapping the same Rust cdylib via Expo's native module system.
-- [`tauri-native`](../tauri-native) — desktop equivalent: the same `include_embedded_schema!` driven through Tauri commands.
+- [`embedded-expo`](../embedded-expo) — the React Native sibling, wrapping the same Rust cdylib via Expo's native module
+  system.
+- [`tauri-native`](../tauri-native) — desktop equivalent: the same `include_embedded_schema!` driven through Tauri
+  commands.
