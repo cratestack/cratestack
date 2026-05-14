@@ -5,26 +5,17 @@
 //! the codec emits strings rather than floats.
 
 use cratestack::include_server_schema;
-use cratestack::sqlx::postgres::PgPoolOptions;
 use cratestack::sqlx::{Row, query};
 use cratestack::{CoolContext, Decimal, Value};
 use std::str::FromStr;
 
 include_server_schema!("tests/fixtures/banking_decimal.cstack", db = Postgres);
 
-async fn serial_guard() -> tokio::sync::MutexGuard<'static, ()> {
-    static M: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-    M.lock().await
-}
+mod support;
 
-async fn connect_or_skip() -> Option<cratestack::sqlx::PgPool> {
-    let database_url = std::env::var("CRATESTACK_TEST_DATABASE_URL").ok()?;
-    PgPoolOptions::new()
-        .max_connections(2)
-        .connect(&database_url)
-        .await
-        .ok()
-}
+use support::pg;
+
+
 
 async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     query("DROP TABLE IF EXISTS cratestack_event_outbox, wallets")
@@ -51,11 +42,12 @@ fn ctx() -> CoolContext {
 
 #[tokio::test]
 async fn decimal_round_trips_through_pg_numeric_without_loss() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
 
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
 
@@ -88,7 +80,7 @@ async fn decimal_round_trips_through_pg_numeric_without_loss() {
 
     // And the raw PG `numeric` column matches the canonical string.
     let row = query("SELECT balance::text AS balance_text FROM wallets WHERE id = 1")
-        .fetch_one(&pool)
+        .fetch_one(pool)
         .await
         .expect("read raw");
     let raw: String = row.get("balance_text");
@@ -99,11 +91,12 @@ async fn decimal_round_trips_through_pg_numeric_without_loss() {
 async fn decimal_arithmetic_is_exact_when_floats_would_drift() {
     // The 0.1 + 0.2 ≠ 0.3 case — confirms the column round-trips through
     // PG and arithmetic in Rust still hits the exact value.
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
 
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
 
@@ -133,11 +126,12 @@ async fn decimal_arithmetic_is_exact_when_floats_would_drift() {
 
 #[tokio::test]
 async fn optional_decimal_null_round_trips_cleanly() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
 
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
     let balance = Decimal::from_str("100").unwrap();
@@ -162,7 +156,7 @@ async fn optional_decimal_null_round_trips_cleanly() {
 
     // Confirm NULL is stored, not zero.
     let raw = query("SELECT ceiling FROM wallets WHERE id = 1")
-        .fetch_one(&pool)
+        .fetch_one(pool)
         .await
         .expect("read");
     let ceiling: Option<Decimal> = raw.try_get("ceiling").ok();

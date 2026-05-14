@@ -10,7 +10,6 @@
 use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack::include_server_schema;
-use cratestack::sqlx::postgres::PgPoolOptions;
 use cratestack::sqlx::query;
 use cratestack::{AuthProvider, CoolCodec, CoolContext, CoolError, RequestContext, Value};
 use cratestack_codec_json::JsonCodec;
@@ -18,19 +17,11 @@ use tower::util::ServiceExt;
 
 include_server_schema!("tests/fixtures/banking_validation.cstack", db = Postgres);
 
-async fn serial_guard() -> tokio::sync::MutexGuard<'static, ()> {
-    static M: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-    M.lock().await
-}
+mod support;
 
-async fn connect_or_skip() -> Option<cratestack::sqlx::PgPool> {
-    let database_url = std::env::var("CRATESTACK_TEST_DATABASE_URL").ok()?;
-    PgPoolOptions::new()
-        .max_connections(2)
-        .connect(&database_url)
-        .await
-        .ok()
-}
+use support::pg;
+
+
 
 async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     query("DROP TABLE IF EXISTS cratestack_event_outbox, members, reserves")
@@ -78,12 +69,13 @@ impl AuthProvider for PassThroughAuth {
 
 #[tokio::test]
 async fn valid_input_round_trips_through_create() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
-    let cool = cratestack_schema::Cratestack::builder(pool).build();
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
 
     let created = cool
         .member()
@@ -103,12 +95,13 @@ async fn valid_input_round_trips_through_create() {
 
 #[tokio::test]
 async fn invalid_email_is_rejected_with_validation_error_at_create() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
-    let cool = cratestack_schema::Cratestack::builder(pool).build();
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
 
     let result = cool
         .member()
@@ -132,12 +125,13 @@ async fn invalid_email_is_rejected_with_validation_error_at_create() {
 
 #[tokio::test]
 async fn invalid_iso4217_currency_is_rejected() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
-    let cool = cratestack_schema::Cratestack::builder(pool).build();
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
 
     let result = cool
         .member()
@@ -156,12 +150,13 @@ async fn invalid_iso4217_currency_is_rejected() {
 
 #[tokio::test]
 async fn length_below_min_is_rejected() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
-    let cool = cratestack_schema::Cratestack::builder(pool).build();
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
 
     let result = cool
         .member()
@@ -182,12 +177,13 @@ async fn length_below_min_is_rejected() {
 
 #[tokio::test]
 async fn regex_violation_is_rejected_for_slug() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
-    let cool = cratestack_schema::Cratestack::builder(pool).build();
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
 
     let result = cool
         .member()
@@ -206,12 +202,13 @@ async fn regex_violation_is_rejected_for_slug() {
 
 #[tokio::test]
 async fn validation_errors_surface_as_422_over_http_with_redacted_message() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
-    let cool = cratestack_schema::Cratestack::builder(pool).build();
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
     let router = cratestack_schema::axum::model_router(cool, JsonCodec, PassThroughAuth);
 
     let response = router
@@ -241,12 +238,13 @@ async fn validation_errors_surface_as_422_over_http_with_redacted_message() {
 #[tokio::test]
 async fn decimal_range_rejects_below_min() {
     use core::str::FromStr;
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
-    let cool = cratestack_schema::Cratestack::builder(pool).build();
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
 
     let result = cool
         .reserve()
@@ -267,12 +265,13 @@ async fn decimal_range_rejects_below_min() {
 #[tokio::test]
 async fn decimal_range_rejects_above_max() {
     use core::str::FromStr;
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
-    let cool = cratestack_schema::Cratestack::builder(pool).build();
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
 
     let result = cool
         .reserve()
@@ -293,12 +292,13 @@ async fn decimal_range_rejects_above_max() {
 #[tokio::test]
 async fn decimal_range_accepts_in_range_value() {
     use core::str::FromStr;
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
-    let cool = cratestack_schema::Cratestack::builder(pool).build();
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
 
     let created = cool
         .reserve()

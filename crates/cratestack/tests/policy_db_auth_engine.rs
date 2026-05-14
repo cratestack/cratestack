@@ -1,13 +1,16 @@
 use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack::include_server_schema;
-use cratestack::sqlx::postgres::PgPoolOptions;
 use cratestack::{AuthProvider, CoolCodec, CoolContext, CoolError, RequestContext, Value};
 use cratestack_codec_cbor::CborCodec;
 use std::collections::BTreeMap;
 use tower::util::ServiceExt;
 
 include_server_schema!("tests/fixtures/auth_engine.cstack", db = Postgres);
+
+mod support;
+
+use support::pg;
 
 #[derive(Clone)]
 struct AuthEngineAuthProvider;
@@ -140,68 +143,59 @@ impl cratestack_schema::procedures::ProcedureRegistry for AuthEngineProcedures {
 #[tokio::test]
 #[ignore = "pre-existing procedure-policy delegation drift; tracked separately"]
 async fn db_backed_auth_engine_supports_all_deny_and_auth_defaults() {
-    let database_url = match std::env::var("CRATESTACK_TEST_DATABASE_URL") {
-        Ok(url) => url,
-        Err(_) => return,
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
     };
-
-    let pool = match PgPoolOptions::new()
-        .max_connections(1)
-        .connect(&database_url)
-        .await
-    {
-        Ok(pool) => pool,
-        Err(_) => return,
-    };
+    let pool = &test_pg.pool;
 
     cratestack::sqlx::query("DROP TABLE IF EXISTS posts, todos, scoped_notes")
-        .execute(&pool)
+        .execute(pool)
         .await
         .expect("auth engine test tables should reset");
     cratestack::sqlx::query("DROP TABLE IF EXISTS admin_panels")
-        .execute(&pool)
+        .execute(pool)
         .await
         .expect("auth engine test tables should reset");
     cratestack::sqlx::query(
         "CREATE TABLE posts (id TEXT PRIMARY KEY DEFAULT ('post_' || md5(random()::text)), title TEXT NOT NULL, published BOOLEAN NOT NULL, author_id TEXT NOT NULL)",
     )
-    .execute(&pool)
+    .execute(pool)
     .await
     .expect("posts table should exist");
     cratestack::sqlx::query(
         "CREATE TABLE todos (id TEXT PRIMARY KEY DEFAULT ('todo_' || md5(random()::text)), owner_id TEXT NOT NULL, title TEXT NOT NULL, organization_id TEXT)",
     )
-    .execute(&pool)
+    .execute(pool)
     .await
     .expect("todos table should exist");
     cratestack::sqlx::query(
         "CREATE TABLE scoped_notes (id TEXT PRIMARY KEY DEFAULT ('note_' || md5(random()::text)), owner_id TEXT NOT NULL, body TEXT NOT NULL)",
     )
-    .execute(&pool)
+    .execute(pool)
     .await
     .expect("scoped_notes table should exist");
     cratestack::sqlx::query(
         "CREATE TABLE admin_panels (id TEXT PRIMARY KEY DEFAULT ('panel_' || md5(random()::text)), title TEXT NOT NULL)",
     )
-    .execute(&pool)
+    .execute(pool)
     .await
     .expect("admin_panels table should exist");
     cratestack::sqlx::query(
         "INSERT INTO posts (id, title, published, author_id) VALUES ('post_1', 'Draft', FALSE, 'usr_1'), ('post_2', 'Published', TRUE, 'usr_2')",
     )
-    .execute(&pool)
+    .execute(pool)
     .await
     .expect("posts should seed");
     cratestack::sqlx::query(
         "INSERT INTO todos (id, owner_id, title, organization_id) VALUES ('todo_seed', 'usr_3', 'Existing Todo', 'org_2')",
     )
-    .execute(&pool)
+    .execute(pool)
     .await
     .expect("todos should seed");
     cratestack::sqlx::query(
         "INSERT INTO admin_panels (id, title) VALUES ('panel_1', 'Operations')",
     )
-    .execute(&pool)
+    .execute(pool)
     .await
     .expect("admin panels should seed");
 

@@ -6,7 +6,6 @@
 use cratestack::axum::body::Body;
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack::include_server_schema;
-use cratestack::sqlx::postgres::PgPoolOptions;
 use cratestack::sqlx::{Row, query};
 use cratestack::{AuthProvider, CoolCodec, CoolContext, CoolError, RequestContext, Value};
 use cratestack_codec_json::JsonCodec;
@@ -14,19 +13,11 @@ use tower::util::ServiceExt;
 
 include_server_schema!("tests/fixtures/banking_versioning.cstack", db = Postgres);
 
-async fn serial_guard() -> tokio::sync::MutexGuard<'static, ()> {
-    static M: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-    M.lock().await
-}
+mod support;
 
-async fn connect_or_skip() -> Option<cratestack::sqlx::PgPool> {
-    let database_url = std::env::var("CRATESTACK_TEST_DATABASE_URL").ok()?;
-    PgPoolOptions::new()
-        .max_connections(2)
-        .connect(&database_url)
-        .await
-        .ok()
-}
+use support::pg;
+
+
 
 async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     query("DROP TABLE IF EXISTS cratestack_event_outbox, ledgers")
@@ -65,13 +56,14 @@ impl AuthProvider for PassThroughAuth {
 
 #[tokio::test]
 async fn delegate_update_without_if_match_returns_precondition_failed() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
     query("INSERT INTO ledgers (id, label, balance, version) VALUES (1, 'gl-1', 0, 0)")
-        .execute(&pool)
+        .execute(pool)
         .await
         .expect("seed");
 
@@ -92,13 +84,14 @@ async fn delegate_update_without_if_match_returns_precondition_failed() {
 
 #[tokio::test]
 async fn delegate_update_with_stale_if_match_returns_412_and_keeps_row_intact() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
     query("INSERT INTO ledgers (id, label, balance, version) VALUES (2, 'gl-2', 5, 7)")
-        .execute(&pool)
+        .execute(pool)
         .await
         .expect("seed");
 
@@ -119,7 +112,7 @@ async fn delegate_update_with_stale_if_match_returns_412_and_keeps_row_intact() 
 
     // Row state must be untouched.
     let row = query("SELECT balance, version FROM ledgers WHERE id = 2")
-        .fetch_one(&pool)
+        .fetch_one(pool)
         .await
         .expect("read ledger");
     let balance: i64 = row.get("balance");
@@ -130,13 +123,14 @@ async fn delegate_update_with_stale_if_match_returns_412_and_keeps_row_intact() 
 
 #[tokio::test]
 async fn delegate_update_with_fresh_if_match_increments_version_and_returns_new_state() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
     query("INSERT INTO ledgers (id, label, balance, version) VALUES (3, 'gl-3', 5, 0)")
-        .execute(&pool)
+        .execute(pool)
         .await
         .expect("seed");
 
@@ -175,13 +169,14 @@ async fn delegate_update_with_fresh_if_match_increments_version_and_returns_new_
 
 #[tokio::test]
 async fn http_patch_round_trips_etag_and_rejects_stale_if_match() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
     query("INSERT INTO ledgers (id, label, balance, version) VALUES (4, 'gl-4', 1, 0)")
-        .execute(&pool)
+        .execute(pool)
         .await
         .expect("seed");
 
@@ -264,11 +259,12 @@ async fn http_patch_round_trips_etag_and_rejects_stale_if_match() {
 
 #[tokio::test]
 async fn create_seeds_version_to_zero_even_when_input_omits_it() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
 
     // The Create input struct is generated without a `version` field
     // (see the @version exclusion in cratestack-macros). If a future

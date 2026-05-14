@@ -6,31 +6,16 @@
 //! redact `@pii` / `@sensitive` columns.
 
 use cratestack::include_server_schema;
-use cratestack::sqlx::postgres::PgPoolOptions;
 use cratestack::sqlx::{Row, query};
 use cratestack::{CoolContext, Value};
 
 include_server_schema!("tests/fixtures/banking_audit.cstack", db = Postgres);
 
-/// Tests in this file all touch the `account` table, so cargo's default
-/// in-binary parallelism would race them on `DROP/CREATE TABLE`. This
-/// guard serializes them; cross-file parallelism is preserved because
-/// each banking_*.rs uses a uniquely-named model/table.
-async fn serial_guard() -> tokio::sync::MutexGuard<'static, ()> {
-    static M: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-    M.lock().await
-}
+mod support;
 
-/// Skips when the test database is not configured. Same pattern the
-/// existing `policy_db_*.rs` tests use, so CI without PG keeps passing.
-async fn connect_or_skip() -> Option<cratestack::sqlx::PgPool> {
-    let database_url = std::env::var("CRATESTACK_TEST_DATABASE_URL").ok()?;
-    PgPoolOptions::new()
-        .max_connections(2)
-        .connect(&database_url)
-        .await
-        .ok()
-}
+use support::pg;
+
+
 
 async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     query("DROP TABLE IF EXISTS cratestack_audit, cratestack_event_outbox, accounts")
@@ -61,11 +46,12 @@ fn operator() -> CoolContext {
 
 #[tokio::test]
 async fn audit_captures_create_with_redacted_pii() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
 
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
     let ctx = operator();
@@ -88,7 +74,7 @@ async fn audit_captures_create_with_redacted_pii() {
         "SELECT model, operation, primary_key, actor, tenant, before, after, request_id \
          FROM cratestack_audit ORDER BY occurred_at",
     )
-    .fetch_all(&pool)
+    .fetch_all(pool)
     .await
     .expect("fetch audit rows");
     assert_eq!(rows.len(), 1, "expected exactly one audit row");
@@ -148,15 +134,16 @@ async fn audit_captures_create_with_redacted_pii() {
 
 #[tokio::test]
 async fn audit_captures_update_before_and_after_with_redaction() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
 
     // Seed directly so the audit-capture path runs on the update, not the create.
     query("INSERT INTO accounts VALUES (2, 'bob@example.com', 50, 250)")
-        .execute(&pool)
+        .execute(pool)
         .await
         .expect("seed");
 
@@ -175,7 +162,7 @@ async fn audit_captures_update_before_and_after_with_redaction() {
         .expect("update succeeds");
 
     let rows = query("SELECT operation, before, after FROM cratestack_audit ORDER BY occurred_at")
-        .fetch_all(&pool)
+        .fetch_all(pool)
         .await
         .expect("fetch audit rows");
     assert_eq!(rows.len(), 1);
@@ -206,13 +193,14 @@ async fn audit_captures_update_before_and_after_with_redaction() {
 
 #[tokio::test]
 async fn audit_captures_delete_with_before_snapshot_and_no_after() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
     query("INSERT INTO accounts VALUES (3, 'carol@example.com', 10, 500)")
-        .execute(&pool)
+        .execute(pool)
         .await
         .expect("seed");
 
@@ -226,7 +214,7 @@ async fn audit_captures_delete_with_before_snapshot_and_no_after() {
         .expect("delete succeeds");
 
     let rows = query("SELECT operation, before, after FROM cratestack_audit")
-        .fetch_all(&pool)
+        .fetch_all(pool)
         .await
         .expect("fetch audit rows");
     assert_eq!(rows.len(), 1);
@@ -251,13 +239,14 @@ async fn audit_row_lives_inside_the_same_transaction_as_the_mutation() {
     // If the audit insert ever escaped the mutation tx, a failing create
     // (e.g. constraint violation) could leave an orphan audit row. We force
     // a duplicate-key create and assert that no audit row appears.
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
     query("INSERT INTO accounts VALUES (4, 'dave@example.com', 1, 1)")
-        .execute(&pool)
+        .execute(pool)
         .await
         .expect("seed");
 
@@ -277,7 +266,7 @@ async fn audit_row_lives_inside_the_same_transaction_as_the_mutation() {
     assert!(result.is_err(), "duplicate-key create must fail");
 
     let row_count: i64 = query("SELECT COUNT(*)::BIGINT FROM cratestack_audit")
-        .fetch_one(&pool)
+        .fetch_one(pool)
         .await
         .expect("count audit")
         .get(0);

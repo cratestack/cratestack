@@ -10,7 +10,6 @@
 use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack::include_server_schema;
-use cratestack::sqlx::postgres::PgPoolOptions;
 use cratestack::sqlx::query;
 use cratestack::{AuthProvider, CoolCodec, CoolContext, CoolError, RequestContext, Value};
 use cratestack_axum::idempotency::IdempotencyLayer;
@@ -22,22 +21,11 @@ use tower::util::ServiceExt;
 
 include_server_schema!("tests/fixtures/banking_idempotency.cstack", db = Postgres);
 
-async fn serial_guard() -> tokio::sync::MutexGuard<'static, ()> {
-    static M: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-    M.lock().await
-}
+mod support;
 
-async fn connect_or_skip() -> Option<cratestack::sqlx::PgPool> {
-    let database_url = std::env::var("CRATESTACK_TEST_DATABASE_URL").ok()?;
-    // The concurrency test runs two requests in parallel and each is
-    // doing reserve + handler + complete; bump the pool above 2 so the
-    // middleware doesn't deadlock on connection acquisition.
-    PgPoolOptions::new()
-        .max_connections(8)
-        .connect(&database_url)
-        .await
-        .ok()
-}
+use support::pg;
+
+
 
 async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     query("DROP TABLE IF EXISTS cratestack_idempotency, vouchers")
@@ -89,11 +77,12 @@ async fn body_string(resp: cratestack::axum::http::Response<Body>) -> String {
 
 #[tokio::test]
 async fn same_key_same_body_replays_response_with_marker_header() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
 
     // Ensure the idempotency table exists. The layer is best-effort about
     // store init in Phase 1; banks run migrations themselves.
@@ -146,7 +135,7 @@ async fn same_key_same_body_replays_response_with_marker_header() {
 
     // And no second row was inserted.
     let count: (i64,) = cratestack::sqlx::query_as("SELECT COUNT(*)::BIGINT FROM vouchers")
-        .fetch_one(&pool)
+        .fetch_one(pool)
         .await
         .expect("count");
     assert_eq!(count.0, 1, "replay must not create a duplicate row");
@@ -154,17 +143,18 @@ async fn same_key_same_body_replays_response_with_marker_header() {
 
 #[tokio::test]
 async fn same_key_different_body_returns_idempotency_conflict() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
     cratestack::SqlxIdempotencyStore::new(pool.clone())
         .ensure_schema()
         .await
         .expect("ensure schema");
 
-    let router = build_router(pool);
+    let router = build_router(pool.clone());
 
     let first_body = r#"{"id":2,"code":"V-2","amount":100}"#;
     let second_body = r#"{"id":2,"code":"V-2","amount":999}"#;
@@ -205,17 +195,18 @@ async fn concurrent_requests_with_same_key_execute_handler_exactly_once() {
     use cratestack::axum::routing::post;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
+    let pool = &test_pg.pool;
     // Drop the idempotency table outright so its schema matches the
     // current shape — a stale row left over from a previous test-binary
     // run could otherwise lack `reservation_id`, and `ensure_schema`'s
     // `CREATE TABLE IF NOT EXISTS` is a no-op against an existing
     // table.
     cratestack::sqlx::query("DROP TABLE IF EXISTS cratestack_idempotency")
-        .execute(&pool)
+        .execute(pool)
         .await
         .expect("drop idempotency");
     cratestack::SqlxIdempotencyStore::new(pool.clone())
@@ -288,11 +279,12 @@ async fn concurrent_requests_with_same_key_execute_handler_exactly_once() {
 
 #[tokio::test]
 async fn expired_reservation_can_be_replaced_on_reuse() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
     cratestack::SqlxIdempotencyStore::new(pool.clone())
         .ensure_schema()
         .await
@@ -322,7 +314,7 @@ async fn expired_reservation_can_be_replaced_on_reuse() {
     // an empty blob by emitting just the status + body.
     .bind(Vec::<u8>::new())
     .bind(br#"{"stale":true}"#.to_vec())
-    .execute(&pool)
+    .execute(pool)
     .await
     .expect("seed expired row");
 
@@ -372,7 +364,7 @@ async fn expired_reservation_can_be_replaced_on_reuse() {
             "SELECT response_body, expires_at FROM cratestack_idempotency
              WHERE principal_fingerprint = 'fingerprint-static' AND key = 'recycled'",
         )
-        .fetch_one(&pool)
+        .fetch_one(pool)
         .await
         .expect("read");
     let body_bytes = response_body.expect("completed row must have a body");
@@ -391,11 +383,12 @@ async fn expired_reservation_can_be_replaced_on_reuse() {
 async fn stale_handler_after_ttl_overrun_cannot_overwrite_newer_reservation() {
     use cratestack_axum::idempotency::{IdempotencyStore, ReservationOutcome};
 
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
     let store = cratestack::SqlxIdempotencyStore::new(pool.clone());
     store.ensure_schema().await.expect("ensure schema");
 
@@ -426,7 +419,7 @@ async fn stale_handler_after_ttl_overrun_cannot_overwrite_newer_reservation() {
     )
     .bind(principal)
     .bind(key)
-    .execute(&pool)
+    .execute(pool)
     .await
     .expect("expire row");
 
@@ -487,7 +480,7 @@ async fn stale_handler_after_ttl_overrun_cannot_overwrite_newer_reservation() {
     )
     .bind(principal)
     .bind(key)
-    .fetch_one(&pool)
+    .fetch_one(pool)
     .await
     .expect("read body");
     let body_str = std::str::from_utf8(&body).expect("utf8");
@@ -512,7 +505,7 @@ async fn stale_handler_after_ttl_overrun_cannot_overwrite_newer_reservation() {
     )
     .bind(principal)
     .bind(key)
-    .fetch_one(&pool)
+    .fetch_one(pool)
     .await
     .expect("count");
     assert_eq!(
@@ -527,12 +520,13 @@ async fn replay_preserves_response_headers_emitted_by_the_handler() {
     use cratestack::axum::response::IntoResponse;
     use cratestack::axum::routing::post;
 
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
+    let pool = &test_pg.pool;
     cratestack::sqlx::query("DROP TABLE IF EXISTS cratestack_idempotency")
-        .execute(&pool)
+        .execute(pool)
         .await
         .expect("drop");
     cratestack::SqlxIdempotencyStore::new(pool.clone())
@@ -630,11 +624,12 @@ async fn same_key_with_different_query_string_does_not_replay() {
     // operation mode. With path-and-query in the hash, the second call
     // sees a different request_hash and the store reports
     // idempotency_key_conflict (422).
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
     cratestack::SqlxIdempotencyStore::new(pool.clone())
         .ensure_schema()
         .await
@@ -686,11 +681,12 @@ async fn same_key_with_different_query_string_does_not_replay() {
 
 #[tokio::test]
 async fn get_requests_bypass_idempotency_layer_entirely() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
     cratestack::SqlxIdempotencyStore::new(pool.clone())
         .ensure_schema()
         .await
@@ -698,10 +694,10 @@ async fn get_requests_bypass_idempotency_layer_entirely() {
 
     // Seed a row to read.
     query("INSERT INTO vouchers VALUES (3, 'V-3', 1)")
-        .execute(&pool)
+        .execute(pool)
         .await
         .expect("seed");
-    let router = build_router(pool);
+    let router = build_router(pool.clone());
 
     let response = router
         .oneshot(

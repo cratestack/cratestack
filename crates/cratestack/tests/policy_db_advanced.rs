@@ -1,12 +1,15 @@
 use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack::include_server_schema;
-use cratestack::sqlx::postgres::PgPoolOptions;
 use cratestack::{AuthProvider, CoolCodec, CoolContext, RequestContext, Value};
 use cratestack_codec_cbor::CborCodec;
 use tower::util::ServiceExt;
 
 include_server_schema!("tests/fixtures/advanced_policy.cstack", db = Postgres);
+
+mod support;
+
+use support::pg;
 
 #[derive(Clone)]
 struct AdvancedPolicyAuthProvider;
@@ -85,54 +88,45 @@ impl AuthProvider for AdvancedPolicyAuthProvider {
 #[tokio::test]
 #[ignore = "pre-existing setup contradicts the assertion; tracked separately"]
 async fn db_backed_advanced_policy_enforcement() {
-    let database_url = match std::env::var("CRATESTACK_TEST_DATABASE_URL") {
-        Ok(url) => url,
-        Err(_) => return,
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
     };
-
-    let pool = match PgPoolOptions::new()
-        .max_connections(1)
-        .connect(&database_url)
-        .await
-    {
-        Ok(pool) => pool,
-        Err(_) => return,
-    };
+    let pool = &test_pg.pool;
 
     // Other test binaries create a `users` table without a `banned`
     // column, then leave it behind. Drop the shared tables first so
     // this test always starts from a known shape. We DON'T drop
     // `cratestack_event_outbox` etc. — those are framework-owned.
     cratestack::sqlx::query("DROP TABLE IF EXISTS posts, users CASCADE")
-        .execute(&pool)
+        .execute(pool)
         .await
         .expect("drop stale tables");
     cratestack::sqlx::query(
         "CREATE TABLE users (id BIGINT PRIMARY KEY, email TEXT NOT NULL, banned BOOLEAN NOT NULL)",
     )
-    .execute(&pool)
+    .execute(pool)
     .await
     .expect("users table should exist");
     cratestack::sqlx::query(
         "CREATE TABLE posts (id BIGINT PRIMARY KEY, title TEXT NOT NULL, published BOOLEAN NOT NULL, author_id BIGINT NOT NULL)",
     )
-    .execute(&pool)
+    .execute(pool)
     .await
     .expect("posts table should exist");
     cratestack::sqlx::query("TRUNCATE TABLE posts, users")
-        .execute(&pool)
+        .execute(pool)
         .await
         .expect("tables should truncate");
     cratestack::sqlx::query(
         "INSERT INTO users (id, email, banned) VALUES (1, 'owner@example.com', FALSE), (2, 'other@example.com', FALSE), (3, 'blocked@example.com', TRUE)",
     )
-    .execute(&pool)
+    .execute(pool)
     .await
     .expect("users should seed");
     cratestack::sqlx::query(
         "INSERT INTO posts (id, title, published, author_id) VALUES (1, 'Draft', FALSE, 1), (2, 'Other Draft', FALSE, 2), (3, 'Blocked Published', TRUE, 3)",
     )
-    .execute(&pool)
+    .execute(pool)
     .await
     .expect("posts should seed");
 

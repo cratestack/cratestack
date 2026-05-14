@@ -6,23 +6,11 @@
 //! them; the runner's retry loop must catch that and re-run the body so
 //! the final balance reflects both increments. Run with PG only.
 
-use cratestack::sqlx::postgres::PgPoolOptions;
+mod support;
+
 use cratestack::sqlx::query;
 use cratestack::{CoolError, TransactionIsolation, run_in_isolated_tx};
-
-async fn serial_guard() -> tokio::sync::MutexGuard<'static, ()> {
-    static M: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-    M.lock().await
-}
-
-async fn connect_or_skip() -> Option<cratestack::sqlx::PgPool> {
-    let database_url = std::env::var("CRATESTACK_TEST_DATABASE_URL").ok()?;
-    PgPoolOptions::new()
-        .max_connections(8)
-        .connect(&database_url)
-        .await
-        .ok()
-}
+use support::pg;
 
 async fn reset(pool: &cratestack::sqlx::PgPool) {
     query("DROP TABLE IF EXISTS balance_under_test")
@@ -70,11 +58,12 @@ async fn increment_balance_with_serialization(
 
 #[tokio::test]
 async fn concurrent_increments_under_serializable_observe_both_writes() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset(&pool).await;
+    let pool = &test_pg.pool;
+    reset(pool).await;
 
     // Spawn two parallel transactions that each +=1 the same row.
     let a = tokio::spawn(increment_balance_with_serialization(pool.clone()));
@@ -86,7 +75,7 @@ async fn concurrent_increments_under_serializable_observe_both_writes() {
 
     let final_amount: (i64,) =
         cratestack::sqlx::query_as("SELECT amount FROM balance_under_test WHERE id = 1")
-            .fetch_one(&pool)
+            .fetch_one(pool)
             .await
             .expect("read");
     assert_eq!(
@@ -106,20 +95,21 @@ async fn write_skew_anomaly_surfaces_at_commit_time_and_is_retried_to_success() 
     // `tx.commit()` rather than from any statement in the body. Before
     // the commit-time-retry fix this would leak a transient 40001 out
     // to the caller; with the fix in place both tasks must succeed.
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
+    let pool = &test_pg.pool;
     query("DROP TABLE IF EXISTS bank_accounts_write_skew")
-        .execute(&pool)
+        .execute(pool)
         .await
         .expect("drop");
     query("CREATE TABLE bank_accounts_write_skew (id INT PRIMARY KEY, balance BIGINT NOT NULL)")
-        .execute(&pool)
+        .execute(pool)
         .await
         .expect("create");
     query("INSERT INTO bank_accounts_write_skew VALUES (1, 100), (2, 100)")
-        .execute(&pool)
+        .execute(pool)
         .await
         .expect("seed");
 
@@ -173,7 +163,7 @@ async fn write_skew_anomaly_surfaces_at_commit_time_and_is_retried_to_success() 
     let total: (i64,) = cratestack::sqlx::query_as(
         "SELECT COALESCE(SUM(balance), 0)::BIGINT FROM bank_accounts_write_skew",
     )
-    .fetch_one(&pool)
+    .fetch_one(pool)
     .await
     .expect("read");
     assert!(
@@ -189,11 +179,12 @@ async fn read_committed_can_lose_an_update_when_no_retry_is_configured() {
     // the lost-update anomaly (two readers both see 0, both write 1, final
     // is 1 not 2). This test documents WHY the serializable + retry pattern
     // exists.
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset(&pool).await;
+    let pool = &test_pg.pool;
+    reset(pool).await;
 
     // Run sequentially first to confirm the row math works; then race two.
     async fn loose_increment(pool: cratestack::sqlx::PgPool) -> Result<(), CoolError> {
@@ -228,7 +219,7 @@ async fn read_committed_can_lose_an_update_when_no_retry_is_configured() {
 
     let final_amount: (i64,) =
         cratestack::sqlx::query_as("SELECT amount FROM balance_under_test WHERE id = 1")
-            .fetch_one(&pool)
+            .fetch_one(pool)
             .await
             .expect("read");
     // Either both observed each other (=2) or one lost an update (=1).
