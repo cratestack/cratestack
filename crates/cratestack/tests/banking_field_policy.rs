@@ -11,7 +11,6 @@
 use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack::include_server_schema;
-use cratestack::sqlx::postgres::PgPoolOptions;
 use cratestack::sqlx::query;
 use cratestack::{AuthProvider, CoolCodec, CoolContext, CoolError, RequestContext, Value};
 use cratestack_codec_json::JsonCodec;
@@ -19,19 +18,11 @@ use tower::util::ServiceExt;
 
 include_server_schema!("tests/fixtures/banking_field_policy.cstack", db = Postgres);
 
-async fn serial_guard() -> tokio::sync::MutexGuard<'static, ()> {
-    static M: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-    M.lock().await
-}
+mod support;
 
-async fn connect_or_skip() -> Option<cratestack::sqlx::PgPool> {
-    let database_url = std::env::var("CRATESTACK_TEST_DATABASE_URL").ok()?;
-    PgPoolOptions::new()
-        .max_connections(2)
-        .connect(&database_url)
-        .await
-        .ok()
-}
+use support::pg;
+
+
 
 async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     query("DROP TABLE IF EXISTS cratestack_event_outbox, vaults")
@@ -96,16 +87,17 @@ fn build_update_input() -> cratestack_schema::UpdateVaultInput {
 
 #[tokio::test]
 async fn server_only_field_is_stripped_from_json_responses() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
     query(
         "INSERT INTO vaults (id, name, balance, internal_score) \
          VALUES (1, 'Audited', 1000, 87)",
     )
-    .execute(&pool)
+    .execute(pool)
     .await
     .expect("seed");
 
@@ -151,13 +143,14 @@ async fn server_only_field_is_stripped_from_json_responses() {
 
 #[tokio::test]
 async fn requesting_server_only_field_via_fields_query_is_rejected() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
     query("INSERT INTO vaults (id, name) VALUES (1, 'X')")
-        .execute(&pool)
+        .execute(pool)
         .await
         .expect("seed");
 
@@ -188,13 +181,14 @@ async fn requesting_server_only_field_via_fields_query_is_rejected() {
 
 #[tokio::test]
 async fn readonly_field_is_not_writable_via_http_patch() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
     query("INSERT INTO vaults (id, name, balance) VALUES (1, 'Locked', 100)")
-        .execute(&pool)
+        .execute(pool)
         .await
         .expect("seed");
 
@@ -217,7 +211,7 @@ async fn readonly_field_is_not_writable_via_http_patch() {
         .expect("patch");
 
     let row = query("SELECT balance, name FROM vaults WHERE id = 1")
-        .fetch_one(&pool)
+        .fetch_one(pool)
         .await
         .expect("read");
     let balance: i64 = cratestack::sqlx::Row::get(&row, "balance");

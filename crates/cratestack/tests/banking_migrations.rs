@@ -7,23 +7,11 @@
 //! - mutating an already-applied migration's SQL aborts the whole run
 //!   with a checksum-drift error before any new SQL touches the DB.
 
-use cratestack::sqlx::postgres::PgPoolOptions;
+mod support;
+
 use cratestack::sqlx::query;
 use cratestack::{Migration, MigrationStatus};
-
-async fn serial_guard() -> tokio::sync::MutexGuard<'static, ()> {
-    static M: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-    M.lock().await
-}
-
-async fn connect_or_skip() -> Option<cratestack::sqlx::PgPool> {
-    let database_url = std::env::var("CRATESTACK_TEST_DATABASE_URL").ok()?;
-    PgPoolOptions::new()
-        .max_connections(2)
-        .connect(&database_url)
-        .await
-        .ok()
-}
+use support::pg;
 
 async fn reset(pool: &cratestack::sqlx::PgPool) {
     // Clean both the runner's own tracking table and the test artefacts.
@@ -44,11 +32,12 @@ fn migration(id: &str, sql: &str) -> Migration {
 
 #[tokio::test]
 async fn apply_pending_runs_in_order_and_records_each_row() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset(&pool).await;
+    let pool = &test_pg.pool;
+    reset(pool).await;
 
     let migrations = vec![
         migration(
@@ -61,7 +50,7 @@ async fn apply_pending_runs_in_order_and_records_each_row() {
         ),
     ];
 
-    let applied = cratestack::apply_pending(&pool, &migrations)
+    let applied = cratestack::apply_pending(pool, &migrations)
         .await
         .expect("apply");
     assert_eq!(
@@ -75,7 +64,7 @@ async fn apply_pending_runs_in_order_and_records_each_row() {
 
     let rows: Vec<(String,)> =
         cratestack::sqlx::query_as("SELECT id FROM cratestack_migrations ORDER BY id")
-            .fetch_all(&pool)
+            .fetch_all(pool)
             .await
             .expect("read migrations");
     assert_eq!(
@@ -88,7 +77,7 @@ async fn apply_pending_runs_in_order_and_records_each_row() {
         "SELECT COUNT(*)::BIGINT FROM information_schema.tables \
          WHERE table_name IN ('migration_test_one', 'migration_test_two')",
     )
-    .fetch_one(&pool)
+    .fetch_one(pool)
     .await
     .expect("introspect");
     assert_eq!(one.0, 2, "both migration tables should exist");
@@ -96,20 +85,21 @@ async fn apply_pending_runs_in_order_and_records_each_row() {
 
 #[tokio::test]
 async fn rerunning_apply_pending_is_a_noop() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset(&pool).await;
+    let pool = &test_pg.pool;
+    reset(pool).await;
 
     let migrations = vec![migration(
         "20260101000000_init",
         "CREATE TABLE migration_test_one (id INT PRIMARY KEY);",
     )];
-    cratestack::apply_pending(&pool, &migrations)
+    cratestack::apply_pending(pool, &migrations)
         .await
         .expect("first apply");
-    let second = cratestack::apply_pending(&pool, &migrations)
+    let second = cratestack::apply_pending(pool, &migrations)
         .await
         .expect("second apply must succeed");
     assert!(
@@ -120,17 +110,18 @@ async fn rerunning_apply_pending_is_a_noop() {
 
 #[tokio::test]
 async fn checksum_drift_aborts_apply_before_running_new_sql() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset(&pool).await;
+    let pool = &test_pg.pool;
+    reset(pool).await;
 
     let original = vec![migration(
         "20260101000000_init",
         "CREATE TABLE migration_test_one (id INT PRIMARY KEY);",
     )];
-    cratestack::apply_pending(&pool, &original)
+    cratestack::apply_pending(pool, &original)
         .await
         .expect("first apply");
 
@@ -147,14 +138,14 @@ async fn checksum_drift_aborts_apply_before_running_new_sql() {
             "CREATE TABLE migration_test_two (id INT PRIMARY KEY);",
         ),
     ];
-    let result = cratestack::apply_pending(&pool, &drifted).await;
+    let result = cratestack::apply_pending(pool, &drifted).await;
     assert!(result.is_err(), "checksum drift must abort the apply");
 
     // The new migration must NOT have run — `migration_test_two` is absent.
     let exists: (bool,) = cratestack::sqlx::query_as(
         "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'migration_test_two')",
     )
-    .fetch_one(&pool)
+    .fetch_one(pool)
     .await
     .expect("introspect");
     assert!(
@@ -165,17 +156,18 @@ async fn checksum_drift_aborts_apply_before_running_new_sql() {
 
 #[tokio::test]
 async fn status_reports_drift_without_changing_state() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset(&pool).await;
+    let pool = &test_pg.pool;
+    reset(pool).await;
 
     let original = vec![migration(
         "20260101000000_init",
         "CREATE TABLE migration_test_one (id INT PRIMARY KEY);",
     )];
-    cratestack::apply_pending(&pool, &original)
+    cratestack::apply_pending(pool, &original)
         .await
         .expect("apply");
 
@@ -183,21 +175,22 @@ async fn status_reports_drift_without_changing_state() {
         "20260101000000_init",
         "CREATE TABLE migration_test_one (id TEXT PRIMARY KEY);",
     )];
-    let states = cratestack::status(&pool, &drifted).await.expect("status");
+    let states = cratestack::status(pool, &drifted).await.expect("status");
     assert_eq!(states.len(), 1);
     assert_eq!(states[0].status, MigrationStatus::ChecksumMismatch);
 }
 
 #[tokio::test]
 async fn apply_pending_runs_multi_statement_migrations_atomically() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
+    let pool = &test_pg.pool;
     // Clean up artefacts from this test in addition to the standard
     // reset — `reset` only knows about migration_test_{one,two}.
     cratestack::sqlx::query("DROP TABLE IF EXISTS cratestack_migrations, migration_multi_stmt")
-        .execute(&pool)
+        .execute(pool)
         .await
         .expect("drop");
 
@@ -214,7 +207,7 @@ async fn apply_pending_runs_multi_statement_migrations_atomically() {
          INSERT INTO migration_multi_stmt (id, label) VALUES (1, 'seed');",
     );
 
-    let applied = cratestack::apply_pending(&pool, &[multi_stmt])
+    let applied = cratestack::apply_pending(pool, &[multi_stmt])
         .await
         .expect("multi-statement migration should apply");
     assert_eq!(applied, vec!["20260201000000_multi_stmt".to_owned()]);
@@ -224,7 +217,7 @@ async fn apply_pending_runs_multi_statement_migrations_atomically() {
         "SELECT COUNT(*)::BIGINT FROM information_schema.tables
          WHERE table_name = 'migration_multi_stmt'",
     )
-    .fetch_one(&pool)
+    .fetch_one(pool)
     .await
     .expect("table check");
     assert_eq!(table_count.0, 1);
@@ -233,7 +226,7 @@ async fn apply_pending_runs_multi_statement_migrations_atomically() {
         "SELECT COUNT(*)::BIGINT FROM pg_indexes
          WHERE indexname = 'migration_multi_stmt_label_idx'",
     )
-    .fetch_one(&pool)
+    .fetch_one(pool)
     .await
     .expect("index check");
     assert_eq!(
@@ -243,26 +236,27 @@ async fn apply_pending_runs_multi_statement_migrations_atomically() {
 
     let seed: (i64,) =
         cratestack::sqlx::query_as("SELECT COUNT(*)::BIGINT FROM migration_multi_stmt")
-            .fetch_one(&pool)
+            .fetch_one(pool)
             .await
             .expect("seed check");
     assert_eq!(seed.0, 1, "the third statement of the script must run");
 
     // Cleanup so subsequent test runs reset cleanly.
     cratestack::sqlx::query("DROP TABLE migration_multi_stmt")
-        .execute(&pool)
+        .execute(pool)
         .await
         .expect("teardown");
 }
 
 #[tokio::test]
 async fn apply_pending_rolls_back_when_a_later_statement_in_a_multi_stmt_fails() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
+    let pool = &test_pg.pool;
     cratestack::sqlx::query("DROP TABLE IF EXISTS cratestack_migrations, migration_partial_apply")
-        .execute(&pool)
+        .execute(pool)
         .await
         .expect("drop");
 
@@ -277,7 +271,7 @@ async fn apply_pending_rolls_back_when_a_later_statement_in_a_multi_stmt_fails()
          CREATE INDEX bad_idx ON migration_partial_apply (column_that_does_not_exist);",
     );
 
-    let result = cratestack::apply_pending(&pool, &[bad]).await;
+    let result = cratestack::apply_pending(pool, &[bad]).await;
     assert!(
         result.is_err(),
         "a broken later statement must surface as a migration error",
@@ -287,7 +281,7 @@ async fn apply_pending_rolls_back_when_a_later_statement_in_a_multi_stmt_fails()
         "SELECT COUNT(*)::BIGINT FROM information_schema.tables
          WHERE table_name = 'migration_partial_apply'",
     )
-    .fetch_one(&pool)
+    .fetch_one(pool)
     .await
     .expect("table check");
     assert_eq!(
@@ -299,7 +293,7 @@ async fn apply_pending_rolls_back_when_a_later_statement_in_a_multi_stmt_fails()
         "SELECT COUNT(*)::BIGINT FROM cratestack_migrations
          WHERE id = '20260202000000_partial'",
     )
-    .fetch_one(&pool)
+    .fetch_one(pool)
     .await
     .expect("ledger check");
     assert_eq!(

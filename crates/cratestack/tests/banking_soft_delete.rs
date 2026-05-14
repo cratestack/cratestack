@@ -6,25 +6,16 @@
 //! the recorded `retention_days` policy).
 
 use cratestack::include_server_schema;
-use cratestack::sqlx::postgres::PgPoolOptions;
 use cratestack::sqlx::{Row, query};
 use cratestack::{CoolContext, Value};
 
 include_server_schema!("tests/fixtures/banking_soft_delete.cstack", db = Postgres);
 
-async fn serial_guard() -> tokio::sync::MutexGuard<'static, ()> {
-    static M: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-    M.lock().await
-}
+mod support;
 
-async fn connect_or_skip() -> Option<cratestack::sqlx::PgPool> {
-    let database_url = std::env::var("CRATESTACK_TEST_DATABASE_URL").ok()?;
-    PgPoolOptions::new()
-        .max_connections(2)
-        .connect(&database_url)
-        .await
-        .ok()
-}
+use support::pg;
+
+
 
 async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     query("DROP TABLE IF EXISTS cratestack_event_outbox, customers")
@@ -50,13 +41,14 @@ fn ctx() -> CoolContext {
 
 #[tokio::test]
 async fn delete_tombstones_the_row_instead_of_removing_it() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
     query("INSERT INTO customers (id, name, email) VALUES (1, 'Alice', 'alice@example.com')")
-        .execute(&pool)
+        .execute(pool)
         .await
         .expect("seed");
 
@@ -66,7 +58,7 @@ async fn delete_tombstones_the_row_instead_of_removing_it() {
 
     // Row still physically there, but `deleted_at` is now non-null.
     let row = query("SELECT id, name, deleted_at FROM customers WHERE id = 1")
-        .fetch_one(&pool)
+        .fetch_one(pool)
         .await
         .expect("read raw");
     let id: i64 = row.get("id");
@@ -80,16 +72,17 @@ async fn delete_tombstones_the_row_instead_of_removing_it() {
 
 #[tokio::test]
 async fn reads_filter_out_tombstoned_rows_in_find_unique() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
     query(
         "INSERT INTO customers (id, name, email, deleted_at) \
          VALUES (1, 'Alive', 'a@x.io', NULL), (2, 'Gone', 'g@x.io', NOW() - INTERVAL '1 day')",
     )
-    .execute(&pool)
+    .execute(pool)
     .await
     .expect("seed");
 
@@ -117,18 +110,19 @@ async fn reads_filter_out_tombstoned_rows_in_find_unique() {
 
 #[tokio::test]
 async fn reads_filter_out_tombstoned_rows_in_find_many() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
     query(
         "INSERT INTO customers (id, name, email, deleted_at) VALUES \
             (1, 'A', 'a@x.io', NULL), \
             (2, 'B', 'b@x.io', NOW()), \
             (3, 'C', 'c@x.io', NULL)",
     )
-    .execute(&pool)
+    .execute(pool)
     .await
     .expect("seed");
 
@@ -145,21 +139,22 @@ async fn redeleting_a_tombstoned_row_does_not_change_the_timestamp_again() {
     // already-tombstoned row should either be a no-op or a clean failure,
     // not a moving timestamp that confuses audit. Today the runner refuses
     // because the WHERE clause requires `deleted_at IS NULL`.
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
     query(
         "INSERT INTO customers (id, name, email, deleted_at) \
          VALUES (1, 'Gone', 'g@x.io', NOW() - INTERVAL '1 day')",
     )
-    .execute(&pool)
+    .execute(pool)
     .await
     .expect("seed");
     let original: chrono::DateTime<chrono::Utc> =
         query("SELECT deleted_at FROM customers WHERE id = 1")
-            .fetch_one(&pool)
+            .fetch_one(pool)
             .await
             .expect("read")
             .get("deleted_at");
@@ -173,7 +168,7 @@ async fn redeleting_a_tombstoned_row_does_not_change_the_timestamp_again() {
 
     let after: chrono::DateTime<chrono::Utc> =
         query("SELECT deleted_at FROM customers WHERE id = 1")
-            .fetch_one(&pool)
+            .fetch_one(pool)
             .await
             .expect("read")
             .get("deleted_at");

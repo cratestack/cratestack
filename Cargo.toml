@@ -112,6 +112,8 @@ sqlx-postgres = { version = "=0.8.6", default-features = false, features = ["chr
 syn = { version = "2.0.108", features = ["full"] }
 thiserror = "2.0.17"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+testcontainers = "0.25"
+testcontainers-modules = { version = "0.13", features = ["postgres"] }
 tower = { version = "0.5", features = ["util"] }
 tower-lsp-server = "0.23"
 tracing = "0.1"
