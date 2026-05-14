@@ -8,7 +8,7 @@ use crate::cli_support::{
     validate_service_url, validate_studio_context_inputs, validate_studio_name,
     write_generated_files,
 };
-use crate::cli_types::{Cli, Command, OutputFormat, StudioProfileArg};
+use crate::cli_types::{Cli, Command, MigrateAction, OutputFormat, StudioProfileArg};
 
 pub(crate) fn run(cli: Cli) -> Result<()> {
     match cli.command {
@@ -47,6 +47,15 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             template_dir,
         )?,
         Command::PrintIr { schema } => handle_print_ir(schema)?,
+        Command::Migrate { action } => match action {
+            MigrateAction::Diff {
+                schema,
+                out_dir,
+                backend,
+                name,
+                allow_destructive,
+            } => crate::migrate::handle_diff(schema, out_dir, backend, name, allow_destructive)?,
+        },
     }
 
     Ok(())

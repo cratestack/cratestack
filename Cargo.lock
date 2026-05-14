@@ -905,10 +905,12 @@ name = "cratestack-cli"
 version = "0.3.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "clap",
  "cratestack-client-dart",
  "cratestack-client-typescript",
  "cratestack-core",
+ "cratestack-migrate",
  "cratestack-parser",
  "cratestack-studio-generator",
  "serde_json",
@@ -1058,6 +1060,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "cratestack-migrate"
+version = "0.3.0"
+dependencies = [
+ "cratestack-core",
+ "cratestack-parser",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
