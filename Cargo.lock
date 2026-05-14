@@ -1064,7 +1064,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-migrate"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "cratestack-core",
  "cratestack-parser",

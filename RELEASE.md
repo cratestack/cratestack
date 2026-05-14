@@ -72,6 +72,7 @@ cargo publish -p cratestack-parser
 cargo publish -p cratestack-codec-cbor
 cargo publish -p cratestack-codec-json
 cargo publish -p cratestack-axum
+cargo publish -p cratestack-sql
 cargo publish -p cratestack-sqlx
 cargo publish -p cratestack-client-rust
 cargo publish -p cratestack-client-dart
@@ -80,8 +81,8 @@ cargo publish -p cratestack-client-flutter
 cargo publish -p cratestack-client-store-sqlite
 cargo publish -p cratestack-client-store-redis
 cargo publish -p cratestack-studio-generator
+cargo publish -p cratestack-migrate
 cargo publish -p cratestack-macros
-cargo publish -p cratestack-sql
 cargo publish -p cratestack-rusqlite
 cargo publish -p cratestack
 cargo publish -p cratestack-lsp
