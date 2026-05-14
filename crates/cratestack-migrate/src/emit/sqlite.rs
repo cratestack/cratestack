@@ -25,9 +25,9 @@ use std::fmt::Write as _;
 
 use crate::emit::EmittedMigration;
 use crate::ir::{
-    AddColumn, AddIndex, AlterColumnDefault, AlterColumnNullability, AlterColumnType, Column,
-    ColumnArity, ColumnDefault, CreateTable, Destructiveness, DropColumn, DropIndex, Op,
-    RenameColumn, RenameTable,
+    AddCheck, AddColumn, AddIndex, AlterColumnDefault, AlterColumnNullability, AlterColumnType,
+    CheckKind, Column, ColumnArity, ColumnDefault, CreateTable, Destructiveness, DropCheck,
+    DropColumn, DropIndex, Op, RenameColumn, RenameTable,
 };
 
 pub fn emit(ops: &[Op]) -> EmittedMigration {
@@ -121,6 +121,54 @@ fn emit_up_op(sql: &mut String, op: &Op) {
             // DDL produces no SQLite migration — variant changes are
             // a Rust-side concern only. See ADR 0004.
         }
+        Op::AddCheck(check) => emit_add_check(sql, check),
+        Op::DropCheck(check) => emit_drop_check(sql, check),
+    }
+}
+
+fn emit_add_check(sql: &mut String, check: &AddCheck) {
+    // SQLite has no `ALTER TABLE ADD CONSTRAINT`. CHECK constraints
+    // must be added at table-creation time or via the table-rebuild
+    // dance. We emit the intended predicate as a comment so the
+    // developer can hand-write the rebuild in `up.pre.sql`.
+    writeln!(
+        sql,
+        "-- SQLite: ADD CONSTRAINT {} CHECK ({}) — \
+         requires table rebuild on SQLite. Hand-write up.pre.sql.",
+        check.name,
+        render_check_predicate_sqlite(&check.column, &check.kind)
+    )
+    .unwrap();
+}
+
+fn emit_drop_check(sql: &mut String, check: &DropCheck) {
+    writeln!(
+        sql,
+        "-- SQLite: DROP CONSTRAINT {} — requires table rebuild on SQLite.",
+        check.name
+    )
+    .unwrap();
+}
+
+fn render_check_predicate_sqlite(column: &str, kind: &CheckKind) -> String {
+    let c = quote_ident(column);
+    match kind {
+        CheckKind::Range { min, max } => match (min, max) {
+            (Some(min), Some(max)) => format!("{c} >= {min} AND {c} <= {max}"),
+            (Some(min), None) => format!("{c} >= {min}"),
+            (None, Some(max)) => format!("{c} <= {max}"),
+            (None, None) => "1".to_owned(),
+        },
+        CheckKind::Length { min, max } => match (min, max) {
+            (Some(min), Some(max)) => format!("length({c}) BETWEEN {min} AND {max}"),
+            (Some(min), None) => format!("length({c}) >= {min}"),
+            (None, Some(max)) => format!("length({c}) <= {max}"),
+            (None, None) => "1".to_owned(),
+        },
+        // SQLite GLOB is closer to LIKE than regex; this is good
+        // enough for ISO 4217 codes which are exactly 3 uppercase
+        // ASCII letters.
+        CheckKind::Iso4217 => format!("{c} GLOB '[A-Z][A-Z][A-Z]'"),
     }
 }
 
@@ -225,6 +273,11 @@ fn emit_down_op(sql: &mut String, op: &Op) {
         }
         Op::CreateEnum(_) | Op::AlterEnumAddVariant(_) | Op::DropEnum(_) => {
             // Enum ops have no SQLite footprint; nothing to reverse.
+        }
+        Op::AddCheck(_) | Op::DropCheck(_) => {
+            sql.push_str(
+                "-- SQLite CHECK constraint reversal requires the same table rebuild as the forward op.\n",
+            );
         }
     }
 }

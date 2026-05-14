@@ -22,6 +22,14 @@ pub fn index_name_unique(table: &str, column: &str) -> String {
     format!("{table}_{column}_key")
 }
 
+/// `<table>_<column>_<validator>_check` — stable, predictable name
+/// for CHECK constraints emitted via `@db_enforce`. Predictability
+/// matters because hand-written `up.pre.sql` halves may reference
+/// these by name.
+pub fn check_name(table: &str, column: &str, validator: &str) -> String {
+    format!("{table}_{column}_{validator}_check")
+}
+
 /// Convert PascalCase or camelCase to snake_case. Mirrors
 /// `cratestack-macros::shared::to_snake_case`.
 fn to_snake_case(value: &str) -> String {

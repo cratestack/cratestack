@@ -15,9 +15,10 @@ use std::fmt::Write as _;
 
 use crate::emit::EmittedMigration;
 use crate::ir::{
-    AddColumn, AddIndex, AlterColumnDefault, AlterColumnNullability, AlterColumnType,
-    AlterEnumAddVariant, Column, ColumnArity, ColumnDefault, ColumnType, CreateEnum, CreateTable,
-    Destructiveness, DropColumn, DropEnum, DropIndex, Op, RenameColumn, RenameTable,
+    AddCheck, AddColumn, AddIndex, AlterColumnDefault, AlterColumnNullability, AlterColumnType,
+    AlterEnumAddVariant, CheckKind, Column, ColumnArity, ColumnDefault, ColumnType, CreateEnum,
+    CreateTable, Destructiveness, DropCheck, DropColumn, DropEnum, DropIndex, Op, RenameColumn,
+    RenameTable,
 };
 use crate::naming;
 
@@ -99,6 +100,48 @@ fn emit_up_op(sql: &mut String, op: &Op) {
         Op::CreateEnum(create) => emit_create_enum(sql, create),
         Op::AlterEnumAddVariant(alter) => emit_alter_enum_add(sql, alter),
         Op::DropEnum(drop) => emit_drop_enum(sql, drop),
+        Op::AddCheck(check) => emit_add_check(sql, check),
+        Op::DropCheck(check) => emit_drop_check(sql, check),
+    }
+}
+
+fn emit_add_check(sql: &mut String, check: &AddCheck) {
+    writeln!(
+        sql,
+        "ALTER TABLE {} ADD CONSTRAINT {} CHECK ({});",
+        quote_ident(&check.table),
+        quote_ident(&check.name),
+        render_check_predicate_postgres(&check.column, &check.kind)
+    )
+    .unwrap();
+}
+
+fn emit_drop_check(sql: &mut String, check: &DropCheck) {
+    writeln!(
+        sql,
+        "ALTER TABLE {} DROP CONSTRAINT {};",
+        quote_ident(&check.table),
+        quote_ident(&check.name)
+    )
+    .unwrap();
+}
+
+fn render_check_predicate_postgres(column: &str, kind: &CheckKind) -> String {
+    let c = quote_ident(column);
+    match kind {
+        CheckKind::Range { min, max } => match (min, max) {
+            (Some(min), Some(max)) => format!("{c} >= {min} AND {c} <= {max}"),
+            (Some(min), None) => format!("{c} >= {min}"),
+            (None, Some(max)) => format!("{c} <= {max}"),
+            (None, None) => "TRUE".to_owned(),
+        },
+        CheckKind::Length { min, max } => match (min, max) {
+            (Some(min), Some(max)) => format!("length({c}) BETWEEN {min} AND {max}"),
+            (Some(min), None) => format!("length({c}) >= {min}"),
+            (None, Some(max)) => format!("length({c}) <= {max}"),
+            (None, None) => "TRUE".to_owned(),
+        },
+        CheckKind::Iso4217 => format!("{c} ~ '^[A-Z]{{3}}$'"),
     }
 }
 
@@ -214,6 +257,26 @@ fn emit_down_op(sql: &mut String, op: &Op) {
             // the swap-dance, which the generator does not attempt
             // here. Comment for the reader.
             sql.push_str("-- AlterEnumAddVariant has no Postgres reversal; manual rebuild required.\n");
+        }
+        Op::AddCheck(check) => {
+            let reverse = DropCheck {
+                table: check.table.clone(),
+                column: check.column.clone(),
+                name: check.name.clone(),
+            };
+            emit_drop_check(sql, &reverse);
+        }
+        Op::DropCheck(check) => {
+            // We can't reverse DropCheck without knowing the
+            // constraint's kind — the previous schema's projection
+            // had it, but the down-emission step doesn't carry that
+            // structure forward. Emit a marker.
+            writeln!(
+                sql,
+                "-- DropCheck {} cannot be auto-reversed; the original CHECK predicate is no longer in the IR.",
+                check.name
+            )
+            .unwrap();
         }
         Op::DropTable(_) | Op::DropColumn(_) | Op::AlterColumnType(_) | Op::DropEnum(_) => {
             // Lossy — routed through the error stub above. AlterColumnType
@@ -1014,6 +1077,99 @@ enum LegacyStatus {
             migration.up
         );
         assert!(migration.down.contains("destructive migration"));
+    }
+
+    #[test]
+    fn db_enforce_range_emits_check_constraint() {
+        let prev = schema(&with_models(""));
+        let next = schema(&with_models(
+            r#"
+model Member {
+  id Int @id
+  amount Int @range(min: 0, max: 1000000) @db_enforce
+}
+"#,
+        ));
+        let migration = emit(&diff(&prev, &next));
+        assert!(migration.has_blocking, "AddCheck is conservatively Blocking");
+        assert!(
+            migration.up.contains(
+                "ALTER TABLE members ADD CONSTRAINT members_amount_range_check \
+                 CHECK (amount >= 0 AND amount <= 1000000);"
+            ),
+            "up was: {}",
+            migration.up
+        );
+    }
+
+    #[test]
+    fn db_enforce_iso4217_uses_regex_predicate() {
+        let prev = schema(&with_models(""));
+        let next = schema(&with_models(
+            r#"
+model Member {
+  id Int @id
+  currency String @iso4217 @db_enforce
+}
+"#,
+        ));
+        let migration = emit(&diff(&prev, &next));
+        assert!(
+            migration.up.contains("CHECK (currency ~ '^[A-Z]{3}$')"),
+            "up was: {}",
+            migration.up
+        );
+    }
+
+    #[test]
+    fn db_enforce_length_emits_length_predicate() {
+        let prev = schema(&with_models(""));
+        let next = schema(&with_models(
+            r#"
+model Member {
+  id Int @id
+  email String @length(min: 3, max: 254) @db_enforce
+}
+"#,
+        ));
+        let migration = emit(&diff(&prev, &next));
+        assert!(
+            migration
+                .up
+                .contains("CHECK (length(email) BETWEEN 3 AND 254)"),
+            "up was: {}",
+            migration.up
+        );
+    }
+
+    #[test]
+    fn removing_db_enforce_drops_constraint() {
+        let prev = schema(&with_models(
+            r#"
+model Member {
+  id Int @id
+  amount Int @range(min: 0) @db_enforce
+}
+"#,
+        ));
+        let next = schema(&with_models(
+            r#"
+model Member {
+  id Int @id
+  amount Int @range(min: 0)
+}
+"#,
+        ));
+        let migration = emit(&diff(&prev, &next));
+        assert!(!migration.has_blocking);
+        assert!(!migration.has_lossy);
+        assert!(
+            migration
+                .up
+                .contains("ALTER TABLE members DROP CONSTRAINT members_amount_range_check;"),
+            "up was: {}",
+            migration.up
+        );
     }
 
     #[test]

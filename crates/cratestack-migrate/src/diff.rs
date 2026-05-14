@@ -22,7 +22,8 @@ use cratestack_core::Schema;
 use crate::convert::{TableProjection, project_model};
 use crate::ir::{
     AddColumn, AlterColumnDefault, AlterColumnNullability, AlterColumnType, AlterEnumAddVariant,
-    Column, CreateEnum, DropColumn, DropEnum, DropIndex, DropTable, Op, RenameColumn, RenameTable,
+    Column, CreateEnum, DropCheck, DropColumn, DropEnum, DropIndex, DropTable, Op, RenameColumn,
+    RenameTable,
 };
 
 /// Compute the migration that turns `prev` into `next`.
@@ -60,6 +61,8 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
     let mut add_columns: Vec<Op> = Vec::new();
     let mut alter_columns: Vec<Op> = Vec::new();
     let mut add_indexes: Vec<Op> = Vec::new();
+    let mut add_checks: Vec<Op> = Vec::new();
+    let mut drop_checks: Vec<Op> = Vec::new();
 
     // Enums first — tables that reference an enum need the type to
     // exist before CREATE TABLE runs.
@@ -166,6 +169,9 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
             }));
             for index in &projection.indexes {
                 add_indexes.push(Op::AddIndex(index.clone()));
+            }
+            for check in &projection.checks {
+                add_checks.push(Op::AddCheck(check.clone()));
             }
         }
     }
@@ -300,6 +306,47 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
             .map(|index| index.name.as_str())
             .collect();
 
+        // Check constraints (from @db_enforce).
+        let prev_checks: BTreeSet<&str> =
+            prev_projection.checks.iter().map(|c| c.name.as_str()).collect();
+        let next_checks_by_name: BTreeMap<&str, &crate::ir::AddCheck> = next_projection
+            .checks
+            .iter()
+            .map(|c| (c.name.as_str(), c))
+            .collect();
+        for check in &prev_projection.checks {
+            if !next_checks_by_name.contains_key(check.name.as_str()) {
+                drop_checks.push(Op::DropCheck(DropCheck {
+                    table: check.table.clone(),
+                    column: check.column.clone(),
+                    name: check.name.clone(),
+                }));
+            }
+        }
+        for (name, check) in &next_checks_by_name {
+            if !prev_checks.contains(name) {
+                add_checks.push(Op::AddCheck((*check).clone()));
+            } else {
+                // Same name on both sides — compare kinds. A kind
+                // change means the bounds tightened/loosened or the
+                // validator type changed; emit drop + add.
+                if let Some(prev) = prev_projection
+                    .checks
+                    .iter()
+                    .find(|c| c.name.as_str() == *name)
+                {
+                    if prev.kind != check.kind {
+                        drop_checks.push(Op::DropCheck(DropCheck {
+                            table: prev.table.clone(),
+                            column: prev.column.clone(),
+                            name: prev.name.clone(),
+                        }));
+                        add_checks.push(Op::AddCheck((*check).clone()));
+                    }
+                }
+            }
+        }
+
         for index in &prev_projection.indexes {
             if !next_indexes.contains(index.name.as_str()) {
                 drop_indexes.push(Op::DropIndex(DropIndex {
@@ -323,6 +370,8 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
     // reference the new names.
     ops.append(&mut rename_tables);
     ops.append(&mut rename_columns);
+    // Drop CHECK constraints before drops on the columns they protect.
+    ops.append(&mut drop_checks);
     ops.append(&mut drop_indexes);
     ops.append(&mut drop_columns);
     ops.append(&mut drop_tables);
@@ -330,6 +379,8 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
     ops.append(&mut add_columns);
     ops.append(&mut alter_columns);
     ops.append(&mut add_indexes);
+    // Add CHECK constraints after the columns they protect exist.
+    ops.append(&mut add_checks);
     // Enum drops last — after any tables that depended on them.
     ops.append(&mut drop_enums);
     ops

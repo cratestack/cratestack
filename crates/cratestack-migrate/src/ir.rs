@@ -127,6 +127,41 @@ pub struct AlterColumnNullability {
     pub to: ColumnArity,
 }
 
+/// One CHECK constraint promoted from a `.cstack` validator marked
+/// `@db_enforce`. The IR captures the *kind* of validator (so each
+/// emitter renders the predicate in its own dialect) rather than a
+/// raw SQL fragment.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AddCheck {
+    pub table: String,
+    pub column: String,
+    pub name: String,
+    pub kind: CheckKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DropCheck {
+    pub table: String,
+    pub column: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CheckKind {
+    /// `@range(min, max)` — numeric bounds. Either bound may be absent.
+    Range {
+        min: Option<i64>,
+        max: Option<i64>,
+    },
+    /// `@length(min, max)` — string/bytes length bounds.
+    Length {
+        min: Option<i64>,
+        max: Option<i64>,
+    },
+    /// `@iso4217` — three ASCII uppercase letters.
+    Iso4217,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateEnum {
     /// PascalCase `.cstack` name. The Postgres emitter snake-cases
@@ -184,6 +219,8 @@ pub enum Op {
     CreateEnum(CreateEnum),
     AlterEnumAddVariant(AlterEnumAddVariant),
     DropEnum(DropEnum),
+    AddCheck(AddCheck),
+    DropCheck(DropCheck),
 }
 
 impl Op {
@@ -220,6 +257,13 @@ impl Op {
             // generator does not attempt that automatically).
             Op::CreateEnum(_) | Op::AlterEnumAddVariant(_) => Destructiveness::Safe,
             Op::DropEnum(_) => Destructiveness::Lossy,
+            // Adding a CHECK constraint is conservatively Blocking
+            // — existing rows that don't satisfy it will block the
+            // ALTER on a non-empty table. Backfilling is the
+            // developer's job via up.pre.sql.
+            Op::AddCheck(_) => Destructiveness::Blocking,
+            // Dropping a CHECK constraint never destroys data.
+            Op::DropCheck(_) => Destructiveness::Safe,
         }
     }
 }
