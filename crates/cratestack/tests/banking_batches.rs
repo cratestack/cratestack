@@ -6,32 +6,19 @@
 //! versioned model, and that successful items in the same batch commit
 //! atomically with their audit + outbox writes.
 //!
-//! Skipped when `CRATESTACK_TEST_DATABASE_URL` isn't set — same pattern
-//! every other `banking_*.rs` test uses.
+//! Proof-of-concept caller for `tests/support/pg.rs`: this is the first
+//! `banking_*.rs` file migrated to the centralised PG-backend selector.
+//! Skips quietly when neither `CRATESTACK_TEST_DATABASE_URL` nor
+//! `CRATESTACK_USE_TESTCONTAINERS` is set.
+
+mod support;
 
 use cratestack::include_server_schema;
-use cratestack::sqlx::postgres::PgPoolOptions;
 use cratestack::sqlx::{Row, query};
 use cratestack::{BatchItemStatus, CoolContext, Value};
+use support::pg;
 
 include_server_schema!("tests/fixtures/banking_batches.cstack", db = Postgres);
-
-/// All tests in this file touch the same `batch_rows` table, so cargo's
-/// in-binary parallelism would race them on the DROP/CREATE. Cross-file
-/// parallelism is preserved by giving this fixture a uniquely-named model.
-async fn serial_guard() -> tokio::sync::MutexGuard<'static, ()> {
-    static M: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-    M.lock().await
-}
-
-async fn connect_or_skip() -> Option<cratestack::sqlx::PgPool> {
-    let database_url = std::env::var("CRATESTACK_TEST_DATABASE_URL").ok()?;
-    PgPoolOptions::new()
-        .max_connections(2)
-        .connect(&database_url)
-        .await
-        .ok()
-}
 
 async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     query("DROP TABLE IF EXISTS cratestack_audit, cratestack_event_outbox, batch_rows")
@@ -80,11 +67,12 @@ fn err_code(
 
 #[tokio::test]
 async fn batch_create_writes_one_audit_row_per_successful_item() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
 
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
     let ctx = operator();
@@ -112,7 +100,7 @@ async fn batch_create_writes_one_audit_row_per_successful_item() {
 
     // Two audit rows — one per successful item — with the same request id.
     let audit_count: i64 = query("SELECT COUNT(*)::BIGINT FROM cratestack_audit WHERE model = 'BatchRow'")
-        .fetch_one(&pool)
+        .fetch_one(pool)
         .await
         .expect("count audit rows")
         .get(0);
@@ -120,7 +108,7 @@ async fn batch_create_writes_one_audit_row_per_successful_item() {
 
     let request_ids: Vec<String> =
         query("SELECT request_id FROM cratestack_audit ORDER BY occurred_at")
-            .fetch_all(&pool)
+            .fetch_all(pool)
             .await
             .expect("fetch audit request ids")
             .into_iter()
@@ -134,7 +122,7 @@ async fn batch_create_writes_one_audit_row_per_successful_item() {
     // And one outbox entry per item.
     let outbox_count: i64 =
         query("SELECT COUNT(*)::BIGINT FROM cratestack_event_outbox WHERE model = 'BatchRow'")
-            .fetch_one(&pool)
+            .fetch_one(pool)
             .await
             .expect("count outbox rows")
             .get(0);
@@ -143,11 +131,12 @@ async fn batch_create_writes_one_audit_row_per_successful_item() {
 
 #[tokio::test]
 async fn batch_update_with_stale_if_match_rolls_back_only_that_item() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
 
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
     let ctx = operator();
@@ -198,7 +187,7 @@ async fn batch_update_with_stale_if_match_rolls_back_only_that_item() {
     // seeded — no balance change, no version bump.
     let row_10: (String, i64, i64) =
         query("SELECT label, balance, version FROM batch_rows WHERE id = 10")
-            .fetch_one(&pool)
+            .fetch_one(pool)
             .await
             .expect("fetch row 10")
             .try_into_pair();
@@ -208,7 +197,7 @@ async fn batch_update_with_stale_if_match_rolls_back_only_that_item() {
 
     let row_20: (String, i64, i64) =
         query("SELECT label, balance, version FROM batch_rows WHERE id = 20")
-            .fetch_one(&pool)
+            .fetch_one(pool)
             .await
             .expect("fetch row 20")
             .try_into_pair();
@@ -223,11 +212,12 @@ async fn batch_upsert_mixes_create_and_update_audit_operations() {
     // ON CONFLICT flow. Each item's audit row should be tagged with the
     // operation that actually fired (`create` for new inserts,
     // `update` for ON CONFLICT branch).
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
 
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
     let ctx = operator();
@@ -278,7 +268,7 @@ async fn batch_upsert_mixes_create_and_update_audit_operations() {
          ))
          ORDER BY occurred_at",
     )
-    .fetch_all(&pool)
+    .fetch_all(pool)
     .await
     .expect("fetch upsert audit ops")
     .into_iter()
@@ -292,11 +282,12 @@ async fn batch_upsert_mixes_create_and_update_audit_operations() {
 
 #[tokio::test]
 async fn batch_delete_writes_audit_before_snapshot_from_returning_row() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
 
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
     let ctx = operator();
@@ -331,7 +322,7 @@ async fn batch_delete_writes_audit_before_snapshot_from_returning_row() {
          WHERE operation = 'delete'
          ORDER BY occurred_at",
     )
-    .fetch_all(&pool)
+    .fetch_all(pool)
     .await
     .expect("fetch delete audit rows")
     .into_iter()
@@ -353,11 +344,12 @@ async fn batch_delete_writes_audit_before_snapshot_from_returning_row() {
 
 #[tokio::test]
 async fn batch_duplicate_pk_rejects_before_any_audit_or_outbox_write() {
-    let _guard = serial_guard().await;
-    let Some(pool) = connect_or_skip().await else {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    reset_schema(&pool).await;
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
 
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
     let ctx = operator();
@@ -390,13 +382,13 @@ async fn batch_duplicate_pk_rejects_before_any_audit_or_outbox_write() {
 
     // No audit or outbox writes — the guard fires before any tx work.
     let audit_count: i64 = query("SELECT COUNT(*)::BIGINT FROM cratestack_audit")
-        .fetch_one(&pool)
+        .fetch_one(pool)
         .await
         .map(|row| row.get(0))
         .unwrap_or(0);
     assert_eq!(audit_count, 0);
     let outbox_count: i64 = query("SELECT COUNT(*)::BIGINT FROM cratestack_event_outbox")
-        .fetch_one(&pool)
+        .fetch_one(pool)
         .await
         .map(|row| row.get(0))
         .unwrap_or(0);

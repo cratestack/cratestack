@@ -46,3 +46,7 @@ test-pg-only *args='':
 	trap cleanup EXIT
 	just pg-up
 	CRATESTACK_TEST_DATABASE_URL='{{PG_URL}}' cargo test -p cratestack {{args}}
+
+# Run the workspace test suite via testcontainers (per-binary ephemeral PG, recommended for CI).
+test-pg-tc *args='':
+	CRATESTACK_USE_TESTCONTAINERS=1 cargo test --workspace --exclude embedded_flutter_native {{args}}
