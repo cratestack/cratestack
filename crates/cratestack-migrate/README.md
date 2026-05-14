@@ -52,7 +52,9 @@ cratestack migrate diff \
 
 ### Not yet implemented
 
-The following items from [ADR 0004] remain follow-up work:
+The full list of deferred work — across the migrate crate *and* the
+rest of CrateStack — lives in the centralized [Roadmap]. The items
+specific to this crate are:
 
 - `cratestack migrate verify` — replay generated migrations against
   an ephemeral Postgres / SQLite and compare to the snapshot.
@@ -67,3 +69,4 @@ The following items from [ADR 0004] remain follow-up work:
 
 [ADR 0004]: https://cratestack.dev/internals/schema-diff-adr
 [ADR 0003]: https://cratestack.dev/internals/views-adr
+[Roadmap]: https://cratestack.dev/overview/roadmap
