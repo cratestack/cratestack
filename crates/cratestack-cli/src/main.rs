@@ -1,12 +1,13 @@
 mod cli_handlers;
 mod cli_support;
 mod cli_types;
+mod migrate;
 
 use anyhow::Result;
 use clap::Parser;
 
 use crate::cli_handlers::run;
-use crate::cli_types::{Cli, Command, StudioProfileArg};
+use crate::cli_types::Cli;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -24,7 +25,8 @@ mod tests {
         slugify_path_token, validate_context_key, validate_mount_path, validate_service_url,
         validate_studio_context_inputs, validate_studio_name,
     };
-    use crate::{Cli, Command, StudioProfileArg};
+    use crate::Cli;
+    use crate::cli_types::{Command, StudioProfileArg};
 
     #[test]
     fn json_success_payload_has_empty_diagnostics() {

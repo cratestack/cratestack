@@ -1,5 +1,5 @@
 [package]
-name = "cratestack-cli"
+name = "cratestack-migrate"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,22 +12,12 @@ readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 
-[[bin]]
-name = "cratestack"
-path = "src/main.rs"
-
 [dependencies]
-anyhow.workspace = true
-chrono.workspace = true
-clap.workspace = true
-cratestack-client-dart.workspace = true
-cratestack-client-typescript.workspace = true
 cratestack-core.workspace = true
-cratestack-migrate.workspace = true
-cratestack-studio-generator.workspace = true
-cratestack-parser.workspace = true
+serde.workspace = true
 serde_json.workspace = true
-url.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
+cratestack-parser.workspace = true
 tempfile = "3"
