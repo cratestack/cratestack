@@ -1061,6 +1061,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "cratestack-migrate"
+version = "0.3.0"
+dependencies = [
+ "cratestack-core",
+ "cratestack-parser",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "cratestack-parser"
 version = "0.3.0"
 dependencies = [
