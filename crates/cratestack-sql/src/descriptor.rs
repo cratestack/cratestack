@@ -58,6 +58,13 @@ pub struct ModelDescriptor<M, PK> {
     /// where `deleted_at < NOW() - retention`. Surfaced here so the GC
     /// can read the policy from one place.
     pub retention_days: Option<u32>,
+    /// Columns the upsert primitive is allowed to overwrite on conflict.
+    /// Populated by the macro to be every scalar column *except* the
+    /// primary key, `created_at`, and the `@version` column. Empty when
+    /// the model has no eligible columns (e.g. PK-only); in that case
+    /// the macro doesn't emit an `UpsertModelInput` impl either, so this
+    /// is just a belt-and-braces.
+    pub upsert_update_columns: &'static [&'static str],
     _marker: PhantomData<fn() -> (M, PK)>,
 }
 
@@ -103,6 +110,7 @@ impl<M, PK> ModelDescriptor<M, PK> {
         sensitive_columns: &'static [&'static str],
         soft_delete_column: Option<&'static str>,
         retention_days: Option<u32>,
+        upsert_update_columns: &'static [&'static str],
     ) -> Self {
         Self {
             schema_name,
@@ -130,6 +138,7 @@ impl<M, PK> ModelDescriptor<M, PK> {
             sensitive_columns,
             soft_delete_column,
             retention_days,
+            upsert_update_columns,
             _marker: PhantomData,
         }
     }

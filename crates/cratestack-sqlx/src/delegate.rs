@@ -5,6 +5,7 @@ use cratestack_core::{CoolContext, CoolError};
 use crate::{
     CreateModelInput, CreateRecord, DeleteRecord, Filter, FilterExpr, FindMany, FindUnique,
     ModelDescriptor, OrderClause, SqlxRuntime, UpdateModelInput, UpdateRecord, UpdateRecordSet,
+    UpsertModelInput, UpsertRecord,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -53,6 +54,17 @@ impl<'a, M: 'static, PK: 'static> ModelDelegate<'a, M, PK> {
 
     pub fn create<I>(&self, input: I) -> CreateRecord<'a, M, PK, I> {
         CreateRecord {
+            runtime: self.runtime,
+            descriptor: self.descriptor,
+            input,
+        }
+    }
+
+    /// Insert-or-update on primary-key conflict. Available only on models
+    /// whose `@id` field is client-supplied (no `@default(...)`); attempting
+    /// to call this on a model with a server-generated PK is a compile error.
+    pub fn upsert<I>(&self, input: I) -> UpsertRecord<'a, M, PK, I> {
+        UpsertRecord {
             runtime: self.runtime,
             descriptor: self.descriptor,
             input,
@@ -156,6 +168,13 @@ impl<'a, M: 'static, PK: 'static> ScopedModelDelegate<'a, M, PK> {
     pub fn create<I>(&self, input: I) -> ScopedCreateRecord<'a, M, PK, I> {
         ScopedCreateRecord {
             request: self.delegate.create(input),
+            ctx: self.ctx.clone(),
+        }
+    }
+
+    pub fn upsert<I>(&self, input: I) -> ScopedUpsertRecord<'a, M, PK, I> {
+        ScopedUpsertRecord {
+            request: self.delegate.upsert(input),
             ctx: self.ctx.clone(),
         }
     }
@@ -269,6 +288,29 @@ where
     pub async fn run(self) -> Result<M, CoolError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
+    {
+        self.request.run(&self.ctx).await
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ScopedUpsertRecord<'a, M: 'static, PK: 'static, I> {
+    request: UpsertRecord<'a, M, PK, I>,
+    ctx: CoolContext,
+}
+
+impl<'a, M: 'static, PK: 'static, I> ScopedUpsertRecord<'a, M, PK, I>
+where
+    I: UpsertModelInput<M>,
+{
+    pub fn preview_sql(&self) -> String {
+        self.request.preview_sql()
+    }
+
+    pub async fn run(self) -> Result<M, CoolError>
+    where
+        for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
+        PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
         self.request.run(&self.ctx).await
     }

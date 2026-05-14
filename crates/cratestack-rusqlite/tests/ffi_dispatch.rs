@@ -89,7 +89,7 @@ const COLUMNS: &[ModelColumn] = &[
 
 static TAG_DESCRIPTOR: ModelDescriptor<Tag, String> = ModelDescriptor::new(
     "Tag", "tags", COLUMNS, "id", &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[],
-    &[], &[], None, false, &[], &[], None, None,
+    &[], &[], None, false, &[], &[], None, None, &[],
 );
 
 // --- the dispatcher --------------------------------------------------------

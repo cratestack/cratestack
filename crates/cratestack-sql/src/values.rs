@@ -51,6 +51,31 @@ pub trait UpdateModelInput<M> {
     }
 }
 
+/// Input shape for the upsert primitive — `INSERT … ON CONFLICT (<pk>) DO
+/// UPDATE …`. `sql_values()` must include the primary-key column (so the
+/// backend can target the conflict), and `primary_key_value()` exposes the
+/// PK separately so the runtime can issue a `SELECT … FOR UPDATE` before
+/// the upsert to drive `Created` vs. `Updated` event / audit semantics.
+///
+/// Only models with a client-supplied primary key (i.e. `@id` *without*
+/// `@default(...)`) emit this trait impl; models with server-generated PKs
+/// don't get an `.upsert()` builder at all. That's intentional — at v1 the
+/// upsert primitive is PK-conflict only, and a server-generated PK can't be
+/// upserted without the caller supplying one anyway.
+pub trait UpsertModelInput<M>: Send {
+    /// Full set of column→value bindings, *including* the primary key.
+    fn sql_values(&self) -> Vec<SqlColumnValue>;
+
+    /// The primary-key value, used to issue the `SELECT … FOR UPDATE` probe
+    /// inside the upsert transaction. Must match the PK column carried in
+    /// `sql_values()`.
+    fn primary_key_value(&self) -> SqlValue;
+
+    fn validate(&self) -> Result<(), cratestack_core::CoolError> {
+        Ok(())
+    }
+}
+
 pub trait IntoSqlValue {
     fn into_sql_value(self) -> SqlValue;
 }

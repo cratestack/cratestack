@@ -196,6 +196,72 @@ fn update_and_delete_round_trip() {
 }
 
 #[test]
+fn upsert_inserts_when_no_conflict_and_updates_on_pk_conflict() {
+    let runtime = setup();
+    let delegate = ModelDelegate::<Tag, uuid::Uuid>::new(&runtime, &TAG_MODEL);
+
+    let id = uuid::Uuid::new_v4();
+
+    // First call → INSERT branch. No row exists yet, so the upsert lands as
+    // a fresh row.
+    let inserted = delegate
+        .upsert(cratestack_schema::CreateTagInput {
+            id,
+            label: "original".into(),
+        })
+        .run()
+        .expect("upsert inserts on no conflict");
+    assert_eq!(inserted.id, id);
+    assert_eq!(inserted.label, "original");
+
+    // Second call with the same PK and a different value → UPDATE branch
+    // via ON CONFLICT. Verifies the conflict target binds correctly and
+    // the DO UPDATE SET list overwrites the existing column.
+    let updated = delegate
+        .upsert(cratestack_schema::CreateTagInput {
+            id,
+            label: "overwritten".into(),
+        })
+        .run()
+        .expect("upsert updates on pk conflict");
+    assert_eq!(updated.id, id);
+    assert_eq!(updated.label, "overwritten");
+
+    // And the row is observable as the *updated* value through a normal
+    // find — i.e., the conflict path didn't create a duplicate.
+    let fetched = delegate.find_unique(id).run().unwrap().unwrap();
+    assert_eq!(fetched.label, "overwritten");
+}
+
+#[test]
+fn upsert_is_idempotent_under_repeated_calls_with_same_input() {
+    // A core promise of upsert for external integrators (idempotent
+    // ingestion keyed on the producer's stable id): replaying the same
+    // payload converges, doesn't error or duplicate.
+    let runtime = setup();
+    let delegate = ModelDelegate::<Tag, uuid::Uuid>::new(&runtime, &TAG_MODEL);
+
+    let id = uuid::Uuid::new_v4();
+    let input = cratestack_schema::CreateTagInput {
+        id,
+        label: "stable".into(),
+    };
+
+    for _ in 0..3 {
+        let result = delegate.upsert(input.clone()).run().expect("upsert ok");
+        assert_eq!(result.label, "stable");
+    }
+
+    // Still exactly one row.
+    let all = delegate.find_many().run().unwrap();
+    assert_eq!(
+        all.iter().filter(|t| t.id == id).count(),
+        1,
+        "replayed upserts must not duplicate the row",
+    );
+}
+
+#[test]
 fn descriptor_columns_match_model_field_order() {
     // Belt-and-braces: the projection the macro builds for SELECT must list
     // the same columns the FromRusqliteRow impl reads, in the same order.

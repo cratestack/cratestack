@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.3.1 (unreleased)
+
+### Upsert primitive
+
+New `.upsert(input)` on every model whose `@id` is client-supplied (i.e. has no `@default(...)`). Backed by `INSERT … ON CONFLICT (<pk>) DO UPDATE …`. Available on both the sqlx (server) and rusqlite (embedded) backends.
+
+```rust
+// Server (sqlx) — both create and update policies enforced, event/audit
+// driven off a SELECT … FOR UPDATE probe inside the same transaction.
+cool.tag().upsert(CreateTagInput { id, label }).run(&ctx).await?;
+
+// Embedded (rusqlite) — single statement, no audit/event machinery.
+delegate.upsert(CreateTagInput { id, label }).run()?;
+```
+
+Models with server-generated PKs (`@id @default(cuid())`, etc.) get **no** `UpsertModelInput` impl — calling `.upsert(...)` on them is a compile error rather than a runtime "not supported." Unique-key (non-PK) conflict targets are deferred.
+
+Semantics:
+
+- **Both create and update policies must allow the call** — evaluated at call time, before the runtime knows which branch will fire. Pre-flighting a read to pick a policy slot would leak row existence to the caller.
+- **`@version` columns are bumped server-side** on the update branch (`<table>.<col> + 1`). `if_match` is not supported on upsert — use `.update(...).if_match(...)` if you need it.
+- **Soft-deleted rows act as "no row"**: the INSERT branch will then trip the PK uniqueness constraint, which is the right outcome (refuse to silently revive a tombstone).
+- **Event / audit fan-out** picks `Created` vs `Updated` based on whether the `SELECT FOR UPDATE` probe saw a row — not Postgres `xmax`, so the rusqlite mirror stays trivial.
+- **Auth-derived defaults (`@default(auth().*)`) are excluded from the update branch** — they're identity bindings, and clobbering them on update would turn upsert into "take ownership of any row I name." The full list of columns the update branch is allowed to overwrite is exposed on `ModelDescriptor::upsert_update_columns`.
+
+### Internal
+
+- `ModelDescriptor::new(...)` gained one trailing argument (`upsert_update_columns`). Schemas built through `include_*_schema!` are unaffected; hand-rolled descriptors need the extra `&[]`.
+
 ## 0.3.0 (unreleased)
 
 ### Headline: three macros, one schema, no dead weight

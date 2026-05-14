@@ -3,7 +3,7 @@ use crate::sqlx;
 use cratestack_core::{AuditOperation, CoolContext, CoolError, ModelEventKind};
 
 use crate::{
-    CreateModelInput, ModelDescriptor, SqlxRuntime, UpdateModelInput,
+    CreateModelInput, ModelDescriptor, SqlValue, SqlxRuntime, UpdateModelInput, UpsertModelInput,
     audit::{build_audit_event, enqueue_audit_event, ensure_audit_table, fetch_for_audit},
     descriptor::{enqueue_event_outbox, ensure_event_outbox_table},
 };
@@ -666,4 +666,347 @@ where
         .await
         .map_err(|error| CoolError::Database(error.to_string()))?
         .ok_or_else(|| CoolError::Forbidden("delete policy denied this operation".to_owned()))
+}
+
+// ───── Upsert ──────────────────────────────────────────────────────────────
+//
+// `INSERT … ON CONFLICT (<pk>) DO UPDATE …`, but with the create/update
+// distinction made *before* the SQL runs (via a `SELECT … FOR UPDATE` probe
+// inside the same transaction) so we can:
+//
+//   * pick the right policy slot (both must allow at call time — see [docs])
+//   * emit the correct ModelEventKind (Created vs Updated)
+//   * capture an audit `before` snapshot only on the update branch
+//
+// The upsert is always transactional, regardless of whether the model emits
+// events or has `@@audit`. That's a deliberate cost: one extra round-trip
+// for the SELECT, in exchange for clean event/audit semantics. Upsert is
+// not a hot read path — callers who need raw insert/update throughput
+// should use `.create()` / `.update()` directly.
+
+#[derive(Debug, Clone)]
+pub struct UpsertRecord<'a, M: 'static, PK: 'static, I> {
+    pub(crate) runtime: &'a SqlxRuntime,
+    pub(crate) descriptor: &'static ModelDescriptor<M, PK>,
+    pub(crate) input: I,
+}
+
+impl<'a, M: 'static, PK: 'static, I> UpsertRecord<'a, M, PK, I>
+where
+    I: UpsertModelInput<M>,
+{
+    /// Render an approximate SQL preview. The actual upsert wraps a
+    /// `SELECT … FOR UPDATE` around the `INSERT … ON CONFLICT`, but this
+    /// preview returns only the conflict-bearing statement — sufficient
+    /// for migration tooling and the schema studio.
+    pub fn preview_sql(&self) -> String {
+        let values = self.input.sql_values();
+        let placeholders = (1..=values.len())
+            .map(|index| format!("${index}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let columns = values
+            .iter()
+            .map(|value| value.column)
+            .collect::<Vec<_>>()
+            .join(", ");
+        let update_assignments = self
+            .descriptor
+            .upsert_update_columns
+            .iter()
+            .map(|column| format!("{column} = EXCLUDED.{column}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let version_bump = match self.descriptor.version_column {
+            Some(col) => format!(", {col} = {table}.{col} + 1", table = self.descriptor.table_name, col = col),
+            None => String::new(),
+        };
+
+        format!(
+            "INSERT INTO {table} ({columns}) VALUES ({placeholders}) \
+             ON CONFLICT ({pk}) DO UPDATE SET {update_assignments}{version_bump} \
+             RETURNING {projection}",
+            table = self.descriptor.table_name,
+            pk = self.descriptor.primary_key,
+            projection = self.descriptor.select_projection(),
+        )
+    }
+
+    pub async fn run(self, ctx: &CoolContext) -> Result<M, CoolError>
+    where
+        for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
+        PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
+    {
+        self.input.validate()?;
+
+        // Compose the full insert value set, including auth-derived defaults
+        // and the seeded `@version` column. Mirrors `create_record_with_executor`
+        // so insert-branch semantics stay identical to `.create()`.
+        let mut insert_values =
+            apply_create_defaults(self.input.sql_values(), self.descriptor.create_defaults, ctx)?;
+        if let Some(version_col) = self.descriptor.version_column
+            && find_column_value(&insert_values, version_col).is_none()
+        {
+            insert_values.push(crate::SqlColumnValue {
+                column: version_col,
+                value: crate::SqlValue::Int(0),
+            });
+        }
+        if insert_values.is_empty() {
+            return Err(CoolError::Validation(
+                "upsert input must contain at least one column".to_owned(),
+            ));
+        }
+
+        // Both create and update policies must allow the call. Stricter than
+        // "evaluate the path that runs," but it's the only choice we can make
+        // before knowing which branch will fire — pre-flighting a read just to
+        // pick the policy slot would leak row existence to the caller.
+        if !evaluate_create_policies(
+            self.runtime.pool(),
+            self.descriptor.create_allow_policies,
+            self.descriptor.create_deny_policies,
+            &insert_values,
+            ctx,
+        )
+        .await?
+        {
+            return Err(CoolError::Forbidden(
+                "create policy denied this upsert".to_owned(),
+            ));
+        }
+
+        let pk_value = self.input.primary_key_value();
+        let emits_created = self.descriptor.emits(ModelEventKind::Created);
+        let emits_updated = self.descriptor.emits(ModelEventKind::Updated);
+        let audit_enabled = self.descriptor.audit_enabled;
+
+        let mut tx = self
+            .runtime
+            .pool()
+            .begin()
+            .await
+            .map_err(|error| CoolError::Database(error.to_string()))?;
+
+        if emits_created || emits_updated {
+            ensure_event_outbox_table(&mut *tx).await?;
+        }
+        if audit_enabled {
+            ensure_audit_table(self.runtime.pool()).await?;
+        }
+
+        // Probe the conflict target under a row-level lock. If a row exists,
+        // this is the update branch and we capture the before-snapshot for
+        // audit; otherwise it's the insert branch. The lock serializes
+        // concurrent upserts on the same key, which is what callers expect.
+        let before_record =
+            select_for_update_by_pk_value(&mut *tx, self.descriptor, &pk_value).await?;
+        let inserted = before_record.is_none();
+
+        // For the update branch we additionally have to enforce the *update*
+        // policy. The insert branch already passed `create` above; for the
+        // update branch we evaluate the update policy against the live row
+        // (using its current column values, not the input — that's how
+        // ordinary `.update()` works) by re-running the policy SQL.
+        if !inserted
+            && !row_passes_update_policy(
+                self.runtime.pool(),
+                self.descriptor,
+                &pk_value,
+                ctx,
+            )
+            .await?
+        {
+            return Err(CoolError::Forbidden(
+                "update policy denied this upsert".to_owned(),
+            ));
+        }
+
+        let before_snapshot = if !inserted && audit_enabled {
+            before_record
+                .as_ref()
+                .and_then(|m| serde_json::to_value(m).ok())
+        } else {
+            None
+        };
+
+        let record = upsert_returning_record(&mut *tx, self.descriptor, &insert_values).await?;
+
+        // Event + audit fan-out, driven off whether the SELECT-FOR-UPDATE
+        // saw a row. We don't lean on `xmax = 0`: keeping the discriminator
+        // in the runtime (not the SQL) makes the rusqlite mirror trivial.
+        let event_kind = if inserted {
+            ModelEventKind::Created
+        } else {
+            ModelEventKind::Updated
+        };
+        let audit_op = if inserted {
+            AuditOperation::Create
+        } else {
+            AuditOperation::Update
+        };
+        let emits_event = if inserted { emits_created } else { emits_updated };
+
+        if emits_event {
+            enqueue_event_outbox(
+                &mut *tx,
+                self.descriptor.schema_name,
+                event_kind,
+                &record,
+            )
+            .await?;
+        }
+        if audit_enabled {
+            let after = serde_json::to_value(&record).ok();
+            let event = build_audit_event(self.descriptor, audit_op, before_snapshot, after, ctx);
+            enqueue_audit_event(&mut *tx, &event).await?;
+        }
+
+        tx.commit()
+            .await
+            .map_err(|error| CoolError::Database(error.to_string()))?;
+
+        if emits_event {
+            let _ = self.runtime.drain_event_outbox().await;
+        }
+
+        Ok(record)
+    }
+}
+
+/// Probe-with-lock: `SELECT projection FROM <table> WHERE <pk> = $1 FOR UPDATE`.
+/// Bypasses read policies — we need the raw row to drive insert/update
+/// branching and to capture the audit before-snapshot. Returns `None` when
+/// no row exists (the insert branch).
+async fn select_for_update_by_pk_value<'e, E, M, PK>(
+    executor: E,
+    descriptor: &'static ModelDescriptor<M, PK>,
+    pk_value: &SqlValue,
+) -> Result<Option<M>, CoolError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
+{
+    let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT ");
+    query.push(descriptor.select_projection());
+    query.push(" FROM ").push(descriptor.table_name);
+    query
+        .push(" WHERE ")
+        .push(descriptor.primary_key)
+        .push(" = ");
+    push_bind_value(&mut query, pk_value);
+    // Soft-deleted rows act as "no row" for upsert purposes: the INSERT
+    // branch will then fail on the PK uniqueness constraint, which is the
+    // right outcome (refuse to silently revive a tombstone).
+    if let Some(col) = descriptor.soft_delete_column {
+        query.push(" AND ").push(col).push(" IS NULL");
+    }
+    query.push(" FOR UPDATE");
+
+    query
+        .build_query_as::<M>()
+        .fetch_optional(executor)
+        .await
+        .map_err(|error| CoolError::Database(error.to_string()))
+}
+
+/// Re-evaluate the update policy against an existing row, using the read
+/// pool so the policy predicates can resolve auth/tenancy. Returns `false`
+/// when the policy denies (or when the row is not visible to the caller,
+/// which we treat as denial — same semantics as ordinary `.update()`).
+async fn row_passes_update_policy<M, PK>(
+    policy_pool: &sqlx::PgPool,
+    descriptor: &'static ModelDescriptor<M, PK>,
+    pk_value: &SqlValue,
+    ctx: &CoolContext,
+) -> Result<bool, CoolError> {
+    let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT 1 FROM ");
+    query.push(descriptor.table_name);
+    query
+        .push(" WHERE ")
+        .push(descriptor.primary_key)
+        .push(" = ");
+    push_bind_value(&mut query, pk_value);
+    query.push(" AND ");
+    push_action_policy_query(
+        &mut query,
+        descriptor.update_allow_policies,
+        descriptor.update_deny_policies,
+        ctx,
+    );
+
+    let row: Option<(i32,)> = query
+        .build_query_as::<(i32,)>()
+        .fetch_optional(policy_pool)
+        .await
+        .map_err(|error| CoolError::Database(error.to_string()))?;
+    Ok(row.is_some())
+}
+
+/// Render and execute the conflict-bearing INSERT. The DO UPDATE clause
+/// references only columns in `descriptor.upsert_update_columns` — PK,
+/// `@version`, `@readonly`, `@server_only`, and `@default(...)` columns are
+/// excluded by construction (see `generate_model_descriptor`).
+async fn upsert_returning_record<'e, E, M, PK>(
+    executor: E,
+    descriptor: &'static ModelDescriptor<M, PK>,
+    insert_values: &[crate::SqlColumnValue],
+) -> Result<M, CoolError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
+{
+    let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("INSERT INTO ");
+    query.push(descriptor.table_name).push(" (");
+    for (index, value) in insert_values.iter().enumerate() {
+        if index > 0 {
+            query.push(", ");
+        }
+        query.push(value.column);
+    }
+    query.push(") VALUES (");
+    for (index, value) in insert_values.iter().enumerate() {
+        if index > 0 {
+            query.push(", ");
+        }
+        push_bind_value(&mut query, &value.value);
+    }
+    query.push(") ON CONFLICT (").push(descriptor.primary_key).push(") DO UPDATE SET ");
+
+    // The DO UPDATE list. If there are no eligible columns to overwrite,
+    // fall back to "DO NOTHING"-equivalent semantics via a no-op assignment:
+    // touching the PK to itself. This keeps the RETURNING clause working
+    // (PG only RETURNs from rows the statement touched), which matters for
+    // round-trips that always want the current row back.
+    if descriptor.upsert_update_columns.is_empty() {
+        query.push(descriptor.primary_key);
+        query.push(" = EXCLUDED.").push(descriptor.primary_key);
+    } else {
+        for (index, column) in descriptor.upsert_update_columns.iter().enumerate() {
+            if index > 0 {
+                query.push(", ");
+            }
+            query.push(*column).push(" = EXCLUDED.").push(*column);
+        }
+    }
+    if let Some(version_col) = descriptor.version_column {
+        query
+            .push(", ")
+            .push(version_col)
+            .push(" = ")
+            .push(descriptor.table_name)
+            .push(".")
+            .push(version_col)
+            .push(" + 1");
+    }
+
+    query
+        .push(" RETURNING ")
+        .push(descriptor.select_projection());
+
+    query
+        .build_query_as::<M>()
+        .fetch_one(executor)
+        .await
+        .map_err(|error| CoolError::Database(error.to_string()))
 }

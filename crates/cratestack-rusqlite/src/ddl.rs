@@ -98,6 +98,7 @@ mod tests {
             &[],
             None,
             None,
+            &[],
         )
     }
 

@@ -4,14 +4,14 @@ use std::marker::PhantomData;
 
 use cratestack_sql::{
     CreateModelInput, Filter, FilterExpr, IntoSqlValue, ModelDescriptor, OrderClause,
-    SqliteDialect, SqlValue, UpdateModelInput,
+    SqliteDialect, SqlValue, UpdateModelInput, UpsertModelInput,
 };
 use rusqlite::params_from_iter;
 
 use crate::{
     FromRusqliteRow, RusqliteError, RusqliteRuntime, SqlValueParam, render::render_delete,
     render::render_insert, render::render_select, render::render_select_by_pk,
-    render::render_update,
+    render::render_update, render::render_upsert,
 };
 
 #[derive(Clone, Copy)]
@@ -59,6 +59,18 @@ impl<'a, M: 'static, PK: 'static> ModelDelegate<'a, M, PK> {
 
     pub fn create<I>(&self, input: I) -> CreateRecord<'a, M, PK, I> {
         CreateRecord {
+            runtime: self.runtime,
+            descriptor: self.descriptor,
+            input,
+        }
+    }
+
+    /// Insert-or-update on primary-key conflict. Only models with a client-
+    /// supplied `@id` (no `@default(...)`) implement `UpsertModelInput`, so
+    /// `.upsert(...)` on a server-PK model is a compile error — same as the
+    /// sqlx delegate.
+    pub fn upsert<I>(&self, input: I) -> UpsertRecord<'a, M, PK, I> {
+        UpsertRecord {
             runtime: self.runtime,
             descriptor: self.descriptor,
             input,
@@ -217,6 +229,42 @@ where
         let dialect = SqliteDialect;
         let values = self.input.sql_values();
         let (sql, binds) = render_insert(&dialect, self.descriptor, &values);
+        self.runtime.with_connection(|conn| {
+            let mut stmt = conn.prepare(&sql)?;
+            let bind_iter = binds.iter().map(SqlValueParam);
+            let mut rows = stmt.query(params_from_iter(bind_iter))?;
+            let row = rows.next()?.ok_or(RusqliteError::NotFound)?;
+            Ok(M::from_rusqlite_row(row)?)
+        })
+    }
+}
+
+pub struct UpsertRecord<'a, M: 'static, PK: 'static, I> {
+    runtime: &'a RusqliteRuntime,
+    descriptor: &'static ModelDescriptor<M, PK>,
+    input: I,
+}
+
+impl<'a, M: 'static, PK: 'static, I> UpsertRecord<'a, M, PK, I>
+where
+    I: UpsertModelInput<M>,
+{
+    pub fn preview_sql(&self) -> String {
+        let dialect = SqliteDialect;
+        let values = self.input.sql_values();
+        let (sql, _) = render_upsert(&dialect, self.descriptor, &values);
+        sql
+    }
+
+    pub fn run(self) -> Result<M, RusqliteError>
+    where
+        M: FromRusqliteRow,
+    {
+        // Validation is server-side concern only; the rusqlite layer matches
+        // `CreateRecord::run`, which also skips `validate()`.
+        let dialect = SqliteDialect;
+        let values = self.input.sql_values();
+        let (sql, binds) = render_upsert(&dialect, self.descriptor, &values);
         self.runtime.with_connection(|conn| {
             let mut stmt = conn.prepare(&sql)?;
             let bind_iter = binds.iter().map(SqlValueParam);

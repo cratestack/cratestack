@@ -13,8 +13,8 @@ use crate::shared::{
     auth_default_field, create_sql_value, doc_attrs, generated_doc_attr, ident,
     is_generated_on_create, is_pii_field, is_primary_key, is_readonly_field, is_sensitive_field,
     is_server_only_field, is_version_field, model_name_set, pluralize, relation_model_fields,
-    rust_type_tokens, rust_type_tokens_with_scope, scalar_model_fields, to_snake_case,
-    update_sql_value,
+    rust_type_tokens, rust_type_tokens_with_scope, scalar_model_fields, sql_value_tokens,
+    to_snake_case, update_sql_value,
 };
 use crate::validators::generate_input_validate_body;
 
@@ -235,6 +235,58 @@ pub(crate) fn generate_update_input_struct(
                 values
             }
             #validate_impl
+        }
+    }
+}
+
+/// Emit `impl UpsertModelInput<M> for Create{Model}Input` for models whose
+/// primary key is client-supplied (i.e. `@id` without `@default(...)`).
+///
+/// We reuse the `Create{Model}Input` struct rather than emitting a separate
+/// `Upsert{Model}Input`: the field set is identical (PK + all client-settable
+/// columns), and the runtime drives the conflict-target / update-columns
+/// split off the descriptor's `upsert_update_columns`, not the input shape.
+///
+/// Models with server-generated PKs (`@id @default(cuid())`, etc.) get *no*
+/// upsert impl — calling `.upsert(...)` on those is a compile error, which
+/// is the intended fail-loud behavior at v1.
+pub(crate) fn generate_upsert_input_struct(
+    model: &Model,
+    _model_names: &BTreeSet<&str>,
+    enum_names: &BTreeSet<&str>,
+) -> proc_macro2::TokenStream {
+    let primary_key = match model.fields.iter().find(|field| is_primary_key(field)) {
+        Some(pk) => pk,
+        None => return quote! {},
+    };
+    // Server-generated PK → no upsert impl. Callers can't target an unknown
+    // row by PK, and v1 doesn't support unique-key conflict targets yet.
+    if is_generated_on_create(primary_key) {
+        return quote! {};
+    }
+
+    let input_ident = ident(&format!("Create{}Input", model.name));
+    let model_ident = ident(&model.name);
+    let pk_field_ident = ident(&primary_key.name);
+    let pk_value =
+        sql_value_tokens(quote! { self.#pk_field_ident.clone() }, &primary_key.ty, enum_names);
+
+    // sql_values() and validate() defer to the CreateModelInput impl on the
+    // same struct — keeps validators in one place. We have to fully-qualify
+    // the call to disambiguate when both traits are in scope.
+    quote! {
+        impl ::cratestack::UpsertModelInput<super::models::#model_ident> for #input_ident {
+            fn sql_values(&self) -> Vec<::cratestack::SqlColumnValue> {
+                <Self as ::cratestack::CreateModelInput<super::models::#model_ident>>::sql_values(self)
+            }
+
+            fn primary_key_value(&self) -> ::cratestack::SqlValue {
+                #pk_value
+            }
+
+            fn validate(&self) -> ::std::result::Result<(), ::cratestack::CoolError> {
+                <Self as ::cratestack::CreateModelInput<super::models::#model_ident>>::validate(self)
+            }
         }
     }
 }
@@ -675,6 +727,30 @@ pub(crate) fn generate_model_descriptor(
         .map(|n| quote! { Some(#n) })
         .unwrap_or_else(|| quote! { None });
 
+    // Columns the upsert primitive may overwrite on conflict. Excludes:
+    //   - primary key (the conflict target — must not appear in SET)
+    //   - `@version` (bumped server-side, never carried by input)
+    //   - `@readonly` / `@server_only` (never settable from input)
+    //   - `@default(...)` columns (server-owned identity bindings like
+    //     auth-derived `ownership_id`; clobbering these on update would
+    //     turn upsert into "take ownership of any row I name").
+    //
+    // The resulting set matches `Update{Model}Input`'s fields, which is the
+    // right shape — we're treating upsert's update branch as a forced
+    // overwrite of the caller-provided non-defaulted columns.
+    let upsert_update_columns = scalar_model_fields(model, &model_names)
+        .into_iter()
+        .filter(|field| !is_primary_key(field))
+        .filter(|field| !is_version_field(field))
+        .filter(|field| !is_readonly_field(field))
+        .filter(|field| !is_server_only_field(field))
+        .filter(|field| !is_generated_on_create(field))
+        .map(|field| {
+            let column = to_snake_case(&field.name);
+            quote! { #column }
+        })
+        .collect::<Vec<_>>();
+
     Ok(quote! {
         pub const #descriptor_ident: ::cratestack::ModelDescriptor<#model_ident, #primary_key_type> =
             ::cratestack::ModelDescriptor::new(
@@ -703,6 +779,7 @@ pub(crate) fn generate_model_descriptor(
                 &[#(#sensitive_columns),*],
                 #soft_delete_column_tokens,
                 #retention_days_tokens,
+                &[#(#upsert_update_columns),*],
             );
     })
 }
