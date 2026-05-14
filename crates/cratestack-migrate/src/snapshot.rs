@@ -36,6 +36,33 @@ impl Snapshot {
             schema,
         }
     }
+
+    /// An empty snapshot — used as the "previous schema" when
+    /// generating the very first migration for a backend.
+    pub fn empty() -> Self {
+        Self::from_schema(Schema {
+            datasource: None,
+            auth: None,
+            config_blocks: Vec::new(),
+            mixins: Vec::new(),
+            models: Vec::new(),
+            types: Vec::new(),
+            enums: Vec::new(),
+            procedures: Vec::new(),
+        })
+    }
+}
+
+/// Read a snapshot file, or return [`Snapshot::empty`] if the file
+/// does not exist. Used by the CLI to bootstrap the first migration
+/// for a backend without forcing the developer to seed an empty
+/// snapshot by hand. Any other I/O or parse failure propagates.
+pub fn read_or_empty(path: impl AsRef<Path>) -> Result<Snapshot, MigrateError> {
+    let path = path.as_ref();
+    if !path.exists() {
+        return Ok(Snapshot::empty());
+    }
+    read_snapshot(path)
 }
 
 /// Read and parse a snapshot file. Returns a structured error if the

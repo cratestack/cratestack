@@ -18,10 +18,12 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
+chrono.workspace = true
 clap.workspace = true
 cratestack-client-dart.workspace = true
 cratestack-client-typescript.workspace = true
 cratestack-core.workspace = true
+cratestack-migrate.workspace = true
 cratestack-studio-generator.workspace = true
 cratestack-parser.workspace = true
 serde_json.workspace = true

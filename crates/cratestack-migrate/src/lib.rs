@@ -20,4 +20,6 @@ pub use diff::diff;
 pub use emit::EmittedMigration;
 pub use error::MigrateError;
 pub use naming::{column_name, index_name_unique, table_name};
-pub use snapshot::{Snapshot, SNAPSHOT_FORMAT_VERSION, read_snapshot, write_snapshot};
+pub use snapshot::{
+    SNAPSHOT_FORMAT_VERSION, Snapshot, read_or_empty, read_snapshot, write_snapshot,
+};

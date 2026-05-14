@@ -905,10 +905,12 @@ name = "cratestack-cli"
 version = "0.3.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "clap",
  "cratestack-client-dart",
  "cratestack-client-typescript",
  "cratestack-core",
+ "cratestack-migrate",
  "cratestack-parser",
  "cratestack-studio-generator",
  "serde_json",

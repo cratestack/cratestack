@@ -16,7 +16,7 @@ use std::fmt::Write as _;
 use crate::emit::EmittedMigration;
 use crate::ir::{
     AddColumn, AddIndex, Column, ColumnArity, ColumnDefault, ColumnType, CreateTable,
-    Destructiveness, DropColumn, DropIndex, DropTable, Op,
+    Destructiveness, DropColumn, DropIndex, Op,
 };
 
 pub fn emit(ops: &[Op]) -> EmittedMigration {
