@@ -856,7 +856,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "axum",
  "chrono",
@@ -885,7 +885,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-axum"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "async-trait",
  "axum",
@@ -902,7 +902,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-cli"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -918,7 +918,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-client-dart"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "cratestack-core",
  "cratestack-parser",
@@ -929,7 +929,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-client-flutter"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "axum",
  "cratestack-client-rust",
@@ -943,7 +943,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-client-rust"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "axum",
  "bytes",
@@ -963,7 +963,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-client-store-redis"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "chrono",
  "cratestack-client-rust",
@@ -973,7 +973,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-client-store-sqlite"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "axum",
  "chrono",
@@ -988,7 +988,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-client-typescript"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "cratestack-core",
  "cratestack-parser",
@@ -999,7 +999,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-codec-cbor"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "cratestack-core",
  "minicbor-serde",
@@ -1009,7 +1009,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-codec-json"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "cratestack-core",
  "serde",
@@ -1018,7 +1018,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-core"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -1040,7 +1040,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-lsp"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "cratestack-core",
  "cratestack-parser",
@@ -1050,7 +1050,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-macros"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "cratestack-core",
  "cratestack-parser",
@@ -1062,7 +1062,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-parser"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "ariadne",
  "chumsky",
@@ -1073,7 +1073,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-policy"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "cratestack-core",
  "serde",
@@ -1081,7 +1081,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-redis"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "async-trait",
  "axum",
@@ -1097,7 +1097,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-rusqlite"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "bigdecimal",
  "chrono",
@@ -1115,7 +1115,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-sql"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "bigdecimal",
  "chrono",
@@ -1129,7 +1129,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-sqlx"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "async-trait",
  "bigdecimal",
@@ -1150,7 +1150,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-studio-generator"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "cratestack-core",
  "cratestack-parser",

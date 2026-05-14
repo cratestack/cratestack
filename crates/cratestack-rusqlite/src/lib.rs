@@ -20,13 +20,16 @@ pub mod opfs;
 pub use cratestack_sql::{
     CreateDefault, CreateDefaultType, CreateModelInput, FieldRef, Filter, FilterExpr,
     IntoSqlValue, ModelColumn, ModelDescriptor, OrderClause, RelationFilter, RelationQuantifier,
-    SortDirection, SqlColumnValue, SqlValue, SqliteDialect, UpdateModelInput,
+    SortDirection, SqlColumnValue, SqlValue, SqliteDialect, UpdateModelInput, UpsertModelInput,
 };
 
 pub use delegate::{
     CreateRecord, DeleteRecord, FindMany, FindUnique, ModelDelegate, UpdateRecord, UpdateRecordSet,
+    UpsertRecord,
 };
-pub use render::{render_delete, render_insert, render_select, render_select_by_pk, render_update};
+pub use render::{
+    render_delete, render_insert, render_select, render_select_by_pk, render_update, render_upsert,
+};
 pub use row::FromRusqliteRow;
 pub use runtime::{RusqliteError, RusqliteRuntime};
 pub use value::{

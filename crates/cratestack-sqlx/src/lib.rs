@@ -86,14 +86,14 @@ pub use cratestack_policy::{PolicyExpr, PolicyLiteral, ReadPolicy, ReadPredicate
 pub use cratestack_sql::{
     CreateDefault, CreateDefaultType, CreateModelInput, FieldRef, Filter, FilterExpr,
     IntoSqlValue, ModelColumn, ModelDescriptor, OrderClause, RelationFilter, RelationQuantifier,
-    SortDirection, SqlColumnValue, SqlValue, UpdateModelInput,
+    SortDirection, SqlColumnValue, SqlValue, UpdateModelInput, UpsertModelInput,
 };
 pub use delegate::{
     ModelDelegate, ScopedCreateRecord, ScopedDeleteRecord, ScopedFindMany, ScopedFindUnique,
-    ScopedModelDelegate, ScopedUpdateRecord, ScopedUpdateRecordSet,
+    ScopedModelDelegate, ScopedUpdateRecord, ScopedUpdateRecordSet, ScopedUpsertRecord,
 };
 pub use descriptor::SqlxRuntime;
 pub use query::{
-    CreateRecord, DeleteRecord, FindMany, FindUnique, UpdateRecord, UpdateRecordSet,
+    CreateRecord, DeleteRecord, FindMany, FindUnique, UpdateRecord, UpdateRecordSet, UpsertRecord,
     create_record_with_executor, update_record_with_executor,
 };

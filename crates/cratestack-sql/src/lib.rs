@@ -4,7 +4,8 @@
 //! This crate carries the type definitions every backend agrees on:
 //!
 //! - [`SqlValue`] / [`SqlColumnValue`] — value envelopes used to bind data
-//! - [`CreateModelInput`] / [`UpdateModelInput`] — traits the codegen emits
+//! - [`CreateModelInput`] / [`UpdateModelInput`] / [`UpsertModelInput`] —
+//!   traits the codegen emits
 //! - [`Filter`] / [`FilterExpr`] / [`FieldRef`] — query AST
 //! - [`OrderClause`] / [`SortDirection`] — ordering AST
 //! - [`ModelDescriptor`] / [`ModelColumn`] / [`CreateDefault`] — schema
@@ -27,4 +28,5 @@ pub use filter::{
 pub use order::{OrderClause, OrderTarget, SortDirection};
 pub use values::{
     CreateModelInput, FilterValue, IntoSqlValue, SqlColumnValue, SqlValue, UpdateModelInput,
+    UpsertModelInput,
 };

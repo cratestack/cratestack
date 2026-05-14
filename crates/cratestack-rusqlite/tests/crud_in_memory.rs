@@ -117,6 +117,7 @@ static POST_DESCRIPTOR: ModelDescriptor<Post, i64> = ModelDescriptor::new(
     &[],
     None,
     None,
+    &[],
 );
 
 fn setup() -> RusqliteRuntime {

@@ -169,6 +169,71 @@ pub fn render_update<M, PK>(
     (sql, binds)
 }
 
+/// Render an `INSERT ... ON CONFLICT (<pk>) DO UPDATE SET ... RETURNING ...`
+/// upsert. Mirrors the cratestack-sqlx server path but without the
+/// always-transactional `SELECT FOR UPDATE` probe: the rusqlite layer has no
+/// audit, no event outbox, and no policies, so there's no consumer that
+/// needs to distinguish the insert branch from the update branch at the
+/// runtime level.
+///
+/// The DO UPDATE clause uses only columns in `descriptor.upsert_update_columns`
+/// (PK, `@version`, `@readonly`, `@server_only`, `@default(...)` excluded by
+/// the macro). The `@version` column, when present, is incremented via
+/// `<table>.<col> + 1` so concurrent upserts converge to the right value.
+pub fn render_upsert<M, PK>(
+    dialect: &dyn Dialect,
+    descriptor: &ModelDescriptor<M, PK>,
+    values: &[SqlColumnValue],
+) -> (String, Vec<SqlValue>) {
+    let mut sql = format!("INSERT INTO {} (", descriptor.table_name);
+    for (idx, value) in values.iter().enumerate() {
+        if idx > 0 {
+            sql.push_str(", ");
+        }
+        sql.push_str(value.column);
+    }
+    sql.push_str(") VALUES (");
+    let mut binds = Vec::with_capacity(values.len());
+    for (idx, value) in values.iter().enumerate() {
+        if idx > 0 {
+            sql.push_str(", ");
+        }
+        dialect.write_placeholder(&mut sql, idx + 1);
+        binds.push(value.value.clone());
+    }
+    let _ = write!(
+        &mut sql,
+        ") ON CONFLICT ({}) DO UPDATE SET ",
+        descriptor.primary_key,
+    );
+    if descriptor.upsert_update_columns.is_empty() {
+        // Degenerate case — touch the PK to itself so RETURNING still
+        // resolves to the conflicting row. Mirrors the sqlx fallback.
+        let _ = write!(
+            &mut sql,
+            "{pk} = excluded.{pk}",
+            pk = descriptor.primary_key,
+        );
+    } else {
+        for (idx, column) in descriptor.upsert_update_columns.iter().enumerate() {
+            if idx > 0 {
+                sql.push_str(", ");
+            }
+            let _ = write!(&mut sql, "{column} = excluded.{column}");
+        }
+    }
+    if let Some(version_col) = descriptor.version_column {
+        let _ = write!(
+            &mut sql,
+            ", {version_col} = {table}.{version_col} + 1",
+            table = descriptor.table_name,
+        );
+    }
+    sql.push_str(" RETURNING ");
+    sql.push_str(&descriptor.select_projection());
+    (sql, binds)
+}
+
 /// Render a DELETE statement. For soft-delete-enabled models this becomes
 /// an UPDATE-of-`deleted_at` instead, matching the cratestack-sqlx semantics.
 pub fn render_delete<M, PK>(
@@ -402,6 +467,7 @@ mod tests {
             &[],
             None,
             None,
+            &[],
         )
     }
 

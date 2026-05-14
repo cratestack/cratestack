@@ -35,7 +35,7 @@ use crate::model::{
     generate_client_model_struct, generate_client_update_input_struct,
     generate_create_input_struct, generate_field_module, generate_model_accessor,
     generate_model_descriptor, generate_model_struct_only, generate_pg_from_row_impl,
-    generate_rusqlite_from_row_impl, generate_update_input_struct,
+    generate_rusqlite_from_row_impl, generate_update_input_struct, generate_upsert_input_struct,
 };
 use crate::procedure::{
     generate_client_procedure_module, generate_procedure_module, generate_procedure_registry_method,
@@ -190,6 +190,11 @@ fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
         .models
         .iter()
         .map(|model| generate_update_input_struct(model, &model_name_set, &enum_name_set));
+    let upsert_input_impls = schema
+        .models
+        .iter()
+        .map(|model| generate_upsert_input_struct(model, &model_name_set, &enum_name_set))
+        .collect::<Vec<_>>();
     let model_accessors = schema.models.iter().map(generate_model_accessor);
     let bound_model_accessors = schema.models.iter().map(generate_bound_model_accessor);
     let procedure_modules = match schema
@@ -344,6 +349,7 @@ fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
 
                 #(#create_input_structs)*
                 #(#update_input_structs)*
+                #(#upsert_input_impls)*
             }
 
             pub use inputs::*;
@@ -705,6 +711,11 @@ fn compose_embedded_schema(schema_path: &LitStr) -> TokenStream {
         .models
         .iter()
         .map(|model| generate_update_input_struct(model, &model_name_set, &enum_name_set));
+    let upsert_input_impls = schema
+        .models
+        .iter()
+        .map(|model| generate_upsert_input_struct(model, &model_name_set, &enum_name_set))
+        .collect::<Vec<_>>();
 
     // Procedures are skipped on the embedded path — local apps don't have an
     // RPC surface to call. `@@audit` and `@@emit` directives are silently
@@ -744,6 +755,7 @@ fn compose_embedded_schema(schema_path: &LitStr) -> TokenStream {
             pub mod inputs {
                 #(#create_input_structs)*
                 #(#update_input_structs)*
+                #(#upsert_input_impls)*
             }
 
             pub use inputs::*;
