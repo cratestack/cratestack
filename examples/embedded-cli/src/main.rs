@@ -70,6 +70,32 @@ enum Command {
 
     /// Print the row count (lightweight smoke test).
     Count,
+
+    /// Mark many notes complete in one transaction. Each id runs under its
+    /// own SAVEPOINT — a missing id surfaces as a per-item NOT_FOUND
+    /// without affecting the successful ones.
+    BulkDone {
+        /// One or more note ids (uuid).
+        #[arg(required = true)]
+        ids: Vec<Uuid>,
+    },
+
+    /// Delete many notes in one transaction. Same per-item envelope as
+    /// `bulk-done` — failures don't take the rest down.
+    BulkDelete {
+        #[arg(required = true)]
+        ids: Vec<Uuid>,
+    },
+
+    /// Import notes from a JSON file via `batch_upsert`: the load is
+    /// idempotent, so replaying the same file converges instead of
+    /// duplicating rows. Errors any item with `code: "CONFLICT"`,
+    /// `"DATABASE_ERROR"`, etc.; successes print as `OK <id>`.
+    Import {
+        /// Path to a JSON file holding `[{"id": "...", "title": "...",
+        /// "body": "...", "pinned": false, "completed": false}, ...]`.
+        path: PathBuf,
+    },
 }
 
 fn main() -> ExitCode {
@@ -101,6 +127,9 @@ fn main() -> ExitCode {
         Command::Done { id } => done(&runtime, id),
         Command::Delete { id } => delete(&runtime, id),
         Command::Count => count(&runtime),
+        Command::BulkDone { ids } => bulk_done(&runtime, ids),
+        Command::BulkDelete { ids } => bulk_delete(&runtime, ids),
+        Command::Import { path } => import(&runtime, path),
     };
 
     match result {
@@ -210,4 +239,103 @@ fn count(runtime: &RusqliteRuntime) -> Result<(), Box<dyn std::error::Error>> {
     let rows = notes.find_many().run()?;
     println!("{} notes", rows.len());
     Ok(())
+}
+
+// ─── Batch ops ───────────────────────────────────────────────────────────────
+//
+// Each batch returns a `BatchResponse<Note>` envelope with per-item
+// status. We print one line per item so the operator can spot the
+// failed ones; non-zero exit only on whole-batch infra failure (size
+// cap exceeded, duplicate input keys, DB connection lost).
+
+fn bulk_done(
+    runtime: &RusqliteRuntime,
+    ids: Vec<Uuid>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let notes = ModelDelegate::new(runtime, &cratestack_schema::NOTE_MODEL);
+    let now = Utc::now();
+    let items: Vec<_> = ids
+        .into_iter()
+        .map(|id| {
+            (
+                id,
+                cratestack_schema::UpdateNoteInput {
+                    completed: Some(true),
+                    updatedAt: Some(now),
+                    ..Default::default()
+                },
+            )
+        })
+        .collect();
+    let response = notes.batch_update(items).run()?;
+    print_envelope(&response);
+    Ok(())
+}
+
+fn bulk_delete(
+    runtime: &RusqliteRuntime,
+    ids: Vec<Uuid>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let notes = ModelDelegate::new(runtime, &cratestack_schema::NOTE_MODEL);
+    let response = notes.batch_delete(ids).run()?;
+    print_envelope(&response);
+    Ok(())
+}
+
+#[derive(serde::Deserialize)]
+struct ImportRow {
+    id: Uuid,
+    title: String,
+    #[serde(default)]
+    body: String,
+    #[serde(default)]
+    pinned: bool,
+    #[serde(default)]
+    completed: bool,
+}
+
+fn import(
+    runtime: &RusqliteRuntime,
+    path: PathBuf,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let raw = std::fs::read(&path)?;
+    let rows: Vec<ImportRow> = serde_json::from_slice(&raw)?;
+    let now = Utc::now();
+    let inputs: Vec<_> = rows
+        .into_iter()
+        .map(|r| cratestack_schema::CreateNoteInput {
+            id: r.id,
+            title: r.title,
+            body: r.body,
+            pinned: r.pinned,
+            completed: r.completed,
+            createdAt: now,
+            updatedAt: now,
+        })
+        .collect();
+    let notes = ModelDelegate::new(runtime, &cratestack_schema::NOTE_MODEL);
+    let response = notes.batch_upsert(inputs).run()?;
+    print_envelope(&response);
+    Ok(())
+}
+
+fn print_envelope(response: &cratestack::BatchResponse<cratestack_schema::Note>) {
+    use cratestack::BatchItemStatus;
+    for item in &response.results {
+        match &item.status {
+            BatchItemStatus::Ok { value } => {
+                println!("OK  [{}] {}  {}", item.index, value.id, value.title);
+            }
+            BatchItemStatus::Error { error } => {
+                println!(
+                    "ERR [{}] {}: {}",
+                    item.index, error.code, error.message
+                );
+            }
+        }
+    }
+    println!(
+        "summary: {} total, {} ok, {} err",
+        response.summary.total, response.summary.ok, response.summary.err,
+    );
 }

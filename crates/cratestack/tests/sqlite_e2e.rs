@@ -560,6 +560,135 @@ fn batch_upsert_mixes_insert_and_update_branches_on_pk_conflict() {
 }
 
 #[test]
+fn batch_empty_input_returns_zero_count_envelope_without_touching_db() {
+    // Empty batch is a valid no-op — the outer guard short-circuits before
+    // a transaction is even started. This matters for callers passing a
+    // dynamically-built id list that legitimately turned out empty.
+    let runtime = setup();
+    let delegate = ModelDelegate::<Tag, uuid::Uuid>::new(&runtime, &TAG_MODEL);
+
+    let response = delegate.batch_get(vec![]).run().expect("empty batch_get ok");
+    assert_eq!(response.summary.total, 0);
+    assert_eq!(response.summary.ok, 0);
+    assert_eq!(response.summary.err, 0);
+    assert!(response.results.is_empty());
+
+    let response = delegate
+        .batch_create::<cratestack_schema::CreateTagInput>(vec![])
+        .run()
+        .expect("empty batch_create ok");
+    assert_eq!(response.summary.total, 0);
+
+    let response = delegate
+        .batch_delete(vec![])
+        .run()
+        .expect("empty batch_delete ok");
+    assert_eq!(response.summary.total, 0);
+}
+
+#[test]
+fn batch_get_rejects_size_cap_violation_before_running_sql() {
+    // Outer guard: more than BATCH_MAX_ITEMS items in one call is rejected
+    // up-front. Without this gate, a malicious or buggy caller could pin a
+    // connection while we built and bound 100k placeholders.
+    let runtime = setup();
+    let delegate = ModelDelegate::<Tag, uuid::Uuid>::new(&runtime, &TAG_MODEL);
+
+    let too_many: Vec<uuid::Uuid> = (0..1001).map(|_| uuid::Uuid::new_v4()).collect();
+    let err = delegate
+        .batch_get(too_many)
+        .run()
+        .expect_err("size cap loud-fails");
+
+    let message = err.to_string();
+    assert!(
+        message.contains("1001") && message.contains("1000"),
+        "expected size-cap error naming actual + max, got: {message}",
+    );
+}
+
+#[test]
+fn batch_update_does_not_persist_failed_items() {
+    // Belt-and-braces around savepoint isolation: even when an item
+    // appears between two successful ones, its rollback must not leave
+    // a half-written row. This guards against an accidental future
+    // refactor that drops a savepoint somewhere.
+    let runtime = setup();
+    let delegate = ModelDelegate::<Tag, uuid::Uuid>::new(&runtime, &TAG_MODEL);
+
+    let alpha = uuid::Uuid::new_v4();
+    let beta = uuid::Uuid::new_v4();
+    for (id, label) in [(alpha, "alpha-orig"), (beta, "beta-orig")] {
+        delegate
+            .create(cratestack_schema::CreateTagInput {
+                id,
+                label: label.into(),
+            })
+            .run()
+            .unwrap();
+    }
+    let ghost = uuid::Uuid::new_v4();
+
+    let _response = delegate
+        .batch_update(vec![
+            (alpha, cratestack_schema::UpdateTagInput { label: Some("alpha-new".into()) }),
+            (ghost, cratestack_schema::UpdateTagInput { label: Some("never-applied".into()) }),
+            (beta, cratestack_schema::UpdateTagInput { label: Some("beta-new".into()) }),
+        ])
+        .run()
+        .expect("batch_update infra ok");
+
+    // Both flanking successes persisted; the ghost did not.
+    assert_eq!(delegate.find_unique(alpha).run().unwrap().unwrap().label, "alpha-new");
+    assert_eq!(delegate.find_unique(beta).run().unwrap().unwrap().label, "beta-new");
+    assert!(delegate.find_unique(ghost).run().unwrap().is_none());
+
+    // And the database has exactly 2 rows total — no orphan from the
+    // failed update.
+    assert_eq!(delegate.find_many().run().unwrap().len(), 2);
+}
+
+#[test]
+fn batch_create_rejects_duplicate_constraint_per_item_not_whole_batch() {
+    // batch_create deliberately skips the outer-guard dup check (the PK
+    // isn't reachable through CreateModelInput). Duplicates within the
+    // batch should land as per-item CONFLICT, with the rest of the batch
+    // committing cleanly. This exercises the rusqlite item_error mapping
+    // and confirms savepoint isolation under same-batch PK collision.
+    let runtime = setup();
+    let delegate = ModelDelegate::<Tag, uuid::Uuid>::new(&runtime, &TAG_MODEL);
+
+    let dup = uuid::Uuid::new_v4();
+    let other = uuid::Uuid::new_v4();
+    let response = delegate
+        .batch_create(vec![
+            cratestack_schema::CreateTagInput {
+                id: dup,
+                label: "first".into(),
+            },
+            cratestack_schema::CreateTagInput {
+                id: other,
+                label: "middle".into(),
+            },
+            cratestack_schema::CreateTagInput {
+                id: dup, // same PK as item 0 — DB raises UNIQUE
+                label: "third".into(),
+            },
+        ])
+        .run()
+        .expect("infra ok despite per-item conflict");
+
+    assert_eq!(response.summary.ok, 2);
+    assert_eq!(response.summary.err, 1);
+    assert_eq!(err_code(&response.results[2]), "CONFLICT");
+
+    // The first two committed; the third left no trace.
+    assert_eq!(delegate.find_unique(dup).run().unwrap().unwrap().label, "first");
+    assert_eq!(delegate.find_unique(other).run().unwrap().unwrap().label, "middle");
+    assert_eq!(delegate.find_many().run().unwrap().len(), 2);
+}
+
+#[test]
 fn descriptor_columns_match_model_field_order() {
     // Belt-and-braces: the projection the macro builds for SELECT must list
     // the same columns the FromRusqliteRow impl reads, in the same order.

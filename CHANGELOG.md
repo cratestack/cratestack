@@ -52,6 +52,26 @@ Detection runs on:
 - New helper in `cratestack-sql`: `find_duplicate_sql_value` for upsert-side dedup, since `SqlValue::Float` / `SqlValue::Decimal` don't admit a sound `Hash` impl.
 - New `RusqliteError` variants: `BatchTooLarge { actual, maximum }` and `DuplicateBatchKey { first, duplicate }`.
 
+### Worked example
+
+The `examples/embedded-cli` notes app gains three batch subcommands that walk through the envelope in real terminal output:
+
+```text
+$ notes import bulk-load.json
+OK  [0] 11111111-…  first
+OK  [1] 22222222-…  second
+summary: 2 total, 2 ok, 0 err
+
+$ notes bulk-done 11111111-… 99999999-…
+OK  [0] 11111111-…  first
+ERR [1] NOT_FOUND: no row matched
+summary: 2 total, 1 ok, 1 err
+```
+
+- `notes import <file.json>` — `batch_upsert` over a JSON file; replays converge.
+- `notes bulk-done <id> [id...]` — `batch_update` to mark complete.
+- `notes bulk-delete <id> [id...]` — `batch_delete`.
+
 ### Deferred
 
 - **Auto-generated `POST /<model>/batch-*` axum routes**: the wire envelope types (`BatchRequest<I>` / `BatchResponse<T>`) are stable in `cratestack-core` so apps can hand-roll a thin handler against the ORM today. Macro-driven route emission per model lands in a follow-up.

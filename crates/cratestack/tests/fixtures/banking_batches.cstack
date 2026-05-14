@@ -1,0 +1,31 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+// Versioned + audit-enabled + event-emitting client-PK model. Exercises
+// every fan-out path the batch primitives drive: per-item audit rows,
+// per-item event outbox entries, savepoint rollback under If-Match
+// mismatch, plus all three branches of batch_upsert (insert / update /
+// dedup loud-fail).
+//
+// Named to play nicely with the framework's naive pluralizer
+// (`BatchRow` → `batch_rows`); avoids the `entry` → `entrys` rough
+// edge.
+model BatchRow {
+  id Int @id
+  label String
+  balance Int
+  version Int @version
+
+  @@audit
+  @@emit(created, updated, deleted)
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
