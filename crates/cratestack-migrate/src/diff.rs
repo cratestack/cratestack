@@ -22,7 +22,7 @@ use cratestack_core::Schema;
 use crate::convert::{TableProjection, project_model};
 use crate::ir::{
     AddColumn, AlterColumnDefault, AlterColumnNullability, AlterColumnType, Column, DropColumn,
-    DropIndex, DropTable, Op,
+    DropIndex, DropTable, Op, RenameColumn, RenameTable,
 };
 
 /// Compute the migration that turns `prev` into `next`.
@@ -48,6 +48,8 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
         })
         .collect();
 
+    let mut rename_tables: Vec<Op> = Vec::new();
+    let mut rename_columns: Vec<Op> = Vec::new();
     let mut drop_indexes: Vec<Op> = Vec::new();
     let mut drop_columns: Vec<Op> = Vec::new();
     let mut drop_tables: Vec<Op> = Vec::new();
@@ -56,15 +58,47 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
     let mut alter_columns: Vec<Op> = Vec::new();
     let mut add_indexes: Vec<Op> = Vec::new();
 
-    // Tables removed entirely.
+    // Resolve table renames first. A model in `next` whose
+    // `@@rename(from = "...")` points at a table name that exists in
+    // `prev` and whose own new name does not exist in `prev` matches
+    // an existing table; we emit RenameTable and pair the projections
+    // for the column-level diff below.
+    let mut renamed_from: BTreeMap<&str, &str> = BTreeMap::new();
+    for (new_name, projection) in &next_tables {
+        let Some(old_name) = projection.rename_from.as_deref() else {
+            continue;
+        };
+        if !prev_tables.contains_key(old_name) {
+            continue;
+        }
+        if prev_tables.contains_key(new_name.as_str()) {
+            // The new name already exists in prev — this is not a
+            // rename, it's a collision. Fall through to drop+add.
+            continue;
+        }
+        rename_tables.push(Op::RenameTable(RenameTable {
+            from: old_name.to_owned(),
+            to: new_name.clone(),
+        }));
+        renamed_from.insert(new_name.as_str(), old_name);
+    }
+
+    // Tables removed entirely (excluding ones consumed by a rename).
+    let consumed_old: BTreeSet<&str> = renamed_from.values().copied().collect();
     for (name, _projection) in &prev_tables {
+        if consumed_old.contains(name.as_str()) {
+            continue;
+        }
         if !next_tables.contains_key(name) {
             drop_tables.push(Op::DropTable(DropTable { name: name.clone() }));
         }
     }
 
-    // Tables added entirely.
+    // Tables added entirely (excluding ones produced by a rename).
     for (name, projection) in &next_tables {
+        if renamed_from.contains_key(name.as_str()) {
+            continue;
+        }
         if !prev_tables.contains_key(name) {
             create_tables.push(Op::CreateTable(crate::ir::CreateTable {
                 name: name.clone(),
@@ -76,10 +110,22 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
         }
     }
 
-    // Tables present in both — column- and index-level diff.
+    // Tables present in both (directly or via rename) — column- and
+    // index-level diff.
     for (name, prev_projection) in &prev_tables {
-        let Some(next_projection) = next_tables.get(name) else {
-            continue;
+        // Find the next projection by direct name or by rename map.
+        let next_projection = match next_tables.get(name) {
+            Some(projection) => projection,
+            None => {
+                // Maybe a rename: look up by inverse map.
+                let renamed_new = renamed_from
+                    .iter()
+                    .find_map(|(new, old)| (*old == name.as_str()).then_some(*new));
+                match renamed_new.and_then(|new| next_tables.get(new)) {
+                    Some(projection) => projection,
+                    None => continue,
+                }
+            }
         };
 
         let prev_columns: BTreeMap<_, _> = prev_projection
@@ -93,30 +139,94 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
             .map(|column| (column.name.as_str(), column))
             .collect();
 
+        // The table name to put on emitted ops is the *new* name —
+        // RenameTable lands earlier in the migration, so all
+        // subsequent column ops should reference the post-rename
+        // table name.
+        let effective_table = next_projection.name.as_str();
+
+        // Column-level renames: a next-side column with
+        // `@rename(from = "...")` consumes the matching prev-side
+        // column so we don't emit drop+add for it.
+        let column_renamed_from: BTreeMap<&str, &str> = next_projection
+            .column_renames
+            .iter()
+            .filter_map(|(new, old)| {
+                if prev_columns.contains_key(old.as_str())
+                    && !prev_columns.contains_key(new.as_str())
+                    && next_columns.contains_key(new.as_str())
+                {
+                    Some((new.as_str(), old.as_str()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let consumed_prev_columns: BTreeSet<&str> =
+            column_renamed_from.values().copied().collect();
+
+        for (new_name, old_name) in &column_renamed_from {
+            rename_columns.push(Op::RenameColumn(RenameColumn {
+                table: effective_table.to_owned(),
+                from: (*old_name).to_owned(),
+                to: (*new_name).to_owned(),
+            }));
+        }
+
         for (column_name, _) in &prev_columns {
+            if consumed_prev_columns.contains(column_name) {
+                continue;
+            }
             if !next_columns.contains_key(column_name) {
                 drop_columns.push(Op::DropColumn(DropColumn {
-                    table: name.clone(),
+                    table: effective_table.to_owned(),
                     column: (*column_name).to_owned(),
                 }));
             }
         }
 
         for (column_name, column) in &next_columns {
+            if column_renamed_from.contains_key(column_name) {
+                continue;
+            }
             if !prev_columns.contains_key(column_name) {
                 add_columns.push(Op::AddColumn(AddColumn {
-                    table: name.clone(),
+                    table: effective_table.to_owned(),
                     column: (*column).clone(),
                 }));
             }
         }
 
         // Columns present in both — emit alter ops for shape changes.
+        // Includes columns that were renamed: their identity (the
+        // value the user means) is preserved, so a type or default
+        // change on a renamed column still produces an alter op.
         for (column_name, prev_column) in &prev_columns {
-            let Some(next_column) = next_columns.get(column_name) else {
+            // If this prev-column was consumed by a rename, compare
+            // against the *new* column on the next side.
+            let renamed_to = column_renamed_from
+                .iter()
+                .find_map(|(new, old)| (*old == *column_name).then_some(*new));
+            let next_column = match renamed_to {
+                Some(new_name) => next_columns.get(new_name),
+                None => next_columns.get(column_name),
+            };
+            let Some(next_column) = next_column else {
                 continue;
             };
-            alter_columns.extend(column_alter_ops(name, prev_column, next_column));
+            // For alter ops, use the *new* column name so they line
+            // up with the rename emitted earlier.
+            let effective_column = match renamed_to {
+                Some(new_name) => new_name,
+                None => *column_name,
+            };
+            let mut with_effective_name = (*prev_column).clone();
+            with_effective_name.name = effective_column.to_owned();
+            alter_columns.extend(column_alter_ops(
+                effective_table,
+                &with_effective_name,
+                next_column,
+            ));
         }
 
         let prev_indexes: BTreeSet<&str> = prev_projection
@@ -146,6 +256,9 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
     }
 
     let mut ops = Vec::new();
+    // Renames first so subsequent ops can reference the new names.
+    ops.append(&mut rename_tables);
+    ops.append(&mut rename_columns);
     ops.append(&mut drop_indexes);
     ops.append(&mut drop_columns);
     ops.append(&mut drop_tables);

@@ -128,6 +128,19 @@ pub struct AlterColumnNullability {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RenameTable {
+    pub from: String,
+    pub to: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RenameColumn {
+    pub table: String,
+    pub from: String,
+    pub to: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AlterColumnDefault {
     pub table: String,
     pub column: String,
@@ -147,6 +160,8 @@ pub enum Op {
     AlterColumnType(AlterColumnType),
     AlterColumnNullability(AlterColumnNullability),
     AlterColumnDefault(AlterColumnDefault),
+    RenameTable(RenameTable),
+    RenameColumn(RenameColumn),
 }
 
 impl Op {
@@ -174,6 +189,9 @@ impl Op {
             },
             // Default-value changes don't touch existing rows.
             Op::AlterColumnDefault(_) => Destructiveness::Safe,
+            // Renames preserve all data; both backends support
+            // ALTER TABLE … RENAME on modern versions.
+            Op::RenameTable(_) | Op::RenameColumn(_) => Destructiveness::Safe,
         }
     }
 }

@@ -27,6 +27,7 @@ use crate::emit::EmittedMigration;
 use crate::ir::{
     AddColumn, AddIndex, AlterColumnDefault, AlterColumnNullability, AlterColumnType, Column,
     ColumnArity, ColumnDefault, CreateTable, Destructiveness, DropColumn, DropIndex, Op,
+    RenameColumn, RenameTable,
 };
 
 pub fn emit(ops: &[Op]) -> EmittedMigration {
@@ -101,7 +102,30 @@ fn emit_up_op(sql: &mut String, op: &Op) {
         Op::AlterColumnType(alter) => emit_alter_column_type(sql, alter),
         Op::AlterColumnNullability(alter) => emit_alter_column_nullability(sql, alter),
         Op::AlterColumnDefault(alter) => emit_alter_column_default(sql, alter),
+        Op::RenameTable(rename) => emit_rename_table(sql, rename),
+        Op::RenameColumn(rename) => emit_rename_column(sql, rename),
     }
+}
+
+fn emit_rename_table(sql: &mut String, rename: &RenameTable) {
+    writeln!(
+        sql,
+        "ALTER TABLE {} RENAME TO {};",
+        quote_ident(&rename.from),
+        quote_ident(&rename.to)
+    )
+    .unwrap();
+}
+
+fn emit_rename_column(sql: &mut String, rename: &RenameColumn) {
+    writeln!(
+        sql,
+        "ALTER TABLE {} RENAME COLUMN {} TO {};",
+        quote_ident(&rename.table),
+        quote_ident(&rename.from),
+        quote_ident(&rename.to)
+    )
+    .unwrap();
 }
 
 fn emit_alter_column_type(sql: &mut String, alter: &AlterColumnType) {
@@ -163,6 +187,21 @@ fn emit_down_op(sql: &mut String, op: &Op) {
             sql.push_str(
                 "-- SQLite alter reversal requires the same table rebuild as the forward op.\n",
             );
+        }
+        Op::RenameTable(rename) => {
+            let reverse = RenameTable {
+                from: rename.to.clone(),
+                to: rename.from.clone(),
+            };
+            emit_rename_table(sql, &reverse);
+        }
+        Op::RenameColumn(rename) => {
+            let reverse = RenameColumn {
+                table: rename.table.clone(),
+                from: rename.to.clone(),
+                to: rename.from.clone(),
+            };
+            emit_rename_column(sql, &reverse);
         }
         Op::DropTable(_) | Op::DropColumn(_) | Op::DropIndex(_) | Op::AlterColumnType(_) => {
             // Routed through the error stub above when lossy.

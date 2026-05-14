@@ -19,7 +19,15 @@ use crate::naming::{column_name, index_name_unique, table_name};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TableProjection {
     pub(crate) name: String,
+    /// Old SQL table name declared via `@@rename(from = "...")`, if
+    /// any. Used by the diff engine to match this projection against
+    /// the previous schema's projection of the same logical table.
+    pub(crate) rename_from: Option<String>,
     pub(crate) columns: Vec<Column>,
+    /// Map from current SQL column name → previous SQL column name,
+    /// for fields that carry `@rename(from = "...")`. Empty when
+    /// there are no column renames.
+    pub(crate) column_renames: Vec<(String, String)>,
     pub(crate) indexes: Vec<AddIndex>,
 }
 
@@ -28,7 +36,15 @@ pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
     let known_types: HashSet<&str> = schema.types.iter().map(|t| t.name.as_str()).collect();
 
     let table = table_name(&model.name);
+    // `@@rename(from = "...")` and `@rename(from = "...")` take the
+    // SQL identifier the developer is renaming, not the PascalCase
+    // model name or camelCase field name. This matches the docs and
+    // is the more intuitive form: the rename describes what's in the
+    // database, not what's in the .cstack source.
+    let rename_from = model_rename_from(model);
+
     let mut columns = Vec::with_capacity(model.fields.len());
+    let mut column_renames = Vec::new();
     let mut indexes = Vec::new();
 
     for field in &model.fields {
@@ -41,6 +57,9 @@ pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
         }
 
         let column = field_to_column(field, &known_enums, &known_types);
+        if let Some(old_name) = field_rename_from(field) {
+            column_renames.push((column.name.clone(), column_name(&old_name)));
+        }
         if field_has_unique(field) && !column.primary_key {
             indexes.push(AddIndex {
                 name: index_name_unique(&table, &column.name),
@@ -54,9 +73,46 @@ pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
 
     TableProjection {
         name: table,
+        rename_from,
         columns,
+        column_renames,
         indexes,
     }
+}
+
+fn model_rename_from(model: &Model) -> Option<String> {
+    let raw = model
+        .attributes
+        .iter()
+        .find(|attribute| attribute.raw.starts_with("@@rename("))?
+        .raw
+        .as_str();
+    parse_rename_from(raw, "@@rename(")
+}
+
+fn field_rename_from(field: &Field) -> Option<String> {
+    let raw = field
+        .attributes
+        .iter()
+        .find(|attribute| attribute.raw.starts_with("@rename("))?
+        .raw
+        .as_str();
+    parse_rename_from(raw, "@rename(")
+}
+
+/// Extract the `<old>` value from `@rename(from = "<old>")` or
+/// `@@rename(from = "<old>")`. Returns `None` for malformed input —
+/// the diff engine treats malformed renames as if the attribute were
+/// absent, falling back to drop+add. A future slice can promote this
+/// to a parse-time validation error.
+fn parse_rename_from(raw: &str, prefix: &str) -> Option<String> {
+    let inner = raw.strip_prefix(prefix)?.strip_suffix(')')?.trim();
+    let rest = inner.strip_prefix("from")?.trim_start();
+    let value_part = rest.strip_prefix('=')?.trim_start();
+    let unquoted = value_part
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))?;
+    Some(unquoted.to_owned())
 }
 
 fn field_to_column(
