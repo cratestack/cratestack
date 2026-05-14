@@ -43,6 +43,31 @@ pub(crate) fn generate_model_struct_only(
     }
 }
 
+/// Emit `impl ModelPrimaryKey<PK> for Model`. Used by batch operations to
+/// pair returned rows back to their input position. Backend-agnostic — same
+/// impl works on server (sqlx) and embedded (rusqlite) since it only
+/// touches in-memory model fields.
+pub(crate) fn generate_primary_key_accessor_impl(
+    model: &Model,
+) -> proc_macro2::TokenStream {
+    let primary_key = match model.fields.iter().find(|field| is_primary_key(field)) {
+        Some(pk) => pk,
+        // Validated schemas always have a primary key; this guard exists
+        // only so the macro doesn't panic during partial-fixture tests.
+        None => return quote! {},
+    };
+    let model_ident = ident(&model.name);
+    let pk_type = rust_type_tokens(&primary_key.ty);
+    let pk_field_ident = ident(&primary_key.name);
+    quote! {
+        impl ::cratestack::ModelPrimaryKey<#pk_type> for #model_ident {
+            fn primary_key(&self) -> #pk_type {
+                self.#pk_field_ident.clone()
+            }
+        }
+    }
+}
+
 /// Emit `impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for Model` only.
 /// **Server-side composer use only — must not appear in embedded output.**
 pub(crate) fn generate_pg_from_row_impl(

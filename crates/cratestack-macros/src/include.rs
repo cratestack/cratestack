@@ -35,7 +35,8 @@ use crate::model::{
     generate_client_model_struct, generate_client_update_input_struct,
     generate_create_input_struct, generate_field_module, generate_model_accessor,
     generate_model_descriptor, generate_model_struct_only, generate_pg_from_row_impl,
-    generate_rusqlite_from_row_impl, generate_update_input_struct, generate_upsert_input_struct,
+    generate_primary_key_accessor_impl, generate_rusqlite_from_row_impl,
+    generate_update_input_struct, generate_upsert_input_struct,
 };
 use crate::procedure::{
     generate_client_procedure_module, generate_procedure_module, generate_procedure_registry_method,
@@ -155,6 +156,11 @@ fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
         .models
         .iter()
         .map(|model| generate_pg_from_row_impl(model, &model_name_set, &enum_name_set));
+    let primary_key_accessor_impls = schema
+        .models
+        .iter()
+        .map(generate_primary_key_accessor_impl)
+        .collect::<Vec<_>>();
     let auth = schema.auth.as_ref();
     let model_descriptors = match schema
         .models
@@ -337,6 +343,7 @@ fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
 
                 #(#model_structs)*
                 #(#pg_from_row_impls)*
+                #(#primary_key_accessor_impls)*
                 #(#model_descriptors)*
             }
 
@@ -676,6 +683,11 @@ fn compose_embedded_schema(schema_path: &LitStr) -> TokenStream {
         .models
         .iter()
         .map(|model| generate_rusqlite_from_row_impl(model, &model_name_set, &enum_name_set));
+    let primary_key_accessor_impls = schema
+        .models
+        .iter()
+        .map(generate_primary_key_accessor_impl)
+        .collect::<Vec<_>>();
     let auth = schema.auth.as_ref();
     let model_descriptors = match schema
         .models
@@ -745,6 +757,7 @@ fn compose_embedded_schema(schema_path: &LitStr) -> TokenStream {
             pub mod models {
                 #(#model_structs)*
                 #(#rusqlite_from_row_impls)*
+                #(#primary_key_accessor_impls)*
                 #(#model_descriptors)*
             }
 

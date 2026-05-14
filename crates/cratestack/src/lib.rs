@@ -19,8 +19,8 @@ pub use cratestack_policy::{
 // where sqlx can't compile.
 pub use cratestack_sql::{
     CreateDefault, CreateDefaultType, CreateModelInput, FieldRef, Filter, FilterExpr,
-    IntoSqlValue, ModelColumn, ModelDescriptor, OrderClause, RelationFilter, SortDirection,
-    SqlColumnValue, SqlValue, UpdateModelInput, UpsertModelInput,
+    IntoSqlValue, ModelColumn, ModelDescriptor, ModelPrimaryKey, OrderClause, RelationFilter,
+    SortDirection, SqlColumnValue, SqlValue, UpdateModelInput, UpsertModelInput,
 };
 
 // Embedded SQLite backend — wasm32-compatible alongside native (mobile,
