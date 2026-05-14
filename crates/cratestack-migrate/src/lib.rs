@@ -8,8 +8,14 @@
 //! See ADR 0004 for the full design:
 //! <https://cratestack.dev/internals/schema-diff-adr>.
 
+mod convert;
+mod diff;
 mod error;
+pub mod ir;
+mod naming;
 mod snapshot;
 
+pub use diff::diff;
 pub use error::MigrateError;
+pub use naming::{column_name, index_name_unique, table_name};
 pub use snapshot::{Snapshot, SNAPSHOT_FORMAT_VERSION, read_snapshot, write_snapshot};
