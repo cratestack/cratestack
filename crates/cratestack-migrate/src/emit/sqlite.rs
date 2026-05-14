@@ -34,6 +34,16 @@ pub fn emit(ops: &[Op]) -> EmittedMigration {
     let mut has_lossy = false;
     let mut has_blocking = false;
     for op in ops {
+        // Enum ops have no SQLite footprint — they do not contribute
+        // to has_lossy / has_blocking, otherwise an enum-variant
+        // change would mark the SQLite migration as destructive while
+        // emitting an empty up.sql.
+        if matches!(
+            op,
+            Op::CreateEnum(_) | Op::AlterEnumAddVariant(_) | Op::DropEnum(_)
+        ) {
+            continue;
+        }
         match op.destructiveness() {
             Destructiveness::Safe => {}
             Destructiveness::Lossy => has_lossy = true,
@@ -104,6 +114,13 @@ fn emit_up_op(sql: &mut String, op: &Op) {
         Op::AlterColumnDefault(alter) => emit_alter_column_default(sql, alter),
         Op::RenameTable(rename) => emit_rename_table(sql, rename),
         Op::RenameColumn(rename) => emit_rename_column(sql, rename),
+        Op::CreateEnum(_) | Op::AlterEnumAddVariant(_) | Op::DropEnum(_) => {
+            // SQLite has no native enum type. The cratestack-rusqlite
+            // runtime stores enum values as text via BLOB affinity;
+            // the Rust enum type drives serde and validation. Enum
+            // DDL produces no SQLite migration — variant changes are
+            // a Rust-side concern only. See ADR 0004.
+        }
     }
 }
 
@@ -205,6 +222,9 @@ fn emit_down_op(sql: &mut String, op: &Op) {
         }
         Op::DropTable(_) | Op::DropColumn(_) | Op::DropIndex(_) | Op::AlterColumnType(_) => {
             // Routed through the error stub above when lossy.
+        }
+        Op::CreateEnum(_) | Op::AlterEnumAddVariant(_) | Op::DropEnum(_) => {
+            // Enum ops have no SQLite footprint; nothing to reverse.
         }
     }
 }
@@ -456,6 +476,63 @@ model Order {
         ));
         let migration = emit(&diff(&prev, &next));
         assert!(migration.up.contains("status BLOB NOT NULL DEFAULT 'pending'"));
+    }
+
+    #[test]
+    fn enum_changes_produce_no_sqlite_ddl() {
+        let prev = schema(&with_models(
+            r#"
+enum OrderStatus {
+  Pending
+}
+
+model Order {
+  id Int @id
+  status OrderStatus
+}
+"#,
+        ));
+        let next = schema(&with_models(
+            r#"
+enum OrderStatus {
+  Pending
+  Shipped
+}
+
+model Order {
+  id Int @id
+  status OrderStatus
+}
+"#,
+        ));
+        let migration = emit(&diff(&prev, &next));
+        // Variant added on the .cstack side; SQLite emits nothing
+        // and the migration is not flagged destructive.
+        assert!(!migration.has_lossy);
+        assert_eq!(migration.up.trim(), "");
+        assert_eq!(migration.down.trim(), "");
+    }
+
+    #[test]
+    fn enum_column_renders_as_blob_on_sqlite() {
+        let prev = schema(&with_models(""));
+        let next = schema(&with_models(
+            r#"
+enum OrderStatus {
+  Pending
+}
+
+model Order {
+  id Int @id
+  status OrderStatus
+}
+"#,
+        ));
+        let migration = emit(&diff(&prev, &next));
+        // No CREATE TYPE — SQLite has none.
+        assert!(!migration.up.contains("CREATE TYPE"));
+        // Column still lands as BLOB.
+        assert!(migration.up.contains("status BLOB NOT NULL"));
     }
 
     #[test]

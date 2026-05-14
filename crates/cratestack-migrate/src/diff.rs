@@ -21,8 +21,8 @@ use cratestack_core::Schema;
 
 use crate::convert::{TableProjection, project_model};
 use crate::ir::{
-    AddColumn, AlterColumnDefault, AlterColumnNullability, AlterColumnType, Column, DropColumn,
-    DropIndex, DropTable, Op, RenameColumn, RenameTable,
+    AddColumn, AlterColumnDefault, AlterColumnNullability, AlterColumnType, AlterEnumAddVariant,
+    Column, CreateEnum, DropColumn, DropEnum, DropIndex, DropTable, Op, RenameColumn, RenameTable,
 };
 
 /// Compute the migration that turns `prev` into `next`.
@@ -48,6 +48,9 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
         })
         .collect();
 
+    let mut create_enums: Vec<Op> = Vec::new();
+    let mut alter_enums: Vec<Op> = Vec::new();
+    let mut drop_enums: Vec<Op> = Vec::new();
     let mut rename_tables: Vec<Op> = Vec::new();
     let mut rename_columns: Vec<Op> = Vec::new();
     let mut drop_indexes: Vec<Op> = Vec::new();
@@ -57,6 +60,63 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
     let mut add_columns: Vec<Op> = Vec::new();
     let mut alter_columns: Vec<Op> = Vec::new();
     let mut add_indexes: Vec<Op> = Vec::new();
+
+    // Enums first — tables that reference an enum need the type to
+    // exist before CREATE TABLE runs.
+    {
+        let prev_enums: BTreeMap<&str, Vec<&str>> = prev
+            .enums
+            .iter()
+            .map(|decl| {
+                (
+                    decl.name.as_str(),
+                    decl.variants.iter().map(|v| v.name.as_str()).collect(),
+                )
+            })
+            .collect();
+        let next_enums: BTreeMap<&str, Vec<&str>> = next
+            .enums
+            .iter()
+            .map(|decl| {
+                (
+                    decl.name.as_str(),
+                    decl.variants.iter().map(|v| v.name.as_str()).collect(),
+                )
+            })
+            .collect();
+
+        for (name, _) in &prev_enums {
+            if !next_enums.contains_key(name) {
+                drop_enums.push(Op::DropEnum(DropEnum {
+                    name: (*name).to_owned(),
+                }));
+            }
+        }
+        for (name, variants) in &next_enums {
+            match prev_enums.get(name) {
+                None => create_enums.push(Op::CreateEnum(CreateEnum {
+                    name: (*name).to_owned(),
+                    variants: variants.iter().map(|v| (*v).to_owned()).collect(),
+                })),
+                Some(prev_variants) => {
+                    // Variants present in next but not prev → ADD VALUE.
+                    // Variant removal is out of scope for this slice
+                    // (requires the Postgres swap-dance, plus a
+                    // backfill plan for referencing rows).
+                    let prev_set: std::collections::HashSet<&str> =
+                        prev_variants.iter().copied().collect();
+                    for variant in variants {
+                        if !prev_set.contains(variant) {
+                            alter_enums.push(Op::AlterEnumAddVariant(AlterEnumAddVariant {
+                                name: (*name).to_owned(),
+                                value: (*variant).to_owned(),
+                            }));
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // Resolve table renames first. A model in `next` whose
     // `@@rename(from = "...")` points at a table name that exists in
@@ -256,7 +316,11 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
     }
 
     let mut ops = Vec::new();
-    // Renames first so subsequent ops can reference the new names.
+    // Enum creates first so tables can reference them.
+    ops.append(&mut create_enums);
+    ops.append(&mut alter_enums);
+    // Renames before table-level changes so subsequent ops can
+    // reference the new names.
     ops.append(&mut rename_tables);
     ops.append(&mut rename_columns);
     ops.append(&mut drop_indexes);
@@ -266,6 +330,8 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
     ops.append(&mut add_columns);
     ops.append(&mut alter_columns);
     ops.append(&mut add_indexes);
+    // Enum drops last — after any tables that depended on them.
+    ops.append(&mut drop_enums);
     ops
 }
 

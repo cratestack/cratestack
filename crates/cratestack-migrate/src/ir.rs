@@ -128,6 +128,25 @@ pub struct AlterColumnNullability {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CreateEnum {
+    /// PascalCase `.cstack` name. The Postgres emitter snake-cases
+    /// this for the SQL type identifier.
+    pub name: String,
+    pub variants: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AlterEnumAddVariant {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DropEnum {
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RenameTable {
     pub from: String,
     pub to: String,
@@ -162,6 +181,9 @@ pub enum Op {
     AlterColumnDefault(AlterColumnDefault),
     RenameTable(RenameTable),
     RenameColumn(RenameColumn),
+    CreateEnum(CreateEnum),
+    AlterEnumAddVariant(AlterEnumAddVariant),
+    DropEnum(DropEnum),
 }
 
 impl Op {
@@ -192,6 +214,12 @@ impl Op {
             // Renames preserve all data; both backends support
             // ALTER TABLE … RENAME on modern versions.
             Op::RenameTable(_) | Op::RenameColumn(_) => Destructiveness::Safe,
+            // Creating an enum or adding a variant is safe. Dropping
+            // an enum entirely is lossy (rows that reference it on
+            // other tables would need to be migrated first; the
+            // generator does not attempt that automatically).
+            Op::CreateEnum(_) | Op::AlterEnumAddVariant(_) => Destructiveness::Safe,
+            Op::DropEnum(_) => Destructiveness::Lossy,
         }
     }
 }

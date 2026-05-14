@@ -15,10 +15,11 @@ use std::fmt::Write as _;
 
 use crate::emit::EmittedMigration;
 use crate::ir::{
-    AddColumn, AddIndex, AlterColumnDefault, AlterColumnNullability, AlterColumnType, Column,
-    ColumnArity, ColumnDefault, ColumnType, CreateTable, Destructiveness, DropColumn, DropIndex,
-    Op, RenameColumn, RenameTable,
+    AddColumn, AddIndex, AlterColumnDefault, AlterColumnNullability, AlterColumnType,
+    AlterEnumAddVariant, Column, ColumnArity, ColumnDefault, ColumnType, CreateEnum, CreateTable,
+    Destructiveness, DropColumn, DropEnum, DropIndex, Op, RenameColumn, RenameTable,
 };
+use crate::naming;
 
 pub fn emit(ops: &[Op]) -> EmittedMigration {
     let mut has_lossy = false;
@@ -95,7 +96,40 @@ fn emit_up_op(sql: &mut String, op: &Op) {
         Op::AlterColumnDefault(alter) => emit_alter_column_default(sql, alter),
         Op::RenameTable(rename) => emit_rename_table(sql, rename),
         Op::RenameColumn(rename) => emit_rename_column(sql, rename),
+        Op::CreateEnum(create) => emit_create_enum(sql, create),
+        Op::AlterEnumAddVariant(alter) => emit_alter_enum_add(sql, alter),
+        Op::DropEnum(drop) => emit_drop_enum(sql, drop),
     }
+}
+
+fn emit_create_enum(sql: &mut String, create: &CreateEnum) {
+    let type_name = quote_ident(&naming::column_name(&create.name));
+    let variants: Vec<String> = create
+        .variants
+        .iter()
+        .map(|v| format!("'{}'", v.replace('\'', "''")))
+        .collect();
+    writeln!(
+        sql,
+        "CREATE TYPE {type_name} AS ENUM ({});",
+        variants.join(", ")
+    )
+    .unwrap();
+}
+
+fn emit_alter_enum_add(sql: &mut String, alter: &AlterEnumAddVariant) {
+    let type_name = quote_ident(&naming::column_name(&alter.name));
+    writeln!(
+        sql,
+        "ALTER TYPE {type_name} ADD VALUE '{}';",
+        alter.value.replace('\'', "''")
+    )
+    .unwrap();
+}
+
+fn emit_drop_enum(sql: &mut String, drop: &DropEnum) {
+    let type_name = quote_ident(&naming::column_name(&drop.name));
+    writeln!(sql, "DROP TYPE {type_name};").unwrap();
 }
 
 fn emit_rename_table(sql: &mut String, rename: &RenameTable) {
@@ -167,7 +201,21 @@ fn emit_down_op(sql: &mut String, op: &Op) {
             };
             emit_rename_column(sql, &reverse);
         }
-        Op::DropTable(_) | Op::DropColumn(_) | Op::AlterColumnType(_) => {
+        Op::CreateEnum(create) => {
+            writeln!(
+                sql,
+                "DROP TYPE {};",
+                quote_ident(&naming::column_name(&create.name))
+            )
+            .unwrap();
+        }
+        Op::AlterEnumAddVariant(_) => {
+            // Postgres has no `DROP VALUE`. Reversal would require
+            // the swap-dance, which the generator does not attempt
+            // here. Comment for the reader.
+            sql.push_str("-- AlterEnumAddVariant has no Postgres reversal; manual rebuild required.\n");
+        }
+        Op::DropTable(_) | Op::DropColumn(_) | Op::AlterColumnType(_) | Op::DropEnum(_) => {
             // Lossy — routed through the error stub above. AlterColumnType
             // is conservatively lossy because the diff engine has no
             // widening/narrowing view.
@@ -322,8 +370,12 @@ fn render_column(column: &Column) -> String {
 fn render_type(ty: &ColumnType, arity: ColumnArity) -> String {
     let base = match ty {
         ColumnType::Scalar(name) => scalar_to_postgres(name).to_owned(),
-        ColumnType::Enum(name) => quote_ident(name),
-        ColumnType::UserDefined(name) => quote_ident(name),
+        // Enum and composite type identifiers are snake-cased so the
+        // SQL type name matches the convention used elsewhere in
+        // the generator (tables, columns) and so that case-mismatched
+        // references don't silently resolve to different identifiers
+        // under Postgres's unquoted-lowercase rule.
+        ColumnType::Enum(name) | ColumnType::UserDefined(name) => quote_ident(&naming::column_name(name)),
     };
     match arity {
         ColumnArity::List => format!("{base}[]"),
@@ -396,6 +448,7 @@ fn describe_lossy(op: &Op) -> String {
             "AlterColumnType {}.{} ({:?} -> {:?})",
             alter.table, alter.column, alter.from, alter.to
         ),
+        Op::DropEnum(drop) => format!("DropEnum {}", drop.name),
         _ => format!("{op:?}"),
     }
 }
@@ -859,6 +912,108 @@ model Customer {
             migration.up
         );
         assert!(!migration.up.contains("RENAME COLUMN"));
+    }
+
+    #[test]
+    fn enum_create_emits_create_type_and_uses_snake_case() {
+        let prev = schema(&with_models(""));
+        let next = schema(&with_models(
+            r#"
+enum OrderStatus {
+  Pending
+  Submitted
+  Shipped
+}
+
+model Order {
+  id Int @id
+  status OrderStatus
+}
+"#,
+        ));
+        let migration = emit(&diff(&prev, &next));
+        assert!(!migration.has_lossy);
+        // Enum type DDL lands before the table that references it.
+        let create_type_idx = migration
+            .up
+            .find("CREATE TYPE order_status AS ENUM")
+            .expect("CREATE TYPE present");
+        let create_table_idx = migration
+            .up
+            .find("CREATE TABLE orders")
+            .expect("CREATE TABLE present");
+        assert!(
+            create_type_idx < create_table_idx,
+            "CREATE TYPE must precede CREATE TABLE so the column can reference the enum"
+        );
+        // Column type references the snake-cased enum.
+        assert!(
+            migration.up.contains("status order_status NOT NULL"),
+            "up was: {}",
+            migration.up
+        );
+        // Variants are single-quoted.
+        assert!(migration.up.contains("'Pending', 'Submitted', 'Shipped'"));
+    }
+
+    #[test]
+    fn enum_add_variant_emits_alter_type_add_value() {
+        let prev = schema(&with_models(
+            r#"
+enum OrderStatus {
+  Pending
+  Submitted
+}
+
+model Order {
+  id Int @id
+  status OrderStatus
+}
+"#,
+        ));
+        let next = schema(&with_models(
+            r#"
+enum OrderStatus {
+  Pending
+  Submitted
+  Shipped
+}
+
+model Order {
+  id Int @id
+  status OrderStatus
+}
+"#,
+        ));
+        let migration = emit(&diff(&prev, &next));
+        assert!(!migration.has_lossy);
+        assert!(
+            migration
+                .up
+                .contains("ALTER TYPE order_status ADD VALUE 'Shipped';"),
+            "up was: {}",
+            migration.up
+        );
+    }
+
+    #[test]
+    fn enum_drop_is_lossy_and_routes_to_error_stub() {
+        let prev = schema(&with_models(
+            r#"
+enum LegacyStatus {
+  Active
+}
+"#,
+        ));
+        let next = schema(&with_models(""));
+        let migration = emit(&diff(&prev, &next));
+        assert!(migration.has_lossy);
+        assert!(
+            migration.up.contains("DROP TYPE legacy_status;"),
+            "up was: {}",
+            migration.up
+        );
+        assert!(migration.down.contains("destructive migration"));
     }
 
     #[test]
