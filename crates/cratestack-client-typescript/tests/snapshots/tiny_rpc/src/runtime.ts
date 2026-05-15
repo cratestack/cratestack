@@ -1,0 +1,252 @@
+// Generated CrateStack TypeScript RPC runtime for `transport rpc` schemas.
+//
+// Speaks the `/rpc/{op_id}` and `/rpc/batch` URL space defined by
+// `cratestack-axum::rpc`. Unary calls POST the codec-encoded input
+// directly; sequence/streaming calls POST the input and read back an
+// `application/cbor-seq`-shaped body.
+
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
+
+export interface CratestackRpcClientOptions {
+  basePath?: string;
+  fetch?: typeof fetch;
+  headers?: HeadersInit | (() => HeadersInit | Promise<HeadersInit>);
+}
+
+export interface CratestackRpcCallOptions {
+  headers?: HeadersInit;
+  signal?: AbortSignal;
+  /** Per-call idempotency key — propagated to the server as the
+   *  `Idempotency-Key` HTTP header on unary calls. */
+  idempotencyKey?: string;
+}
+
+/** Wire shape of a single batch request frame. Mirrors the server-side
+ *  `cratestack_core::rpc::RpcRequest`. */
+export interface RpcRequest<I = JsonValue> {
+  id: number;
+  op: string;
+  input: I;
+  idem?: string;
+}
+
+/** Wire shape of a single batch response frame. Mirrors the server-side
+ *  `cratestack_core::rpc::RpcResponseFrame`. */
+export interface RpcResponseFrame<O = JsonValue> {
+  id: number;
+  output?: O;
+  error?: RpcErrorBody;
+}
+
+/** Wire shape of an RPC error body. Mirrors the server-side
+ *  `cratestack_core::rpc::RpcErrorBody`. */
+export interface RpcErrorBody {
+  code: RpcErrorCode | string;
+  message: string;
+  details?: unknown;
+}
+
+/** Stable gRPC-style error codes the server emits. Open string union
+ *  so a future server-side code lands without breaking compilation. */
+export type RpcErrorCode =
+  | "invalid_argument"
+  | "unauthenticated"
+  | "permission_denied"
+  | "not_found"
+  | "conflict"
+  | "failed_precondition"
+  | "internal";
+
+/** Thrown by `CratestackRpcRuntime` when a remote call fails. Carries
+ *  the wire-shaped `RpcErrorBody` directly so callers can switch on
+ *  `error.code` (`"not_found"`, `"unauthenticated"`, etc.). */
+export class CratestackRpcError extends Error {
+  readonly status: number;
+  readonly code: RpcErrorCode | string;
+  readonly details: unknown;
+  readonly body: RpcErrorBody;
+
+  constructor(status: number, body: RpcErrorBody) {
+    super(`RPC call failed with code ${body.code} (status ${status}): ${body.message}`);
+    this.name = "CratestackRpcError";
+    this.status = status;
+    this.code = body.code;
+    this.details = body.details;
+    this.body = body;
+  }
+}
+
+/** Transport-level error (network failure, malformed response,
+ *  unsupported content-type). Distinct from {@link CratestackRpcError}
+ *  which always means the server itself emitted a `RpcErrorBody`. */
+export class CratestackRpcTransportError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CratestackRpcTransportError";
+  }
+}
+
+const CBOR_SEQ_CONTENT_TYPE = "application/cbor-seq";
+
+export class CratestackRpcRuntime {
+  readonly origin: string;
+  readonly basePath: string;
+  readonly fetchFn: typeof fetch;
+  readonly defaultHeaders?: HeadersInit | (() => HeadersInit | Promise<HeadersInit>);
+
+  constructor(origin: string, options: CratestackRpcClientOptions = {}) {
+    this.origin = origin.replace(/\/+$/, "");
+    this.basePath = options.basePath ?? "/api";
+    this.fetchFn = options.fetch ?? fetch;
+    this.defaultHeaders = options.headers;
+  }
+
+  /** POST /rpc/{op_id} — unary call. */
+  async call<I, O>(opId: string, input: I, options: CratestackRpcCallOptions = {}): Promise<O> {
+    const headers = await this.buildHeaders(options.headers);
+    headers.set("Accept", "application/json");
+    headers.set("Content-Type", "application/json");
+    if (options.idempotencyKey !== undefined) {
+      headers.set("Idempotency-Key", options.idempotencyKey);
+    }
+
+    const response = await this.fetchFn(this.url(`/rpc/${encodeURIComponent(opId)}`), {
+      method: "POST",
+      headers,
+      body: JSON.stringify(input ?? null),
+      signal: options.signal,
+    });
+
+    return (await this.readUnaryResponse(response)) as O;
+  }
+
+  /** POST /rpc/batch — batched calls. Per-frame errors do not poison
+   *  the batch; each `RpcResponseFrame` reports its own success or
+   *  failure. */
+  async batch<O = JsonValue>(
+    requests: RpcRequest[],
+    options: CratestackRpcCallOptions = {},
+  ): Promise<RpcResponseFrame<O>[]> {
+    const headers = await this.buildHeaders(options.headers);
+    headers.set("Accept", "application/json");
+    headers.set("Content-Type", "application/json");
+
+    const response = await this.fetchFn(this.url("/rpc/batch"), {
+      method: "POST",
+      headers,
+      body: JSON.stringify(requests),
+      signal: options.signal,
+    });
+
+    return (await this.readUnaryResponse(response)) as RpcResponseFrame<O>[];
+  }
+
+  /** POST /rpc/{op_id} — sequence-returning call. Yields one `O` per
+   *  frame the server emits. Decoded from `application/cbor-seq` when
+   *  the server picks CBOR, or from a JSON array body when it picks
+   *  JSON. */
+  async *stream<O>(
+    opId: string,
+    input: unknown,
+    options: CratestackRpcCallOptions = {},
+  ): AsyncIterable<O> {
+    const headers = await this.buildHeaders(options.headers);
+    headers.set("Accept", `${CBOR_SEQ_CONTENT_TYPE}, application/json`);
+    headers.set("Content-Type", "application/json");
+
+    const response = await this.fetchFn(this.url(`/rpc/${encodeURIComponent(opId)}`), {
+      method: "POST",
+      headers,
+      body: JSON.stringify(input ?? null),
+      signal: options.signal,
+    });
+
+    if (!response.ok) {
+      const body = await readErrorBody(response);
+      throw new CratestackRpcError(response.status, body);
+    }
+
+    const contentType = response.headers.get("Content-Type") ?? "";
+    if (contentType.includes("application/json")) {
+      // Server picked JSON — body is a single array of `O`.
+      const text = await response.text();
+      if (text.length === 0) {
+        return;
+      }
+      const items = JSON.parse(text) as O[];
+      for (const item of items) {
+        yield item;
+      }
+      return;
+    }
+
+    // CBOR sequence — caller is expected to provide a decoder. The
+    // default runtime ships JSON only; CBOR streaming decoding is a
+    // TODO so we surface the unsupported case rather than corrupting
+    // the iterator.
+    // TODO: wire a CBOR-seq decoder (e.g. `cbor-x` streaming reader)
+    //       so streaming works against CBOR servers.
+    throw new CratestackRpcTransportError(
+      `streaming over ${CBOR_SEQ_CONTENT_TYPE} is not yet supported by the default runtime`,
+    );
+  }
+
+  private async readUnaryResponse(response: Response): Promise<unknown> {
+    if (response.ok) {
+      if (response.status === 204) {
+        return undefined;
+      }
+      const text = await response.text();
+      if (text.length === 0) {
+        return undefined;
+      }
+      const contentType = response.headers.get("Content-Type") ?? "";
+      if (contentType.includes("application/json")) {
+        return JSON.parse(text);
+      }
+      return text;
+    }
+
+    throw new CratestackRpcError(response.status, await readErrorBody(response));
+  }
+
+  private async buildHeaders(extra?: HeadersInit): Promise<Headers> {
+    const headers = new Headers(await resolveHeaders(this.defaultHeaders));
+    for (const [key, value] of new Headers(extra)) {
+      headers.set(key, value);
+    }
+    return headers;
+  }
+
+  private url(path: string): string {
+    const normalizedBase = this.basePath === "/" ? "" : this.basePath.replace(/\/+$/, "");
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+    return new URL(`${normalizedBase}${normalizedPath}`, `${this.origin}/`).toString();
+  }
+}
+
+async function resolveHeaders(
+  headers: HeadersInit | (() => HeadersInit | Promise<HeadersInit>) | undefined,
+): Promise<HeadersInit | undefined> {
+  if (typeof headers === "function") {
+    return headers();
+  }
+  return headers;
+}
+
+async function readErrorBody(response: Response): Promise<RpcErrorBody> {
+  const text = await response.text().catch(() => "");
+  if (text.length === 0) {
+    return { code: "internal", message: `RPC call returned status ${response.status}` };
+  }
+  try {
+    const parsed = JSON.parse(text) as RpcErrorBody;
+    if (typeof parsed === "object" && parsed !== null && typeof parsed.code === "string") {
+      return parsed;
+    }
+    return { code: "internal", message: text };
+  } catch {
+    return { code: "internal", message: text };
+  }
+}

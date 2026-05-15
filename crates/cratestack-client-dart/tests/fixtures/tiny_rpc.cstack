@@ -1,0 +1,11 @@
+// Tiny RPC schema for the Dart snapshot test.
+
+transport rpc
+
+model Widget {
+  id Int @id
+  name String
+  weight Int?
+}
+
+procedure echoName(name: String): String
