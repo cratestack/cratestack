@@ -1,8 +1,9 @@
-//! End-to-end smoke test for `RpcClient::call_streaming`.
+//! End-to-end smoke test for the generated typed streaming method.
 //!
 //! Spawns a tiny axum server that emits an `application/cbor-seq`
 //! response chunk-per-item for `POST /rpc/procedure.ticks`, then
-//! consumes it via the example's `RpcClient` setup. Verifies:
+//! consumes it via the macro-generated `client.procedures().ticks(args)`
+//! method. Verifies:
 //!
 //! 1. Items arrive in order.
 //! 2. The decoder cleanly closes after the last item (no truncated
@@ -18,45 +19,41 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::body::Body;
-use axum::extract::State;
 use axum::http::{HeaderMap, HeaderValue, Response, StatusCode, header};
 use axum::routing::post;
 use axum::Router;
 use bytes::Bytes;
-use cratestack_client_rust::{ClientConfig, CratestackClient, RpcClient};
+use cratestack_client_rust::{ClientConfig, CratestackClient};
 use cratestack_codec_cbor::CborCodec;
 use cratestack_core::CoolCodec;
 use rpc_streaming_client_rust_example::{
-    StaticAuthId, Tick, TickerArgs, TickerInput, TICKS_OP_ID,
+    StaticAuthId,
+    cratestack_schema::{self, Tick, TickerArgs, procedures::ticks},
 };
 use url::Url;
 
 const CBOR_SEQ: &str = "application/cbor-seq";
 
-#[derive(Clone)]
-struct AppState {
-    codec: CborCodec,
-}
-
 #[tokio::test]
 async fn streams_each_tick_as_it_arrives() {
     let (base_url, _server) = spawn_server().await;
 
-    let rest = CratestackClient::new(ClientConfig::new(base_url), CborCodec)
+    let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec)
         .with_request_authorizer(Arc::new(StaticAuthId(1)));
-    let rpc = RpcClient::new(rest);
+    let client = cratestack_schema::client::Client::new(runtime);
 
-    let input = TickerInput {
+    let args = ticks::Args {
         args: TickerArgs {
             start: 100,
             count: 5,
         },
     };
 
-    let mut rx = rpc
-        .call_streaming::<TickerInput, Tick>(TICKS_OP_ID, &input)
+    let mut rx = client
+        .procedures()
+        .ticks(&args)
         .await
-        .expect("call_streaming should open the stream");
+        .expect("typed streaming method should open the stream");
 
     let mut received = Vec::<Tick>::new();
     while let Some(item) = rx.recv().await {
@@ -76,21 +73,19 @@ async fn missing_auth_header_surfaces_as_remote_error_before_stream_opens() {
 
     // Build a client with NO authorizer — the mock server's handler
     // requires `x-auth-id` and returns 401 if it's missing. The error
-    // path: call_streaming(...) returns Err(...) immediately; no
+    // path: the generated method returns Err(...) immediately; no
     // channel is opened.
-    let rest = CratestackClient::new(ClientConfig::new(base_url), CborCodec);
-    let rpc = RpcClient::new(rest);
+    let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec);
+    let client = cratestack_schema::client::Client::new(runtime);
 
-    let input = TickerInput {
+    let args = ticks::Args {
         args: TickerArgs {
             start: 0,
             count: 1,
         },
     };
 
-    let result = rpc
-        .call_streaming::<TickerInput, Tick>(TICKS_OP_ID, &input)
-        .await;
+    let result = client.procedures().ticks(&args).await;
     assert!(
         result.is_err(),
         "missing auth should surface as Err before the channel opens",
@@ -102,9 +97,7 @@ async fn missing_auth_header_surfaces_as_remote_error_before_stream_opens() {
 // -----------------------------------------------------------------------------
 
 async fn spawn_server() -> (Url, tokio::task::JoinHandle<()>) {
-    let app = Router::new()
-        .route("/rpc/procedure.ticks", post(handle_ticks))
-        .with_state(AppState { codec: CborCodec });
+    let app = Router::new().route("/rpc/procedure.ticks", post(handle_ticks));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("listener should bind");
@@ -116,11 +109,7 @@ async fn spawn_server() -> (Url, tokio::task::JoinHandle<()>) {
     (base_url, handle)
 }
 
-async fn handle_ticks(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Response<Body> {
+async fn handle_ticks(headers: HeaderMap, body: Bytes) -> Response<Body> {
     // Auth: server example reads `x-auth-id` as a positive int. Mirror
     // that here so the missing-auth test exercises the same shape.
     let auth_id = headers
@@ -134,13 +123,13 @@ async fn handle_ticks(
             .expect("response builds");
     }
 
-    let input: TickerInput = state.codec.decode(&body).expect("decode TickerInput");
+    // The generated typed method sends the `<proc>::Args` envelope.
+    let input: ticks::Args = CborCodec.decode(&body).expect("decode ticks::Args");
     let count = input.args.count.max(0);
 
     let pre_encoded: Vec<Vec<u8>> = (0..count)
         .map(|index| {
-            state
-                .codec
+            CborCodec
                 .encode(&Tick {
                     index,
                     value: input.args.start + index,

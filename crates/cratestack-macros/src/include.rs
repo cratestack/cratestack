@@ -28,7 +28,7 @@ use crate::axum::{
     generate_axum_shared_support, generate_model_axum_handlers, generate_model_axum_routes,
     generate_procedure_axum_handler, generate_procedure_axum_route,
 };
-use crate::client::generate_generated_client_module;
+use crate::client::generate_client_module;
 use crate::event::generate_event_module;
 use crate::model::{
     generate_bound_model_accessor, generate_client_create_input_struct,
@@ -570,7 +570,7 @@ fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
     };
 
     let generated_client_module =
-        match generate_generated_client_module(&schema.models, &schema.procedures) {
+        match generate_client_module(&schema.models, &schema.procedures, schema.transport) {
             Ok(module) => module,
             Err(error) => {
                 return syn::Error::new(schema_path.span(), error)
@@ -1131,7 +1131,7 @@ fn compose_client_schema(schema_path: &LitStr) -> TokenStream {
         }
     };
     let generated_client_module =
-        match generate_generated_client_module(&schema.models, &schema.procedures) {
+        match generate_client_module(&schema.models, &schema.procedures, schema.transport) {
             Ok(module) => module,
             Err(error) => {
                 return syn::Error::new(schema_path.span(), error)

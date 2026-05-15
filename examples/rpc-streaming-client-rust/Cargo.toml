@@ -10,6 +10,7 @@ name = "rpc-streaming-client"
 path = "src/main.rs"
 
 [dependencies]
+cratestack = { path = "../../crates/cratestack", version = "0.3.2" }
 cratestack-client-rust = { path = "../../crates/cratestack-client-rust", version = "0.3.2" }
 cratestack-codec-cbor = { path = "../../crates/cratestack-codec-cbor", version = "0.3.2" }
 serde = { workspace = true }
