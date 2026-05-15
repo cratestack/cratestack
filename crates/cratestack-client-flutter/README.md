@@ -116,6 +116,52 @@ pub fn rpc_call_streamed(
 
 End-to-end tests live in [`tests/streaming_bridge.rs`](tests/streaming_bridge.rs).
 
+### Decode-only mode (dio-driven HTTP)
+
+The two entrypoints above run the HTTP request *and* the cbor-seq decoding in Rust. For apps that prefer to run the request via `dio` (or any Dart-side HTTP client) — to get native NSURLSession / OkHttp behavior, system proxy integration, Flutter DevTools visibility, or to share interceptors with the rest of the app — `FlutterCborSeqDecoder` exposes just the boundary scanner over FFI:
+
+```rust
+// On the Rust shim side, frb's auto-bridging is enough — no wrapper needed.
+pub use cratestack_client_flutter::FlutterCborSeqDecoder;
+```
+
+```dart
+import 'package:cbor/cbor.dart';
+import 'package:dio/dio.dart';
+
+final decoder = FlutterCborSeqDecoder();
+final response = await dio.post<ResponseBody>(
+    '/rpc/$opId',
+    data: input,
+    options: Options(
+        responseType: ResponseType.stream,
+        headers: {
+            'Accept': 'application/cbor-seq',
+            'Content-Type': 'application/cbor',
+        },
+    ),
+);
+
+await for (final chunk in response.data!.stream) {
+    final items = await decoder.feed(Uint8List.fromList(chunk));
+    for (final item in items) {
+        controller.add(cbor.decode(item));   // pure-Dart per-item decode
+    }
+}
+if (decoder.pendingLen() > 0) {
+    controller.addError('truncated final cbor-seq frame');
+}
+```
+
+The decoder is a pure data structure — no I/O. The boundary-detection logic stays in Rust (where `minicbor::Decoder::skip` already lives); HTTP cancellation, retry, interceptors, and platform networking concerns stay in Dart with dio. Tests in [`tests/cbor_seq_decoder.rs`](tests/cbor_seq_decoder.rs).
+
+This is **complementary** to `execute_streamed` / `rpc_call_streamed`, not a replacement — pick per request:
+
+| Path | Best for |
+|---|---|
+| `execute_streamed` / `rpc_call_streamed` | Streaming is uncommon in the app and you want one HTTP stack (reqwest in Rust) for everything. |
+| `FlutterCborSeqDecoder` + dio | Streaming is central; you want native HTTP visibility, dio interceptors, or to avoid shipping reqwest+rustls for the streaming path. |
+
 ## See Also
 
 - `cratestack-client-rust` — underlying runtime
