@@ -491,6 +491,12 @@ const DEFAULT_CONTENT_TYPE: &str = "application/cbor";
 /// default for the REST binding too).
 ///
 /// Used by the macro-generated RPC dispatcher; safe to use directly.
+//
+// TODO: this is nearly identical to `decode_transport_request_for` but
+// differs in the missing-Content-Type fallback — this helper defaults to
+// CBOR, while `decode_transport_request_for` errors with
+// `UnsupportedMediaType`. Reconciling the two would change RPC behavior,
+// so the bodies are kept distinct for now.
 pub fn decode_rpc_body<C, T>(codec: &C, headers: &HeaderMap, body: &[u8]) -> Result<T, CoolError>
 where
     C: HttpTransport,
