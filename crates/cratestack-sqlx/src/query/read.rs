@@ -313,6 +313,15 @@ impl<'a, M: 'static, PK: 'static, Rel: 'static, RelPK: 'static> FindManyWith<'a,
         self
     }
 
+    /// Apply `FOR UPDATE` to the parent-row SELECT. The related-side
+    /// side-load query is **not** locked — to lock both sides, wrap
+    /// the call in [`Self::run_in_tx`] and issue an explicit
+    /// `SELECT ... FOR UPDATE` against the related table separately.
+    pub fn for_update(mut self) -> Self {
+        self.parent = self.parent.for_update();
+        self
+    }
+
     pub async fn run(self, ctx: &CoolContext) -> Result<Vec<(M, Option<Rel>)>, CoolError>
     where
         M: Clone,
@@ -1121,6 +1130,49 @@ impl<'a, M: 'static, PK: 'static> ProjectedFindMany<'a, M, PK> {
         let rows = query
             .build()
             .fetch_all(self.runtime.pool())
+            .await
+            .map_err(|error| CoolError::Database(error.to_string()))?;
+        rows.into_iter()
+            .map(|row| {
+                M::decode_partial_pg_row(&row, &self.selected)
+                    .map(|value| cratestack_sql::Projection {
+                        value,
+                        selected: self.selected.clone(),
+                    })
+                    .map_err(|error| CoolError::Database(error.to_string()))
+            })
+            .collect()
+    }
+
+    pub async fn run_in_tx<'tx>(
+        self,
+        tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
+        ctx: &CoolContext,
+    ) -> Result<Vec<cratestack_sql::Projection<M>>, CoolError>
+    where
+        M: crate::FromPartialPgRow,
+    {
+        let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT ");
+        query
+            .push(self.descriptor.select_projection_subset(&self.selected))
+            .push(" FROM ")
+            .push(self.descriptor.table_name);
+        push_scoped_conditions(
+            &mut query,
+            self.descriptor,
+            &self.filters,
+            None::<(&'static str, i64)>,
+            ctx,
+            ReadPolicyKind::List,
+        );
+        push_order_and_paging(&mut query, &self.order_by, self.limit, self.offset);
+        if self.for_update {
+            query.push(" FOR UPDATE");
+        }
+
+        let rows = query
+            .build()
+            .fetch_all(&mut **tx)
             .await
             .map_err(|error| CoolError::Database(error.to_string()))?;
         rows.into_iter()

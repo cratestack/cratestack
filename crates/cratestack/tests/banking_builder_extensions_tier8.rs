@@ -157,3 +157,48 @@ async fn find_unique_select_with_filter_under_read_policy_returns_none_when_deni
         .unwrap();
     assert!(projection.is_none(), "policy must deny anonymous lookups");
 }
+
+#[tokio::test]
+async fn find_many_select_run_in_tx_locks_rows_and_returns_projection() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    seed(pool).await;
+
+    let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
+    let ctx = operator();
+
+    use cratestack_schema::payment_intent;
+
+    // Open a transaction explicitly so we can both (a) verify the
+    // projection runs against the borrowed connection and (b) prove
+    // the FOR UPDATE clause is appended without the query failing —
+    // postgres lets FOR UPDATE only inside a transaction.
+    let mut tx = pool.begin().await.expect("begin tx");
+    let projections = cool
+        .payment_intent()
+        .bind(ctx)
+        .find_many()
+        .order_by(payment_intent::id().asc())
+        .select([
+            payment_intent::connectorId().column_name(),
+            payment_intent::amountMinor().column_name(),
+        ])
+        .for_update()
+        .run_in_tx(&mut tx)
+        .await
+        .expect("run_in_tx succeeds");
+    tx.commit().await.expect("commit");
+
+    assert_eq!(projections.len(), 2);
+    assert_eq!(projections[0].value.connectorId, "stripe_live");
+    assert_eq!(projections[0].value.amountMinor, 1000);
+    assert_eq!(projections[1].value.connectorId, "adyen_test");
+    assert_eq!(projections[1].value.amountMinor, 250);
+    assert!(projections.iter().all(|p| p.is_selected("connector_id")));
+    assert!(projections.iter().all(|p| p.is_selected("amount_minor")));
+    assert!(projections.iter().all(|p| !p.is_selected("status")));
+}
