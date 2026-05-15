@@ -144,21 +144,27 @@ impl<M, T> FieldRef<M, T> {
     /// Intended for `jsonb` / JSON columns. Using this on a non-JSON
     /// column compiles fine but errors at the engine layer when the
     /// SQL runs — Rust's type system doesn't gate this for you.
-    pub fn json_has_key(self, key: &'static str) -> FilterExpr {
+    ///
+    /// The key is taken as `impl Into<String>` so callers can pass
+    /// either a `&'static str` literal or a runtime-owned `String`
+    /// (e.g. user-driven analytics queries that pivot on a metric
+    /// name from the request).
+    pub fn json_has_key(self, key: impl Into<String>) -> FilterExpr {
         FilterExpr::Json(JsonFilter::HasKey {
             column: self.column,
-            key,
+            key: key.into(),
         })
     }
 
     /// PG: `col ->> 'key' <op> $1` — extract the value at `key` as
     /// text, then compare. SQLite: `json_extract(col, '$.key') <op>
     /// $1`. Returns a [`JsonTextPath`] that supports the standard
-    /// comparison ops via chained methods.
-    pub fn json_get_text(self, key: &'static str) -> JsonTextPath {
+    /// comparison ops via chained methods. See [`Self::json_has_key`]
+    /// for the key-ownership rationale.
+    pub fn json_get_text(self, key: impl Into<String>) -> JsonTextPath {
         JsonTextPath {
             column: self.column,
-            key,
+            key: key.into(),
         }
     }
 
@@ -386,15 +392,20 @@ pub const fn point(lng: f64, lat: f64) -> SpatialPoint {
 ///   compare). On SQLite the same `json_extract` path with a column
 ///   accessor handles it. Supported comparison ops are the standard
 ///   `Eq/Ne/Lt/Lte/Gt/Gte` plus `IsNull` / `IsNotNull`.
+///
+/// Keys are owned `String` so callers can pass runtime-supplied
+/// metric / setting names (e.g. user-driven `model_run_timeseries`
+/// queries that pivot on `args.metric`). The column slot stays
+/// `&'static str` because columns are always schema-rooted.
 #[derive(Debug, Clone, PartialEq)]
 pub enum JsonFilter {
     HasKey {
         column: &'static str,
-        key: &'static str,
+        key: String,
     },
     GetText {
         column: &'static str,
-        key: &'static str,
+        key: String,
         op: FilterOp,
         value: FilterValue,
     },
@@ -402,10 +413,10 @@ pub enum JsonFilter {
 
 /// Left-hand operand of a `json_get_text` filter — chain a comparison
 /// method (`.eq`, `.lt`, `.is_null`, ...) to produce a [`FilterExpr`].
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct JsonTextPath {
     column: &'static str,
-    key: &'static str,
+    key: String,
 }
 
 impl JsonTextPath {
