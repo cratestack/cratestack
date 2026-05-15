@@ -1,0 +1,22 @@
+[package]
+name = "rpc-streaming-example"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "RPC server with a list-return procedure streamed over Accept: application/cbor-seq. Demonstrates content-negotiated streaming on the same POST /rpc/{op_id} route as unary — no separate streaming endpoint."
+
+[[bin]]
+name = "rpc-streaming-server"
+path = "src/main.rs"
+
+[dependencies]
+cratestack = { path = "../../crates/cratestack", version = "0.3.2" }
+cratestack-codec-cbor = { path = "../../crates/cratestack-codec-cbor", version = "0.3.2" }
+cratestack-codec-json = { path = "../../crates/cratestack-codec-json", version = "0.3.2" }
+minicbor-serde = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+tower = { workspace = true }

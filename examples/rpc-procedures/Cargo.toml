@@ -1,0 +1,21 @@
+[package]
+name = "rpc-procedures-example"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Smallest possible CrateStack RPC server: a query procedure and a mutation procedure exposed over POST /rpc/{op_id}. Uses no database — handlers are stateless, the lazy pg pool is never opened."
+
+[[bin]]
+name = "rpc-procedures-server"
+path = "src/main.rs"
+
+[dependencies]
+cratestack = { path = "../../crates/cratestack", version = "0.3.2" }
+cratestack-codec-cbor = { path = "../../crates/cratestack-codec-cbor", version = "0.3.2" }
+cratestack-codec-json = { path = "../../crates/cratestack-codec-json", version = "0.3.2" }
+serde = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+tower = { workspace = true }

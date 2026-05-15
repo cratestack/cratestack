@@ -1,0 +1,34 @@
+// `transport rpc` schema with a list-return procedure. Procedures whose
+// return type is `T[]` get `OpKind::Sequence` from the macro and serve
+// `application/cbor-seq` automatically on the same `POST /rpc/{op_id}`
+// route as unary — content negotiation does the switch.
+//
+// No models, no DB.
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Caller {
+  id Int
+}
+
+type TickerArgs {
+  start Int
+  count Int
+}
+
+type Tick {
+  index Int
+  value Int
+}
+
+// Returns N ticks of `value = start + index`. With
+// `Accept: application/cbor-seq` each chunk arrives independently — try
+// pointing at this from a streaming-aware client to see backpressure work.
+// With the default Accept the same op returns a single CBOR `Vec<Tick>`.
+procedure ticks(args: TickerArgs): Tick[]
+  @allow(auth() != null)

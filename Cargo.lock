@@ -4951,6 +4951,59 @@ dependencies = [
 ]
 
 [[package]]
+name = "rpc-batch-debounce-example"
+version = "0.1.0"
+dependencies = [
+ "cratestack",
+ "cratestack-codec-cbor",
+ "cratestack-codec-json",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower",
+]
+
+[[package]]
+name = "rpc-batch-example"
+version = "0.1.0"
+dependencies = [
+ "cratestack",
+ "cratestack-codec-cbor",
+ "cratestack-codec-json",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower",
+]
+
+[[package]]
+name = "rpc-procedures-example"
+version = "0.1.0"
+dependencies = [
+ "cratestack",
+ "cratestack-codec-cbor",
+ "cratestack-codec-json",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower",
+]
+
+[[package]]
+name = "rpc-streaming-example"
+version = "0.1.0"
+dependencies = [
+ "cratestack",
+ "cratestack-codec-cbor",
+ "cratestack-codec-json",
+ "minicbor-serde",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower",
+]
+
+[[package]]
 name = "rsqlite-vfs"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
