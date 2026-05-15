@@ -29,11 +29,12 @@ pub use batch::{
     BatchCreate, BatchDelete, BatchGet, BatchUpdate, BatchUpdateItem, BatchUpsert,
 };
 pub use delegate::{
-    CreateRecord, DeleteRecord, FindMany, FindUnique, ModelDelegate, UpdateRecord, UpdateRecordSet,
-    UpsertRecord,
+    CreateRecord, DeleteRecord, FindMany, FindUnique, ModelDelegate, UpdateMany, UpdateManySet,
+    UpdateRecord, UpdateRecordSet, UpsertRecord,
 };
 pub use render::{
-    render_delete, render_insert, render_select, render_select_by_pk, render_update, render_upsert,
+    render_delete, render_insert, render_select, render_select_by_pk, render_update,
+    render_update_many, render_upsert,
 };
 pub use row::FromRusqliteRow;
 pub use runtime::{RusqliteError, RusqliteRuntime};

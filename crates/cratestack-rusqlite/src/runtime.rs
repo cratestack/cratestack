@@ -33,6 +33,11 @@ pub enum RusqliteError {
         first: usize,
         duplicate: usize,
     },
+    /// Caller-side input rejected before any SQL ran (e.g. `update_many`
+    /// without a filter, an empty patch set). Distinct from a SQLite-level
+    /// error so callers can surface a fast-fail validation message rather
+    /// than a generic database error.
+    Validation(String),
 }
 
 impl std::fmt::Display for RusqliteError {
@@ -49,6 +54,7 @@ impl std::fmt::Display for RusqliteError {
                 f,
                 "duplicate primary key in batch at positions {first} and {duplicate}",
             ),
+            Self::Validation(message) => write!(f, "validation error: {message}"),
         }
     }
 }

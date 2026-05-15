@@ -17,6 +17,7 @@ pub struct FindMany<'a, M: 'static, PK: 'static> {
     pub(crate) order_by: Vec<OrderClause>,
     pub(crate) limit: Option<i64>,
     pub(crate) offset: Option<i64>,
+    pub(crate) for_update: bool,
 }
 
 impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
@@ -47,6 +48,17 @@ impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
 
     pub fn offset(mut self, offset: i64) -> Self {
         self.offset = Some(offset);
+        self
+    }
+
+    /// Emit `SELECT ... FOR UPDATE` so the engine takes an exclusive
+    /// row-level lock on every matched row for the duration of the
+    /// surrounding transaction. Only meaningful when paired with
+    /// [`Self::run_in_tx`] — outside an explicit transaction the lock is
+    /// released immediately after the statement and the flag becomes a
+    /// no-op (PG accepts the syntax but the lock has nothing to outlive).
+    pub fn for_update(mut self) -> Self {
+        self.for_update = true;
         self
     }
 
@@ -92,6 +104,10 @@ impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
             (None, None) => {}
         }
 
+        if self.for_update {
+            sql.push_str(" FOR UPDATE");
+        }
+
         sql
     }
 
@@ -126,10 +142,51 @@ impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
             ctx,
         );
         push_order_and_paging(&mut query, &order_by, self.limit, self.offset);
+        if self.for_update {
+            query.push(" FOR UPDATE");
+        }
 
         query
             .build_query_as::<M>()
             .fetch_all(self.runtime.pool())
+            .await
+            .map_err(|error| CoolError::Database(error.to_string()))
+    }
+
+    /// Run inside a caller-supplied transaction. Required when pairing
+    /// with [`Self::for_update`] — the row locks only persist for the life
+    /// of the transaction, so calling against the pool would emit
+    /// `FOR UPDATE` to no effect.
+    pub async fn run_in_tx<'tx>(
+        self,
+        tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
+        ctx: &CoolContext,
+    ) -> Result<Vec<M>, CoolError>
+    where
+        for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
+    {
+        let order_by = self.effective_order_by();
+        let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT ");
+        query
+            .push(self.descriptor.select_projection())
+            .push(" FROM ")
+            .push(self.descriptor.table_name);
+
+        push_scoped_conditions(
+            &mut query,
+            self.descriptor,
+            &self.filters,
+            None::<(&'static str, i64)>,
+            ctx,
+        );
+        push_order_and_paging(&mut query, &order_by, self.limit, self.offset);
+        if self.for_update {
+            query.push(" FOR UPDATE");
+        }
+
+        query
+            .build_query_as::<M>()
+            .fetch_all(&mut **tx)
             .await
             .map_err(|error| CoolError::Database(error.to_string()))
     }
@@ -161,16 +218,30 @@ pub struct FindUnique<'a, M: 'static, PK: 'static> {
     pub(crate) runtime: &'a SqlxRuntime,
     pub(crate) descriptor: &'static ModelDescriptor<M, PK>,
     pub(crate) id: PK,
+    pub(crate) for_update: bool,
 }
 
 impl<'a, M: 'static, PK: 'static> FindUnique<'a, M, PK> {
+    /// Emit `SELECT ... FOR UPDATE` so the engine takes an exclusive
+    /// row-level lock on the matched row for the duration of the
+    /// surrounding transaction. See [`FindMany::for_update`] for the
+    /// tx-pairing caveat.
+    pub fn for_update(mut self) -> Self {
+        self.for_update = true;
+        self
+    }
+
     pub fn preview_sql(&self) -> String {
-        format!(
+        let mut sql = format!(
             "SELECT {} FROM {} WHERE {} = $1 LIMIT 1",
             self.descriptor.select_projection(),
             self.descriptor.table_name,
             self.descriptor.primary_key,
-        )
+        );
+        if self.for_update {
+            sql.push_str(" FOR UPDATE");
+        }
+        sql
     }
 
     pub fn preview_scoped_sql(&self, ctx: &CoolContext) -> String {
@@ -196,6 +267,9 @@ impl<'a, M: 'static, PK: 'static> FindUnique<'a, M, PK> {
                 self.descriptor.primary_key
             ));
         }
+        if self.for_update {
+            sql.push_str(" FOR UPDATE");
+        }
         sql
     }
 
@@ -217,10 +291,48 @@ impl<'a, M: 'static, PK: 'static> FindUnique<'a, M, PK> {
             ctx,
         );
         query.push(" LIMIT 1");
+        if self.for_update {
+            query.push(" FOR UPDATE");
+        }
 
         query
             .build_query_as::<M>()
             .fetch_optional(self.runtime.pool())
+            .await
+            .map_err(|error| CoolError::Database(error.to_string()))
+    }
+
+    /// Run inside a caller-supplied transaction. Required when pairing
+    /// with [`Self::for_update`].
+    pub async fn run_in_tx<'tx>(
+        self,
+        tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
+        ctx: &CoolContext,
+    ) -> Result<Option<M>, CoolError>
+    where
+        for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
+        PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
+    {
+        let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT ");
+        query
+            .push(self.descriptor.select_projection())
+            .push(" FROM ")
+            .push(self.descriptor.table_name);
+        push_scoped_conditions(
+            &mut query,
+            self.descriptor,
+            &[],
+            Some((self.descriptor.primary_key, self.id)),
+            ctx,
+        );
+        query.push(" LIMIT 1");
+        if self.for_update {
+            query.push(" FOR UPDATE");
+        }
+
+        query
+            .build_query_as::<M>()
+            .fetch_optional(&mut **tx)
             .await
             .map_err(|error| CoolError::Database(error.to_string()))
     }

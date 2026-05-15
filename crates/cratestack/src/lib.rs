@@ -77,9 +77,10 @@ pub use cratestack_sqlx::sqlx;
 #[cfg(not(target_arch = "wasm32"))]
 pub use cratestack_sqlx::{
     CreateRecord, DeleteRecord, FindMany, FindUnique, ModelDelegate, ScopedCreateRecord,
-    ScopedDeleteRecord, ScopedFindMany, ScopedFindUnique, ScopedModelDelegate, ScopedUpdateRecord,
-    ScopedUpdateRecordSet, SqlxIdempotencyStore, UpdateRecord, UpdateRecordSet,
-    create_record_with_executor, update_record_with_executor,
+    ScopedDeleteRecord, ScopedFindMany, ScopedFindUnique, ScopedModelDelegate, ScopedUpdateMany,
+    ScopedUpdateManySet, ScopedUpdateRecord, ScopedUpdateRecordSet, SqlxIdempotencyStore,
+    UpdateMany, UpdateManySet, UpdateRecord, UpdateRecordSet, create_record_with_executor,
+    update_record_with_executor,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use cratestack_sqlx::{

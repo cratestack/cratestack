@@ -2,6 +2,7 @@
 
 use std::marker::PhantomData;
 
+use cratestack_core::{BatchSummary};
 use cratestack_sql::{
     CreateModelInput, Filter, FilterExpr, IntoSqlValue, ModelDescriptor, OrderClause,
     SqliteDialect, SqlValue, UpdateModelInput, UpsertModelInput,
@@ -11,7 +12,7 @@ use rusqlite::params_from_iter;
 use crate::{
     FromRusqliteRow, RusqliteError, RusqliteRuntime, SqlValueParam, render::render_delete,
     render::render_insert, render::render_select, render::render_select_by_pk,
-    render::render_update, render::render_upsert,
+    render::render_update, render::render_update_many, render::render_upsert,
 };
 
 #[derive(Clone, Copy)]
@@ -82,6 +83,18 @@ impl<'a, M: 'static, PK: 'static> ModelDelegate<'a, M, PK> {
             runtime: self.runtime,
             descriptor: self.descriptor,
             id,
+        }
+    }
+
+    /// Bulk UPDATE by predicate. Mirrors the sqlx delegate; the embedded
+    /// layer has no policies, so the only filter applied beyond the
+    /// caller's is the implicit soft-delete-IS-NULL where applicable.
+    /// Refuses to run without at least one filter — same safety stance.
+    pub fn update_many(&self) -> UpdateMany<'a, M, PK> {
+        UpdateMany {
+            runtime: self.runtime,
+            descriptor: self.descriptor,
+            filters: Vec::new(),
         }
     }
 
@@ -185,6 +198,15 @@ impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
         self
     }
 
+    /// API-compat no-op. SQLite has no `SELECT ... FOR UPDATE` — its
+    /// transaction model uses whole-database write locks (`BEGIN IMMEDIATE`),
+    /// which already give the serialization guarantees the server-side
+    /// `FOR UPDATE` is reaching for. Kept on the embedded delegate so
+    /// schemas can compile and tests can share code across backends.
+    pub fn for_update(self) -> Self {
+        self
+    }
+
     pub fn preview_sql(&self) -> String {
         let dialect = SqliteDialect;
         let (sql, _) = render_select(
@@ -222,6 +244,34 @@ impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
             Ok(rows)
         })
     }
+
+    /// Run against a caller-supplied connection (typically the active
+    /// transaction's connection, via `&mut *tx`). Mirrors the sqlx
+    /// `run_in_tx` shape for cross-backend ergonomics; on rusqlite this
+    /// is just the same query executed against the provided connection
+    /// instead of the runtime's mutex-guarded one.
+    pub fn run_in_tx(self, conn: &rusqlite::Connection) -> Result<Vec<M>, RusqliteError>
+    where
+        M: FromRusqliteRow,
+    {
+        let dialect = SqliteDialect;
+        let (sql, binds) = render_select(
+            &dialect,
+            self.descriptor,
+            &self.filters,
+            &self.order_by,
+            self.limit,
+            self.offset,
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let bind_iter = binds.iter().map(SqlValueParam);
+        let rows = stmt
+            .query_map(params_from_iter(bind_iter), |row| {
+                M::from_rusqlite_row(row)
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
 }
 
 pub struct FindUnique<'a, M: 'static, PK: 'static> {
@@ -234,6 +284,11 @@ impl<'a, M: 'static, PK: 'static> FindUnique<'a, M, PK>
 where
     PK: IntoSqlValue + Clone,
 {
+    /// See [`FindMany::for_update`] — no-op on the embedded layer.
+    pub fn for_update(self) -> Self {
+        self
+    }
+
     pub fn preview_sql(&self) -> String {
         let dialect = SqliteDialect;
         let (sql, _) =
@@ -258,6 +313,25 @@ where
                 Ok(None)
             }
         })
+    }
+
+    /// Run against a caller-supplied connection. See
+    /// [`FindMany::run_in_tx`] for cross-backend rationale.
+    pub fn run_in_tx(self, conn: &rusqlite::Connection) -> Result<Option<M>, RusqliteError>
+    where
+        M: FromRusqliteRow,
+    {
+        let dialect = SqliteDialect;
+        let (sql, binds) =
+            render_select_by_pk(&dialect, self.descriptor, self.id.clone().into_sql_value());
+        let mut stmt = conn.prepare(&sql)?;
+        let bind_iter = binds.iter().map(SqlValueParam);
+        let mut rows = stmt.query(params_from_iter(bind_iter))?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(M::from_rusqlite_row(row)?))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -286,13 +360,35 @@ where
         let values = self.input.sql_values();
         let (sql, binds) = render_insert(&dialect, self.descriptor, &values);
         self.runtime.with_connection(|conn| {
-            let mut stmt = conn.prepare(&sql)?;
-            let bind_iter = binds.iter().map(SqlValueParam);
-            let mut rows = stmt.query(params_from_iter(bind_iter))?;
-            let row = rows.next()?.ok_or(RusqliteError::NotFound)?;
-            Ok(M::from_rusqlite_row(row)?)
+            run_insert_returning(conn, &sql, &binds)
         })
     }
+
+    /// Run against a caller-supplied connection (typically the active
+    /// transaction's connection, via `&mut *tx`). Mirrors the sqlx
+    /// `run_in_tx` shape so cross-backend code can switch backends
+    /// without rewriting transaction call sites.
+    pub fn run_in_tx(self, conn: &rusqlite::Connection) -> Result<M, RusqliteError>
+    where
+        M: FromRusqliteRow,
+    {
+        let dialect = SqliteDialect;
+        let values = self.input.sql_values();
+        let (sql, binds) = render_insert(&dialect, self.descriptor, &values);
+        run_insert_returning(conn, &sql, &binds)
+    }
+}
+
+fn run_insert_returning<M: FromRusqliteRow>(
+    conn: &rusqlite::Connection,
+    sql: &str,
+    binds: &[SqlValue],
+) -> Result<M, RusqliteError> {
+    let mut stmt = conn.prepare(sql)?;
+    let bind_iter = binds.iter().map(SqlValueParam);
+    let mut rows = stmt.query(params_from_iter(bind_iter))?;
+    let row = rows.next()?.ok_or(RusqliteError::NotFound)?;
+    Ok(M::from_rusqlite_row(row)?)
 }
 
 pub struct UpsertRecord<'a, M: 'static, PK: 'static, I> {
@@ -321,13 +417,20 @@ where
         let dialect = SqliteDialect;
         let values = self.input.sql_values();
         let (sql, binds) = render_upsert(&dialect, self.descriptor, &values);
-        self.runtime.with_connection(|conn| {
-            let mut stmt = conn.prepare(&sql)?;
-            let bind_iter = binds.iter().map(SqlValueParam);
-            let mut rows = stmt.query(params_from_iter(bind_iter))?;
-            let row = rows.next()?.ok_or(RusqliteError::NotFound)?;
-            Ok(M::from_rusqlite_row(row)?)
-        })
+        self.runtime
+            .with_connection(|conn| run_insert_returning(conn, &sql, &binds))
+    }
+
+    /// Run against a caller-supplied connection. See
+    /// [`CreateRecord::run_in_tx`].
+    pub fn run_in_tx(self, conn: &rusqlite::Connection) -> Result<M, RusqliteError>
+    where
+        M: FromRusqliteRow,
+    {
+        let dialect = SqliteDialect;
+        let values = self.input.sql_values();
+        let (sql, binds) = render_upsert(&dialect, self.descriptor, &values);
+        run_insert_returning(conn, &sql, &binds)
     }
 }
 
@@ -376,13 +479,20 @@ where
         let dialect = SqliteDialect;
         let values = self.input.sql_values();
         let (sql, binds) = render_update(&dialect, self.descriptor, &values, self.id.clone().into_sql_value());
-        self.runtime.with_connection(|conn| {
-            let mut stmt = conn.prepare(&sql)?;
-            let bind_iter = binds.iter().map(SqlValueParam);
-            let mut rows = stmt.query(params_from_iter(bind_iter))?;
-            let row = rows.next()?.ok_or(RusqliteError::NotFound)?;
-            Ok(M::from_rusqlite_row(row)?)
-        })
+        self.runtime
+            .with_connection(|conn| run_insert_returning(conn, &sql, &binds))
+    }
+
+    /// Run against a caller-supplied connection. See
+    /// [`CreateRecord::run_in_tx`].
+    pub fn run_in_tx(self, conn: &rusqlite::Connection) -> Result<M, RusqliteError>
+    where
+        M: FromRusqliteRow,
+    {
+        let dialect = SqliteDialect;
+        let values = self.input.sql_values();
+        let (sql, binds) = render_update(&dialect, self.descriptor, &values, self.id.clone().into_sql_value());
+        run_insert_returning(conn, &sql, &binds)
     }
 }
 
@@ -418,14 +528,149 @@ where
             self.id.clone().into_sql_value(),
             chrono::Utc::now(),
         );
-        self.runtime.with_connection(|conn| {
-            let mut stmt = conn.prepare(&sql)?;
-            let bind_iter = binds.iter().map(SqlValueParam);
-            let mut rows = stmt.query(params_from_iter(bind_iter))?;
-            let row = rows.next()?.ok_or(RusqliteError::NotFound)?;
-            let result: SqlValue = SqlValue::Int(0);
-            let _ = result;
-            Ok(M::from_rusqlite_row(row)?)
-        })
+        self.runtime
+            .with_connection(|conn| run_insert_returning(conn, &sql, &binds))
     }
+
+    /// Run against a caller-supplied connection. See
+    /// [`CreateRecord::run_in_tx`].
+    pub fn run_in_tx(self, conn: &rusqlite::Connection) -> Result<M, RusqliteError>
+    where
+        M: FromRusqliteRow,
+    {
+        let dialect = SqliteDialect;
+        let (sql, binds) = render_delete(
+            &dialect,
+            self.descriptor,
+            self.id.clone().into_sql_value(),
+            chrono::Utc::now(),
+        );
+        run_insert_returning(conn, &sql, &binds)
+    }
+}
+
+// ───── UpdateMany ──────────────────────────────────────────────────────────
+
+pub struct UpdateMany<'a, M: 'static, PK: 'static> {
+    runtime: &'a RusqliteRuntime,
+    descriptor: &'static ModelDescriptor<M, PK>,
+    filters: Vec<FilterExpr>,
+}
+
+impl<'a, M: 'static, PK: 'static> UpdateMany<'a, M, PK> {
+    pub fn where_(mut self, filter: Filter) -> Self {
+        self.filters.push(FilterExpr::from(filter));
+        self
+    }
+
+    pub fn where_expr(mut self, filter: FilterExpr) -> Self {
+        self.filters.push(filter);
+        self
+    }
+
+    pub fn set<I>(self, input: I) -> UpdateManySet<'a, M, PK, I> {
+        UpdateManySet {
+            runtime: self.runtime,
+            descriptor: self.descriptor,
+            filters: self.filters,
+            input,
+            _marker: PhantomData,
+        }
+    }
+}
+
+pub struct UpdateManySet<'a, M: 'static, PK: 'static, I> {
+    runtime: &'a RusqliteRuntime,
+    descriptor: &'static ModelDescriptor<M, PK>,
+    filters: Vec<FilterExpr>,
+    input: I,
+    _marker: PhantomData<fn() -> M>,
+}
+
+impl<'a, M: 'static, PK: 'static, I> UpdateManySet<'a, M, PK, I>
+where
+    I: UpdateModelInput<M>,
+{
+    pub fn preview_sql(&self) -> String {
+        let dialect = SqliteDialect;
+        let values = self.input.sql_values();
+        let (sql, _) = render_update_many(&dialect, self.descriptor, &values, &self.filters);
+        sql
+    }
+
+    /// Run the bulk update. Returns a `BatchSummary { total, ok, err: 0 }`
+    /// where `ok` is the number of rows the UPDATE actually mutated.
+    pub fn run(self) -> Result<BatchSummary, RusqliteError>
+    where
+        M: FromRusqliteRow,
+    {
+        let dialect = SqliteDialect;
+        if self.filters.is_empty() {
+            // Mirror the sqlx safety stance: reject predicate-less bulk
+            // updates loud and early. There's no equivalent of
+            // `CoolError::Validation` here, so we surface a sqlite error
+            // — an empty WHERE would let a typo wipe the table.
+            return Err(RusqliteError::Validation(
+                "update_many requires at least one filter".to_owned(),
+            ));
+        }
+        let values = self.input.sql_values();
+        if values.is_empty() {
+            return Err(RusqliteError::Validation(
+                "update input must contain at least one changed column".to_owned(),
+            ));
+        }
+        let (sql, binds) = render_update_many(&dialect, self.descriptor, &values, &self.filters);
+        self.runtime
+            .with_connection(|conn| run_update_many_returning::<M>(conn, &sql, &binds))
+    }
+
+    /// Run against a caller-supplied connection. See
+    /// [`CreateRecord::run_in_tx`].
+    pub fn run_in_tx(self, conn: &rusqlite::Connection) -> Result<BatchSummary, RusqliteError>
+    where
+        M: FromRusqliteRow,
+    {
+        if self.filters.is_empty() {
+            return Err(RusqliteError::Validation(
+                "update_many requires at least one filter".to_owned(),
+            ));
+        }
+        let dialect = SqliteDialect;
+        let values = self.input.sql_values();
+        if values.is_empty() {
+            return Err(RusqliteError::Validation(
+                "update input must contain at least one changed column".to_owned(),
+            ));
+        }
+        let (sql, binds) = render_update_many(&dialect, self.descriptor, &values, &self.filters);
+        run_update_many_returning::<M>(conn, &sql, &binds)
+    }
+}
+
+fn run_update_many_returning<M: FromRusqliteRow>(
+    conn: &rusqlite::Connection,
+    sql: &str,
+    binds: &[SqlValue],
+) -> Result<BatchSummary, RusqliteError> {
+    let mut stmt = conn.prepare(sql)?;
+    let bind_iter = binds.iter().map(SqlValueParam);
+    let mut count = 0usize;
+    {
+        // We use query_map but only care about the row count — discarding
+        // each row keeps the FromRusqliteRow round-trip honest (catches
+        // schema mismatches early) without retaining the materialised set.
+        let iter = stmt.query_map(params_from_iter(bind_iter), |row| {
+            M::from_rusqlite_row(row).map(|_| ())
+        })?;
+        for item in iter {
+            item?;
+            count += 1;
+        }
+    }
+    Ok(BatchSummary {
+        total: count,
+        ok: count,
+        err: 0,
+    })
 }

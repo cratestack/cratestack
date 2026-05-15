@@ -169,6 +169,60 @@ pub fn render_update<M, PK>(
     (sql, binds)
 }
 
+/// Render a bulk UPDATE-by-predicate. `set` is the patch column list; the
+/// `filters` are AND-joined into the WHERE clause and bind positionally
+/// after the SET values. Soft-delete column (if any) is layered in as an
+/// implicit `WHERE col IS NULL`. `@version` is auto-incremented for every
+/// matched row — bulk update isn't an optimistic-locking idiom, so callers
+/// who need CAS should fall back to the per-row `update().if_match()`.
+pub fn render_update_many<M, PK>(
+    dialect: &dyn Dialect,
+    descriptor: &ModelDescriptor<M, PK>,
+    set: &[SqlColumnValue],
+    filters: &[FilterExpr],
+) -> (String, Vec<SqlValue>) {
+    let mut sql = format!("UPDATE {} SET ", descriptor.table_name);
+    let mut binds: Vec<SqlValue> = Vec::with_capacity(set.len() + filters.len());
+    let mut bind_index = 1usize;
+    for (idx, value) in set.iter().enumerate() {
+        if idx > 0 {
+            sql.push_str(", ");
+        }
+        let _ = write!(&mut sql, "{} = ", value.column);
+        dialect.write_placeholder(&mut sql, bind_index);
+        bind_index += 1;
+        binds.push(value.value.clone());
+    }
+    if let Some(version_col) = descriptor.version_column {
+        let _ = write!(&mut sql, ", {version_col} = {version_col} + 1");
+    }
+
+    sql.push_str(" WHERE ");
+    let mut where_started = false;
+    if let Some(col) = descriptor.soft_delete_column {
+        let _ = write!(&mut sql, "{col} IS NULL");
+        where_started = true;
+    }
+    if !filters.is_empty() {
+        if where_started {
+            sql.push_str(" AND ");
+        }
+        sql.push('(');
+        let mut joined = false;
+        for filter in filters {
+            if joined {
+                sql.push_str(" AND ");
+            }
+            render_filter_expr(dialect, filter, &mut sql, &mut binds, &mut bind_index);
+            joined = true;
+        }
+        sql.push(')');
+    }
+    sql.push_str(" RETURNING ");
+    sql.push_str(&descriptor.select_projection());
+    (sql, binds)
+}
+
 /// Render an `INSERT ... ON CONFLICT (<pk>) DO UPDATE SET ... RETURNING ...`
 /// upsert. Mirrors the cratestack-sqlx server path but without the
 /// always-transactional `SELECT FOR UPDATE` probe: the rusqlite layer has no
@@ -262,7 +316,7 @@ pub fn render_delete<M, PK>(
     (sql, vec![id])
 }
 
-fn render_filter_expr(
+pub(crate) fn render_filter_expr(
     dialect: &dyn Dialect,
     filter: &FilterExpr,
     sql: &mut String,
@@ -583,6 +637,46 @@ mod tests {
             render_delete(&dialect, &descriptor, SqlValue::Int(9), now);
         assert!(sql.starts_with("UPDATE posts SET deleted_at = ?1 WHERE id = ?2"));
         assert_eq!(binds, vec![SqlValue::DateTime(now), SqlValue::Int(9)]);
+    }
+
+    #[test]
+    fn update_many_with_filter_renders_set_and_where() {
+        let dialect = SqliteDialect;
+        let descriptor = fixture_descriptor();
+        let title_filter = FieldRef::<(), String>::new("title").eq("foo");
+        let (sql, binds) = render_update_many(
+            &dialect,
+            &descriptor,
+            &[SqlColumnValue {
+                column: "published",
+                value: SqlValue::Bool(true),
+            }],
+            &[FilterExpr::from(title_filter)],
+        );
+        assert_eq!(
+            sql,
+            "UPDATE posts SET published = ?1 WHERE (title = ?2) RETURNING id AS \"id\", title AS \"title\", published AS \"published\"",
+        );
+        assert_eq!(
+            binds,
+            vec![SqlValue::Bool(true), SqlValue::String("foo".into())],
+        );
+    }
+
+    #[test]
+    fn update_many_with_soft_delete_layers_in_isnull_clause() {
+        let dialect = SqliteDialect;
+        let descriptor = soft_delete_descriptor();
+        let (sql, _) = render_update_many(
+            &dialect,
+            &descriptor,
+            &[SqlColumnValue {
+                column: "title",
+                value: SqlValue::String("renamed".into()),
+            }],
+            &[FilterExpr::from(FieldRef::<(), bool>::new("published").is_true())],
+        );
+        assert!(sql.contains("WHERE deleted_at IS NULL AND ("), "got: {sql}");
     }
 
     #[test]
