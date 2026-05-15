@@ -126,7 +126,9 @@ fn handle_studio(cmd: StudioCmd) -> Result<()> {
     match cmd {
         StudioCmd::Init { out, force } => handle_studio_init(out, force),
         StudioCmd::Run { config, bind } => handle_studio_run(config, bind),
-        StudioCmd::Eject { config, out } => handle_studio_eject(config, out),
+        StudioCmd::Eject { config, out, force } => {
+            handle_studio_eject(config, out, force)
+        }
     }
 }
 
@@ -171,7 +173,19 @@ fn handle_studio_run(config: PathBuf, bind: Option<String>) -> Result<()> {
     })
 }
 
-fn handle_studio_eject(_config: PathBuf, _out: PathBuf) -> Result<()> {
-    cratestack_studio_generator::eject()?;
+fn handle_studio_eject(_config: PathBuf, out: PathBuf, force: bool) -> Result<()> {
+    let report = cratestack_studio_generator::eject(&cratestack_studio_generator::EjectOptions {
+        out: out.clone(),
+        force,
+    })?;
+    println!(
+        "ejected studio UI to '{}' ({} files written)",
+        report.out.display(),
+        report.written.len()
+    );
+    println!(
+        "next steps: `cd {} && trunk serve` (with `cratestack studio run` in another terminal)",
+        report.out.display(),
+    );
     Ok(())
 }

@@ -13,4 +13,5 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
+cratestack-studio.workspace = true
 thiserror.workspace = true

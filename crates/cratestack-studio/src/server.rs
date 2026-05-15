@@ -62,11 +62,33 @@ pub async fn run(options: ServerOptions) -> Result<(), ServerError> {
 /// Public for the smoke test in `tests/api_smoke.rs`.
 pub fn build_router(workspace: Arc<LoadedWorkspace>) -> Router {
     let cors_dev = workspace.config.cors_dev;
-    let app = Router::new()
-        .route("/", get(index_page))
+    let mut app = Router::new()
         .route("/api/health", get(health_handler))
-        .merge(crate::api::router())
-        .with_state(workspace);
+        .merge(crate::api::router());
+
+    // The UI is mounted *after* the API routes so any future overlap
+    // (e.g. `/api/health` vs an `index.html` SPA route) resolves in
+    // favor of the JSON endpoint. Without the `embed-ui` feature we
+    // fall back to a stub explainer page.
+    #[cfg(feature = "embed-ui")]
+    {
+        if crate::ui_assets::has_assets() {
+            app = crate::ui_assets::mount(app);
+        } else {
+            tracing::warn!(
+                "embed-ui feature is enabled but the UI bundle is empty; \
+                 run `trunk build --release` in crates/cratestack-studio/ui/ \
+                 before building the studio binary"
+            );
+            app = app.route("/", get(index_page));
+        }
+    }
+    #[cfg(not(feature = "embed-ui"))]
+    {
+        app = app.route("/", get(index_page));
+    }
+
+    let app = app.with_state(workspace);
 
     if cors_dev {
         let cors = tower_http::cors::CorsLayer::new()
