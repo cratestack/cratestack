@@ -3,8 +3,8 @@ use crate::sqlx;
 use cratestack_core::{AuditOperation, BatchSummary, CoolContext, CoolError, ModelEventKind};
 
 use crate::{
-    CreateModelInput, FilterExpr, ModelDescriptor, SqlValue, SqlxRuntime, UpdateModelInput,
-    UpsertModelInput,
+    ConflictTarget, CreateModelInput, FilterExpr, ModelDescriptor, SqlColumnValue, SqlValue,
+    SqlxRuntime, UpdateModelInput, UpsertModelInput,
     audit::{build_audit_event, enqueue_audit_event, ensure_audit_table, fetch_for_audit},
     descriptor::{enqueue_event_outbox, ensure_event_outbox_table},
 };
@@ -877,12 +877,28 @@ pub struct UpsertRecord<'a, M: 'static, PK: 'static, I> {
     pub(crate) runtime: &'a SqlxRuntime,
     pub(crate) descriptor: &'static ModelDescriptor<M, PK>,
     pub(crate) input: I,
+    pub(crate) conflict_target: ConflictTarget,
 }
 
 impl<'a, M: 'static, PK: 'static, I> UpsertRecord<'a, M, PK, I>
 where
     I: UpsertModelInput<M>,
 {
+    /// Choose the conflict target for the upsert. Defaults to the
+    /// model's primary key; pass [`ConflictTarget::Columns`] to upsert
+    /// on a composite unique key instead.
+    ///
+    /// The named columns must form a `UNIQUE` constraint or `UNIQUE`
+    /// index on the target table — otherwise PostgreSQL rejects the
+    /// statement with `42P10 (invalid_column_reference)`. The upsert
+    /// input must additionally carry a value for every conflict
+    /// column so the runtime's `SELECT … FOR UPDATE` conflict probe
+    /// has something to filter on.
+    pub fn on_conflict(mut self, target: ConflictTarget) -> Self {
+        self.conflict_target = target;
+        self
+    }
+
     /// Render an approximate SQL preview. The actual upsert wraps a
     /// `SELECT … FOR UPDATE` around the `INSERT … ON CONFLICT`, but this
     /// preview returns only the conflict-bearing statement — sufficient
@@ -909,13 +925,16 @@ where
             Some(col) => format!(", {col} = {table}.{col} + 1", table = self.descriptor.table_name, col = col),
             None => String::new(),
         };
+        let conflict_tuple = match self.conflict_target {
+            ConflictTarget::PrimaryKey => self.descriptor.primary_key.to_owned(),
+            ConflictTarget::Columns(cols) => cols.join(", "),
+        };
 
         format!(
             "INSERT INTO {table} ({columns}) VALUES ({placeholders}) \
-             ON CONFLICT ({pk}) DO UPDATE SET {update_assignments}{version_bump} \
+             ON CONFLICT ({conflict_tuple}) DO UPDATE SET {update_assignments}{version_bump} \
              RETURNING {projection}",
             table = self.descriptor.table_name,
-            pk = self.descriptor.primary_key,
             projection = self.descriptor.select_projection(),
         )
     }
@@ -936,6 +955,7 @@ where
             runtime.pool(),
             self.descriptor,
             self.input,
+            self.conflict_target,
             ctx,
         )
         .await?;
@@ -967,6 +987,7 @@ where
             self.runtime.pool(),
             self.descriptor,
             self.input,
+            self.conflict_target,
             ctx,
         )
         .await?;
@@ -983,6 +1004,7 @@ async fn run_upsert_in_tx<'tx, M, PK, I>(
     policy_pool: &sqlx::PgPool,
     descriptor: &'static ModelDescriptor<M, PK>,
     input: I,
+    conflict_target: ConflictTarget,
     ctx: &CoolContext,
 ) -> Result<(M, bool), CoolError>
 where
@@ -1011,6 +1033,27 @@ where
         ));
     }
 
+    // Build the conflict-key tuple by looking up each named column's
+    // value in the (defaulted) insert set. The PrimaryKey branch keeps
+    // the old single-column path so we don't pay an extra lookup on the
+    // common case.
+    let pk_value = input.primary_key_value();
+    let conflict_columns: Vec<(&'static str, SqlValue)> = match conflict_target {
+        ConflictTarget::PrimaryKey => vec![(descriptor.primary_key, pk_value)],
+        ConflictTarget::Columns(cols) => {
+            let mut out = Vec::with_capacity(cols.len());
+            for col in cols {
+                let value = find_column_value(&insert_values, col).cloned().ok_or_else(|| {
+                    CoolError::Validation(format!(
+                        "upsert on_conflict references column `{col}` which is not present in the input",
+                    ))
+                })?;
+                out.push((*col, value));
+            }
+            out
+        }
+    };
+
     // Both create and update policies must allow the call. Stricter than
     // "evaluate the path that runs," but it's the only choice we can make
     // before knowing which branch will fire — pre-flighting a read just to
@@ -1029,7 +1072,6 @@ where
         ));
     }
 
-    let pk_value = input.primary_key_value();
     let emits_created = descriptor.emits(ModelEventKind::Created);
     let emits_updated = descriptor.emits(ModelEventKind::Updated);
     let audit_enabled = descriptor.audit_enabled;
@@ -1045,7 +1087,8 @@ where
     // this is the update branch and we capture the before-snapshot for
     // audit; otherwise it's the insert branch. The lock serializes
     // concurrent upserts on the same key, which is what callers expect.
-    let before_record = select_for_update_by_pk_value(&mut **tx, descriptor, &pk_value).await?;
+    let before_record =
+        select_for_update_by_conflict_target(&mut **tx, descriptor, &conflict_columns).await?;
     let inserted = before_record.is_none();
 
     // For the update branch we additionally have to enforce the *update*
@@ -1053,7 +1096,9 @@ where
     // update branch we evaluate the update policy against the live row
     // (using its current column values, not the input — that's how
     // ordinary `.update()` works) by re-running the policy SQL.
-    if !inserted && !row_passes_update_policy(policy_pool, descriptor, &pk_value, ctx).await? {
+    if !inserted
+        && !row_passes_update_policy(policy_pool, descriptor, &conflict_columns, ctx).await?
+    {
         return Err(CoolError::Forbidden(
             "update policy denied this upsert".to_owned(),
         ));
@@ -1067,7 +1112,8 @@ where
         None
     };
 
-    let record = upsert_returning_record(&mut **tx, descriptor, &insert_values).await?;
+    let record =
+        upsert_returning_record(&mut **tx, descriptor, &insert_values, conflict_target).await?;
 
     // Event + audit fan-out, driven off whether the SELECT-FOR-UPDATE
     // saw a row. We don't lean on `xmax = 0`: keeping the discriminator
@@ -1096,14 +1142,15 @@ where
     Ok((record, emits_event))
 }
 
-/// Probe-with-lock: `SELECT projection FROM <table> WHERE <pk> = $1 FOR UPDATE`.
-/// Bypasses read policies — we need the raw row to drive insert/update
-/// branching and to capture the audit before-snapshot. Returns `None` when
-/// no row exists (the insert branch).
-async fn select_for_update_by_pk_value<'e, E, M, PK>(
+/// Probe-with-lock: `SELECT projection FROM <table> WHERE <conflict
+/// tuple> FOR UPDATE`. Bypasses read policies — we need the raw row to
+/// drive insert/update branching and to capture the audit
+/// before-snapshot. Returns `None` when no row exists (the insert
+/// branch).
+async fn select_for_update_by_conflict_target<'e, E, M, PK>(
     executor: E,
     descriptor: &'static ModelDescriptor<M, PK>,
-    pk_value: &SqlValue,
+    conflict: &[(&'static str, SqlValue)],
 ) -> Result<Option<M>, CoolError>
 where
     E: sqlx::Executor<'e, Database = sqlx::Postgres>,
@@ -1112,13 +1159,16 @@ where
     let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT ");
     query.push(descriptor.select_projection());
     query.push(" FROM ").push(descriptor.table_name);
-    query
-        .push(" WHERE ")
-        .push(descriptor.primary_key)
-        .push(" = ");
-    push_bind_value(&mut query, pk_value);
+    query.push(" WHERE ");
+    for (idx, (column, value)) in conflict.iter().enumerate() {
+        if idx > 0 {
+            query.push(" AND ");
+        }
+        query.push(*column).push(" = ");
+        push_bind_value(&mut query, value);
+    }
     // Soft-deleted rows act as "no row" for upsert purposes: the INSERT
-    // branch will then fail on the PK uniqueness constraint, which is the
+    // branch will then fail on the unique-constraint check, which is the
     // right outcome (refuse to silently revive a tombstone).
     if let Some(col) = descriptor.soft_delete_column {
         query.push(" AND ").push(col).push(" IS NULL");
@@ -1139,16 +1189,19 @@ where
 async fn row_passes_update_policy<M, PK>(
     policy_pool: &sqlx::PgPool,
     descriptor: &'static ModelDescriptor<M, PK>,
-    pk_value: &SqlValue,
+    conflict: &[(&'static str, SqlValue)],
     ctx: &CoolContext,
 ) -> Result<bool, CoolError> {
     let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT 1 FROM ");
     query.push(descriptor.table_name);
-    query
-        .push(" WHERE ")
-        .push(descriptor.primary_key)
-        .push(" = ");
-    push_bind_value(&mut query, pk_value);
+    query.push(" WHERE ");
+    for (idx, (column, value)) in conflict.iter().enumerate() {
+        if idx > 0 {
+            query.push(" AND ");
+        }
+        query.push(*column).push(" = ");
+        push_bind_value(&mut query, value);
+    }
     query.push(" AND ");
     push_action_policy_query(
         &mut query,
@@ -1172,7 +1225,8 @@ async fn row_passes_update_policy<M, PK>(
 async fn upsert_returning_record<'e, E, M, PK>(
     executor: E,
     descriptor: &'static ModelDescriptor<M, PK>,
-    insert_values: &[crate::SqlColumnValue],
+    insert_values: &[SqlColumnValue],
+    conflict_target: ConflictTarget,
 ) -> Result<M, CoolError>
 where
     E: sqlx::Executor<'e, Database = sqlx::Postgres>,
@@ -1193,7 +1247,22 @@ where
         }
         push_bind_value(&mut query, &value.value);
     }
-    query.push(") ON CONFLICT (").push(descriptor.primary_key).push(") DO UPDATE SET ");
+
+    query.push(") ON CONFLICT (");
+    match conflict_target {
+        ConflictTarget::PrimaryKey => {
+            query.push(descriptor.primary_key);
+        }
+        ConflictTarget::Columns(cols) => {
+            for (idx, column) in cols.iter().enumerate() {
+                if idx > 0 {
+                    query.push(", ");
+                }
+                query.push(*column);
+            }
+        }
+    }
+    query.push(") DO UPDATE SET ");
 
     // The DO UPDATE list. If there are no eligible columns to overwrite,
     // fall back to "DO NOTHING"-equivalent semantics via a no-op assignment:

@@ -7,7 +7,7 @@ use crate::{
     render::render_scoped_select_sql,
 };
 
-use super::support::{push_order_and_paging, push_scoped_conditions};
+use super::support::{push_order_and_paging, push_scoped_conditions, ReadPolicyKind};
 
 #[derive(Debug, Clone)]
 pub struct FindMany<'a, M: 'static, PK: 'static> {
@@ -140,6 +140,7 @@ impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
             &self.filters,
             None::<(&'static str, i64)>,
             ctx,
+            ReadPolicyKind::List,
         );
         push_order_and_paging(&mut query, &order_by, self.limit, self.offset);
         if self.for_update {
@@ -178,6 +179,7 @@ impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
             &self.filters,
             None::<(&'static str, i64)>,
             ctx,
+            ReadPolicyKind::List,
         );
         push_order_and_paging(&mut query, &order_by, self.limit, self.offset);
         if self.for_update {
@@ -219,6 +221,7 @@ pub struct FindUnique<'a, M: 'static, PK: 'static> {
     pub(crate) descriptor: &'static ModelDescriptor<M, PK>,
     pub(crate) id: PK,
     pub(crate) for_update: bool,
+    pub(crate) policy_kind: ReadPolicyKind,
 }
 
 impl<'a, M: 'static, PK: 'static> FindUnique<'a, M, PK> {
@@ -228,6 +231,30 @@ impl<'a, M: 'static, PK: 'static> FindUnique<'a, M, PK> {
     /// tx-pairing caveat.
     pub fn for_update(mut self) -> Self {
         self.for_update = true;
+        self
+    }
+
+    /// Evaluate against the schema's `detail` policy slice (the default
+    /// for `find_unique`). A no-op when called explicitly, kept for
+    /// API symmetry with [`Self::as_list`] so call sites can be
+    /// self-documenting about which policy slot they want.
+    ///
+    /// `@@allow("detail", ...)` rules are typically more permissive
+    /// than `@@allow("list", ...)` — e.g. "anyone can fetch a public
+    /// post by id, but only members can see the listing" — and the
+    /// schema author's intent for unique lookups belongs in `detail`.
+    pub fn as_detail(mut self) -> Self {
+        self.policy_kind = ReadPolicyKind::Detail;
+        self
+    }
+
+    /// Evaluate against the schema's `read`/`list` policy slice instead
+    /// of `detail`. Use when the call site needs list-style permission
+    /// semantics on what happens to be a unique-key lookup — most
+    /// commonly during a migration from a list-shaped route to a
+    /// by-id route that should still preserve the old gate.
+    pub fn as_list(mut self) -> Self {
+        self.policy_kind = ReadPolicyKind::List;
         self
     }
 
@@ -251,12 +278,17 @@ impl<'a, M: 'static, PK: 'static> FindUnique<'a, M, PK> {
             self.descriptor.table_name,
         );
         let mut bind_index = 1usize;
-        if let Some(policy_clause) = render_read_policy_sql(
-            self.descriptor.detail_allow_policies,
-            self.descriptor.detail_deny_policies,
-            ctx,
-            &mut bind_index,
-        ) {
+        let (allow, deny) = match self.policy_kind {
+            ReadPolicyKind::List => (
+                self.descriptor.read_allow_policies,
+                self.descriptor.read_deny_policies,
+            ),
+            ReadPolicyKind::Detail => (
+                self.descriptor.detail_allow_policies,
+                self.descriptor.detail_deny_policies,
+            ),
+        };
+        if let Some(policy_clause) = render_read_policy_sql(allow, deny, ctx, &mut bind_index) {
             sql.push_str(&format!(
                 " WHERE ({policy_clause}) AND {} = ${bind_index} LIMIT 1",
                 self.descriptor.primary_key
@@ -289,6 +321,7 @@ impl<'a, M: 'static, PK: 'static> FindUnique<'a, M, PK> {
             &[],
             Some((self.descriptor.primary_key, self.id)),
             ctx,
+            self.policy_kind,
         );
         query.push(" LIMIT 1");
         if self.for_update {
@@ -324,6 +357,7 @@ impl<'a, M: 'static, PK: 'static> FindUnique<'a, M, PK> {
             &[],
             Some((self.descriptor.primary_key, self.id)),
             ctx,
+            self.policy_kind,
         );
         query.push(" LIMIT 1");
         if self.for_update {
