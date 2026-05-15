@@ -321,7 +321,7 @@ pub(crate) fn generate_generated_rpc_client_module(
 
             impl<C> Client<C>
             where
-                C: ::cratestack::client_rust::HttpClientCodec + Clone,
+                C: ::cratestack::client_rust::HttpClientCodec + Clone + Send + 'static,
             {
                 /// Build a typed RPC client from a configured `CratestackClient`.
                 /// The `CratestackClient`'s `request_authorizer` (set via
@@ -347,6 +347,14 @@ pub(crate) fn generate_generated_rpc_client_module(
                     self.rpc.inner()
                 }
 
+                /// Start a typed batch. Chain `.queue(&mut batch)` from
+                /// any unary RPC call on this client (model CRUD or
+                /// procedure) to defer it into one `POST /rpc/batch`
+                /// round-trip, then `batch.send().await` to fire.
+                pub fn batch(&self) -> ::cratestack::client_rust::BatchBuilder<C> {
+                    self.rpc.batch_builder()
+                }
+
                 #(#model_client_accessors)*
 
                 pub fn procedures(&self) -> ProceduresClient<C> {
@@ -366,7 +374,7 @@ pub(crate) fn generate_generated_rpc_client_module(
 
             impl<C> ProceduresClient<C>
             where
-                C: ::cratestack::client_rust::HttpClientCodec + Clone,
+                C: ::cratestack::client_rust::HttpClientCodec + Clone + Send + 'static,
             {
                 fn new(rpc: ::cratestack::client_rust::RpcClient<C>) -> Self {
                     Self { rpc }
@@ -418,78 +426,96 @@ fn generate_generated_rpc_model_client(
 
         impl<C> #client_ident<C>
         where
-            C: ::cratestack::client_rust::HttpClientCodec + Clone,
+            C: ::cratestack::client_rust::HttpClientCodec + Clone + Send + 'static,
         {
             fn new(rpc: ::cratestack::client_rust::RpcClient<C>) -> Self {
                 Self { rpc }
             }
 
             /// `POST /rpc/model.X.list` — server decodes `RpcListInput`,
-            /// synthesizes a query string, and runs the same list handler
-            /// as the REST binding. Output shape is unchanged: paged
-            /// models return `Page<Model>`, non-paged return `Vec<Model>`.
-            pub async fn list(
+            /// synthesizes a query string, and runs the same list
+            /// handler as the REST binding. Output shape is unchanged:
+            /// paged models return `Page<Model>`, non-paged return
+            /// `Vec<Model>`.
+            ///
+            /// Returns a [`BatchableCall`](::cratestack::client_rust::BatchableCall)
+            /// — `.await` to fire immediately, or
+            /// `.queue(&mut batch)` to defer into a multiplexed
+            /// `/rpc/batch` round-trip.
+            pub fn list(
                 &self,
                 input: &::cratestack::rpc::RpcListInput,
-            ) -> Result<#list_output_type, ::cratestack::client_rust::RpcClientError> {
-                self.rpc.call::<_, #list_output_type>(#list_op, input).await
+            ) -> ::cratestack::client_rust::BatchableCall<C, #list_output_type> {
+                ::cratestack::client_rust::BatchableCall::new(
+                    self.rpc.clone(),
+                    #list_op,
+                    input,
+                )
             }
 
             /// `POST /rpc/model.X.get` — wraps `id` in `RpcPkInput { id }`.
-            pub async fn get(
+            pub fn get(
                 &self,
                 id: &#primary_key_type,
-            ) -> Result<super::models::#model_ident, ::cratestack::client_rust::RpcClientError> {
+            ) -> ::cratestack::client_rust::BatchableCall<C, super::models::#model_ident> {
                 let input = ::cratestack::rpc::RpcPkInput {
                     id: id.clone(),
                 };
-                self.rpc
-                    .call::<_, super::models::#model_ident>(#get_op, &input)
-                    .await
+                ::cratestack::client_rust::BatchableCall::new(
+                    self.rpc.clone(),
+                    #get_op,
+                    &input,
+                )
             }
 
             /// `POST /rpc/model.X.create` — body is the create input
             /// directly (no envelope; server delegates to the existing
             /// REST POST handler unchanged).
-            pub async fn create(
+            pub fn create(
                 &self,
                 input: &super::inputs::#create_input_ident,
-            ) -> Result<super::models::#model_ident, ::cratestack::client_rust::RpcClientError> {
-                self.rpc
-                    .call::<_, super::models::#model_ident>(#create_op, input)
-                    .await
+            ) -> ::cratestack::client_rust::BatchableCall<C, super::models::#model_ident> {
+                ::cratestack::client_rust::BatchableCall::new(
+                    self.rpc.clone(),
+                    #create_op,
+                    input,
+                )
             }
 
             /// `POST /rpc/model.X.update` — wraps `id` + `patch` in
             /// `RpcUpdateInput { id, patch }`. The patch is the same
             /// `Update<Model>Input` struct as the REST PATCH body, so
             /// `Option::None` round-trips through CBOR correctly.
-            pub async fn update(
+            pub fn update(
                 &self,
                 id: &#primary_key_type,
                 patch: &super::inputs::#update_input_ident,
-            ) -> Result<super::models::#model_ident, ::cratestack::client_rust::RpcClientError> {
+            ) -> ::cratestack::client_rust::BatchableCall<C, super::models::#model_ident> {
                 let input = ::cratestack::rpc::RpcUpdateInput {
                     id: id.clone(),
                     patch: patch.clone(),
                 };
-                self.rpc
-                    .call::<_, super::models::#model_ident>(#update_op, &input)
-                    .await
+                ::cratestack::client_rust::BatchableCall::new(
+                    self.rpc.clone(),
+                    #update_op,
+                    &input,
+                )
             }
 
             /// `POST /rpc/model.X.delete` — wraps `id` in `RpcPkInput { id }`.
             /// Returns the deleted record (same as REST DELETE).
-            pub async fn delete(
+            pub fn delete(
                 &self,
                 id: &#primary_key_type,
-            ) -> Result<super::models::#model_ident, ::cratestack::client_rust::RpcClientError> {
+            ) -> ::cratestack::client_rust::BatchableCall<C, super::models::#model_ident> {
                 let input = ::cratestack::rpc::RpcPkInput {
                     id: id.clone(),
                 };
-                self.rpc
-                    .call::<_, super::models::#model_ident>(#delete_op, &input)
-                    .await
+                ::cratestack::client_rust::BatchableCall::new(
+                    self.rpc.clone(),
+                    #delete_op,
+                    &input,
+                )
             }
         }
     })
@@ -530,19 +556,27 @@ fn generate_generated_rpc_procedure_client_method(
             }
         })
     } else {
-        // Unary procedure → single buffered response.
+        // Unary procedure → BatchableCall. `.await` to fire immediately,
+        // `.queue(&mut batch)` to defer into a `/rpc/batch` round-trip.
         Ok(quote! {
-            #[doc = concat!("Unary RPC call to `", #op_id, "`.")]
-            pub async fn #method_ident(
+            #[doc = concat!(
+                "Unary RPC call to `",
+                #op_id,
+                "`. Returns a `BatchableCall` — `.await` to fire immediately, ",
+                "or `.queue(&mut batch)` to defer."
+            )]
+            pub fn #method_ident(
                 &self,
                 args: &super::procedures::#module_ident::Args,
-            ) -> Result<
+            ) -> ::cratestack::client_rust::BatchableCall<
+                C,
                 super::procedures::#module_ident::Output,
-                ::cratestack::client_rust::RpcClientError,
             > {
-                self.rpc
-                    .call::<_, super::procedures::#module_ident::Output>(#op_id, args)
-                    .await
+                ::cratestack::client_rust::BatchableCall::new(
+                    self.rpc.clone(),
+                    #op_id,
+                    args,
+                )
             }
         })
     }

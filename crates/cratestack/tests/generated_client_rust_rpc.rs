@@ -145,6 +145,106 @@ async fn rpc_client_sequence_procedure_streams_each_item() {
     assert_eq!(collected, vec!["tick-0", "tick-1", "tick-2"]);
 }
 
+#[tokio::test]
+async fn rpc_client_batches_heterogeneous_ops_in_one_round_trip() {
+    let (base_url, _server) = spawn_batch_server().await;
+    let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec);
+    let client = cratestack_schema::client::Client::new(runtime);
+
+    let mut batch = client.batch();
+    assert!(batch.is_empty());
+
+    // Queue a mix: a model CRUD op, a unary procedure, and another CRUD
+    // op. Each `.queue(...)` is sync; nothing fires until `.send().await`.
+    let h_widget_get = client.widgets().get(&1).queue(&mut batch);
+    let h_ping = client
+        .procedures()
+        .ping(&cratestack_schema::procedures::ping::Args {
+            args: cratestack_schema::PingArgs {
+                nonce: "batch-1".into(),
+            },
+        })
+        .queue(&mut batch);
+    let h_widget_create = client
+        .widgets()
+        .create(&cratestack_schema::CreateWidgetInput {
+            id: 99,
+            name: "BatchedGamma".into(),
+        })
+        .queue(&mut batch);
+
+    assert_eq!(batch.len(), 3);
+
+    let mut results = batch
+        .send()
+        .await
+        .expect("batch.send should succeed at the HTTP envelope level");
+
+    let widget = results
+        .take(h_widget_get)
+        .expect("widget.get frame should resolve");
+    assert_eq!(widget.id, 1);
+    assert_eq!(widget.name, "Alpha");
+
+    let echoed = results
+        .take(h_ping)
+        .expect("ping frame should resolve");
+    assert_eq!(echoed.nonce, "batch-1");
+
+    let created = results
+        .take(h_widget_create)
+        .expect("widget.create frame should resolve");
+    assert_eq!(created.id, 99);
+    assert_eq!(created.name, "BatchedGamma");
+}
+
+#[tokio::test]
+async fn rpc_client_batch_per_frame_error_does_not_poison_other_frames() {
+    let (base_url, _server) = spawn_batch_server().await;
+    let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec);
+    let client = cratestack_schema::client::Client::new(runtime);
+
+    // Use a non-existent id so the server's batch handler emits a
+    // per-frame `not_found` error for it. The other two ops in the
+    // batch should still succeed independently.
+    let mut batch = client.batch();
+    let h_ok = client.widgets().get(&1).queue(&mut batch);
+    let h_missing = client.widgets().get(&999).queue(&mut batch);
+    let h_ping = client
+        .procedures()
+        .ping(&cratestack_schema::procedures::ping::Args {
+            args: cratestack_schema::PingArgs {
+                nonce: "after-error".into(),
+            },
+        })
+        .queue(&mut batch);
+
+    let mut results = batch
+        .send()
+        .await
+        .expect("batch envelope should succeed even when individual frames err");
+
+    let widget = results
+        .take(h_ok)
+        .expect("the ok frame should resolve");
+    assert_eq!(widget.id, 1);
+
+    let err = results
+        .take(h_missing)
+        .expect_err("missing widget should surface as per-frame error");
+    match err {
+        cratestack_client_rust::RpcClientError::Remote(ref remote) => {
+            assert_eq!(remote.body.code, "not_found");
+        }
+        other => panic!("expected Remote(not_found), got {other:?}"),
+    }
+
+    let echoed = results
+        .take(h_ping)
+        .expect("ping frame after the error should still resolve");
+    assert_eq!(echoed.nonce, "after-error");
+}
+
 // -----------------------------------------------------------------------------
 // Mock server — canned `/rpc/...` responses for each op.
 // -----------------------------------------------------------------------------
@@ -292,4 +392,104 @@ async fn handle_proc_many_pings(
         .header(header::CONTENT_TYPE, HeaderValue::from_static(CBOR_SEQ))
         .body(Body::from_stream(stream))
         .expect("response builds")
+}
+
+// -----------------------------------------------------------------------------
+// Batch-aware mock — `POST /rpc/batch` route on top of the per-op routes,
+// dispatching each frame to a tiny in-process handler. Used by the batch
+// tests above.
+// -----------------------------------------------------------------------------
+
+async fn spawn_batch_server() -> (url::Url, tokio::task::JoinHandle<()>) {
+    let app = Router::new()
+        // Per-op routes — present so a misrouted batch payload still 404s
+        // visibly rather than mysteriously hanging.
+        .route("/rpc/model.Widget.list", post(handle_widget_list))
+        .route("/rpc/model.Widget.get", post(handle_widget_get))
+        .route("/rpc/model.Widget.create", post(handle_widget_create))
+        .route("/rpc/model.Widget.update", post(handle_widget_update))
+        .route("/rpc/model.Widget.delete", post(handle_widget_delete))
+        .route("/rpc/procedure.ping", post(handle_proc_ping))
+        // The batch route fans frames out to local handlers below.
+        .route("/rpc/batch", post(handle_batch));
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("listener should bind");
+    let addr: std::net::SocketAddr = listener.local_addr().expect("listener has addr");
+    let handle = tokio::spawn(async move {
+        axum::serve(listener, app).await.expect("server should run");
+    });
+    (
+        url::Url::parse(&format!("http://{addr}")).expect("base url parses"),
+        handle,
+    )
+}
+
+async fn handle_batch(body: Bytes) -> Response<Body> {
+    let requests: Vec<cratestack::rpc::RpcRequest> =
+        CborCodec.decode(&body).expect("decode batch frames");
+    let responses: Vec<cratestack::rpc::RpcResponseFrame> = requests
+        .into_iter()
+        .map(dispatch_frame)
+        .collect();
+    cbor_response(StatusCode::OK, &responses)
+}
+
+fn dispatch_frame(req: cratestack::rpc::RpcRequest) -> cratestack::rpc::RpcResponseFrame {
+    use cratestack::rpc::{RpcErrorBody, RpcResponseFrame};
+
+    match req.op.as_str() {
+        "model.Widget.get" => {
+            let input: cratestack::rpc::RpcPkInput<i64> =
+                serde_json::from_value(req.input).expect("decode RpcPkInput");
+            if input.id == 1 {
+                let value = serde_json::to_value(widget(1, "Alpha")).expect("encode widget");
+                RpcResponseFrame {
+                    id: req.id,
+                    output: Some(value),
+                    error: None,
+                }
+            } else {
+                RpcResponseFrame {
+                    id: req.id,
+                    output: None,
+                    error: Some(RpcErrorBody {
+                        code: "not_found".to_owned(),
+                        message: format!("widget {} not found", input.id),
+                        details: None,
+                    }),
+                }
+            }
+        }
+        "model.Widget.create" => {
+            let input: cratestack_schema::CreateWidgetInput =
+                serde_json::from_value(req.input).expect("decode CreateWidgetInput");
+            let value = serde_json::to_value(widget(input.id, &input.name)).expect("encode widget");
+            RpcResponseFrame {
+                id: req.id,
+                output: Some(value),
+                error: None,
+            }
+        }
+        "procedure.ping" => {
+            let input: cratestack_schema::procedures::ping::Args =
+                serde_json::from_value(req.input).expect("decode ping::Args");
+            let value = serde_json::to_value(input.args).expect("encode PingArgs");
+            RpcResponseFrame {
+                id: req.id,
+                output: Some(value),
+                error: None,
+            }
+        }
+        other => RpcResponseFrame {
+            id: req.id,
+            output: None,
+            error: Some(RpcErrorBody {
+                code: "internal".to_owned(),
+                message: format!("test batch server has no dispatch for op `{other}`"),
+                details: None,
+            }),
+        },
+    }
 }
