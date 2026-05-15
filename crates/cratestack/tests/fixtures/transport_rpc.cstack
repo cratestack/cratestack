@@ -1,0 +1,33 @@
+// Smoke fixture for the `transport rpc` generation style. The vocabulary
+// patch only changes which descriptor slice the macro populates — the
+// underlying server runtime is still REST-shaped for now. Once the RPC
+// runtime lands, this fixture also exercises that path.
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Widget {
+  id Int @id
+  name String
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
+
+type PingArgs {
+  nonce String
+}
+
+procedure ping(args: PingArgs): PingArgs
+
+mutation procedure bump(args: PingArgs): PingArgs
