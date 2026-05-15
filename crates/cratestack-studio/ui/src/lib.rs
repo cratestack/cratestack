@@ -3,6 +3,8 @@
 
 mod api;
 mod app;
+mod editors;
+mod tools;
 mod types;
 
 use leptos::prelude::*;

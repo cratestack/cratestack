@@ -25,10 +25,14 @@ use cratestack_core::Schema;
 use sqlx_core::row::Row as _;
 use sqlx_postgres::{PgPool, PgRow};
 
+use super::db_errors::map_pg_error;
 use super::model_info::{
     ModelSqlInfo, PkCast, find_pk_field, json_value_to_cursor, resolve_model,
 };
-use super::{DEFAULT_PAGE_LIMIT, DataError, DataSource, MAX_PAGE_LIMIT, Page, PageRequest, Row};
+use super::{
+    ColumnSnapshot, DEFAULT_PAGE_LIMIT, DataError, DataSource, MAX_PAGE_LIMIT, Page,
+    PageRequest, Row, SqlOp, SqlParam, SqlPreview,
+};
 
 #[derive(Debug, Clone)]
 pub struct PostgresSource {
@@ -373,7 +377,7 @@ impl DataSource for PostgresSource {
     }
 
     async fn create(&self, model: &str, payload: &Row) -> Result<Row, DataError> {
-        let (_, info) = resolve_model(&self.schema, model)?;
+        let (resolved, info) = resolve_model(&self.schema, model)?;
         let (cols, binds) = collect_payload(&self.schema, model, &info, payload);
         let sql = build_insert_sql(&info, &cols);
 
@@ -381,7 +385,15 @@ impl DataSource for PostgresSource {
         for value in &binds {
             q = bind_typed(q, value);
         }
-        let row: PgRow = q.fetch_one(&self.pool).await?;
+        let row: PgRow = match q.fetch_one(&self.pool).await {
+            Ok(r) => r,
+            Err(e) => {
+                if let Some(mapped) = map_pg_error(Some(resolved), &e) {
+                    return Err(mapped);
+                }
+                return Err(DataError::Db(e));
+            }
+        };
         let value: serde_json::Value = row.try_get(0)?;
         match value {
             serde_json::Value::Object(map) => Ok(map),
@@ -397,7 +409,7 @@ impl DataSource for PostgresSource {
         pk: &str,
         payload: &Row,
     ) -> Result<Option<Row>, DataError> {
-        let (_, info) = resolve_model(&self.schema, model)?;
+        let (resolved, info) = resolve_model(&self.schema, model)?;
         if payload.is_empty() {
             return self.get(model, pk).await;
         }
@@ -409,7 +421,15 @@ impl DataSource for PostgresSource {
             q = bind_typed(q, value);
         }
         q = q.bind(pk);
-        let row: Option<PgRow> = q.fetch_optional(&self.pool).await?;
+        let row: Option<PgRow> = match q.fetch_optional(&self.pool).await {
+            Ok(r) => r,
+            Err(e) => {
+                if let Some(mapped) = map_pg_error(Some(resolved), &e) {
+                    return Err(mapped);
+                }
+                return Err(DataError::Db(e));
+            }
+        };
         match row {
             None => Ok(None),
             Some(r) => {
@@ -423,12 +443,21 @@ impl DataSource for PostgresSource {
     }
 
     async fn delete(&self, model: &str, pk: &str) -> Result<Option<Row>, DataError> {
-        let (_, info) = resolve_model(&self.schema, model)?;
+        let (resolved, info) = resolve_model(&self.schema, model)?;
         let sql = build_delete_sql(&info);
-        let row: Option<PgRow> = sqlx_core::query::query(&sql)
+        let row: Option<PgRow> = match sqlx_core::query::query(&sql)
             .bind(pk)
             .fetch_optional(&self.pool)
-            .await?;
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                if let Some(mapped) = map_pg_error(Some(resolved), &e) {
+                    return Err(mapped);
+                }
+                return Err(DataError::Db(e));
+            }
+        };
         match row {
             None => Ok(None),
             Some(r) => {
@@ -439,6 +468,115 @@ impl DataSource for PostgresSource {
                 })
             }
         }
+    }
+
+    async fn preview_sql(
+        &self,
+        op: SqlOp,
+        model: &str,
+        pk: Option<&str>,
+        payload: Option<&Row>,
+    ) -> Result<SqlPreview, DataError> {
+        let (_, info) = resolve_model(&self.schema, model)?;
+        let (sql, params, notes) = match op {
+            SqlOp::List => {
+                let sql = build_list_sql(&info, DEFAULT_PAGE_LIMIT);
+                (
+                    sql,
+                    vec![SqlParam {
+                        index: 1,
+                        binding: "cursor (NULL on first page)".to_owned(),
+                        kind: "text",
+                    }],
+                    None,
+                )
+            }
+            SqlOp::Get => {
+                let pk_value = pk.unwrap_or("…");
+                let sql = build_get_sql(&info);
+                (
+                    sql,
+                    vec![SqlParam {
+                        index: 1,
+                        binding: pk_value.to_owned(),
+                        kind: pk_kind(info.pk_cast),
+                    }],
+                    None,
+                )
+            }
+            SqlOp::Create => {
+                let (cols, binds) = payload
+                    .map(|p| collect_payload(&self.schema, model, &info, p))
+                    .unwrap_or_else(|| sample_columns_and_binds(&info));
+                let sql = build_insert_sql(&info, &cols);
+                (sql, label_params(&cols, &binds, false, info.pk_cast), None)
+            }
+            SqlOp::Update => {
+                let (cols, binds) = payload
+                    .map(|p| collect_payload(&self.schema, model, &info, p))
+                    .unwrap_or_else(|| sample_columns_and_binds(&info));
+                let mut params = label_params(&cols, &binds, false, info.pk_cast);
+                params.push(SqlParam {
+                    index: (cols.len() + 1) as u32,
+                    binding: pk.unwrap_or("…").to_owned(),
+                    kind: pk_kind(info.pk_cast),
+                });
+                let sql = build_update_sql(&info, &cols);
+                (sql, params, None)
+            }
+            SqlOp::Delete => {
+                let sql = build_delete_sql(&info);
+                (
+                    sql,
+                    vec![SqlParam {
+                        index: 1,
+                        binding: pk.unwrap_or("…").to_owned(),
+                        kind: pk_kind(info.pk_cast),
+                    }],
+                    None,
+                )
+            }
+        };
+        Ok(SqlPreview {
+            driver: "postgres",
+            sql,
+            params,
+            plan: None,
+            notes,
+        })
+    }
+
+    async fn inspect_columns(
+        &self,
+        model: &str,
+    ) -> Result<Option<Vec<ColumnSnapshot>>, DataError> {
+        let (_, info) = resolve_model(&self.schema, model)?;
+        let sql = "SELECT column_name, data_type, is_nullable \
+                   FROM information_schema.columns \
+                   WHERE table_schema = current_schema() \
+                     AND table_name = $1 \
+                   ORDER BY ordinal_position";
+        let rows: Vec<PgRow> = sqlx_core::query::query(sql)
+            .bind(info.table.clone())
+            .fetch_all(&self.pool)
+            .await?;
+        if rows.is_empty() {
+            return Ok(None);
+        }
+        let snapshots = rows
+            .into_iter()
+            .map(|r| {
+                let name: String = r.try_get(0).unwrap_or_default();
+                let data_type: String = r.try_get(1).unwrap_or_default();
+                let is_nullable: String = r.try_get(2).unwrap_or_default();
+                ColumnSnapshot {
+                    name,
+                    data_type,
+                    nullable: is_nullable.eq_ignore_ascii_case("YES"),
+                }
+            })
+            .collect();
+        Ok(Some(snapshots))
     }
 
     async fn follow(
@@ -476,6 +614,56 @@ impl DataSource for PostgresSource {
             rows: decoded,
             next_cursor,
         })
+    }
+}
+
+pub(crate) fn pk_kind(cast: PkCast) -> &'static str {
+    match cast {
+        PkCast::Text => "text",
+        PkCast::BigInt => "bigint",
+    }
+}
+
+/// Synthesize one bind per scalar column so callers can preview a
+/// CREATE / UPDATE without first crafting a payload. The labels are
+/// placeholders meant for the SQL preview UI, not for execution.
+fn sample_columns_and_binds(
+    info: &ModelSqlInfo<'_>,
+) -> (Vec<String>, Vec<TypedValue>) {
+    let cols = info.columns.iter().map(|c| c.column_name.clone()).collect();
+    let binds = info
+        .columns
+        .iter()
+        .map(|_| TypedValue::Text("…".to_owned()))
+        .collect();
+    (cols, binds)
+}
+
+fn label_params(
+    cols: &[String],
+    binds: &[TypedValue],
+    _partial: bool,
+    _pk: PkCast,
+) -> Vec<SqlParam> {
+    cols.iter()
+        .zip(binds.iter())
+        .enumerate()
+        .map(|(i, (col, bind))| SqlParam {
+            index: (i + 1) as u32,
+            binding: col.clone(),
+            kind: typed_kind(bind),
+        })
+        .collect()
+}
+
+fn typed_kind(value: &TypedValue) -> &'static str {
+    match value {
+        TypedValue::Text(_) => "text",
+        TypedValue::Int(_) => "bigint",
+        TypedValue::Float(_) => "double",
+        TypedValue::Bool(_) => "boolean",
+        TypedValue::Json(_) => "jsonb",
+        TypedValue::Null => "null",
     }
 }
 

@@ -28,10 +28,14 @@ use cratestack_core::Schema;
 use rusqlite::Connection;
 use tokio::sync::Mutex;
 
+use super::db_errors::map_sqlite_error;
 use super::model_info::{
     ColumnInfo, ModelSqlInfo, PkCast, find_pk_field, json_value_to_cursor, resolve_model,
 };
-use super::{DEFAULT_PAGE_LIMIT, DataError, DataSource, MAX_PAGE_LIMIT, Page, PageRequest, Row};
+use super::{
+    ColumnSnapshot, DEFAULT_PAGE_LIMIT, DataError, DataSource, MAX_PAGE_LIMIT, Page,
+    PageRequest, Row, SqlOp, SqlParam, SqlPreview,
+};
 
 #[derive(Debug)]
 pub struct SqliteSource {
@@ -332,7 +336,8 @@ impl DataSource for SqliteSource {
     }
 
     async fn create(&self, model: &str, payload: &Row) -> Result<Row, DataError> {
-        let (_, info) = resolve_model(&self.schema, model)?;
+        let (resolved, info) = resolve_model(&self.schema, model)?;
+        let resolved = resolved.clone();
         let (cols, sql_args) = build_payload_bindings(&info, payload, false);
         let sql = build_insert_sql(&info, &cols);
         let conn = self.connection.clone();
@@ -342,10 +347,20 @@ impl DataSource for SqliteSource {
                 .iter()
                 .map(|v| v as &dyn rusqlite::ToSql)
                 .collect();
-            let rows = fetch_rows(conn, &sql, &params)?;
-            rows.into_iter().next().ok_or_else(|| DataError::Sqlite(
-                rusqlite::Error::QueryReturnedNoRows,
-            ))
+            match fetch_rows(conn, &sql, &params) {
+                Ok(rows) => rows
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| DataError::Sqlite(rusqlite::Error::QueryReturnedNoRows)),
+                Err(DataError::Sqlite(e)) => {
+                    if let Some(mapped) = map_sqlite_error(Some(&resolved), &e) {
+                        Err(mapped)
+                    } else {
+                        Err(DataError::Sqlite(e))
+                    }
+                }
+                Err(other) => Err(other),
+            }
         })
         .await?;
         Ok(row)
@@ -357,9 +372,9 @@ impl DataSource for SqliteSource {
         pk: &str,
         payload: &Row,
     ) -> Result<Option<Row>, DataError> {
-        let (_, info) = resolve_model(&self.schema, model)?;
+        let (resolved, info) = resolve_model(&self.schema, model)?;
+        let resolved = resolved.clone();
         if payload.is_empty() {
-            // Nothing to update — just return the existing row.
             return self.get(model, pk).await;
         }
         let (cols, mut sql_args) = build_payload_bindings(&info, payload, true);
@@ -372,22 +387,133 @@ impl DataSource for SqliteSource {
                 .iter()
                 .map(|v| v as &dyn rusqlite::ToSql)
                 .collect();
-            fetch_rows(conn, &sql, &params)
+            match fetch_rows(conn, &sql, &params) {
+                Ok(rows) => Ok(rows),
+                Err(DataError::Sqlite(e)) => {
+                    if let Some(mapped) = map_sqlite_error(Some(&resolved), &e) {
+                        Err(mapped)
+                    } else {
+                        Err(DataError::Sqlite(e))
+                    }
+                }
+                Err(other) => Err(other),
+            }
         })
         .await?;
         Ok(rows.into_iter().next())
     }
 
     async fn delete(&self, model: &str, pk: &str) -> Result<Option<Row>, DataError> {
-        let (_, info) = resolve_model(&self.schema, model)?;
+        let (resolved, info) = resolve_model(&self.schema, model)?;
+        let resolved = resolved.clone();
         let sql = build_delete_sql(&info);
         let pk_owned = pk.to_owned();
         let conn = self.connection.clone();
         let rows = with_conn(conn, move |conn| {
-            fetch_rows(conn, &sql, &[&pk_owned])
+            match fetch_rows(conn, &sql, &[&pk_owned]) {
+                Ok(rows) => Ok(rows),
+                Err(DataError::Sqlite(e)) => {
+                    if let Some(mapped) = map_sqlite_error(Some(&resolved), &e) {
+                        Err(mapped)
+                    } else {
+                        Err(DataError::Sqlite(e))
+                    }
+                }
+                Err(other) => Err(other),
+            }
         })
         .await?;
         Ok(rows.into_iter().next())
+    }
+
+    async fn preview_sql(
+        &self,
+        op: SqlOp,
+        model: &str,
+        pk: Option<&str>,
+        payload: Option<&Row>,
+    ) -> Result<SqlPreview, DataError> {
+        let (_, info) = resolve_model(&self.schema, model)?;
+        let (sql, params) = match op {
+            SqlOp::List => (
+                build_list_sql(&info, DEFAULT_PAGE_LIMIT),
+                vec![SqlParam {
+                    index: 1,
+                    binding: "cursor (NULL on first page)".to_owned(),
+                    kind: "text",
+                }],
+            ),
+            SqlOp::Get => (
+                build_get_sql(&info),
+                vec![SqlParam {
+                    index: 1,
+                    binding: pk.unwrap_or("…").to_owned(),
+                    kind: pk_kind(info.pk_cast),
+                }],
+            ),
+            SqlOp::Create => {
+                let (cols, binds) = payload
+                    .map(|p| build_payload_bindings(&info, p, false))
+                    .unwrap_or_else(|| sample_columns_and_binds(&info));
+                let sql = build_insert_sql(&info, &cols);
+                (sql, label_params(&cols, &binds, info.pk_cast, None))
+            }
+            SqlOp::Update => {
+                let (cols, binds) = payload
+                    .map(|p| build_payload_bindings(&info, p, true))
+                    .unwrap_or_else(|| sample_columns_and_binds(&info));
+                let mut params = label_params(&cols, &binds, info.pk_cast, None);
+                params.push(SqlParam {
+                    index: (cols.len() + 1) as u32,
+                    binding: pk.unwrap_or("…").to_owned(),
+                    kind: pk_kind(info.pk_cast),
+                });
+                (build_update_sql(&info, &cols), params)
+            }
+            SqlOp::Delete => (
+                build_delete_sql(&info),
+                vec![SqlParam {
+                    index: 1,
+                    binding: pk.unwrap_or("…").to_owned(),
+                    kind: pk_kind(info.pk_cast),
+                }],
+            ),
+        };
+        Ok(SqlPreview {
+            driver: "sqlite",
+            sql,
+            params,
+            plan: None,
+            notes: None,
+        })
+    }
+
+    async fn inspect_columns(
+        &self,
+        model: &str,
+    ) -> Result<Option<Vec<ColumnSnapshot>>, DataError> {
+        let (_, info) = resolve_model(&self.schema, model)?;
+        let table = info.table.clone();
+        let conn = self.connection.clone();
+        let rows = with_conn(conn, move |conn| -> Result<Vec<ColumnSnapshot>, DataError> {
+            let sql = format!("PRAGMA table_info(\"{}\")", table.replace('"', ""));
+            let mut stmt = conn.prepare(&sql)?;
+            let mut iter = stmt.query([])?;
+            let mut out = Vec::new();
+            while let Some(row) = iter.next()? {
+                let name: String = row.get(1)?;
+                let data_type: String = row.get(2).unwrap_or_default();
+                let notnull: i64 = row.get(3).unwrap_or(0);
+                out.push(ColumnSnapshot {
+                    name,
+                    data_type,
+                    nullable: notnull == 0,
+                });
+            }
+            Ok(out)
+        })
+        .await?;
+        if rows.is_empty() { Ok(None) } else { Ok(Some(rows)) }
     }
 
     async fn follow(
@@ -429,6 +555,53 @@ impl DataSource for SqliteSource {
 
 #[allow(dead_code)]
 fn _silence_unused_column_info(_c: &ColumnInfo<'_>) {}
+
+pub(crate) fn pk_kind(cast: PkCast) -> &'static str {
+    match cast {
+        PkCast::Text => "text",
+        PkCast::BigInt => "integer",
+    }
+}
+
+fn sample_columns_and_binds(
+    info: &ModelSqlInfo<'_>,
+) -> (Vec<String>, Vec<rusqlite::types::Value>) {
+    let cols = info.columns.iter().map(|c| c.column_name.clone()).collect();
+    let binds = info
+        .columns
+        .iter()
+        .map(|_| rusqlite::types::Value::Text("…".to_owned()))
+        .collect();
+    (cols, binds)
+}
+
+fn label_params(
+    cols: &[String],
+    binds: &[rusqlite::types::Value],
+    _pk: PkCast,
+    _: Option<()>,
+) -> Vec<SqlParam> {
+    cols.iter()
+        .zip(binds.iter())
+        .enumerate()
+        .map(|(i, (col, value))| SqlParam {
+            index: (i + 1) as u32,
+            binding: col.clone(),
+            kind: sqlite_kind(value),
+        })
+        .collect()
+}
+
+fn sqlite_kind(value: &rusqlite::types::Value) -> &'static str {
+    use rusqlite::types::Value as V;
+    match value {
+        V::Null => "null",
+        V::Integer(_) => "integer",
+        V::Real(_) => "real",
+        V::Text(_) => "text",
+        V::Blob(_) => "blob",
+    }
+}
 
 #[cfg(test)]
 mod tests {

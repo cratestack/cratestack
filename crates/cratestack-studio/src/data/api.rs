@@ -24,7 +24,9 @@ use cratestack_migrate::table_name;
 use reqwest::header::HeaderName;
 use reqwest::{Client, StatusCode};
 
-use super::{DataError, DataSource, Page, PageRequest, PkCast, Row};
+use super::{
+    ColumnSnapshot, DataError, DataSource, Page, PageRequest, PkCast, Row, SqlOp, SqlPreview,
+};
 use crate::config::ApiAuth;
 
 #[derive(Debug, Clone)]
@@ -239,6 +241,27 @@ impl DataSource for ApiSource {
         Ok(match value {
             serde_json::Value::Object(map) => Some(map),
             _ => None,
+        })
+    }
+
+    async fn preview_sql(
+        &self,
+        _op: SqlOp,
+        _model: &str,
+        _pk: Option<&str>,
+        _payload: Option<&Row>,
+    ) -> Result<SqlPreview, DataError> {
+        Err(DataError::Unsupported {
+            what: "SQL preview against API targets — the upstream service runs the query, not Studio",
+        })
+    }
+
+    async fn inspect_columns(
+        &self,
+        _model: &str,
+    ) -> Result<Option<Vec<ColumnSnapshot>>, DataError> {
+        Err(DataError::Unsupported {
+            what: "drift inspection against API targets — Studio needs DB access for information_schema",
         })
     }
 

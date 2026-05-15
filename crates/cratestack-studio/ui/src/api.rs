@@ -8,7 +8,10 @@
 use gloo_net::http::Request;
 use serde::de::DeserializeOwned;
 
-use crate::types::{ApiError, FieldError, FollowResponse, ModelList, Page, RecordResponse, SnippetResponse, TargetList};
+use crate::types::{
+    ApiError, AuditResponse, DriftResponse, FieldError, FollowResponse, ModelList, Page,
+    RecordResponse, SearchResponse, SnippetResponse, SqlPreview, TargetList,
+};
 
 /// A failed fetch. When the server returned a structured envelope,
 /// `code` carries the `error.code` value; otherwise `code` is empty
@@ -208,7 +211,36 @@ pub async fn delete_record(
     .await
 }
 
-fn urlencode(value: &str) -> String {
+pub async fn preview_sql(
+    target: &str,
+    model: &str,
+    op: &str,
+    pk: Option<&str>,
+) -> Result<SqlPreview, FetchError> {
+    let mut url = format!("/api/targets/{target}/models/{model}/sql?op={op}");
+    if let Some(p) = pk {
+        url.push_str(&format!("&pk={}", urlencode(p)));
+    }
+    fetch_json(&url).await
+}
+
+pub async fn target_drift(target: &str) -> Result<DriftResponse, FetchError> {
+    fetch_json(&format!("/api/targets/{target}/drift")).await
+}
+
+pub async fn schema_search(target: &str, query: &str) -> Result<SearchResponse, FetchError> {
+    fetch_json(&format!(
+        "/api/targets/{target}/search?q={}",
+        urlencode(query)
+    ))
+    .await
+}
+
+pub async fn audit_log(limit: u32) -> Result<AuditResponse, FetchError> {
+    fetch_json(&format!("/api/audit?limit={limit}")).await
+}
+
+pub fn urlencode(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     for byte in value.bytes() {
         if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {

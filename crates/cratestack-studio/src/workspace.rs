@@ -10,6 +10,7 @@ use cratestack_core::Schema;
 use sqlx_core::pool::PoolOptions;
 use sqlx_postgres::{PgPool, Postgres};
 
+use crate::audit::AuditLog;
 use crate::config::{
     DbDriver, StudioConfig, StudioConfigError, TargetConfig, TargetMode, WorkspaceConfig,
     resolve_secret,
@@ -24,6 +25,7 @@ use crate::data::sqlite::SqliteSource;
 pub struct LoadedWorkspace {
     pub config: WorkspaceConfig,
     pub targets: Vec<Arc<LoadedTarget>>,
+    pub audit: Arc<AuditLog>,
 }
 
 /// One target with everything resolved: schema, pool, source.
@@ -125,6 +127,7 @@ impl LoadedWorkspace {
         Ok(Arc::new(Self {
             config: raw.workspace,
             targets,
+            audit: Arc::new(AuditLog::new()),
         }))
     }
 

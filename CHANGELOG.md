@@ -2,6 +2,144 @@
 
 ## 0.3.2 (unreleased)
 
+### Studio rewrite — Phase 1d + 4 (typed editors + power tools)
+
+The final phases of the Studio rewrite. Phase 1d retires the
+one-text-box-per-field approach in the create + edit forms; Phase 4
+ships SQL preview, drift detection, CSV/JSON export, schema search,
+an audit log, and constraint-aware error mapping.
+
+**Typed editors (Phase 1d).** The create form and the drawer's edit
+mode now dispatch on each field's declared scalar:
+
+- `<select>` for enums (variants pulled from the schema)
+- `<textarea>` for `Json` (free-form, parsed on submit)
+- `<input type="datetime-local">` for `DateTime` (auto-normalized to
+  `YYYY-MM-DDTHH:MM:SSZ` before the request)
+- `<input type="number" step="any">` for `Float` / `Decimal`
+- `<input type="number" step="1">` for `Int`
+- `<select>` (true/false) for `Boolean`
+- plain text for `String`, `Cuid`, `Uuid`, `Bytes`
+
+The `/api/targets/:key/models` response gains `is_enum` and
+`enum_variants` per field so the UI doesn't need a second round-trip
+to populate the dropdown.
+
+**SQL preview (Phase 4).**
+
+```
+GET /api/targets/:key/models/:model/sql?op=list|get|create|update|delete&pk=…
+```
+
+Returns the SQL Studio would run plus an ordered parameter list:
+
+```json
+{
+  "driver": "postgres",
+  "sql": "WITH inserted AS ( INSERT INTO \"posts\" …",
+  "params": [ { "index": 1, "binding": "title", "kind": "text" }, … ]
+}
+```
+
+API-backed targets return **501 UNSUPPORTED** — Studio doesn't render
+SQL it doesn't run.
+
+**Drift indicator (Phase 4).**
+
+```
+GET /api/targets/:key/drift
+```
+
+Compares declared columns (from the `.cstack` schema) against the live
+database. Each model carries one of: `ok`, `drift` (column mismatch),
+`missing_table` (table absent), `unsupported` (API-only target), or
+`skipped` (no @id or unsupported PK type). The UI renders an amber
+`⚠ drift` badge in the sidebar next to any model that doesn't match,
+and a red `✕ table` badge for missing tables.
+
+**CSV/JSON export (Phase 4).**
+
+```
+GET /api/targets/:key/models/:model/export?format=csv|json&limit=N
+```
+
+Streams up to `EXPORT_CAP = 10_000` rows through cursor pagination
+under the hood and returns one body. Sets `Content-Disposition:
+attachment; filename="<target>-<table>.<ext>"` so browsers download
+the file. CSV uses RFC-4180-style escaping (quote-wrap on commas,
+quotes, or newlines; double up embedded quotes).
+
+**Schema search (Phase 4).**
+
+```
+GET /api/targets/:key/search?q=<term>
+```
+
+Case-insensitive substring over models, fields, enums (and variants),
+types, mixins, procedures. Hits return `kind`, optional `model`,
+`name`, and a short `detail` so the dropdown can present them. The
+search bar in the header debounces on input and shows the dropdown
+inline.
+
+**Audit log (Phase 4).** Every successful write (CREATE / UPDATE /
+DELETE) is appended to an in-memory ring buffer (cap **500**, FIFO
+when full) attached to the workspace. The `Audit` button in the
+header opens an overlay listing the most recent entries:
+
+```
+GET /api/audit?limit=N
+```
+
+Returns newest-first. Entries carry `id`, `at` (RFC-3339), `target`,
+`model`, `op`, and the row's `pk` (for CREATE, the post-insert value
+the DB filled in).
+
+**SQLSTATE → VALIDATION_ERROR mapping (Phase 4).** Constraint
+failures from the driver are now mapped into the same per-field
+`VALIDATION_ERROR` envelope the in-process validators produce, so the
+UI can drop the message next to the input that broke:
+
+| Source                       | Code           |
+| ---------------------------- | -------------- |
+| Postgres `23505` / SQLite `SQLITE_CONSTRAINT_UNIQUE` / `…_PRIMARYKEY` | `UNIQUE`       |
+| Postgres `23503` / SQLite `SQLITE_CONSTRAINT_FOREIGNKEY`             | `FOREIGN_KEY`  |
+| Postgres `23502` / SQLite `SQLITE_CONSTRAINT_NOTNULL`                | `REQUIRED`     |
+| Postgres `22001` (string truncation)                                 | `LENGTH`       |
+| Postgres `22P02` (invalid text representation)                       | `TYPE_MISMATCH`|
+| Postgres `23514` / SQLite `SQLITE_CONSTRAINT_CHECK`                  | `REGEX`        |
+
+Unrecognized driver errors still surface as `DATABASE_ERROR` (500).
+
+**Validation codes.** Two new codes on top of Phase 3:
+
+- `UNIQUE` — unique-constraint violation from the database.
+- `FOREIGN_KEY` — foreign-key violation from the database.
+
+**UI surfaces (Phase 4).**
+
+- **Tools row.** Above the records table: an op selector + "Show SQL"
+  button that fetches the preview and renders it as monospace SQL +
+  bind list. Next to it: "Export JSON" / "Export CSV" links that
+  point straight at the export endpoint so the browser handles the
+  download.
+- **Drift dots.** Each model in the sidebar carries a small status
+  chip when its live shape doesn't match the schema.
+- **Search.** The header's search input fans out to
+  `/api/targets/:key/search` on every keystroke; results render in a
+  dropdown below the input.
+- **Audit overlay.** "Audit" button next to the target switcher
+  toggles a 28rem-wide overlay listing recent writes by timestamp.
+
+**Scope notes.**
+
+- Audit log is in-memory only by design — Studio is a local admin
+  tool. Restarting the binary clears the buffer.
+- Drift inspection talks to `information_schema` (Postgres) and
+  `PRAGMA table_info` (SQLite). API-backed targets are reported as
+  `unsupported`.
+- Export is bounded at 10_000 rows. Larger pulls should use the
+  underlying database directly.
+
 ### Studio rewrite — Phase 1c + 3 (UI polish + write path)
 
 Studio gains create / update / delete and the UI polish that goes
