@@ -22,9 +22,9 @@ pub use cratestack_sql::{
     coalesce, point, CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault,
     CreateDefaultType, CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName,
     IntoSqlValue, JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey,
-    NullOrder, OrderClause, RelationFilter, RelationInclude, RelationQuantifier, SortDirection,
-    SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue, SqliteDialect, UpdateModelInput,
-    UpsertModelInput,
+    NullOrder, OrderClause, Projection, RelationFilter, RelationInclude, RelationQuantifier,
+    SortDirection, SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue, SqliteDialect,
+    UpdateModelInput, UpsertModelInput,
 };
 
 pub use batch::{
@@ -32,14 +32,14 @@ pub use batch::{
 };
 pub use delegate::{
     Aggregate, AggregateColumn, AggregateCount, CreateRecord, DeleteMany, DeleteRecord, FindMany,
-    FindManyWith, FindUnique, ModelDelegate, UpdateMany, UpdateManySet, UpdateRecord,
-    UpdateRecordSet, UpsertRecord,
+    FindManyWith, FindUnique, ModelDelegate, ProjectedFindMany, ProjectedFindUnique, UpdateMany,
+    UpdateManySet, UpdateRecord, UpdateRecordSet, UpsertRecord,
 };
 pub use render::{
     render_delete, render_delete_many, render_insert, render_select, render_select_by_pk,
     render_update, render_update_many, render_upsert, render_upsert_with_conflict,
 };
-pub use row::FromRusqliteRow;
+pub use row::{FromPartialRusqliteRow, FromRusqliteRow};
 pub use runtime::{RusqliteError, RusqliteRuntime};
 pub use value::{
     DateTimeColumn, DecimalColumn, JsonColumn, SqlValueParam, UuidColumn, decode_datetime,

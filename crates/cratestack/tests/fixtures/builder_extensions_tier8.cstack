@@ -1,0 +1,21 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+// Payment-intent-shaped row driving the column-projection test. The
+// named upstream site (`payment_intent_connector_id`) fetches only
+// `connector_id` from a wide row.
+model PaymentIntent {
+  id Int @id
+  connectorId String
+  status String
+  amountMinor Int
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}

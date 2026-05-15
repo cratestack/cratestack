@@ -157,4 +157,48 @@ impl<M, PK> ModelDescriptor<M, PK> {
         }
         sql
     }
+
+    /// Like [`Self::select_projection`] but emits only the named
+    /// columns, in the order they appear in the model descriptor.
+    /// Unknown column names are silently dropped — the caller is
+    /// expected to have validated the request via `FieldRef` already
+    /// (typed-builder path) or via schema validation
+    /// (string-name path). When no columns survive the filter, the
+    /// primary key is emitted as a fallback so the SQL still binds
+    /// at least one column to the projection.
+    pub fn select_projection_subset(&self, columns: &[&str]) -> String {
+        let mut sql = String::new();
+        let mut emitted = false;
+        for column in self.columns.iter() {
+            if columns.iter().any(|name| *name == column.sql_name)
+                && {
+                    if emitted {
+                        sql.push_str(", ");
+                    }
+                    let _ = write!(sql, "{} AS \"{}\"", column.sql_name, column.rust_name);
+                    emitted = true;
+                    true
+                }
+            {}
+        }
+        if !emitted {
+            // Fallback: always project the primary key so the
+            // emitted SQL is valid and downstream code can still
+            // identify rows. Callers asking for an empty projection
+            // are misusing the API — but we soft-handle it rather
+            // than producing `SELECT FROM table` which PG rejects.
+            if let Some(pk_column) = self
+                .columns
+                .iter()
+                .find(|column| column.sql_name == self.primary_key)
+            {
+                let _ = write!(
+                    sql,
+                    "{} AS \"{}\"",
+                    pk_column.sql_name, pk_column.rust_name,
+                );
+            }
+        }
+        sql
+    }
 }

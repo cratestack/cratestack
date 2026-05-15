@@ -29,7 +29,7 @@ pub use filter::{
 };
 pub use order::{NullOrder, OrderClause, OrderTarget, SortDirection};
 pub use values::{
-    ConflictTarget, CreateModelInput, FilterValue, IntoSqlValue, ModelPrimaryKey,
+    ConflictTarget, CreateModelInput, FilterValue, IntoSqlValue, ModelPrimaryKey, Projection,
     RelationInclude, SqlColumnValue, SqlValue, UpdateModelInput, UpsertModelInput,
     find_duplicate_sql_value,
 };

@@ -21,16 +21,16 @@ pub use cratestack_sql::{
     coalesce, point, CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault,
     CreateDefaultType, CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName,
     IntoSqlValue, JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey,
-    NullOrder, OrderClause, RelationFilter, RelationInclude, SortDirection, SpatialFilter,
-    SpatialPoint, SqlColumnValue, SqlValue, UpdateModelInput, UpsertModelInput,
+    NullOrder, OrderClause, Projection, RelationFilter, RelationInclude, SortDirection,
+    SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue, UpdateModelInput, UpsertModelInput,
 };
 
 // Embedded SQLite backend — wasm32-compatible alongside native (mobile,
 // desktop), via `rusqlite 0.39`'s transparent FFI switch to `sqlite-wasm-rs`.
 pub use cratestack_rusqlite as rusqlite_backend;
 pub use cratestack_rusqlite::{
-    DateTimeColumn, DecimalColumn, FromRusqliteRow, JsonColumn, RusqliteError, RusqliteRuntime,
-    SqlValueParam, UuidColumn, rusqlite,
+    DateTimeColumn, DecimalColumn, FromPartialRusqliteRow, FromRusqliteRow, JsonColumn,
+    RusqliteError, RusqliteRuntime, SqlValueParam, UuidColumn, rusqlite,
 };
 
 pub use regex;
@@ -93,12 +93,13 @@ pub use cratestack_sqlx::sqlx;
 #[cfg(not(target_arch = "wasm32"))]
 pub use cratestack_sqlx::{
     Aggregate, AggregateColumn, AggregateCount, CreateRecord, DeleteMany, DeleteRecord, FindMany,
-    FindManyWith, FindUnique, ModelDelegate, ScopedAggregate, ScopedAggregateColumn,
-    ScopedAggregateCount, ScopedCreateRecord, ScopedDeleteMany, ScopedDeleteRecord,
-    ScopedFindMany, ScopedFindManyWith, ScopedFindUnique, ScopedModelDelegate, ScopedUpdateMany,
-    ScopedUpdateManySet, ScopedUpdateRecord, ScopedUpdateRecordSet, SqlxIdempotencyStore,
-    UpdateMany, UpdateManySet, UpdateRecord, UpdateRecordSet, create_record_with_executor,
-    update_record_with_executor,
+    FindManyWith, FindUnique, FromPartialPgRow, ModelDelegate, ProjectedFindMany,
+    ProjectedFindUnique, ScopedAggregate,
+    ScopedAggregateColumn, ScopedAggregateCount, ScopedCreateRecord, ScopedDeleteMany,
+    ScopedDeleteRecord, ScopedFindMany, ScopedFindManyWith, ScopedFindUnique, ScopedModelDelegate,
+    ScopedProjectedFindMany, ScopedProjectedFindUnique, ScopedUpdateMany, ScopedUpdateManySet,
+    ScopedUpdateRecord, ScopedUpdateRecordSet, SqlxIdempotencyStore, UpdateMany, UpdateManySet,
+    UpdateRecord, UpdateRecordSet, create_record_with_executor, update_record_with_executor,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use cratestack_sqlx::{

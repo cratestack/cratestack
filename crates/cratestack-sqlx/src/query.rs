@@ -4,7 +4,10 @@ mod support;
 mod write;
 
 pub use batch::{BatchCreate, BatchDelete, BatchGet, BatchUpdate, BatchUpdateItem, BatchUpsert};
-pub use read::{Aggregate, AggregateColumn, AggregateCount, FindMany, FindManyWith, FindUnique};
+pub use read::{
+    Aggregate, AggregateColumn, AggregateCount, FindMany, FindManyWith, FindUnique,
+    ProjectedFindMany, ProjectedFindUnique,
+};
 #[allow(unused_imports)]
 pub(crate) use support::{
     apply_create_defaults, auth_value_to_sql, authorize_record_action, evaluate_create_policies,

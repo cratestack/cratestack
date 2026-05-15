@@ -16,3 +16,17 @@ use rusqlite::Row;
 pub trait FromRusqliteRow: Sized {
     fn from_rusqlite_row(row: &Row<'_>) -> rusqlite::Result<Self>;
 }
+
+/// Partial-row decoder — mirrors [`cratestack_sqlx::FromPartialPgRow`]
+/// for the embedded backend. The macro emits this impl alongside
+/// `FromRusqliteRow`; users see it only as the bound on the typed
+/// builder's `T` generic when they call `.select(...)`.
+pub trait FromPartialRusqliteRow: Sized {
+    /// Decode `row` into `Self` using `selected` as the projection
+    /// manifest. Columns not in `selected` populate to their type's
+    /// `Default::default()` value.
+    fn from_partial_rusqlite_row(
+        row: &Row<'_>,
+        selected: &[&str],
+    ) -> rusqlite::Result<Self>;
+}
