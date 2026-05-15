@@ -33,3 +33,9 @@ procedure ping(args: PingArgs): PingArgs
 
 mutation procedure bump(args: PingArgs): PingArgs
   @allow(auth() != null)
+
+// List-return procedure — by virtue of `[]` arity the macro emits this
+// as a `Sequence` op. Clients on the RPC binding can ask for
+// `application/cbor-seq` and stream chunks.
+procedure many_pings(args: PingArgs): PingArgs[]
+  @allow(auth() != null)
