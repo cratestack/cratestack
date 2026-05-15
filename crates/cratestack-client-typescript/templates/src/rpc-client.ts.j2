@@ -1,0 +1,97 @@
+import {
+  CratestackRpcRuntime,
+  type CratestackRpcCallOptions,
+  type CratestackRpcClientOptions,
+} from "./runtime";
+import type {
+{% for interface in interfaces %}
+  {{ interface.name }},
+{% endfor %}
+{% for enum in enums %}
+  {{ enum.name }},
+{% endfor %}
+  Page,
+} from "./models";
+
+export class {{ client_class_name }} {
+  readonly runtime: CratestackRpcRuntime;
+  readonly procedures: ProceduresApi;
+{% for model in models %}
+  readonly {{ model.accessor }}: {{ model.api_name }};
+{% endfor %}
+
+  constructor(originOrRuntime: string | CratestackRpcRuntime, options: CratestackRpcClientOptions = {}) {
+    this.runtime = typeof originOrRuntime === "string"
+      ? new CratestackRpcRuntime(originOrRuntime, options)
+      : originOrRuntime;
+    this.procedures = new ProceduresApi(this.runtime);
+{% for model in models %}
+    this.{{ model.accessor }} = new {{ model.api_name }}(this.runtime);
+{% endfor %}
+  }
+}
+
+{% for model in models %}
+export class {{ model.api_name }} {
+  constructor(private readonly runtime: CratestackRpcRuntime) {}
+
+  list(input: Record<string, unknown> = {}, options: CratestackRpcCallOptions = {}): Promise<{{ model.list_return_type }}> {
+    return this.runtime.call<Record<string, unknown>, {{ model.list_return_type }}>(
+      "model.{{ model.name }}.list",
+      input,
+      options,
+    );
+  }
+
+  get(id: {{ model.primary_key_type }}, options: CratestackRpcCallOptions = {}): Promise<{{ model.name }}> {
+    return this.runtime.call<{ id: {{ model.primary_key_type }} }, {{ model.name }}>(
+      "model.{{ model.name }}.get",
+      { id },
+      options,
+    );
+  }
+
+  create(input: {{ model.create_input_name }}, options: CratestackRpcCallOptions = {}): Promise<{{ model.name }}> {
+    return this.runtime.call<{{ model.create_input_name }}, {{ model.name }}>(
+      "model.{{ model.name }}.create",
+      input,
+      options,
+    );
+  }
+
+  update(
+    id: {{ model.primary_key_type }},
+    patch: {{ model.update_input_name }},
+    options: CratestackRpcCallOptions = {},
+  ): Promise<{{ model.name }}> {
+    return this.runtime.call<{ id: {{ model.primary_key_type }}; patch: {{ model.update_input_name }} }, {{ model.name }}>(
+      "model.{{ model.name }}.update",
+      { id, patch },
+      options,
+    );
+  }
+
+  delete(id: {{ model.primary_key_type }}, options: CratestackRpcCallOptions = {}): Promise<void> {
+    return this.runtime.call<{ id: {{ model.primary_key_type }} }, void>(
+      "model.{{ model.name }}.delete",
+      { id },
+      options,
+    );
+  }
+}
+
+{% endfor %}
+export class ProceduresApi {
+  constructor(private readonly runtime: CratestackRpcRuntime) {}
+
+{% for procedure in procedures %}
+  {{ procedure.method_name }}(args: {{ procedure.args_name }}, options: CratestackRpcCallOptions = {}): Promise<{{ procedure.return_type }}> {
+    return this.runtime.call<{{ procedure.args_name }}, {{ procedure.return_type }}>(
+      "procedure.{{ procedure.name }}",
+      args,
+      options,
+    );
+  }
+
+{% endfor %}
+}

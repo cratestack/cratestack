@@ -1,0 +1,11 @@
+// Tiny REST schema — exercises the default `transport rest` codepath.
+// One model + one procedure is enough for the snapshot to cover the
+// shape of every emitted file.
+
+model Widget {
+  id Int @id
+  name String
+  weight Int?
+}
+
+procedure echoName(name: String): String

@@ -1,0 +1,9 @@
+// Tiny REST schema for the Dart snapshot test.
+
+model Widget {
+  id Int @id
+  name String
+  weight Int?
+}
+
+procedure echoName(name: String): String

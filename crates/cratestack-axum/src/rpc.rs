@@ -25,13 +25,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::HttpTransport;
 
-/// Mount path for unary RPC calls. The trailing segment is the
-/// percent-decoded op id, e.g. `POST /rpc/model.User.list`.
-pub const RPC_UNARY_PATH: &str = "/rpc/{op_id}";
-
-/// Mount path for batched RPC calls. Body is a codec-encoded sequence of
-/// [`RpcRequest`] frames.
-pub const RPC_BATCH_PATH: &str = "/rpc/batch";
+// Re-export the wire shapes from `cratestack-core::rpc`. Both the server
+// binding and every generated client agree on those shapes, and lifting
+// them into core means the client crates don't need to depend on axum.
+pub use cratestack_core::rpc::{
+    RPC_BATCH_PATH, RPC_UNARY_PATH, RpcErrorBody, RpcRequest, RpcResponseFrame,
+    cool_error_code_to_rpc_code, rpc_code,
+};
 
 /// Codec/transport capabilities for every RPC binding route. Both unary
 /// and batch accept and emit CBOR or JSON, default CBOR; sequence
@@ -47,139 +47,6 @@ pub const RPC_BINDING_CAPABILITIES: cratestack_core::RouteTransportCapabilities 
         default_response_type: "application/cbor",
         supports_sequence_response: false,
     };
-
-/// Wire shape of a single error returned by an RPC call. Maps from
-/// [`CoolError`] via [`rpc_code`] + [`CoolError::public_message`].
-///
-/// The shape is deliberately tiny (no structured `details` yet) so the
-/// surface is forward-compatible: clients written today against
-/// `{code, message}` keep working when `details` is added later.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RpcErrorBody {
-    /// Stable gRPC-style code: `not_found`, `invalid_argument`,
-    /// `permission_denied`, `failed_precondition`, `conflict`,
-    /// `unauthenticated`, `internal`. Never a server-internal enum name.
-    pub code: String,
-    /// Public, safe-to-expose message. For 5xx errors this is a fixed
-    /// canned string; the detailed operator message is logged via
-    /// tracing only, never returned over the wire.
-    pub message: String,
-    /// Op-defined structured payload (e.g. validation issues). Optional;
-    /// today only populated when the underlying `CoolErrorResponse`
-    /// carried details. Per design doc §2.3.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub details: Option<serde_json::Value>,
-}
-
-impl RpcErrorBody {
-    pub fn from_cool(error: &CoolError) -> Self {
-        Self {
-            code: rpc_code(error).to_owned(),
-            message: error.public_message().into_owned(),
-            details: None,
-        }
-    }
-
-    /// Translate a REST-style [`cratestack_core::CoolErrorResponse`] (the
-    /// shape the existing axum handlers emit) into the RPC error body.
-    /// The `code` field is mapped from screaming-snake to gRPC-style
-    /// lowercase via [`cool_error_code_to_rpc_code`]; `message` and
-    /// `details` flow through verbatim.
-    pub fn from_cool_response(response: cratestack_core::CoolErrorResponse) -> Self {
-        let cratestack_core::CoolErrorResponse {
-            code,
-            message,
-            details,
-        } = response;
-        Self {
-            code: cool_error_code_to_rpc_code(&code).to_owned(),
-            message,
-            details: details.map(cool_value_to_json),
-        }
-    }
-}
-
-/// Map a `CoolErrorResponse.code` string (screaming-snake, REST-binding
-/// vocabulary) to the stable gRPC-style code the RPC binding emits.
-/// Unknown codes degrade to `"internal"` so a new server variant never
-/// leaks an unrecognized string to the wire.
-pub fn cool_error_code_to_rpc_code(code: &str) -> &'static str {
-    match code {
-        "BAD_REQUEST"
-        | "NOT_ACCEPTABLE"
-        | "UNSUPPORTED_MEDIA_TYPE"
-        | "VALIDATION_ERROR"
-        | "CODEC_ERROR" => "invalid_argument",
-        "UNAUTHORIZED" => "unauthenticated",
-        "FORBIDDEN" => "permission_denied",
-        "NOT_FOUND" => "not_found",
-        "CONFLICT" => "conflict",
-        "PRECONDITION_FAILED" => "failed_precondition",
-        "DATABASE_ERROR" | "INTERNAL_ERROR" => "internal",
-        _ => "internal",
-    }
-}
-
-fn cool_value_to_json(value: cratestack_core::Value) -> serde_json::Value {
-    // `CoolErrorResponse.details: Option<Value>` carries the framework's
-    // own `Value` enum. Round-trip via serde_json to get a JSON-friendly
-    // shape for the RPC wire — anything that can't round-trip (which
-    // shouldn't happen for the variants the framework emits today) is
-    // dropped to `Null` rather than failing the whole error response.
-    serde_json::to_value(&value).unwrap_or(serde_json::Value::Null)
-}
-
-/// Wire shape of a single batch request frame.
-///
-/// Used for [`RPC_BATCH_PATH`] only — unary calls send the input payload
-/// unwrapped (the op id is in the URL, the correlation id is irrelevant
-/// for one-shot HTTP).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RpcRequest {
-    /// Client-chosen correlation id, unique within the batch. Echoed
-    /// back on the matching response frame.
-    pub id: u64,
-    /// Dotted op id, e.g. `"model.User.list"` or `"procedure.publishPost"`.
-    pub op: String,
-    /// Codec-encoded input payload, kept opaque at the batch envelope
-    /// layer so each frame can be decoded against its own input type.
-    pub input: serde_json::Value,
-    /// Optional idempotency key, per-frame. The batch route rejects an
-    /// `Idempotency-Key` HTTP header as ambiguous; idempotency is always
-    /// per-frame in batch.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub idem: Option<String>,
-}
-
-/// Wire shape of a single batch response frame. Tagged by which field is
-/// present — `output` on success, `error` on failure — so the variant
-/// discriminator is one map key, not a separate `type` field.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RpcResponseFrame {
-    pub id: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub output: Option<serde_json::Value>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error: Option<RpcErrorBody>,
-}
-
-impl RpcResponseFrame {
-    pub fn ok(id: u64, output: serde_json::Value) -> Self {
-        Self {
-            id,
-            output: Some(output),
-            error: None,
-        }
-    }
-
-    pub fn err(id: u64, error: &CoolError) -> Self {
-        Self {
-            id,
-            output: None,
-            error: Some(RpcErrorBody::from_cool(error)),
-        }
-    }
-}
 
 // -----------------------------------------------------------------------------
 // CRUD input shapes
@@ -539,32 +406,6 @@ where
             CoolError::Internal(format!("failed to buffer encoded RPC body: {error}"))
         })?;
     Ok(bytes.to_vec())
-}
-
-/// Map a [`CoolError`] to its stable RPC code (gRPC-style snake_case).
-///
-/// CoolError is the framework's internal error representation and uses
-/// its own SCREAMING_CASE codes for the REST binding. The RPC binding
-/// translates at the wire boundary so clients across both bindings see
-/// the same vocabulary they expect for their transport.
-///
-/// `unavailable`, `deadline_exceeded`, and `canceled` are reserved for
-/// future use (rate limit hit, request timeout, client cancellation)
-/// and not currently produced by this mapping.
-pub const fn rpc_code(error: &CoolError) -> &'static str {
-    match error {
-        CoolError::BadRequest(_)
-        | CoolError::NotAcceptable(_)
-        | CoolError::UnsupportedMediaType(_)
-        | CoolError::Codec(_)
-        | CoolError::Validation(_) => "invalid_argument",
-        CoolError::Unauthorized(_) => "unauthenticated",
-        CoolError::Forbidden(_) => "permission_denied",
-        CoolError::NotFound(_) => "not_found",
-        CoolError::Conflict(_) => "conflict",
-        CoolError::PreconditionFailed(_) => "failed_precondition",
-        CoolError::Database(_) | CoolError::Internal(_) => "internal",
-    }
 }
 
 #[cfg(test)]

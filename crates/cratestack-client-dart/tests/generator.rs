@@ -306,8 +306,10 @@ fn prefers_template_override_directory_when_provided() {
         fs::remove_dir_all(&template_dir).expect("existing template dir should be removable");
     }
     fs::create_dir_all(&template_dir).expect("template dir should be created");
+    // REST schemas resolve their library template through `rest-library.dart.j2`.
+    // RPC schemas use `rpc-library.dart.j2`. The blog fixture is REST (default).
     fs::write(
-        template_dir.join("library.dart.j2"),
+        template_dir.join("rest-library.dart.j2"),
         "// override {{ client_class_name }} {{ model_apis|length }}",
     )
     .expect("override template should write");

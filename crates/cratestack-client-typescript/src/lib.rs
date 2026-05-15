@@ -3,12 +3,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use cratestack_core::{
-    EnumDecl, Field, Model, Procedure, ProcedureKind, Schema, TypeArity, TypeRef,
+    EnumDecl, Field, Model, Procedure, ProcedureKind, Schema, TransportStyle, TypeArity, TypeRef,
 };
 use minijinja::Environment;
 use serde::Serialize;
 
-const TEMPLATE_SPECS: &[TemplateSpec] = &[
+// Common templates emitted for both REST and RPC schemas.
+const COMMON_TEMPLATE_SPECS: &[TemplateSpec] = &[
     TemplateSpec {
         template_name: "package.json.j2",
         output_path: "package.json",
@@ -25,34 +26,62 @@ const TEMPLATE_SPECS: &[TemplateSpec] = &[
         default_source: include_str!("../templates/README.md.j2"),
     },
     TemplateSpec {
-        template_name: "runtime.ts.j2",
-        output_path: "src/runtime.ts",
-        default_source: include_str!("../templates/src/runtime.ts.j2"),
-    },
-    TemplateSpec {
-        template_name: "queries.ts.j2",
-        output_path: "src/queries.ts",
-        default_source: include_str!("../templates/src/queries.ts.j2"),
-    },
-    TemplateSpec {
         template_name: "models.ts.j2",
         output_path: "src/models.ts",
         default_source: include_str!("../templates/src/models.ts.j2"),
     },
+];
+
+// REST-specific templates. Used when `schema.transport == Rest`.
+const REST_TEMPLATE_SPECS: &[TemplateSpec] = &[
     TemplateSpec {
-        template_name: "client.ts.j2",
+        template_name: "rest-runtime.ts.j2",
+        output_path: "src/runtime.ts",
+        default_source: include_str!("../templates/src/rest-runtime.ts.j2"),
+    },
+    TemplateSpec {
+        template_name: "rest-queries.ts.j2",
+        output_path: "src/queries.ts",
+        default_source: include_str!("../templates/src/rest-queries.ts.j2"),
+    },
+    TemplateSpec {
+        template_name: "rest-client.ts.j2",
         output_path: "src/client.ts",
-        default_source: include_str!("../templates/src/client.ts.j2"),
+        default_source: include_str!("../templates/src/rest-client.ts.j2"),
     },
     TemplateSpec {
-        template_name: "react-query.ts.j2",
+        template_name: "rest-react-query.ts.j2",
         output_path: "src/react-query.ts",
-        default_source: include_str!("../templates/src/react-query.ts.j2"),
+        default_source: include_str!("../templates/src/rest-react-query.ts.j2"),
     },
     TemplateSpec {
-        template_name: "index.ts.j2",
+        template_name: "rest-index.ts.j2",
         output_path: "src/index.ts",
-        default_source: include_str!("../templates/src/index.ts.j2"),
+        default_source: include_str!("../templates/src/rest-index.ts.j2"),
+    },
+];
+
+// RPC-specific templates. Used when `schema.transport == Rpc`.
+const RPC_TEMPLATE_SPECS: &[TemplateSpec] = &[
+    TemplateSpec {
+        template_name: "rpc-runtime.ts.j2",
+        output_path: "src/runtime.ts",
+        default_source: include_str!("../templates/src/rpc-runtime.ts.j2"),
+    },
+    TemplateSpec {
+        template_name: "rpc-client.ts.j2",
+        output_path: "src/client.ts",
+        default_source: include_str!("../templates/src/rpc-client.ts.j2"),
+    },
+    TemplateSpec {
+        template_name: "rpc-react-query.ts.j2",
+        output_path: "src/react-query.ts",
+        default_source: include_str!("../templates/src/rpc-react-query.ts.j2"),
+    },
+    TemplateSpec {
+        template_name: "rpc-index.ts.j2",
+        output_path: "src/index.ts",
+        default_source: include_str!("../templates/src/rpc-index.ts.j2"),
     },
 ];
 
@@ -106,13 +135,31 @@ pub enum TypeScriptGeneratorError {
     TemplateRender(&'static str, #[source] minijinja::Error),
 }
 
+/// Pick the right template specs for the schema's declared transport.
+/// REST schemas get the historical fetch-based client + the
+/// `CratestackFetchQuery` helpers; RPC schemas get a CratestackRpcRuntime
+/// that speaks the `/rpc/{op_id}` URL space and skip `queries.ts` entirely
+/// (no URL-query shaping needed when every call is a POST with a typed
+/// body).
+fn template_specs_for(transport: TransportStyle) -> Vec<TemplateSpec> {
+    let mode_specs = match transport {
+        TransportStyle::Rest => REST_TEMPLATE_SPECS,
+        TransportStyle::Rpc => RPC_TEMPLATE_SPECS,
+    };
+    let mut specs = Vec::with_capacity(COMMON_TEMPLATE_SPECS.len() + mode_specs.len());
+    specs.extend_from_slice(COMMON_TEMPLATE_SPECS);
+    specs.extend_from_slice(mode_specs);
+    specs
+}
+
 pub fn generate_package(
     schema: &Schema,
     config: &TypeScriptGeneratorConfig,
 ) -> Result<GeneratedTypeScriptPackage, TypeScriptGeneratorError> {
-    let environment = build_environment(config.template_dir.as_deref())?;
+    let specs = template_specs_for(schema.transport);
+    let environment = build_environment(config.template_dir.as_deref(), &specs)?;
     let context = build_template_context(schema, config);
-    let files = TEMPLATE_SPECS
+    let files = specs
         .iter()
         .map(|spec| {
             let template = environment
@@ -135,12 +182,13 @@ pub fn generate_package(
 
 fn build_environment(
     template_dir: Option<&Path>,
+    specs: &[TemplateSpec],
 ) -> Result<Environment<'static>, TypeScriptGeneratorError> {
     let mut environment = Environment::new();
     environment.set_trim_blocks(true);
     environment.set_lstrip_blocks(true);
 
-    for spec in TEMPLATE_SPECS {
+    for spec in specs {
         let source = load_template_source(template_dir, spec)?;
         environment
             .add_template_owned(spec.template_name.to_owned(), source)

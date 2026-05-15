@@ -1,0 +1,12 @@
+// Tiny RPC schema — same surface as tiny_rest, but with the
+// `transport rpc` directive so the generator emits the RPC client.
+
+transport rpc
+
+model Widget {
+  id Int @id
+  name String
+  weight Int?
+}
+
+procedure echoName(name: String): String

@@ -113,6 +113,44 @@ impl FlutterRuntime {
             .map(FlutterResponse::from)
             .map_err(FlutterRuntimeError::from)
     }
+
+    /// POST /rpc/{op_id} — unary call.
+    ///
+    /// `op_id` is the dotted dispatch key the server emits (e.g.
+    /// `model.User.list`, `procedure.publishPost`). `input_json` is the
+    /// JSON-encoded RPC input body. Returns the full `FlutterResponse`
+    /// so the Dart side can decode the body against the right type.
+    pub fn rpc_call(
+        &self,
+        op_id: &str,
+        input_json: Vec<u8>,
+        headers: Vec<FlutterHeader>,
+    ) -> Result<FlutterResponse, FlutterRuntimeError> {
+        let request = FlutterRequest {
+            method: "POST".to_owned(),
+            path: format!("/rpc/{}", op_id),
+            canonical_query: None,
+            headers,
+            body: input_json,
+        };
+        self.execute(request)
+    }
+
+    /// POST /rpc/batch — batched call.
+    pub fn rpc_batch(
+        &self,
+        batch_json: Vec<u8>,
+        headers: Vec<FlutterHeader>,
+    ) -> Result<FlutterResponse, FlutterRuntimeError> {
+        let request = FlutterRequest {
+            method: "POST".to_owned(),
+            path: "/rpc/batch".to_owned(),
+            canonical_query: None,
+            headers,
+            body: batch_json,
+        };
+        self.execute(request)
+    }
 }
 
 impl From<FlutterRuntimeConfig> for RuntimeConfigWire {
