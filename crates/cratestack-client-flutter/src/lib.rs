@@ -174,6 +174,40 @@ impl FlutterRuntime {
         self.execute(request)
     }
 
+    /// Streaming companion to [`Self::rpc_call`]. POSTs to
+    /// `/rpc/{op_id}` with `Accept: application/cbor-seq` and delivers
+    /// one [`FlutterChunkWire`] per item as bytes arrive on the wire;
+    /// returning `false` from the callback cancels the stream.
+    ///
+    /// `op_id` is the dotted dispatch key the server emits — typically
+    /// `model.X.list` for sequence-returning CRUD or `procedure.<name>`
+    /// for list-return procedures. `input` is the codec-encoded RPC
+    /// input body; decode the per-item bytes on the Dart side against
+    /// the `Output` type the op produces.
+    ///
+    /// Wrap this with a `flutter_rust_bridge` `StreamSink<FlutterChunkWire>`
+    /// in the consuming Flutter app — same pattern as
+    /// [`Self::execute_streamed`].
+    pub fn rpc_call_streamed<F>(
+        &self,
+        op_id: &str,
+        input: Vec<u8>,
+        headers: Vec<FlutterHeader>,
+        on_chunk: F,
+    ) -> Result<(), FlutterRuntimeError>
+    where
+        F: FnMut(FlutterChunkWire) -> bool + Send,
+    {
+        let request = FlutterRequest {
+            method: "POST".to_owned(),
+            path: format!("/rpc/{}", op_id),
+            canonical_query: None,
+            headers,
+            body: input,
+        };
+        self.execute_streamed(request, on_chunk)
+    }
+
     /// Streaming companion to [`Self::execute`]. The callback receives
     /// one [`FlutterChunkWire`] per complete cbor-seq item as bytes
     /// arrive on the wire; returning `false` cancels the stream.
