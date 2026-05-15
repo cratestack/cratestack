@@ -21,20 +21,22 @@ pub mod opfs;
 pub use cratestack_sql::{
     coalesce, CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault, CreateDefaultType,
     CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName, IntoSqlValue,
-    ModelColumn, ModelDescriptor, ModelPrimaryKey, OrderClause, RelationFilter, RelationQuantifier,
-    SortDirection, SqlColumnValue, SqlValue, SqliteDialect, UpdateModelInput, UpsertModelInput,
+    ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder, OrderClause, RelationFilter,
+    RelationQuantifier, SortDirection, SqlColumnValue, SqlValue, SqliteDialect, UpdateModelInput,
+    UpsertModelInput,
 };
 
 pub use batch::{
     BatchCreate, BatchDelete, BatchGet, BatchUpdate, BatchUpdateItem, BatchUpsert,
 };
 pub use delegate::{
-    CreateRecord, DeleteRecord, FindMany, FindUnique, ModelDelegate, UpdateMany, UpdateManySet,
-    UpdateRecord, UpdateRecordSet, UpsertRecord,
+    Aggregate, AggregateColumn, AggregateCount, CreateRecord, DeleteMany, DeleteRecord, FindMany,
+    FindUnique, ModelDelegate, UpdateMany, UpdateManySet, UpdateRecord, UpdateRecordSet,
+    UpsertRecord,
 };
 pub use render::{
-    render_delete, render_insert, render_select, render_select_by_pk, render_update,
-    render_update_many, render_upsert, render_upsert_with_conflict,
+    render_delete, render_delete_many, render_insert, render_select, render_select_by_pk,
+    render_update, render_update_many, render_upsert, render_upsert_with_conflict,
 };
 pub use row::FromRusqliteRow;
 pub use runtime::{RusqliteError, RusqliteRuntime};

@@ -11,8 +11,9 @@ use rusqlite::params_from_iter;
 
 use crate::{
     FromRusqliteRow, RusqliteError, RusqliteRuntime, SqlValueParam, render::render_delete,
-    render::render_insert, render::render_select, render::render_select_by_pk,
-    render::render_update, render::render_update_many, render::render_upsert_with_conflict,
+    render::render_delete_many, render::render_insert, render::render_select,
+    render::render_select_by_pk, render::render_update, render::render_update_many,
+    render::render_upsert_with_conflict,
 };
 
 #[derive(Clone, Copy)]
@@ -104,6 +105,28 @@ impl<'a, M: 'static, PK: 'static> ModelDelegate<'a, M, PK> {
             runtime: self.runtime,
             descriptor: self.descriptor,
             id,
+        }
+    }
+
+    /// Bulk DELETE by predicate. Soft-delete-aware (tombstones via
+    /// `deleted_at = CURRENT_TIMESTAMP` when the model declares one,
+    /// otherwise hard-deletes). Refuses to run without ≥1 filter —
+    /// same safety stance as `update_many`.
+    pub fn delete_many(&self) -> DeleteMany<'a, M, PK> {
+        DeleteMany {
+            runtime: self.runtime,
+            descriptor: self.descriptor,
+            filters: Vec::new(),
+        }
+    }
+
+    /// Aggregate read. Mirrors the sqlx delegate; the embedded layer
+    /// has no policy enforcement, so the result describes every row
+    /// that matches the filters and is not soft-deleted.
+    pub fn aggregate(&self) -> Aggregate<'a, M, PK> {
+        Aggregate {
+            runtime: self.runtime,
+            descriptor: self.descriptor,
         }
     }
 
@@ -737,4 +760,347 @@ fn run_update_many_returning<M: FromRusqliteRow>(
         ok: count,
         err: 0,
     })
+}
+
+// ───── DeleteMany ──────────────────────────────────────────────────────────
+
+pub struct DeleteMany<'a, M: 'static, PK: 'static> {
+    runtime: &'a RusqliteRuntime,
+    descriptor: &'static ModelDescriptor<M, PK>,
+    filters: Vec<FilterExpr>,
+}
+
+impl<'a, M: 'static, PK: 'static> DeleteMany<'a, M, PK> {
+    pub fn where_(mut self, filter: Filter) -> Self {
+        self.filters.push(FilterExpr::from(filter));
+        self
+    }
+
+    pub fn where_expr(mut self, filter: FilterExpr) -> Self {
+        self.filters.push(filter);
+        self
+    }
+
+    /// Conditionally append a filter; `None` is a no-op. See
+    /// [`FindMany::where_optional`].
+    pub fn where_optional<F>(mut self, filter: Option<F>) -> Self
+    where
+        F: Into<FilterExpr>,
+    {
+        if let Some(filter) = filter {
+            self.filters.push(filter.into());
+        }
+        self
+    }
+
+    pub fn preview_sql(&self) -> String {
+        let dialect = SqliteDialect;
+        let (sql, _) = render_delete_many(&dialect, self.descriptor, &self.filters);
+        sql
+    }
+
+    pub fn run(self) -> Result<BatchSummary, RusqliteError>
+    where
+        M: FromRusqliteRow,
+    {
+        if self.filters.is_empty() {
+            return Err(RusqliteError::Validation(
+                "delete_many requires at least one filter".to_owned(),
+            ));
+        }
+        let dialect = SqliteDialect;
+        let (sql, binds) = render_delete_many(&dialect, self.descriptor, &self.filters);
+        self.runtime
+            .with_connection(|conn| run_delete_many_returning::<M>(conn, &sql, &binds))
+    }
+
+    /// Run against a caller-supplied connection. See
+    /// [`CreateRecord::run_in_tx`].
+    pub fn run_in_tx(self, conn: &rusqlite::Connection) -> Result<BatchSummary, RusqliteError>
+    where
+        M: FromRusqliteRow,
+    {
+        if self.filters.is_empty() {
+            return Err(RusqliteError::Validation(
+                "delete_many requires at least one filter".to_owned(),
+            ));
+        }
+        let dialect = SqliteDialect;
+        let (sql, binds) = render_delete_many(&dialect, self.descriptor, &self.filters);
+        run_delete_many_returning::<M>(conn, &sql, &binds)
+    }
+}
+
+fn run_delete_many_returning<M: FromRusqliteRow>(
+    conn: &rusqlite::Connection,
+    sql: &str,
+    binds: &[SqlValue],
+) -> Result<BatchSummary, RusqliteError> {
+    let mut stmt = conn.prepare(sql)?;
+    let bind_iter = binds.iter().map(SqlValueParam);
+    let mut count = 0usize;
+    {
+        let iter = stmt.query_map(params_from_iter(bind_iter), |row| {
+            M::from_rusqlite_row(row).map(|_| ())
+        })?;
+        for item in iter {
+            item?;
+            count += 1;
+        }
+    }
+    Ok(BatchSummary { total: count, ok: count, err: 0 })
+}
+
+// ───── Aggregate ───────────────────────────────────────────────────────────
+
+pub struct Aggregate<'a, M: 'static, PK: 'static> {
+    runtime: &'a RusqliteRuntime,
+    descriptor: &'static ModelDescriptor<M, PK>,
+}
+
+impl<'a, M: 'static, PK: 'static> Aggregate<'a, M, PK> {
+    pub fn count(self) -> AggregateCount<'a, M, PK> {
+        AggregateCount {
+            runtime: self.runtime,
+            descriptor: self.descriptor,
+            filters: Vec::new(),
+        }
+    }
+
+    pub fn sum<C: cratestack_sql::IntoColumnName>(
+        self,
+        column: C,
+    ) -> AggregateColumn<'a, M, PK> {
+        AggregateColumn::new(self.runtime, self.descriptor, AggregateOp::Sum, column)
+    }
+
+    pub fn avg<C: cratestack_sql::IntoColumnName>(
+        self,
+        column: C,
+    ) -> AggregateColumn<'a, M, PK> {
+        AggregateColumn::new(self.runtime, self.descriptor, AggregateOp::Avg, column)
+    }
+
+    pub fn min<C: cratestack_sql::IntoColumnName>(
+        self,
+        column: C,
+    ) -> AggregateColumn<'a, M, PK> {
+        AggregateColumn::new(self.runtime, self.descriptor, AggregateOp::Min, column)
+    }
+
+    pub fn max<C: cratestack_sql::IntoColumnName>(
+        self,
+        column: C,
+    ) -> AggregateColumn<'a, M, PK> {
+        AggregateColumn::new(self.runtime, self.descriptor, AggregateOp::Max, column)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum AggregateOp {
+    Sum,
+    Avg,
+    Min,
+    Max,
+}
+
+impl AggregateOp {
+    fn function_name(self) -> &'static str {
+        match self {
+            Self::Sum => "SUM",
+            Self::Avg => "AVG",
+            Self::Min => "MIN",
+            Self::Max => "MAX",
+        }
+    }
+}
+
+pub struct AggregateCount<'a, M: 'static, PK: 'static> {
+    runtime: &'a RusqliteRuntime,
+    descriptor: &'static ModelDescriptor<M, PK>,
+    filters: Vec<FilterExpr>,
+}
+
+impl<'a, M: 'static, PK: 'static> AggregateCount<'a, M, PK> {
+    pub fn where_(mut self, filter: Filter) -> Self {
+        self.filters.push(FilterExpr::from(filter));
+        self
+    }
+
+    pub fn where_expr(mut self, filter: FilterExpr) -> Self {
+        self.filters.push(filter);
+        self
+    }
+
+    pub fn where_optional<F>(mut self, filter: Option<F>) -> Self
+    where
+        F: Into<FilterExpr>,
+    {
+        if let Some(filter) = filter {
+            self.filters.push(filter.into());
+        }
+        self
+    }
+
+    fn render(&self) -> (String, Vec<SqlValue>) {
+        render_aggregate(
+            self.descriptor,
+            AggregateProjection::CountStar,
+            &self.filters,
+        )
+    }
+
+    pub fn run(self) -> Result<i64, RusqliteError> {
+        let (sql, binds) = self.render();
+        self.runtime.with_connection(|conn| {
+            let mut stmt = conn.prepare(&sql)?;
+            let bind_iter = binds.iter().map(SqlValueParam);
+            let value: i64 = stmt.query_row(params_from_iter(bind_iter), |row| row.get(0))?;
+            Ok(value)
+        })
+    }
+
+    pub fn run_in_tx(self, conn: &rusqlite::Connection) -> Result<i64, RusqliteError> {
+        let (sql, binds) = self.render();
+        let mut stmt = conn.prepare(&sql)?;
+        let bind_iter = binds.iter().map(SqlValueParam);
+        let value: i64 = stmt.query_row(params_from_iter(bind_iter), |row| row.get(0))?;
+        Ok(value)
+    }
+}
+
+pub struct AggregateColumn<'a, M: 'static, PK: 'static> {
+    runtime: &'a RusqliteRuntime,
+    descriptor: &'static ModelDescriptor<M, PK>,
+    op: AggregateOp,
+    column: &'static str,
+    filters: Vec<FilterExpr>,
+}
+
+impl<'a, M: 'static, PK: 'static> AggregateColumn<'a, M, PK> {
+    fn new<C: cratestack_sql::IntoColumnName>(
+        runtime: &'a RusqliteRuntime,
+        descriptor: &'static ModelDescriptor<M, PK>,
+        op: AggregateOp,
+        column: C,
+    ) -> Self {
+        Self {
+            runtime,
+            descriptor,
+            op,
+            column: column.into_column_name(),
+            filters: Vec::new(),
+        }
+    }
+
+    pub fn where_(mut self, filter: Filter) -> Self {
+        self.filters.push(FilterExpr::from(filter));
+        self
+    }
+
+    pub fn where_expr(mut self, filter: FilterExpr) -> Self {
+        self.filters.push(filter);
+        self
+    }
+
+    pub fn where_optional<F>(mut self, filter: Option<F>) -> Self
+    where
+        F: Into<FilterExpr>,
+    {
+        if let Some(filter) = filter {
+            self.filters.push(filter.into());
+        }
+        self
+    }
+
+    fn render(&self) -> (String, Vec<SqlValue>) {
+        render_aggregate(
+            self.descriptor,
+            AggregateProjection::Column {
+                function: self.op.function_name(),
+                column: self.column,
+            },
+            &self.filters,
+        )
+    }
+
+    /// Run the aggregate. `T` is whatever `rusqlite::types::FromSql`-shaped
+    /// scalar the call site wants — `i64` for `SUM(int)`, `f64` for
+    /// `AVG(int)`, `chrono::DateTime` for `MIN(timestamp)`, etc.
+    pub fn run<T>(self) -> Result<Option<T>, RusqliteError>
+    where
+        T: rusqlite::types::FromSql,
+    {
+        let (sql, binds) = self.render();
+        self.runtime.with_connection(|conn| {
+            let mut stmt = conn.prepare(&sql)?;
+            let bind_iter = binds.iter().map(SqlValueParam);
+            let value: Option<T> =
+                stmt.query_row(params_from_iter(bind_iter), |row| row.get(0))?;
+            Ok(value)
+        })
+    }
+
+    pub fn run_in_tx<T>(self, conn: &rusqlite::Connection) -> Result<Option<T>, RusqliteError>
+    where
+        T: rusqlite::types::FromSql,
+    {
+        let (sql, binds) = self.render();
+        let mut stmt = conn.prepare(&sql)?;
+        let bind_iter = binds.iter().map(SqlValueParam);
+        let value: Option<T> =
+            stmt.query_row(params_from_iter(bind_iter), |row| row.get(0))?;
+        Ok(value)
+    }
+}
+
+enum AggregateProjection<'a> {
+    CountStar,
+    Column {
+        function: &'static str,
+        column: &'a str,
+    },
+}
+
+fn render_aggregate<M, PK>(
+    descriptor: &ModelDescriptor<M, PK>,
+    projection: AggregateProjection<'_>,
+    filters: &[FilterExpr],
+) -> (String, Vec<SqlValue>) {
+    use std::fmt::Write;
+    let dialect = SqliteDialect;
+    let mut sql = String::from("SELECT ");
+    match projection {
+        AggregateProjection::CountStar => sql.push_str("COUNT(*)"),
+        AggregateProjection::Column { function, column } => {
+            let _ = write!(sql, "{function}({column})");
+        }
+    }
+    let _ = write!(sql, " FROM {}", descriptor.table_name);
+
+    let mut binds: Vec<SqlValue> = Vec::new();
+    let mut bind_index = 1usize;
+    let mut where_started = false;
+    if let Some(soft_delete) = descriptor.soft_delete_column {
+        let _ = write!(sql, " WHERE {soft_delete} IS NULL");
+        where_started = true;
+    }
+    if !filters.is_empty() {
+        sql.push_str(if where_started { " AND " } else { " WHERE " });
+        let mut joined = false;
+        for filter in filters {
+            if joined {
+                sql.push_str(" AND ");
+            }
+            crate::render::render_filter_expr(
+                &dialect,
+                filter,
+                &mut sql,
+                &mut binds,
+                &mut bind_index,
+            );
+            joined = true;
+        }
+    }
+    (sql, binds)
 }

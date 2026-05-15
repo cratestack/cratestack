@@ -385,3 +385,269 @@ impl<'a, M: 'static, PK: 'static> FindUnique<'a, M, PK> {
             .map_err(|error| CoolError::Database(error.to_string()))
     }
 }
+
+// ───── Aggregate ───────────────────────────────────────────────────────────
+//
+// Side-effect-free read query that returns a single scalar (or a few
+// scalars worth of stats) about the rows matching the filter set.
+//
+// Like `find_many`, the result is filtered through the model's read
+// policy AND the soft-delete column — aggregate counts could otherwise
+// leak privileged information ("this admin has 100 sensitive records"
+// when the caller can't see any of them). Aggregates are evaluated
+// post-filter, so the count/sum/avg/etc. always describe rows the
+// caller would be allowed to retrieve via `find_many`.
+//
+// Each operation returns a dedicated builder rather than a single
+// polymorphic struct because the return type genuinely differs: count
+// is `i64` (never NULL — empty match means 0), but sum / avg / min /
+// max are `Option<T>` (NULL when no rows match). The dedicated types
+// also let the schema studio generate ergonomic call sites without
+// resorting to turbofish.
+
+use cratestack_sql::IntoColumnName;
+
+#[derive(Debug, Clone)]
+pub struct Aggregate<'a, M: 'static, PK: 'static> {
+    pub(crate) runtime: &'a SqlxRuntime,
+    pub(crate) descriptor: &'static ModelDescriptor<M, PK>,
+}
+
+impl<'a, M: 'static, PK: 'static> Aggregate<'a, M, PK> {
+    /// `COUNT(*)` over the matching rows. Always returns a concrete
+    /// `i64`; empty matches yield 0 rather than NULL.
+    pub fn count(self) -> AggregateCount<'a, M, PK> {
+        AggregateCount {
+            runtime: self.runtime,
+            descriptor: self.descriptor,
+            filters: Vec::new(),
+        }
+    }
+
+    /// `SUM(<col>)`. Returns `Option<T>` — `None` when no rows match.
+    pub fn sum<C: IntoColumnName>(self, column: C) -> AggregateColumn<'a, M, PK> {
+        AggregateColumn::new(self.runtime, self.descriptor, AggregateOp::Sum, column)
+    }
+
+    /// `AVG(<col>)`. Returns `Option<T>` — `None` when no rows match.
+    pub fn avg<C: IntoColumnName>(self, column: C) -> AggregateColumn<'a, M, PK> {
+        AggregateColumn::new(self.runtime, self.descriptor, AggregateOp::Avg, column)
+    }
+
+    /// `MIN(<col>)`. Returns `Option<T>` — `None` when no rows match.
+    pub fn min<C: IntoColumnName>(self, column: C) -> AggregateColumn<'a, M, PK> {
+        AggregateColumn::new(self.runtime, self.descriptor, AggregateOp::Min, column)
+    }
+
+    /// `MAX(<col>)`. Returns `Option<T>` — `None` when no rows match.
+    pub fn max<C: IntoColumnName>(self, column: C) -> AggregateColumn<'a, M, PK> {
+        AggregateColumn::new(self.runtime, self.descriptor, AggregateOp::Max, column)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum AggregateOp {
+    Sum,
+    Avg,
+    Min,
+    Max,
+}
+
+impl AggregateOp {
+    fn function_name(self) -> &'static str {
+        match self {
+            Self::Sum => "SUM",
+            Self::Avg => "AVG",
+            Self::Min => "MIN",
+            Self::Max => "MAX",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct AggregateCount<'a, M: 'static, PK: 'static> {
+    runtime: &'a SqlxRuntime,
+    descriptor: &'static ModelDescriptor<M, PK>,
+    filters: Vec<FilterExpr>,
+}
+
+impl<'a, M: 'static, PK: 'static> AggregateCount<'a, M, PK> {
+    pub fn where_(mut self, filter: crate::Filter) -> Self {
+        self.filters.push(FilterExpr::from(filter));
+        self
+    }
+
+    pub fn where_expr(mut self, filter: FilterExpr) -> Self {
+        self.filters.push(filter);
+        self
+    }
+
+    pub fn where_any(mut self, filters: impl IntoIterator<Item = FilterExpr>) -> Self {
+        self.filters.push(FilterExpr::any(filters));
+        self
+    }
+
+    pub fn where_optional<F>(mut self, filter: Option<F>) -> Self
+    where
+        F: Into<FilterExpr>,
+    {
+        if let Some(filter) = filter {
+            self.filters.push(filter.into());
+        }
+        self
+    }
+
+    fn build_query<'q>(
+        &self,
+        ctx: &CoolContext,
+    ) -> sqlx::QueryBuilder<'q, sqlx::Postgres> {
+        let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT COUNT(*) FROM ");
+        query.push(self.descriptor.table_name);
+        push_scoped_conditions(
+            &mut query,
+            self.descriptor,
+            &self.filters,
+            None::<(&'static str, i64)>,
+            ctx,
+            ReadPolicyKind::List,
+        );
+        query
+    }
+
+    pub async fn run(self, ctx: &CoolContext) -> Result<i64, CoolError> {
+        let mut query = self.build_query(ctx);
+        let value: (i64,) = query
+            .build_query_as::<(i64,)>()
+            .fetch_one(self.runtime.pool())
+            .await
+            .map_err(|error| CoolError::Database(error.to_string()))?;
+        Ok(value.0)
+    }
+
+    pub async fn run_in_tx<'tx>(
+        self,
+        tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
+        ctx: &CoolContext,
+    ) -> Result<i64, CoolError> {
+        let mut query = self.build_query(ctx);
+        let value: (i64,) = query
+            .build_query_as::<(i64,)>()
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|error| CoolError::Database(error.to_string()))?;
+        Ok(value.0)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct AggregateColumn<'a, M: 'static, PK: 'static> {
+    runtime: &'a SqlxRuntime,
+    descriptor: &'static ModelDescriptor<M, PK>,
+    op: AggregateOp,
+    column: &'static str,
+    filters: Vec<FilterExpr>,
+}
+
+impl<'a, M: 'static, PK: 'static> AggregateColumn<'a, M, PK> {
+    fn new<C: IntoColumnName>(
+        runtime: &'a SqlxRuntime,
+        descriptor: &'static ModelDescriptor<M, PK>,
+        op: AggregateOp,
+        column: C,
+    ) -> Self {
+        Self {
+            runtime,
+            descriptor,
+            op,
+            column: column.into_column_name(),
+            filters: Vec::new(),
+        }
+    }
+
+    pub fn where_(mut self, filter: crate::Filter) -> Self {
+        self.filters.push(FilterExpr::from(filter));
+        self
+    }
+
+    pub fn where_expr(mut self, filter: FilterExpr) -> Self {
+        self.filters.push(filter);
+        self
+    }
+
+    pub fn where_any(mut self, filters: impl IntoIterator<Item = FilterExpr>) -> Self {
+        self.filters.push(FilterExpr::any(filters));
+        self
+    }
+
+    pub fn where_optional<F>(mut self, filter: Option<F>) -> Self
+    where
+        F: Into<FilterExpr>,
+    {
+        if let Some(filter) = filter {
+            self.filters.push(filter.into());
+        }
+        self
+    }
+
+    fn build_query<'q>(
+        &self,
+        ctx: &CoolContext,
+    ) -> sqlx::QueryBuilder<'q, sqlx::Postgres> {
+        let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT ");
+        query
+            .push(self.op.function_name())
+            .push("(")
+            .push(self.column)
+            .push(") FROM ")
+            .push(self.descriptor.table_name);
+        push_scoped_conditions(
+            &mut query,
+            self.descriptor,
+            &self.filters,
+            None::<(&'static str, i64)>,
+            ctx,
+            ReadPolicyKind::List,
+        );
+        query
+    }
+
+    /// Run the aggregate. `T` is whatever sqlx scalar type decodes the
+    /// expression result — for PG `SUM(int)` that's `i64`, for `AVG(int)`
+    /// it's `f64` or `rust_decimal::Decimal`, for `MIN/MAX(timestamp)`
+    /// it's `chrono::DateTime<Utc>`, etc. Pick at the call site.
+    pub async fn run<T>(self, ctx: &CoolContext) -> Result<Option<T>, CoolError>
+    where
+        T: Send
+            + Unpin
+            + for<'r> sqlx::Decode<'r, sqlx::Postgres>
+            + sqlx::Type<sqlx::Postgres>,
+    {
+        let mut query = self.build_query(ctx);
+        let value: (Option<T>,) = query
+            .build_query_as::<(Option<T>,)>()
+            .fetch_one(self.runtime.pool())
+            .await
+            .map_err(|error| CoolError::Database(error.to_string()))?;
+        Ok(value.0)
+    }
+
+    pub async fn run_in_tx<'tx, T>(
+        self,
+        tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
+        ctx: &CoolContext,
+    ) -> Result<Option<T>, CoolError>
+    where
+        T: Send
+            + Unpin
+            + for<'r> sqlx::Decode<'r, sqlx::Postgres>
+            + sqlx::Type<sqlx::Postgres>,
+    {
+        let mut query = self.build_query(ctx);
+        let value: (Option<T>,) = query
+            .build_query_as::<(Option<T>,)>()
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|error| CoolError::Database(error.to_string()))?;
+        Ok(value.0)
+    }
+}

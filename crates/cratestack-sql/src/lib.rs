@@ -26,7 +26,7 @@ pub use filter::{
     coalesce, CoalesceExpr, CoalesceFilter, FieldRef, Filter, FilterExpr, FilterOp,
     IntoColumnName, RelationFilter, RelationQuantifier,
 };
-pub use order::{OrderClause, OrderTarget, SortDirection};
+pub use order::{NullOrder, OrderClause, OrderTarget, SortDirection};
 pub use values::{
     ConflictTarget, CreateModelInput, FilterValue, IntoSqlValue, ModelPrimaryKey, SqlColumnValue,
     SqlValue, UpdateModelInput, UpsertModelInput, find_duplicate_sql_value,

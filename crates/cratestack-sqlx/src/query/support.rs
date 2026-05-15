@@ -520,7 +520,9 @@ fn push_order_clause_query(
             query
                 .push(*column)
                 .push(" ")
-                .push(sort_direction_sql(clause.direction));
+                .push(sort_direction_sql(clause.direction))
+                .push(" ")
+                .push(null_order_sql(clause.null_order));
         }
         OrderTarget::RelationScalar {
             parent_table,
@@ -545,7 +547,7 @@ fn push_order_clause_query(
                 .push(" LIMIT 1) ")
                 .push(sort_direction_sql(clause.direction))
                 .push(" ")
-                .push(null_order_sql());
+                .push(null_order_sql(clause.null_order));
         }
     }
 }
@@ -742,8 +744,11 @@ pub(crate) fn sort_direction_sql(direction: SortDirection) -> &'static str {
     }
 }
 
-pub(crate) fn null_order_sql() -> &'static str {
-    "NULLS LAST"
+pub(crate) fn null_order_sql(order: cratestack_sql::NullOrder) -> &'static str {
+    match order {
+        cratestack_sql::NullOrder::First => "NULLS FIRST",
+        cratestack_sql::NullOrder::Last => "NULLS LAST",
+    }
 }
 
 fn push_binary_filter_query(

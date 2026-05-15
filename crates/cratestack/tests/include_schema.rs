@@ -1049,7 +1049,7 @@ async fn generated_where_and_order_preview_select_sql() {
 
     assert_eq!(
         sql,
-        "SELECT id AS \"id\", title AS \"title\", subtitle AS \"subtitle\", published AS \"published\", author_id AS \"authorId\" FROM posts WHERE published = $1 AND author_id != $2 AND title LIKE $3 AND subtitle IS NULL AND id IN ($4, $5, $6) ORDER BY title ASC, id DESC LIMIT $7 OFFSET $8"
+        "SELECT id AS \"id\", title AS \"title\", subtitle AS \"subtitle\", published AS \"published\", author_id AS \"authorId\" FROM posts WHERE published = $1 AND author_id != $2 AND title LIKE $3 AND subtitle IS NULL AND id IN ($4, $5, $6) ORDER BY title ASC NULLS LAST, id DESC NULLS LAST LIMIT $7 OFFSET $8"
     );
 }
 
@@ -1068,7 +1068,7 @@ async fn generated_relation_order_preview_appends_primary_key_tie_break() {
 
     assert_eq!(
         sql,
-        "SELECT id AS \"id\", title AS \"title\", subtitle AS \"subtitle\", published AS \"published\", author_id AS \"authorId\" FROM posts ORDER BY (SELECT users.email FROM users WHERE users.id = posts.author_id LIMIT 1) DESC NULLS LAST, id DESC"
+        "SELECT id AS \"id\", title AS \"title\", subtitle AS \"subtitle\", published AS \"published\", author_id AS \"authorId\" FROM posts ORDER BY (SELECT users.email FROM users WHERE users.id = posts.author_id LIMIT 1) DESC NULLS LAST, id DESC NULLS LAST"
     );
 }
 
@@ -1087,7 +1087,7 @@ async fn generated_nested_relation_order_preview_renders_nested_subqueries() {
 
     assert_eq!(
         sql,
-        "SELECT id AS \"id\", title AS \"title\", subtitle AS \"subtitle\", published AS \"published\", author_id AS \"authorId\" FROM posts ORDER BY (SELECT (SELECT profiles.nickname FROM profiles WHERE profiles.id = users.profile_id LIMIT 1) FROM users WHERE users.id = posts.author_id LIMIT 1) ASC NULLS LAST, id ASC"
+        "SELECT id AS \"id\", title AS \"title\", subtitle AS \"subtitle\", published AS \"published\", author_id AS \"authorId\" FROM posts ORDER BY (SELECT (SELECT profiles.nickname FROM profiles WHERE profiles.id = users.profile_id LIMIT 1) FROM users WHERE users.id = posts.author_id LIMIT 1) ASC NULLS LAST, id ASC NULLS LAST"
     );
 }
 

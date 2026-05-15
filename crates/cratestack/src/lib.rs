@@ -20,8 +20,8 @@ pub use cratestack_policy::{
 pub use cratestack_sql::{
     coalesce, CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault, CreateDefaultType,
     CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName, IntoSqlValue,
-    ModelColumn, ModelDescriptor, ModelPrimaryKey, OrderClause, RelationFilter, SortDirection,
-    SqlColumnValue, SqlValue, UpdateModelInput, UpsertModelInput,
+    ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder, OrderClause, RelationFilter,
+    SortDirection, SqlColumnValue, SqlValue, UpdateModelInput, UpsertModelInput,
 };
 
 // Embedded SQLite backend — wasm32-compatible alongside native (mobile,
@@ -91,11 +91,12 @@ pub use cratestack_sqlx::AUDIT_TABLE_DDL;
 pub use cratestack_sqlx::sqlx;
 #[cfg(not(target_arch = "wasm32"))]
 pub use cratestack_sqlx::{
-    CreateRecord, DeleteRecord, FindMany, FindUnique, ModelDelegate, ScopedCreateRecord,
-    ScopedDeleteRecord, ScopedFindMany, ScopedFindUnique, ScopedModelDelegate, ScopedUpdateMany,
-    ScopedUpdateManySet, ScopedUpdateRecord, ScopedUpdateRecordSet, SqlxIdempotencyStore,
-    UpdateMany, UpdateManySet, UpdateRecord, UpdateRecordSet, create_record_with_executor,
-    update_record_with_executor,
+    Aggregate, AggregateColumn, AggregateCount, CreateRecord, DeleteMany, DeleteRecord, FindMany,
+    FindUnique, ModelDelegate, ScopedAggregate, ScopedAggregateColumn, ScopedAggregateCount,
+    ScopedCreateRecord, ScopedDeleteMany, ScopedDeleteRecord, ScopedFindMany, ScopedFindUnique,
+    ScopedModelDelegate, ScopedUpdateMany, ScopedUpdateManySet, ScopedUpdateRecord,
+    ScopedUpdateRecordSet, SqlxIdempotencyStore, UpdateMany, UpdateManySet, UpdateRecord,
+    UpdateRecordSet, create_record_with_executor, update_record_with_executor,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use cratestack_sqlx::{
