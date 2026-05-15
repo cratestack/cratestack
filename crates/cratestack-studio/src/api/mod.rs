@@ -8,9 +8,14 @@
 //! - `GET /api/targets/:key/models/:m/records/:pk`
 //! - `GET /api/targets/:key/models/:m/snippet?pk=…`
 
+mod audit;
+mod drift;
 mod errors;
+mod export;
+mod preview;
 mod records;
 mod schema;
+mod search;
 mod snippet;
 mod targets;
 
@@ -49,4 +54,15 @@ pub fn router() -> Router<Arc<LoadedWorkspace>> {
             "/api/targets/{key}/models/{model}/snippet",
             get(snippet::record_snippet),
         )
+        .route(
+            "/api/targets/{key}/models/{model}/sql",
+            get(preview::preview_sql),
+        )
+        .route(
+            "/api/targets/{key}/models/{model}/export",
+            get(export::export_records),
+        )
+        .route("/api/targets/{key}/drift", get(drift::target_drift))
+        .route("/api/targets/{key}/search", get(search::schema_search))
+        .route("/api/audit", get(audit::list_audit))
 }

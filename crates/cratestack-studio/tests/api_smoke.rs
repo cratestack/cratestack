@@ -12,6 +12,7 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
+use cratestack_studio::audit::AuditLog;
 use cratestack_studio::config::{TargetMode, WorkspaceConfig};
 use cratestack_studio::data::api::ApiSource;
 use cratestack_studio::data::sqlite::SqliteSource;
@@ -123,6 +124,7 @@ fn build_workspace() -> Arc<LoadedWorkspace> {
             Arc::new(sqlite_target),
             Arc::new(rw_target),
         ],
+        audit: Arc::new(AuditLog::new()),
     })
 }
 
@@ -545,6 +547,271 @@ async fn delete_record_against_rw_target_removes_and_echoes_row() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["row"]["id"], "rw1");
+}
+
+#[tokio::test]
+async fn preview_sql_returns_list_select_with_text_cursor() {
+    let (status, body) =
+        json_get("/api/targets/sqlite/models/Post/sql?op=list").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["driver"], "sqlite");
+    let sql = body["sql"].as_str().unwrap();
+    assert!(sql.contains("FROM \"posts\""), "{sql}");
+    assert!(sql.contains("ORDER BY"), "{sql}");
+}
+
+#[tokio::test]
+async fn preview_sql_for_delete_binds_pk() {
+    let (status, body) =
+        json_get("/api/targets/sqlite/models/Post/sql?op=delete&pk=p1").await;
+    assert_eq!(status, StatusCode::OK);
+    let sql = body["sql"].as_str().unwrap();
+    assert!(sql.contains("DELETE FROM \"posts\""), "{sql}");
+    let params = body["params"].as_array().unwrap();
+    assert_eq!(params.len(), 1);
+    assert_eq!(params[0]["binding"], "p1");
+}
+
+#[tokio::test]
+async fn preview_sql_against_api_target_returns_unsupported() {
+    let (status, body) =
+        json_get("/api/targets/api/models/Post/sql?op=list").await;
+    assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
+    assert_eq!(body["error"]["code"], "UNSUPPORTED");
+}
+
+#[tokio::test]
+async fn drift_endpoint_reports_ok_for_matching_models() {
+    let (status, body) = json_get("/api/targets/sqlite/drift").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["target"], "sqlite");
+    let models = body["models"].as_array().unwrap();
+    // The fixture has Customer + Post tables matching the schema.
+    let post = models.iter().find(|m| m["model"] == "Post").unwrap();
+    assert_eq!(post["status"], "ok");
+}
+
+#[tokio::test]
+async fn drift_endpoint_reports_unsupported_for_api_target() {
+    let (status, body) = json_get("/api/targets/api/drift").await;
+    assert_eq!(status, StatusCode::OK);
+    let models = body["models"].as_array().unwrap();
+    assert!(models.iter().all(|m| m["status"] == "unsupported"));
+}
+
+#[tokio::test]
+async fn search_endpoint_returns_model_and_field_hits() {
+    let (status, body) =
+        json_get("/api/targets/sqlite/search?q=author").await;
+    assert_eq!(status, StatusCode::OK);
+    let hits = body["hits"].as_array().unwrap();
+    let names: Vec<&str> = hits.iter().filter_map(|h| h["name"].as_str()).collect();
+    assert!(names.contains(&"author"), "{names:?}");
+    assert!(names.contains(&"authorId"), "{names:?}");
+}
+
+#[tokio::test]
+async fn audit_log_is_empty_initially() {
+    let (status, body) = json_get("/api/audit").await;
+    assert_eq!(status, StatusCode::OK);
+    let entries = body["entries"].as_array().unwrap();
+    assert!(entries.is_empty());
+}
+
+#[tokio::test]
+async fn export_csv_renders_header_and_rows() {
+    let app = cratestack_studio::server::build_router(build_workspace());
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/targets/sqlite/models/Post/export?format=csv&limit=10")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let ctype = response
+        .headers()
+        .get("content-type")
+        .map(|v| v.to_str().unwrap_or("").to_owned())
+        .unwrap_or_default();
+    assert!(ctype.contains("text/csv"), "{ctype}");
+    let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024)
+        .await
+        .expect("body");
+    let text = std::str::from_utf8(&bytes).expect("utf-8");
+    // Header column order follows the row's JSON key order (alphabetical
+    // here because rusqlite's json_object output deserializes through
+    // serde_json::Map, which sorts by default). We just assert all
+    // three column names show up.
+    let first_line = text.lines().next().unwrap();
+    assert!(first_line.contains("id"), "{text}");
+    assert!(first_line.contains("authorId"), "{text}");
+    assert!(first_line.contains("title"), "{text}");
+    assert!(text.contains("first"), "{text}");
+}
+
+#[tokio::test]
+async fn export_json_returns_array_of_rows() {
+    let app = cratestack_studio::server::build_router(build_workspace());
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/targets/sqlite/models/Post/export?format=json&limit=10")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024)
+        .await
+        .expect("body");
+    let parsed: Vec<serde_json::Map<String, serde_json::Value>> =
+        serde_json::from_slice(&bytes).expect("json");
+    assert_eq!(parsed.len(), 3);
+    assert_eq!(parsed[0]["title"], "first");
+}
+
+#[tokio::test]
+async fn models_endpoint_reports_enum_variants() {
+    // Build a workspace with an enum-typed field; the fixture above
+    // doesn't include one so we add a tiny one inline.
+    let schema = Arc::new(
+        cratestack_parser::parse_schema(
+            r#"
+            enum Mood {
+              HAPPY
+              GRUMPY
+            }
+            model Probe {
+              id String @id
+              mood Mood
+            }
+            "#,
+        )
+        .expect("schema parses"),
+    );
+    let conn = rusqlite::Connection::open_in_memory().expect("sqlite open");
+    conn.execute_batch(
+        "CREATE TABLE probes (id TEXT PRIMARY KEY, mood TEXT NOT NULL);",
+    )
+    .expect("ddl");
+    let target = LoadedTarget {
+        key: "enum_t".to_owned(),
+        display_name: "enum_t".to_owned(),
+        mode: TargetMode::Ro,
+        schema: schema.clone(),
+        schema_path: PathBuf::from("x.cstack"),
+        source: Arc::new(SqliteSource::new(conn, schema.clone())),
+        has_db: true,
+        has_api: false,
+    };
+    let ws = Arc::new(LoadedWorkspace {
+        config: WorkspaceConfig {
+            name: "enum_smoke".to_owned(),
+            default_mode: TargetMode::Ro,
+            cors_dev: false,
+        },
+        targets: vec![Arc::new(target)],
+        audit: Arc::new(AuditLog::new()),
+    });
+
+    let app = cratestack_studio::server::build_router(ws);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/targets/enum_t/models")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024)
+        .await
+        .expect("body");
+    let value: Value = serde_json::from_slice(&bytes).unwrap();
+    let probe = value["models"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["name"] == "Probe")
+        .unwrap();
+    let mood_field = probe["fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["name"] == "mood")
+        .unwrap();
+    assert_eq!(mood_field["is_enum"], true);
+    let variants: Vec<&str> = mood_field["enum_variants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|v| v.as_str())
+        .collect();
+    assert_eq!(variants, vec!["HAPPY", "GRUMPY"]);
+}
+
+#[tokio::test]
+async fn audit_log_captures_create_and_delete() {
+    // One workspace, two requests against it. We can't reuse json_get
+    // (it rebuilds the router each time, dropping the audit log), so
+    // do the dance inline.
+    let ws = build_workspace();
+    let app = cratestack_studio::server::build_router(ws.clone());
+    let _ = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/targets/rw/models/Post/records")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&serde_json::json!({
+                        "id": "audit-1",
+                        "authorId": 1,
+                        "title": "audited",
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .expect("post");
+    let _ = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri("/api/targets/rw/models/Post/records/audit-1")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("delete");
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/audit")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("audit");
+    let bytes = axum::body::to_bytes(resp.into_body(), 16 * 1024)
+        .await
+        .unwrap();
+    let body: Value = serde_json::from_slice(&bytes).unwrap();
+    let entries = body["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 2);
+    // Newest first.
+    assert_eq!(entries[0]["op"], "DELETE");
+    assert_eq!(entries[0]["pk"], "audit-1");
+    assert_eq!(entries[1]["op"], "CREATE");
 }
 
 #[tokio::test]

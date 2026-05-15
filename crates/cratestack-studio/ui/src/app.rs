@@ -14,8 +14,10 @@
 use leptos::prelude::*;
 
 use crate::api;
+use crate::editors::{build_payload, render_typed_input, render_typed_input_optional};
+use crate::tools::{AuditButton, SearchBar, ToolsRow, drift_status, render_drift_dot};
 use crate::types::{
-    FieldError, FieldSummary, FollowResponse, ModelSummary, Page, TargetSummary,
+    FieldError, FieldSummary, FollowResponse, ModelDrift, ModelSummary, Page, TargetSummary,
 };
 
 const PAGE_LIMIT: u32 = 25;
@@ -52,7 +54,12 @@ pub fn App() -> impl IntoView {
 
     view! {
         <div class="min-h-screen flex flex-col">
-            <Header workspace_name target_list=targets selected=selected_target set_selected=set_selected_target />
+            <Header
+                workspace_name
+                target_list=targets
+                selected=selected_target
+                set_selected=set_selected_target
+            />
             <main class="flex-1 flex">
                 {move || match boot_error.get() {
                     Some(e) => view! {
@@ -77,13 +84,17 @@ fn Header(
     selected: ReadSignal<Option<String>>,
     set_selected: WriteSignal<Option<String>>,
 ) -> impl IntoView {
+    let selected_for_signal = selected;
+    let target_signal = Signal::derive(move || selected_for_signal.get());
     view! {
-        <header class="border-b border-slate-200 bg-white px-6 py-3 flex items-center gap-6">
+        <header class="relative border-b border-slate-200 bg-white px-6 py-3 flex items-center gap-4">
             <div>
                 <span class="text-xs uppercase tracking-wide text-slate-500">"workspace"</span>
                 <div class="font-semibold text-slate-900">{move || workspace_name.get()}</div>
             </div>
             <div class="flex-1" />
+            <SearchBar target=target_signal />
+            <AuditButton />
             <label class="flex items-center gap-2 text-sm text-slate-600">
                 "Target"
                 <select
@@ -119,6 +130,7 @@ fn Workspace(
     let (models, set_models) = signal(Vec::<ModelSummary>::new());
     let (selected_model, set_selected_model) = signal(Option::<String>::None);
     let (load_error, set_load_error) = signal(Option::<String>::None);
+    let (drift, set_drift) = signal(Vec::<ModelDrift>::new());
 
     Effect::new(move |_| {
         let Some(key) = target_key.get() else {
@@ -126,6 +138,8 @@ fn Workspace(
         };
         set_load_error.set(None);
         set_selected_model.set(None);
+        set_drift.set(Vec::new());
+        let key_for_drift = key.clone();
         leptos::task::spawn_local(async move {
             match api::list_models(&key).await {
                 Ok(list) => {
@@ -136,11 +150,16 @@ fn Workspace(
                 Err(e) => set_load_error.set(Some(e.message)),
             }
         });
+        leptos::task::spawn_local(async move {
+            if let Ok(resp) = api::target_drift(&key_for_drift).await {
+                set_drift.set(resp.models);
+            }
+        });
     });
 
     view! {
         <div class="flex-1 flex">
-            <Sidebar models selected=selected_model set_selected=set_selected_model />
+            <Sidebar models selected=selected_model set_selected=set_selected_model drift=drift />
             <section class="flex-1 p-6 overflow-auto">
                 {move || match load_error.get() {
                     Some(e) => view! {
@@ -165,6 +184,7 @@ fn Sidebar(
     models: ReadSignal<Vec<ModelSummary>>,
     selected: ReadSignal<Option<String>>,
     set_selected: WriteSignal<Option<String>>,
+    drift: ReadSignal<Vec<ModelDrift>>,
 ) -> impl IntoView {
     view! {
         <aside class="w-56 border-r border-slate-200 bg-white p-2">
@@ -174,12 +194,13 @@ fn Sidebar(
                     let name = m.name.clone();
                     let selected_name = name.clone();
                     let click_name = name.clone();
+                    let drift_name = name.clone();
                     let class = move || {
                         let is_active = selected.get().as_deref() == Some(selected_name.as_str());
                         if is_active {
-                            "w-full text-left px-2 py-1 rounded text-sm bg-slate-900 text-white"
+                            "w-full flex items-center text-left px-2 py-1 rounded text-sm bg-slate-900 text-white"
                         } else {
-                            "w-full text-left px-2 py-1 rounded text-sm text-slate-700 hover:bg-slate-100"
+                            "w-full flex items-center text-left px-2 py-1 rounded text-sm text-slate-700 hover:bg-slate-100"
                         }
                     };
                     view! {
@@ -188,7 +209,11 @@ fn Sidebar(
                                 class=class
                                 on:click=move |_| set_selected.set(Some(click_name.clone()))
                             >
-                                {name}
+                                <span>{name}</span>
+                                {move || {
+                                    let snap = drift.get();
+                                    render_drift_dot(drift_status(&snap, &drift_name))
+                                }}
                             </button>
                         </li>
                     }
@@ -267,9 +292,21 @@ fn RecordsPane(
     let is_rw =
         Signal::derive(move || target_mode.get().as_deref() == Some("rw"));
 
+    let target_signal: Signal<Option<String>> = Signal::derive(move || target_key.get());
+    let model_signal: Signal<Option<String>> = Signal::derive(move || selected_model.get());
+    let pk_signal: Signal<Option<String>> = Signal::derive(move || {
+        selected_row.get().and_then(|row| {
+            row.get("id").map(|v| match v {
+                serde_json::Value::String(s) => s.clone(),
+                other => other.to_string(),
+            })
+        })
+    });
+
     view! {
         <div class="flex gap-6 h-full">
             <div class="flex-1 min-w-0 space-y-3">
+                <ToolsRow target=target_signal model=model_signal pk=pk_signal />
                 <div class="flex items-center gap-2 text-sm">
                     {move || current_model.get().map(|m| view! {
                         <h2 class="font-semibold text-slate-900">{m.name.clone()}</h2>
@@ -489,25 +526,12 @@ fn CreateForm(
             <div class="space-y-2">
                 {writable_for_view.into_iter().map(|f| {
                     let name = f.name.clone();
-                    let name_for_input = name.clone();
                     let name_for_error = name.clone();
-                    let name_for_value = name.clone();
-                    let placeholder = format!("{} ({})", f.type_name, f.arity);
+                    let field_for_input = f.clone();
                     view! {
                         <div>
                             <label class="block text-xs text-slate-600 mb-0.5">{name.clone()}</label>
-                            <input
-                                type="text"
-                                class="w-full border border-slate-300 rounded px-2 py-1 text-sm font-mono"
-                                placeholder=placeholder
-                                prop:value=move || values.get().get(&name_for_value).cloned().unwrap_or_default()
-                                on:input=move |ev| {
-                                    let v = event_target_value(&ev);
-                                    set_values.update(|m| {
-                                        m.insert(name_for_input.clone(), v);
-                                    });
-                                }
-                            />
+                            {render_typed_input(field_for_input, values, set_values)}
                             {move || errors.get().iter()
                                 .find(|e| e.field == name_for_error)
                                 .map(|e| view! {
@@ -825,31 +849,13 @@ fn EditFields(
         <dl class="text-sm space-y-2">
             {writable.into_iter().map(|f| {
                 let name = f.name.clone();
-                let name_for_input = name.clone();
-                let name_for_value = name.clone();
                 let name_for_error = name.clone();
-                let placeholder = format!("{} ({})", f.type_name, f.arity);
+                let field_for_input = f.clone();
                 view! {
                     <div class="grid grid-cols-3 gap-2 items-start">
                         <dt class="text-slate-500 pt-1">{name.clone()}</dt>
                         <dd class="col-span-2">
-                            <input
-                                type="text"
-                                class="w-full border border-slate-300 rounded px-2 py-1 text-xs font-mono"
-                                placeholder=placeholder
-                                prop:value=move || values.with(|opt| opt
-                                    .as_ref()
-                                    .and_then(|m| m.get(&name_for_value).cloned())
-                                    .unwrap_or_default())
-                                on:input=move |ev| {
-                                    let v = event_target_value(&ev);
-                                    set_values.update(|opt| {
-                                        if let Some(m) = opt.as_mut() {
-                                            m.insert(name_for_input.clone(), v);
-                                        }
-                                    });
-                                }
-                            />
+                            {render_typed_input_optional(field_for_input, values, set_values)}
                             {move || errors.get().iter()
                                 .find(|e| e.field == name_for_error)
                                 .map(|e| view! {
@@ -965,40 +971,6 @@ fn FollowPanel(panel: ReadSignal<Option<FollowResult>>) -> impl IntoView {
             },
         }}
     }
-}
-
-/// Build a JSON payload from a `String`-typed form map, parsing each
-/// value into the right JSON variant based on the field's declared
-/// type. Empty strings on optional fields become `null`; empty
-/// strings on required fields are sent as `null` too and the server's
-/// validator surfaces the REQUIRED error.
-fn build_payload(
-    writable: &[FieldSummary],
-    values: &std::collections::BTreeMap<String, String>,
-) -> serde_json::Value {
-    let mut out = serde_json::Map::new();
-    for f in writable {
-        let raw = values.get(&f.name).cloned().unwrap_or_default();
-        if raw.is_empty() {
-            if f.arity == "optional" {
-                out.insert(f.name.clone(), serde_json::Value::Null);
-            }
-            continue;
-        }
-        let v = match f.type_name.as_str() {
-            "Int" => raw.parse::<i64>().map(serde_json::Value::from).unwrap_or(serde_json::Value::String(raw.clone())),
-            "Float" => raw.parse::<f64>().map(serde_json::Value::from).unwrap_or(serde_json::Value::String(raw.clone())),
-            "Boolean" => match raw.as_str() {
-                "true" | "1" | "yes" => serde_json::Value::Bool(true),
-                "false" | "0" | "no" => serde_json::Value::Bool(false),
-                _ => serde_json::Value::String(raw.clone()),
-            },
-            "Json" => serde_json::from_str(&raw).unwrap_or(serde_json::Value::String(raw.clone())),
-            _ => serde_json::Value::String(raw.clone()),
-        };
-        out.insert(f.name.clone(), v);
-    }
-    serde_json::Value::Object(out)
 }
 
 fn format_cell(value: &serde_json::Value) -> String {

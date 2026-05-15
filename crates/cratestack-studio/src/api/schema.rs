@@ -35,6 +35,15 @@ pub struct FieldSummary {
     pub arity: &'static str,
     pub is_id: bool,
     pub is_relation: bool,
+    /// `true` when `type_name` resolves to an enum declared in the
+    /// same schema. The UI uses this to render a `<select>` of
+    /// `enum_variants` instead of a free-text input.
+    #[serde(default)]
+    pub is_enum: bool,
+    /// Populated when `is_enum` is true; the in-order list of enum
+    /// variant names declared on the matching `enum`.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub enum_variants: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -52,6 +61,16 @@ pub async fn list_models(
     let schema = &target.schema;
     let model_names: std::collections::HashSet<&str> =
         schema.models.iter().map(|m| m.name.as_str()).collect();
+    let enum_lookup: std::collections::HashMap<&str, Vec<String>> = schema
+        .enums
+        .iter()
+        .map(|e| {
+            (
+                e.name.as_str(),
+                e.variants.iter().map(|v| v.name.clone()).collect(),
+            )
+        })
+        .collect();
 
     let models = schema
         .models
@@ -65,12 +84,21 @@ pub async fn list_models(
             let fields = m
                 .fields
                 .iter()
-                .map(|f| FieldSummary {
-                    name: f.name.clone(),
-                    type_name: f.ty.name.clone(),
-                    arity: arity_to_str(f.ty.arity),
-                    is_id: f.attributes.iter().any(|a| a.raw.starts_with("@id")),
-                    is_relation: model_names.contains(f.ty.name.as_str()),
+                .map(|f| {
+                    let enum_variants = enum_lookup
+                        .get(f.ty.name.as_str())
+                        .cloned()
+                        .unwrap_or_default();
+                    let is_enum = !enum_variants.is_empty();
+                    FieldSummary {
+                        name: f.name.clone(),
+                        type_name: f.ty.name.clone(),
+                        arity: arity_to_str(f.ty.arity),
+                        is_id: f.attributes.iter().any(|a| a.raw.starts_with("@id")),
+                        is_relation: model_names.contains(f.ty.name.as_str()),
+                        is_enum,
+                        enum_variants,
+                    }
                 })
                 .collect();
             ModelSummary {

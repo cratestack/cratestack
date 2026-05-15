@@ -5,9 +5,11 @@
 //! land in subsequent phases (see workspace plan).
 
 pub mod api;
+pub mod audit;
 pub mod config;
 pub mod data;
 pub mod eject;
+pub mod search;
 pub mod server;
 pub mod snippet;
 pub mod validators;

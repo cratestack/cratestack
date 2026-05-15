@@ -34,6 +34,10 @@ pub struct FieldSummary {
     pub arity: String,
     pub is_id: bool,
     pub is_relation: bool,
+    #[serde(default)]
+    pub is_enum: bool,
+    #[serde(default)]
+    pub enum_variants: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -93,4 +97,70 @@ pub enum FollowResponse {
         row: Option<serde_json::Map<String, serde_json::Value>>,
     },
     Page(Page),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SqlPreview {
+    pub driver: String,
+    pub sql: String,
+    pub params: Vec<SqlParam>,
+    #[serde(default)]
+    pub plan: Option<String>,
+    #[serde(default)]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SqlParam {
+    pub index: u32,
+    pub binding: String,
+    pub kind: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DriftResponse {
+    pub target: String,
+    pub models: Vec<ModelDrift>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ModelDrift {
+    pub model: String,
+    pub status: String,
+    #[serde(default)]
+    pub missing_columns: Vec<String>,
+    #[serde(default)]
+    pub extra_columns: Vec<String>,
+    #[serde(default)]
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuditResponse {
+    pub entries: Vec<AuditEntry>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuditEntry {
+    pub id: u64,
+    pub at: String,
+    pub target: String,
+    pub model: String,
+    pub op: String,
+    #[serde(default)]
+    pub pk: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SearchResponse {
+    pub hits: Vec<SearchHit>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SearchHit {
+    pub kind: String,
+    #[serde(default)]
+    pub model: Option<String>,
+    pub name: String,
+    pub detail: String,
 }

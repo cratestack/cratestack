@@ -38,6 +38,13 @@ pub enum ValidationCode {
     Uri,
     /// `@iso4217` rejected the value (currency code).
     Iso4217,
+    /// A unique constraint rejected the value at the database layer
+    /// (Postgres SQLSTATE `23505`, SQLite `SQLITE_CONSTRAINT_UNIQUE` /
+    /// `SQLITE_CONSTRAINT_PRIMARYKEY`).
+    Unique,
+    /// A foreign-key constraint rejected the value at the database
+    /// layer (Postgres `23503`, SQLite `SQLITE_CONSTRAINT_FOREIGNKEY`).
+    ForeignKey,
 }
 
 /// Validate one record's worth of input against the model.

@@ -8,6 +8,7 @@ use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
 
 use crate::api::ApiError;
+use crate::audit::AuditOp;
 use crate::config::TargetMode;
 use crate::data::model_info::resolve_model;
 use crate::data::relations::{extract_filter_value, resolve_relation};
@@ -102,7 +103,23 @@ pub async fn create_record(
     }
 
     let row = target.source.create(&model, &payload).await?;
+    let pk_value = row
+        .get(model_decl
+            .fields
+            .iter()
+            .find(|f| f.attributes.iter().any(|a| a.raw.starts_with("@id")))
+            .map(|f| f.name.as_str())
+            .unwrap_or("id"))
+        .map(value_to_string);
+    state.audit.push(&target.key, &model, AuditOp::Create, pk_value);
     Ok((StatusCode::CREATED, Json(RecordResponse { row })))
+}
+
+fn value_to_string(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::String(s) => s.clone(),
+        other => other.to_string(),
+    }
 }
 
 /// `PATCH /api/targets/:key/models/:model/records/:pk`
@@ -130,6 +147,9 @@ pub async fn update_record(
     let row = target.source.update(&model, &pk, &payload).await?.ok_or_else(|| {
         ApiError::InvalidPrimaryKey(pk.clone(), "no row with this id".to_owned())
     })?;
+    state
+        .audit
+        .push(&target.key, &model, AuditOp::Update, Some(pk.clone()));
     Ok(Json(RecordResponse { row }))
 }
 
@@ -148,6 +168,9 @@ pub async fn delete_record(
         .delete(&model, &pk)
         .await?
         .ok_or_else(|| ApiError::InvalidPrimaryKey(pk.clone(), "no row with this id".to_owned()))?;
+    state
+        .audit
+        .push(&target.key, &model, AuditOp::Delete, Some(pk.clone()));
     Ok(Json(RecordResponse { row }))
 }
 
