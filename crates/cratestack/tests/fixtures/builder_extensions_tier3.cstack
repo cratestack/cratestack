@@ -1,0 +1,22 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+// Scheduler-shaped row. The three timestamp fields drive the
+// COALESCE filter test — a dispatcher's "earliest non-null wakeup
+// time" pattern. `market_code` is the nullable-OR filter target.
+model TaskRow {
+  id Int @id
+  marketCode String?
+  nextAttemptAt Int?
+  scheduledAt Int?
+  createdAt Int
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}

@@ -125,6 +125,15 @@ pub(crate) fn render_filter_expr_sql(
             FilterOp::IsNotNull => {
                 let _ = write!(sql, "{} IS NOT NULL", filter.column);
             }
+            FilterOp::EqOrNull => {
+                let _ = write!(
+                    sql,
+                    "({col} IS NULL OR {col} = ${bind})",
+                    col = filter.column,
+                    bind = *bind_index,
+                );
+                *bind_index += 1;
+            }
         },
         FilterExpr::All(filters) => render_grouped_filter_sql(filters, " AND ", sql, bind_index),
         FilterExpr::Any(filters) => render_grouped_filter_sql(filters, " OR ", sql, bind_index),
@@ -136,7 +145,46 @@ pub(crate) fn render_filter_expr_sql(
         FilterExpr::Relation(relation) => {
             render_relation_filter_sql(relation, sql, bind_index);
         }
+        FilterExpr::Coalesce(coalesce) => {
+            render_coalesce_filter_sql(coalesce, sql, bind_index);
+        }
     }
+}
+
+fn render_coalesce_filter_sql(
+    filter: &cratestack_sql::CoalesceFilter,
+    sql: &mut String,
+    bind_index: &mut usize,
+) {
+    sql.push_str("COALESCE(");
+    for (idx, column) in filter.columns.iter().enumerate() {
+        if idx > 0 {
+            sql.push_str(", ");
+        }
+        sql.push_str(column);
+    }
+    sql.push(')');
+    match filter.op {
+        FilterOp::Eq => render_coalesce_binary_sql("=", sql, bind_index),
+        FilterOp::Ne => render_coalesce_binary_sql("!=", sql, bind_index),
+        FilterOp::Lt => render_coalesce_binary_sql("<", sql, bind_index),
+        FilterOp::Lte => render_coalesce_binary_sql("<=", sql, bind_index),
+        FilterOp::Gt => render_coalesce_binary_sql(">", sql, bind_index),
+        FilterOp::Gte => render_coalesce_binary_sql(">=", sql, bind_index),
+        FilterOp::IsNull => sql.push_str(" IS NULL"),
+        FilterOp::IsNotNull => sql.push_str(" IS NOT NULL"),
+        FilterOp::In | FilterOp::Contains | FilterOp::StartsWith | FilterOp::EqOrNull => {
+            unreachable!(
+                "CoalesceFilter built with unsupported op {:?}",
+                filter.op,
+            );
+        }
+    }
+}
+
+fn render_coalesce_binary_sql(operator: &str, sql: &mut String, bind_index: &mut usize) {
+    let _ = write!(sql, " {operator} ${bind_index}");
+    *bind_index += 1;
 }
 
 pub(crate) fn render_relation_filter_sql(
