@@ -64,6 +64,11 @@ pub struct RpcErrorBody {
     /// canned string; the detailed operator message is logged via
     /// tracing only, never returned over the wire.
     pub message: String,
+    /// Op-defined structured payload (e.g. validation issues). Optional;
+    /// today only populated when the underlying `CoolErrorResponse`
+    /// carried details. Per design doc §2.3.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub details: Option<serde_json::Value>,
 }
 
 impl RpcErrorBody {
@@ -71,8 +76,57 @@ impl RpcErrorBody {
         Self {
             code: rpc_code(error).to_owned(),
             message: error.public_message().into_owned(),
+            details: None,
         }
     }
+
+    /// Translate a REST-style [`cratestack_core::CoolErrorResponse`] (the
+    /// shape the existing axum handlers emit) into the RPC error body.
+    /// The `code` field is mapped from screaming-snake to gRPC-style
+    /// lowercase via [`cool_error_code_to_rpc_code`]; `message` and
+    /// `details` flow through verbatim.
+    pub fn from_cool_response(response: cratestack_core::CoolErrorResponse) -> Self {
+        let cratestack_core::CoolErrorResponse {
+            code,
+            message,
+            details,
+        } = response;
+        Self {
+            code: cool_error_code_to_rpc_code(&code).to_owned(),
+            message,
+            details: details.map(cool_value_to_json),
+        }
+    }
+}
+
+/// Map a `CoolErrorResponse.code` string (screaming-snake, REST-binding
+/// vocabulary) to the stable gRPC-style code the RPC binding emits.
+/// Unknown codes degrade to `"internal"` so a new server variant never
+/// leaks an unrecognized string to the wire.
+pub fn cool_error_code_to_rpc_code(code: &str) -> &'static str {
+    match code {
+        "BAD_REQUEST"
+        | "NOT_ACCEPTABLE"
+        | "UNSUPPORTED_MEDIA_TYPE"
+        | "VALIDATION_ERROR"
+        | "CODEC_ERROR" => "invalid_argument",
+        "UNAUTHORIZED" => "unauthenticated",
+        "FORBIDDEN" => "permission_denied",
+        "NOT_FOUND" => "not_found",
+        "CONFLICT" => "conflict",
+        "PRECONDITION_FAILED" => "failed_precondition",
+        "DATABASE_ERROR" | "INTERNAL_ERROR" => "internal",
+        _ => "internal",
+    }
+}
+
+fn cool_value_to_json(value: cratestack_core::Value) -> serde_json::Value {
+    // `CoolErrorResponse.details: Option<Value>` carries the framework's
+    // own `Value` enum. Round-trip via serde_json to get a JSON-friendly
+    // shape for the RPC wire — anything that can't round-trip (which
+    // shouldn't happen for the variants the framework emits today) is
+    // dropped to `Null` rather than failing the whole error response.
+    serde_json::to_value(&value).unwrap_or(serde_json::Value::Null)
 }
 
 /// Wire shape of a single batch request frame.
@@ -251,6 +305,101 @@ pub fn synthesize_list_query(input: &RpcListInput) -> Option<String> {
 }
 
 // -----------------------------------------------------------------------------
+// Error encoding + handler-response post-processing
+//
+// Every error that exits the RPC binding ends up wire-shaped as
+// `RpcErrorBody { code, message, details? }` with gRPC-style lowercase
+// codes — regardless of whether it originated inside the dispatcher
+// (before reaching a handler) or inside the handler itself. The two
+// helpers below cover both paths.
+// -----------------------------------------------------------------------------
+
+/// Build an `axum::Response` carrying an [`RpcErrorBody`] for a
+/// [`CoolError`] raised inside the dispatcher (e.g. body decode
+/// failure, unknown op id). The HTTP status comes from
+/// [`CoolError::status_code`]; the body is codec-encoded via the
+/// request's codec, content-type negotiated against
+/// [`RPC_BINDING_CAPABILITIES`].
+pub fn encode_rpc_error<C>(codec: &C, headers: &HeaderMap, error: &CoolError) -> axum::response::Response
+where
+    C: HttpTransport,
+{
+    let body = RpcErrorBody::from_cool(error);
+    let status = error.status_code();
+    encode_rpc_value_response(codec, headers, status, body)
+}
+
+/// Post-process a handler-emitted response. Success responses pass
+/// through unchanged. Non-2xx responses are buffered, their bodies
+/// decoded as [`cratestack_core::CoolErrorResponse`] (the REST shape
+/// the existing axum handlers emit), translated to [`RpcErrorBody`]
+/// with the gRPC-style code, and re-encoded with the same HTTP status.
+///
+/// Called once per dispatch (inside `rpc_dispatch_inner`) so unary and
+/// batch both see uniformly RpcErrorBody-shaped error bodies.
+pub async fn convert_handler_error_response<C>(
+    response: axum::response::Response,
+    codec: &C,
+    headers: &HeaderMap,
+) -> axum::response::Response
+where
+    C: HttpTransport,
+{
+    if response.status().is_success() {
+        return response;
+    }
+
+    let status = response.status();
+    let body_bytes = match axum::body::to_bytes(response.into_body(), usize::MAX).await {
+        Ok(bytes) => bytes.to_vec(),
+        Err(error) => {
+            // Buffering failed — synthesize an internal error frame.
+            let cool = CoolError::Internal(format!("buffer handler error body: {error}"));
+            return encode_rpc_error(codec, headers, &cool);
+        }
+    };
+
+    let rpc_body = match decode_rpc_body::<_, cratestack_core::CoolErrorResponse>(
+        codec,
+        headers,
+        &body_bytes,
+    ) {
+        Ok(parsed) => RpcErrorBody::from_cool_response(parsed),
+        Err(_) => {
+            // Handler emitted a non-2xx with a body that isn't the
+            // framework's REST error shape (unusual — would happen if a
+            // handler escaped through `into_response()` directly). Build
+            // a synthetic body from the status alone.
+            let cool = synthesize_error_for_status(status);
+            RpcErrorBody::from_cool(&cool)
+        }
+    };
+
+    encode_rpc_value_response(codec, headers, status, rpc_body)
+}
+
+fn encode_rpc_value_response<C, T>(
+    codec: &C,
+    headers: &HeaderMap,
+    status: axum::http::StatusCode,
+    value: T,
+) -> axum::response::Response
+where
+    C: HttpTransport,
+    T: Serialize,
+{
+    // Re-use the existing transport encoder so content negotiation
+    // happens via the same path as everything else.
+    crate::encode_transport_result_with_status_for::<_, T>(
+        codec,
+        headers,
+        &RPC_BINDING_CAPABILITIES,
+        status,
+        Ok(value),
+    )
+}
+
+// -----------------------------------------------------------------------------
 // Batch helpers
 // -----------------------------------------------------------------------------
 
@@ -258,11 +407,11 @@ pub fn synthesize_list_query(input: &RpcListInput) -> Option<String> {
 /// single batch response frame.
 ///
 /// Success bodies (2xx) are decoded as `serde_json::Value` via the same
-/// codec the request used and become `RpcResponseFrame::ok`. Error bodies
-/// (4xx/5xx) are decoded as the existing `CoolErrorResponse` shape and
-/// become `RpcResponseFrame::err` — the `code` field is passed through
-/// verbatim (uppercase SCREAMING for now; switching to lowercase
-/// gRPC-style codes lands with the `RpcErrorBody` migration).
+/// codec the request used and become `RpcResponseFrame::ok`. Error
+/// bodies (4xx/5xx) — which have already been post-processed by
+/// [`convert_handler_error_response`] inside `rpc_dispatch_inner` — are
+/// decoded as [`RpcErrorBody`] and inlined into
+/// `RpcResponseFrame::error` directly.
 ///
 /// Wire limitation: success outputs must be representable as
 /// `serde_json::Value`. For CRUD/procedure outputs this is fine; if a
@@ -294,19 +443,19 @@ where
             Err(error) => RpcResponseFrame::err(id, &error),
         }
     } else {
-        // Try to decode the body as the framework's REST error shape;
-        // if that fails, synthesize a generic error from the status alone.
-        match decode_rpc_body::<_, cratestack_core::CoolErrorResponse>(codec, headers, &body_bytes)
-        {
-            Ok(parsed) => RpcResponseFrame {
+        // Body is already RpcErrorBody-shaped — `rpc_dispatch_inner`
+        // post-processes handler errors before they reach us.
+        match decode_rpc_body::<_, RpcErrorBody>(codec, headers, &body_bytes) {
+            Ok(body) => RpcResponseFrame {
                 id,
                 output: None,
-                error: Some(RpcErrorBody {
-                    code: parsed.code,
-                    message: parsed.message,
-                }),
+                error: Some(body),
             },
             Err(_) => {
+                // Defensive: a handler/dispatcher returned a non-2xx
+                // body that isn't RpcErrorBody-shaped. Synthesize one
+                // from the status alone rather than corrupting the
+                // batch envelope.
                 let synthetic = synthesize_error_for_status(status);
                 RpcResponseFrame::err(id, &synthetic)
             }
@@ -415,6 +564,59 @@ pub const fn rpc_code(error: &CoolError) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cool_error_code_to_rpc_code_covers_every_cool_error_variant() {
+        // Mirror image of `rpc_code_maps_each_cool_error_variant` — for
+        // every CoolError variant, encoding it as CoolErrorResponse and
+        // then translating its `code` must land on the same gRPC-style
+        // string as the direct `rpc_code` path.
+        for variant in [
+            CoolError::BadRequest("x".into()),
+            CoolError::NotAcceptable("x".into()),
+            CoolError::Unauthorized("x".into()),
+            CoolError::UnsupportedMediaType("x".into()),
+            CoolError::Forbidden("x".into()),
+            CoolError::NotFound("x".into()),
+            CoolError::Conflict("x".into()),
+            CoolError::Validation("x".into()),
+            CoolError::PreconditionFailed("x".into()),
+            CoolError::Codec("x".into()),
+            CoolError::Database("x".into()),
+            CoolError::Internal("x".into()),
+        ] {
+            let cool_code = variant.code();
+            let direct = rpc_code(&variant);
+            let translated = cool_error_code_to_rpc_code(cool_code);
+            assert_eq!(
+                direct, translated,
+                "rpc_code({:?}) = {:?} but cool_error_code_to_rpc_code({:?}) = {:?}",
+                variant, direct, cool_code, translated,
+            );
+        }
+    }
+
+    #[test]
+    fn cool_error_code_to_rpc_code_unknown_input_falls_to_internal() {
+        // A server that adds a new CoolError variant we don't know about
+        // shouldn't leak a SCREAMING string to the wire — degrade to
+        // "internal" rather than passing through.
+        assert_eq!(cool_error_code_to_rpc_code("SOMETHING_NEW"), "internal");
+        assert_eq!(cool_error_code_to_rpc_code(""), "internal");
+    }
+
+    #[test]
+    fn error_body_from_cool_response_translates_code_and_preserves_message() {
+        let response = cratestack_core::CoolErrorResponse {
+            code: "NOT_FOUND".to_owned(),
+            message: "widget 42".to_owned(),
+            details: None,
+        };
+        let body = RpcErrorBody::from_cool_response(response);
+        assert_eq!(body.code, "not_found");
+        assert_eq!(body.message, "widget 42");
+        assert!(body.details.is_none());
+    }
 
     #[test]
     fn rpc_code_maps_each_cool_error_variant() {
