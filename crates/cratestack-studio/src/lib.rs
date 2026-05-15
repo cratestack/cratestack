@@ -10,6 +10,7 @@ pub mod data;
 pub mod eject;
 pub mod server;
 pub mod snippet;
+pub mod validators;
 pub mod workspace;
 
 #[cfg(feature = "embed-ui")]

@@ -81,7 +81,33 @@ fn build_workspace() -> Arc<LoadedWorkspace> {
         mode: TargetMode::Ro,
         schema: schema.clone(),
         schema_path: PathBuf::from("schema.cstack"),
-        source: Arc::new(SqliteSource::new(conn, schema)),
+        source: Arc::new(SqliteSource::new(conn, schema.clone())),
+        has_db: true,
+        has_api: false,
+    };
+
+    let conn_rw = rusqlite::Connection::open_in_memory().expect("sqlite open");
+    conn_rw
+        .execute_batch(
+            r#"
+            CREATE TABLE posts (
+              id TEXT PRIMARY KEY,
+              author_id INTEGER NOT NULL,
+              title TEXT NOT NULL
+            );
+            INSERT INTO posts VALUES ('rw1', 1, 'mutable');
+            CREATE TABLE customers (id INTEGER PRIMARY KEY, email TEXT NOT NULL);
+            INSERT INTO customers VALUES (1, 'rw@example.com');
+            "#,
+        )
+        .expect("ddl");
+    let rw_target = LoadedTarget {
+        key: "rw".to_owned(),
+        display_name: "Read-write SQLite".to_owned(),
+        mode: TargetMode::Rw,
+        schema: schema.clone(),
+        schema_path: PathBuf::from("schema.cstack"),
+        source: Arc::new(SqliteSource::new(conn_rw, schema)),
         has_db: true,
         has_api: false,
     };
@@ -92,8 +118,38 @@ fn build_workspace() -> Arc<LoadedWorkspace> {
             default_mode: TargetMode::Ro,
             cors_dev: true,
         },
-        targets: vec![Arc::new(api_target), Arc::new(sqlite_target)],
+        targets: vec![
+            Arc::new(api_target),
+            Arc::new(sqlite_target),
+            Arc::new(rw_target),
+        ],
     })
+}
+
+async fn json_request(
+    method: &str,
+    uri: &str,
+    body: Option<Value>,
+) -> (StatusCode, Value) {
+    let app = cratestack_studio::server::build_router(build_workspace());
+    let mut builder = Request::builder().method(method).uri(uri);
+    let body_bytes = match body {
+        Some(v) => {
+            builder = builder.header("content-type", "application/json");
+            serde_json::to_vec(&v).expect("body serializes")
+        }
+        None => Vec::new(),
+    };
+    let response = app
+        .oneshot(builder.body(Body::from(body_bytes)).unwrap())
+        .await
+        .expect("request");
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024)
+        .await
+        .expect("body");
+    let value: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    (status, value)
 }
 
 async fn json_get(uri: &str) -> (StatusCode, Value) {
@@ -285,7 +341,7 @@ async fn health_endpoint_reflects_workspace() {
     let (status, body) = json_get("/api/health").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["workspace"], "smoke");
-    assert_eq!(body["target_count"], 2);
+    assert_eq!(body["target_count"], 3);
 }
 
 /// With the `embed-ui` feature on (and `trunk build` already run in
@@ -365,6 +421,130 @@ async fn root_serves_stub_page_when_feature_off() {
         "stub page should describe the current phase: {}",
         &text[..text.len().min(200)]
     );
+}
+
+#[tokio::test]
+async fn create_record_against_ro_target_returns_403() {
+    let (status, body) = json_request(
+        "POST",
+        "/api/targets/sqlite/models/Post/records",
+        Some(serde_json::json!({
+            "id": "p99",
+            "authorId": 1,
+            "title": "hello"
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body["error"]["code"], "FORBIDDEN");
+}
+
+#[tokio::test]
+async fn create_record_against_rw_target_inserts_and_echoes_row() {
+    let (status, body) = json_request(
+        "POST",
+        "/api/targets/rw/models/Post/records",
+        Some(serde_json::json!({
+            "id": "rw2",
+            "authorId": 1,
+            "title": "freshly created"
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["row"]["id"], "rw2");
+    assert_eq!(body["row"]["title"], "freshly created");
+    assert_eq!(body["row"]["authorId"], 1);
+}
+
+#[tokio::test]
+async fn create_record_with_missing_required_field_returns_422() {
+    let (status, body) = json_request(
+        "POST",
+        "/api/targets/rw/models/Post/records",
+        Some(serde_json::json!({
+            "id": "rw3"
+            // missing authorId and title
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+    let fields = body["error"]["fields"].as_array().expect("fields list");
+    let codes: Vec<&str> = fields
+        .iter()
+        .filter_map(|f| f["code"].as_str())
+        .collect();
+    assert!(codes.contains(&"REQUIRED"));
+    let field_names: Vec<&str> = fields
+        .iter()
+        .filter_map(|f| f["field"].as_str())
+        .collect();
+    assert!(field_names.contains(&"title"));
+    assert!(field_names.contains(&"authorId"));
+}
+
+#[tokio::test]
+async fn update_record_against_rw_target_patches_field() {
+    let (status, body) = json_request(
+        "PATCH",
+        "/api/targets/rw/models/Post/records/rw1",
+        Some(serde_json::json!({ "title": "updated title" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["row"]["id"], "rw1");
+    assert_eq!(body["row"]["title"], "updated title");
+}
+
+#[tokio::test]
+async fn update_record_with_wrong_type_returns_422() {
+    let (status, body) = json_request(
+        "PATCH",
+        "/api/targets/rw/models/Post/records/rw1",
+        Some(serde_json::json!({ "title": 42 })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+    let fields = body["error"]["fields"].as_array().expect("fields list");
+    assert!(fields.iter().any(|f| f["code"] == "TYPE_MISMATCH"));
+}
+
+#[tokio::test]
+async fn update_record_unknown_pk_returns_400() {
+    let (status, body) = json_request(
+        "PATCH",
+        "/api/targets/rw/models/Post/records/nonexistent",
+        Some(serde_json::json!({ "title": "x" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"]["code"], "INVALID_PRIMARY_KEY");
+}
+
+#[tokio::test]
+async fn delete_record_against_ro_target_returns_403() {
+    let (status, body) = json_request(
+        "DELETE",
+        "/api/targets/sqlite/models/Post/records/p1",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body["error"]["code"], "FORBIDDEN");
+}
+
+#[tokio::test]
+async fn delete_record_against_rw_target_removes_and_echoes_row() {
+    let (status, body) = json_request(
+        "DELETE",
+        "/api/targets/rw/models/Post/records/rw1",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["row"]["id"], "rw1");
 }
 
 #[tokio::test]

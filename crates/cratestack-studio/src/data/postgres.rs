@@ -145,6 +145,181 @@ fn clamp_limit(requested: Option<u32>) -> u32 {
         .clamp(1, MAX_PAGE_LIMIT)
 }
 
+pub(crate) fn build_insert_sql(info: &ModelSqlInfo<'_>, columns: &[String]) -> String {
+    let names = columns
+        .iter()
+        .map(|c| format!("\"{c}\""))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let placeholders = (1..=columns.len())
+        .map(|i| format!("${i}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let projection = info
+        .columns
+        .iter()
+        .map(|c| format!("\"{}\"", c.column_name))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "WITH inserted AS ( \
+           INSERT INTO \"{table}\" ({names}) VALUES ({placeholders}) RETURNING * \
+         ) \
+         SELECT row_to_json(t.*) AS row FROM (SELECT {projection} FROM inserted) t",
+        table = info.table,
+        names = names,
+        placeholders = placeholders,
+        projection = projection,
+    )
+}
+
+pub(crate) fn build_update_sql(info: &ModelSqlInfo<'_>, columns: &[String]) -> String {
+    let assignments = columns
+        .iter()
+        .enumerate()
+        .map(|(i, c)| format!("\"{c}\" = ${}", i + 1))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let pk_placeholder = columns.len() + 1;
+    let pk = &info.pk_column;
+    let pk_predicate = match info.pk_cast {
+        PkCast::Text => format!("\"{pk}\" = ${pk_placeholder}"),
+        PkCast::BigInt => format!("\"{pk}\" = ${pk_placeholder}::bigint"),
+    };
+    let projection = info
+        .columns
+        .iter()
+        .map(|c| format!("\"{}\"", c.column_name))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "WITH updated AS ( \
+           UPDATE \"{table}\" SET {assignments} WHERE {pk_predicate} RETURNING * \
+         ) \
+         SELECT row_to_json(t.*) AS row FROM (SELECT {projection} FROM updated) t",
+        table = info.table,
+        assignments = assignments,
+        pk_predicate = pk_predicate,
+        projection = projection,
+    )
+}
+
+pub(crate) fn build_delete_sql(info: &ModelSqlInfo<'_>) -> String {
+    let pk = &info.pk_column;
+    let pk_predicate = match info.pk_cast {
+        PkCast::Text => format!("\"{pk}\" = $1"),
+        PkCast::BigInt => format!("\"{pk}\" = $1::bigint"),
+    };
+    let projection = info
+        .columns
+        .iter()
+        .map(|c| format!("\"{}\"", c.column_name))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "WITH deleted AS ( \
+           DELETE FROM \"{table}\" WHERE {pk_predicate} RETURNING * \
+         ) \
+         SELECT row_to_json(t.*) AS row FROM (SELECT {projection} FROM deleted) t",
+        table = info.table,
+        pk_predicate = pk_predicate,
+        projection = projection,
+    )
+}
+
+/// One typed value ready for a Postgres bind. Studio chooses the
+/// variant from the field's declared scalar type and the incoming JSON
+/// value; the variant in turn drives sqlx's encoding path. JSON / array
+/// / object payloads bind through `sqlx::types::Json` so non-jsonb
+/// columns get a hard error at type-check time rather than a silent
+/// stringification.
+#[derive(Debug, Clone)]
+pub(crate) enum TypedValue {
+    Text(String),
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+    Json(serde_json::Value),
+    Null,
+}
+
+/// Walk `payload` in column order, looking up each field's scalar
+/// type on the source model and producing a `TypedValue` for each
+/// present key. Missing keys are skipped (the UPDATE path uses that
+/// for partial updates; CREATE relies on the validator having already
+/// flagged missing required keys).
+pub(crate) fn collect_payload(
+    schema: &cratestack_core::Schema,
+    model_name: &str,
+    info: &ModelSqlInfo<'_>,
+    payload: &Row,
+) -> (Vec<String>, Vec<TypedValue>) {
+    let model = schema
+        .models
+        .iter()
+        .find(|m| m.name == model_name)
+        .expect("resolve_model already checked the model exists");
+    let mut cols = Vec::new();
+    let mut binds = Vec::new();
+    for col in &info.columns {
+        let Some(value) = payload.get(col.field_name) else {
+            continue;
+        };
+        let field = model
+            .fields
+            .iter()
+            .find(|f| f.name == col.field_name)
+            .expect("column info was derived from the same field list");
+        cols.push(col.column_name.clone());
+        binds.push(json_to_typed(&field.ty.name, value));
+    }
+    (cols, binds)
+}
+
+fn json_to_typed(scalar: &str, value: &serde_json::Value) -> TypedValue {
+    if value.is_null() {
+        return TypedValue::Null;
+    }
+    match scalar {
+        "Int" => TypedValue::Int(value.as_i64().unwrap_or_else(|| {
+            value.as_f64().map(|f| f as i64).unwrap_or(0)
+        })),
+        "Float" => TypedValue::Float(value.as_f64().unwrap_or(0.0)),
+        "Boolean" => TypedValue::Bool(value.as_bool().unwrap_or(false)),
+        "Json" => TypedValue::Json(value.clone()),
+        // String, Cuid, Uuid, Decimal, DateTime, Bytes, enums.
+        _ => TypedValue::Text(match value {
+            serde_json::Value::String(s) => s.clone(),
+            other => other.to_string(),
+        }),
+    }
+}
+
+/// Bind one typed value onto a sqlx Query. The `match` keeps the
+/// per-variant Encode chosen at compile time even though the caller
+/// sees a single function.
+pub(crate) fn bind_typed<'q>(
+    q: sqlx_core::query::Query<
+        'q,
+        sqlx_postgres::Postgres,
+        sqlx_postgres::PgArguments,
+    >,
+    value: &TypedValue,
+) -> sqlx_core::query::Query<
+    'q,
+    sqlx_postgres::Postgres,
+    sqlx_postgres::PgArguments,
+> {
+    match value {
+        TypedValue::Text(s) => q.bind(s.clone()),
+        TypedValue::Int(i) => q.bind(*i),
+        TypedValue::Float(f) => q.bind(*f),
+        TypedValue::Bool(b) => q.bind(*b),
+        TypedValue::Json(j) => q.bind(sqlx_core::types::Json(j.clone())),
+        TypedValue::Null => q.bind(Option::<String>::None),
+    }
+}
+
 #[async_trait]
 impl DataSource for PostgresSource {
     async fn list(&self, model: &str, page: PageRequest<'_>) -> Result<Page, DataError> {
@@ -185,6 +360,75 @@ impl DataSource for PostgresSource {
             .fetch_optional(&self.pool)
             .await?;
 
+        match row {
+            None => Ok(None),
+            Some(r) => {
+                let value: serde_json::Value = r.try_get(0)?;
+                Ok(match value {
+                    serde_json::Value::Object(map) => Some(map),
+                    _ => None,
+                })
+            }
+        }
+    }
+
+    async fn create(&self, model: &str, payload: &Row) -> Result<Row, DataError> {
+        let (_, info) = resolve_model(&self.schema, model)?;
+        let (cols, binds) = collect_payload(&self.schema, model, &info, payload);
+        let sql = build_insert_sql(&info, &cols);
+
+        let mut q = sqlx_core::query::query(&sql);
+        for value in &binds {
+            q = bind_typed(q, value);
+        }
+        let row: PgRow = q.fetch_one(&self.pool).await?;
+        let value: serde_json::Value = row.try_get(0)?;
+        match value {
+            serde_json::Value::Object(map) => Ok(map),
+            _ => Err(DataError::Unsupported {
+                what: "INSERT … RETURNING did not produce a JSON object",
+            }),
+        }
+    }
+
+    async fn update(
+        &self,
+        model: &str,
+        pk: &str,
+        payload: &Row,
+    ) -> Result<Option<Row>, DataError> {
+        let (_, info) = resolve_model(&self.schema, model)?;
+        if payload.is_empty() {
+            return self.get(model, pk).await;
+        }
+        let (cols, binds) = collect_payload(&self.schema, model, &info, payload);
+        let sql = build_update_sql(&info, &cols);
+
+        let mut q = sqlx_core::query::query(&sql);
+        for value in &binds {
+            q = bind_typed(q, value);
+        }
+        q = q.bind(pk);
+        let row: Option<PgRow> = q.fetch_optional(&self.pool).await?;
+        match row {
+            None => Ok(None),
+            Some(r) => {
+                let value: serde_json::Value = r.try_get(0)?;
+                Ok(match value {
+                    serde_json::Value::Object(map) => Some(map),
+                    _ => None,
+                })
+            }
+        }
+    }
+
+    async fn delete(&self, model: &str, pk: &str) -> Result<Option<Row>, DataError> {
+        let (_, info) = resolve_model(&self.schema, model)?;
+        let sql = build_delete_sql(&info);
+        let row: Option<PgRow> = sqlx_core::query::query(&sql)
+            .bind(pk)
+            .fetch_optional(&self.pool)
+            .await?;
         match row {
             None => Ok(None),
             Some(r) => {

@@ -141,6 +141,113 @@ fn sql_quote_string(value: &str) -> String {
     value.replace('\'', "''")
 }
 
+pub(crate) fn build_insert_sql(info: &ModelSqlInfo<'_>, columns: &[String]) -> String {
+    let object = build_json_object(info);
+    let names = columns
+        .iter()
+        .map(|c| format!("\"{c}\""))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let placeholders = (1..=columns.len())
+        .map(|i| format!("?{i}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "INSERT INTO \"{table}\" ({names}) VALUES ({placeholders}) \
+         RETURNING json_object({object}) AS row",
+        table = info.table,
+        object = object,
+        names = names,
+        placeholders = placeholders,
+    )
+}
+
+pub(crate) fn build_update_sql(info: &ModelSqlInfo<'_>, columns: &[String]) -> String {
+    let object = build_json_object(info);
+    let assignments = columns
+        .iter()
+        .enumerate()
+        .map(|(i, c)| format!("\"{c}\" = ?{}", i + 1))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let pk_placeholder = columns.len() + 1;
+    let pk = &info.pk_column;
+    let pk_predicate = match info.pk_cast {
+        PkCast::Text => format!("\"{pk}\" = ?{pk_placeholder}"),
+        PkCast::BigInt => {
+            format!("\"{pk}\" = CAST(?{pk_placeholder} AS INTEGER)")
+        }
+    };
+    format!(
+        "UPDATE \"{table}\" SET {assignments} WHERE {pk_predicate} \
+         RETURNING json_object({object}) AS row",
+        table = info.table,
+        object = object,
+        assignments = assignments,
+        pk_predicate = pk_predicate,
+    )
+}
+
+pub(crate) fn build_delete_sql(info: &ModelSqlInfo<'_>) -> String {
+    let object = build_json_object(info);
+    let pk = &info.pk_column;
+    let pk_predicate = match info.pk_cast {
+        PkCast::Text => format!("\"{pk}\" = ?1"),
+        PkCast::BigInt => format!("\"{pk}\" = CAST(?1 AS INTEGER)"),
+    };
+    format!(
+        "DELETE FROM \"{table}\" WHERE {pk_predicate} \
+         RETURNING json_object({object}) AS row",
+        table = info.table,
+        object = object,
+        pk_predicate = pk_predicate,
+    )
+}
+
+/// Map the payload object to `(columns, bound_values)` where each
+/// value is a `rusqlite::types::Value` ready to bind. `partial = true`
+/// (update) only includes keys present in the payload; `partial = false`
+/// (create) emits every payload key in a deterministic order.
+pub(crate) fn build_payload_bindings(
+    info: &ModelSqlInfo<'_>,
+    payload: &Row,
+    _partial: bool,
+) -> (Vec<String>, Vec<rusqlite::types::Value>) {
+    let mut columns = Vec::new();
+    let mut values = Vec::new();
+    for col in &info.columns {
+        let Some(json_value) = payload.get(col.field_name) else {
+            continue;
+        };
+        columns.push(col.column_name.clone());
+        values.push(json_to_sqlite(json_value));
+    }
+    (columns, values)
+}
+
+fn json_to_sqlite(value: &serde_json::Value) -> rusqlite::types::Value {
+    use rusqlite::types::Value as V;
+    match value {
+        serde_json::Value::Null => V::Null,
+        serde_json::Value::Bool(b) => V::Integer(if *b { 1 } else { 0 }),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                V::Integer(i)
+            } else if let Some(f) = n.as_f64() {
+                V::Real(f)
+            } else {
+                V::Text(n.to_string())
+            }
+        }
+        serde_json::Value::String(s) => V::Text(s.clone()),
+        // JSON objects/arrays land as text — the schema-declared
+        // type is the contract; we round-trip via SQLite's text
+        // storage which lines up with how the framework's macro
+        // path stores JSON columns.
+        other => V::Text(other.to_string()),
+    }
+}
+
 fn clamp_limit(requested: Option<u32>) -> u32 {
     requested
         .unwrap_or(DEFAULT_PAGE_LIMIT)
@@ -221,6 +328,65 @@ impl DataSource for SqliteSource {
         })
         .await?;
 
+        Ok(rows.into_iter().next())
+    }
+
+    async fn create(&self, model: &str, payload: &Row) -> Result<Row, DataError> {
+        let (_, info) = resolve_model(&self.schema, model)?;
+        let (cols, sql_args) = build_payload_bindings(&info, payload, false);
+        let sql = build_insert_sql(&info, &cols);
+        let conn = self.connection.clone();
+
+        let row = with_conn(conn, move |conn| {
+            let params: Vec<&dyn rusqlite::ToSql> = sql_args
+                .iter()
+                .map(|v| v as &dyn rusqlite::ToSql)
+                .collect();
+            let rows = fetch_rows(conn, &sql, &params)?;
+            rows.into_iter().next().ok_or_else(|| DataError::Sqlite(
+                rusqlite::Error::QueryReturnedNoRows,
+            ))
+        })
+        .await?;
+        Ok(row)
+    }
+
+    async fn update(
+        &self,
+        model: &str,
+        pk: &str,
+        payload: &Row,
+    ) -> Result<Option<Row>, DataError> {
+        let (_, info) = resolve_model(&self.schema, model)?;
+        if payload.is_empty() {
+            // Nothing to update — just return the existing row.
+            return self.get(model, pk).await;
+        }
+        let (cols, mut sql_args) = build_payload_bindings(&info, payload, true);
+        sql_args.push(rusqlite::types::Value::Text(pk.to_owned()));
+        let sql = build_update_sql(&info, &cols);
+        let conn = self.connection.clone();
+
+        let rows = with_conn(conn, move |conn| {
+            let params: Vec<&dyn rusqlite::ToSql> = sql_args
+                .iter()
+                .map(|v| v as &dyn rusqlite::ToSql)
+                .collect();
+            fetch_rows(conn, &sql, &params)
+        })
+        .await?;
+        Ok(rows.into_iter().next())
+    }
+
+    async fn delete(&self, model: &str, pk: &str) -> Result<Option<Row>, DataError> {
+        let (_, info) = resolve_model(&self.schema, model)?;
+        let sql = build_delete_sql(&info);
+        let pk_owned = pk.to_owned();
+        let conn = self.connection.clone();
+        let rows = with_conn(conn, move |conn| {
+            fetch_rows(conn, &sql, &[&pk_owned])
+        })
+        .await?;
         Ok(rows.into_iter().next())
     }
 

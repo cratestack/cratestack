@@ -2,6 +2,103 @@
 
 ## 0.3.2 (unreleased)
 
+### Studio rewrite — Phase 1c + 3 (UI polish + write path)
+
+Studio gains create / update / delete and the UI polish that goes
+with it.
+
+**Write API.** Three new endpoints:
+
+```
+POST   /api/targets/:key/models/:model/records          -> 201 + row
+PATCH  /api/targets/:key/models/:model/records/:pk      -> 200 + row
+DELETE /api/targets/:key/models/:model/records/:pk      -> 200 + row
+```
+
+All three reject requests against `mode = "ro"` targets with **403
+FORBIDDEN**. Writes are wired on all three data sources: Postgres
+uses `INSERT/UPDATE/DELETE … RETURNING *` wrapped in `row_to_json` for
+type-blind projection; SQLite mirrors the shape with `RETURNING
+json_object(...)`; the API source POSTs/PATCHes/DELETEs to the
+upstream service's generated `/api/<plural-snake-model>` routes.
+
+The Postgres write path binds typed values based on the field's
+declared scalar — `String`/`Uuid`/`Cuid`/`Decimal`/`DateTime`/`Bytes`
+as text, `Int` as `i64`, `Float` as `f64`, `Boolean` as `bool`, `Json`
+through `sqlx::types::Json`. Anything else (enums) binds as text and
+relies on the DB's enum cast.
+
+**Validator pass-through.** A new `validators` module mirrors the
+framework's macro-side validators (`@email`, `@length(min:, max:)`,
+`@range(min:, max:)`, `@regex("...")`, `@uri`, `@iso4217`) against the
+incoming JSON payload before Studio hits the database. Failures
+surface as **422 VALIDATION_ERROR** with a structured per-field detail
+list the UI can render inline:
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "payload failed validation",
+    "fields": [
+      { "field": "title", "code": "LENGTH", "message": "field 'title' must be at least 3 characters long" },
+      { "field": "authorEmail", "code": "EMAIL", "message": "field 'authorEmail' is not a valid email address" }
+    ]
+  }
+}
+```
+
+Validation codes (all `SCREAMING_SNAKE_CASE`): `REQUIRED`,
+`TYPE_MISMATCH`, `EMAIL`, `LENGTH`, `RANGE`, `REGEX`, `URI`, `ISO4217`.
+The error envelope adds a `fields: []` array — omitted entirely on
+non-validation errors so the existing error contract is unchanged.
+
+**UI updates (Phase 1c + 3).**
+
+- **Typed relation picker.** Drawer's relation follow swaps the free
+  text input for a dropdown built from the model's `is_relation`
+  fields. Labels show `<field> → <target> (<arity>)`.
+- **RO / RW badge.** Each model header now displays a small badge
+  reflecting the target's mode, so users see at a glance whether
+  edits are allowed.
+- **Create flow.** RW targets expose a `+ New` button above the
+  records table that opens an inline form with one input per writable
+  field. Validation errors surface per-field inline; on success the
+  table reloads.
+- **Edit flow.** RW targets expose an **Edit** button in the drawer
+  that turns the field list into editable inputs. **Save** PATCHes
+  the row; the response replaces the drawer's view. Per-field
+  validation errors appear inline.
+- **Delete flow.** RW targets expose a **Delete** button in the
+  drawer guarded by a `window.confirm()` prompt. On success the
+  drawer clears and the table reloads.
+- **Pretty JSON viewer.** Object/array cell values in the drawer now
+  render through `serde_json::to_string_pretty`.
+
+**Error codes.** Two additions on top of Phase 1b's set:
+
+- `FORBIDDEN` (403) — target is read-only.
+- `VALIDATION_ERROR` (422) — payload-level validation failure with
+  per-field detail.
+
+The earlier (`BAD_REQUEST`) code is now reserved for malformed request
+bodies (e.g. invalid JSON); validation errors get their own code so
+the UI can route them into per-field error displays.
+
+#### Scope notes
+
+- Validators run before the DB. Constraint-level failures (UNIQUE,
+  NOT NULL, CHECK, type mismatch beyond what we catch) still surface
+  as `500 DATABASE_ERROR` with the underlying driver message; mapping
+  SQLSTATE / SQLite extended codes to friendlier validation
+  envelopes is Phase 4.
+- The UI's create / edit form is a single text-input per field; typed
+  pickers for enums and rich editors for JSON / DateTime / Decimal
+  are Phase 1d.
+- API targets accept writes and forward them to the upstream's REST
+  routes verbatim. The upstream's own policy/auth enforces what's
+  actually allowed.
+
 ### Studio rewrite — Phase 2 (`studio eject` + bundled UI)
 
 Two things land in this phase. Both are about making Studio
