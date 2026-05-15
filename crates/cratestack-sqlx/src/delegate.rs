@@ -501,11 +501,26 @@ impl<'a, M: 'static, PK: 'static> ScopedProjectedFindMany<'a, M, PK> {
         self
     }
 
+    pub fn for_update(mut self) -> Self {
+        self.request = self.request.for_update();
+        self
+    }
+
     pub async fn run(self) -> Result<Vec<cratestack_sql::Projection<M>>, CoolError>
     where
         M: crate::FromPartialPgRow,
     {
         self.request.run(&self.ctx).await
+    }
+
+    pub async fn run_in_tx<'tx>(
+        self,
+        tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
+    ) -> Result<Vec<cratestack_sql::Projection<M>>, CoolError>
+    where
+        M: crate::FromPartialPgRow,
+    {
+        self.request.run_in_tx(tx, &self.ctx).await
     }
 }
 
@@ -553,6 +568,12 @@ impl<'a, M: 'static, PK: 'static, Rel: 'static, RelPK: 'static>
 
     pub fn offset(mut self, offset: i64) -> Self {
         self.request = self.request.offset(offset);
+        self
+    }
+
+    /// See [`FindManyWith::for_update`].
+    pub fn for_update(mut self) -> Self {
+        self.request = self.request.for_update();
         self
     }
 

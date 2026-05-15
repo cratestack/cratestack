@@ -366,6 +366,12 @@ impl<'a, M: 'static, PK: 'static, Rel: 'static, RelPK: 'static>
         self
     }
 
+    /// `FOR UPDATE` is a no-op on embedded SQLite — preserved for
+    /// cross-backend ergonomics. See [`FindMany::for_update`].
+    pub fn for_update(self) -> Self {
+        self
+    }
+
     pub fn run(self) -> Result<Vec<(M, Option<Rel>)>, RusqliteError>
     where
         M: FromRusqliteRow + Clone,
@@ -1395,6 +1401,12 @@ impl<'a, M: 'static, PK: 'static> ProjectedFindMany<'a, M, PK> {
         self
     }
 
+    /// `FOR UPDATE` is a no-op on embedded SQLite — preserved for
+    /// cross-backend ergonomics. See [`FindMany::for_update`].
+    pub fn for_update(self) -> Self {
+        self
+    }
+
     pub fn run(self) -> Result<Vec<cratestack_sql::Projection<M>>, RusqliteError>
     where
         M: crate::FromPartialRusqliteRow,
@@ -1431,6 +1443,42 @@ impl<'a, M: 'static, PK: 'static> ProjectedFindMany<'a, M, PK> {
                 })
                 .collect())
         })
+    }
+
+    /// Cross-backend `run_in_tx` shape. See [`FindMany::run_in_tx`]
+    /// for embedded-vs-server semantics.
+    pub fn run_in_tx(
+        self,
+        conn: &rusqlite::Connection,
+    ) -> Result<Vec<cratestack_sql::Projection<M>>, RusqliteError>
+    where
+        M: crate::FromPartialRusqliteRow,
+    {
+        let dialect = SqliteDialect;
+        let (sql, binds) = build_partial_select(
+            &dialect,
+            self.descriptor,
+            &self.selected,
+            &self.filters,
+            &self.order_by,
+            self.limit,
+            self.offset,
+        );
+        let selected = self.selected;
+        let mut stmt = conn.prepare(&sql)?;
+        let bind_iter = binds.iter().map(SqlValueParam);
+        let rows = stmt
+            .query_map(params_from_iter(bind_iter), |row| {
+                M::from_partial_rusqlite_row(row, &selected)
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows
+            .into_iter()
+            .map(|value| cratestack_sql::Projection {
+                value,
+                selected: selected.clone(),
+            })
+            .collect())
     }
 }
 

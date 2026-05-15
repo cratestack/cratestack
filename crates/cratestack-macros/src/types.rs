@@ -65,13 +65,24 @@ pub(crate) fn generate_client_type_struct(ty: &TypeDecl) -> proc_macro2::TokenSt
 pub(crate) fn generate_enum_type(enum_decl: &EnumDecl) -> proc_macro2::TokenStream {
     let enum_ident = ident(&enum_decl.name);
     let docs = doc_attrs(&enum_decl.docs);
-    let variants = enum_decl.variants.iter().map(|variant| {
+    let variants = enum_decl.variants.iter().enumerate().map(|(index, variant)| {
         let variant_ident = ident(&variant.name);
         let variant_docs = doc_attrs(&variant.docs);
         let name = schema_lit(&variant.name);
+        // The first variant is the `Default` — needed so model
+        // structs with enum fields can `derive(Default)` for the
+        // column-projection `Projection<T>` placeholder values. The
+        // chosen variant is observable only in unselected fields,
+        // which callers are expected to guard with `is_selected`.
+        let default_attr = if index == 0 {
+            quote! { #[default] }
+        } else {
+            quote! {}
+        };
         quote! {
             #variant_docs
             #[serde(rename = #name)]
+            #default_attr
             #variant_ident,
         }
     });
@@ -93,7 +104,7 @@ pub(crate) fn generate_enum_type(enum_decl: &EnumDecl) -> proc_macro2::TokenStre
 
     quote! {
         #docs
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+        #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
         pub enum #enum_ident {
             #(#variants)*
         }
@@ -134,13 +145,19 @@ pub(crate) fn generate_enum_type(enum_decl: &EnumDecl) -> proc_macro2::TokenStre
 pub(crate) fn generate_client_enum_type(enum_decl: &EnumDecl) -> proc_macro2::TokenStream {
     let enum_ident = ident(&enum_decl.name);
     let docs = doc_attrs(&enum_decl.docs);
-    let variants = enum_decl.variants.iter().map(|variant| {
+    let variants = enum_decl.variants.iter().enumerate().map(|(index, variant)| {
         let variant_ident = ident(&variant.name);
         let variant_docs = doc_attrs(&variant.docs);
         let name = schema_lit(&variant.name);
+        let default_attr = if index == 0 {
+            quote! { #[default] }
+        } else {
+            quote! {}
+        };
         quote! {
             #variant_docs
             #[serde(rename = #name)]
+            #default_attr
             #variant_ident,
         }
     });
@@ -162,7 +179,7 @@ pub(crate) fn generate_client_enum_type(enum_decl: &EnumDecl) -> proc_macro2::To
 
     quote! {
         #docs
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+        #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
         pub enum #enum_ident {
             #(#variants)*
         }
