@@ -432,3 +432,130 @@ CratestackRpcException _exceptionFromDio(DioException error) {
     body: RpcErrorBody.fromWire(data ?? {'code': 'internal', 'message': error.message ?? ''}),
   );
 }
+
+// -----------------------------------------------------------------------------
+// `application/cbor-seq` streaming primitives
+//
+// HTTP-client-agnostic primitives for consuming a cbor-seq response as
+// a true Dart `Stream<T>` — items arrive as bytes parse off the wire,
+// no full-body buffering. Two pieces:
+//
+//   * `CborSeqDecoderHandle` — contract a boundary scanner must satisfy.
+//     Plug in `FlutterCborSeqDecoder` from `cratestack-client-flutter`
+//     (frb-generated, FFI-backed by Rust's `CborSeqChunkDecoder`) for
+//     native Flutter apps, or any other impl for non-Flutter contexts.
+//
+//   * `CborSeqStreamTransformer` — a plain `dart:async`
+//     `StreamTransformer<Uint8List, Uint8List>` that wraps a decoder
+//     handle. Composes with dio's `ResponseBody.stream`, with
+//     `package:http`'s `StreamedResponse.stream`, with `dart:io`
+//     `HttpClient`, with a test mock — anything that produces
+//     `Stream<Uint8List>`. No opinion on the HTTP client.
+//
+// Recipe (dio + interceptors + transformer):
+//
+//   final dio = Dio(BaseOptions(baseUrl: 'https://...'))
+//     // Auth header on every request.
+//     ..interceptors.add(InterceptorsWrapper(onRequest: (opts, h) {
+//       opts.headers['Authorization'] = 'Bearer ${currentToken()}';
+//       h.next(opts);
+//     }))
+//     // Per-request idempotency key for safe retries.
+//     ..interceptors.add(InterceptorsWrapper(onRequest: (opts, h) {
+//       opts.headers.putIfAbsent('Idempotency-Key', () => Uuid().v4());
+//       h.next(opts);
+//     }))
+//     // Retry transient failures (use `dio_smart_retry` in production).
+//     ..interceptors.add(RetryOnTransientInterceptor(maxAttempts: 3));
+//
+//   final decoder = myFlutterCborSeqDecoder();   // or any impl
+//   final response = await dio.post<ResponseBody>(
+//     '/rpc/$opId',
+//     data: input,
+//     options: Options(
+//       responseType: ResponseType.stream,
+//       contentType: 'application/cbor',
+//       headers: {'Accept': 'application/cbor-seq'},
+//     ),
+//   );
+//
+//   final items = response.data!.stream
+//     .transform(CborSeqStreamTransformer(decoder))
+//     .map((bytes) => MyType.fromWire(cbor.cbor.decode(bytes)));
+//
+//   await for (final item in items) renderRow(item);
+//
+// The transformer throws `FormatException` if the upstream stream
+// closes with a non-empty decoder buffer (truncated final frame),
+// which surfaces naturally through `Stream.listen(..., onError: ...)`
+// or an `await for` try/catch — no separate error channel.
+// -----------------------------------------------------------------------------
+
+/// Contract for a stateful `application/cbor-seq` boundary scanner.
+///
+/// One method, one accessor, no I/O. Implementations buffer partial
+/// frames across chunks and emit the bytes of each complete top-level
+/// CBOR item as it becomes available.
+///
+/// Ship-with-Flutter impl: `FlutterCborSeqDecoder` from
+/// `cratestack-client-flutter` (FFI-backed). Pure-Dart impls can be
+/// added by hosts that need them (web, server-side Dart, tests).
+abstract interface class CborSeqDecoderHandle {
+  /// Feed one chunk of bytes from the HTTP response body. Returns the
+  /// bytes of every complete top-level CBOR item now available. Any
+  /// trailing bytes that don't yet form a complete item stay buffered
+  /// for the next call.
+  ///
+  /// Returns a `Future` because FFI-backed impls hop across an isolate
+  /// boundary; in-process impls can return a `SynchronousFuture`.
+  Future<List<Uint8List>> feed(Uint8List chunk);
+
+  /// Bytes currently buffered, waiting for frame completion. After the
+  /// upstream stream closes, a non-zero value here indicates the
+  /// server hung up mid-item — consumers should surface that as a
+  /// terminal error.
+  int pendingLen();
+}
+
+/// `StreamTransformer<Uint8List, Uint8List>` that turns a chunked byte
+/// stream into one element per complete cbor-seq item.
+///
+/// Wraps any [CborSeqDecoderHandle]. Compose with any HTTP client's
+/// response stream — dio, `package:http`, `dart:io`, a test mock.
+/// Per-item CBOR decoding is the consumer's responsibility (typically
+/// `cbor.cbor.decode(bytes)`), so the transformer stays codec-agnostic
+/// at the boundary level and keeps decode cost out of the
+/// transformer's hot loop.
+///
+/// Errors flow through the standard Dart stream error channel:
+///
+///   * decoder errors (malformed CBOR) propagate as the original
+///     exception type the decoder throws,
+///   * stream-closed-mid-frame raises a [FormatException].
+///
+/// Cancellation works as expected — `subscription.cancel()` propagates
+/// upstream through dio's stream and tears down the HTTP request via
+/// the underlying client's cancellation contract.
+class CborSeqStreamTransformer
+    extends StreamTransformerBase<Uint8List, Uint8List> {
+  const CborSeqStreamTransformer(this.decoder);
+
+  final CborSeqDecoderHandle decoder;
+
+  @override
+  Stream<Uint8List> bind(Stream<Uint8List> stream) async* {
+    await for (final chunk in stream) {
+      final items = await decoder.feed(chunk);
+      for (final item in items) {
+        yield item;
+      }
+    }
+    final pending = decoder.pendingLen();
+    if (pending > 0) {
+      throw FormatException(
+        'cbor-seq stream ended with $pending bytes buffered '
+        '(truncated final frame)',
+      );
+    }
+  }
+}
