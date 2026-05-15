@@ -1256,3 +1256,295 @@ fn render_aggregate<M, PK>(
     }
     (sql, binds)
 }
+
+// ───── Column projection (.select) ─────────────────────────────────────────
+
+pub struct ProjectedFindUnique<'a, M: 'static, PK: 'static> {
+    runtime: &'a RusqliteRuntime,
+    descriptor: &'static ModelDescriptor<M, PK>,
+    id: PK,
+    selected: Vec<&'static str>,
+}
+
+impl<'a, M: 'static, PK: 'static> ProjectedFindUnique<'a, M, PK>
+where
+    PK: IntoSqlValue + Clone,
+{
+    pub fn run(
+        self,
+    ) -> Result<Option<cratestack_sql::Projection<M>>, RusqliteError>
+    where
+        M: crate::FromPartialRusqliteRow,
+    {
+        let projection_sql = self.descriptor.select_projection_subset(&self.selected);
+        let mut sql = format!(
+            "SELECT {} FROM {} WHERE {} = ?1",
+            projection_sql, self.descriptor.table_name, self.descriptor.primary_key,
+        );
+        if let Some(soft_delete) = self.descriptor.soft_delete_column {
+            sql.push_str(&format!(" AND {soft_delete} IS NULL"));
+        }
+        sql.push_str(" LIMIT 1");
+        let bind = self.id.clone().into_sql_value();
+        let selected = self.selected;
+        self.runtime.with_connection(|conn| {
+            let mut stmt = conn.prepare(&sql)?;
+            let bind_iter = std::iter::once(SqlValueParam(&bind));
+            let mut rows = stmt.query(params_from_iter(bind_iter))?;
+            if let Some(row) = rows.next()? {
+                let value = M::from_partial_rusqlite_row(row, &selected)?;
+                Ok(Some(cratestack_sql::Projection {
+                    value,
+                    selected,
+                }))
+            } else {
+                Ok(None)
+            }
+        })
+    }
+
+    pub fn run_in_tx(
+        self,
+        conn: &rusqlite::Connection,
+    ) -> Result<Option<cratestack_sql::Projection<M>>, RusqliteError>
+    where
+        M: crate::FromPartialRusqliteRow,
+    {
+        let projection_sql = self.descriptor.select_projection_subset(&self.selected);
+        let mut sql = format!(
+            "SELECT {} FROM {} WHERE {} = ?1",
+            projection_sql, self.descriptor.table_name, self.descriptor.primary_key,
+        );
+        if let Some(soft_delete) = self.descriptor.soft_delete_column {
+            sql.push_str(&format!(" AND {soft_delete} IS NULL"));
+        }
+        sql.push_str(" LIMIT 1");
+        let bind = self.id.clone().into_sql_value();
+        let mut stmt = conn.prepare(&sql)?;
+        let bind_iter = std::iter::once(SqlValueParam(&bind));
+        let mut rows = stmt.query(params_from_iter(bind_iter))?;
+        if let Some(row) = rows.next()? {
+            let value = M::from_partial_rusqlite_row(row, &self.selected)?;
+            Ok(Some(cratestack_sql::Projection {
+                value,
+                selected: self.selected,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+impl<'a, M: 'static, PK: 'static> FindUnique<'a, M, PK>
+where
+    PK: IntoSqlValue + Clone,
+{
+    /// Restrict the SELECT to the named columns; see
+    /// [`cratestack_sqlx::FindUnique::select`] for the shared
+    /// caller-side contract. Returns `Option<Projection<M>>`.
+    pub fn select<I, C>(self, columns: I) -> ProjectedFindUnique<'a, M, PK>
+    where
+        I: IntoIterator<Item = C>,
+        C: cratestack_sql::IntoColumnName,
+    {
+        ProjectedFindUnique {
+            runtime: self.runtime,
+            descriptor: self.descriptor,
+            id: self.id,
+            selected: columns
+                .into_iter()
+                .map(cratestack_sql::IntoColumnName::into_column_name)
+                .collect(),
+        }
+    }
+}
+
+pub struct ProjectedFindMany<'a, M: 'static, PK: 'static> {
+    runtime: &'a RusqliteRuntime,
+    descriptor: &'static ModelDescriptor<M, PK>,
+    filters: Vec<FilterExpr>,
+    order_by: Vec<OrderClause>,
+    limit: Option<i64>,
+    offset: Option<i64>,
+    selected: Vec<&'static str>,
+}
+
+impl<'a, M: 'static, PK: 'static> ProjectedFindMany<'a, M, PK> {
+    pub fn where_(mut self, filter: Filter) -> Self {
+        self.filters.push(FilterExpr::from(filter));
+        self
+    }
+
+    pub fn where_expr(mut self, filter: FilterExpr) -> Self {
+        self.filters.push(filter);
+        self
+    }
+
+    pub fn order_by(mut self, clause: OrderClause) -> Self {
+        self.order_by.push(clause);
+        self
+    }
+
+    pub fn limit(mut self, limit: i64) -> Self {
+        self.limit = Some(limit);
+        self
+    }
+
+    pub fn offset(mut self, offset: i64) -> Self {
+        self.offset = Some(offset);
+        self
+    }
+
+    pub fn run(self) -> Result<Vec<cratestack_sql::Projection<M>>, RusqliteError>
+    where
+        M: crate::FromPartialRusqliteRow,
+    {
+        // We reuse the regular `render_select` rendering but swap in
+        // the subset projection. Easier than maintaining a parallel
+        // render fn — the only delta is the projection list, and
+        // build_select_with_projection inlines the descriptor's
+        // subset projection in place of the full one.
+        let dialect = SqliteDialect;
+        let (sql, binds) = build_partial_select(
+            &dialect,
+            self.descriptor,
+            &self.selected,
+            &self.filters,
+            &self.order_by,
+            self.limit,
+            self.offset,
+        );
+        let selected = self.selected;
+        self.runtime.with_connection(|conn| {
+            let mut stmt = conn.prepare(&sql)?;
+            let bind_iter = binds.iter().map(SqlValueParam);
+            let rows = stmt
+                .query_map(params_from_iter(bind_iter), |row| {
+                    M::from_partial_rusqlite_row(row, &selected)
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows
+                .into_iter()
+                .map(|value| cratestack_sql::Projection {
+                    value,
+                    selected: selected.clone(),
+                })
+                .collect())
+        })
+    }
+}
+
+impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
+    pub fn select<I, C>(self, columns: I) -> ProjectedFindMany<'a, M, PK>
+    where
+        I: IntoIterator<Item = C>,
+        C: cratestack_sql::IntoColumnName,
+    {
+        ProjectedFindMany {
+            runtime: self.runtime,
+            descriptor: self.descriptor,
+            filters: self.filters,
+            order_by: self.order_by,
+            limit: self.limit,
+            offset: self.offset,
+            selected: columns
+                .into_iter()
+                .map(cratestack_sql::IntoColumnName::into_column_name)
+                .collect(),
+        }
+    }
+}
+
+fn build_partial_select<M, PK>(
+    dialect: &dyn cratestack_sql::Dialect,
+    descriptor: &ModelDescriptor<M, PK>,
+    selected: &[&'static str],
+    filters: &[FilterExpr],
+    order_by: &[OrderClause],
+    limit: Option<i64>,
+    offset: Option<i64>,
+) -> (String, Vec<SqlValue>) {
+    use std::fmt::Write;
+    let mut sql = format!(
+        "SELECT {} FROM {}",
+        descriptor.select_projection_subset(selected),
+        descriptor.table_name,
+    );
+    let mut binds: Vec<SqlValue> = Vec::new();
+    let mut bind_index = 1usize;
+    let mut where_sql = String::new();
+    let mut wrote = false;
+    if let Some(soft_delete) = descriptor.soft_delete_column {
+        let _ = write!(&mut where_sql, "{soft_delete} IS NULL");
+        wrote = true;
+    }
+    if !filters.is_empty() {
+        if wrote {
+            where_sql.push_str(" AND ");
+        }
+        let mut joined = false;
+        for filter in filters {
+            if joined {
+                where_sql.push_str(" AND ");
+            }
+            crate::render::render_filter_expr(
+                dialect,
+                filter,
+                &mut where_sql,
+                &mut binds,
+                &mut bind_index,
+            );
+            joined = true;
+        }
+    }
+    if !where_sql.is_empty() {
+        sql.push_str(" WHERE ");
+        sql.push_str(&where_sql);
+    }
+    if !order_by.is_empty() {
+        sql.push_str(" ORDER BY ");
+        for (idx, clause) in order_by.iter().enumerate() {
+            if idx > 0 {
+                sql.push_str(", ");
+            }
+            // Cheap inline rewrite of render_order_clause — it isn't
+            // pub from render.rs and we only need the column-target
+            // path here in practice. For relation-scalar order in a
+            // projection we'd defer; for v1 of `.select(...)` plain
+            // column ordering is the common case.
+            use cratestack_sql::{OrderTarget, SortDirection};
+            match &clause.target {
+                OrderTarget::Column(column) => {
+                    let direction = match clause.direction {
+                        SortDirection::Asc => "ASC",
+                        SortDirection::Desc => "DESC",
+                    };
+                    let nulls = match clause.null_order {
+                        cratestack_sql::NullOrder::First => "NULLS FIRST",
+                        cratestack_sql::NullOrder::Last => "NULLS LAST",
+                    };
+                    let _ = write!(&mut sql, "{column} {direction} {nulls}");
+                }
+                OrderTarget::RelationScalar { .. } => {
+                    // Relation-scalar ordering on a projected query is
+                    // a non-v1 shape — skip the clause silently rather
+                    // than emit something that'd join the relation
+                    // table while we're trying to keep the projection
+                    // narrow.
+                }
+            }
+        }
+    }
+    if let Some(limit_value) = limit {
+        sql.push_str(" LIMIT ");
+        dialect.write_placeholder(&mut sql, bind_index);
+        bind_index += 1;
+        binds.push(SqlValue::Int(limit_value));
+    }
+    if let Some(offset_value) = offset {
+        sql.push_str(" OFFSET ");
+        dialect.write_placeholder(&mut sql, bind_index);
+        binds.push(SqlValue::Int(offset_value));
+    }
+    (sql, binds)
+}

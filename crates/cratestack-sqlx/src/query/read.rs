@@ -877,3 +877,285 @@ impl<'a, M: 'static, PK: 'static> AggregateColumn<'a, M, PK> {
         Ok(value.0)
     }
 }
+
+// ───── Column projection (.select) ─────────────────────────────────────────
+//
+// `find_unique(id).select([...])` and `find_many().select([...])` emit a
+// SQL `SELECT` clause restricted to the named columns and decode the row
+// into a `Projection<T>` where non-selected fields hold
+// `Default::default()` values. See `cratestack_sql::Projection` for the
+// caller-side contract.
+//
+// Implementation: the projected builders reuse the parent `FindMany` /
+// `FindUnique` filter + ordering machinery via `push_scoped_conditions`,
+// swapping the projection on the SELECT for `select_projection_subset`
+// and routing the decode through the `FromPartialPgRow` impl the macro
+// emits per model.
+
+use cratestack_sql::IntoColumnName as _ProjIntoColumnName;
+
+#[derive(Debug, Clone)]
+pub struct ProjectedFindUnique<'a, M: 'static, PK: 'static> {
+    runtime: &'a SqlxRuntime,
+    descriptor: &'static ModelDescriptor<M, PK>,
+    id: PK,
+    selected: Vec<&'static str>,
+    policy_kind: ReadPolicyKind,
+    for_update: bool,
+}
+
+impl<'a, M: 'static, PK: 'static> ProjectedFindUnique<'a, M, PK> {
+    pub fn as_detail(mut self) -> Self {
+        self.policy_kind = ReadPolicyKind::Detail;
+        self
+    }
+
+    pub fn as_list(mut self) -> Self {
+        self.policy_kind = ReadPolicyKind::List;
+        self
+    }
+
+    pub fn for_update(mut self) -> Self {
+        self.for_update = true;
+        self
+    }
+
+    pub async fn run(
+        self,
+        ctx: &CoolContext,
+    ) -> Result<Option<cratestack_sql::Projection<M>>, CoolError>
+    where
+        M: crate::FromPartialPgRow,
+        PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
+    {
+        let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT ");
+        query
+            .push(self.descriptor.select_projection_subset(&self.selected))
+            .push(" FROM ")
+            .push(self.descriptor.table_name);
+        push_scoped_conditions(
+            &mut query,
+            self.descriptor,
+            &[],
+            Some((self.descriptor.primary_key, self.id)),
+            ctx,
+            self.policy_kind,
+        );
+        query.push(" LIMIT 1");
+        if self.for_update {
+            query.push(" FOR UPDATE");
+        }
+
+        let row = query
+            .build()
+            .fetch_optional(self.runtime.pool())
+            .await
+            .map_err(|error| CoolError::Database(error.to_string()))?;
+        match row {
+            Some(row) => {
+                let value = M::decode_partial_pg_row(&row, &self.selected)
+                    .map_err(|error| CoolError::Database(error.to_string()))?;
+                Ok(Some(cratestack_sql::Projection {
+                    value,
+                    selected: self.selected,
+                }))
+            }
+            None => Ok(None),
+        }
+    }
+
+    pub async fn run_in_tx<'tx>(
+        self,
+        tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
+        ctx: &CoolContext,
+    ) -> Result<Option<cratestack_sql::Projection<M>>, CoolError>
+    where
+        M: crate::FromPartialPgRow,
+        PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
+    {
+        let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT ");
+        query
+            .push(self.descriptor.select_projection_subset(&self.selected))
+            .push(" FROM ")
+            .push(self.descriptor.table_name);
+        push_scoped_conditions(
+            &mut query,
+            self.descriptor,
+            &[],
+            Some((self.descriptor.primary_key, self.id)),
+            ctx,
+            self.policy_kind,
+        );
+        query.push(" LIMIT 1");
+        if self.for_update {
+            query.push(" FOR UPDATE");
+        }
+
+        let row = query
+            .build()
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|error| CoolError::Database(error.to_string()))?;
+        match row {
+            Some(row) => {
+                let value = M::decode_partial_pg_row(&row, &self.selected)
+                    .map_err(|error| CoolError::Database(error.to_string()))?;
+                Ok(Some(cratestack_sql::Projection {
+                    value,
+                    selected: self.selected,
+                }))
+            }
+            None => Ok(None),
+        }
+    }
+}
+
+impl<'a, M: 'static, PK: 'static> FindUnique<'a, M, PK> {
+    /// Restrict the SELECT to the named columns. The returned builder
+    /// resolves to `Option<Projection<M>>` rather than `Option<M>`;
+    /// non-selected fields on the inner `M` hold `Default::default()`
+    /// values, so callers should check `Projection::is_selected(col)`
+    /// before reading a field they didn't request.
+    pub fn select<I, C>(self, columns: I) -> ProjectedFindUnique<'a, M, PK>
+    where
+        I: IntoIterator<Item = C>,
+        C: _ProjIntoColumnName,
+    {
+        ProjectedFindUnique {
+            runtime: self.runtime,
+            descriptor: self.descriptor,
+            id: self.id,
+            selected: columns
+                .into_iter()
+                .map(_ProjIntoColumnName::into_column_name)
+                .collect(),
+            policy_kind: self.policy_kind,
+            for_update: self.for_update,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ProjectedFindMany<'a, M: 'static, PK: 'static> {
+    runtime: &'a SqlxRuntime,
+    descriptor: &'static ModelDescriptor<M, PK>,
+    filters: Vec<FilterExpr>,
+    order_by: Vec<OrderClause>,
+    limit: Option<i64>,
+    offset: Option<i64>,
+    for_update: bool,
+    selected: Vec<&'static str>,
+}
+
+impl<'a, M: 'static, PK: 'static> ProjectedFindMany<'a, M, PK> {
+    pub fn where_(mut self, filter: crate::Filter) -> Self {
+        self.filters.push(FilterExpr::from(filter));
+        self
+    }
+
+    pub fn where_expr(mut self, filter: FilterExpr) -> Self {
+        self.filters.push(filter);
+        self
+    }
+
+    pub fn where_any(mut self, filters: impl IntoIterator<Item = FilterExpr>) -> Self {
+        self.filters.push(FilterExpr::any(filters));
+        self
+    }
+
+    pub fn where_optional<F>(mut self, filter: Option<F>) -> Self
+    where
+        F: Into<FilterExpr>,
+    {
+        if let Some(filter) = filter {
+            self.filters.push(filter.into());
+        }
+        self
+    }
+
+    pub fn order_by(mut self, clause: OrderClause) -> Self {
+        self.order_by.push(clause);
+        self
+    }
+
+    pub fn limit(mut self, limit: i64) -> Self {
+        self.limit = Some(limit);
+        self
+    }
+
+    pub fn offset(mut self, offset: i64) -> Self {
+        self.offset = Some(offset);
+        self
+    }
+
+    pub fn for_update(mut self) -> Self {
+        self.for_update = true;
+        self
+    }
+
+    pub async fn run(
+        self,
+        ctx: &CoolContext,
+    ) -> Result<Vec<cratestack_sql::Projection<M>>, CoolError>
+    where
+        M: crate::FromPartialPgRow,
+    {
+        let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT ");
+        query
+            .push(self.descriptor.select_projection_subset(&self.selected))
+            .push(" FROM ")
+            .push(self.descriptor.table_name);
+        push_scoped_conditions(
+            &mut query,
+            self.descriptor,
+            &self.filters,
+            None::<(&'static str, i64)>,
+            ctx,
+            ReadPolicyKind::List,
+        );
+        push_order_and_paging(&mut query, &self.order_by, self.limit, self.offset);
+        if self.for_update {
+            query.push(" FOR UPDATE");
+        }
+
+        let rows = query
+            .build()
+            .fetch_all(self.runtime.pool())
+            .await
+            .map_err(|error| CoolError::Database(error.to_string()))?;
+        rows.into_iter()
+            .map(|row| {
+                M::decode_partial_pg_row(&row, &self.selected)
+                    .map(|value| cratestack_sql::Projection {
+                        value,
+                        selected: self.selected.clone(),
+                    })
+                    .map_err(|error| CoolError::Database(error.to_string()))
+            })
+            .collect()
+    }
+}
+
+impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
+    /// Restrict the SELECT to the named columns. See
+    /// [`FindUnique::select`] for the caller-side contract.
+    pub fn select<I, C>(self, columns: I) -> ProjectedFindMany<'a, M, PK>
+    where
+        I: IntoIterator<Item = C>,
+        C: _ProjIntoColumnName,
+    {
+        ProjectedFindMany {
+            runtime: self.runtime,
+            descriptor: self.descriptor,
+            filters: self.filters,
+            order_by: self.order_by,
+            limit: self.limit,
+            offset: self.offset,
+            for_update: self.for_update,
+            selected: columns
+                .into_iter()
+                .map(_ProjIntoColumnName::into_column_name)
+                .collect(),
+        }
+    }
+}

@@ -34,9 +34,18 @@ pub(crate) fn generate_model_struct_only(
         .iter()
         .map(|field| struct_field_definition(field, false, enum_names));
 
+    // `Default` is required so `.find_unique(id).select(...).run(ctx)`
+    // can return a `Projection<T>` where non-selected fields hold
+    // type defaults. The constraint propagates to every field type;
+    // schemas with non-Default `Json<MyCustomStruct>` fields error at
+    // the macro boundary and the fix is to derive Default on the
+    // custom struct (or wrap the field in Option). For the standard
+    // primitive set (i64 / String / bool / DateTime / Decimal / Uuid /
+    // Vec<u8> / serde_json::Value / Option<T>) Default is already
+    // available, so the change is invisible to most schemas.
     quote! {
         #docs
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct #model_ident {
             #(#fields)*
         }
@@ -81,6 +90,10 @@ pub(crate) fn generate_pg_from_row_impl(
         .iter()
         .map(|field| row_field_tokens(field, enum_names));
 
+    let partial_row_fields = scalar_fields
+        .iter()
+        .map(|field| partial_row_field_tokens(field, enum_names));
+
     quote! {
         impl<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> for #model_ident {
             fn from_row(row: &'r sqlx::postgres::PgRow) -> Result<Self, sqlx::Error> {
@@ -88,6 +101,18 @@ pub(crate) fn generate_pg_from_row_impl(
 
                 Ok(Self {
                     #(#row_fields)*
+                })
+            }
+        }
+
+        impl ::cratestack::FromPartialPgRow for #model_ident {
+            fn decode_partial_pg_row(
+                row: &sqlx::postgres::PgRow,
+                selected: &[&str],
+            ) -> ::std::result::Result<Self, sqlx::Error> {
+                use sqlx::Row;
+                Ok(Self {
+                    #(#partial_row_fields)*
                 })
             }
         }
@@ -107,6 +132,10 @@ pub(crate) fn generate_rusqlite_from_row_impl(
         .iter()
         .map(|field| sqlite_row_field_tokens(field, enum_names));
 
+    let partial_sqlite_row_fields = scalar_fields
+        .iter()
+        .map(|field| partial_sqlite_row_field_tokens(field, enum_names));
+
     quote! {
         impl ::cratestack_rusqlite::FromRusqliteRow for #model_ident {
             fn from_rusqlite_row(
@@ -114,6 +143,17 @@ pub(crate) fn generate_rusqlite_from_row_impl(
             ) -> ::cratestack_rusqlite::rusqlite::Result<Self> {
                 Ok(Self {
                     #(#sqlite_row_fields)*
+                })
+            }
+        }
+
+        impl ::cratestack_rusqlite::FromPartialRusqliteRow for #model_ident {
+            fn from_partial_rusqlite_row(
+                row: &::cratestack_rusqlite::rusqlite::Row<'_>,
+                selected: &[&str],
+            ) -> ::cratestack_rusqlite::rusqlite::Result<Self> {
+                Ok(Self {
+                    #(#partial_sqlite_row_fields)*
                 })
             }
         }
@@ -343,6 +383,83 @@ pub(crate) fn generate_client_update_input_struct(
     }
 }
 
+/// Partial-decode variant of [`row_field_tokens`]. Emits the same
+/// per-field decode expression but gated on whether the column was
+/// requested via `.select(...)`. The `selected` slice carries the
+/// SQL column names (snake_case) so we match against
+/// `to_snake_case(&field.name)` rather than the Rust-side field name.
+fn partial_row_field_tokens(
+    field: &Field,
+    enum_names: &BTreeSet<&str>,
+) -> proc_macro2::TokenStream {
+    let field_ident = ident(&field.name);
+    let field_name = &field.name;
+    let sql_name = to_snake_case(&field.name);
+    let decode_expr = row_field_decode_expr(field, enum_names);
+    quote! {
+        #field_ident: if selected.iter().any(|c| *c == #sql_name) {
+            #decode_expr
+        } else {
+            ::std::default::Default::default()
+        },
+    }
+}
+
+/// Extract the decode expression for a single field — same shape as
+/// the body of [`row_field_tokens`] but without the `field_ident:`
+/// prefix and trailing comma, so it can plug into the conditional
+/// branch of [`partial_row_field_tokens`].
+fn row_field_decode_expr(
+    field: &Field,
+    enum_names: &BTreeSet<&str>,
+) -> proc_macro2::TokenStream {
+    let field_name = &field.name;
+    if !enum_names.contains(field.ty.name.as_str()) {
+        return quote! { row.try_get(#field_name)? };
+    }
+
+    let enum_ident = ident(&field.ty.name);
+    let parse_error = |error: proc_macro2::TokenStream| {
+        quote! {
+            sqlx::Error::Decode(Box::new(::std::io::Error::new(
+                ::std::io::ErrorKind::InvalidData,
+                #error,
+            )))
+        }
+    };
+    match field.ty.arity {
+        TypeArity::Required => {
+            let decode_error = parse_error(quote! { error });
+            quote! {
+                {
+                    let raw: String = row.try_get(#field_name)?;
+                    raw.parse::<super::types::#enum_ident>().map_err(|error| #decode_error)?
+                }
+            }
+        }
+        TypeArity::Optional => {
+            let decode_error = parse_error(quote! { error });
+            quote! {
+                {
+                    let raw: Option<String> = row.try_get(#field_name)?;
+                    raw.map(|value| value.parse::<super::types::#enum_ident>().map_err(|error| #decode_error)).transpose()?
+                }
+            }
+        }
+        TypeArity::List => {
+            let decode_error = parse_error(quote! { error });
+            quote! {
+                {
+                    let raw: Vec<String> = row.try_get(#field_name)?;
+                    raw.into_iter()
+                        .map(|value| value.parse::<super::types::#enum_ident>().map_err(|error| #decode_error))
+                        .collect::<Result<Vec<_>, sqlx::Error>>()?
+                }
+            }
+        }
+    }
+}
+
 fn row_field_tokens(field: &Field, enum_names: &BTreeSet<&str>) -> proc_macro2::TokenStream {
     let field_ident = ident(&field.name);
     let field_name = &field.name;
@@ -400,6 +517,34 @@ fn sqlite_row_field_tokens(
     enum_names: &BTreeSet<&str>,
 ) -> proc_macro2::TokenStream {
     let field_ident = ident(&field.name);
+    let expr = sqlite_row_field_decode_expr(field, enum_names);
+    quote! {
+        #field_ident: #expr,
+    }
+}
+
+/// Partial-decode mirror of [`sqlite_row_field_tokens`] — gates the
+/// expression on whether the column was requested via `.select(...)`.
+fn partial_sqlite_row_field_tokens(
+    field: &Field,
+    enum_names: &BTreeSet<&str>,
+) -> proc_macro2::TokenStream {
+    let field_ident = ident(&field.name);
+    let sql_name = to_snake_case(&field.name);
+    let expr = sqlite_row_field_decode_expr(field, enum_names);
+    quote! {
+        #field_ident: if selected.iter().any(|c| *c == #sql_name) {
+            #expr
+        } else {
+            ::std::default::Default::default()
+        },
+    }
+}
+
+fn sqlite_row_field_decode_expr(
+    field: &Field,
+    enum_names: &BTreeSet<&str>,
+) -> proc_macro2::TokenStream {
     let field_name = &field.name;
 
     // Enums round-trip as TEXT (same as the PG side).
@@ -421,34 +566,32 @@ fn sqlite_row_field_tokens(
             TypeArity::Required => {
                 let decode_error = parse_error(quote! { error.to_string() });
                 quote! {
-                    #field_ident: {
+                    {
                         let raw: String = row.get(#field_name)?;
                         raw.parse::<super::types::#enum_ident>().map_err(|error| #decode_error)?
-                    },
+                    }
                 }
             }
             TypeArity::Optional => {
                 let decode_error = parse_error(quote! { error.to_string() });
                 quote! {
-                    #field_ident: {
+                    {
                         let raw: Option<String> = row.get(#field_name)?;
                         raw.map(|value| value.parse::<super::types::#enum_ident>().map_err(|error| #decode_error)).transpose()?
-                    },
+                    }
                 }
             }
             TypeArity::List => {
-                // SQLite has no native array storage; lists encode as JSON arrays
-                // of variant strings. Decode-side mirrors that.
                 let decode_error = parse_error(quote! { error.to_string() });
                 quote! {
-                    #field_ident: {
+                    {
                         let raw: String = row.get(#field_name)?;
                         let strs: Vec<String> = ::serde_json::from_str(&raw)
                             .map_err(|error| #decode_error)?;
                         strs.into_iter()
                             .map(|value| value.parse::<super::types::#enum_ident>().map_err(|error| #decode_error))
                             .collect::<Result<Vec<_>, _>>()?
-                    },
+                    }
                 }
             }
         };
@@ -460,45 +603,45 @@ fn sqlite_row_field_tokens(
     // impls directly via `row.get(name)?`.
     match (field.ty.name.as_str(), field.ty.arity) {
         ("Boolean", TypeArity::Required) => quote! {
-            #field_ident: row.get::<_, i64>(#field_name)? != 0,
+            row.get::<_, i64>(#field_name)? != 0
         },
         ("Boolean", TypeArity::Optional) => quote! {
-            #field_ident: row
+            row
                 .get::<_, Option<i64>>(#field_name)?
-                .map(|value| value != 0),
+                .map(|value| value != 0)
         },
         ("Uuid", TypeArity::Required) => quote! {
-            #field_ident: row
+            row
                 .get::<_, ::cratestack::UuidColumn>(#field_name)?
-                .0,
+                .0
         },
         ("Uuid", TypeArity::Optional) => quote! {
-            #field_ident: row
+            row
                 .get::<_, Option<::cratestack::UuidColumn>>(#field_name)?
-                .map(|v| v.0),
+                .map(|v| v.0)
         },
         ("DateTime", TypeArity::Required) => quote! {
-            #field_ident: row
+            row
                 .get::<_, ::cratestack::DateTimeColumn>(#field_name)?
-                .0,
+                .0
         },
         ("DateTime", TypeArity::Optional) => quote! {
-            #field_ident: row
+            row
                 .get::<_, Option<::cratestack::DateTimeColumn>>(#field_name)?
-                .map(|v| v.0),
+                .map(|v| v.0)
         },
         ("Decimal", TypeArity::Required) => quote! {
-            #field_ident: row
+            row
                 .get::<_, ::cratestack::DecimalColumn>(#field_name)?
-                .0,
+                .0
         },
         ("Decimal", TypeArity::Optional) => quote! {
-            #field_ident: row
+            row
                 .get::<_, Option<::cratestack::DecimalColumn>>(#field_name)?
-                .map(|v| v.0),
+                .map(|v| v.0)
         },
         ("Json", TypeArity::Required) => quote! {
-            #field_ident: {
+            {
                 let raw: String = row.get(#field_name)?;
                 let value: ::cratestack::Value = ::serde_json::from_str(&raw)
                     .map_err(|error| ::cratestack::rusqlite::Error::FromSqlConversionFailure(
@@ -507,10 +650,10 @@ fn sqlite_row_field_tokens(
                         Box::new(error),
                     ))?;
                 ::cratestack::Json(value)
-            },
+            }
         },
         ("Json", TypeArity::Optional) => quote! {
-            #field_ident: {
+            {
                 let raw: Option<String> = row.get(#field_name)?;
                 match raw {
                     Some(text) => {
@@ -524,12 +667,12 @@ fn sqlite_row_field_tokens(
                     }
                     None => None,
                 }
-            },
+            }
         },
         // Default: rusqlite's built-in FromSql handles the conversion (String,
         // Int as i64, Float as f64, Bytes as Vec<u8>, Cuid as String).
         _ => quote! {
-            #field_ident: row.get(#field_name)?,
+            row.get(#field_name)?
         },
     }
 }

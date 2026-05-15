@@ -69,10 +69,13 @@ mod descriptor;
 mod idempotency;
 mod isolation;
 mod migrations;
+mod partial_row;
 mod query;
 mod render;
 #[cfg(test)]
 mod tests;
+
+pub use partial_row::FromPartialPgRow;
 
 pub use audit::{AUDIT_TABLE_DDL, primary_key_from_snapshot, snapshot_model};
 pub use idempotency::{SqlxIdempotencyStore, expiry_from};
@@ -87,20 +90,21 @@ pub use cratestack_sql::{
     coalesce, point, CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault,
     CreateDefaultType, CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName,
     IntoSqlValue, JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey,
-    NullOrder, OrderClause, RelationFilter, RelationInclude, RelationQuantifier, SortDirection,
-    SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue, UpdateModelInput, UpsertModelInput,
+    NullOrder, OrderClause, Projection, RelationFilter, RelationInclude, RelationQuantifier,
+    SortDirection, SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue, UpdateModelInput,
+    UpsertModelInput,
 };
 pub use delegate::{
     ModelDelegate, ScopedAggregate, ScopedAggregateColumn, ScopedAggregateCount, ScopedBatchCreate,
     ScopedBatchDelete, ScopedBatchGet, ScopedBatchUpdate, ScopedBatchUpsert, ScopedCreateRecord,
     ScopedDeleteMany, ScopedDeleteRecord, ScopedFindMany, ScopedFindManyWith, ScopedFindUnique,
-    ScopedModelDelegate, ScopedUpdateMany, ScopedUpdateManySet, ScopedUpdateRecord,
-    ScopedUpdateRecordSet, ScopedUpsertRecord,
+    ScopedModelDelegate, ScopedProjectedFindMany, ScopedProjectedFindUnique, ScopedUpdateMany,
+    ScopedUpdateManySet, ScopedUpdateRecord, ScopedUpdateRecordSet, ScopedUpsertRecord,
 };
 pub use descriptor::SqlxRuntime;
 pub use query::{
     Aggregate, AggregateColumn, AggregateCount, BatchCreate, BatchDelete, BatchGet, BatchUpdate,
     BatchUpdateItem, BatchUpsert, CreateRecord, DeleteMany, DeleteRecord, FindMany, FindManyWith,
-    FindUnique, UpdateMany, UpdateManySet, UpdateRecord, UpdateRecordSet, UpsertRecord,
-    create_record_with_executor, update_record_with_executor,
+    FindUnique, ProjectedFindMany, ProjectedFindUnique, UpdateMany, UpdateManySet, UpdateRecord,
+    UpdateRecordSet, UpsertRecord, create_record_with_executor, update_record_with_executor,
 };
