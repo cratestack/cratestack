@@ -227,6 +227,232 @@ impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
         order_by.push(OrderClause::column(self.descriptor.primary_key, direction));
         order_by
     }
+
+    /// Side-load a to-one relation alongside the matched rows.
+    /// Returns a builder whose `.run` resolves to
+    /// `Vec<(M, Option<Rel>)>` — the option captures both
+    /// nullable-FK rows and rows whose related target was filtered out
+    /// by the related model's read policy.
+    ///
+    /// Implementation strategy: two queries, not a SQL JOIN. The
+    /// first round-trip materializes the parent rows under the
+    /// caller's filters; the second round-trip loads the related
+    /// rows with `target_pk IN (collected FKs)`, applying the
+    /// related model's read policy + soft-delete just like a normal
+    /// `find_many` would. We then merge in-memory keyed by the
+    /// extracted FK.
+    ///
+    /// Why not a SQL JOIN? Two reasons. (1) Aliasing `SELECT
+    /// parent.*, related.*` collides on overlapping column names
+    /// (`id` is universal) and forces every model's `FromRow` impl
+    /// to learn a join-aware projection — a deeper codegen change.
+    /// (2) The two-query path naturally inherits the related-side
+    /// read policy via `find_many`, so policy correctness costs us
+    /// nothing extra. The cost is one extra round-trip per
+    /// `.include()`; for the named upstream site (delivery batcher)
+    /// the cardinalities make this trivially acceptable.
+    pub fn include<Rel, RelPK>(
+        self,
+        relation: cratestack_sql::RelationInclude<M, Rel, RelPK>,
+    ) -> FindManyWith<'a, M, PK, Rel, RelPK>
+    where
+        Rel: 'static,
+        RelPK: 'static,
+    {
+        FindManyWith {
+            parent: self,
+            relation,
+        }
+    }
+}
+
+/// `FindMany` with one to-one relation side-loaded — see
+/// [`FindMany::include`].
+#[derive(Debug, Clone)]
+pub struct FindManyWith<'a, M: 'static, PK: 'static, Rel: 'static, RelPK: 'static> {
+    parent: FindMany<'a, M, PK>,
+    relation: cratestack_sql::RelationInclude<M, Rel, RelPK>,
+}
+
+impl<'a, M: 'static, PK: 'static, Rel: 'static, RelPK: 'static> FindManyWith<'a, M, PK, Rel, RelPK> {
+    pub fn where_(mut self, filter: crate::Filter) -> Self {
+        self.parent = self.parent.where_(filter);
+        self
+    }
+
+    pub fn where_expr(mut self, filter: FilterExpr) -> Self {
+        self.parent = self.parent.where_expr(filter);
+        self
+    }
+
+    pub fn where_any(mut self, filters: impl IntoIterator<Item = FilterExpr>) -> Self {
+        self.parent = self.parent.where_any(filters);
+        self
+    }
+
+    pub fn where_optional<F>(mut self, filter: Option<F>) -> Self
+    where
+        F: Into<FilterExpr>,
+    {
+        self.parent = self.parent.where_optional(filter);
+        self
+    }
+
+    pub fn order_by(mut self, clause: OrderClause) -> Self {
+        self.parent = self.parent.order_by(clause);
+        self
+    }
+
+    pub fn limit(mut self, limit: i64) -> Self {
+        self.parent = self.parent.limit(limit);
+        self
+    }
+
+    pub fn offset(mut self, offset: i64) -> Self {
+        self.parent = self.parent.offset(offset);
+        self
+    }
+
+    pub async fn run(self, ctx: &CoolContext) -> Result<Vec<(M, Option<Rel>)>, CoolError>
+    where
+        M: Clone,
+        for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
+        Rel: Clone,
+        for<'r> Rel:
+            Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + cratestack_sql::ModelPrimaryKey<RelPK>,
+        RelPK: Send
+            + Clone
+            + std::cmp::Eq
+            + std::hash::Hash
+            + cratestack_sql::IntoSqlValue
+            + sqlx::Type<sqlx::Postgres>
+            + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
+    {
+        let runtime = self.parent.runtime;
+        let relation = self.relation;
+        let parents = self.parent.run(ctx).await?;
+        run_side_load(runtime, &parents, relation, ctx, None::<&mut sqlx::Transaction<'_, sqlx::Postgres>>)
+            .await
+    }
+
+    pub async fn run_in_tx<'tx>(
+        self,
+        tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
+        ctx: &CoolContext,
+    ) -> Result<Vec<(M, Option<Rel>)>, CoolError>
+    where
+        M: Clone,
+        for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
+        Rel: Clone,
+        for<'r> Rel:
+            Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + cratestack_sql::ModelPrimaryKey<RelPK>,
+        RelPK: Send
+            + Clone
+            + std::cmp::Eq
+            + std::hash::Hash
+            + cratestack_sql::IntoSqlValue
+            + sqlx::Type<sqlx::Postgres>
+            + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
+    {
+        let runtime = self.parent.runtime;
+        let relation = self.relation;
+        let parents = self.parent.run_in_tx(tx, ctx).await?;
+        run_side_load(runtime, &parents, relation, ctx, Some(tx)).await
+    }
+}
+
+async fn run_side_load<'tx, M, Rel, RelPK>(
+    runtime: &SqlxRuntime,
+    parents: &[M],
+    relation: cratestack_sql::RelationInclude<M, Rel, RelPK>,
+    ctx: &CoolContext,
+    tx: Option<&mut sqlx::Transaction<'tx, sqlx::Postgres>>,
+) -> Result<Vec<(M, Option<Rel>)>, CoolError>
+where
+    M: 'static + Clone,
+    for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
+    Rel: 'static + Clone,
+    for<'r> Rel:
+        Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + cratestack_sql::ModelPrimaryKey<RelPK>,
+    RelPK: 'static
+        + Send
+        + Clone
+        + std::cmp::Eq
+        + std::hash::Hash
+        + cratestack_sql::IntoSqlValue
+        + sqlx::Type<sqlx::Postgres>
+        + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
+{
+    // Collect distinct non-null FK values from the parent rows. Dedup
+    // preserves the per-parent merge step but trims the IN-list — for
+    // batchy dispatchers where many parents share a target subscription,
+    // this can collapse the side-load to a single matched row.
+    let mut fk_values: Vec<RelPK> = Vec::new();
+    let mut seen: std::collections::HashSet<RelPK> = std::collections::HashSet::new();
+    for parent in parents {
+        if let Some(fk) = (relation.parent_fk_extract)(parent)
+            && seen.insert(fk.clone())
+        {
+            fk_values.push(fk);
+        }
+    }
+
+    let by_pk: std::collections::HashMap<RelPK, Rel> = if fk_values.is_empty() {
+        std::collections::HashMap::new()
+    } else {
+        // The side-load runs under the same read policy as a normal
+        // find_many on the related descriptor, so rows the caller
+        // can't see drop out and surface as `None` on the merged
+        // side. Reusing FindMany also picks up soft-delete + the
+        // standard order_by tie-breaker for free.
+        let primary_key = relation.related_descriptor.primary_key;
+        let related_rows: Vec<Rel> = {
+            let mut probe = FindMany {
+                runtime,
+                descriptor: relation.related_descriptor,
+                filters: Vec::new(),
+                order_by: Vec::new(),
+                limit: None,
+                offset: None,
+                for_update: false,
+            };
+            // Build the IN filter through the typed filter AST so the
+            // bind values flow through `push_bind_value` like every
+            // other read query.
+            probe.filters.push(FilterExpr::from(crate::Filter {
+                column: primary_key,
+                op: cratestack_sql::FilterOp::In,
+                value: cratestack_sql::FilterValue::Many(
+                    fk_values
+                        .iter()
+                        .cloned()
+                        .map(cratestack_sql::IntoSqlValue::into_sql_value)
+                        .collect(),
+                ),
+            }));
+            match tx {
+                Some(tx) => probe.run_in_tx(tx, ctx).await?,
+                None => probe.run(ctx).await?,
+            }
+        };
+        related_rows
+            .into_iter()
+            .map(|r| {
+                let pk = cratestack_sql::ModelPrimaryKey::primary_key(&r);
+                (pk, r)
+            })
+            .collect()
+    };
+
+    Ok(parents
+        .iter()
+        .map(|m| {
+            let related = (relation.parent_fk_extract)(m)
+                .and_then(|fk| by_pk.get(&fk))
+                .cloned();
+            (m.clone(), related)
+        })
+        .collect())
 }
 
 #[derive(Debug, Clone)]

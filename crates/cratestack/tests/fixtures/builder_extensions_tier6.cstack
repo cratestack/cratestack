@@ -1,0 +1,30 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+// Subscription / Delivery pair driving the `.include(...)` test. The
+// dispatcher batches `Delivery` rows and side-loads the parent
+// `Subscription` row to render the webhook URL — the named upstream
+// site is the partner_webhooks dispatcher.
+model Subscription {
+  id Int @id
+  label String
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}
+
+model Delivery {
+  id Int @id
+  subscriptionId Int?
+  label String
+  subscription Subscription? @relation(fields:[subscriptionId],references:[id])
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}

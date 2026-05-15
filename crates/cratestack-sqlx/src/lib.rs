@@ -87,20 +87,20 @@ pub use cratestack_sql::{
     coalesce, CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault, CreateDefaultType,
     CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName, IntoSqlValue,
     JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder,
-    OrderClause, RelationFilter, RelationQuantifier, SortDirection, SqlColumnValue, SqlValue,
-    UpdateModelInput, UpsertModelInput,
+    OrderClause, RelationFilter, RelationInclude, RelationQuantifier, SortDirection,
+    SqlColumnValue, SqlValue, UpdateModelInput, UpsertModelInput,
 };
 pub use delegate::{
     ModelDelegate, ScopedAggregate, ScopedAggregateColumn, ScopedAggregateCount, ScopedBatchCreate,
     ScopedBatchDelete, ScopedBatchGet, ScopedBatchUpdate, ScopedBatchUpsert, ScopedCreateRecord,
-    ScopedDeleteMany, ScopedDeleteRecord, ScopedFindMany, ScopedFindUnique, ScopedModelDelegate,
-    ScopedUpdateMany, ScopedUpdateManySet, ScopedUpdateRecord, ScopedUpdateRecordSet,
-    ScopedUpsertRecord,
+    ScopedDeleteMany, ScopedDeleteRecord, ScopedFindMany, ScopedFindManyWith, ScopedFindUnique,
+    ScopedModelDelegate, ScopedUpdateMany, ScopedUpdateManySet, ScopedUpdateRecord,
+    ScopedUpdateRecordSet, ScopedUpsertRecord,
 };
 pub use descriptor::SqlxRuntime;
 pub use query::{
     Aggregate, AggregateColumn, AggregateCount, BatchCreate, BatchDelete, BatchGet, BatchUpdate,
-    BatchUpdateItem, BatchUpsert, CreateRecord, DeleteMany, DeleteRecord, FindMany, FindUnique,
-    UpdateMany, UpdateManySet, UpdateRecord, UpdateRecordSet, UpsertRecord,
+    BatchUpdateItem, BatchUpsert, CreateRecord, DeleteMany, DeleteRecord, FindMany, FindManyWith,
+    FindUnique, UpdateMany, UpdateManySet, UpdateRecord, UpdateRecordSet, UpsertRecord,
     create_record_with_executor, update_record_with_executor,
 };

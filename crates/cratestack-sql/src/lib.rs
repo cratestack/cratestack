@@ -28,6 +28,7 @@ pub use filter::{
 };
 pub use order::{NullOrder, OrderClause, OrderTarget, SortDirection};
 pub use values::{
-    ConflictTarget, CreateModelInput, FilterValue, IntoSqlValue, ModelPrimaryKey, SqlColumnValue,
-    SqlValue, UpdateModelInput, UpsertModelInput, find_duplicate_sql_value,
+    ConflictTarget, CreateModelInput, FilterValue, IntoSqlValue, ModelPrimaryKey,
+    RelationInclude, SqlColumnValue, SqlValue, UpdateModelInput, UpsertModelInput,
+    find_duplicate_sql_value,
 };
