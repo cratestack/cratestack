@@ -49,6 +49,13 @@ members = [
     "examples/embedded-expo/native",
 ]
 
+exclude = [
+    # The Studio web UI is a wasm32 target built by Trunk, not a
+    # workspace member — keeping it out of `cargo check --workspace`
+    # avoids forcing every developer onto the wasm32 toolchain.
+    "crates/cratestack-studio/ui",
+]
+
 [workspace.package]
 version = "0.3.2"
 edition = "2024"
@@ -123,6 +130,7 @@ toml = "0.9"
 testcontainers = "0.27"
 testcontainers-modules = { version = "0.15", features = ["postgres"] }
 tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["cors"] }
 tower-lsp-server = "0.23"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["registry", "std"] }

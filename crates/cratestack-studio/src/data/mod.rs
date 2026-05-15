@@ -11,8 +11,12 @@
 //! `libsqlite3-sys`).
 
 pub mod api;
+pub(crate) mod model_info;
 pub mod postgres;
+pub mod relations;
+pub mod sqlite;
 
+pub(crate) use model_info::PkCast;
 use serde::Serialize;
 
 /// One database row, projected as a JSON object so the API layer can
@@ -47,6 +51,10 @@ pub const MAX_PAGE_LIMIT: u32 = 500;
 pub enum DataError {
     #[error("unknown model '{model}' in target")]
     UnknownModel { model: String },
+    #[error("model '{model}' has no field '{field}'")]
+    UnknownField { model: String, field: String },
+    #[error("field '{field}' on model '{model}' is not a relation")]
+    NotARelation { model: String, field: String },
     #[error("model '{model}' has no @id field; Studio v0 requires one")]
     NoPrimaryKey { model: String },
     #[error("primary key value '{pk}' is not valid for model '{model}': {reason}")]
@@ -59,8 +67,12 @@ pub enum DataError {
     Unsupported { what: &'static str },
     #[error("database error: {0}")]
     Db(#[from] sqlx_core::Error),
+    #[error("sqlite error: {0}")]
+    Sqlite(#[from] rusqlite::Error),
     #[error("upstream API error: {0}")]
     Api(#[from] reqwest::Error),
+    #[error("blocking task panicked: {0}")]
+    BlockingJoin(String),
 }
 
 /// Backend interface used by the read endpoints. Each `LoadedTarget`
@@ -74,4 +86,18 @@ pub trait DataSource: Send + Sync + std::fmt::Debug {
     /// Fetch one row by its primary key value. Returns `Ok(None)` if
     /// the row doesn't exist.
     async fn get(&self, model: &str, pk: &str) -> Result<Option<Row>, DataError>;
+
+    /// Paginated rows of `target_model` whose `filter_column` equals
+    /// `filter_value`. Powers the relation-follow endpoint: the
+    /// caller resolves the relation to a (model, column, cast, value)
+    /// tuple via [`relations::resolve_relation`], and the source runs
+    /// the SQL.
+    async fn follow(
+        &self,
+        target_model: &str,
+        filter_column: &str,
+        filter_cast: PkCast,
+        filter_value: &str,
+        page: PageRequest<'_>,
+    ) -> Result<Page, DataError>;
 }

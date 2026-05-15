@@ -1,0 +1,27 @@
+[workspace]
+
+[package]
+name = "cratestack-studio-ui"
+version = "0.3.2"
+edition = "2024"
+license = "MIT"
+description = "Leptos+Trunk web UI for CrateStack Studio. Built independently of the workspace because it targets wasm32-unknown-unknown."
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+console_error_panic_hook = "0.1"
+gloo-net = { version = "0.6", features = ["http", "json"] }
+leptos = { version = "0.8", features = ["csr"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = ["Clipboard", "Navigator", "Window"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1

@@ -61,11 +61,22 @@ pub async fn run(options: ServerOptions) -> Result<(), ServerError> {
 
 /// Public for the smoke test in `tests/api_smoke.rs`.
 pub fn build_router(workspace: Arc<LoadedWorkspace>) -> Router {
-    Router::new()
+    let cors_dev = workspace.config.cors_dev;
+    let app = Router::new()
         .route("/", get(index_page))
         .route("/api/health", get(health_handler))
         .merge(crate::api::router())
-        .with_state(workspace)
+        .with_state(workspace);
+
+    if cors_dev {
+        let cors = tower_http::cors::CorsLayer::new()
+            .allow_origin(tower_http::cors::Any)
+            .allow_methods(tower_http::cors::Any)
+            .allow_headers(tower_http::cors::Any);
+        app.layer(cors)
+    } else {
+        app
+    }
 }
 
 async fn index_page() -> axum::response::Html<&'static str> {
