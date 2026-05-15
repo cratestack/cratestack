@@ -151,6 +151,37 @@ pub(crate) fn render_filter_expr_sql(
         FilterExpr::Json(json) => {
             render_json_filter_sql(json, sql, bind_index);
         }
+        FilterExpr::Spatial(spatial) => {
+            render_spatial_filter_sql(spatial, sql, bind_index);
+        }
+    }
+}
+
+fn render_spatial_filter_sql(
+    filter: &cratestack_sql::SpatialFilter,
+    sql: &mut String,
+    bind_index: &mut usize,
+) {
+    match filter {
+        cratestack_sql::SpatialFilter::CoversGeographyPoint { column, .. } => {
+            let _ = write!(
+                sql,
+                "ST_Covers({column}::geography, ST_MakePoint(${lng}, ${lat})::geography)",
+                lng = *bind_index,
+                lat = *bind_index + 1,
+            );
+            *bind_index += 2;
+        }
+        cratestack_sql::SpatialFilter::DWithinGeographyPoint { column, .. } => {
+            let _ = write!(
+                sql,
+                "ST_DWithin({column}::geography, ST_MakePoint(${lng}, ${lat})::geography, ${rad})",
+                lng = *bind_index,
+                lat = *bind_index + 1,
+                rad = *bind_index + 2,
+            );
+            *bind_index += 3;
+        }
     }
 }
 
