@@ -129,4 +129,9 @@ pub fn install_fips_crypto_provider() -> Result<(), cratestack_core::CoolError> 
 #[doc(hidden)]
 pub mod __private {
     pub use cratestack_sqlx::SqlxRuntime;
+
+    /// Re-exports for the macro-emitted RPC dispatcher. Not part of the
+    /// public API surface — schema authors should never reference these
+    /// directly. Public helpers live at `cratestack::rpc::*`.
+    pub use cratestack_axum::rpc::{decode_rpc_body, encode_rpc_value, response_to_frame};
 }

@@ -355,34 +355,40 @@ fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
                 pub auth_provider: Auth,
             }
 
-            /// Fallback returned by every CRUD dispatch arm until the model
-            /// handlers grow body-shaped inner fns. Procedure dispatch hits
-            /// the existing axum handler directly and bypasses this.
-            fn rpc_not_yet_implemented<C>(
-                _codec: &C,
-                _headers: &::cratestack::axum::http::HeaderMap,
-                op_id: &str,
+            /// Encode a `CoolError` raised inside an RPC dispatch arm using
+            /// the request's codec. The status code comes from the error;
+            /// the body shape is the existing `CoolErrorResponse` REST
+            /// form (uppercase codes). Switching to `RpcErrorBody`
+            /// (lowercase gRPC-style codes) lands in a follow-up.
+            fn rpc_dispatch_error<R, C, Auth>(
+                state: &RpcRouterState<R, C, Auth>,
+                headers: &::cratestack::axum::http::HeaderMap,
+                error: ::cratestack::CoolError,
             ) -> ::cratestack::axum::response::Response
             where
                 C: HttpTransport,
             {
-                use ::cratestack::axum::response::IntoResponse;
-                (
-                    ::cratestack::axum::http::StatusCode::NOT_IMPLEMENTED,
-                    format!(
-                        "RPC dispatch for `{op_id}` is not implemented yet; \
-                         this arm lands in the next patch (model CRUD over RPC).",
-                    ),
+                // `success_status` is unused on the error path — pick an
+                // arbitrary 2xx; the function uses `error.status_code()`.
+                ::cratestack::encode_transport_result_with_status_for::<
+                    _,
+                    ::cratestack::serde_json::Value,
+                >(
+                    &state.codec,
+                    headers,
+                    &::cratestack::rpc::RPC_BINDING_CAPABILITIES,
+                    ::cratestack::axum::http::StatusCode::OK,
+                    Err(error),
                 )
-                    .into_response()
             }
 
-            async fn rpc_dispatch<R, C, Auth>(
-                ::cratestack::axum::extract::State(state):
-                    ::cratestack::axum::extract::State<RpcRouterState<R, C, Auth>>,
-                ::cratestack::axum::extract::Path(op_id):
-                    ::cratestack::axum::extract::Path<String>,
+            /// Per-op dispatch — shared by unary and batch routes. Returns
+            /// an `axum::Response`; the unary route returns it as-is, the
+            /// batch route buffers + decodes it back into a frame.
+            async fn rpc_dispatch_inner<R, C, Auth>(
+                state: RpcRouterState<R, C, Auth>,
                 headers: ::cratestack::axum::http::HeaderMap,
+                op_id: &str,
                 body: ::cratestack::axum::body::Bytes,
             ) -> ::cratestack::axum::response::Response
             where
@@ -390,7 +396,7 @@ fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
                 C: HttpTransport,
                 Auth: ::cratestack::AuthProvider,
             {
-                match op_id.as_str() {
+                match op_id {
                     #(#rpc_dispatch_arms)*
                     other => {
                         use ::cratestack::axum::response::IntoResponse;
@@ -408,10 +414,118 @@ fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
                 }
             }
 
-            /// Build the RPC router for `transport rpc` schemas. Mounts
-            /// `POST /rpc/{op_id}` over the same db / registry / codec /
-            /// auth-provider as the REST routers. Batch and WS bindings
-            /// follow in subsequent patches.
+            async fn rpc_dispatch<R, C, Auth>(
+                ::cratestack::axum::extract::State(state):
+                    ::cratestack::axum::extract::State<RpcRouterState<R, C, Auth>>,
+                ::cratestack::axum::extract::Path(op_id):
+                    ::cratestack::axum::extract::Path<String>,
+                headers: ::cratestack::axum::http::HeaderMap,
+                body: ::cratestack::axum::body::Bytes,
+            ) -> ::cratestack::axum::response::Response
+            where
+                R: super::procedures::ProcedureRegistry,
+                C: HttpTransport,
+                Auth: ::cratestack::AuthProvider,
+            {
+                rpc_dispatch_inner(state, headers, &op_id, body).await
+            }
+
+            /// Batch route — `POST /rpc/batch`. Decodes a sequence of
+            /// `RpcRequest` frames, dispatches each through the same
+            /// per-op routing as unary, and emits a sequence of
+            /// `RpcResponseFrame`s in the same order. Per-frame errors
+            /// don't poison the batch; a malformed batch envelope
+            /// returns 400. See `docs/design/rpc-transport.md` §3.2.
+            async fn rpc_batch_dispatch<R, C, Auth>(
+                ::cratestack::axum::extract::State(state):
+                    ::cratestack::axum::extract::State<RpcRouterState<R, C, Auth>>,
+                headers: ::cratestack::axum::http::HeaderMap,
+                body: ::cratestack::axum::body::Bytes,
+            ) -> ::cratestack::axum::response::Response
+            where
+                R: super::procedures::ProcedureRegistry,
+                C: HttpTransport,
+                Auth: ::cratestack::AuthProvider,
+            {
+                if headers.get(::cratestack::axum::http::header::CONTENT_TYPE).is_some()
+                    && headers
+                        .get("idempotency-key")
+                        .is_some()
+                {
+                    return rpc_dispatch_error(
+                        &state,
+                        &headers,
+                        ::cratestack::CoolError::BadRequest(
+                            "Idempotency-Key header is not supported on /rpc/batch; \
+                             use the per-frame `idem` field instead".to_owned(),
+                        ),
+                    );
+                }
+
+                let frames: Vec<::cratestack::rpc::RpcRequest> =
+                    match ::cratestack::__private::decode_rpc_body(&state.codec, &headers, &body) {
+                        Ok(frames) => frames,
+                        Err(error) => return rpc_dispatch_error(&state, &headers, error),
+                    };
+
+                let mut responses: Vec<::cratestack::rpc::RpcResponseFrame> =
+                    Vec::with_capacity(frames.len());
+                for frame in frames {
+                    // Re-encode the frame's opaque `input` value back to
+                    // codec bytes so we can route it through the same
+                    // dispatcher as unary.
+                    let input_bytes = match ::cratestack::__private::encode_rpc_value(
+                        &state.codec,
+                        &headers,
+                        &frame.input,
+                    ).await {
+                        Ok(bytes) => bytes,
+                        Err(error) => {
+                            responses.push(::cratestack::rpc::RpcResponseFrame::err(
+                                frame.id,
+                                &error,
+                            ));
+                            continue;
+                        }
+                    };
+
+                    // Per-frame state clone — we can't `move` the original
+                    // because the loop owns it.
+                    let frame_state = state.clone();
+                    let frame_headers = headers.clone();
+                    let response = rpc_dispatch_inner(
+                        frame_state,
+                        frame_headers,
+                        &frame.op,
+                        ::cratestack::axum::body::Bytes::from(input_bytes),
+                    ).await;
+
+                    let frame_result = ::cratestack::rpc::response_to_frame(
+                        frame.id,
+                        response,
+                        &state.codec,
+                        &headers,
+                    ).await;
+                    responses.push(frame_result);
+                }
+
+                ::cratestack::encode_transport_result_with_status_for::<
+                    _,
+                    Vec<::cratestack::rpc::RpcResponseFrame>,
+                >(
+                    &state.codec,
+                    &headers,
+                    &::cratestack::rpc::RPC_BINDING_CAPABILITIES,
+                    ::cratestack::axum::http::StatusCode::OK,
+                    Ok(responses),
+                )
+            }
+
+            /// Build the RPC router for `transport rpc` schemas. Mounts:
+            /// - `POST /rpc/{op_id}` — unary
+            /// - `POST /rpc/batch` — sequence of frames
+            ///
+            /// WS / streaming bindings follow in subsequent patches.
             pub fn rpc_router<R, C, Auth>(
                 db: super::Cratestack,
                 registry: R,
@@ -430,6 +544,10 @@ fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
                     auth_provider,
                 };
                 axum::Router::new()
+                    .route(
+                        ::cratestack::rpc::RPC_BATCH_PATH,
+                        axum::routing::post(rpc_batch_dispatch),
+                    )
                     .route(
                         ::cratestack::rpc::RPC_UNARY_PATH,
                         axum::routing::post(rpc_dispatch),

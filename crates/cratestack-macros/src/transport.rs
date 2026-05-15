@@ -1,7 +1,7 @@
 use cratestack_core::{Model, Procedure, ProcedureKind, TypeArity};
 use quote::quote;
 
-use crate::shared::{ident, pluralize, to_snake_case};
+use crate::shared::{ident, is_primary_key, pluralize, rust_type_tokens, to_snake_case};
 
 pub(crate) fn generate_procedure_transport_constants(
     procedure: &Procedure,
@@ -269,24 +269,183 @@ pub(crate) fn generate_procedure_rpc_dispatch_arm(
     }
 }
 
-/// Emit `model.<X>.{list,get,create,update,delete}` dispatch arms. For v1
-/// these return `501 Not Implemented` with a stable message — wiring them
-/// to the existing model handlers requires refactoring those handlers to
-/// accept the request shape (id, patch, filter, …) from a single body
-/// instead of from axum extractors. Tracked in the next patch.
+/// Emit `model.<X>.{list,get,create,update,delete}` dispatch arms.
+///
+/// Each arm constructs a `ModelRouterState` from the unified
+/// `RpcRouterState`, decodes the RPC body into the right input shape
+/// from `cratestack::rpc`, synthesizes the axum extractor values the
+/// existing CRUD handlers expect (`Path(id)`, `RawQuery(qs)`, `Bytes`),
+/// and delegates. The handlers themselves are untouched, so REST and
+/// RPC share one code path per verb.
 pub(crate) fn generate_model_rpc_dispatch_arms(model: &Model) -> Vec<proc_macro2::TokenStream> {
     let m = model.name.as_str();
-    ["list", "get", "create", "update", "delete"]
-        .into_iter()
-        .map(|verb| {
-            let op_id = format!("model.{m}.{verb}");
-            quote! {
-                #op_id => {
-                    rpc_not_yet_implemented(&state.codec, &headers, #op_id)
+    let pk_field = model
+        .fields
+        .iter()
+        .find(|field| is_primary_key(field));
+    let list_handler =
+        ident(&format!("handle_list_{}", pluralize(&to_snake_case(m))));
+    let create_handler =
+        ident(&format!("handle_create_{}", pluralize(&to_snake_case(m))));
+    let get_handler = ident(&format!("handle_get_{}", to_snake_case(m)));
+    let update_handler = ident(&format!("handle_update_{}", to_snake_case(m)));
+    let delete_handler = ident(&format!("handle_delete_{}", to_snake_case(m)));
+    let update_input_ident = ident(&format!("Update{m}Input"));
+
+    let list_id = format!("model.{m}.list");
+    let get_id = format!("model.{m}.get");
+    let create_id = format!("model.{m}.create");
+    let update_id = format!("model.{m}.update");
+    let delete_id = format!("model.{m}.delete");
+
+    // Models without a primary key can't have `get`/`update`/`delete` ops
+    // dispatch (no id to extract). The parser already rejects PK-less
+    // models for the REST binding, but be defensive here too — emit a
+    // dispatch arm that returns 500 if somehow reached.
+    let Some(pk) = pk_field else {
+        return ["list", "get", "create", "update", "delete"]
+            .into_iter()
+            .map(|verb| {
+                let op_id = format!("model.{m}.{verb}");
+                quote! {
+                    #op_id => {
+                        rpc_dispatch_error(
+                            &state,
+                            &headers,
+                            ::cratestack::CoolError::Internal(format!(
+                                "model `{}` has no primary key; RPC dispatch impossible",
+                                #m,
+                            )),
+                        )
+                    }
                 }
+            })
+            .collect();
+    };
+    let pk_type = rust_type_tokens(&pk.ty);
+
+    vec![
+        // model.<X>.list — decode RpcListInput, synthesize query string,
+        // call existing list handler with RawQuery(Some(qs)).
+        quote! {
+            #list_id => {
+                let model_state = ModelRouterState {
+                    db: state.db.clone(),
+                    codec: state.codec.clone(),
+                    auth_provider: state.auth_provider.clone(),
+                };
+                let input = match ::cratestack::__private::decode_rpc_body::<
+                    _,
+                    ::cratestack::rpc::RpcListInput,
+                >(&state.codec, &headers, &body) {
+                    Ok(input) => input,
+                    Err(error) => return rpc_dispatch_error(&state, &headers, error),
+                };
+                let raw_query = ::cratestack::rpc::synthesize_list_query(&input);
+                #list_handler(
+                    ::cratestack::axum::extract::State(model_state),
+                    headers,
+                    ::cratestack::axum::extract::RawQuery(raw_query),
+                ).await
             }
-        })
-        .collect()
+        },
+        // model.<X>.get — decode RpcPkInput<Pk>, construct Path(id), call.
+        quote! {
+            #get_id => {
+                let model_state = ModelRouterState {
+                    db: state.db.clone(),
+                    codec: state.codec.clone(),
+                    auth_provider: state.auth_provider.clone(),
+                };
+                let input = match ::cratestack::__private::decode_rpc_body::<
+                    _,
+                    ::cratestack::rpc::RpcPkInput<#pk_type>,
+                >(&state.codec, &headers, &body) {
+                    Ok(input) => input,
+                    Err(error) => return rpc_dispatch_error(&state, &headers, error),
+                };
+                #get_handler(
+                    ::cratestack::axum::extract::State(model_state),
+                    headers,
+                    ::cratestack::axum::extract::Path(input.id),
+                    ::cratestack::axum::extract::RawQuery(None),
+                ).await
+            }
+        },
+        // model.<X>.create — body shape already matches the REST POST.
+        // Delegate directly; no decode-then-re-encode.
+        quote! {
+            #create_id => {
+                let model_state = ModelRouterState {
+                    db: state.db.clone(),
+                    codec: state.codec.clone(),
+                    auth_provider: state.auth_provider.clone(),
+                };
+                #create_handler(
+                    ::cratestack::axum::extract::State(model_state),
+                    headers,
+                    body,
+                ).await
+            }
+        },
+        // model.<X>.update — decode {id, patch} with the patch typed to
+        // the model's concrete `Update<X>Input` (so CBOR Option::None
+        // round-trips correctly), re-encode just the patch via the same
+        // codec, then call existing update handler with Path(id) + Bytes.
+        quote! {
+            #update_id => {
+                let model_state = ModelRouterState {
+                    db: state.db.clone(),
+                    codec: state.codec.clone(),
+                    auth_provider: state.auth_provider.clone(),
+                };
+                let input = match ::cratestack::__private::decode_rpc_body::<
+                    _,
+                    ::cratestack::rpc::RpcUpdateInput<#pk_type, super::inputs::#update_input_ident>,
+                >(&state.codec, &headers, &body) {
+                    Ok(input) => input,
+                    Err(error) => return rpc_dispatch_error(&state, &headers, error),
+                };
+                let patch_bytes = match ::cratestack::__private::encode_rpc_value(
+                    &state.codec,
+                    &headers,
+                    &input.patch,
+                ).await {
+                    Ok(bytes) => bytes,
+                    Err(error) => return rpc_dispatch_error(&state, &headers, error),
+                };
+                #update_handler(
+                    ::cratestack::axum::extract::State(model_state),
+                    headers,
+                    ::cratestack::axum::extract::Path(input.id),
+                    ::cratestack::axum::body::Bytes::from(patch_bytes),
+                ).await
+            }
+        },
+        // model.<X>.delete — decode {id}, call existing delete handler
+        // with Path(id).
+        quote! {
+            #delete_id => {
+                let model_state = ModelRouterState {
+                    db: state.db.clone(),
+                    codec: state.codec.clone(),
+                    auth_provider: state.auth_provider.clone(),
+                };
+                let input = match ::cratestack::__private::decode_rpc_body::<
+                    _,
+                    ::cratestack::rpc::RpcPkInput<#pk_type>,
+                >(&state.codec, &headers, &body) {
+                    Ok(input) => input,
+                    Err(error) => return rpc_dispatch_error(&state, &headers, error),
+                };
+                #delete_handler(
+                    ::cratestack::axum::extract::State(model_state),
+                    headers,
+                    ::cratestack::axum::extract::Path(input.id),
+                ).await
+            }
+        },
+    ]
 }
 
 pub(crate) fn generate_procedure_op_descriptor(
