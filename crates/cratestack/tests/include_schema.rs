@@ -2408,4 +2408,184 @@ mod transport_rpc_schema {
         assert_eq!(by_id("model.Widget.create").input_ty, "CreateWidgetInput");
         assert_eq!(by_id("model.Widget.update").input_ty, "UpdateWidgetInput");
     }
+
+    // -------------------------------------------------------------------------
+    // RPC unary runtime: procedure dispatch
+    //
+    // The macro emits an `rpc_router` (gated on `transport rpc`) that mounts
+    // `POST /rpc/{op_id}`. Procedure ops dispatch into the existing
+    // `handle_<name>` axum handler; model CRUD ops return 501 for now (next
+    // patch wires them).
+    // -------------------------------------------------------------------------
+
+    #[derive(Clone)]
+    struct RpcTestProcedures;
+
+    impl cratestack_schema::procedures::ProcedureRegistry for RpcTestProcedures {
+        fn ping(
+            &self,
+            _db: &cratestack_schema::Cratestack,
+            _ctx: &CoolContext,
+            args: cratestack_schema::procedures::ping::Args,
+        ) -> impl core::future::Future<
+            Output = Result<cratestack_schema::procedures::ping::Output, cratestack::CoolError>,
+        > + Send {
+            async move { Ok(args.args) }
+        }
+
+        fn bump(
+            &self,
+            _db: &cratestack_schema::Cratestack,
+            _ctx: &CoolContext,
+            args: cratestack_schema::procedures::bump::Args,
+        ) -> impl core::future::Future<
+            Output = Result<cratestack_schema::procedures::bump::Output, cratestack::CoolError>,
+        > + Send {
+            async move {
+                Ok(cratestack_schema::PingArgs {
+                    nonce: format!("{}!", args.args.nonce),
+                })
+            }
+        }
+    }
+
+    /// Auth provider for the RPC runtime tests. Returns an authenticated
+    /// context whenever an `x-auth-id` header is present; anonymous
+    /// otherwise. The fixture's procedures use `@allow(auth() != null)`
+    /// so tests opt in by sending the header.
+    #[derive(Clone)]
+    struct RpcTestAuthProvider;
+
+    impl AuthProvider for RpcTestAuthProvider {
+        type Error = cratestack::CoolError;
+
+        fn authenticate(
+            &self,
+            request: &RequestContext<'_>,
+        ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
+            let ctx = request
+                .headers
+                .get("x-auth-id")
+                .and_then(|value| value.to_str().ok())
+                .and_then(|raw| raw.parse::<i64>().ok())
+                .map(|id| CoolContext::authenticated([("id".to_owned(), Value::Int(id))]))
+                .unwrap_or_else(CoolContext::anonymous);
+            core::future::ready(Ok(ctx))
+        }
+    }
+
+    fn rpc_test_db() -> cratestack_schema::Cratestack {
+        let pool = PgPoolOptions::new()
+            .connect_lazy("postgres://cratestack:cratestack@localhost/cratestack")
+            .expect("lazy pool should parse");
+        cratestack_schema::Cratestack::builder(pool).build()
+    }
+
+    fn rpc_test_router(codec: CborCodec) -> cratestack::axum::Router {
+        cratestack_schema::axum::rpc_router(
+            rpc_test_db(),
+            RpcTestProcedures,
+            codec,
+            RpcTestAuthProvider,
+        )
+    }
+
+    #[tokio::test]
+    async fn rpc_unary_dispatches_query_procedure() {
+        let codec = CborCodec;
+        let router = rpc_test_router(codec.clone());
+        let body = codec
+            .encode(&cratestack_schema::procedures::ping::Args {
+                args: cratestack_schema::PingArgs {
+                    nonce: "hello".to_owned(),
+                },
+            })
+            .expect("ping request should encode");
+
+        let response = router
+            .oneshot(
+                Request::post("/rpc/procedure.ping")
+                    .header("content-type", CborCodec::CONTENT_TYPE)
+                    .header("x-auth-id", "1")
+                    .body(Body::from(body))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should succeed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response_bytes = cratestack::axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body should buffer");
+        let decoded: cratestack_schema::PingArgs = codec
+            .decode(&response_bytes)
+            .expect("response should decode as PingArgs");
+        assert_eq!(decoded.nonce, "hello");
+    }
+
+    #[tokio::test]
+    async fn rpc_unary_dispatches_mutation_procedure() {
+        let codec = CborCodec;
+        let router = rpc_test_router(codec.clone());
+        let body = codec
+            .encode(&cratestack_schema::procedures::bump::Args {
+                args: cratestack_schema::PingArgs {
+                    nonce: "x".to_owned(),
+                },
+            })
+            .expect("bump request should encode");
+
+        let response = router
+            .oneshot(
+                Request::post("/rpc/procedure.bump")
+                    .header("content-type", CborCodec::CONTENT_TYPE)
+                    .header("x-auth-id", "1")
+                    .body(Body::from(body))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should succeed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let response_bytes = cratestack::axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body should buffer");
+        let decoded: cratestack_schema::PingArgs = codec
+            .decode(&response_bytes)
+            .expect("response should decode as PingArgs");
+        assert_eq!(decoded.nonce, "x!");
+    }
+
+    #[tokio::test]
+    async fn rpc_unary_unknown_op_returns_404() {
+        let codec = CborCodec;
+        let router = rpc_test_router(codec);
+        let response = router
+            .oneshot(
+                Request::post("/rpc/procedure.does_not_exist")
+                    .header("content-type", CborCodec::CONTENT_TYPE)
+                    .body(Body::from(Vec::<u8>::new()))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should succeed");
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn rpc_unary_crud_arms_return_501_until_next_patch() {
+        let codec = CborCodec;
+        let router = rpc_test_router(codec);
+        let response = router
+            .oneshot(
+                Request::post("/rpc/model.Widget.list")
+                    .header("content-type", CborCodec::CONTENT_TYPE)
+                    .body(Body::from(Vec::<u8>::new()))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should succeed");
+        assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+    }
 }

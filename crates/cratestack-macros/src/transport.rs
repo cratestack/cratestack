@@ -236,6 +236,59 @@ pub(crate) fn generate_model_op_descriptors(
     ]
 }
 
+// -----------------------------------------------------------------------------
+// RPC dispatch arms
+//
+// Emitted into the body of the generated `rpc_dispatch` fn — one arm per
+// callable. Procedures delegate to the existing axum handler (already shaped
+// as `(State, HeaderMap, Bytes) -> Response`). Model CRUD verbs delegate to
+// a per-verb adapter that builds the right axum extractor values from the
+// RPC request body — this lives in a future patch, so for now the macro
+// emits arms that return a 501-shaped CoolError::Internal explaining the
+// gap.
+// -----------------------------------------------------------------------------
+
+pub(crate) fn generate_procedure_rpc_dispatch_arm(
+    procedure: &Procedure,
+) -> proc_macro2::TokenStream {
+    let op_id = format!("procedure.{}", procedure.name);
+    let handler_ident = ident(&format!("handle_{}", to_snake_case(&procedure.name)));
+    quote! {
+        #op_id => {
+            #handler_ident(
+                ::cratestack::axum::extract::State(ProcedureRouterState {
+                    db: state.db.clone(),
+                    registry: state.registry.clone(),
+                    codec: state.codec.clone(),
+                    auth_provider: state.auth_provider.clone(),
+                }),
+                headers,
+                body,
+            ).await
+        }
+    }
+}
+
+/// Emit `model.<X>.{list,get,create,update,delete}` dispatch arms. For v1
+/// these return `501 Not Implemented` with a stable message — wiring them
+/// to the existing model handlers requires refactoring those handlers to
+/// accept the request shape (id, patch, filter, …) from a single body
+/// instead of from axum extractors. Tracked in the next patch.
+pub(crate) fn generate_model_rpc_dispatch_arms(model: &Model) -> Vec<proc_macro2::TokenStream> {
+    let m = model.name.as_str();
+    ["list", "get", "create", "update", "delete"]
+        .into_iter()
+        .map(|verb| {
+            let op_id = format!("model.{m}.{verb}");
+            quote! {
+                #op_id => {
+                    rpc_not_yet_implemented(&state.codec, &headers, #op_id)
+                }
+            }
+        })
+        .collect()
+}
+
 pub(crate) fn generate_procedure_op_descriptor(
     procedure: &Procedure,
     auth_required: bool,

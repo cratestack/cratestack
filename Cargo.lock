@@ -1027,6 +1027,7 @@ dependencies = [
  "cratestack-core",
  "http",
  "serde",
+ "serde_json",
  "sha2",
  "tokio",
  "tower",
