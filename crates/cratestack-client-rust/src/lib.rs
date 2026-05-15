@@ -1658,6 +1658,293 @@ where
     }
 }
 
+// -----------------------------------------------------------------------------
+// RPC client surface
+//
+// Sits alongside `CratestackClient` (the REST client). Schemas declared
+// with `transport rpc` generate against the methods on `RpcClient`:
+//
+//   * `call::<I, O>(op_id, input)`     — POST /rpc/{op_id}, unary
+//   * `batch(requests)`                — POST /rpc/batch
+//   * `call_streaming::<I, O>(op_id, input)` — POST /rpc/{op_id}, sequence
+//
+// Wire types and the `RPC_*_PATH` constants come from `cratestack_core::rpc`
+// so server (`cratestack-axum::rpc`) and client share one source of truth.
+// -----------------------------------------------------------------------------
+
+pub use cratestack_core::rpc::{
+    RPC_BATCH_PATH, RPC_UNARY_PATH, RpcErrorBody, RpcRequest, RpcResponseFrame, rpc_code,
+};
+
+/// Error variant produced by the RPC client when a remote call fails with
+/// an `RpcErrorBody` payload. Distinct from the REST `ClientError::Remote`
+/// (which carries the `CoolErrorResponse` shape) so library users can
+/// switch on the gRPC-style `code` string directly.
+#[derive(Debug, Clone)]
+pub struct RpcRemoteError {
+    pub status: StatusCode,
+    pub body: RpcErrorBody,
+}
+
+impl std::fmt::Display for RpcRemoteError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "RPC call failed with code {} (status {}): {}",
+            self.body.code,
+            self.status.as_u16(),
+            self.body.message
+        )
+    }
+}
+
+impl std::error::Error for RpcRemoteError {}
+
+/// Top-level error returned by the RPC client. Mirrors `ClientError`
+/// (the REST error type) but reports server-side failures as
+/// `RpcRemoteError { code, message, details }` rather than the
+/// REST-shaped `CoolErrorResponse`.
+#[derive(Debug, thiserror::Error)]
+pub enum RpcClientError {
+    #[error("transport error: {0}")]
+    Transport(#[from] reqwest::Error),
+    #[error("codec error: {0}")]
+    Codec(#[from] CoolError),
+    #[error("invalid response: {0}")]
+    InvalidResponse(String),
+    #[error("bad input: {0}")]
+    BadInput(String),
+    #[error("{0}")]
+    Remote(RpcRemoteError),
+}
+
+/// Thin RPC client built on top of the REST client's transport + codec
+/// plumbing.
+///
+/// Shares a `reqwest::Client` and a codec impl with `CratestackClient`,
+/// but speaks the `/rpc/...` URL space instead of REST routes. Both
+/// clients can be used side-by-side against the same server.
+#[derive(Clone)]
+pub struct RpcClient<C = CborCodec> {
+    inner: CratestackClient<C>,
+}
+
+impl RpcClient<CborCodec> {
+    pub fn cbor(config: ClientConfig) -> Self {
+        Self::new(CratestackClient::cbor(config))
+    }
+}
+
+impl<C> RpcClient<C>
+where
+    C: HttpClientCodec + Clone,
+{
+    /// Build an RPC client on top of an existing REST client. The two
+    /// share their `reqwest::Client`, codec, and state store.
+    pub fn new(inner: CratestackClient<C>) -> Self {
+        Self { inner }
+    }
+
+    /// Underlying REST client. Exposed for callers that want REST + RPC
+    /// side-by-side (e.g. a long migration window between the two).
+    pub fn inner(&self) -> &CratestackClient<C> {
+        &self.inner
+    }
+
+    /// POST /rpc/{op_id} — unary call.
+    ///
+    /// `op_id` is the dotted dispatch key the server emits — `model.X.list`
+    /// / `model.X.get` / `model.X.create` / `model.X.update` /
+    /// `model.X.delete` for CRUD verbs and `procedure.<name>` for procedures.
+    pub async fn call<I, O>(&self, op_id: &str, input: &I) -> Result<O, RpcClientError>
+    where
+        I: Serialize,
+        O: DeserializeOwned,
+    {
+        let body = self.inner.codec.encode(input).map_err(RpcClientError::Codec)?;
+        let path = format!("/rpc/{}", op_id);
+        let response = self
+            .inner
+            .request_raw_with_query_and_accept(
+                Method::POST,
+                &path,
+                Some(body),
+                None,
+                &[],
+                None,
+            )
+            .await
+            .map_err(client_error_to_rpc)?;
+        decode_rpc_unary_response(&self.inner.codec, &response)
+    }
+
+    /// POST /rpc/batch — sequence of `RpcRequest` frames in, sequence of
+    /// `RpcResponseFrame` frames out. Per-frame errors do not poison the
+    /// batch (each frame's `output` / `error` is reported independently).
+    pub async fn batch(
+        &self,
+        requests: &[RpcRequest],
+    ) -> Result<Vec<RpcResponseFrame>, RpcClientError> {
+        let body = self.inner.codec.encode(&requests).map_err(RpcClientError::Codec)?;
+        let response = self
+            .inner
+            .request_raw_with_query_and_accept(
+                Method::POST,
+                RPC_BATCH_PATH_PLAIN,
+                Some(body),
+                None,
+                &[],
+                None,
+            )
+            .await
+            .map_err(client_error_to_rpc)?;
+        decode_rpc_unary_response::<C, Vec<RpcResponseFrame>>(&self.inner.codec, &response)
+    }
+
+    /// POST /rpc/{op_id} — sequence response. Returns the full sequence as
+    /// a `Vec<O>` (the binding currently buffers; a `Stream<Item=O>`
+    /// adapter can be layered on top once the server emits streamed
+    /// responses framed in `application/cbor-seq`).
+    pub async fn call_streaming<I, O>(
+        &self,
+        op_id: &str,
+        input: &I,
+    ) -> Result<Vec<O>, RpcClientError>
+    where
+        I: Serialize,
+        O: DeserializeOwned,
+    {
+        let body = self.inner.codec.encode(input).map_err(RpcClientError::Codec)?;
+        let path = format!("/rpc/{}", op_id);
+        let response = self
+            .inner
+            .request_raw_with_query_and_accept(
+                Method::POST,
+                &path,
+                Some(body),
+                None,
+                &[],
+                Some(self.inner.codec.sequence_accept_header_value()),
+            )
+            .await
+            .map_err(client_error_to_rpc)?;
+        decode_rpc_sequence_response(&self.inner.codec, &response)
+    }
+}
+
+// `RPC_BATCH_PATH` from core is the axum-template form `"/rpc/batch"`,
+// so we just reuse it. The unary path is templated (`/rpc/{op_id}`) so
+// we format it per call instead of using the constant directly.
+const RPC_BATCH_PATH_PLAIN: &str = RPC_BATCH_PATH;
+
+fn client_error_to_rpc(error: ClientError) -> RpcClientError {
+    match error {
+        ClientError::Transport(error) => RpcClientError::Transport(error),
+        ClientError::Codec(error) => RpcClientError::Codec(error),
+        ClientError::InvalidResponse(message) => RpcClientError::InvalidResponse(message),
+        ClientError::BadInput(message) => RpcClientError::BadInput(message),
+        ClientError::State(message) => RpcClientError::InvalidResponse(message),
+        ClientError::Remote {
+            status,
+            error,
+            message,
+        } => {
+            // Legacy translation path — should not fire for /rpc/... URLs
+            // (the server-side dispatcher emits RpcErrorBody-shaped error
+            // bodies), but keep a sensible fallback rather than dropping
+            // the message on the floor.
+            let body = error
+                .map(cratestack_core::rpc::RpcErrorBody::from_cool_response)
+                .unwrap_or_else(|| RpcErrorBody {
+                    code: "internal".to_owned(),
+                    message,
+                    details: None,
+                });
+            RpcClientError::Remote(RpcRemoteError { status, body })
+        }
+    }
+}
+
+fn decode_rpc_unary_response<C, Output>(
+    codec: &C,
+    response: &RuntimeResponseWire,
+) -> Result<Output, RpcClientError>
+where
+    C: HttpClientCodec,
+    Output: DeserializeOwned,
+{
+    let content_type = response
+        .headers
+        .iter()
+        .find(|header| header.name.eq_ignore_ascii_case("content-type"))
+        .map(|header| header.value.as_str())
+        .ok_or_else(|| {
+            RpcClientError::InvalidResponse("response is missing Content-Type header".to_owned())
+        })?;
+
+    if (200..=299).contains(&response.status_code) {
+        codec
+            .decode_response::<Output>(content_type, &response.body)
+            .map_err(RpcClientError::Codec)
+    } else {
+        let body = codec
+            .decode_response::<RpcErrorBody>(content_type, &response.body)
+            .unwrap_or_else(|_| RpcErrorBody {
+                code: "internal".to_owned(),
+                message: format!(
+                    "unexpected RPC error body for status {}",
+                    response.status_code
+                ),
+                details: None,
+            });
+        Err(RpcClientError::Remote(RpcRemoteError {
+            status: StatusCode::from_u16(response.status_code)
+                .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+            body,
+        }))
+    }
+}
+
+fn decode_rpc_sequence_response<C, Output>(
+    codec: &C,
+    response: &RuntimeResponseWire,
+) -> Result<Vec<Output>, RpcClientError>
+where
+    C: HttpClientCodec,
+    Output: DeserializeOwned,
+{
+    let content_type = response
+        .headers
+        .iter()
+        .find(|header| header.name.eq_ignore_ascii_case("content-type"))
+        .map(|header| header.value.as_str())
+        .ok_or_else(|| {
+            RpcClientError::InvalidResponse("response is missing Content-Type header".to_owned())
+        })?;
+
+    if (200..=299).contains(&response.status_code) {
+        codec
+            .decode_sequence_response::<Output>(content_type, &response.body)
+            .map_err(RpcClientError::Codec)
+    } else {
+        let body = codec
+            .decode_response::<RpcErrorBody>(content_type, &response.body)
+            .unwrap_or_else(|_| RpcErrorBody {
+                code: "internal".to_owned(),
+                message: format!(
+                    "unexpected RPC error body for status {}",
+                    response.status_code
+                ),
+                details: None,
+            });
+        Err(RpcClientError::Remote(RpcRemoteError {
+            status: StatusCode::from_u16(response.status_code)
+                .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+            body,
+        }))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
