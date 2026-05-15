@@ -7,10 +7,15 @@
 pub mod api;
 pub mod config;
 pub mod data;
+pub mod eject;
 pub mod server;
 pub mod snippet;
 pub mod workspace;
 
+#[cfg(feature = "embed-ui")]
+pub mod ui_assets;
+
+pub use eject::{EjectError, EjectOptions, EjectReport, eject};
 pub use workspace::{LoadedTarget, LoadedWorkspace, WorkspaceError};
 
 pub use config::{StudioConfig, StudioConfigError, TargetConfig, TargetMode};

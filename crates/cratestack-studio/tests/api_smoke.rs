@@ -288,6 +288,85 @@ async fn health_endpoint_reflects_workspace() {
     assert_eq!(body["target_count"], 2);
 }
 
+/// With the `embed-ui` feature on (and `trunk build` already run in
+/// `ui/`), `/` returns the bundled UI's index.html — not the Phase 1b
+/// stub. Without the feature, `/` returns the stub. Both branches are
+/// here so the test suite covers the feature matrix.
+#[cfg(feature = "embed-ui")]
+#[tokio::test]
+async fn root_serves_bundled_ui_index_when_feature_on() {
+    let app = cratestack_studio::server::build_router(build_workspace());
+    let response = app
+        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+        .await
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .expect("body");
+    let text = std::str::from_utf8(&bytes).expect("utf-8");
+    assert!(
+        text.contains("cratestack-studio"),
+        "bundled index.html should contain 'cratestack-studio'; got: {}",
+        &text[..text.len().min(200)]
+    );
+    assert!(
+        text.contains("data-trunk") || text.contains(".wasm") || text.contains(".js"),
+        "bundled index.html should reference trunk-injected assets"
+    );
+}
+
+#[cfg(feature = "embed-ui")]
+#[tokio::test]
+async fn unknown_static_path_falls_back_to_index_html() {
+    let app = cratestack_studio::server::build_router(build_workspace());
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/some/spa/route")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let ct = response
+        .headers()
+        .get("content-type")
+        .map(|v| v.to_str().unwrap_or("").to_owned())
+        .unwrap_or_default();
+    assert!(ct.contains("html"), "fallback should be HTML, got {ct}");
+}
+
+#[cfg(feature = "embed-ui")]
+#[tokio::test]
+async fn api_route_takes_precedence_over_ui_fallback() {
+    // /api/* must hit the JSON API, not the SPA fallback.
+    let (status, body) = json_get("/api/targets").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["workspace"], "smoke");
+}
+
+#[cfg(not(feature = "embed-ui"))]
+#[tokio::test]
+async fn root_serves_stub_page_when_feature_off() {
+    let app = cratestack_studio::server::build_router(build_workspace());
+    let response = app
+        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+        .await
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024)
+        .await
+        .expect("body");
+    let text = std::str::from_utf8(&bytes).expect("utf-8");
+    assert!(
+        text.contains("Phase 1a backend") || text.contains("Phase 1b backend"),
+        "stub page should describe the current phase: {}",
+        &text[..text.len().min(200)]
+    );
+}
+
 #[tokio::test]
 async fn cors_headers_present_on_api_responses() {
     let app = cratestack_studio::server::build_router(build_workspace());

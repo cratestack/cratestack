@@ -77,13 +77,18 @@ pub(crate) enum StudioCmd {
         #[arg(long)]
         bind: Option<String>,
     },
-    /// Eject the studio's source as a customizable Leptos+Axum project.
-    /// Not implemented in Phase 0.
+    /// Eject the studio's Leptos+Trunk UI sources as a customizable
+    /// standalone crate at `--out`. Pair with `cratestack studio run`
+    /// from a separate terminal for local development.
     Eject {
         #[arg(long, default_value = "studio.toml")]
         config: PathBuf,
         #[arg(long)]
         out: PathBuf,
+        /// Overwrite files in `--out` if the directory already exists
+        /// and has contents.
+        #[arg(long)]
+        force: bool,
     },
 }
 

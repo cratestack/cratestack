@@ -12,6 +12,15 @@ readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 
+[features]
+default = []
+# Bundle the Leptos UI's Trunk output into the binary via `rust-embed`.
+# Build prerequisites: `cargo install trunk`, `rustup target add
+# wasm32-unknown-unknown`, then `trunk build --release` in
+# `crates/cratestack-studio/ui/`. Without that artifact tree, building
+# this feature will fail at the embed step with a clear error.
+embed-ui = ["dep:rust-embed"]
+
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
@@ -20,8 +29,10 @@ cratestack-core.workspace = true
 cratestack-migrate.workspace = true
 cratestack-parser.workspace = true
 cratestack-sql.workspace = true
+include_dir.workspace = true
 reqwest.workspace = true
 rusqlite.workspace = true
+rust-embed = { workspace = true, optional = true, features = ["mime-guess", "interpolate-folder-path"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sqlx-core.workspace = true

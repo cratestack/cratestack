@@ -2,6 +2,60 @@
 
 ## 0.3.2 (unreleased)
 
+### Studio rewrite — Phase 2 (`studio eject` + bundled UI)
+
+Two things land in this phase. Both are about making Studio
+distributable rather than dev-only.
+
+**`cratestack studio eject --out <dir>`** writes a writable copy of
+Studio's Leptos+Trunk UI into the target directory: `Cargo.toml`,
+`Trunk.toml`, `index.html`, `src/{lib,api,app,types}.rs`, and a
+purpose-built `README.md` that explains the standalone build flow.
+Generated artifacts (`dist/`, `target/`, `Cargo.lock`) are skipped so
+the eject output is a clean checkout. The UI tree is embedded into the
+framework binary at compile time via `include_dir!`, so eject is a
+single-step copy with no template substitution to drift.
+
+```
+cratestack studio eject --out ./fork
+# wrote 9 files; cd ./fork && trunk serve
+```
+
+`--force` lets you overwrite an existing non-empty directory; without
+it, eject refuses to clobber.
+
+**`embed-ui` cargo feature** bundles the Trunk release build into the
+Studio binary via `rust-embed`. Build flow:
+
+```bash
+cd crates/cratestack-studio/ui && trunk build --release
+cargo build -p cratestack-cli --bin cratestack \
+  --features cratestack-studio/embed-ui
+```
+
+With the feature on, `cratestack studio run` serves the SPA at `/`,
+keeps the JSON API mounted at `/api/*`, and falls back to `index.html`
+for unknown paths so the browser's client-side routing works. With
+the feature off (the default), `/` still serves the Phase 1b stub
+explainer so the binary stays minimal for dev.
+
+Wiring: API routes are mounted before the UI routes, so any future
+overlap resolves in favor of the JSON surface. The bundled-UI tests
+explicitly assert that `/api/targets` still hits the JSON handler
+when the SPA fallback is in play.
+
+#### Crate / module changes
+
+- `cratestack-studio` gains `mod eject` (with `eject()`, `EjectOptions`, `EjectError`, `EjectReport`) and an `embed-ui`-gated `mod ui_assets`.
+- `cratestack-studio-generator` is now a thin re-export of `cratestack_studio::eject` so the CLI's existing import surface keeps working. New code should depend on `cratestack-studio` directly.
+- `cratestack-cli`'s `studio eject` subcommand gains `--force` and now prints the eject report (file count + next-steps hint).
+- New workspace deps: `include_dir = "0.7"`, `rust-embed = "8"` (used only when the `embed-ui` feature is on).
+
+#### Scope notes
+
+- The `embed-ui` feature requires a Trunk release build to have produced `crates/cratestack-studio/ui/dist/`. Building the feature without that tree fails fast at the embed step.
+- Eject's output README points users at the framework's docs for upstream upgrades. There's no automated re-eject path — a forked UI is a fork.
+
 ### Studio rewrite — Phase 1b (read API completions + Leptos UI)
 
 Phase 1b finishes the read story. SQLite targets are now a first-class
