@@ -145,7 +145,61 @@ pub(crate) fn push_filter_expr_query(
         }
         FilterExpr::Relation(relation) => push_relation_filter_query(query, relation),
         FilterExpr::Coalesce(coalesce) => push_coalesce_filter_query(query, coalesce),
+        FilterExpr::Json(filter) => push_json_filter_query(query, filter),
     }
+}
+
+fn push_json_filter_query(
+    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    filter: &cratestack_sql::JsonFilter,
+) {
+    match filter {
+        cratestack_sql::JsonFilter::HasKey { column, key } => {
+            query.push(*column).push(" ? ");
+            query.push_bind((*key).to_owned());
+        }
+        cratestack_sql::JsonFilter::GetText { column, key, op, value } => {
+            query
+                .push(*column)
+                .push(" ->> ");
+            query.push_bind((*key).to_owned());
+            match op {
+                FilterOp::Eq => push_json_get_text_binary(query, "=", value),
+                FilterOp::Ne => push_json_get_text_binary(query, "!=", value),
+                FilterOp::Lt => push_json_get_text_binary(query, "<", value),
+                FilterOp::Lte => push_json_get_text_binary(query, "<=", value),
+                FilterOp::Gt => push_json_get_text_binary(query, ">", value),
+                FilterOp::Gte => push_json_get_text_binary(query, ">=", value),
+                FilterOp::IsNull => {
+                    query.push(" IS NULL");
+                }
+                FilterOp::IsNotNull => {
+                    query.push(" IS NOT NULL");
+                }
+                FilterOp::In
+                | FilterOp::Contains
+                | FilterOp::StartsWith
+                | FilterOp::EqOrNull => {
+                    unreachable!(
+                        "JsonFilter::GetText built with unsupported op {:?}",
+                        op,
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn push_json_get_text_binary(
+    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    operator: &str,
+    value: &FilterValue,
+) {
+    query.push(" ").push(operator).push(" ");
+    let FilterValue::Single(value) = value else {
+        unreachable!("json_get_text comparison requires FilterValue::Single");
+    };
+    push_bind_value(query, value);
 }
 
 fn push_coalesce_filter_query(

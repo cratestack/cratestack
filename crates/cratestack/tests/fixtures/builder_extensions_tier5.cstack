@@ -1,0 +1,20 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+// Insights-shaped row carrying a sparse `metrics` JSONB column. Drives
+// the json_has_key / json_get_text tests — the named upstream site is
+// `model_run_timeseries`, which filters on the presence and value of
+// arbitrary metric keys inside the JSONB document.
+model ModelRun {
+  id Int @id
+  metrics Json?
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}

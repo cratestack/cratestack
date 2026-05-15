@@ -459,7 +459,94 @@ pub(crate) fn render_filter_expr(
         FilterExpr::Coalesce(coalesce) => {
             render_coalesce(dialect, coalesce, sql, binds, bind_index);
         }
+        FilterExpr::Json(json) => {
+            render_json(dialect, json, sql, binds, bind_index);
+        }
     }
+}
+
+fn render_json(
+    dialect: &dyn Dialect,
+    filter: &cratestack_sql::JsonFilter,
+    sql: &mut String,
+    binds: &mut Vec<SqlValue>,
+    bind_index: &mut usize,
+) {
+    // SQLite has no `?` / `->>` JSONB operators, but its `json1`
+    // extension (bundled by rusqlite via `libsqlite3-sys`'s
+    // `bundled` feature) provides `json_extract(col, '$.path')`
+    // which covers both cases. We inline the path constant
+    // (`'$.<key>'`) at render time rather than binding it because
+    // SQLite's JSON path syntax is a string the parser inspects up
+    // front. The `column` and `key` are both schema-static at the
+    // type level (`&'static str`), so there's no untrusted input
+    // to escape — but as a belt-and-braces guard we still reject
+    // any key containing a single quote.
+    match filter {
+        cratestack_sql::JsonFilter::HasKey { column, key } => {
+            let json_path = json_path_literal(key);
+            let _ = write!(sql, "json_extract({column}, '{json_path}') IS NOT NULL");
+        }
+        cratestack_sql::JsonFilter::GetText {
+            column,
+            key,
+            op,
+            value,
+        } => {
+            let json_path = json_path_literal(key);
+            let _ = write!(sql, "json_extract({column}, '{json_path}')");
+            match op {
+                FilterOp::Eq => render_json_text_binary(dialect, "=", value, sql, binds, bind_index),
+                FilterOp::Ne => render_json_text_binary(dialect, "!=", value, sql, binds, bind_index),
+                FilterOp::Lt => render_json_text_binary(dialect, "<", value, sql, binds, bind_index),
+                FilterOp::Lte => render_json_text_binary(dialect, "<=", value, sql, binds, bind_index),
+                FilterOp::Gt => render_json_text_binary(dialect, ">", value, sql, binds, bind_index),
+                FilterOp::Gte => render_json_text_binary(dialect, ">=", value, sql, binds, bind_index),
+                FilterOp::IsNull => sql.push_str(" IS NULL"),
+                FilterOp::IsNotNull => sql.push_str(" IS NOT NULL"),
+                FilterOp::In
+                | FilterOp::Contains
+                | FilterOp::StartsWith
+                | FilterOp::EqOrNull => {
+                    unreachable!(
+                        "JsonFilter::GetText built with unsupported op {:?}",
+                        op,
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn render_json_text_binary(
+    dialect: &dyn Dialect,
+    operator: &str,
+    value: &FilterValue,
+    sql: &mut String,
+    binds: &mut Vec<SqlValue>,
+    bind_index: &mut usize,
+) {
+    let FilterValue::Single(value) = value else {
+        unreachable!("json_get_text comparison requires FilterValue::Single");
+    };
+    let _ = write!(sql, " {operator} ");
+    dialect.write_placeholder(sql, *bind_index);
+    *bind_index += 1;
+    binds.push(value.clone());
+}
+
+/// Build the `'$.<key>'` JSON path constant the SQLite `json_extract`
+/// function consumes. The key comes from the schema as `&'static str`,
+/// so it's trusted-by-construction, but we still refuse any key that
+/// contains a single quote — defense in depth against schema bugs
+/// that smuggle SQL syntax into a column name.
+fn json_path_literal(key: &str) -> String {
+    if key.contains('\'') {
+        panic!(
+            "JSON path key {key:?} contains a single quote; refusing to render to SQLite json_extract",
+        );
+    }
+    format!("$.{key}")
 }
 
 fn render_coalesce(
@@ -963,6 +1050,60 @@ mod tests {
         );
         assert!(sql.contains("RETURNING"));
         assert_eq!(binds, vec![SqlValue::String("doomed".into())]);
+    }
+
+    #[test]
+    fn json_has_key_lowers_to_json_extract_is_not_null() {
+        let dialect = SqliteDialect;
+        let descriptor = fixture_descriptor();
+        let filter =
+            FieldRef::<(), serde_json::Value>::new("metrics").json_has_key("loss");
+        let (sql, binds) = render_select(
+            &dialect,
+            &descriptor,
+            &[filter],
+            &[],
+            None,
+            None,
+        );
+        assert!(
+            sql.contains("WHERE json_extract(metrics, '$.loss') IS NOT NULL"),
+            "got: {sql}",
+        );
+        assert!(binds.is_empty(), "key is inlined, value-less filter");
+    }
+
+    #[test]
+    fn json_get_text_eq_lowers_to_json_extract_eq() {
+        let dialect = SqliteDialect;
+        let descriptor = fixture_descriptor();
+        let filter = FieldRef::<(), serde_json::Value>::new("metrics")
+            .json_get_text("loss")
+            .eq("0.001");
+        let (sql, binds) = render_select(
+            &dialect,
+            &descriptor,
+            &[filter],
+            &[],
+            None,
+            None,
+        );
+        assert!(
+            sql.contains("WHERE json_extract(metrics, '$.loss') = ?1"),
+            "got: {sql}",
+        );
+        assert_eq!(binds, vec![SqlValue::String("0.001".into())]);
+    }
+
+    #[test]
+    #[should_panic(expected = "single quote")]
+    fn json_path_with_single_quote_is_rejected() {
+        let dialect = SqliteDialect;
+        let descriptor = fixture_descriptor();
+        let filter = FieldRef::<(), serde_json::Value>::new("metrics")
+            .json_has_key("loss'; DROP TABLE posts;--");
+        // Render should panic because the key has a single quote.
+        let _ = render_select(&dialect, &descriptor, &[filter], &[], None, None);
     }
 
     #[test]

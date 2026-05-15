@@ -20,8 +20,9 @@ pub use cratestack_policy::{
 pub use cratestack_sql::{
     coalesce, CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault, CreateDefaultType,
     CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName, IntoSqlValue,
-    ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder, OrderClause, RelationFilter,
-    SortDirection, SqlColumnValue, SqlValue, UpdateModelInput, UpsertModelInput,
+    JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder,
+    OrderClause, RelationFilter, SortDirection, SqlColumnValue, SqlValue, UpdateModelInput,
+    UpsertModelInput,
 };
 
 // Embedded SQLite backend — wasm32-compatible alongside native (mobile,
