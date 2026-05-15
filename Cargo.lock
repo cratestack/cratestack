@@ -1317,6 +1317,7 @@ dependencies = [
  "cratestack-parser",
  "cratestack-sql",
  "include_dir",
+ "regex",
  "reqwest 0.12.28",
  "rusqlite",
  "rust-embed",
@@ -1332,6 +1333,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
+ "url",
 ]
 
 [[package]]

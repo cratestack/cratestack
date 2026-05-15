@@ -65,6 +65,14 @@ pub enum DataError {
     },
     #[error("operation not supported by this backend: {what}")]
     Unsupported { what: &'static str },
+    /// Target is in read-only mode (`mode = "ro"`).
+    #[error("target is read-only")]
+    Forbidden,
+    /// One or more field-level validators rejected the payload. The
+    /// per-field detail is forwarded to the API envelope as
+    /// `VALIDATION_ERROR`.
+    #[error("payload failed validation")]
+    Validation(Vec<crate::validators::FieldError>),
     #[error("database error: {0}")]
     Db(#[from] sqlx_core::Error),
     #[error("sqlite error: {0}")]
@@ -100,4 +108,32 @@ pub trait DataSource: Send + Sync + std::fmt::Debug {
         filter_value: &str,
         page: PageRequest<'_>,
     ) -> Result<Page, DataError>;
+
+    /// INSERT a row into `model` using the (validated) payload. The
+    /// returned `Row` is the persisted row as the database stores it
+    /// (so generated defaults like `@default(dbgenerated())` are
+    /// visible).
+    async fn create(
+        &self,
+        model: &str,
+        payload: &Row,
+    ) -> Result<Row, DataError>;
+
+    /// UPDATE the row identified by `pk` with the (validated, partial)
+    /// payload. Returns the updated row. `Ok(None)` if no row
+    /// matched.
+    async fn update(
+        &self,
+        model: &str,
+        pk: &str,
+        payload: &Row,
+    ) -> Result<Option<Row>, DataError>;
+
+    /// DELETE the row identified by `pk`. Returns the deleted row, or
+    /// `Ok(None)` if no row matched.
+    async fn delete(
+        &self,
+        model: &str,
+        pk: &str,
+    ) -> Result<Option<Row>, DataError>;
 }

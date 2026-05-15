@@ -30,6 +30,7 @@ cratestack-migrate.workspace = true
 cratestack-parser.workspace = true
 cratestack-sql.workspace = true
 include_dir.workspace = true
+regex.workspace = true
 reqwest.workspace = true
 rusqlite.workspace = true
 rust-embed = { workspace = true, optional = true, features = ["mime-guess", "interpolate-folder-path"] }
@@ -40,6 +41,7 @@ sqlx-postgres.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "signal"] }
 toml.workspace = true
+url.workspace = true
 tower.workspace = true
 tower-http.workspace = true
 tracing.workspace = true

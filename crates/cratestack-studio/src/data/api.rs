@@ -184,6 +184,84 @@ impl DataSource for ApiSource {
             what: "relation follow against API targets — Studio needs DB access for arbitrary column filters",
         })
     }
+
+    async fn create(&self, model: &str, payload: &Row) -> Result<Row, DataError> {
+        let url = self.list_url(model);
+        let body = serde_json::to_vec(&serde_json::Value::Object(payload.clone()))
+            .expect("json serialize");
+        let builder = self
+            .client
+            .post(&url)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(body);
+        let response = self.apply_auth(builder).send().await?;
+        if response.status() == StatusCode::NOT_FOUND {
+            return Err(DataError::UnknownModel {
+                model: model.to_owned(),
+            });
+        }
+        let bytes = response.error_for_status()?.bytes().await?;
+        let value: serde_json::Value =
+            serde_json::from_slice(&bytes).map_err(|_| DataError::Unsupported {
+                what: "upstream response was not valid JSON (is this a cratestack service?)",
+            })?;
+        match value {
+            serde_json::Value::Object(map) => Ok(map),
+            _ => Err(DataError::Unsupported {
+                what: "upstream create response was not a JSON object",
+            }),
+        }
+    }
+
+    async fn update(
+        &self,
+        model: &str,
+        pk: &str,
+        payload: &Row,
+    ) -> Result<Option<Row>, DataError> {
+        let url = self.detail_url(model, pk);
+        let body = serde_json::to_vec(&serde_json::Value::Object(payload.clone()))
+            .expect("json serialize");
+        let builder = self
+            .client
+            .patch(&url)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(body);
+        let response = self.apply_auth(builder).send().await?;
+        if response.status() == StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        let bytes = response.error_for_status()?.bytes().await?;
+        let value: serde_json::Value =
+            serde_json::from_slice(&bytes).map_err(|_| DataError::Unsupported {
+                what: "upstream response was not valid JSON (is this a cratestack service?)",
+            })?;
+        Ok(match value {
+            serde_json::Value::Object(map) => Some(map),
+            _ => None,
+        })
+    }
+
+    async fn delete(&self, model: &str, pk: &str) -> Result<Option<Row>, DataError> {
+        let url = self.detail_url(model, pk);
+        let response = self.apply_auth(self.client.delete(&url)).send().await?;
+        match response.status() {
+            StatusCode::NOT_FOUND => Ok(None),
+            StatusCode::NO_CONTENT => Ok(Some(Row::new())),
+            status if status.is_success() => {
+                let bytes = response.bytes().await?;
+                let value: serde_json::Value = serde_json::from_slice(&bytes)
+                    .map_err(|_| DataError::Unsupported {
+                        what: "upstream response was not valid JSON (is this a cratestack service?)",
+                    })?;
+                Ok(match value {
+                    serde_json::Value::Object(map) => Some(map),
+                    _ => Some(Row::new()),
+                })
+            }
+            _ => Err(DataError::Api(response.error_for_status().unwrap_err())),
+        }
+    }
 }
 
 #[cfg(test)]

@@ -1,15 +1,21 @@
-//! Top-level Studio UI: header (workspace name + target switcher),
-//! left sidebar (model list), main pane (records table), right drawer
-//! (selected record details + relation follow + copy snippet).
+//! Top-level Studio UI.
 //!
-//! Everything is plain Leptos CSR. State is held in signals at the
-//! root; child components take props.
+//! Layout:
+//! - Header — workspace name + target switcher (with RO / RW badge).
+//! - Left sidebar — models in the selected target.
+//! - Main pane — records table for the selected model, with cursor
+//!   pagination and a "+ New" button on RW targets.
+//! - Right drawer — selected row's fields, a typed relation picker,
+//!   per-field edit inputs (RW only), a delete action, and a "Copy
+//!   Rust query" snippet button.
+//!
+//! State is held in signals at the root; child components take props.
 
 use leptos::prelude::*;
 
 use crate::api;
 use crate::types::{
-    FieldSummary, FollowResponse, ModelSummary, Page, TargetSummary,
+    FieldError, FieldSummary, FollowResponse, ModelSummary, Page, TargetSummary,
 };
 
 const PAGE_LIMIT: u32 = 25;
@@ -35,6 +41,15 @@ pub fn App() -> impl IntoView {
         }
     });
 
+    let current_target_mode = Signal::derive(move || {
+        let key = selected_target.get()?;
+        targets
+            .get()
+            .into_iter()
+            .find(|t| t.key == key)
+            .map(|t| t.mode)
+    });
+
     view! {
         <div class="min-h-screen flex flex-col">
             <Header workspace_name target_list=targets selected=selected_target set_selected=set_selected_target />
@@ -47,7 +62,7 @@ pub fn App() -> impl IntoView {
                         </div>
                     }.into_any(),
                     None => view! {
-                        <Workspace target_key=selected_target />
+                        <Workspace target_key=selected_target target_mode=current_target_mode />
                     }.into_any(),
                 }}
             </main>
@@ -97,7 +112,10 @@ fn Header(
 }
 
 #[component]
-fn Workspace(target_key: ReadSignal<Option<String>>) -> impl IntoView {
+fn Workspace(
+    target_key: ReadSignal<Option<String>>,
+    target_mode: Signal<Option<String>>,
+) -> impl IntoView {
     let (models, set_models) = signal(Vec::<ModelSummary>::new());
     let (selected_model, set_selected_model) = signal(Option::<String>::None);
     let (load_error, set_load_error) = signal(Option::<String>::None);
@@ -131,6 +149,7 @@ fn Workspace(target_key: ReadSignal<Option<String>>) -> impl IntoView {
                     None => view! {
                         <RecordsPane
                             target_key
+                            target_mode
                             models
                             selected_model
                         />
@@ -182,6 +201,7 @@ fn Sidebar(
 #[component]
 fn RecordsPane(
     target_key: ReadSignal<Option<String>>,
+    target_mode: Signal<Option<String>>,
     models: ReadSignal<Vec<ModelSummary>>,
     selected_model: ReadSignal<Option<String>>,
 ) -> impl IntoView {
@@ -191,6 +211,8 @@ fn RecordsPane(
     let (selected_row, set_selected_row) = signal(
         Option::<serde_json::Map<String, serde_json::Value>>::None,
     );
+    let (creating, set_creating) = signal(false);
+    let (reload_token, set_reload_token) = signal(0u32);
 
     let load = move |cursor: Option<String>| {
         let Some(target) = target_key.get() else {
@@ -212,6 +234,7 @@ fn RecordsPane(
     Effect::new(move |_| {
         let _ = target_key.get();
         let _ = selected_model.get();
+        let _ = reload_token.get();
         set_cursor_stack.set(vec![None]);
         load(None);
     });
@@ -235,16 +258,67 @@ fn RecordsPane(
         load(cursor);
     };
 
-    let current_model = move || {
+    let current_model = Signal::derive(move || {
         selected_model
             .get()
             .and_then(|name| models.get().into_iter().find(|m| m.name == name))
-    };
+    });
+
+    let is_rw =
+        Signal::derive(move || target_mode.get().as_deref() == Some("rw"));
 
     view! {
         <div class="flex gap-6 h-full">
-            <div class="flex-1 min-w-0">
-                {move || match (current_model(), load_error.get(), page.get()) {
+            <div class="flex-1 min-w-0 space-y-3">
+                <div class="flex items-center gap-2 text-sm">
+                    {move || current_model.get().map(|m| view! {
+                        <h2 class="font-semibold text-slate-900">{m.name.clone()}</h2>
+                    }.into_any()).unwrap_or_else(|| ().into_any())}
+                    <span class="text-slate-500">"·"</span>
+                    {move || target_mode.get().map(|m| {
+                        let upper = m.to_uppercase();
+                        let class = if m == "rw" {
+                            "text-xs px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800"
+                        } else {
+                            "text-xs px-1.5 py-0.5 rounded bg-slate-200 text-slate-700"
+                        };
+                        view! { <span class=class>{upper}</span> }.into_any()
+                    }).unwrap_or_else(|| ().into_any())}
+                    <span class="flex-1" />
+                    {move || if is_rw.get() && !creating.get() {
+                        view! {
+                            <button
+                                class="px-3 py-1 text-sm rounded bg-slate-900 text-white hover:bg-slate-700"
+                                on:click=move |_| set_creating.set(true)
+                            >
+                                "+ New"
+                            </button>
+                        }.into_any()
+                    } else {
+                        ().into_any()
+                    }}
+                </div>
+
+                {move || if creating.get() {
+                    let Some(m) = current_model.get() else { return ().into_any() };
+                    let Some(target) = target_key.get() else { return ().into_any() };
+                    view! {
+                        <CreateForm
+                            target
+                            model=m
+                            on_close=Callback::new(move |inserted: bool| {
+                                set_creating.set(false);
+                                if inserted {
+                                    set_reload_token.update(|n| *n = n.wrapping_add(1));
+                                }
+                            })
+                        />
+                    }.into_any()
+                } else {
+                    ().into_any()
+                }}
+
+                {move || match (current_model.get(), load_error.get(), page.get()) {
                     (None, _, _) => view! { <p class="text-slate-500 text-sm">"Select a model."</p> }.into_any(),
                     (_, Some(e), _) => view! {
                         <div class="p-4 bg-red-50 border border-red-200 rounded text-red-800 text-sm">{e}</div>
@@ -264,8 +338,13 @@ fn RecordsPane(
             </div>
             <Drawer
                 target_key
-                selected_model
+                target_mode
+                current_model
                 selected_row
+                set_selected_row
+                on_changed=Callback::new(move |_| {
+                    set_reload_token.update(|n| *n = n.wrapping_add(1));
+                })
             />
         </div>
     }
@@ -290,14 +369,11 @@ fn Table(
     let column_rows = columns;
     let next_disabled = page.next_cursor.is_none();
     let rows = page.rows;
+    let row_count = rows.len();
 
     view! {
         <div class="space-y-3">
-            <div class="flex items-center gap-2 text-sm">
-                <h2 class="font-semibold text-slate-900">{model.name.clone()}</h2>
-                <span class="text-slate-500">"·"</span>
-                <span class="text-slate-500">{rows.len()}" rows"</span>
-            </div>
+            <div class="text-xs text-slate-500">{row_count}" rows on this page"</div>
             <div class="overflow-x-auto border border-slate-200 rounded bg-white">
                 <table class="min-w-full text-sm">
                     <thead class="bg-slate-100 text-slate-700 text-xs uppercase tracking-wide">
@@ -312,7 +388,7 @@ fn Table(
                             let row_for_handler = row.clone();
                             let cells = column_rows.iter().map(|c| {
                                 let value = row.get(&c.name).map(format_cell).unwrap_or_else(|| "—".to_owned());
-                                view! { <td class="px-3 py-2 border-t border-slate-100 align-top">{value}</td> }
+                                view! { <td class="px-3 py-2 border-t border-slate-100 align-top font-mono text-xs">{value}</td> }
                             }).collect_view();
                             view! {
                                 <tr
@@ -347,33 +423,156 @@ fn Table(
 }
 
 #[component]
+fn CreateForm(
+    target: String,
+    model: ModelSummary,
+    on_close: Callback<bool>,
+) -> impl IntoView {
+    // One signal per writable field, plus a global error list.
+    let writable: Vec<FieldSummary> = model
+        .fields
+        .iter()
+        .filter(|f| !f.is_relation && f.arity != "list")
+        .cloned()
+        .collect();
+    let initial: std::collections::BTreeMap<String, String> = writable
+        .iter()
+        .map(|f| (f.name.clone(), String::new()))
+        .collect();
+    let (values, set_values) = signal(initial);
+    let (errors, set_errors) = signal(Vec::<FieldError>::new());
+    let (submitting, set_submitting) = signal(false);
+    let (general_error, set_general_error) = signal(Option::<String>::None);
+
+    let model_name = model.name.clone();
+    let writable_for_submit = writable.clone();
+    let submit = move |_| {
+        if submitting.get_untracked() {
+            return;
+        }
+        set_submitting.set(true);
+        set_errors.set(Vec::new());
+        set_general_error.set(None);
+        let target = target.clone();
+        let model_name = model_name.clone();
+        let raw_values = values.get_untracked();
+        let payload = build_payload(&writable_for_submit, &raw_values);
+        leptos::task::spawn_local(async move {
+            match api::create_record(&target, &model_name, &payload).await {
+                Ok(_) => {
+                    on_close.run(true);
+                }
+                Err(e) => {
+                    if e.code == "VALIDATION_ERROR" {
+                        set_errors.set(e.fields);
+                    } else {
+                        set_general_error.set(Some(e.message));
+                    }
+                    set_submitting.set(false);
+                }
+            }
+        });
+    };
+
+    let writable_for_view = writable;
+    view! {
+        <div class="p-4 border border-slate-200 rounded bg-white space-y-3">
+            <div class="flex items-center justify-between">
+                <h3 class="font-semibold text-slate-900">"New "{model.name.clone()}</h3>
+                <button
+                    class="text-sm text-slate-500 hover:text-slate-900"
+                    on:click=move |_| on_close.run(false)
+                >
+                    "Cancel"
+                </button>
+            </div>
+            <div class="space-y-2">
+                {writable_for_view.into_iter().map(|f| {
+                    let name = f.name.clone();
+                    let name_for_input = name.clone();
+                    let name_for_error = name.clone();
+                    let name_for_value = name.clone();
+                    let placeholder = format!("{} ({})", f.type_name, f.arity);
+                    view! {
+                        <div>
+                            <label class="block text-xs text-slate-600 mb-0.5">{name.clone()}</label>
+                            <input
+                                type="text"
+                                class="w-full border border-slate-300 rounded px-2 py-1 text-sm font-mono"
+                                placeholder=placeholder
+                                prop:value=move || values.get().get(&name_for_value).cloned().unwrap_or_default()
+                                on:input=move |ev| {
+                                    let v = event_target_value(&ev);
+                                    set_values.update(|m| {
+                                        m.insert(name_for_input.clone(), v);
+                                    });
+                                }
+                            />
+                            {move || errors.get().iter()
+                                .find(|e| e.field == name_for_error)
+                                .map(|e| view! {
+                                    <p class="text-xs text-red-700 mt-0.5">{e.message.clone()}</p>
+                                }.into_any())
+                                .unwrap_or_else(|| ().into_any())}
+                        </div>
+                    }
+                }).collect_view()}
+            </div>
+            {move || general_error.get().map(|e| view! {
+                <div class="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-800">{e}</div>
+            }.into_any()).unwrap_or_else(|| ().into_any())}
+            <div class="flex items-center gap-2">
+                <button
+                    class="px-3 py-1 text-sm rounded bg-slate-900 text-white hover:bg-slate-700 disabled:opacity-40"
+                    on:click=submit
+                    disabled=move || submitting.get()
+                >
+                    {move || if submitting.get() { "Creating…" } else { "Create" }}
+                </button>
+            </div>
+        </div>
+    }
+}
+
+#[component]
 fn Drawer(
     target_key: ReadSignal<Option<String>>,
-    selected_model: ReadSignal<Option<String>>,
+    target_mode: Signal<Option<String>>,
+    current_model: Signal<Option<ModelSummary>>,
     selected_row: ReadSignal<Option<serde_json::Map<String, serde_json::Value>>>,
+    set_selected_row: WriteSignal<Option<serde_json::Map<String, serde_json::Value>>>,
+    on_changed: Callback<()>,
 ) -> impl IntoView {
     let (snippet, set_snippet) = signal(Option::<String>::None);
     let (snippet_status, set_snippet_status) = signal(String::new());
     let (follow_panel, set_follow_panel) = signal(Option::<FollowResult>::None);
+    let (relation_field, set_relation_field) = signal(String::new());
+    let (edit_values, set_edit_values): (
+        ReadSignal<Option<std::collections::BTreeMap<String, String>>>,
+        WriteSignal<Option<std::collections::BTreeMap<String, String>>>,
+    ) = signal(None);
+    let (edit_errors, set_edit_errors) = signal(Vec::<FieldError>::new());
+    let (action_status, set_action_status) = signal(Option::<String>::None);
+
+    let pk_value = Signal::derive(move || {
+        selected_row.get().and_then(|row| {
+            row.get("id").map(|v| match v {
+                serde_json::Value::String(s) => s.clone(),
+                other => other.to_string(),
+            })
+        })
+    });
+
+    let is_rw =
+        Signal::derive(move || target_mode.get().as_deref() == Some("rw"));
 
     let copy_snippet = move |_| {
         let Some(target) = target_key.get() else { return };
-        let Some(model) = selected_model.get() else { return };
-        let Some(row) = selected_row.get() else { return };
-        let Some(pk_value) = row
-            .iter()
-            .find_map(|(k, v)| if k == "id" { Some(v.clone()) } else { None })
-        else {
-            set_snippet_status.set("no `id` column on this row".to_owned());
-            return;
-        };
-        let pk_str = match pk_value {
-            serde_json::Value::String(s) => s,
-            v => v.to_string(),
-        };
+        let Some(model) = current_model.get().map(|m| m.name) else { return };
+        let Some(pk) = pk_value.get() else { return };
         set_snippet_status.set(String::new());
         leptos::task::spawn_local(async move {
-            match api::snippet(&target, &model, &pk_str).await {
+            match api::snippet(&target, &model, &pk).await {
                 Ok(s) => {
                     set_snippet.set(Some(s.rust.clone()));
                     if let Some(win) = web_sys::window() {
@@ -388,26 +587,20 @@ fn Drawer(
         });
     };
 
-    let follow = move |field: String| {
-        let Some(target) = target_key.get() else { return };
-        let Some(model) = selected_model.get() else { return };
-        let Some(row) = selected_row.get() else { return };
-        let Some(pk_value) = row
-            .iter()
-            .find_map(|(k, v)| if k == "id" { Some(v.clone()) } else { None })
-        else {
+    let follow_selected = move |_| {
+        let field = relation_field.get();
+        if field.is_empty() {
             return;
-        };
-        let pk_str = match pk_value {
-            serde_json::Value::String(s) => s,
-            v => v.to_string(),
-        };
+        }
+        let Some(target) = target_key.get() else { return };
+        let Some(model) = current_model.get().map(|m| m.name) else { return };
+        let Some(pk) = pk_value.get() else { return };
         let field_for_panel = field.clone();
         set_follow_panel.set(Some(FollowResult::Loading {
             field: field_for_panel.clone(),
         }));
         leptos::task::spawn_local(async move {
-            let result = api::follow_relation(&target, &model, &pk_str, &field).await;
+            let result = api::follow_relation(&target, &model, &pk, &field).await;
             set_follow_panel.set(Some(match result {
                 Ok(r) => FollowResult::Loaded {
                     field: field_for_panel,
@@ -421,6 +614,90 @@ fn Drawer(
         });
     };
 
+    let start_edit = move |_| {
+        let Some(row) = selected_row.get() else { return };
+        let Some(model) = current_model.get() else { return };
+        let map: std::collections::BTreeMap<String, String> = model
+            .fields
+            .iter()
+            .filter(|f| !f.is_relation && f.arity != "list" && !f.is_id)
+            .map(|f| {
+                let v = row.get(&f.name).map(format_cell).unwrap_or_default();
+                (f.name.clone(), v)
+            })
+            .collect();
+        set_edit_values.set(Some(map));
+        set_edit_errors.set(Vec::new());
+        set_action_status.set(None);
+    };
+
+    let cancel_edit = move |_| {
+        set_edit_values.set(None);
+        set_edit_errors.set(Vec::new());
+    };
+
+    let save_edit = move |_| {
+        let Some(target) = target_key.get() else { return };
+        let Some(model) = current_model.get() else { return };
+        let Some(pk) = pk_value.get() else { return };
+        let Some(values) = edit_values.get_untracked() else { return };
+        let writable: Vec<FieldSummary> = model
+            .fields
+            .iter()
+            .filter(|f| !f.is_relation && f.arity != "list" && !f.is_id)
+            .cloned()
+            .collect();
+        let payload = build_payload(&writable, &values);
+        set_edit_errors.set(Vec::new());
+        set_action_status.set(Some("Saving…".to_owned()));
+        leptos::task::spawn_local(async move {
+            match api::update_record(&target, &model.name, &pk, &payload).await {
+                Ok(resp) => {
+                    set_selected_row.set(Some(resp.row));
+                    set_edit_values.set(None);
+                    set_action_status.set(Some("Saved.".to_owned()));
+                    on_changed.run(());
+                }
+                Err(e) => {
+                    if e.code == "VALIDATION_ERROR" {
+                        set_edit_errors.set(e.fields);
+                        set_action_status.set(None);
+                    } else {
+                        set_action_status.set(Some(format!("Failed: {}", e.message)));
+                    }
+                }
+            }
+        });
+    };
+
+    let delete_row = move |_| {
+        let Some(target) = target_key.get() else { return };
+        let Some(model) = current_model.get().map(|m| m.name) else { return };
+        let Some(pk) = pk_value.get() else { return };
+        // Plain confirm() — no fancy modal in Phase 3.
+        if let Some(win) = web_sys::window() {
+            let ok = win
+                .confirm_with_message(&format!("Delete {} {}?", model, pk))
+                .unwrap_or(false);
+            if !ok {
+                return;
+            }
+        }
+        set_action_status.set(Some("Deleting…".to_owned()));
+        leptos::task::spawn_local(async move {
+            match api::delete_record(&target, &model, &pk).await {
+                Ok(_) => {
+                    set_selected_row.set(None);
+                    set_action_status.set(Some("Deleted.".to_owned()));
+                    on_changed.run(());
+                }
+                Err(e) => {
+                    set_action_status.set(Some(format!("Failed: {}", e.message)));
+                }
+            }
+        });
+    };
+
     view! {
         <aside class="w-96 border-l border-slate-200 bg-white p-4 overflow-auto">
             <h3 class="font-semibold text-slate-900 mb-2">"Record"</h3>
@@ -428,34 +705,83 @@ fn Drawer(
                 None => view! { <p class="text-slate-500 text-sm">"Select a row."</p> }.into_any(),
                 Some(row) => view! {
                     <div class="space-y-4">
-                        <dl class="text-sm">
-                            {row.iter().map(|(k, v)| {
-                                let key = k.clone();
-                                let value = format_cell(v);
-                                view! {
-                                    <div class="grid grid-cols-3 gap-2 py-1 border-b border-slate-100">
-                                        <dt class="text-slate-500">{key}</dt>
-                                        <dd class="col-span-2 font-mono text-xs break-all">{value}</dd>
-                                    </div>
-                                }
-                            }).collect_view()}
-                        </dl>
-                        <RelationActions
-                            selected_model
-                            on_follow=Callback::new(move |field| follow(field))
+                        {move || match edit_values.get() {
+                            None => view! {
+                                <FieldList row=row.clone() />
+                            }.into_any(),
+                            Some(_) => view! {
+                                <EditFields
+                                    values=edit_values
+                                    errors=edit_errors
+                                    set_values=set_edit_values
+                                    model=current_model.get().expect("current model present")
+                                />
+                            }.into_any(),
+                        }}
+
+                        <RelationPicker
+                            current_model
+                            selected_field=relation_field
+                            set_selected_field=set_relation_field
+                            on_follow=Callback::new(follow_selected)
                         />
                         <FollowPanel panel=follow_panel />
-                        <div class="pt-2 border-t border-slate-200">
-                            <button
-                                class="px-3 py-1 text-sm rounded bg-slate-900 text-white hover:bg-slate-700"
-                                on:click=copy_snippet
-                            >
-                                "Copy Rust query"
-                            </button>
-                            <span class="ml-2 text-xs text-slate-500">{move || snippet_status.get()}</span>
-                            {move || snippet.get().map(|s| view! {
-                                <pre class="mt-2 p-2 bg-slate-50 border border-slate-200 rounded text-xs whitespace-pre-wrap break-all">{s}</pre>
+
+                        <div class="pt-2 border-t border-slate-200 space-y-2">
+                            {move || if is_rw.get() {
+                                if edit_values.get().is_some() {
+                                    view! {
+                                        <div class="flex items-center gap-2">
+                                            <button
+                                                class="px-3 py-1 text-sm rounded bg-slate-900 text-white hover:bg-slate-700"
+                                                on:click=save_edit
+                                            >
+                                                "Save"
+                                            </button>
+                                            <button
+                                                class="px-3 py-1 text-sm rounded border border-slate-300 hover:bg-slate-100"
+                                                on:click=cancel_edit
+                                            >
+                                                "Cancel"
+                                            </button>
+                                        </div>
+                                    }.into_any()
+                                } else {
+                                    view! {
+                                        <div class="flex items-center gap-2">
+                                            <button
+                                                class="px-3 py-1 text-sm rounded border border-slate-300 hover:bg-slate-100"
+                                                on:click=start_edit
+                                            >
+                                                "Edit"
+                                            </button>
+                                            <button
+                                                class="px-3 py-1 text-sm rounded border border-red-200 text-red-700 hover:bg-red-50"
+                                                on:click=delete_row
+                                            >
+                                                "Delete"
+                                            </button>
+                                        </div>
+                                    }.into_any()
+                                }
+                            } else {
+                                ().into_any()
+                            }}
+                            {move || action_status.get().map(|s| view! {
+                                <p class="text-xs text-slate-600">{s}</p>
                             }.into_any()).unwrap_or_else(|| ().into_any())}
+                            <div>
+                                <button
+                                    class="px-3 py-1 text-sm rounded bg-slate-900 text-white hover:bg-slate-700"
+                                    on:click=copy_snippet
+                                >
+                                    "Copy Rust query"
+                                </button>
+                                <span class="ml-2 text-xs text-slate-500">{move || snippet_status.get()}</span>
+                                {move || snippet.get().map(|s| view! {
+                                    <pre class="mt-2 p-2 bg-slate-50 border border-slate-200 rounded text-xs whitespace-pre-wrap break-all">{s}</pre>
+                                }.into_any()).unwrap_or_else(|| ().into_any())}
+                            </div>
                         </div>
                     </div>
                 }.into_any(),
@@ -465,41 +791,128 @@ fn Drawer(
 }
 
 #[component]
-fn RelationActions(
-    selected_model: ReadSignal<Option<String>>,
-    on_follow: Callback<String>,
-) -> impl IntoView {
-    // We don't actually have `models` here — to keep Phase 1b minimal,
-    // we expose a tiny input to type the relation field name. Drawer's
-    // parent already knows the model, but threading the field list into
-    // every drawer instance is more wiring than this PR needs; this UI
-    // is correct but unpolished.
-    let (field, set_field) = signal(String::new());
+fn FieldList(row: serde_json::Map<String, serde_json::Value>) -> impl IntoView {
     view! {
-        <div class="pt-2 border-t border-slate-200 space-y-1">
-            <div class="text-xs uppercase tracking-wide text-slate-500">"Follow relation"</div>
-            <div class="flex items-center gap-2">
-                <input
-                    type="text"
-                    placeholder="relation field name"
-                    class="flex-1 border border-slate-300 rounded px-2 py-1 text-sm"
-                    prop:value=field
-                    on:input=move |ev| set_field.set(event_target_value(&ev))
-                />
-                <button
-                    class="px-2 py-1 text-sm rounded border border-slate-300 bg-white hover:bg-slate-100"
-                    on:click=move |_| {
-                        let value = field.get();
-                        let _ = selected_model.get();
-                        if !value.is_empty() {
-                            on_follow.run(value);
-                        }
-                    }
-                >
-                    "Follow"
-                </button>
-            </div>
-        </div>
+        <dl class="text-sm">
+            {row.iter().map(|(k, v)| {
+                let key = k.clone();
+                let value = format_value_html(v);
+                view! {
+                    <div class="grid grid-cols-3 gap-2 py-1 border-b border-slate-100">
+                        <dt class="text-slate-500">{key}</dt>
+                        <dd class="col-span-2 font-mono text-xs break-all">{value}</dd>
+                    </div>
+                }
+            }).collect_view()}
+        </dl>
+    }
+}
+
+#[component]
+fn EditFields(
+    values: ReadSignal<Option<std::collections::BTreeMap<String, String>>>,
+    errors: ReadSignal<Vec<FieldError>>,
+    set_values: WriteSignal<Option<std::collections::BTreeMap<String, String>>>,
+    model: ModelSummary,
+) -> impl IntoView {
+    let writable: Vec<FieldSummary> = model
+        .fields
+        .iter()
+        .filter(|f| !f.is_relation && f.arity != "list" && !f.is_id)
+        .cloned()
+        .collect();
+    view! {
+        <dl class="text-sm space-y-2">
+            {writable.into_iter().map(|f| {
+                let name = f.name.clone();
+                let name_for_input = name.clone();
+                let name_for_value = name.clone();
+                let name_for_error = name.clone();
+                let placeholder = format!("{} ({})", f.type_name, f.arity);
+                view! {
+                    <div class="grid grid-cols-3 gap-2 items-start">
+                        <dt class="text-slate-500 pt-1">{name.clone()}</dt>
+                        <dd class="col-span-2">
+                            <input
+                                type="text"
+                                class="w-full border border-slate-300 rounded px-2 py-1 text-xs font-mono"
+                                placeholder=placeholder
+                                prop:value=move || values.with(|opt| opt
+                                    .as_ref()
+                                    .and_then(|m| m.get(&name_for_value).cloned())
+                                    .unwrap_or_default())
+                                on:input=move |ev| {
+                                    let v = event_target_value(&ev);
+                                    set_values.update(|opt| {
+                                        if let Some(m) = opt.as_mut() {
+                                            m.insert(name_for_input.clone(), v);
+                                        }
+                                    });
+                                }
+                            />
+                            {move || errors.get().iter()
+                                .find(|e| e.field == name_for_error)
+                                .map(|e| view! {
+                                    <p class="text-xs text-red-700 mt-0.5">{e.message.clone()}</p>
+                                }.into_any())
+                                .unwrap_or_else(|| ().into_any())}
+                        </dd>
+                    </div>
+                }
+            }).collect_view()}
+        </dl>
+    }
+}
+
+#[component]
+fn RelationPicker(
+    current_model: Signal<Option<ModelSummary>>,
+    selected_field: ReadSignal<String>,
+    set_selected_field: WriteSignal<String>,
+    on_follow: Callback<()>,
+) -> impl IntoView {
+    view! {
+        {move || {
+            let Some(model) = current_model.get() else { return ().into_any() };
+            let relations: Vec<FieldSummary> = model
+                .fields
+                .iter()
+                .filter(|f| f.is_relation)
+                .cloned()
+                .collect();
+            if relations.is_empty() {
+                return view! {
+                    <p class="text-xs text-slate-500">"No relations on this model."</p>
+                }.into_any();
+            }
+            view! {
+                <div class="pt-2 border-t border-slate-200 space-y-1">
+                    <div class="text-xs uppercase tracking-wide text-slate-500">"Follow relation"</div>
+                    <div class="flex items-center gap-2">
+                        <select
+                            class="flex-1 border border-slate-300 rounded px-2 py-1 text-sm bg-white"
+                            on:change=move |ev| set_selected_field.set(event_target_value(&ev))
+                        >
+                            <option value="">"Select…"</option>
+                            {relations.into_iter().map(|f| {
+                                let is_selected = selected_field.get() == f.name;
+                                let label = format!("{} → {} ({})", f.name, f.type_name, f.arity);
+                                view! {
+                                    <option value=f.name.clone() selected=is_selected>{label}</option>
+                                }
+                            }).collect_view()}
+                        </select>
+                        <button
+                            class="px-2 py-1 text-sm rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40"
+                            on:click=move |_| on_follow.run(())
+                            disabled=move || selected_field.get().is_empty()
+                        >
+                            "Follow"
+                        </button>
+                    </div>
+                </div>
+            }.into_any()
+        }}
     }
 }
 
@@ -554,6 +967,40 @@ fn FollowPanel(panel: ReadSignal<Option<FollowResult>>) -> impl IntoView {
     }
 }
 
+/// Build a JSON payload from a `String`-typed form map, parsing each
+/// value into the right JSON variant based on the field's declared
+/// type. Empty strings on optional fields become `null`; empty
+/// strings on required fields are sent as `null` too and the server's
+/// validator surfaces the REQUIRED error.
+fn build_payload(
+    writable: &[FieldSummary],
+    values: &std::collections::BTreeMap<String, String>,
+) -> serde_json::Value {
+    let mut out = serde_json::Map::new();
+    for f in writable {
+        let raw = values.get(&f.name).cloned().unwrap_or_default();
+        if raw.is_empty() {
+            if f.arity == "optional" {
+                out.insert(f.name.clone(), serde_json::Value::Null);
+            }
+            continue;
+        }
+        let v = match f.type_name.as_str() {
+            "Int" => raw.parse::<i64>().map(serde_json::Value::from).unwrap_or(serde_json::Value::String(raw.clone())),
+            "Float" => raw.parse::<f64>().map(serde_json::Value::from).unwrap_or(serde_json::Value::String(raw.clone())),
+            "Boolean" => match raw.as_str() {
+                "true" | "1" | "yes" => serde_json::Value::Bool(true),
+                "false" | "0" | "no" => serde_json::Value::Bool(false),
+                _ => serde_json::Value::String(raw.clone()),
+            },
+            "Json" => serde_json::from_str(&raw).unwrap_or(serde_json::Value::String(raw.clone())),
+            _ => serde_json::Value::String(raw.clone()),
+        };
+        out.insert(f.name.clone(), v);
+    }
+    serde_json::Value::Object(out)
+}
+
 fn format_cell(value: &serde_json::Value) -> String {
     match value {
         serde_json::Value::Null => "—".to_owned(),
@@ -561,5 +1008,16 @@ fn format_cell(value: &serde_json::Value) -> String {
         serde_json::Value::Bool(b) => b.to_string(),
         serde_json::Value::Number(n) => n.to_string(),
         other => other.to_string(),
+    }
+}
+
+/// Pretty-print object/array cells in the drawer; scalars use the
+/// short [`format_cell`] form.
+fn format_value_html(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Object(_) | serde_json::Value::Array(_) => {
+            serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string())
+        }
+        other => format_cell(other),
     }
 }

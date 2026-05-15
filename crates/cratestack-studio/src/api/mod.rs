@@ -33,11 +33,13 @@ pub fn router() -> Router<Arc<LoadedWorkspace>> {
         .route("/api/targets/{key}/models", get(schema::list_models))
         .route(
             "/api/targets/{key}/models/{model}/records",
-            get(records::list_records),
+            get(records::list_records).post(records::create_record),
         )
         .route(
             "/api/targets/{key}/models/{model}/records/{pk}",
-            get(records::get_record),
+            get(records::get_record)
+                .patch(records::update_record)
+                .delete(records::delete_record),
         )
         .route(
             "/api/targets/{key}/models/{model}/records/{pk}/rel/{field}",

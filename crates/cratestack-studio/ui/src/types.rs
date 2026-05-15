@@ -73,6 +73,15 @@ pub struct ApiError {
 pub struct ApiErrorBody {
     pub code: String,
     pub message: String,
+    #[serde(default)]
+    pub fields: Vec<FieldError>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct FieldError {
+    pub field: String,
+    pub code: String,
+    pub message: String,
 }
 
 /// Untagged follow-response: either a single row (Required-arity

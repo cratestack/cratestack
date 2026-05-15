@@ -11,6 +11,7 @@ use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 
 use crate::data::DataError;
+use crate::validators::FieldError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ApiError {
@@ -28,6 +29,12 @@ pub enum ApiError {
     NoPrimaryKey,
     #[error("operation not supported by this backend: {0}")]
     Unsupported(&'static str),
+    #[error("target is read-only")]
+    Forbidden,
+    #[error("payload failed validation")]
+    Validation(Vec<FieldError>),
+    #[error("invalid request body: {0}")]
+    BadRequest(String),
     #[error("database error: {0}")]
     Database(String),
     #[error("upstream API error: {0}")]
@@ -45,7 +52,10 @@ impl ApiError {
             ApiError::NotARelation(_, _) => StatusCode::BAD_REQUEST,
             ApiError::NoPrimaryKey => StatusCode::BAD_REQUEST,
             ApiError::InvalidPrimaryKey(_, _) => StatusCode::BAD_REQUEST,
+            ApiError::BadRequest(_) => StatusCode::BAD_REQUEST,
             ApiError::Unsupported(_) => StatusCode::NOT_IMPLEMENTED,
+            ApiError::Forbidden => StatusCode::FORBIDDEN,
+            ApiError::Validation(_) => StatusCode::UNPROCESSABLE_ENTITY,
             ApiError::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,
             ApiError::Upstream(_) => StatusCode::BAD_GATEWAY,
             ApiError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -60,7 +70,10 @@ impl ApiError {
             ApiError::NotARelation(_, _) => "NOT_A_RELATION",
             ApiError::NoPrimaryKey => "NO_PRIMARY_KEY",
             ApiError::InvalidPrimaryKey(_, _) => "INVALID_PRIMARY_KEY",
+            ApiError::BadRequest(_) => "BAD_REQUEST",
             ApiError::Unsupported(_) => "UNSUPPORTED",
+            ApiError::Forbidden => "FORBIDDEN",
+            ApiError::Validation(_) => "VALIDATION_ERROR",
             ApiError::Database(_) => "DATABASE_ERROR",
             ApiError::Upstream(_) => "UPSTREAM_ERROR",
             ApiError::Internal(_) => "INTERNAL_ERROR",
@@ -79,6 +92,8 @@ impl From<DataError> for ApiError {
                 ApiError::InvalidPrimaryKey(pk, reason)
             }
             DataError::Unsupported { what } => ApiError::Unsupported(what),
+            DataError::Forbidden => ApiError::Forbidden,
+            DataError::Validation(errors) => ApiError::Validation(errors),
             DataError::Db(e) => ApiError::Database(e.to_string()),
             DataError::Sqlite(e) => ApiError::Database(e.to_string()),
             DataError::Api(e) => ApiError::Upstream(e.to_string()),
@@ -96,16 +111,28 @@ struct WireBody {
 struct WireError {
     code: &'static str,
     message: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    fields: Vec<FieldError>,
 }
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
+        let code = self.code();
+        let status = self.status();
+        let (message, fields) = match self {
+            ApiError::Validation(errs) => (
+                "payload failed validation".to_owned(),
+                errs,
+            ),
+            other => (other.to_string(), Vec::new()),
+        };
         let body = WireBody {
             error: WireError {
-                code: self.code(),
-                message: self.to_string(),
+                code,
+                message,
+                fields,
             },
         };
-        (self.status(), Json(body)).into_response()
+        (status, Json(body)).into_response()
     }
 }
