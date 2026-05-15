@@ -2,9 +2,9 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use cratestack_client_rust::{
-    ClientError, RuntimeCodecConfig, RuntimeConfigWire, RuntimeEnvelopeConfig, RuntimeErrorCode,
-    RuntimeErrorWire, RuntimeHandle, RuntimeHeader, RuntimeRequestWire, RuntimeResponseWire,
-    RuntimeStateStoreConfig, RuntimeTransportConfig,
+    ClientError, RuntimeChunkWire, RuntimeCodecConfig, RuntimeConfigWire, RuntimeEnvelopeConfig,
+    RuntimeErrorCode, RuntimeErrorWire, RuntimeHandle, RuntimeHeader, RuntimeRequestWire,
+    RuntimeResponseWire, RuntimeStateStoreConfig, RuntimeTransportConfig,
 };
 use serde::{Deserialize, Serialize};
 
@@ -88,6 +88,28 @@ pub struct FlutterRuntimeError {
     pub remote_body: Option<Vec<u8>>,
 }
 
+/// Streaming-response chunk shape exposed to Flutter.
+///
+/// The native Rust side of a flutter_rust_bridge app exposes this enum
+/// to Dart by wrapping `FlutterRuntime::execute_streamed` with a
+/// `StreamSink<FlutterChunkWire>` argument. From Dart, the app code
+/// gets a `Stream<FlutterChunkWire>` that yields one variant per
+/// complete cbor-seq item over the wire:
+///
+/// - `Item(Vec<u8>)` — one CBOR-encoded item. Decode it on the Dart
+///   side with the `cbor` package; the bytes are exactly what the
+///   server emitted.
+/// - `End` — the server closed the stream cleanly. No further chunks.
+/// - `Error(FlutterRuntimeError)` — the stream failed mid-flight. No
+///   further chunks. Same shape as `FlutterRuntimeError` from `execute`,
+///   so the Dart error handling reuses one match arm.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum FlutterChunkWire {
+    Item(Vec<u8>),
+    End,
+    Error(FlutterRuntimeError),
+}
+
 pub struct FlutterRuntime {
     inner: Mutex<RuntimeHandle>,
 }
@@ -150,6 +172,48 @@ impl FlutterRuntime {
             body: batch_json,
         };
         self.execute(request)
+    }
+
+    /// Streaming companion to [`Self::execute`]. The callback receives
+    /// one [`FlutterChunkWire`] per complete cbor-seq item as bytes
+    /// arrive on the wire; returning `false` cancels the stream.
+    /// Returns when the stream terminates (clean end, error, or
+    /// cancellation).
+    ///
+    /// Designed to be wrapped by `flutter_rust_bridge`'s
+    /// `StreamSink<FlutterChunkWire>` in the consuming Flutter app —
+    /// see the example in `examples/embedded-flutter/native` for the
+    /// thin Dart-callable wrapper pattern.
+    pub fn execute_streamed<F>(
+        &self,
+        request: FlutterRequest,
+        mut on_chunk: F,
+    ) -> Result<(), FlutterRuntimeError>
+    where
+        F: FnMut(FlutterChunkWire) -> bool + Send,
+    {
+        let handle = self.inner.lock().map_err(|error| FlutterRuntimeError {
+            code: RuntimeErrorCode::State as u32,
+            http_status: None,
+            message: format!("failed to lock runtime handle: {error}"),
+            remote_code: None,
+            remote_body: None,
+        })?;
+        handle
+            .execute_streamed(request.into(), move |chunk| {
+                on_chunk(FlutterChunkWire::from(chunk))
+            })
+            .map_err(FlutterRuntimeError::from)
+    }
+}
+
+impl From<RuntimeChunkWire> for FlutterChunkWire {
+    fn from(value: RuntimeChunkWire) -> Self {
+        match value {
+            RuntimeChunkWire::Item(bytes) => Self::Item(bytes),
+            RuntimeChunkWire::End => Self::End,
+            RuntimeChunkWire::Error(error) => Self::Error(FlutterRuntimeError::from(error)),
+        }
     }
 }
 

@@ -1068,7 +1068,9 @@ dependencies = [
 name = "cratestack-client-flutter"
 version = "0.3.2"
 dependencies = [
+ "async-stream",
  "axum",
+ "bytes",
  "cratestack-client-rust",
  "cratestack-codec-cbor",
  "cratestack-core",
