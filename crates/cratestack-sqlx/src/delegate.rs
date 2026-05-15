@@ -5,8 +5,8 @@ use cratestack_core::{CoolContext, CoolError};
 use crate::{
     BatchCreate, BatchDelete, BatchGet, BatchUpdate, BatchUpdateItem, BatchUpsert,
     CreateModelInput, CreateRecord, DeleteRecord, Filter, FilterExpr, FindMany, FindUnique,
-    ModelDescriptor, OrderClause, SqlxRuntime, UpdateModelInput, UpdateRecord, UpdateRecordSet,
-    UpsertModelInput, UpsertRecord,
+    ModelDescriptor, OrderClause, SqlxRuntime, UpdateMany, UpdateManySet, UpdateModelInput,
+    UpdateRecord, UpdateRecordSet, UpsertModelInput, UpsertRecord,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -42,6 +42,7 @@ impl<'a, M: 'static, PK: 'static> ModelDelegate<'a, M, PK> {
             order_by: Vec::new(),
             limit: None,
             offset: None,
+            for_update: false,
         }
     }
 
@@ -50,6 +51,7 @@ impl<'a, M: 'static, PK: 'static> ModelDelegate<'a, M, PK> {
             runtime: self.runtime,
             descriptor: self.descriptor,
             id,
+            for_update: false,
         }
     }
 
@@ -77,6 +79,19 @@ impl<'a, M: 'static, PK: 'static> ModelDelegate<'a, M, PK> {
             runtime: self.runtime,
             descriptor: self.descriptor,
             id,
+        }
+    }
+
+    /// Bulk UPDATE by predicate. Compose filters via `.where_(...)` on the
+    /// returned builder, then supply the patch with `.set(input)`. Refuses
+    /// to run without at least one filter — table-wide bulk updates are a
+    /// footgun that should be written in raw SQL so the intent is loud at
+    /// review time.
+    pub fn update_many(&self) -> UpdateMany<'a, M, PK> {
+        UpdateMany {
+            runtime: self.runtime,
+            descriptor: self.descriptor,
+            filters: Vec::new(),
         }
     }
 
@@ -243,6 +258,13 @@ impl<'a, M: 'static, PK: 'static> ScopedModelDelegate<'a, M, PK> {
         }
     }
 
+    pub fn update_many(&self) -> ScopedUpdateMany<'a, M, PK> {
+        ScopedUpdateMany {
+            request: self.delegate.update_many(),
+            ctx: self.ctx.clone(),
+        }
+    }
+
     pub fn delete(&self, id: PK) -> ScopedDeleteRecord<'a, M, PK> {
         ScopedDeleteRecord {
             request: self.delegate.delete(id),
@@ -326,6 +348,12 @@ impl<'a, M: 'static, PK: 'static> ScopedFindMany<'a, M, PK> {
         self
     }
 
+    /// See [`FindMany::for_update`].
+    pub fn for_update(mut self) -> Self {
+        self.request = self.request.for_update();
+        self
+    }
+
     pub fn preview_sql(&self) -> String {
         self.request.preview_sql()
     }
@@ -340,6 +368,16 @@ impl<'a, M: 'static, PK: 'static> ScopedFindMany<'a, M, PK> {
     {
         self.request.run(&self.ctx).await
     }
+
+    pub async fn run_in_tx<'tx>(
+        self,
+        tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
+    ) -> Result<Vec<M>, CoolError>
+    where
+        for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
+    {
+        self.request.run_in_tx(tx, &self.ctx).await
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -349,6 +387,12 @@ pub struct ScopedFindUnique<'a, M: 'static, PK: 'static> {
 }
 
 impl<'a, M: 'static, PK: 'static> ScopedFindUnique<'a, M, PK> {
+    /// See [`FindUnique::for_update`].
+    pub fn for_update(mut self) -> Self {
+        self.request = self.request.for_update();
+        self
+    }
+
     pub fn preview_sql(&self) -> String {
         self.request.preview_sql()
     }
@@ -363,6 +407,17 @@ impl<'a, M: 'static, PK: 'static> ScopedFindUnique<'a, M, PK> {
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
         self.request.run(&self.ctx).await
+    }
+
+    pub async fn run_in_tx<'tx>(
+        self,
+        tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
+    ) -> Result<Option<M>, CoolError>
+    where
+        for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
+        PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
+    {
+        self.request.run_in_tx(tx, &self.ctx).await
     }
 }
 
@@ -386,6 +441,16 @@ where
     {
         self.request.run(&self.ctx).await
     }
+
+    pub async fn run_in_tx<'tx>(
+        self,
+        tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
+    ) -> Result<M, CoolError>
+    where
+        for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
+    {
+        self.request.run_in_tx(tx, &self.ctx).await
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -408,6 +473,17 @@ where
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
         self.request.run(&self.ctx).await
+    }
+
+    pub async fn run_in_tx<'tx>(
+        self,
+        tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
+    ) -> Result<M, CoolError>
+    where
+        for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
+        PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
+    {
+        self.request.run_in_tx(tx, &self.ctx).await
     }
 }
 
@@ -448,11 +524,84 @@ where
         self.request.run(&self.ctx).await
     }
 
+    pub async fn run_in_tx<'tx>(
+        self,
+        tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
+    ) -> Result<M, CoolError>
+    where
+        for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
+        PK: Send + Clone + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
+    {
+        self.request.run_in_tx(tx, &self.ctx).await
+    }
+
     /// Attach an expected version for optimistic locking. See
     /// [`UpdateRecordSet::if_match`].
     pub fn if_match(mut self, expected: i64) -> Self {
         self.request = self.request.if_match(expected);
         self
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ScopedUpdateMany<'a, M: 'static, PK: 'static> {
+    request: UpdateMany<'a, M, PK>,
+    ctx: CoolContext,
+}
+
+impl<'a, M: 'static, PK: 'static> ScopedUpdateMany<'a, M, PK> {
+    pub fn where_(mut self, filter: Filter) -> Self {
+        self.request = self.request.where_(filter);
+        self
+    }
+
+    pub fn where_expr(mut self, filter: FilterExpr) -> Self {
+        self.request = self.request.where_expr(filter);
+        self
+    }
+
+    pub fn where_any(mut self, filters: impl IntoIterator<Item = FilterExpr>) -> Self {
+        self.request = self.request.where_any(filters);
+        self
+    }
+
+    pub fn set<I>(self, input: I) -> ScopedUpdateManySet<'a, M, PK, I> {
+        ScopedUpdateManySet {
+            request: self.request.set(input),
+            ctx: self.ctx,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ScopedUpdateManySet<'a, M: 'static, PK: 'static, I> {
+    request: UpdateManySet<'a, M, PK, I>,
+    ctx: CoolContext,
+}
+
+impl<'a, M: 'static, PK: 'static, I> ScopedUpdateManySet<'a, M, PK, I>
+where
+    I: UpdateModelInput<M>,
+{
+    pub fn preview_sql(&self) -> String {
+        self.request.preview_sql()
+    }
+
+    pub async fn run(self) -> Result<cratestack_core::BatchSummary, CoolError>
+    where
+        for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
+    {
+        self.request.run(&self.ctx).await
+    }
+
+    pub async fn run_in_tx<'tx>(
+        self,
+        tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
+    ) -> Result<cratestack_core::BatchSummary, CoolError>
+    where
+        for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
+    {
+        self.request.run_in_tx(tx, &self.ctx).await
     }
 }
 
@@ -473,6 +622,17 @@ impl<'a, M: 'static, PK: 'static> ScopedDeleteRecord<'a, M, PK> {
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
         self.request.run(&self.ctx).await
+    }
+
+    pub async fn run_in_tx<'tx>(
+        self,
+        tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
+    ) -> Result<M, CoolError>
+    where
+        for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
+        PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
+    {
+        self.request.run_in_tx(tx, &self.ctx).await
     }
 }
 

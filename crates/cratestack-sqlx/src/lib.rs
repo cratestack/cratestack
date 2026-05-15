@@ -92,11 +92,12 @@ pub use cratestack_sql::{
 pub use delegate::{
     ModelDelegate, ScopedBatchCreate, ScopedBatchDelete, ScopedBatchGet, ScopedBatchUpdate,
     ScopedBatchUpsert, ScopedCreateRecord, ScopedDeleteRecord, ScopedFindMany, ScopedFindUnique,
-    ScopedModelDelegate, ScopedUpdateRecord, ScopedUpdateRecordSet, ScopedUpsertRecord,
+    ScopedModelDelegate, ScopedUpdateMany, ScopedUpdateManySet, ScopedUpdateRecord,
+    ScopedUpdateRecordSet, ScopedUpsertRecord,
 };
 pub use descriptor::SqlxRuntime;
 pub use query::{
     BatchCreate, BatchDelete, BatchGet, BatchUpdate, BatchUpdateItem, BatchUpsert, CreateRecord,
-    DeleteRecord, FindMany, FindUnique, UpdateRecord, UpdateRecordSet, UpsertRecord,
-    create_record_with_executor, update_record_with_executor,
+    DeleteRecord, FindMany, FindUnique, UpdateMany, UpdateManySet, UpdateRecord, UpdateRecordSet,
+    UpsertRecord, create_record_with_executor, update_record_with_executor,
 };

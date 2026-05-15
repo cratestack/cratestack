@@ -14,6 +14,7 @@ pub(crate) use support::{
 };
 #[allow(unused_imports)]
 pub use write::{
-    CreateRecord, DeleteRecord, UpdateRecord, UpdateRecordSet, UpsertRecord,
-    create_record_with_executor, render_update_preview_sql, update_record_with_executor,
+    CreateRecord, DeleteRecord, UpdateMany, UpdateManySet, UpdateRecord, UpdateRecordSet,
+    UpsertRecord, create_record_with_executor, render_update_many_preview_sql,
+    render_update_preview_sql, update_record_with_executor,
 };
