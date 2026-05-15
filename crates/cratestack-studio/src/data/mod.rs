@@ -1,24 +1,24 @@
 //! Abstraction over Studio's data backends.
 //!
-//! Two implementations land in Phase 1:
+//! Three implementations land in Phase 1:
 //! - [`postgres::PostgresSource`] — a sqlx Postgres pool. Phase 1a.
+//! - [`sqlite::SqliteSource`] — rusqlite-backed for local databases.
 //! - [`api::ApiSource`] — a reqwest client against a deployed cratestack
-//!   service. Schema-fetch is implemented in Phase 1a; record reads
-//!   land in a later phase.
-//!
-//! A future SQLite source will use `rusqlite` directly (sqlx-sqlite
-//! conflicts with the workspace's existing rusqlite pin on
-//! `libsqlite3-sys`).
+//!   service.
 
 pub mod api;
+pub(crate) mod common;
 pub(crate) mod db_errors;
 pub(crate) mod model_info;
 pub mod postgres;
 pub mod relations;
+pub mod source;
 pub mod sqlite;
 
 pub(crate) use model_info::PkCast;
 use serde::{Deserialize, Serialize};
+
+pub use source::DataSource;
 
 /// One database row, projected as a JSON object so the API layer can
 /// pass it through without knowing per-column types. Keys are field
@@ -128,85 +128,4 @@ pub enum DataError {
     Api(#[from] reqwest::Error),
     #[error("blocking task panicked: {0}")]
     BlockingJoin(String),
-}
-
-/// Backend interface used by the read endpoints. Each `LoadedTarget`
-/// owns one `Arc<dyn DataSource>`.
-#[async_trait::async_trait]
-pub trait DataSource: Send + Sync + std::fmt::Debug {
-    /// List paginated rows of one model. Order is by ascending primary
-    /// key so cursors are stable.
-    async fn list(&self, model: &str, page: PageRequest<'_>) -> Result<Page, DataError>;
-
-    /// Fetch one row by its primary key value. Returns `Ok(None)` if
-    /// the row doesn't exist.
-    async fn get(&self, model: &str, pk: &str) -> Result<Option<Row>, DataError>;
-
-    /// Paginated rows of `target_model` whose `filter_column` equals
-    /// `filter_value`. Powers the relation-follow endpoint: the
-    /// caller resolves the relation to a (model, column, cast, value)
-    /// tuple via [`relations::resolve_relation`], and the source runs
-    /// the SQL.
-    async fn follow(
-        &self,
-        target_model: &str,
-        filter_column: &str,
-        filter_cast: PkCast,
-        filter_value: &str,
-        page: PageRequest<'_>,
-    ) -> Result<Page, DataError>;
-
-    /// INSERT a row into `model` using the (validated) payload. The
-    /// returned `Row` is the persisted row as the database stores it
-    /// (so generated defaults like `@default(dbgenerated())` are
-    /// visible).
-    async fn create(
-        &self,
-        model: &str,
-        payload: &Row,
-    ) -> Result<Row, DataError>;
-
-    /// UPDATE the row identified by `pk` with the (validated, partial)
-    /// payload. Returns the updated row. `Ok(None)` if no row
-    /// matched.
-    async fn update(
-        &self,
-        model: &str,
-        pk: &str,
-        payload: &Row,
-    ) -> Result<Option<Row>, DataError>;
-
-    /// DELETE the row identified by `pk`. Returns the deleted row, or
-    /// `Ok(None)` if no row matched.
-    async fn delete(
-        &self,
-        model: &str,
-        pk: &str,
-    ) -> Result<Option<Row>, DataError>;
-
-    /// Render the SQL Studio would run for `op` on `model` without
-    /// touching the database. `pk` is required for GET / UPDATE /
-    /// DELETE; `payload` is optional for CREATE / UPDATE (when
-    /// provided, the bound parameters reflect its column order). The
-    /// returned struct carries the rendered SQL plus a parameter list.
-    ///
-    /// Backends that don't speak SQL (the deployed-API source) return
-    /// `DataError::Unsupported`.
-    async fn preview_sql(
-        &self,
-        op: SqlOp,
-        model: &str,
-        pk: Option<&str>,
-        payload: Option<&Row>,
-    ) -> Result<SqlPreview, DataError>;
-
-    /// Snapshot the live database columns for `model`'s table. Used by
-    /// the drift endpoint to compare against schema-declared columns.
-    /// `Ok(None)` when the table doesn't exist in the live database.
-    /// Backends without a database (API source) return
-    /// `DataError::Unsupported`.
-    async fn inspect_columns(
-        &self,
-        model: &str,
-    ) -> Result<Option<Vec<ColumnSnapshot>>, DataError>;
 }
