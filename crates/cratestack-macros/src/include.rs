@@ -357,9 +357,9 @@ fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
 
             /// Encode a `CoolError` raised inside an RPC dispatch arm using
             /// the request's codec. The status code comes from the error;
-            /// the body shape is the existing `CoolErrorResponse` REST
-            /// form (uppercase codes). Switching to `RpcErrorBody`
-            /// (lowercase gRPC-style codes) lands in a follow-up.
+            /// the body is `RpcErrorBody { code, message, details? }`
+            /// with the gRPC-style lowercase code via
+            /// [`cratestack::rpc::rpc_code`].
             fn rpc_dispatch_error<R, C, Auth>(
                 state: &RpcRouterState<R, C, Auth>,
                 headers: &::cratestack::axum::http::HeaderMap,
@@ -368,23 +368,18 @@ fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
             where
                 C: HttpTransport,
             {
-                // `success_status` is unused on the error path — pick an
-                // arbitrary 2xx; the function uses `error.status_code()`.
-                ::cratestack::encode_transport_result_with_status_for::<
-                    _,
-                    ::cratestack::serde_json::Value,
-                >(
-                    &state.codec,
-                    headers,
-                    &::cratestack::rpc::RPC_BINDING_CAPABILITIES,
-                    ::cratestack::axum::http::StatusCode::OK,
-                    Err(error),
-                )
+                ::cratestack::rpc::encode_rpc_error(&state.codec, headers, &error)
             }
 
             /// Per-op dispatch — shared by unary and batch routes. Returns
-            /// an `axum::Response`; the unary route returns it as-is, the
-            /// batch route buffers + decodes it back into a frame.
+            /// an `axum::Response`; the unary route returns it as-is,
+            /// the batch route buffers + decodes it back into a frame.
+            ///
+            /// Handler-emitted error responses (any non-2xx that bubbles
+            /// out of the underlying axum handler in `CoolErrorResponse`
+            /// REST shape) are post-processed into `RpcErrorBody` shape
+            /// before returning, so callers always see one error
+            /// vocabulary on the wire.
             async fn rpc_dispatch_inner<R, C, Auth>(
                 state: RpcRouterState<R, C, Auth>,
                 headers: ::cratestack::axum::http::HeaderMap,
@@ -396,22 +391,37 @@ fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
                 C: HttpTransport,
                 Auth: ::cratestack::AuthProvider,
             {
-                match op_id {
+                // Hold a codec + headers reference for the post-processing
+                // step. The match arms consume `state` and `headers` when
+                // calling into the underlying axum handlers, so we need
+                // these copies to outlive the match.
+                let post_codec = state.codec.clone();
+                let post_headers = headers.clone();
+
+                let response = match op_id {
                     #(#rpc_dispatch_arms)*
                     other => {
-                        use ::cratestack::axum::response::IntoResponse;
                         ::cratestack::tracing::warn!(
                             target: "cratestack",
                             cratestack_operation = "rpc_dispatch",
                             cratestack_op_id = other,
                             "unknown RPC op id",
                         );
-                        (
-                            ::cratestack::axum::http::StatusCode::NOT_FOUND,
-                            format!("unknown RPC op `{other}`"),
-                        ).into_response()
+                        return ::cratestack::rpc::encode_rpc_error(
+                            &post_codec,
+                            &post_headers,
+                            &::cratestack::CoolError::NotFound(format!(
+                                "unknown RPC op `{other}`",
+                            )),
+                        );
                     }
-                }
+                };
+
+                ::cratestack::rpc::convert_handler_error_response(
+                    response,
+                    &post_codec,
+                    &post_headers,
+                ).await
             }
 
             async fn rpc_dispatch<R, C, Auth>(

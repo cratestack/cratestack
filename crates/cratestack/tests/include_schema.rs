@@ -2691,6 +2691,107 @@ mod transport_rpc_schema {
         );
     }
 
+    // ----- error wire shape -----
+    //
+    // After the RpcErrorBody migration, every error that exits the RPC
+    // binding — whether it originated inside the dispatcher (decode
+    // failure, unknown op id) or inside a handler — must hit the wire
+    // as `{ code: <lowercase gRPC>, message: ..., details?: ... }`.
+    // The tests below assert that shape directly off the body bytes.
+
+    async fn decode_unary_error_body(
+        response: cratestack::axum::response::Response,
+    ) -> (StatusCode, cratestack::rpc::RpcErrorBody) {
+        let status = response.status();
+        let bytes = cratestack::axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body should buffer");
+        let body: cratestack::rpc::RpcErrorBody = CborCodec
+            .decode(&bytes)
+            .unwrap_or_else(|err| {
+                panic!(
+                    "unary error response (status {status}) should decode as RpcErrorBody, \
+                     got error {err}; bytes (hex) = {}",
+                    bytes.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+                )
+            });
+        (status, body)
+    }
+
+    #[tokio::test]
+    async fn rpc_unary_decode_error_returns_rpc_error_body_with_lowercase_code() {
+        // Decode failure inside the dispatcher (the early `return
+        // rpc_dispatch_error(...)` path inside the get arm). Body must
+        // be RpcErrorBody-shaped with `invalid_argument` code, not the
+        // legacy CoolErrorResponse `BAD_REQUEST` / `VALIDATION_ERROR`.
+        let router = rpc_test_router(CborCodec);
+        let body = cbor(&serde_json::json!({"id": "not-a-number"}));
+        let response = router
+            .oneshot(rpc_request("model.Widget.get", body))
+            .await
+            .expect("request should succeed");
+        let (status, error) = decode_unary_error_body(response).await;
+        assert!(status.is_client_error(), "decode failure should be 4xx, got {status}");
+        assert_eq!(
+            error.code, "invalid_argument",
+            "decode failures map to invalid_argument: {error:?}",
+        );
+        assert!(
+            !error.message.is_empty(),
+            "RpcErrorBody must carry a public message",
+        );
+    }
+
+    #[tokio::test]
+    async fn rpc_unary_unknown_op_returns_rpc_error_body() {
+        // The unknown-op early-return path in `rpc_dispatch_inner` —
+        // emits via `encode_rpc_error` rather than the prior plain-text
+        // `(404, "...")` response.
+        let router = rpc_test_router(CborCodec);
+        let response = router
+            .oneshot(rpc_request(
+                "procedure.does_not_exist",
+                Vec::<u8>::new(),
+            ))
+            .await
+            .expect("request should succeed");
+        let (status, error) = decode_unary_error_body(response).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(error.code, "not_found");
+        assert!(error.message.contains("does_not_exist"));
+    }
+
+    #[tokio::test]
+    async fn rpc_unary_handler_error_is_post_processed_to_rpc_error_body() {
+        // The mutation `bump` is gated by `@allow(auth() != null)`.
+        // Send anonymous (no x-auth-id header) — the handler emits a
+        // CoolError::Forbidden, encoded as CoolErrorResponse with code
+        // `FORBIDDEN`. The dispatcher's post-processor must translate
+        // that to RpcErrorBody { code: "permission_denied", ... }.
+        let router = rpc_test_router(CborCodec);
+        let body = cbor(&cratestack_schema::procedures::bump::Args {
+            args: cratestack_schema::PingArgs {
+                nonce: "x".to_owned(),
+            },
+        });
+        let response = router
+            .oneshot(
+                Request::post("/rpc/procedure.bump")
+                    .header("content-type", CborCodec::CONTENT_TYPE)
+                    // intentionally no x-auth-id
+                    .body(Body::from(body))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should succeed");
+        let (status, error) = decode_unary_error_body(response).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(
+            error.code, "permission_denied",
+            "handler-emitted FORBIDDEN must translate to permission_denied: {error:?}",
+        );
+    }
+
     // ----- batch -----
 
     fn batch_request(frames: Vec<cratestack::rpc::RpcRequest>) -> cratestack::axum::http::Request<Body> {
@@ -2758,6 +2859,69 @@ mod transport_rpc_schema {
 
         let out1 = responses[1].output.as_ref().expect("ok frame has output");
         assert_eq!(out1.get("nonce").and_then(|v| v.as_str()), Some("second!"));
+    }
+
+    #[tokio::test]
+    async fn rpc_batch_error_frames_carry_lowercase_grpc_codes() {
+        // One unknown-op frame and one mutation-with-no-auth frame —
+        // both error paths must produce RpcErrorBody-shaped frames with
+        // gRPC-style lowercase codes. This is the primary assertion of
+        // the post-processor.
+        let router = rpc_test_router(CborCodec);
+        // Build the batch body manually so we can drop the auth header
+        // on the request without losing it from the auth-gated frame.
+        let frames = vec![
+            cratestack::rpc::RpcRequest {
+                id: 1,
+                op: "procedure.does_not_exist".into(),
+                input: serde_json::json!(null),
+                idem: None,
+            },
+            cratestack::rpc::RpcRequest {
+                id: 2,
+                op: "procedure.bump".into(),
+                input: serde_json::json!({"args": {"nonce": "x"}}),
+                idem: None,
+            },
+        ];
+        let body = CborCodec
+            .encode(&frames)
+            .expect("batch body should encode");
+        let response = router
+            .oneshot(
+                Request::post("/rpc/batch")
+                    .header("content-type", CborCodec::CONTENT_TYPE)
+                    // no x-auth-id: bump should hit the @allow gate
+                    .body(Body::from(body))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should succeed");
+        let status = response.status();
+        let bytes = cratestack::axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body should buffer");
+        let responses: Vec<cratestack::rpc::RpcResponseFrame> = CborCodec
+            .decode(&bytes)
+            .expect("batch response decodes");
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(responses.len(), 2);
+
+        let unknown = responses[0]
+            .error
+            .as_ref()
+            .expect("frame 0 (unknown op) should error");
+        assert_eq!(unknown.code, "not_found", "unknown-op code: {unknown:?}");
+
+        let forbidden = responses[1]
+            .error
+            .as_ref()
+            .expect("frame 1 (no auth) should error");
+        assert_eq!(
+            forbidden.code, "permission_denied",
+            "anonymous bump should map to permission_denied: {forbidden:?}",
+        );
     }
 
     #[tokio::test]
