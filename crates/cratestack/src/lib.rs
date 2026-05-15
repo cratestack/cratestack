@@ -71,6 +71,17 @@ pub use cratestack_axum::axum;
 #[cfg(not(target_arch = "wasm32"))]
 pub use cratestack_axum::*;
 
+// `cratestack_core::rpc` (wire shapes) and `cratestack_axum::rpc` (the
+// server-side helpers the macro emits against — `encode_rpc_error`,
+// `convert_handler_error_response`, `response_to_frame`,
+// `RPC_BINDING_CAPABILITIES`) both glob in via the lines above, and the
+// resulting ambiguity makes `::cratestack::rpc::X` fail to resolve in
+// macro-emitted code. The axum module re-exports every wire shape from
+// `cratestack_core::rpc`, so an explicit named re-export here is a
+// strict superset — and it shadows the glob, breaking the tie.
+#[cfg(not(target_arch = "wasm32"))]
+pub use cratestack_axum::rpc;
+
 #[cfg(not(target_arch = "wasm32"))]
 pub use cratestack_sqlx::AUDIT_TABLE_DDL;
 #[cfg(not(target_arch = "wasm32"))]
