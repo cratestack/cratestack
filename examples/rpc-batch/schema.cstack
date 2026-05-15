@@ -1,0 +1,44 @@
+// `transport rpc` schema demonstrating `POST /rpc/batch` — multiple op
+// calls in a single round-trip. The batch envelope carries N
+// `RpcRequest { id, op, input, idem? }` frames and returns N
+// `RpcResponseFrame { id, output? | error? }` in the same order.
+//
+// Three pure procedures (no DB, no shared state) so the demo focuses on
+// the batch wire shape, not the underlying ops.
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Caller {
+  id Int
+}
+
+type BinaryArgs {
+  a Int
+  b Int
+}
+
+type ScalarResult {
+  value Int
+}
+
+type DivideArgs {
+  numerator Int
+  denominator Int
+}
+
+procedure add(args: BinaryArgs): ScalarResult
+  @allow(auth() != null)
+
+procedure multiply(args: BinaryArgs): ScalarResult
+  @allow(auth() != null)
+
+// Procedure that errors on `denominator == 0` so the batch tests can
+// demonstrate per-frame error isolation — one bad frame doesn't poison
+// the rest of the batch.
+procedure divide(args: DivideArgs): ScalarResult
+  @allow(auth() != null)

@@ -1,0 +1,39 @@
+// Same shape as the rpc-batch example — three pure procedures so the
+// demo can focus on the **client-side debouncer**, not the server.
+//
+// In a real deployment the debouncer would point at any RPC server;
+// the schema is duplicated here only so this example is self-contained.
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Caller {
+  id Int
+}
+
+type BinaryArgs {
+  a Int
+  b Int
+}
+
+type ScalarResult {
+  value Int
+}
+
+type DivideArgs {
+  numerator Int
+  denominator Int
+}
+
+procedure add(args: BinaryArgs): ScalarResult
+  @allow(auth() != null)
+
+procedure multiply(args: BinaryArgs): ScalarResult
+  @allow(auth() != null)
+
+procedure divide(args: DivideArgs): ScalarResult
+  @allow(auth() != null)

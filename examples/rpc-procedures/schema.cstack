@@ -1,0 +1,44 @@
+// Smallest possible RPC-binding schema. Two procedures and a couple of
+// types — no models, no database access in the handlers.
+//
+// `transport rpc` is the directive that flips the macro from REST emission
+// to RPC emission: the schema mounts `POST /rpc/{op_id}` instead of
+// per-route REST handlers. See ADR 0005 in cratestack-docs.
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Caller {
+  id Int
+}
+
+type GreetArgs {
+  name String
+}
+
+type GreetReply {
+  message String
+}
+
+type CounterDelta {
+  by Int
+}
+
+type CounterValue {
+  total Int
+}
+
+// Read-shaped procedure. `@allow(auth() != null)` requires the caller to
+// have presented credentials — the example uses an x-auth-id header.
+procedure greet(args: GreetArgs): GreetReply
+  @allow(auth() != null)
+
+// Mutation-shaped procedure (declared with `mutation procedure`). Same
+// wire shape as a query for the client; the framework treats it
+// differently for idempotency defaults and ProcedureKind metadata.
+mutation procedure increment(args: CounterDelta): CounterValue
+  @allow(auth() != null)
