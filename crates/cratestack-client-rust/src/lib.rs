@@ -543,9 +543,63 @@ impl RuntimeHandle {
             .map_err(RuntimeErrorWire::from)
     }
 
+    /// Streaming companion to [`Self::execute`]. The callback receives
+    /// one [`RuntimeChunkWire`] per complete cbor-seq item as bytes
+    /// arrive on the wire; returning `false` cancels the stream.
+    /// Returns when the stream terminates (clean end, error, or
+    /// cancellation).
+    ///
+    /// Designed for the FFI surface — the callback gets raw CBOR bytes
+    /// per item, so the host language decodes with its native CBOR
+    /// library (Dart, Swift, Kotlin) rather than carrying a typed
+    /// generic across the bridge.
+    pub fn execute_streamed<F>(
+        &self,
+        request: RuntimeRequestWire,
+        on_chunk: F,
+    ) -> Result<(), RuntimeErrorWire>
+    where
+        F: FnMut(RuntimeChunkWire) -> bool + Send,
+    {
+        self.runtime
+            .block_on(self.client.execute_streamed(request, on_chunk))
+    }
+
     pub fn state(&self) -> Result<PersistedClientState, ClientError> {
         self.client.state()
     }
+}
+
+async fn execute_streamed_transport<C>(
+    client: &CratestackClient<C>,
+    request: RuntimeRequestWire,
+    accept: &'static str,
+) -> Result<reqwest::Response, ClientError>
+where
+    C: HttpClientCodec,
+{
+    let method = Method::from_bytes(request.method.as_bytes()).map_err(|error| {
+        ClientError::BadInput(format!("invalid HTTP method '{}': {error}", request.method))
+    })?;
+    let header_pairs = request
+        .headers
+        .iter()
+        .map(|header| (header.name.as_str(), header.value.as_str()))
+        .collect::<Vec<_>>();
+    client
+        .request_streamed_with_query_and_accept(
+            method,
+            &request.path,
+            if request.body.is_empty() {
+                None
+            } else {
+                Some(request.body)
+            },
+            request.canonical_query.as_deref(),
+            &header_pairs,
+            accept,
+        )
+        .await
 }
 
 fn replace_bridge_content_type(headers: &mut Vec<RuntimeHeader>) {
@@ -567,6 +621,37 @@ impl RuntimeTransportClient {
             Self::Json(client) => client.execute_raw_transport(request).await,
         }
         .and_then(|response| self.transport_response_to_bridge(response))
+    }
+
+    /// Streaming variant of `execute_raw` for the FFI surface. The
+    /// callback receives one [`RuntimeChunkWire`] per complete
+    /// cbor-seq item; returning `false` cancels the stream. Returns
+    /// when the stream terminates by completion, error, or
+    /// cancellation. The success response body is **not buffered** —
+    /// items reach the callback as they arrive on the wire.
+    async fn execute_streamed<F>(
+        &self,
+        request: RuntimeRequestWire,
+        on_chunk: F,
+    ) -> Result<(), RuntimeErrorWire>
+    where
+        F: FnMut(RuntimeChunkWire) -> bool + Send,
+    {
+        let request = self
+            .bridge_request_to_transport(request)
+            .map_err(RuntimeErrorWire::from)?;
+        let response = match self {
+            Self::Cbor(client) => {
+                let accept = client.codec.sequence_accept_header_value();
+                execute_streamed_transport(client, request, accept).await
+            }
+            Self::Json(client) => {
+                let accept = client.codec.sequence_accept_header_value();
+                execute_streamed_transport(client, request, accept).await
+            }
+        };
+        let response = response.map_err(RuntimeErrorWire::from)?;
+        pump_streamed_response_callback(response, on_chunk).await
     }
 
     fn bridge_request_to_transport(
@@ -813,6 +898,51 @@ where
         decode_sequence_response(&self.codec, &response)
     }
 
+    /// Streaming variant of [`Self::post_list`]. Returns an
+    /// `mpsc::Receiver` that yields decoded items as they arrive over
+    /// the network — first-item latency drops from "buffer the whole
+    /// body" to "decode one chunk." Useful on mobile / flaky links
+    /// where time-to-first-byte matters more than total throughput.
+    ///
+    /// The receiver yields `Result<Output, ClientError>` per item.
+    /// Transport / decode errors are terminal — the next call to
+    /// `.recv()` returns `None` after one. A clean end-of-stream
+    /// (server closed cleanly after the last item) also surfaces as
+    /// `None` from the next `.recv()`.
+    ///
+    /// The server must return `application/cbor-seq`. If it returns a
+    /// buffered `application/cbor` or `application/json` instead, the
+    /// caller should use [`Self::post_list`] — this method does not
+    /// fall back.
+    pub async fn post_list_streamed<Input, Output>(
+        &self,
+        path: &str,
+        input: &Input,
+        headers: &[HeaderPair<'_>],
+    ) -> Result<tokio::sync::mpsc::Receiver<Result<Output, ClientError>>, ClientError>
+    where
+        Input: Serialize,
+        Output: DeserializeOwned + Send + 'static,
+    {
+        let body = self.codec.encode(input)?;
+        let response = self
+            .request_streamed_with_query_and_accept(
+                Method::POST,
+                path,
+                Some(body),
+                None,
+                headers,
+                self.codec.sequence_accept_header_value(),
+            )
+            .await?;
+
+        // Bounded channel keeps memory tight on the consumer side —
+        // 16 items in flight is plenty for a single subscriber.
+        let (tx, rx) = tokio::sync::mpsc::channel(16);
+        tokio::spawn(pump_streamed_response_typed::<Output>(response, tx));
+        Ok(rx)
+    }
+
     pub async fn patch<Input, Output>(
         &self,
         path: &str,
@@ -983,6 +1113,98 @@ where
             .await
     }
 
+    /// Streaming counterpart to `request_raw_with_query_and_accept`.
+    /// Same prep (URL, headers, auth, canonical request), but returns
+    /// the raw `reqwest::Response` instead of buffering the body — so
+    /// callers can drive `bytes_stream()` themselves.
+    ///
+    /// Rejects non-2xx responses with `ClientError::Remote` after
+    /// buffering the body once, since error bodies are bounded by
+    /// `CoolErrorResponse` and small. Only successful responses leave
+    /// this method unbuffered.
+    async fn request_streamed_with_query_and_accept(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<Vec<u8>>,
+        canonical_query: Option<&str>,
+        headers: &[HeaderPair<'_>],
+        accept: &'static str,
+    ) -> Result<reqwest::Response, ClientError> {
+        let url = build_url(&self.config.base_url, path, canonical_query)?;
+        let mut header_map = HeaderMap::new();
+        header_map.insert(ACCEPT, HeaderValue::from_static(accept));
+        let content_type = if body.is_some() {
+            header_map.insert(CONTENT_TYPE, HeaderValue::from_static(C::CONTENT_TYPE));
+            Some(C::CONTENT_TYPE.to_owned())
+        } else {
+            None
+        };
+        if let Some(authorizer) = &self.request_authorizer {
+            let canonical_request = canonical_request_string(
+                method.as_str(),
+                path,
+                canonical_query,
+                content_type.as_deref(),
+                body.as_deref().unwrap_or(&[]),
+            );
+            let authorization_request = AuthorizationRequest {
+                method: method.as_str().to_owned(),
+                path: path.to_owned(),
+                canonical_query: canonical_query.map(str::to_owned),
+                content_type: content_type.clone(),
+                body: body.clone().unwrap_or_default(),
+                canonical_request,
+            };
+            for (name, value) in authorizer.authorize(&authorization_request)? {
+                header_map.insert(
+                    HeaderName::from_bytes(name.as_bytes()).map_err(|error| {
+                        ClientError::BadInput(format!("invalid header name '{name}': {error}"))
+                    })?,
+                    HeaderValue::from_str(&value).map_err(|error| {
+                        ClientError::BadInput(format!("invalid header value for '{name}': {error}"))
+                    })?,
+                );
+            }
+        }
+        for (name, value) in headers {
+            header_map.insert(
+                HeaderName::from_bytes(name.as_bytes()).map_err(|error| {
+                    ClientError::BadInput(format!("invalid header name '{name}': {error}"))
+                })?,
+                HeaderValue::from_str(value).map_err(|error| {
+                    ClientError::BadInput(format!("invalid header value for '{name}': {error}"))
+                })?,
+            );
+        }
+
+        let mut request = self.http.request(method.clone(), url).headers(header_map);
+        if let Some(body) = body {
+            request = request.body(body);
+        }
+
+        let response = request.send().await?;
+        let status = response.status();
+        let headers_snapshot = response.headers().clone();
+        self.record_request(method.as_str(), path, status, &headers_snapshot)?;
+
+        if !status.is_success() {
+            // Bounded error path — buffer the body (small by contract)
+            // and produce a Remote error, matching the buffered code
+            // path's behavior.
+            let bytes = response.bytes().await?;
+            let response_wire = RuntimeResponseWire {
+                status_code: status.as_u16(),
+                headers: headers_to_runtime(&headers_snapshot),
+                body: bytes.to_vec(),
+            };
+            let error = remote_error_from_response(&self.codec, &response_wire);
+            return Err(error);
+        }
+
+        Ok(response)
+    }
+
     fn record_request(
         &self,
         method: &str,
@@ -1052,6 +1274,33 @@ where
     C: HttpClientCodec,
 {
     decode_typed_response(codec, response)
+}
+
+/// Build a `ClientError::Remote` from a non-2xx response, decoding the
+/// body as a `CoolErrorResponse` if possible. Used by the streaming
+/// path which has a separate buffer-on-error step (success path
+/// streams, error path is bounded and fits in memory).
+fn remote_error_from_response<C>(codec: &C, response: &RuntimeResponseWire) -> ClientError
+where
+    C: HttpClientCodec,
+{
+    let content_type = response
+        .headers
+        .iter()
+        .find(|header| header.name.eq_ignore_ascii_case("content-type"))
+        .map(|header| header.value.as_str())
+        .unwrap_or("");
+    let error = codec
+        .decode_response::<CoolErrorResponse>(content_type, &response.body)
+        .ok();
+    let message = error.as_ref().map(|value| value.message.clone()).unwrap_or_else(|| {
+        format!("unexpected error body for status {}", response.status_code)
+    });
+    ClientError::Remote {
+        status: StatusCode::from_u16(response.status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+        error,
+        message,
+    }
 }
 
 fn decode_sequence_response<C, Output>(
@@ -1197,6 +1446,216 @@ where
         offset += consumed;
     }
     Ok(values)
+}
+
+// -----------------------------------------------------------------------------
+// Chunked cbor-seq decoder + streaming response consumers
+//
+// The buffered path above (`decode_cbor_sequence`) needs the full
+// response body before yielding the first item. On a flaky / metered
+// network — typical for mobile clients — that costs time-to-first-byte
+// AND memory: a 5 MB streamed list buffers all 5 MB before any item
+// reaches the UI.
+//
+// The pieces below give callers two streaming consumer shapes:
+//
+// - **`CratestackClient::post_list_streamed`** — typed Rust callers.
+//   Returns a `tokio::sync::mpsc::Receiver<Result<T, ClientError>>`
+//   that yields items as bytes arrive over the network.
+//
+// - **`RuntimeHandle::execute_streamed`** — FFI / Flutter shape.
+//   Synchronous from the caller's perspective: pass a callback, return
+//   when the stream is done. The callback receives raw item bytes
+//   (one CBOR-encoded value per call) so the FFI side can decode using
+//   whatever native CBOR library it prefers.
+// -----------------------------------------------------------------------------
+
+/// Stateful boundary scanner for `application/cbor-seq` streams. Bytes
+/// arrive in arbitrary chunks; this type buffers them and emits the
+/// byte ranges of any complete top-level CBOR items observed so far.
+/// The CBOR-level parse uses `minicbor::Decoder::skip` for boundary
+/// detection (cheap, doesn't allocate); the per-item serde decode
+/// happens at the caller's leisure on each returned slice.
+struct CborSeqChunkDecoder {
+    buffer: Vec<u8>,
+}
+
+impl CborSeqChunkDecoder {
+    fn new() -> Self {
+        Self { buffer: Vec::new() }
+    }
+
+    /// Append `chunk` to the internal buffer and return the bytes of
+    /// every complete top-level CBOR item now in it. Drains those bytes
+    /// from the buffer; any trailing bytes that don't yet form a
+    /// complete item stay buffered for the next call.
+    fn feed_chunk(&mut self, chunk: &[u8]) -> Result<Vec<Vec<u8>>, CoolError> {
+        self.buffer.extend_from_slice(chunk);
+        let mut items: Vec<Vec<u8>> = Vec::new();
+        let mut consumed = 0;
+        loop {
+            let remaining = &self.buffer[consumed..];
+            if remaining.is_empty() {
+                break;
+            }
+            let mut decoder = minicbor::decode::Decoder::new(remaining);
+            match decoder.skip() {
+                Ok(()) => {
+                    let item_len = decoder.position();
+                    if item_len == 0 {
+                        return Err(CoolError::Codec(
+                            "cbor-seq decoder made no progress".to_owned(),
+                        ));
+                    }
+                    items.push(remaining[..item_len].to_vec());
+                    consumed += item_len;
+                }
+                Err(error) if error.is_end_of_input() => {
+                    // Truncated final item — wait for the next chunk.
+                    break;
+                }
+                Err(error) => {
+                    return Err(CoolError::Codec(format!(
+                        "cbor-seq decode failed: {error}",
+                    )));
+                }
+            }
+        }
+        if consumed > 0 {
+            self.buffer.drain(..consumed);
+        }
+        Ok(items)
+    }
+
+    fn pending_len(&self) -> usize {
+        self.buffer.len()
+    }
+}
+
+/// Pump a reqwest streaming response into an `mpsc::Sender`. Each
+/// complete cbor-seq item gets deserialized to `T` and sent through;
+/// transport / decode errors become terminal `Err` items.
+async fn pump_streamed_response_typed<T>(
+    response: reqwest::Response,
+    tx: tokio::sync::mpsc::Sender<Result<T, ClientError>>,
+) where
+    T: DeserializeOwned + Send + 'static,
+{
+    use futures_util::StreamExt;
+
+    let mut byte_stream = response.bytes_stream();
+    let mut decoder = CborSeqChunkDecoder::new();
+    while let Some(chunk_result) = byte_stream.next().await {
+        let chunk = match chunk_result {
+            Ok(c) => c,
+            Err(error) => {
+                let _ = tx.send(Err(ClientError::Transport(error))).await;
+                return;
+            }
+        };
+        let items = match decoder.feed_chunk(&chunk) {
+            Ok(items) => items,
+            Err(error) => {
+                let _ = tx.send(Err(ClientError::Codec(error))).await;
+                return;
+            }
+        };
+        for item_bytes in items {
+            let decoded: Result<T, ClientError> = minicbor_serde::from_slice(&item_bytes)
+                .map_err(|error| {
+                    ClientError::Codec(CoolError::Codec(format!(
+                        "decode cbor-seq item: {error}",
+                    )))
+                });
+            if tx.send(decoded).await.is_err() {
+                // Receiver dropped — caller cancelled, stop work.
+                return;
+            }
+        }
+    }
+
+    if decoder.pending_len() > 0 {
+        let _ = tx
+            .send(Err(ClientError::InvalidResponse(format!(
+                "stream ended with {} bytes buffered (incomplete final item)",
+                decoder.pending_len(),
+            ))))
+            .await;
+    }
+}
+
+/// FFI-shaped chunk delivered to the `execute_streamed` callback.
+/// `Item` carries one CBOR-encoded item's raw bytes; `Error` is
+/// terminal; `End` is terminal and indicates a clean stream close.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum RuntimeChunkWire {
+    /// One complete cbor-seq item. The bytes are CBOR-encoded — decode
+    /// on the FFI side with whatever native library the host has.
+    Item(Vec<u8>),
+    /// Terminal: the stream ended cleanly. No further chunks follow.
+    End,
+    /// Terminal: the stream failed mid-flight. No further chunks follow.
+    Error(RuntimeErrorWire),
+}
+
+/// Drive a streaming response through a callback. Used by
+/// `RuntimeHandle::execute_streamed` — the callback returns `false` to
+/// cancel the stream early. The function returns once the stream is
+/// done (by completion, error, or cancellation).
+async fn pump_streamed_response_callback<F>(
+    response: reqwest::Response,
+    mut on_chunk: F,
+) -> Result<(), RuntimeErrorWire>
+where
+    F: FnMut(RuntimeChunkWire) -> bool,
+{
+    use futures_util::StreamExt;
+
+    let mut byte_stream = response.bytes_stream();
+    let mut decoder = CborSeqChunkDecoder::new();
+    loop {
+        let chunk_result = byte_stream.next().await;
+        let chunk = match chunk_result {
+            Some(Ok(c)) => c,
+            Some(Err(error)) => {
+                let err = RuntimeErrorWire::from(ClientError::Transport(error));
+                on_chunk(RuntimeChunkWire::Error(err.clone()));
+                return Err(err);
+            }
+            None => {
+                if decoder.pending_len() > 0 {
+                    let err = RuntimeErrorWire {
+                        code: RuntimeErrorCode::InvalidResponse,
+                        http_status: None,
+                        message: format!(
+                            "stream ended with {} bytes buffered (incomplete final item)",
+                            decoder.pending_len(),
+                        ),
+                        remote_code: None,
+                        remote_body: None,
+                    };
+                    on_chunk(RuntimeChunkWire::Error(err.clone()));
+                    return Err(err);
+                }
+                on_chunk(RuntimeChunkWire::End);
+                return Ok(());
+            }
+        };
+        let items = match decoder.feed_chunk(&chunk) {
+            Ok(items) => items,
+            Err(error) => {
+                let err = RuntimeErrorWire::from(ClientError::Codec(error));
+                on_chunk(RuntimeChunkWire::Error(err.clone()));
+                return Err(err);
+            }
+        };
+        for item_bytes in items {
+            if !on_chunk(RuntimeChunkWire::Item(item_bytes)) {
+                // Caller cancelled.
+                return Ok(());
+            }
+        }
+    }
 }
 
 #[cfg(test)]

@@ -43,6 +43,32 @@ Run:
 cargo test -p rpc-streaming-example
 ```
 
+## Consuming the stream as a real client (not buffered)
+
+The tests above prove the server side. On the **client** side,
+`cratestack-client-rust` ships two consumer shapes:
+
+- **`CratestackClient::post_list(...)`** — buffers the whole response
+  body, then decodes. Same `Vec<T>` shape whether the response was
+  framed as a single CBOR vec or as cbor-seq.
+
+- **`CratestackClient::post_list_streamed(...)`** — returns a
+  `tokio::sync::mpsc::Receiver<Result<T, ClientError>>` that yields
+  items **as bytes arrive on the wire**. First-item latency drops from
+  "buffer the whole body" to "decode one chunk." Useful on mobile /
+  flaky networks where time-to-first-byte matters more than total
+  throughput.
+
+  See `crates/cratestack-client-rust/tests/streaming.rs` for the
+  end-to-end demo: spins up a server that emits one chunk every 50ms,
+  asserts the first item arrives before the connection has closed.
+
+For Flutter mobile clients the same capability is exposed through
+`RuntimeHandle::execute_streamed(request, on_chunk: FnMut(...))` — a
+callback-shaped wrapper so flutter_rust_bridge can wrap it as a Dart
+`Stream<T>` in the Flutter SDK. (The Flutter SDK side is the next
+patch on the roadmap.)
+
 ## SSE?
 
 The framework's codec layer supports `text/event-stream` too — clients

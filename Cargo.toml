@@ -94,7 +94,8 @@ cratestack-sql = { path = "crates/cratestack-sql", version = "0.3.2" }
 cratestack-sqlx = { path = "crates/cratestack-sqlx", version = "0.3.2" }
 cratestack-studio-generator = { path = "crates/cratestack-studio-generator", version = "0.3.2" }
 minijinja = "2"
-reqwest = { version = "0", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0", default-features = false, features = ["rustls-tls", "stream"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 rusqlite = { version = "0.39", features = ["bundled", "fallible_uint"] }
 redis = "1.2.0"
 regex = "1"
