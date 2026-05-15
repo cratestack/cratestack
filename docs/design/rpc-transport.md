@@ -1,7 +1,29 @@
 # RPC transport — v1 design
 
-Status: **accepted** (2026-05-15)
+Status: **accepted** (2026-05-15) — HTTP surface **shipped** in PRs #20–#24.
 Scope: schemas declaring `transport rpc` in `.cstack`.
+
+## Shipped vs. pending
+
+| Item | Status | Where |
+|------|--------|-------|
+| `transport rpc` directive + `OpDescriptor` vocabulary | shipped | #20 |
+| Unary runtime for procedures + `cratestack-axum::rpc` primitives | shipped | #21 |
+| CRUD over RPC unary + `POST /rpc/batch` | shipped | #22 |
+| `RpcErrorBody` with gRPC-style codes (uniform on every error path) | shipped | #23 |
+| Streaming for `Sequence`-kind ops via `Accept: application/cbor-seq` | shipped | #24 (test coverage only — no code change needed) |
+| WebSocket binding + subscriptions (`@@subscribe` schema directive) | **pending** | — |
+| Batch parallelization | deferred (no observed contention) | — |
+
+Streaming turned out to be free: list-return procedures already get
+`OpKind::Sequence` from the macro, and the existing axum handler does
+content-negotiated `application/cbor-seq` encoding. The RPC dispatcher
+delegates unchanged, so no new code path was needed beyond the test
+fixture that pins the contract.
+
+Subscriptions are the only HTTP-surface gap left, and unlike streaming
+the use cases are not yet concrete enough to motivate the schema-syntax
+and runtime work — see §6.
 
 The REST binding is and remains the default. RPC is an alternative *generation
 style* — a schema picks one or the other via the `transport` directive, and
@@ -234,6 +256,37 @@ appears.
 - **Cross-schema dispatch.** Each schema has its own op registry; mounting
   two schemas in one binary produces two independent registries under
   different prefixes.
+
+## 6.5. WebSocket binding + subscriptions — status
+
+§3.4 specifies the wire shape for WebSocket and subscriptions in detail.
+None of it is implemented yet. Unlike streaming — where list-return
+procedures had a concrete shape (paginated reads, audit feeds, anything
+naturally producing a finite sequence) and the binding fell out of the
+existing axum sequence encoder — subscription use cases haven't
+crystallized in the CrateStack consumer base yet. The design captured in
+§3.4 stays as the target; the runtime work is gated on a real driving
+case.
+
+Concretely, what's missing:
+
+- **Schema directive.** `@@subscribe` on models doesn't parse today;
+  `OpKind::Subscription` exists in `cratestack-core` but no `.cstack`
+  syntax emits it.
+- **WS frame loop.** The `Request`/`Response`/`StreamItem`/`StreamEnd`/
+  `Cancel`/`Error` variants in §2.3 are not wired through to the
+  axum WS extractor.
+- **Bus integration.** `CoolEventBus` already exists in
+  `cratestack-core` and is what a subscription would ride on, but the
+  per-client fan-out + bounded-buffer behavior described in §3.4 needs
+  to be written.
+
+The honest question to ask before that work starts is *what subscription
+should I implement, for whom*. Server-to-server consumers in
+CrateStack's audit/event landscape today don't need subscriptions — they
+poll or consume from the audit sink. External clients (mobile apps,
+browser SPAs) are the natural fit, but no concrete CrateStack consumer
+is asking for them yet. When one does, this section becomes a v1 task.
 
 ## 7. Compatibility
 
