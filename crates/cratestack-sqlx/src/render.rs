@@ -148,7 +148,56 @@ pub(crate) fn render_filter_expr_sql(
         FilterExpr::Coalesce(coalesce) => {
             render_coalesce_filter_sql(coalesce, sql, bind_index);
         }
+        FilterExpr::Json(json) => {
+            render_json_filter_sql(json, sql, bind_index);
+        }
     }
+}
+
+fn render_json_filter_sql(
+    filter: &cratestack_sql::JsonFilter,
+    sql: &mut String,
+    bind_index: &mut usize,
+) {
+    match filter {
+        cratestack_sql::JsonFilter::HasKey { column, key: _ } => {
+            let _ = write!(sql, "{column} ? ${bind_index}");
+            *bind_index += 1;
+        }
+        cratestack_sql::JsonFilter::GetText {
+            column,
+            key: _,
+            op,
+            value: _,
+        } => {
+            let _ = write!(sql, "{column} ->> ${bind_index}");
+            *bind_index += 1;
+            match op {
+                FilterOp::Eq => render_json_text_binary_sql("=", sql, bind_index),
+                FilterOp::Ne => render_json_text_binary_sql("!=", sql, bind_index),
+                FilterOp::Lt => render_json_text_binary_sql("<", sql, bind_index),
+                FilterOp::Lte => render_json_text_binary_sql("<=", sql, bind_index),
+                FilterOp::Gt => render_json_text_binary_sql(">", sql, bind_index),
+                FilterOp::Gte => render_json_text_binary_sql(">=", sql, bind_index),
+                FilterOp::IsNull => sql.push_str(" IS NULL"),
+                FilterOp::IsNotNull => sql.push_str(" IS NOT NULL"),
+                FilterOp::In
+                | FilterOp::Contains
+                | FilterOp::StartsWith
+                | FilterOp::EqOrNull => {
+                    unreachable!(
+                        "JsonFilter::GetText built with unsupported op {:?}",
+                        op,
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn render_json_text_binary_sql(operator: &str, sql: &mut String, bind_index: &mut usize) {
+    let _ = write!(sql, " {operator} ${bind_index}");
+    *bind_index += 1;
 }
 
 fn render_coalesce_filter_sql(

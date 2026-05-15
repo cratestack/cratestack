@@ -24,7 +24,7 @@ pub use descriptor::{CreateDefault, CreateDefaultType, ModelColumn, ModelDescrip
 pub use dialect::{Dialect, PostgresDialect, SqliteDialect};
 pub use filter::{
     coalesce, CoalesceExpr, CoalesceFilter, FieldRef, Filter, FilterExpr, FilterOp,
-    IntoColumnName, RelationFilter, RelationQuantifier,
+    IntoColumnName, JsonFilter, JsonTextPath, RelationFilter, RelationQuantifier,
 };
 pub use order::{NullOrder, OrderClause, OrderTarget, SortDirection};
 pub use values::{

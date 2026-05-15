@@ -21,9 +21,9 @@ pub mod opfs;
 pub use cratestack_sql::{
     coalesce, CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault, CreateDefaultType,
     CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName, IntoSqlValue,
-    ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder, OrderClause, RelationFilter,
-    RelationQuantifier, SortDirection, SqlColumnValue, SqlValue, SqliteDialect, UpdateModelInput,
-    UpsertModelInput,
+    JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder,
+    OrderClause, RelationFilter, RelationQuantifier, SortDirection, SqlColumnValue, SqlValue,
+    SqliteDialect, UpdateModelInput, UpsertModelInput,
 };
 
 pub use batch::{
