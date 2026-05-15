@@ -939,7 +939,11 @@ where
         // Bounded channel keeps memory tight on the consumer side —
         // 16 items in flight is plenty for a single subscriber.
         let (tx, rx) = tokio::sync::mpsc::channel(16);
-        tokio::spawn(pump_streamed_response_typed::<Output>(response, tx));
+        tokio::spawn(pump_streamed_response_typed::<Output, ClientError, _>(
+            response,
+            tx,
+            std::convert::identity,
+        ));
         Ok(rx)
     }
 
@@ -1535,11 +1539,19 @@ impl CborSeqChunkDecoder {
 /// Pump a reqwest streaming response into an `mpsc::Sender`. Each
 /// complete cbor-seq item gets deserialized to `T` and sent through;
 /// transport / decode errors become terminal `Err` items.
-async fn pump_streamed_response_typed<T>(
+///
+/// Generic over the consumer-facing error type `E`. REST callers pass
+/// `std::convert::identity` (so `E = ClientError`); RPC callers pass
+/// `client_error_to_rpc` (so `E = RpcClientError`). Keeping a single
+/// pump avoids a second forwarding task per stream.
+async fn pump_streamed_response_typed<T, E, F>(
     response: reqwest::Response,
-    tx: tokio::sync::mpsc::Sender<Result<T, ClientError>>,
+    tx: tokio::sync::mpsc::Sender<Result<T, E>>,
+    convert_error: F,
 ) where
     T: DeserializeOwned + Send + 'static,
+    E: Send + 'static,
+    F: Fn(ClientError) -> E + Send + 'static,
 {
     use futures_util::StreamExt;
 
@@ -1549,24 +1561,25 @@ async fn pump_streamed_response_typed<T>(
         let chunk = match chunk_result {
             Ok(c) => c,
             Err(error) => {
-                let _ = tx.send(Err(ClientError::Transport(error))).await;
+                let _ = tx
+                    .send(Err(convert_error(ClientError::Transport(error))))
+                    .await;
                 return;
             }
         };
         let items = match decoder.feed_chunk(&chunk) {
             Ok(items) => items,
             Err(error) => {
-                let _ = tx.send(Err(ClientError::Codec(error))).await;
+                let _ = tx.send(Err(convert_error(ClientError::Codec(error)))).await;
                 return;
             }
         };
         for item_bytes in items {
-            let decoded: Result<T, ClientError> = minicbor_serde::from_slice(&item_bytes)
-                .map_err(|error| {
-                    ClientError::Codec(CoolError::Codec(format!(
-                        "decode cbor-seq item: {error}",
-                    )))
-                });
+            let decoded: Result<T, E> = minicbor_serde::from_slice(&item_bytes).map_err(|error| {
+                convert_error(ClientError::Codec(CoolError::Codec(format!(
+                    "decode cbor-seq item: {error}",
+                ))))
+            });
             if tx.send(decoded).await.is_err() {
                 // Receiver dropped — caller cancelled, stop work.
                 return;
@@ -1576,10 +1589,10 @@ async fn pump_streamed_response_typed<T>(
 
     if decoder.pending_len() > 0 {
         let _ = tx
-            .send(Err(ClientError::InvalidResponse(format!(
+            .send(Err(convert_error(ClientError::InvalidResponse(format!(
                 "stream ended with {} bytes buffered (incomplete final item)",
                 decoder.pending_len(),
-            ))))
+            )))))
             .await;
     }
 }
@@ -1801,34 +1814,57 @@ where
         decode_rpc_unary_response::<C, Vec<RpcResponseFrame>>(&self.inner.codec, &response)
     }
 
-    /// POST /rpc/{op_id} — sequence response. Returns the full sequence as
-    /// a `Vec<O>` (the binding currently buffers; a `Stream<Item=O>`
-    /// adapter can be layered on top once the server emits streamed
-    /// responses framed in `application/cbor-seq`).
+    /// POST /rpc/{op_id} — sequence response, item-at-a-time.
+    ///
+    /// Returns a bounded `mpsc::Receiver` that yields each cbor-seq
+    /// item as bytes arrive over the network — no full-body buffering
+    /// before the first item reaches the caller. Transport / decode
+    /// failures appear as terminal `Err` items on the channel; the
+    /// receiver returning `None` indicates a clean stream close.
+    ///
+    /// Non-2xx responses are buffered and surfaced as a single
+    /// `RpcClientError::Remote(RpcRemoteError { ... })` from this
+    /// function (the channel is never opened) — same shape as the
+    /// unary `call` path. The server must return `application/cbor-seq`
+    /// for streaming; on a buffered `application/cbor` response this
+    /// method will misframe the body.
     pub async fn call_streaming<I, O>(
         &self,
         op_id: &str,
         input: &I,
-    ) -> Result<Vec<O>, RpcClientError>
+    ) -> Result<tokio::sync::mpsc::Receiver<Result<O, RpcClientError>>, RpcClientError>
     where
         I: Serialize,
-        O: DeserializeOwned,
+        O: DeserializeOwned + Send + 'static,
     {
-        let body = self.inner.codec.encode(input).map_err(RpcClientError::Codec)?;
+        let body = self
+            .inner
+            .codec
+            .encode(input)
+            .map_err(RpcClientError::Codec)?;
         let path = format!("/rpc/{}", op_id);
         let response = self
             .inner
-            .request_raw_with_query_and_accept(
+            .request_streamed_with_query_and_accept(
                 Method::POST,
                 &path,
                 Some(body),
                 None,
                 &[],
-                Some(self.inner.codec.sequence_accept_header_value()),
+                self.inner.codec.sequence_accept_header_value(),
             )
             .await
             .map_err(client_error_to_rpc)?;
-        decode_rpc_sequence_response(&self.inner.codec, &response)
+
+        // Bounded channel — 16 in-flight items matches the REST
+        // `post_list_streamed` shape and keeps consumer memory tight.
+        let (tx, rx) = tokio::sync::mpsc::channel(16);
+        tokio::spawn(pump_streamed_response_typed::<O, RpcClientError, _>(
+            response,
+            tx,
+            client_error_to_rpc,
+        ));
+        Ok(rx)
     }
 }
 
@@ -1885,46 +1921,6 @@ where
     if (200..=299).contains(&response.status_code) {
         codec
             .decode_response::<Output>(content_type, &response.body)
-            .map_err(RpcClientError::Codec)
-    } else {
-        let body = codec
-            .decode_response::<RpcErrorBody>(content_type, &response.body)
-            .unwrap_or_else(|_| RpcErrorBody {
-                code: "internal".to_owned(),
-                message: format!(
-                    "unexpected RPC error body for status {}",
-                    response.status_code
-                ),
-                details: None,
-            });
-        Err(RpcClientError::Remote(RpcRemoteError {
-            status: StatusCode::from_u16(response.status_code)
-                .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
-            body,
-        }))
-    }
-}
-
-fn decode_rpc_sequence_response<C, Output>(
-    codec: &C,
-    response: &RuntimeResponseWire,
-) -> Result<Vec<Output>, RpcClientError>
-where
-    C: HttpClientCodec,
-    Output: DeserializeOwned,
-{
-    let content_type = response
-        .headers
-        .iter()
-        .find(|header| header.name.eq_ignore_ascii_case("content-type"))
-        .map(|header| header.value.as_str())
-        .ok_or_else(|| {
-            RpcClientError::InvalidResponse("response is missing Content-Type header".to_owned())
-        })?;
-
-    if (200..=299).contains(&response.status_code) {
-        codec
-            .decode_sequence_response::<Output>(content_type, &response.body)
             .map_err(RpcClientError::Codec)
     } else {
         let body = codec
