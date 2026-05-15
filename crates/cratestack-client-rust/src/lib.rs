@@ -1480,20 +1480,27 @@ where
 /// The CBOR-level parse uses `minicbor::Decoder::skip` for boundary
 /// detection (cheap, doesn't allocate); the per-item serde decode
 /// happens at the caller's leisure on each returned slice.
-struct CborSeqChunkDecoder {
+///
+/// Exposed publicly so non-`RuntimeHandle` callers — e.g. apps that
+/// run the HTTP request themselves (dio in Flutter, `fetch` in Wasm,
+/// platform networking on iOS/Android) — can reuse the
+/// boundary-detection logic without re-implementing it.
+pub struct CborSeqChunkDecoder {
     buffer: Vec<u8>,
 }
 
 impl CborSeqChunkDecoder {
-    fn new() -> Self {
-        Self { buffer: Vec::new() }
+    pub fn new() -> Self {
+        Self {
+            buffer: Vec::new(),
+        }
     }
 
     /// Append `chunk` to the internal buffer and return the bytes of
     /// every complete top-level CBOR item now in it. Drains those bytes
     /// from the buffer; any trailing bytes that don't yet form a
     /// complete item stay buffered for the next call.
-    fn feed_chunk(&mut self, chunk: &[u8]) -> Result<Vec<Vec<u8>>, CoolError> {
+    pub fn feed_chunk(&mut self, chunk: &[u8]) -> Result<Vec<Vec<u8>>, CoolError> {
         self.buffer.extend_from_slice(chunk);
         let mut items: Vec<Vec<u8>> = Vec::new();
         let mut consumed = 0;
@@ -1531,8 +1538,17 @@ impl CborSeqChunkDecoder {
         Ok(items)
     }
 
-    fn pending_len(&self) -> usize {
+    /// Bytes currently buffered (waiting for frame completion). After
+    /// the upstream stream closes, a non-zero value here indicates a
+    /// truncated final frame — the server hung up mid-item.
+    pub fn pending_len(&self) -> usize {
         self.buffer.len()
+    }
+}
+
+impl Default for CborSeqChunkDecoder {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
