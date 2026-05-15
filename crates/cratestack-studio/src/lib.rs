@@ -4,8 +4,14 @@
 //! Axum server that serves a stub page. The full data layer, UI, and API
 //! land in subsequent phases (see workspace plan).
 
+pub mod api;
 pub mod config;
+pub mod data;
 pub mod server;
+pub mod snippet;
+pub mod workspace;
+
+pub use workspace::{LoadedTarget, LoadedWorkspace, WorkspaceError};
 
 pub use config::{StudioConfig, StudioConfigError, TargetConfig, TargetMode};
 pub use server::{ServerError, ServerOptions, run};

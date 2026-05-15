@@ -2,6 +2,59 @@
 
 ## 0.3.2 (unreleased)
 
+### Studio rewrite — Phase 1a (read API)
+
+The studio gains a real backend. `cratestack studio run` now parses
+each target's `.cstack`, opens a sqlx Postgres pool (when the target
+has a `[target.db]` block), and serves six read endpoints:
+
+```
+GET /api/targets
+GET /api/targets/:key/schema
+GET /api/targets/:key/models
+GET /api/targets/:key/models/:model/records?cursor=…&limit=…
+GET /api/targets/:key/models/:model/records/:pk
+GET /api/targets/:key/models/:model/snippet?pk=…
+```
+
+`/snippet` returns a Rust `find_unique` call against the macro
+delegate so you can paste it into a service crate. Primary-key
+literals are typed: `String`/`Cuid`/`Uuid`/`Decimal` IDs render as
+`"…".to_owned()`, `Int` IDs as `42_i64`.
+
+Pagination is cursor-based on the model's `@id`. Cursors are bound as
+text and cast in SQL (`$1::bigint` for Int PKs, no cast for text-shaped
+PKs) so the Rust side stays blind to column types. Row projection uses
+Postgres's `row_to_json(t.*)` over the model's scalar columns, which
+keeps the dynamic decode path off the type-OID treadmill.
+
+Studio now reads `env:NAME` and `file:PATH` references in
+`studio.toml`. `target.db.url` and `target.api.auth.{token,value}` are
+resolved at boot; unset env vars and missing files surface a load-time
+error that names the bad config field.
+
+API responses use a uniform error envelope —
+`{"error": {"code": "…", "message": "…"}}` — with stable codes
+(`UNKNOWN_TARGET`, `UNKNOWN_MODEL`, `NO_PRIMARY_KEY`,
+`INVALID_PRIMARY_KEY`, `UNSUPPORTED`, `DATABASE_ERROR`,
+`UPSTREAM_ERROR`).
+
+#### Scope limits
+
+- **Postgres only.** The workspace currently pins `rusqlite` (used by
+  `cratestack-rusqlite` and `cratestack-client-store-sqlite`) against
+  `libsqlite3-sys` 0.37, which conflicts with `sqlx-sqlite`'s pin.
+  Phase 1b adds an alternate SQLite path that uses `rusqlite` directly
+  so the two crates can coexist.
+- **No relation follow yet.** `/api/targets/:key/models/:m/records/:pk/rel/:f`
+  lands in Phase 1b alongside the UI.
+- **API-only targets return 501 on list/get.** Schema and snippet
+  endpoints work because they read the parsed schema, not the upstream;
+  list/get against `[target.api]` targets is wired in Phase 1b.
+- **Primary-key types.** Phase 1a accepts `String`, `Cuid`, `Uuid`,
+  `Decimal`, and `Int`. Other PK types (`DateTime`, `Bytes`, etc.)
+  return `UNSUPPORTED`.
+
 ### Studio rewrite — Phase 0 (breaking)
 
 The Jinja-templated `cratestack generate-studio` scaffold is removed. In its
