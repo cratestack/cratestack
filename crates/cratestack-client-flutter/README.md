@@ -95,6 +95,25 @@ await for (final chunk in stream) {
 
 The chunked decoder (see `cratestack-client-rust::CborSeqChunkDecoder`) drives `reqwest::Response::bytes_stream()` and emits one `Item(Vec<u8>)` per complete CBOR item. Cancellation, terminal-end, and transport errors all flow as variants of `FlutterChunkWire`, so the Dart consumer needs just one match arm to cover all paths.
 
+### RPC streaming
+
+For schemas declared with `transport rpc`, list-return procedures (and any sequence-kind op) are served at `POST /rpc/{op_id}` with the same `application/cbor-seq` framing. `FlutterRuntime::rpc_call_streamed` is the dedicated entrypoint — same callback shape as `execute_streamed`, just constructs the `/rpc/{op_id}` URL for you:
+
+```rust
+#[frb(sync)]
+pub fn rpc_call_streamed(
+    runtime: &FlutterRuntime,
+    op_id: String,
+    input: Vec<u8>,
+    headers: Vec<FlutterHeader>,
+    sink: flutter_rust_bridge::StreamSink<FlutterChunkWire>,
+) -> Result<(), FlutterRuntimeError> {
+    runtime.rpc_call_streamed(&op_id, input, headers, move |chunk| sink.add(chunk).is_ok())
+}
+```
+
+`op_id` is the dotted dispatch key the server emits — `model.User.list` for sequence-returning CRUD or `procedure.<name>` for list-return procedures. `input` is the codec-encoded RPC input body; decode each `FlutterChunkWire::Item(bytes)` on the Dart side against the right `Output` type for the op.
+
 End-to-end tests live in [`tests/streaming_bridge.rs`](tests/streaming_bridge.rs).
 
 ## See Also
