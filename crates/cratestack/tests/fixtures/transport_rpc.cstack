@@ -29,5 +29,7 @@ type PingArgs {
 }
 
 procedure ping(args: PingArgs): PingArgs
+  @allow(auth() != null)
 
 mutation procedure bump(args: PingArgs): PingArgs
+  @allow(auth() != null)

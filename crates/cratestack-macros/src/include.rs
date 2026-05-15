@@ -43,8 +43,9 @@ use crate::procedure::{
 };
 use crate::shared::schema_lit;
 use crate::transport::{
-    generate_model_op_descriptors, generate_model_transport_constants,
-    generate_model_transport_entries, generate_procedure_op_descriptor,
+    generate_model_op_descriptors, generate_model_rpc_dispatch_arms,
+    generate_model_transport_constants, generate_model_transport_entries,
+    generate_procedure_op_descriptor, generate_procedure_rpc_dispatch_arm,
     generate_procedure_transport_constants, generate_procedure_transport_entries,
 };
 use crate::types::{
@@ -327,6 +328,117 @@ fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
         routes.extend(procedure_transport_entries.iter().cloned());
         routes.extend(model_transport_entries.iter().cloned());
         (Vec::new(), routes)
+    };
+
+    // RPC dispatch arms — emitted only when `transport rpc`, otherwise an
+    // empty vec collapses the `match` to a single fallback arm. The
+    // `rpc_router` / `rpc_dispatch` fns are also gated on `is_rpc` below.
+    let rpc_dispatch_arms: Vec<proc_macro2::TokenStream> = if is_rpc {
+        let mut arms: Vec<proc_macro2::TokenStream> = Vec::new();
+        for procedure in &schema.procedures {
+            arms.push(generate_procedure_rpc_dispatch_arm(procedure));
+        }
+        for model in &schema.models {
+            arms.extend(generate_model_rpc_dispatch_arms(model));
+        }
+        arms
+    } else {
+        Vec::new()
+    };
+    let rpc_module = if is_rpc {
+        quote! {
+            #[derive(Clone)]
+            pub struct RpcRouterState<R, C, Auth> {
+                pub db: super::Cratestack,
+                pub registry: R,
+                pub codec: C,
+                pub auth_provider: Auth,
+            }
+
+            /// Fallback returned by every CRUD dispatch arm until the model
+            /// handlers grow body-shaped inner fns. Procedure dispatch hits
+            /// the existing axum handler directly and bypasses this.
+            fn rpc_not_yet_implemented<C>(
+                _codec: &C,
+                _headers: &::cratestack::axum::http::HeaderMap,
+                op_id: &str,
+            ) -> ::cratestack::axum::response::Response
+            where
+                C: HttpTransport,
+            {
+                use ::cratestack::axum::response::IntoResponse;
+                (
+                    ::cratestack::axum::http::StatusCode::NOT_IMPLEMENTED,
+                    format!(
+                        "RPC dispatch for `{op_id}` is not implemented yet; \
+                         this arm lands in the next patch (model CRUD over RPC).",
+                    ),
+                )
+                    .into_response()
+            }
+
+            async fn rpc_dispatch<R, C, Auth>(
+                ::cratestack::axum::extract::State(state):
+                    ::cratestack::axum::extract::State<RpcRouterState<R, C, Auth>>,
+                ::cratestack::axum::extract::Path(op_id):
+                    ::cratestack::axum::extract::Path<String>,
+                headers: ::cratestack::axum::http::HeaderMap,
+                body: ::cratestack::axum::body::Bytes,
+            ) -> ::cratestack::axum::response::Response
+            where
+                R: super::procedures::ProcedureRegistry,
+                C: HttpTransport,
+                Auth: ::cratestack::AuthProvider,
+            {
+                match op_id.as_str() {
+                    #(#rpc_dispatch_arms)*
+                    other => {
+                        use ::cratestack::axum::response::IntoResponse;
+                        ::cratestack::tracing::warn!(
+                            target: "cratestack",
+                            cratestack_operation = "rpc_dispatch",
+                            cratestack_op_id = other,
+                            "unknown RPC op id",
+                        );
+                        (
+                            ::cratestack::axum::http::StatusCode::NOT_FOUND,
+                            format!("unknown RPC op `{other}`"),
+                        ).into_response()
+                    }
+                }
+            }
+
+            /// Build the RPC router for `transport rpc` schemas. Mounts
+            /// `POST /rpc/{op_id}` over the same db / registry / codec /
+            /// auth-provider as the REST routers. Batch and WS bindings
+            /// follow in subsequent patches.
+            pub fn rpc_router<R, C, Auth>(
+                db: super::Cratestack,
+                registry: R,
+                codec: C,
+                auth_provider: Auth,
+            ) -> axum::Router
+            where
+                R: super::procedures::ProcedureRegistry,
+                C: HttpTransport,
+                Auth: ::cratestack::AuthProvider,
+            {
+                let state = RpcRouterState {
+                    db,
+                    registry,
+                    codec,
+                    auth_provider,
+                };
+                axum::Router::new()
+                    .route(
+                        ::cratestack::rpc::RPC_UNARY_PATH,
+                        axum::routing::post(rpc_dispatch),
+                    )
+                    .with_state(state)
+            }
+        }
+    } else {
+        quote! {}
     };
 
     let generated_client_module =
@@ -619,6 +731,8 @@ fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
                     model_router(db.clone(), codec.clone(), auth_provider.clone())
                         .merge(procedure_router(db, registry, codec, auth_provider))
                 }
+
+                #rpc_module
             }
 
             #[derive(Clone)]
