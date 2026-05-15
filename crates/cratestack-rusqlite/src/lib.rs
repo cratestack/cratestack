@@ -19,10 +19,10 @@ pub mod ffi;
 pub mod opfs;
 
 pub use cratestack_sql::{
-    ConflictTarget, CreateDefault, CreateDefaultType, CreateModelInput, FieldRef, Filter,
-    FilterExpr, IntoSqlValue, ModelColumn, ModelDescriptor, ModelPrimaryKey, OrderClause,
-    RelationFilter, RelationQuantifier, SortDirection, SqlColumnValue, SqlValue, SqliteDialect,
-    UpdateModelInput, UpsertModelInput,
+    coalesce, CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault, CreateDefaultType,
+    CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName, IntoSqlValue,
+    ModelColumn, ModelDescriptor, ModelPrimaryKey, OrderClause, RelationFilter, RelationQuantifier,
+    SortDirection, SqlColumnValue, SqlValue, SqliteDialect, UpdateModelInput, UpsertModelInput,
 };
 
 pub use batch::{

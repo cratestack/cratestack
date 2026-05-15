@@ -18,9 +18,10 @@ pub use cratestack_policy::{
 // code resolve `::cratestack::FilterExpr` etc. on `wasm32-unknown-unknown`,
 // where sqlx can't compile.
 pub use cratestack_sql::{
-    ConflictTarget, CreateDefault, CreateDefaultType, CreateModelInput, FieldRef, Filter,
-    FilterExpr, IntoSqlValue, ModelColumn, ModelDescriptor, ModelPrimaryKey, OrderClause,
-    RelationFilter, SortDirection, SqlColumnValue, SqlValue, UpdateModelInput, UpsertModelInput,
+    coalesce, CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault, CreateDefaultType,
+    CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName, IntoSqlValue,
+    ModelColumn, ModelDescriptor, ModelPrimaryKey, OrderClause, RelationFilter, SortDirection,
+    SqlColumnValue, SqlValue, UpdateModelInput, UpsertModelInput,
 };
 
 // Embedded SQLite backend — wasm32-compatible alongside native (mobile,

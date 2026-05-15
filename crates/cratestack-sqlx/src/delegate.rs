@@ -335,6 +335,15 @@ impl<'a, M: 'static, PK: 'static> ScopedFindMany<'a, M, PK> {
         self
     }
 
+    /// See [`FindMany::where_optional`].
+    pub fn where_optional<F>(mut self, filter: Option<F>) -> Self
+    where
+        F: Into<FilterExpr>,
+    {
+        self.request = self.request.where_optional(filter);
+        self
+    }
+
     pub fn order_by(mut self, clause: OrderClause) -> Self {
         self.request = self.request.order_by(clause);
         self
@@ -582,6 +591,15 @@ impl<'a, M: 'static, PK: 'static> ScopedUpdateMany<'a, M, PK> {
 
     pub fn where_any(mut self, filters: impl IntoIterator<Item = FilterExpr>) -> Self {
         self.request = self.request.where_any(filters);
+        self
+    }
+
+    /// See [`UpdateMany::where_optional`].
+    pub fn where_optional<F>(mut self, filter: Option<F>) -> Self
+    where
+        F: Into<FilterExpr>,
+    {
+        self.request = self.request.where_optional(filter);
         self
     }
 

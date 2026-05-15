@@ -23,7 +23,8 @@ mod values;
 pub use descriptor::{CreateDefault, CreateDefaultType, ModelColumn, ModelDescriptor};
 pub use dialect::{Dialect, PostgresDialect, SqliteDialect};
 pub use filter::{
-    FieldRef, Filter, FilterExpr, FilterOp, RelationFilter, RelationQuantifier,
+    coalesce, CoalesceExpr, CoalesceFilter, FieldRef, Filter, FilterExpr, FilterOp,
+    IntoColumnName, RelationFilter, RelationQuantifier,
 };
 pub use order::{OrderClause, OrderTarget, SortDirection};
 pub use values::{

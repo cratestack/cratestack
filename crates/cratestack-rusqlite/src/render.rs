@@ -379,6 +379,16 @@ pub(crate) fn render_filter_expr(
             FilterOp::IsNotNull => {
                 let _ = write!(sql, "{} IS NOT NULL", filter.column);
             }
+            FilterOp::EqOrNull => {
+                let FilterValue::Single(value) = &filter.value else {
+                    unreachable!("FilterOp::EqOrNull requires FilterValue::Single");
+                };
+                let _ = write!(sql, "({col} IS NULL OR {col} = ", col = filter.column);
+                dialect.write_placeholder(sql, *bind_index);
+                *bind_index += 1;
+                binds.push(value.clone());
+                sql.push(')');
+            }
         },
         FilterExpr::All(filters) => render_group(dialect, filters, " AND ", sql, binds, bind_index),
         FilterExpr::Any(filters) => render_group(dialect, filters, " OR ", sql, binds, bind_index),
@@ -390,7 +400,60 @@ pub(crate) fn render_filter_expr(
         FilterExpr::Relation(relation) => {
             render_relation(dialect, relation, sql, binds, bind_index);
         }
+        FilterExpr::Coalesce(coalesce) => {
+            render_coalesce(dialect, coalesce, sql, binds, bind_index);
+        }
     }
+}
+
+fn render_coalesce(
+    dialect: &dyn Dialect,
+    filter: &cratestack_sql::CoalesceFilter,
+    sql: &mut String,
+    binds: &mut Vec<SqlValue>,
+    bind_index: &mut usize,
+) {
+    sql.push_str("COALESCE(");
+    for (idx, column) in filter.columns.iter().enumerate() {
+        if idx > 0 {
+            sql.push_str(", ");
+        }
+        sql.push_str(column);
+    }
+    sql.push(')');
+    match filter.op {
+        FilterOp::Eq => render_coalesce_binary(dialect, "=", &filter.value, sql, binds, bind_index),
+        FilterOp::Ne => render_coalesce_binary(dialect, "!=", &filter.value, sql, binds, bind_index),
+        FilterOp::Lt => render_coalesce_binary(dialect, "<", &filter.value, sql, binds, bind_index),
+        FilterOp::Lte => render_coalesce_binary(dialect, "<=", &filter.value, sql, binds, bind_index),
+        FilterOp::Gt => render_coalesce_binary(dialect, ">", &filter.value, sql, binds, bind_index),
+        FilterOp::Gte => render_coalesce_binary(dialect, ">=", &filter.value, sql, binds, bind_index),
+        FilterOp::IsNull => sql.push_str(" IS NULL"),
+        FilterOp::IsNotNull => sql.push_str(" IS NOT NULL"),
+        FilterOp::In | FilterOp::Contains | FilterOp::StartsWith | FilterOp::EqOrNull => {
+            unreachable!(
+                "CoalesceFilter built with unsupported op {:?}",
+                filter.op,
+            );
+        }
+    }
+}
+
+fn render_coalesce_binary(
+    dialect: &dyn Dialect,
+    operator: &str,
+    value: &FilterValue,
+    sql: &mut String,
+    binds: &mut Vec<SqlValue>,
+    bind_index: &mut usize,
+) {
+    let FilterValue::Single(value) = value else {
+        unreachable!("coalesce comparison requires FilterValue::Single");
+    };
+    let _ = write!(sql, " {operator} ");
+    dialect.write_placeholder(sql, *bind_index);
+    *bind_index += 1;
+    binds.push(value.clone());
 }
 
 fn render_relation(
@@ -738,6 +801,57 @@ mod tests {
         );
         assert_eq!(pk_sql, explicit_sql);
         assert!(pk_sql.contains("ON CONFLICT (id) DO UPDATE SET"));
+    }
+
+    #[test]
+    fn eq_or_null_renders_two_branch_disjunction_with_one_bind() {
+        let dialect = SqliteDialect;
+        let descriptor = fixture_descriptor();
+        let title_eq_or_null = FieldRef::<(), String>::new("title").eq_or_null("hi");
+        let (sql, binds) = render_select(
+            &dialect,
+            &descriptor,
+            &[FilterExpr::from(title_eq_or_null)],
+            &[],
+            None,
+            None,
+        );
+        assert!(
+            sql.contains("WHERE (title IS NULL OR title = ?1)"),
+            "got: {sql}",
+        );
+        assert_eq!(binds, vec![SqlValue::String("hi".into())]);
+    }
+
+    #[test]
+    fn coalesce_lte_renders_coalesce_function_with_single_bind() {
+        let dialect = SqliteDialect;
+        let descriptor = fixture_descriptor();
+        // Bare-&str path:
+        let filter = cratestack_sql::coalesce(["title", "published"]).eq("x");
+        let (sql, binds) = render_select(&dialect, &descriptor, &[filter], &[], None, None);
+        assert!(
+            sql.contains("WHERE COALESCE(title, published) = ?1"),
+            "got: {sql}",
+        );
+        assert_eq!(binds, vec![SqlValue::String("x".into())]);
+    }
+
+    #[test]
+    fn coalesce_accepts_fieldref_items() {
+        let dialect = SqliteDialect;
+        let descriptor = fixture_descriptor();
+        // FieldRef path — exercises the IntoColumnName impl.
+        let filter = cratestack_sql::coalesce([
+            FieldRef::<(), String>::new("title"),
+            FieldRef::<(), String>::new("subtitle"),
+        ])
+        .is_null();
+        let (sql, _) = render_select(&dialect, &descriptor, &[filter], &[], None, None);
+        assert!(
+            sql.contains("WHERE COALESCE(title, subtitle) IS NULL"),
+            "got: {sql}",
+        );
     }
 
     #[test]

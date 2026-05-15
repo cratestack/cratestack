@@ -342,3 +342,57 @@ fn update_many_preview_sql_with_soft_delete_layers_in_predicate() {
         "UPDATE posts SET title = $1 WHERE <soft_delete IS NULL> AND <filters> AND <update_policy> RETURNING id AS \"id\"",
     );
 }
+
+// ───── #7 EqOrNull + #13 Coalesce (preview-SQL rendering) ────────────────────
+
+#[test]
+fn eq_or_null_preview_emits_two_branch_disjunction_with_one_bind() {
+    let filter = FieldRef::<(), String>::new("market_code").eq_or_null("us");
+    let mut bind_index = 1usize;
+    let mut sql = String::new();
+    render_filter_expr_sql(&FilterExpr::from(filter), &mut sql, &mut bind_index);
+    assert_eq!(sql, "(market_code IS NULL OR market_code = $1)");
+    assert_eq!(bind_index, 2, "exactly one bind consumed");
+}
+
+#[test]
+fn match_optional_some_emits_eq_or_null_clause() {
+    let filter = FieldRef::<(), String>::new("market_code")
+        .match_optional(Some("eu"))
+        .expect("Some should produce a filter");
+    let mut bind_index = 1usize;
+    let mut sql = String::new();
+    render_filter_expr_sql(&FilterExpr::from(filter), &mut sql, &mut bind_index);
+    assert!(sql.contains("market_code IS NULL OR market_code = $1"));
+}
+
+#[test]
+fn match_optional_none_yields_no_filter() {
+    let filter: Option<crate::Filter> =
+        FieldRef::<(), String>::new("market_code").match_optional(Option::<&str>::None);
+    assert!(filter.is_none(), "None input must yield None filter");
+}
+
+#[test]
+fn coalesce_lte_renders_coalesce_function_with_one_bind() {
+    let filter = cratestack_sql::coalesce(["next_attempt_at", "scheduled_at", "created_at"])
+        .lte(42_i64);
+    let mut bind_index = 1usize;
+    let mut sql = String::new();
+    render_filter_expr_sql(&filter, &mut sql, &mut bind_index);
+    assert_eq!(
+        sql,
+        "COALESCE(next_attempt_at, scheduled_at, created_at) <= $1",
+    );
+    assert_eq!(bind_index, 2);
+}
+
+#[test]
+fn coalesce_is_null_renders_no_bind() {
+    let filter = cratestack_sql::coalesce(["a", "b"]).is_null();
+    let mut bind_index = 1usize;
+    let mut sql = String::new();
+    render_filter_expr_sql(&filter, &mut sql, &mut bind_index);
+    assert_eq!(sql, "COALESCE(a, b) IS NULL");
+    assert_eq!(bind_index, 1, "IS NULL must not consume a bind slot");
+}

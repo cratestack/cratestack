@@ -84,10 +84,10 @@ pub use migrations::{
 
 pub use cratestack_policy::{PolicyExpr, PolicyLiteral, ReadPolicy, ReadPredicate};
 pub use cratestack_sql::{
-    ConflictTarget, CreateDefault, CreateDefaultType, CreateModelInput, FieldRef, Filter,
-    FilterExpr, IntoSqlValue, ModelColumn, ModelDescriptor, ModelPrimaryKey, OrderClause,
-    RelationFilter, RelationQuantifier, SortDirection, SqlColumnValue, SqlValue, UpdateModelInput,
-    UpsertModelInput,
+    coalesce, CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault, CreateDefaultType,
+    CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName, IntoSqlValue,
+    ModelColumn, ModelDescriptor, ModelPrimaryKey, OrderClause, RelationFilter, RelationQuantifier,
+    SortDirection, SqlColumnValue, SqlValue, UpdateModelInput, UpsertModelInput,
 };
 pub use delegate::{
     ModelDelegate, ScopedBatchCreate, ScopedBatchDelete, ScopedBatchGet, ScopedBatchUpdate,

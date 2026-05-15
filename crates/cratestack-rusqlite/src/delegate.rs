@@ -184,6 +184,20 @@ impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
         self
     }
 
+    /// Conditionally append a filter — `None` is a no-op. Mirrors
+    /// the sqlx delegate's `where_optional` so cross-backend code can
+    /// stay backend-agnostic when handling optional query
+    /// parameters.
+    pub fn where_optional<F>(mut self, filter: Option<F>) -> Self
+    where
+        F: Into<FilterExpr>,
+    {
+        if let Some(filter) = filter {
+            self.filters.push(filter.into());
+        }
+        self
+    }
+
     pub fn order_by(mut self, clause: OrderClause) -> Self {
         self.order_by.push(clause);
         self
@@ -603,6 +617,18 @@ impl<'a, M: 'static, PK: 'static> UpdateMany<'a, M, PK> {
 
     pub fn where_expr(mut self, filter: FilterExpr) -> Self {
         self.filters.push(filter);
+        self
+    }
+
+    /// Conditionally append a filter. See
+    /// [`FindMany::where_optional`].
+    pub fn where_optional<F>(mut self, filter: Option<F>) -> Self
+    where
+        F: Into<FilterExpr>,
+    {
+        if let Some(filter) = filter {
+            self.filters.push(filter.into());
+        }
         self
     }
 

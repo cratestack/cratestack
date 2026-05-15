@@ -126,6 +126,15 @@ pub(crate) fn push_filter_expr_query(
             FilterOp::IsNotNull => {
                 query.push(filter.column).push(" IS NOT NULL");
             }
+            FilterOp::EqOrNull => {
+                let FilterValue::Single(value) = &filter.value else {
+                    unreachable!("FilterOp::EqOrNull requires FilterValue::Single");
+                };
+                query.push("(").push(filter.column).push(" IS NULL OR ");
+                query.push(filter.column).push(" = ");
+                push_bind_value(query, value);
+                query.push(")");
+            }
         },
         FilterExpr::All(filters) => push_grouped_filter_query(query, filters, " AND "),
         FilterExpr::Any(filters) => push_grouped_filter_query(query, filters, " OR "),
@@ -135,7 +144,60 @@ pub(crate) fn push_filter_expr_query(
             query.push(")");
         }
         FilterExpr::Relation(relation) => push_relation_filter_query(query, relation),
+        FilterExpr::Coalesce(coalesce) => push_coalesce_filter_query(query, coalesce),
     }
+}
+
+fn push_coalesce_filter_query(
+    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    filter: &cratestack_sql::CoalesceFilter,
+) {
+    query.push("COALESCE(");
+    for (idx, column) in filter.columns.iter().enumerate() {
+        if idx > 0 {
+            query.push(", ");
+        }
+        query.push(*column);
+    }
+    query.push(")");
+    match filter.op {
+        FilterOp::Eq => push_coalesce_binary(query, "=", &filter.value),
+        FilterOp::Ne => push_coalesce_binary(query, "!=", &filter.value),
+        FilterOp::Lt => push_coalesce_binary(query, "<", &filter.value),
+        FilterOp::Lte => push_coalesce_binary(query, "<=", &filter.value),
+        FilterOp::Gt => push_coalesce_binary(query, ">", &filter.value),
+        FilterOp::Gte => push_coalesce_binary(query, ">=", &filter.value),
+        FilterOp::IsNull => {
+            query.push(" IS NULL");
+        }
+        FilterOp::IsNotNull => {
+            query.push(" IS NOT NULL");
+        }
+        // The remaining FilterOp variants don't have a sensible
+        // coalesce semantics — `IN` and `LIKE` against a coalesced
+        // tuple would invite footguns, and `EqOrNull` has no LHS
+        // column to also null-check. Fail loud on construction
+        // (caller built a CoalesceFilter with an unsupported op) so
+        // schema drift can't smuggle in a broken predicate.
+        FilterOp::In | FilterOp::Contains | FilterOp::StartsWith | FilterOp::EqOrNull => {
+            unreachable!(
+                "CoalesceFilter built with unsupported op {:?}; only Eq/Ne/Lt/Lte/Gt/Gte/IsNull/IsNotNull are valid",
+                filter.op,
+            );
+        }
+    }
+}
+
+fn push_coalesce_binary(
+    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    operator: &str,
+    value: &FilterValue,
+) {
+    query.push(" ").push(operator).push(" ");
+    let FilterValue::Single(value) = value else {
+        unreachable!("coalesce comparison requires FilterValue::Single");
+    };
+    push_bind_value(query, value);
 }
 
 fn push_relation_filter_query(

@@ -36,6 +36,20 @@ impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
         self
     }
 
+    /// Conditionally append a filter. `None` is a no-op so callers
+    /// can pipe `FieldRef::match_optional(...)` results straight in
+    /// without an `if let` ladder at every site that handles
+    /// optional query parameters.
+    pub fn where_optional<F>(mut self, filter: Option<F>) -> Self
+    where
+        F: Into<FilterExpr>,
+    {
+        if let Some(filter) = filter {
+            self.filters.push(filter.into());
+        }
+        self
+    }
+
     pub fn order_by(mut self, clause: OrderClause) -> Self {
         self.order_by.push(clause);
         self

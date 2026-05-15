@@ -1344,6 +1344,19 @@ impl<'a, M: 'static, PK: 'static> UpdateMany<'a, M, PK> {
         self
     }
 
+    /// Conditionally append a filter — `None` is a no-op. See
+    /// [`crate::FindMany::where_optional`] for the surrounding
+    /// rationale.
+    pub fn where_optional<F>(mut self, filter: Option<F>) -> Self
+    where
+        F: Into<FilterExpr>,
+    {
+        if let Some(filter) = filter {
+            self.filters.push(filter.into());
+        }
+        self
+    }
+
     /// Supply the patch values. Returns a builder ready to `.run(ctx)`.
     pub fn set<I>(self, input: I) -> UpdateManySet<'a, M, PK, I> {
         UpdateManySet {
