@@ -18,17 +18,20 @@ chrono.workspace = true
 cratestack-codec-cbor.workspace = true
 cratestack-codec-json.workspace = true
 cratestack-core.workspace = true
+futures-util.workspace = true
+minicbor.workspace = true
 minicbor-serde.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_urlencoded.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["sync"] }
 url.workspace = true
 
 [dev-dependencies]
+async-stream = "0.3"
 axum.workspace = true
 cratestack-core.workspace = true
 serde.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time", "sync"] }
