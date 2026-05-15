@@ -15,10 +15,11 @@
 
 use std::sync::Arc;
 
-use cratestack_client_rust::{ClientConfig, CratestackClient, RpcClient};
+use cratestack_client_rust::{ClientConfig, CratestackClient};
 use cratestack_codec_cbor::CborCodec;
 use rpc_streaming_client_rust_example::{
-    StaticAuthId, Tick, TickerArgs, TickerInput, TICKS_OP_ID,
+    StaticAuthId,
+    cratestack_schema::{self, TickerArgs, procedures::ticks},
 };
 use url::Url;
 
@@ -39,13 +40,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Build the runtime with an authorizer that injects `x-auth-id: 1`
     // on every request — the server example authenticates positive
-    // integers as caller-id. RpcClient::new wraps a CratestackClient,
-    // sharing its reqwest::Client / codec / authorizer.
-    let rest = CratestackClient::new(ClientConfig::new(base_url.clone()), CborCodec)
+    // integers as caller-id. The authorizer flows through every
+    // generated client method automatically.
+    let runtime = CratestackClient::new(ClientConfig::new(base_url.clone()), CborCodec)
         .with_request_authorizer(Arc::new(StaticAuthId(1)));
-    let rpc = RpcClient::new(rest);
+    let client = cratestack_schema::client::Client::new(runtime);
 
-    let input = TickerInput {
+    let args = ticks::Args {
         args: TickerArgs {
             start: 100,
             count: 10,
@@ -53,16 +54,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     println!(
-        "Streaming `{TICKS_OP_ID}` from {base_url} (start={}, count={}):",
-        input.args.start, input.args.count,
+        "Streaming `procedure.ticks` from {base_url} (start={}, count={}):",
+        args.args.start, args.args.count,
     );
     println!();
 
-    let mut rx = rpc.call_streaming::<TickerInput, Tick>(TICKS_OP_ID, &input).await?;
+    // The macro saw `procedure ticks(...): Tick[]` and emitted a
+    // streaming method that returns `RpcStream<Tick>` — a bounded
+    // `tokio::sync::mpsc::Receiver` that yields each cbor-seq frame as
+    // it parses off the wire. No full-body buffering.
+    let mut rx = client.procedures().ticks(&args).await?;
 
-    // Each `recv()` await wakes when the next complete cbor-seq frame
-    // has parsed off the wire — no full-body buffering. The bounded
-    // mpsc channel keeps memory tight regardless of stream length.
     let mut received = 0usize;
     while let Some(item) = rx.recv().await {
         match item {
@@ -73,7 +75,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Err(error) => {
                 // Per-item errors (decode failure, mid-stream transport
                 // error) are terminal. Non-2xx responses surface at
-                // call_streaming(...) before the channel ever opens.
+                // `client.procedures().ticks(...)` before the channel
+                // ever opens.
                 eprintln!("\nstream error after {received} items: {error}");
                 return Err(error.into());
             }

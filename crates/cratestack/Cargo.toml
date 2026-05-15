@@ -59,6 +59,7 @@ cratestack-client-rust.workspace = true
 cratestack-sqlx.workspace = true
 
 [dev-dependencies]
+async-stream = "0.3"
 axum.workspace = true
 cratestack-codec-cbor.workspace = true
 cratestack-codec-json.workspace = true

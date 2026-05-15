@@ -1747,6 +1747,14 @@ pub enum RpcClientError {
     Remote(RpcRemoteError),
 }
 
+/// Stable alias for the receiver shape that [`RpcClient::call_streaming`]
+/// returns. Exists so macro-generated code (`include_client_schema!` for
+/// `transport rpc` schemas) has a single name to bind without
+/// re-spelling the tokio/error-type plumbing on every method, and so
+/// downstream users have a typedef they can store in struct fields,
+/// function returns, etc. without leaking the implementation detail.
+pub type RpcStream<O> = tokio::sync::mpsc::Receiver<Result<O, RpcClientError>>;
+
 /// Thin RPC client built on top of the REST client's transport + codec
 /// plumbing.
 ///
