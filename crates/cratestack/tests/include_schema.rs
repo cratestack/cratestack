@@ -2557,6 +2557,300 @@ mod transport_rpc_schema {
         assert_eq!(decoded.nonce, "x!");
     }
 
+    /// Build a CBOR body of a value that's serializable. Lifts the
+    /// boilerplate of unwrapping codec.encode out of the CRUD tests below.
+    fn cbor(value: &impl serde::Serialize) -> Vec<u8> {
+        CborCodec
+            .encode(value)
+            .expect("test body should encode")
+    }
+
+    /// Build an RPC unary request with CBOR content-type + auth header.
+    fn rpc_request(op_id: &str, body: Vec<u8>) -> cratestack::axum::http::Request<Body> {
+        Request::post(format!("/rpc/{op_id}"))
+            .header("content-type", CborCodec::CONTENT_TYPE)
+            .header("x-auth-id", "1")
+            .body(Body::from(body))
+            .expect("request should build")
+    }
+
+    #[tokio::test]
+    async fn rpc_unary_create_rejects_malformed_body() {
+        // Wrong-shape body (missing required `name`) — the existing
+        // create handler should reject this with a 4xx before ever
+        // hitting the DB. Validates that dispatch routes to handle_create
+        // and that the handler's decode path is reached.
+        let router = rpc_test_router(CborCodec);
+        let body = cbor(&serde_json::json!({}));
+        let response = router
+            .oneshot(rpc_request("model.Widget.create", body))
+            .await
+            .expect("request should succeed");
+        assert!(
+            response.status().is_client_error(),
+            "malformed create body should be 4xx, got {}",
+            response.status(),
+        );
+    }
+
+    #[tokio::test]
+    async fn rpc_unary_get_returns_4xx_on_unparseable_pk() {
+        // `Widget.id` is `Int`; sending a string instead exercises the
+        // RpcPkInput<i32> decode path inside the dispatcher. The decode
+        // error surfaces as a 4xx via `rpc_dispatch_error`, with no DB
+        // involvement.
+        let router = rpc_test_router(CborCodec);
+        let body = cbor(&serde_json::json!({"id": "not-a-number"}));
+        let response = router
+            .oneshot(rpc_request("model.Widget.get", body))
+            .await
+            .expect("request should succeed");
+        assert!(
+            response.status().is_client_error(),
+            "non-integer id should be 4xx, got {}",
+            response.status(),
+        );
+    }
+
+    #[tokio::test]
+    async fn rpc_unary_delete_returns_4xx_on_unparseable_pk() {
+        let router = rpc_test_router(CborCodec);
+        let body = cbor(&serde_json::json!({"id": "not-a-number"}));
+        let response = router
+            .oneshot(rpc_request("model.Widget.delete", body))
+            .await
+            .expect("request should succeed");
+        assert!(
+            response.status().is_client_error(),
+            "non-integer id should be 4xx, got {}",
+            response.status(),
+        );
+    }
+
+    #[tokio::test]
+    async fn rpc_unary_update_returns_4xx_on_malformed_patch() {
+        // Well-formed id, malformed patch (an invalid field type for
+        // `name`). The dispatcher decodes RpcUpdateInput<i32, UpdateWidgetInput>
+        // and rejects before re-encoding.
+        let router = rpc_test_router(CborCodec);
+        let body = cbor(&serde_json::json!({
+            "id": 1,
+            "patch": { "name": 42 }
+        }));
+        let response = router
+            .oneshot(rpc_request("model.Widget.update", body))
+            .await
+            .expect("request should succeed");
+        assert!(
+            response.status().is_client_error(),
+            "type-mismatched patch should be 4xx, got {}",
+            response.status(),
+        );
+    }
+
+    #[tokio::test]
+    async fn rpc_unary_list_accepts_pagination_input_shape() {
+        // Body decodes as RpcListInput, gets synthesized into a query
+        // string, gets parsed back by `parse_model_list_query`. If the
+        // round-trip is broken the handler returns 4xx; this test asserts
+        // we get past that — the only error left is the DB failure (no
+        // postgres in the test env) which surfaces as 5xx.
+        let router = rpc_test_router(CborCodec);
+        let body = cbor(&serde_json::json!({
+            "limit": 5,
+            "offset": 10,
+        }));
+        let response = router
+            .oneshot(rpc_request("model.Widget.list", body))
+            .await
+            .expect("request should succeed");
+        assert!(
+            response.status().is_server_error()
+                || response.status() == StatusCode::FORBIDDEN,
+            "list pagination should reach the handler (forbidden by policy or DB error), got {}",
+            response.status(),
+        );
+    }
+
+    #[tokio::test]
+    async fn rpc_unary_list_rejects_malformed_input_shape() {
+        // `limit` must be an integer — sending a string is a decode
+        // error inside the dispatcher, surfaces as 4xx.
+        let router = rpc_test_router(CborCodec);
+        let body = cbor(&serde_json::json!({
+            "limit": "five",
+        }));
+        let response = router
+            .oneshot(rpc_request("model.Widget.list", body))
+            .await
+            .expect("request should succeed");
+        assert!(
+            response.status().is_client_error(),
+            "non-integer limit should be 4xx, got {}",
+            response.status(),
+        );
+    }
+
+    // ----- batch -----
+
+    fn batch_request(frames: Vec<cratestack::rpc::RpcRequest>) -> cratestack::axum::http::Request<Body> {
+        let body = CborCodec
+            .encode(&frames)
+            .expect("batch body should encode");
+        Request::post("/rpc/batch")
+            .header("content-type", CborCodec::CONTENT_TYPE)
+            .header("x-auth-id", "1")
+            .body(Body::from(body))
+            .expect("request should build")
+    }
+
+    async fn run_batch(
+        router: cratestack::axum::Router,
+        frames: Vec<cratestack::rpc::RpcRequest>,
+    ) -> (StatusCode, Vec<cratestack::rpc::RpcResponseFrame>) {
+        let response = router
+            .oneshot(batch_request(frames))
+            .await
+            .expect("batch request should succeed");
+        let status = response.status();
+        let bytes = cratestack::axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body should buffer");
+        let decoded: Vec<cratestack::rpc::RpcResponseFrame> = CborCodec
+            .decode(&bytes)
+            .expect("batch response should decode as Vec<RpcResponseFrame>");
+        (status, decoded)
+    }
+
+    #[tokio::test]
+    async fn rpc_batch_preserves_response_order_and_correlates_ids() {
+        let router = rpc_test_router(CborCodec);
+        let frames = vec![
+            cratestack::rpc::RpcRequest {
+                id: 100,
+                op: "procedure.ping".into(),
+                input: serde_json::json!({
+                    "args": { "nonce": "first" }
+                }),
+                idem: None,
+            },
+            cratestack::rpc::RpcRequest {
+                id: 200,
+                op: "procedure.bump".into(),
+                input: serde_json::json!({
+                    "args": { "nonce": "second" }
+                }),
+                idem: None,
+            },
+        ];
+
+        let (status, responses) = run_batch(router, frames).await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(responses.len(), 2);
+        assert_eq!(responses[0].id, 100);
+        assert_eq!(responses[1].id, 200);
+        assert!(responses[0].error.is_none(), "frame 0 should succeed: {:?}", responses[0]);
+        assert!(responses[1].error.is_none(), "frame 1 should succeed: {:?}", responses[1]);
+
+        let out0 = responses[0].output.as_ref().expect("ok frame has output");
+        assert_eq!(out0.get("nonce").and_then(|v| v.as_str()), Some("first"));
+
+        let out1 = responses[1].output.as_ref().expect("ok frame has output");
+        assert_eq!(out1.get("nonce").and_then(|v| v.as_str()), Some("second!"));
+    }
+
+    #[tokio::test]
+    async fn rpc_batch_per_frame_errors_dont_poison_other_frames() {
+        // Mix one valid procedure call with one unknown op; the batch
+        // still returns 200, the valid frame succeeds, the bad frame
+        // carries an error.
+        let router = rpc_test_router(CborCodec);
+        let frames = vec![
+            cratestack::rpc::RpcRequest {
+                id: 1,
+                op: "procedure.ping".into(),
+                input: serde_json::json!({"args": {"nonce": "ok"}}),
+                idem: None,
+            },
+            cratestack::rpc::RpcRequest {
+                id: 2,
+                op: "procedure.does_not_exist".into(),
+                input: serde_json::json!(null),
+                idem: None,
+            },
+        ];
+
+        let (status, responses) = run_batch(router, frames).await;
+
+        assert_eq!(status, StatusCode::OK, "batch envelope must succeed");
+        assert_eq!(responses.len(), 2);
+        assert_eq!(responses[0].id, 1);
+        assert_eq!(responses[1].id, 2);
+        assert!(responses[0].error.is_none(), "frame 1 should succeed");
+        assert!(
+            responses[1].error.is_some(),
+            "frame 2 (unknown op) should carry an error: {:?}",
+            responses[1],
+        );
+    }
+
+    #[tokio::test]
+    async fn rpc_batch_malformed_envelope_returns_4xx() {
+        // Body that isn't a sequence of RpcRequest frames — should
+        // surface as a 4xx, NOT a 200 with an empty array.
+        let router = rpc_test_router(CborCodec);
+        let body = CborCodec
+            .encode(&serde_json::json!({"not": "a sequence"}))
+            .expect("body should encode");
+        let response = router
+            .oneshot(
+                Request::post("/rpc/batch")
+                    .header("content-type", CborCodec::CONTENT_TYPE)
+                    .header("x-auth-id", "1")
+                    .body(Body::from(body))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should succeed");
+        assert!(
+            response.status().is_client_error(),
+            "malformed batch envelope should be 4xx, got {}",
+            response.status(),
+        );
+    }
+
+    #[tokio::test]
+    async fn rpc_batch_rejects_idempotency_key_header() {
+        // Per-frame idempotency is the model; the HTTP header is
+        // ambiguous in batch context and explicitly rejected.
+        let router = rpc_test_router(CborCodec);
+        let body = CborCodec
+            .encode(&Vec::<cratestack::rpc::RpcRequest>::new())
+            .expect("body should encode");
+        let response = router
+            .oneshot(
+                Request::post("/rpc/batch")
+                    .header("content-type", CborCodec::CONTENT_TYPE)
+                    .header("x-auth-id", "1")
+                    .header("idempotency-key", "abc-123")
+                    .body(Body::from(body))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should succeed");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn rpc_batch_empty_returns_empty_response() {
+        // No frames in, no frames out. Doesn't 400, doesn't crash.
+        let router = rpc_test_router(CborCodec);
+        let (status, responses) = run_batch(router, Vec::new()).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(responses.is_empty());
+    }
+
     #[tokio::test]
     async fn rpc_unary_unknown_op_returns_404() {
         let codec = CborCodec;
@@ -2573,19 +2867,4 @@ mod transport_rpc_schema {
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
-    #[tokio::test]
-    async fn rpc_unary_crud_arms_return_501_until_next_patch() {
-        let codec = CborCodec;
-        let router = rpc_test_router(codec);
-        let response = router
-            .oneshot(
-                Request::post("/rpc/model.Widget.list")
-                    .header("content-type", CborCodec::CONTENT_TYPE)
-                    .body(Body::from(Vec::<u8>::new()))
-                    .expect("request should build"),
-            )
-            .await
-            .expect("request should succeed");
-        assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
-    }
 }
