@@ -32,11 +32,11 @@ use crate::client::generate_client_module;
 use crate::event::generate_event_module;
 use crate::model::{
     generate_bound_model_accessor, generate_client_create_input_struct,
-    generate_client_model_struct, generate_client_update_input_struct,
-    generate_create_input_struct, generate_field_module, generate_model_accessor,
-    generate_model_descriptor, generate_model_struct_only, generate_pg_from_row_impl,
-    generate_primary_key_accessor_impl, generate_rusqlite_from_row_impl,
-    generate_update_input_struct, generate_upsert_input_struct,
+    generate_client_field_module, generate_client_model_struct,
+    generate_client_update_input_struct, generate_create_input_struct, generate_field_module,
+    generate_model_accessor, generate_model_descriptor, generate_model_struct_only,
+    generate_pg_from_row_impl, generate_primary_key_accessor_impl,
+    generate_rusqlite_from_row_impl, generate_update_input_struct, generate_upsert_input_struct,
 };
 use crate::procedure::{
     generate_client_procedure_module, generate_procedure_module, generate_procedure_registry_method,
@@ -1104,10 +1104,13 @@ fn compose_client_schema(schema_path: &LitStr) -> TokenStream {
         .models
         .iter()
         .map(|model| generate_client_update_input_struct(model, &model_name_set, &enum_name_set));
+    // Client field modules: same surface as server field modules minus
+    // emissions that hard-reference `*_MODEL` descriptors (which the
+    // client composer doesn't emit). See `FieldModuleKind::Client`.
     let field_modules = match schema
         .models
         .iter()
-        .map(|model| generate_field_module(model, &model_name_set, &schema.models))
+        .map(|model| generate_client_field_module(model, &model_name_set, &schema.models))
         .collect::<Result<Vec<_>, String>>()
     {
         Ok(field_modules) => field_modules,

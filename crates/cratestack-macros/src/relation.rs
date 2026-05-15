@@ -339,6 +339,7 @@ pub(crate) fn generate_relation_order_module(
     model: &Model,
     relation_field: &Field,
     models: &[Model],
+    kind: crate::model::FieldModuleKind,
 ) -> Result<proc_macro2::TokenStream, String> {
     let relation_link = relation_link(model, relation_field, models)?;
     let root_model = find_model(models, &relation_field.ty.name).ok_or_else(|| {
@@ -374,8 +375,16 @@ pub(crate) fn generate_relation_order_module(
     // related model's primary key (the schema norm); other shapes
     // silently skip the method so the build stays clean while the
     // hand-built literal continues to work.
-    let as_include_method =
-        generate_as_include_method(model, relation_field, root_model, models)?;
+    // `as_include()` references `super::*_MODEL` descriptors, which the
+    // client schema (`include_client_schema!`) doesn't emit. Skip it on
+    // the client path — `RelationInclude` is a server-side ORM concept
+    // and isn't reachable from generated client code anyway.
+    let as_include_method = match kind {
+        crate::model::FieldModuleKind::Server => {
+            generate_as_include_method(model, relation_field, root_model, models)?
+        }
+        crate::model::FieldModuleKind::Client => None,
+    };
     let root_extra: Vec<proc_macro2::TokenStream> =
         as_include_method.into_iter().collect();
 
