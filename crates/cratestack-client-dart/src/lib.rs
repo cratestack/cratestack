@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use minijinja::Environment;
 use serde::Serialize;
 
-use cratestack_core::{EnumDecl, Field, Model, Procedure, Schema, TypeArity, TypeRef};
+use cratestack_core::{EnumDecl, Field, Model, Procedure, Schema, TransportStyle, TypeArity, TypeRef};
 
 fn synthetic_span() -> cratestack_core::SourceSpan {
     cratestack_core::SourceSpan {
@@ -15,7 +15,8 @@ fn synthetic_span() -> cratestack_core::SourceSpan {
     }
 }
 
-const TEMPLATE_SPECS: &[TemplateSpec] = &[
+// Common templates emitted regardless of the schema's transport.
+const COMMON_TEMPLATE_SPECS: &[TemplateSpec] = &[
     TemplateSpec {
         template_name: "pubspec.yaml.j2",
         output_path: "pubspec.yaml",
@@ -37,21 +38,6 @@ const TEMPLATE_SPECS: &[TemplateSpec] = &[
         default_source: include_str!("../templates/analysis_options.yaml.j2"),
     },
     TemplateSpec {
-        template_name: "library.dart.j2",
-        output_path: "lib/{{ package_name }}.dart",
-        default_source: include_str!("../templates/library.dart.j2"),
-    },
-    TemplateSpec {
-        template_name: "runtime.dart.j2",
-        output_path: "lib/src/runtime.dart",
-        default_source: include_str!("../templates/runtime.dart.j2"),
-    },
-    TemplateSpec {
-        template_name: "queries.dart.j2",
-        output_path: "lib/src/queries.dart",
-        default_source: include_str!("../templates/queries.dart.j2"),
-    },
-    TemplateSpec {
         template_name: "constants.dart.j2",
         output_path: "lib/src/constants.dart",
         default_source: include_str!("../templates/constants.dart.j2"),
@@ -62,11 +48,6 @@ const TEMPLATE_SPECS: &[TemplateSpec] = &[
         default_source: include_str!("../templates/models.dart.j2"),
     },
     TemplateSpec {
-        template_name: "apis.dart.j2",
-        output_path: "lib/src/apis.dart",
-        default_source: include_str!("../templates/apis.dart.j2"),
-    },
-    TemplateSpec {
         template_name: "example_main.dart.j2",
         output_path: "example/main.dart",
         default_source: include_str!("../templates/example_main.dart.j2"),
@@ -75,6 +56,50 @@ const TEMPLATE_SPECS: &[TemplateSpec] = &[
         template_name: "package_test.dart.j2",
         output_path: "test/{{ package_name }}_test.dart",
         default_source: include_str!("../templates/package_test.dart.j2"),
+    },
+];
+
+// REST-specific templates. Includes `queries.dart` with selection /
+// projection / fetch-query helpers — none of that is useful for RPC
+// mode since every call carries a typed body and no URL query.
+const REST_TEMPLATE_SPECS: &[TemplateSpec] = &[
+    TemplateSpec {
+        template_name: "rest-library.dart.j2",
+        output_path: "lib/{{ package_name }}.dart",
+        default_source: include_str!("../templates/rest-library.dart.j2"),
+    },
+    TemplateSpec {
+        template_name: "rest-runtime.dart.j2",
+        output_path: "lib/src/runtime.dart",
+        default_source: include_str!("../templates/rest-runtime.dart.j2"),
+    },
+    TemplateSpec {
+        template_name: "rest-queries.dart.j2",
+        output_path: "lib/src/queries.dart",
+        default_source: include_str!("../templates/rest-queries.dart.j2"),
+    },
+    TemplateSpec {
+        template_name: "rest-apis.dart.j2",
+        output_path: "lib/src/apis.dart",
+        default_source: include_str!("../templates/rest-apis.dart.j2"),
+    },
+];
+
+const RPC_TEMPLATE_SPECS: &[TemplateSpec] = &[
+    TemplateSpec {
+        template_name: "rpc-library.dart.j2",
+        output_path: "lib/{{ package_name }}.dart",
+        default_source: include_str!("../templates/rpc-library.dart.j2"),
+    },
+    TemplateSpec {
+        template_name: "rpc-runtime.dart.j2",
+        output_path: "lib/src/runtime.dart",
+        default_source: include_str!("../templates/rpc-runtime.dart.j2"),
+    },
+    TemplateSpec {
+        template_name: "rpc-apis.dart.j2",
+        output_path: "lib/src/apis.dart",
+        default_source: include_str!("../templates/rpc-apis.dart.j2"),
     },
 ];
 
@@ -128,13 +153,25 @@ pub enum DartGeneratorError {
     TemplateRender(&'static str, #[source] minijinja::Error),
 }
 
+fn template_specs_for(transport: TransportStyle) -> Vec<TemplateSpec> {
+    let mode_specs = match transport {
+        TransportStyle::Rest => REST_TEMPLATE_SPECS,
+        TransportStyle::Rpc => RPC_TEMPLATE_SPECS,
+    };
+    let mut specs = Vec::with_capacity(COMMON_TEMPLATE_SPECS.len() + mode_specs.len());
+    specs.extend_from_slice(COMMON_TEMPLATE_SPECS);
+    specs.extend_from_slice(mode_specs);
+    specs
+}
+
 pub fn generate_package(
     schema: &Schema,
     config: &DartGeneratorConfig,
 ) -> Result<GeneratedDartPackage, DartGeneratorError> {
-    let environment = build_environment(config.template_dir.as_deref())?;
+    let specs = template_specs_for(schema.transport);
+    let environment = build_environment(config.template_dir.as_deref(), &specs)?;
     let context = build_template_context(schema, config);
-    let files = TEMPLATE_SPECS
+    let files = specs
         .iter()
         .map(|spec| {
             let template = environment
@@ -157,12 +194,13 @@ pub fn generate_package(
 
 fn build_environment(
     template_dir: Option<&Path>,
+    specs: &[TemplateSpec],
 ) -> Result<Environment<'static>, DartGeneratorError> {
     let mut environment = Environment::new();
     environment.set_trim_blocks(true);
     environment.set_lstrip_blocks(true);
 
-    for spec in TEMPLATE_SPECS {
+    for spec in specs {
         let source = load_template_source(template_dir, spec)?;
         environment
             .add_template_owned(spec.template_name.to_owned(), source)
@@ -478,6 +516,10 @@ struct SelectedRelationAccessorView {
 
 #[derive(Debug, Clone, Serialize)]
 struct ProcedureView {
+    /// Raw schema procedure name (e.g. `publishPost`). Used to build
+    /// the server-side op id `procedure.<name>` in RPC mode and to
+    /// build the REST URL `/$procs/<name>` in REST mode.
+    name: String,
     method_name: String,
     args_name: String,
     return_type: String,
@@ -663,6 +705,7 @@ fn build_procedure(
     enum_names: &BTreeSet<&str>,
 ) -> ProcedureView {
     ProcedureView {
+        name: procedure.name.clone(),
         method_name: to_camel_case(&procedure.name),
         args_name: procedure_wrapper_name(procedure, occupied_type_names),
         return_type: dart_type(&procedure.return_type, false),
