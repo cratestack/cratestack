@@ -1,4 +1,4 @@
-use cratestack_core::{Model, Procedure, TypeArity};
+use cratestack_core::{Model, Procedure, ProcedureKind, TypeArity};
 use quote::quote;
 
 use crate::shared::{ident, pluralize, to_snake_case};
@@ -147,6 +147,125 @@ pub(crate) fn model_write_transport_capabilities_tokens() -> proc_macro2::TokenS
             response_types: &["application/cbor", "application/json"],
             default_response_type: "application/cbor",
             supports_sequence_response: false,
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// RPC op descriptors
+//
+// These are emitted in addition to the REST `RouteTransportDescriptor` consts
+// above. The top-level macro chooses which slice (`ROUTE_TRANSPORTS` or `OPS`)
+// to populate based on `Schema.transport`; both consts always exist on the
+// generated module so downstream code compiles uniformly.
+//
+// See `docs/design/rpc-transport.md` for the semantic spec.
+//
+// `auth_required` is currently a placeholder — set to `true` whenever the
+// schema declares an `auth` block, `false` otherwise. Per-op policy resolution
+// (parsing `@allow` / `@@allow` attributes) is future work; consumers should
+// treat this field as advisory until then.
+// -----------------------------------------------------------------------------
+
+pub(crate) fn generate_model_op_descriptors(
+    model: &Model,
+    auth_required: bool,
+) -> Vec<proc_macro2::TokenStream> {
+    let model_name = model.name.as_str();
+    let page_ty = format!("Page<{model_name}>");
+    let create_input = format!("Create{model_name}Input");
+    let update_input = format!("Update{model_name}Input");
+
+    let list_id = format!("model.{model_name}.list");
+    let get_id = format!("model.{model_name}.get");
+    let create_id = format!("model.{model_name}.create");
+    let update_id = format!("model.{model_name}.update");
+    let delete_id = format!("model.{model_name}.delete");
+
+    vec![
+        quote! {
+            ::cratestack::OpDescriptor {
+                op_id: #list_id,
+                kind: ::cratestack::OpKind::Unary,
+                input_ty: "",
+                output_ty: #page_ty,
+                idempotent_by_default: true,
+                auth_required: #auth_required,
+            }
+        },
+        quote! {
+            ::cratestack::OpDescriptor {
+                op_id: #get_id,
+                kind: ::cratestack::OpKind::Unary,
+                input_ty: "",
+                output_ty: #model_name,
+                idempotent_by_default: true,
+                auth_required: #auth_required,
+            }
+        },
+        quote! {
+            ::cratestack::OpDescriptor {
+                op_id: #create_id,
+                kind: ::cratestack::OpKind::Unary,
+                input_ty: #create_input,
+                output_ty: #model_name,
+                idempotent_by_default: false,
+                auth_required: #auth_required,
+            }
+        },
+        quote! {
+            ::cratestack::OpDescriptor {
+                op_id: #update_id,
+                kind: ::cratestack::OpKind::Unary,
+                input_ty: #update_input,
+                output_ty: #model_name,
+                idempotent_by_default: false,
+                auth_required: #auth_required,
+            }
+        },
+        quote! {
+            ::cratestack::OpDescriptor {
+                op_id: #delete_id,
+                kind: ::cratestack::OpKind::Unary,
+                input_ty: "",
+                output_ty: #model_name,
+                idempotent_by_default: false,
+                auth_required: #auth_required,
+            }
+        },
+    ]
+}
+
+pub(crate) fn generate_procedure_op_descriptor(
+    procedure: &Procedure,
+    auth_required: bool,
+) -> proc_macro2::TokenStream {
+    let op_id = format!("procedure.{}", procedure.name);
+    let kind = if matches!(procedure.return_type.arity, TypeArity::List) {
+        quote! { ::cratestack::OpKind::Sequence }
+    } else {
+        quote! { ::cratestack::OpKind::Unary }
+    };
+    // For now, the input type is the first arg's type name (the conventional
+    // single-`args` arg). Procedures with zero or multiple args expose an
+    // empty `input_ty`; richer surfacing is future work.
+    let input_ty = procedure
+        .args
+        .first()
+        .map(|a| a.ty.name.as_str())
+        .unwrap_or("");
+    let output_ty = procedure.return_type.name.as_str();
+    // Queries are safe to retry without an idempotency key; mutations are not.
+    let idempotent = matches!(procedure.kind, ProcedureKind::Query);
+
+    quote! {
+        ::cratestack::OpDescriptor {
+            op_id: #op_id,
+            kind: #kind,
+            input_ty: #input_ty,
+            output_ty: #output_ty,
+            idempotent_by_default: #idempotent,
+            auth_required: #auth_required,
         }
     }
 }

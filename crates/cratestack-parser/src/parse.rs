@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use chumsky::prelude::*;
 use cratestack_core::{
     Attribute, AuthBlock, ConfigBlock, ConfigEntry, Datasource, EnumDecl, EnumVariant, Field,
-    MixinDecl, Model, Procedure, ProcedureArg, ProcedureKind, Schema, SourceSpan, TypeArity,
-    TypeDecl, TypeRef,
+    MixinDecl, Model, Procedure, ProcedureArg, ProcedureKind, Schema, SourceSpan, TransportStyle,
+    TypeArity, TypeDecl, TypeRef,
 };
 
 use crate::diagnostics::SchemaError;
@@ -26,6 +26,8 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
     let mut types = Vec::new();
     let mut enums = Vec::new();
     let mut procedures = Vec::new();
+    let mut transport: Option<TransportStyle> = None;
+    let mut transport_line: Option<usize> = None;
 
     while cursor < lines.len() {
         let line = &lines[cursor];
@@ -138,6 +140,22 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
             continue;
         }
 
+        if line.trimmed.starts_with("transport ") || line.trimmed == "transport" {
+            let style = parse_transport_directive(line)?;
+            if let Some(prev) = transport_line {
+                return Err(SchemaError::new(
+                    format!("duplicate `transport` directive (first declared on line {prev})"),
+                    line.start..line.start + line.raw.len(),
+                    line.number,
+                ));
+            }
+            transport = Some(style);
+            transport_line = Some(line.number);
+            pending_docs.clear();
+            cursor += 1;
+            continue;
+        }
+
         if line.trimmed.starts_with("procedure ") || line.trimmed.starts_with("mutation procedure ")
         {
             let (procedure, next) =
@@ -165,7 +183,28 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
         types,
         enums,
         procedures,
+        transport: transport.unwrap_or_default(),
     })
+}
+
+fn parse_transport_directive(line: &Line<'_>) -> Result<TransportStyle, SchemaError> {
+    let rest = line.trimmed.strip_prefix("transport").unwrap_or("").trim();
+    if rest.is_empty() {
+        return Err(SchemaError::new(
+            "expected transport style after `transport` (one of: rest, rpc)",
+            line.start..line.start + line.raw.len(),
+            line.number,
+        ));
+    }
+    match rest {
+        "rest" => Ok(TransportStyle::Rest),
+        "rpc" => Ok(TransportStyle::Rpc),
+        other => Err(SchemaError::new(
+            format!("unknown transport style `{other}` (expected one of: rest, rpc)"),
+            line.start..line.start + line.raw.len(),
+            line.number,
+        )),
+    }
 }
 
 fn parse_named_config_block(

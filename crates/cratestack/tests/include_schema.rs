@@ -2293,3 +2293,119 @@ async fn axum_combined_router_serves_procedure_routes() {
 
     assert_eq!(response.status(), StatusCode::OK);
 }
+
+// -----------------------------------------------------------------------------
+// Transport-style introspection
+//
+// `transport rest` (the default) populates `ROUTE_TRANSPORTS` and leaves `OPS`
+// empty. `transport rpc` does the opposite. See docs/design/rpc-transport.md.
+// -----------------------------------------------------------------------------
+
+#[test]
+fn rest_schema_emits_route_transports_and_no_ops() {
+    // The blog fixture omits the `transport` directive, so it picks up the
+    // REST default.
+    assert_eq!(cratestack_schema::TRANSPORT_STYLE, "rest");
+    assert!(
+        cratestack_schema::axum::OPS.is_empty(),
+        "REST schemas must not populate the OPS slice; got {} entries",
+        cratestack_schema::axum::OPS.len(),
+    );
+    assert!(
+        !cratestack_schema::axum::ROUTE_TRANSPORTS.is_empty(),
+        "REST schemas must populate ROUTE_TRANSPORTS",
+    );
+}
+
+mod transport_rpc_schema {
+    use super::*;
+
+    include_server_schema!("tests/fixtures/transport_rpc.cstack", db = Postgres);
+
+    #[test]
+    fn rpc_schema_emits_ops_and_no_route_transports() {
+        assert_eq!(cratestack_schema::TRANSPORT_STYLE, "rpc");
+        assert!(
+            cratestack_schema::axum::ROUTE_TRANSPORTS.is_empty(),
+            "RPC schemas must not populate ROUTE_TRANSPORTS; got {} entries",
+            cratestack_schema::axum::ROUTE_TRANSPORTS.len(),
+        );
+        assert!(
+            !cratestack_schema::axum::OPS.is_empty(),
+            "RPC schemas must populate the OPS slice",
+        );
+    }
+
+    #[test]
+    fn rpc_schema_emits_one_op_per_crud_verb_per_model() {
+        let ops = cratestack_schema::axum::OPS;
+        for verb in ["list", "get", "create", "update", "delete"] {
+            let expected = format!("model.Widget.{verb}");
+            assert!(
+                ops.iter().any(|op| op.op_id == expected),
+                "missing op_id `{expected}`; got: {:?}",
+                ops.iter().map(|o| o.op_id).collect::<Vec<_>>(),
+            );
+        }
+    }
+
+    #[test]
+    fn rpc_schema_op_kinds_match_procedure_shape() {
+        let ops = cratestack_schema::axum::OPS;
+
+        let ping = ops
+            .iter()
+            .find(|op| op.op_id == "procedure.ping")
+            .expect("procedure.ping should be emitted");
+        assert_eq!(ping.kind, cratestack::OpKind::Unary);
+        assert!(
+            ping.idempotent_by_default,
+            "query procedures should be idempotent_by_default",
+        );
+
+        let bump = ops
+            .iter()
+            .find(|op| op.op_id == "procedure.bump")
+            .expect("procedure.bump should be emitted");
+        assert_eq!(bump.kind, cratestack::OpKind::Unary);
+        assert!(
+            !bump.idempotent_by_default,
+            "mutation procedures should not be idempotent_by_default",
+        );
+    }
+
+    #[test]
+    fn rpc_schema_crud_idempotency_defaults_are_safe() {
+        let ops = cratestack_schema::axum::OPS;
+        for op in ops {
+            match op.op_id {
+                "model.Widget.list" | "model.Widget.get" => {
+                    assert!(op.idempotent_by_default, "{} should be idempotent", op.op_id)
+                }
+                "model.Widget.create" | "model.Widget.update" | "model.Widget.delete" => {
+                    assert!(
+                        !op.idempotent_by_default,
+                        "{} must not default to idempotent (writes)",
+                        op.op_id,
+                    )
+                }
+                _ => {}
+            }
+        }
+    }
+
+    #[test]
+    fn rpc_schema_crud_input_and_output_types_use_generated_names() {
+        let ops = cratestack_schema::axum::OPS;
+        let by_id = |id: &str| {
+            ops.iter()
+                .find(|op| op.op_id == id)
+                .unwrap_or_else(|| panic!("missing op {id}"))
+        };
+
+        assert_eq!(by_id("model.Widget.list").output_ty, "Page<Widget>");
+        assert_eq!(by_id("model.Widget.get").output_ty, "Widget");
+        assert_eq!(by_id("model.Widget.create").input_ty, "CreateWidgetInput");
+        assert_eq!(by_id("model.Widget.update").input_ty, "UpdateWidgetInput");
+    }
+}

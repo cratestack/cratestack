@@ -43,7 +43,8 @@ use crate::procedure::{
 };
 use crate::shared::schema_lit;
 use crate::transport::{
-    generate_model_transport_constants, generate_model_transport_entries,
+    generate_model_op_descriptors, generate_model_transport_constants,
+    generate_model_transport_entries, generate_procedure_op_descriptor,
     generate_procedure_transport_constants, generate_procedure_transport_entries,
 };
 use crate::types::{
@@ -294,6 +295,40 @@ fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
         .iter()
         .flat_map(generate_model_transport_entries)
         .collect::<Vec<_>>();
+
+    // RPC op descriptors — see docs/design/rpc-transport.md.
+    //
+    // The schema's `transport` directive picks which slice is populated at
+    // emission time. Both consts are always emitted (so downstream code can
+    // introspect uniformly), but exactly one is non-empty per schema.
+    let is_rpc = matches!(
+        schema.transport,
+        ::cratestack_core::TransportStyle::Rpc,
+    );
+    let auth_required_default = schema.auth.is_some();
+    let transport_style_str = schema.transport.as_str();
+    let (op_descriptor_entries, route_transport_entries): (
+        Vec<proc_macro2::TokenStream>,
+        Vec<proc_macro2::TokenStream>,
+    ) = if is_rpc {
+        let mut ops: Vec<proc_macro2::TokenStream> = Vec::new();
+        for procedure in &schema.procedures {
+            ops.push(generate_procedure_op_descriptor(
+                procedure,
+                auth_required_default,
+            ));
+        }
+        for model in &schema.models {
+            ops.extend(generate_model_op_descriptors(model, auth_required_default));
+        }
+        (ops, Vec::new())
+    } else {
+        let mut routes: Vec<proc_macro2::TokenStream> = Vec::new();
+        routes.extend(procedure_transport_entries.iter().cloned());
+        routes.extend(model_transport_entries.iter().cloned());
+        (Vec::new(), routes)
+    };
+
     let generated_client_module =
         match generate_generated_client_module(&schema.models, &schema.procedures) {
             Ok(module) => module,
@@ -327,6 +362,11 @@ fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
             pub const TYPE_COUNT: usize = TYPES.len();
             pub const ENUM_COUNT: usize = ENUMS.len();
             pub const PROCEDURE_COUNT: usize = PROCEDURES.len();
+
+            /// Generation style the schema declared via the `transport`
+            /// directive. Either `"rest"` (the default) or `"rpc"`. See
+            /// `docs/design/rpc-transport.md`.
+            pub const TRANSPORT_STYLE: &str = #transport_style_str;
 
             pub mod types {
                 use ::cratestack::serde;
@@ -508,8 +548,15 @@ fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
                 #axum_shared_support
 
                 pub const ROUTE_TRANSPORTS: &[::cratestack::RouteTransportDescriptor] = &[
-                    #(#procedure_transport_entries,)*
-                    #(#model_transport_entries,)*
+                    #(#route_transport_entries,)*
+                ];
+
+                /// RPC op descriptors. Populated only when the schema declares
+                /// `transport rpc`; empty otherwise. The two slices
+                /// (`ROUTE_TRANSPORTS` and `OPS`) are never both non-empty for a
+                /// given schema — see `docs/design/rpc-transport.md`.
+                pub const OPS: &[::cratestack::OpDescriptor] = &[
+                    #(#op_descriptor_entries,)*
                 ];
 
                 #(#procedure_axum_handler_defs)*
