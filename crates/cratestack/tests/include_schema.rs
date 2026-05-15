@@ -2447,6 +2447,33 @@ mod transport_rpc_schema {
                 })
             }
         }
+
+        fn many_pings(
+            &self,
+            _db: &cratestack_schema::Cratestack,
+            _ctx: &CoolContext,
+            args: cratestack_schema::procedures::many_pings::Args,
+        ) -> impl core::future::Future<
+            Output = Result<
+                cratestack_schema::procedures::many_pings::Output,
+                cratestack::CoolError,
+            >,
+        > + Send {
+            async move {
+                let base = args.args.nonce;
+                Ok(vec![
+                    cratestack_schema::PingArgs {
+                        nonce: format!("{base}-1"),
+                    },
+                    cratestack_schema::PingArgs {
+                        nonce: format!("{base}-2"),
+                    },
+                    cratestack_schema::PingArgs {
+                        nonce: format!("{base}-3"),
+                    },
+                ])
+            }
+        }
     }
 
     /// Auth provider for the RPC runtime tests. Returns an authenticated
@@ -2689,6 +2716,97 @@ mod transport_rpc_schema {
             "non-integer limit should be 4xx, got {}",
             response.status(),
         );
+    }
+
+    // ----- streaming (cbor-seq) -----
+    //
+    // List-return procedures get `OpKind::Sequence` from the macro
+    // (`procedure many_pings(...): PingArgs[]` in the fixture). Streaming
+    // them over the RPC binding is a content-negotiation concern, not a
+    // new route: the dispatcher delegates to the existing axum handler,
+    // which inspects `Accept: application/cbor-seq` and emits a cbor-seq
+    // body via `encode_transport_sequence_result_with_status_for`. The
+    // tests below assert that contract end-to-end.
+
+    #[tokio::test]
+    async fn rpc_unary_streams_list_return_procedure_as_cbor_seq() {
+        let router = rpc_test_router(CborCodec);
+        let body = cbor(&cratestack_schema::procedures::many_pings::Args {
+            args: cratestack_schema::PingArgs {
+                nonce: "x".to_owned(),
+            },
+        });
+        let response = router
+            .oneshot(
+                Request::post("/rpc/procedure.many_pings")
+                    .header("content-type", CborCodec::CONTENT_TYPE)
+                    .header("accept", cratestack::CBOR_SEQUENCE_CONTENT_TYPE)
+                    .header("x-auth-id", "1")
+                    .body(Body::from(body))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should succeed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let content_type = response
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_owned();
+        assert!(
+            content_type.starts_with(cratestack::CBOR_SEQUENCE_CONTENT_TYPE),
+            "streaming response should advertise cbor-seq, got `{content_type}`",
+        );
+
+        let bytes = cratestack::axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body should buffer");
+        let items: Vec<cratestack_schema::PingArgs> = decode_cbor_seq(&bytes);
+        assert_eq!(items.len(), 3, "many_pings returns three items");
+        assert_eq!(items[0].nonce, "x-1");
+        assert_eq!(items[1].nonce, "x-2");
+        assert_eq!(items[2].nonce, "x-3");
+    }
+
+    #[tokio::test]
+    async fn rpc_unary_list_return_procedure_still_serves_single_cbor_when_requested() {
+        // No `Accept` header (default to CBOR via RPC_BINDING_CAPABILITIES).
+        // The same op_id returns a normal CBOR Vec, not a sequence. Tests
+        // that content-negotiation is the only switch between unary and
+        // streaming for `Sequence`-kind ops.
+        let router = rpc_test_router(CborCodec);
+        let body = cbor(&cratestack_schema::procedures::many_pings::Args {
+            args: cratestack_schema::PingArgs {
+                nonce: "y".to_owned(),
+            },
+        });
+        let response = router
+            .oneshot(rpc_request("procedure.many_pings", body))
+            .await
+            .expect("request should succeed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let content_type = response
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_owned();
+        assert!(
+            content_type.starts_with(CborCodec::CONTENT_TYPE),
+            "default Accept should produce single-CBOR, got `{content_type}`",
+        );
+
+        let bytes = cratestack::axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body should buffer");
+        let items: Vec<cratestack_schema::PingArgs> = CborCodec
+            .decode(&bytes)
+            .expect("unary CBOR response should decode as Vec");
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[0].nonce, "y-1");
     }
 
     // ----- error wire shape -----
