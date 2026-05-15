@@ -462,6 +462,18 @@ pub(crate) fn render_filter_expr(
         FilterExpr::Json(json) => {
             render_json(dialect, json, sql, binds, bind_index);
         }
+        FilterExpr::Spatial(_) => {
+            // PostGIS-style spatial predicates require server-side
+            // extensions (PostGIS on Postgres, SpatiaLite on SQLite)
+            // that the embedded runtime doesn't ship by default. We
+            // fail loud at render time rather than silently emitting
+            // SQL the SQLite parser would reject anyway — a schema
+            // that uses spatial filters is implicitly server-only.
+            panic!(
+                "spatial filters are not supported on the embedded rusqlite backend; \
+                 schemas that use FieldRef::covers_geography / dwithin_geography are server-only",
+            );
+        }
     }
 }
 

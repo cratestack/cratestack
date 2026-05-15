@@ -1,0 +1,23 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+// Delivery-zone-shaped row driving the spatial filter test. The
+// schema has no native `Geography` type yet, so the column lands as
+// `Bytes` here (we'll create the actual `geography(Polygon, 4326)`
+// column via raw DDL in the test). The typed `.covers_geography(...)`
+// builder method only cares about the column NAME at the AST level,
+// so the schema field type is incidental.
+model DeliveryZone {
+  id Int @id
+  label String
+  serviceArea Bytes
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}

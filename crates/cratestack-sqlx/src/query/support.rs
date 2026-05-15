@@ -146,6 +146,42 @@ pub(crate) fn push_filter_expr_query(
         FilterExpr::Relation(relation) => push_relation_filter_query(query, relation),
         FilterExpr::Coalesce(coalesce) => push_coalesce_filter_query(query, coalesce),
         FilterExpr::Json(filter) => push_json_filter_query(query, filter),
+        FilterExpr::Spatial(filter) => push_spatial_filter_query(query, filter),
+    }
+}
+
+fn push_spatial_filter_query(
+    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    filter: &cratestack_sql::SpatialFilter,
+) {
+    match filter {
+        cratestack_sql::SpatialFilter::CoversGeographyPoint { column, lng, lat } => {
+            query
+                .push("ST_Covers(")
+                .push(*column)
+                .push("::geography, ST_MakePoint(");
+            query.push_bind(*lng);
+            query.push(", ");
+            query.push_bind(*lat);
+            query.push(")::geography)");
+        }
+        cratestack_sql::SpatialFilter::DWithinGeographyPoint {
+            column,
+            lng,
+            lat,
+            radius_meters,
+        } => {
+            query
+                .push("ST_DWithin(")
+                .push(*column)
+                .push("::geography, ST_MakePoint(");
+            query.push_bind(*lng);
+            query.push(", ");
+            query.push_bind(*lat);
+            query.push(")::geography, ");
+            query.push_bind(*radius_meters);
+            query.push(")");
+        }
     }
 }
 
