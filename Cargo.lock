@@ -5019,6 +5019,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "rpc-streaming-client-rust-example"
+version = "0.1.0"
+dependencies = [
+ "async-stream",
+ "axum",
+ "bytes",
+ "cratestack-client-rust",
+ "cratestack-codec-cbor",
+ "cratestack-core",
+ "serde",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "rpc-streaming-example"
 version = "0.1.0"
 dependencies = [

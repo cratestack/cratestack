@@ -32,6 +32,7 @@ members = [
     "examples/microservice-pair",
     "examples/rpc-procedures",
     "examples/rpc-streaming",
+    "examples/rpc-streaming-client-rust",
     "examples/rpc-batch",
     "examples/rpc-batch-debounce",
     "examples/embedded-browser-vite",

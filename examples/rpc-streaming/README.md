@@ -63,11 +63,13 @@ The tests above prove the server side. On the **client** side,
   end-to-end demo: spins up a server that emits one chunk every 50ms,
   asserts the first item arrives before the connection has closed.
 
-For Flutter mobile clients the same capability is exposed through
-`RuntimeHandle::execute_streamed(request, on_chunk: FnMut(...))` — a
-callback-shaped wrapper so flutter_rust_bridge can wrap it as a Dart
-`Stream<T>` in the Flutter SDK. (The Flutter SDK side is the next
-patch on the roadmap.)
+For a runnable client-side demo see [`examples/rpc-streaming-client-rust/`](../rpc-streaming-client-rust/) — a sibling crate that builds an `RpcClient` and consumes this server's `procedure.ticks` stream via `RpcClient::call_streaming::<TickerInput, Tick>("procedure.ticks", &input)`. Items arrive on a bounded `mpsc::Receiver` as cbor-seq frames parse off the wire.
+
+For Flutter mobile clients the same capability is exposed through several entrypoints in `cratestack-client-flutter`:
+
+- `FlutterRuntime::execute_streamed(request, on_chunk)` — REST-shaped streaming for any `application/cbor-seq` URL.
+- `FlutterRuntime::rpc_call_streamed(op_id, input, headers, on_chunk)` — RPC-shaped streaming dedicated to `POST /rpc/{op_id}`.
+- `FlutterCborSeqDecoder` — decode-only FFI primitive for apps that prefer to run the HTTP via `dio` (native NSURLSession / OkHttp, system proxy integration, dio interceptors). Pair it with the Dart-side `CborSeqStreamTransformer` shipped by `cratestack-client-dart` for an idiomatic `Stream<Uint8List>.transform(...)` pipeline.
 
 ## SSE?
 
