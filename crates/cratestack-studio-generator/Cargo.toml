@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description.workspace = true
+description = "Transitional shim — the studio generator has been replaced by the cratestack-studio binary. This crate currently only hosts the future `studio eject` path."
 repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
@@ -13,12 +13,4 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-cratestack-core.workspace = true
-minijinja.workspace = true
-serde.workspace = true
-serde_json.workspace = true
 thiserror.workspace = true
-
-[dev-dependencies]
-cratestack-parser.workspace = true
-tempfile = "3"

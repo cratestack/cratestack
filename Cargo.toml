@@ -22,6 +22,7 @@ members = [
     "crates/cratestack-rusqlite",
     "crates/cratestack-sql",
     "crates/cratestack-sqlx",
+    "crates/cratestack-studio",
     "crates/cratestack-studio-generator",
     "examples/embedded-cli",
     "examples/embedded-daemon",
@@ -92,6 +93,7 @@ cratestack-redis = { path = "crates/cratestack-redis", version = "0.3.2" }
 cratestack-rusqlite = { path = "crates/cratestack-rusqlite", version = "0.3.2" }
 cratestack-sql = { path = "crates/cratestack-sql", version = "0.3.2" }
 cratestack-sqlx = { path = "crates/cratestack-sqlx", version = "0.3.2" }
+cratestack-studio = { path = "crates/cratestack-studio", version = "0.3.2" }
 cratestack-studio-generator = { path = "crates/cratestack-studio-generator", version = "0.3.2" }
 minijinja = "2"
 reqwest = { version = "0", default-features = false, features = ["rustls-tls"] }
@@ -116,6 +118,7 @@ sqlx-postgres = { version = "=0.8.6", default-features = false, features = ["chr
 syn = { version = "2.0.108", features = ["full"] }
 thiserror = "2.0.17"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+toml = "0.9"
 testcontainers = "0.27"
 testcontainers-modules = { version = "0.15", features = ["postgres"] }
 tower = { version = "0.5", features = ["util"] }

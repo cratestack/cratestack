@@ -1,10 +1,10 @@
 [package]
-name = "cratestack-cli"
+name = "cratestack-studio"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description.workspace = true
+description = "CrateStack Studio — admin and testing surface for .cstack schemas, served as a local web app."
 repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
@@ -12,24 +12,19 @@ readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 
-[[bin]]
-name = "cratestack"
-path = "src/main.rs"
-
 [dependencies]
 anyhow.workspace = true
-chrono.workspace = true
-clap.workspace = true
-cratestack-client-dart.workspace = true
-cratestack-client-typescript.workspace = true
+axum.workspace = true
 cratestack-core.workspace = true
-cratestack-migrate.workspace = true
 cratestack-parser.workspace = true
-cratestack-studio.workspace = true
-cratestack-studio-generator.workspace = true
+serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
-tokio.workspace = true
-url.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "signal"] }
+toml.workspace = true
+tower.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
 
 [dev-dependencies]
 tempfile = "3"

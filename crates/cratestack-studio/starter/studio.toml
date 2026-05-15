@@ -1,0 +1,29 @@
+# CrateStack Studio workspace configuration.
+#
+# Each [[target]] describes one .cstack schema and how the studio reaches
+# its data. A target needs at least one of `[target.db]` or `[target.api]`.
+#
+# Phase 0 only validates this file's shape. The fields below are the v0
+# surface — DB/API targets become functional in Phase 1.
+
+[workspace]
+name = "studio"
+# default_mode applies when a target omits `mode`. Values: "ro" | "rw".
+default_mode = "ro"
+
+# Example target — replace with your own and remove this stub before booting.
+#
+# [[target]]
+# key = "catalog"
+# display_name = "Catalog"
+# schema = "schemas/catalog.cstack"
+# mode = "rw"
+#
+# [target.db]
+# url = "env:CATALOG_DB_URL"
+# driver = "postgres"
+# max_connections = 5
+#
+# [target.api]
+# base_url = "https://catalog.internal"
+# auth = { kind = "bearer", token = "env:CATALOG_TOKEN" }

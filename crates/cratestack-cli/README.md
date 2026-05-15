@@ -66,30 +66,24 @@ Flags:
 - `--base-path <PATH>` (default `/api`)
 - `--template-dir <PATH>` (optional)
 
-### `generate-studio` — Studio scaffold
+### `studio` — admin and testing surface
 
-`--schema` and `--service-url` are repeatable and zipped pairwise; pass one of each per service.
+Replaces the old `generate-studio` codegen scaffold. The studio reads a
+workspace file (`studio.toml`) listing one or more `.cstack` schemas plus
+their DB and/or API targets, then serves a single binary.
 
 ```bash
-cratestack generate-studio \
-  --name catalog-studio \
-  --schema schemas/catalog.cstack \
-  --service-url https://catalog.example.internal \
-  --schema schemas/accounts.cstack \
-  --service-url https://accounts.example.internal \
-  --out target/catalog-studio
+cratestack studio init               # writes ./studio.toml
+cratestack studio run                # binds 127.0.0.1:7878 by default
+cratestack studio run --config infra/studio.toml --bind 0.0.0.0:9000
+cratestack studio eject --out ./out  # Phase 2 — currently returns NotImplemented
 ```
 
-Flags:
+Subcommand flags:
 
-- `--schema <PATH>` — repeatable, at least one (required)
-- `--service-url <URL>` — repeatable, at least one (required)
-- `--out <PATH>` (required)
-- `--name <NAME>` (required)
-- `--context <KEY=VALUE>` — repeatable, propagated to the studio config
-- `--mount-path <PATH>` (default `/studio`)
-- `--profile <dev|prod>` (default `dev`)
-- `--template-dir <PATH>` (optional)
+- `init`: `--out <DIR>` (default `.`), `--force` to overwrite an existing `studio.toml`
+- `run`: `--config <PATH>` (default `studio.toml`), `--bind <ADDR>` (default `127.0.0.1:7878`)
+- `eject`: `--config <PATH>` (default `studio.toml`), `--out <DIR>` (required)
 
 ### `print-ir` — dump parsed schema IR
 

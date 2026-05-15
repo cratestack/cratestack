@@ -1047,9 +1047,11 @@ dependencies = [
  "cratestack-core",
  "cratestack-migrate",
  "cratestack-parser",
+ "cratestack-studio",
  "cratestack-studio-generator",
  "serde_json",
  "tempfile",
+ "tokio",
  "url",
 ]
 
@@ -1298,15 +1300,28 @@ dependencies = [
 ]
 
 [[package]]
-name = "cratestack-studio-generator"
+name = "cratestack-studio"
 version = "0.3.2"
 dependencies = [
+ "anyhow",
+ "axum",
  "cratestack-core",
  "cratestack-parser",
- "minijinja",
  "serde",
  "serde_json",
  "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "toml 0.9.12+spec-1.1.0",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "cratestack-studio-generator"
+version = "0.3.2"
+dependencies = [
  "thiserror 2.0.18",
 ]
 

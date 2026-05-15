@@ -44,6 +44,7 @@ for package in \
   cratestack-client-flutter \
   cratestack-client-store-sqlite \
   cratestack-client-store-redis \
+  cratestack-studio \
   cratestack-studio-generator \
   cratestack-macros \
   cratestack \
@@ -80,6 +81,7 @@ cargo publish -p cratestack-client-typescript
 cargo publish -p cratestack-client-flutter
 cargo publish -p cratestack-client-store-sqlite
 cargo publish -p cratestack-client-store-redis
+cargo publish -p cratestack-studio
 cargo publish -p cratestack-studio-generator
 cargo publish -p cratestack-migrate
 cargo publish -p cratestack-macros

@@ -20,13 +20,9 @@ mod tests {
 
     use clap::Parser;
 
-    use crate::cli_support::{
-        ensure_output_dir_is_empty, json_check_failure, json_check_success, resolve_context_keys,
-        slugify_path_token, validate_context_key, validate_mount_path, validate_service_url,
-        validate_studio_context_inputs, validate_studio_name,
-    };
     use crate::Cli;
-    use crate::cli_types::{Command, StudioProfileArg};
+    use crate::cli_support::{json_check_failure, json_check_success};
+    use crate::cli_types::{Command, StudioCmd};
 
     #[test]
     fn json_success_payload_has_empty_diagnostics() {
@@ -53,40 +49,6 @@ mod tests {
                 .expect("message should be a string")
                 .contains("missing an @id field")
         );
-    }
-
-    #[test]
-    fn generate_studio_clap_defaults() {
-        let cli = Cli::parse_from([
-            "cratestack",
-            "generate-studio",
-            "--schema",
-            "schema.cstack",
-            "--out",
-            "out",
-            "--name",
-            "inventory-studio",
-            "--service-url",
-            "http://127.0.0.1:8082",
-        ]);
-
-        match cli.command {
-            Command::GenerateStudio {
-                schema,
-                service_url,
-                context,
-                mount_path,
-                profile,
-                ..
-            } => {
-                assert_eq!(schema, vec![PathBuf::from("schema.cstack")]);
-                assert_eq!(service_url, vec!["http://127.0.0.1:8082".to_owned()]);
-                assert!(context.is_empty());
-                assert_eq!(mount_path, "/studio");
-                assert_eq!(profile, StudioProfileArg::Dev);
-            }
-            _ => panic!("expected generate-studio command"),
-        }
     }
 
     #[test]
@@ -119,135 +81,40 @@ mod tests {
     }
 
     #[test]
-    fn validate_mount_path_rejects_missing_leading_slash() {
-        let error = validate_mount_path("studio").expect_err("mount path should fail");
-        assert!(error.to_string().contains("must begin with '/'"));
+    fn studio_run_clap_defaults() {
+        let cli = Cli::parse_from(["cratestack", "studio", "run"]);
+        match cli.command {
+            Command::Studio {
+                cmd: StudioCmd::Run { config, bind },
+            } => {
+                assert_eq!(config, PathBuf::from("studio.toml"));
+                assert!(bind.is_none());
+            }
+            _ => panic!("expected studio run command"),
+        }
     }
 
     #[test]
-    fn validate_mount_path_rejects_root_mount() {
-        let error = validate_mount_path("/").expect_err("root mount path should fail");
-        assert!(error.to_string().contains("not supported"));
+    fn studio_init_clap_defaults() {
+        let cli = Cli::parse_from(["cratestack", "studio", "init"]);
+        match cli.command {
+            Command::Studio {
+                cmd: StudioCmd::Init { out, force },
+            } => {
+                assert_eq!(out, PathBuf::from("."));
+                assert!(!force);
+            }
+            _ => panic!("expected studio init command"),
+        }
     }
 
     #[test]
-    fn validate_service_url_rejects_relative_url() {
-        let error = validate_service_url("inventory-service:8082")
-            .expect_err("relative service url should fail");
-        assert!(error.to_string().contains("must be absolute"));
-    }
-
-    #[test]
-    fn validate_service_url_rejects_missing_host() {
-        let error = validate_service_url("file:///tmp/schema.cstack")
-            .expect_err("service URL without host should fail");
-        assert!(error.to_string().contains("must be absolute"));
-    }
-
-    #[test]
-    fn validate_studio_context_inputs_rejects_mismatched_lengths() {
-        let error = validate_studio_context_inputs(
-            &[PathBuf::from("a.cstack"), PathBuf::from("b.cstack")],
-            &["http://127.0.0.1:8081".to_owned()],
-            &[],
-        )
-        .expect_err("mismatched inputs should fail");
+    fn studio_eject_requires_out() {
+        let result = Cli::try_parse_from(["cratestack", "studio", "eject"]);
         assert!(
-            error
-                .to_string()
-                .contains("same number of --schema and --service-url")
-        );
-    }
-
-    #[test]
-    fn validate_context_key_rejects_spaces() {
-        let error = validate_context_key("inventory admin")
-            .expect_err("spaces should fail context key validation");
-        assert!(error.to_string().contains("not URL-safe"));
-    }
-
-    #[test]
-    fn resolve_context_keys_derives_unique_defaults() {
-        let keys = resolve_context_keys(
-            &[
-                PathBuf::from("services/inventory-service/schema/inventory.cstack"),
-                PathBuf::from("services/accounts-service/schema/accounts.cstack"),
-            ],
-            &[],
-        )
-        .expect("context keys should derive");
-
-        assert_eq!(keys, vec!["inventory".to_owned(), "accounts".to_owned()]);
-    }
-
-    #[test]
-    fn resolve_context_keys_accepts_explicit_values() {
-        let keys = resolve_context_keys(
-            &[PathBuf::from("a.cstack"), PathBuf::from("b.cstack")],
-            &["inventory".to_owned(), "accounts_api".to_owned()],
-        )
-        .expect("explicit context keys should be accepted");
-        assert_eq!(
-            keys,
-            vec!["inventory".to_owned(), "accounts_api".to_owned()]
-        );
-    }
-
-    #[test]
-    fn resolve_context_keys_rejects_duplicates() {
-        let error = resolve_context_keys(
-            &[PathBuf::from("a.cstack"), PathBuf::from("b.cstack")],
-            &["dup".to_owned(), "dup".to_owned()],
-        )
-        .expect_err("duplicate context keys should fail");
-        assert!(error.to_string().contains("is duplicated"));
-    }
-
-    #[test]
-    fn resolve_context_keys_rejects_invalid_explicit_values() {
-        let error = resolve_context_keys(&[PathBuf::from("a.cstack")], &["invalid key".to_owned()])
-            .expect_err("invalid context key should fail");
-        assert!(error.to_string().contains("not URL-safe"));
-    }
-
-    #[test]
-    fn resolve_context_keys_prefixes_numeric_file_stem() {
-        let keys = resolve_context_keys(&[PathBuf::from("01-admin.cstack")], &[])
-            .expect("derived key should succeed");
-        assert_eq!(keys, vec!["context-01-admin".to_owned()]);
-    }
-
-    #[test]
-    fn slugify_path_token_normalizes_mixed_symbols() {
-        assert_eq!(
-            slugify_path_token("Inventory API__V2!!!"),
-            "inventory-api__v2"
-        );
-    }
-
-    #[test]
-    fn validate_studio_name_rejects_invalid_chars() {
-        let error = validate_studio_name("inventory studio")
-            .expect_err("spaces should fail studio name validation");
-        assert!(
-            error
-                .to_string()
-                .contains("not cargo-safe or filesystem-safe")
-        );
-    }
-
-    #[test]
-    fn ensure_output_dir_is_empty_rejects_non_empty_directory() {
-        let temp_dir = tempfile::tempdir().expect("temp dir should create");
-        let file_path = temp_dir.path().join("existing.txt");
-        std::fs::write(&file_path, "hello").expect("temp file should write");
-
-        let error = ensure_output_dir_is_empty(&PathBuf::from(temp_dir.path()))
-            .expect_err("non-empty dir should fail");
-        assert!(
-            error
-                .to_string()
-                .contains("already exists and is not empty")
+            result.is_err(),
+            "studio eject must require --out, got {:?}",
+            result.map(|cli| cli.command)
         );
     }
 }
