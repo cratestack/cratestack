@@ -1788,6 +1788,14 @@ where
         &self.inner
     }
 
+    /// Start a new typed batch. Use with [`BatchableCall::queue`] from
+    /// the macro-generated typed methods (or any hand-built
+    /// [`BatchableCall`]) to compose a heterogeneous batch, then
+    /// `batch.send().await` for a single `POST /rpc/batch` round-trip.
+    pub fn batch_builder(&self) -> BatchBuilder<C> {
+        BatchBuilder::new(self.clone())
+    }
+
     /// POST /rpc/{op_id} — unary call.
     ///
     /// `op_id` is the dotted dispatch key the server emits — `model.X.list`
@@ -1889,6 +1897,308 @@ where
             client_error_to_rpc,
         ));
         Ok(rx)
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Typed batch surface
+//
+// Lets callers compose heterogeneous batches of typed RPC ops into a
+// single `POST /rpc/batch` round-trip without dropping to the raw
+// `RpcRequest` / `RpcResponseFrame` wire types. Typical use through
+// the macro-generated client:
+//
+//   let mut batch = client.batch();
+//   let h_widgets = client.widgets().list(&list_input).queue(&mut batch);
+//   let h_ping    = client.procedures().ping(&args).queue(&mut batch);
+//   let h_created = client.widgets().create(&new).queue(&mut batch);
+//
+//   let mut results = batch.send().await?;            // one HTTP call
+//   let widgets:  Vec<Widget> = results.take(h_widgets)?;
+//   let echoed:   PingArgs    = results.take(h_ping)?;
+//   let created:  Widget      = results.take(h_created)?;
+//
+// `BatchableCall<C, O>` is what every macro-generated unary RPC method
+// now returns. It implements `IntoFuture`, so `.await` on it fires the
+// call immediately exactly like before — `.queue(&mut batch)` is the
+// opt-in deferral path. No `_batched` API duplication; same method,
+// two consumption modes.
+//
+// Sequence-streaming methods (`call_streaming` under the hood) stay as
+// `async fn -> Result<RpcStream<O>, _>` and do NOT participate in
+// batches — `/rpc/batch` is unary by construction.
+// -----------------------------------------------------------------------------
+
+/// A typed unary RPC call that has been *prepared* but not yet sent.
+///
+/// Produced by every macro-generated unary RPC method on the typed
+/// client (model CRUD + unary procedures). Two consumption modes:
+///
+/// - **Eager.** `.await` directly — `IntoFuture` desugars to the same
+///   HTTP request `RpcClient::call` would have made.
+/// - **Batched.** `.queue(&mut batch)` registers the call with a
+///   [`BatchBuilder`] for a single multiplexed `POST /rpc/batch`.
+///   Returns a typed [`BatchHandle`] for `.take(...)` on the results
+///   after `batch.send().await` resolves.
+///
+/// The input is eagerly converted to `serde_json::Value` at
+/// construction time so the same prepared call can flow into either
+/// consumption mode without re-borrowing the input. Conversion errors
+/// surface lazily — eagerly on `.await`, per-handle on the batch path.
+#[must_use = "BatchableCall does nothing until `.await`ed or `.queue(&mut batch)`d"]
+pub struct BatchableCall<C, O> {
+    rpc: RpcClient<C>,
+    op_id: String,
+    input_value: Result<serde_json::Value, CoolError>,
+    /// `fn() -> O` instead of `O` so `BatchableCall` is `Send` + `Sync`
+    /// regardless of whether `O` is — the marker is variance-only.
+    _output: std::marker::PhantomData<fn() -> O>,
+}
+
+impl<C, O> BatchableCall<C, O>
+where
+    C: HttpClientCodec + Clone + Send + 'static,
+    O: serde::de::DeserializeOwned + Send + 'static,
+{
+    /// Construct a prepared call. Callers should generally use the
+    /// macro-generated typed methods rather than building this by hand.
+    pub fn new<I>(rpc: RpcClient<C>, op_id: impl Into<String>, input: &I) -> Self
+    where
+        I: serde::Serialize,
+    {
+        let input_value = serde_json::to_value(input)
+            .map_err(|error| CoolError::Codec(format!("encode batch input: {error}")));
+        Self {
+            rpc,
+            op_id: op_id.into(),
+            input_value,
+            _output: std::marker::PhantomData,
+        }
+    }
+
+    /// Queue this call into a [`BatchBuilder`] for deferred
+    /// execution. The returned [`BatchHandle`] is the key to
+    /// retrieve the typed result via [`BatchResults::take`] after
+    /// [`BatchBuilder::send`] resolves.
+    ///
+    /// Input-encoding errors observed at construction time are
+    /// preserved per-handle, so a single bad input in a batch
+    /// produces a per-handle `take(...)?` error rather than
+    /// poisoning the whole batch.
+    pub fn queue(self, batch: &mut BatchBuilder<C>) -> BatchHandle<O> {
+        let id = match self.input_value {
+            Ok(value) => batch.push_frame(self.op_id, value),
+            Err(error) => batch.push_failed_frame(error),
+        };
+        BatchHandle {
+            id,
+            _output: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<C, O> std::future::IntoFuture for BatchableCall<C, O>
+where
+    C: HttpClientCodec + Clone + Send + 'static,
+    O: serde::de::DeserializeOwned + Send + 'static,
+{
+    type Output = Result<O, RpcClientError>;
+    type IntoFuture =
+        std::pin::Pin<Box<dyn std::future::Future<Output = Self::Output> + Send>>;
+
+    fn into_future(self) -> Self::IntoFuture {
+        Box::pin(async move {
+            let value = self.input_value.map_err(RpcClientError::Codec)?;
+            self.rpc.call::<serde_json::Value, O>(&self.op_id, &value).await
+        })
+    }
+}
+
+/// A typed key returned by [`BatchableCall::queue`]. Pair it with
+/// [`BatchResults::take`] to extract the typed output for that op
+/// from the batch response.
+///
+/// Carries `O` only as a phantom type — there's no runtime overhead.
+/// Cheap to clone; clones share identity (you can `take(handle)` only
+/// once, but the type tracks across passes).
+pub struct BatchHandle<O> {
+    id: u64,
+    _output: std::marker::PhantomData<fn() -> O>,
+}
+
+impl<O> Clone for BatchHandle<O> {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id,
+            _output: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<O> Copy for BatchHandle<O> {}
+
+impl<O> std::fmt::Debug for BatchHandle<O> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BatchHandle").field("id", &self.id).finish()
+    }
+}
+
+/// Accumulates queued [`BatchableCall`]s into a single
+/// `POST /rpc/batch` round-trip. Build via [`RpcClient::batch_builder`]
+/// or the macro-generated `Client::batch()`.
+///
+/// Send-on-drop is intentionally *not* implemented — the batch only
+/// fires when you call `.send().await`. Drops without sending are
+/// silent (queued calls just discarded).
+#[must_use = "BatchBuilder does nothing until `.send().await`ed"]
+pub struct BatchBuilder<C> {
+    rpc: RpcClient<C>,
+    frames: Vec<cratestack_core::rpc::RpcRequest>,
+    /// Frames whose input failed to encode pre-send — recorded by id
+    /// so [`BatchResults::take`] can surface the error per-handle
+    /// instead of poisoning the whole batch.
+    encode_errors: std::collections::HashMap<u64, CoolError>,
+    next_id: u64,
+}
+
+impl<C> BatchBuilder<C>
+where
+    C: HttpClientCodec + Clone + Send + 'static,
+{
+    pub(crate) fn new(rpc: RpcClient<C>) -> Self {
+        Self {
+            rpc,
+            frames: Vec::new(),
+            encode_errors: std::collections::HashMap::new(),
+            next_id: 0,
+        }
+    }
+
+    /// Number of queued frames (including ones whose input failed
+    /// to encode — those still consume an id and will surface their
+    /// error on the matching `take`).
+    pub fn len(&self) -> usize {
+        self.frames.len() + self.encode_errors.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    fn next_id(&mut self) -> u64 {
+        let id = self.next_id;
+        self.next_id += 1;
+        id
+    }
+
+    pub(crate) fn push_frame(&mut self, op_id: String, input: serde_json::Value) -> u64 {
+        let id = self.next_id();
+        self.frames.push(cratestack_core::rpc::RpcRequest {
+            id,
+            op: op_id,
+            input,
+            idem: None,
+        });
+        id
+    }
+
+    pub(crate) fn push_failed_frame(&mut self, error: CoolError) -> u64 {
+        let id = self.next_id();
+        self.encode_errors.insert(id, error);
+        id
+    }
+
+    /// Fire the batch as a single `POST /rpc/batch` and return a
+    /// [`BatchResults`] keyed by handle for per-op output extraction.
+    ///
+    /// The outer `Result` only fails on transport / batch-envelope
+    /// errors (the whole batch couldn't be sent or the response
+    /// couldn't be parsed). Per-frame failures — both pre-send input
+    /// encoding errors and server-side `RpcErrorBody` — are deferred
+    /// to the matching `BatchResults::take(handle)?` call.
+    pub async fn send(self) -> Result<BatchResults, RpcClientError> {
+        let encode_errors = self.encode_errors;
+        let frames = if self.frames.is_empty() {
+            std::collections::HashMap::new()
+        } else {
+            let response_frames = self.rpc.batch(&self.frames).await?;
+            response_frames.into_iter().map(|f| (f.id, f)).collect()
+        };
+        Ok(BatchResults {
+            frames,
+            encode_errors,
+        })
+    }
+}
+
+/// Per-handle results from a sent batch. Each handle can be `take`n
+/// exactly once.
+pub struct BatchResults {
+    frames: std::collections::HashMap<u64, cratestack_core::rpc::RpcResponseFrame>,
+    encode_errors: std::collections::HashMap<u64, CoolError>,
+}
+
+impl BatchResults {
+    /// Extract the typed output for one queued op. Returns:
+    ///
+    /// - `Ok(output)` — the server emitted an `output` for this frame
+    ///   and it decoded into `O`.
+    /// - `Err(RpcClientError::Codec(_))` — the input failed to encode
+    ///   before send, or the output failed to decode.
+    /// - `Err(RpcClientError::Remote(RpcRemoteError { body, .. }))` —
+    ///   the server emitted an `error` frame for this op. The
+    ///   `status` field is derived from the gRPC-style code in the
+    ///   body since `/rpc/batch` returns 200 at the HTTP level
+    ///   regardless of per-frame outcomes.
+    /// - `Err(RpcClientError::InvalidResponse(_))` — the server
+    ///   omitted this frame entirely or the frame had neither
+    ///   `output` nor `error` set.
+    pub fn take<O>(&mut self, handle: BatchHandle<O>) -> Result<O, RpcClientError>
+    where
+        O: serde::de::DeserializeOwned,
+    {
+        if let Some(error) = self.encode_errors.remove(&handle.id) {
+            return Err(RpcClientError::Codec(error));
+        }
+        let frame = self.frames.remove(&handle.id).ok_or_else(|| {
+            RpcClientError::InvalidResponse(format!(
+                "batch response missing frame for id {}",
+                handle.id,
+            ))
+        })?;
+        match (frame.output, frame.error) {
+            (Some(output), None) => serde_json::from_value::<O>(output).map_err(|error| {
+                RpcClientError::Codec(CoolError::Codec(format!(
+                    "decode batch output for id {}: {error}",
+                    handle.id,
+                )))
+            }),
+            (None, Some(body)) => Err(RpcClientError::Remote(RpcRemoteError {
+                status: http_status_for_rpc_code(&body.code),
+                body,
+            })),
+            (Some(_), Some(_)) | (None, None) => Err(RpcClientError::InvalidResponse(format!(
+                "batch frame {} has both `output` and `error` set, or neither",
+                handle.id,
+            ))),
+        }
+    }
+}
+
+/// Map a gRPC-style `RpcErrorBody.code` back to a sensible HTTP status.
+/// Inverse of `cratestack_core::rpc::rpc_code`. Used for batch error
+/// frames — the wire frame doesn't carry an HTTP status (the outer
+/// `/rpc/batch` response is always 200), so we synthesize one from the
+/// code for consistency with the unary `RpcRemoteError` shape.
+fn http_status_for_rpc_code(code: &str) -> StatusCode {
+    match code {
+        "invalid_argument" => StatusCode::BAD_REQUEST,
+        "unauthenticated" => StatusCode::UNAUTHORIZED,
+        "permission_denied" => StatusCode::FORBIDDEN,
+        "not_found" => StatusCode::NOT_FOUND,
+        "conflict" => StatusCode::CONFLICT,
+        "failed_precondition" => StatusCode::PRECONDITION_FAILED,
+        _ => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }
 
