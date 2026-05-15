@@ -1,0 +1,44 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+// Two distinct allow slots. Anonymous callers can fetch a single
+// `Article` by id (detail) but cannot list articles. Authenticated
+// callers see both. Used to verify `.find_unique.as_detail()` /
+// `.find_unique.as_list()` route through the right policy slice on
+// the runtime path (the previous behavior pulled `read_*` regardless,
+// silently denying anonymous detail lookups even when the schema said
+// otherwise).
+model Article {
+  id Int @id
+  title String
+
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+  @@allow("list", auth() != null)
+  @@allow("detail", auth() == null)
+}
+
+// Composite unique key on (scope, key) — exercises
+// `.upsert(...).on_conflict(ConflictTarget::Columns(&["scope", "key"]))`.
+// The PK stays @id so the model carries an auto-rowid; the natural key
+// is the conflict target. `payload` is the only column that changes on
+// the update branch.
+model Pair {
+  id Int @id
+  scope String
+  key String
+  payload String
+
+  @@audit
+  @@emit(created, updated)
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+}

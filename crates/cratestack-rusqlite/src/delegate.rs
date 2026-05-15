@@ -2,17 +2,17 @@
 
 use std::marker::PhantomData;
 
-use cratestack_core::{BatchSummary};
+use cratestack_core::BatchSummary;
 use cratestack_sql::{
-    CreateModelInput, Filter, FilterExpr, IntoSqlValue, ModelDescriptor, OrderClause,
-    SqliteDialect, SqlValue, UpdateModelInput, UpsertModelInput,
+    ConflictTarget, CreateModelInput, Filter, FilterExpr, IntoSqlValue, ModelDescriptor,
+    OrderClause, SqliteDialect, SqlValue, UpdateModelInput, UpsertModelInput,
 };
 use rusqlite::params_from_iter;
 
 use crate::{
     FromRusqliteRow, RusqliteError, RusqliteRuntime, SqlValueParam, render::render_delete,
     render::render_insert, render::render_select, render::render_select_by_pk,
-    render::render_update, render::render_update_many, render::render_upsert,
+    render::render_update, render::render_update_many, render::render_upsert_with_conflict,
 };
 
 #[derive(Clone, Copy)]
@@ -75,6 +75,7 @@ impl<'a, M: 'static, PK: 'static> ModelDelegate<'a, M, PK> {
             runtime: self.runtime,
             descriptor: self.descriptor,
             input,
+            conflict_target: ConflictTarget::PrimaryKey,
         }
     }
 
@@ -289,6 +290,19 @@ where
         self
     }
 
+    /// API-compat no-op. The embedded layer doesn't enforce policies,
+    /// so the detail-vs-list distinction has no runtime effect; kept
+    /// so cross-backend code can call `.as_detail()` / `.as_list()`
+    /// without conditional compilation.
+    pub fn as_detail(self) -> Self {
+        self
+    }
+
+    /// API-compat no-op. See [`Self::as_detail`].
+    pub fn as_list(self) -> Self {
+        self
+    }
+
     pub fn preview_sql(&self) -> String {
         let dialect = SqliteDialect;
         let (sql, _) =
@@ -395,16 +409,30 @@ pub struct UpsertRecord<'a, M: 'static, PK: 'static, I> {
     runtime: &'a RusqliteRuntime,
     descriptor: &'static ModelDescriptor<M, PK>,
     input: I,
+    conflict_target: ConflictTarget,
 }
 
 impl<'a, M: 'static, PK: 'static, I> UpsertRecord<'a, M, PK, I>
 where
     I: UpsertModelInput<M>,
 {
+    /// Choose the conflict target. See
+    /// [`cratestack_sqlx::UpsertRecord::on_conflict`]; the embedded
+    /// runtime supports `ConflictTarget::Columns` symmetrically.
+    pub fn on_conflict(mut self, target: ConflictTarget) -> Self {
+        self.conflict_target = target;
+        self
+    }
+
     pub fn preview_sql(&self) -> String {
         let dialect = SqliteDialect;
         let values = self.input.sql_values();
-        let (sql, _) = render_upsert(&dialect, self.descriptor, &values);
+        let (sql, _) = render_upsert_with_conflict(
+            &dialect,
+            self.descriptor,
+            &values,
+            self.conflict_target,
+        );
         sql
     }
 
@@ -416,7 +444,12 @@ where
         // `CreateRecord::run`, which also skips `validate()`.
         let dialect = SqliteDialect;
         let values = self.input.sql_values();
-        let (sql, binds) = render_upsert(&dialect, self.descriptor, &values);
+        let (sql, binds) = render_upsert_with_conflict(
+            &dialect,
+            self.descriptor,
+            &values,
+            self.conflict_target,
+        );
         self.runtime
             .with_connection(|conn| run_insert_returning(conn, &sql, &binds))
     }
@@ -429,7 +462,12 @@ where
     {
         let dialect = SqliteDialect;
         let values = self.input.sql_values();
-        let (sql, binds) = render_upsert(&dialect, self.descriptor, &values);
+        let (sql, binds) = render_upsert_with_conflict(
+            &dialect,
+            self.descriptor,
+            &values,
+            self.conflict_target,
+        );
         run_insert_returning(conn, &sql, &binds)
     }
 }

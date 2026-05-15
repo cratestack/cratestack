@@ -19,10 +19,10 @@ pub mod ffi;
 pub mod opfs;
 
 pub use cratestack_sql::{
-    CreateDefault, CreateDefaultType, CreateModelInput, FieldRef, Filter, FilterExpr,
-    IntoSqlValue, ModelColumn, ModelDescriptor, ModelPrimaryKey, OrderClause, RelationFilter,
-    RelationQuantifier, SortDirection, SqlColumnValue, SqlValue, SqliteDialect, UpdateModelInput,
-    UpsertModelInput,
+    ConflictTarget, CreateDefault, CreateDefaultType, CreateModelInput, FieldRef, Filter,
+    FilterExpr, IntoSqlValue, ModelColumn, ModelDescriptor, ModelPrimaryKey, OrderClause,
+    RelationFilter, RelationQuantifier, SortDirection, SqlColumnValue, SqlValue, SqliteDialect,
+    UpdateModelInput, UpsertModelInput,
 };
 
 pub use batch::{
@@ -34,7 +34,7 @@ pub use delegate::{
 };
 pub use render::{
     render_delete, render_insert, render_select, render_select_by_pk, render_update,
-    render_update_many, render_upsert,
+    render_update_many, render_upsert, render_upsert_with_conflict,
 };
 pub use row::FromRusqliteRow;
 pub use runtime::{RusqliteError, RusqliteRuntime};

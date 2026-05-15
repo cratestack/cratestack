@@ -52,6 +52,7 @@ impl<'a, M: 'static, PK: 'static> ModelDelegate<'a, M, PK> {
             descriptor: self.descriptor,
             id,
             for_update: false,
+            policy_kind: crate::query::ReadPolicyKind::Detail,
         }
     }
 
@@ -71,6 +72,7 @@ impl<'a, M: 'static, PK: 'static> ModelDelegate<'a, M, PK> {
             runtime: self.runtime,
             descriptor: self.descriptor,
             input,
+            conflict_target: cratestack_sql::ConflictTarget::PrimaryKey,
         }
     }
 
@@ -393,6 +395,18 @@ impl<'a, M: 'static, PK: 'static> ScopedFindUnique<'a, M, PK> {
         self
     }
 
+    /// See [`FindUnique::as_detail`].
+    pub fn as_detail(mut self) -> Self {
+        self.request = self.request.as_detail();
+        self
+    }
+
+    /// See [`FindUnique::as_list`].
+    pub fn as_list(mut self) -> Self {
+        self.request = self.request.as_list();
+        self
+    }
+
     pub fn preview_sql(&self) -> String {
         self.request.preview_sql()
     }
@@ -463,6 +477,12 @@ impl<'a, M: 'static, PK: 'static, I> ScopedUpsertRecord<'a, M, PK, I>
 where
     I: UpsertModelInput<M>,
 {
+    /// See [`UpsertRecord::on_conflict`].
+    pub fn on_conflict(mut self, target: cratestack_sql::ConflictTarget) -> Self {
+        self.request = self.request.on_conflict(target);
+        self
+    }
+
     pub fn preview_sql(&self) -> String {
         self.request.preview_sql()
     }

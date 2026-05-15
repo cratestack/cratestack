@@ -11,12 +11,32 @@ use crate::{
     SqlColumnValue, SqlValue, SqlxRuntime,
 };
 
+/// Which policy slot to consult when filtering rows from a read query.
+/// Schemas can declare separate `@@allow("list", ...)` (folded into
+/// `read_*`) and `@@allow("detail", ...)` (folded into `detail_*`)
+/// predicates; the right slot depends on what kind of read is happening.
+/// Bulk and listing operations apply List; single-row lookups (where the
+/// caller is asking for a specific row by PK or unique key) apply
+/// Detail. The toggle is exposed on `FindUnique` via `.as_detail()` /
+/// `.as_list()`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReadPolicyKind {
+    /// `read_*` policies — used by list-style reads (`find_many`,
+    /// `batch_get`, scoped updates/deletes that filter by PK).
+    List,
+    /// `detail_*` policies — used by single-row lookups
+    /// (`find_unique`). Falls back to the list policies when the schema
+    /// hasn't declared explicit detail rules.
+    Detail,
+}
+
 pub(crate) fn push_scoped_conditions<'a, M, PK, Id>(
     query: &mut sqlx::QueryBuilder<'a, sqlx::Postgres>,
     descriptor: &ModelDescriptor<M, PK>,
     filters: &[FilterExpr],
     primary_key: Option<(&'static str, Id)>,
     ctx: &CoolContext,
+    policy_kind: ReadPolicyKind,
 ) where
     Id: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres> + 'a,
 {
@@ -50,12 +70,14 @@ pub(crate) fn push_scoped_conditions<'a, M, PK, Id>(
     if wrote_clause {
         query.push(" AND ");
     }
-    push_action_policy_query(
-        query,
-        descriptor.read_allow_policies,
-        descriptor.read_deny_policies,
-        ctx,
-    );
+    let (allow, deny) = match policy_kind {
+        ReadPolicyKind::List => (descriptor.read_allow_policies, descriptor.read_deny_policies),
+        ReadPolicyKind::Detail => (
+            descriptor.detail_allow_policies,
+            descriptor.detail_deny_policies,
+        ),
+    };
+    push_action_policy_query(query, allow, deny, ctx);
 }
 
 pub(crate) fn push_filter_query(

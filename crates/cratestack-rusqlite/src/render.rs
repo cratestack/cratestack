@@ -12,8 +12,8 @@
 use std::fmt::Write;
 
 use cratestack_sql::{
-    Dialect, FilterExpr, FilterOp, FilterValue, ModelDescriptor, OrderClause, OrderTarget,
-    RelationFilter, RelationQuantifier, SortDirection, SqlColumnValue, SqlValue,
+    ConflictTarget, Dialect, FilterExpr, FilterOp, FilterValue, ModelDescriptor, OrderClause,
+    OrderTarget, RelationFilter, RelationQuantifier, SortDirection, SqlColumnValue, SqlValue,
 };
 
 /// Render a `SELECT ... FROM table WHERE ... ORDER BY ... LIMIT ?N OFFSET ?N`
@@ -239,6 +239,19 @@ pub fn render_upsert<M, PK>(
     descriptor: &ModelDescriptor<M, PK>,
     values: &[SqlColumnValue],
 ) -> (String, Vec<SqlValue>) {
+    render_upsert_with_conflict(dialect, descriptor, values, ConflictTarget::PrimaryKey)
+}
+
+/// Render an upsert against an arbitrary conflict target. The default
+/// `render_upsert` wraps this with `ConflictTarget::PrimaryKey` so the
+/// older public surface stays bit-identical; new callers that need a
+/// composite unique key pass `ConflictTarget::Columns(&[..])`.
+pub fn render_upsert_with_conflict<M, PK>(
+    dialect: &dyn Dialect,
+    descriptor: &ModelDescriptor<M, PK>,
+    values: &[SqlColumnValue],
+    conflict_target: ConflictTarget,
+) -> (String, Vec<SqlValue>) {
     let mut sql = format!("INSERT INTO {} (", descriptor.table_name);
     for (idx, value) in values.iter().enumerate() {
         if idx > 0 {
@@ -255,11 +268,21 @@ pub fn render_upsert<M, PK>(
         dialect.write_placeholder(&mut sql, idx + 1);
         binds.push(value.value.clone());
     }
-    let _ = write!(
-        &mut sql,
-        ") ON CONFLICT ({}) DO UPDATE SET ",
-        descriptor.primary_key,
-    );
+    sql.push_str(") ON CONFLICT (");
+    match conflict_target {
+        ConflictTarget::PrimaryKey => {
+            sql.push_str(descriptor.primary_key);
+        }
+        ConflictTarget::Columns(cols) => {
+            for (idx, column) in cols.iter().enumerate() {
+                if idx > 0 {
+                    sql.push_str(", ");
+                }
+                sql.push_str(column);
+            }
+        }
+    }
+    sql.push_str(") DO UPDATE SET ");
     if descriptor.upsert_update_columns.is_empty() {
         // Degenerate case — touch the PK to itself so RETURNING still
         // resolves to the conflicting row. Mirrors the sqlx fallback.
@@ -677,6 +700,44 @@ mod tests {
             &[FilterExpr::from(FieldRef::<(), bool>::new("published").is_true())],
         );
         assert!(sql.contains("WHERE deleted_at IS NULL AND ("), "got: {sql}");
+    }
+
+    #[test]
+    fn upsert_with_composite_conflict_emits_tuple_in_on_conflict() {
+        let dialect = SqliteDialect;
+        let descriptor = fixture_descriptor();
+        let (sql, _) = render_upsert_with_conflict(
+            &dialect,
+            &descriptor,
+            &[
+                SqlColumnValue { column: "title", value: SqlValue::String("hi".into()) },
+                SqlColumnValue { column: "published", value: SqlValue::Bool(true) },
+            ],
+            ConflictTarget::Columns(&["title", "published"]),
+        );
+        assert!(
+            sql.contains("ON CONFLICT (title, published) DO UPDATE SET"),
+            "got: {sql}",
+        );
+    }
+
+    #[test]
+    fn upsert_default_conflict_target_is_primary_key() {
+        let dialect = SqliteDialect;
+        let descriptor = fixture_descriptor();
+        let (pk_sql, _) = render_upsert(
+            &dialect,
+            &descriptor,
+            &[SqlColumnValue { column: "title", value: SqlValue::String("x".into()) }],
+        );
+        let (explicit_sql, _) = render_upsert_with_conflict(
+            &dialect,
+            &descriptor,
+            &[SqlColumnValue { column: "title", value: SqlValue::String("x".into()) }],
+            ConflictTarget::PrimaryKey,
+        );
+        assert_eq!(pk_sql, explicit_sql);
+        assert!(pk_sql.contains("ON CONFLICT (id) DO UPDATE SET"));
     }
 
     #[test]
