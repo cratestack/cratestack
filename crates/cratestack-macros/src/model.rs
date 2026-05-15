@@ -959,10 +959,47 @@ fn version_field(model: &Model) -> Option<&Field> {
         .find(|field| field.attributes.iter().any(|a| a.raw == "@version"))
 }
 
+/// Which schema-emission kind is asking for a field module. Server &
+/// embedded both emit `*_MODEL` descriptors so they can carry the full
+/// surface; client-side does not, so emissions that hard-reference those
+/// descriptors must be suppressed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FieldModuleKind {
+    /// Reachable from `include_server_schema!` / `include_embedded_schema!`.
+    /// `*_MODEL` descriptors are in scope.
+    Server,
+    /// Reachable from `include_client_schema!`. `*_MODEL` descriptors are
+    /// NOT emitted by the client composer, so any code that references
+    /// them (today: `Path::as_include()`) must be skipped — otherwise the
+    /// macro output fails to compile.
+    Client,
+}
+
 pub(crate) fn generate_field_module(
     model: &Model,
     model_names: &BTreeSet<&str>,
     models: &[Model],
+) -> Result<proc_macro2::TokenStream, String> {
+    generate_field_module_with_kind(model, model_names, models, FieldModuleKind::Server)
+}
+
+/// Variant of [`generate_field_module`] that suppresses emissions which
+/// reference `*_MODEL` descriptors. The client schema doesn't emit those
+/// descriptors, so anything that hard-references them (today: `as_include()`
+/// on to-one relation `Path` — see PR #47) has to be skipped.
+pub(crate) fn generate_client_field_module(
+    model: &Model,
+    model_names: &BTreeSet<&str>,
+    models: &[Model],
+) -> Result<proc_macro2::TokenStream, String> {
+    generate_field_module_with_kind(model, model_names, models, FieldModuleKind::Client)
+}
+
+fn generate_field_module_with_kind(
+    model: &Model,
+    model_names: &BTreeSet<&str>,
+    models: &[Model],
+    kind: FieldModuleKind,
 ) -> Result<proc_macro2::TokenStream, String> {
     let module_ident = ident(&to_snake_case(&model.name));
     let model_ident = ident(&model.name);
@@ -993,7 +1030,9 @@ pub(crate) fn generate_field_module(
         });
     let relation_modules = relation_model_fields(model, model_names)
         .into_iter()
-        .map(|relation_field| generate_relation_order_module(model, relation_field, models))
+        .map(|relation_field| {
+            generate_relation_order_module(model, relation_field, models, kind)
+        })
         .collect::<Result<Vec<_>, String>>()?;
     let selection_module = generate_selection_module(model, model_names, models)?;
 
