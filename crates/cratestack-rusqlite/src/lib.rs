@@ -22,8 +22,8 @@ pub use cratestack_sql::{
     coalesce, CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault, CreateDefaultType,
     CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName, IntoSqlValue,
     JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder,
-    OrderClause, RelationFilter, RelationQuantifier, SortDirection, SqlColumnValue, SqlValue,
-    SqliteDialect, UpdateModelInput, UpsertModelInput,
+    OrderClause, RelationFilter, RelationInclude, RelationQuantifier, SortDirection,
+    SqlColumnValue, SqlValue, SqliteDialect, UpdateModelInput, UpsertModelInput,
 };
 
 pub use batch::{
@@ -31,8 +31,8 @@ pub use batch::{
 };
 pub use delegate::{
     Aggregate, AggregateColumn, AggregateCount, CreateRecord, DeleteMany, DeleteRecord, FindMany,
-    FindUnique, ModelDelegate, UpdateMany, UpdateManySet, UpdateRecord, UpdateRecordSet,
-    UpsertRecord,
+    FindManyWith, FindUnique, ModelDelegate, UpdateMany, UpdateManySet, UpdateRecord,
+    UpdateRecordSet, UpsertRecord,
 };
 pub use render::{
     render_delete, render_delete_many, render_insert, render_select, render_select_by_pk,
