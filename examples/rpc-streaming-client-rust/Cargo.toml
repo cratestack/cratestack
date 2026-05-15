@@ -1,0 +1,23 @@
+[package]
+name = "rpc-streaming-client-rust-example"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Rust binary that consumes an `application/cbor-seq` stream from a `transport rpc` server via RpcClient::call_streaming. Companion to the `rpc-streaming-example` server crate."
+
+[[bin]]
+name = "rpc-streaming-client"
+path = "src/main.rs"
+
+[dependencies]
+cratestack-client-rust = { path = "../../crates/cratestack-client-rust", version = "0.3.2" }
+cratestack-codec-cbor = { path = "../../crates/cratestack-codec-cbor", version = "0.3.2" }
+serde = { workspace = true }
+tokio = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+async-stream = "0.3"
+axum = { workspace = true }
+bytes = { workspace = true }
+cratestack-core = { path = "../../crates/cratestack-core", version = "0.3.2" }
