@@ -169,6 +169,62 @@ pub fn render_update<M, PK>(
     (sql, binds)
 }
 
+/// Render a bulk DELETE-by-predicate. Soft-delete-aware: if the
+/// descriptor carries a `soft_delete_column`, this becomes an UPDATE
+/// that tombstones the matched rows (and bumps `@version`, if any).
+/// Otherwise emits a plain `DELETE ... RETURNING`.
+///
+/// `filters` must be non-empty — the caller is expected to enforce that
+/// at the builder level so we don't have to invent a "table-wide truncate"
+/// semantics here.
+pub fn render_delete_many<M, PK>(
+    dialect: &dyn Dialect,
+    descriptor: &ModelDescriptor<M, PK>,
+    filters: &[FilterExpr],
+) -> (String, Vec<SqlValue>) {
+    let mut sql = String::new();
+    let mut binds: Vec<SqlValue> = Vec::with_capacity(filters.len());
+    let mut bind_index = 1usize;
+
+    let mut where_started = false;
+    match descriptor.soft_delete_column {
+        Some(col) => {
+            let _ = write!(
+                &mut sql,
+                "UPDATE {} SET {col} = CURRENT_TIMESTAMP",
+                descriptor.table_name,
+            );
+            if let Some(version_col) = descriptor.version_column {
+                let _ = write!(&mut sql, ", {version_col} = {version_col} + 1");
+            }
+            sql.push_str(" WHERE ");
+            let _ = write!(&mut sql, "{col} IS NULL");
+            where_started = true;
+        }
+        None => {
+            let _ = write!(&mut sql, "DELETE FROM {} WHERE ", descriptor.table_name);
+        }
+    }
+    if !filters.is_empty() {
+        if where_started {
+            sql.push_str(" AND ");
+        }
+        sql.push('(');
+        let mut joined = false;
+        for filter in filters {
+            if joined {
+                sql.push_str(" AND ");
+            }
+            render_filter_expr(dialect, filter, &mut sql, &mut binds, &mut bind_index);
+            joined = true;
+        }
+        sql.push(')');
+    }
+    sql.push_str(" RETURNING ");
+    sql.push_str(&descriptor.select_projection());
+    (sql, binds)
+}
+
 /// Render a bulk UPDATE-by-predicate. `set` is the patch column list; the
 /// `filters` are AND-joined into the WHERE clause and bind positionally
 /// after the SET values. Soft-delete column (if any) is layered in as an
@@ -545,7 +601,12 @@ fn render_group(
 fn render_order_clause(clause: &OrderClause, sql: &mut String) {
     match &clause.target {
         OrderTarget::Column(column) => {
-            let _ = write!(sql, "{column} {} NULLS LAST", sort_dir(clause.direction));
+            let _ = write!(
+                sql,
+                "{column} {} {}",
+                sort_dir(clause.direction),
+                null_order(clause.null_order),
+            );
         }
         OrderTarget::RelationScalar {
             parent_table,
@@ -556,8 +617,9 @@ fn render_order_clause(clause: &OrderClause, sql: &mut String) {
         } => {
             let _ = write!(
                 sql,
-                "(SELECT {value_sql} FROM {related_table} WHERE {related_table}.{related_column} = {parent_table}.{parent_column} LIMIT 1) {} NULLS LAST",
+                "(SELECT {value_sql} FROM {related_table} WHERE {related_table}.{related_column} = {parent_table}.{parent_column} LIMIT 1) {} {}",
                 sort_dir(clause.direction),
+                null_order(clause.null_order),
             );
         }
     }
@@ -567,6 +629,13 @@ fn sort_dir(direction: SortDirection) -> &'static str {
     match direction {
         SortDirection::Asc => "ASC",
         SortDirection::Desc => "DESC",
+    }
+}
+
+fn null_order(order: cratestack_sql::NullOrder) -> &'static str {
+    match order {
+        cratestack_sql::NullOrder::First => "NULLS FIRST",
+        cratestack_sql::NullOrder::Last => "NULLS LAST",
     }
 }
 
@@ -867,5 +936,49 @@ mod tests {
             None,
         );
         assert!(sql.contains("ORDER BY title ASC NULLS LAST"), "got: {sql}");
+    }
+
+    #[test]
+    fn order_by_nulls_first_flips_null_placement() {
+        let dialect = SqliteDialect;
+        let descriptor = fixture_descriptor();
+        let clause = OrderClause::column("title", SortDirection::Asc).nulls_first();
+        let (sql, _) = render_select(&dialect, &descriptor, &[], &[clause], None, None);
+        assert!(sql.contains("ORDER BY title ASC NULLS FIRST"), "got: {sql}");
+    }
+
+    #[test]
+    fn delete_many_hard_emits_delete_with_filter_predicate() {
+        let dialect = SqliteDialect;
+        let descriptor = fixture_descriptor();
+        let title_filter = FieldRef::<(), String>::new("title").eq("doomed");
+        let (sql, binds) = render_delete_many(
+            &dialect,
+            &descriptor,
+            &[FilterExpr::from(title_filter)],
+        );
+        assert!(
+            sql.starts_with("DELETE FROM posts WHERE (title = ?1)"),
+            "got: {sql}",
+        );
+        assert!(sql.contains("RETURNING"));
+        assert_eq!(binds, vec![SqlValue::String("doomed".into())]);
+    }
+
+    #[test]
+    fn delete_many_soft_delete_emits_update_of_deleted_at() {
+        let dialect = SqliteDialect;
+        let descriptor = soft_delete_descriptor();
+        let id_filter = FieldRef::<(), i64>::new("id").gte(10i64);
+        let (sql, _) = render_delete_many(
+            &dialect,
+            &descriptor,
+            &[FilterExpr::from(id_filter)],
+        );
+        assert!(
+            sql.contains("UPDATE posts SET deleted_at = CURRENT_TIMESTAMP"),
+            "got: {sql}",
+        );
+        assert!(sql.contains("WHERE deleted_at IS NULL AND ("));
     }
 }

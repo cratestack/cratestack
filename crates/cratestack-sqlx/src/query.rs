@@ -4,7 +4,7 @@ mod support;
 mod write;
 
 pub use batch::{BatchCreate, BatchDelete, BatchGet, BatchUpdate, BatchUpdateItem, BatchUpsert};
-pub use read::{FindMany, FindUnique};
+pub use read::{Aggregate, AggregateColumn, AggregateCount, FindMany, FindUnique};
 #[allow(unused_imports)]
 pub(crate) use support::{
     apply_create_defaults, auth_value_to_sql, authorize_record_action, evaluate_create_policies,
@@ -14,7 +14,7 @@ pub(crate) use support::{
 };
 #[allow(unused_imports)]
 pub use write::{
-    CreateRecord, DeleteRecord, UpdateMany, UpdateManySet, UpdateRecord, UpdateRecordSet,
-    UpsertRecord, create_record_with_executor, render_update_many_preview_sql,
+    CreateRecord, DeleteMany, DeleteRecord, UpdateMany, UpdateManySet, UpdateRecord,
+    UpdateRecordSet, UpsertRecord, create_record_with_executor, render_update_many_preview_sql,
     render_update_preview_sql, update_record_with_executor,
 };

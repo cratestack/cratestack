@@ -1,0 +1,23 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+// Refund-shaped row driving the aggregate test (sum/avg/min/max of
+// `amountMinor`) and the delete_many test (bulk-delete failed refunds).
+model Refund {
+  id Int @id
+  paymentIntentId String
+  status String
+  amountMinor Int
+
+  @@audit
+  @@emit(deleted)
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("delete", auth() != null)
+}

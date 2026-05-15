@@ -1556,3 +1556,228 @@ where
         emits_event,
     ))
 }
+
+// ───── DeleteMany ──────────────────────────────────────────────────────────
+//
+// Bulk DELETE-by-predicate: one statement that tombstones (soft-delete) or
+// removes (hard-delete) every row the filter matches AND the delete policy
+// admits. Returns `BatchSummary { total, ok, err: 0 }` — same shape as
+// `update_many`, so callers can branch on `summary.ok` to decide whether
+// the predicate matched anything.
+//
+// Soft-delete is identical to the single-row `.delete(id)` semantics: the
+// row's `deleted_at` column is stamped with `NOW()` and `@version`, if
+// declared, increments. The row stays in the table so audit replays can
+// reconstruct it. Hard-delete uses `DELETE ... RETURNING` so the audit
+// "before" snapshot is the row's pre-delete state — same trick the
+// single-row delete uses.
+//
+// Like `update_many`, this refuses to run without ≥1 filter. Predicate-
+// less bulk deletion of a table is virtually never what the caller meant
+// at the typed-builder level; callers who genuinely want to truncate
+// should write raw SQL so the intent is loud at review time.
+
+#[derive(Debug, Clone)]
+pub struct DeleteMany<'a, M: 'static, PK: 'static> {
+    pub(crate) runtime: &'a SqlxRuntime,
+    pub(crate) descriptor: &'static ModelDescriptor<M, PK>,
+    pub(crate) filters: Vec<FilterExpr>,
+}
+
+impl<'a, M: 'static, PK: 'static> DeleteMany<'a, M, PK> {
+    pub fn where_(mut self, filter: crate::Filter) -> Self {
+        self.filters.push(FilterExpr::from(filter));
+        self
+    }
+
+    pub fn where_expr(mut self, filter: FilterExpr) -> Self {
+        self.filters.push(filter);
+        self
+    }
+
+    pub fn where_any(mut self, filters: impl IntoIterator<Item = FilterExpr>) -> Self {
+        self.filters.push(FilterExpr::any(filters));
+        self
+    }
+
+    /// Conditionally append a filter; `None` is a no-op. See
+    /// [`crate::FindMany::where_optional`].
+    pub fn where_optional<F>(mut self, filter: Option<F>) -> Self
+    where
+        F: Into<FilterExpr>,
+    {
+        if let Some(filter) = filter {
+            self.filters.push(filter.into());
+        }
+        self
+    }
+
+    /// Approximate SQL preview. The runtime path interpolates filter
+    /// predicates and the delete policy clause; this returns the
+    /// rough shape — good enough for migration tooling and the
+    /// schema studio.
+    pub fn preview_sql(&self) -> String {
+        let mut sql = match self.descriptor.soft_delete_column {
+            Some(col) => {
+                let mut s = format!(
+                    "UPDATE {} SET {col} = NOW()",
+                    self.descriptor.table_name,
+                );
+                if let Some(version_col) = self.descriptor.version_column {
+                    s.push_str(&format!(", {version_col} = {version_col} + 1"));
+                }
+                s.push_str(&format!(" WHERE {col} IS NULL AND "));
+                s
+            }
+            None => format!("DELETE FROM {} WHERE ", self.descriptor.table_name),
+        };
+        sql.push_str("<filters> AND <delete_policy> RETURNING ");
+        sql.push_str(&self.descriptor.select_projection());
+        sql
+    }
+
+    pub async fn run(self, ctx: &CoolContext) -> Result<BatchSummary, CoolError>
+    where
+        for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
+    {
+        let runtime = self.runtime;
+        let descriptor = self.descriptor;
+        let mut tx = runtime
+            .pool()
+            .begin()
+            .await
+            .map_err(|error| CoolError::Database(error.to_string()))?;
+        let (summary, emits_event) =
+            run_delete_many_in_tx(&mut tx, runtime.pool(), descriptor, &self.filters, ctx).await?;
+        tx.commit()
+            .await
+            .map_err(|error| CoolError::Database(error.to_string()))?;
+        if emits_event {
+            let _ = runtime.drain_event_outbox().await;
+        }
+        Ok(summary)
+    }
+
+    pub async fn run_in_tx<'tx>(
+        self,
+        tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
+        ctx: &CoolContext,
+    ) -> Result<BatchSummary, CoolError>
+    where
+        for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
+    {
+        let (summary, _) = run_delete_many_in_tx(
+            tx,
+            self.runtime.pool(),
+            self.descriptor,
+            &self.filters,
+            ctx,
+        )
+        .await?;
+        Ok(summary)
+    }
+}
+
+async fn run_delete_many_in_tx<'tx, M, PK>(
+    tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
+    policy_pool: &sqlx::PgPool,
+    descriptor: &'static ModelDescriptor<M, PK>,
+    filters: &[FilterExpr],
+    ctx: &CoolContext,
+) -> Result<(BatchSummary, bool), CoolError>
+where
+    for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
+{
+    if filters.is_empty() {
+        return Err(CoolError::Validation(
+            "delete_many requires at least one filter — refusing table-wide delete".to_owned(),
+        ));
+    }
+
+    let emits_event = descriptor.emits(ModelEventKind::Deleted);
+    let audit_enabled = descriptor.audit_enabled;
+    if emits_event {
+        ensure_event_outbox_table(&mut **tx).await?;
+    }
+    if audit_enabled {
+        ensure_audit_table(policy_pool).await?;
+    }
+
+    // Build the soft-or-hard delete statement with the caller's filters
+    // AND-joined into the WHERE alongside the delete policy clause.
+    let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("");
+    let mut wrote_implicit_predicate = false;
+    match descriptor.soft_delete_column {
+        Some(col) => {
+            query.push("UPDATE ").push(descriptor.table_name);
+            query.push(" SET ").push(col).push(" = NOW()");
+            if let Some(version_col) = descriptor.version_column {
+                query
+                    .push(", ")
+                    .push(version_col)
+                    .push(" = ")
+                    .push(version_col)
+                    .push(" + 1");
+            }
+            query.push(" WHERE ").push(col).push(" IS NULL");
+            wrote_implicit_predicate = true;
+        }
+        None => {
+            query.push("DELETE FROM ").push(descriptor.table_name);
+            query.push(" WHERE ");
+        }
+    }
+    if wrote_implicit_predicate {
+        query.push(" AND ");
+    }
+    query.push("(");
+    push_filter_query(&mut query, filters);
+    query.push(") AND ");
+    push_action_policy_query(
+        &mut query,
+        descriptor.delete_allow_policies,
+        descriptor.delete_deny_policies,
+        ctx,
+    );
+    query
+        .push(" RETURNING ")
+        .push(descriptor.select_projection());
+
+    let removed: Vec<M> = query
+        .build_query_as::<M>()
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(|error| CoolError::Database(error.to_string()))?;
+
+    // Fan-out one audit + one outbox entry per actually-deleted row.
+    // The RETURNING row IS the audit "before" snapshot for hard
+    // deletes; for soft deletes it's the post-tombstone state, but
+    // the operation kind still records the delete intent.
+    for record in &removed {
+        if emits_event {
+            enqueue_event_outbox(
+                &mut **tx,
+                descriptor.schema_name,
+                ModelEventKind::Deleted,
+                record,
+            )
+            .await?;
+        }
+        if audit_enabled {
+            let before = serde_json::to_value(record).ok();
+            let event =
+                build_audit_event(descriptor, AuditOperation::Delete, before, None, ctx);
+            enqueue_audit_event(&mut **tx, &event).await?;
+        }
+    }
+
+    let total = removed.len();
+    Ok((
+        BatchSummary {
+            total,
+            ok: total,
+            err: 0,
+        },
+        emits_event,
+    ))
+}

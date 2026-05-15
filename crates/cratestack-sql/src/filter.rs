@@ -29,6 +29,7 @@ impl<M, T> FieldRef<M, T> {
         OrderClause {
             target: OrderTarget::Column(self.column),
             direction: SortDirection::Asc,
+            null_order: crate::NullOrder::Last,
         }
     }
 
@@ -36,6 +37,7 @@ impl<M, T> FieldRef<M, T> {
         OrderClause {
             target: OrderTarget::Column(self.column),
             direction: SortDirection::Desc,
+            null_order: crate::NullOrder::Last,
         }
     }
 }

@@ -3,10 +3,10 @@ use crate::sqlx;
 use cratestack_core::{CoolContext, CoolError};
 
 use crate::{
-    BatchCreate, BatchDelete, BatchGet, BatchUpdate, BatchUpdateItem, BatchUpsert,
-    CreateModelInput, CreateRecord, DeleteRecord, Filter, FilterExpr, FindMany, FindUnique,
-    ModelDescriptor, OrderClause, SqlxRuntime, UpdateMany, UpdateManySet, UpdateModelInput,
-    UpdateRecord, UpdateRecordSet, UpsertModelInput, UpsertRecord,
+    Aggregate, AggregateColumn, AggregateCount, BatchCreate, BatchDelete, BatchGet, BatchUpdate,
+    BatchUpdateItem, BatchUpsert, CreateModelInput, CreateRecord, DeleteMany, DeleteRecord, Filter,
+    FilterExpr, FindMany, FindUnique, ModelDescriptor, OrderClause, SqlxRuntime, UpdateMany,
+    UpdateManySet, UpdateModelInput, UpdateRecord, UpdateRecordSet, UpsertModelInput, UpsertRecord,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -102,6 +102,34 @@ impl<'a, M: 'static, PK: 'static> ModelDelegate<'a, M, PK> {
             runtime: self.runtime,
             descriptor: self.descriptor,
             id,
+        }
+    }
+
+    /// Side-effect-free aggregate read. Returns a builder that
+    /// branches into `.count()` / `.sum(col)` / `.avg(col)` / `.min(col)`
+    /// / `.max(col)`; each branch chains `.where_(...)` filters and
+    /// terminates in `.run(ctx)` (or `.run_in_tx(...)`).
+    ///
+    /// Aggregates apply the read policy AND the soft-delete column,
+    /// so the result always describes rows the caller would also be
+    /// allowed to retrieve via `find_many`.
+    pub fn aggregate(&self) -> Aggregate<'a, M, PK> {
+        Aggregate {
+            runtime: self.runtime,
+            descriptor: self.descriptor,
+        }
+    }
+
+    /// Bulk DELETE by predicate. Mirrors `update_many` semantically:
+    /// applies the delete policy and the soft-delete column (if any),
+    /// fans audit + outbox out per-row via RETURNING, and refuses to
+    /// run without at least one filter. Returns `BatchSummary` with
+    /// `ok = rows_affected`.
+    pub fn delete_many(&self) -> DeleteMany<'a, M, PK> {
+        DeleteMany {
+            runtime: self.runtime,
+            descriptor: self.descriptor,
+            filters: Vec::new(),
         }
     }
 
@@ -270,6 +298,20 @@ impl<'a, M: 'static, PK: 'static> ScopedModelDelegate<'a, M, PK> {
     pub fn delete(&self, id: PK) -> ScopedDeleteRecord<'a, M, PK> {
         ScopedDeleteRecord {
             request: self.delegate.delete(id),
+            ctx: self.ctx.clone(),
+        }
+    }
+
+    pub fn delete_many(&self) -> ScopedDeleteMany<'a, M, PK> {
+        ScopedDeleteMany {
+            request: self.delegate.delete_many(),
+            ctx: self.ctx.clone(),
+        }
+    }
+
+    pub fn aggregate(&self) -> ScopedAggregate<'a, M, PK> {
+        ScopedAggregate {
+            request: self.delegate.aggregate(),
             ctx: self.ctx.clone(),
         }
     }
@@ -671,6 +713,210 @@ impl<'a, M: 'static, PK: 'static> ScopedDeleteRecord<'a, M, PK> {
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
         self.request.run_in_tx(tx, &self.ctx).await
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ScopedDeleteMany<'a, M: 'static, PK: 'static> {
+    request: DeleteMany<'a, M, PK>,
+    ctx: CoolContext,
+}
+
+impl<'a, M: 'static, PK: 'static> ScopedDeleteMany<'a, M, PK> {
+    pub fn where_(mut self, filter: Filter) -> Self {
+        self.request = self.request.where_(filter);
+        self
+    }
+
+    pub fn where_expr(mut self, filter: FilterExpr) -> Self {
+        self.request = self.request.where_expr(filter);
+        self
+    }
+
+    pub fn where_any(mut self, filters: impl IntoIterator<Item = FilterExpr>) -> Self {
+        self.request = self.request.where_any(filters);
+        self
+    }
+
+    /// See [`DeleteMany::where_optional`].
+    pub fn where_optional<F>(mut self, filter: Option<F>) -> Self
+    where
+        F: Into<FilterExpr>,
+    {
+        self.request = self.request.where_optional(filter);
+        self
+    }
+
+    pub fn preview_sql(&self) -> String {
+        self.request.preview_sql()
+    }
+
+    pub async fn run(self) -> Result<cratestack_core::BatchSummary, CoolError>
+    where
+        for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
+    {
+        self.request.run(&self.ctx).await
+    }
+
+    pub async fn run_in_tx<'tx>(
+        self,
+        tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
+    ) -> Result<cratestack_core::BatchSummary, CoolError>
+    where
+        for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
+    {
+        self.request.run_in_tx(tx, &self.ctx).await
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ScopedAggregate<'a, M: 'static, PK: 'static> {
+    request: Aggregate<'a, M, PK>,
+    ctx: CoolContext,
+}
+
+impl<'a, M: 'static, PK: 'static> ScopedAggregate<'a, M, PK> {
+    pub fn count(self) -> ScopedAggregateCount<'a, M, PK> {
+        ScopedAggregateCount {
+            request: self.request.count(),
+            ctx: self.ctx,
+        }
+    }
+
+    pub fn sum<C: cratestack_sql::IntoColumnName>(
+        self,
+        column: C,
+    ) -> ScopedAggregateColumn<'a, M, PK> {
+        ScopedAggregateColumn {
+            request: self.request.sum(column),
+            ctx: self.ctx,
+        }
+    }
+
+    pub fn avg<C: cratestack_sql::IntoColumnName>(
+        self,
+        column: C,
+    ) -> ScopedAggregateColumn<'a, M, PK> {
+        ScopedAggregateColumn {
+            request: self.request.avg(column),
+            ctx: self.ctx,
+        }
+    }
+
+    pub fn min<C: cratestack_sql::IntoColumnName>(
+        self,
+        column: C,
+    ) -> ScopedAggregateColumn<'a, M, PK> {
+        ScopedAggregateColumn {
+            request: self.request.min(column),
+            ctx: self.ctx,
+        }
+    }
+
+    pub fn max<C: cratestack_sql::IntoColumnName>(
+        self,
+        column: C,
+    ) -> ScopedAggregateColumn<'a, M, PK> {
+        ScopedAggregateColumn {
+            request: self.request.max(column),
+            ctx: self.ctx,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ScopedAggregateCount<'a, M: 'static, PK: 'static> {
+    request: AggregateCount<'a, M, PK>,
+    ctx: CoolContext,
+}
+
+impl<'a, M: 'static, PK: 'static> ScopedAggregateCount<'a, M, PK> {
+    pub fn where_(mut self, filter: Filter) -> Self {
+        self.request = self.request.where_(filter);
+        self
+    }
+
+    pub fn where_expr(mut self, filter: FilterExpr) -> Self {
+        self.request = self.request.where_expr(filter);
+        self
+    }
+
+    pub fn where_any(mut self, filters: impl IntoIterator<Item = FilterExpr>) -> Self {
+        self.request = self.request.where_any(filters);
+        self
+    }
+
+    pub fn where_optional<F>(mut self, filter: Option<F>) -> Self
+    where
+        F: Into<FilterExpr>,
+    {
+        self.request = self.request.where_optional(filter);
+        self
+    }
+
+    pub async fn run(self) -> Result<i64, CoolError> {
+        self.request.run(&self.ctx).await
+    }
+
+    pub async fn run_in_tx<'tx>(
+        self,
+        tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
+    ) -> Result<i64, CoolError> {
+        self.request.run_in_tx(tx, &self.ctx).await
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ScopedAggregateColumn<'a, M: 'static, PK: 'static> {
+    request: AggregateColumn<'a, M, PK>,
+    ctx: CoolContext,
+}
+
+impl<'a, M: 'static, PK: 'static> ScopedAggregateColumn<'a, M, PK> {
+    pub fn where_(mut self, filter: Filter) -> Self {
+        self.request = self.request.where_(filter);
+        self
+    }
+
+    pub fn where_expr(mut self, filter: FilterExpr) -> Self {
+        self.request = self.request.where_expr(filter);
+        self
+    }
+
+    pub fn where_any(mut self, filters: impl IntoIterator<Item = FilterExpr>) -> Self {
+        self.request = self.request.where_any(filters);
+        self
+    }
+
+    pub fn where_optional<F>(mut self, filter: Option<F>) -> Self
+    where
+        F: Into<FilterExpr>,
+    {
+        self.request = self.request.where_optional(filter);
+        self
+    }
+
+    pub async fn run<T>(self) -> Result<Option<T>, CoolError>
+    where
+        T: Send
+            + Unpin
+            + for<'r> sqlx::Decode<'r, sqlx::Postgres>
+            + sqlx::Type<sqlx::Postgres>,
+    {
+        self.request.run::<T>(&self.ctx).await
+    }
+
+    pub async fn run_in_tx<'tx, T>(
+        self,
+        tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
+    ) -> Result<Option<T>, CoolError>
+    where
+        T: Send
+            + Unpin
+            + for<'r> sqlx::Decode<'r, sqlx::Postgres>
+            + sqlx::Type<sqlx::Postgres>,
+    {
+        self.request.run_in_tx::<T>(tx, &self.ctx).await
     }
 }
 

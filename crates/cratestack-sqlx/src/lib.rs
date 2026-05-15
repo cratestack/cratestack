@@ -86,18 +86,20 @@ pub use cratestack_policy::{PolicyExpr, PolicyLiteral, ReadPolicy, ReadPredicate
 pub use cratestack_sql::{
     coalesce, CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault, CreateDefaultType,
     CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName, IntoSqlValue,
-    ModelColumn, ModelDescriptor, ModelPrimaryKey, OrderClause, RelationFilter, RelationQuantifier,
-    SortDirection, SqlColumnValue, SqlValue, UpdateModelInput, UpsertModelInput,
+    ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder, OrderClause, RelationFilter,
+    RelationQuantifier, SortDirection, SqlColumnValue, SqlValue, UpdateModelInput, UpsertModelInput,
 };
 pub use delegate::{
-    ModelDelegate, ScopedBatchCreate, ScopedBatchDelete, ScopedBatchGet, ScopedBatchUpdate,
-    ScopedBatchUpsert, ScopedCreateRecord, ScopedDeleteRecord, ScopedFindMany, ScopedFindUnique,
-    ScopedModelDelegate, ScopedUpdateMany, ScopedUpdateManySet, ScopedUpdateRecord,
-    ScopedUpdateRecordSet, ScopedUpsertRecord,
+    ModelDelegate, ScopedAggregate, ScopedAggregateColumn, ScopedAggregateCount, ScopedBatchCreate,
+    ScopedBatchDelete, ScopedBatchGet, ScopedBatchUpdate, ScopedBatchUpsert, ScopedCreateRecord,
+    ScopedDeleteMany, ScopedDeleteRecord, ScopedFindMany, ScopedFindUnique, ScopedModelDelegate,
+    ScopedUpdateMany, ScopedUpdateManySet, ScopedUpdateRecord, ScopedUpdateRecordSet,
+    ScopedUpsertRecord,
 };
 pub use descriptor::SqlxRuntime;
 pub use query::{
-    BatchCreate, BatchDelete, BatchGet, BatchUpdate, BatchUpdateItem, BatchUpsert, CreateRecord,
-    DeleteRecord, FindMany, FindUnique, UpdateMany, UpdateManySet, UpdateRecord, UpdateRecordSet,
-    UpsertRecord, create_record_with_executor, update_record_with_executor,
+    Aggregate, AggregateColumn, AggregateCount, BatchCreate, BatchDelete, BatchGet, BatchUpdate,
+    BatchUpdateItem, BatchUpsert, CreateRecord, DeleteMany, DeleteRecord, FindMany, FindUnique,
+    UpdateMany, UpdateManySet, UpdateRecord, UpdateRecordSet, UpsertRecord,
+    create_record_with_executor, update_record_with_executor,
 };

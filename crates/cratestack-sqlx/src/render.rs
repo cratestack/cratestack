@@ -454,7 +454,13 @@ fn render_relation_policy_exists_sql<Render>(
 pub(crate) fn render_order_clause_sql(clause: &OrderClause, sql: &mut String) {
     match &clause.target {
         OrderTarget::Column(column) => {
-            let _ = write!(sql, "{} {}", column, sort_direction_sql(clause.direction));
+            let _ = write!(
+                sql,
+                "{} {} {}",
+                column,
+                sort_direction_sql(clause.direction),
+                null_order_sql(clause.null_order),
+            );
         }
         OrderTarget::RelationScalar {
             parent_table,
@@ -473,7 +479,7 @@ pub(crate) fn render_order_clause_sql(clause: &OrderClause, sql: &mut String) {
                 parent_table,
                 parent_column,
                 sort_direction_sql(clause.direction),
-                null_order_sql(),
+                null_order_sql(clause.null_order),
             );
         }
     }
@@ -529,6 +535,9 @@ fn sort_direction_sql(direction: SortDirection) -> &'static str {
     }
 }
 
-fn null_order_sql() -> &'static str {
-    "NULLS LAST"
+fn null_order_sql(order: cratestack_sql::NullOrder) -> &'static str {
+    match order {
+        cratestack_sql::NullOrder::First => "NULLS FIRST",
+        cratestack_sql::NullOrder::Last => "NULLS LAST",
+    }
 }
