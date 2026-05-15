@@ -71,6 +71,20 @@ pub use cratestack_axum::axum;
 #[cfg(not(target_arch = "wasm32"))]
 pub use cratestack_axum::*;
 
+// Disambiguate the `rpc` module path. Both `cratestack_core` (wire
+// shapes, lifted in #31) and `cratestack_axum` (binding helpers) now
+// expose an `rpc` module, so the two `pub use ..::*` globs above
+// collide on the name and `::cratestack::rpc::*` resolves
+// non-deterministically. Macro-emitted code in `transport rpc`
+// schemas references symbols like `encode_rpc_error`,
+// `convert_handler_error_response`, `response_to_frame`, and
+// `RPC_BINDING_CAPABILITIES` — all of which live in `cratestack-axum::rpc`.
+// An explicit `pub use` re-export takes precedence over the globs,
+// pinning `::cratestack::rpc` to the axum module (which itself
+// re-exports the wire types from `cratestack-core::rpc`).
+#[cfg(not(target_arch = "wasm32"))]
+pub use cratestack_axum::rpc;
+
 #[cfg(not(target_arch = "wasm32"))]
 pub use cratestack_sqlx::AUDIT_TABLE_DDL;
 #[cfg(not(target_arch = "wasm32"))]
