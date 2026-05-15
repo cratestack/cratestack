@@ -60,7 +60,8 @@ The Rust workspace contains these main packages:
 * `cratestack-codec-json`: JSON codec
 * `cratestack-cli`: `cratestack` command-line tool
 * `cratestack-lsp`: `.cstack` language server
-* `cratestack-studio-generator`: Studio app scaffold generator
+* `cratestack-studio`: admin and testing surface for `.cstack` schemas, served from a `studio.toml`
+* `cratestack-studio-generator`: transitional shim that will host `studio eject` in Phase 2 of the studio rewrite
 
 The VS Code extension wrapper lives under `packages/cratestack-vscode`.
 
@@ -336,20 +337,21 @@ Generated TypeScript packages include:
 * TanStack Query hooks for React and React Native consumers
 * projection helpers for generated route query params
 
-## Studio Generation
+## Studio
 
-Generate a Studio app from one or more schemas:
+The studio is an admin and testing surface for `.cstack` schemas. Instead of
+a per-project codegen step, you describe the workspace once in a
+`studio.toml` and the shipped binary serves the UI:
 
 ```sh
-cargo run -p cratestack-cli -- generate-studio \
-  --schema schemas/catalog.cstack \
-  --service-url https://catalog.example.internal \
-  --schema schemas/accounts.cstack \
-  --service-url https://accounts.example.internal \
-  --out target/catalog-studio
+cargo run -p cratestack-cli -- studio init     # writes ./studio.toml
+cargo run -p cratestack-cli -- studio run      # binds 127.0.0.1:7878
 ```
 
-`generate-studio` currently supports repeated `--schema` and `--service-url` pairs. Manifest-driven Studio generation is not implemented yet.
+A target in `studio.toml` declares one `.cstack`, a `[target.db]` block
+(sqlx pool), a `[target.api]` block (deployed cratestack service), or
+both. The 0.3.x Jinja-templated `generate-studio` scaffold is gone —
+`cratestack studio eject` will replace it in Phase 2 of the rewrite.
 
 ## VS Code
 

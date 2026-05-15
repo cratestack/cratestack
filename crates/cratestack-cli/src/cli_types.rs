@@ -43,23 +43,10 @@ pub(crate) enum Command {
         #[arg(long)]
         template_dir: Option<PathBuf>,
     },
-    GenerateStudio {
-        #[arg(long, required = true)]
-        schema: Vec<PathBuf>,
-        #[arg(long)]
-        out: PathBuf,
-        #[arg(long)]
-        name: String,
-        #[arg(long, required = true)]
-        service_url: Vec<String>,
-        #[arg(long)]
-        context: Vec<String>,
-        #[arg(long, default_value = "/studio")]
-        mount_path: String,
-        #[arg(long, value_enum, default_value_t = StudioProfileArg::Dev)]
-        profile: StudioProfileArg,
-        #[arg(long)]
-        template_dir: Option<PathBuf>,
+    /// Studio: admin and testing surface for `.cstack` schemas.
+    Studio {
+        #[command(subcommand)]
+        cmd: StudioCmd,
     },
     PrintIr {
         #[arg(long)]
@@ -68,6 +55,35 @@ pub(crate) enum Command {
     Migrate {
         #[command(subcommand)]
         action: MigrateAction,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum StudioCmd {
+    /// Write a starter `studio.toml` in the chosen directory.
+    Init {
+        /// Output directory. The file is always named `studio.toml`.
+        #[arg(long, default_value = ".")]
+        out: PathBuf,
+        /// Overwrite an existing `studio.toml` if present.
+        #[arg(long)]
+        force: bool,
+    },
+    /// Boot the studio server against a `studio.toml`.
+    Run {
+        #[arg(long, default_value = "studio.toml")]
+        config: PathBuf,
+        /// Override the bind address (default `127.0.0.1:7878`).
+        #[arg(long)]
+        bind: Option<String>,
+    },
+    /// Eject the studio's source as a customizable Leptos+Axum project.
+    /// Not implemented in Phase 0.
+    Eject {
+        #[arg(long, default_value = "studio.toml")]
+        config: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
     },
 }
 
@@ -108,10 +124,4 @@ pub(crate) enum MigrateBackendArg {
 pub(crate) enum OutputFormat {
     Human,
     Json,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
-pub(crate) enum StudioProfileArg {
-    Dev,
-    Prod,
 }

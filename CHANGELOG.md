@@ -2,6 +2,43 @@
 
 ## 0.3.2 (unreleased)
 
+### Studio rewrite — Phase 0 (breaking)
+
+The Jinja-templated `cratestack generate-studio` scaffold is removed. In its
+place is a new crate, `cratestack-studio`, and a new CLI surface,
+`cratestack studio`, with three subcommands:
+
+```sh
+cratestack studio init                  # writes ./studio.toml
+cratestack studio run                   # binds 127.0.0.1:7878 by default
+cratestack studio eject --out ./out     # Phase 2 — currently returns NotImplemented
+```
+
+The studio now reads a workspace file (`studio.toml`) that lists one or
+more `[[target]]` blocks. Each target points at a `.cstack` schema and
+declares how the studio reaches its data: a `[target.db]` block for
+direct sqlx connections, a `[target.api]` block for a deployed
+cratestack service, or both. A target with neither channel is rejected
+at load time.
+
+Phase 0 only ships the skeleton: config loader, target validation, and
+an Axum server that exposes `/` (stub page) and `/api/health` (workspace
++ target summary). Schema introspection, record browsing, mutations, and
+the Leptos UI follow in Phases 1-4.
+
+`cratestack-studio-generator` is now a transitional shim. Its 0.3.x
+public API (`generate_package`, `StudioGeneratorConfig`,
+`StudioGeneratorContext`, `StudioProfile`, `GeneratedStudioFile`,
+`GeneratedStudioPackage`) is gone; the only remaining surface is a
+placeholder `eject()` that will, in Phase 2, copy `cratestack-studio`'s
+own sources into an output directory for users who want to fork the UI.
+
+Migration for existing `generate-studio` users: run `cratestack studio
+init` to seed a `studio.toml`, fill in your schemas and connection
+strings, then `cratestack studio run`. There is no automated migration
+of the 0.3.x multi-crate output — it was generated code and should be
+regenerated from the new shape.
+
 ### Batch primitives — tRPC-style per-item envelope
 
 Five new ORM methods on every model delegate, on both the sqlx (server) and rusqlite (embedded) backends:

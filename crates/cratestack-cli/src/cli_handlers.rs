@@ -1,14 +1,13 @@
+use std::net::SocketAddr;
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{Context, Result, bail};
 
 use crate::cli_support::{
-    ensure_output_dir_is_empty, into_generated_files, json_check_failure, json_check_success,
-    parse_schema_or_render, render_schema_error, resolve_context_keys, validate_mount_path,
-    validate_service_url, validate_studio_context_inputs, validate_studio_name,
-    write_generated_files,
+    into_generated_files, json_check_failure, json_check_success, parse_schema_or_render,
+    render_schema_error, write_generated_files,
 };
-use crate::cli_types::{Cli, Command, MigrateAction, OutputFormat, StudioProfileArg};
+use crate::cli_types::{Cli, Command, MigrateAction, OutputFormat, StudioCmd};
 
 pub(crate) fn run(cli: Cli) -> Result<()> {
     match cli.command {
@@ -27,25 +26,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             base_path,
             template_dir,
         } => handle_generate_typescript(schema, out, package_name, base_path, template_dir)?,
-        Command::GenerateStudio {
-            schema,
-            out,
-            name,
-            service_url,
-            context,
-            mount_path,
-            profile,
-            template_dir,
-        } => handle_generate_studio(
-            schema,
-            out,
-            name,
-            service_url,
-            context,
-            mount_path,
-            profile,
-            template_dir,
-        )?,
+        Command::Studio { cmd } => handle_studio(cmd)?,
         Command::PrintIr { schema } => handle_print_ir(schema)?,
         Command::Migrate { action } => match action {
             MigrateAction::Diff {
@@ -135,78 +116,62 @@ fn handle_generate_typescript(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-fn handle_generate_studio(
-    schema: Vec<PathBuf>,
-    out: PathBuf,
-    name: String,
-    service_url: Vec<String>,
-    context: Vec<String>,
-    mount_path: String,
-    profile: StudioProfileArg,
-    template_dir: Option<PathBuf>,
-) -> Result<()> {
-    validate_studio_name(&name)?;
-    validate_mount_path(&mount_path)?;
-    validate_studio_context_inputs(&schema, &service_url, &context)?;
-    for url in &service_url {
-        validate_service_url(url)?;
-    }
-    ensure_output_dir_is_empty(&out)?;
-
-    let parsed_schemas = schema
-        .iter()
-        .map(parse_schema_or_render)
-        .collect::<Result<Vec<_>>>()?;
-    let context_keys = resolve_context_keys(&schema, &context)?;
-    let generation_contexts =
-        build_studio_contexts(&parsed_schemas, &schema, &service_url, &context_keys, &name);
-    let package = cratestack_studio_generator::generate_package(
-        &generation_contexts,
-        &cratestack_studio_generator::StudioGeneratorConfig {
-            name,
-            mount_path,
-            profile: match profile {
-                StudioProfileArg::Dev => cratestack_studio_generator::StudioProfile::Dev,
-                StudioProfileArg::Prod => cratestack_studio_generator::StudioProfile::Prod,
-            },
-            template_dir,
-        },
-    )?;
-
-    write_generated_files(&out, into_generated_files(package.files))?;
-    println!("generated Studio app: {}", out.display());
-    Ok(())
-}
-
 fn handle_print_ir(schema: PathBuf) -> Result<()> {
     let parsed = parse_schema_or_render(&schema)?;
     println!("{parsed:#?}");
     Ok(())
 }
 
-fn build_studio_contexts<'a>(
-    parsed_schemas: &'a [cratestack_core::Schema],
-    schema_paths: &[PathBuf],
-    service_urls: &[String],
-    context_keys: &[String],
-    studio_name: &str,
-) -> Vec<cratestack_studio_generator::StudioGeneratorContext<'a>> {
-    parsed_schemas
-        .iter()
-        .zip(schema_paths.iter())
-        .zip(service_urls.iter())
-        .zip(context_keys.iter())
-        .map(|(((parsed, schema_path), upstream_url), context_key)| {
-            let service_name = crate::cli_support::derive_service_name(schema_path, studio_name);
-            cratestack_studio_generator::StudioGeneratorContext {
-                key: context_key.clone(),
-                display_name: service_name.clone(),
-                service_name,
-                schema_path: schema_path.clone(),
-                service_url: upstream_url.clone(),
-                schema: parsed,
-            }
+fn handle_studio(cmd: StudioCmd) -> Result<()> {
+    match cmd {
+        StudioCmd::Init { out, force } => handle_studio_init(out, force),
+        StudioCmd::Run { config, bind } => handle_studio_run(config, bind),
+        StudioCmd::Eject { config, out } => handle_studio_eject(config, out),
+    }
+}
+
+fn handle_studio_init(out: PathBuf, force: bool) -> Result<()> {
+    std::fs::create_dir_all(&out)
+        .with_context(|| format!("failed to create output directory '{}'", out.display()))?;
+    let target = out.join(cratestack_studio::DEFAULT_CONFIG_FILE);
+    if target.exists() && !force {
+        bail!(
+            "'{}' already exists; pass --force to overwrite",
+            target.display()
+        );
+    }
+    std::fs::write(&target, cratestack_studio::STARTER_CONFIG)
+        .with_context(|| format!("failed to write '{}'", target.display()))?;
+    println!("wrote starter studio config: {}", target.display());
+    Ok(())
+}
+
+fn handle_studio_run(config: PathBuf, bind: Option<String>) -> Result<()> {
+    let bind_addr: SocketAddr = match bind {
+        Some(value) => value
+            .parse()
+            .with_context(|| format!("invalid --bind '{value}'"))?,
+        None => cratestack_studio::DEFAULT_BIND
+            .parse()
+            .expect("default bind is a valid socket addr"),
+    };
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .context("failed to start tokio runtime")?;
+
+    runtime.block_on(async {
+        cratestack_studio::run(cratestack_studio::ServerOptions {
+            config_path: config,
+            bind: bind_addr,
         })
-        .collect()
+        .await
+        .map_err(anyhow::Error::from)
+    })
+}
+
+fn handle_studio_eject(_config: PathBuf, _out: PathBuf) -> Result<()> {
+    cratestack_studio_generator::eject()?;
+    Ok(())
 }
