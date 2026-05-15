@@ -18,6 +18,10 @@ pub enum ApiError {
     UnknownTarget(String),
     #[error("unknown model '{0}'")]
     UnknownModel(String),
+    #[error("unknown field '{1}' on model '{0}'")]
+    UnknownField(String, String),
+    #[error("field '{1}' on model '{0}' is not a relation")]
+    NotARelation(String, String),
     #[error("primary key '{0}' is not valid for this model: {1}")]
     InvalidPrimaryKey(String, String),
     #[error("model has no @id field; Studio v0 requires one")]
@@ -28,6 +32,8 @@ pub enum ApiError {
     Database(String),
     #[error("upstream API error: {0}")]
     Upstream(String),
+    #[error("internal error: {0}")]
+    Internal(String),
 }
 
 impl ApiError {
@@ -35,11 +41,14 @@ impl ApiError {
         match self {
             ApiError::UnknownTarget(_) => StatusCode::NOT_FOUND,
             ApiError::UnknownModel(_) => StatusCode::NOT_FOUND,
+            ApiError::UnknownField(_, _) => StatusCode::NOT_FOUND,
+            ApiError::NotARelation(_, _) => StatusCode::BAD_REQUEST,
             ApiError::NoPrimaryKey => StatusCode::BAD_REQUEST,
             ApiError::InvalidPrimaryKey(_, _) => StatusCode::BAD_REQUEST,
             ApiError::Unsupported(_) => StatusCode::NOT_IMPLEMENTED,
             ApiError::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,
             ApiError::Upstream(_) => StatusCode::BAD_GATEWAY,
+            ApiError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 
@@ -47,11 +56,14 @@ impl ApiError {
         match self {
             ApiError::UnknownTarget(_) => "UNKNOWN_TARGET",
             ApiError::UnknownModel(_) => "UNKNOWN_MODEL",
+            ApiError::UnknownField(_, _) => "UNKNOWN_FIELD",
+            ApiError::NotARelation(_, _) => "NOT_A_RELATION",
             ApiError::NoPrimaryKey => "NO_PRIMARY_KEY",
             ApiError::InvalidPrimaryKey(_, _) => "INVALID_PRIMARY_KEY",
             ApiError::Unsupported(_) => "UNSUPPORTED",
             ApiError::Database(_) => "DATABASE_ERROR",
             ApiError::Upstream(_) => "UPSTREAM_ERROR",
+            ApiError::Internal(_) => "INTERNAL_ERROR",
         }
     }
 }
@@ -60,13 +72,17 @@ impl From<DataError> for ApiError {
     fn from(err: DataError) -> Self {
         match err {
             DataError::UnknownModel { model } => ApiError::UnknownModel(model),
+            DataError::UnknownField { model, field } => ApiError::UnknownField(model, field),
+            DataError::NotARelation { model, field } => ApiError::NotARelation(model, field),
             DataError::NoPrimaryKey { .. } => ApiError::NoPrimaryKey,
             DataError::InvalidPrimaryKey { pk, reason, .. } => {
                 ApiError::InvalidPrimaryKey(pk, reason)
             }
             DataError::Unsupported { what } => ApiError::Unsupported(what),
             DataError::Db(e) => ApiError::Database(e.to_string()),
+            DataError::Sqlite(e) => ApiError::Database(e.to_string()),
             DataError::Api(e) => ApiError::Upstream(e.to_string()),
+            DataError::BlockingJoin(msg) => ApiError::Internal(msg),
         }
     }
 }

@@ -17,6 +17,7 @@ use crate::config::{
 use crate::data::DataSource;
 use crate::data::api::ApiSource;
 use crate::data::postgres::PostgresSource;
+use crate::data::sqlite::SqliteSource;
 
 /// In-memory workspace state shared by every request handler.
 #[derive(Debug)]
@@ -67,14 +68,43 @@ pub enum WorkspaceError {
         #[source]
         source: sqlx_core::Error,
     },
-    #[error("driver '{driver:?}' is not supported in this Studio build (target '{key}'); Phase 1a only ships Postgres")]
+    #[error("driver '{driver:?}' is not supported in this Studio build (target '{key}')")]
     UnsupportedDriver { key: String, driver: DbDriver },
+    #[error("failed to open SQLite database for target '{key}': {source}")]
+    SqliteOpen {
+        key: String,
+        #[source]
+        source: rusqlite::Error,
+    },
+    #[error("sqlite open task panicked for target '{key}': {message}")]
+    SqliteJoin { key: String, message: String },
     #[error("failed to build HTTP client for target '{key}': {source}")]
     HttpClient {
         key: String,
         #[source]
         source: reqwest::Error,
     },
+}
+
+/// Open a SQLite connection from a `studio.toml` URL.
+///
+/// Accepted forms (kept narrow on purpose — SQLite has historically
+/// accreted format variants that all mean roughly the same thing):
+///
+/// - `sqlite:` / `sqlite::memory:` — in-memory database
+/// - `sqlite:/path/to/db.sqlite` — file path (leading slash kept)
+/// - `sqlite:path/to/db.sqlite` — file path (relative)
+/// - Any bare path also works (treated as a file path)
+fn open_sqlite(url: &str) -> Result<rusqlite::Connection, rusqlite::Error> {
+    let trimmed = url
+        .strip_prefix("sqlite://")
+        .or_else(|| url.strip_prefix("sqlite:"))
+        .unwrap_or(url);
+    if trimmed.is_empty() || trimmed == ":memory:" {
+        rusqlite::Connection::open_in_memory()
+    } else {
+        rusqlite::Connection::open(trimmed)
+    }
 }
 
 impl LoadedWorkspace {
@@ -150,6 +180,24 @@ async fn load_target(
                         source,
                     })?;
                 Arc::new(PostgresSource::new(pool, schema.clone()))
+            }
+            DbDriver::Sqlite => {
+                let url = resolve_secret(
+                    &db.url,
+                    &format!("target[{}].db.url", target.key),
+                )?;
+                let target_key = target.key.clone();
+                let conn = tokio::task::spawn_blocking(move || open_sqlite(&url))
+                    .await
+                    .map_err(|e| WorkspaceError::SqliteJoin {
+                        key: target_key.clone(),
+                        message: e.to_string(),
+                    })?
+                    .map_err(|source| WorkspaceError::SqliteOpen {
+                        key: target.key.clone(),
+                        source,
+                    })?;
+                Arc::new(SqliteSource::new(conn, schema.clone()))
             }
             other => {
                 return Err(WorkspaceError::UnsupportedDriver {

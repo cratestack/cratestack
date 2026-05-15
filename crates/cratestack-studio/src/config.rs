@@ -24,6 +24,13 @@ pub struct WorkspaceConfig {
     pub name: String,
     #[serde(default)]
     pub default_mode: TargetMode,
+    /// Permissive CORS for browser-based UI development. Defaults to
+    /// `true` because Studio binds 127.0.0.1 — the threat model is "no
+    /// public exposure," and a Trunk dev server on `localhost:8080`
+    /// needs to call the backend on `localhost:7878`. Set `false` to
+    /// disable when binding to a wider interface.
+    #[serde(default = "WorkspaceConfig::default_cors_dev")]
+    pub cors_dev: bool,
 }
 
 impl Default for WorkspaceConfig {
@@ -31,6 +38,7 @@ impl Default for WorkspaceConfig {
         Self {
             name: Self::default_name(),
             default_mode: TargetMode::default(),
+            cors_dev: Self::default_cors_dev(),
         }
     }
 }
@@ -38,6 +46,9 @@ impl Default for WorkspaceConfig {
 impl WorkspaceConfig {
     fn default_name() -> String {
         "studio".to_owned()
+    }
+    fn default_cors_dev() -> bool {
+        true
     }
 }
 

@@ -40,6 +40,10 @@ pub fn router() -> Router<Arc<LoadedWorkspace>> {
             get(records::get_record),
         )
         .route(
+            "/api/targets/{key}/models/{model}/records/{pk}/rel/{field}",
+            get(records::follow_relation),
+        )
+        .route(
             "/api/targets/{key}/models/{model}/snippet",
             get(snippet::record_snippet),
         )

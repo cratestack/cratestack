@@ -8,7 +8,7 @@
 use cratestack_core::Schema;
 
 use crate::data::DataError;
-use crate::data::postgres::resolve_model;
+use crate::data::model_info::{PkCast, resolve_model};
 
 /// Render a Rust snippet that reads the model row by primary key.
 /// Quoting follows the PK-type rule: text-shaped keys get string
@@ -36,12 +36,7 @@ pub fn rust_find_unique(
     ))
 }
 
-fn pk_literal_for(
-    _scalar: &str,
-    pk_value: &str,
-    cast: crate::data::postgres::PkCast,
-) -> String {
-    use crate::data::postgres::PkCast;
+fn pk_literal_for(_scalar: &str, pk_value: &str, cast: PkCast) -> String {
     match cast {
         PkCast::BigInt => format!("{pk_value}_i64"),
         PkCast::Text => format!("\"{}\".to_owned()", escape_str(pk_value)),

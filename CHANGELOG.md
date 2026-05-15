@@ -2,6 +2,79 @@
 
 ## 0.3.2 (unreleased)
 
+### Studio rewrite — Phase 1b (read API completions + Leptos UI)
+
+Phase 1b finishes the read story. SQLite targets are now a first-class
+driver, the `@relation` traversal endpoint is wired, the API-backed
+list/get path talks to deployed CrateStack services, and a Leptos+Trunk
+web UI consumes all of it from the browser.
+
+**SQLite via rusqlite.** A new `data::sqlite::SqliteSource` opens a
+SQLite connection per target and projects rows through SQLite's
+`json_object(...)` so the rest of the pipeline stays identical to the
+Postgres path. Studio doesn't use `sqlx-sqlite` because the workspace's
+`rusqlite 0.39 → libsqlite3-sys 0.37` pin conflicts with sqlx-sqlite's;
+the rusqlite-based source has no such conflict. `[target.db]` URLs
+accept `sqlite:`, `sqlite://`, `sqlite::memory:`, and bare file paths.
+
+**Relation follow.** New endpoint
+`GET /api/targets/:key/models/:m/records/:pk/rel/:field`. The
+resolver reads `@relation(fields: [...], references: [...])` symmetrically
+on both ends of a relation: the target is the field's declared type,
+the source row's `fields[0]` supplies the bound value, and we filter
+the target table on `references[0]`. List-arity fields return a paginated
+page; Required-arity fields return a single optional row. Both sides
+of the relation must declare `@relation` (which is what the CrateStack
+parser already enforces).
+
+**API list/get.** `data::api::ApiSource` now talks to a deployed
+CrateStack service over the same REST routes the generated TypeScript
+and Dart clients use: `GET <base>/api/<plural-snake-model>` for list,
+`GET <base>/api/<plural-snake-model>/{id}` for find_unique. Studio
+maps its cursor abstraction onto the upstream's offset/limit pagination
+by encoding the next offset as the opaque cursor string. Auth headers
+follow `[target.api.auth]` (`bearer { token = … }` or `header { name,
+value }`). Relation follow against API targets returns `UNSUPPORTED` —
+the generated REST surface doesn't expose arbitrary column filters.
+
+**Dev CORS.** `[workspace] cors_dev = true` (the default) layers a
+permissive CORS layer on the router so a Trunk dev server on
+`localhost:8080` can talk to the Studio backend on `localhost:7878`.
+Set `cors_dev = false` when binding to a wider interface.
+
+**Leptos UI.** New `crates/cratestack-studio/ui/` crate — a Leptos
+CSR app built by Trunk, intentionally excluded from the workspace so
+`cargo check --workspace` doesn't pull in the `wasm32-unknown-unknown`
+toolchain. Surface:
+
+- Header with workspace name and target switcher (shows mode + db/api capability).
+- Left sidebar listing the selected target's models.
+- Records table with cursor-based pagination (previous/next).
+- Record drawer with a per-field view, a relation-follow input, and a
+  "Copy Rust query" button that writes the find_unique snippet to the
+  system clipboard.
+
+Run locally with `cratestack studio run` in one terminal and
+`trunk serve` in `crates/cratestack-studio/ui/` in another; Trunk's
+proxy forwards `/api/*` to the backend on port 7878.
+
+**Error envelope additions.** Two new stable codes: `UNKNOWN_FIELD`
+(unknown field name on relation follow, 404) and `NOT_A_RELATION`
+(field exists but isn't a relation, 400). `INTERNAL_ERROR` is reserved
+for blocking-task panics during the SQLite path.
+
+#### Scope notes
+
+- Relation follow is read-only and supports the two common shapes
+  (outgoing 1-1 / many-1, inbound 1-many). Many-to-many through a
+  junction table returns `UNSUPPORTED`.
+- The UI's relation follow currently takes the field name as a free
+  text input — a typed dropdown lands in Phase 1c once the UI threads
+  the per-model relation field list down to the drawer.
+- The Studio binary still ships without the UI compiled in. Phase 2's
+  `studio eject` writes the UI's sources to a writable workspace; Phase
+  2 / 3 also adds the `rust-embed` bundle for single-binary distribution.
+
 ### Studio rewrite — Phase 1a (read API)
 
 The studio gains a real backend. `cratestack studio run` now parses

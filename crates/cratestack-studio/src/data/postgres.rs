@@ -16,21 +16,19 @@
 //! ```
 //!
 //! Primary keys are bound as text and cast in SQL, which keeps the
-//! Rust side blind to PK types. Phase 1a supports String- and
-//! Int/BigInt-typed `@id` fields; other PK types fall through to
-//! [`DataError::Unsupported`].
+//! Rust side blind to PK types.
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use cratestack_core::{Field, Model, Schema};
-use cratestack_migrate::{column_name, table_name};
-use sqlx_postgres::{PgPool, PgRow};
+use cratestack_core::Schema;
 use sqlx_core::row::Row as _;
+use sqlx_postgres::{PgPool, PgRow};
 
-use super::{
-    DEFAULT_PAGE_LIMIT, DataError, DataSource, MAX_PAGE_LIMIT, Page, PageRequest, Row,
+use super::model_info::{
+    ModelSqlInfo, PkCast, find_pk_field, json_value_to_cursor, resolve_model,
 };
+use super::{DEFAULT_PAGE_LIMIT, DataError, DataSource, MAX_PAGE_LIMIT, Page, PageRequest, Row};
 
 #[derive(Debug, Clone)]
 pub struct PostgresSource {
@@ -41,102 +39,6 @@ pub struct PostgresSource {
 impl PostgresSource {
     pub fn new(pool: PgPool, schema: Arc<Schema>) -> Self {
         Self { pool, schema }
-    }
-}
-
-/// Project the columns and primary-key info needed to build a SELECT
-/// for one model. Pulled out so we can unit-test SQL generation
-/// without a live database.
-#[derive(Debug)]
-pub(crate) struct ModelSqlInfo<'a> {
-    pub table: String,
-    pub columns: Vec<ColumnInfo<'a>>,
-    pub pk_column: String,
-    pub pk_cast: PkCast,
-}
-
-#[derive(Debug)]
-pub(crate) struct ColumnInfo<'a> {
-    /// The field's `.cstack` name (camelCase). The snippet generator
-    /// will use this in Phase 1b once the snippet projects fields; for
-    /// now it's read only by tests.
-    #[allow(dead_code)]
-    pub field_name: &'a str,
-    pub column_name: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PkCast {
-    /// `WHERE pk = $1` — bind as text directly, no SQL cast.
-    Text,
-    /// `WHERE pk = $1::bigint`.
-    BigInt,
-}
-
-pub(crate) fn resolve_model<'a>(
-    schema: &'a Schema,
-    model_name: &str,
-) -> Result<(&'a Model, ModelSqlInfo<'a>), DataError> {
-    let model = schema
-        .models
-        .iter()
-        .find(|m| m.name == model_name)
-        .ok_or_else(|| DataError::UnknownModel {
-            model: model_name.to_owned(),
-        })?;
-
-    let pk_field = find_pk_field(model).ok_or_else(|| DataError::NoPrimaryKey {
-        model: model_name.to_owned(),
-    })?;
-
-    let columns = model
-        .fields
-        .iter()
-        .filter(|f| is_scalar_field(schema, f))
-        .map(|f| ColumnInfo {
-            field_name: f.name.as_str(),
-            column_name: column_name(&f.name),
-        })
-        .collect();
-
-    let pk_cast = pk_cast_for(&pk_field.ty.name).ok_or_else(|| DataError::Unsupported {
-        what: "primary key of this type (Phase 1a supports String, Int, BigInt)",
-    })?;
-
-    Ok((
-        model,
-        ModelSqlInfo {
-            table: table_name(&model.name),
-            columns,
-            pk_column: column_name(&pk_field.name),
-            pk_cast,
-        },
-    ))
-}
-
-fn find_pk_field(model: &Model) -> Option<&Field> {
-    model
-        .fields
-        .iter()
-        .find(|f| f.attributes.iter().any(|a| a.raw.starts_with("@id")))
-}
-
-/// Phase 1a treats relation-shaped fields as non-projectable. A field
-/// counts as scalar if its arity isn't `List` and its declared type
-/// doesn't name a model in the same schema. Enum-typed fields stay
-/// scalar (they're stored as text columns).
-fn is_scalar_field(schema: &Schema, field: &Field) -> bool {
-    if matches!(field.ty.arity, cratestack_core::TypeArity::List) {
-        return false;
-    }
-    !schema.models.iter().any(|m| m.name == field.ty.name)
-}
-
-fn pk_cast_for(scalar: &str) -> Option<PkCast> {
-    match scalar {
-        "String" | "Uuid" | "Cuid" | "Decimal" => Some(PkCast::Text),
-        "Int" => Some(PkCast::BigInt),
-        _ => None,
     }
 }
 
@@ -195,6 +97,48 @@ pub(crate) fn build_get_sql(info: &ModelSqlInfo<'_>) -> String {
     )
 }
 
+/// Cursor-paginated SELECT against a column with caller-supplied cast.
+/// Used by the relation-follow path, which scans foreign-key columns
+/// that aren't necessarily the model's primary key.
+pub(crate) fn build_list_on_column_sql(
+    info: &ModelSqlInfo<'_>,
+    filter_column: &str,
+    filter_cast: PkCast,
+    limit: u32,
+) -> String {
+    let projection = info
+        .columns
+        .iter()
+        .map(|c| format!("\"{}\"", c.column_name))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let pk = &info.pk_column;
+    let filter_predicate = match filter_cast {
+        PkCast::Text => format!("\"{filter_column}\" = $1"),
+        PkCast::BigInt => format!("\"{filter_column}\" = $1::bigint"),
+    };
+    let cursor_predicate = match info.pk_cast {
+        PkCast::Text => format!("($2::text IS NULL OR \"{pk}\" > $2)"),
+        PkCast::BigInt => format!("($2::text IS NULL OR \"{pk}\" > $2::bigint)"),
+    };
+    format!(
+        "SELECT row_to_json(t.*) AS row \
+         FROM ( \
+           SELECT {projection} \
+           FROM \"{table}\" \
+           WHERE {filter_predicate} AND {cursor_predicate} \
+           ORDER BY \"{pk}\" ASC \
+           LIMIT {limit} \
+         ) t",
+        table = info.table,
+        projection = projection,
+        filter_predicate = filter_predicate,
+        cursor_predicate = cursor_predicate,
+        pk = pk,
+        limit = limit,
+    )
+}
+
 fn clamp_limit(requested: Option<u32>) -> u32 {
     requested
         .unwrap_or(DEFAULT_PAGE_LIMIT)
@@ -216,14 +160,7 @@ impl DataSource for PostgresSource {
             .fetch_all(&self.pool)
             .await?;
 
-        let mut decoded: Vec<Row> = Vec::with_capacity(rows.len());
-        for row in rows {
-            let value: serde_json::Value = row.try_get(0)?;
-            if let serde_json::Value::Object(map) = value {
-                decoded.push(map);
-            }
-        }
-
+        let decoded = decode_rows(rows)?;
         let next_cursor = if decoded.len() == limit as usize {
             decoded
                 .last()
@@ -259,16 +196,54 @@ impl DataSource for PostgresSource {
             }
         }
     }
+
+    async fn follow(
+        &self,
+        target_model: &str,
+        filter_column: &str,
+        filter_cast: PkCast,
+        filter_value: &str,
+        page: PageRequest<'_>,
+    ) -> Result<Page, DataError> {
+        let (resolved_model, info) = resolve_model(&self.schema, target_model)?;
+        let limit = clamp_limit(page.limit);
+        let sql = build_list_on_column_sql(&info, filter_column, filter_cast, limit);
+        let pk_field_name = find_pk_field(resolved_model)
+            .map(|f| f.name.clone())
+            .expect("resolve_model returns an error when there is no @id");
+
+        let rows: Vec<PgRow> = sqlx_core::query::query(&sql)
+            .bind(filter_value)
+            .bind(page.cursor)
+            .fetch_all(&self.pool)
+            .await?;
+
+        let decoded = decode_rows(rows)?;
+        let next_cursor = if decoded.len() == limit as usize {
+            decoded
+                .last()
+                .and_then(|r| r.get(&pk_field_name))
+                .map(json_value_to_cursor)
+        } else {
+            None
+        };
+
+        Ok(Page {
+            rows: decoded,
+            next_cursor,
+        })
+    }
 }
 
-/// JSON values come back as strings or numbers depending on the PK
-/// column type; both serialize losslessly as a `String` cursor that we
-/// later re-bind as `text` and cast in SQL.
-fn json_value_to_cursor(value: &serde_json::Value) -> String {
-    match value {
-        serde_json::Value::String(s) => s.clone(),
-        other => other.to_string(),
+fn decode_rows(rows: Vec<PgRow>) -> Result<Vec<Row>, DataError> {
+    let mut out = Vec::with_capacity(rows.len());
+    for row in rows {
+        let value: serde_json::Value = row.try_get(0)?;
+        if let serde_json::Value::Object(map) = value {
+            out.push(map);
+        }
     }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -277,66 +252,6 @@ mod tests {
 
     fn parse(schema_text: &str) -> Schema {
         cratestack_parser::parse_schema(schema_text).expect("schema parses")
-    }
-
-    #[test]
-    fn resolves_model_with_string_pk() {
-        let schema = parse(
-            r#"
-                model Post {
-                  id String @id
-                  title String
-                }
-            "#,
-        );
-        let (_, info) = resolve_model(&schema, "Post").expect("resolves");
-        assert_eq!(info.table, "posts");
-        assert_eq!(info.pk_column, "id");
-        assert_eq!(info.pk_cast, PkCast::Text);
-        let columns: Vec<&str> = info.columns.iter().map(|c| c.field_name).collect();
-        assert_eq!(columns, vec!["id", "title"]);
-    }
-
-    #[test]
-    fn resolves_model_with_int_pk() {
-        let schema = parse(
-            r#"
-                model Customer {
-                  id Int @id
-                  email String
-                }
-            "#,
-        );
-        let (_, info) = resolve_model(&schema, "Customer").expect("resolves");
-        assert_eq!(info.pk_cast, PkCast::BigInt);
-    }
-
-    #[test]
-    fn unknown_model_errors() {
-        let schema = parse(
-            r#"
-                model Post {
-                  id String @id
-                  title String
-                }
-            "#,
-        );
-        let error = resolve_model(&schema, "Nope").expect_err("missing model errors");
-        assert!(matches!(error, DataError::UnknownModel { ref model } if model == "Nope"));
-    }
-
-    #[test]
-    fn unsupported_pk_type_errors() {
-        let schema = parse(
-            r#"
-                model Event {
-                  id DateTime @id
-                  label String
-                }
-            "#,
-        );
-        let error = resolve_model(&schema, "Event").expect_err("unsupported pk fails");
-        assert!(matches!(error, DataError::Unsupported { what } if what.contains("primary key")));
     }
 
     #[test]
@@ -391,18 +306,20 @@ mod tests {
     }
 
     #[test]
-    fn skips_list_arity_fields_from_projection() {
+    fn list_on_column_filters_and_pages_simultaneously() {
         let schema = parse(
             r#"
-                model Author {
+                model Post {
                   id String @id
-                  name String
-                  tags String[]
+                  authorId String
+                  title String
                 }
             "#,
         );
-        let (_, info) = resolve_model(&schema, "Author").unwrap();
-        let fields: Vec<&str> = info.columns.iter().map(|c| c.field_name).collect();
-        assert_eq!(fields, vec!["id", "name"]);
+        let (_, info) = resolve_model(&schema, "Post").unwrap();
+        let sql = build_list_on_column_sql(&info, "author_id", PkCast::Text, 25);
+        assert!(sql.contains(r#""author_id" = $1"#), "{sql}");
+        assert!(sql.contains(r#""id" > $2"#), "{sql}");
+        assert!(sql.contains("LIMIT 25"), "{sql}");
     }
 }

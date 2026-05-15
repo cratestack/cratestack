@@ -1,0 +1,14 @@
+[build]
+target = "index.html"
+
+[serve]
+address = "127.0.0.1"
+port = 8080
+open = false
+
+# Proxy /api/* to the Studio backend in dev so the SPA can be served
+# from port 8080 while talking to the API on 7878 with same-origin
+# semantics.
+[[proxy]]
+backend = "http://127.0.0.1:7878/api/"
+rewrite = "/api/"
