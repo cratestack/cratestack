@@ -43,6 +43,60 @@ let response = runtime.execute(FlutterRequest {
 
 Codec options are `Cbor` and `Json`. Envelope options are `None` and `CoseSign1` (envelope wiring lives in `cratestack-client-rust`).
 
+## Streaming (`application/cbor-seq`)
+
+For list-return procedures and any `Sequence`-kind RPC op, `FlutterRuntime::execute_streamed` delivers items **as bytes arrive on the wire** instead of buffering the full response body. On a flaky or metered mobile link this drops first-item latency from "buffer the whole body" to "decode one chunk."
+
+The Rust shape is callback-driven; the typical Flutter integration wraps it with a `flutter_rust_bridge` `StreamSink<FlutterChunkWire>` so Dart code sees a normal `Stream<FlutterChunkWire>`:
+
+```rust
+// In your Flutter app's native crate (the one running flutter_rust_bridge_codegen):
+use cratestack_client_flutter::{
+    FlutterChunkWire, FlutterRequest, FlutterRuntime, FlutterRuntimeError,
+};
+use flutter_rust_bridge::frb;
+
+#[frb(sync)]
+pub fn execute_streamed(
+    runtime: &FlutterRuntime,
+    request: FlutterRequest,
+    sink: flutter_rust_bridge::StreamSink<FlutterChunkWire>,
+) -> Result<(), FlutterRuntimeError> {
+    runtime.execute_streamed(request, move |chunk| {
+        // Push to Dart. `add` returns Err if the Dart side cancelled
+        // (await-for loop broke out / sink closed) — propagate that as
+        // a cancellation signal so the stream stops cleanly.
+        sink.add(chunk).is_ok()
+    })
+}
+```
+
+On the Dart side (after `flutter_rust_bridge_codegen generate`):
+
+```dart
+final Stream<FlutterChunkWire> stream = executeStreamed(
+    runtime: runtime,
+    request: request,
+);
+
+await for (final chunk in stream) {
+    switch (chunk) {
+        case FlutterChunkWire_Item(:final field0):
+            final item = cbor.decode(field0); // any Dart CBOR package
+            renderRow(item);
+        case FlutterChunkWire_End():
+            break;
+        case FlutterChunkWire_Error(:final field0):
+            handleError(field0);
+            break;
+    }
+}
+```
+
+The chunked decoder (see `cratestack-client-rust::CborSeqChunkDecoder`) drives `reqwest::Response::bytes_stream()` and emits one `Item(Vec<u8>)` per complete CBOR item. Cancellation, terminal-end, and transport errors all flow as variants of `FlutterChunkWire`, so the Dart consumer needs just one match arm to cover all paths.
+
+End-to-end tests live in [`tests/streaming_bridge.rs`](tests/streaming_bridge.rs).
+
 ## See Also
 
 - `cratestack-client-rust` — underlying runtime
