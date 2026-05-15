@@ -365,6 +365,20 @@ pub(crate) fn generate_relation_order_module(
     }];
     let visited = vec![relation_visit_key(model, relation_field)];
 
+    // Codegen sugar for `.find_many().include(...)`: emit an
+    // `as_include()` method on the root-level relation `Path` so call
+    // sites can write `cool.parent().find_many().include(
+    // parent_module::relation_name().as_include())` without
+    // hand-rolling the `RelationInclude` literal. Only emitted for
+    // to-one relations whose `@relation(references:[...])` is the
+    // related model's primary key (the schema norm); other shapes
+    // silently skip the method so the build stays clean while the
+    // hand-built literal continues to work.
+    let as_include_method =
+        generate_as_include_method(model, relation_field, root_model, models)?;
+    let root_extra: Vec<proc_macro2::TokenStream> =
+        as_include_method.into_iter().collect();
+
     generate_relation_order_module_recursive(
         &relation_link,
         root_model,
@@ -375,7 +389,88 @@ pub(crate) fn generate_relation_order_module(
         &wrappers,
         &visited,
         models,
+        &root_extra,
     )
+}
+
+/// Emit the per-relation `as_include()` method body. Returns `None`
+/// when the relation isn't eligible for the typed `.include(...)`
+/// shortcut — for example, when the schema references a non-PK column,
+/// or when the related model has no `@id` field. Eligible shape: a
+/// to-one relation whose `@relation(references:[<col>])` names the
+/// related model's primary key. The call site already gates on
+/// `is_to_many` before reaching here, so we only need to validate the
+/// PK alignment in this helper.
+fn generate_as_include_method(
+    model: &Model,
+    relation_field: &Field,
+    related_model: &Model,
+    _models: &[Model],
+) -> Result<Option<proc_macro2::TokenStream>, String> {
+    let parsed = match parse_relation_attribute(relation_field) {
+        Some(p) => p,
+        None => return Ok(None),
+    };
+    if parsed.fields.len() != 1 || parsed.references.len() != 1 {
+        return Ok(None);
+    }
+    let fk_field_name = &parsed.fields[0];
+    let ref_field_name = &parsed.references[0];
+
+    let related_pk = match related_model
+        .fields
+        .iter()
+        .find(|field| crate::shared::is_primary_key(field))
+    {
+        Some(pk) => pk,
+        None => return Ok(None),
+    };
+    // Only support reference-equals-PK for v1. Other shapes (unique
+    // non-PK references) need a different `RelationInclude` field set
+    // and stay on the hand-built literal path.
+    if ref_field_name != &related_pk.name {
+        return Ok(None);
+    }
+
+    let fk_field = match model.fields.iter().find(|field| &field.name == fk_field_name) {
+        Some(f) => f,
+        None => return Ok(None),
+    };
+
+    let parent_ident = ident(&model.name);
+    let related_ident = ident(&related_model.name);
+    let related_pk_type = rust_type_tokens(&related_pk.ty);
+    let related_descriptor_ident = ident(&format!(
+        "{}_MODEL",
+        to_snake_case(&related_model.name).to_uppercase(),
+    ));
+    let fk_field_ident = ident(&fk_field.name);
+
+    // Optional FK ⇒ field type is already `Option<RelPK>`. Required
+    // FK ⇒ wrap in `Some(...)` so the function pointer's return type
+    // is the same shape in both cases.
+    let fk_extract_body = if fk_field.ty.arity == TypeArity::Optional {
+        quote::quote! { m.#fk_field_ident.clone() }
+    } else {
+        quote::quote! { ::std::option::Option::Some(m.#fk_field_ident.clone()) }
+    };
+
+    Ok(Some(quote! {
+        /// Build a `RelationInclude` for this to-one relation, ready
+        /// to feed into a `.find_many().include(...)` chain. Equivalent
+        /// to hand-rolling the struct literal that names the parent
+        /// FK extractor and the related descriptor.
+        pub fn as_include(self) -> ::cratestack::RelationInclude<
+            super::#parent_ident,
+            super::#related_ident,
+            #related_pk_type,
+        > {
+            ::cratestack::RelationInclude {
+                parent_fk_extract: |m: &super::#parent_ident| #fk_extract_body,
+                related_descriptor: &super::#related_descriptor_ident,
+            }
+        }
+    }))
 }
 
 pub(crate) fn generate_relation_include_arm(
@@ -598,6 +693,7 @@ fn generate_relation_order_module_recursive(
     wrappers: &[RelationPathSegment],
     visited: &[String],
     models: &[Model],
+    root_extra_path_methods: &[proc_macro2::TokenStream],
 ) -> Result<proc_macro2::TokenStream, String> {
     let module_ident = ident(&relation_field.name);
     let model_names = model_name_set(models);
@@ -657,6 +753,7 @@ fn generate_relation_order_module_recursive(
             impl Path {
                 #(#scalar_path_methods)*
                 #(#relation_path_methods)*
+                #(#root_extra_path_methods)*
             }
 
             #(#scalar_fns)*
@@ -842,6 +939,7 @@ fn build_recursive_relation_entry(
         &nested_wrappers,
         &nested_visited,
         models,
+        &[],
     )?;
     Ok(Some((
         generate_nested_relation_path_method(nested_relation),
@@ -1067,6 +1165,7 @@ fn build_quantifier_relation_entry(
         &nested_wrappers,
         &nested_visited,
         models,
+        &[],
     )?;
     Ok(Some((
         generate_nested_relation_path_method(nested_relation),
