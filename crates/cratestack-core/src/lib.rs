@@ -1022,6 +1022,17 @@ pub enum Value {
     Map(BTreeMap<String, Value>),
 }
 
+/// `Default` is required by every generated model struct since #51
+/// (column projection): non-selected fields hold `T::default()` so the
+/// returned `Projection<T>` is constructable without re-fetching.
+/// `Value::Null` is the natural identity — JSON columns surfacing as
+/// `cratestack::Value` default to "no payload" until the next read.
+impl Default for Value {
+    fn default() -> Self {
+        Value::Null
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct CoolAuthIdentity {
     pub fields: BTreeMap<String, Value>,
