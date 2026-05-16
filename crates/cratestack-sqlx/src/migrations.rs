@@ -1,14 +1,8 @@
-//! Forward-only migration runner.
-//!
-//! Phase 3 ships the foundations: a tracking table, a runner that applies
-//! pending migrations in order, and a checksum guard so the SQL recorded
-//! in the database can be cross-checked against the one a deployment ships
-//! today. Banks running zero-downtime migrations write their migrations by
-//! hand (the contract under regulation is "the change is reviewable as a
-//! SQL diff") — schema-diff-driven generation is out of scope here.
+//! Forward-only migration runner with a checksum guard against drift.
+//! Banks write migrations by hand (the contract under regulation is "the
+//! change is reviewable as a SQL diff").
+
 use crate::sqlx;
-
-
 use cratestack_core::CoolError;
 use sha2::{Digest, Sha256};
 
@@ -21,10 +15,9 @@ CREATE TABLE IF NOT EXISTS cratestack_migrations (
 );
 "#;
 
-/// A single migration step. Banks store these in source control alongside
-/// the schema; the runner applies any rows in `migrations` not yet present
-/// in `cratestack_migrations`. `down` is recorded but the runner doesn't
-/// call it — irreversible-by-default is the safe banking posture.
+/// A single migration step. The runner applies any rows not yet
+/// present in `cratestack_migrations`. `down` is recorded but never
+/// called — irreversible-by-default is the safe banking posture.
 #[derive(Debug, Clone)]
 pub struct Migration {
     /// Sortable id, conventionally `YYYYMMDDHHMMSS_<slug>`.
@@ -115,10 +108,10 @@ pub async fn status(
         .collect())
 }
 
-/// Apply every pending migration in the input slice, in order. Each
-/// migration runs inside its own transaction; checksum drift aborts the
-/// whole apply (banks treat drift as a release-process failure to be
-/// resolved by humans, not silently overwritten).
+/// Apply every pending migration in the input slice in order. Each
+/// runs in its own transaction; checksum drift aborts the whole apply
+/// (banks treat drift as a release-process failure for humans, not a
+/// silent overwrite).
 pub async fn apply_pending(
     pool: &sqlx::PgPool,
     migrations: &[Migration],
@@ -143,15 +136,10 @@ pub async fn apply_pending(
             .begin()
             .await
             .map_err(|error| CoolError::Database(error.to_string()))?;
-        // PG prepared statements only carry one command per round-trip,
-        // so a multi-statement migration like
-        //   CREATE TABLE foo (...);
-        //   CREATE INDEX bar ON foo (id);
-        // would fail before being recorded. Other DDL helpers in this
-        // crate (audit::ensure_audit_table, idempotency ensure_schema)
-        // already split on `;`; this loop does the same inside the
-        // migration's transaction so partial state can't survive a
-        // mid-script failure.
+        // PG prepared statements only carry one command per round-trip.
+        // Split on `;` inside the migration's transaction so partial
+        // state can't survive a mid-script failure (audit/idempotency
+        // DDL helpers do the same).
         for statement in migration
             .up
             .split(';')
