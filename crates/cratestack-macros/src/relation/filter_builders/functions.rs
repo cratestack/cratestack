@@ -4,7 +4,7 @@ use quote::quote;
 
 use crate::shared::{ident, supports_comparison};
 
-use super::super::RelationPathSegment;
+use super::super::types::RelationPathSegment;
 use super::op_expr;
 
 pub(in super::super) fn append_required_filter_functions(

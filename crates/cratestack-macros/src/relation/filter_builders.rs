@@ -6,7 +6,8 @@
 
 use quote::quote;
 
-use super::{RelationPathSegment, wrap_filter_expr_tokens};
+use super::types::RelationPathSegment;
+use super::wrap::wrap_filter_expr_tokens;
 
 mod functions;
 mod methods;
