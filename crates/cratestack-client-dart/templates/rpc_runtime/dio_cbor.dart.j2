@@ -1,0 +1,165 @@
+/// CBOR-by-default adapter with JSON negotiation. Mirrors the REST
+/// runtime's `CratestackCborDioAdapter`.
+class CratestackRpcCborDioAdapter implements CratestackRpcAdapter {
+  const CratestackRpcCborDioAdapter({required Dio dio}) : _dio = dio;
+
+  final Dio _dio;
+
+  @override
+  Future<Object?> call(
+    String opId,
+    Object? input, {
+    CratestackRpcCallOptions? options,
+  }) async {
+    try {
+      final response = await _dio.post<List<int>>(
+        '/rpc/${Uri.encodeComponent(opId)}',
+        data: _encodeBody(input),
+        options: Options(
+          contentType: 'application/cbor',
+          responseType: ResponseType.bytes,
+          headers: {
+            'Accept': 'application/cbor, application/json;q=0.9',
+            if (options?.idempotencyKey != null)
+              'Idempotency-Key': options!.idempotencyKey!,
+            ...?options?.headers,
+          },
+        ),
+      );
+      return _decodeBody(response);
+    } on DioException catch (error) {
+      throw _exceptionFromDio(error);
+    }
+  }
+
+  @override
+  Future<List<RpcResponseFrame>> batch(
+    List<RpcRequest> requests, {
+    CratestackRpcCallOptions? options,
+  }) async {
+    try {
+      final wire =
+          requests.map((r) => r.toWire()).toList(growable: false);
+      final response = await _dio.post<List<int>>(
+        '/rpc/batch',
+        data: _encodeBody(wire),
+        options: Options(
+          contentType: 'application/cbor',
+          responseType: ResponseType.bytes,
+          headers: {
+            'Accept': 'application/cbor, application/json;q=0.9',
+            ...?options?.headers,
+          },
+        ),
+      );
+      final decoded = _decodeBody(response);
+      final frames = decoded as List<dynamic>;
+      return frames
+          .map((frame) => RpcResponseFrame.fromWire(frame))
+          .toList(growable: false);
+    } on DioException catch (error) {
+      throw _exceptionFromDio(error);
+    }
+  }
+
+  @override
+  Stream<Object?> stream(
+    String opId,
+    Object? input, {
+    CratestackRpcCallOptions? options,
+  }) async* {
+    // TODO: stream `application/cbor-seq` frame-by-frame. Today we
+    //       buffer the body and decode it as a single CBOR array,
+    //       which matches the REST runtime's `post_list` behaviour.
+    try {
+      final response = await _dio.post<List<int>>(
+        '/rpc/${Uri.encodeComponent(opId)}',
+        data: _encodeBody(input),
+        options: Options(
+          contentType: 'application/cbor',
+          responseType: ResponseType.bytes,
+          headers: {
+            'Accept': 'application/cbor-seq, application/cbor, application/json;q=0.9',
+            ...?options?.headers,
+          },
+        ),
+      );
+      final decoded = _decodeBody(response);
+      final items = decoded as List<dynamic>;
+      for (final item in items) {
+        yield item;
+      }
+    } on DioException catch (error) {
+      throw _exceptionFromDio(error);
+    }
+  }
+
+  Object? _decodeBody(Response<List<int>> response) {
+    final bytes = response.data;
+    if (bytes == null || bytes.isEmpty) {
+      return null;
+    }
+    final contentType = response.headers.value(Headers.contentTypeHeader) ?? '';
+    if (_isCborContentType(contentType)) {
+      return cbor.cbor.decode(Uint8List.fromList(bytes));
+    }
+    if (_isJsonContentType(contentType)) {
+      return jsonDecode(utf8.decode(bytes));
+    }
+    throw FormatException(
+      'Unsupported response Content-Type $contentType for CratestackRpcCborDioAdapter',
+    );
+  }
+}
+
+Object? _encodeBody(Object? body) {
+  if (body == null) {
+    return null;
+  }
+  if (body is Uint8List) {
+    return body;
+  }
+  if (body is List<int>) {
+    return Uint8List.fromList(body);
+  }
+  return Uint8List.fromList(cbor.cbor.encode(body));
+}
+
+bool _isCborContentType(String contentType) {
+  return contentType.split(';').first.trim() == 'application/cbor';
+}
+
+bool _isJsonContentType(String contentType) {
+  return contentType.split(';').first.trim() == Headers.jsonContentType;
+}
+
+CratestackRpcException _exceptionFromDio(DioException error) {
+  final response = error.response;
+  final status = response?.statusCode ?? 0;
+  Object? data = response?.data;
+
+  // Surface the body if Dio handed it back as bytes (CBOR adapter
+  // path); otherwise let RpcErrorBody.fromWire handle the JSON shape.
+  if (data is List<int>) {
+    final contentType =
+        response?.headers.value(Headers.contentTypeHeader) ?? '';
+    if (_isCborContentType(contentType)) {
+      try {
+        data = cbor.cbor.decode(Uint8List.fromList(data));
+      } catch (_) {
+        data = null;
+      }
+    } else if (_isJsonContentType(contentType)) {
+      try {
+        data = jsonDecode(utf8.decode(data));
+      } catch (_) {
+        data = null;
+      }
+    }
+  }
+
+  return CratestackRpcException(
+    status: status,
+    body: RpcErrorBody.fromWire(data ?? {'code': 'internal', 'message': error.message ?? ''}),
+  );
+}

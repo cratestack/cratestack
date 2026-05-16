@@ -1,0 +1,51 @@
+## Flutter Usage
+
+Selection-shaped list query in Flutter or Riverpod:
+
+```dart
+{% if sample_model %}final {{ provider_prefix }}{{ sample_model.model_name }}ListProvider = FutureProvider((ref) async {
+  final client = ref.watch({{ provider_prefix }}ClientProvider);
+  final selection = {{ sample_model.model_name }}Selection()
+{% if sample_model.first_field %}    ..{{ sample_model.first_field.value }}()
+{% endif %}{% if sample_model.first_include %}    ..{{ sample_model.first_include.value }}()
+{% endif %};
+
+  return client.{{ sample_model.accessor }}.list(
+    query: selection.toListQuery(
+      sort: '-id',
+      limit: 20,
+      where: 'published=true',
+    ),
+  );
+});
+{% else %}final itemsProvider = FutureProvider((ref) async {
+  throw UnimplementedError();
+});
+{% endif %}
+```
+
+Projection-backed detail query in Flutter or Riverpod:
+
+```dart
+{% if sample_model %}final {{ provider_prefix }}{{ sample_model.model_name }}CardProvider = FutureProvider.family((ref, int id) async {
+  final client = ref.watch({{ provider_prefix }}ClientProvider);
+  final selection = {{ sample_model.model_name }}Selection()
+{% if sample_model.first_field %}    ..{{ sample_model.first_field.value }}()
+{% endif %}{% if sample_model.first_include %}    ..{{ sample_model.first_include.value }}()
+{% endif %};
+
+  return client.{{ sample_model.accessor }}.getView(
+    id,
+    projection: selection.asProjection(),
+  );
+});
+{% else %}final itemProvider = FutureProvider.family((ref, int id) async {
+  throw UnimplementedError();
+});
+{% endif %}
+```
+
+Rule of thumb:
+
+- use `selection.toListQuery(...)` when the screen still wants full generated model types back from `list(...)` or `get(...)`
+- use `selection.asProjection()` with `getView(...)` or `listView(...)` when the screen only needs a shaped payload and should receive a projected wrapper type

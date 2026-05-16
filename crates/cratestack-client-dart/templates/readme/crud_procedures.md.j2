@@ -1,0 +1,68 @@
+## CRUD Usage
+
+{% if sample_model %}
+```dart
+final listSelection = {{ sample_model.model_name }}Selection();
+{% if sample_model.first_field %}listSelection.{{ sample_model.first_field.value }}();
+{% endif %}{% if sample_model.first_include %}listSelection.{{ sample_model.first_include.value }}();
+{% endif %}
+
+final listQuery = listSelection.toListQuery(
+  sort: '-id',
+  limit: 20,
+  offset: 0,
+  where: 'published=true',
+  orFilters: ['published=true', 'published=false'],
+  filters: {'status': 'active'},
+);
+
+final items = await client.{{ sample_model.accessor }}.list(
+  query: listQuery,
+  options: options,
+);
+
+final item = await client.{{ sample_model.accessor }}.get(
+  1,
+  query: const CratestackFetchQuery(),
+  options: options,
+);
+```
+{% else %}
+Use the generated `client.<modelPlural>.list(...)`, `get(...)`, `create(...)`, `update(...)`, and `delete(...)` APIs for CRUD routes.
+{% endif %}
+
+Generated model entry points:
+
+{% for accessor in model_accessors %}
+- `client.{{ accessor.accessor }}`
+{% endfor %}
+
+## Procedure Usage
+
+All generated procedures use `POST` at the HTTP layer, but the package exposes them as typed Dart methods.
+
+Query procedures:
+
+{% if query_procedures | length == 0 %}
+- none in this schema
+{% else %}
+{% for procedure in query_procedures %}
+- `client.procedures.{{ procedure.method_name }}({{ procedure.args_name }}(...), options: options)`
+{% endfor %}
+{% endif %}
+
+Mutation procedures:
+
+{% if mutation_procedures | length == 0 %}
+- none in this schema
+{% else %}
+{% for procedure in mutation_procedures %}
+- `client.procedures.{{ procedure.method_name }}({{ procedure.args_name }}(...), options: options)`
+{% endfor %}
+{% endif %}
+
+Full generated procedure inventory:
+
+{% for procedure in procedures %}
+- `{{ procedure.kind }}` `client.procedures.{{ procedure.method_name }}(...)` returns `{{ procedure.return_type }}`
+{% endfor %}

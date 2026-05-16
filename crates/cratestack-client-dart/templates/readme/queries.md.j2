@@ -1,0 +1,114 @@
+## Query Parameters
+
+The generated query helpers cover the canonical client-side query contract:
+
+- `fields`
+- `include`
+- `includeFields[path]`
+- `sort`
+- `orderBy`
+- `limit`
+- `offset`
+- `where`
+- legacy `or`
+- resource-specific filters via `filters`
+
+Example:
+
+```dart
+final params = ({{ sample_model.model_name if sample_model else 'Post' }}Selection()
+{% if sample_model and sample_model.first_field %}  ..{{ sample_model.first_field.value }}()
+{% endif %}{% if sample_model and sample_model.first_include %}  ..{{ sample_model.first_include.value }}()
+{% endif %}).toListQuery(
+  sort: '-id',
+  limit: 20,
+  offset: 0,
+  where: 'published=true',
+  orFilters: ['published=true', 'published=false'],
+  filters: {'status': 'active'},
+).toQueryParameters();
+```
+
+## Generated Constants
+
+Use the generated constant groups to avoid stringly-typed `fields` and `include` selections.
+
+{% for group in selection_groups %}
+- `{{ group.field_group_name }}`
+- `{{ group.include_group_name }}`
+{% endfor %}
+
+Example:
+
+```dart
+{% if sample_model and sample_model.first_field %}final fields = <String>[{{ sample_model.field_group_name }}.{{ sample_model.first_field.const_name }}];
+{% else %}final fields = <String>[];
+{% endif %}{% if sample_model and sample_model.first_include %}final include = <String>[{{ sample_model.include_group_name }}.{{ sample_model.first_include.const_name }}];
+{% else %}final include = <String>[];
+{% endif %}
+```
+
+## Projection Views
+
+Generated selection builders can still express projected reads without hand-writing `fields`, `include`, and `includeFields[path]` strings.
+
+```dart
+{% if sample_model %}final selection = {{ sample_model.model_name }}Selection();
+{% if sample_model.first_field %}selection.{{ sample_model.first_field.value }}();
+{% endif %}{% if sample_model.first_include %}selection.{{ sample_model.first_include.value }}();
+{% endif %}
+final projection = selection.asProjection();
+
+final item = await client.{{ sample_model.accessor }}.getView(
+  1,
+  projection: projection,
+  options: options,
+);
+
+final items = await client.{{ sample_model.accessor }}.listView(
+  projection: projection,
+  query: const CratestackListQuery(limit: 20),
+  options: options,
+);
+{% endif %}
+```
+
+Projection views return `T` for `getView(...)` and `List<T>` or `Page<T>` for `listView(...)`, depending on whether the model list route is paged.
+
+Use `selection.toListQuery(...)` when you want the plain `list(...)` or `get(...)` APIs but do not want to hand-write `fields`, `include`, and `includeFields[path]`. Use `selection.asProjection()` with `getView(...)` or `listView(...)` when you want projected wrapper types back.
+
+Why this speeds development:
+
+```dart
+// Before
+final posts = await client.{{ sample_model.accessor }}.list(
+  query: const CratestackListQuery(
+{% if sample_model.first_field %}    fields: [{{ sample_model.field_group_name }}.{{ sample_model.first_field.const_name }}],
+{% endif %}{% if sample_model.first_include %}    include: [{{ sample_model.include_group_name }}.{{ sample_model.first_include.const_name }}],
+    includeFields: {
+      {{ sample_model.include_group_name }}.{{ sample_model.first_include.const_name }}: ['id'],
+    },
+{% endif %}    sort: '-id',
+    limit: 20,
+    where: 'published=true',
+  ),
+);
+
+// After
+final selection = {{ sample_model.model_name if sample_model else 'Post' }}Selection()
+{% if sample_model and sample_model.first_field %}  ..{{ sample_model.first_field.value }}()
+{% endif %}{% if sample_model and sample_model.first_include %}  ..{{ sample_model.first_include.value }}()
+{% endif %};
+
+final posts = await client.{{ sample_model.accessor if sample_model else 'items' }}.list(
+  query: selection.toListQuery(
+    sort: '-id',
+    limit: 20,
+    where: 'published=true',
+  ),
+);
+```
+
+This cuts down on repeated query-shape plumbing, keeps nested relation shape next to the relation itself, and makes screen/query iteration faster because adding one field usually means adding one builder call.
+
+The generated field/include constants are still useful. Keep them for low-level dynamic query composition, persisted query settings, user-driven field pickers, or any code path that cannot rely on one static generated selection builder.

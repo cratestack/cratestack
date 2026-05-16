@@ -1,0 +1,44 @@
+## Generated APIs
+
+Model entry points:
+
+{% for accessor in model_accessors %}
+- `client.{{ accessor.accessor }}`
+{% endfor %}
+
+Procedure entry points:
+
+{% for procedure in procedures %}
+- `client.procedures.{{ procedure.method_name }}(...)`
+{% endfor %}
+
+## Bridge Contract
+
+The Dart side sends:
+
+- method
+- path
+- canonical query string
+- headers
+- body bytes
+
+The Rust bridge is expected to:
+
+- interpret bridge bytes
+- transcode to the configured transport codec
+- execute HTTP
+- decode the HTTP response
+- return bridge bytes to Dart
+
+Bridge bytes are an internal runtime format, not the public transport codec contract.
+
+## Limitations
+
+- model fields are generated as projection-safe nullable properties so `fields`, `include`, and `includeFields[path]` remain usable
+- the generated Dart package still relies on generic value-graph conversion for typed model shaping
+- the bridge currently uses JSON bytes internally even when the HTTP transport codec is CBOR
+- the generated Dart APIs do not yet surface a first-class typed remote-error API
+- `sort` and `orderBy` must match if both are provided
+- transport codec, envelope behavior, and signing belong to the Rust runtime bridge, not this package
+
+generated files under `lib/src/` are implementation details; prefer importing the main library entry point only
