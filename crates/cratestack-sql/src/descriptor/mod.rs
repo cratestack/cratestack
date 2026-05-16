@@ -4,6 +4,10 @@ use std::marker::PhantomData;
 use cratestack_core::ModelEventKind;
 use cratestack_policy::ReadPolicy;
 
+mod defaults;
+
+pub use defaults::{CreateDefault, CreateDefaultType};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ModelColumn {
     pub rust_name: &'static str,
@@ -66,21 +70,6 @@ pub struct ModelDescriptor<M, PK> {
     /// is just a belt-and-braces.
     pub upsert_update_columns: &'static [&'static str],
     _marker: PhantomData<fn() -> (M, PK)>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CreateDefaultType {
-    Bool,
-    Int,
-    String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CreateDefault {
-    pub column: &'static str,
-    pub auth_field: &'static str,
-    pub ty: CreateDefaultType,
-    pub nullable: bool,
 }
 
 impl<M, PK> ModelDescriptor<M, PK> {
