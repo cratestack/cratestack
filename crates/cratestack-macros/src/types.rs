@@ -1,12 +1,19 @@
+//! Generators for the `type ...` and `enum ...` schema declarations,
+//! plus the custom-field-resolver descriptors used at runtime.
+
+mod enums;
+
 use std::collections::BTreeSet;
 
-use cratestack_core::{EnumDecl, TypeDecl};
+use cratestack_core::TypeDecl;
 use quote::quote;
 
 use crate::shared::{
     doc_attrs, field_definition, ident, is_custom_field, rust_type_tokens_with_scope, schema_lit,
     to_snake_case, value_tokens,
 };
+
+pub(crate) use enums::{generate_client_enum_type, generate_enum_type};
 
 pub(crate) fn generate_type_struct(
     ty: &TypeDecl,
@@ -58,155 +65,6 @@ pub(crate) fn generate_client_type_struct(ty: &TypeDecl) -> proc_macro2::TokenSt
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct #type_ident {
             #(#fields)*
-        }
-    }
-}
-
-pub(crate) fn generate_enum_type(enum_decl: &EnumDecl) -> proc_macro2::TokenStream {
-    let enum_ident = ident(&enum_decl.name);
-    let docs = doc_attrs(&enum_decl.docs);
-    let variants = enum_decl.variants.iter().enumerate().map(|(index, variant)| {
-        let variant_ident = ident(&variant.name);
-        let variant_docs = doc_attrs(&variant.docs);
-        let name = schema_lit(&variant.name);
-        // The first variant is the `Default` — needed so model
-        // structs with enum fields can `derive(Default)` for the
-        // column-projection `Projection<T>` placeholder values. The
-        // chosen variant is observable only in unselected fields,
-        // which callers are expected to guard with `is_selected`.
-        let default_attr = if index == 0 {
-            quote! { #[default] }
-        } else {
-            quote! {}
-        };
-        quote! {
-            #variant_docs
-            #[serde(rename = #name)]
-            #default_attr
-            #variant_ident,
-        }
-    });
-    let as_str_arms = enum_decl.variants.iter().map(|variant| {
-        let variant_ident = ident(&variant.name);
-        let name = schema_lit(&variant.name);
-        quote! {
-            Self::#variant_ident => #name,
-        }
-    });
-    let parse_arms = enum_decl.variants.iter().map(|variant| {
-        let variant_ident = ident(&variant.name);
-        let name = schema_lit(&variant.name);
-        quote! {
-            #name => Ok(Self::#variant_ident),
-        }
-    });
-    let enum_name = schema_lit(&enum_decl.name);
-
-    quote! {
-        #docs
-        #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum #enum_ident {
-            #(#variants)*
-        }
-
-        impl #enum_ident {
-            pub const fn as_str(self) -> &'static str {
-                match self {
-                    #(#as_str_arms)*
-                }
-            }
-        }
-
-        impl ::core::fmt::Display for #enum_ident {
-            fn fmt(&self, formatter: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                formatter.write_str(self.as_str())
-            }
-        }
-
-        impl ::core::str::FromStr for #enum_ident {
-            type Err = String;
-
-            fn from_str(value: &str) -> Result<Self, Self::Err> {
-                match value {
-                    #(#parse_arms)*
-                    _ => Err(format!("unknown enum variant `{value}` for `{}`", #enum_name)),
-                }
-            }
-        }
-
-        impl ::cratestack::IntoSqlValue for #enum_ident {
-            fn into_sql_value(self) -> ::cratestack::SqlValue {
-                ::cratestack::SqlValue::String(self.to_string())
-            }
-        }
-    }
-}
-
-pub(crate) fn generate_client_enum_type(enum_decl: &EnumDecl) -> proc_macro2::TokenStream {
-    let enum_ident = ident(&enum_decl.name);
-    let docs = doc_attrs(&enum_decl.docs);
-    let variants = enum_decl.variants.iter().enumerate().map(|(index, variant)| {
-        let variant_ident = ident(&variant.name);
-        let variant_docs = doc_attrs(&variant.docs);
-        let name = schema_lit(&variant.name);
-        let default_attr = if index == 0 {
-            quote! { #[default] }
-        } else {
-            quote! {}
-        };
-        quote! {
-            #variant_docs
-            #[serde(rename = #name)]
-            #default_attr
-            #variant_ident,
-        }
-    });
-    let as_str_arms = enum_decl.variants.iter().map(|variant| {
-        let variant_ident = ident(&variant.name);
-        let name = schema_lit(&variant.name);
-        quote! {
-            Self::#variant_ident => #name,
-        }
-    });
-    let parse_arms = enum_decl.variants.iter().map(|variant| {
-        let variant_ident = ident(&variant.name);
-        let name = schema_lit(&variant.name);
-        quote! {
-            #name => Ok(Self::#variant_ident),
-        }
-    });
-    let enum_name = schema_lit(&enum_decl.name);
-
-    quote! {
-        #docs
-        #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum #enum_ident {
-            #(#variants)*
-        }
-
-        impl #enum_ident {
-            pub const fn as_str(self) -> &'static str {
-                match self {
-                    #(#as_str_arms)*
-                }
-            }
-        }
-
-        impl ::core::fmt::Display for #enum_ident {
-            fn fmt(&self, formatter: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                formatter.write_str(self.as_str())
-            }
-        }
-
-        impl ::core::str::FromStr for #enum_ident {
-            type Err = String;
-
-            fn from_str(value: &str) -> Result<Self, Self::Err> {
-                match value {
-                    #(#parse_arms)*
-                    _ => Err(format!("unknown enum variant `{value}` for `{}`", #enum_name)),
-                }
-            }
         }
     }
 }
