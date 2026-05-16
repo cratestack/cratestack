@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.3.3 (unreleased)
+
+### Workspace-wide 200-LoC refactor
+
+Every `.rs` file under `crates/*/src/` is now ≤200 LoC, landed across 16
+PRs (#57–#76). No public API changes — all splits preserve the crate
+surface via `pub use` re-exports. The major rewrites:
+
+- `cratestack-sqlx` and `cratestack-rusqlite` delegate / render / batch /
+  value modules split into focused submodules
+- `cratestack-axum` idempotency, rpc, transport, ratelimit, headers,
+  codec all broken into per-concern files
+- `cratestack-macros` four giants split (include / model / axum /
+  relation), medium files re-grouped
+- `cratestack-client-{dart,rust,typescript,flutter}` `lib.rs` split into
+  per-concern modules (largest: client-rust at 2369 → 18 submodules)
+- `cratestack-parser` 880-line `parse.rs`, 1086-line `validate.rs`, and
+  1336-line `tests.rs` split per topic
+- `cratestack-lsp` `main.rs` (1273 LoC) split into 11 submodules
+- `cratestack-client-dart` README and rpc-runtime jinja templates split
+  via `{% include %}` fragments (loader sets
+  `set_keep_trailing_newline(true)` for byte-identical output)
+- Inline `#[cfg(test)] mod tests` blocks throughout the workspace
+  extracted into `tests_<topic>.rs` siblings
+
+### README fixups
+
+Four crate READMEs (`cratestack-axum`, `cratestack-sqlx`,
+`cratestack-client-rust`, `cratestack-parser`) still referenced the
+pre-0.3.0 macro names (`include_schema!`,
+`include_client_macro!`) — updated to the current
+`include_server_schema!` / `include_client_schema!`. The `client-rust`
+README's two duplicate sections (one per old macro) collapse into one.
+
 ## 0.3.2 (unreleased)
 
 ### Studio rewrite — Phase 1d + 4 (typed editors + power tools)

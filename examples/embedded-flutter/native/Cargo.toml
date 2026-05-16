@@ -24,9 +24,9 @@ chrono = { workspace = true }
 # next to this manifest emits the appropriate `rustc-link-lib` so the
 # Flutter app links cleanly on macOS / iOS. None of the server-side
 # code actually runs from the Flutter dylib.
-cratestack = { path = "../../../crates/cratestack", version = "0.3.2" }
-cratestack-macros = { path = "../../../crates/cratestack-macros", version = "0.3.2" }
-cratestack-rusqlite = { path = "../../../crates/cratestack-rusqlite", version = "0.3.2" }
+cratestack = { path = "../../../crates/cratestack", version = "0.3.3" }
+cratestack-macros = { path = "../../../crates/cratestack-macros", version = "0.3.3" }
+cratestack-rusqlite = { path = "../../../crates/cratestack-rusqlite", version = "0.3.3" }
 flutter_rust_bridge = "=2.12.0"
 serde = { workspace = true }
 uuid = { workspace = true }

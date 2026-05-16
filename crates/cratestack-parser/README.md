@@ -4,7 +4,7 @@ Parser and semantic checker for `.cstack` schema files.
 
 ## Overview
 
-`cratestack-parser` turns `.cstack` source text into a `cratestack_core::Schema` AST and runs semantic validation. The `include_schema!` proc-macro calls this crate at compile time; the LSP and CLI call it at runtime.
+`cratestack-parser` turns `.cstack` source text into a `cratestack_core::Schema` AST and runs semantic validation. The `include_server_schema!` / `include_embedded_schema!` / `include_client_schema!` proc-macros call this crate at compile time; the LSP and CLI call it at runtime.
 
 ## Installation
 
