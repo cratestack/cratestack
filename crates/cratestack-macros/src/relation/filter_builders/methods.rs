@@ -8,7 +8,7 @@ use quote::quote;
 
 use crate::shared::supports_comparison;
 
-use super::super::RelationPathSegment;
+use super::super::types::RelationPathSegment;
 use super::op_expr;
 
 pub(in super::super) fn append_required_builder_methods(
