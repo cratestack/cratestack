@@ -14,6 +14,6 @@ pub(crate) use rest::{
     generate_model_transport_constants, generate_model_transport_entries,
     generate_procedure_transport_constants, generate_procedure_transport_entries,
     model_read_transport_capabilities_tokens, model_write_transport_capabilities_tokens,
-    procedure_transport_capabilities_tokens, route_transport_const_ident,
+    procedure_transport_capabilities_tokens,
 };
 pub(crate) use rpc::{generate_model_rpc_dispatch_arms, generate_procedure_rpc_dispatch_arm};
