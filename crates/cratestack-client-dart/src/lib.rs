@@ -7,6 +7,7 @@ mod generator;
 mod idents;
 mod naming;
 mod templates;
+mod templates_fragments;
 mod views;
 mod wire_decode;
 mod wire_encode;
