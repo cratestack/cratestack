@@ -73,7 +73,27 @@ mod partial_row;
 mod query;
 mod render;
 #[cfg(test)]
-mod tests;
+mod tests_coalesce;
+#[cfg(test)]
+mod tests_descriptor;
+#[cfg(test)]
+mod tests_field_filter;
+#[cfg(test)]
+mod tests_filter_logic;
+#[cfg(test)]
+mod tests_geography;
+#[cfg(test)]
+mod tests_json;
+#[cfg(test)]
+mod tests_nested_relation_policy;
+#[cfg(test)]
+mod tests_optional;
+#[cfg(test)]
+mod tests_relation;
+#[cfg(test)]
+mod tests_update;
+#[cfg(test)]
+mod tests_update_many;
 
 pub use partial_row::FromPartialPgRow;
 
