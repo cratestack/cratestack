@@ -5,7 +5,31 @@ mod relation_helpers;
 mod validate;
 
 #[cfg(test)]
-mod tests;
+mod tests_basic;
+#[cfg(test)]
+mod tests_docs;
+#[cfg(test)]
+mod tests_enums;
+#[cfg(test)]
+mod tests_field_attrs;
+#[cfg(test)]
+mod tests_mixins;
+#[cfg(test)]
+mod tests_model_attrs;
+#[cfg(test)]
+mod tests_procedures;
+#[cfg(test)]
+mod tests_relations;
+#[cfg(test)]
+mod tests_relations_policy;
+#[cfg(test)]
+mod tests_transport;
+#[cfg(test)]
+mod tests_types;
+#[cfg(test)]
+mod tests_validators;
+#[cfg(test)]
+mod tests_version;
 
 use std::path::Path;
 
