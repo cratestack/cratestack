@@ -85,6 +85,52 @@ const REST_TEMPLATE_SPECS: &[TemplateSpec] = &[
     },
 ];
 
+// Include-only fragments. Registered with the minijinja environment so
+// `{% include %}` resolves, but not rendered to disk — they're slices of
+// larger templates that exceed the workspace ≤200-LoC rule.
+const FRAGMENT_TEMPLATES: &[(&str, &str)] = &[
+    (
+        "readme/setup.md.j2",
+        include_str!("../templates/readme/setup.md.j2"),
+    ),
+    (
+        "readme/flutter_usage.md.j2",
+        include_str!("../templates/readme/flutter_usage.md.j2"),
+    ),
+    (
+        "readme/paged.md.j2",
+        include_str!("../templates/readme/paged.md.j2"),
+    ),
+    (
+        "readme/crud_procedures.md.j2",
+        include_str!("../templates/readme/crud_procedures.md.j2"),
+    ),
+    (
+        "readme/queries.md.j2",
+        include_str!("../templates/readme/queries.md.j2"),
+    ),
+    (
+        "readme/api_bridge.md.j2",
+        include_str!("../templates/readme/api_bridge.md.j2"),
+    ),
+    (
+        "rpc_runtime/types.dart.j2",
+        include_str!("../templates/rpc_runtime/types.dart.j2"),
+    ),
+    (
+        "rpc_runtime/dio_json.dart.j2",
+        include_str!("../templates/rpc_runtime/dio_json.dart.j2"),
+    ),
+    (
+        "rpc_runtime/dio_cbor.dart.j2",
+        include_str!("../templates/rpc_runtime/dio_cbor.dart.j2"),
+    ),
+    (
+        "rpc_runtime/cbor_seq.dart.j2",
+        include_str!("../templates/rpc_runtime/cbor_seq.dart.j2"),
+    ),
+];
+
 const RPC_TEMPLATE_SPECS: &[TemplateSpec] = &[
     TemplateSpec {
         template_name: "rpc-library.dart.j2",
@@ -199,6 +245,18 @@ fn build_environment(
     let mut environment = Environment::new();
     environment.set_trim_blocks(true);
     environment.set_lstrip_blocks(true);
+    // {% include %} strips the included template's final newline by
+    // default, which breaks byte-identical output when a large template
+    // is split into fragments along section boundaries. Preserving the
+    // trailing newline keeps the rendered concatenation predictable and
+    // matches POSIX text-file convention (files end with \n).
+    environment.set_keep_trailing_newline(true);
+
+    for (name, source) in FRAGMENT_TEMPLATES {
+        environment
+            .add_template(name, source)
+            .map_err(|error| DartGeneratorError::TemplateRegistration(name, error))?;
+    }
 
     for spec in specs {
         let source = load_template_source(template_dir, spec)?;

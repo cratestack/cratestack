@@ -1,0 +1,87 @@
+/// JSON-over-HTTP adapter. The easy default.
+class CratestackRpcDioAdapter implements CratestackRpcAdapter {
+  const CratestackRpcDioAdapter({required Dio dio}) : _dio = dio;
+
+  final Dio _dio;
+
+  @override
+  Future<Object?> call(
+    String opId,
+    Object? input, {
+    CratestackRpcCallOptions? options,
+  }) async {
+    try {
+      final response = await _dio.post<Object?>(
+        '/rpc/${Uri.encodeComponent(opId)}',
+        data: input,
+        options: Options(
+          contentType: Headers.jsonContentType,
+          responseType: ResponseType.json,
+          headers: {
+            ...?options?.headers,
+            if (options?.idempotencyKey != null)
+              'Idempotency-Key': options!.idempotencyKey!,
+          },
+        ),
+      );
+      return response.data;
+    } on DioException catch (error) {
+      throw _exceptionFromDio(error);
+    }
+  }
+
+  @override
+  Future<List<RpcResponseFrame>> batch(
+    List<RpcRequest> requests, {
+    CratestackRpcCallOptions? options,
+  }) async {
+    try {
+      final response = await _dio.post<Object?>(
+        '/rpc/batch',
+        data: requests.map((r) => r.toWire()).toList(growable: false),
+        options: Options(
+          contentType: Headers.jsonContentType,
+          responseType: ResponseType.json,
+          headers: {...?options?.headers},
+        ),
+      );
+      final frames = response.data as List<dynamic>;
+      return frames
+          .map((frame) => RpcResponseFrame.fromWire(frame))
+          .toList(growable: false);
+    } on DioException catch (error) {
+      throw _exceptionFromDio(error);
+    }
+  }
+
+  @override
+  Stream<Object?> stream(
+    String opId,
+    Object? input, {
+    CratestackRpcCallOptions? options,
+  }) async* {
+    // JSON adapter — server emits a single JSON array for the full
+    // sequence. The CBOR adapter below handles real frame-by-frame
+    // streaming over `application/cbor-seq`.
+    try {
+      final response = await _dio.post<Object?>(
+        '/rpc/${Uri.encodeComponent(opId)}',
+        data: input,
+        options: Options(
+          contentType: Headers.jsonContentType,
+          responseType: ResponseType.json,
+          headers: {
+            'Accept': '${Headers.jsonContentType}, application/cbor-seq;q=0.9',
+            ...?options?.headers,
+          },
+        ),
+      );
+      final items = response.data as List<dynamic>;
+      for (final item in items) {
+        yield item;
+      }
+    } on DioException catch (error) {
+      throw _exceptionFromDio(error);
+    }
+  }
+}

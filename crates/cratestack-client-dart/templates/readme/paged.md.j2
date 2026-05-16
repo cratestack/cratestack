@@ -1,0 +1,154 @@
+## Paged Models
+
+When a model opts into `@@paged`, generated Dart list APIs switch from `List<T>` to `Page<T>` for that model.
+
+Full-model paged Flutter example:
+
+```dart
+{% if sample_model %}final {{ provider_prefix }}{{ sample_model.model_name }}PagedProvider = FutureProvider((ref) async {
+  final client = ref.watch({{ provider_prefix }}ClientProvider);
+  final selection = {{ sample_model.model_name }}Selection()
+{% if sample_model.first_field %}    ..{{ sample_model.first_field.value }}()
+{% endif %}{% if sample_model.first_include %}    ..{{ sample_model.first_include.value }}()
+{% endif %};
+
+  return client.{{ sample_model.accessor }}.list(
+    query: selection.toListQuery(
+      sort: '-id',
+      limit: 20,
+      offset: 0,
+      where: 'published=true',
+    ),
+  );
+});
+
+Widget buildPagedList(WidgetRef ref) {
+  final page = ref.watch({{ provider_prefix }}{{ sample_model.model_name }}PagedProvider);
+
+  return page.when(
+    data: (page) => ListView.builder(
+      itemCount: page.items.length,
+      itemBuilder: (context, index) {
+        final item = page.items[index];
+        return ListTile(title: Text(item.{{ sample_model.first_field.value if sample_model.first_field else 'toString()' }}{% if sample_model.first_field %}.toString(){% endif %}));
+      },
+    ),
+    loading: () => const CircularProgressIndicator(),
+    error: (error, _) => Text('$error'),
+  );
+}
+{% else %}final pagedProvider = FutureProvider((ref) async {
+  throw UnimplementedError();
+});
+{% endif %}
+```
+
+Projected paged Flutter example:
+
+```dart
+{% if sample_model %}final {{ provider_prefix }}{{ sample_model.model_name }}ProjectedPageProvider = FutureProvider((ref) async {
+  final client = ref.watch({{ provider_prefix }}ClientProvider);
+  final selection = {{ sample_model.model_name }}Selection()
+{% if sample_model.first_field %}    ..{{ sample_model.first_field.value }}()
+{% endif %}{% if sample_model.first_include %}    ..{{ sample_model.first_include.value }}()
+{% endif %};
+
+  return client.{{ sample_model.accessor }}.listView(
+    projection: selection.asProjection(),
+    query: const CratestackListQuery(
+      limit: 20,
+      offset: 0,
+      sort: '-id',
+      where: 'published=true',
+    ),
+  );
+});
+
+String describePage(Page<Projected{{ sample_model.model_name }}> page) {
+  final count = page.items.length;
+  final total = page.totalCount;
+  final hasNext = page.pageInfo.hasNextPage;
+  return 'items=$count total=$total hasNext=$hasNext';
+}
+{% else %}final projectedPagedProvider = FutureProvider((ref) async {
+  throw UnimplementedError();
+});
+{% endif %}
+```
+
+Flutter UI example using those providers:
+
+```dart
+{% if sample_model %}class {{ sample_model.model_name }}PagedScreen extends ConsumerWidget {
+  const {{ sample_model.model_name }}PagedScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final page = ref.watch({{ provider_prefix }}{{ sample_model.model_name }}PagedProvider);
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('{{ sample_model.model_name }}s')),
+      body: page.when(
+        data: (page) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text('Total: ${page.totalCount ?? page.items.length}'),
+            ),
+            Expanded(
+              child: ListView.builder(
+                itemCount: page.items.length,
+                itemBuilder: (context, index) {
+                  final item = page.items[index];
+                  return ListTile(
+                    title: Text(item.{{ sample_model.first_field.value if sample_model.first_field else 'toString()' }}{% if sample_model.first_field %}.toString(){% endif %}),
+                    subtitle: Text('hasNextPage=${page.pageInfo.hasNextPage}'),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (error, _) => Center(child: Text('$error')),
+      ),
+    );
+  }
+}
+
+class {{ sample_model.model_name }}CardView extends ConsumerWidget {
+  const {{ sample_model.model_name }}CardView({super.key, required this.id});
+
+  final int id;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final item = ref.watch({{ provider_prefix }}{{ sample_model.model_name }}CardProvider(id));
+
+    return item.when(
+      data: (item) => Card(
+        child: ListTile(
+          title: Text(item.{{ sample_model.first_field.value if sample_model.first_field else 'raw()' }}{% if sample_model.first_field %}?.toString() ?? ''{% else %}.toString(){% endif %}),
+        ),
+      ),
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, _) => Center(child: Text('$error')),
+    );
+  }
+}
+{% else %}class ExampleScreen extends ConsumerWidget {
+  const ExampleScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => const SizedBox.shrink();
+}
+{% endif %}
+```
+
+For `@@paged` models:
+
+- `list(...)` returns `Page<Model>`
+- `listView(...)` returns `Page<ProjectedModel>`
+- the paging envelope stays stable at `items`, `totalCount`, and `pageInfo`
+- only the item type changes between full-model and projected flows

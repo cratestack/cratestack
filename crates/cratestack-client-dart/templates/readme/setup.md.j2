@@ -1,0 +1,134 @@
+# {{ package_name }}
+
+Generated CrateStack Flutter package.
+
+## Package Purpose
+
+- typed CRUD APIs for generated CrateStack model routes
+- typed procedure APIs for generated CrateStack procedure routes
+- Riverpod providers for the generated client and APIs
+- an adapter seam that lets app code provide Dio or another transport implementation
+
+This package does not own app-specific host selection, request signing policy, or transport interception policy. Those concerns stay with the host Flutter app and its Dio stack.
+
+## Install And Import
+
+This generated package is Flutter-shaped because it includes Riverpod providers.
+
+```yaml
+dependencies:
+  {{ package_name }}:
+    path: ../{{ package_name }}
+```
+
+Main import:
+
+```dart
+import 'package:{{ package_name }}/{{ package_name }}.dart';
+```
+
+## Project Layout
+
+- `pubspec.yaml`
+- `README.md`
+- `CHANGELOG.md`
+- `analysis_options.yaml`
+- `lib/{{ package_name }}.dart`
+- `lib/src/runtime.dart`
+- `lib/src/queries.dart`
+- `lib/src/constants.dart`
+- `lib/src/models.dart`
+- `lib/src/apis.dart`
+- `example/main.dart`
+- `test/{{ package_name }}_test.dart`
+
+Import only `package:{{ package_name }}/{{ package_name }}.dart` from application code. Files under `lib/src/` are implementation details.
+
+## Adapter Setup
+
+The generated package expects a transport adapter implementation. The built-in default is `CratestackDioAdapter`, but the client only depends on the `CratestackClientAdapter` interface.
+
+Minimal shape:
+
+```dart
+class MyAdapter implements CratestackClientAdapter {
+  @override
+  Future<Object?> execute(
+    CratestackRequest request, {
+    CratestackCallOptions? options,
+  }) async {
+    throw UnimplementedError();
+  }
+}
+```
+
+Client construction:
+
+```dart
+final client = {{ client_class_name }}(
+  myAdapter,
+  basePath: '{{ base_path_literal }}',
+);
+```
+
+Dio-backed setup:
+
+```dart
+final adapter = CratestackDioAdapter(
+  dio: myDio,
+  useRustTransport: true,
+);
+
+final client = {{ client_class_name }}(
+  adapter,
+  basePath: '{{ base_path_literal }}',
+);
+```
+
+CBOR-over-Dio setup for web or non-Rust platforms:
+
+```dart
+final adapter = CratestackCborDioAdapter(dio: myDio);
+
+final client = {{ client_class_name }}(
+  adapter,
+  basePath: '{{ base_path_literal }}',
+);
+```
+
+Rule of thumb:
+
+- use `CratestackDioAdapter(dio: ..., useRustTransport: true)` when Rust should execute the request
+- use `CratestackDioAdapter(dio: ..., useRustTransport: false)` for plain JSON/Dio flows
+- use `CratestackCborDioAdapter(dio: ...)` when the host should stay on Dio/browser transport but speak CBOR on the wire
+
+Per-request headers:
+
+```dart
+const options = CratestackCallOptions(
+  headers: {'x-auth-id': '1'},
+);
+```
+
+## Riverpod Setup
+
+Generated providers include:
+
+- `{{ provider_prefix }}AdapterProvider`
+- `{{ provider_prefix }}BasePathProvider`
+- `{{ provider_prefix }}ClientProvider`
+{% for accessor in model_accessors %}- `{{ accessor.provider_name }}`
+{% endfor %}- `{{ provider_prefix }}ProceduresApiProvider`
+
+Typical overrides:
+
+```dart
+final container = ProviderContainer(
+  overrides: [
+    {{ provider_prefix }}AdapterProvider.overrideWithValue(
+      CratestackDioAdapter(dio: myDio, useRustTransport: true),
+    ),
+    {{ provider_prefix }}BasePathProvider.overrideWith((ref) => '{{ base_path_literal }}'),
+  ],
+);
+```
