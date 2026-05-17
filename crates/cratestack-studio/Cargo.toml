@@ -26,17 +26,19 @@ include = [
     "tests/**/*",
     "build.rs",
     "embedded-ui.tar.gz",
+    "embedded-ui-dist.tar.gz",
     "Cargo.toml",
     "README.md",
 ]
 
 [features]
-default = []
+default = ["embed-ui"]
 # Bundle the Leptos UI's Trunk output into the binary via `rust-embed`.
-# Build prerequisites: `cargo install trunk`, `rustup target add
-# wasm32-unknown-unknown`, then `trunk build --release` in
-# `crates/cratestack-studio-ui/`. Without that artifact tree, building
-# this feature will fail at the embed step with a clear error.
+# `build.rs` materializes the dist into `$OUT_DIR/ui-dist` from either
+# the local sibling (dev) or the published `embedded-ui-dist.tar.gz`,
+# so this feature compiles regardless of whether Trunk has run — when
+# the bundle is empty, the server transparently falls back to a
+# placeholder page.
 embed-ui = ["dep:rust-embed"]
 
 [dependencies]

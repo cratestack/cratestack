@@ -1,12 +1,14 @@
-//! Build script: hand the Studio UI source tree to `eject` as a single
-//! tarball in `$OUT_DIR`.
+//! Build script: hand the Studio UI to runtime via two `OUT_DIR`
+//! artifacts.
 //!
-//! Two execution contexts:
-//! - Local dev: the sibling crate at `../cratestack-studio-ui/` is on
-//!   disk. Pack it on every relevant change.
-//! - `cargo publish --verify` (and crates.io consumers): only
-//!   `embedded-ui.tar.gz` shipped inside the published tarball is
-//!   available. Copy it through to `$OUT_DIR`.
+//! - `ui.tar.gz` — gzipped source tree consumed by `studio eject
+//!   --with-ui`. Sourced from the `cratestack-studio-ui` sibling
+//!   during dev, or from `embedded-ui.tar.gz` in the published crate.
+//! - `ui-dist/` — Trunk's release build of the Leptos app, served by
+//!   the `embed-ui` feature via `rust-embed`. Sourced from the
+//!   sibling's `dist/` during dev (if present), or extracted from
+//!   `embedded-ui-dist.tar.gz` in the published crate. Always created
+//!   (possibly empty) so `rust-embed` compiles either way.
 //!
 //! The sibling layout sidesteps cargo's hardcoded "exclude any
 //! subdirectory containing its own Cargo.toml" rule that would
@@ -19,27 +21,34 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use flate2::Compression;
+use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
-use tar::Builder;
+use tar::{Archive, Builder};
 
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-    let out = PathBuf::from(env::var("OUT_DIR").unwrap()).join("ui.tar.gz");
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=embedded-ui.tar.gz");
+    println!("cargo:rerun-if-changed=embedded-ui-dist.tar.gz");
 
     let sibling = manifest_dir
         .parent()
         .expect("manifest dir has parent")
         .join("cratestack-studio-ui");
+
+    materialize_source_tarball(&manifest_dir, &sibling, &out_dir.join("ui.tar.gz"));
+    materialize_dist_dir(&manifest_dir, &sibling, &out_dir.join("ui-dist"));
+}
+
+fn materialize_source_tarball(manifest_dir: &Path, sibling: &Path, out: &Path) {
     let bundled = manifest_dir.join("embedded-ui.tar.gz");
-
-    println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=embedded-ui.tar.gz");
-
     if sibling.is_dir() {
-        bundle_from_source(&sibling, &out).expect("pack ui sources");
-        emit_rerun_for_tree(&sibling);
+        bundle_from_source(sibling, out).expect("pack ui sources");
+        emit_rerun_for_tree(sibling);
     } else if bundled.is_file() {
-        fs::copy(&bundled, &out).expect("copy bundled ui tarball");
+        fs::copy(&bundled, out).expect("copy bundled ui tarball");
     } else {
         panic!(
             "cratestack-studio: no UI source at {} and no bundled tarball at {}. \
@@ -48,6 +57,50 @@ fn main() {
             bundled.display(),
         );
     }
+}
+
+fn materialize_dist_dir(manifest_dir: &Path, sibling: &Path, out: &Path) {
+    let _ = fs::remove_dir_all(out);
+    fs::create_dir_all(out).expect("create OUT_DIR/ui-dist");
+
+    let sibling_dist = sibling.join("dist");
+    let bundled_dist = manifest_dir.join("embedded-ui-dist.tar.gz");
+
+    if sibling_dist.is_dir() {
+        copy_tree(&sibling_dist, out).expect("copy sibling dist");
+        emit_rerun_for_tree(&sibling_dist);
+    } else if bundled_dist.is_file() {
+        extract_tarball(&bundled_dist, out).expect("extract dist tarball");
+    } else {
+        println!(
+            "cargo:warning=cratestack-studio: no Trunk dist available (looked at {} and {}). \
+             The `embed-ui` feature will fall back to the placeholder page. \
+             Run `just bundle-studio-ui` to ship a real admin UI.",
+            sibling_dist.display(),
+            bundled_dist.display(),
+        );
+    }
+}
+
+fn copy_tree(src: &Path, dst: &Path) -> io::Result<()> {
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            fs::create_dir_all(&to)?;
+            copy_tree(&from, &to)?;
+        } else {
+            fs::copy(&from, &to)?;
+        }
+    }
+    Ok(())
+}
+
+fn extract_tarball(archive: &Path, dst: &Path) -> io::Result<()> {
+    let f = fs::File::open(archive)?;
+    let mut ar = Archive::new(GzDecoder::new(f));
+    ar.unpack(dst)
 }
 
 fn bundle_from_source(src: &Path, out: &Path) -> io::Result<()> {
