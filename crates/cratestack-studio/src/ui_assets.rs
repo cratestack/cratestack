@@ -1,18 +1,19 @@
 //! Compile-time bundle of the Leptos UI's Trunk output.
 //!
-//! Gated behind the `embed-ui` cargo feature. Build prerequisites:
+//! `build.rs` materializes the Trunk dist into `$OUT_DIR/ui-dist/` —
+//! either from the `cratestack-studio-ui` sibling during local dev or
+//! from the published `embedded-ui-dist.tar.gz`. `rust-embed` then
+//! snapshots that directory at compile time. When no dist is
+//! available the directory exists but is empty, `has_assets()`
+//! returns false, and the server falls back to the placeholder page.
+//!
+//! Maintainer build prerequisites for refreshing the bundle:
 //!
 //! ```text
-//! cargo install trunk
+//! cargo install --locked trunk
 //! rustup target add wasm32-unknown-unknown
-//! (cd crates/cratestack-studio-ui && trunk build --release)
-//! cargo build -p cratestack-cli --features cratestack-studio/embed-ui
+//! just bundle-studio-ui
 //! ```
-//!
-//! `rust-embed`'s proc-macro reads the directory at compile time, so
-//! `trunk build` must run before the studio binary is compiled. Without
-//! the `embed-ui` feature, the binary serves the Phase 1b stub `/`
-//! page instead.
 
 use axum::Router;
 use axum::body::Body;
@@ -23,7 +24,7 @@ use rust_embed::RustEmbed;
 
 /// The Trunk `dist/` output, snapshotted at compile time.
 #[derive(RustEmbed)]
-#[folder = "$CARGO_MANIFEST_DIR/../cratestack-studio-ui/dist"]
+#[folder = "$OUT_DIR/ui-dist"]
 struct UiAssets;
 
 /// Mount the bundled UI on the given router under `/`. Falls back to

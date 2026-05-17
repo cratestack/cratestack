@@ -7,6 +7,37 @@ CrateStack publishes through the common public Rust and editor channels:
 * VS Code extension: Visual Studio Marketplace and Open VSX
 * Documentation site: Mintlify or equivalent static docs hosting from `docs-site/`
 
+## Quickstart (automated)
+
+End-to-end release in one command — bumps every workspace `Cargo.toml`,
+validates, publishes each crate in dependency order, and tags `vX.Y.Z`
+locally:
+
+```sh
+just release 0.3.4              # publishes for real, tags locally
+PUSH=1 just release 0.3.4       # additionally pushes commit + tag to origin
+just release 0.3.4 dry          # rehearsal: dry-run publishes, no tag
+```
+
+Underlying recipes you can also run individually:
+
+* `just bump 0.3.4` — rewrite `0.x.y` → `0.3.4` across every `Cargo.toml`
+  and refresh `Cargo.lock`. Idempotent.
+* `just release-check` — `cargo fmt --check` + workspace check + workspace
+  tests (skips `embedded_flutter_native`).
+* `just bundle-studio-ui` — refresh `embedded-ui.tar.gz` and
+  `embedded-ui-dist.tar.gz` (requires `cargo install --locked trunk` +
+  `rustup target add wasm32-unknown-unknown`).
+* `just release-publish [real|dry]` — publish every workspace crate in
+  dependency order, with one retry-after-30s when the crates.io index
+  hasn't caught up to a freshly-published dependency.
+* `just publish-studio` — single-crate publish for `cratestack-studio`
+  with the studio's tarball-dirty allowance.
+
+The Rust-crate flow described in the rest of this document is the
+manual fallback. The VS Code extension still ships on its own
+cadence — see [Publish Editor Extension](#publish-editor-extension).
+
 ## Prerequisites
 
 Required credentials are intentionally read from the environment:

@@ -10,9 +10,9 @@ name = "rpc-streaming-server"
 path = "src/main.rs"
 
 [dependencies]
-cratestack = { path = "../../crates/cratestack", version = "0.3.3" }
-cratestack-codec-cbor = { path = "../../crates/cratestack-codec-cbor", version = "0.3.3" }
-cratestack-codec-json = { path = "../../crates/cratestack-codec-json", version = "0.3.3" }
+cratestack = { path = "../../crates/cratestack", version = "0.3.4" }
+cratestack-codec-cbor = { path = "../../crates/cratestack-codec-cbor", version = "0.3.4" }
+cratestack-codec-json = { path = "../../crates/cratestack-codec-json", version = "0.3.4" }
 minicbor-serde = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true }

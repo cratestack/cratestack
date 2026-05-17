@@ -126,9 +126,12 @@ fn handle_studio(cmd: StudioCmd) -> Result<()> {
     match cmd {
         StudioCmd::Init { out, force } => handle_studio_init(out, force),
         StudioCmd::Run { config, bind } => handle_studio_run(config, bind),
-        StudioCmd::Eject { config, out, force } => {
-            handle_studio_eject(config, out, force)
-        }
+        StudioCmd::Eject {
+            out,
+            name,
+            force,
+            with_ui,
+        } => handle_studio_eject(out, name, force, with_ui),
     }
 }
 
@@ -173,19 +176,34 @@ fn handle_studio_run(config: PathBuf, bind: Option<String>) -> Result<()> {
     })
 }
 
-fn handle_studio_eject(_config: PathBuf, out: PathBuf, force: bool) -> Result<()> {
+fn handle_studio_eject(
+    out: PathBuf,
+    name: Option<String>,
+    force: bool,
+    with_ui: bool,
+) -> Result<()> {
     let report = cratestack_studio::eject(&cratestack_studio::EjectOptions {
         out: out.clone(),
+        name,
         force,
+        with_ui,
     })?;
     println!(
-        "ejected studio UI to '{}' ({} files written)",
+        "ejected starter project to '{}' ({} files written)",
         report.out.display(),
         report.written.len()
     );
-    println!(
-        "next steps: `cd {} && trunk serve` (with `cratestack studio run` in another terminal)",
-        report.out.display(),
-    );
+    if report.with_ui {
+        println!(
+            "next steps: `cd {} && cargo run` to start the studio, \
+             and `(cd ui && trunk serve)` to iterate on the UI",
+            report.out.display(),
+        );
+    } else {
+        println!(
+            "next steps: `cd {} && cargo run` to start the studio",
+            report.out.display(),
+        );
+    }
     Ok(())
 }

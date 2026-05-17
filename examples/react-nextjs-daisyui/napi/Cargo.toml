@@ -15,11 +15,11 @@ unsafe_code = "allow"
 
 [dependencies]
 chrono = { workspace = true }
-cratestack = { path = "../../../crates/cratestack", version = "0.3.3" }
-cratestack-client-rust = { path = "../../../crates/cratestack-client-rust", version = "0.3.3" }
-cratestack-codec-cbor = { path = "../../../crates/cratestack-codec-cbor", version = "0.3.3" }
-cratestack-macros = { path = "../../../crates/cratestack-macros", version = "0.3.3" }
-cratestack-rusqlite = { path = "../../../crates/cratestack-rusqlite", version = "0.3.3" }
+cratestack = { path = "../../../crates/cratestack", version = "0.3.4" }
+cratestack-client-rust = { path = "../../../crates/cratestack-client-rust", version = "0.3.4" }
+cratestack-codec-cbor = { path = "../../../crates/cratestack-codec-cbor", version = "0.3.4" }
+cratestack-macros = { path = "../../../crates/cratestack-macros", version = "0.3.4" }
+cratestack-rusqlite = { path = "../../../crates/cratestack-rusqlite", version = "0.3.4" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 url = { workspace = true }

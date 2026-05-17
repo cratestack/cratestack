@@ -16,9 +16,9 @@ clap = { workspace = true }
 # helpers (IntoSqlValue, FilterExpr, ...). Until that is fixed to emit
 # `::cratestack_core::*` + `::cratestack_sql::*` directly (tracked as a
 # follow-up), embedded consumers transitively pull in the facade.
-cratestack = { path = "../../crates/cratestack", version = "0.3.3" }
-cratestack-macros = { path = "../../crates/cratestack-macros", version = "0.3.3" }
-cratestack-rusqlite = { path = "../../crates/cratestack-rusqlite", version = "0.3.3" }
+cratestack = { path = "../../crates/cratestack", version = "0.3.4" }
+cratestack-macros = { path = "../../crates/cratestack-macros", version = "0.3.4" }
+cratestack-rusqlite = { path = "../../crates/cratestack-rusqlite", version = "0.3.4" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }

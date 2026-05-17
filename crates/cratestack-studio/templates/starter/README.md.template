@@ -1,0 +1,42 @@
+# {{name}}
+
+Ejected from `cratestack studio eject` — a standalone Rust binary that
+embeds [CrateStack Studio][cratestack] against your own `.cstack`
+schemas.
+
+## Run
+
+```sh
+cargo run
+```
+
+The studio listens on `http://127.0.0.1:7878` by default. The Leptos
+admin UI is bundled into the binary, so no separate build step is
+needed.
+
+## Layout
+
+```
+.
+├── Cargo.toml
+├── studio.toml          # workspace + targets
+├── schemas/
+│   └── example.cstack   # example .cstack — replace with your own
+└── src/
+    └── main.rs          # axum entry point
+```
+
+## Customize
+
+`main.rs` is intentionally small. Drop in your own routes, middleware,
+or auth by composing on top of `cratestack_studio::build_router`:
+
+```rust
+let workspace = cratestack_studio::LoadedWorkspace::load(&path).await?;
+let app = cratestack_studio::build_router(workspace).route("/health", get(|| async { "ok" }));
+```
+
+To customize the Leptos UI itself, re-eject with `--with-ui` — that
+emits a Trunk-built sibling crate you can iterate on.
+
+[cratestack]: https://cratestack.dev
