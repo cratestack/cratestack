@@ -1,0 +1,20 @@
+# CrateStack Studio workspace config — ejected starter.
+#
+# Tune `targets` to point at your real DBs / APIs. The example below
+# wires the bundled `schemas/example.cstack` to an on-disk SQLite file
+# so `cargo run` boots into a working admin app without any external
+# services.
+
+[workspace]
+name = "studio"
+default_mode = "rw"
+
+[[target]]
+key = "example"
+display_name = "Example"
+schema = "schemas/example.cstack"
+mode = "rw"
+
+[target.db]
+url = "sqlite:./studio.sqlite"
+driver = "sqlite"

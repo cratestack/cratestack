@@ -1,16 +1,22 @@
-//! `cratestack studio eject` — copy the Leptos+Trunk UI sources into a
-//! writable directory.
+//! `cratestack studio eject` — produce a customizable starter project
+//! that embeds CrateStack Studio against your own `.cstack` schemas.
 //!
-//! The UI tree at `crates/cratestack-studio-ui/` is packed by
-//! `build.rs` into a gzipped tarball in `OUT_DIR` and embedded via
-//! `include_bytes!`. At runtime we stream the archive into the
-//! caller's target directory, then write a small README that points
-//! at the upstream and explains how the standalone workflow lines up
-//! against the in-tree one.
+//! The default eject hands the caller a self-contained Cargo binary
+//! crate:
 //!
-//! Generated artifacts (`/dist`, `/target`, `Cargo.lock`,
-//! `.trunk/`) are filtered at pack time, so the runtime walk only
-//! sees the source files we want to hand over.
+//! ```text
+//! <out>/
+//! ├── Cargo.toml
+//! ├── README.md
+//! ├── studio.toml
+//! ├── schemas/example.cstack
+//! └── src/main.rs
+//! ```
+//!
+//! Pair with `--with-ui` to also drop the full Leptos+Trunk UI sources
+//! into `<out>/ui/` for in-place customization. The UI source tree is
+//! shipped inside the studio crate as a gzipped tarball produced by
+//! `build.rs`.
 
 use std::fs;
 use std::io;
@@ -19,25 +25,29 @@ use std::path::{Path, PathBuf};
 use flate2::read::GzDecoder;
 use tar::Archive;
 
-/// Gzipped tarball of the UI source tree, produced by `build.rs`.
-/// Refreshed every time `cratestack-studio` is rebuilt — the eject
-/// output is therefore tied to the framework version that built the
-/// binary.
 const UI_TARBALL: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/ui.tar.gz"));
 
-/// Bytes written into the ejected directory's `README.md`, replacing
-/// whatever ships in the in-tree UI crate. Self-contained so callers
-/// know how to build + serve without flipping back to the framework
-/// docs.
-const EJECT_README: &str = include_str!("../templates/eject/README.md");
+const STARTER_CARGO_TOML: &str =
+    include_str!("../templates/starter/Cargo.toml.template");
+const STARTER_README: &str = include_str!("../templates/starter/README.md.template");
+const STARTER_MAIN: &str = include_str!("../templates/starter/main.rs");
+const STARTER_STUDIO_TOML: &str = include_str!("../templates/starter/studio.toml");
+const STARTER_EXAMPLE_CSTACK: &str =
+    include_str!("../templates/starter/example.cstack");
 
 #[derive(Debug, Clone)]
 pub struct EjectOptions {
     pub out: PathBuf,
+    /// Project name written into `Cargo.toml` / `README.md`. Defaults
+    /// to the output directory's file name when unset.
+    pub name: Option<String>,
     /// When `true`, an existing non-empty output directory is
     /// overwritten file-by-file. When `false` (default), eject
     /// refuses to write into a non-empty directory.
     pub force: bool,
+    /// When `true`, also unpack the Leptos UI sources into
+    /// `<out>/ui/` so callers can customize the front-end.
+    pub with_ui: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -62,14 +72,17 @@ pub enum EjectError {
         #[source]
         source: io::Error,
     },
-    #[error("failed to read embedded UI tarball: {0}")]
+    #[error("failed to unpack embedded UI tarball: {0}")]
     Unpack(#[source] io::Error),
 }
 
-/// Render and write the UI tree into `options.out`. Existing files
-/// with the same path are overwritten; the README in the ejected dir
-/// is replaced with [`EJECT_README`] regardless of what ships in the
-/// embedded tree.
+#[derive(Debug, Clone)]
+pub struct EjectReport {
+    pub out: PathBuf,
+    pub written: Vec<PathBuf>,
+    pub with_ui: bool,
+}
+
 pub fn eject(options: &EjectOptions) -> Result<EjectReport, EjectError> {
     ensure_writable_target(&options.out, options.force)?;
     fs::create_dir_all(&options.out).map_err(|source| EjectError::CreateDir {
@@ -77,35 +90,78 @@ pub fn eject(options: &EjectOptions) -> Result<EjectReport, EjectError> {
         source,
     })?;
 
-    let written = unpack_tarball(&options.out)?;
+    let name = derive_name(options);
+    let cargo_version = env!("CARGO_PKG_VERSION");
+    let mut written = Vec::<PathBuf>::new();
 
-    let readme_path = options.out.join("README.md");
-    fs::write(&readme_path, EJECT_README).map_err(|source| EjectError::Write {
-        path: readme_path.clone(),
-        source,
-    })?;
-    let mut written = written;
-    if !written.iter().any(|p| p.ends_with("README.md")) {
-        written.push(PathBuf::from("README.md"));
+    let cargo_toml = render_template(STARTER_CARGO_TOML, &[("name", &name), ("cratestack_version", cargo_version)]);
+    write_file(&options.out, "Cargo.toml", cargo_toml.as_bytes(), &mut written)?;
+    let readme = render_template(STARTER_README, &[("name", &name)]);
+    write_file(&options.out, "README.md", readme.as_bytes(), &mut written)?;
+    write_file(&options.out, "studio.toml", STARTER_STUDIO_TOML.as_bytes(), &mut written)?;
+    write_file(
+        &options.out,
+        "schemas/example.cstack",
+        STARTER_EXAMPLE_CSTACK.as_bytes(),
+        &mut written,
+    )?;
+    write_file(&options.out, "src/main.rs", STARTER_MAIN.as_bytes(), &mut written)?;
+
+    if options.with_ui {
+        unpack_ui_sources(&options.out.join("ui"), &mut written)?;
     }
 
     Ok(EjectReport {
         out: options.out.clone(),
         written,
+        with_ui: options.with_ui,
     })
 }
 
-#[derive(Debug, Clone)]
-pub struct EjectReport {
-    pub out: PathBuf,
-    pub written: Vec<PathBuf>,
+fn derive_name(options: &EjectOptions) -> String {
+    if let Some(name) = options.name.as_deref().filter(|s| !s.is_empty()) {
+        return name.to_string();
+    }
+    options
+        .out
+        .file_name()
+        .and_then(|s| s.to_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("cratestack-studio-app")
+        .to_string()
+}
+
+fn render_template(template: &str, vars: &[(&str, &str)]) -> String {
+    let mut out = template.to_string();
+    for (k, v) in vars {
+        out = out.replace(&format!("{{{{{k}}}}}"), v);
+    }
+    out
+}
+
+fn write_file(
+    root: &Path,
+    rel: &str,
+    bytes: &[u8],
+    written: &mut Vec<PathBuf>,
+) -> Result<(), EjectError> {
+    let dest = root.join(rel);
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent).map_err(|source| EjectError::CreateDir {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+    }
+    fs::write(&dest, bytes).map_err(|source| EjectError::Write {
+        path: dest.clone(),
+        source,
+    })?;
+    written.push(PathBuf::from(rel));
+    Ok(())
 }
 
 fn ensure_writable_target(out: &Path, force: bool) -> Result<(), EjectError> {
-    if !out.exists() {
-        return Ok(());
-    }
-    if force {
+    if !out.exists() || force {
         return Ok(());
     }
     let mut entries = fs::read_dir(out).map_err(|source| EjectError::Inspect {
@@ -120,16 +176,15 @@ fn ensure_writable_target(out: &Path, force: bool) -> Result<(), EjectError> {
     Ok(())
 }
 
-fn unpack_tarball(root: &Path) -> Result<Vec<PathBuf>, EjectError> {
+fn unpack_ui_sources(root: &Path, written: &mut Vec<PathBuf>) -> Result<(), EjectError> {
+    fs::create_dir_all(root).map_err(|source| EjectError::CreateDir {
+        path: root.to_path_buf(),
+        source,
+    })?;
     let mut archive = Archive::new(GzDecoder::new(UI_TARBALL));
-    let mut written = Vec::<PathBuf>::new();
-    let entries = archive.entries().map_err(EjectError::Unpack)?;
-    for entry in entries {
+    for entry in archive.entries().map_err(EjectError::Unpack)? {
         let mut entry = entry.map_err(EjectError::Unpack)?;
-        let rel = entry
-            .path()
-            .map_err(EjectError::Unpack)?
-            .into_owned();
+        let rel = entry.path().map_err(EjectError::Unpack)?.into_owned();
         let dest = root.join(&rel);
         if entry.header().entry_type().is_dir() {
             fs::create_dir_all(&dest).map_err(|source| EjectError::CreateDir {
@@ -148,9 +203,9 @@ fn unpack_tarball(root: &Path) -> Result<Vec<PathBuf>, EjectError> {
             path: dest.clone(),
             source,
         })?;
-        written.push(rel);
+        written.push(PathBuf::from("ui").join(&rel));
     }
-    Ok(written)
+    Ok(())
 }
 
 #[cfg(test)]

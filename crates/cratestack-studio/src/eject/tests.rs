@@ -14,26 +14,47 @@ fn assert_file<S: AsRef<str>>(path: &Path, expected_substring: S) {
 }
 
 #[test]
-fn ejects_into_empty_directory() {
+fn ejects_starter_project_into_empty_directory() {
     let temp = tempfile::tempdir().expect("temp");
+    let out = temp.path().join("my-app");
     let report = eject(&EjectOptions {
-        out: temp.path().to_path_buf(),
+        out: out.clone(),
+        name: None,
         force: false,
+        with_ui: false,
     })
     .expect("eject succeeds into empty dir");
 
-    assert!(temp.path().join("Cargo.toml").is_file());
-    assert!(temp.path().join("index.html").is_file());
-    assert!(temp.path().join("Trunk.toml").is_file());
-    assert!(temp.path().join("src/lib.rs").is_file());
-    assert!(temp.path().join("src/app.rs").is_file());
-    assert!(temp.path().join("src/api.rs").is_file());
-    assert!(temp.path().join("src/types.rs").is_file());
+    assert!(out.join("Cargo.toml").is_file());
+    assert!(out.join("README.md").is_file());
+    assert!(out.join("studio.toml").is_file());
+    assert!(out.join("schemas/example.cstack").is_file());
+    assert!(out.join("src/main.rs").is_file());
+    assert!(
+        !out.join("ui").exists(),
+        "ui/ should only land with --with-ui"
+    );
 
-    assert_file(&temp.path().join("README.md"), "cratestack studio eject");
+    assert_file(&out.join("Cargo.toml"), "name = \"my-app\"");
+    assert_file(&out.join("Cargo.toml"), "cratestack-studio = \"");
+    assert_file(&out.join("README.md"), "# my-app");
+    assert_file(&out.join("src/main.rs"), "cratestack_studio::");
+    assert!(!report.with_ui);
+}
 
-    let has_lib = report.written.iter().any(|p| p.ends_with("src/lib.rs"));
-    assert!(has_lib, "report should list src/lib.rs; got {:?}", report.written);
+#[test]
+fn explicit_name_overrides_directory_basename() {
+    let temp = tempfile::tempdir().expect("temp");
+    let out = temp.path().join("anything");
+    eject(&EjectOptions {
+        out: out.clone(),
+        name: Some("renamed-app".into()),
+        force: false,
+        with_ui: false,
+    })
+    .expect("eject succeeds");
+    assert_file(&out.join("Cargo.toml"), "name = \"renamed-app\"");
+    assert_file(&out.join("README.md"), "# renamed-app");
 }
 
 #[test]
@@ -42,7 +63,9 @@ fn refuses_non_empty_directory_without_force() {
     std::fs::write(temp.path().join("existing.txt"), "hi").unwrap();
     let error = eject(&EjectOptions {
         out: temp.path().to_path_buf(),
+        name: None,
         force: false,
+        with_ui: false,
     })
     .expect_err("non-empty dir should refuse");
     assert!(matches!(error, EjectError::OutputNotEmpty { .. }));
@@ -55,24 +78,28 @@ fn force_overwrites_existing_files() {
     std::fs::write(&target, "PLACEHOLDER").unwrap();
     eject(&EjectOptions {
         out: temp.path().to_path_buf(),
+        name: Some("forced".into()),
         force: true,
+        with_ui: false,
     })
     .expect("force eject succeeds");
-    let body = std::fs::read_to_string(&target).unwrap();
-    assert!(body.contains("cratestack-studio-ui"), "{body}");
+    assert_file(&target, "name = \"forced\"");
 }
 
 #[test]
-fn skips_dist_and_target() {
+fn with_ui_unpacks_leptos_sources() {
     let temp = tempfile::tempdir().expect("temp");
-    eject(&EjectOptions {
-        out: temp.path().to_path_buf(),
+    let out = temp.path().join("with-ui");
+    let report = eject(&EjectOptions {
+        out: out.clone(),
+        name: None,
         force: false,
+        with_ui: true,
     })
-    .expect("eject succeeds");
-    assert!(!temp.path().join("dist").exists(), "dist/ must not be ejected");
-    assert!(
-        !temp.path().join("target").exists(),
-        "target/ must not be ejected"
-    );
+    .expect("eject with ui succeeds");
+    assert!(report.with_ui);
+    assert!(out.join("ui/Cargo.toml").is_file());
+    assert!(out.join("ui/Trunk.toml").is_file());
+    assert!(out.join("ui/index.html").is_file());
+    assert!(out.join("ui/src/lib.rs").is_file());
 }

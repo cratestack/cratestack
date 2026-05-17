@@ -77,18 +77,26 @@ pub(crate) enum StudioCmd {
         #[arg(long)]
         bind: Option<String>,
     },
-    /// Eject the studio's Leptos+Trunk UI sources as a customizable
-    /// standalone crate at `--out`. Pair with `cratestack studio run`
-    /// from a separate terminal for local development.
+    /// Eject a customizable starter project that embeds the studio
+    /// against your own `.cstack` schemas. The default emits a
+    /// self-contained binary crate (Cargo.toml, src/main.rs,
+    /// studio.toml, example schema). Pass `--with-ui` to also drop
+    /// the Leptos UI sources for front-end customization.
     Eject {
-        #[arg(long, default_value = "studio.toml")]
-        config: PathBuf,
         #[arg(long)]
         out: PathBuf,
+        /// Optional project name written into Cargo.toml / README.
+        /// Defaults to the `--out` directory's basename.
+        #[arg(long)]
+        name: Option<String>,
         /// Overwrite files in `--out` if the directory already exists
         /// and has contents.
         #[arg(long)]
         force: bool,
+        /// Also unpack the Leptos+Trunk UI sources into `<out>/ui/`
+        /// for front-end customization.
+        #[arg(long)]
+        with_ui: bool,
     },
 }
 

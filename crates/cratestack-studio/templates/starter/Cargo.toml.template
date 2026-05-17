@@ -1,0 +1,10 @@
+[package]
+name = "{{name}}"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1"
+cratestack-studio = "{{cratestack_version}}"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "net"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
