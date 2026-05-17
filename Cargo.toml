@@ -54,7 +54,7 @@ exclude = [
     # The Studio web UI is a wasm32 target built by Trunk, not a
     # workspace member — keeping it out of `cargo check --workspace`
     # avoids forcing every developer onto the wasm32 toolchain.
-    "crates/cratestack-studio/ui",
+    "crates/cratestack-studio-ui",
 ]
 
 [workspace.package]
@@ -119,7 +119,6 @@ base64 = "0.22"
 serde_json = "1"
 serde_urlencoded = "0.7.1"
 http = "1"
-include_dir = "0.7"
 proc-macro2 = "1"
 rust-embed = { version = "8", default-features = false }
 quote = "1"

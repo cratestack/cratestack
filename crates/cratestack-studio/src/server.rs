@@ -77,7 +77,7 @@ pub fn build_router(workspace: Arc<LoadedWorkspace>) -> Router {
         } else {
             tracing::warn!(
                 "embed-ui feature is enabled but the UI bundle is empty; \
-                 run `trunk build --release` in crates/cratestack-studio/ui/ \
+                 run `trunk build --release` in crates/cratestack-studio-ui/ \
                  before building the studio binary"
             );
             app = app.route("/", get(index_page));

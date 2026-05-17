@@ -50,3 +50,25 @@ test-pg-only *args='':
 # Run the workspace test suite via testcontainers (per-binary ephemeral PG, recommended for CI).
 test-pg-tc *args='':
 	CRATESTACK_USE_TESTCONTAINERS=1 cargo test --workspace --exclude embedded_flutter_native {{args}}
+
+# Bundle the Studio UI sources into crates/cratestack-studio/embedded-ui.tar.gz
+# so the published crate can carry them past cargo's nested-package
+# exclusion. Run this before `cargo publish -p cratestack-studio`.
+bundle-studio-ui:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	out=crates/cratestack-studio/embedded-ui.tar.gz
+	tar --exclude='target' \
+	    --exclude='Cargo.lock' \
+	    --exclude='.gitignore' \
+	    --exclude='.trunk' \
+	    --exclude='dist' \
+	    -czf "$out" \
+	    -C crates cratestack-studio-ui
+	echo "wrote $out ($(du -h "$out" | cut -f1))"
+
+# End-to-end publish for cratestack-studio: refresh the embedded UI
+# tarball, then publish. Pass through any extra cargo flags.
+publish-studio *args='':
+	just bundle-studio-ui
+	cargo publish -p cratestack-studio {{args}}

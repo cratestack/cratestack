@@ -5,7 +5,7 @@
 //! ```text
 //! cargo install trunk
 //! rustup target add wasm32-unknown-unknown
-//! (cd crates/cratestack-studio/ui && trunk build --release)
+//! (cd crates/cratestack-studio-ui && trunk build --release)
 //! cargo build -p cratestack-cli --features cratestack-studio/embed-ui
 //! ```
 //!
@@ -23,7 +23,7 @@ use rust_embed::RustEmbed;
 
 /// The Trunk `dist/` output, snapshotted at compile time.
 #[derive(RustEmbed)]
-#[folder = "$CARGO_MANIFEST_DIR/ui/dist"]
+#[folder = "$CARGO_MANIFEST_DIR/../cratestack-studio-ui/dist"]
 struct UiAssets;
 
 /// Mount the bundled UI on the given router under `/`. Falls back to
