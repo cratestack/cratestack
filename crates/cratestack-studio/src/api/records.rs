@@ -64,11 +64,10 @@ pub async fn get_record(
     Path((key, model, pk)): Path<(String, String, String)>,
 ) -> Result<Json<RecordResponse>, ApiError> {
     let target = resolve_target(&state, &key)?;
-    let row = target
-        .source
-        .get(&model, &pk)
-        .await?
-        .ok_or_else(|| ApiError::InvalidPrimaryKey(pk.clone(), "no row with this id".to_owned()))?;
+    let row =
+        target.source.get(&model, &pk).await?.ok_or_else(|| {
+            ApiError::InvalidPrimaryKey(pk.clone(), "no row with this id".to_owned())
+        })?;
     Ok(Json(RecordResponse { row }))
 }
 
@@ -82,11 +81,10 @@ pub async fn follow_relation(
     let (source_model, source_info) = resolve_model(&target.schema, &model)?;
     let relation = resolve_relation(&target.schema, source_model, &field)?;
 
-    let source_row = target
-        .source
-        .get(&model, &pk)
-        .await?
-        .ok_or_else(|| ApiError::InvalidPrimaryKey(pk.clone(), "no row with this id".to_owned()))?;
+    let source_row =
+        target.source.get(&model, &pk).await?.ok_or_else(|| {
+            ApiError::InvalidPrimaryKey(pk.clone(), "no row with this id".to_owned())
+        })?;
     let filter_value = extract_filter_value(&source_row, &source_info, &relation)?;
 
     let body = if relation.single {

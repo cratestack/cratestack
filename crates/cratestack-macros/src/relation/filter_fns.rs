@@ -32,19 +32,39 @@ fn generate_scalar_relation_filter_functions(
     let mut fns = Vec::new();
 
     filter_builders::append_required_filter_functions(
-        &mut fns, field, wrappers, &field_type, &column,
+        &mut fns,
+        field,
+        wrappers,
+        &field_type,
+        &column,
     );
     filter_builders::append_boolean_filter_functions(
-        &mut fns, field, wrappers, &field_type, &column,
+        &mut fns,
+        field,
+        wrappers,
+        &field_type,
+        &column,
     );
     filter_builders::append_required_text_filter_functions(
-        &mut fns, field, wrappers, &field_type, &column,
+        &mut fns,
+        field,
+        wrappers,
+        &field_type,
+        &column,
     );
     filter_builders::append_optional_filter_functions(
-        &mut fns, field, wrappers, &field_type, &column,
+        &mut fns,
+        field,
+        wrappers,
+        &field_type,
+        &column,
     );
     filter_builders::append_optional_string_filter_functions(
-        &mut fns, field, wrappers, &field_type, &column,
+        &mut fns,
+        field,
+        wrappers,
+        &field_type,
+        &column,
     );
 
     Ok(fns)

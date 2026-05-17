@@ -56,8 +56,7 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
     let runtime = Arc::new(
-        RusqliteRuntime::open(&cli.db)
-            .with_context(|| format!("opening {}", cli.db.display()))?,
+        RusqliteRuntime::open(&cli.db).with_context(|| format!("opening {}", cli.db.display()))?,
     );
     bootstrap(&runtime).context("bootstrap schema")?;
 
@@ -87,8 +86,8 @@ struct RawEvent {
 }
 
 fn build_watcher(tx: mpsc::UnboundedSender<RawEvent>) -> anyhow::Result<RecommendedWatcher> {
-    let watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-        match res {
+    let watcher =
+        notify::recommended_watcher(move |res: notify::Result<notify::Event>| match res {
             Ok(event) => {
                 let kind = match event.kind {
                     EventKind::Create(_) => Some("created"),
@@ -111,8 +110,7 @@ fn build_watcher(tx: mpsc::UnboundedSender<RawEvent>) -> anyhow::Result<Recommen
             Err(error) => {
                 warn!(%error, "notify watcher reported an error");
             }
-        }
-    })?;
+        })?;
     Ok(watcher)
 }
 

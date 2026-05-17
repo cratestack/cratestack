@@ -1,8 +1,10 @@
 use cratestack_core::Schema;
 
-use crate::config::{GeneratedTypeScriptFile, GeneratedTypeScriptPackage, TypeScriptGeneratorConfig};
+use crate::config::{
+    GeneratedTypeScriptFile, GeneratedTypeScriptPackage, TypeScriptGeneratorConfig,
+};
 use crate::context::build_template_context;
-use crate::templates::{build_environment, template_specs_for, TypeScriptGeneratorError};
+use crate::templates::{TypeScriptGeneratorError, build_environment, template_specs_for};
 
 pub fn generate_package(
     schema: &Schema,

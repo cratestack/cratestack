@@ -1,8 +1,6 @@
 #![cfg(test)]
 
-use crate::{
-    PolicyExpr, ReadPolicy, ReadPredicate, render::render_read_policy_sql,
-};
+use crate::{PolicyExpr, ReadPolicy, ReadPredicate, render::render_read_policy_sql};
 use cratestack_core::CoolContext;
 
 #[test]

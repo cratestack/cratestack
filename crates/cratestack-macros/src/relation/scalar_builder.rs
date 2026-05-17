@@ -28,19 +28,39 @@ pub(super) fn generate_scalar_relation_builder_module(
     let mut methods = Vec::new();
 
     filter_builders::append_required_builder_methods(
-        &mut methods, field, wrappers, &field_type, &column,
+        &mut methods,
+        field,
+        wrappers,
+        &field_type,
+        &column,
     );
     filter_builders::append_boolean_builder_methods(
-        &mut methods, field, wrappers, &field_type, &column,
+        &mut methods,
+        field,
+        wrappers,
+        &field_type,
+        &column,
     );
     filter_builders::append_required_text_builder_methods(
-        &mut methods, field, wrappers, &field_type, &column,
+        &mut methods,
+        field,
+        wrappers,
+        &field_type,
+        &column,
     );
     filter_builders::append_optional_builder_methods(
-        &mut methods, field, wrappers, &field_type, &column,
+        &mut methods,
+        field,
+        wrappers,
+        &field_type,
+        &column,
     );
     filter_builders::append_optional_string_builder_methods(
-        &mut methods, field, wrappers, &field_type, &column,
+        &mut methods,
+        field,
+        wrappers,
+        &field_type,
+        &column,
     );
 
     if allow_ordering {

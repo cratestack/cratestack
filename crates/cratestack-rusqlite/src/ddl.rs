@@ -34,10 +34,7 @@ use cratestack_sql::ModelDescriptor;
 /// our binding choices (UUID, DateTime, Decimal, JSON all bind as TEXT).
 /// The primary key is marked `PRIMARY KEY` inline.
 pub fn create_table_sql<M, PK>(descriptor: &ModelDescriptor<M, PK>) -> String {
-    let mut sql = format!(
-        "CREATE TABLE IF NOT EXISTS {} (\n",
-        descriptor.table_name
-    );
+    let mut sql = format!("CREATE TABLE IF NOT EXISTS {} (\n", descriptor.table_name);
     for (idx, column) in descriptor.columns.iter().enumerate() {
         if idx > 0 {
             sql.push_str(",\n");
@@ -48,11 +45,7 @@ pub fn create_table_sql<M, PK>(descriptor: &ModelDescriptor<M, PK>) -> String {
         }
     }
     if let Some(deleted_at) = descriptor.soft_delete_column {
-        if !descriptor
-            .columns
-            .iter()
-            .any(|c| c.sql_name == deleted_at)
-        {
+        if !descriptor.columns.iter().any(|c| c.sql_name == deleted_at) {
             sql.push_str(",\n    ");
             sql.push_str(deleted_at);
             sql.push_str(" BLOB");
@@ -69,8 +62,14 @@ mod tests {
 
     fn descriptor() -> ModelDescriptor<(), i64> {
         const COLUMNS: &[ModelColumn] = &[
-            ModelColumn { rust_name: "id", sql_name: "id" },
-            ModelColumn { rust_name: "title", sql_name: "title" },
+            ModelColumn {
+                rust_name: "id",
+                sql_name: "id",
+            },
+            ModelColumn {
+                rust_name: "title",
+                sql_name: "title",
+            },
         ];
         ModelDescriptor::new(
             "Post",

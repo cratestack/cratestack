@@ -15,7 +15,10 @@ fn system_time_ms_roundtrip_near_now() {
         .duration_since(back)
         .or_else(|err| Ok::<_, std::time::SystemTimeError>(err.duration()))
         .unwrap();
-    assert!(drift < Duration::from_millis(2), "roundtrip drift: {drift:?}");
+    assert!(
+        drift < Duration::from_millis(2),
+        "roundtrip drift: {drift:?}"
+    );
 }
 
 #[test]

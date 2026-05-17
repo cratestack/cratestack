@@ -60,17 +60,32 @@ fn error_body_from_cool_response_translates_code_and_preserves_message() {
 
 #[test]
 fn rpc_code_maps_each_cool_error_variant() {
-    assert_eq!(rpc_code(&CoolError::BadRequest("x".into())), "invalid_argument");
-    assert_eq!(rpc_code(&CoolError::NotAcceptable("x".into())), "invalid_argument");
-    assert_eq!(rpc_code(&CoolError::Unauthorized("x".into())), "unauthenticated");
+    assert_eq!(
+        rpc_code(&CoolError::BadRequest("x".into())),
+        "invalid_argument"
+    );
+    assert_eq!(
+        rpc_code(&CoolError::NotAcceptable("x".into())),
+        "invalid_argument"
+    );
+    assert_eq!(
+        rpc_code(&CoolError::Unauthorized("x".into())),
+        "unauthenticated"
+    );
     assert_eq!(
         rpc_code(&CoolError::UnsupportedMediaType("x".into())),
         "invalid_argument",
     );
-    assert_eq!(rpc_code(&CoolError::Forbidden("x".into())), "permission_denied");
+    assert_eq!(
+        rpc_code(&CoolError::Forbidden("x".into())),
+        "permission_denied"
+    );
     assert_eq!(rpc_code(&CoolError::NotFound("x".into())), "not_found");
     assert_eq!(rpc_code(&CoolError::Conflict("x".into())), "conflict");
-    assert_eq!(rpc_code(&CoolError::Validation("x".into())), "invalid_argument");
+    assert_eq!(
+        rpc_code(&CoolError::Validation("x".into())),
+        "invalid_argument"
+    );
     assert_eq!(
         rpc_code(&CoolError::PreconditionFailed("x".into())),
         "failed_precondition",

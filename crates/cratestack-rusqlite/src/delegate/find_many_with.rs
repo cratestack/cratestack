@@ -146,8 +146,7 @@ where
     Ok(parents
         .into_iter()
         .map(|m| {
-            let related = (relation.parent_fk_extract)(&m)
-                .and_then(|fk| by_pk.get(&fk).cloned());
+            let related = (relation.parent_fk_extract)(&m).and_then(|fk| by_pk.get(&fk).cloned());
             (m, related)
         })
         .collect())

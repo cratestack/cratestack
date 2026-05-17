@@ -16,7 +16,10 @@ use cratestack::sqlx::query;
 use cratestack::{CoolContext, Value};
 use support::pg;
 
-include_server_schema!("tests/fixtures/builder_extensions_tier5.cstack", db = Postgres);
+include_server_schema!(
+    "tests/fixtures/builder_extensions_tier5.cstack",
+    db = Postgres
+);
 
 async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     query("DROP TABLE IF EXISTS model_runs")
@@ -35,8 +38,7 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
 }
 
 fn operator() -> CoolContext {
-    CoolContext::authenticated([("id".to_owned(), Value::Int(1))])
-        .with_request_id("tier5-001")
+    CoolContext::authenticated([("id".to_owned(), Value::Int(1))]).with_request_id("tier5-001")
 }
 
 async fn seed(pool: &cratestack::sqlx::PgPool) {
@@ -51,8 +53,8 @@ async fn seed(pool: &cratestack::sqlx::PgPool) {
         (4, None),
     ];
     for (id, json) in rows {
-        let value: Option<cratestack::sqlx::types::Json<serde_json::Value>> = json
-            .map(|s| cratestack::sqlx::types::Json(serde_json::from_str(s).unwrap()));
+        let value: Option<cratestack::sqlx::types::Json<serde_json::Value>> =
+            json.map(|s| cratestack::sqlx::types::Json(serde_json::from_str(s).unwrap()));
         query("INSERT INTO model_runs (id, metrics) VALUES ($1, $2)")
             .bind(id)
             .bind(value)

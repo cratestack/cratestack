@@ -19,7 +19,10 @@ use cratestack::sqlx::{Row, query};
 use cratestack::{ConflictTarget, CoolContext, Value};
 use support::pg;
 
-include_server_schema!("tests/fixtures/builder_extensions_tier2.cstack", db = Postgres);
+include_server_schema!(
+    "tests/fixtures/builder_extensions_tier2.cstack",
+    db = Postgres
+);
 
 async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     query("DROP TABLE IF EXISTS cratestack_audit, cratestack_event_outbox, articles, pairs")
@@ -45,8 +48,7 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
 }
 
 fn operator() -> CoolContext {
-    CoolContext::authenticated([("id".to_owned(), Value::Int(1))])
-        .with_request_id("tier2-001")
+    CoolContext::authenticated([("id".to_owned(), Value::Int(1))]).with_request_id("tier2-001")
 }
 
 // ───── #8 as_detail() / as_list() ────────────────────────────────────────────
@@ -179,15 +181,14 @@ async fn composite_upsert_inserts_then_updates_on_natural_key() {
     assert_eq!(count, 1);
 
     // Audit must show both operations against the same conflict row.
-    let audit: Vec<String> = query(
-        "SELECT operation FROM cratestack_audit WHERE model = 'Pair' ORDER BY occurred_at",
-    )
-    .fetch_all(pool)
-    .await
-    .unwrap()
-    .into_iter()
-    .map(|r| r.get::<String, _>("operation"))
-    .collect();
+    let audit: Vec<String> =
+        query("SELECT operation FROM cratestack_audit WHERE model = 'Pair' ORDER BY occurred_at")
+            .fetch_all(pool)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|r| r.get::<String, _>("operation"))
+            .collect();
     assert_eq!(audit, vec!["create".to_string(), "update".to_string()]);
 }
 

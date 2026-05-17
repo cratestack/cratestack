@@ -6,8 +6,7 @@ mod read_types;
 
 pub use eval::{authorize_procedure, context_has_role, context_in_tenant};
 pub use procedure_types::{
-    ProcedureArgs, ProcedurePolicy, ProcedurePolicyExpr, ProcedurePolicyLiteral,
-    ProcedurePredicate,
+    ProcedureArgs, ProcedurePolicy, ProcedurePolicyExpr, ProcedurePolicyLiteral, ProcedurePredicate,
 };
 pub use read_types::{PolicyExpr, PolicyLiteral, ReadPolicy, ReadPredicate, RelationQuantifier};
 

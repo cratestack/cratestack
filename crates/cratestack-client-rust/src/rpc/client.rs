@@ -8,9 +8,7 @@ use crate::client::CratestackClient;
 use crate::codec::HttpClientCodec;
 use crate::config::ClientConfig;
 use crate::rpc::batch::BatchBuilder;
-use crate::rpc::error::{
-    RpcClientError, client_error_to_rpc, decode_rpc_unary_response,
-};
+use crate::rpc::error::{RpcClientError, client_error_to_rpc, decode_rpc_unary_response};
 use crate::streaming::pump_streamed_response_typed;
 
 // `RPC_BATCH_PATH` from core is the axum-template form `"/rpc/batch"`,
@@ -69,18 +67,15 @@ where
         I: Serialize,
         O: DeserializeOwned,
     {
-        let body = self.inner.codec.encode(input).map_err(RpcClientError::Codec)?;
+        let body = self
+            .inner
+            .codec
+            .encode(input)
+            .map_err(RpcClientError::Codec)?;
         let path = format!("/rpc/{}", op_id);
         let response = self
             .inner
-            .request_raw_with_query_and_accept(
-                Method::POST,
-                &path,
-                Some(body),
-                None,
-                &[],
-                None,
-            )
+            .request_raw_with_query_and_accept(Method::POST, &path, Some(body), None, &[], None)
             .await
             .map_err(client_error_to_rpc)?;
         decode_rpc_unary_response(&self.inner.codec, &response)
@@ -93,7 +88,11 @@ where
         &self,
         requests: &[RpcRequest],
     ) -> Result<Vec<RpcResponseFrame>, RpcClientError> {
-        let body = self.inner.codec.encode(&requests).map_err(RpcClientError::Codec)?;
+        let body = self
+            .inner
+            .codec
+            .encode(&requests)
+            .map_err(RpcClientError::Codec)?;
         let response = self
             .inner
             .request_raw_with_query_and_accept(

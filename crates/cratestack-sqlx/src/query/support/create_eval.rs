@@ -79,7 +79,9 @@ fn evaluate_create_predicate<'a>(
                     .map_err(|error| CoolError::Database(error.to_string()))?;
                 Ok(result.0)
             }
-            _ => Ok(super::create::evaluate_input_predicate(predicate, values, ctx)),
+            _ => Ok(super::create::evaluate_input_predicate(
+                predicate, values, ctx,
+            )),
         }
     })
 }

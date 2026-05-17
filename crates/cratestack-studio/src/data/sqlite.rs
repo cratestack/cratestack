@@ -84,12 +84,7 @@ impl DataSource for SqliteSource {
         ops::create(&self.schema, &self.connection, model, payload).await
     }
 
-    async fn update(
-        &self,
-        model: &str,
-        pk: &str,
-        payload: &Row,
-    ) -> Result<Option<Row>, DataError> {
+    async fn update(&self, model: &str, pk: &str, payload: &Row) -> Result<Option<Row>, DataError> {
         if payload.is_empty() {
             return self.get(model, pk).await;
         }
@@ -111,10 +106,7 @@ impl DataSource for SqliteSource {
         Ok(preview::render(&info, op, pk, payload))
     }
 
-    async fn inspect_columns(
-        &self,
-        model: &str,
-    ) -> Result<Option<Vec<ColumnSnapshot>>, DataError> {
+    async fn inspect_columns(&self, model: &str) -> Result<Option<Vec<ColumnSnapshot>>, DataError> {
         let (_, info) = resolve_model(&self.schema, model)?;
         let table = info.table.clone();
         let rows = runtime::with_conn(self.connection.clone(), move |conn| {
@@ -135,7 +127,10 @@ impl DataSource for SqliteSource {
             Ok::<_, DataError>(out)
         })
         .await?;
-        if rows.is_empty() { Ok(None) } else { Ok(Some(rows)) }
+        if rows.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(rows))
+        }
     }
 }
-

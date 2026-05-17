@@ -44,9 +44,7 @@ impl ApiSource {
     ) -> Result<Self, reqwest::Error> {
         let client = Client::builder().build()?;
         let auth_header = auth.map(|a| match a {
-            ApiAuth::Bearer { token } => {
-                ("Authorization".to_owned(), format!("Bearer {token}"))
-            }
+            ApiAuth::Bearer { token } => ("Authorization".to_owned(), format!("Bearer {token}")),
             ApiAuth::Header { name, value } => (name.clone(), value.clone()),
         });
         Ok(Self {
@@ -82,16 +80,26 @@ impl DataSource for ApiSource {
     }
 
     async fn create(&self, model: &str, payload: &Row) -> Result<Row, DataError> {
-        ops::create(&self.client, &self.base_url, &self.auth_header, model, payload).await
+        ops::create(
+            &self.client,
+            &self.base_url,
+            &self.auth_header,
+            model,
+            payload,
+        )
+        .await
     }
 
-    async fn update(
-        &self,
-        model: &str,
-        pk: &str,
-        payload: &Row,
-    ) -> Result<Option<Row>, DataError> {
-        ops::update(&self.client, &self.base_url, &self.auth_header, model, pk, payload).await
+    async fn update(&self, model: &str, pk: &str, payload: &Row) -> Result<Option<Row>, DataError> {
+        ops::update(
+            &self.client,
+            &self.base_url,
+            &self.auth_header,
+            model,
+            pk,
+            payload,
+        )
+        .await
     }
 
     async fn delete(&self, model: &str, pk: &str) -> Result<Option<Row>, DataError> {

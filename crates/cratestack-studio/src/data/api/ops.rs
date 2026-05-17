@@ -144,7 +144,9 @@ pub(super) async fn delete(
     pk: &str,
 ) -> Result<Option<Row>, DataError> {
     let url = detail_url(base_url, model, pk);
-    let response = apply_auth(client.delete(&url), auth.as_ref()).send().await?;
+    let response = apply_auth(client.delete(&url), auth.as_ref())
+        .send()
+        .await?;
     match response.status() {
         StatusCode::NOT_FOUND => Ok(None),
         StatusCode::NO_CONTENT => Ok(Some(Row::new())),

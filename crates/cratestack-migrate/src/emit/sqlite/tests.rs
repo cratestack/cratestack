@@ -62,8 +62,16 @@ model Account {
 "#,
     ));
     let migration = emit(&diff(&prev, &next));
-    assert!(migration.up.contains("ALTER TABLE accounts DROP COLUMN legacy;"));
-    assert!(migration.up.contains("ALTER TABLE accounts ADD COLUMN balance BLOB"));
+    assert!(
+        migration
+            .up
+            .contains("ALTER TABLE accounts DROP COLUMN legacy;")
+    );
+    assert!(
+        migration
+            .up
+            .contains("ALTER TABLE accounts ADD COLUMN balance BLOB")
+    );
 }
 
 #[test]
@@ -76,11 +84,13 @@ model Account {
 }
 "#,
     ));
-    let next = schema(&with_models(r#"
+    let next = schema(&with_models(
+        r#"
 model Account {
   id Int @id
 }
-"#));
+"#,
+    ));
     let migration = emit(&diff(&prev, &next));
     assert!(migration.has_lossy);
     assert!(migration.down.contains("RAISE(FAIL"));
@@ -120,7 +130,11 @@ model Order {
 "#,
     ));
     let migration = emit(&diff(&prev, &next));
-    assert!(migration.up.contains("status BLOB NOT NULL DEFAULT 'pending'"));
+    assert!(
+        migration
+            .up
+            .contains("status BLOB NOT NULL DEFAULT 'pending'")
+    );
 }
 
 #[test]
@@ -182,11 +196,13 @@ model Order {
 
 #[test]
 fn empty_diff_produces_empty_migration() {
-    let s = schema(&with_models(r#"
+    let s = schema(&with_models(
+        r#"
 model Account {
   id Int @id
 }
-"#));
+"#,
+    ));
     let migration = emit(&diff(&s, &s));
     assert_eq!(migration.up.trim(), "");
     assert_eq!(migration.down.trim(), "");

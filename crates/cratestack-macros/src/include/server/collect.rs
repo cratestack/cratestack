@@ -78,16 +78,8 @@ pub(super) fn collect_server_schema(
     let auth_required_default = schema.auth.is_some();
     let is_rpc = matches!(schema.transport, cratestack_core::TransportStyle::Rpc);
 
-    let mixin_names = schema
-        .mixins
-        .iter()
-        .map(|m| schema_lit(&m.name))
-        .collect();
-    let model_names = schema
-        .models
-        .iter()
-        .map(|m| schema_lit(&m.name))
-        .collect();
+    let mixin_names = schema.mixins.iter().map(|m| schema_lit(&m.name)).collect();
+    let model_names = schema.models.iter().map(|m| schema_lit(&m.name)).collect();
     let type_names = schema.types.iter().map(|t| schema_lit(&t.name)).collect();
     let enum_names = schema.enums.iter().map(|e| schema_lit(&e.name)).collect();
     let procedure_names = schema
@@ -122,7 +114,10 @@ pub(super) fn collect_server_schema(
     let (op_descriptor_entries, route_transport_entries) = if is_rpc {
         let mut ops = Vec::new();
         for procedure in &schema.procedures {
-            ops.push(generate_procedure_op_descriptor(procedure, auth_required_default));
+            ops.push(generate_procedure_op_descriptor(
+                procedure,
+                auth_required_default,
+            ));
         }
         for model in &schema.models {
             ops.extend(generate_model_op_descriptors(model, auth_required_default));

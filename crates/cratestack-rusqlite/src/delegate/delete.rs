@@ -2,9 +2,7 @@
 
 use cratestack_sql::{IntoSqlValue, ModelDescriptor, SqliteDialect};
 
-use crate::{
-    FromRusqliteRow, RusqliteError, RusqliteRuntime, render::render_delete,
-};
+use crate::{FromRusqliteRow, RusqliteError, RusqliteRuntime, render::render_delete};
 
 use super::support::run_insert_returning;
 

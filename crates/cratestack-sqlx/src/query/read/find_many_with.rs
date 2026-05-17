@@ -78,8 +78,10 @@ impl<'a, M: 'static, PK: 'static, Rel: 'static, RelPK: 'static>
         M: Clone,
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
         Rel: Clone,
-        for<'r> Rel:
-            Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + cratestack_sql::ModelPrimaryKey<RelPK>,
+        for<'r> Rel: Send
+            + Unpin
+            + sqlx::FromRow<'r, sqlx::postgres::PgRow>
+            + cratestack_sql::ModelPrimaryKey<RelPK>,
         RelPK: Send
             + Clone
             + std::cmp::Eq
@@ -91,7 +93,14 @@ impl<'a, M: 'static, PK: 'static, Rel: 'static, RelPK: 'static>
         let runtime = self.parent.runtime;
         let relation = self.relation;
         let parents = self.parent.run(ctx).await?;
-        run_side_load(runtime, &parents, relation, ctx, None::<&mut sqlx::Transaction<'_, sqlx::Postgres>>).await
+        run_side_load(
+            runtime,
+            &parents,
+            relation,
+            ctx,
+            None::<&mut sqlx::Transaction<'_, sqlx::Postgres>>,
+        )
+        .await
     }
 
     pub async fn run_in_tx<'tx>(
@@ -103,8 +112,10 @@ impl<'a, M: 'static, PK: 'static, Rel: 'static, RelPK: 'static>
         M: Clone,
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
         Rel: Clone,
-        for<'r> Rel:
-            Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + cratestack_sql::ModelPrimaryKey<RelPK>,
+        for<'r> Rel: Send
+            + Unpin
+            + sqlx::FromRow<'r, sqlx::postgres::PgRow>
+            + cratestack_sql::ModelPrimaryKey<RelPK>,
         RelPK: Send
             + Clone
             + std::cmp::Eq

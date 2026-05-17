@@ -29,10 +29,7 @@ pub(super) fn render(
                 kind: "text",
             }],
         ),
-        SqlOp::Get => (
-            build_get_sql(info),
-            vec![pk_param(1, pk, info.pk_cast)],
-        ),
+        SqlOp::Get => (build_get_sql(info), vec![pk_param(1, pk, info.pk_cast)]),
         SqlOp::Create => {
             let (cols, binds) = payload
                 .map(|p| build_payload_bindings(info, p))
@@ -47,10 +44,7 @@ pub(super) fn render(
             params.push(pk_param((cols.len() + 1) as u32, pk, info.pk_cast));
             (build_update_sql(info, &cols), params)
         }
-        SqlOp::Delete => (
-            build_delete_sql(info),
-            vec![pk_param(1, pk, info.pk_cast)],
-        ),
+        SqlOp::Delete => (build_delete_sql(info), vec![pk_param(1, pk, info.pk_cast)]),
     };
     SqlPreview {
         driver: "sqlite",
@@ -76,9 +70,7 @@ pub(crate) fn pk_kind(cast: PkCast) -> &'static str {
     }
 }
 
-fn sample_columns_and_binds(
-    info: &ModelSqlInfo<'_>,
-) -> (Vec<String>, Vec<rusqlite::types::Value>) {
+fn sample_columns_and_binds(info: &ModelSqlInfo<'_>) -> (Vec<String>, Vec<rusqlite::types::Value>) {
     let cols = sample_column_names(info);
     let binds = info
         .columns

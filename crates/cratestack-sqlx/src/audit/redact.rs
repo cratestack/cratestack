@@ -115,8 +115,8 @@ mod tests {
 
     #[test]
     fn snapshot_round_trip_preserves_strings_and_numbers() {
-        let snap = snapshot_model(&json!({ "amount": "12.34", "currency": "USD" }))
-            .expect("serializable");
+        let snap =
+            snapshot_model(&json!({ "amount": "12.34", "currency": "USD" })).expect("serializable");
         assert_eq!(snap["amount"], json!("12.34"));
         assert_eq!(snap["currency"], json!("USD"));
     }

@@ -14,7 +14,10 @@ fn synthesize_list_query_returns_none_when_empty() {
 #[test]
 fn synthesize_list_query_round_trips_through_parse_query_pairs() {
     let mut include_fields = std::collections::BTreeMap::new();
-    include_fields.insert("author".to_owned(), vec!["id".to_owned(), "name".to_owned()]);
+    include_fields.insert(
+        "author".to_owned(),
+        vec!["id".to_owned(), "name".to_owned()],
+    );
 
     let input = RpcListInput {
         limit: Some(20),
@@ -36,11 +39,7 @@ fn synthesize_list_query_round_trips_through_parse_query_pairs() {
 
     // Every input field re-appears in the parsed pairs with the right key.
     // The parser strips no information, so this is a faithful round-trip.
-    let has = |k: &str, v: &str| {
-        pairs
-            .iter()
-            .any(|(pk, pv)| pk == k && pv == v)
-    };
+    let has = |k: &str, v: &str| pairs.iter().any(|(pk, pv)| pk == k && pv == v);
     assert!(has("limit", "20"));
     assert!(has("offset", "40"));
     assert!(has("fields", "id,title"));

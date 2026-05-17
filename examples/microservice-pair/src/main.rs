@@ -54,7 +54,11 @@ impl AuthProvider for HeaderAuthProvider {
         request: &RequestContext<'_>,
     ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
         let mut fields = Vec::new();
-        if let Some(id) = request.headers.get("x-auth-id").and_then(|v| v.to_str().ok()) {
+        if let Some(id) = request
+            .headers
+            .get("x-auth-id")
+            .and_then(|v| v.to_str().ok())
+        {
             if let Ok(id) = id.parse::<i64>() {
                 fields.push(("id".to_owned(), Value::Int(id)));
             }
@@ -111,10 +115,7 @@ fn print_surfaces() {
     );
     println!();
     println!("=== catalog (upstream, consumed via include_client_schema!) ===");
-    println!(
-        "  models = {:?}",
-        catalog_client::cratestack_schema::MODELS
-    );
+    println!("  models = {:?}", catalog_client::cratestack_schema::MODELS);
     println!();
     println!("Set DATABASE_URL and CATALOG_URL to bind the server and talk to catalog.");
 }

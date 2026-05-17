@@ -32,11 +32,13 @@ model Account {
 
 #[test]
 fn blocking_migration_carries_warning_comment() {
-    let prev = schema(&with_models(r#"
+    let prev = schema(&with_models(
+        r#"
 model Account {
   id Int @id
 }
-"#));
+"#,
+    ));
     let next = schema(&with_models(
         r#"
 model Account {
@@ -48,7 +50,11 @@ model Account {
     let migration = emit(&diff(&prev, &next));
     assert!(migration.has_blocking);
     assert!(migration.up.contains("WARNING"));
-    assert!(migration.up.contains("ALTER TABLE accounts ADD COLUMN status TEXT NOT NULL"));
+    assert!(
+        migration
+            .up
+            .contains("ALTER TABLE accounts ADD COLUMN status TEXT NOT NULL")
+    );
 }
 
 #[test]
@@ -101,7 +107,9 @@ model Order {
     ));
     let migration = emit(&diff(&prev, &next));
     assert!(
-        migration.up.contains("status TEXT NOT NULL DEFAULT 'pending'"),
+        migration
+            .up
+            .contains("status TEXT NOT NULL DEFAULT 'pending'"),
         "up was: {}",
         migration.up
     );
@@ -128,11 +136,13 @@ model Tag {
 
 #[test]
 fn empty_diff_produces_empty_migration() {
-    let s = schema(&with_models(r#"
+    let s = schema(&with_models(
+        r#"
 model Account {
   id Int @id
 }
-"#));
+"#,
+    ));
     let migration = emit(&diff(&s, &s));
     assert_eq!(migration.up.trim(), "");
     assert_eq!(migration.down.trim(), "");

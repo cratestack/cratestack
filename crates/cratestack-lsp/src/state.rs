@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use cratestack_core::{Schema, SourceSpan};
 use tokio::sync::RwLock;
-use tower_lsp_server::ls_types::Uri;
 use tower_lsp_server::Client;
+use tower_lsp_server::ls_types::Uri;
 
 use crate::analyze::analyze_document;
 

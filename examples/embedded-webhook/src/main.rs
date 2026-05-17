@@ -41,8 +41,7 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
     let runtime = Arc::new(
-        RusqliteRuntime::open(&cli.db)
-            .with_context(|| format!("opening {}", cli.db.display()))?,
+        RusqliteRuntime::open(&cli.db).with_context(|| format!("opening {}", cli.db.display()))?,
     );
     bootstrap(&runtime).context("bootstrap schema")?;
     let app = build_router(AppState { runtime });

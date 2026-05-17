@@ -153,7 +153,13 @@ async fn follow_returns_rows_matching_filter_column() {
     let schema = parse(BLOG_SCHEMA);
     let source = make_source(schema);
     let page = source
-        .follow("Post", "author_id", PkCast::BigInt, "1", PageRequest::default())
+        .follow(
+            "Post",
+            "author_id",
+            PkCast::BigInt,
+            "1",
+            PageRequest::default(),
+        )
         .await
         .expect("follow ok");
     assert_eq!(page.rows.len(), 2);

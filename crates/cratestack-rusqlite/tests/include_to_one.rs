@@ -48,14 +48,43 @@ impl CreateModelInput<Subscription> for CreateSubscriptionInput {
 }
 
 const SUBSCRIPTION_COLUMNS: &[ModelColumn] = &[
-    ModelColumn { rust_name: "id", sql_name: "id" },
-    ModelColumn { rust_name: "label", sql_name: "label" },
+    ModelColumn {
+        rust_name: "id",
+        sql_name: "id",
+    },
+    ModelColumn {
+        rust_name: "label",
+        sql_name: "label",
+    },
 ];
 
 static SUBSCRIPTION_DESCRIPTOR: ModelDescriptor<Subscription, i64> = ModelDescriptor::new(
-    "Subscription", "subscriptions", SUBSCRIPTION_COLUMNS, "id",
-    &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[],
-    None, false, &[], &[], None, None, &[],
+    "Subscription",
+    "subscriptions",
+    SUBSCRIPTION_COLUMNS,
+    "id",
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    None,
+    false,
+    &[],
+    &[],
+    None,
+    None,
+    &[],
 );
 
 // ───── Delivery (parent side, carries an optional FK) ───────────────────────
@@ -108,15 +137,47 @@ impl CreateModelInput<Delivery> for CreateDeliveryInput {
 }
 
 const DELIVERY_COLUMNS: &[ModelColumn] = &[
-    ModelColumn { rust_name: "id", sql_name: "id" },
-    ModelColumn { rust_name: "subscription_id", sql_name: "subscription_id" },
-    ModelColumn { rust_name: "label", sql_name: "label" },
+    ModelColumn {
+        rust_name: "id",
+        sql_name: "id",
+    },
+    ModelColumn {
+        rust_name: "subscription_id",
+        sql_name: "subscription_id",
+    },
+    ModelColumn {
+        rust_name: "label",
+        sql_name: "label",
+    },
 ];
 
 static DELIVERY_DESCRIPTOR: ModelDescriptor<Delivery, i64> = ModelDescriptor::new(
-    "Delivery", "deliveries", DELIVERY_COLUMNS, "id",
-    &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[],
-    None, false, &[], &[], None, None, &[],
+    "Delivery",
+    "deliveries",
+    DELIVERY_COLUMNS,
+    "id",
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    None,
+    false,
+    &[],
+    &[],
+    None,
+    None,
+    &[],
 );
 
 fn setup() -> RusqliteRuntime {
@@ -157,7 +218,7 @@ fn seed(runtime: &RusqliteRuntime) {
         (Some(1_i64), "d1-to-a"),
         (Some(1_i64), "d2-to-a"),
         (Some(2_i64), "d3-to-b"),
-        (None, "d4-orphan"),     // null FK
+        (None, "d4-orphan"),           // null FK
         (Some(99_i64), "d5-dangling"), // FK references missing subscription
     ] {
         del_delegate

@@ -64,9 +64,7 @@ enum Command {
     },
 
     /// Delete a note by id.
-    Delete {
-        id: Uuid,
-    },
+    Delete { id: Uuid },
 
     /// Print the row count (lightweight smoke test).
     Count,
@@ -248,10 +246,7 @@ fn count(runtime: &RusqliteRuntime) -> Result<(), Box<dyn std::error::Error>> {
 // failed ones; non-zero exit only on whole-batch infra failure (size
 // cap exceeded, duplicate input keys, DB connection lost).
 
-fn bulk_done(
-    runtime: &RusqliteRuntime,
-    ids: Vec<Uuid>,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn bulk_done(runtime: &RusqliteRuntime, ids: Vec<Uuid>) -> Result<(), Box<dyn std::error::Error>> {
     let notes = ModelDelegate::new(runtime, &cratestack_schema::NOTE_MODEL);
     let now = Utc::now();
     let items: Vec<_> = ids
@@ -294,10 +289,7 @@ struct ImportRow {
     completed: bool,
 }
 
-fn import(
-    runtime: &RusqliteRuntime,
-    path: PathBuf,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn import(runtime: &RusqliteRuntime, path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     let raw = std::fs::read(&path)?;
     let rows: Vec<ImportRow> = serde_json::from_slice(&raw)?;
     let now = Utc::now();
@@ -327,10 +319,7 @@ fn print_envelope(response: &cratestack::BatchResponse<cratestack_schema::Note>)
                 println!("OK  [{}] {}  {}", item.index, value.id, value.title);
             }
             BatchItemStatus::Error { error } => {
-                println!(
-                    "ERR [{}] {}: {}",
-                    item.index, error.code, error.message
-                );
+                println!("ERR [{}] {}: {}", item.index, error.code, error.message);
             }
         }
     }

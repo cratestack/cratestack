@@ -27,7 +27,10 @@ use cratestack::sqlx::query;
 use cratestack::{CoolContext, Value};
 use support::pg;
 
-include_server_schema!("tests/fixtures/builder_extensions_tier6.cstack", db = Postgres);
+include_server_schema!(
+    "tests/fixtures/builder_extensions_tier6.cstack",
+    db = Postgres
+);
 
 async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     query("DROP TABLE IF EXISTS deliverys, subscriptions")

@@ -19,7 +19,7 @@ use std::sync::OnceLock;
 
 use chrono::Utc;
 use cratestack_rusqlite::ddl::create_table_sql;
-use cratestack_rusqlite::{ModelDelegate, RusqliteRuntime, RusqliteError};
+use cratestack_rusqlite::{ModelDelegate, RusqliteError, RusqliteRuntime};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

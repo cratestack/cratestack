@@ -71,7 +71,10 @@ pub(crate) fn push_scoped_conditions<'a, M, PK, Id>(
         query.push(" AND ");
     }
     let (allow, deny) = match policy_kind {
-        ReadPolicyKind::List => (descriptor.read_allow_policies, descriptor.read_deny_policies),
+        ReadPolicyKind::List => (
+            descriptor.read_allow_policies,
+            descriptor.read_deny_policies,
+        ),
         ReadPolicyKind::Detail => (
             descriptor.detail_allow_policies,
             descriptor.detail_deny_policies,

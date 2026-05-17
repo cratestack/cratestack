@@ -28,10 +28,7 @@ pub(super) fn render(
                 kind: "text",
             }],
         ),
-        SqlOp::Get => (
-            build_get_sql(info),
-            vec![pk_param(1, pk, info.pk_cast)],
-        ),
+        SqlOp::Get => (build_get_sql(info), vec![pk_param(1, pk, info.pk_cast)]),
         SqlOp::Create => {
             let (cols, binds) = payload
                 .map(|p| collect_payload(schema, model_name, info, p))
@@ -46,10 +43,7 @@ pub(super) fn render(
             params.push(pk_param((cols.len() + 1) as u32, pk, info.pk_cast));
             (build_update_sql(info, &cols), params)
         }
-        SqlOp::Delete => (
-            build_delete_sql(info),
-            vec![pk_param(1, pk, info.pk_cast)],
-        ),
+        SqlOp::Delete => (build_delete_sql(info), vec![pk_param(1, pk, info.pk_cast)]),
     };
     SqlPreview {
         driver: "postgres",

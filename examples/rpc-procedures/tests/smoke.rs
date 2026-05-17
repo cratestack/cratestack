@@ -4,9 +4,9 @@
 //!
 //! Reading these tests is how you learn the example.
 
-use cratestack::axum::body::{to_bytes, Body};
-use cratestack::axum::http::{Request, StatusCode};
 use cratestack::CoolCodec;
+use cratestack::axum::body::{Body, to_bytes};
+use cratestack::axum::http::{Request, StatusCode};
 use cratestack_codec_cbor::CborCodec;
 use cratestack_codec_json::JsonCodec;
 use rpc_procedures_example::build_router;

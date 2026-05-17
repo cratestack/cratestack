@@ -85,13 +85,14 @@ where
     O: serde::de::DeserializeOwned + Send + 'static,
 {
     type Output = Result<O, RpcClientError>;
-    type IntoFuture =
-        std::pin::Pin<Box<dyn std::future::Future<Output = Self::Output> + Send>>;
+    type IntoFuture = std::pin::Pin<Box<dyn std::future::Future<Output = Self::Output> + Send>>;
 
     fn into_future(self) -> Self::IntoFuture {
         Box::pin(async move {
             let value = self.input_value.map_err(RpcClientError::Codec)?;
-            self.rpc.call::<serde_json::Value, O>(&self.op_id, &value).await
+            self.rpc
+                .call::<serde_json::Value, O>(&self.op_id, &value)
+                .await
         })
     }
 }

@@ -54,11 +54,13 @@ model User {
 
 #[test]
 fn ops_are_ordered_drops_before_creates_indexes_last() {
-    let prev = schema(&with_models(r#"
+    let prev = schema(&with_models(
+        r#"
 model Old {
   id Int @id
 }
-"#));
+"#,
+    ));
     let next = schema(&with_models(
         r#"
 model New {

@@ -11,12 +11,8 @@
 //! below, on top of the same generated `ModelDelegate`. The schema itself
 //! stays clean of "client bookkeeping" concerns.
 
-use chrono::Utc;
 use cratestack_macros::include_embedded_schema;
-use cratestack_rusqlite::ddl::create_table_sql;
-use cratestack_rusqlite::{ModelDelegate, RusqliteRuntime};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 include_embedded_schema!("schema.cstack");
 
@@ -181,8 +177,8 @@ mod wasm {
 
     #[wasm_bindgen]
     pub fn mark_done(id: &str) -> Result<JsValue, JsValue> {
-        let uuid =
-            Uuid::parse_str(id).map_err(|error| JsValue::from_str(&format!("bad uuid: {error}")))?;
+        let uuid = Uuid::parse_str(id)
+            .map_err(|error| JsValue::from_str(&format!("bad uuid: {error}")))?;
         with_runtime(|runtime| {
             let notes = ModelDelegate::new(runtime, &cratestack_schema::NOTE_MODEL);
             notes
@@ -202,8 +198,8 @@ mod wasm {
 
     #[wasm_bindgen]
     pub fn delete_note(id: &str) -> Result<JsValue, JsValue> {
-        let uuid =
-            Uuid::parse_str(id).map_err(|error| JsValue::from_str(&format!("bad uuid: {error}")))?;
+        let uuid = Uuid::parse_str(id)
+            .map_err(|error| JsValue::from_str(&format!("bad uuid: {error}")))?;
         with_runtime(|runtime| {
             let notes = ModelDelegate::new(runtime, &cratestack_schema::NOTE_MODEL);
             notes.delete(uuid).run()
@@ -292,9 +288,9 @@ mod wasm {
         };
         with_runtime(|runtime| {
             let notes = ModelDelegate::new(runtime, &cratestack_schema::NOTE_MODEL);
-            let mut query = notes.find_many().order_by(
-                cratestack_schema::note::updatedAt().asc(),
-            );
+            let mut query = notes
+                .find_many()
+                .order_by(cratestack_schema::note::updatedAt().asc());
             if let Some(cutoff) = cutoff {
                 query = query.where_(cratestack_schema::note::updatedAt().gt(cutoff));
             }

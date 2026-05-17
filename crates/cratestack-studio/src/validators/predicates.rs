@@ -110,7 +110,9 @@ fn length_error(field: &Field, bound: i64, comparator: &str) -> FieldError {
 }
 
 fn check_range(field: &Field, value: &serde_json::Value, args: &str) -> Option<FieldError> {
-    let n = value.as_i64().or_else(|| value.as_f64().map(|f| f as i64))?;
+    let n = value
+        .as_i64()
+        .or_else(|| value.as_f64().map(|f| f as i64))?;
     let (min, max) = parse_min_max(args);
     if let Some(m) = min
         && n < m

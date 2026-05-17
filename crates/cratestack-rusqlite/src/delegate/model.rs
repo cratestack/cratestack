@@ -21,10 +21,7 @@ pub struct ModelDelegate<'a, M: 'static, PK: 'static> {
 }
 
 impl<'a, M: 'static, PK: 'static> ModelDelegate<'a, M, PK> {
-    pub fn new(
-        runtime: &'a RusqliteRuntime,
-        descriptor: &'static ModelDescriptor<M, PK>,
-    ) -> Self {
+    pub fn new(runtime: &'a RusqliteRuntime, descriptor: &'static ModelDescriptor<M, PK>) -> Self {
         Self {
             runtime,
             descriptor,

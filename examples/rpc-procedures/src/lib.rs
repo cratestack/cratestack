@@ -11,13 +11,11 @@
 
 use cratestack::axum::Router;
 use cratestack::sqlx::postgres::PgPoolOptions;
-use cratestack::{
-    AuthProvider, CodecSet, CoolContext, CoolError, RequestContext, Value,
-};
+use cratestack::{AuthProvider, CodecSet, CoolContext, CoolError, RequestContext, Value};
 use cratestack_codec_cbor::CborCodec;
 use cratestack_codec_json::JsonCodec;
-use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, Ordering};
 
 cratestack::include_server_schema!("schema.cstack", db = Postgres);
 
@@ -59,8 +57,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     > + Send {
         let counter = Arc::clone(&self.counter);
         async move {
-            let total =
-                counter.fetch_add(args.args.by, Ordering::Relaxed) + args.args.by;
+            let total = counter.fetch_add(args.args.by, Ordering::Relaxed) + args.args.by;
             Ok(cratestack_schema::CounterValue { total })
         }
     }

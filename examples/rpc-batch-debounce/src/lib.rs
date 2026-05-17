@@ -28,7 +28,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use cratestack::axum::Router;
-use cratestack::axum::body::{to_bytes, Body};
+use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack::rpc::{RpcRequest, RpcResponseFrame};
 use cratestack::sqlx::postgres::PgPoolOptions;
@@ -37,7 +37,7 @@ use cratestack::{
 };
 use cratestack_codec_cbor::CborCodec;
 use cratestack_codec_json::JsonCodec;
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{Mutex, oneshot};
 use tower::ServiceExt;
 
 cratestack::include_server_schema!("schema.cstack", db = Postgres);
@@ -292,8 +292,8 @@ impl BatchDebouncer {
             .encode(&frames)
             .map_err(|e| DebouncerError::Transport(format!("encode batch body: {e}")))?;
 
-        let mut builder = Request::post("/rpc/batch")
-            .header("content-type", CborCodec::CONTENT_TYPE);
+        let mut builder =
+            Request::post("/rpc/batch").header("content-type", CborCodec::CONTENT_TYPE);
         if let Some(auth) = &self.inner.auth_header {
             builder = builder.header("x-auth-id", auth);
         }

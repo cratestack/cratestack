@@ -21,7 +21,10 @@ pub struct ModelDelegate<'a, M: 'static, PK: 'static> {
 
 impl<'a, M: 'static, PK: 'static> ModelDelegate<'a, M, PK> {
     pub fn new(runtime: &'a SqlxRuntime, descriptor: &'static ModelDescriptor<M, PK>) -> Self {
-        Self { runtime, descriptor }
+        Self {
+            runtime,
+            descriptor,
+        }
     }
 
     pub fn descriptor(&self) -> &'static ModelDescriptor<M, PK> {

@@ -43,13 +43,7 @@ pub fn render_select<M, PK>(
             if needs_join {
                 where_sql.push_str(" AND ");
             }
-            render_filter_expr(
-                dialect,
-                filter,
-                &mut where_sql,
-                &mut binds,
-                &mut bind_index,
-            );
+            render_filter_expr(dialect, filter, &mut where_sql, &mut binds, &mut bind_index);
             needs_join = true;
         }
     }

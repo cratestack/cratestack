@@ -5,9 +5,7 @@
 use std::collections::HashMap;
 use std::hash::Hash;
 
-use cratestack_core::{
-    AuditOperation, BatchResponse, CoolContext, CoolError, ModelEventKind,
-};
+use cratestack_core::{AuditOperation, BatchResponse, CoolContext, CoolError, ModelEventKind};
 
 use crate::audit::{build_audit_event, enqueue_audit_event, ensure_audit_table};
 use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
@@ -118,13 +116,8 @@ impl<'a, M: 'static, PK: 'static> BatchDelete<'a, M, PK> {
             }
             if audit_enabled {
                 let before = serde_json::to_value(record).ok();
-                let event = build_audit_event(
-                    self.descriptor,
-                    AuditOperation::Delete,
-                    before,
-                    None,
-                    ctx,
-                );
+                let event =
+                    build_audit_event(self.descriptor, AuditOperation::Delete, before, None, ctx);
                 enqueue_audit_event(&mut *tx, &event).await?;
             }
         }
@@ -140,8 +133,7 @@ impl<'a, M: 'static, PK: 'static> BatchDelete<'a, M, PK> {
         // Walk-and-match: any input id whose row isn't in `deleted`
         // failed the WHERE (tombstoned, policy denied, never existed).
         // All three collapse to NotFound on the wire.
-        let mut by_pk: HashMap<PK, M> =
-            deleted.into_iter().map(|m| (m.primary_key(), m)).collect();
+        let mut by_pk: HashMap<PK, M> = deleted.into_iter().map(|m| (m.primary_key(), m)).collect();
         let per_item: Vec<Result<M, CoolError>> = self
             .ids
             .into_iter()

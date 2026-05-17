@@ -39,8 +39,7 @@ async fn hmac_envelope_rejects_stale_timestamp() {
     let key = keys.resolve_signing_key("ops-1").await.expect("key");
     let mut mac = <Hmac<sha2::Sha256> as Mac>::new_from_slice(&key).unwrap();
     mac.update(&sealed.signing_input().unwrap());
-    sealed.mac_b64 =
-        base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes());
+    sealed.mac_b64 = base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes());
 
     let err = env.open(&sealed).await.expect_err("must reject");
     assert_eq!(err.code(), "UNAUTHORIZED");

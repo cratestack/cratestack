@@ -18,8 +18,10 @@ where
     M: 'static + Clone,
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
     Rel: 'static + Clone,
-    for<'r> Rel:
-        Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + cratestack_sql::ModelPrimaryKey<RelPK>,
+    for<'r> Rel: Send
+        + Unpin
+        + sqlx::FromRow<'r, sqlx::postgres::PgRow>
+        + cratestack_sql::ModelPrimaryKey<RelPK>,
     RelPK: 'static
         + Send
         + Clone

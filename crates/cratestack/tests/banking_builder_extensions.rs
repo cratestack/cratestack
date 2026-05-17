@@ -67,7 +67,11 @@ async fn update_many_mutates_matched_rows_and_writes_audit_per_row() {
     };
     let pool = &test_pg.pool;
     reset_schema(pool).await;
-    seed(pool, &[(1, "alpha", 100), (2, "beta", 200), (3, "gamma", 300)]).await;
+    seed(
+        pool,
+        &[(1, "alpha", 100), (2, "beta", 200), (3, "gamma", 300)],
+    )
+    .await;
 
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
     let ctx = operator();
@@ -102,12 +106,13 @@ async fn update_many_mutates_matched_rows_and_writes_audit_per_row() {
     );
 
     // An audit row exists for the update.
-    let audit_count: i64 =
-        query("SELECT COUNT(*) FROM cratestack_audit WHERE model = 'BatchRow' AND operation = 'update'")
-            .fetch_one(pool)
-            .await
-            .unwrap()
-            .get(0);
+    let audit_count: i64 = query(
+        "SELECT COUNT(*) FROM cratestack_audit WHERE model = 'BatchRow' AND operation = 'update'",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap()
+    .get(0);
     assert_eq!(audit_count, 1, "exactly one audit row for the one match");
 
     // Untouched rows must keep their original balance.
@@ -146,14 +151,13 @@ async fn update_many_without_filter_is_rejected_before_any_sql_runs() {
     assert!(detail.contains("at least one filter"), "got: {detail:?}");
 
     // Confirm no rows were mutated.
-    let surviving_balances: Vec<i64> =
-        query("SELECT balance FROM batch_rows ORDER BY id")
-            .fetch_all(pool)
-            .await
-            .unwrap()
-            .into_iter()
-            .map(|r| r.get::<i64, _>("balance"))
-            .collect();
+    let surviving_balances: Vec<i64> = query("SELECT balance FROM batch_rows ORDER BY id")
+        .fetch_all(pool)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|r| r.get::<i64, _>("balance"))
+        .collect();
     assert_eq!(surviving_balances, vec![100, 200]);
 }
 
@@ -193,12 +197,13 @@ async fn run_in_tx_create_commits_audit_and_outbox_alongside_row() {
     assert_eq!(found, 7);
 
     // Audit row written inside the caller's tx must be visible after commit.
-    let audit_count: i64 =
-        query("SELECT COUNT(*) FROM cratestack_audit WHERE model = 'BatchRow' AND operation = 'create'")
-            .fetch_one(pool)
-            .await
-            .unwrap()
-            .get(0);
+    let audit_count: i64 = query(
+        "SELECT COUNT(*) FROM cratestack_audit WHERE model = 'BatchRow' AND operation = 'create'",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap()
+    .get(0);
     assert_eq!(audit_count, 1);
 }
 
@@ -235,12 +240,11 @@ async fn run_in_tx_rollback_unwinds_row_audit_and_outbox_together() {
         .get(0);
     assert_eq!(count, 0, "row must not be visible after rollback");
 
-    let audit_count: i64 =
-        query("SELECT COUNT(*) FROM cratestack_audit WHERE model = 'BatchRow'")
-            .fetch_one(pool)
-            .await
-            .unwrap()
-            .get(0);
+    let audit_count: i64 = query("SELECT COUNT(*) FROM cratestack_audit WHERE model = 'BatchRow'")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+        .get(0);
     assert_eq!(audit_count, 0, "audit row must roll back with the row");
 }
 

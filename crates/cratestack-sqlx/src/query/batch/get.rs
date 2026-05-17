@@ -22,8 +22,7 @@ pub struct BatchGet<'a, M: 'static, PK: 'static> {
 impl<'a, M: 'static, PK: 'static> BatchGet<'a, M, PK> {
     pub async fn run(self, ctx: &CoolContext) -> Result<BatchResponse<M>, CoolError>
     where
-        for<'r> M:
-            Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + ModelPrimaryKey<PK>,
+        for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + ModelPrimaryKey<PK>,
         PK: Clone
             + Eq
             + Hash
@@ -68,8 +67,7 @@ impl<'a, M: 'static, PK: 'static> BatchGet<'a, M, PK> {
 
         // Walk-and-match: pair each input PK back to its row, or
         // NotFound when the read policy / soft-delete excluded it.
-        let mut by_pk: HashMap<PK, M> =
-            rows.into_iter().map(|m| (m.primary_key(), m)).collect();
+        let mut by_pk: HashMap<PK, M> = rows.into_iter().map(|m| (m.primary_key(), m)).collect();
         let per_item: Vec<Result<M, CoolError>> = self
             .ids
             .into_iter()

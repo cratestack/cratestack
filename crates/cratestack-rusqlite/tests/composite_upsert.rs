@@ -73,10 +73,22 @@ impl UpsertModelInput<Slot> for UpsertSlotInput {
 }
 
 const COLUMNS: &[ModelColumn] = &[
-    ModelColumn { rust_name: "id", sql_name: "id" },
-    ModelColumn { rust_name: "envelope_id", sql_name: "envelope_id" },
-    ModelColumn { rust_name: "slot", sql_name: "slot" },
-    ModelColumn { rust_name: "payload", sql_name: "payload" },
+    ModelColumn {
+        rust_name: "id",
+        sql_name: "id",
+    },
+    ModelColumn {
+        rust_name: "envelope_id",
+        sql_name: "envelope_id",
+    },
+    ModelColumn {
+        rust_name: "slot",
+        sql_name: "slot",
+    },
+    ModelColumn {
+        rust_name: "payload",
+        sql_name: "payload",
+    },
 ];
 
 // `upsert_update_columns` lists the non-key fields the DO UPDATE clause
@@ -86,9 +98,32 @@ const COLUMNS: &[ModelColumn] = &[
 static UPSERT_UPDATE_COLUMNS: &[&str] = &["payload"];
 
 static SLOT_DESCRIPTOR: ModelDescriptor<Slot, i64> = ModelDescriptor::new(
-    "Slot", "slots", COLUMNS, "id",
-    &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[],
-    None, false, &[], &[], None, None, UPSERT_UPDATE_COLUMNS,
+    "Slot",
+    "slots",
+    COLUMNS,
+    "id",
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    None,
+    false,
+    &[],
+    &[],
+    None,
+    None,
+    UPSERT_UPDATE_COLUMNS,
 );
 
 fn setup() -> RusqliteRuntime {

@@ -21,8 +21,12 @@ pub(crate) fn handle_diff(
     name: String,
     allow_destructive: bool,
 ) -> Result<()> {
-    let next_schema = cratestack_parser::parse_schema_file(&schema)
-        .map_err(|error| anyhow::anyhow!("{}", crate::cli_support::render_schema_error(&schema, &error)))?;
+    let next_schema = cratestack_parser::parse_schema_file(&schema).map_err(|error| {
+        anyhow::anyhow!(
+            "{}",
+            crate::cli_support::render_schema_error(&schema, &error)
+        )
+    })?;
 
     let slug = sanitize_slug(&name);
     let timestamp = Utc::now().format("%Y%m%d%H%M%S").to_string();
@@ -40,10 +44,7 @@ pub(crate) fn handle_diff(
 
         let ops = diff(&prev_snapshot.schema, &next_schema);
         if ops.is_empty() {
-            println!(
-                "migrate diff [{}]: no changes",
-                backend.slug()
-            );
+            println!("migrate diff [{}]: no changes", backend.slug());
             continue;
         }
 
@@ -101,12 +102,10 @@ pub(crate) fn handle_diff(
 }
 
 fn write_migration(directory: &Path, migration: &EmittedMigration) -> Result<()> {
-    fs::create_dir_all(directory)
-        .with_context(|| format!("creating {}", directory.display()))?;
+    fs::create_dir_all(directory).with_context(|| format!("creating {}", directory.display()))?;
     let up_path = directory.join("up.sql");
     let down_path = directory.join("down.sql");
-    fs::write(&up_path, &migration.up)
-        .with_context(|| format!("writing {}", up_path.display()))?;
+    fs::write(&up_path, &migration.up).with_context(|| format!("writing {}", up_path.display()))?;
     fs::write(&down_path, &migration.down)
         .with_context(|| format!("writing {}", down_path.display()))?;
     Ok(())

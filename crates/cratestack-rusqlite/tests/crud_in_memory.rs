@@ -198,7 +198,10 @@ fn find_many_filters_and_orders() {
         .run()
         .expect("find_many succeeds");
 
-    assert_eq!(results.iter().map(|p| p.title.as_str()).collect::<Vec<_>>(), ["alpha", "gamma"]);
+    assert_eq!(
+        results.iter().map(|p| p.title.as_str()).collect::<Vec<_>>(),
+        ["alpha", "gamma"]
+    );
 }
 
 #[test]

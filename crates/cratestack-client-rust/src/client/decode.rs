@@ -82,9 +82,7 @@ where
     let message = error
         .as_ref()
         .map(|value| value.message.clone())
-        .unwrap_or_else(|| {
-            format!("unexpected error body for status {}", response.status_code)
-        });
+        .unwrap_or_else(|| format!("unexpected error body for status {}", response.status_code));
     ClientError::Remote {
         status: StatusCode::from_u16(response.status_code)
             .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),

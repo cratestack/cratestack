@@ -42,7 +42,11 @@ impl AuthProvider for HeaderAuthProvider {
         request: &RequestContext<'_>,
     ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
         let mut fields = Vec::new();
-        if let Some(id) = request.headers.get("x-auth-id").and_then(|v| v.to_str().ok()) {
+        if let Some(id) = request
+            .headers
+            .get("x-auth-id")
+            .and_then(|v| v.to_str().ok())
+        {
             match id.parse::<i64>() {
                 Ok(id) => fields.push(("id".to_owned(), Value::Int(id))),
                 Err(error) => {
@@ -74,7 +78,10 @@ fn build_router(db: cratestack_schema::Cratestack) -> Router {
 }
 
 fn print_route_table() {
-    println!("Generated routes ({}):", cratestack_schema::axum::ROUTE_TRANSPORTS.len());
+    println!(
+        "Generated routes ({}):",
+        cratestack_schema::axum::ROUTE_TRANSPORTS.len()
+    );
     for route in cratestack_schema::axum::ROUTE_TRANSPORTS {
         println!("  {:<8} {}", route.method, route.path);
     }
@@ -124,7 +131,9 @@ mod tests {
             .iter()
             .map(|r| r.path)
             .collect();
-        assert!(paths.iter().any(|p| p.contains("articles")), "got: {paths:?}");
+        assert!(
+            paths.iter().any(|p| p.contains("articles")),
+            "got: {paths:?}"
+        );
     }
-
 }

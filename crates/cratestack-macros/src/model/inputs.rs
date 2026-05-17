@@ -152,8 +152,11 @@ pub(crate) fn generate_upsert_input_struct(
     let input_ident = ident(&format!("Create{}Input", model.name));
     let model_ident = ident(&model.name);
     let pk_field_ident = ident(&primary_key.name);
-    let pk_value =
-        sql_value_tokens(quote! { self.#pk_field_ident.clone() }, &primary_key.ty, enum_names);
+    let pk_value = sql_value_tokens(
+        quote! { self.#pk_field_ident.clone() },
+        &primary_key.ty,
+        enum_names,
+    );
 
     // sql_values()/validate() defer to CreateModelInput on the same
     // struct (keeps validators in one place); fully qualified to

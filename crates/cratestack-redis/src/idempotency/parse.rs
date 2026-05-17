@@ -121,9 +121,7 @@ pub(super) fn next_u16_decimal<I: Iterator<Item = RedisValue>>(
 ) -> Result<u16, CoolError> {
     let n = next_i64_decimal(iter, field)?;
     u16::try_from(n).map_err(|_| {
-        CoolError::Internal(format!(
-            "redis idempotency: {field} out of u16 range: {n}"
-        ))
+        CoolError::Internal(format!("redis idempotency: {field} out of u16 range: {n}"))
     })
 }
 

@@ -113,8 +113,7 @@ fn resolves_type_reference_to_declaration_name_span() {
     assert!(diagnostics.is_empty());
     let schema = schema.expect("schema should parse");
     let offset = text.rfind("FeedInput").expect("return type should exist");
-    let span =
-        type_reference_target_span(&schema, offset).expect("type reference should resolve");
+    let span = type_reference_target_span(&schema, offset).expect("type reference should resolve");
 
     assert_eq!(&text[span.start..span.end], "FeedInput");
     assert_eq!(

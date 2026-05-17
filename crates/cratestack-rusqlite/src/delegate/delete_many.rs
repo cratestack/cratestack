@@ -93,5 +93,9 @@ fn run_delete_many_returning<M: FromRusqliteRow>(
             count += 1;
         }
     }
-    Ok(BatchSummary { total: count, ok: count, err: 0 })
+    Ok(BatchSummary {
+        total: count,
+        ok: count,
+        err: 0,
+    })
 }

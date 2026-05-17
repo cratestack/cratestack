@@ -25,8 +25,14 @@ impl<'a, M: 'static, PK: 'static> ScopedBatchGet<'a, M, PK> {
 
     pub async fn run(self) -> Result<BatchResponse<M>, CoolError>
     where
-        for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + crate::ModelPrimaryKey<PK>,
-        PK: Clone + Eq + Hash + Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
+        for<'r> M:
+            Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + crate::ModelPrimaryKey<PK>,
+        PK: Clone
+            + Eq
+            + Hash
+            + Send
+            + sqlx::Type<sqlx::Postgres>
+            + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
         self.request.run(&self.ctx).await
     }
@@ -75,7 +81,12 @@ where
     pub async fn run(self) -> Result<BatchResponse<M>, CoolError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
-        PK: Clone + Eq + Hash + Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
+        PK: Clone
+            + Eq
+            + Hash
+            + Send
+            + sqlx::Type<sqlx::Postgres>
+            + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
         self.request.run(&self.ctx).await
     }
@@ -94,8 +105,17 @@ impl<'a, M: 'static, PK: 'static> ScopedBatchDelete<'a, M, PK> {
 
     pub async fn run(self) -> Result<BatchResponse<M>, CoolError>
     where
-        for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + crate::ModelPrimaryKey<PK> + serde::Serialize,
-        PK: Clone + Eq + Hash + Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
+        for<'r> M: Send
+            + Unpin
+            + sqlx::FromRow<'r, sqlx::postgres::PgRow>
+            + crate::ModelPrimaryKey<PK>
+            + serde::Serialize,
+        PK: Clone
+            + Eq
+            + Hash
+            + Send
+            + sqlx::Type<sqlx::Postgres>
+            + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
         self.request.run(&self.ctx).await
     }

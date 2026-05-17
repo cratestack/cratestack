@@ -91,11 +91,7 @@ fn macro_emitted_descriptor_decodes_uuid_primary_key() {
         })
         .unwrap();
 
-    let fetched = delegate
-        .find_unique(id)
-        .run()
-        .unwrap()
-        .expect("row exists");
+    let fetched = delegate.find_unique(id).run().unwrap().expect("row exists");
     assert_eq!(fetched.id, id);
     assert_eq!(fetched.label, "important");
 }
@@ -140,7 +136,10 @@ fn find_many_with_filter_uses_macro_emitted_fieldref() {
         .expect("find_many succeeds");
 
     assert_eq!(
-        actives.iter().map(|a| a.ownerName.clone()).collect::<Vec<_>>(),
+        actives
+            .iter()
+            .map(|a| a.ownerName.clone())
+            .collect::<Vec<_>>(),
         vec!["Alice".to_string(), "Carol".to_string()],
     );
 }
@@ -395,10 +394,19 @@ fn batch_create_isolates_per_item_failures_via_savepoint() {
 
     // Both successes must have actually persisted — proves savepoints
     // released cleanly and the outer commit went through.
-    assert_eq!(delegate.find_unique(a).run().unwrap().unwrap().label, "fresh-a");
-    assert_eq!(delegate.find_unique(c).run().unwrap().unwrap().label, "fresh-c");
+    assert_eq!(
+        delegate.find_unique(a).run().unwrap().unwrap().label,
+        "fresh-a"
+    );
+    assert_eq!(
+        delegate.find_unique(c).run().unwrap().unwrap().label,
+        "fresh-c"
+    );
     // And the seeded row was NOT overwritten by the failing item.
-    assert_eq!(delegate.find_unique(b).run().unwrap().unwrap().label, "existing");
+    assert_eq!(
+        delegate.find_unique(b).run().unwrap().unwrap().label,
+        "existing"
+    );
 }
 
 #[test]
@@ -440,7 +448,10 @@ fn batch_update_marks_missing_rows_as_not_found_without_failing_others() {
     assert_eq!(err_code(&response.results[1]), "NOT_FOUND");
 
     // The successful update committed; the failed one had no effect.
-    assert_eq!(delegate.find_unique(a).run().unwrap().unwrap().label, "after");
+    assert_eq!(
+        delegate.find_unique(a).run().unwrap().unwrap().label,
+        "after"
+    );
     assert!(delegate.find_unique(ghost).run().unwrap().is_none());
 }
 
@@ -567,7 +578,10 @@ fn batch_empty_input_returns_zero_count_envelope_without_touching_db() {
     let runtime = setup();
     let delegate = ModelDelegate::<Tag, uuid::Uuid>::new(&runtime, &TAG_MODEL);
 
-    let response = delegate.batch_get(vec![]).run().expect("empty batch_get ok");
+    let response = delegate
+        .batch_get(vec![])
+        .run()
+        .expect("empty batch_get ok");
     assert_eq!(response.summary.total, 0);
     assert_eq!(response.summary.ok, 0);
     assert_eq!(response.summary.err, 0);
@@ -631,16 +645,37 @@ fn batch_update_does_not_persist_failed_items() {
 
     let _response = delegate
         .batch_update(vec![
-            (alpha, cratestack_schema::UpdateTagInput { label: Some("alpha-new".into()) }),
-            (ghost, cratestack_schema::UpdateTagInput { label: Some("never-applied".into()) }),
-            (beta, cratestack_schema::UpdateTagInput { label: Some("beta-new".into()) }),
+            (
+                alpha,
+                cratestack_schema::UpdateTagInput {
+                    label: Some("alpha-new".into()),
+                },
+            ),
+            (
+                ghost,
+                cratestack_schema::UpdateTagInput {
+                    label: Some("never-applied".into()),
+                },
+            ),
+            (
+                beta,
+                cratestack_schema::UpdateTagInput {
+                    label: Some("beta-new".into()),
+                },
+            ),
         ])
         .run()
         .expect("batch_update infra ok");
 
     // Both flanking successes persisted; the ghost did not.
-    assert_eq!(delegate.find_unique(alpha).run().unwrap().unwrap().label, "alpha-new");
-    assert_eq!(delegate.find_unique(beta).run().unwrap().unwrap().label, "beta-new");
+    assert_eq!(
+        delegate.find_unique(alpha).run().unwrap().unwrap().label,
+        "alpha-new"
+    );
+    assert_eq!(
+        delegate.find_unique(beta).run().unwrap().unwrap().label,
+        "beta-new"
+    );
     assert!(delegate.find_unique(ghost).run().unwrap().is_none());
 
     // And the database has exactly 2 rows total — no orphan from the
@@ -683,8 +718,14 @@ fn batch_create_rejects_duplicate_constraint_per_item_not_whole_batch() {
     assert_eq!(err_code(&response.results[2]), "CONFLICT");
 
     // The first two committed; the third left no trace.
-    assert_eq!(delegate.find_unique(dup).run().unwrap().unwrap().label, "first");
-    assert_eq!(delegate.find_unique(other).run().unwrap().unwrap().label, "middle");
+    assert_eq!(
+        delegate.find_unique(dup).run().unwrap().unwrap().label,
+        "first"
+    );
+    assert_eq!(
+        delegate.find_unique(other).run().unwrap().unwrap().label,
+        "middle"
+    );
     assert_eq!(delegate.find_many().run().unwrap().len(), 2);
 }
 
@@ -702,7 +743,13 @@ fn descriptor_columns_match_model_field_order() {
         );
     }
     // Silence unused warnings for items only used at compile-time elsewhere.
-    let _ = (SqlValue::Int(0), SqlColumnValue { column: "x", value: SqlValue::Int(0) });
+    let _ = (
+        SqlValue::Int(0),
+        SqlColumnValue {
+            column: "x",
+            value: SqlValue::Int(0),
+        },
+    );
     let _ = Value::Null;
     let _: fn(&rusqlite::Row<'_>) -> rusqlite::Result<Account> = Account::from_rusqlite_row;
     let _: &ModelDescriptor<Account, i64> = &ACCOUNT_MODEL;

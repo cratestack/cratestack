@@ -15,8 +15,14 @@ fn upsert_with_composite_conflict_emits_tuple_in_on_conflict() {
         &dialect,
         &descriptor,
         &[
-            SqlColumnValue { column: "title", value: SqlValue::String("hi".into()) },
-            SqlColumnValue { column: "published", value: SqlValue::Bool(true) },
+            SqlColumnValue {
+                column: "title",
+                value: SqlValue::String("hi".into()),
+            },
+            SqlColumnValue {
+                column: "published",
+                value: SqlValue::Bool(true),
+            },
         ],
         ConflictTarget::Columns(&["title", "published"]),
     );
@@ -33,12 +39,18 @@ fn upsert_default_conflict_target_is_primary_key() {
     let (pk_sql, _) = render_upsert(
         &dialect,
         &descriptor,
-        &[SqlColumnValue { column: "title", value: SqlValue::String("x".into()) }],
+        &[SqlColumnValue {
+            column: "title",
+            value: SqlValue::String("x".into()),
+        }],
     );
     let (explicit_sql, _) = render_upsert_with_conflict(
         &dialect,
         &descriptor,
-        &[SqlColumnValue { column: "title", value: SqlValue::String("x".into()) }],
+        &[SqlColumnValue {
+            column: "title",
+            value: SqlValue::String("x".into()),
+        }],
         ConflictTarget::PrimaryKey,
     );
     assert_eq!(pk_sql, explicit_sql);

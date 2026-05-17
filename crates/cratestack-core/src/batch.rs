@@ -47,12 +47,8 @@ pub struct BatchItemResult<T> {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "lowercase")]
 pub enum BatchItemStatus<T> {
-    Ok {
-        value: T,
-    },
-    Error {
-        error: BatchItemError,
-    },
+    Ok { value: T },
+    Error { error: BatchItemError },
 }
 
 /// Public, safe-to-expose shape of a per-item failure. Mirrors

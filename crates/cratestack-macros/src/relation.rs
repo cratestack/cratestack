@@ -54,8 +54,8 @@ pub(crate) use types::{RelationLink, relation_link};
 mod tests {
     use cratestack_core::{Attribute, Field, SourceSpan, TypeRef};
 
-    use super::parse::{parse_relation_attribute, split_top_level};
     use super::order_recursive::wrappers_allow_ordering;
+    use super::parse::{parse_relation_attribute, split_top_level};
     use super::types::{RelationFilterWrapperKind, RelationLink, RelationPathSegment};
 
     fn span() -> SourceSpan {

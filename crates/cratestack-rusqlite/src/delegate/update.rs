@@ -5,9 +5,7 @@ use std::marker::PhantomData;
 
 use cratestack_sql::{IntoSqlValue, ModelDescriptor, SqliteDialect, UpdateModelInput};
 
-use crate::{
-    FromRusqliteRow, RusqliteError, RusqliteRuntime, render::render_update,
-};
+use crate::{FromRusqliteRow, RusqliteError, RusqliteRuntime, render::render_update};
 
 use super::support::run_insert_returning;
 
@@ -45,7 +43,12 @@ where
     pub fn preview_sql(&self) -> String {
         let dialect = SqliteDialect;
         let values = self.input.sql_values();
-        let (sql, _) = render_update(&dialect, self.descriptor, &values, self.id.clone().into_sql_value());
+        let (sql, _) = render_update(
+            &dialect,
+            self.descriptor,
+            &values,
+            self.id.clone().into_sql_value(),
+        );
         sql
     }
 
@@ -55,7 +58,12 @@ where
     {
         let dialect = SqliteDialect;
         let values = self.input.sql_values();
-        let (sql, binds) = render_update(&dialect, self.descriptor, &values, self.id.clone().into_sql_value());
+        let (sql, binds) = render_update(
+            &dialect,
+            self.descriptor,
+            &values,
+            self.id.clone().into_sql_value(),
+        );
         self.runtime
             .with_connection(|conn| run_insert_returning(conn, &sql, &binds))
     }
@@ -68,7 +76,12 @@ where
     {
         let dialect = SqliteDialect;
         let values = self.input.sql_values();
-        let (sql, binds) = render_update(&dialect, self.descriptor, &values, self.id.clone().into_sql_value());
+        let (sql, binds) = render_update(
+            &dialect,
+            self.descriptor,
+            &values,
+            self.id.clone().into_sql_value(),
+        );
         run_insert_returning(conn, &sql, &binds)
     }
 }

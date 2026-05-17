@@ -12,8 +12,7 @@ use super::time::system_time_to_ms;
 fn parse_reserved_extracts_token_bytes() {
     let token = uuid::Uuid::new_v4();
     let value = RedisValue::Array(vec![bulk("reserved"), raw_bulk(token.as_bytes())]);
-    let outcome =
-        parse_reserve_outcome(value, "p", "k").expect("parse should succeed");
+    let outcome = parse_reserve_outcome(value, "p", "k").expect("parse should succeed");
     match outcome {
         ReservationOutcome::Reserved { token: got } => assert_eq!(got, token),
         other => panic!("expected Reserved, got {other:?}"),
@@ -159,8 +158,8 @@ fn parse_rejects_non_array_root() {
     // The reserve script always returns a Lua table, which Redis
     // serialises as a multi-bulk reply (`Value::Array`). Anything
     // else is corruption — refuse rather than guess.
-    let err = parse_reserve_outcome(bulk("reserved"), "p", "k")
-        .expect_err("non-array root must error");
+    let err =
+        parse_reserve_outcome(bulk("reserved"), "p", "k").expect_err("non-array root must error");
     assert!(matches!(err, CoolError::Internal(_)));
 }
 

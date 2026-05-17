@@ -76,15 +76,47 @@ impl UpdateModelInput<Post> for UpdatePostInput {
 }
 
 const COLUMNS: &[ModelColumn] = &[
-    ModelColumn { rust_name: "id", sql_name: "id" },
-    ModelColumn { rust_name: "title", sql_name: "title" },
-    ModelColumn { rust_name: "published", sql_name: "published" },
+    ModelColumn {
+        rust_name: "id",
+        sql_name: "id",
+    },
+    ModelColumn {
+        rust_name: "title",
+        sql_name: "title",
+    },
+    ModelColumn {
+        rust_name: "published",
+        sql_name: "published",
+    },
 ];
 
 static POST_DESCRIPTOR: ModelDescriptor<Post, i64> = ModelDescriptor::new(
-    "Post", "posts", COLUMNS, "id",
-    &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[],
-    None, false, &[], &[], None, None, &[],
+    "Post",
+    "posts",
+    COLUMNS,
+    "id",
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    None,
+    false,
+    &[],
+    &[],
+    None,
+    None,
+    &[],
 );
 
 fn setup() -> RusqliteRuntime {

@@ -2,9 +2,7 @@
 
 use cratestack_sql::{CreateModelInput, ModelDescriptor, SqliteDialect};
 
-use crate::{
-    FromRusqliteRow, RusqliteError, RusqliteRuntime, render::render_insert,
-};
+use crate::{FromRusqliteRow, RusqliteError, RusqliteRuntime, render::render_insert};
 
 use super::support::run_insert_returning;
 
@@ -32,9 +30,8 @@ where
         let dialect = SqliteDialect;
         let values = self.input.sql_values();
         let (sql, binds) = render_insert(&dialect, self.descriptor, &values);
-        self.runtime.with_connection(|conn| {
-            run_insert_returning(conn, &sql, &binds)
-        })
+        self.runtime
+            .with_connection(|conn| run_insert_returning(conn, &sql, &binds))
     }
 
     /// Run against a caller-supplied connection (typically the active

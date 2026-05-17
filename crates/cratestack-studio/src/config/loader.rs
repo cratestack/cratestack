@@ -26,11 +26,10 @@ impl StudioConfig {
     /// error is set to `studio.toml` — callers that read from disk should
     /// prefer [`StudioConfig::load`] so the real path is surfaced.
     pub fn parse(contents: &str) -> Result<Self, StudioConfigError> {
-        let parsed: Self =
-            toml::from_str(contents).map_err(|source| StudioConfigError::Parse {
-                path: PathBuf::from("studio.toml"),
-                source,
-            })?;
+        let parsed: Self = toml::from_str(contents).map_err(|source| StudioConfigError::Parse {
+            path: PathBuf::from("studio.toml"),
+            source,
+        })?;
         parsed.validate()?;
         Ok(parsed)
     }

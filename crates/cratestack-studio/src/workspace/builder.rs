@@ -124,20 +124,17 @@ fn build_api_source(
             }),
             ApiAuth::Header { name, value } => Ok(ApiAuth::Header {
                 name: name.clone(),
-                value: resolve_secret(
-                    value,
-                    &format!("target[{}].api.auth.value", target.key),
-                )?,
+                value: resolve_secret(value, &format!("target[{}].api.auth.value", target.key))?,
             }),
         })
         .transpose()?;
 
     Ok(Arc::new(
-        ApiSource::new(api.base_url.clone(), resolved_auth.as_ref(), schema).map_err(
-            |source| WorkspaceError::HttpClient {
+        ApiSource::new(api.base_url.clone(), resolved_auth.as_ref(), schema).map_err(|source| {
+            WorkspaceError::HttpClient {
                 key: target.key.clone(),
                 source,
-            },
-        )?,
+            }
+        })?,
     ))
 }

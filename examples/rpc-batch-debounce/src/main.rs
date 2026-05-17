@@ -11,7 +11,7 @@
 //! The expected output: 12 calls go in (across 3 procedures), 1 batch
 //! HTTP request goes out, 12 results come back correctly mapped.
 
-use rpc_batch_debounce_example::{build_router, BatchDebouncer};
+use rpc_batch_debounce_example::{BatchDebouncer, build_router};
 use std::time::Instant;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]

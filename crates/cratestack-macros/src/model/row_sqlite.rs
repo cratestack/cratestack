@@ -48,10 +48,7 @@ pub(crate) fn generate_rusqlite_from_row_impl(
     }
 }
 
-fn sqlite_row_field_tokens(
-    field: &Field,
-    enum_names: &BTreeSet<&str>,
-) -> proc_macro2::TokenStream {
+fn sqlite_row_field_tokens(field: &Field, enum_names: &BTreeSet<&str>) -> proc_macro2::TokenStream {
     let field_ident = ident(&field.name);
     let expr = sqlite_row_field_decode_expr(field, enum_names);
     quote! {

@@ -25,8 +25,5 @@ pub trait FromPartialRusqliteRow: Sized {
     /// Decode `row` into `Self` using `selected` as the projection
     /// manifest. Columns not in `selected` populate to their type's
     /// `Default::default()` value.
-    fn from_partial_rusqlite_row(
-        row: &Row<'_>,
-        selected: &[&str],
-    ) -> rusqlite::Result<Self>;
+    fn from_partial_rusqlite_row(row: &Row<'_>, selected: &[&str]) -> rusqlite::Result<Self>;
 }

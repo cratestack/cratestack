@@ -16,9 +16,7 @@
 
 use cratestack::axum::Router;
 use cratestack::sqlx::postgres::PgPoolOptions;
-use cratestack::{
-    AuthProvider, CodecSet, CoolContext, CoolError, RequestContext, Value,
-};
+use cratestack::{AuthProvider, CodecSet, CoolContext, CoolError, RequestContext, Value};
 use cratestack_codec_cbor::CborCodec;
 use cratestack_codec_json::JsonCodec;
 
@@ -97,8 +95,7 @@ pub fn decode_cbor_seq<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Vec<T> {
     let mut offset = 0usize;
     while offset < bytes.len() {
         let mut deserializer = minicbor_serde::Deserializer::new(&bytes[offset..]);
-        let value = T::deserialize(&mut deserializer)
-            .expect("cbor-seq item should decode");
+        let value = T::deserialize(&mut deserializer).expect("cbor-seq item should decode");
         values.push(value);
         let consumed = deserializer.decoder().position();
         assert!(consumed > 0, "decoder must make progress on each chunk");

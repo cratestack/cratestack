@@ -17,9 +17,7 @@ impl<'a, M: 'static, PK: 'static> ProjectedFindUnique<'a, M, PK>
 where
     PK: IntoSqlValue + Clone,
 {
-    pub fn run(
-        self,
-    ) -> Result<Option<cratestack_sql::Projection<M>>, RusqliteError>
+    pub fn run(self) -> Result<Option<cratestack_sql::Projection<M>>, RusqliteError>
     where
         M: crate::FromPartialRusqliteRow,
     {
@@ -40,10 +38,7 @@ where
             let mut rows = stmt.query(params_from_iter(bind_iter))?;
             if let Some(row) = rows.next()? {
                 let value = M::from_partial_rusqlite_row(row, &selected)?;
-                Ok(Some(cratestack_sql::Projection {
-                    value,
-                    selected,
-                }))
+                Ok(Some(cratestack_sql::Projection { value, selected }))
             } else {
                 Ok(None)
             }

@@ -108,7 +108,10 @@ async fn per_key_isolation_does_not_leak_between_principals() {
 
     // Exhausting Alice's bucket must leave Bob's bucket untouched.
     let alice_throttled = store.consume("alice", config).await.expect("alice 2");
-    assert!(matches!(alice_throttled, RateLimitDecision::Throttled { .. }));
+    assert!(matches!(
+        alice_throttled,
+        RateLimitDecision::Throttled { .. }
+    ));
     let bob_throttled = store.consume("bob", config).await.expect("bob 2");
     assert!(matches!(bob_throttled, RateLimitDecision::Throttled { .. }));
 }
@@ -293,7 +296,11 @@ struct XorShift64(u64);
 
 impl XorShift64 {
     fn new(seed: u64) -> Self {
-        Self(if seed == 0 { 0xDEAD_BEEF_CAFE_BABE } else { seed })
+        Self(if seed == 0 {
+            0xDEAD_BEEF_CAFE_BABE
+        } else {
+            seed
+        })
     }
     fn next_u64(&mut self) -> u64 {
         let mut x = self.0;
@@ -345,9 +352,7 @@ async fn randomized_consume_grants_at_most_burst_tokens_in_a_short_window() {
         let mut throttled = 0u32;
         for attempt in 0..(burst + 5) {
             match store.consume(&key, config).await.unwrap_or_else(|err| {
-                panic!(
-                    "seed={seed:#x} iter={iteration} burst={burst} attempt={attempt}: {err:?}",
-                )
+                panic!("seed={seed:#x} iter={iteration} burst={burst} attempt={attempt}: {err:?}",)
             }) {
                 RateLimitDecision::Allowed { .. } => allowed += 1,
                 RateLimitDecision::Throttled { .. } => throttled += 1,
@@ -379,9 +384,10 @@ async fn randomized_keys_have_independent_buckets() {
 
     // First pass: each key gets its single allowed token.
     for (i, key) in keys.iter().enumerate() {
-        let decision = store.consume(key, config).await.unwrap_or_else(|err| {
-            panic!("seed={seed:#x} key#{i}={key:?}: {err:?}")
-        });
+        let decision = store
+            .consume(key, config)
+            .await
+            .unwrap_or_else(|err| panic!("seed={seed:#x} key#{i}={key:?}: {err:?}"));
         assert!(
             matches!(decision, RateLimitDecision::Allowed { .. }),
             "seed={seed:#x} key#{i}={key:?}: first consume must succeed, got {decision:?}",
@@ -389,9 +395,10 @@ async fn randomized_keys_have_independent_buckets() {
     }
     // Second pass: every key is now exhausted independently.
     for (i, key) in keys.iter().enumerate() {
-        let decision = store.consume(key, config).await.unwrap_or_else(|err| {
-            panic!("seed={seed:#x} key#{i}={key:?}: {err:?}")
-        });
+        let decision = store
+            .consume(key, config)
+            .await
+            .unwrap_or_else(|err| panic!("seed={seed:#x} key#{i}={key:?}: {err:?}"));
         assert!(
             matches!(decision, RateLimitDecision::Throttled { .. }),
             "seed={seed:#x} key#{i}={key:?}: second consume must throttle, got {decision:?}",

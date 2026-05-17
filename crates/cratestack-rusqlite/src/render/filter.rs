@@ -4,9 +4,7 @@ use std::fmt::Write;
 
 use cratestack_sql::{Dialect, FilterExpr, FilterOp, FilterValue, SqlValue};
 
-use super::{
-    coalesce::render_coalesce, json::render_json, relation::render_relation,
-};
+use super::{coalesce::render_coalesce, json::render_json, relation::render_relation};
 
 pub(crate) fn render_filter_expr(
     dialect: &dyn Dialect,
@@ -17,12 +15,60 @@ pub(crate) fn render_filter_expr(
 ) {
     match filter {
         FilterExpr::Filter(filter) => match filter.op {
-            FilterOp::Eq => render_binary(dialect, &filter.column, "=", &filter.value, sql, binds, bind_index),
-            FilterOp::Ne => render_binary(dialect, &filter.column, "!=", &filter.value, sql, binds, bind_index),
-            FilterOp::Lt => render_binary(dialect, &filter.column, "<", &filter.value, sql, binds, bind_index),
-            FilterOp::Lte => render_binary(dialect, &filter.column, "<=", &filter.value, sql, binds, bind_index),
-            FilterOp::Gt => render_binary(dialect, &filter.column, ">", &filter.value, sql, binds, bind_index),
-            FilterOp::Gte => render_binary(dialect, &filter.column, ">=", &filter.value, sql, binds, bind_index),
+            FilterOp::Eq => render_binary(
+                dialect,
+                &filter.column,
+                "=",
+                &filter.value,
+                sql,
+                binds,
+                bind_index,
+            ),
+            FilterOp::Ne => render_binary(
+                dialect,
+                &filter.column,
+                "!=",
+                &filter.value,
+                sql,
+                binds,
+                bind_index,
+            ),
+            FilterOp::Lt => render_binary(
+                dialect,
+                &filter.column,
+                "<",
+                &filter.value,
+                sql,
+                binds,
+                bind_index,
+            ),
+            FilterOp::Lte => render_binary(
+                dialect,
+                &filter.column,
+                "<=",
+                &filter.value,
+                sql,
+                binds,
+                bind_index,
+            ),
+            FilterOp::Gt => render_binary(
+                dialect,
+                &filter.column,
+                ">",
+                &filter.value,
+                sql,
+                binds,
+                bind_index,
+            ),
+            FilterOp::Gte => render_binary(
+                dialect,
+                &filter.column,
+                ">=",
+                &filter.value,
+                sql,
+                binds,
+                bind_index,
+            ),
             FilterOp::In => {
                 let FilterValue::Many(values) = &filter.value else {
                     unreachable!("FilterOp::In requires FilterValue::Many");
@@ -39,9 +85,15 @@ pub(crate) fn render_filter_expr(
                 }
                 sql.push(')');
             }
-            FilterOp::Contains | FilterOp::StartsWith => {
-                render_binary(dialect, &filter.column, "LIKE", &filter.value, sql, binds, bind_index)
-            }
+            FilterOp::Contains | FilterOp::StartsWith => render_binary(
+                dialect,
+                &filter.column,
+                "LIKE",
+                &filter.value,
+                sql,
+                binds,
+                bind_index,
+            ),
             FilterOp::IsNull => {
                 let _ = write!(sql, "{} IS NULL", filter.column);
             }

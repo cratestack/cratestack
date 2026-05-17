@@ -57,7 +57,10 @@ fn list_url_pluralizes_and_snake_cases_model() {
 
 #[test]
 fn list_url_strips_trailing_slash() {
-    assert_eq!(list_url("https://example.test/", "Post"), "https://example.test/api/posts");
+    assert_eq!(
+        list_url("https://example.test/", "Post"),
+        "https://example.test/api/posts"
+    );
 }
 
 #[test]

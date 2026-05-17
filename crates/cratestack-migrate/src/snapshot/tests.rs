@@ -78,7 +78,9 @@ fn read_rejects_incompatible_format_version() {
 
     let err = read_snapshot(&path).expect_err("should reject");
     match err {
-        MigrateError::SnapshotFormatVersion { found, expected, .. } => {
+        MigrateError::SnapshotFormatVersion {
+            found, expected, ..
+        } => {
             assert_eq!(found, SNAPSHOT_FORMAT_VERSION + 99);
             assert_eq!(expected, SNAPSHOT_FORMAT_VERSION);
         }

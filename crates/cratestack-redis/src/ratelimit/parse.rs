@@ -75,8 +75,6 @@ pub(super) fn next_u32_decimal<I: Iterator<Item = RedisValue>>(
 ) -> Result<u32, CoolError> {
     let n = next_i64_decimal(iter, field)?;
     u32::try_from(n).map_err(|_| {
-        CoolError::Internal(format!(
-            "redis rate limit: {field} out of u32 range: {n}"
-        ))
+        CoolError::Internal(format!("redis rate limit: {field} out of u32 range: {n}"))
     })
 }

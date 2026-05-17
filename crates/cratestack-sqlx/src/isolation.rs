@@ -8,7 +8,6 @@
 //! requires only the attribute.
 use crate::sqlx;
 
-
 use std::future::Future;
 
 use cratestack_core::{CoolError, TransactionIsolation};

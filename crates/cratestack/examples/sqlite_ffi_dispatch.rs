@@ -137,10 +137,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     }))?;
     let response_bytes = ffi_call(&runtime, &request_bytes);
-    println!(
-        "create response: {}",
-        std::str::from_utf8(&response_bytes)?
-    );
+    println!("create response: {}", std::str::from_utf8(&response_bytes)?);
 
     // ---- Simulate Dart fetching it back ----
     let request_bytes = serde_json::to_vec(&serde_json::json!({

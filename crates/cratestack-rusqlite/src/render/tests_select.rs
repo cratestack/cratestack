@@ -11,14 +11,7 @@ use super::tests_fixtures::{fixture_descriptor, soft_delete_descriptor};
 fn select_uses_question_placeholders_for_limit_and_offset() {
     let dialect = SqliteDialect;
     let descriptor = fixture_descriptor();
-    let (sql, binds) = render_select(
-        &dialect,
-        &descriptor,
-        &[],
-        &[],
-        Some(10),
-        Some(5),
-    );
+    let (sql, binds) = render_select(&dialect, &descriptor, &[], &[], Some(10), Some(5));
     assert!(sql.contains("LIMIT ?1"));
     assert!(sql.contains("OFFSET ?2"));
     assert_eq!(binds, vec![SqlValue::Int(10), SqlValue::Int(5)]);

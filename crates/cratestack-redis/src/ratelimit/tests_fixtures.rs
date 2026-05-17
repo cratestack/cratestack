@@ -5,8 +5,7 @@ use redis::Value as RedisValue;
 use super::store::RedisRateLimitStore;
 
 pub(super) fn offline_store(prefix: &str) -> RedisRateLimitStore {
-    let client =
-        redis::Client::open("redis://127.0.0.1/").expect("static URL must parse offline");
+    let client = redis::Client::open("redis://127.0.0.1/").expect("static URL must parse offline");
     RedisRateLimitStore::from_client(client, prefix)
 }
 
@@ -26,7 +25,11 @@ pub(super) struct XorShift64(u64);
 impl XorShift64 {
     pub(super) fn new(seed: u64) -> Self {
         // Avoid the all-zero state which would lock the PRNG.
-        Self(if seed == 0 { 0xDEAD_BEEF_CAFE_BABE } else { seed })
+        Self(if seed == 0 {
+            0xDEAD_BEEF_CAFE_BABE
+        } else {
+            seed
+        })
     }
     pub(super) fn next_u64(&mut self) -> u64 {
         let mut x = self.0;

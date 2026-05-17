@@ -60,7 +60,10 @@ fn length_validator_enforces_min_and_max() {
     let model = schema.models.iter().find(|m| m.name == "Post").unwrap();
     let short = validate_payload(
         model,
-        &payload(&[("id", serde_json::json!("p")), ("title", serde_json::json!("hi"))]),
+        &payload(&[
+            ("id", serde_json::json!("p")),
+            ("title", serde_json::json!("hi")),
+        ]),
         false,
     );
     assert!(short.iter().any(|e| e.code == ValidationCode::Length));

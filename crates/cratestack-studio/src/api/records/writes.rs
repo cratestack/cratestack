@@ -13,9 +13,7 @@ use crate::audit::AuditOp;
 use crate::validators::validate_payload;
 use crate::workspace::LoadedWorkspace;
 
-use super::{
-    RecordResponse, require_writable, resolve_target, target_model, value_to_string,
-};
+use super::{RecordResponse, require_writable, resolve_target, target_model, value_to_string};
 
 /// `POST /api/targets/:key/models/:model/records`
 pub async fn create_record(
@@ -40,7 +38,9 @@ pub async fn create_record(
         .map(|f| f.name.as_str())
         .unwrap_or("id");
     let pk_value = row.get(pk_field).map(value_to_string);
-    state.audit.push(&target.key, &model, AuditOp::Create, pk_value);
+    state
+        .audit
+        .push(&target.key, &model, AuditOp::Create, pk_value);
     Ok((StatusCode::CREATED, Json(RecordResponse { row })))
 }
 
@@ -63,9 +63,7 @@ pub async fn update_record(
         .source
         .update(&model, &pk, &payload)
         .await?
-        .ok_or_else(|| {
-            ApiError::InvalidPrimaryKey(pk.clone(), "no row with this id".to_owned())
-        })?;
+        .ok_or_else(|| ApiError::InvalidPrimaryKey(pk.clone(), "no row with this id".to_owned()))?;
     state
         .audit
         .push(&target.key, &model, AuditOp::Update, Some(pk.clone()));
@@ -80,11 +78,8 @@ pub async fn delete_record(
     let target = resolve_target(&state, &key)?;
     require_writable(target)?;
 
-    let row = target
-        .source
-        .delete(&model, &pk)
-        .await?
-        .ok_or_else(|| {
+    let row =
+        target.source.delete(&model, &pk).await?.ok_or_else(|| {
             ApiError::InvalidPrimaryKey(pk.clone(), "no row with this id".to_owned())
         })?;
     state

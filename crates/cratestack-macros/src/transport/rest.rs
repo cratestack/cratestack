@@ -81,13 +81,19 @@ pub(crate) fn generate_model_transport_constants(model: &Model) -> proc_macro2::
 
 pub(crate) fn generate_model_transport_entries(model: &Model) -> Vec<proc_macro2::TokenStream> {
     let model_name = &model.name;
-    ["list_get", "list_post", "detail_get", "detail_patch", "detail_delete"]
-        .into_iter()
-        .map(|suffix| {
-            let id = route_transport_const_ident("model", model_name, suffix);
-            quote! { #id }
-        })
-        .collect()
+    [
+        "list_get",
+        "list_post",
+        "detail_get",
+        "detail_patch",
+        "detail_delete",
+    ]
+    .into_iter()
+    .map(|suffix| {
+        let id = route_transport_const_ident("model", model_name, suffix);
+        quote! { #id }
+    })
+    .collect()
 }
 
 pub(crate) fn route_transport_const_ident(kind: &str, name: &str, suffix: &str) -> syn::Ident {

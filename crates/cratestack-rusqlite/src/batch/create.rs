@@ -6,9 +6,7 @@ use rusqlite::params_from_iter;
 
 use crate::{FromRusqliteRow, RusqliteError, RusqliteRuntime, SqlValueParam};
 
-use super::support::{
-    err_item, finalize, item_error, ok_item, validate_batch_size,
-};
+use super::support::{err_item, finalize, item_error, ok_item, validate_batch_size};
 
 pub struct BatchCreate<'a, M: 'static, PK: 'static, I> {
     pub(crate) runtime: &'a RusqliteRuntime,

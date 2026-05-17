@@ -19,17 +19,15 @@ pub mod ffi;
 pub mod opfs;
 
 pub use cratestack_sql::{
-    coalesce, point, CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault,
-    CreateDefaultType, CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName,
-    IntoSqlValue, JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey,
-    NullOrder, OrderClause, Projection, RelationFilter, RelationInclude, RelationQuantifier,
-    SortDirection, SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue, SqliteDialect,
-    UpdateModelInput, UpsertModelInput,
+    CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault, CreateDefaultType,
+    CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName, IntoSqlValue,
+    JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder,
+    OrderClause, Projection, RelationFilter, RelationInclude, RelationQuantifier, SortDirection,
+    SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue, SqliteDialect, UpdateModelInput,
+    UpsertModelInput, coalesce, point,
 };
 
-pub use batch::{
-    BatchCreate, BatchDelete, BatchGet, BatchUpdate, BatchUpdateItem, BatchUpsert,
-};
+pub use batch::{BatchCreate, BatchDelete, BatchGet, BatchUpdate, BatchUpdateItem, BatchUpsert};
 pub use delegate::{
     Aggregate, AggregateColumn, AggregateCount, CreateRecord, DeleteMany, DeleteRecord, FindMany,
     FindManyWith, FindUnique, ModelDelegate, ProjectedFindMany, ProjectedFindUnique, UpdateMany,

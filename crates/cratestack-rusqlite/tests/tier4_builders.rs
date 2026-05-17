@@ -54,15 +54,47 @@ impl CreateModelInput<Item> for CreateItemInput {
 }
 
 const COLUMNS: &[ModelColumn] = &[
-    ModelColumn { rust_name: "id", sql_name: "id" },
-    ModelColumn { rust_name: "label", sql_name: "label" },
-    ModelColumn { rust_name: "amount", sql_name: "amount" },
+    ModelColumn {
+        rust_name: "id",
+        sql_name: "id",
+    },
+    ModelColumn {
+        rust_name: "label",
+        sql_name: "label",
+    },
+    ModelColumn {
+        rust_name: "amount",
+        sql_name: "amount",
+    },
 ];
 
 static ITEM_DESCRIPTOR: ModelDescriptor<Item, i64> = ModelDescriptor::new(
-    "Item", "items", COLUMNS, "id",
-    &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[],
-    None, false, &[], &[], None, None, &[],
+    "Item",
+    "items",
+    COLUMNS,
+    "id",
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    None,
+    false,
+    &[],
+    &[],
+    None,
+    None,
+    &[],
 );
 
 fn setup() -> RusqliteRuntime {
@@ -85,10 +117,22 @@ fn setup() -> RusqliteRuntime {
 
 fn seed(delegate: &ModelDelegate<'_, Item, i64>) -> Vec<Item> {
     vec![
-        CreateItemInput { label: Some("a".into()), amount: 10 },
-        CreateItemInput { label: Some("b".into()), amount: 20 },
-        CreateItemInput { label: None, amount: 5 },
-        CreateItemInput { label: Some("c".into()), amount: 30 },
+        CreateItemInput {
+            label: Some("a".into()),
+            amount: 10,
+        },
+        CreateItemInput {
+            label: Some("b".into()),
+            amount: 20,
+        },
+        CreateItemInput {
+            label: None,
+            amount: 5,
+        },
+        CreateItemInput {
+            label: Some("c".into()),
+            amount: 30,
+        },
     ]
     .into_iter()
     .map(|input| delegate.create(input).run().unwrap())
@@ -109,7 +153,10 @@ fn order_by_nulls_first_places_null_label_at_top() {
         .order_by(label.asc().nulls_first())
         .run()
         .unwrap();
-    assert!(rows[0].label.is_none(), "null label must lead, got: {rows:?}");
+    assert!(
+        rows[0].label.is_none(),
+        "null label must lead, got: {rows:?}"
+    );
 }
 
 #[test]
@@ -119,12 +166,11 @@ fn order_by_default_places_null_label_at_bottom() {
     let _ = seed(&delegate);
 
     let label = FieldRef::<Item, String>::new("label");
-    let rows: Vec<Item> = delegate
-        .find_many()
-        .order_by(label.asc())
-        .run()
-        .unwrap();
-    assert!(rows.last().unwrap().label.is_none(), "null trails by default");
+    let rows: Vec<Item> = delegate.find_many().order_by(label.asc()).run().unwrap();
+    assert!(
+        rows.last().unwrap().label.is_none(),
+        "null trails by default"
+    );
 }
 
 // ───── #6 delete_many ────────────────────────────────────────────────────────
@@ -240,11 +286,7 @@ fn aggregate_avg_returns_mean_as_float() {
     let delegate = ModelDelegate::new(&runtime, &ITEM_DESCRIPTOR);
     let _ = seed(&delegate);
 
-    let avg: Option<f64> = delegate
-        .aggregate()
-        .avg("amount")
-        .run()
-        .unwrap();
+    let avg: Option<f64> = delegate.aggregate().avg("amount").run().unwrap();
     let value = avg.expect("avg must be present");
     assert!((value - 16.25).abs() < 1e-9, "got: {value}");
 }

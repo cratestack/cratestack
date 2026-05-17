@@ -19,7 +19,7 @@ mod schema {
     include_embedded_schema!("notes.cstack");
 }
 
-use std::ffi::{c_char, CStr};
+use std::ffi::{CStr, c_char};
 use std::path::PathBuf;
 use std::ptr;
 use std::sync::OnceLock;
@@ -298,9 +298,9 @@ pub unsafe extern "C" fn cratestack_free(ptr: *mut u8, len: usize) {
 #[cfg(target_os = "android")]
 mod android_jni {
     use super::{dispatch, init_database};
+    use jni::JNIEnv;
     use jni::objects::{JByteArray, JClass, JString};
     use jni::sys::{jbyteArray, jint};
-    use jni::JNIEnv;
 
     /// Matches Kotlin's
     /// `private external fun nativeInit(dbPath: String): Int`
@@ -311,7 +311,9 @@ mod android_jni {
     /// caller then propagates that exception to the JS side instead of the
     /// previous silent "code -1" placeholder.
     #[unsafe(no_mangle)]
-    pub extern "system" fn Java_dev_cratestack_examples_cratestacknotes_CratestackNotesModule_nativeInit<'local>(
+    pub extern "system" fn Java_dev_cratestack_examples_cratestacknotes_CratestackNotesModule_nativeInit<
+        'local,
+    >(
         mut env: JNIEnv<'local>,
         _class: JClass<'local>,
         db_path: JString<'local>,
@@ -341,7 +343,9 @@ mod android_jni {
     /// Matches Kotlin's
     /// `private external fun nativeDispatch(request: ByteArray): ByteArray`.
     #[unsafe(no_mangle)]
-    pub extern "system" fn Java_dev_cratestack_examples_cratestacknotes_CratestackNotesModule_nativeDispatch<'local>(
+    pub extern "system" fn Java_dev_cratestack_examples_cratestacknotes_CratestackNotesModule_nativeDispatch<
+        'local,
+    >(
         mut env: JNIEnv<'local>,
         _class: JClass<'local>,
         request: JByteArray<'local>,
@@ -399,7 +403,10 @@ mod tests {
                 }),
             },
         );
-        assert_eq!(create_response["status"], "ok", "response: {create_response}");
+        assert_eq!(
+            create_response["status"], "ok",
+            "response: {create_response}"
+        );
         let created_id = create_response["data"]["id"]
             .as_str()
             .expect("created note must have a string id")

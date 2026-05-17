@@ -58,9 +58,11 @@ fn json_to_typed(scalar: &str, value: &serde_json::Value) -> TypedValue {
         return TypedValue::Null;
     }
     match scalar {
-        "Int" => TypedValue::Int(value.as_i64().unwrap_or_else(|| {
-            value.as_f64().map(|f| f as i64).unwrap_or(0)
-        })),
+        "Int" => TypedValue::Int(
+            value
+                .as_i64()
+                .unwrap_or_else(|| value.as_f64().map(|f| f as i64).unwrap_or(0)),
+        ),
         "Float" => TypedValue::Float(value.as_f64().unwrap_or(0.0)),
         "Boolean" => TypedValue::Bool(value.as_bool().unwrap_or(false)),
         "Json" => TypedValue::Json(value.clone()),
@@ -76,17 +78,9 @@ fn json_to_typed(scalar: &str, value: &serde_json::Value) -> TypedValue {
 /// per-variant Encode chosen at compile time even though the caller
 /// sees a single function.
 pub(super) fn bind_typed<'q>(
-    q: sqlx_core::query::Query<
-        'q,
-        sqlx_postgres::Postgres,
-        sqlx_postgres::PgArguments,
-    >,
+    q: sqlx_core::query::Query<'q, sqlx_postgres::Postgres, sqlx_postgres::PgArguments>,
     value: &TypedValue,
-) -> sqlx_core::query::Query<
-    'q,
-    sqlx_postgres::Postgres,
-    sqlx_postgres::PgArguments,
-> {
+) -> sqlx_core::query::Query<'q, sqlx_postgres::Postgres, sqlx_postgres::PgArguments> {
     match value {
         TypedValue::Text(s) => q.bind(s.clone()),
         TypedValue::Int(i) => q.bind(*i),

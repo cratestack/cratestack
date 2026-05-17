@@ -8,7 +8,9 @@ use sqlx_core::acquire::Acquire as _;
 
 use crate::audit::{build_audit_event, enqueue_audit_event};
 use crate::descriptor::enqueue_event_outbox;
-use crate::query::support::{apply_create_defaults, evaluate_create_policies, find_column_value, push_bind_value};
+use crate::query::support::{
+    apply_create_defaults, evaluate_create_policies, find_column_value, push_bind_value,
+};
 use crate::{CreateModelInput, ModelDescriptor, sqlx};
 
 pub(super) async fn run_create_item<'tx, M, PK, I>(
@@ -33,7 +35,8 @@ where
     // savepoint commit/rollback decision is centralized below.
     let inner: Result<M, CoolError> = async {
         input.validate()?;
-        let mut values = apply_create_defaults(input.sql_values(), descriptor.create_defaults, ctx)?;
+        let mut values =
+            apply_create_defaults(input.sql_values(), descriptor.create_defaults, ctx)?;
         if let Some(version_col) = descriptor.version_column
             && find_column_value(&values, version_col).is_none()
         {

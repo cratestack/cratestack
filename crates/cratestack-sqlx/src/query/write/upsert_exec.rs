@@ -139,7 +139,11 @@ where
     } else {
         AuditOperation::Update
     };
-    let emits_event = if inserted { emits_created } else { emits_updated };
+    let emits_event = if inserted {
+        emits_created
+    } else {
+        emits_updated
+    };
 
     if emits_event {
         enqueue_event_outbox(&mut **tx, descriptor.schema_name, event_kind, &record).await?;

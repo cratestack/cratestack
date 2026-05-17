@@ -8,7 +8,9 @@ pub mod selection;
 
 use serde::{Deserialize, Serialize};
 
-pub use model::{Attribute, EnumDecl, EnumVariant, Field, MixinDecl, Model, TypeArity, TypeDecl, TypeRef};
+pub use model::{
+    Attribute, EnumDecl, EnumVariant, Field, MixinDecl, Model, TypeArity, TypeDecl, TypeRef,
+};
 pub use procedure::{Procedure, ProcedureArg, ProcedureKind};
 pub use selection::SelectionQuery;
 

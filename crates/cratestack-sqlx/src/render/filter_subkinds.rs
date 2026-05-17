@@ -62,10 +62,7 @@ pub(super) fn render_json_filter_sql(
                 FilterOp::Gte => render_json_text_binary_sql(">=", sql, bind_index),
                 FilterOp::IsNull => sql.push_str(" IS NULL"),
                 FilterOp::IsNotNull => sql.push_str(" IS NOT NULL"),
-                FilterOp::In
-                | FilterOp::Contains
-                | FilterOp::StartsWith
-                | FilterOp::EqOrNull => {
+                FilterOp::In | FilterOp::Contains | FilterOp::StartsWith | FilterOp::EqOrNull => {
                     unreachable!("JsonFilter::GetText built with unsupported op {:?}", op);
                 }
             }

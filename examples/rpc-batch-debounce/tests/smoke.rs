@@ -2,7 +2,7 @@
 //! ports — the tests rely on size-based auto-flush + explicit
 //! `flush()` calls.
 
-use rpc_batch_debounce_example::{build_router, BatchDebouncer};
+use rpc_batch_debounce_example::{BatchDebouncer, build_router};
 
 #[tokio::test]
 async fn fewer_than_max_size_calls_wait_for_explicit_flush() {
@@ -12,8 +12,11 @@ async fn fewer_than_max_size_calls_wait_for_explicit_flush() {
 
     let d = debouncer.clone();
     let h1 = tokio::spawn(async move {
-        d.call("procedure.add", serde_json::json!({"args": {"a": 1, "b": 2}}))
-            .await
+        d.call(
+            "procedure.add",
+            serde_json::json!({"args": {"a": 1, "b": 2}}),
+        )
+        .await
     });
     let d = debouncer.clone();
     let h2 = tokio::spawn(async move {

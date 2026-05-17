@@ -82,10 +82,7 @@ impl<'a, M: 'static, PK: 'static> AggregateColumn<'a, M, PK> {
 
     pub async fn run<T>(self, ctx: &CoolContext) -> Result<Option<T>, CoolError>
     where
-        T: Send
-            + Unpin
-            + for<'r> sqlx::Decode<'r, sqlx::Postgres>
-            + sqlx::Type<sqlx::Postgres>,
+        T: Send + Unpin + for<'r> sqlx::Decode<'r, sqlx::Postgres> + sqlx::Type<sqlx::Postgres>,
     {
         let mut query = self.build_query(ctx);
         let value: (Option<T>,) = query
@@ -102,10 +99,7 @@ impl<'a, M: 'static, PK: 'static> AggregateColumn<'a, M, PK> {
         ctx: &CoolContext,
     ) -> Result<Option<T>, CoolError>
     where
-        T: Send
-            + Unpin
-            + for<'r> sqlx::Decode<'r, sqlx::Postgres>
-            + sqlx::Type<sqlx::Postgres>,
+        T: Send + Unpin + for<'r> sqlx::Decode<'r, sqlx::Postgres> + sqlx::Type<sqlx::Postgres>,
     {
         let mut query = self.build_query(ctx);
         let value: (Option<T>,) = query

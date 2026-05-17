@@ -27,13 +27,11 @@ use tar::Archive;
 
 const UI_TARBALL: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/ui.tar.gz"));
 
-const STARTER_CARGO_TOML: &str =
-    include_str!("../templates/starter/Cargo.toml.template");
+const STARTER_CARGO_TOML: &str = include_str!("../templates/starter/Cargo.toml.template");
 const STARTER_README: &str = include_str!("../templates/starter/README.md.template");
 const STARTER_MAIN: &str = include_str!("../templates/starter/main.rs");
 const STARTER_STUDIO_TOML: &str = include_str!("../templates/starter/studio.toml");
-const STARTER_EXAMPLE_CSTACK: &str =
-    include_str!("../templates/starter/example.cstack");
+const STARTER_EXAMPLE_CSTACK: &str = include_str!("../templates/starter/example.cstack");
 
 #[derive(Debug, Clone)]
 pub struct EjectOptions {
@@ -94,18 +92,36 @@ pub fn eject(options: &EjectOptions) -> Result<EjectReport, EjectError> {
     let cargo_version = env!("CARGO_PKG_VERSION");
     let mut written = Vec::<PathBuf>::new();
 
-    let cargo_toml = render_template(STARTER_CARGO_TOML, &[("name", &name), ("cratestack_version", cargo_version)]);
-    write_file(&options.out, "Cargo.toml", cargo_toml.as_bytes(), &mut written)?;
+    let cargo_toml = render_template(
+        STARTER_CARGO_TOML,
+        &[("name", &name), ("cratestack_version", cargo_version)],
+    );
+    write_file(
+        &options.out,
+        "Cargo.toml",
+        cargo_toml.as_bytes(),
+        &mut written,
+    )?;
     let readme = render_template(STARTER_README, &[("name", &name)]);
     write_file(&options.out, "README.md", readme.as_bytes(), &mut written)?;
-    write_file(&options.out, "studio.toml", STARTER_STUDIO_TOML.as_bytes(), &mut written)?;
+    write_file(
+        &options.out,
+        "studio.toml",
+        STARTER_STUDIO_TOML.as_bytes(),
+        &mut written,
+    )?;
     write_file(
         &options.out,
         "schemas/example.cstack",
         STARTER_EXAMPLE_CSTACK.as_bytes(),
         &mut written,
     )?;
-    write_file(&options.out, "src/main.rs", STARTER_MAIN.as_bytes(), &mut written)?;
+    write_file(
+        &options.out,
+        "src/main.rs",
+        STARTER_MAIN.as_bytes(),
+        &mut written,
+    )?;
 
     if options.with_ui {
         unpack_ui_sources(&options.out.join("ui"), &mut written)?;
@@ -187,10 +203,8 @@ fn unpack_ui_sources(root: &Path, written: &mut Vec<PathBuf>) -> Result<(), Ejec
         let rel = entry.path().map_err(EjectError::Unpack)?.into_owned();
         let dest = root.join(&rel);
         if entry.header().entry_type().is_dir() {
-            fs::create_dir_all(&dest).map_err(|source| EjectError::CreateDir {
-                path: dest,
-                source,
-            })?;
+            fs::create_dir_all(&dest)
+                .map_err(|source| EjectError::CreateDir { path: dest, source })?;
             continue;
         }
         if let Some(parent) = dest.parent() {

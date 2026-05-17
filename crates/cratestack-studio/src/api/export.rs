@@ -156,8 +156,14 @@ mod tests {
     #[test]
     fn renders_csv_with_header_union_and_escapes_quotes() {
         let rows: Vec<Row> = vec![
-            json!({ "id": "p1", "title": "first" }).as_object().unwrap().clone(),
-            json!({ "id": "p2", "title": "with \"quotes\"" }).as_object().unwrap().clone(),
+            json!({ "id": "p1", "title": "first" })
+                .as_object()
+                .unwrap()
+                .clone(),
+            json!({ "id": "p2", "title": "with \"quotes\"" })
+                .as_object()
+                .unwrap()
+                .clone(),
         ];
         let bytes = render_csv(&rows);
         let text = std::str::from_utf8(&bytes).unwrap();

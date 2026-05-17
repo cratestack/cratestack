@@ -4,11 +4,13 @@ use crate::diff::diff;
 
 #[test]
 fn add_column_emits_alter_table() {
-    let prev = schema(&with_models(r#"
+    let prev = schema(&with_models(
+        r#"
 model Account {
   id Int @id
 }
-"#));
+"#,
+    ));
     let next = schema(&with_models(
         r#"
 model Account {
@@ -18,8 +20,16 @@ model Account {
 "#,
     ));
     let migration = emit(&diff(&prev, &next));
-    assert!(migration.up.contains("ALTER TABLE accounts ADD COLUMN balance BIGINT"));
-    assert!(migration.down.contains("ALTER TABLE accounts DROP COLUMN balance;"));
+    assert!(
+        migration
+            .up
+            .contains("ALTER TABLE accounts ADD COLUMN balance BIGINT")
+    );
+    assert!(
+        migration
+            .down
+            .contains("ALTER TABLE accounts DROP COLUMN balance;")
+    );
 }
 
 #[test]
@@ -32,14 +42,20 @@ model Account {
 }
 "#,
     ));
-    let next = schema(&with_models(r#"
+    let next = schema(&with_models(
+        r#"
 model Account {
   id Int @id
 }
-"#));
+"#,
+    ));
     let migration = emit(&diff(&prev, &next));
     assert!(migration.has_lossy);
-    assert!(migration.up.contains("ALTER TABLE accounts DROP COLUMN legacy;"));
+    assert!(
+        migration
+            .up
+            .contains("ALTER TABLE accounts DROP COLUMN legacy;")
+    );
     assert!(migration.down.contains("destructive migration"));
     assert!(migration.down.contains("DropColumn accounts.legacy"));
     assert!(!migration.down.contains("ADD COLUMN"));
@@ -67,12 +83,18 @@ model Account {
     assert!(!migration.has_lossy);
     assert!(!migration.has_blocking);
     assert!(
-        migration.up.contains("ALTER TABLE accounts ALTER COLUMN status DROP NOT NULL;"),
-        "up was: {}", migration.up
+        migration
+            .up
+            .contains("ALTER TABLE accounts ALTER COLUMN status DROP NOT NULL;"),
+        "up was: {}",
+        migration.up
     );
     assert!(
-        migration.down.contains("ALTER TABLE accounts ALTER COLUMN status SET NOT NULL;"),
-        "down was: {}", migration.down
+        migration
+            .down
+            .contains("ALTER TABLE accounts ALTER COLUMN status SET NOT NULL;"),
+        "down was: {}",
+        migration.down
     );
 }
 
@@ -96,7 +118,11 @@ model Account {
     ));
     let migration = emit(&diff(&prev, &next));
     assert!(migration.has_blocking);
-    assert!(migration.up.contains("ALTER TABLE accounts ALTER COLUMN status SET NOT NULL;"));
+    assert!(
+        migration
+            .up
+            .contains("ALTER TABLE accounts ALTER COLUMN status SET NOT NULL;")
+    );
     assert!(migration.up.contains("WARNING"));
 }
 
@@ -151,10 +177,17 @@ model Order {
     let migration = emit(&diff(&prev, &next));
     assert!(!migration.has_lossy);
     assert!(
-        migration.up.contains("ALTER TABLE orders ALTER COLUMN status SET DEFAULT 'submitted';"),
-        "up was: {}", migration.up
+        migration
+            .up
+            .contains("ALTER TABLE orders ALTER COLUMN status SET DEFAULT 'submitted';"),
+        "up was: {}",
+        migration.up
     );
-    assert!(migration.down.contains("ALTER TABLE orders ALTER COLUMN status SET DEFAULT 'pending';"));
+    assert!(
+        migration
+            .down
+            .contains("ALTER TABLE orders ALTER COLUMN status SET DEFAULT 'pending';")
+    );
 }
 
 #[test]
@@ -177,7 +210,10 @@ model Order {
     ));
     let migration = emit(&diff(&prev, &next));
     assert!(
-        migration.up.contains("ALTER TABLE orders ALTER COLUMN status DROP DEFAULT;"),
-        "up was: {}", migration.up
+        migration
+            .up
+            .contains("ALTER TABLE orders ALTER COLUMN status DROP DEFAULT;"),
+        "up was: {}",
+        migration.up
     );
 }

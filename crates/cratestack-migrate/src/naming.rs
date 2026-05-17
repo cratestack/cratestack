@@ -82,6 +82,9 @@ mod tests {
 
     #[test]
     fn unique_index_name_is_stable() {
-        assert_eq!(index_name_unique("customers", "email"), "customers_email_key");
+        assert_eq!(
+            index_name_unique("customers", "email"),
+            "customers_email_key"
+        );
     }
 }

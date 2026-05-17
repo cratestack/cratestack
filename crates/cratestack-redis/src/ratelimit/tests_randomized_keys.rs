@@ -9,7 +9,7 @@
 // failure via the assertion message.
 
 use super::config::normalize_key_prefix;
-use super::tests_fixtures::{offline_store, test_seed, XorShift64};
+use super::tests_fixtures::{XorShift64, offline_store, test_seed};
 use super::util::nibble_hex;
 
 #[test]
@@ -34,7 +34,9 @@ fn randomized_bucket_key_is_deterministic_and_well_formed() {
             "seed={seed:#x} iter={iteration} key={key:?}: hex suffix must be 64 chars",
         );
         assert!(
-            suffix.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+            suffix
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
             "seed={seed:#x} iter={iteration} key={key:?}: suffix {suffix:?} must be lowercase hex",
         );
     }
@@ -48,8 +50,7 @@ fn randomized_bucket_key_collisions_are_negligible() {
     let seed = test_seed();
     let mut rng = XorShift64::new(seed);
     let store = offline_store("bank");
-    let mut seen: std::collections::HashMap<String, String> =
-        std::collections::HashMap::new();
+    let mut seen: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     for iteration in 0..500 {
         let key = rng.next_string(32);
         let derived = store.bucket_key(&key);

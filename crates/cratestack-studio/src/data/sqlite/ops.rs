@@ -85,8 +85,9 @@ pub(super) async fn create(
                 .into_iter()
                 .next()
                 .ok_or(DataError::Sqlite(rusqlite::Error::QueryReturnedNoRows)),
-            Err(DataError::Sqlite(e)) => Err(map_sqlite_error(Some(&resolved), &e)
-                .unwrap_or(DataError::Sqlite(e))),
+            Err(DataError::Sqlite(e)) => {
+                Err(map_sqlite_error(Some(&resolved), &e).unwrap_or(DataError::Sqlite(e)))
+            }
             Err(other) => Err(other),
         }
     })
@@ -112,8 +113,9 @@ pub(super) async fn update(
             sql_args.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
         match fetch_rows(conn, &sql, &params) {
             Ok(rows) => Ok(rows),
-            Err(DataError::Sqlite(e)) => Err(map_sqlite_error(Some(&resolved), &e)
-                .unwrap_or(DataError::Sqlite(e))),
+            Err(DataError::Sqlite(e)) => {
+                Err(map_sqlite_error(Some(&resolved), &e).unwrap_or(DataError::Sqlite(e)))
+            }
             Err(other) => Err(other),
         }
     })
@@ -135,8 +137,9 @@ pub(super) async fn delete(
     let rows = with_conn(conn.clone(), move |conn| {
         match fetch_rows(conn, &sql, &[&pk_owned]) {
             Ok(rows) => Ok(rows),
-            Err(DataError::Sqlite(e)) => Err(map_sqlite_error(Some(&resolved), &e)
-                .unwrap_or(DataError::Sqlite(e))),
+            Err(DataError::Sqlite(e)) => {
+                Err(map_sqlite_error(Some(&resolved), &e).unwrap_or(DataError::Sqlite(e)))
+            }
             Err(other) => Err(other),
         }
     })
@@ -171,4 +174,3 @@ pub(super) async fn follow(
     let next_cursor = next_cursor(&rows, &pk_field_name, limit);
     Ok(Page { rows, next_cursor })
 }
-

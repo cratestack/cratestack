@@ -11,7 +11,9 @@ use cratestack_core::{
 };
 
 use crate::diagnostics::SchemaError;
-use crate::line_helpers::{collect_lines, name_span_in_line, parse_doc_comment, split_config_entry};
+use crate::line_helpers::{
+    collect_lines, name_span_in_line, parse_doc_comment, split_config_entry,
+};
 
 use self::blocks::{
     parse_body_block, parse_named_config_block, parse_simple_config_block,

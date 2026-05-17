@@ -9,11 +9,11 @@
 use std::sync::Arc;
 
 use axum::Json;
+use axum::Router;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use axum::Router;
 use chrono::{DateTime, Utc};
 use cratestack_macros::include_embedded_schema;
 use cratestack_rusqlite::ddl::create_table_sql;
@@ -32,9 +32,7 @@ pub struct AppState {
 
 pub fn bootstrap(runtime: &RusqliteRuntime) -> Result<(), RusqliteError> {
     runtime.with_connection(|conn| {
-        conn.execute_batch(&create_table_sql(
-            &cratestack_schema::WEBHOOK_EVENT_MODEL,
-        ))?;
+        conn.execute_batch(&create_table_sql(&cratestack_schema::WEBHOOK_EVENT_MODEL))?;
         Ok(())
     })
 }
@@ -199,11 +197,17 @@ impl IntoResponse for AppError {
             }
             AppError::Sqlite(error) => {
                 tracing::error!(%error, "rusqlite error");
-                (StatusCode::INTERNAL_SERVER_ERROR, "internal error".to_owned())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "internal error".to_owned(),
+                )
             }
             AppError::Join(error) => {
                 tracing::error!(%error, "spawn_blocking task panicked");
-                (StatusCode::INTERNAL_SERVER_ERROR, "internal error".to_owned())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "internal error".to_owned(),
+                )
             }
         };
         (status, body).into_response()
@@ -339,7 +343,10 @@ mod tests {
             .await
             .expect("oneshot");
         let pending: Vec<WebhookView> = json_body(resp).await;
-        assert!(pending.is_empty(), "pending list should be empty: {pending:?}");
+        assert!(
+            pending.is_empty(),
+            "pending list should be empty: {pending:?}"
+        );
     }
 
     #[tokio::test]

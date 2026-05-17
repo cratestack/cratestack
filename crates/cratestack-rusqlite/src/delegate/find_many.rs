@@ -99,9 +99,7 @@ impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
             let mut stmt = conn.prepare(&sql)?;
             let bind_iter = binds.iter().map(SqlValueParam);
             let rows = stmt
-                .query_map(params_from_iter(bind_iter), |row| {
-                    M::from_rusqlite_row(row)
-                })?
+                .query_map(params_from_iter(bind_iter), |row| M::from_rusqlite_row(row))?
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(rows)
         })
@@ -128,9 +126,7 @@ impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
         let mut stmt = conn.prepare(&sql)?;
         let bind_iter = binds.iter().map(SqlValueParam);
         let rows = stmt
-            .query_map(params_from_iter(bind_iter), |row| {
-                M::from_rusqlite_row(row)
-            })?
+            .query_map(params_from_iter(bind_iter), |row| M::from_rusqlite_row(row))?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     }
@@ -167,4 +163,3 @@ impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
         }
     }
 }
-

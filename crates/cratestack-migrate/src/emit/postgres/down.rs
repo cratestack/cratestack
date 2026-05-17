@@ -4,10 +4,14 @@
 
 use std::fmt::Write as _;
 
-use crate::ir::{AlterColumnDefault, AlterColumnNullability, DropCheck, Op, RenameColumn, RenameTable};
+use crate::ir::{
+    AlterColumnDefault, AlterColumnNullability, DropCheck, Op, RenameColumn, RenameTable,
+};
 
 use super::checks::emit_drop_check;
-use super::columns::{emit_alter_column_default, emit_alter_column_nullability, emit_rename_column};
+use super::columns::{
+    emit_alter_column_default, emit_alter_column_nullability, emit_rename_column,
+};
 use super::idents::quote_ident;
 use super::tables::emit_rename_table;
 

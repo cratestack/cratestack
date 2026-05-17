@@ -37,11 +37,13 @@ model Account {
 
 #[test]
 fn removing_a_model_emits_drop_table() {
-    let prev = schema(&with_models(r#"
+    let prev = schema(&with_models(
+        r#"
 model Account {
   id Int @id
 }
-"#));
+"#,
+    ));
     let next = schema(&with_models(""));
     let ops = diff(&prev, &next);
     assert_eq!(ops.len(), 1);
@@ -51,11 +53,13 @@ model Account {
 
 #[test]
 fn adding_a_column_emits_add_column() {
-    let prev = schema(&with_models(r#"
+    let prev = schema(&with_models(
+        r#"
 model Account {
   id Int @id
 }
-"#));
+"#,
+    ));
     let next = schema(&with_models(
         r#"
 model Account {
@@ -79,11 +83,13 @@ model Account {
 
 #[test]
 fn adding_required_column_without_default_is_blocking() {
-    let prev = schema(&with_models(r#"
+    let prev = schema(&with_models(
+        r#"
 model Account {
   id Int @id
 }
-"#));
+"#,
+    ));
     let next = schema(&with_models(
         r#"
 model Account {
@@ -102,11 +108,13 @@ model Account {
 
 #[test]
 fn adding_required_column_with_default_is_safe() {
-    let prev = schema(&with_models(r#"
+    let prev = schema(&with_models(
+        r#"
 model Account {
   id Int @id
 }
-"#));
+"#,
+    ));
     let next = schema(&with_models(
         r#"
 model Account {
@@ -130,11 +138,13 @@ model Account {
 }
 "#,
     ));
-    let next = schema(&with_models(r#"
+    let next = schema(&with_models(
+        r#"
 model Account {
   id Int @id
 }
-"#));
+"#,
+    ));
     let ops = diff(&prev, &next);
     assert_eq!(ops.len(), 1);
     assert!(matches!(&ops[0], Op::DropColumn(drop)

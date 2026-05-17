@@ -6,8 +6,8 @@ use std::path::PathBuf;
 
 use tempfile::TempDir;
 
-use crate::cli_types::MigrateBackendArg;
 use super::diff_cmd::handle_diff;
+use crate::cli_types::MigrateBackendArg;
 
 fn write_schema(dir: &TempDir, source: &str) -> PathBuf {
     let path = dir.path().join("schema.cstack");

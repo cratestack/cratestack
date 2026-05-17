@@ -138,10 +138,7 @@ impl<'a, M: 'static, PK: 'static> ScopedAggregateColumn<'a, M, PK> {
 
     pub async fn run<T>(self) -> Result<Option<T>, CoolError>
     where
-        T: Send
-            + Unpin
-            + for<'r> sqlx::Decode<'r, sqlx::Postgres>
-            + sqlx::Type<sqlx::Postgres>,
+        T: Send + Unpin + for<'r> sqlx::Decode<'r, sqlx::Postgres> + sqlx::Type<sqlx::Postgres>,
     {
         self.request.run::<T>(&self.ctx).await
     }
@@ -151,10 +148,7 @@ impl<'a, M: 'static, PK: 'static> ScopedAggregateColumn<'a, M, PK> {
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
     ) -> Result<Option<T>, CoolError>
     where
-        T: Send
-            + Unpin
-            + for<'r> sqlx::Decode<'r, sqlx::Postgres>
-            + sqlx::Type<sqlx::Postgres>,
+        T: Send + Unpin + for<'r> sqlx::Decode<'r, sqlx::Postgres> + sqlx::Type<sqlx::Postgres>,
     {
         self.request.run_in_tx::<T>(tx, &self.ctx).await
     }

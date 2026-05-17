@@ -56,9 +56,7 @@ where
                         ClientError::BadInput(format!("invalid header name '{name}': {error}"))
                     })?,
                     HeaderValue::from_str(&value).map_err(|error| {
-                        ClientError::BadInput(format!(
-                            "invalid header value for '{name}': {error}"
-                        ))
+                        ClientError::BadInput(format!("invalid header value for '{name}': {error}"))
                     })?,
                 );
             }

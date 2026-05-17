@@ -22,8 +22,7 @@ use instrument::{
     authorize_fn_tokens, authorize_with_db_fn_tokens, invoke_fn_tokens, invoke_with_db_fn_tokens,
 };
 use types::{
-    generate_client_procedure_args_struct, generate_procedure_args_struct,
-    procedure_output_tokens,
+    generate_client_procedure_args_struct, generate_procedure_args_struct, procedure_output_tokens,
 };
 
 pub(crate) use types::procedure_client_output_item_tokens;

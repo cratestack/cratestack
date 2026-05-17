@@ -99,8 +99,7 @@ pub fn json_response_into(response: &OperationResponse) -> Vec<u8> {
         // Serialization of OperationResponse itself can't realistically
         // fail (all variants are plain serde-derived types), but if it
         // ever does the FFI caller still needs a parseable error.
-        br#"{"status":"err","code":"serialize","message":"response serialization failed"}"#
-            .to_vec()
+        br#"{"status":"err","code":"serialize","message":"response serialization failed"}"#.to_vec()
     })
 }
 

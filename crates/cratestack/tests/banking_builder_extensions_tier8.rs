@@ -10,7 +10,10 @@ use cratestack::sqlx::query;
 use cratestack::{CoolContext, Value};
 use support::pg;
 
-include_server_schema!("tests/fixtures/builder_extensions_tier8.cstack", db = Postgres);
+include_server_schema!(
+    "tests/fixtures/builder_extensions_tier8.cstack",
+    db = Postgres
+);
 
 async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     query("DROP TABLE IF EXISTS payment_intents")
@@ -31,8 +34,7 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
 }
 
 fn operator() -> CoolContext {
-    CoolContext::authenticated([("id".to_owned(), Value::Int(1))])
-        .with_request_id("tier8-001")
+    CoolContext::authenticated([("id".to_owned(), Value::Int(1))]).with_request_id("tier8-001")
 }
 
 async fn seed(pool: &cratestack::sqlx::PgPool) {

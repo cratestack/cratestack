@@ -120,10 +120,7 @@ impl IntoResponse for ApiError {
         let code = self.code();
         let status = self.status();
         let (message, fields) = match self {
-            ApiError::Validation(errs) => (
-                "payload failed validation".to_owned(),
-                errs,
-            ),
+            ApiError::Validation(errs) => ("payload failed validation".to_owned(), errs),
             other => (other.to_string(), Vec::new()),
         };
         let body = WireBody {

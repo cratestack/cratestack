@@ -35,7 +35,13 @@ pub(super) fn collect_procedures(
         .procedures
         .iter()
         .map(|procedure| {
-            generate_procedure_module(procedure, &schema.models, &schema.types, enum_name_set, auth)
+            generate_procedure_module(
+                procedure,
+                &schema.models,
+                &schema.types,
+                enum_name_set,
+                auth,
+            )
         })
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| compile_error(schema_path, e))?;

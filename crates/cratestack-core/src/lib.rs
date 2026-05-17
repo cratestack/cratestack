@@ -61,13 +61,12 @@ pub use audit::{
     TransactionIsolation,
 };
 pub use batch::{
-    BATCH_MAX_ITEMS, BatchItemError, BatchItemResult, BatchItemStatus, BatchRequest,
-    BatchResponse, BatchSummary, find_duplicate_position,
+    BATCH_MAX_ITEMS, BatchItemError, BatchItemResult, BatchItemStatus, BatchRequest, BatchResponse,
+    BatchSummary, find_duplicate_position,
 };
 pub use codec::{CoolCodec, CoolEnvelope, NoEnvelope};
 pub use context::{
-    AuthProvider, CoolAuthIdentity, CoolContext, PrincipalContext, PrincipalFacet,
-    RequestContext,
+    AuthProvider, CoolAuthIdentity, CoolContext, PrincipalContext, PrincipalFacet, RequestContext,
 };
 pub use envelope::{
     HmacEnvelope, InMemoryNonceStore, KeyProvider, NonceStore, SealedEnvelope, StaticKeyProvider,
@@ -89,7 +88,7 @@ pub use transport::{
     canonical_request_string,
 };
 pub use validators::{
-    validate_email, validate_iso4217, validate_length, validate_range_decimal,
-    validate_range_i64, validate_uri,
+    validate_email, validate_iso4217, validate_length, validate_range_decimal, validate_range_i64,
+    validate_uri,
 };
 pub use value::Value;

@@ -100,13 +100,8 @@ impl<'a, M: 'static, PK: 'static> DeleteRecord<'a, M, PK> {
                 // DELETE ... RETURNING yields the row's pre-delete
                 // state, so it doubles as the audit `before` snapshot.
                 let before = serde_json::to_value(&record).ok();
-                let event = build_audit_event(
-                    self.descriptor,
-                    AuditOperation::Delete,
-                    before,
-                    None,
-                    ctx,
-                );
+                let event =
+                    build_audit_event(self.descriptor, AuditOperation::Delete, before, None, ctx);
                 enqueue_audit_event(&mut *tx, &event).await?;
             }
             tx.commit()

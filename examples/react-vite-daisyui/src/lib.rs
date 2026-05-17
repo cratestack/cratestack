@@ -8,12 +8,8 @@
 //! The Rust surface is identical, which is the point: CrateStack's embedded
 //! shape doesn't care which UI framework wraps it.
 
-use chrono::Utc;
 use cratestack_macros::include_embedded_schema;
-use cratestack_rusqlite::ddl::create_table_sql;
-use cratestack_rusqlite::{ModelDelegate, RusqliteRuntime};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 include_embedded_schema!("schema.cstack");
 
@@ -165,8 +161,8 @@ mod wasm {
 
     #[wasm_bindgen]
     pub fn mark_done(id: &str) -> Result<JsValue, JsValue> {
-        let uuid =
-            Uuid::parse_str(id).map_err(|error| JsValue::from_str(&format!("bad uuid: {error}")))?;
+        let uuid = Uuid::parse_str(id)
+            .map_err(|error| JsValue::from_str(&format!("bad uuid: {error}")))?;
         with_runtime(|runtime| {
             let notes = ModelDelegate::new(runtime, &cratestack_schema::NOTE_MODEL);
             notes
@@ -186,8 +182,8 @@ mod wasm {
 
     #[wasm_bindgen]
     pub fn delete_note(id: &str) -> Result<JsValue, JsValue> {
-        let uuid =
-            Uuid::parse_str(id).map_err(|error| JsValue::from_str(&format!("bad uuid: {error}")))?;
+        let uuid = Uuid::parse_str(id)
+            .map_err(|error| JsValue::from_str(&format!("bad uuid: {error}")))?;
         with_runtime(|runtime| {
             let notes = ModelDelegate::new(runtime, &cratestack_schema::NOTE_MODEL);
             notes.delete(uuid).run()

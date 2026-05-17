@@ -18,12 +18,12 @@ use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::time::Duration;
 
+use axum::Router;
 use axum::body::{Body, Bytes};
 use axum::http::{HeaderMap, HeaderValue, Response, StatusCode, header};
 use axum::routing::post;
-use axum::Router;
 use cratestack::include_client_schema;
-use cratestack_client_rust::{ClientConfig, CborCodec, CratestackClient};
+use cratestack_client_rust::{CborCodec, ClientConfig, CratestackClient};
 use cratestack_core::CoolCodec;
 
 include_client_schema!("../cratestack/tests/fixtures/transport_rpc.cstack");
@@ -47,11 +47,7 @@ async fn rpc_client_widget_list_get_create_update_delete_round_trip() {
     assert_eq!(listed[1].name, "Beta");
 
     // get — input wraps `id` in RpcPkInput { id }.
-    let widget = client
-        .widgets()
-        .get(&1)
-        .await
-        .expect("get should succeed");
+    let widget = client.widgets().get(&1).await.expect("get should succeed");
     assert_eq!(widget.id, 1);
     assert_eq!(widget.name, "Alpha");
 
@@ -186,9 +182,7 @@ async fn rpc_client_batches_heterogeneous_ops_in_one_round_trip() {
     assert_eq!(widget.id, 1);
     assert_eq!(widget.name, "Alpha");
 
-    let echoed = results
-        .take(h_ping)
-        .expect("ping frame should resolve");
+    let echoed = results.take(h_ping).expect("ping frame should resolve");
     assert_eq!(echoed.nonce, "batch-1");
 
     let created = results
@@ -224,9 +218,7 @@ async fn rpc_client_batch_per_frame_error_does_not_poison_other_frames() {
         .await
         .expect("batch envelope should succeed even when individual frames err");
 
-    let widget = results
-        .take(h_ok)
-        .expect("the ok frame should resolve");
+    let widget = results.take(h_ok).expect("the ok frame should resolve");
     assert_eq!(widget.id, 1);
 
     let err = results
@@ -286,7 +278,10 @@ fn cbor_response<T: serde::Serialize>(status: StatusCode, body: &T) -> Response<
     let bytes = CborCodec.encode(body).expect("encode body");
     Response::builder()
         .status(status)
-        .header(header::CONTENT_TYPE, HeaderValue::from_static("application/cbor"))
+        .header(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/cbor"),
+        )
         .body(Body::from(bytes))
         .expect("response builds")
 }
@@ -294,7 +289,7 @@ fn cbor_response<T: serde::Serialize>(status: StatusCode, body: &T) -> Response<
 async fn handle_widget_list(_body: Bytes) -> Response<Body> {
     // Server-side: would decode the body as RpcListInput. For the mock we
     // just return a canned list.
-    
+
     cbor_response(StatusCode::OK, &vec![widget(1, "Alpha"), widget(2, "Beta")])
 }
 
@@ -320,11 +315,7 @@ async fn handle_widget_update(body: Bytes) -> Response<Body> {
     let input: cratestack::rpc::RpcUpdateInput<i64, cratestack_schema::UpdateWidgetInput> =
         CborCodec.decode(&body).expect("decode RpcUpdateInput");
     assert_eq!(input.id, 1, "client should wrap id in RpcUpdateInput");
-    let new_name = input
-        .patch
-        .name
-        .clone()
-        .expect("patch.name should be Some");
+    let new_name = input.patch.name.clone().expect("patch.name should be Some");
     cbor_response(StatusCode::OK, &widget(input.id, &new_name))
 }
 
@@ -350,11 +341,7 @@ async fn handle_proc_bump(body: Bytes) -> Response<Body> {
     cbor_response(StatusCode::OK, &echoed)
 }
 
-async fn handle_proc_many_pings(
-    
-    headers: HeaderMap,
-    body: Bytes,
-) -> Response<Body> {
+async fn handle_proc_many_pings(headers: HeaderMap, body: Bytes) -> Response<Body> {
     // The generated streaming method sets `Accept: application/cbor-seq`
     // — assert that so a future regression that drops the Accept header
     // shows up here as a test failure.
@@ -429,10 +416,8 @@ async fn spawn_batch_server() -> (url::Url, tokio::task::JoinHandle<()>) {
 async fn handle_batch(body: Bytes) -> Response<Body> {
     let requests: Vec<cratestack::rpc::RpcRequest> =
         CborCodec.decode(&body).expect("decode batch frames");
-    let responses: Vec<cratestack::rpc::RpcResponseFrame> = requests
-        .into_iter()
-        .map(dispatch_frame)
-        .collect();
+    let responses: Vec<cratestack::rpc::RpcResponseFrame> =
+        requests.into_iter().map(dispatch_frame).collect();
     cbor_response(StatusCode::OK, &responses)
 }
 

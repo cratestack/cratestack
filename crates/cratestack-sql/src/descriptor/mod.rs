@@ -159,16 +159,14 @@ impl<M, PK> ModelDescriptor<M, PK> {
         let mut sql = String::new();
         let mut emitted = false;
         for column in self.columns.iter() {
-            if columns.iter().any(|name| *name == column.sql_name)
-                && {
-                    if emitted {
-                        sql.push_str(", ");
-                    }
-                    let _ = write!(sql, "{} AS \"{}\"", column.sql_name, column.rust_name);
-                    emitted = true;
-                    true
+            if columns.iter().any(|name| *name == column.sql_name) && {
+                if emitted {
+                    sql.push_str(", ");
                 }
-            {}
+                let _ = write!(sql, "{} AS \"{}\"", column.sql_name, column.rust_name);
+                emitted = true;
+                true
+            } {}
         }
         if !emitted {
             // Fallback: always project the primary key so the
@@ -181,11 +179,7 @@ impl<M, PK> ModelDescriptor<M, PK> {
                 .iter()
                 .find(|column| column.sql_name == self.primary_key)
             {
-                let _ = write!(
-                    sql,
-                    "{} AS \"{}\"",
-                    pk_column.sql_name, pk_column.rust_name,
-                );
+                let _ = write!(sql, "{} AS \"{}\"", pk_column.sql_name, pk_column.rust_name,);
             }
         }
         sql

@@ -45,13 +45,20 @@ fn hash_key_uses_configured_prefix_and_idem_namespace() {
         .strip_prefix("bank:idem:")
         .expect("hash_key must use `<prefix>:idem:` as its namespace");
     assert_eq!(suffix.len(), 64);
-    assert!(suffix.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+    assert!(
+        suffix
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+    );
 }
 
 #[test]
 fn hash_key_is_deterministic() {
     let store = offline_store("bank");
-    assert_eq!(store.hash_key("alice", "txn-1"), store.hash_key("alice", "txn-1"));
+    assert_eq!(
+        store.hash_key("alice", "txn-1"),
+        store.hash_key("alice", "txn-1")
+    );
 }
 
 #[test]

@@ -51,7 +51,12 @@ pub(super) fn push_json_filter_query(
             query.push(*column).push(" ? ");
             query.push_bind((*key).to_owned());
         }
-        cratestack_sql::JsonFilter::GetText { column, key, op, value } => {
+        cratestack_sql::JsonFilter::GetText {
+            column,
+            key,
+            op,
+            value,
+        } => {
             query.push(*column).push(" ->> ");
             query.push_bind((*key).to_owned());
             match op {

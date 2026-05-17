@@ -32,7 +32,10 @@ fn database_error_public_message_is_canned() {
 fn codec_error_public_message_is_canned() {
     let err = CoolError::Codec("malformed CBOR major type 7 at offset 42".to_owned());
     assert_eq!(err.public_message(), "invalid request payload");
-    assert_eq!(err.detail(), Some("malformed CBOR major type 7 at offset 42"));
+    assert_eq!(
+        err.detail(),
+        Some("malformed CBOR major type 7 at offset 42")
+    );
 }
 
 #[test]

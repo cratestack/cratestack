@@ -16,7 +16,7 @@ mod config;
 mod layer;
 mod store;
 
-pub use config::{RateLimitConfig, RateLimitDecision, _bucket_capacity_for};
+pub use config::{_bucket_capacity_for, RateLimitConfig, RateLimitDecision};
 pub use layer::{RateLimitLayer, RateLimitService};
 pub use store::{InMemoryRateLimitStore, RateLimitStore};
 

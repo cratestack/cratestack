@@ -12,7 +12,9 @@ use crate::runtime::wire::{
     RuntimeCodecConfig, RuntimeConfigWire, RuntimeEnvelopeConfig, RuntimeErrorCode,
     RuntimeErrorWire, RuntimeRequestWire, RuntimeResponseWire, RuntimeStateStoreConfig,
 };
-use crate::state::{ClientStateStore, InMemoryStateStore, JsonFileStateStore, PersistedClientState};
+use crate::state::{
+    ClientStateStore, InMemoryStateStore, JsonFileStateStore, PersistedClientState,
+};
 use crate::streaming_callback::RuntimeChunkWire;
 
 pub struct RuntimeHandle {

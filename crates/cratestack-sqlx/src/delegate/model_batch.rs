@@ -32,10 +32,7 @@ impl<'a, M: 'static, PK: 'static> ModelDelegate<'a, M, PK> {
     /// Update many rows in one outer transaction with per-item
     /// patches and optional `if_match` versions. Per-item failures
     /// roll back at the savepoint; successful items commit together.
-    pub fn batch_update<I>(
-        &self,
-        items: Vec<BatchUpdateItem<PK, I>>,
-    ) -> BatchUpdate<'a, M, PK, I> {
+    pub fn batch_update<I>(&self, items: Vec<BatchUpdateItem<PK, I>>) -> BatchUpdate<'a, M, PK, I> {
         BatchUpdate {
             runtime: self.runtime,
             descriptor: self.descriptor,

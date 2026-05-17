@@ -1,9 +1,7 @@
 use axum::http::HeaderMap;
 use cratestack_core::{CoolCodec, CoolError};
 
-use crate::transport::{
-    validate_transport_accept_header, validate_transport_content_type_header,
-};
+use crate::transport::{validate_transport_accept_header, validate_transport_content_type_header};
 
 pub fn validate_codec_response_headers<C>(headers: &HeaderMap) -> Result<(), CoolError>
 where

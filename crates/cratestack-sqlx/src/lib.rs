@@ -107,12 +107,12 @@ pub use migrations::{
 
 pub use cratestack_policy::{PolicyExpr, PolicyLiteral, ReadPolicy, ReadPredicate};
 pub use cratestack_sql::{
-    coalesce, point, CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault,
-    CreateDefaultType, CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName,
-    IntoSqlValue, JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey,
-    NullOrder, OrderClause, Projection, RelationFilter, RelationInclude, RelationQuantifier,
-    SortDirection, SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue, UpdateModelInput,
-    UpsertModelInput,
+    CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault, CreateDefaultType,
+    CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName, IntoSqlValue,
+    JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder,
+    OrderClause, Projection, RelationFilter, RelationInclude, RelationQuantifier, SortDirection,
+    SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue, UpdateModelInput, UpsertModelInput,
+    coalesce, point,
 };
 pub use delegate::{
     ModelDelegate, ScopedAggregate, ScopedAggregateColumn, ScopedAggregateCount, ScopedBatchCreate,

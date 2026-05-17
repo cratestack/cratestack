@@ -6,9 +6,18 @@ use cratestack_sql::{ModelColumn, ModelDescriptor};
 
 pub(super) fn fixture_descriptor() -> ModelDescriptor<(), i64> {
     const COLUMNS: &[ModelColumn] = &[
-        ModelColumn { rust_name: "id", sql_name: "id" },
-        ModelColumn { rust_name: "title", sql_name: "title" },
-        ModelColumn { rust_name: "published", sql_name: "published" },
+        ModelColumn {
+            rust_name: "id",
+            sql_name: "id",
+        },
+        ModelColumn {
+            rust_name: "title",
+            sql_name: "title",
+        },
+        ModelColumn {
+            rust_name: "published",
+            sql_name: "published",
+        },
     ];
     ModelDescriptor::new(
         "Post",

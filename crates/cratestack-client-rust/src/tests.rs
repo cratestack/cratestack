@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use super::{
     ClientStateStore, JsonFileStateStore, PersistedClientState, RequestJournalEntry,
-    RuntimeCodecConfig, RuntimeConfigWire, RuntimeEnvelopeConfig, RuntimeErrorCode,
-    RuntimeHandle, RuntimeRequestWire, RuntimeStateStoreConfig, RuntimeTransportConfig,
+    RuntimeCodecConfig, RuntimeConfigWire, RuntimeEnvelopeConfig, RuntimeErrorCode, RuntimeHandle,
+    RuntimeRequestWire, RuntimeStateStoreConfig, RuntimeTransportConfig,
 };
 
 #[test]

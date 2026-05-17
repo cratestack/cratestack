@@ -2,9 +2,9 @@
 //! Accept variants. The proof point is that **streaming is a content
 //! negotiation**, not a route — the URL doesn't change.
 
-use cratestack::axum::body::{to_bytes, Body};
-use cratestack::axum::http::{Request, StatusCode};
 use cratestack::CoolCodec;
+use cratestack::axum::body::{Body, to_bytes};
+use cratestack::axum::http::{Request, StatusCode};
 use cratestack_codec_cbor::CborCodec;
 use rpc_streaming_example::{build_router, decode_cbor_seq, schema};
 use tower::ServiceExt;
@@ -14,7 +14,10 @@ async fn ticks_returns_single_cbor_vec_with_default_accept() {
     let app = build_router();
     let body = CborCodec
         .encode(&schema::procedures::ticks::Args {
-            args: schema::TickerArgs { start: 10, count: 3 },
+            args: schema::TickerArgs {
+                start: 10,
+                count: 3,
+            },
         })
         .unwrap();
     let response = app
@@ -52,7 +55,10 @@ async fn ticks_streams_cbor_seq_when_negotiated() {
     let app = build_router();
     let body = CborCodec
         .encode(&schema::procedures::ticks::Args {
-            args: schema::TickerArgs { start: 100, count: 4 },
+            args: schema::TickerArgs {
+                start: 100,
+                count: 4,
+            },
         })
         .unwrap();
     let response = app

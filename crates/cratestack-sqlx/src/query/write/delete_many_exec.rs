@@ -101,5 +101,12 @@ where
     }
 
     let total = removed.len();
-    Ok((BatchSummary { total, ok: total, err: 0 }, emits_event))
+    Ok((
+        BatchSummary {
+            total,
+            ok: total,
+            err: 0,
+        },
+        emits_event,
+    ))
 }

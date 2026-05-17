@@ -66,8 +66,13 @@ where
         if audit_enabled {
             let before_snapshot = before.as_ref().and_then(|m| serde_json::to_value(m).ok());
             let after = serde_json::to_value(&record).ok();
-            let event =
-                build_audit_event(descriptor, AuditOperation::Update, before_snapshot, after, ctx);
+            let event = build_audit_event(
+                descriptor,
+                AuditOperation::Update,
+                before_snapshot,
+                after,
+                ctx,
+            );
             enqueue_audit_event(&mut *item_tx, &event).await?;
         }
         Ok(record)

@@ -173,11 +173,25 @@ async fn expired_reservation_is_replaced_with_fresh_token() {
     // the newer reservation. We then verify the retry's own complete
     // sticks.
     store
-        .complete(principal, key, original_token, 500, &[], br#"{"stale":true}"#)
+        .complete(
+            principal,
+            key,
+            original_token,
+            500,
+            &[],
+            br#"{"stale":true}"#,
+        )
         .await
         .expect("stale complete must not error");
     store
-        .complete(principal, key, retry_token, 201, &[], br#"{"owner":"retry"}"#)
+        .complete(
+            principal,
+            key,
+            retry_token,
+            201,
+            &[],
+            br#"{"owner":"retry"}"#,
+        )
         .await
         .expect("retry complete");
 
@@ -266,10 +280,7 @@ async fn release_with_matching_token_clears_reservation() {
         ReservationOutcome::Reserved { token } => token,
         other => panic!("expected Reserved, got {other:?}"),
     };
-    store
-        .release(principal, key, token)
-        .await
-        .expect("release");
+    store.release(principal, key, token).await.expect("release");
 
     // After a self-release the key is gone — a re-reserve under the
     // same (principal, key, hash) must produce a fresh Reserved with a
@@ -312,7 +323,10 @@ async fn different_keys_under_same_principal_are_isolated() {
         ReservationOutcome::Reserved { token } => token,
         other => panic!("expected Reserved for B, got {other:?}"),
     };
-    assert_ne!(token_a, token_b, "distinct keys must produce distinct reservations");
+    assert_ne!(
+        token_a, token_b,
+        "distinct keys must produce distinct reservations"
+    );
 
     // Completing A must not affect B's reservation status.
     store
@@ -535,7 +549,14 @@ async fn replay_with_large_body_roundtrips_unchanged() {
     // test fast.
     let body: Vec<u8> = (0..(256 * 1024)).map(|i| (i % 251) as u8).collect();
     store
-        .complete(principal, key, token, 200, b"content-type:application/octet-stream", &body)
+        .complete(
+            principal,
+            key,
+            token,
+            200,
+            b"content-type:application/octet-stream",
+            &body,
+        )
         .await
         .unwrap();
     let record = match store
@@ -665,9 +686,7 @@ async fn release_for_unreserved_key_is_silent_noop() {
     let Some(store) = store_or_skip("release-no-reserve") else {
         return;
     };
-    let result = store
-        .release("fp-nr", "txn-nr", Uuid::new_v4())
-        .await;
+    let result = store.release("fp-nr", "txn-nr", Uuid::new_v4()).await;
     assert!(result.is_ok(), "expected silent ok, got {result:?}");
 }
 
@@ -710,7 +729,10 @@ async fn concurrent_reserves_elect_exactly_one_winner() {
         }
     }
     assert_eq!(reserved, 1, "exactly one task must win — got {reserved}");
-    assert_eq!(in_flight, 15, "the rest must see InFlight — got {in_flight}");
+    assert_eq!(
+        in_flight, 15,
+        "the rest must see InFlight — got {in_flight}"
+    );
     assert_eq!(other, 0, "no Conflict/Replay expected — got {other}");
 }
 

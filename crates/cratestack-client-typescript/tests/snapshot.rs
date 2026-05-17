@@ -184,10 +184,7 @@ fn snapshot_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/snapshots")
 }
 
-fn package_file<'a>(
-    package: &'a GeneratedTypeScriptPackage,
-    file_name: &str,
-) -> &'a str {
+fn package_file<'a>(package: &'a GeneratedTypeScriptPackage, file_name: &str) -> &'a str {
     package
         .files
         .iter()

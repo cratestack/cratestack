@@ -39,7 +39,10 @@ where
     let store = Arc::new(store);
     Router::new()
         .route("/transfer", post(move || handler.clone()()))
-        .route("/transfer/{id}", get(|| async { (StatusCode::OK, "GET ok") }))
+        .route(
+            "/transfer/{id}",
+            get(|| async { (StatusCode::OK, "GET ok") }),
+        )
         .layer(IdempotencyLayer::new(store, Duration::from_secs(60)))
 }
 
@@ -204,7 +207,10 @@ async fn replay_preserves_response_headers_emitted_by_the_handler() {
         .await
         .expect("first");
     let (_, headers_a, _) = body_string(first).await;
-    let location_a = headers_a.get("location").cloned().expect("Location on first");
+    let location_a = headers_a
+        .get("location")
+        .cloned()
+        .expect("Location on first");
 
     let second = router
         .clone()

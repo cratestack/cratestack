@@ -4,8 +4,8 @@
 use std::hash::Hash;
 
 use cratestack_core::{
-    BATCH_MAX_ITEMS, BatchItemError, BatchItemResult, BatchItemStatus, BatchResponse,
-    BatchSummary, find_duplicate_position,
+    BATCH_MAX_ITEMS, BatchItemError, BatchItemResult, BatchItemStatus, BatchResponse, BatchSummary,
+    find_duplicate_position,
 };
 use cratestack_sql::{SqlValue, find_duplicate_sql_value};
 
@@ -23,14 +23,20 @@ pub(super) fn validate_batch_size(len: usize) -> Result<(), RusqliteError> {
 
 pub(super) fn reject_duplicate_pks<K: Eq + Hash + Clone>(keys: &[K]) -> Result<(), RusqliteError> {
     if let Some((first, dup)) = find_duplicate_position(keys.iter().cloned()) {
-        return Err(RusqliteError::DuplicateBatchKey { first, duplicate: dup });
+        return Err(RusqliteError::DuplicateBatchKey {
+            first,
+            duplicate: dup,
+        });
     }
     Ok(())
 }
 
 pub(super) fn reject_duplicate_sql_values(values: &[SqlValue]) -> Result<(), RusqliteError> {
     if let Some((first, dup)) = find_duplicate_sql_value(values) {
-        return Err(RusqliteError::DuplicateBatchKey { first, duplicate: dup });
+        return Err(RusqliteError::DuplicateBatchKey {
+            first,
+            duplicate: dup,
+        });
     }
     Ok(())
 }

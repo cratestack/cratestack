@@ -20,7 +20,9 @@ fn parse_throttled_extracts_retry_after() {
     let outcome = parse_consume_outcome(value).expect("parse");
     assert_eq!(
         outcome,
-        RateLimitDecision::Throttled { retry_after_secs: 3 },
+        RateLimitDecision::Throttled {
+            retry_after_secs: 3
+        },
     );
 }
 

@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::config::{RateLimitConfig, RateLimitDecision, _bucket_capacity_for};
+use super::config::{_bucket_capacity_for, RateLimitConfig, RateLimitDecision};
 use super::store::{InMemoryRateLimitStore, RateLimitStore};
 
 #[tokio::test]

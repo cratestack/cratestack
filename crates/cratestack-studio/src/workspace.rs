@@ -114,7 +114,9 @@ impl LoadedWorkspace {
 
         let mut targets = Vec::with_capacity(raw.targets.len());
         for target_cfg in &raw.targets {
-            targets.push(Arc::new(builder::load_target(target_cfg, &raw, &base_dir).await?));
+            targets.push(Arc::new(
+                builder::load_target(target_cfg, &raw, &base_dir).await?,
+            ));
         }
 
         Ok(Arc::new(Self {

@@ -22,10 +22,7 @@ pub(super) struct ColumnLists {
     pub(super) upsert_update_columns: Vec<proc_macro2::TokenStream>,
 }
 
-pub(super) fn collect_column_lists(
-    model: &Model,
-    models: &[Model],
-) -> Result<ColumnLists, String> {
+pub(super) fn collect_column_lists(model: &Model, models: &[Model]) -> Result<ColumnLists, String> {
     let model_names = model_name_set(models);
     let columns = scalar_model_fields(model, &model_names)
         .into_iter()

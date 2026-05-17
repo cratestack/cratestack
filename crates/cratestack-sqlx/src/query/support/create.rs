@@ -49,16 +49,28 @@ pub(crate) fn apply_create_defaults(
             continue;
         }
         let value = resolve_default_value(default, ctx)?;
-        values.push(SqlColumnValue { column: default.column, value });
+        values.push(SqlColumnValue {
+            column: default.column,
+            value,
+        });
     }
     Ok(values)
 }
 
-fn resolve_default_value(default: &CreateDefault, ctx: &CoolContext) -> Result<SqlValue, CoolError> {
-    match (ctx.auth_field(default.auth_field), default.ty, default.nullable) {
+fn resolve_default_value(
+    default: &CreateDefault,
+    ctx: &CoolContext,
+) -> Result<SqlValue, CoolError> {
+    match (
+        ctx.auth_field(default.auth_field),
+        default.ty,
+        default.nullable,
+    ) {
         (Some(Value::Bool(value)), CreateDefaultType::Bool, _) => Ok(SqlValue::Bool(*value)),
         (Some(Value::Int(value)), CreateDefaultType::Int, _) => Ok(SqlValue::Int(*value)),
-        (Some(Value::String(value)), CreateDefaultType::String, _) => Ok(SqlValue::String(value.clone())),
+        (Some(Value::String(value)), CreateDefaultType::String, _) => {
+            Ok(SqlValue::String(value.clone()))
+        }
         (None, CreateDefaultType::Bool, true) => Ok(SqlValue::NullBool),
         (None, CreateDefaultType::Int, true) => Ok(SqlValue::NullInt),
         (None, CreateDefaultType::String, true) => Ok(SqlValue::NullString),
@@ -116,4 +128,3 @@ pub(super) fn evaluate_input_predicate(
         ReadPredicate::Relation { .. } => false,
     }
 }
-

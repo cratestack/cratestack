@@ -32,11 +32,7 @@ fn store_or_skip(suffix: &str) -> Option<RedisRateLimitStore> {
     RedisRateLimitStore::open(url, prefix).ok()
 }
 
-fn build_router<H, Fut>(
-    store: RedisRateLimitStore,
-    config: RateLimitConfig,
-    handler: H,
-) -> Router
+fn build_router<H, Fut>(store: RedisRateLimitStore, config: RateLimitConfig, handler: H) -> Router
 where
     H: Clone + Send + Sync + 'static + Fn() -> Fut,
     Fut: std::future::Future<Output = Response<Body>> + Send + 'static,
@@ -94,7 +90,10 @@ async fn allows_up_to_burst_then_returns_429_with_retry_after() {
         // The layer must surface the bucket hints on every allowed
         // response — banks build client-side backoff on these.
         assert_eq!(
-            response.headers().get("x-ratelimit-limit").map(|v| v.as_bytes()),
+            response
+                .headers()
+                .get("x-ratelimit-limit")
+                .map(|v| v.as_bytes()),
             Some(b"3".as_slice()),
             "X-RateLimit-Limit must reflect the configured burst",
         );
@@ -308,7 +307,11 @@ fn test_seed() -> u64 {
 struct XorShift64(u64);
 impl XorShift64 {
     fn new(seed: u64) -> Self {
-        Self(if seed == 0 { 0xDEAD_BEEF_CAFE_BABE } else { seed })
+        Self(if seed == 0 {
+            0xDEAD_BEEF_CAFE_BABE
+        } else {
+            seed
+        })
     }
     fn next_u64(&mut self) -> u64 {
         let mut x = self.0;

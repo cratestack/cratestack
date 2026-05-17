@@ -24,11 +24,46 @@ pub(crate) fn generate_model_op_descriptors(
     let delete_id = format!("model.{model_name}.delete");
 
     vec![
-        op_descriptor(&list_id, quote! { ::cratestack::OpKind::Unary }, "", &page_ty, true, auth_required),
-        op_descriptor(&get_id, quote! { ::cratestack::OpKind::Unary }, "", model_name, true, auth_required),
-        op_descriptor(&create_id, quote! { ::cratestack::OpKind::Unary }, &create_input, model_name, false, auth_required),
-        op_descriptor(&update_id, quote! { ::cratestack::OpKind::Unary }, &update_input, model_name, false, auth_required),
-        op_descriptor(&delete_id, quote! { ::cratestack::OpKind::Unary }, "", model_name, false, auth_required),
+        op_descriptor(
+            &list_id,
+            quote! { ::cratestack::OpKind::Unary },
+            "",
+            &page_ty,
+            true,
+            auth_required,
+        ),
+        op_descriptor(
+            &get_id,
+            quote! { ::cratestack::OpKind::Unary },
+            "",
+            model_name,
+            true,
+            auth_required,
+        ),
+        op_descriptor(
+            &create_id,
+            quote! { ::cratestack::OpKind::Unary },
+            &create_input,
+            model_name,
+            false,
+            auth_required,
+        ),
+        op_descriptor(
+            &update_id,
+            quote! { ::cratestack::OpKind::Unary },
+            &update_input,
+            model_name,
+            false,
+            auth_required,
+        ),
+        op_descriptor(
+            &delete_id,
+            quote! { ::cratestack::OpKind::Unary },
+            "",
+            model_name,
+            false,
+            auth_required,
+        ),
     ]
 }
 

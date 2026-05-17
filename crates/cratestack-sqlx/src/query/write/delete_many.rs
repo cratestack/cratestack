@@ -96,14 +96,9 @@ impl<'a, M: 'static, PK: 'static> DeleteMany<'a, M, PK> {
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
     {
-        let (summary, _) = run_delete_many_in_tx(
-            tx,
-            self.runtime.pool(),
-            self.descriptor,
-            &self.filters,
-            ctx,
-        )
-        .await?;
+        let (summary, _) =
+            run_delete_many_in_tx(tx, self.runtime.pool(), self.descriptor, &self.filters, ctx)
+                .await?;
         Ok(summary)
     }
 }

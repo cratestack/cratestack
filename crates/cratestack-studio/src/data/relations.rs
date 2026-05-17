@@ -81,15 +81,18 @@ pub(crate) fn resolve_relation<'a>(
             field: field_name.to_owned(),
         })?;
 
-    let relation =
-        parse_relation_attribute(field).ok_or_else(|| DataError::NotARelation {
-            model: source_model.name.clone(),
-            field: field_name.to_owned(),
-        })?;
-
-    let source_field_name = relation.fields.first().cloned().ok_or(DataError::Unsupported {
-        what: "@relation has no `fields:` array (Phase 1b requires exactly one)",
+    let relation = parse_relation_attribute(field).ok_or_else(|| DataError::NotARelation {
+        model: source_model.name.clone(),
+        field: field_name.to_owned(),
     })?;
+
+    let source_field_name = relation
+        .fields
+        .first()
+        .cloned()
+        .ok_or(DataError::Unsupported {
+            what: "@relation has no `fields:` array (Phase 1b requires exactly one)",
+        })?;
     let target_field_name = relation
         .references
         .first()
@@ -100,21 +103,23 @@ pub(crate) fn resolve_relation<'a>(
 
     // The cast comes from the target column's declared type, since we
     // bind on the target side of the SQL filter.
-    let target_field =
-        target_model
-            .fields
-            .iter()
-            .find(|f| f.name == target_field_name)
-            .ok_or(DataError::Unsupported {
-                what: "@relation references a target field that doesn't exist",
-            })?;
+    let target_field = target_model
+        .fields
+        .iter()
+        .find(|f| f.name == target_field_name)
+        .ok_or(DataError::Unsupported {
+            what: "@relation references a target field that doesn't exist",
+        })?;
     let filter_cast = pk_cast_for(&target_field.ty.name).ok_or(DataError::Unsupported {
         what: "relation target column has an unsupported scalar type",
     })?;
 
     // Validate that the source field exists on this model (catches
     // typos in the schema's `fields:` array early).
-    let source_field_exists = source_model.fields.iter().any(|f| f.name == source_field_name);
+    let source_field_exists = source_model
+        .fields
+        .iter()
+        .any(|f| f.name == source_field_name);
     if !source_field_exists {
         return Err(DataError::Unsupported {
             what: "@relation `fields:` references a field that doesn't exist on the source model",

@@ -122,7 +122,8 @@ pub(super) fn build_prep(model: &Model) -> Result<ModelHandlerPrep, String> {
     let total_count_block =
         list_logging::total_count_tokens(paged, &list_builder_ident, &list_response_type);
     let list_success_value = list_logging::list_success_tokens(paged);
-    let list_result_log = list_logging::list_result_log_tokens(paged, &list_route_path, &model.name);
+    let list_result_log =
+        list_logging::list_result_log_tokens(paged, &list_route_path, &model.name);
 
     Ok(ModelHandlerPrep {
         list_handler_ident: ident(&format!("handle_list_{}", plural)),
@@ -140,7 +141,10 @@ pub(super) fn build_prep(model: &Model) -> Result<ModelHandlerPrep, String> {
         list_builder_ident,
         validate_selection_ident: ident(&format!("validate_{}_selection_query", snake)),
         validate_include_path_ident: ident(&format!("validate_{}_include_path", snake)),
-        validate_include_fields_path_ident: ident(&format!("validate_{}_include_fields_path", snake)),
+        validate_include_fields_path_ident: ident(&format!(
+            "validate_{}_include_fields_path",
+            snake
+        )),
         project_model_value_ident: ident(&format!("project_{}_model_value", snake)),
         project_object_fields_ident: ident(&format!("project_{}_object_fields", snake)),
         project_serialized_value_ident: ident(&format!("project_{}_serialized_value", snake)),

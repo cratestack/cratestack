@@ -50,21 +50,23 @@ impl<'a, M: 'static, PK: 'static> BatchGet<'a, M, PK> {
         }
         sql.push(')');
 
-        let binds: Vec<SqlValue> = self.ids.iter().cloned().map(IntoSqlValue::into_sql_value).collect();
+        let binds: Vec<SqlValue> = self
+            .ids
+            .iter()
+            .cloned()
+            .map(IntoSqlValue::into_sql_value)
+            .collect();
 
         let rows: Vec<M> = self.runtime.with_connection(|conn| {
             let mut stmt = conn.prepare(&sql)?;
             let bind_iter = binds.iter().map(SqlValueParam);
             let rows = stmt
-                .query_map(params_from_iter(bind_iter), |row| {
-                    M::from_rusqlite_row(row)
-                })?
+                .query_map(params_from_iter(bind_iter), |row| M::from_rusqlite_row(row))?
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(rows)
         })?;
 
-        let mut by_pk: HashMap<PK, M> =
-            rows.into_iter().map(|m| (m.primary_key(), m)).collect();
+        let mut by_pk: HashMap<PK, M> = rows.into_iter().map(|m| (m.primary_key(), m)).collect();
         let results = self
             .ids
             .into_iter()

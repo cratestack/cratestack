@@ -4,8 +4,8 @@ use axum::response::Response;
 use cratestack_core::{CoolCodec, CoolError};
 use serde::Serialize;
 
-use super::http_transport::CborCodecMarker;
 use super::CBOR_SEQUENCE_CONTENT_TYPE;
+use super::http_transport::CborCodecMarker;
 
 pub(crate) fn encode_cbor_sequence_response<C, T>(
     codec: &C,

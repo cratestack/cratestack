@@ -13,7 +13,10 @@ use cratestack::sqlx::{Row, query};
 use cratestack::{CoolContext, Value};
 use support::pg;
 
-include_server_schema!("tests/fixtures/builder_extensions_tier4.cstack", db = Postgres);
+include_server_schema!(
+    "tests/fixtures/builder_extensions_tier4.cstack",
+    db = Postgres
+);
 
 async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     query("DROP TABLE IF EXISTS cratestack_audit, cratestack_event_outbox, refunds")
@@ -34,8 +37,7 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
 }
 
 fn operator() -> CoolContext {
-    CoolContext::authenticated([("id".to_owned(), Value::Int(1))])
-        .with_request_id("tier4-001")
+    CoolContext::authenticated([("id".to_owned(), Value::Int(1))]).with_request_id("tier4-001")
 }
 
 async fn seed(pool: &cratestack::sqlx::PgPool) {
@@ -94,10 +96,7 @@ async fn aggregate_sum_filters_through_read_policy() {
         .run()
         .await
         .expect("aggregate sum succeeds");
-    assert_eq!(
-        sum,
-        Some(cratestack::Decimal::from(3500_i64)),
-    );
+    assert_eq!(sum, Some(cratestack::Decimal::from(3500_i64)),);
 }
 
 #[tokio::test]
@@ -249,10 +248,7 @@ async fn order_by_nulls_first_preview_includes_nulls_first_clause() {
         .find_many()
         .order_by(refund::status().asc().nulls_first())
         .preview_scoped_sql();
-    assert!(
-        preview.contains("status ASC NULLS FIRST"),
-        "got: {preview}",
-    );
+    assert!(preview.contains("status ASC NULLS FIRST"), "got: {preview}",);
 
     // Sanity-check the live query: it should also run cleanly with the
     // NULLS FIRST clause emitted.

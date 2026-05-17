@@ -73,12 +73,7 @@ impl DataSource for PostgresSource {
         ops::create(&self.schema, &self.pool, model, payload).await
     }
 
-    async fn update(
-        &self,
-        model: &str,
-        pk: &str,
-        payload: &Row,
-    ) -> Result<Option<Row>, DataError> {
+    async fn update(&self, model: &str, pk: &str, payload: &Row) -> Result<Option<Row>, DataError> {
         if payload.is_empty() {
             return self.get(model, pk).await;
         }
@@ -100,10 +95,7 @@ impl DataSource for PostgresSource {
         Ok(preview::render(&self.schema, &info, model, op, pk, payload))
     }
 
-    async fn inspect_columns(
-        &self,
-        model: &str,
-    ) -> Result<Option<Vec<ColumnSnapshot>>, DataError> {
+    async fn inspect_columns(&self, model: &str) -> Result<Option<Vec<ColumnSnapshot>>, DataError> {
         let (_, info) = resolve_model(&self.schema, model)?;
         let sql = "SELECT column_name, data_type, is_nullable \
                    FROM information_schema.columns \

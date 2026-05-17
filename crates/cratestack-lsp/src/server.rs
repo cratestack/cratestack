@@ -1,3 +1,4 @@
+use tower_lsp_server::LanguageServer;
 use tower_lsp_server::jsonrpc::Result;
 use tower_lsp_server::ls_types::{
     CompletionOptions, CompletionParams, CompletionResponse, DidChangeTextDocumentParams,
@@ -6,7 +7,6 @@ use tower_lsp_server::ls_types::{
     InitializeParams, InitializeResult, InitializedParams, MarkupContent, MarkupKind, MessageType,
     OneOf, ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind,
 };
-use tower_lsp_server::LanguageServer;
 
 use crate::completion::completion_items;
 use crate::definition::definition_location;

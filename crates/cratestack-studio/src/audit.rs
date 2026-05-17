@@ -108,9 +108,7 @@ fn rfc3339_from_unix(secs: i64) -> String {
     let (minute, second) = (rest / 60, rest % 60);
 
     let (year, month, day) = civil_from_days(days);
-    format!(
-        "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z"
-    )
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
 }
 
 /// Howard Hinnant's `civil_from_days` algorithm. Converts days from
@@ -148,12 +146,7 @@ mod tests {
     fn buffer_drops_oldest_past_capacity() {
         let log = AuditLog::new();
         for i in 0..AuditLog::CAPACITY + 5 {
-            log.push(
-                "t",
-                "Post",
-                AuditOp::Create,
-                Some(format!("p{i}")),
-            );
+            log.push("t", "Post", AuditOp::Create, Some(format!("p{i}")));
         }
         let snap = log.snapshot(AuditLog::CAPACITY * 2);
         assert_eq!(snap.len(), AuditLog::CAPACITY);

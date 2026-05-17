@@ -5,7 +5,9 @@ use crate::builders_model::{
     build_model_api, build_procedure, build_selection_group, build_selection_model,
 };
 use crate::config::DartGeneratorConfig;
-use crate::idents::{dart_identifier, escape_dart_string, pluralize, to_camel_case, to_pascal_case};
+use crate::idents::{
+    dart_identifier, escape_dart_string, pluralize, to_camel_case, to_pascal_case,
+};
 use crate::naming::{
     enum_name_set, is_generated_on_create, is_primary_key, is_relation_field, model_name_set,
     occupied_type_names, procedure_wrapper_name, scalar_model_fields,

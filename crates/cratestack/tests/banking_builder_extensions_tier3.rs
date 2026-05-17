@@ -11,10 +11,13 @@ mod support;
 
 use cratestack::include_server_schema;
 use cratestack::sqlx::query;
-use cratestack::{coalesce, CoolContext, FieldRef, Value};
+use cratestack::{CoolContext, FieldRef, Value, coalesce};
 use support::pg;
 
-include_server_schema!("tests/fixtures/builder_extensions_tier3.cstack", db = Postgres);
+include_server_schema!(
+    "tests/fixtures/builder_extensions_tier3.cstack",
+    db = Postgres
+);
 
 async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     query("DROP TABLE IF EXISTS task_rows")
@@ -36,8 +39,7 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
 }
 
 fn operator() -> CoolContext {
-    CoolContext::authenticated([("id".to_owned(), Value::Int(1))])
-        .with_request_id("tier3-001")
+    CoolContext::authenticated([("id".to_owned(), Value::Int(1))]).with_request_id("tier3-001")
 }
 
 async fn seed(pool: &cratestack::sqlx::PgPool) {
@@ -181,9 +183,7 @@ async fn coalesce_accepts_bare_str_columns() {
         .task_row()
         .bind(ctx)
         .find_many()
-        .where_expr(
-            coalesce(["next_attempt_at", "scheduled_at", "created_at"]).lte(100_i64),
-        )
+        .where_expr(coalesce(["next_attempt_at", "scheduled_at", "created_at"]).lte(100_i64))
         .run()
         .await
         .unwrap();

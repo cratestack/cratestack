@@ -5,9 +5,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use cratestack_client_dart::{
-    DartGeneratorConfig, GeneratedDartPackage, generate_package,
-};
+use cratestack_client_dart::{DartGeneratorConfig, GeneratedDartPackage, generate_package};
 
 #[test]
 fn rest_snapshot_matches_fixture() {

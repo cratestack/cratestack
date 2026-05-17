@@ -50,8 +50,13 @@ pub(super) fn generate_relation_quantifier_module(
         .into_iter()
         .map(generate_scalar_relation_path_method)
         .collect::<Vec<_>>();
-    let relation_entries =
-        collect_quantifier_relation_entries(target_model, &model_names, visited, &wrappers, models)?;
+    let relation_entries = collect_quantifier_relation_entries(
+        target_model,
+        &model_names,
+        visited,
+        &wrappers,
+        models,
+    )?;
     let relation_path_methods = relation_entries
         .iter()
         .map(|(method, _)| method.clone())

@@ -88,8 +88,32 @@ const COLUMNS: &[ModelColumn] = &[
 ];
 
 static TAG_DESCRIPTOR: ModelDescriptor<Tag, String> = ModelDescriptor::new(
-    "Tag", "tags", COLUMNS, "id", &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[],
-    &[], &[], None, false, &[], &[], None, None, &[],
+    "Tag",
+    "tags",
+    COLUMNS,
+    "id",
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    None,
+    false,
+    &[],
+    &[],
+    None,
+    None,
+    &[],
 );
 
 // --- the dispatcher --------------------------------------------------------
@@ -99,7 +123,10 @@ static TAG_DESCRIPTOR: ModelDescriptor<Tag, String> = ModelDescriptor::new(
 
 fn dispatch(runtime: &RusqliteRuntime, request: OperationRequest) -> OperationResponse {
     if request.model != "Tag" {
-        return OperationResponse::err("unknown_model", format!("unknown model `{}`", request.model));
+        return OperationResponse::err(
+            "unknown_model",
+            format!("unknown model `{}`", request.model),
+        );
     }
 
     let delegate = ModelDelegate::<Tag, String>::new(runtime, &TAG_DESCRIPTOR);

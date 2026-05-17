@@ -35,10 +35,7 @@ impl FromRusqliteRow for PaymentIntent {
 }
 
 impl FromPartialRusqliteRow for PaymentIntent {
-    fn from_partial_rusqlite_row(
-        row: &Row<'_>,
-        selected: &[&str],
-    ) -> rusqlite::Result<Self> {
+    fn from_partial_rusqlite_row(row: &Row<'_>, selected: &[&str]) -> rusqlite::Result<Self> {
         Ok(Self {
             id: if selected.iter().any(|c| *c == "id") {
                 row.get("id")?
@@ -91,16 +88,51 @@ impl CreateModelInput<PaymentIntent> for CreatePaymentIntentInput {
 }
 
 const COLUMNS: &[ModelColumn] = &[
-    ModelColumn { rust_name: "id", sql_name: "id" },
-    ModelColumn { rust_name: "connector_id", sql_name: "connector_id" },
-    ModelColumn { rust_name: "status", sql_name: "status" },
-    ModelColumn { rust_name: "amount", sql_name: "amount" },
+    ModelColumn {
+        rust_name: "id",
+        sql_name: "id",
+    },
+    ModelColumn {
+        rust_name: "connector_id",
+        sql_name: "connector_id",
+    },
+    ModelColumn {
+        rust_name: "status",
+        sql_name: "status",
+    },
+    ModelColumn {
+        rust_name: "amount",
+        sql_name: "amount",
+    },
 ];
 
 static PAYMENT_INTENT_DESCRIPTOR: ModelDescriptor<PaymentIntent, i64> = ModelDescriptor::new(
-    "PaymentIntent", "payment_intents", COLUMNS, "id",
-    &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[],
-    None, false, &[], &[], None, None, &[],
+    "PaymentIntent",
+    "payment_intents",
+    COLUMNS,
+    "id",
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    None,
+    false,
+    &[],
+    &[],
+    None,
+    None,
+    &[],
 );
 
 fn setup() -> RusqliteRuntime {

@@ -42,12 +42,7 @@ pub trait DataSource: Send + Sync + std::fmt::Debug {
 
     /// UPDATE the row identified by `pk` with the (validated, partial)
     /// payload. Returns the updated row. `Ok(None)` if no row matched.
-    async fn update(
-        &self,
-        model: &str,
-        pk: &str,
-        payload: &Row,
-    ) -> Result<Option<Row>, DataError>;
+    async fn update(&self, model: &str, pk: &str, payload: &Row) -> Result<Option<Row>, DataError>;
 
     /// DELETE the row identified by `pk`. Returns the deleted row, or
     /// `Ok(None)` if no row matched.
@@ -73,8 +68,5 @@ pub trait DataSource: Send + Sync + std::fmt::Debug {
     /// `Ok(None)` when the table doesn't exist in the live database.
     /// Backends without a database (API source) return
     /// [`DataError::Unsupported`].
-    async fn inspect_columns(
-        &self,
-        model: &str,
-    ) -> Result<Option<Vec<ColumnSnapshot>>, DataError>;
+    async fn inspect_columns(&self, model: &str) -> Result<Option<Vec<ColumnSnapshot>>, DataError>;
 }

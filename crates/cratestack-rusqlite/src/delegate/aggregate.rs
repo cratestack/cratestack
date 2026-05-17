@@ -24,31 +24,19 @@ impl<'a, M: 'static, PK: 'static> Aggregate<'a, M, PK> {
         }
     }
 
-    pub fn sum<C: cratestack_sql::IntoColumnName>(
-        self,
-        column: C,
-    ) -> AggregateColumn<'a, M, PK> {
+    pub fn sum<C: cratestack_sql::IntoColumnName>(self, column: C) -> AggregateColumn<'a, M, PK> {
         AggregateColumn::new(self.runtime, self.descriptor, AggregateOp::Sum, column)
     }
 
-    pub fn avg<C: cratestack_sql::IntoColumnName>(
-        self,
-        column: C,
-    ) -> AggregateColumn<'a, M, PK> {
+    pub fn avg<C: cratestack_sql::IntoColumnName>(self, column: C) -> AggregateColumn<'a, M, PK> {
         AggregateColumn::new(self.runtime, self.descriptor, AggregateOp::Avg, column)
     }
 
-    pub fn min<C: cratestack_sql::IntoColumnName>(
-        self,
-        column: C,
-    ) -> AggregateColumn<'a, M, PK> {
+    pub fn min<C: cratestack_sql::IntoColumnName>(self, column: C) -> AggregateColumn<'a, M, PK> {
         AggregateColumn::new(self.runtime, self.descriptor, AggregateOp::Min, column)
     }
 
-    pub fn max<C: cratestack_sql::IntoColumnName>(
-        self,
-        column: C,
-    ) -> AggregateColumn<'a, M, PK> {
+    pub fn max<C: cratestack_sql::IntoColumnName>(self, column: C) -> AggregateColumn<'a, M, PK> {
         AggregateColumn::new(self.runtime, self.descriptor, AggregateOp::Max, column)
     }
 }

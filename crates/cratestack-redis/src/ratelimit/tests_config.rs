@@ -34,9 +34,11 @@ fn bucket_key_uses_configured_prefix_and_rl_namespace() {
         .strip_prefix("bank:rl:")
         .expect("bucket_key must use `<prefix>:rl:` as its namespace");
     assert_eq!(suffix.len(), 64);
-    assert!(suffix
-        .chars()
-        .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+    assert!(
+        suffix
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+    );
 }
 
 #[test]

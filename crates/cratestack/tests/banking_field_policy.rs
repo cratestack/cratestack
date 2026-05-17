@@ -22,8 +22,6 @@ mod support;
 
 use support::pg;
 
-
-
 async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     query("DROP TABLE IF EXISTS cratestack_event_outbox, vaults")
         .execute(pool)

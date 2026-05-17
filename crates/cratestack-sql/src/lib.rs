@@ -23,9 +23,9 @@ mod values;
 pub use descriptor::{CreateDefault, CreateDefaultType, ModelColumn, ModelDescriptor};
 pub use dialect::{Dialect, PostgresDialect, SqliteDialect};
 pub use filter::{
-    coalesce, point, CoalesceExpr, CoalesceFilter, FieldRef, Filter, FilterExpr, FilterOp,
-    IntoColumnName, JsonFilter, JsonTextPath, RelationFilter, RelationQuantifier, SpatialFilter,
-    SpatialPoint,
+    CoalesceExpr, CoalesceFilter, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName,
+    JsonFilter, JsonTextPath, RelationFilter, RelationQuantifier, SpatialFilter, SpatialPoint,
+    coalesce, point,
 };
 pub use order::{NullOrder, OrderClause, OrderTarget, SortDirection};
 pub use values::{

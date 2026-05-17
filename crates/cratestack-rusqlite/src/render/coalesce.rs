@@ -21,18 +21,21 @@ pub(super) fn render_coalesce(
     sql.push(')');
     match filter.op {
         FilterOp::Eq => render_coalesce_binary(dialect, "=", &filter.value, sql, binds, bind_index),
-        FilterOp::Ne => render_coalesce_binary(dialect, "!=", &filter.value, sql, binds, bind_index),
+        FilterOp::Ne => {
+            render_coalesce_binary(dialect, "!=", &filter.value, sql, binds, bind_index)
+        }
         FilterOp::Lt => render_coalesce_binary(dialect, "<", &filter.value, sql, binds, bind_index),
-        FilterOp::Lte => render_coalesce_binary(dialect, "<=", &filter.value, sql, binds, bind_index),
+        FilterOp::Lte => {
+            render_coalesce_binary(dialect, "<=", &filter.value, sql, binds, bind_index)
+        }
         FilterOp::Gt => render_coalesce_binary(dialect, ">", &filter.value, sql, binds, bind_index),
-        FilterOp::Gte => render_coalesce_binary(dialect, ">=", &filter.value, sql, binds, bind_index),
+        FilterOp::Gte => {
+            render_coalesce_binary(dialect, ">=", &filter.value, sql, binds, bind_index)
+        }
         FilterOp::IsNull => sql.push_str(" IS NULL"),
         FilterOp::IsNotNull => sql.push_str(" IS NOT NULL"),
         FilterOp::In | FilterOp::Contains | FilterOp::StartsWith | FilterOp::EqOrNull => {
-            unreachable!(
-                "CoalesceFilter built with unsupported op {:?}",
-                filter.op,
-            );
+            unreachable!("CoalesceFilter built with unsupported op {:?}", filter.op,);
         }
     }
 }

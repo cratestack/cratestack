@@ -57,7 +57,9 @@ pub(crate) fn render_policy_expr_sql(
     bind_index: &mut usize,
 ) {
     match expr {
-        PolicyExpr::Predicate(predicate) => render_policy_predicate(predicate, ctx, sql, bind_index),
+        PolicyExpr::Predicate(predicate) => {
+            render_policy_predicate(predicate, ctx, sql, bind_index)
+        }
         PolicyExpr::And(exprs) => render_grouped_policy_sql(exprs, " AND ", ctx, sql, bind_index),
         PolicyExpr::Or(exprs) => render_grouped_policy_sql(exprs, " OR ", ctx, sql, bind_index),
     }

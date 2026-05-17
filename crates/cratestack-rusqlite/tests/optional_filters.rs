@@ -10,8 +10,8 @@
 //!     filters that resolved to `None`.
 
 use cratestack_rusqlite::{
-    coalesce, CreateModelInput, FromRusqliteRow, ModelDelegate, RusqliteRuntime, SqlColumnValue,
-    SqlValue, UpdateModelInput,
+    CreateModelInput, FromRusqliteRow, ModelDelegate, RusqliteRuntime, SqlColumnValue, SqlValue,
+    UpdateModelInput, coalesce,
 };
 use cratestack_sql::{FieldRef, ModelColumn, ModelDescriptor};
 use rusqlite::Row;
@@ -86,17 +86,55 @@ impl UpdateModelInput<Task> for UpdateTaskInput {
 }
 
 const COLUMNS: &[ModelColumn] = &[
-    ModelColumn { rust_name: "id", sql_name: "id" },
-    ModelColumn { rust_name: "market_code", sql_name: "market_code" },
-    ModelColumn { rust_name: "next_attempt_at", sql_name: "next_attempt_at" },
-    ModelColumn { rust_name: "scheduled_at", sql_name: "scheduled_at" },
-    ModelColumn { rust_name: "created_at", sql_name: "created_at" },
+    ModelColumn {
+        rust_name: "id",
+        sql_name: "id",
+    },
+    ModelColumn {
+        rust_name: "market_code",
+        sql_name: "market_code",
+    },
+    ModelColumn {
+        rust_name: "next_attempt_at",
+        sql_name: "next_attempt_at",
+    },
+    ModelColumn {
+        rust_name: "scheduled_at",
+        sql_name: "scheduled_at",
+    },
+    ModelColumn {
+        rust_name: "created_at",
+        sql_name: "created_at",
+    },
 ];
 
 static TASK_DESCRIPTOR: ModelDescriptor<Task, i64> = ModelDescriptor::new(
-    "Task", "tasks", COLUMNS, "id",
-    &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[], &[],
-    None, false, &[], &[], None, None, &[],
+    "Task",
+    "tasks",
+    COLUMNS,
+    "id",
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    None,
+    false,
+    &[],
+    &[],
+    None,
+    None,
+    &[],
 );
 
 fn setup() -> RusqliteRuntime {
@@ -212,9 +250,7 @@ fn coalesce_lte_uses_first_non_null_value() {
     //   row 3: COALESCE(NULL, NULL, 5) = 5 → 5 <= 100 ✓
     let hits: Vec<Task> = delegate
         .find_many()
-        .where_expr(
-            coalesce(["next_attempt_at", "scheduled_at", "created_at"]).lte(100_i64),
-        )
+        .where_expr(coalesce(["next_attempt_at", "scheduled_at", "created_at"]).lte(100_i64))
         .run()
         .unwrap();
     let ids: Vec<i64> = hits.iter().map(|t| t.id).collect();

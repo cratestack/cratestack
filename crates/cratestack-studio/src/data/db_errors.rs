@@ -40,17 +40,29 @@ pub(crate) fn map_pg_error(model: Option<&Model>, error: &sqlx_core::Error) -> O
         // unique_violation
         "23505" => (
             ValidationCode::Unique,
-            format!("value violates unique constraint{}", constraint_suffix(constraint)),
+            format!(
+                "value violates unique constraint{}",
+                constraint_suffix(constraint)
+            ),
         ),
         // foreign_key_violation
         "23503" => (
             ValidationCode::ForeignKey,
-            format!("value violates foreign-key constraint{}", constraint_suffix(constraint)),
+            format!(
+                "value violates foreign-key constraint{}",
+                constraint_suffix(constraint)
+            ),
         ),
         // not_null_violation
-        "23502" => (ValidationCode::Required, "value must not be null".to_owned()),
+        "23502" => (
+            ValidationCode::Required,
+            "value must not be null".to_owned(),
+        ),
         // string_data_right_truncation
-        "22001" => (ValidationCode::Length, "value is too long for column".to_owned()),
+        "22001" => (
+            ValidationCode::Length,
+            "value is too long for column".to_owned(),
+        ),
         // invalid_text_representation
         "22P02" => (
             ValidationCode::TypeMismatch,
@@ -59,7 +71,10 @@ pub(crate) fn map_pg_error(model: Option<&Model>, error: &sqlx_core::Error) -> O
         // check_violation
         "23514" => (
             ValidationCode::Regex,
-            format!("value violates check constraint{}", constraint_suffix(constraint)),
+            format!(
+                "value violates check constraint{}",
+                constraint_suffix(constraint)
+            ),
         ),
         _ => return None,
     };
@@ -74,7 +89,10 @@ pub(crate) fn map_pg_error(model: Option<&Model>, error: &sqlx_core::Error) -> O
 /// Inspect a rusqlite error from a SQLite write. SQLite reports
 /// constraint failures via `Error::SqliteFailure` with extended codes;
 /// the column/table is in the message text.
-pub(crate) fn map_sqlite_error(model: Option<&Model>, error: &rusqlite::Error) -> Option<DataError> {
+pub(crate) fn map_sqlite_error(
+    model: Option<&Model>,
+    error: &rusqlite::Error,
+) -> Option<DataError> {
     use rusqlite::ErrorCode;
     let (err, message) = match error {
         rusqlite::Error::SqliteFailure(err, Some(message)) => (err, message.as_str()),
@@ -91,7 +109,9 @@ pub(crate) fn map_sqlite_error(model: Option<&Model>, error: &rusqlite::Error) -
     //   "NOT NULL constraint failed: posts.title"
     //   "FOREIGN KEY constraint failed"
     let column_hint = message.split_once(": ").and_then(|(_, rhs)| {
-        rhs.split('.').nth(1).map(|c| c.trim_end_matches(';').trim().to_owned())
+        rhs.split('.')
+            .nth(1)
+            .map(|c| c.trim_end_matches(';').trim().to_owned())
     });
     let field_name = column_hint
         .as_deref()
@@ -106,23 +126,30 @@ pub(crate) fn map_sqlite_error(model: Option<&Model>, error: &rusqlite::Error) -
     const SQLITE_CONSTRAINT_CHECK: i32 = 275;
 
     let extended = err.extended_code;
-    let (code, msg) = if extended == SQLITE_CONSTRAINT_UNIQUE || extended == SQLITE_CONSTRAINT_PRIMARYKEY {
-        (ValidationCode::Unique, "value violates unique constraint")
-    } else if extended == SQLITE_CONSTRAINT_NOTNULL {
-        (ValidationCode::Required, "value must not be null")
-    } else if extended == SQLITE_CONSTRAINT_FOREIGNKEY {
-        (ValidationCode::ForeignKey, "value violates foreign-key constraint")
-    } else if extended == SQLITE_CONSTRAINT_CHECK {
-        (ValidationCode::Regex, "value violates check constraint")
-    } else if message.to_ascii_uppercase().contains("UNIQUE") {
-        (ValidationCode::Unique, "value violates unique constraint")
-    } else if message.to_ascii_uppercase().contains("NOT NULL") {
-        (ValidationCode::Required, "value must not be null")
-    } else if message.to_ascii_uppercase().contains("FOREIGN KEY") {
-        (ValidationCode::ForeignKey, "value violates foreign-key constraint")
-    } else {
-        return None;
-    };
+    let (code, msg) =
+        if extended == SQLITE_CONSTRAINT_UNIQUE || extended == SQLITE_CONSTRAINT_PRIMARYKEY {
+            (ValidationCode::Unique, "value violates unique constraint")
+        } else if extended == SQLITE_CONSTRAINT_NOTNULL {
+            (ValidationCode::Required, "value must not be null")
+        } else if extended == SQLITE_CONSTRAINT_FOREIGNKEY {
+            (
+                ValidationCode::ForeignKey,
+                "value violates foreign-key constraint",
+            )
+        } else if extended == SQLITE_CONSTRAINT_CHECK {
+            (ValidationCode::Regex, "value violates check constraint")
+        } else if message.to_ascii_uppercase().contains("UNIQUE") {
+            (ValidationCode::Unique, "value violates unique constraint")
+        } else if message.to_ascii_uppercase().contains("NOT NULL") {
+            (ValidationCode::Required, "value must not be null")
+        } else if message.to_ascii_uppercase().contains("FOREIGN KEY") {
+            (
+                ValidationCode::ForeignKey,
+                "value violates foreign-key constraint",
+            )
+        } else {
+            return None;
+        };
 
     Some(DataError::Validation(vec![FieldError {
         field: field_name,

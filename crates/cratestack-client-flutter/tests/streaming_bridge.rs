@@ -305,15 +305,14 @@ fn rpc_call_streamed_respects_callback_cancellation() {
 
     let counter = Arc::new(Mutex::new(0usize));
     let counter_ref = Arc::clone(&counter);
-    let result =
-        runtime.rpc_call_streamed("test.stream", input, Vec::new(), move |chunk| {
-            if matches!(chunk, FlutterChunkWire::Item(_)) {
-                let mut n = counter_ref.lock().unwrap();
-                *n += 1;
-                return *n < 3;
-            }
-            true
-        });
+    let result = runtime.rpc_call_streamed("test.stream", input, Vec::new(), move |chunk| {
+        if matches!(chunk, FlutterChunkWire::Item(_)) {
+            let mut n = counter_ref.lock().unwrap();
+            *n += 1;
+            return *n < 3;
+        }
+        true
+    });
 
     assert!(result.is_ok(), "callback-cancel is not an error");
     assert_eq!(
@@ -402,7 +401,9 @@ async fn handle_stream(
     if !accept.contains(CBOR_SEQ) {
         return Response::builder()
             .status(StatusCode::NOT_ACCEPTABLE)
-            .body(Body::from(format!("client did not accept cbor-seq: {accept}")))
+            .body(Body::from(format!(
+                "client did not accept cbor-seq: {accept}"
+            )))
             .expect("response should build");
     }
 
@@ -454,7 +455,10 @@ async fn handle_error(_state: State<AppState>) -> Response<Body> {
         .expect("encode error");
     Response::builder()
         .status(StatusCode::INTERNAL_SERVER_ERROR)
-        .header(header::CONTENT_TYPE, HeaderValue::from_static("application/cbor"))
+        .header(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/cbor"),
+        )
         .body(Body::from(body))
         .expect("response should build")
 }

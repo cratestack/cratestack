@@ -31,7 +31,16 @@ where
         ));
     }
 
-    update_returning_record(executor, policy_pool, descriptor, id, &values, ctx, if_match).await
+    update_returning_record(
+        executor,
+        policy_pool,
+        descriptor,
+        id,
+        &values,
+        ctx,
+        if_match,
+    )
+    .await
 }
 
 #[allow(clippy::too_many_arguments)]

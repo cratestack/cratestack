@@ -36,16 +36,10 @@ model Post {
 "#;
 
 fn build_workspace() -> Arc<LoadedWorkspace> {
-    let schema = Arc::new(
-        cratestack_parser::parse_schema(BLOG_SCHEMA).expect("schema parses"),
-    );
+    let schema = Arc::new(cratestack_parser::parse_schema(BLOG_SCHEMA).expect("schema parses"));
 
-    let api_source = ApiSource::new(
-        "https://example.test".to_owned(),
-        None,
-        schema.clone(),
-    )
-    .expect("ApiSource builds");
+    let api_source = ApiSource::new("https://example.test".to_owned(), None, schema.clone())
+        .expect("ApiSource builds");
     let api_target = LoadedTarget {
         key: "api".to_owned(),
         display_name: "Demo API".to_owned(),
@@ -128,11 +122,7 @@ fn build_workspace() -> Arc<LoadedWorkspace> {
     })
 }
 
-async fn json_request(
-    method: &str,
-    uri: &str,
-    body: Option<Value>,
-) -> (StatusCode, Value) {
+async fn json_request(method: &str, uri: &str, body: Option<Value>) -> (StatusCode, Value) {
     let app = cratestack_studio::server::build_router(build_workspace());
     let mut builder = Request::builder().method(method).uri(uri);
     let body_bytes = match body {
@@ -219,8 +209,7 @@ async fn list_models_returns_primary_keys_and_fields() {
 
 #[tokio::test]
 async fn snippet_renders_owned_string_literal() {
-    let (status, body) =
-        json_get("/api/targets/sqlite/models/Post/snippet?pk=p1").await;
+    let (status, body) = json_get("/api/targets/sqlite/models/Post/snippet?pk=p1").await;
     assert_eq!(status, StatusCode::OK);
     let rust = body["rust"].as_str().expect("rust");
     assert!(rust.contains("cool.post()"), "{rust}");
@@ -229,8 +218,7 @@ async fn snippet_renders_owned_string_literal() {
 
 #[tokio::test]
 async fn snippet_renders_int_literal_for_int_pk() {
-    let (status, body) =
-        json_get("/api/targets/sqlite/models/Customer/snippet?pk=42").await;
+    let (status, body) = json_get("/api/targets/sqlite/models/Customer/snippet?pk=42").await;
     assert_eq!(status, StatusCode::OK);
     let rust = body["rust"].as_str().expect("rust");
     assert!(rust.contains(".find_unique(42_i64)"), "{rust}");
@@ -238,10 +226,7 @@ async fn snippet_renders_int_literal_for_int_pk() {
 
 #[tokio::test]
 async fn list_records_against_sqlite_returns_rows() {
-    let (status, body) = json_get(
-        "/api/targets/sqlite/models/Post/records?limit=2",
-    )
-    .await;
+    let (status, body) = json_get("/api/targets/sqlite/models/Post/records?limit=2").await;
     assert_eq!(status, StatusCode::OK);
     let rows = body["rows"].as_array().unwrap();
     assert_eq!(rows.len(), 2);
@@ -250,55 +235,39 @@ async fn list_records_against_sqlite_returns_rows() {
 
 #[tokio::test]
 async fn get_record_against_sqlite_returns_row() {
-    let (status, body) =
-        json_get("/api/targets/sqlite/models/Post/records/p2").await;
+    let (status, body) = json_get("/api/targets/sqlite/models/Post/records/p2").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["row"]["title"], "second");
 }
 
 #[tokio::test]
 async fn follow_outgoing_returns_single_row() {
-    let (status, body) = json_get(
-        "/api/targets/sqlite/models/Post/records/p1/rel/author",
-    )
-    .await;
+    let (status, body) = json_get("/api/targets/sqlite/models/Post/records/p1/rel/author").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["row"]["email"], "alice@example.com");
 }
 
 #[tokio::test]
 async fn follow_inbound_one_to_many_returns_page() {
-    let (status, body) = json_get(
-        "/api/targets/sqlite/models/Customer/records/1/rel/posts",
-    )
-    .await;
+    let (status, body) = json_get("/api/targets/sqlite/models/Customer/records/1/rel/posts").await;
     assert_eq!(status, StatusCode::OK);
     let rows = body["rows"].as_array().unwrap();
     assert_eq!(rows.len(), 2);
-    let titles: Vec<&str> = rows
-        .iter()
-        .filter_map(|r| r["title"].as_str())
-        .collect();
+    let titles: Vec<&str> = rows.iter().filter_map(|r| r["title"].as_str()).collect();
     assert!(titles.contains(&"first"));
     assert!(titles.contains(&"second"));
 }
 
 #[tokio::test]
 async fn follow_unknown_field_returns_404() {
-    let (status, body) = json_get(
-        "/api/targets/sqlite/models/Post/records/p1/rel/nope",
-    )
-    .await;
+    let (status, body) = json_get("/api/targets/sqlite/models/Post/records/p1/rel/nope").await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["error"]["code"], "UNKNOWN_FIELD");
 }
 
 #[tokio::test]
 async fn follow_non_relation_field_returns_400() {
-    let (status, body) = json_get(
-        "/api/targets/sqlite/models/Post/records/p1/rel/title",
-    )
-    .await;
+    let (status, body) = json_get("/api/targets/sqlite/models/Post/records/p1/rel/title").await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"]["code"], "NOT_A_RELATION");
 }
@@ -307,8 +276,7 @@ async fn follow_non_relation_field_returns_400() {
 async fn list_records_against_api_target_returns_bad_gateway() {
     // The configured base_url is unreachable; ApiSource attempts the
     // upstream call and surfaces a 502.
-    let (status, body) =
-        json_get("/api/targets/api/models/Post/records").await;
+    let (status, body) = json_get("/api/targets/api/models/Post/records").await;
     assert_eq!(status, StatusCode::BAD_GATEWAY);
     assert_eq!(body["error"]["code"], "UPSTREAM_ERROR");
 }
@@ -322,8 +290,7 @@ async fn unknown_target_returns_404() {
 
 #[tokio::test]
 async fn unknown_model_in_snippet_returns_404() {
-    let (status, body) =
-        json_get("/api/targets/sqlite/models/Nope/snippet?pk=1").await;
+    let (status, body) = json_get("/api/targets/sqlite/models/Nope/snippet?pk=1").await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["error"]["code"], "UNKNOWN_MODEL");
 }
@@ -473,15 +440,9 @@ async fn create_record_with_missing_required_field_returns_422() {
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
     let fields = body["error"]["fields"].as_array().expect("fields list");
-    let codes: Vec<&str> = fields
-        .iter()
-        .filter_map(|f| f["code"].as_str())
-        .collect();
+    let codes: Vec<&str> = fields.iter().filter_map(|f| f["code"].as_str()).collect();
     assert!(codes.contains(&"REQUIRED"));
-    let field_names: Vec<&str> = fields
-        .iter()
-        .filter_map(|f| f["field"].as_str())
-        .collect();
+    let field_names: Vec<&str> = fields.iter().filter_map(|f| f["field"].as_str()).collect();
     assert!(field_names.contains(&"title"));
     assert!(field_names.contains(&"authorId"));
 }
@@ -527,32 +488,23 @@ async fn update_record_unknown_pk_returns_400() {
 
 #[tokio::test]
 async fn delete_record_against_ro_target_returns_403() {
-    let (status, body) = json_request(
-        "DELETE",
-        "/api/targets/sqlite/models/Post/records/p1",
-        None,
-    )
-    .await;
+    let (status, body) =
+        json_request("DELETE", "/api/targets/sqlite/models/Post/records/p1", None).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(body["error"]["code"], "FORBIDDEN");
 }
 
 #[tokio::test]
 async fn delete_record_against_rw_target_removes_and_echoes_row() {
-    let (status, body) = json_request(
-        "DELETE",
-        "/api/targets/rw/models/Post/records/rw1",
-        None,
-    )
-    .await;
+    let (status, body) =
+        json_request("DELETE", "/api/targets/rw/models/Post/records/rw1", None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["row"]["id"], "rw1");
 }
 
 #[tokio::test]
 async fn preview_sql_returns_list_select_with_text_cursor() {
-    let (status, body) =
-        json_get("/api/targets/sqlite/models/Post/sql?op=list").await;
+    let (status, body) = json_get("/api/targets/sqlite/models/Post/sql?op=list").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["driver"], "sqlite");
     let sql = body["sql"].as_str().unwrap();
@@ -562,8 +514,7 @@ async fn preview_sql_returns_list_select_with_text_cursor() {
 
 #[tokio::test]
 async fn preview_sql_for_delete_binds_pk() {
-    let (status, body) =
-        json_get("/api/targets/sqlite/models/Post/sql?op=delete&pk=p1").await;
+    let (status, body) = json_get("/api/targets/sqlite/models/Post/sql?op=delete&pk=p1").await;
     assert_eq!(status, StatusCode::OK);
     let sql = body["sql"].as_str().unwrap();
     assert!(sql.contains("DELETE FROM \"posts\""), "{sql}");
@@ -574,8 +525,7 @@ async fn preview_sql_for_delete_binds_pk() {
 
 #[tokio::test]
 async fn preview_sql_against_api_target_returns_unsupported() {
-    let (status, body) =
-        json_get("/api/targets/api/models/Post/sql?op=list").await;
+    let (status, body) = json_get("/api/targets/api/models/Post/sql?op=list").await;
     assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
     assert_eq!(body["error"]["code"], "UNSUPPORTED");
 }
@@ -601,8 +551,7 @@ async fn drift_endpoint_reports_unsupported_for_api_target() {
 
 #[tokio::test]
 async fn search_endpoint_returns_model_and_field_hits() {
-    let (status, body) =
-        json_get("/api/targets/sqlite/search?q=author").await;
+    let (status, body) = json_get("/api/targets/sqlite/search?q=author").await;
     assert_eq!(status, StatusCode::OK);
     let hits = body["hits"].as_array().unwrap();
     let names: Vec<&str> = hits.iter().filter_map(|h| h["name"].as_str()).collect();
@@ -694,10 +643,8 @@ async fn models_endpoint_reports_enum_variants() {
         .expect("schema parses"),
     );
     let conn = rusqlite::Connection::open_in_memory().expect("sqlite open");
-    conn.execute_batch(
-        "CREATE TABLE probes (id TEXT PRIMARY KEY, mood TEXT NOT NULL);",
-    )
-    .expect("ddl");
+    conn.execute_batch("CREATE TABLE probes (id TEXT PRIMARY KEY, mood TEXT NOT NULL);")
+        .expect("ddl");
     let target = LoadedTarget {
         key: "enum_t".to_owned(),
         display_name: "enum_t".to_owned(),

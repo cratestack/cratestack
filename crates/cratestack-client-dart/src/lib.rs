@@ -12,5 +12,7 @@ mod views;
 mod wire_decode;
 mod wire_encode;
 
-pub use config::{DartGeneratorConfig, DartGeneratorError, GeneratedDartFile, GeneratedDartPackage};
+pub use config::{
+    DartGeneratorConfig, DartGeneratorError, GeneratedDartFile, GeneratedDartPackage,
+};
 pub use generator::generate_package;

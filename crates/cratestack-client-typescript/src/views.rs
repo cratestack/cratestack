@@ -158,4 +158,3 @@ pub(crate) fn build_procedure(
         mutation_key: format!("{}Procedure", to_camel_case(&procedure.name)),
     }
 }
-

@@ -5,9 +5,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::codec::encode_codec_response;
 
+use super::CBOR_SEQUENCE_CONTENT_TYPE;
 use super::internal::encode_cbor_sequence_response;
 use super::media_type::media_type_matches;
-use super::CBOR_SEQUENCE_CONTENT_TYPE;
 
 pub trait HttpTransport: Clone + Send + Sync + 'static {
     fn decode_request<T>(&self, content_type: &str, body: &[u8]) -> Result<T, CoolError>

@@ -6,7 +6,9 @@
 use cratestack_core::Model;
 use quote::quote;
 
-use crate::shared::{ident, is_paged_model, is_primary_key, pluralize, rust_type_tokens, to_snake_case};
+use crate::shared::{
+    ident, is_paged_model, is_primary_key, pluralize, rust_type_tokens, to_snake_case,
+};
 
 pub(super) fn generate_generated_model_client(
     model: &Model,

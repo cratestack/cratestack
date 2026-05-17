@@ -13,7 +13,10 @@ use cratestack::sqlx::query;
 use cratestack::{CoolContext, RelationInclude, Value};
 use support::pg;
 
-include_server_schema!("tests/fixtures/builder_extensions_tier6.cstack", db = Postgres);
+include_server_schema!(
+    "tests/fixtures/builder_extensions_tier6.cstack",
+    db = Postgres
+);
 
 async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     query("DROP TABLE IF EXISTS deliverys, subscriptions")
@@ -37,8 +40,7 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
 }
 
 fn operator() -> CoolContext {
-    CoolContext::authenticated([("id".to_owned(), Value::Int(1))])
-        .with_request_id("tier6-001")
+    CoolContext::authenticated([("id".to_owned(), Value::Int(1))]).with_request_id("tier6-001")
 }
 
 async fn seed(pool: &cratestack::sqlx::PgPool) {
@@ -68,11 +70,8 @@ async fn seed(pool: &cratestack::sqlx::PgPool) {
     }
 }
 
-fn subscription_relation() -> RelationInclude<
-    cratestack_schema::Delivery,
-    cratestack_schema::Subscription,
-    i64,
-> {
+fn subscription_relation()
+-> RelationInclude<cratestack_schema::Delivery, cratestack_schema::Subscription, i64> {
     RelationInclude {
         parent_fk_extract: |d: &cratestack_schema::Delivery| d.subscriptionId,
         related_descriptor: &cratestack_schema::models::SUBSCRIPTION_MODEL,

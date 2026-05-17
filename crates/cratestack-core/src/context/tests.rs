@@ -51,15 +51,24 @@ fn from_principal_promotes_actor_session_and_tenant_facets() {
 
     let principal = ctx.principal.expect("principal should exist");
     assert_eq!(
-        principal.actor.as_ref().and_then(|facet| facet.fields.get("id")),
+        principal
+            .actor
+            .as_ref()
+            .and_then(|facet| facet.fields.get("id")),
         Some(&Value::String("usr_1".to_owned()))
     );
     assert_eq!(
-        principal.session.as_ref().and_then(|facet| facet.fields.get("id")),
+        principal
+            .session
+            .as_ref()
+            .and_then(|facet| facet.fields.get("id")),
         Some(&Value::String("sess_1".to_owned()))
     );
     assert_eq!(
-        principal.tenant.as_ref().and_then(|facet| facet.fields.get("id")),
+        principal
+            .tenant
+            .as_ref()
+            .and_then(|facet| facet.fields.get("id")),
         Some(&Value::String("org_1".to_owned()))
     );
     assert_eq!(

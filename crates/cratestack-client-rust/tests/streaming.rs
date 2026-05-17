@@ -19,7 +19,7 @@ use axum::http::{HeaderMap, HeaderValue, Response, StatusCode, header};
 use axum::routing::post;
 use bytes::Bytes;
 use cratestack_client_rust::{
-    CratestackClient, ClientConfig, RuntimeChunkWire, RuntimeConfigWire, RuntimeCodecConfig,
+    ClientConfig, CratestackClient, RuntimeChunkWire, RuntimeCodecConfig, RuntimeConfigWire,
     RuntimeEnvelopeConfig, RuntimeHandle, RuntimeHeader, RuntimeRequestWire,
     RuntimeStateStoreConfig, RuntimeTransportConfig,
 };
@@ -67,7 +67,9 @@ async fn handle_stream(
     if !accept.contains(CBOR_SEQ) {
         return Response::builder()
             .status(StatusCode::NOT_ACCEPTABLE)
-            .body(Body::from(format!("client did not accept cbor-seq: {accept}")))
+            .body(Body::from(format!(
+                "client did not accept cbor-seq: {accept}"
+            )))
             .expect("response should build");
     }
 
@@ -124,7 +126,10 @@ async fn handle_error(_state: State<AppState>) -> Response<Body> {
         .expect("encode error");
     Response::builder()
         .status(StatusCode::INTERNAL_SERVER_ERROR)
-        .header(header::CONTENT_TYPE, HeaderValue::from_static("application/cbor"))
+        .header(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/cbor"),
+        )
         .body(Body::from(body))
         .expect("response should build")
 }
@@ -393,5 +398,8 @@ async fn execute_streamed_respects_callback_cancellation() {
     server.abort();
 
     assert!(result.is_ok(), "cancellation is not an error");
-    assert_eq!(final_count, 5, "callback should have seen exactly 5 items before cancelling");
+    assert_eq!(
+        final_count, 5,
+        "callback should have seen exactly 5 items before cancelling"
+    );
 }

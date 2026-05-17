@@ -10,9 +10,9 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 chrono = { workspace = true }
-cratestack = { path = "../../../crates/cratestack", version = "0.3.4" }
-cratestack-macros = { path = "../../../crates/cratestack-macros", version = "0.3.4" }
-cratestack-rusqlite = { path = "../../../crates/cratestack-rusqlite", version = "0.3.4" }
+cratestack = { path = "../../../crates/cratestack", version = "0.3.5" }
+cratestack-macros = { path = "../../../crates/cratestack-macros", version = "0.3.5" }
+cratestack-rusqlite = { path = "../../../crates/cratestack-rusqlite", version = "0.3.5" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true, features = ["js"] }

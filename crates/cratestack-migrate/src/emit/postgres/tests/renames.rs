@@ -80,11 +80,13 @@ fn rename_without_matching_old_falls_back_to_add() {
     // A @rename(from = "doesnt_exist") on a brand-new column can't
     // match an existing column — the diff engine falls back to
     // AddColumn and ignores the rename marker.
-    let prev = schema(&with_models(r#"
+    let prev = schema(&with_models(
+        r#"
 model Customer {
   id Int @id
 }
-"#));
+"#,
+    ));
     let next = schema(&with_models(
         r#"
 model Customer {

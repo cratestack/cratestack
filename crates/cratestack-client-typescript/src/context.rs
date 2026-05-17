@@ -3,10 +3,12 @@ use serde::Serialize;
 
 use crate::config::TypeScriptGeneratorConfig;
 use crate::naming::{occupied_type_names, package_class_stem, to_pascal_case};
-use crate::types::{enum_name_set, is_generated_on_create, is_primary_key, model_name_set, scalar_model_fields};
+use crate::types::{
+    enum_name_set, is_generated_on_create, is_primary_key, model_name_set, scalar_model_fields,
+};
 use crate::views::{
-    build_enum_view, build_interface, build_model_api, build_procedure, EnumView, InterfaceKind,
-    InterfaceView, ModelApiView, ProcedureView,
+    EnumView, InterfaceKind, InterfaceView, ModelApiView, ProcedureView, build_enum_view,
+    build_interface, build_model_api, build_procedure,
 };
 
 #[derive(Debug, Clone, Serialize)]

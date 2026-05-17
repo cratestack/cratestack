@@ -18,7 +18,11 @@ use super::util::synthesize_error_for_status;
 /// [`CoolError::status_code`]; the body is codec-encoded via the
 /// request's codec, content-type negotiated against
 /// [`RPC_BINDING_CAPABILITIES`].
-pub fn encode_rpc_error<C>(codec: &C, headers: &HeaderMap, error: &CoolError) -> axum::response::Response
+pub fn encode_rpc_error<C>(
+    codec: &C,
+    headers: &HeaderMap,
+    error: &CoolError,
+) -> axum::response::Response
 where
     C: HttpTransport,
 {
@@ -57,21 +61,19 @@ where
         }
     };
 
-    let rpc_body = match decode_rpc_body::<_, cratestack_core::CoolErrorResponse>(
-        codec,
-        headers,
-        &body_bytes,
-    ) {
-        Ok(parsed) => RpcErrorBody::from_cool_response(parsed),
-        Err(_) => {
-            // Handler emitted a non-2xx with a body that isn't the
-            // framework's REST error shape (unusual — would happen if a
-            // handler escaped through `into_response()` directly). Build
-            // a synthetic body from the status alone.
-            let cool = synthesize_error_for_status(status);
-            RpcErrorBody::from_cool(&cool)
-        }
-    };
+    let rpc_body =
+        match decode_rpc_body::<_, cratestack_core::CoolErrorResponse>(codec, headers, &body_bytes)
+        {
+            Ok(parsed) => RpcErrorBody::from_cool_response(parsed),
+            Err(_) => {
+                // Handler emitted a non-2xx with a body that isn't the
+                // framework's REST error shape (unusual — would happen if a
+                // handler escaped through `into_response()` directly). Build
+                // a synthetic body from the status alone.
+                let cool = synthesize_error_for_status(status);
+                RpcErrorBody::from_cool(&cool)
+            }
+        };
 
     encode_rpc_value_response(codec, headers, status, rpc_body)
 }

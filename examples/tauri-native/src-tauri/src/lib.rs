@@ -199,14 +199,15 @@ static DB_PATH_OVERRIDE: OnceLock<std::path::PathBuf> = OnceLock::new();
 
 fn build_app_state(db_path: &std::path::Path) -> Result<AppState, String> {
     if let Some(parent) = db_path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|error| format!("create app data dir: {error}"))?;
+        std::fs::create_dir_all(parent).map_err(|error| format!("create app data dir: {error}"))?;
     }
-    let runtime = RusqliteRuntime::open(db_path)
-        .map_err(|error| format!("open sqlite: {error}"))?;
+    let runtime =
+        RusqliteRuntime::open(db_path).map_err(|error| format!("open sqlite: {error}"))?;
     runtime
         .with_connection(|conn| {
-            conn.execute_batch(&create_table_sql(&notes_schema::cratestack_schema::NOTE_MODEL))?;
+            conn.execute_batch(&create_table_sql(
+                &notes_schema::cratestack_schema::NOTE_MODEL,
+            ))?;
             Ok(())
         })
         .map_err(|error| format!("bootstrap notes table: {error}"))?;

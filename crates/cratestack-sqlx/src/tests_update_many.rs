@@ -34,13 +34,7 @@ fn update_many_preview_sql_versioned_bumps_version() {
 
 #[test]
 fn update_many_preview_sql_with_soft_delete_layers_in_predicate() {
-    let sql = render_update_many_preview_sql(
-        "posts",
-        true,
-        None,
-        &["title"],
-        "id AS \"id\"",
-    );
+    let sql = render_update_many_preview_sql("posts", true, None, &["title"], "id AS \"id\"");
     assert_eq!(
         sql,
         "UPDATE posts SET title = $1 WHERE <soft_delete IS NULL> AND <filters> AND <update_policy> RETURNING id AS \"id\"",

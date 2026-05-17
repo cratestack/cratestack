@@ -106,7 +106,10 @@ where
     if let Some(version_col) = descriptor.version_column {
         sql.push_str(&format!(", {version_col} = {version_col} + 1"));
     }
-    sql.push_str(&format!(" WHERE {} = ?{}", descriptor.primary_key, bind_index));
+    sql.push_str(&format!(
+        " WHERE {} = ?{}",
+        descriptor.primary_key, bind_index
+    ));
     binds.push(id.into_sql_value());
     sql.push_str(" RETURNING ");
     sql.push_str(&descriptor.select_projection());

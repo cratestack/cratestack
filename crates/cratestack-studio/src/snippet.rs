@@ -13,11 +13,7 @@ use crate::data::model_info::{PkCast, resolve_model};
 /// Render a Rust snippet that reads the model row by primary key.
 /// Quoting follows the PK-type rule: text-shaped keys get string
 /// literals, numeric keys get the unquoted value.
-pub fn rust_find_unique(
-    schema: &Schema,
-    model: &str,
-    pk_value: &str,
-) -> Result<String, DataError> {
+pub fn rust_find_unique(schema: &Schema, model: &str, pk_value: &str) -> Result<String, DataError> {
     let (resolved, info) = resolve_model(schema, model)?;
     let pk_field = resolved
         .fields

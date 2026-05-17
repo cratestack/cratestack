@@ -30,4 +30,6 @@ pub use scoped_find_many_projected::ScopedProjectedFindMany;
 pub use scoped_find_many_with::ScopedFindManyWith;
 pub use scoped_find_unique::{ScopedFindUnique, ScopedProjectedFindUnique};
 pub use scoped_update_many::{ScopedUpdateMany, ScopedUpdateManySet};
-pub use scoped_writes::{ScopedCreateRecord, ScopedUpdateRecord, ScopedUpdateRecordSet, ScopedUpsertRecord};
+pub use scoped_writes::{
+    ScopedCreateRecord, ScopedUpdateRecord, ScopedUpdateRecordSet, ScopedUpsertRecord,
+};

@@ -71,13 +71,15 @@ impl FlutterCborSeqDecoder {
             remote_code: None,
             remote_body: None,
         })?;
-        guard.feed_chunk(&chunk).map_err(|error| FlutterRuntimeError {
-            code: RuntimeErrorCode::Codec as u32,
-            http_status: None,
-            message: error.to_string(),
-            remote_code: None,
-            remote_body: None,
-        })
+        guard
+            .feed_chunk(&chunk)
+            .map_err(|error| FlutterRuntimeError {
+                code: RuntimeErrorCode::Codec as u32,
+                http_status: None,
+                message: error.to_string(),
+                remote_code: None,
+                remote_body: None,
+            })
     }
 
     /// Bytes currently buffered (waiting for frame completion). Call

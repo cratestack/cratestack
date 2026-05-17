@@ -160,7 +160,9 @@ fn resolve_secret_reads_file_and_trims() {
 fn resolve_secret_reports_missing_file_with_field() {
     let error = resolve_secret("file:/nonexistent/path-12345", "target.db.url")
         .expect_err("missing file should fail");
-    assert!(matches!(error, StudioConfigError::SecretFile { ref field, .. } if field == "target.db.url"));
+    assert!(
+        matches!(error, StudioConfigError::SecretFile { ref field, .. } if field == "target.db.url")
+    );
 }
 
 #[test]

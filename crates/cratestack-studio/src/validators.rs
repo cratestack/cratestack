@@ -81,7 +81,10 @@ fn field_is_optional(field: &Field) -> bool {
 }
 
 fn has_default(field: &Field) -> bool {
-    field.attributes.iter().any(|a| a.raw.starts_with("@default"))
+    field
+        .attributes
+        .iter()
+        .any(|a| a.raw.starts_with("@default"))
 }
 
 fn has_attr(field: &Field, name: &str) -> bool {
@@ -98,7 +101,10 @@ fn is_writable_field(field: &Field) -> bool {
     if matches!(field.ty.arity, cratestack_core::TypeArity::List) {
         return false;
     }
-    !field.attributes.iter().any(|a| a.raw.starts_with("@relation"))
+    !field
+        .attributes
+        .iter()
+        .any(|a| a.raw.starts_with("@relation"))
 }
 
 fn check_type(field: &Field, value: &serde_json::Value) -> Option<FieldError> {

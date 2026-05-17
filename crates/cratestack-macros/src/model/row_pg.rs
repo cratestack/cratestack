@@ -75,10 +75,7 @@ fn partial_row_field_tokens(
 /// the body of [`row_field_tokens`] but without the `field_ident:`
 /// prefix and trailing comma, so it can plug into the conditional
 /// branch of [`partial_row_field_tokens`].
-fn row_field_decode_expr(
-    field: &Field,
-    enum_names: &BTreeSet<&str>,
-) -> proc_macro2::TokenStream {
+fn row_field_decode_expr(field: &Field, enum_names: &BTreeSet<&str>) -> proc_macro2::TokenStream {
     let field_name = &field.name;
     if !enum_names.contains(field.ty.name.as_str()) {
         return quote! { row.try_get(#field_name)? };

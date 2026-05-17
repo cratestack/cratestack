@@ -7,8 +7,8 @@ use std::fmt::Write;
 use cratestack_core::CoolContext;
 use cratestack_policy::{context_has_role, context_in_tenant};
 
-use crate::query::{auth_value_to_sql, value_matches_auth_literal};
 use crate::ReadPredicate;
+use crate::query::{auth_value_to_sql, value_matches_auth_literal};
 
 use super::policy::render_relation_policy_sql;
 
@@ -20,16 +20,32 @@ pub(super) fn render_policy_predicate(
 ) {
     match predicate {
         ReadPredicate::AuthNotNull => {
-            sql.push_str(if ctx.is_authenticated() { "TRUE" } else { "FALSE" });
+            sql.push_str(if ctx.is_authenticated() {
+                "TRUE"
+            } else {
+                "FALSE"
+            });
         }
         ReadPredicate::AuthIsNull => {
-            sql.push_str(if ctx.is_authenticated() { "FALSE" } else { "TRUE" });
+            sql.push_str(if ctx.is_authenticated() {
+                "FALSE"
+            } else {
+                "TRUE"
+            });
         }
         ReadPredicate::HasRole { role } => {
-            sql.push_str(if context_has_role(ctx, role) { "TRUE" } else { "FALSE" });
+            sql.push_str(if context_has_role(ctx, role) {
+                "TRUE"
+            } else {
+                "FALSE"
+            });
         }
         ReadPredicate::InTenant { tenant_id } => {
-            sql.push_str(if context_in_tenant(ctx, tenant_id) { "TRUE" } else { "FALSE" });
+            sql.push_str(if context_in_tenant(ctx, tenant_id) {
+                "TRUE"
+            } else {
+                "FALSE"
+            });
         }
         ReadPredicate::AuthFieldEqLiteral { auth_field, value } => {
             sql.push_str(
@@ -104,4 +120,3 @@ pub(super) fn render_policy_predicate(
         }
     }
 }
-

@@ -74,8 +74,7 @@ impl<'a, M: 'static, PK: 'static> AggregateColumn<'a, M, PK> {
         self.runtime.with_connection(|conn| {
             let mut stmt = conn.prepare(&sql)?;
             let bind_iter = binds.iter().map(SqlValueParam);
-            let value: Option<T> =
-                stmt.query_row(params_from_iter(bind_iter), |row| row.get(0))?;
+            let value: Option<T> = stmt.query_row(params_from_iter(bind_iter), |row| row.get(0))?;
             Ok(value)
         })
     }
@@ -87,8 +86,7 @@ impl<'a, M: 'static, PK: 'static> AggregateColumn<'a, M, PK> {
         let (sql, binds) = self.render();
         let mut stmt = conn.prepare(&sql)?;
         let bind_iter = binds.iter().map(SqlValueParam);
-        let value: Option<T> =
-            stmt.query_row(params_from_iter(bind_iter), |row| row.get(0))?;
+        let value: Option<T> = stmt.query_row(params_from_iter(bind_iter), |row| row.get(0))?;
         Ok(value)
     }
 }

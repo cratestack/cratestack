@@ -14,7 +14,10 @@ model Member {
 "#,
     ));
     let migration = emit(&diff(&prev, &next));
-    assert!(migration.has_blocking, "AddCheck is conservatively Blocking");
+    assert!(
+        migration.has_blocking,
+        "AddCheck is conservatively Blocking"
+    );
     assert!(
         migration.up.contains(
             "ALTER TABLE members ADD CONSTRAINT members_amount_range_check \

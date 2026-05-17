@@ -127,13 +127,8 @@ where
             }
             if audit_enabled {
                 let after = serde_json::to_value(&record).ok();
-                let event = build_audit_event(
-                    self.descriptor,
-                    AuditOperation::Create,
-                    None,
-                    after,
-                    ctx,
-                );
+                let event =
+                    build_audit_event(self.descriptor, AuditOperation::Create, None, after, ctx);
                 enqueue_audit_event(&mut *tx, &event).await?;
             }
             tx.commit()

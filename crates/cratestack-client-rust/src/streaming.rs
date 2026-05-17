@@ -35,9 +35,7 @@ pub struct CborSeqChunkDecoder {
 
 impl CborSeqChunkDecoder {
     pub fn new() -> Self {
-        Self {
-            buffer: Vec::new(),
-        }
+        Self { buffer: Vec::new() }
     }
 
     /// Append `chunk` to the internal buffer and return the bytes of
@@ -70,9 +68,9 @@ impl CborSeqChunkDecoder {
                     break;
                 }
                 Err(error) => {
-                    return Err(CoolError::Codec(format!(
-                        "cbor-seq decode failed: {error}",
-                    )));
+                    return Err(CoolError::Codec(
+                        format!("cbor-seq decode failed: {error}",),
+                    ));
                 }
             }
         }

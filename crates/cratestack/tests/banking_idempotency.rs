@@ -25,8 +25,6 @@ mod support;
 
 use support::pg;
 
-
-
 async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     query("DROP TABLE IF EXISTS cratestack_idempotency, vouchers")
         .execute(pool)

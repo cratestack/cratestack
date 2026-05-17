@@ -44,14 +44,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let billing_url = Url::parse(&billing_url.unwrap())?;
     let inventory_url = Url::parse(&inventory_url.unwrap())?;
 
-    let billing_runtime =
-        CratestackClient::new(ClientConfig::new(billing_url), CborCodec);
-    let inventory_runtime =
-        CratestackClient::new(ClientConfig::new(inventory_url), CborCodec);
+    let billing_runtime = CratestackClient::new(ClientConfig::new(billing_url), CborCodec);
+    let inventory_runtime = CratestackClient::new(ClientConfig::new(inventory_url), CborCodec);
 
     let billing = billing::cratestack_schema::client::Client::new(billing_runtime);
-    let inventory =
-        inventory::cratestack_schema::client::Client::new(inventory_runtime);
+    let inventory = inventory::cratestack_schema::client::Client::new(inventory_runtime);
 
     // Fan out concurrently — typical BFF pattern. The intermediate
     // `invoices()` / `products()` clients are borrows, so we bind them to

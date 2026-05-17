@@ -2380,7 +2380,11 @@ mod transport_rpc_schema {
         for op in ops {
             match op.op_id {
                 "model.Widget.list" | "model.Widget.get" => {
-                    assert!(op.idempotent_by_default, "{} should be idempotent", op.op_id)
+                    assert!(
+                        op.idempotent_by_default,
+                        "{} should be idempotent",
+                        op.op_id
+                    )
                 }
                 "model.Widget.create" | "model.Widget.update" | "model.Widget.delete" => {
                     assert!(
@@ -2587,9 +2591,7 @@ mod transport_rpc_schema {
     /// Build a CBOR body of a value that's serializable. Lifts the
     /// boilerplate of unwrapping codec.encode out of the CRUD tests below.
     fn cbor(value: &impl serde::Serialize) -> Vec<u8> {
-        CborCodec
-            .encode(value)
-            .expect("test body should encode")
+        CborCodec.encode(value).expect("test body should encode")
     }
 
     /// Build an RPC unary request with CBOR content-type + auth header.
@@ -2692,8 +2694,7 @@ mod transport_rpc_schema {
             .await
             .expect("request should succeed");
         assert!(
-            response.status().is_server_error()
-                || response.status() == StatusCode::FORBIDDEN,
+            response.status().is_server_error() || response.status() == StatusCode::FORBIDDEN,
             "list pagination should reach the handler (forbidden by policy or DB error), got {}",
             response.status(),
         );
@@ -2824,15 +2825,13 @@ mod transport_rpc_schema {
         let bytes = cratestack::axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
             .expect("response body should buffer");
-        let body: cratestack::rpc::RpcErrorBody = CborCodec
-            .decode(&bytes)
-            .unwrap_or_else(|err| {
-                panic!(
-                    "unary error response (status {status}) should decode as RpcErrorBody, \
+        let body: cratestack::rpc::RpcErrorBody = CborCodec.decode(&bytes).unwrap_or_else(|err| {
+            panic!(
+                "unary error response (status {status}) should decode as RpcErrorBody, \
                      got error {err}; bytes (hex) = {}",
-                    bytes.iter().map(|b| format!("{b:02x}")).collect::<String>(),
-                )
-            });
+                bytes.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+            )
+        });
         (status, body)
     }
 
@@ -2849,7 +2848,10 @@ mod transport_rpc_schema {
             .await
             .expect("request should succeed");
         let (status, error) = decode_unary_error_body(response).await;
-        assert!(status.is_client_error(), "decode failure should be 4xx, got {status}");
+        assert!(
+            status.is_client_error(),
+            "decode failure should be 4xx, got {status}"
+        );
         assert_eq!(
             error.code, "invalid_argument",
             "decode failures map to invalid_argument: {error:?}",
@@ -2867,10 +2869,7 @@ mod transport_rpc_schema {
         // `(404, "...")` response.
         let router = rpc_test_router(CborCodec);
         let response = router
-            .oneshot(rpc_request(
-                "procedure.does_not_exist",
-                Vec::<u8>::new(),
-            ))
+            .oneshot(rpc_request("procedure.does_not_exist", Vec::<u8>::new()))
             .await
             .expect("request should succeed");
         let (status, error) = decode_unary_error_body(response).await;
@@ -2912,10 +2911,10 @@ mod transport_rpc_schema {
 
     // ----- batch -----
 
-    fn batch_request(frames: Vec<cratestack::rpc::RpcRequest>) -> cratestack::axum::http::Request<Body> {
-        let body = CborCodec
-            .encode(&frames)
-            .expect("batch body should encode");
+    fn batch_request(
+        frames: Vec<cratestack::rpc::RpcRequest>,
+    ) -> cratestack::axum::http::Request<Body> {
+        let body = CborCodec.encode(&frames).expect("batch body should encode");
         Request::post("/rpc/batch")
             .header("content-type", CborCodec::CONTENT_TYPE)
             .header("x-auth-id", "1")
@@ -2969,8 +2968,16 @@ mod transport_rpc_schema {
         assert_eq!(responses.len(), 2);
         assert_eq!(responses[0].id, 100);
         assert_eq!(responses[1].id, 200);
-        assert!(responses[0].error.is_none(), "frame 0 should succeed: {:?}", responses[0]);
-        assert!(responses[1].error.is_none(), "frame 1 should succeed: {:?}", responses[1]);
+        assert!(
+            responses[0].error.is_none(),
+            "frame 0 should succeed: {:?}",
+            responses[0]
+        );
+        assert!(
+            responses[1].error.is_none(),
+            "frame 1 should succeed: {:?}",
+            responses[1]
+        );
 
         let out0 = responses[0].output.as_ref().expect("ok frame has output");
         assert_eq!(out0.get("nonce").and_then(|v| v.as_str()), Some("first"));
@@ -3002,9 +3009,7 @@ mod transport_rpc_schema {
                 idem: None,
             },
         ];
-        let body = CborCodec
-            .encode(&frames)
-            .expect("batch body should encode");
+        let body = CborCodec.encode(&frames).expect("batch body should encode");
         let response = router
             .oneshot(
                 Request::post("/rpc/batch")
@@ -3019,9 +3024,8 @@ mod transport_rpc_schema {
         let bytes = cratestack::axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
             .expect("response body should buffer");
-        let responses: Vec<cratestack::rpc::RpcResponseFrame> = CborCodec
-            .decode(&bytes)
-            .expect("batch response decodes");
+        let responses: Vec<cratestack::rpc::RpcResponseFrame> =
+            CborCodec.decode(&bytes).expect("batch response decodes");
 
         assert_eq!(status, StatusCode::OK);
         assert_eq!(responses.len(), 2);
@@ -3148,5 +3152,4 @@ mod transport_rpc_schema {
             .expect("request should succeed");
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
-
 }

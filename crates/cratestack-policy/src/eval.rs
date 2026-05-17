@@ -3,8 +3,7 @@
 use cratestack_core::{CoolContext, CoolError, Value};
 
 use crate::procedure_types::{
-    ProcedureArgs, ProcedurePolicy, ProcedurePolicyExpr, ProcedurePolicyLiteral,
-    ProcedurePredicate,
+    ProcedureArgs, ProcedurePolicy, ProcedurePolicyExpr, ProcedurePolicyLiteral, ProcedurePredicate,
 };
 
 pub fn authorize_procedure<A: ProcedureArgs + ?Sized>(

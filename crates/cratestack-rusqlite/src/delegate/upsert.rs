@@ -2,9 +2,7 @@
 
 use cratestack_sql::{ConflictTarget, ModelDescriptor, SqliteDialect, UpsertModelInput};
 
-use crate::{
-    FromRusqliteRow, RusqliteError, RusqliteRuntime, render::render_upsert_with_conflict,
-};
+use crate::{FromRusqliteRow, RusqliteError, RusqliteRuntime, render::render_upsert_with_conflict};
 
 use super::support::run_insert_returning;
 
@@ -30,12 +28,8 @@ where
     pub fn preview_sql(&self) -> String {
         let dialect = SqliteDialect;
         let values = self.input.sql_values();
-        let (sql, _) = render_upsert_with_conflict(
-            &dialect,
-            self.descriptor,
-            &values,
-            self.conflict_target,
-        );
+        let (sql, _) =
+            render_upsert_with_conflict(&dialect, self.descriptor, &values, self.conflict_target);
         sql
     }
 
@@ -47,12 +41,8 @@ where
         // `CreateRecord::run`, which also skips `validate()`.
         let dialect = SqliteDialect;
         let values = self.input.sql_values();
-        let (sql, binds) = render_upsert_with_conflict(
-            &dialect,
-            self.descriptor,
-            &values,
-            self.conflict_target,
-        );
+        let (sql, binds) =
+            render_upsert_with_conflict(&dialect, self.descriptor, &values, self.conflict_target);
         self.runtime
             .with_connection(|conn| run_insert_returning(conn, &sql, &binds))
     }
@@ -65,12 +55,8 @@ where
     {
         let dialect = SqliteDialect;
         let values = self.input.sql_values();
-        let (sql, binds) = render_upsert_with_conflict(
-            &dialect,
-            self.descriptor,
-            &values,
-            self.conflict_target,
-        );
+        let (sql, binds) =
+            render_upsert_with_conflict(&dialect, self.descriptor, &values, self.conflict_target);
         run_insert_returning(conn, &sql, &binds)
     }
 }

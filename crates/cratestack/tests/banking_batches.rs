@@ -54,9 +54,7 @@ fn ok_value<'a>(
     }
 }
 
-fn err_code(
-    item: &cratestack::BatchItemResult<cratestack_schema::BatchRow>,
-) -> &str {
+fn err_code(item: &cratestack::BatchItemResult<cratestack_schema::BatchRow>) -> &str {
     match &item.status {
         BatchItemStatus::Error { error } => error.code.as_str(),
         BatchItemStatus::Ok { .. } => {
@@ -99,11 +97,12 @@ async fn batch_create_writes_one_audit_row_per_successful_item() {
     assert_eq!(response.summary.err, 0);
 
     // Two audit rows — one per successful item — with the same request id.
-    let audit_count: i64 = query("SELECT COUNT(*)::BIGINT FROM cratestack_audit WHERE model = 'BatchRow'")
-        .fetch_one(pool)
-        .await
-        .expect("count audit rows")
-        .get(0);
+    let audit_count: i64 =
+        query("SELECT COUNT(*)::BIGINT FROM cratestack_audit WHERE model = 'BatchRow'")
+            .fetch_one(pool)
+            .await
+            .expect("count audit rows")
+            .get(0);
     assert_eq!(audit_count, 2);
 
     let request_ids: Vec<String> =
@@ -144,8 +143,16 @@ async fn batch_update_with_stale_if_match_rolls_back_only_that_item() {
     // Seed two rows. Both start at version 0.
     cool.batch_row()
         .batch_create(vec![
-            cratestack_schema::CreateBatchRowInput { id: 10, label: "ten".into(), balance: 10 },
-            cratestack_schema::CreateBatchRowInput { id: 20, label: "twenty".into(), balance: 20 },
+            cratestack_schema::CreateBatchRowInput {
+                id: 10,
+                label: "ten".into(),
+                balance: 10,
+            },
+            cratestack_schema::CreateBatchRowInput {
+                id: 20,
+                label: "twenty".into(),
+                balance: 20,
+            },
         ])
         .run(&ctx)
         .await
@@ -294,8 +301,16 @@ async fn batch_delete_writes_audit_before_snapshot_from_returning_row() {
 
     cool.batch_row()
         .batch_create(vec![
-            cratestack_schema::CreateBatchRowInput { id: 300, label: "doomed-a".into(), balance: 1 },
-            cratestack_schema::CreateBatchRowInput { id: 400, label: "doomed-b".into(), balance: 2 },
+            cratestack_schema::CreateBatchRowInput {
+                id: 300,
+                label: "doomed-a".into(),
+                balance: 1,
+            },
+            cratestack_schema::CreateBatchRowInput {
+                id: 400,
+                label: "doomed-b".into(),
+                balance: 2,
+            },
         ])
         .run(&ctx)
         .await

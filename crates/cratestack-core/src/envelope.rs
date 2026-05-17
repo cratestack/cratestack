@@ -132,9 +132,7 @@ impl<K: KeyProvider> HmacEnvelope<K> {
                 envelope.ts + self.clock_skew_secs,
                 0,
             )
-            .ok_or_else(|| {
-                CoolError::Unauthorized("envelope timestamp out of range".to_owned())
-            })?;
+            .ok_or_else(|| CoolError::Unauthorized("envelope timestamp out of range".to_owned()))?;
             let recorded = nonces.record_if_unseen(&envelope.nonce, expires_at).await?;
             if !recorded {
                 return Err(CoolError::Unauthorized(

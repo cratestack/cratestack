@@ -17,7 +17,10 @@ pub(super) fn emit_field_validators(
     let scalar = field.ty.name.as_str();
     let is_optional = treat_as_optional || matches!(field.ty.arity, TypeArity::Optional);
 
-    let calls = validators.iter().enumerate().map(|(idx, v)| emit_one(field, scalar, idx, v));
+    let calls = validators
+        .iter()
+        .enumerate()
+        .map(|(idx, v)| emit_one(field, scalar, idx, v));
 
     if is_optional {
         quote! {

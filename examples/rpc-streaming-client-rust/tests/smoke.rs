@@ -18,10 +18,10 @@ use std::convert::Infallible;
 use std::sync::Arc;
 use std::time::Duration;
 
+use axum::Router;
 use axum::body::Body;
 use axum::http::{HeaderMap, HeaderValue, Response, StatusCode, header};
 use axum::routing::post;
-use axum::Router;
 use bytes::Bytes;
 use cratestack_client_rust::{ClientConfig, CratestackClient};
 use cratestack_codec_cbor::CborCodec;
@@ -79,10 +79,7 @@ async fn missing_auth_header_surfaces_as_remote_error_before_stream_opens() {
     let client = cratestack_schema::client::Client::new(runtime);
 
     let args = ticks::Args {
-        args: TickerArgs {
-            start: 0,
-            count: 1,
-        },
+        args: TickerArgs { start: 0, count: 1 },
     };
 
     let result = client.procedures().ticks(&args).await;
@@ -155,4 +152,3 @@ async fn handle_ticks(headers: HeaderMap, body: Bytes) -> Response<Body> {
         .body(body)
         .expect("response builds")
 }
-

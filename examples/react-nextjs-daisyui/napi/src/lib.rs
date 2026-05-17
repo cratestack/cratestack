@@ -119,7 +119,9 @@ mod addon {
             .map_err(|error| napi::Error::from_reason(format!("open failed: {error}")))?;
         opened
             .with_connection(|conn| {
-                conn.execute_batch(&create_table_sql(&notes_schema::cratestack_schema::NOTE_MODEL))?;
+                conn.execute_batch(&create_table_sql(
+                    &notes_schema::cratestack_schema::NOTE_MODEL,
+                ))?;
                 Ok(())
             })
             .map_err(|error| napi::Error::from_reason(format!("bootstrap failed: {error}")))?;

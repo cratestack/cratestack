@@ -18,16 +18,32 @@ pub(super) fn push_policy_predicate(
 ) {
     match predicate {
         ReadPredicate::AuthNotNull => {
-            query.push(if ctx.is_authenticated() { "TRUE" } else { "FALSE" });
+            query.push(if ctx.is_authenticated() {
+                "TRUE"
+            } else {
+                "FALSE"
+            });
         }
         ReadPredicate::AuthIsNull => {
-            query.push(if ctx.is_authenticated() { "FALSE" } else { "TRUE" });
+            query.push(if ctx.is_authenticated() {
+                "FALSE"
+            } else {
+                "TRUE"
+            });
         }
         ReadPredicate::HasRole { role } => {
-            query.push(if context_has_role(ctx, role) { "TRUE" } else { "FALSE" });
+            query.push(if context_has_role(ctx, role) {
+                "TRUE"
+            } else {
+                "FALSE"
+            });
         }
         ReadPredicate::InTenant { tenant_id } => {
-            query.push(if context_in_tenant(ctx, tenant_id) { "TRUE" } else { "FALSE" });
+            query.push(if context_in_tenant(ctx, tenant_id) {
+                "TRUE"
+            } else {
+                "FALSE"
+            });
         }
         ReadPredicate::AuthFieldEqLiteral { auth_field, value } => {
             query.push(
@@ -100,10 +116,7 @@ pub(super) fn push_policy_predicate(
     }
 }
 
-fn push_policy_literal(
-    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
-    literal: PolicyLiteral,
-) {
+fn push_policy_literal(query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>, literal: PolicyLiteral) {
     match literal {
         PolicyLiteral::Bool(value) => query.push_bind(value),
         PolicyLiteral::Int(value) => query.push_bind(value),

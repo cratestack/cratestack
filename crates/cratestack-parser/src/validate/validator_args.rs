@@ -13,10 +13,10 @@ pub(crate) fn parse_length_args(raw: &str) -> Result<(Option<u32>, Option<u32>),
             other => return Err(format!("@length: unknown argument `{other}`")),
         }
     }
-    if let (Some(lo), Some(hi)) = (min, max) {
-        if lo > hi {
-            return Err(format!("@length: min ({lo}) must be <= max ({hi})"));
-        }
+    if let (Some(lo), Some(hi)) = (min, max)
+        && lo > hi
+    {
+        return Err(format!("@length: min ({lo}) must be <= max ({hi})"));
     }
     Ok((min, max))
 }
@@ -37,10 +37,10 @@ pub(crate) fn parse_range_args(raw: &str) -> Result<(Option<i64>, Option<i64>), 
             other => return Err(format!("@range: unknown argument `{other}`")),
         }
     }
-    if let (Some(lo), Some(hi)) = (min, max) {
-        if lo > hi {
-            return Err(format!("@range: min ({lo}) must be <= max ({hi})"));
-        }
+    if let (Some(lo), Some(hi)) = (min, max)
+        && lo > hi
+    {
+        return Err(format!("@range: min ({lo}) must be <= max ({hi})"));
     }
     Ok((min, max))
 }

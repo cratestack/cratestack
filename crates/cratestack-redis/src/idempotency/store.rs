@@ -46,9 +46,7 @@ impl RedisIdempotencyStore {
         out
     }
 
-    pub(super) async fn connection(
-        &self,
-    ) -> Result<redis::aio::MultiplexedConnection, CoolError> {
+    pub(super) async fn connection(&self) -> Result<redis::aio::MultiplexedConnection, CoolError> {
         self.client
             .get_multiplexed_async_connection()
             .await

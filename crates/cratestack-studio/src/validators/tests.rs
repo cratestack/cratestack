@@ -54,7 +54,10 @@ fn type_mismatch_flags_wrong_json_type() {
     let model = schema.models.iter().find(|m| m.name == "Post").unwrap();
     let bad = validate_payload(
         model,
-        &payload(&[("id", serde_json::json!("p")), ("title", serde_json::json!(42))]),
+        &payload(&[
+            ("id", serde_json::json!("p")),
+            ("title", serde_json::json!(42)),
+        ]),
         false,
     );
     assert!(bad.iter().any(|e| e.code == ValidationCode::TypeMismatch));

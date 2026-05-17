@@ -10,9 +10,7 @@
 
 use cratestack::axum::Router;
 use cratestack::sqlx::postgres::PgPoolOptions;
-use cratestack::{
-    AuthProvider, CodecSet, CoolContext, CoolError, RequestContext, Value,
-};
+use cratestack::{AuthProvider, CodecSet, CoolContext, CoolError, RequestContext, Value};
 use cratestack_codec_cbor::CborCodec;
 use cratestack_codec_json::JsonCodec;
 

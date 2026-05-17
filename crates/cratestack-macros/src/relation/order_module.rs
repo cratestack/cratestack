@@ -80,16 +80,34 @@ pub(super) fn generate_relation_quantifier_container_module(
 ) -> Result<proc_macro2::TokenStream, String> {
     let module_ident = ident(&relation_field.name);
     let some = super::quantifier::generate_relation_quantifier_module(
-        parent_model, target_model, relation_field, parent_wrappers,
-        RelationFilterWrapperKind::Some, "some", visited, models,
+        parent_model,
+        target_model,
+        relation_field,
+        parent_wrappers,
+        RelationFilterWrapperKind::Some,
+        "some",
+        visited,
+        models,
     )?;
     let every = super::quantifier::generate_relation_quantifier_module(
-        parent_model, target_model, relation_field, parent_wrappers,
-        RelationFilterWrapperKind::Every, "every", visited, models,
+        parent_model,
+        target_model,
+        relation_field,
+        parent_wrappers,
+        RelationFilterWrapperKind::Every,
+        "every",
+        visited,
+        models,
     )?;
     let none = super::quantifier::generate_relation_quantifier_module(
-        parent_model, target_model, relation_field, parent_wrappers,
-        RelationFilterWrapperKind::None, "none", visited, models,
+        parent_model,
+        target_model,
+        relation_field,
+        parent_wrappers,
+        RelationFilterWrapperKind::None,
+        "none",
+        visited,
+        models,
     )?;
 
     Ok(quote! {
@@ -151,7 +169,11 @@ fn generate_as_include_method(
         return Ok(None);
     }
 
-    let Some(fk_field) = model.fields.iter().find(|field| &field.name == fk_field_name) else {
+    let Some(fk_field) = model
+        .fields
+        .iter()
+        .find(|field| &field.name == fk_field_name)
+    else {
         return Ok(None);
     };
 

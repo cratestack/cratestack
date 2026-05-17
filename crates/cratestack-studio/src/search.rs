@@ -153,11 +153,13 @@ mod tests {
         );
         let hits = search(&schema, "cust");
         assert!(
-            hits.iter().any(|h| h.kind == HitKind::Model && h.name == "Customer"),
+            hits.iter()
+                .any(|h| h.kind == HitKind::Model && h.name == "Customer"),
             "{hits:?}"
         );
         assert!(
-            hits.iter().any(|h| h.kind == HitKind::Field && h.name == "customerId"),
+            hits.iter()
+                .any(|h| h.kind == HitKind::Field && h.name == "customerId"),
             "{hits:?}"
         );
     }

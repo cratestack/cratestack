@@ -32,7 +32,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("Start the server example with:");
             println!("    cargo run -p rpc-streaming-example");
             println!("Then re-run this binary with:");
-            println!("    REMOTE_URL=http://localhost:3001 cargo run -p rpc-streaming-client-rust-example");
+            println!(
+                "    REMOTE_URL=http://localhost:3001 cargo run -p rpc-streaming-client-rust-example"
+            );
             return Ok(());
         }
     };

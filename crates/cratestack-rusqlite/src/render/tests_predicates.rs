@@ -62,16 +62,8 @@ fn coalesce_accepts_fieldref_items() {
 fn json_has_key_lowers_to_json_extract_is_not_null() {
     let dialect = SqliteDialect;
     let descriptor = fixture_descriptor();
-    let filter =
-        FieldRef::<(), serde_json::Value>::new("metrics").json_has_key("loss");
-    let (sql, binds) = render_select(
-        &dialect,
-        &descriptor,
-        &[filter],
-        &[],
-        None,
-        None,
-    );
+    let filter = FieldRef::<(), serde_json::Value>::new("metrics").json_has_key("loss");
+    let (sql, binds) = render_select(&dialect, &descriptor, &[filter], &[], None, None);
     assert!(
         sql.contains("WHERE json_extract(metrics, '$.loss') IS NOT NULL"),
         "got: {sql}",
@@ -86,14 +78,7 @@ fn json_get_text_eq_lowers_to_json_extract_eq() {
     let filter = FieldRef::<(), serde_json::Value>::new("metrics")
         .json_get_text("loss")
         .eq("0.001");
-    let (sql, binds) = render_select(
-        &dialect,
-        &descriptor,
-        &[filter],
-        &[],
-        None,
-        None,
-    );
+    let (sql, binds) = render_select(&dialect, &descriptor, &[filter], &[], None, None);
     assert!(
         sql.contains("WHERE json_extract(metrics, '$.loss') = ?1"),
         "got: {sql}",

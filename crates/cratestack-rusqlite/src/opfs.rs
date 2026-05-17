@@ -30,8 +30,8 @@
 //! registered as the default on first install, so subsequent `Connection::
 //! open()` calls automatically route through it.
 
-use sqlite_wasm_vfs::sahpool::{OpfsSAHPoolCfg, install as sahpool_install};
 use sqlite_wasm_rs as ffi;
+use sqlite_wasm_vfs::sahpool::{OpfsSAHPoolCfg, install as sahpool_install};
 
 /// Options for the OPFS SAH-pool VFS.
 #[derive(Debug, Clone)]

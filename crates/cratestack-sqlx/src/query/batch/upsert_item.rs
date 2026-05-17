@@ -9,9 +9,7 @@ use sqlx_core::acquire::Acquire as _;
 
 use crate::audit::{build_audit_event, enqueue_audit_event};
 use crate::descriptor::enqueue_event_outbox;
-use crate::query::support::{
-    apply_create_defaults, evaluate_create_policies, find_column_value,
-};
+use crate::query::support::{apply_create_defaults, evaluate_create_policies, find_column_value};
 use crate::{ModelDescriptor, UpsertModelInput, sqlx};
 
 use super::upsert_sql::{
@@ -77,9 +75,7 @@ where
             select_for_update_by_pk_value(&mut item_tx, descriptor, &pk_value).await?;
         let inserted = before_record.is_none();
 
-        if !inserted
-            && !row_passes_update_policy(policy_pool, descriptor, &pk_value, ctx).await?
-        {
+        if !inserted && !row_passes_update_policy(policy_pool, descriptor, &pk_value, ctx).await? {
             return Err(CoolError::Forbidden(
                 "update policy denied this upsert".to_owned(),
             ));
@@ -96,9 +92,21 @@ where
         let record =
             upsert_one_in_savepoint::<M, PK>(&mut item_tx, descriptor, &insert_values).await?;
 
-        let event_kind = if inserted { ModelEventKind::Created } else { ModelEventKind::Updated };
-        let audit_op = if inserted { AuditOperation::Create } else { AuditOperation::Update };
-        let emits_this_event = if inserted { emits_created } else { emits_updated };
+        let event_kind = if inserted {
+            ModelEventKind::Created
+        } else {
+            ModelEventKind::Updated
+        };
+        let audit_op = if inserted {
+            AuditOperation::Create
+        } else {
+            AuditOperation::Update
+        };
+        let emits_this_event = if inserted {
+            emits_created
+        } else {
+            emits_updated
+        };
 
         if emits_this_event {
             enqueue_event_outbox(&mut *item_tx, descriptor.schema_name, event_kind, &record)
@@ -131,4 +139,3 @@ where
         }
     }
 }
-

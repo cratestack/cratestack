@@ -35,8 +35,10 @@ impl<'a, M: 'static, PK: 'static> BatchDelete<'a, M, PK> {
         // can pair them back to the input order.
         let mut sql = match self.descriptor.soft_delete_column {
             Some(col) => {
-                let mut s =
-                    format!("UPDATE {} SET {col} = CURRENT_TIMESTAMP", self.descriptor.table_name);
+                let mut s = format!(
+                    "UPDATE {} SET {col} = CURRENT_TIMESTAMP",
+                    self.descriptor.table_name
+                );
                 if let Some(version_col) = self.descriptor.version_column {
                     s.push_str(&format!(", {version_col} = {version_col} + 1"));
                 }
@@ -56,21 +58,23 @@ impl<'a, M: 'static, PK: 'static> BatchDelete<'a, M, PK> {
         sql.push_str(") RETURNING ");
         sql.push_str(&self.descriptor.select_projection());
 
-        let binds: Vec<SqlValue> = self.ids.iter().cloned().map(IntoSqlValue::into_sql_value).collect();
+        let binds: Vec<SqlValue> = self
+            .ids
+            .iter()
+            .cloned()
+            .map(IntoSqlValue::into_sql_value)
+            .collect();
 
         let deleted: Vec<M> = self.runtime.with_connection(|conn| {
             let mut stmt = conn.prepare(&sql)?;
             let bind_iter = binds.iter().map(SqlValueParam);
             let rows = stmt
-                .query_map(params_from_iter(bind_iter), |row| {
-                    M::from_rusqlite_row(row)
-                })?
+                .query_map(params_from_iter(bind_iter), |row| M::from_rusqlite_row(row))?
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(rows)
         })?;
 
-        let mut by_pk: HashMap<PK, M> =
-            deleted.into_iter().map(|m| (m.primary_key(), m)).collect();
+        let mut by_pk: HashMap<PK, M> = deleted.into_iter().map(|m| (m.primary_key(), m)).collect();
         let results = self
             .ids
             .into_iter()

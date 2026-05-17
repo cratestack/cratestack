@@ -18,7 +18,10 @@ use cratestack::sqlx::{Row, query};
 use cratestack::{CoolContext, Value, point};
 use support::pg;
 
-include_server_schema!("tests/fixtures/builder_extensions_tier7.cstack", db = Postgres);
+include_server_schema!(
+    "tests/fixtures/builder_extensions_tier7.cstack",
+    db = Postgres
+);
 
 async fn ensure_postgis_or_skip(pool: &cratestack::sqlx::PgPool) -> bool {
     // `CREATE EXTENSION IF NOT EXISTS postgis;` succeeds when the
@@ -57,8 +60,7 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
 }
 
 fn operator() -> CoolContext {
-    CoolContext::authenticated([("id".to_owned(), Value::Int(1))])
-        .with_request_id("tier7-001")
+    CoolContext::authenticated([("id".to_owned(), Value::Int(1))]).with_request_id("tier7-001")
 }
 
 async fn seed(pool: &cratestack::sqlx::PgPool) {
