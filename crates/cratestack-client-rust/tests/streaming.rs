@@ -20,7 +20,7 @@ use axum::routing::post;
 use bytes::Bytes;
 use cratestack_client_rust::{
     ClientConfig, CratestackClient, RuntimeChunkWire, RuntimeCodecConfig, RuntimeConfigWire,
-    RuntimeEnvelopeConfig, RuntimeHandle, RuntimeHeader, RuntimeRequestWire,
+    RuntimeEnvelopeConfig, RuntimeHandle, RuntimeRequestWire,
     RuntimeStateStoreConfig, RuntimeTransportConfig,
 };
 use cratestack_codec_cbor::CborCodec;
