@@ -174,7 +174,7 @@ fn handle_studio_run(config: PathBuf, bind: Option<String>) -> Result<()> {
 }
 
 fn handle_studio_eject(_config: PathBuf, out: PathBuf, force: bool) -> Result<()> {
-    let report = cratestack_studio_generator::eject(&cratestack_studio_generator::EjectOptions {
+    let report = cratestack_studio::eject(&cratestack_studio::EjectOptions {
         out: out.clone(),
         force,
     })?;
