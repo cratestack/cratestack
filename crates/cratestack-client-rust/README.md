@@ -4,7 +4,7 @@ Rust HTTP client runtime for CrateStack services.
 
 ## Overview
 
-`cratestack-client-rust` provides the typed client runtime that `include_schema!` and `include_client_macro!` build their generated `client::Client` surfaces on top of. It owns the HTTP transport, codec negotiation, request authorization hook, and optional offline state journaling.
+`cratestack-client-rust` provides the typed client runtime that `include_client_schema!` builds its generated `client::Client` surface on top of. It owns the HTTP transport, codec negotiation, request authorization hook, and optional offline state journaling.
 
 The CBOR and JSON codecs are re-exported as `CborCodec` and `JsonCodec`.
 
@@ -19,28 +19,11 @@ url = "2"
 
 ## Usage
 
-### With `include_schema!`
-
 ```rust
-use cratestack::include_schema;
+use cratestack::include_client_schema;
 use cratestack_client_rust::{CborCodec, ClientConfig, CratestackClient};
 
-include_schema!("../schemas/api.cstack");
-
-let base_url = url::Url::parse("https://api.example.com")?;
-let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec);
-let client = cratestack_schema::client::Client::new(runtime);
-```
-
-### With `include_client_macro!`
-
-For consumer-only crates that do not own the schema's database:
-
-```rust
-use cratestack::include_client_macro;
-use cratestack_client_rust::{CborCodec, ClientConfig, CratestackClient};
-
-include_client_macro!("../schemas/api.cstack");
+include_client_schema!("../schemas/api.cstack");
 
 let base_url = url::Url::parse("https://api.example.com")?;
 let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec);

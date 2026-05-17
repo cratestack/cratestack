@@ -10,9 +10,9 @@ name = "rpc-streaming-client"
 path = "src/main.rs"
 
 [dependencies]
-cratestack = { path = "../../crates/cratestack", version = "0.3.2" }
-cratestack-client-rust = { path = "../../crates/cratestack-client-rust", version = "0.3.2" }
-cratestack-codec-cbor = { path = "../../crates/cratestack-codec-cbor", version = "0.3.2" }
+cratestack = { path = "../../crates/cratestack", version = "0.3.3" }
+cratestack-client-rust = { path = "../../crates/cratestack-client-rust", version = "0.3.3" }
+cratestack-codec-cbor = { path = "../../crates/cratestack-codec-cbor", version = "0.3.3" }
 serde = { workspace = true }
 tokio = { workspace = true }
 url = { workspace = true }
@@ -21,4 +21,4 @@ url = { workspace = true }
 async-stream = "0.3"
 axum = { workspace = true }
 bytes = { workspace = true }
-cratestack-core = { path = "../../crates/cratestack-core", version = "0.3.2" }
+cratestack-core = { path = "../../crates/cratestack-core", version = "0.3.3" }
