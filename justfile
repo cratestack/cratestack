@@ -140,38 +140,120 @@ release-check:
 # delegates to that recipe when it gets to studio.
 PUBLISH_ORDER := "cratestack-core cratestack-policy cratestack-parser cratestack-codec-cbor cratestack-codec-json cratestack-axum cratestack-sql cratestack-sqlx cratestack-client-rust cratestack-client-dart cratestack-client-typescript cratestack-client-flutter cratestack-client-store-sqlite cratestack-client-store-redis cratestack-studio cratestack-studio-generator cratestack-migrate cratestack-macros cratestack-rusqlite cratestack cratestack-lsp cratestack-redis cratestack-cli"
 
-# Publish every workspace crate to crates.io in dependency order. Use
-# `just release-publish dry` for a dry-run (packages + verifies each
+# Publish every workspace crate to crates.io in dependency order.
+#
+# Idempotent: each crate is checked against the crates.io API for the
+# current workspace version before publishing — already-uploaded
+# versions are skipped, so reruns after a partial failure pick up
+# where they left off. Use `FROM=cratestack-studio just release-publish`
+# to skip straight to a specific crate without hitting crates.io for
+# the earlier ones.
+#
+# `dry` mode runs `cargo publish --dry-run` (packages + verifies each
 # but skips upload). Pairs with `just bump` for the version step and
 # `just release` for the full end-to-end flow.
 release-publish mode='real':
 	#!/usr/bin/env bash
-	set -euo pipefail
+	# Note: `set +e` here — we want to detect "already uploaded" errors
+	# rather than abort the whole loop on them. Each command's exit
+	# status is checked explicitly.
+	set -uo pipefail
 	if [ "{{mode}}" != "real" ] && [ "{{mode}}" != "dry" ]; then
 	  echo "usage: just release-publish [real|dry]" >&2
 	  exit 2
 	fi
 	dry=""
 	[ "{{mode}}" = "dry" ] && dry="--dry-run"
-	# Bundle the studio UI once up front so the studio publish leg can
-	# pick up fresh tarballs without re-running trunk per crate.
-	just bundle-studio-ui
+	version=$(awk -F'"' '/^version = /{print $2; exit}' Cargo.toml)
+	from="${FROM:-}"
+	skipping=true
+	[ -z "$from" ] && skipping=false
+
+	# Returns 0 if `crate@version` is already published on crates.io.
+	# Uses the JSON API; falls back to "not published" on any network
+	# error so we surface a fresh publish failure rather than masking it.
+	is_published() {
+	  local pkg=$1 ver=$2
+	  curl -fsS -A "cratestack-release/1.0" \
+	    "https://crates.io/api/v1/crates/$pkg/$ver" \
+	    -o /dev/null 2>/dev/null
+	}
+
+	# Run a single `cargo publish` and classify the outcome:
+	#   0 = published or already uploaded (idempotent success)
+	#   1 = real failure (caller decides retry vs abort)
+	publish_once() {
+	  local pkg=$1 extra=$2
+	  local out rc
+	  out=$(cargo publish -p "$pkg" $extra $dry 2>&1)
+	  rc=$?
+	  printf '%s\n' "$out"
+	  if [ $rc -eq 0 ]; then
+	    return 0
+	  fi
+	  if printf '%s' "$out" | grep -qE 'already (uploaded|exists)'; then
+	    echo "  → already uploaded, treating as success"
+	    return 0
+	  fi
+	  return 1
+	}
+
+	bundled=false
+	bundle_studio() {
+	  if [ "$bundled" = "false" ]; then
+	    just bundle-studio-ui >&2
+	    bundled=true
+	  fi
+	}
+
+	failed=""
 	for pkg in {{PUBLISH_ORDER}}; do
-	  echo ""
-	  echo "=== publishing $pkg ==="
-	  if [ "$pkg" = "cratestack-studio" ]; then
-	    # Studio needs --allow-dirty for the regenerated tarballs.
-	    cargo publish -p "$pkg" --allow-dirty $dry
-	  else
-	    # Retry once after a short wait if the crates.io index hasn't
-	    # propagated a freshly-published dependency.
-	    if ! cargo publish -p "$pkg" $dry; then
-	      echo "publish failed; sleeping 30s then retrying once..." >&2
-	      sleep 30
-	      cargo publish -p "$pkg" $dry
+	  if [ "$skipping" = "true" ]; then
+	    if [ "$pkg" = "$from" ]; then
+	      skipping=false
+	    else
+	      echo "skipping $pkg (before FROM=$from)"
+	      continue
 	    fi
 	  fi
+
+	  echo ""
+	  echo "=== $pkg @ $version ==="
+
+	  # Cheap pre-check: if already on crates.io, skip the cargo publish
+	  # round-trip entirely. Only meaningful in real mode; dry runs
+	  # always want to exercise the package + verify path.
+	  if [ "{{mode}}" = "real" ] && is_published "$pkg" "$version"; then
+	    echo "  → already on crates.io, skipping"
+	    continue
+	  fi
+
+	  extra=""
+	  if [ "$pkg" = "cratestack-studio" ]; then
+	    # Re-bundle right before studio's publish so OUT_DIR matches the
+	    # current sibling state, even if a prior loop iteration cleaned it.
+	    bundle_studio
+	    extra="--allow-dirty"
+	  fi
+
+	  if publish_once "$pkg" "$extra"; then
+	    continue
+	  fi
+	  echo "  → first attempt failed; sleeping 30s and retrying once..." >&2
+	  sleep 30
+	  if publish_once "$pkg" "$extra"; then
+	    continue
+	  fi
+	  failed="$pkg"
+	  break
 	done
+
+	if [ -n "$failed" ]; then
+	  echo "" >&2
+	  echo "release-publish failed at $failed." >&2
+	  echo "Resume with: FROM=$failed just release-publish {{mode}}" >&2
+	  exit 1
+	fi
 
 # End-to-end release: bump version, validate, publish all crates, tag,
 # and push. Refuses to run on a dirty working tree (besides the
