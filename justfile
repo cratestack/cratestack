@@ -68,7 +68,19 @@ bundle-studio-ui:
 	echo "wrote $out ($(du -h "$out" | cut -f1))"
 
 # End-to-end publish for cratestack-studio: refresh the embedded UI
-# tarball, then publish. Pass through any extra cargo flags.
+# tarball, then publish. `--allow-dirty` is needed because the
+# regenerated tarball is gitignored by design (binary, derived from
+# the cratestack-studio-ui sibling); we guard the flag by refusing to
+# publish if anything else in the crate is dirty.
 publish-studio *args='':
+	#!/usr/bin/env bash
+	set -euo pipefail
 	just bundle-studio-ui
-	cargo publish -p cratestack-studio {{args}}
+	dirty=$(git status --porcelain -- crates/cratestack-studio crates/cratestack-studio-ui \
+	        | grep -v 'crates/cratestack-studio/embedded-ui\.tar\.gz$' || true)
+	if [ -n "$dirty" ]; then
+	  echo "refusing to publish: uncommitted changes besides embedded-ui.tar.gz:" >&2
+	  echo "$dirty" >&2
+	  exit 1
+	fi
+	cargo publish -p cratestack-studio --allow-dirty {{args}}
