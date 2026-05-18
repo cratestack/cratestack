@@ -133,14 +133,13 @@ release-check:
 	cargo check --workspace --all-targets
 	cargo test --workspace --exclude embedded_flutter_native
 
-# Ordered list of crates to publish, leaves first. Keep in sync with
-# RELEASE.md. `cratestack-studio-ui` is `publish = false` and absent.
-# Note: `cratestack-studio` ships via `just publish-studio` so it can
-# refresh the embedded UI tarballs first; the publish loop below
-# delegates to that recipe when it gets to studio.
-PUBLISH_ORDER := "cratestack-core cratestack-policy cratestack-parser cratestack-codec-cbor cratestack-codec-json cratestack-axum cratestack-sql cratestack-sqlx cratestack-client-rust cratestack-client-dart cratestack-client-typescript cratestack-client-flutter cratestack-client-store-sqlite cratestack-client-store-redis cratestack-studio cratestack-studio-generator cratestack-migrate cratestack-macros cratestack-rusqlite cratestack cratestack-lsp cratestack-redis cratestack-cli"
-
 # Publish every workspace crate to crates.io in dependency order.
+#
+# The order is computed at recipe-time by topologically sorting the
+# workspace graph from `cargo metadata`, so it can't drift when a new
+# inter-crate dependency lands. Previously a hand-maintained list in
+# this file (and in RELEASE.md) silently broke when cratestack-studio
+# took on a cratestack-migrate dep but migrate stayed later in the list.
 #
 # Idempotent: each crate is checked against the crates.io API for the
 # current workspace version before publishing — already-uploaded
@@ -161,6 +160,35 @@ release-publish mode='real':
 	if [ "{{mode}}" != "real" ] && [ "{{mode}}" != "dry" ]; then
 	  echo "usage: just release-publish [real|dry]" >&2
 	  exit 2
+	fi
+	# Compute the publish order by topo-sorting cratestack-* workspace
+	# packages from `cargo metadata`. Requires python3 (ubiquitous on
+	# dev machines). On failure (parse, cycle, missing python) the
+	# error is loud and the recipe aborts before touching crates.io.
+	publish_order=$(cargo metadata --format-version=1 --no-deps 2>/dev/null | \
+	  python3 -c "$(cat <<'PYEOF'
+	import json, sys, copy
+	m = json.load(sys.stdin)
+	pkgs = {p["name"]: p for p in m["packages"]
+	        if p["name"].startswith("cratestack") and p.get("publish") != []}
+	graph = {n: {d["name"] for d in p["dependencies"]
+	             if d["name"] in pkgs and d["name"] != n}
+	         for n, p in pkgs.items()}
+	order, remaining = [], copy.deepcopy(graph)
+	while remaining:
+	    leaves = sorted(n for n, d in remaining.items() if not d)
+	    if not leaves:
+	        sys.exit(f"dependency cycle: {remaining}")
+	    for n in leaves:
+	        order.append(n); del remaining[n]
+	    for d in remaining.values():
+	        d.difference_update(leaves)
+	print(" ".join(order))
+	PYEOF
+	)")
+	if [ -z "$publish_order" ]; then
+	  echo "failed to compute publish order from cargo metadata" >&2
+	  exit 1
 	fi
 	dry=""
 	[ "{{mode}}" = "dry" ] && dry="--dry-run"
@@ -207,7 +235,7 @@ release-publish mode='real':
 	}
 
 	failed=""
-	for pkg in {{PUBLISH_ORDER}}; do
+	for pkg in $publish_order; do
 	  if [ "$skipping" = "true" ]; then
 	    if [ "$pkg" = "$from" ]; then
 	      skipping=false

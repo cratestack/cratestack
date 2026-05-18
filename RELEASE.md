@@ -58,32 +58,18 @@ cargo test --workspace --all-features
 cargo package -p cratestack-core --allow-dirty --no-verify
 ```
 
-On the first public release, sibling crates that depend on `cratestack-core` and each other cannot all complete `cargo package` against crates.io until their dependencies have been published. After the first ordered publish has populated crates.io, run package dry-runs across the full workspace before each later release:
+On the first public release, sibling crates that depend on
+`cratestack-core` and each other cannot all complete `cargo package`
+against crates.io until their dependencies have been published. After
+the first ordered publish has populated crates.io, run package
+dry-runs across the full workspace via the automation:
 
 ```sh
-for package in \
-  cratestack-core \
-  cratestack-policy \
-  cratestack-parser \
-  cratestack-codec-cbor \
-  cratestack-codec-json \
-  cratestack-axum \
-  cratestack-sqlx \
-  cratestack-client-rust \
-  cratestack-client-dart \
-  cratestack-client-typescript \
-  cratestack-client-flutter \
-  cratestack-client-store-sqlite \
-  cratestack-client-store-redis \
-  cratestack-studio \
-  cratestack-studio-generator \
-  cratestack-macros \
-  cratestack \
-  cratestack-lsp \
-  cratestack-cli; do
-  cargo package -p "$package" --allow-dirty --no-verify
-done
+just release-publish dry
 ```
+
+The recipe topo-sorts the workspace from `cargo metadata`, so the
+order can't drift.
 
 Run from `packages/cratestack-vscode`:
 
@@ -95,35 +81,36 @@ pnpm run package:vsix
 
 ## Publish Rust Crates
 
-Publish leaf crates before crates that depend on them:
+Preferred path: `just release-publish` (or `just release VERSION`) walks
+the workspace in topo-sorted order computed from `cargo metadata`. The
+recipe is idempotent — already-uploaded versions are skipped — so
+restarting after a partial failure is safe.
+
+Manual fallback: print the same order with
 
 ```sh
-cargo publish -p cratestack-core
-cargo publish -p cratestack-policy
-cargo publish -p cratestack-parser
-cargo publish -p cratestack-codec-cbor
-cargo publish -p cratestack-codec-json
-cargo publish -p cratestack-axum
-cargo publish -p cratestack-sql
-cargo publish -p cratestack-sqlx
-cargo publish -p cratestack-client-rust
-cargo publish -p cratestack-client-dart
-cargo publish -p cratestack-client-typescript
-cargo publish -p cratestack-client-flutter
-cargo publish -p cratestack-client-store-sqlite
-cargo publish -p cratestack-client-store-redis
-cargo publish -p cratestack-studio
-cargo publish -p cratestack-studio-generator
-cargo publish -p cratestack-migrate
-cargo publish -p cratestack-macros
-cargo publish -p cratestack-rusqlite
-cargo publish -p cratestack
-cargo publish -p cratestack-lsp
-cargo publish -p cratestack-redis
-cargo publish -p cratestack-cli
+cargo metadata --format-version=1 --no-deps | python3 -c '
+import json, sys, copy
+m = json.load(sys.stdin)
+pkgs = {p["name"]: p for p in m["packages"]
+        if p["name"].startswith("cratestack") and p.get("publish") != []}
+graph = {n: {d["name"] for d in p["dependencies"]
+             if d["name"] in pkgs and d["name"] != n}
+         for n, p in pkgs.items()}
+order, remaining = [], copy.deepcopy(graph)
+while remaining:
+    leaves = sorted(n for n, d in remaining.items() if not d)
+    if not leaves: sys.exit(f"cycle: {remaining}")
+    for n in leaves: order.append(n); del remaining[n]
+    for d in remaining.values(): d.difference_update(leaves)
+print("\n".join(f"cargo publish -p {n}" for n in order))'
 ```
 
-If crates.io index propagation causes a dependency lookup race, wait briefly and retry the next crate.
+and run the resulting `cargo publish` commands top-to-bottom. If
+crates.io index propagation causes a dependency lookup race, wait
+briefly and retry the next crate. Do *not* maintain a parallel
+hand-written list in this file — past releases have stalled when the
+list drifted out of sync with the actual workspace dep graph.
 
 ## Publish Editor Extension
 
