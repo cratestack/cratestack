@@ -10,6 +10,7 @@ mod shared;
 mod transport;
 mod types;
 mod validators;
+mod view;
 
 use proc_macro::TokenStream;
 

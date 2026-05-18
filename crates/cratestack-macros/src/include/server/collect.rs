@@ -50,6 +50,10 @@ pub(super) struct ServerCollected {
     pub(super) upsert_input_impls: Vec<Ts>,
     pub(super) model_accessors: Vec<Ts>,
     pub(super) bound_model_accessors: Vec<Ts>,
+    pub(super) view_structs: Vec<Ts>,
+    pub(super) view_descriptors: Vec<Ts>,
+    pub(super) view_pg_from_row_impls: Vec<Ts>,
+    pub(super) view_accessors: Vec<Ts>,
     pub(super) procedure_modules: Vec<Ts>,
     pub(super) procedure_registry_methods: Vec<Ts>,
     pub(super) procedure_axum_handler_defs: Vec<Ts>,
@@ -151,6 +155,27 @@ pub(super) fn collect_server_schema(
     let generated_event_module =
         generate_event_module(&schema.models).map_err(|e| compile_error(schema_path, e))?;
 
+    // View emission — see ADR-0003. Views participate in the server
+    // composer only when they declare `@@server_sql` (or `@@sql` as a
+    // shorthand). Views with only `@@embedded_sql` are skipped here
+    // because their SQL body wouldn't compile against Postgres.
+    let mut view_structs = Vec::new();
+    let mut view_descriptors = Vec::new();
+    let mut view_pg_from_row_impls = Vec::new();
+    let mut view_accessors = Vec::new();
+    for view in &schema.views {
+        if view.server_sql().is_none() {
+            continue;
+        }
+        view_structs.push(crate::view::generate_view_struct_only(view, &enum_name_set));
+        let descriptor = crate::view::generate_view_descriptor(view)
+            .map_err(|e| compile_error(schema_path, e))?;
+        view_descriptors.push(descriptor);
+        view_pg_from_row_impls
+            .push(crate::view::generate_view_pg_from_row_impl(view, &enum_name_set));
+        view_accessors.push(crate::view::generate_view_accessor(view));
+    }
+
     Ok(ServerCollected {
         transport_style_str: schema.transport.as_str().to_owned(),
         is_rpc,
@@ -174,6 +199,10 @@ pub(super) fn collect_server_schema(
         upsert_input_impls: mc.upsert_input_impls,
         model_accessors: mc.accessors,
         bound_model_accessors: mc.bound_accessors,
+        view_structs,
+        view_descriptors,
+        view_pg_from_row_impls,
+        view_accessors,
         procedure_modules: pc.modules,
         procedure_registry_methods: pc.registry_methods,
         procedure_axum_handler_defs: pc.axum_handler_defs,
