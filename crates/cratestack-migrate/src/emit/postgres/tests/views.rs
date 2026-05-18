@@ -80,6 +80,20 @@ fn emits_create_or_replace_view_on_body_change() {
     let ops = diff(&prev, &next);
     let up = emit(&ops).up;
 
-    assert!(up.contains("CREATE OR REPLACE VIEW active_customers AS"));
+    // Body changes are modelled as Drop + Create rather than
+    // `CREATE OR REPLACE VIEW` so the ordering works when the same
+    // migration drops a column the old body referenced. Within a
+    // Postgres migration transaction other connections never observe
+    // the transient missing-view state.
+    let drop_pos = up
+        .find("DROP VIEW active_customers")
+        .expect("DROP VIEW emitted for body change");
+    let create_pos = up
+        .find("CREATE VIEW active_customers AS")
+        .expect("CREATE VIEW emitted for body change");
+    assert!(
+        drop_pos < create_pos,
+        "DROP must precede CREATE in body-change migration"
+    );
     assert!(up.contains("WHERE email IS NOT NULL"));
 }

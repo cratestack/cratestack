@@ -86,12 +86,16 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
     // Drop CHECK constraints before drops on the columns they protect.
     ops.append(&mut drop_checks_ops);
     ops.append(&mut drop_indexes_ops);
-    ops.append(&mut drop_columns);
-    // Drop views BEFORE the source tables they depend on (ADR-0003
-    // §"Migration emission" — views reference source columns through
-    // their SQL body, so Postgres rejects a `DROP TABLE` while a
-    // dependent view is alive).
+    // View drops land BEFORE column drops and table drops (ADR-0003
+    // §"Migration emission"). Postgres rejects a `DROP COLUMN` /
+    // `DROP TABLE` while a dependent view still references it, so any
+    // view that touches a soon-to-be-dropped column/table has to be
+    // gone first. Body changes are also modelled as drop + create
+    // (see `diff/views.rs::ViewDiff`), so this is also the position
+    // where the "old body" of a view-body-change disappears before
+    // its referenced columns can be dropped.
     ops.append(&mut view_diff.drops);
+    ops.append(&mut drop_columns);
     ops.append(&mut drop_tables_ops);
     ops.append(&mut create_tables);
     ops.append(&mut add_columns);
@@ -99,14 +103,10 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
     ops.append(&mut add_indexes);
     // Add CHECK constraints after the columns they protect exist.
     ops.append(&mut add_checks);
-    // View creates land AFTER all table creates so source tables
-    // exist before the view body references them.
+    // View creates land AFTER all column adds + table creates so
+    // both source tables and any new columns the view body
+    // references exist before the view definition is parsed.
     ops.append(&mut view_diff.creates);
-    // Replace ops are atomic (CREATE OR REPLACE VIEW on Postgres,
-    // drop-then-create on SQLite). They land after create-and-replace
-    // ordering doesn't matter — both halves of the diff are emitted
-    // after fresh tables exist.
-    ops.append(&mut view_diff.replaces);
     // Enum drops last — after any tables that depended on them.
     ops.append(&mut drop_enums);
     ops

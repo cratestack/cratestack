@@ -21,9 +21,7 @@ use std::collections::BTreeMap;
 
 use cratestack_core::{Schema, View};
 
-use crate::ir::{
-    CreateMaterializedView, CreateView, DropMaterializedView, DropView, Op, ReplaceView,
-};
+use crate::ir::{CreateMaterializedView, CreateView, DropMaterializedView, DropView, Op};
 
 /// Internal projection of a view at one side of a diff. Carries the
 /// dialect-specific SQL body chosen at projection time.
@@ -71,6 +69,16 @@ fn dialect_for(schema: &Schema) -> Dialect {
 }
 
 fn project_view(view: &View, dialect: Dialect) -> Option<ViewProjection> {
+    // Materialized views are server-only (ADR-0003 §"Materialized
+    // views"). The macro's embedded composer hard-errors at expansion
+    // time; the migration generator has to apply the same gate
+    // independently because it doesn't go through the macro. Without
+    // this filter, a schema with `@@materialized` + `@@sql(...)`
+    // pointed at `provider = "sqlite"` would reach the SQLite emitter's
+    // `unreachable!`.
+    if matches!(dialect, Dialect::Sqlite) && view.is_materialized() {
+        return None;
+    }
     let sql = match dialect {
         Dialect::Postgres => view.server_sql()?.to_owned(),
         Dialect::Sqlite => view.embedded_sql()?.to_owned(),
@@ -95,13 +103,22 @@ fn project_view(view: &View, dialect: Dialect) -> Option<ViewProjection> {
     })
 }
 
-/// Diff bucket — drops are flushed before table drops, creates after
-/// table creates (see `super::diff`).
+/// Diff bucket — drops are flushed before column/table drops, creates
+/// after column/table creates (see `super::diff`).
+///
+/// Body changes are modelled as a `Drop + Create` pair rather than a
+/// `ReplaceView` op. This sacrifices the atomicity of Postgres's
+/// `CREATE OR REPLACE VIEW` for ordering correctness when the same
+/// migration drops a column the old body referenced or adds a column
+/// the new body references — the `Drop` lands before column drops
+/// (old body can't block the column DROP) and the `Create` lands
+/// after column adds (new body's column refs are valid). Within a
+/// single Postgres migration transaction, other connections never
+/// observe the transient `view missing` state.
 #[derive(Debug, Default)]
 pub(super) struct ViewDiff {
     pub(super) drops: Vec<Op>,
     pub(super) creates: Vec<Op>,
-    pub(super) replaces: Vec<Op>,
 }
 
 pub(super) fn diff_views(prev: &Schema, next: &Schema) -> ViewDiff {
@@ -143,42 +160,31 @@ pub(super) fn diff_views(prev: &Schema, next: &Schema) -> ViewDiff {
                 // Unchanged — no op.
             }
             Some(prev_proj) => {
-                // Body changed. For non-materialized views Postgres
-                // supports `CREATE OR REPLACE VIEW`; the SQLite
-                // emitter expands `ReplaceView` to `DROP + CREATE`.
-                //
-                // Materialized views always require drop + create
-                // because Postgres has no `CREATE OR REPLACE
-                // MATERIALIZED VIEW`. We model this as a DropMV +
-                // CreateMV pair (the drop lands in `diff.drops`, the
-                // create in `diff.creates` — already ordered relative
-                // to table drops/creates).
-                if next_proj.is_materialized || prev_proj.is_materialized {
-                    diff.drops.push(if prev_proj.is_materialized {
-                        Op::DropMaterializedView(DropMaterializedView { name: name.clone() })
-                    } else {
-                        Op::DropView(DropView { name: name.clone() })
-                    });
-                    diff.creates.push(if next_proj.is_materialized {
-                        Op::CreateMaterializedView(CreateMaterializedView {
-                            name: name.clone(),
-                            sql: next_proj.sql.clone(),
-                            primary_key: next_proj.primary_key.clone(),
-                            source_tables: next_proj.source_tables.clone(),
-                        })
-                    } else {
-                        Op::CreateView(CreateView {
-                            name: name.clone(),
-                            sql: next_proj.sql.clone(),
-                            source_tables: next_proj.source_tables.clone(),
-                        })
-                    });
+                // Body changed. Always model as Drop + Create so the
+                // ordering works regardless of whether the migration
+                // also adds/drops columns the old/new body references
+                // — see the `ViewDiff` doc. Loses Postgres atomicity
+                // of `CREATE OR REPLACE VIEW`; preserved correctness
+                // outweighs the optimization at this stage.
+                diff.drops.push(if prev_proj.is_materialized {
+                    Op::DropMaterializedView(DropMaterializedView { name: name.clone() })
                 } else {
-                    diff.replaces.push(Op::ReplaceView(ReplaceView {
+                    Op::DropView(DropView { name: name.clone() })
+                });
+                diff.creates.push(if next_proj.is_materialized {
+                    Op::CreateMaterializedView(CreateMaterializedView {
                         name: name.clone(),
                         sql: next_proj.sql.clone(),
-                    }));
-                }
+                        primary_key: next_proj.primary_key.clone(),
+                        source_tables: next_proj.source_tables.clone(),
+                    })
+                } else {
+                    Op::CreateView(CreateView {
+                        name: name.clone(),
+                        sql: next_proj.sql.clone(),
+                        source_tables: next_proj.source_tables.clone(),
+                    })
+                });
             }
         }
     }
