@@ -31,7 +31,16 @@ use super::{CreateDefault, ModelColumn};
 /// `M` is the Rust struct deserialized from a row; `PK` is the
 /// primary-key Rust type. Both descriptors and the read builders are
 /// generic over the same `(M, PK)` pair so the bounds line up.
-pub trait ReadSource<M, PK> {
+///
+/// `Send + Sync` are required so that `&'static dyn ReadSource<M, PK>`
+/// is `Send`. Axum handler futures capture the trait object across
+/// `await` points; without these bounds those futures stop being
+/// `Send`, which makes them unusable as Axum handlers. Both
+/// first-party impls (`ModelDescriptor`, `ViewDescriptor`) are
+/// trivially `Send + Sync` — every field is either a `&'static`
+/// reference to a primitive slice or a `PhantomData<fn() -> _>`, all
+/// of which are themselves `Send + Sync` regardless of `M` / `PK`.
+pub trait ReadSource<M, PK>: Send + Sync {
     /// Logical schema name the model / view lives under. Currently
     /// always the dataset schema declared in `datasource db { ... }`;
     /// kept on the trait so future per-source schemas (e.g. analytics

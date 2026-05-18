@@ -3,7 +3,7 @@
 
 use std::fmt::Write;
 
-use cratestack_sql::{Dialect, FilterExpr, ModelDescriptor, OrderClause, SqlValue};
+use cratestack_sql::{Dialect, FilterExpr, OrderClause, ReadSource, SqlValue};
 
 use super::filter::render_filter_expr;
 use super::order::render_order_clause;
@@ -13,7 +13,7 @@ use super::order::render_order_clause;
 /// placeholders, in placeholder order.
 pub fn render_select<M, PK>(
     dialect: &dyn Dialect,
-    descriptor: &ModelDescriptor<M, PK>,
+    descriptor: &dyn ReadSource<M, PK>,
     filters: &[FilterExpr],
     order_by: &[OrderClause],
     limit: Option<i64>,
@@ -22,14 +22,14 @@ pub fn render_select<M, PK>(
     let mut sql = format!(
         "SELECT {} FROM {}",
         descriptor.select_projection(),
-        descriptor.table_name,
+        descriptor.table_name(),
     );
     let mut binds: Vec<SqlValue> = Vec::new();
     let mut bind_index = 1usize;
     let mut where_sql = String::new();
     let mut soft_delete_active = false;
 
-    if let Some(deleted_at) = descriptor.soft_delete_column {
+    if let Some(deleted_at) = descriptor.soft_delete_column() {
         let _ = write!(&mut where_sql, "{deleted_at} IS NULL");
         soft_delete_active = true;
     }
@@ -81,18 +81,18 @@ pub fn render_select<M, PK>(
 /// Render `SELECT ... FROM table WHERE pk = ?1 [AND deleted_at IS NULL]`.
 pub fn render_select_by_pk<M, PK>(
     dialect: &dyn Dialect,
-    descriptor: &ModelDescriptor<M, PK>,
+    descriptor: &dyn ReadSource<M, PK>,
     id: SqlValue,
 ) -> (String, Vec<SqlValue>) {
     let mut sql = format!(
         "SELECT {} FROM {} WHERE {} = ",
         descriptor.select_projection(),
-        descriptor.table_name,
-        descriptor.primary_key,
+        descriptor.table_name(),
+        descriptor.primary_key(),
     );
     let mut binds = vec![id];
     dialect.write_placeholder(&mut sql, 1);
-    if let Some(deleted_at) = descriptor.soft_delete_column {
+    if let Some(deleted_at) = descriptor.soft_delete_column() {
         let _ = write!(&mut sql, " AND {deleted_at} IS NULL");
     }
     (sql, binds.drain(..).collect())

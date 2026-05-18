@@ -43,6 +43,19 @@ fn descriptor() -> ViewDescriptor<DummyRow, DummyPk> {
 #[allow(dead_code)]
 fn accepts_read_source<S: ReadSource<DummyRow, DummyPk>>(_: &S) {}
 
+/// Compile-time proof that a `&'static dyn ReadSource<_, _>` is
+/// `Send`. Required so the async helpers that take the trait object
+/// (e.g. `cratestack-sqlx::authorize_record_action`) produce futures
+/// that Axum can accept as handlers. Regression guard against
+/// dropping the `Send + Sync` supertrait on `ReadSource`.
+#[allow(dead_code)]
+fn ref_is_send<T: Send>(_: &T) {}
+
+#[allow(dead_code)]
+fn dyn_ref_is_send(d: &'static dyn ReadSource<DummyRow, DummyPk>) {
+    ref_is_send(&d);
+}
+
 #[test]
 fn implements_read_source() {
     let d = descriptor();
