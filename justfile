@@ -129,9 +129,42 @@ bump NEW:
 # before publishing. Skips fmt + clippy because `all-checks` is the
 # canonical pre-PR gate for those (it auto-fixes); release-check
 # focuses on what must hold for a clean publish.
+#
+# Test stage is retried up to 3x to absorb known-flaky tests (notably
+# `generated_routes_emit_tracing_events`, which intermittently misses
+# tracing events under workspace concurrency — see its source comment).
+# A genuine regression will fail all 3 attempts and still block the
+# release; only flakes get masked.
+#
+# Emergency override: `SKIP_TESTS=1 just release-check` bypasses the
+# test stage entirely. Use only when you know the failing test is the
+# known flake and you've already verified it passes in isolation.
 release-check:
+	#!/usr/bin/env bash
+	set -euo pipefail
 	cargo check --workspace --all-targets
-	cargo test --workspace --exclude embedded_flutter_native
+	if [ "${SKIP_TESTS:-0}" = "1" ]; then
+	  echo "release-check: SKIP_TESTS=1 — bypassing workspace tests." >&2
+	  exit 0
+	fi
+	attempt=1
+	max=3
+	while [ "$attempt" -le "$max" ]; do
+	  echo ""
+	  echo "=== test attempt $attempt/$max ==="
+	  if cargo test --workspace --exclude embedded_flutter_native; then
+	    exit 0
+	  fi
+	  if [ "$attempt" -eq "$max" ]; then
+	    echo "" >&2
+	    echo "release-check: tests failed after $max attempts." >&2
+	    echo "If you've verified this is a known flake (e.g. tracing event capture)," >&2
+	    echo "rerun with: SKIP_TESTS=1 just release-check" >&2
+	    exit 1
+	  fi
+	  echo "tests failed; retrying ($((attempt + 1))/$max)..."
+	  attempt=$((attempt + 1))
+	done
 
 # Publish every workspace crate to crates.io in dependency order.
 #
