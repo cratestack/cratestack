@@ -1228,6 +1228,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "cratestack-pg"
+version = "0.3.7"
+dependencies = [
+ "chrono",
+ "cratestack-axum",
+ "cratestack-client-rust",
+ "cratestack-core",
+ "cratestack-macros",
+ "cratestack-parser",
+ "cratestack-policy",
+ "cratestack-sql",
+ "cratestack-sqlx",
+ "regex",
+ "serde",
+ "serde_json",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "cratestack-policy"
 version = "0.3.7"
 dependencies = [
@@ -1280,6 +1300,24 @@ dependencies = [
  "rust_decimal",
  "serde",
  "serde_json",
+ "uuid",
+]
+
+[[package]]
+name = "cratestack-sqlite"
+version = "0.3.7"
+dependencies = [
+ "chrono",
+ "cratestack-core",
+ "cratestack-macros",
+ "cratestack-parser",
+ "cratestack-policy",
+ "cratestack-rusqlite",
+ "cratestack-sql",
+ "regex",
+ "serde",
+ "serde_json",
+ "tracing",
  "uuid",
 ]
 

@@ -1,0 +1,38 @@
+[package]
+name = "cratestack-sqlite"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "CrateStack embedded facade — rusqlite-backed SQLite runtime (native + wasm32) plus the shared schema/parser/policy/SQL surface. Pick this crate via `cratestack = { package = \"cratestack-sqlite\" }` for mobile, desktop, browser, or any on-device storage layer."
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+default = ["decimal-rust-decimal"]
+decimal-rust-decimal = [
+    "cratestack-core/decimal-rust-decimal",
+    "cratestack-rusqlite/decimal-rust-decimal",
+]
+decimal-bigdecimal = [
+    "cratestack-core/decimal-bigdecimal",
+    "cratestack-rusqlite/decimal-bigdecimal",
+]
+
+[dependencies]
+chrono.workspace = true
+cratestack-core.workspace = true
+cratestack-macros.workspace = true
+cratestack-parser.workspace = true
+cratestack-policy.workspace = true
+cratestack-rusqlite.workspace = true
+cratestack-sql.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+uuid.workspace = true

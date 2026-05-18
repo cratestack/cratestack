@@ -17,10 +17,12 @@ members = [
     "crates/cratestack-macros",
     "crates/cratestack-migrate",
     "crates/cratestack-parser",
+    "crates/cratestack-pg",
     "crates/cratestack-policy",
     "crates/cratestack-redis",
     "crates/cratestack-rusqlite",
     "crates/cratestack-sql",
+    "crates/cratestack-sqlite",
     "crates/cratestack-sqlx",
     "crates/cratestack-studio",
     "crates/cratestack-studio-generator",
@@ -96,10 +98,12 @@ cratestack-core = { path = "crates/cratestack-core", version = "0.3.7" }
 cratestack-macros = { path = "crates/cratestack-macros", version = "0.3.7" }
 cratestack-migrate = { path = "crates/cratestack-migrate", version = "0.3.7" }
 cratestack-parser = { path = "crates/cratestack-parser", version = "0.3.7" }
+cratestack-pg = { path = "crates/cratestack-pg", version = "0.3.7" }
 cratestack-policy = { path = "crates/cratestack-policy", version = "0.3.7" }
 cratestack-redis = { path = "crates/cratestack-redis", version = "0.3.7" }
 cratestack-rusqlite = { path = "crates/cratestack-rusqlite", version = "0.3.7" }
 cratestack-sql = { path = "crates/cratestack-sql", version = "0.3.7" }
+cratestack-sqlite = { path = "crates/cratestack-sqlite", version = "0.3.7" }
 cratestack-sqlx = { path = "crates/cratestack-sqlx", version = "0.3.7" }
 cratestack-studio = { path = "crates/cratestack-studio", version = "0.3.7" }
 cratestack-studio-generator = { path = "crates/cratestack-studio-generator", version = "0.3.7" }
