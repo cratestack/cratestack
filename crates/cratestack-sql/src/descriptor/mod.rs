@@ -5,8 +5,16 @@ use cratestack_core::ModelEventKind;
 use cratestack_policy::ReadPolicy;
 
 mod defaults;
+mod model_impls;
+mod read_source;
+mod view;
+
+#[cfg(test)]
+mod tests_view;
 
 pub use defaults::{CreateDefault, CreateDefaultType};
+pub use read_source::{ReadSource, WriteSource};
+pub use view::ViewDescriptor;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ModelColumn {
@@ -185,3 +193,7 @@ impl<M, PK> ModelDescriptor<M, PK> {
         sql
     }
 }
+
+// `ReadSource` / `WriteSource` impls for `ModelDescriptor` live in
+// `descriptor/model_impls.rs` — pulled out to keep this file under the
+// 200-LoC ceiling.

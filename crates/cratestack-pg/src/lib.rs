@@ -40,8 +40,9 @@ pub use cratestack_sql::{
     CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault, CreateDefaultType,
     CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName, IntoSqlValue,
     JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder,
-    OrderClause, Projection, RelationFilter, RelationInclude, SortDirection, SpatialFilter,
-    SpatialPoint, SqlColumnValue, SqlValue, UpdateModelInput, UpsertModelInput, coalesce, point,
+    OrderClause, Projection, ReadSource, RelationFilter, RelationInclude, SortDirection,
+    SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue, UpdateModelInput, UpsertModelInput,
+    ViewDescriptor, WriteSource, coalesce, point,
 };
 
 pub use regex;
