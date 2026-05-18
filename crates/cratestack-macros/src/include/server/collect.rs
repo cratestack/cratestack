@@ -35,6 +35,7 @@ pub(super) struct ServerCollected {
     pub(super) type_names: Vec<syn::LitStr>,
     pub(super) enum_names: Vec<syn::LitStr>,
     pub(super) procedure_names: Vec<syn::LitStr>,
+    pub(super) view_names: Vec<syn::LitStr>,
     pub(super) type_structs: Vec<Ts>,
     pub(super) enum_types: Vec<Ts>,
     pub(super) custom_field_descriptors: Vec<Ts>,
@@ -87,6 +88,7 @@ pub(super) fn collect_server_schema(
         .iter()
         .map(|p| schema_lit(&p.name))
         .collect();
+    let view_names = schema.views.iter().map(|v| schema_lit(&v.name)).collect();
     let type_structs = schema
         .types
         .iter()
@@ -157,6 +159,7 @@ pub(super) fn collect_server_schema(
         type_names,
         enum_names,
         procedure_names,
+        view_names,
         type_structs,
         enum_types,
         custom_field_descriptors,

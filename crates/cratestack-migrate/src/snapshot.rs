@@ -52,6 +52,7 @@ impl Snapshot {
             types: Vec::new(),
             enums: Vec::new(),
             procedures: Vec::new(),
+            views: Vec::new(),
             transport: Default::default(),
         })
     }

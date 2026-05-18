@@ -4,10 +4,11 @@ mod models;
 mod procedure_docs;
 mod procedures;
 mod types;
+mod views;
 
 use cratestack_core::{
     AuthBlock, ConfigEntry, Datasource, EnumDecl, MixinDecl, Model, Schema, TransportStyle,
-    TypeDecl,
+    TypeDecl, View,
 };
 
 use crate::diagnostics::SchemaError;
@@ -22,6 +23,7 @@ use self::blocks::{
 use self::fields::{parse_enum_variants, parse_fields};
 use self::models::{expand_model_mixins, parse_model_body};
 use self::procedures::parse_procedure;
+use self::views::parse_view_block;
 
 pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
     let lines = collect_lines(source);
@@ -36,6 +38,7 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
     let mut types = Vec::new();
     let mut enums = Vec::new();
     let mut procedures = Vec::new();
+    let mut views: Vec<View> = Vec::new();
     let mut transport: Option<TransportStyle> = None;
     let mut transport_line: Option<usize> = None;
 
@@ -175,6 +178,13 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
             continue;
         }
 
+        if line.trimmed.starts_with("view ") {
+            let (view, next) = parse_view_block(&lines, cursor, std::mem::take(&mut pending_docs))?;
+            views.push(view);
+            cursor = next;
+            continue;
+        }
+
         return Err(SchemaError::new(
             format!("unsupported top-level declaration: {}", line.trimmed),
             line.start..line.start + line.raw.len(),
@@ -193,6 +203,7 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
         types,
         enums,
         procedures,
+        views,
         transport: transport.unwrap_or_default(),
     })
 }

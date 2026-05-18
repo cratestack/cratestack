@@ -83,7 +83,8 @@ pub use projection::ProjectionDecoder;
 pub use schema::{
     Attribute, AuthBlock, ConfigBlock, ConfigEntry, Datasource, EnumDecl, EnumVariant, Field,
     MixinDecl, Model, OwnedSchemaSummary, Procedure, ProcedureArg, ProcedureKind, Schema,
-    SchemaSummary, SelectionQuery, SourceSpan, TransportStyle, TypeArity, TypeDecl, TypeRef,
+    SchemaSummary, SelectionQuery, SourceSpan, TransportStyle, TypeArity, TypeDecl, TypeRef, View,
+    ViewSource,
 };
 pub use transport::{
     OpDescriptor, OpKind, RouteTransportCapabilities, RouteTransportDescriptor,

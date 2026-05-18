@@ -6,6 +6,7 @@ mod procedures;
 mod type_names;
 mod validator_args;
 mod validators;
+mod views;
 
 use std::collections::BTreeSet;
 
@@ -53,6 +54,7 @@ pub(crate) fn validate_schema(
     validate_enums(schema)?;
     validate_auth(schema, &type_names, &page_item_type_names)?;
     validate_procedures(schema, &type_names, &page_item_type_names)?;
+    self::views::validate_views(schema)?;
 
     let _ = (path, source);
     Ok(())
