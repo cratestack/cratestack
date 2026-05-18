@@ -55,6 +55,24 @@ pub(super) fn emit_down_op(sql: &mut String, op: &Op) {
                 "-- SQLite CHECK constraint reversal requires the same table rebuild as the forward op.\n",
             );
         }
+        Op::CreateView(view) => {
+            writeln!(sql, "DROP VIEW IF EXISTS {};", quote_ident(&view.name)).unwrap();
+        }
+        Op::ReplaceView(_) => {
+            sql.push_str(
+                "-- ReplaceView has no auto-reversal; the previous SQL body is not in the IR.\n",
+            );
+        }
+        Op::DropView(_) => {
+            // Routed through the error stub when lossy.
+        }
+        Op::CreateMaterializedView(_) | Op::DropMaterializedView(_) => {
+            // Materialized views have no SQLite equivalent — same
+            // unreachable contract as the up-emission path.
+            unreachable!(
+                "materialized view ops have no SQLite equivalent and should never reach the SQLite emitter"
+            );
+        }
     }
 }
 

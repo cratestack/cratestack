@@ -14,6 +14,7 @@ mod checks;
 mod columns;
 mod enums;
 mod ops;
+mod views;
 
 use serde::{Deserialize, Serialize};
 
@@ -24,6 +25,7 @@ pub use ops::{
     AddColumn, AddIndex, AlterColumnDefault, AlterColumnNullability, AlterColumnType, CreateTable,
     DropColumn, DropIndex, DropTable, RenameColumn, RenameTable,
 };
+pub use views::{CreateMaterializedView, CreateView, DropMaterializedView, DropView, ReplaceView};
 
 /// How dangerous an operation is to apply.
 ///
@@ -57,6 +59,11 @@ pub enum Op {
     DropEnum(DropEnum),
     AddCheck(AddCheck),
     DropCheck(DropCheck),
+    CreateView(CreateView),
+    DropView(DropView),
+    ReplaceView(ReplaceView),
+    CreateMaterializedView(CreateMaterializedView),
+    DropMaterializedView(DropMaterializedView),
 }
 
 impl Op {
@@ -98,6 +105,17 @@ impl Op {
             Op::AddCheck(_) => Destructiveness::Blocking,
             // Dropping a CHECK constraint never destroys data.
             Op::DropCheck(_) => Destructiveness::Safe,
+            // View creates and replaces never destroy data (the view
+            // is a read-only projection over existing tables; replace
+            // swaps the SQL body, not the underlying rows).
+            Op::CreateView(_)
+            | Op::ReplaceView(_)
+            | Op::CreateMaterializedView(_) => Destructiveness::Safe,
+            // Dropping a view doesn't destroy source rows but does
+            // destroy a queryable surface — treat as Lossy so the
+            // generator requires explicit opt-in, mirroring DropTable
+            // / DropEnum semantics.
+            Op::DropView(_) | Op::DropMaterializedView(_) => Destructiveness::Lossy,
         }
     }
 }

@@ -98,7 +98,28 @@ pub(super) fn emit_down_op(sql: &mut String, op: &Op) {
             )
             .unwrap();
         }
-        Op::DropTable(_) | Op::DropColumn(_) | Op::AlterColumnType(_) | Op::DropEnum(_) => {
+        Op::CreateView(view) => {
+            writeln!(sql, "DROP VIEW {};", quote_ident(&view.name)).unwrap();
+        }
+        Op::CreateMaterializedView(view) => {
+            writeln!(
+                sql,
+                "DROP MATERIALIZED VIEW {};",
+                quote_ident(&view.name)
+            )
+            .unwrap();
+        }
+        Op::ReplaceView(_) => {
+            // We can't reverse `CREATE OR REPLACE VIEW` without
+            // knowing the previous SQL body — the diff engine knows
+            // it, but down-emission only sees the new op. Emit a
+            // marker so the migration's down body is honest.
+            sql.push_str(
+                "-- ReplaceView has no auto-reversal; the previous SQL body is not in the IR.\n",
+            );
+        }
+        Op::DropTable(_) | Op::DropColumn(_) | Op::AlterColumnType(_) | Op::DropEnum(_)
+        | Op::DropView(_) | Op::DropMaterializedView(_) => {
             // Lossy — routed through the error stub above.
             // AlterColumnType is conservatively lossy because the
             // diff engine has no widening/narrowing view.
@@ -122,6 +143,8 @@ pub(super) fn describe_lossy(op: &Op) -> String {
             alter.table, alter.column, alter.from, alter.to
         ),
         Op::DropEnum(drop) => format!("DropEnum {}", drop.name),
+        Op::DropView(drop) => format!("DropView {}", drop.name),
+        Op::DropMaterializedView(drop) => format!("DropMaterializedView {}", drop.name),
         _ => format!("{op:?}"),
     }
 }

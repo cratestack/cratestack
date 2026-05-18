@@ -26,6 +26,7 @@ mod down;
 mod idents;
 mod indexes;
 mod tables;
+mod views;
 
 #[cfg(test)]
 mod tests;
@@ -44,6 +45,7 @@ use down::{describe_lossy, emit_down_op};
 use idents::quote_ident;
 use indexes::{emit_add_index, emit_drop_index};
 use tables::{emit_create_table, emit_rename_table};
+use views::{emit_create_view, emit_drop_view, emit_replace_view};
 
 pub fn emit(ops: &[Op]) -> EmittedMigration {
     let mut has_lossy = false;
@@ -131,5 +133,18 @@ fn emit_up_op(sql: &mut String, op: &Op) {
         }
         Op::AddCheck(check) => emit_add_check(sql, check),
         Op::DropCheck(check) => emit_drop_check(sql, check),
+        Op::CreateView(view) => emit_create_view(sql, view),
+        Op::DropView(view) => emit_drop_view(sql, view),
+        Op::ReplaceView(view) => emit_replace_view(sql, view),
+        Op::CreateMaterializedView(_) | Op::DropMaterializedView(_) => {
+            // The macro's embedded composer hard-errors at expansion
+            // time on `@@materialized` views, so the diff engine
+            // should never produce one of these ops on a SQLite emit
+            // path. If it ever does, it's an upstream invariant
+            // violation rather than a recoverable runtime case.
+            unreachable!(
+                "materialized view ops have no SQLite equivalent and should never reach the SQLite emitter"
+            );
+        }
     }
 }

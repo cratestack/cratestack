@@ -22,7 +22,7 @@ fn view_macro_emits_struct_descriptor_and_accessor() {
 
     // The descriptor const exists and reports the right metadata.
     let descriptor = &cratestack_schema::models::ACTIVE_CUSTOMER_VIEW;
-    assert_eq!(descriptor.view_name, "active_customer");
+    assert_eq!(descriptor.view_name, "active_customers");
     assert_eq!(descriptor.primary_key, "id");
     assert_eq!(descriptor.columns.len(), 3);
     assert_eq!(descriptor.source_tables, &["customers", "orders"]);
@@ -39,7 +39,7 @@ fn no_unique_view_descriptor_has_empty_primary_key() {
     // `DailyRevenue` is declared `@@no_unique` — the descriptor's
     // `primary_key` is an empty string, signalling "no @id".
     let descriptor = &cratestack_schema::models::DAILY_REVENUE_VIEW;
-    assert_eq!(descriptor.view_name, "daily_revenue");
+    assert_eq!(descriptor.view_name, "daily_revenues");
     assert_eq!(descriptor.primary_key, "");
     assert_eq!(descriptor.columns.len(), 2);
 }

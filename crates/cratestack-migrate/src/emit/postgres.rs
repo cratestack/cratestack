@@ -17,6 +17,7 @@ mod enums;
 mod idents;
 mod indexes;
 mod tables;
+mod views;
 
 #[cfg(test)]
 mod tests;
@@ -36,6 +37,10 @@ use enums::{emit_alter_enum_add, emit_create_enum, emit_drop_enum};
 use idents::quote_ident;
 use indexes::{emit_add_index, emit_drop_index};
 use tables::{emit_create_table, emit_rename_table};
+use views::{
+    emit_create_materialized_view, emit_create_view, emit_drop_materialized_view, emit_drop_view,
+    emit_replace_view,
+};
 
 pub fn emit(ops: &[Op]) -> EmittedMigration {
     let mut has_lossy = false;
@@ -117,5 +122,10 @@ fn emit_up_op(sql: &mut String, op: &Op) {
         Op::DropEnum(drop) => emit_drop_enum(sql, drop),
         Op::AddCheck(check) => emit_add_check(sql, check),
         Op::DropCheck(check) => emit_drop_check(sql, check),
+        Op::CreateView(view) => emit_create_view(sql, view),
+        Op::DropView(view) => emit_drop_view(sql, view),
+        Op::ReplaceView(view) => emit_replace_view(sql, view),
+        Op::CreateMaterializedView(view) => emit_create_materialized_view(sql, view),
+        Op::DropMaterializedView(view) => emit_drop_materialized_view(sql, view),
     }
 }
