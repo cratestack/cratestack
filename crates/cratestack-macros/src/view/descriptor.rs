@@ -15,7 +15,7 @@
 use cratestack_core::View;
 use quote::quote;
 
-use crate::shared::{ident, to_snake_case};
+use crate::shared::{ident, pluralize, to_snake_case};
 
 pub(crate) fn generate_view_descriptor(view: &View) -> Result<proc_macro2::TokenStream, String> {
     let view_ident = ident(&view.name);
@@ -23,7 +23,10 @@ pub(crate) fn generate_view_descriptor(view: &View) -> Result<proc_macro2::Token
         "{}_VIEW",
         to_snake_case(&view.name).to_uppercase()
     ));
-    let view_sql_name = to_snake_case(&view.name);
+    // Same naming convention as tables (pluralize + snake_case) so
+    // the view's SQL identifier matches what `cratestack-migrate`
+    // emits in `CREATE VIEW`. `ActiveCustomer` → `active_customers`.
+    let view_sql_name = pluralize(&to_snake_case(&view.name));
 
     // Primary key — empty string when `@@no_unique`. Validator already
     // rejected `@id` count != 1 unless `@@no_unique` set.

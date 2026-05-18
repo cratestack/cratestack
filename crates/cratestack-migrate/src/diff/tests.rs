@@ -3,6 +3,7 @@
 
 mod basic;
 mod indexes;
+mod views;
 
 use cratestack_core::Schema;
 use cratestack_parser::parse_schema;

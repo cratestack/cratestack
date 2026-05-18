@@ -21,6 +21,7 @@ mod columns;
 mod enums;
 mod indexes;
 mod tables;
+mod views;
 
 #[cfg(test)]
 mod tests;
@@ -72,6 +73,8 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
         drop_indexes_ops.append(&mut idx_ops.drops);
     }
 
+    let mut view_diff = views::diff_views(prev, next);
+
     let mut ops = Vec::new();
     // Enum creates first so tables can reference them.
     ops.append(&mut create_enums);
@@ -84,6 +87,11 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
     ops.append(&mut drop_checks_ops);
     ops.append(&mut drop_indexes_ops);
     ops.append(&mut drop_columns);
+    // Drop views BEFORE the source tables they depend on (ADR-0003
+    // §"Migration emission" — views reference source columns through
+    // their SQL body, so Postgres rejects a `DROP TABLE` while a
+    // dependent view is alive).
+    ops.append(&mut view_diff.drops);
     ops.append(&mut drop_tables_ops);
     ops.append(&mut create_tables);
     ops.append(&mut add_columns);
@@ -91,6 +99,14 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
     ops.append(&mut add_indexes);
     // Add CHECK constraints after the columns they protect exist.
     ops.append(&mut add_checks);
+    // View creates land AFTER all table creates so source tables
+    // exist before the view body references them.
+    ops.append(&mut view_diff.creates);
+    // Replace ops are atomic (CREATE OR REPLACE VIEW on Postgres,
+    // drop-then-create on SQLite). They land after create-and-replace
+    // ordering doesn't matter — both halves of the diff are emitted
+    // after fresh tables exist.
+    ops.append(&mut view_diff.replaces);
     // Enum drops last — after any tables that depended on them.
     ops.append(&mut drop_enums);
     ops
