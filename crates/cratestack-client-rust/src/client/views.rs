@@ -1,5 +1,5 @@
 use cratestack_codec_json::JsonCodec;
-use cratestack_core::{CoolCodec, Page};
+use cratestack_core::{CoolCodec, Page, ProjectionDecoder};
 use reqwest::Method;
 
 use crate::client::core::CratestackClient;
@@ -7,7 +7,6 @@ use crate::client::decode::decode_json_value_response;
 use crate::client::helpers::canonical_query_from_selection;
 use crate::codec::HttpClientCodec;
 use crate::error::{ClientError, HeaderPair, QueryPair};
-use crate::projection::Projection;
 
 impl<C> CratestackClient<C>
 where
@@ -20,7 +19,7 @@ where
         headers: &[HeaderPair<'_>],
     ) -> Result<P::Output, ClientError>
     where
-        P: Projection,
+        P: ProjectionDecoder,
     {
         let selection = projection.selection_query();
         let canonical_query = canonical_query_from_selection(&selection, &[])?;
@@ -46,7 +45,7 @@ where
         headers: &[HeaderPair<'_>],
     ) -> Result<Vec<P::Output>, ClientError>
     where
-        P: Projection,
+        P: ProjectionDecoder,
     {
         let selection = projection.selection_query();
         let canonical_query = canonical_query_from_selection(&selection, extra_query)?;
@@ -72,7 +71,7 @@ where
         headers: &[HeaderPair<'_>],
     ) -> Result<Page<P::Output>, ClientError>
     where
-        P: Projection,
+        P: ProjectionDecoder,
     {
         let selection = projection.selection_query();
         let canonical_query = canonical_query_from_selection(&selection, extra_query)?;

@@ -79,7 +79,7 @@ pub(super) fn build_selection_block(
             }
         }
 
-        impl ::cratestack::client_rust::Projection for Selection {
+        impl ::cratestack::ProjectionDecoder for Selection {
             type Output = Projected;
 
             fn selection_query(&self) -> ::cratestack::SelectionQuery {

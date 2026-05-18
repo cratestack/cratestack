@@ -26,7 +26,7 @@ use cratestack::include_client_schema;
 use cratestack_client_rust::{CborCodec, ClientConfig, CratestackClient};
 use cratestack_core::CoolCodec;
 
-include_client_schema!("../cratestack/tests/fixtures/transport_rpc.cstack");
+include_client_schema!("tests/fixtures/transport_rpc.cstack");
 
 #[tokio::test]
 async fn rpc_client_widget_list_get_create_update_delete_round_trip() {

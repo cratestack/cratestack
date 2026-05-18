@@ -12,6 +12,17 @@ readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 
+# The library is named `cratestack` so that integration tests under
+# `tests/` resolve `::cratestack::*` paths (which the schema macros
+# emit) without per-file aliasing. External consumers depend on the
+# package as `cratestack = { package = "cratestack-pg" }` — Cargo's
+# package-rename mechanism already exposes the lib under whatever name
+# they pick on their side, so this `[lib] name` change is invisible
+# downstream.
+[lib]
+name = "cratestack"
+path = "src/lib.rs"
+
 [features]
 default = ["decimal-rust-decimal"]
 decimal-rust-decimal = [
@@ -44,3 +55,16 @@ serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+async-stream = "0.3"
+axum.workspace = true
+cratestack-codec-cbor.workspace = true
+cratestack-codec-json.workspace = true
+minicbor-serde.workspace = true
+testcontainers.workspace = true
+testcontainers-modules.workspace = true
+tokio.workspace = true
+tower.workspace = true
+tracing-subscriber.workspace = true
+url.workspace = true

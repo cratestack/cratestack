@@ -18,6 +18,7 @@ pub mod error;
 pub mod events;
 pub mod json;
 pub mod page;
+pub mod projection;
 pub mod rpc;
 pub mod schema;
 pub mod transport;
@@ -78,6 +79,7 @@ pub use events::{
 };
 pub use json::Json;
 pub use page::{Page, PageInfo};
+pub use projection::ProjectionDecoder;
 pub use schema::{
     Attribute, AuthBlock, ConfigBlock, ConfigEntry, Datasource, EnumDecl, EnumVariant, Field,
     MixinDecl, Model, OwnedSchemaSummary, Procedure, ProcedureArg, ProcedureKind, Schema,

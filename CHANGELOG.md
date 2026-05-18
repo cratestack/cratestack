@@ -1,5 +1,66 @@
 # Changelog
 
+## 0.4.0 (unreleased)
+
+### Breaking: the `cratestack` umbrella facade was split
+
+The single `cratestack` umbrella crate is gone. It has been carved into
+two strictly disjoint sub-facades that consumers pick between via
+Cargo's `package =` rename:
+
+```toml
+# Backend service (Postgres + Axum + generated Rust client runtime)
+cratestack = { package = "cratestack-pg", version = "0.4" }
+
+# Embedded / mobile / desktop / wasm (rusqlite + shared surface)
+cratestack = { package = "cratestack-sqlite", version = "0.4" }
+```
+
+Schema macros (`include_server_schema!`, `include_embedded_schema!`,
+`include_client_schema!`) continue to emit `::cratestack::*` paths
+unchanged. Strict disjointness is enforced by what the consumer picks,
+not by the macro.
+
+**Why this matters in practice:**
+
+* `cratestack-pg` does not pull in `cratestack-rusqlite`, so
+  `libsqlite3-sys` is no longer in the dep graph. Backend services can
+  now depend on the official `sqlx` umbrella crate (which optionally
+  declares `sqlx-sqlite`) without tripping Cargo's `links = "sqlite3"`
+  collision rule. Downstream `sqlx-shim` workarounds can be deleted.
+* `cratestack-sqlite` keeps compiling on `wasm32-unknown-unknown`; it
+  also exposes `cratestack-client-rust` on native targets so hybrid
+  consumers (e.g. a Tauri or NAPI shell that ships an embedded DB
+  *and* calls a remote backend) can still use `include_client_schema!`
+  alongside `include_embedded_schema!`.
+
+### Breaking: `Projection` trait moved + renamed
+
+The `Projection` trait — implemented by every model's macro-emitted
+`Selection` type to decode projected query responses — has moved from
+`cratestack-client-rust` into `cratestack-core` and been renamed
+**`ProjectionDecoder`**. The previous name collided with the SQL value
+type `cratestack_sql::Projection<T>` (the actual `.select()` result
+wrapper), which was the more central, user-facing meaning of the name.
+
+* Old: `cratestack::client_rust::Projection`
+* New: `cratestack::ProjectionDecoder`
+
+`cratestack-client-rust` keeps re-exporting the trait under both
+`ProjectionDecoder` and the deprecated `Projection` alias for one
+release. Macro-emitted code now references the new name, so most
+codebases will see no source-level impact.
+
+### Cleanup
+
+* `cratestack-macros` no longer emits selection / projection helpers
+  behind a `cfg(not(target_arch = "wasm32"))` gate — `ProjectionDecoder`
+  now lives in `cratestack-core` and works on every target.
+* The umbrella's banking / policy / migrations / isolation /
+  validation / generated-client integration tests are now under
+  `crates/cratestack-pg/tests/`; the SQLite e2e test under
+  `crates/cratestack-sqlite/tests/`. No test logic was changed.
+
 ## 0.3.3 (unreleased)
 
 ### Workspace-wide 200-LoC refactor

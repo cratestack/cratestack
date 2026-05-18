@@ -81,7 +81,7 @@ pub(super) fn generate_generated_model_client(
                 headers: &[::cratestack::client_rust::HeaderPair<'_>],
             ) -> Result<#list_view_output_type, ::cratestack::client_rust::ClientError>
             where
-                P: ::cratestack::client_rust::Projection,
+                P: ::cratestack::ProjectionDecoder,
             {
                 #list_view_call
             }
@@ -101,7 +101,7 @@ pub(super) fn generate_generated_model_client(
                 headers: &[::cratestack::client_rust::HeaderPair<'_>],
             ) -> Result<P::Output, ::cratestack::client_rust::ClientError>
             where
-                P: ::cratestack::client_rust::Projection,
+                P: ::cratestack::ProjectionDecoder,
             {
                 self.runtime
                     .get_view(&format!("{}/{}", #route_path, id), projection, headers)

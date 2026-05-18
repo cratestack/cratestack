@@ -25,6 +25,13 @@
 //! ```
 
 pub use chrono;
+// Generated HTTP client runtime — available on native targets so that
+// hybrid consumers (e.g. a NAPI / Tauri shell that ships an embedded
+// SQLite DB *and* calls a remote backend over HTTP) can use
+// `include_client_schema!` alongside `include_embedded_schema!`.
+// Target-gated off `wasm32` because `reqwest` doesn't compile there.
+#[cfg(not(target_arch = "wasm32"))]
+pub use cratestack_client_rust as client_rust;
 pub use cratestack_core::*;
 pub use cratestack_macros::{
     include_client_schema, include_embedded_schema, include_server_schema,
