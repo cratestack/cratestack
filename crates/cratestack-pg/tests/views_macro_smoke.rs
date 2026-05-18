@@ -28,6 +28,15 @@ fn view_macro_emits_struct_descriptor_and_accessor() {
     assert_eq!(descriptor.source_tables, &["customers", "orders"]);
     assert!(!descriptor.is_materialized);
 
+    // `@@allow("read", auth() != null)` should produce one
+    // `ReadPolicy` in BOTH `read_allow_policies` (list reads) and
+    // `detail_allow_policies` (single-row reads), since views only
+    // support the `read` action and we fan it to both slots.
+    assert_eq!(descriptor.read_allow_policies.len(), 1);
+    assert_eq!(descriptor.detail_allow_policies.len(), 1);
+    assert!(descriptor.read_deny_policies.is_empty());
+    assert!(descriptor.detail_deny_policies.is_empty());
+
     // Schema summary surfaces the view name.
     let summary = cratestack_schema::schema_summary();
     assert!(summary.views.contains(&"ActiveCustomer"));

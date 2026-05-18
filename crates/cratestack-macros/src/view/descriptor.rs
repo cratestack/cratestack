@@ -5,19 +5,26 @@
 //! defaults/audit/version/PII state, no soft-delete column. Adds the
 //! view-only fields `is_materialized` and `source_tables`.
 //!
-//! **v1 limitation**: this generator does not lower `@@allow("read", ...)`
-//! predicates yet — the descriptor's policy arrays are emitted empty.
-//! The parser-level validator (see
-//! `crates/cratestack-parser/src/validate/views.rs`) still rejects any
-//! non-`"read"` action on a view; runtime policy enforcement is
-//! tracked as a follow-up.
+//! `@@allow("read", ...)` predicates are lowered through the existing
+//! model policy machinery by synthesizing a `Model` from the view's
+//! shared `attributes` + `fields` shape (see [`view_as_model`]). The
+//! parser-level validator (see
+//! `crates/cratestack-parser/src/validate/views.rs`) still rejects
+//! any non-`"read"` action on a view, so the lowerer is fed a known-
+//! good action set.
 
-use cratestack_core::View;
+use cratestack_core::{Model, TypeDecl, View};
 use quote::quote;
 
+use crate::policy::{generate_denies_for_actions, generate_policies_for_actions};
 use crate::shared::{ident, pluralize, to_snake_case};
 
-pub(crate) fn generate_view_descriptor(view: &View) -> Result<proc_macro2::TokenStream, String> {
+pub(crate) fn generate_view_descriptor(
+    view: &View,
+    models: &[Model],
+    types: &[TypeDecl],
+    auth: Option<&cratestack_core::AuthBlock>,
+) -> Result<proc_macro2::TokenStream, String> {
     let view_ident = ident(&view.name);
     let descriptor_ident = ident(&format!(
         "{}_VIEW",
@@ -103,6 +110,19 @@ pub(crate) fn generate_view_descriptor(view: &View) -> Result<proc_macro2::Token
 
     let is_materialized = view.is_materialized();
 
+    // Lower the view's `@@allow("read", ...)` / `@@deny("read", ...)`
+    // predicates through the existing model policy machinery. View
+    // attributes carry the same shape as model attributes, so a
+    // synthesized [`Model`] (see [`view_as_model`]) is the simplest
+    // adapter — no duplication of the AST + relation-path lowerer.
+    // Views only support the `"read"` action (validator-enforced), so
+    // detail policies are the same set as read policies.
+    let synthetic = view_as_model(view);
+    let read_allow = generate_policies_for_actions(&synthetic, models, types, auth, &["read"])?;
+    let read_deny = generate_denies_for_actions(&synthetic, models, types, auth, &["read"])?;
+    let detail_allow = read_allow.clone();
+    let detail_deny = read_deny.clone();
+
     Ok(quote! {
         pub const #descriptor_ident: ::cratestack::ViewDescriptor<#view_ident, #primary_key_type> =
             ::cratestack::ViewDescriptor::new(
@@ -112,12 +132,32 @@ pub(crate) fn generate_view_descriptor(view: &View) -> Result<proc_macro2::Token
                 #primary_key_sql,
                 &[#(#allowed_fields),*],
                 &[#(#allowed_fields),*],
-                &[],
-                &[],
-                &[],
-                &[],
+                &[#(#read_allow),*],
+                &[#(#read_deny),*],
+                &[#(#detail_allow),*],
+                &[#(#detail_deny),*],
                 #is_materialized,
                 &[#(#source_tables),*],
             );
     })
+}
+
+/// Synthesize a `Model` from a `View` for the policy lowerer's
+/// consumption. The lowerer iterates `model.attributes` looking for
+/// `@@allow` / `@@deny` directives — that surface is identical
+/// between [`Model`] and [`View`], so a structurally-equivalent
+/// `Model` is enough to reuse the entire AST + relation-path
+/// pipeline. The lowerer also takes `model.fields` for predicate
+/// field-name resolution; view fields are scalar (no relation paths
+/// because the validator forbids them), so this is a straight
+/// shallow clone.
+fn view_as_model(view: &View) -> Model {
+    Model {
+        docs: view.docs.clone(),
+        name: view.name.clone(),
+        name_span: view.name_span,
+        fields: view.fields.clone(),
+        attributes: view.attributes.clone(),
+        span: view.span,
+    }
 }
