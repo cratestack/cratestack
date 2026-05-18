@@ -41,6 +41,7 @@ pub(super) fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
         type_names,
         enum_names,
         procedure_names,
+        view_names,
         type_structs,
         enum_types,
         custom_field_descriptors,
@@ -69,12 +70,14 @@ pub(super) fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
             pub const TYPES: &[&str] = &[#(#type_names),*];
             pub const ENUMS: &[&str] = &[#(#enum_names),*];
             pub const PROCEDURES: &[&str] = &[#(#procedure_names),*];
+            pub const VIEWS: &[&str] = &[#(#view_names),*];
 
             pub const MIXIN_COUNT: usize = MIXINS.len();
             pub const MODEL_COUNT: usize = MODELS.len();
             pub const TYPE_COUNT: usize = TYPES.len();
             pub const ENUM_COUNT: usize = ENUMS.len();
             pub const PROCEDURE_COUNT: usize = PROCEDURES.len();
+            pub const VIEW_COUNT: usize = VIEWS.len();
 
             /// Generation style the schema declared via the `transport`
             /// directive. Either `"rest"` (the default) or `"rpc"`. See

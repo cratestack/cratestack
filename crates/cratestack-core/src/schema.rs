@@ -5,6 +5,7 @@
 pub mod model;
 pub mod procedure;
 pub mod selection;
+pub mod view;
 
 use serde::{Deserialize, Serialize};
 
@@ -13,6 +14,7 @@ pub use model::{
 };
 pub use procedure::{Procedure, ProcedureArg, ProcedureKind};
 pub use selection::SelectionQuery;
+pub use view::{View, ViewSource};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceSpan {
@@ -52,6 +54,8 @@ pub struct Schema {
     pub enums: Vec<EnumDecl>,
     pub procedures: Vec<Procedure>,
     #[serde(default)]
+    pub views: Vec<View>,
+    #[serde(default)]
     pub transport: TransportStyle,
 }
 
@@ -71,6 +75,7 @@ impl Schema {
                 .iter()
                 .map(|procedure| procedure.name.clone())
                 .collect(),
+            views: self.views.iter().map(|view| view.name.clone()).collect(),
         }
     }
 }
@@ -82,6 +87,7 @@ pub struct SchemaSummary {
     pub types: &'static [&'static str],
     pub enums: &'static [&'static str],
     pub procedures: &'static [&'static str],
+    pub views: &'static [&'static str],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -91,6 +97,8 @@ pub struct OwnedSchemaSummary {
     pub types: Vec<String>,
     pub enums: Vec<String>,
     pub procedures: Vec<String>,
+    #[serde(default)]
+    pub views: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

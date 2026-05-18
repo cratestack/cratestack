@@ -30,6 +30,8 @@ mod tests_types;
 mod tests_validators;
 #[cfg(test)]
 mod tests_version;
+#[cfg(test)]
+mod tests_views;
 
 use std::path::Path;
 

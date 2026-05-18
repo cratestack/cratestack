@@ -77,6 +77,7 @@ pub(super) fn build_runtime_block(
                 types: TYPES,
                 enums: ENUMS,
                 procedures: PROCEDURES,
+                views: VIEWS,
             }
         }
     }
