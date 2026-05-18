@@ -20,7 +20,10 @@ mod filter;
 mod order;
 mod values;
 
-pub use descriptor::{CreateDefault, CreateDefaultType, ModelColumn, ModelDescriptor};
+pub use descriptor::{
+    CreateDefault, CreateDefaultType, ModelColumn, ModelDescriptor, ReadSource, ViewDescriptor,
+    WriteSource,
+};
 pub use dialect::{Dialect, PostgresDialect, SqliteDialect};
 pub use filter::{
     CoalesceExpr, CoalesceFilter, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName,
