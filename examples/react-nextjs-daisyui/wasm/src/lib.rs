@@ -309,11 +309,11 @@ pub use wasm::*;
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use chrono::*;
-    use uuid::Uuid;
     use cratestack_rusqlite::ddl::*;
     use cratestack_rusqlite::*;
-    use super::*;
+    use uuid::Uuid;
 
     #[test]
     fn in_memory_crud_round_trip() {
