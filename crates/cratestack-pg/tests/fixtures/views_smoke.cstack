@@ -21,6 +21,7 @@ view ActiveCustomer from Customer, Order {
 
   @@server_sql("SELECT c.id, c.email, COUNT(o.id)::int AS order_count FROM customers c LEFT JOIN orders o ON o.customer_id = c.id GROUP BY c.id, c.email")
   @@embedded_sql("SELECT c.id, c.email, COUNT(o.id) AS order_count FROM customers c LEFT JOIN orders o ON o.customer_id = c.id GROUP BY c.id, c.email")
+  @@allow("read", auth() != null)
 }
 
 view DailyRevenue from Order {

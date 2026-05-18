@@ -132,7 +132,9 @@ pub(super) fn compose_embedded_schema(schema_path: &LitStr) -> TokenStream {
         .views
         .iter()
         .filter(|view| view.embedded_sql().is_some())
-        .map(crate::view::generate_view_descriptor)
+        .map(|view| {
+            crate::view::generate_view_descriptor(view, &schema.models, &schema.types, auth)
+        })
         .collect::<Result<Vec<_>, String>>()
     {
         Ok(descriptors) => descriptors,
