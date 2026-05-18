@@ -1,0 +1,24 @@
+datasource db {
+  provider = "postgresql"
+}
+
+model Customer {
+  id Int @id
+  email String
+}
+
+model Order {
+  id Int @id
+  customerId Int
+  totalCents Int
+  createdAt DateTime
+}
+
+view ActiveCustomer from Customer, Order {
+  id Int @id @from(Customer.id)
+  email String @from(Customer.email)
+  orderCount Int
+
+  @@server_sql("SELECT c.id, c.email, COUNT(o.id)::int AS order_count FROM customers c LEFT JOIN orders o ON o.customer_id = c.id GROUP BY c.id, c.email")
+  @@embedded_sql("SELECT c.id, c.email, COUNT(o.id) AS order_count FROM customers c LEFT JOIN orders o ON o.customer_id = c.id GROUP BY c.id, c.email")
+}

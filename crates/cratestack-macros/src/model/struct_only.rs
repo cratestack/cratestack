@@ -88,7 +88,7 @@ pub(crate) fn generate_client_model_struct(
     }
 }
 
-pub(super) fn struct_field_definition(
+pub(crate) fn struct_field_definition(
     field: &Field,
     wrap_for_patch: bool,
     enum_names: &BTreeSet<&str>,

@@ -96,6 +96,59 @@ pub(super) fn compose_embedded_schema(schema_path: &LitStr) -> TokenStream {
         .map(|model| generate_upsert_input_struct(model, &model_name_set, &enum_name_set))
         .collect::<Vec<_>>();
 
+    // View emission (ADR-0003) — embedded composer.
+    //
+    // Materialized views are a server-only feature (SQLite has no
+    // `MATERIALIZED VIEW`). The ADR specifies this is a hard error
+    // at expansion time: emit `compile_error!` pointing at the
+    // attribute so the developer sees the gating in their IDE.
+    for view in &schema.views {
+        if view.is_materialized() {
+            return syn::Error::new(
+                schema_path.span(),
+                format!(
+                    "view `{}` is `@@materialized` which is not supported on the embedded backend \
+                     (SQLite has no materialized views). Either gate this view with a feature \
+                     flag or split it into a server-only schema. See ADR-0003 \
+                     (cratestack-docs `internals/views-adr.md`) for the rationale.",
+                    view.name
+                ),
+            )
+            .to_compile_error()
+            .into();
+        }
+    }
+
+    // Views with only `@@server_sql` (no `@@embedded_sql` / `@@sql`)
+    // are backend-specific to Postgres and are silently skipped on
+    // the embedded composer — the same way procedures are skipped.
+    let view_structs = schema
+        .views
+        .iter()
+        .filter(|view| view.embedded_sql().is_some())
+        .map(|view| crate::view::generate_view_struct_only(view, &enum_name_set))
+        .collect::<Vec<_>>();
+    let view_descriptors = match schema
+        .views
+        .iter()
+        .filter(|view| view.embedded_sql().is_some())
+        .map(crate::view::generate_view_descriptor)
+        .collect::<Result<Vec<_>, String>>()
+    {
+        Ok(descriptors) => descriptors,
+        Err(error) => {
+            return syn::Error::new(schema_path.span(), error)
+                .to_compile_error()
+                .into();
+        }
+    };
+    let view_rusqlite_from_row_impls = schema
+        .views
+        .iter()
+        .filter(|view| view.embedded_sql().is_some())
+        .map(|view| crate::view::generate_view_rusqlite_from_row_impl(view, &enum_name_set))
+        .collect::<Vec<_>>();
+
     // Procedures are skipped on the embedded path — local apps don't have an
     // RPC surface to call. `@@audit` and `@@emit` directives are silently
     // ignored for v1; see CHANGELOG for the follow-up plan.
@@ -126,6 +179,13 @@ pub(super) fn compose_embedded_schema(schema_path: &LitStr) -> TokenStream {
                 #(#rusqlite_from_row_impls)*
                 #(#primary_key_accessor_impls)*
                 #(#model_descriptors)*
+
+                // Embedded view emission — same shape as the server
+                // composer (ADR-0003), minus `@@materialized` which
+                // is rejected upstream by `compile_error!` above.
+                #(#view_structs)*
+                #(#view_rusqlite_from_row_impls)*
+                #(#view_descriptors)*
             }
 
             pub use models::*;

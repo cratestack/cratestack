@@ -29,8 +29,11 @@ pub(super) fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
     };
 
     let axum_module = axum_module::build_axum_module(&collected);
-    let runtime_block =
-        runtime::build_runtime_block(&collected.model_accessors, &collected.bound_model_accessors);
+    let runtime_block = runtime::build_runtime_block(
+        &collected.model_accessors,
+        &collected.bound_model_accessors,
+        &collected.view_accessors,
+    );
 
     // Destructure here for `quote!` interpolation — quoting through the
     // struct adds a `c.` prefix per field, which `quote!` doesn't accept.
@@ -54,6 +57,9 @@ pub(super) fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
         create_input_structs,
         update_input_structs,
         upsert_input_impls,
+        view_structs,
+        view_descriptors,
+        view_pg_from_row_impls,
         procedure_modules,
         procedure_registry_methods,
         generated_client_module,
@@ -101,6 +107,16 @@ pub(super) fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
                 #(#pg_from_row_impls)*
                 #(#primary_key_accessor_impls)*
                 #(#model_descriptors)*
+
+                // View emission (ADR-0003) lives alongside models in
+                // the same `models` module so the view structs share
+                // the same scope as the source models they were
+                // declared `from`. The `runtime.views().<view>()`
+                // accessor reaches into `super::models::<View>` to
+                // construct the `ViewDelegate`.
+                #(#view_structs)*
+                #(#view_pg_from_row_impls)*
+                #(#view_descriptors)*
             }
 
             pub use models::*;

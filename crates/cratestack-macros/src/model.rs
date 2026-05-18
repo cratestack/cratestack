@@ -23,11 +23,11 @@ mod accessor;
 mod descriptor;
 mod field_module;
 mod inputs;
-mod row_pg;
-mod row_sqlite;
+pub(crate) mod row_pg;
+pub(crate) mod row_sqlite;
 mod selection;
 mod selection_module;
-mod struct_only;
+pub(crate) mod struct_only;
 
 pub(crate) use accessor::{generate_bound_model_accessor, generate_model_accessor};
 pub(crate) use descriptor::generate_model_descriptor;
