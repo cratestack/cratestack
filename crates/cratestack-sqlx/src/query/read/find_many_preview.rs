@@ -12,7 +12,7 @@ pub(super) fn preview_sql<M, PK>(find: &FindMany<'_, M, PK>) -> String {
     let mut sql = format!(
         "SELECT {} FROM {}",
         find.descriptor.select_projection(),
-        find.descriptor.table_name,
+        find.descriptor.table_name(),
     );
     let order_by = find.effective_order_by();
 

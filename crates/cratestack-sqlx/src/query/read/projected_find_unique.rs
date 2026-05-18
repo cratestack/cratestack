@@ -4,17 +4,17 @@
 //! `Projection::is_selected(col)`.
 
 use cratestack_core::{CoolContext, CoolError};
-use cratestack_sql::IntoColumnName;
+use cratestack_sql::{IntoColumnName, ReadSource};
 
 use crate::query::support::{ReadPolicyKind, push_scoped_conditions};
-use crate::{ModelDescriptor, SqlxRuntime, sqlx};
+use crate::{SqlxRuntime, sqlx};
 
 use super::find_unique::FindUnique;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ProjectedFindUnique<'a, M: 'static, PK: 'static> {
     runtime: &'a SqlxRuntime,
-    descriptor: &'static ModelDescriptor<M, PK>,
+    descriptor: &'static dyn ReadSource<M, PK>,
     id: PK,
     selected: Vec<&'static str>,
     policy_kind: ReadPolicyKind,
@@ -49,12 +49,12 @@ impl<'a, M: 'static, PK: 'static> ProjectedFindUnique<'a, M, PK> {
         query
             .push(self.descriptor.select_projection_subset(&self.selected))
             .push(" FROM ")
-            .push(self.descriptor.table_name);
+            .push(self.descriptor.table_name());
         push_scoped_conditions(
             &mut query,
             self.descriptor,
             &[],
-            Some((self.descriptor.primary_key, self.id)),
+            Some((self.descriptor.primary_key(), self.id)),
             ctx,
             self.policy_kind,
         );
@@ -84,12 +84,12 @@ impl<'a, M: 'static, PK: 'static> ProjectedFindUnique<'a, M, PK> {
         query
             .push(self.descriptor.select_projection_subset(&self.selected))
             .push(" FROM ")
-            .push(self.descriptor.table_name);
+            .push(self.descriptor.table_name());
         push_scoped_conditions(
             &mut query,
             self.descriptor,
             &[],
-            Some((self.descriptor.primary_key, self.id)),
+            Some((self.descriptor.primary_key(), self.id)),
             ctx,
             self.policy_kind,
         );

@@ -1,21 +1,22 @@
 //! `aggregate.count()` — `COUNT(*)` with filter + read policy.
 
 use cratestack_core::{CoolContext, CoolError};
+use cratestack_sql::ReadSource;
 
 use crate::query::support::{ReadPolicyKind, push_scoped_conditions};
-use crate::{FilterExpr, ModelDescriptor, SqlxRuntime, sqlx};
+use crate::{FilterExpr, SqlxRuntime, sqlx};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AggregateCount<'a, M: 'static, PK: 'static> {
     runtime: &'a SqlxRuntime,
-    descriptor: &'static ModelDescriptor<M, PK>,
+    descriptor: &'static dyn ReadSource<M, PK>,
     filters: Vec<FilterExpr>,
 }
 
 impl<'a, M: 'static, PK: 'static> AggregateCount<'a, M, PK> {
     pub(super) fn new(
         runtime: &'a SqlxRuntime,
-        descriptor: &'static ModelDescriptor<M, PK>,
+        descriptor: &'static dyn ReadSource<M, PK>,
     ) -> Self {
         Self {
             runtime,
@@ -51,7 +52,7 @@ impl<'a, M: 'static, PK: 'static> AggregateCount<'a, M, PK> {
 
     fn build_query<'q>(&self, ctx: &CoolContext) -> sqlx::QueryBuilder<'q, sqlx::Postgres> {
         let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT COUNT(*) FROM ");
-        query.push(self.descriptor.table_name);
+        query.push(self.descriptor.table_name());
         push_scoped_conditions(
             &mut query,
             self.descriptor,

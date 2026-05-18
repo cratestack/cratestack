@@ -1,14 +1,14 @@
 //! `ProjectedFindUnique` — `.select(...)` on a `FindUnique` produces a
 //! partial-row `Projection<M>` instead of a full model.
 
-use cratestack_sql::{IntoSqlValue, ModelDescriptor};
+use cratestack_sql::{IntoSqlValue, ReadSource};
 use rusqlite::params_from_iter;
 
 use crate::{RusqliteError, RusqliteRuntime, SqlValueParam};
 
 pub struct ProjectedFindUnique<'a, M: 'static, PK: 'static> {
     pub(super) runtime: &'a RusqliteRuntime,
-    pub(super) descriptor: &'static ModelDescriptor<M, PK>,
+    pub(super) descriptor: &'static dyn ReadSource<M, PK>,
     pub(super) id: PK,
     pub(super) selected: Vec<&'static str>,
 }
@@ -24,9 +24,9 @@ where
         let projection_sql = self.descriptor.select_projection_subset(&self.selected);
         let mut sql = format!(
             "SELECT {} FROM {} WHERE {} = ?1",
-            projection_sql, self.descriptor.table_name, self.descriptor.primary_key,
+            projection_sql, self.descriptor.table_name(), self.descriptor.primary_key(),
         );
-        if let Some(soft_delete) = self.descriptor.soft_delete_column {
+        if let Some(soft_delete) = self.descriptor.soft_delete_column() {
             sql.push_str(&format!(" AND {soft_delete} IS NULL"));
         }
         sql.push_str(" LIMIT 1");
@@ -55,9 +55,9 @@ where
         let projection_sql = self.descriptor.select_projection_subset(&self.selected);
         let mut sql = format!(
             "SELECT {} FROM {} WHERE {} = ?1",
-            projection_sql, self.descriptor.table_name, self.descriptor.primary_key,
+            projection_sql, self.descriptor.table_name(), self.descriptor.primary_key(),
         );
-        if let Some(soft_delete) = self.descriptor.soft_delete_column {
+        if let Some(soft_delete) = self.descriptor.soft_delete_column() {
             sql.push_str(&format!(" AND {soft_delete} IS NULL"));
         }
         sql.push_str(" LIMIT 1");

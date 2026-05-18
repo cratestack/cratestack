@@ -8,7 +8,7 @@ use crate::{Filter, FilterExpr, FindMany, OrderClause, sqlx};
 use super::scoped_find_many_projected::ScopedProjectedFindMany;
 use super::scoped_find_many_with::ScopedFindManyWith;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ScopedFindMany<'a, M: 'static, PK: 'static> {
     pub(super) request: FindMany<'a, M, PK>,
     pub(super) ctx: CoolContext,

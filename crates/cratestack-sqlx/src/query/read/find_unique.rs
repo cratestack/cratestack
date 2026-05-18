@@ -2,15 +2,16 @@
 //! and a List/Detail policy-slot toggle.
 
 use cratestack_core::{CoolContext, CoolError};
+use cratestack_sql::ReadSource;
 
 use crate::query::support::{ReadPolicyKind, push_scoped_conditions};
 use crate::render::render_read_policy_sql;
-use crate::{ModelDescriptor, SqlxRuntime, sqlx};
+use crate::{SqlxRuntime, sqlx};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct FindUnique<'a, M: 'static, PK: 'static> {
     pub(crate) runtime: &'a SqlxRuntime,
-    pub(crate) descriptor: &'static ModelDescriptor<M, PK>,
+    pub(crate) descriptor: &'static dyn ReadSource<M, PK>,
     pub(crate) id: PK,
     pub(crate) for_update: bool,
     pub(crate) policy_kind: ReadPolicyKind,
@@ -44,8 +45,8 @@ impl<'a, M: 'static, PK: 'static> FindUnique<'a, M, PK> {
         let mut sql = format!(
             "SELECT {} FROM {} WHERE {} = $1 LIMIT 1",
             self.descriptor.select_projection(),
-            self.descriptor.table_name,
-            self.descriptor.primary_key,
+            self.descriptor.table_name(),
+            self.descriptor.primary_key(),
         );
         if self.for_update {
             sql.push_str(" FOR UPDATE");
@@ -57,28 +58,28 @@ impl<'a, M: 'static, PK: 'static> FindUnique<'a, M, PK> {
         let mut sql = format!(
             "SELECT {} FROM {}",
             self.descriptor.select_projection(),
-            self.descriptor.table_name,
+            self.descriptor.table_name(),
         );
         let mut bind_index = 1usize;
         let (allow, deny) = match self.policy_kind {
             ReadPolicyKind::List => (
-                self.descriptor.read_allow_policies,
-                self.descriptor.read_deny_policies,
+                self.descriptor.read_allow_policies(),
+                self.descriptor.read_deny_policies(),
             ),
             ReadPolicyKind::Detail => (
-                self.descriptor.detail_allow_policies,
-                self.descriptor.detail_deny_policies,
+                self.descriptor.detail_allow_policies(),
+                self.descriptor.detail_deny_policies(),
             ),
         };
         if let Some(policy_clause) = render_read_policy_sql(allow, deny, ctx, &mut bind_index) {
             sql.push_str(&format!(
                 " WHERE ({policy_clause}) AND {} = ${bind_index} LIMIT 1",
-                self.descriptor.primary_key
+                self.descriptor.primary_key()
             ));
         } else {
             sql.push_str(&format!(
                 " WHERE {} = ${bind_index} LIMIT 1",
-                self.descriptor.primary_key
+                self.descriptor.primary_key()
             ));
         }
         if self.for_update {
@@ -96,12 +97,12 @@ impl<'a, M: 'static, PK: 'static> FindUnique<'a, M, PK> {
         query
             .push(self.descriptor.select_projection())
             .push(" FROM ")
-            .push(self.descriptor.table_name);
+            .push(self.descriptor.table_name());
         push_scoped_conditions(
             &mut query,
             self.descriptor,
             &[],
-            Some((self.descriptor.primary_key, self.id)),
+            Some((self.descriptor.primary_key(), self.id)),
             ctx,
             self.policy_kind,
         );
@@ -130,12 +131,12 @@ impl<'a, M: 'static, PK: 'static> FindUnique<'a, M, PK> {
         query
             .push(self.descriptor.select_projection())
             .push(" FROM ")
-            .push(self.descriptor.table_name);
+            .push(self.descriptor.table_name());
         push_scoped_conditions(
             &mut query,
             self.descriptor,
             &[],
-            Some((self.descriptor.primary_key, self.id)),
+            Some((self.descriptor.primary_key(), self.id)),
             ctx,
             self.policy_kind,
         );

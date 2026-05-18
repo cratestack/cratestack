@@ -4,15 +4,16 @@
 use std::fmt::Write;
 
 use cratestack_core::CoolContext;
+use cratestack_sql::ReadSource;
 
-use crate::{FilterExpr, ModelDescriptor, OrderClause};
+use crate::{FilterExpr, OrderClause};
 
 use super::filter::render_filter_sql;
 use super::order::render_order_clause_sql;
 use super::policy::render_read_policy_sql;
 
 pub(crate) fn render_scoped_select_sql<M, PK>(
-    descriptor: &ModelDescriptor<M, PK>,
+    descriptor: &dyn ReadSource<M, PK>,
     filters: &[FilterExpr],
     order_by: &[OrderClause],
     limit: Option<i64>,
@@ -22,13 +23,13 @@ pub(crate) fn render_scoped_select_sql<M, PK>(
     let mut sql = format!(
         "SELECT {} FROM {}",
         descriptor.select_projection(),
-        descriptor.table_name,
+        descriptor.table_name(),
     );
     let mut bind_index = 1usize;
     let user_clause = render_filter_sql(filters, &mut bind_index);
     let policy_clause = render_read_policy_sql(
-        descriptor.read_allow_policies,
-        descriptor.read_deny_policies,
+        descriptor.read_allow_policies(),
+        descriptor.read_deny_policies(),
         ctx,
         &mut bind_index,
     );

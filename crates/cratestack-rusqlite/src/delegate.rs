@@ -17,6 +17,7 @@ mod support;
 mod update;
 mod update_many;
 mod upsert;
+mod view;
 
 pub use aggregate::Aggregate;
 pub use aggregate_column::AggregateColumn;
@@ -33,3 +34,4 @@ pub use projected_find_unique::ProjectedFindUnique;
 pub use update::{UpdateRecord, UpdateRecordSet};
 pub use update_many::{UpdateMany, UpdateManySet};
 pub use upsert::UpsertRecord;
+pub use view::ViewDelegate;

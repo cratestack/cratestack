@@ -4,7 +4,7 @@ use cratestack_core::{CoolContext, CoolError};
 
 use crate::{Filter, FilterExpr, OrderClause, sqlx};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ScopedProjectedFindMany<'a, M: 'static, PK: 'static> {
     pub(super) request: crate::ProjectedFindMany<'a, M, PK>,
     pub(super) ctx: CoolContext,

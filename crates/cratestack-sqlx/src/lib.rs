@@ -120,6 +120,7 @@ pub use delegate::{
     ScopedDeleteMany, ScopedDeleteRecord, ScopedFindMany, ScopedFindManyWith, ScopedFindUnique,
     ScopedModelDelegate, ScopedProjectedFindMany, ScopedProjectedFindUnique, ScopedUpdateMany,
     ScopedUpdateManySet, ScopedUpdateRecord, ScopedUpdateRecordSet, ScopedUpsertRecord,
+    ViewDelegate,
 };
 pub use descriptor::SqlxRuntime;
 pub use query::{

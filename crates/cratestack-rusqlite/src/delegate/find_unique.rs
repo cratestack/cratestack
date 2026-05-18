@@ -1,7 +1,7 @@
 //! `FindUnique` — single-row PK lookup with optional `.select(...)`
 //! projection.
 
-use cratestack_sql::{IntoSqlValue, ModelDescriptor, SqliteDialect};
+use cratestack_sql::{IntoSqlValue, ReadSource, SqliteDialect};
 use rusqlite::params_from_iter;
 
 use crate::{
@@ -12,7 +12,7 @@ use super::projected_find_unique::ProjectedFindUnique;
 
 pub struct FindUnique<'a, M: 'static, PK: 'static> {
     pub(super) runtime: &'a RusqliteRuntime,
-    pub(super) descriptor: &'static ModelDescriptor<M, PK>,
+    pub(super) descriptor: &'static dyn ReadSource<M, PK>,
     pub(super) id: PK,
 }
 
