@@ -17,9 +17,9 @@ unsafe_code = "allow"
 
 [dependencies]
 chrono = { workspace = true }
-cratestack = { path = "../../../crates/cratestack", version = "0.3.5" }
-cratestack-macros = { path = "../../../crates/cratestack-macros", version = "0.3.5" }
-cratestack-rusqlite = { path = "../../../crates/cratestack-rusqlite", version = "0.3.5" }
+cratestack = { path = "../../../crates/cratestack", version = "0.3.6" }
+cratestack-macros = { path = "../../../crates/cratestack-macros", version = "0.3.6" }
+cratestack-rusqlite = { path = "../../../crates/cratestack-rusqlite", version = "0.3.6" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
