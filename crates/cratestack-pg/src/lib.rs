@@ -83,7 +83,7 @@ pub use cratestack_sqlx::{
     ScopedCreateRecord, ScopedDeleteMany, ScopedDeleteRecord, ScopedFindMany, ScopedFindManyWith,
     ScopedFindUnique, ScopedModelDelegate, ScopedProjectedFindMany, ScopedProjectedFindUnique,
     ScopedUpdateMany, ScopedUpdateManySet, ScopedUpdateRecord, ScopedUpdateRecordSet,
-    SqlxIdempotencyStore, UpdateMany, UpdateManySet, UpdateRecord, UpdateRecordSet,
+    SqlxIdempotencyStore, UpdateMany, UpdateManySet, UpdateRecord, UpdateRecordSet, ViewDelegate,
     create_record_with_executor, update_record_with_executor,
 };
 pub use cratestack_sqlx::{

@@ -10,7 +10,7 @@ use crate::{FilterExpr, OrderClause, sqlx};
 use super::find_many::FindMany;
 use super::side_load::run_side_load;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct FindManyWith<'a, M: 'static, PK: 'static, Rel: 'static, RelPK: 'static> {
     parent: FindMany<'a, M, PK>,
     relation: cratestack_sql::RelationInclude<M, Rel, RelPK>,

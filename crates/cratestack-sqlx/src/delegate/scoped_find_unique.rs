@@ -4,7 +4,7 @@ use cratestack_core::{CoolContext, CoolError};
 
 use crate::{FindUnique, sqlx};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ScopedFindUnique<'a, M: 'static, PK: 'static> {
     pub(super) request: FindUnique<'a, M, PK>,
     pub(super) ctx: CoolContext,
@@ -73,7 +73,7 @@ impl<'a, M: 'static, PK: 'static> ScopedFindUnique<'a, M, PK> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ScopedProjectedFindUnique<'a, M: 'static, PK: 'static> {
     request: crate::ProjectedFindUnique<'a, M, PK>,
     ctx: CoolContext,

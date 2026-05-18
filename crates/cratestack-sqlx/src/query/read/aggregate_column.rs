@@ -4,17 +4,17 @@
 //! f64/Decimal, etc.
 
 use cratestack_core::{CoolContext, CoolError};
-use cratestack_sql::IntoColumnName;
+use cratestack_sql::{IntoColumnName, ReadSource};
 
 use crate::query::support::{ReadPolicyKind, push_scoped_conditions};
-use crate::{FilterExpr, ModelDescriptor, SqlxRuntime, sqlx};
+use crate::{FilterExpr, SqlxRuntime, sqlx};
 
 use super::aggregate::AggregateOp;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AggregateColumn<'a, M: 'static, PK: 'static> {
     runtime: &'a SqlxRuntime,
-    descriptor: &'static ModelDescriptor<M, PK>,
+    descriptor: &'static dyn ReadSource<M, PK>,
     op: AggregateOp,
     column: &'static str,
     filters: Vec<FilterExpr>,
@@ -23,7 +23,7 @@ pub struct AggregateColumn<'a, M: 'static, PK: 'static> {
 impl<'a, M: 'static, PK: 'static> AggregateColumn<'a, M, PK> {
     pub(super) fn new<C: IntoColumnName>(
         runtime: &'a SqlxRuntime,
-        descriptor: &'static ModelDescriptor<M, PK>,
+        descriptor: &'static dyn ReadSource<M, PK>,
         op: AggregateOp,
         column: C,
     ) -> Self {
@@ -68,7 +68,7 @@ impl<'a, M: 'static, PK: 'static> AggregateColumn<'a, M, PK> {
             .push("(")
             .push(self.column)
             .push(") FROM ")
-            .push(self.descriptor.table_name);
+            .push(self.descriptor.table_name());
         push_scoped_conditions(
             &mut query,
             self.descriptor,

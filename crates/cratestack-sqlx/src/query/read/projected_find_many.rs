@@ -3,17 +3,17 @@
 //! [`super::projected_find_unique`].
 
 use cratestack_core::{CoolContext, CoolError};
-use cratestack_sql::IntoColumnName;
+use cratestack_sql::{IntoColumnName, ReadSource};
 
 use crate::query::support::{ReadPolicyKind, push_order_and_paging, push_scoped_conditions};
-use crate::{FilterExpr, ModelDescriptor, OrderClause, SqlxRuntime, sqlx};
+use crate::{FilterExpr, OrderClause, SqlxRuntime, sqlx};
 
 use super::find_many::FindMany;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ProjectedFindMany<'a, M: 'static, PK: 'static> {
     runtime: &'a SqlxRuntime,
-    descriptor: &'static ModelDescriptor<M, PK>,
+    descriptor: &'static dyn ReadSource<M, PK>,
     filters: Vec<FilterExpr>,
     order_by: Vec<OrderClause>,
     limit: Option<i64>,
@@ -73,7 +73,7 @@ impl<'a, M: 'static, PK: 'static> ProjectedFindMany<'a, M, PK> {
         query
             .push(self.descriptor.select_projection_subset(&self.selected))
             .push(" FROM ")
-            .push(self.descriptor.table_name);
+            .push(self.descriptor.table_name());
         push_scoped_conditions(
             &mut query,
             self.descriptor,

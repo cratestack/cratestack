@@ -5,7 +5,7 @@ use cratestack_core::{CoolContext, CoolError};
 
 use crate::{Filter, FilterExpr, OrderClause, sqlx};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ScopedFindManyWith<'a, M: 'static, PK: 'static, Rel: 'static, RelPK: 'static> {
     pub(super) request: crate::FindManyWith<'a, M, PK, Rel, RelPK>,
     pub(super) ctx: CoolContext,

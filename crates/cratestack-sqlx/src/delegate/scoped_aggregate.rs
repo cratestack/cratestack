@@ -5,7 +5,7 @@ use cratestack_core::{CoolContext, CoolError};
 
 use crate::{Aggregate, AggregateColumn, AggregateCount, Filter, FilterExpr, sqlx};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ScopedAggregate<'a, M: 'static, PK: 'static> {
     request: Aggregate<'a, M, PK>,
     ctx: CoolContext,
@@ -64,7 +64,7 @@ impl<'a, M: 'static, PK: 'static> ScopedAggregate<'a, M, PK> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ScopedAggregateCount<'a, M: 'static, PK: 'static> {
     request: AggregateCount<'a, M, PK>,
     ctx: CoolContext,
@@ -106,7 +106,7 @@ impl<'a, M: 'static, PK: 'static> ScopedAggregateCount<'a, M, PK> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ScopedAggregateColumn<'a, M: 'static, PK: 'static> {
     request: AggregateColumn<'a, M, PK>,
     ctx: CoolContext,

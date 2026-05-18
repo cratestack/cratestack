@@ -3,9 +3,9 @@
 //! policy AND the soft-delete column so counts/sums describe rows the
 //! caller would be allowed to retrieve.
 
-use cratestack_sql::IntoColumnName;
+use cratestack_sql::{IntoColumnName, ReadSource};
 
-use crate::{ModelDescriptor, SqlxRuntime};
+use crate::SqlxRuntime;
 
 use super::aggregate_column::AggregateColumn;
 use super::aggregate_count::AggregateCount;
@@ -29,10 +29,10 @@ impl AggregateOp {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Aggregate<'a, M: 'static, PK: 'static> {
     pub(crate) runtime: &'a SqlxRuntime,
-    pub(crate) descriptor: &'static ModelDescriptor<M, PK>,
+    pub(crate) descriptor: &'static dyn ReadSource<M, PK>,
 }
 
 impl<'a, M: 'static, PK: 'static> Aggregate<'a, M, PK> {

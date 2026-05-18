@@ -17,8 +17,10 @@ mod scoped_find_many_with;
 mod scoped_find_unique;
 mod scoped_update_many;
 mod scoped_writes;
+mod view;
 
 pub use model::ModelDelegate;
+pub use view::ViewDelegate;
 pub use scoped::ScopedModelDelegate;
 pub use scoped_aggregate::{ScopedAggregate, ScopedAggregateColumn, ScopedAggregateCount};
 pub use scoped_batch::{

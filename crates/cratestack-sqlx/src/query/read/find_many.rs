@@ -3,14 +3,18 @@
 //! [`super::find_many_preview`] to keep this file under budget.
 
 use cratestack_core::{CoolContext, CoolError};
+use cratestack_sql::ReadSource;
 
 use crate::query::support::{ReadPolicyKind, push_order_and_paging, push_scoped_conditions};
-use crate::{FilterExpr, ModelDescriptor, OrderClause, SqlxRuntime, sqlx};
+use crate::{FilterExpr, OrderClause, SqlxRuntime, sqlx};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct FindMany<'a, M: 'static, PK: 'static> {
     pub(crate) runtime: &'a SqlxRuntime,
-    pub(crate) descriptor: &'static ModelDescriptor<M, PK>,
+    /// Either a `&'static ModelDescriptor<M, PK>` (typical) or a
+    /// `&'static ViewDescriptor<M, PK>` (view path). Both impl
+    /// `ReadSource<M, PK>`.
+    pub(crate) descriptor: &'static dyn ReadSource<M, PK>,
     pub(crate) filters: Vec<FilterExpr>,
     pub(crate) order_by: Vec<OrderClause>,
     pub(crate) limit: Option<i64>,
@@ -87,7 +91,7 @@ impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
         query
             .push(self.descriptor.select_projection())
             .push(" FROM ")
-            .push(self.descriptor.table_name);
+            .push(self.descriptor.table_name());
 
         push_scoped_conditions(
             &mut query,
@@ -124,7 +128,7 @@ impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
         query
             .push(self.descriptor.select_projection())
             .push(" FROM ")
-            .push(self.descriptor.table_name);
+            .push(self.descriptor.table_name());
 
         push_scoped_conditions(
             &mut query,
@@ -158,12 +162,12 @@ impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
 
         if order_by
             .iter()
-            .any(|clause| clause.targets_column(self.descriptor.primary_key))
+            .any(|clause| clause.targets_column(self.descriptor.primary_key()))
         {
             return order_by;
         }
 
-        order_by.push(OrderClause::column(self.descriptor.primary_key, direction));
+        order_by.push(OrderClause::column(self.descriptor.primary_key(), direction));
         order_by
     }
 

@@ -1,7 +1,7 @@
 //! `FindMany` — fluent SELECT builder with filter/order/limit/offset and
 //! transaction-scoped variants.
 
-use cratestack_sql::{Filter, FilterExpr, ModelDescriptor, OrderClause, SqliteDialect};
+use cratestack_sql::{Filter, FilterExpr, OrderClause, ReadSource, SqliteDialect};
 use rusqlite::params_from_iter;
 
 use crate::{
@@ -13,7 +13,7 @@ use super::projected_find_many::ProjectedFindMany;
 
 pub struct FindMany<'a, M: 'static, PK: 'static> {
     pub(super) runtime: &'a RusqliteRuntime,
-    pub(super) descriptor: &'static ModelDescriptor<M, PK>,
+    pub(super) descriptor: &'static dyn ReadSource<M, PK>,
     pub(super) filters: Vec<FilterExpr>,
     pub(super) order_by: Vec<OrderClause>,
     pub(super) limit: Option<i64>,

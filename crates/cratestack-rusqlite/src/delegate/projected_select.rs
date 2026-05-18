@@ -4,11 +4,11 @@
 
 use std::fmt::Write;
 
-use cratestack_sql::{Dialect, FilterExpr, ModelDescriptor, OrderClause, SqlValue};
+use cratestack_sql::{Dialect, FilterExpr, OrderClause, ReadSource, SqlValue};
 
 pub(super) fn build_partial_select<M, PK>(
     dialect: &dyn Dialect,
-    descriptor: &ModelDescriptor<M, PK>,
+    descriptor: &dyn ReadSource<M, PK>,
     selected: &[&'static str],
     filters: &[FilterExpr],
     order_by: &[OrderClause],
@@ -18,13 +18,13 @@ pub(super) fn build_partial_select<M, PK>(
     let mut sql = format!(
         "SELECT {} FROM {}",
         descriptor.select_projection_subset(selected),
-        descriptor.table_name,
+        descriptor.table_name(),
     );
     let mut binds: Vec<SqlValue> = Vec::new();
     let mut bind_index = 1usize;
     let mut where_sql = String::new();
     let mut wrote = false;
-    if let Some(soft_delete) = descriptor.soft_delete_column {
+    if let Some(soft_delete) = descriptor.soft_delete_column() {
         let _ = write!(&mut where_sql, "{soft_delete} IS NULL");
         wrote = true;
     }
