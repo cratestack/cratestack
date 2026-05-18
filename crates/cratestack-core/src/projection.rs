@@ -1,7 +1,7 @@
-use cratestack_core::{CoolError, Page, SelectionQuery};
+use crate::{CoolError, Page, SelectionQuery};
 use serde_json::Value as JsonValue;
 
-pub trait Projection {
+pub trait ProjectionDecoder {
     type Output;
 
     fn selection_query(&self) -> SelectionQuery;
@@ -33,7 +33,7 @@ pub trait Projection {
     }
 }
 
-impl Projection for SelectionQuery {
+impl ProjectionDecoder for SelectionQuery {
     type Output = JsonValue;
 
     fn selection_query(&self) -> SelectionQuery {

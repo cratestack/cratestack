@@ -10,9 +10,9 @@ name = "rpc-procedures-server"
 path = "src/main.rs"
 
 [dependencies]
-cratestack = { path = "../../crates/cratestack", version = "0.3.7" }
-cratestack-codec-cbor = { path = "../../crates/cratestack-codec-cbor", version = "0.3.7" }
-cratestack-codec-json = { path = "../../crates/cratestack-codec-json", version = "0.3.7" }
+cratestack = { package = "cratestack-pg", path = "../../crates/cratestack-pg", version = "0.4.0" }
+cratestack-codec-cbor = { path = "../../crates/cratestack-codec-cbor", version = "0.4.0" }
+cratestack-codec-json = { path = "../../crates/cratestack-codec-json", version = "0.4.0" }
 serde = { workspace = true }
 tokio = { workspace = true }
 

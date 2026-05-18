@@ -845,9 +845,9 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 name = "client-multi-service-example"
 version = "0.1.0"
 dependencies = [
- "cratestack",
  "cratestack-client-rust",
  "cratestack-codec-cbor",
+ "cratestack-pg",
  "serde",
  "serde_json",
  "tokio",
@@ -859,11 +859,11 @@ name = "client-stub-rust-example"
 version = "0.1.0"
 dependencies = [
  "axum",
- "cratestack",
  "cratestack-axum",
  "cratestack-client-rust",
  "cratestack-codec-cbor",
  "cratestack-codec-json",
+ "cratestack-pg",
  "serde",
  "serde_json",
  "tokio",
@@ -987,40 +987,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "cratestack"
-version = "0.3.7"
-dependencies = [
- "async-stream",
- "axum",
- "chrono",
- "cratestack-axum",
- "cratestack-client-rust",
- "cratestack-codec-cbor",
- "cratestack-codec-json",
- "cratestack-core",
- "cratestack-macros",
- "cratestack-parser",
- "cratestack-policy",
- "cratestack-rusqlite",
- "cratestack-sql",
- "cratestack-sqlx",
- "minicbor-serde",
- "regex",
- "serde",
- "serde_json",
- "testcontainers",
- "testcontainers-modules",
- "tokio",
- "tower",
- "tracing",
- "tracing-subscriber",
- "url",
- "uuid",
-]
-
-[[package]]
 name = "cratestack-axum"
-version = "0.3.7"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -1038,7 +1006,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-cli"
-version = "0.3.7"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1057,7 +1025,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-client-dart"
-version = "0.3.7"
+version = "0.4.0"
 dependencies = [
  "cratestack-core",
  "cratestack-parser",
@@ -1068,7 +1036,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-client-flutter"
-version = "0.3.7"
+version = "0.4.0"
 dependencies = [
  "async-stream",
  "axum",
@@ -1084,7 +1052,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-client-rust"
-version = "0.3.7"
+version = "0.4.0"
 dependencies = [
  "async-stream",
  "axum",
@@ -1107,7 +1075,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-client-store-redis"
-version = "0.3.7"
+version = "0.4.0"
 dependencies = [
  "chrono",
  "cratestack-client-rust",
@@ -1117,7 +1085,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-client-store-sqlite"
-version = "0.3.7"
+version = "0.4.0"
 dependencies = [
  "axum",
  "chrono",
@@ -1132,7 +1100,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-client-typescript"
-version = "0.3.7"
+version = "0.4.0"
 dependencies = [
  "cratestack-core",
  "cratestack-parser",
@@ -1143,7 +1111,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-codec-cbor"
-version = "0.3.7"
+version = "0.4.0"
 dependencies = [
  "cratestack-core",
  "minicbor-serde",
@@ -1153,7 +1121,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-codec-json"
-version = "0.3.7"
+version = "0.4.0"
 dependencies = [
  "cratestack-core",
  "serde",
@@ -1162,7 +1130,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-core"
-version = "0.3.7"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -1184,7 +1152,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-lsp"
-version = "0.3.7"
+version = "0.4.0"
 dependencies = [
  "cratestack-core",
  "cratestack-parser",
@@ -1194,7 +1162,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-macros"
-version = "0.3.7"
+version = "0.4.0"
 dependencies = [
  "cratestack-core",
  "cratestack-parser",
@@ -1206,7 +1174,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-migrate"
-version = "0.3.7"
+version = "0.4.0"
 dependencies = [
  "cratestack-core",
  "cratestack-parser",
@@ -1218,7 +1186,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-parser"
-version = "0.3.7"
+version = "0.4.0"
 dependencies = [
  "ariadne",
  "chumsky",
@@ -1229,27 +1197,38 @@ dependencies = [
 
 [[package]]
 name = "cratestack-pg"
-version = "0.3.7"
+version = "0.4.0"
 dependencies = [
+ "async-stream",
+ "axum",
  "chrono",
  "cratestack-axum",
  "cratestack-client-rust",
+ "cratestack-codec-cbor",
+ "cratestack-codec-json",
  "cratestack-core",
  "cratestack-macros",
  "cratestack-parser",
  "cratestack-policy",
  "cratestack-sql",
  "cratestack-sqlx",
+ "minicbor-serde",
  "regex",
  "serde",
  "serde_json",
+ "testcontainers",
+ "testcontainers-modules",
+ "tokio",
+ "tower",
  "tracing",
+ "tracing-subscriber",
+ "url",
  "uuid",
 ]
 
 [[package]]
 name = "cratestack-policy"
-version = "0.3.7"
+version = "0.4.0"
 dependencies = [
  "cratestack-core",
  "serde",
@@ -1257,7 +1236,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-redis"
-version = "0.3.7"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -1273,7 +1252,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-rusqlite"
-version = "0.3.7"
+version = "0.4.0"
 dependencies = [
  "bigdecimal",
  "chrono",
@@ -1291,7 +1270,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-sql"
-version = "0.3.7"
+version = "0.4.0"
 dependencies = [
  "bigdecimal",
  "chrono",
@@ -1305,9 +1284,10 @@ dependencies = [
 
 [[package]]
 name = "cratestack-sqlite"
-version = "0.3.7"
+version = "0.4.0"
 dependencies = [
  "chrono",
+ "cratestack-client-rust",
  "cratestack-core",
  "cratestack-macros",
  "cratestack-parser",
@@ -1317,13 +1297,15 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "tokio",
  "tracing",
+ "tracing-subscriber",
  "uuid",
 ]
 
 [[package]]
 name = "cratestack-sqlx"
-version = "0.3.7"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "bigdecimal",
@@ -1344,7 +1326,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-studio"
-version = "0.3.7"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1376,7 +1358,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-studio-generator"
-version = "0.3.7"
+version = "0.4.0"
 dependencies = [
  "cratestack-studio",
  "thiserror 2.0.18",
@@ -1819,9 +1801,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "console_error_panic_hook",
- "cratestack",
  "cratestack-macros",
  "cratestack-rusqlite",
+ "cratestack-sqlite",
  "js-sys",
  "serde",
  "serde-wasm-bindgen",
@@ -1837,9 +1819,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "console_error_panic_hook",
- "cratestack",
  "cratestack-macros",
  "cratestack-rusqlite",
+ "cratestack-sqlite",
  "js-sys",
  "serde",
  "serde-wasm-bindgen",
@@ -1855,9 +1837,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "console_error_panic_hook",
- "cratestack",
  "cratestack-macros",
  "cratestack-rusqlite",
+ "cratestack-sqlite",
  "js-sys",
  "serde",
  "serde-wasm-bindgen",
@@ -1873,9 +1855,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "clap",
- "cratestack",
  "cratestack-macros",
  "cratestack-rusqlite",
+ "cratestack-sqlite",
  "serde",
  "serde_json",
  "uuid",
@@ -1888,9 +1870,9 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
- "cratestack",
  "cratestack-macros",
  "cratestack-rusqlite",
+ "cratestack-sqlite",
  "notify",
  "serde",
  "tempfile",
@@ -1905,9 +1887,9 @@ name = "embedded-expo-native"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "cratestack",
  "cratestack-macros",
  "cratestack-rusqlite",
+ "cratestack-sqlite",
  "jni",
  "serde",
  "serde_json",
@@ -1922,9 +1904,9 @@ dependencies = [
  "axum",
  "chrono",
  "clap",
- "cratestack",
  "cratestack-macros",
  "cratestack-rusqlite",
+ "cratestack-sqlite",
  "http-body-util",
  "serde",
  "serde_json",
@@ -1940,9 +1922,9 @@ name = "embedded_flutter_native"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "cratestack",
  "cratestack-macros",
  "cratestack-rusqlite",
+ "cratestack-sqlite",
  "flutter_rust_bridge",
  "serde",
  "uuid",
@@ -3596,10 +3578,10 @@ dependencies = [
 name = "microservice-pair-example"
 version = "0.1.0"
 dependencies = [
- "cratestack",
  "cratestack-client-rust",
  "cratestack-codec-cbor",
  "cratestack-codec-json",
+ "cratestack-pg",
  "serde",
  "serde_json",
  "tokio",
@@ -4737,11 +4719,11 @@ name = "react-nextjs-daisyui-napi"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "cratestack",
  "cratestack-client-rust",
  "cratestack-codec-cbor",
  "cratestack-macros",
  "cratestack-rusqlite",
+ "cratestack-sqlite",
  "napi",
  "napi-build",
  "napi-derive",
@@ -4758,9 +4740,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "console_error_panic_hook",
- "cratestack",
  "cratestack-macros",
  "cratestack-rusqlite",
+ "cratestack-sqlite",
  "js-sys",
  "serde",
  "serde-wasm-bindgen",
@@ -4776,9 +4758,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "console_error_panic_hook",
- "cratestack",
  "cratestack-macros",
  "cratestack-rusqlite",
+ "cratestack-sqlite",
  "js-sys",
  "serde",
  "serde-wasm-bindgen",
@@ -5039,9 +5021,9 @@ dependencies = [
 name = "rpc-batch-debounce-example"
 version = "0.1.0"
 dependencies = [
- "cratestack",
  "cratestack-codec-cbor",
  "cratestack-codec-json",
+ "cratestack-pg",
  "serde",
  "serde_json",
  "tokio",
@@ -5052,9 +5034,9 @@ dependencies = [
 name = "rpc-batch-example"
 version = "0.1.0"
 dependencies = [
- "cratestack",
  "cratestack-codec-cbor",
  "cratestack-codec-json",
+ "cratestack-pg",
  "serde",
  "serde_json",
  "tokio",
@@ -5065,9 +5047,9 @@ dependencies = [
 name = "rpc-procedures-example"
 version = "0.1.0"
 dependencies = [
- "cratestack",
  "cratestack-codec-cbor",
  "cratestack-codec-json",
+ "cratestack-pg",
  "serde",
  "serde_json",
  "tokio",
@@ -5081,10 +5063,10 @@ dependencies = [
  "async-stream",
  "axum",
  "bytes",
- "cratestack",
  "cratestack-client-rust",
  "cratestack-codec-cbor",
  "cratestack-core",
+ "cratestack-pg",
  "serde",
  "tokio",
  "url",
@@ -5094,9 +5076,9 @@ dependencies = [
 name = "rpc-streaming-example"
 version = "0.1.0"
 dependencies = [
- "cratestack",
  "cratestack-codec-cbor",
  "cratestack-codec-json",
+ "cratestack-pg",
  "minicbor-serde",
  "serde",
  "serde_json",
@@ -6211,11 +6193,11 @@ name = "tauri-native-shell-example"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "cratestack",
  "cratestack-client-rust",
  "cratestack-codec-cbor",
  "cratestack-macros",
  "cratestack-rusqlite",
+ "cratestack-sqlite",
  "serde",
  "serde_json",
  "tauri",
@@ -6318,9 +6300,9 @@ dependencies = [
 name = "tauri-web-shell-example"
 version = "0.1.0"
 dependencies = [
- "cratestack",
  "cratestack-client-rust",
  "cratestack-codec-cbor",
+ "cratestack-sqlite",
  "serde",
  "serde_json",
  "tauri",
@@ -6335,9 +6317,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "console_error_panic_hook",
- "cratestack",
  "cratestack-macros",
  "cratestack-rusqlite",
+ "cratestack-sqlite",
  "js-sys",
  "serde",
  "serde-wasm-bindgen",

@@ -8,6 +8,18 @@ The implementation is still pre-1.0. As of `0.3.0` the framework is organized ar
 * **`include_embedded_schema!("schema.cstack")`** — `cratestack-rusqlite` only. Native mobile/desktop **and** `wasm32-unknown-unknown` (browser, OPFS-backed) from the same source. No sqlx, no axum.
 * **`include_client_schema!("schema.cstack")`** — HTTP client stubs only. Treats another service's `.cstack` as a contract; owns no database.
 
+As of `0.4.0` the previous single `cratestack` umbrella crate is split into two strictly disjoint sub-facades that consumers pick between via Cargo's `package =` rename:
+
+```toml
+# Backend service (Postgres + Axum + generated Rust client runtime)
+cratestack = { package = "cratestack-pg", version = "0.4" }
+
+# Embedded / mobile / desktop / wasm (rusqlite + shared surface)
+cratestack = { package = "cratestack-sqlite", version = "0.4" }
+```
+
+`cratestack-pg` does not pull in `libsqlite3-sys`, so backend services can depend on the official `sqlx` umbrella crate alongside it without `links = "sqlite3"` collisions. See [`CHANGELOG.md`](./CHANGELOG.md) for the full 0.4.0 migration notes.
+
 What the current slice covers, across those three shapes:
 
 * schema parsing and semantic validation

@@ -9,12 +9,12 @@ use cratestack_client_rust::{ClientConfig, CratestackClient, JsonCodec};
 use cratestack_core::CoolCodec;
 use std::net::SocketAddr;
 
-include_server_schema!("../cratestack/tests/fixtures/blog.cstack", db = Postgres);
+include_server_schema!("tests/fixtures/blog.cstack", db = Postgres);
 
 mod client_only_schema {
     use super::include_client_schema;
 
-    include_client_schema!("../cratestack/tests/fixtures/blog.cstack");
+    include_client_schema!("tests/fixtures/blog.cstack");
 }
 
 #[tokio::test]

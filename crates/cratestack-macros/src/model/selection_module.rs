@@ -1,8 +1,7 @@
 //! Per-model `mod selection { ... }` emission: the projection /
 //! include surface (`Selection`, `IncludeSelection`, `Projected`,
 //! `ProjectedInclude`) used by `.select(...)` / `.include(...)`
-//! delegate calls. Wired into [`super::field_module`] under
-//! `#[cfg(not(target_arch = "wasm32"))]`.
+//! delegate calls. Wired into [`super::field_module`].
 
 mod projected;
 mod selection_struct;
