@@ -1,0 +1,17 @@
+datasource db {
+  provider = "postgresql"
+}
+
+model Customer {
+  id Int @id
+  email String
+  active Boolean
+}
+
+view ActiveCustomerSummary from Customer {
+  id Int @id @from(Customer.id)
+  email String @from(Customer.email)
+
+  @@server_sql("SELECT id, email FROM customers WHERE active = true")
+  @@allow("read", auth() != null)
+}

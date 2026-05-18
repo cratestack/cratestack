@@ -1,0 +1,16 @@
+datasource db {
+  provider = "sqlite"
+}
+
+model Note {
+  id Int @id
+  title String
+  archived Boolean
+}
+
+view ActiveNote from Note {
+  id Int @id @from(Note.id)
+  title String @from(Note.title)
+
+  @@embedded_sql("SELECT id, title FROM notes WHERE archived = 0")
+}

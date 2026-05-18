@@ -1,0 +1,17 @@
+datasource db {
+  provider = "postgresql"
+}
+
+model Sale {
+  id Int @id
+  amountCents Int
+}
+
+view SaleTotal from Sale {
+  id Int @id @from(Sale.id)
+  amountCents Int @from(Sale.amountCents)
+
+  @@server_sql("SELECT id, amount_cents FROM sales")
+  @@allow("read", auth() != null)
+  @@materialized
+}
