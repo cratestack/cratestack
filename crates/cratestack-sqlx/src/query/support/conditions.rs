@@ -6,7 +6,9 @@
 
 use cratestack_core::{CoolContext, CoolError};
 
-use crate::{FilterExpr, ModelDescriptor, ReadPolicy, SqlxRuntime, sqlx};
+use cratestack_sql::ReadSource;
+
+use crate::{FilterExpr, ReadPolicy, SqlxRuntime, sqlx};
 
 use super::filter::push_filter_query;
 use super::policy::push_action_policy_query;
@@ -32,7 +34,7 @@ pub(crate) enum ReadPolicyKind {
 
 pub(crate) fn push_scoped_conditions<'a, M, PK, Id>(
     query: &mut sqlx::QueryBuilder<'a, sqlx::Postgres>,
-    descriptor: &ModelDescriptor<M, PK>,
+    descriptor: &dyn ReadSource<M, PK>,
     filters: &[FilterExpr],
     primary_key: Option<(&'static str, Id)>,
     ctx: &CoolContext,
@@ -46,7 +48,9 @@ pub(crate) fn push_scoped_conditions<'a, M, PK, Id>(
     // Soft-delete filter: hide tombstoned rows from every read. Banks
     // treat the audit log as source of truth for what changed; this
     // just prevents deleted rows from leaking back into responses.
-    if let Some(col) = descriptor.soft_delete_column {
+    // Views always report `None` here — the view's SQL body is
+    // responsible for filtering soft-deleted source rows.
+    if let Some(col) = descriptor.soft_delete_column() {
         query.push(col).push(" IS NULL");
         wrote_clause = true;
     }
@@ -72,12 +76,12 @@ pub(crate) fn push_scoped_conditions<'a, M, PK, Id>(
     }
     let (allow, deny) = match policy_kind {
         ReadPolicyKind::List => (
-            descriptor.read_allow_policies,
-            descriptor.read_deny_policies,
+            descriptor.read_allow_policies(),
+            descriptor.read_deny_policies(),
         ),
         ReadPolicyKind::Detail => (
-            descriptor.detail_allow_policies,
-            descriptor.detail_deny_policies,
+            descriptor.detail_allow_policies(),
+            descriptor.detail_deny_policies(),
         ),
     };
     push_action_policy_query(query, allow, deny, ctx);
@@ -85,7 +89,7 @@ pub(crate) fn push_scoped_conditions<'a, M, PK, Id>(
 
 pub(crate) async fn authorize_record_action<M, PK>(
     runtime: &SqlxRuntime,
-    descriptor: &'static ModelDescriptor<M, PK>,
+    descriptor: &'static dyn ReadSource<M, PK>,
     id: PK,
     allow_policies: &[ReadPolicy],
     deny_policies: &[ReadPolicy],
@@ -97,9 +101,9 @@ where
 {
     let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT 1 FROM ");
     query
-        .push(descriptor.table_name)
+        .push(descriptor.table_name())
         .push(" WHERE ")
-        .push(descriptor.primary_key)
+        .push(descriptor.primary_key())
         .push(" = ");
     query.push_bind(id);
     query.push(" AND ");
