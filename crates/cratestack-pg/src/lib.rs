@@ -84,7 +84,7 @@ pub use cratestack_sqlx::{
     ScopedFindUnique, ScopedModelDelegate, ScopedProjectedFindMany, ScopedProjectedFindUnique,
     ScopedUpdateMany, ScopedUpdateManySet, ScopedUpdateRecord, ScopedUpdateRecordSet,
     SqlxIdempotencyStore, UpdateMany, UpdateManySet, UpdateRecord, UpdateRecordSet, ViewDelegate,
-    create_record_with_executor, update_record_with_executor,
+    ViewDelegateNoUnique, create_record_with_executor, update_record_with_executor,
 };
 pub use cratestack_sqlx::{
     MIGRATIONS_TABLE_DDL, Migration, MigrationState, MigrationStatus, apply_pending,

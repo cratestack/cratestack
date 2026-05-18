@@ -32,6 +32,7 @@ pub use delegate::{
     Aggregate, AggregateColumn, AggregateCount, CreateRecord, DeleteMany, DeleteRecord, FindMany,
     FindManyWith, FindUnique, ModelDelegate, ProjectedFindMany, ProjectedFindUnique, UpdateMany,
     UpdateManySet, UpdateRecord, UpdateRecordSet, UpsertRecord, ViewDelegate,
+    ViewDelegateNoUnique,
 };
 pub use render::{
     render_delete, render_delete_many, render_insert, render_select, render_select_by_pk,

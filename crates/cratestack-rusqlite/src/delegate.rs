@@ -34,4 +34,4 @@ pub use projected_find_unique::ProjectedFindUnique;
 pub use update::{UpdateRecord, UpdateRecordSet};
 pub use update_many::{UpdateMany, UpdateManySet};
 pub use upsert::UpsertRecord;
-pub use view::ViewDelegate;
+pub use view::{ViewDelegate, ViewDelegateNoUnique};

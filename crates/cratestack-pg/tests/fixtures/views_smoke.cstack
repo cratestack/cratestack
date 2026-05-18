@@ -22,3 +22,11 @@ view ActiveCustomer from Customer, Order {
   @@server_sql("SELECT c.id, c.email, COUNT(o.id)::int AS order_count FROM customers c LEFT JOIN orders o ON o.customer_id = c.id GROUP BY c.id, c.email")
   @@embedded_sql("SELECT c.id, c.email, COUNT(o.id) AS order_count FROM customers c LEFT JOIN orders o ON o.customer_id = c.id GROUP BY c.id, c.email")
 }
+
+view DailyRevenue from Order {
+  day DateTime
+  totalCents Int
+
+  @@server_sql("SELECT DATE_TRUNC('day', created_at) AS day, SUM(total_cents)::bigint AS total_cents FROM orders GROUP BY DATE_TRUNC('day', created_at)")
+  @@no_unique
+}

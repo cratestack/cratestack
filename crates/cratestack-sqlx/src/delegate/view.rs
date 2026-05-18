@@ -22,6 +22,12 @@ use cratestack_sql::ViewDescriptor;
 
 use crate::{FindMany, FindUnique, SqlxRuntime, sqlx};
 
+/// View delegate for views that declared an `@id` field. Exposes
+/// `find_many` + `find_unique` (and `refresh()` on materialized
+/// views). Views declared `@@no_unique` get [`ViewDelegateNoUnique`]
+/// instead, which omits `find_unique` at the type level so a call
+/// like `runtime.views().<v>().find_unique(())` is a compile error
+/// rather than a runtime "WHERE  = $1" footgun.
 #[derive(Clone, Copy)]
 pub struct ViewDelegate<'a, V: 'static, PK: 'static> {
     pub(super) runtime: &'a SqlxRuntime,
@@ -56,12 +62,9 @@ impl<'a, V: 'static, PK: 'static> ViewDelegate<'a, V, PK> {
         }
     }
 
-    /// `find_unique` is only meaningful on views that declared an
-    /// `@id` field (i.e. were not `@@no_unique`). The macro omits
-    /// this method from the generated delegate when the view opted
-    /// out of a unique key; for hand-written `ViewDelegate` callers,
-    /// `descriptor.primary_key` will be the empty string and the
-    /// resulting query will be malformed — guard at the call site.
+    /// Single-row lookup by primary key. Only available on views
+    /// with an `@id` field — `@@no_unique` views get
+    /// [`ViewDelegateNoUnique`], which doesn't expose this method.
     pub fn find_unique(&self, id: PK) -> FindUnique<'a, V, PK> {
         FindUnique {
             runtime: self.runtime,
@@ -100,5 +103,49 @@ impl<'a, V: 'static, PK: 'static> ViewDelegate<'a, V, PK> {
             .await
             .map_err(|error| CoolError::Database(error.to_string()))?;
         Ok(())
+    }
+}
+
+/// View delegate for views declared `@@no_unique`. Exposes only
+/// `find_many` — `find_unique` and `refresh()` are absent at the type
+/// level because:
+///
+/// - `find_unique` needs an `@id` field, which `@@no_unique` views
+///   opt out of (validator-enforced).
+/// - `@@materialized` + `@@no_unique` is a parse-time error
+///   (concurrent refresh requires a unique index), so a
+///   `ViewDelegateNoUnique` can never be materialized.
+///
+/// `PK` is fixed to `()` because the underlying `ViewDescriptor<V, ()>`
+/// stores an empty `primary_key` string — preventing any code path
+/// from constructing one with a real PK type.
+#[derive(Clone, Copy)]
+pub struct ViewDelegateNoUnique<'a, V: 'static> {
+    runtime: &'a SqlxRuntime,
+    descriptor: &'static ViewDescriptor<V, ()>,
+}
+
+impl<'a, V: 'static> ViewDelegateNoUnique<'a, V> {
+    pub fn new(runtime: &'a SqlxRuntime, descriptor: &'static ViewDescriptor<V, ()>) -> Self {
+        Self {
+            runtime,
+            descriptor,
+        }
+    }
+
+    pub fn descriptor(&self) -> &'static ViewDescriptor<V, ()> {
+        self.descriptor
+    }
+
+    pub fn find_many(&self) -> FindMany<'a, V, ()> {
+        FindMany {
+            runtime: self.runtime,
+            descriptor: self.descriptor,
+            filters: Vec::new(),
+            order_by: Vec::new(),
+            limit: None,
+            offset: None,
+            for_update: false,
+        }
     }
 }
