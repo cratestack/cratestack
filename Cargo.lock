@@ -987,6 +987,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "cratestack"
+version = "0.4.3"
+
+[[package]]
 name = "cratestack-axum"
 version = "0.4.3"
 dependencies = [
