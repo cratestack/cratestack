@@ -81,30 +81,43 @@ pub(super) fn build_projected_block(
             #(#include_accessors)*
         }
 
+        /// Per-arity fallback for a JSON object that omits the
+        /// projected field's key. See [`decode_projected_field`].
+        #[derive(Debug, Clone, Copy)]
+        enum MissingFieldFallback {
+            /// Required arity — missing key is a hard
+            /// `CoolError::Internal("missing field …")`.
+            Reject,
+            /// Optional arity — missing key is treated as
+            /// `Value::Null`, which serde maps to `Option::None`.
+            Null,
+            /// List arity — missing key is treated as
+            /// `Value::Array(vec![])`. Serde refuses to
+            /// deserialize `Vec<T>` from `null`, and the
+            /// `#[serde(default)]` on the model field only fires
+            /// at whole-struct deserialization time, so we have
+            /// to produce an empty JSON array explicitly.
+            EmptyArray,
+        }
+
         /// Decode one projected scalar out of a `Projected`'s JSON
         /// object.
         ///
-        /// `is_optional` switches the missing-field behaviour:
-        ///
-        /// - `false` (required arity) — a JSON object missing the
-        ///   key is a hard payload error. Callers receive
-        ///   `CoolError::Internal` and the read fails. This matches
-        ///   the original strict behaviour.
-        /// - `true` (Optional / List arity) — a missing key is
-        ///   treated as `null`. `serde_json::from_value(Null)`
-        ///   resolves `Option<T>` to `None` and (via
-        ///   `#[serde(default)]` on the model field) `Vec<T>` to
-        ///   `Vec::new()`. This is what consumers want: when a
-        ///   server adds a new optional projection field, existing
-        ///   client mocks / older responses that omit the field
-        ///   keep decoding as `None` instead of failing the whole
-        ///   round-trip with a "missing field" error.
+        /// The whole point of per-arity fallbacks is that adding a
+        /// new optional / list projection field to a server is no
+        /// longer a breaking change for clients (real or mocked)
+        /// that haven't been updated to include the field in their
+        /// payloads — the decoder degrades to `None` / `Vec::new()`
+        /// instead of failing the whole round-trip with a
+        /// "missing field" error. Required-arity strictness is
+        /// preserved so a route that forgets to project the
+        /// primary key still surfaces.
         fn decode_projected_field<T>(
             object: &::cratestack::serde_json::Map<String, ::cratestack::serde_json::Value>,
             selected: bool,
             model_name: &str,
             field_name: &str,
-            is_optional: bool,
+            fallback: MissingFieldFallback,
         ) -> Result<T, ::cratestack::CoolError>
         where
             T: ::cratestack::serde::de::DeserializeOwned,
@@ -117,10 +130,15 @@ pub(super) fn build_projected_block(
                 )));
             }
 
-            let value = match object.get(field_name).cloned() {
-                Some(value) => value,
-                None if is_optional => ::cratestack::serde_json::Value::Null,
-                None => {
+            let value = match (object.get(field_name).cloned(), fallback) {
+                (Some(value), _) => value,
+                (None, MissingFieldFallback::Null) => {
+                    ::cratestack::serde_json::Value::Null
+                }
+                (None, MissingFieldFallback::EmptyArray) => {
+                    ::cratestack::serde_json::Value::Array(::std::vec::Vec::new())
+                }
+                (None, MissingFieldFallback::Reject) => {
                     return Err(::cratestack::CoolError::Internal(format!(
                         "projected {} payload is missing field '{}'",
                         model_name,

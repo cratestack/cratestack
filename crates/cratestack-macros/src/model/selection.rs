@@ -45,18 +45,33 @@ pub(super) fn build_selected_scalar_accessors(
             let method_ident = ident(&field.name);
             let field_name = &field.name;
             let field_type = rust_type_tokens(&field.ty);
-            // Optional / List arity gets the "missing field tolerated"
-            // path in `decode_projected_field` — a JSON object that
-            // omits the key is treated as if the key were present
-            // with a `null` value, which serde then turns into `None`
-            // for `Option<T>` and `Vec::new()` for `Vec<T>` (via the
-            // `#[serde(default)]` attribute on the model struct's
-            // field). Required arity stays strict — a missing
-            // required field is a hard payload error, same as before.
-            let is_optional = matches!(
-                field.ty.arity,
-                cratestack_core::TypeArity::Optional | cratestack_core::TypeArity::List
-            );
+            // The arity drives the missing-field fallback in
+            // `decode_projected_field`. The model field's
+            // `#[serde(default)]` only applies when serde
+            // deserializes the whole struct; the per-accessor path
+            // here calls `serde_json::from_value::<T>(...)` on a
+            // bare `T`, so we have to feed serde a value it can
+            // accept for the missing case:
+            //
+            // - **Required** → no fallback. Missing key is a hard
+            //   "missing field" error so a route that forgot to
+            //   project the primary key still surfaces.
+            // - **Optional** → fallback is `null`. Serde maps
+            //   `Value::Null` into `Option::None`.
+            // - **List** → fallback is `[]`. Serde refuses to
+            //   deserialize `Vec<T>` from `null`, so we have to
+            //   produce an empty JSON array explicitly.
+            let fallback = match field.ty.arity {
+                cratestack_core::TypeArity::Optional => {
+                    quote! { MissingFieldFallback::Null }
+                }
+                cratestack_core::TypeArity::List => {
+                    quote! { MissingFieldFallback::EmptyArray }
+                }
+                cratestack_core::TypeArity::Required => {
+                    quote! { MissingFieldFallback::Reject }
+                }
+            };
             quote! {
                 #[allow(non_snake_case)]
                 pub fn #method_ident(&self) -> Result<#field_type, ::cratestack::CoolError> {
@@ -65,7 +80,7 @@ pub(super) fn build_selected_scalar_accessors(
                         self.allows_field(#field_name),
                         #model_name,
                         #field_name,
-                        #is_optional,
+                        #fallback,
                     )
                 }
             }

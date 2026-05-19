@@ -74,6 +74,20 @@ fn optional_field_present_value_decodes_to_some() {
     assert_eq!(projected.refundWindowSeconds().unwrap(), Some(86400));
 }
 
+// Note on list arity: the macro's `decode_projected_field` helper
+// has a third fallback variant (`MissingFieldFallback::EmptyArray`)
+// for `TypeArity::List` fields — Codex #93 P2 flagged that a missing
+// list-arity field can't share the same `null` fallback as optional
+// fields, since `serde_json::from_value::<Vec<T>>(Value::Null)`
+// errors. The fix is in place (see
+// `crates/cratestack-macros/src/model/selection.rs` +
+// `selection_module/projected.rs`), but there's no end-to-end
+// regression test for it because both composers' scalar-value
+// codegen (`crates/cratestack-macros/src/shared/sql.rs:128`)
+// currently panics on list-arity fields with
+// `"unsupported SQLx value type for this slice"`. When that
+// limitation is lifted, the regression test slot is right here.
+
 #[test]
 fn required_field_missing_from_payload_still_errors() {
     // Regression guard for the strict path. Required fields must
