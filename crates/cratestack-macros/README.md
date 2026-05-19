@@ -14,13 +14,16 @@ Procedural macros for compile-time schema processing.
 
 The split is **strict**: `include_server_schema!` never emits rusqlite items, `include_embedded_schema!` never emits sqlx items. Each deployment pays only for its own surface.
 
-All three are re-exported through the facade `cratestack` crate; most consumers should depend on `cratestack` rather than this crate directly. Embedded-only consumers building for `wasm32` may prefer to depend on `cratestack-macros` + `cratestack-rusqlite` directly to shed the server-side transitive deps.
+All three are re-exported through the facade crates `cratestack-pg` and `cratestack-sqlite`; most consumers should depend on one of those (renamed to `cratestack` via Cargo's `package =` field) rather than this crate directly. The choice of facade picks which side of the strict split the macro emits against — backend services use `cratestack-pg`, embedded / mobile / wasm builds use `cratestack-sqlite`.
 
 ## Installation
 
 ```toml
 [dependencies]
-cratestack = "0.3"
+# Server-side
+cratestack = { package = "cratestack-pg", version = "0.4" }
+# OR embedded-side
+# cratestack = { package = "cratestack-sqlite", version = "0.4" }
 ```
 
 ## `include_server_schema!`
@@ -45,6 +48,7 @@ The macro emits, inside a `cratestack_schema` module:
 - the `Cratestack` runtime struct with `builder(pool)`, `bind_context(ctx)`, `bind_auth(principal)`, and per-model accessors (`cool.post()`, `cool.user()`, ...)
 - `axum::model_router(cool, codec, auth_provider)` and `axum::procedure_router(...)`
 - procedure dispatch glue and `events::Subscriptions` for `@@emit` model events
+- for each `view` block: a typed struct, `<UPPER>_VIEW: ViewDescriptor<...>` const, `sqlx::FromRow<PgRow>` impl, and an accessor on `cool.views().<view_snake>()` returning `ViewDelegate` (or `ViewDelegateNoUnique` for `@@no_unique` views). `@@materialized` views also get a `refresh()` method. See [ADR-0003](https://cratestack.dev/internals/views-adr).
 
 ## `include_embedded_schema!`
 
@@ -69,6 +73,7 @@ The macro emits:
 - `ModelDescriptor` constants (needed by `ModelDelegate`)
 - `Create<Model>Input` / `Update<Model>Input` with `CreateModelInput` / `UpdateModelInput` impls
 - per-model filter helper modules
+- for each non-`@@materialized` `view` block: a typed struct, `<UPPER>_VIEW: ViewDescriptor<...>` const, and `cratestack_rusqlite::FromRusqliteRow` impl. `@@materialized` views are rejected at expansion time with a `compile_error!` referencing [ADR-0003](https://cratestack.dev/internals/views-adr) — SQLite has no materialized views.
 
 It **does not** emit: `sqlx::FromRow`, the `Cratestack` server runtime, axum routes, procedure handlers, or events. Policies (`@@allow` / `@@deny`) are silently dropped — clients are untrusted; authorization is the server's job.
 

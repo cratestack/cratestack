@@ -51,6 +51,92 @@ wrapper), which was the more central, user-facing meaning of the name.
 release. Macro-emitted code now references the new name, so most
 codebases will see no source-level impact.
 
+### New: SQL views (ADR-0003)
+
+A new `view` block in `.cstack` declares a read-only, SQL-defined
+projection over one or more existing `model` blocks. Views generate
+a typed Rust struct, a read-only delegate, and `CREATE VIEW` DDL
+during migration generation, with the same `@@allow` policy
+enforcement models get.
+
+```cstack
+view ActiveCustomer from Customer, Order {
+  id          Int       @id  @from(Customer.id)
+  email       String         @from(Customer.email)
+  orderCount  Int
+
+  @@server_sql("""
+    SELECT c.id, c.email, COUNT(o.id)::int AS order_count
+    FROM   customers c
+    LEFT JOIN orders o ON o.customer_id = c.id
+    GROUP  BY c.id, c.email
+  """)
+  @@embedded_sql("""
+    SELECT c.id, c.email, COUNT(o.id) AS order_count
+    FROM   customers c
+    LEFT JOIN orders o ON o.customer_id = c.id
+    GROUP  BY c.id, c.email
+  """)
+
+  @@allow("read", auth() != null)
+}
+```
+
+```rust
+let cool = cratestack_schema::Cratestack::builder(pool).build();
+let rows = cool.views().active_customer().find_many().run(&ctx).await?;
+```
+
+#### Capabilities
+
+* **Both backends.** `@@server_sql` runs against Postgres; `@@embedded_sql`
+  runs against SQLite. The `@@sql` shorthand applies to both with a
+  cargo warning that portability is the developer's problem.
+* **Materialized views (server only).** `@@materialized` emits
+  `CREATE MATERIALIZED VIEW` + `CREATE UNIQUE INDEX <name>_pkey ON
+  <name> (<id>)` and produces a `refresh()` method on the delegate
+  that runs `REFRESH MATERIALIZED VIEW CONCURRENTLY`. Embedded
+  builds with a `@@materialized` view hard-error at macro expansion
+  time — SQLite has no materialized views.
+* **Type-level read-only.** `ViewDescriptor` does not implement
+  `WriteSource`, so the bound on `CreateRecord` / `UpdateRecord` /
+  `DeleteRecord` / `UpsertModelInput` simply fails to hold — there
+  is no runtime check, the type system refuses.
+* **`@@no_unique` gets its own delegate.** Views declared
+  `@@no_unique` return a separate `ViewDelegateNoUnique<V>` type
+  that omits `find_unique` (and `refresh()`) at the type level, so
+  a call like `runtime.views().<v>().find_unique(())` is a compile
+  error rather than a runtime `WHERE  = $1` footgun.
+* **Migration ordering is automatic.** `cratestack-migrate` lands
+  `DROP VIEW` ops before column / table drops the view referenced
+  and `CREATE VIEW` ops after the matching column / table adds, so
+  body changes that overlap with column changes still apply
+  correctly. Body changes are modelled as `Drop + Create` (not
+  `CREATE OR REPLACE VIEW`) to preserve that ordering invariant.
+* **Policy enforcement is the same machinery models use.**
+  `@@allow("read", expr)` lowers into the same `ReadPolicy` array
+  consumed by `push_scoped_conditions`. Only the `"read"` action
+  is accepted; any other action is a parse error.
+
+Landed end-to-end across eight PRs:
+[#84](https://github.com/cratestack/cratestack/pull/84) (parser + IR +
+validator),
+[#85](https://github.com/cratestack/cratestack/pull/85) (`ReadSource`
+/ `WriteSource` traits + `ViewDescriptor`),
+[#86](https://github.com/cratestack/cratestack/pull/86) (polymorphic
+read helpers),
+[#87](https://github.com/cratestack/cratestack/pull/87) (generic
+read builders + `ViewDelegate`),
+[#88](https://github.com/cratestack/cratestack/pull/88) (macro
+emission + `runtime.views()` accessor),
+[#89](https://github.com/cratestack/cratestack/pull/89) (migrate IR +
+diff + per-backend DDL),
+[#90](https://github.com/cratestack/cratestack/pull/90) (policy
+lowering),
+[#91](https://github.com/cratestack/cratestack/pull/91) (integration
+tests vs real Postgres + SQLite). ADR-0003 is `Accepted` in the docs
+repo (`cratestack-docs` [#21](https://github.com/cratestack/cratestack-docs/pull/21)).
+
 ### Cleanup
 
 * `cratestack-macros` no longer emits selection / projection helpers

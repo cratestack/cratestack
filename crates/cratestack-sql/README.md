@@ -12,7 +12,7 @@ Most users do not depend on this crate directly — it is reached transitively t
 
 ```toml
 [dependencies]
-cratestack-sql = "0.2.2"
+cratestack-sql = "0.4"
 ```
 
 ## Scalar Values
@@ -86,6 +86,17 @@ pub enum SortDirection { Asc, Desc }
 let desc = &cratestack_schema::USER_MODEL; // &'static ModelDescriptor<User, UserPk>
 println!("table = {}", desc.table_name);
 ```
+
+## View Descriptor + ReadSource trait (0.4+)
+
+`ViewDescriptor<V, PK>` is the read-only sibling of `ModelDescriptor` generated for each `view` block. It carries the same shape minus write-side metadata, plus two view-specific fields:
+
+- `is_materialized` — toggles the macro-generated `refresh()` method on `ViewDelegate` and tells migrations to emit `CREATE MATERIALIZED VIEW`.
+- `source_tables` — drives migration ordering so view creates land after their source tables (and column adds) and view drops land before them.
+
+Both descriptors implement the **`ReadSource<M, PK>`** trait — schema name, table/view name, columns, primary key, allowed fields/sorts, read+detail policy slots, optional soft-delete column. Every read-path builder in `cratestack-sqlx` and `cratestack-rusqlite` (`FindMany`, `FindUnique`, `Aggregate`, projected variants, plus the `push_scoped_conditions` and `render_select` helpers) is generic over `ReadSource<M, PK>`, which is what lets a single set of query builders serve both model and view reads.
+
+Only `ModelDescriptor` implements the additional **`WriteSource`** supertrait. `ViewDescriptor` deliberately does not — so write builders (`CreateRecord`, `UpdateRecord`, `DeleteRecord`, `UpsertModelInput`) refuse to accept a view at the type level. See [ADR-0003](https://cratestack.dev/internals/views-adr) for the rationale.
 
 ## See Also
 

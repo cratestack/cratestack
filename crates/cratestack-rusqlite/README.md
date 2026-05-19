@@ -19,16 +19,24 @@ The architecture is "Rust as real frontend, UI layer is UI only": Rust owns stat
 
 ```toml
 [dependencies]
-cratestack-rusqlite = "0.3"
-cratestack-macros = "0.3"  # for include_embedded_schema!
+cratestack-rusqlite = "0.4"
+cratestack-macros = "0.4"  # for include_embedded_schema!
 ```
 
-Or via the facade crate (recommended when sharing schema with the server):
+Or via the [`cratestack-sqlite`](../cratestack-sqlite) facade
+(recommended when sharing schema with the server) — renamed to
+`cratestack` via Cargo's `package =` field:
 
 ```toml
 [dependencies]
-cratestack = "0.3"
+cratestack = { package = "cratestack-sqlite", version = "0.4" }
 ```
+
+## View delegates
+
+Since 0.4, `view` blocks ([ADR-0003](https://cratestack.dev/internals/views-adr)) get a `ViewDelegate<'_, V, PK>` on the embedded path too. The delegate exposes `find_many` + `find_unique` against an on-device `CREATE VIEW`. Views declared `@@no_unique` get a separate `ViewDelegateNoUnique<V>` that omits `find_unique` at the type level.
+
+`@@materialized` is **not** available here — the macro's embedded composer hard-errors at expansion time. SQLite has no materialized views; the right move is to gate the schema with a feature flag or split it into a server-only schema.
 
 ### Building for the browser (`wasm32-unknown-unknown`)
 

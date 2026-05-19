@@ -33,6 +33,7 @@ What the current slice covers, across those three shapes:
 * a standalone `.cstack` language server (`tower-lsp-server` 0.23) and VS Code extension package
 * Studio scaffold generation for one or more schemas
 * mixin declarations and model `@use(...)` expansion
+* **SQL views** (`view <Name> from <Model>, ...`) — read-only, SQL-defined projections over one or more models on both backends; server-side `@@materialized` with `refresh()` via `REFRESH MATERIALIZED VIEW CONCURRENTLY`; same `@@allow("read", …)` policy machinery models use ([ADR-0003](https://cratestack.dev/internals/views-adr))
 
 ## Support Matrix
 
@@ -47,12 +48,14 @@ What the current slice covers, across those three shapes:
 | `procedure` / `mutation procedure` | Supported | Typed args + return type |
 | `mcp` | Supported | Parsed as config block |
 | `@use(...)` on model | Supported | Expands mixin fields before validation; model-local fields win name conflicts |
+| `view` | Supported | Read-only SQL-defined projection over one or more models. `@@server_sql` / `@@embedded_sql` / `@@sql` for the body, `@@materialized` (server-only) for cached views with `refresh()`, `@@no_unique` for views without a natural primary key, `@@allow("read", …)` enforced. See [ADR-0003](https://cratestack.dev/internals/views-adr). |
 
 ## Workspace
 
 The Rust workspace contains these main packages:
 
-* `cratestack`: public facade crate and proc-macro re-exports
+* `cratestack-pg`: server-side facade — sqlx (Postgres) + axum + generated Rust client runtime + the shared schema surface. Picked via `cratestack = { package = "cratestack-pg" }`.
+* `cratestack-sqlite`: embedded facade — rusqlite (SQLite on native + `wasm32`) + the shared schema surface. Picked via `cratestack = { package = "cratestack-sqlite" }`. Also re-exports `cratestack-client-rust` on native targets so hybrid consumers (NAPI / Tauri shells) can call `include_client_schema!` alongside `include_embedded_schema!`.
 * `cratestack-core`: shared metadata, auth context, codec, error, and envelope types
 * `cratestack-parser`: `.cstack` parser and semantic checker
 * `cratestack-policy`: canonical policy literals, predicates, and procedure-policy evaluation types

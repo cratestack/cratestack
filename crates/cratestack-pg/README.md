@@ -33,6 +33,18 @@ Then in code:
 cratestack::include_server_schema!("schema/foo.cstack", db = Postgres);
 ```
 
+## SQL views
+
+This facade re-exports `ViewDelegate` and `ViewDelegateNoUnique` — the
+read-only delegates handed out by `runtime.views().<view_snake>()`
+for every `view` block in the schema. `ViewDelegate` exposes
+`find_many` + `find_unique` and, on `@@materialized` views, a
+`refresh()` method that runs `REFRESH MATERIALIZED VIEW CONCURRENTLY`.
+`ViewDelegateNoUnique` (for `@@no_unique` views) exposes only
+`find_many` — `find_unique` and `refresh()` are absent at the type
+level. See [the Views reference](https://cratestack.dev/reference/views)
+and [ADR-0003](https://cratestack.dev/internals/views-adr).
+
 ## Features
 
 - `decimal-rust-decimal` *(default)* — `Decimal` columns use `rust_decimal`.

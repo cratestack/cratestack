@@ -4,19 +4,37 @@ SQLx-backed Postgres runtime and delegate primitives for CrateStack models.
 
 ## Overview
 
-`cratestack-sqlx` is the server-side database layer. `include_server_schema!` generates one delegate per model, plus migration helpers, audit DDL, idempotency-store DDL, optimistic-locking support, and transaction-isolation helpers — all backed by SQLx + PostgreSQL.
+`cratestack-sqlx` is the server-side database layer. `include_server_schema!` generates one delegate per model, plus migration helpers, audit DDL, idempotency-store DDL, optimistic-locking support, transaction-isolation helpers, and — since 0.4 — a `ViewDelegate` per `view` block. All of it is backed by SQLx + PostgreSQL.
 
 ## Installation
 
 ```toml
 [dependencies]
-cratestack-sqlx = "0.2.2"
+cratestack-sqlx = "0.4"
 sqlx = { version = "0.8", default-features = false, features = [
     "runtime-tokio-rustls", "postgres", "chrono", "uuid", "json", "macros",
 ] }
 ```
 
-Most users depend on the umbrella `cratestack` crate instead, which re-exports the entire surface.
+Most users depend on the [`cratestack-pg`](../cratestack-pg) facade instead (renamed to `cratestack` via Cargo's `package =` field), which re-exports the entire surface.
+
+## View delegates
+
+`view` blocks ([ADR-0003](https://cratestack.dev/internals/views-adr)) get a `ViewDelegate<'_, V, PK>` exposed at `runtime.views().<view_snake>()`. The delegate is read-only at the type level — `ViewDescriptor` doesn't implement the `WriteSource` trait that powers `CreateRecord` / `UpdateRecord` / `DeleteRecord`, so the bound on those builders simply doesn't hold.
+
+```rust
+let cool = cratestack_schema::Cratestack::builder(pool).build();
+
+// Same FindMany / FindUnique builders models use — `ReadSource` makes
+// them polymorphic across `ModelDescriptor` and `ViewDescriptor`.
+let rows = cool.views().active_customer().find_many().run(&ctx).await?;
+
+// Materialized views also expose `refresh()` →
+// `REFRESH MATERIALIZED VIEW CONCURRENTLY <name>`.
+cool.views().account_balance().refresh().await?;
+```
+
+Views declared `@@no_unique` get a separate `ViewDelegateNoUnique<V>` that omits `find_unique` and `refresh()` at the type level.
 
 ## Delegate Usage
 
