@@ -35,9 +35,18 @@ jobs:
         # GTK system packages on the Ubuntu runner. Example crates are
         # applications, not libraries — their rustdoc isn't useful on
         # the docs site, so we just skip them.
+        #
+        # The published `cratestack/` rustdoc namespace comes from
+        # `cratestack-pg` (the server facade), since pg and sqlite
+        # both set `[lib] name = "cratestack"` and would collide if
+        # built together — the docs site lands users on the server
+        # surface, which is the broader of the two. The sqlite facade
+        # is intentionally skipped here; consumers depending on it
+        # read the same crate-level docs via `cratestack-sqlite` on
+        # docs.rs.
         run: |
           cargo doc --no-deps \
-            -p cratestack \
+            -p cratestack-pg \
             -p cratestack-axum \
             -p cratestack-cli \
             -p cratestack-client-dart \
