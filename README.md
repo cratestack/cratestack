@@ -48,7 +48,7 @@ What the current slice covers, across those three shapes:
 | `procedure` / `mutation procedure` | Supported | Typed args + return type |
 | `mcp` | Supported | Parsed as config block |
 | `@use(...)` on model | Supported | Expands mixin fields before validation; model-local fields win name conflicts |
-| `view` | Supported | Read-only SQL-defined projection over one or more models. `@@server_sql` / `@@embedded_sql` / `@@sql` for the body, `@@materialized` (server-only) for cached views with `refresh()`, `@@no_unique` for views without a natural primary key, `@@allow("read", …)` enforced. See [ADR-0003](https://cratestack.dev/internals/views-adr). |
+| `view` | Supported | Read-only SQL-defined projection over one or more models. `@@server_sql` / `@@embedded_sql` / `@@sql` for the body, `@@materialized` (server-only) for cached views with `refresh()`, `@@no_unique` for views without a natural primary key. `@@allow("read", …)` is enforced on the server backend only — same scope as model policies, which the embedded rusqlite path also doesn't enforce (clients are untrusted; authorization is the server's job). See [ADR-0003](https://cratestack.dev/internals/views-adr). |
 
 ## Workspace
 
