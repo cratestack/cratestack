@@ -59,7 +59,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.4.0"
+version = "0.4.2"
 edition = "2024"
 license = "MIT"
 description = "Rust-native schema-first framework for typed HTTP APIs, generated clients, and backend services."
@@ -83,28 +83,28 @@ minicbor = "2.2.1"
 minicbor-serde = { version = "0.6.2", features = ["std"] }
 chrono = { version = "0", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
-cratestack-axum = { path = "crates/cratestack-axum", version = "0.4.0" }
-cratestack-client-dart = { path = "crates/cratestack-client-dart", version = "0.4.0" }
-cratestack-client-flutter = { path = "crates/cratestack-client-flutter", version = "0.4.0" }
-cratestack-client-typescript = { path = "crates/cratestack-client-typescript", version = "0.4.0" }
-cratestack-client-store-redis = { path = "crates/cratestack-client-store-redis", version = "0.4.0" }
-cratestack-client-rust = { path = "crates/cratestack-client-rust", version = "0.4.0", default-features = false }
-cratestack-client-store-sqlite = { path = "crates/cratestack-client-store-sqlite", version = "0.4.0" }
-cratestack-codec-cbor = { path = "crates/cratestack-codec-cbor", version = "0.4.0" }
-cratestack-codec-json = { path = "crates/cratestack-codec-json", version = "0.4.0" }
-cratestack-core = { path = "crates/cratestack-core", version = "0.4.0" }
-cratestack-macros = { path = "crates/cratestack-macros", version = "0.4.0" }
-cratestack-migrate = { path = "crates/cratestack-migrate", version = "0.4.0" }
-cratestack-parser = { path = "crates/cratestack-parser", version = "0.4.0" }
-cratestack-pg = { path = "crates/cratestack-pg", version = "0.4.0" }
-cratestack-policy = { path = "crates/cratestack-policy", version = "0.4.0" }
-cratestack-redis = { path = "crates/cratestack-redis", version = "0.4.0" }
-cratestack-rusqlite = { path = "crates/cratestack-rusqlite", version = "0.4.0" }
-cratestack-sql = { path = "crates/cratestack-sql", version = "0.4.0" }
-cratestack-sqlite = { path = "crates/cratestack-sqlite", version = "0.4.0" }
-cratestack-sqlx = { path = "crates/cratestack-sqlx", version = "0.4.0" }
-cratestack-studio = { path = "crates/cratestack-studio", version = "0.4.0" }
-cratestack-studio-generator = { path = "crates/cratestack-studio-generator", version = "0.4.0" }
+cratestack-axum = { path = "crates/cratestack-axum", version = "0.4.2" }
+cratestack-client-dart = { path = "crates/cratestack-client-dart", version = "0.4.2" }
+cratestack-client-flutter = { path = "crates/cratestack-client-flutter", version = "0.4.2" }
+cratestack-client-typescript = { path = "crates/cratestack-client-typescript", version = "0.4.2" }
+cratestack-client-store-redis = { path = "crates/cratestack-client-store-redis", version = "0.4.2" }
+cratestack-client-rust = { path = "crates/cratestack-client-rust", version = "0.4.2", default-features = false }
+cratestack-client-store-sqlite = { path = "crates/cratestack-client-store-sqlite", version = "0.4.2" }
+cratestack-codec-cbor = { path = "crates/cratestack-codec-cbor", version = "0.4.2" }
+cratestack-codec-json = { path = "crates/cratestack-codec-json", version = "0.4.2" }
+cratestack-core = { path = "crates/cratestack-core", version = "0.4.2" }
+cratestack-macros = { path = "crates/cratestack-macros", version = "0.4.2" }
+cratestack-migrate = { path = "crates/cratestack-migrate", version = "0.4.2" }
+cratestack-parser = { path = "crates/cratestack-parser", version = "0.4.2" }
+cratestack-pg = { path = "crates/cratestack-pg", version = "0.4.2" }
+cratestack-policy = { path = "crates/cratestack-policy", version = "0.4.2" }
+cratestack-redis = { path = "crates/cratestack-redis", version = "0.4.2" }
+cratestack-rusqlite = { path = "crates/cratestack-rusqlite", version = "0.4.2" }
+cratestack-sql = { path = "crates/cratestack-sql", version = "0.4.2" }
+cratestack-sqlite = { path = "crates/cratestack-sqlite", version = "0.4.2" }
+cratestack-sqlx = { path = "crates/cratestack-sqlx", version = "0.4.2" }
+cratestack-studio = { path = "crates/cratestack-studio", version = "0.4.2" }
+cratestack-studio-generator = { path = "crates/cratestack-studio-generator", version = "0.4.2" }
 minijinja = "2"
 reqwest = { version = "0", default-features = false, features = ["rustls-tls", "stream"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }

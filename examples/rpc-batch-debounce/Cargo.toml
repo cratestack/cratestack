@@ -10,9 +10,9 @@ name = "rpc-batch-debounce-demo"
 path = "src/main.rs"
 
 [dependencies]
-cratestack = { package = "cratestack-pg", path = "../../crates/cratestack-pg", version = "0.4.0" }
-cratestack-codec-cbor = { path = "../../crates/cratestack-codec-cbor", version = "0.4.0" }
-cratestack-codec-json = { path = "../../crates/cratestack-codec-json", version = "0.4.0" }
+cratestack = { package = "cratestack-pg", path = "../../crates/cratestack-pg", version = "0.4.2" }
+cratestack-codec-cbor = { path = "../../crates/cratestack-codec-cbor", version = "0.4.2" }
+cratestack-codec-json = { path = "../../crates/cratestack-codec-json", version = "0.4.2" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time"] }
