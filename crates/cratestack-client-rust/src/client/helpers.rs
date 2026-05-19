@@ -1,10 +1,16 @@
+#[cfg(feature = "codec-json")]
 use cratestack_core::SelectionQuery;
 use reqwest::Url;
 use reqwest::header::HeaderMap;
 
-use crate::error::{ClientError, QueryPair};
+use crate::error::ClientError;
+#[cfg(feature = "codec-json")]
+use crate::error::QueryPair;
 use crate::runtime::wire::RuntimeHeader;
 
+// Only called from `client/views.rs`, whose method bodies are
+// themselves gated on `codec-json`.
+#[cfg(feature = "codec-json")]
 pub(crate) fn canonical_query_from_selection(
     selection: &SelectionQuery,
     extra_query: &[QueryPair<'_>],

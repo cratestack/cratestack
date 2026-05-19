@@ -38,7 +38,10 @@ decimal-bigdecimal = [
 # (`default-features = false`) on backend services that speak only CBOR
 # on the wire and want to drop the `serde_json`-shaped client surface.
 # Note: disabling this also disables the projection-view client methods
-# (`get_view` / `list_view` / `list_view_paged`), which are JSON-only.
+# (`get_view` / `list_view` / `list_view_paged`); their signatures
+# stay so generated `<Model>Client` types still compile, but the
+# bodies refuse with `ClientError::BadInput` — the server projection
+# routes are JSON-only today, so a CBOR-only build cannot use them.
 codec-json = ["cratestack-client-rust/codec-json"]
 # Replace the default `ring`-backed rustls provider with `aws-lc-rs`, which
 # is the only provider with current FIPS 140-3 validation among the
