@@ -19,6 +19,13 @@ categories.workspace = true
 # rationale and migration guide.
 [lib]
 path = "src/lib.rs"
+# This crate's README is illustrative prose — it shows the snippet a
+# downstream consumer would write once they've pulled in
+# `cratestack-pg` via `package =`. The vitrine itself exports
+# nothing, so the snippet would never compile against it. Disable
+# doctests so `cargo test -p cratestack` (and the release recipe)
+# doesn't try.
+doctest = false
 
 [dependencies]
 
