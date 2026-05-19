@@ -81,11 +81,30 @@ pub(super) fn build_projected_block(
             #(#include_accessors)*
         }
 
+        /// Decode one projected scalar out of a `Projected`'s JSON
+        /// object.
+        ///
+        /// `is_optional` switches the missing-field behaviour:
+        ///
+        /// - `false` (required arity) — a JSON object missing the
+        ///   key is a hard payload error. Callers receive
+        ///   `CoolError::Internal` and the read fails. This matches
+        ///   the original strict behaviour.
+        /// - `true` (Optional / List arity) — a missing key is
+        ///   treated as `null`. `serde_json::from_value(Null)`
+        ///   resolves `Option<T>` to `None` and (via
+        ///   `#[serde(default)]` on the model field) `Vec<T>` to
+        ///   `Vec::new()`. This is what consumers want: when a
+        ///   server adds a new optional projection field, existing
+        ///   client mocks / older responses that omit the field
+        ///   keep decoding as `None` instead of failing the whole
+        ///   round-trip with a "missing field" error.
         fn decode_projected_field<T>(
             object: &::cratestack::serde_json::Map<String, ::cratestack::serde_json::Value>,
             selected: bool,
             model_name: &str,
             field_name: &str,
+            is_optional: bool,
         ) -> Result<T, ::cratestack::CoolError>
         where
             T: ::cratestack::serde::de::DeserializeOwned,
@@ -98,13 +117,17 @@ pub(super) fn build_projected_block(
                 )));
             }
 
-            let value = object.get(field_name).cloned().ok_or_else(|| {
-                ::cratestack::CoolError::Internal(format!(
-                    "projected {} payload is missing field '{}'",
-                    model_name,
-                    field_name,
-                ))
-            })?;
+            let value = match object.get(field_name).cloned() {
+                Some(value) => value,
+                None if is_optional => ::cratestack::serde_json::Value::Null,
+                None => {
+                    return Err(::cratestack::CoolError::Internal(format!(
+                        "projected {} payload is missing field '{}'",
+                        model_name,
+                        field_name,
+                    )));
+                }
+            };
 
             ::cratestack::serde_json::from_value(value).map_err(|error| {
                 ::cratestack::CoolError::Internal(format!(

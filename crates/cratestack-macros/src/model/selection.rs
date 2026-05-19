@@ -45,6 +45,18 @@ pub(super) fn build_selected_scalar_accessors(
             let method_ident = ident(&field.name);
             let field_name = &field.name;
             let field_type = rust_type_tokens(&field.ty);
+            // Optional / List arity gets the "missing field tolerated"
+            // path in `decode_projected_field` — a JSON object that
+            // omits the key is treated as if the key were present
+            // with a `null` value, which serde then turns into `None`
+            // for `Option<T>` and `Vec::new()` for `Vec<T>` (via the
+            // `#[serde(default)]` attribute on the model struct's
+            // field). Required arity stays strict — a missing
+            // required field is a hard payload error, same as before.
+            let is_optional = matches!(
+                field.ty.arity,
+                cratestack_core::TypeArity::Optional | cratestack_core::TypeArity::List
+            );
             quote! {
                 #[allow(non_snake_case)]
                 pub fn #method_ident(&self) -> Result<#field_type, ::cratestack::CoolError> {
@@ -53,6 +65,7 @@ pub(super) fn build_selected_scalar_accessors(
                         self.allows_field(#field_name),
                         #model_name,
                         #field_name,
+                        #is_optional,
                     )
                 }
             }
