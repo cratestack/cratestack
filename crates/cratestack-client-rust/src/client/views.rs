@@ -1,3 +1,13 @@
+// `get_view` / `list_view` / `list_view_paged` are projection-view
+// reads. The server projection routes always respond with JSON
+// (the `?select=…` shape isn't currently exposed over CBOR), so
+// these methods hard-require `JsonCodec` and the whole impl is
+// gated on the `codec-json` feature. Disabling `codec-json`
+// drops the projection-view client surface; plain model reads
+// keep working over whichever codec the client was constructed
+// with.
+#![cfg(feature = "codec-json")]
+
 use cratestack_codec_json::JsonCodec;
 use cratestack_core::{CoolCodec, Page, ProjectionDecoder};
 use reqwest::Method;

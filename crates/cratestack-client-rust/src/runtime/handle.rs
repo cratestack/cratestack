@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use cratestack_codec_cbor::CborCodec;
+#[cfg(feature = "codec-json")]
 use cratestack_codec_json::JsonCodec;
 use reqwest::Url;
 
@@ -49,10 +50,25 @@ impl RuntimeHandle {
                 CratestackClient::new(ClientConfig::new(base_url.clone()), CborCodec)
                     .with_state_store(state_store.clone()),
             ),
+            #[cfg(feature = "codec-json")]
             RuntimeCodecConfig::Json => RuntimeTransportClient::Json(
                 CratestackClient::new(ClientConfig::new(base_url), JsonCodec)
                     .with_state_store(state_store),
             ),
+            #[cfg(not(feature = "codec-json"))]
+            RuntimeCodecConfig::Json => {
+                let _ = state_store;
+                return Err(RuntimeErrorWire {
+                    code: RuntimeErrorCode::BadInput,
+                    http_status: None,
+                    message: "JSON codec is not compiled in (cratestack-client-rust built \
+                              with `--no-default-features` or without the `codec-json` \
+                              feature)"
+                        .to_owned(),
+                    remote_code: None,
+                    remote_body: None,
+                });
+            }
         };
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()

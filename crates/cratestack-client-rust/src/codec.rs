@@ -1,4 +1,5 @@
 use cratestack_codec_cbor::CborCodec;
+#[cfg(feature = "codec-json")]
 use cratestack_codec_json::JsonCodec;
 use cratestack_core::{CoolCodec, CoolError};
 use serde::de::DeserializeOwned;
@@ -25,11 +26,30 @@ pub trait HttpClientCodec: CoolCodec {
 
 impl HttpClientCodec for CborCodec {
     fn accept_header_value(&self) -> &'static str {
-        "application/cbor, application/json"
+        // With `codec-json` disabled the client cannot actually
+        // decode a JSON response — drop it from the Accept header
+        // so a server with content negotiation chooses CBOR (or
+        // fails on no acceptable representation) rather than
+        // sending JSON the client will then error on.
+        #[cfg(feature = "codec-json")]
+        {
+            "application/cbor, application/json"
+        }
+        #[cfg(not(feature = "codec-json"))]
+        {
+            "application/cbor"
+        }
     }
 
     fn sequence_accept_header_value(&self) -> &'static str {
-        "application/cbor-seq, application/cbor, application/json"
+        #[cfg(feature = "codec-json")]
+        {
+            "application/cbor-seq, application/cbor, application/json"
+        }
+        #[cfg(not(feature = "codec-json"))]
+        {
+            "application/cbor-seq, application/cbor"
+        }
     }
 
     fn decode_response<T>(&self, content_type: &str, body: &[u8]) -> Result<T, CoolError>
@@ -38,9 +58,11 @@ impl HttpClientCodec for CborCodec {
     {
         if media_type_matches(content_type, CborCodec::CONTENT_TYPE) {
             self.decode(body)
-        } else if media_type_matches(content_type, JsonCodec::CONTENT_TYPE) {
-            JsonCodec.decode(body)
         } else {
+            #[cfg(feature = "codec-json")]
+            if media_type_matches(content_type, JsonCodec::CONTENT_TYPE) {
+                return JsonCodec.decode(body);
+            }
             Err(CoolError::Codec(format!(
                 "unsupported response Content-Type {content_type}"
             )))
@@ -59,9 +81,11 @@ impl HttpClientCodec for CborCodec {
             decode_cbor_sequence(body)
         } else if media_type_matches(content_type, CborCodec::CONTENT_TYPE) {
             self.decode(body)
-        } else if media_type_matches(content_type, JsonCodec::CONTENT_TYPE) {
-            JsonCodec.decode(body)
         } else {
+            #[cfg(feature = "codec-json")]
+            if media_type_matches(content_type, JsonCodec::CONTENT_TYPE) {
+                return JsonCodec.decode(body);
+            }
             Err(CoolError::Codec(format!(
                 "unsupported response Content-Type {content_type}"
             )))
@@ -69,6 +93,7 @@ impl HttpClientCodec for CborCodec {
     }
 }
 
+#[cfg(feature = "codec-json")]
 impl HttpClientCodec for JsonCodec {
     fn accept_header_value(&self) -> &'static str {
         "application/json, application/cbor"

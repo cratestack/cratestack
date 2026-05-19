@@ -21,7 +21,7 @@ name = "cratestack"
 path = "src/lib.rs"
 
 [features]
-default = ["decimal-rust-decimal"]
+default = ["decimal-rust-decimal", "codec-json"]
 decimal-rust-decimal = [
     "cratestack-core/decimal-rust-decimal",
     "cratestack-rusqlite/decimal-rust-decimal",
@@ -30,6 +30,10 @@ decimal-bigdecimal = [
     "cratestack-core/decimal-bigdecimal",
     "cratestack-rusqlite/decimal-bigdecimal",
 ]
+# Forwards the JSON codec to the generated client runtime. See
+# `cratestack-pg` for rationale. On `wasm32` the client runtime isn't
+# linked (no `reqwest`), so this feature has no effect there.
+codec-json = ["cratestack-client-rust/codec-json"]
 
 [dependencies]
 chrono.workspace = true

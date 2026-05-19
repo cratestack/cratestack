@@ -12,11 +12,22 @@ readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 
+[features]
+# CBOR is the framework's default backend-to-backend transport and
+# is the type the schema macro emits as the default codec parameter
+# (`pub struct Client<C = CborCodec>`), so it is **not** opt-out.
+# Only `JsonCodec` is feature-gated — it is useful for debugging
+# and content-negotiation fallback but production deployments that
+# treat JSON as a misconfiguration may want to disable it so a
+# stray `application/json` response surfaces as a hard codec error.
+default = ["codec-json"]
+codec-json = ["dep:cratestack-codec-json"]
+
 [dependencies]
 bytes.workspace = true
 chrono.workspace = true
 cratestack-codec-cbor.workspace = true
-cratestack-codec-json.workspace = true
+cratestack-codec-json = { workspace = true, optional = true }
 cratestack-core.workspace = true
 futures-util.workspace = true
 minicbor.workspace = true

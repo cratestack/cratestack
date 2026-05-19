@@ -1,6 +1,7 @@
 use cratestack_core::CoolErrorResponse;
 use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
+#[cfg(feature = "codec-json")]
 use serde_json::Value as JsonValue;
 
 use crate::codec::{
@@ -49,6 +50,9 @@ where
     }
 }
 
+// Used only by `client/views.rs`, which is itself gated on the
+// `codec-json` feature.
+#[cfg(feature = "codec-json")]
 pub(crate) fn decode_json_value_response<C>(
     codec: &C,
     response: &RuntimeResponseWire,
