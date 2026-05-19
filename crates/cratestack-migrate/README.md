@@ -33,7 +33,8 @@ The crate ships these surfaces:
 - **IR** (`ir::Op`) — CreateTable / DropTable / Add+Drop Column /
   Add+Drop Index / AlterColumn (type/nullability/default) /
   Rename Table+Column / CreateEnum / AlterEnumAddVariant / DropEnum /
-  AddCheck / DropCheck.
+  AddCheck / DropCheck / CreateView / DropView / ReplaceView /
+  CreateMaterializedView / DropMaterializedView.
 - **Emitters** (`emit::postgres`, `emit::sqlite`) — render the IR
   to per-dialect SQL with up/down bodies, has_lossy /
   has_blocking flags, and explicit error stubs for destructive
@@ -60,12 +61,37 @@ specific to this crate are:
   an ephemeral Postgres / SQLite and compare to the snapshot.
 - `cratestack migrate drift` — introspect a live database and
   report differences from the snapshot.
-- View IR ops (`CreateView` / `ReplaceView` / `DropView`,
-  `CreateMaterializedView` / `DropMaterializedView`). The view
-  block ([ADR 0003]) needs parser, AST, validator, and macro work
-  before these ops have anything to consume.
 - `DropEnumVariant` — needs the Postgres swap-dance and a backfill
   plan for referencing rows.
+
+### View diff ordering
+
+`view` blocks ([ADR 0003]) ship with the rest of the IR. The
+diff engine projects views using the SQL body that matches the
+schema's `datasource.provider` (`@@server_sql` on postgresql,
+`@@embedded_sql` on sqlite), then interleaves view ops with the
+rest of the migration:
+
+- **View drops flush before column / table drops** — Postgres
+  refuses to drop a column or table that still has a dependent
+  view referencing it, so any view that touches a soon-to-be-
+  dropped surface has to go first.
+- **View creates flush after column / table creates** — source
+  tables and any new columns the view body references have to
+  exist before the view definition is parsed.
+
+Body changes are modelled as `Drop + Create` rather than
+`CREATE OR REPLACE VIEW` so the ordering works regardless of
+which column ops the same migration includes. Within a Postgres
+migration transaction other connections never observe the
+transient missing-view state, so the atomicity loss has no
+externally visible effect. The `ReplaceView` IR op is preserved
+for hand-constructed callers; the diff engine no longer emits it.
+
+Materialized views are server-only — the SQLite emitter treats
+`CreateMaterializedView` / `DropMaterializedView` as `unreachable!`,
+and the diff stage filters them out of SQLite projections so the
+panic is defensive rather than reachable.
 
 [ADR 0004]: https://cratestack.dev/internals/schema-diff-adr
 [ADR 0003]: https://cratestack.dev/internals/views-adr
