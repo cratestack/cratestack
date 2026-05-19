@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
 fn generates_runtime_based_and_riverpod_client_for_blog_schema() {
-    let schema = cratestack_parser::parse_schema_file("../cratestack/tests/fixtures/blog.cstack")
+    let schema = cratestack_parser::parse_schema_file("../cratestack-pg/tests/fixtures/blog.cstack")
         .expect("fixture schema should parse");
 
     let package = generate_package(
@@ -179,7 +179,7 @@ fn generates_runtime_based_and_riverpod_client_for_blog_schema() {
 #[test]
 fn preserves_custom_fields_on_generated_types() {
     let schema =
-        cratestack_parser::parse_schema_file("../cratestack/tests/fixtures/custom_fields.cstack")
+        cratestack_parser::parse_schema_file("../cratestack-pg/tests/fixtures/custom_fields.cstack")
             .expect("fixture schema should parse");
 
     let package = generate_package(&schema, &DartGeneratorConfig::default())
@@ -299,7 +299,7 @@ fn generates_real_dart_enums_for_schema_enum_fields_and_procedures() {
 
 #[test]
 fn prefers_template_override_directory_when_provided() {
-    let schema = cratestack_parser::parse_schema_file("../cratestack/tests/fixtures/blog.cstack")
+    let schema = cratestack_parser::parse_schema_file("../cratestack-pg/tests/fixtures/blog.cstack")
         .expect("fixture schema should parse");
     let template_dir = project_tmp_path("template-override");
     if template_dir.exists() {
