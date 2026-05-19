@@ -1,4 +1,5 @@
 use cratestack_codec_cbor::CborCodec;
+#[cfg(feature = "codec-json")]
 use cratestack_codec_json::JsonCodec;
 use cratestack_core::CoolCodec;
 use reqwest::Method;
@@ -17,6 +18,7 @@ pub(crate) const BRIDGE_CONTENT_TYPE: &str = "application/json";
 
 pub(crate) enum RuntimeTransportClient {
     Cbor(CratestackClient<CborCodec>),
+    #[cfg(feature = "codec-json")]
     Json(CratestackClient<JsonCodec>),
 }
 
@@ -68,6 +70,7 @@ impl RuntimeTransportClient {
         let request = self.bridge_request_to_transport(request)?;
         match self {
             Self::Cbor(client) => client.execute_raw_transport(request).await,
+            #[cfg(feature = "codec-json")]
             Self::Json(client) => client.execute_raw_transport(request).await,
         }
         .and_then(|response| self.transport_response_to_bridge(response))
@@ -95,6 +98,7 @@ impl RuntimeTransportClient {
                 let accept = client.codec.sequence_accept_header_value();
                 execute_streamed_transport(client, request, accept).await
             }
+            #[cfg(feature = "codec-json")]
             Self::Json(client) => {
                 let accept = client.codec.sequence_accept_header_value();
                 execute_streamed_transport(client, request, accept).await
@@ -117,6 +121,7 @@ impl RuntimeTransportClient {
         })?;
         let body = match self {
             Self::Cbor(_) => CborCodec.encode(&value)?,
+            #[cfg(feature = "codec-json")]
             Self::Json(_) => JsonCodec.encode(&value)?,
         };
 
@@ -134,6 +139,7 @@ impl RuntimeTransportClient {
 
         let value = match self {
             Self::Cbor(_) => CborCodec.decode::<JsonValue>(&response.body)?,
+            #[cfg(feature = "codec-json")]
             Self::Json(_) => JsonCodec.decode::<JsonValue>(&response.body)?,
         };
 
@@ -147,6 +153,7 @@ impl RuntimeTransportClient {
     pub(crate) fn state(&self) -> Result<PersistedClientState, ClientError> {
         match self {
             Self::Cbor(client) => client.state(),
+            #[cfg(feature = "codec-json")]
             Self::Json(client) => client.state(),
         }
     }

@@ -1,9 +1,22 @@
-use cratestack_codec_json::JsonCodec;
-use cratestack_core::{CoolCodec, Page, ProjectionDecoder};
+// `get_view` / `list_view` / `list_view_paged` are projection-view
+// reads. The server advertises both `application/cbor` and
+// `application/json` on the model read routes that back these
+// projections (see `model_read_transport_capabilities_tokens` in
+// `cratestack-macros`), so we deliberately do **not** hardcode a
+// JSON content type — the request goes out with the client's
+// configured Accept (`self.codec.accept_header_value()`) and the
+// response is decoded through the same codec into
+// `serde_json::Value`, which `CborCodec` and `JsonCodec` both
+// support. That keeps the projection-view client surface available
+// under either codec configuration; only the `JsonCodec` wrapper
+// type itself is gated on `codec-json`.
+
+use cratestack_core::{Page, ProjectionDecoder};
 use reqwest::Method;
+use serde_json::Value as JsonValue;
 
 use crate::client::core::CratestackClient;
-use crate::client::decode::decode_json_value_response;
+use crate::client::decode::decode_typed_response;
 use crate::client::helpers::canonical_query_from_selection;
 use crate::codec::HttpClientCodec;
 use crate::error::{ClientError, HeaderPair, QueryPair};
@@ -24,16 +37,9 @@ where
         let selection = projection.selection_query();
         let canonical_query = canonical_query_from_selection(&selection, &[])?;
         let response = self
-            .request_raw_with_query_and_accept(
-                Method::GET,
-                path,
-                None,
-                canonical_query.as_deref(),
-                headers,
-                Some(JsonCodec::CONTENT_TYPE),
-            )
+            .request_raw_with_query(Method::GET, path, None, canonical_query.as_deref(), headers)
             .await?;
-        let value = decode_json_value_response(&JsonCodec, &response)?;
+        let value: JsonValue = decode_typed_response(&self.codec, &response)?;
         projection.decode_one(value).map_err(ClientError::from)
     }
 
@@ -50,16 +56,9 @@ where
         let selection = projection.selection_query();
         let canonical_query = canonical_query_from_selection(&selection, extra_query)?;
         let response = self
-            .request_raw_with_query_and_accept(
-                Method::GET,
-                path,
-                None,
-                canonical_query.as_deref(),
-                headers,
-                Some(JsonCodec::CONTENT_TYPE),
-            )
+            .request_raw_with_query(Method::GET, path, None, canonical_query.as_deref(), headers)
             .await?;
-        let value = decode_json_value_response(&JsonCodec, &response)?;
+        let value: JsonValue = decode_typed_response(&self.codec, &response)?;
         projection.decode_many(value).map_err(ClientError::from)
     }
 
@@ -76,16 +75,9 @@ where
         let selection = projection.selection_query();
         let canonical_query = canonical_query_from_selection(&selection, extra_query)?;
         let response = self
-            .request_raw_with_query_and_accept(
-                Method::GET,
-                path,
-                None,
-                canonical_query.as_deref(),
-                headers,
-                Some(JsonCodec::CONTENT_TYPE),
-            )
+            .request_raw_with_query(Method::GET, path, None, canonical_query.as_deref(), headers)
             .await?;
-        let value = decode_json_value_response(&JsonCodec, &response)?;
+        let value: JsonValue = decode_typed_response(&self.codec, &response)?;
         projection.decode_page(value).map_err(ClientError::from)
     }
 }

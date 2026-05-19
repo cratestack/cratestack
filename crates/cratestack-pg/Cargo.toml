@@ -24,7 +24,7 @@ name = "cratestack"
 path = "src/lib.rs"
 
 [features]
-default = ["decimal-rust-decimal"]
+default = ["decimal-rust-decimal", "codec-json"]
 decimal-rust-decimal = [
     "cratestack-core/decimal-rust-decimal",
     "cratestack-sqlx/decimal-rust-decimal",
@@ -33,6 +33,16 @@ decimal-bigdecimal = [
     "cratestack-core/decimal-bigdecimal",
     "cratestack-sqlx/decimal-bigdecimal",
 ]
+# Forwards the JSON codec to the generated client runtime. On by default
+# so `include_client_schema!` keeps offering both CBOR and JSON; disable
+# (`default-features = false`) on backend services that speak only CBOR
+# on the wire and want to drop the `JsonCodec` wrapper type from the
+# client surface. CBOR stays unconditional — the schema macros emit
+# `pub struct Client<C = CborCodec>` — and the projection-view client
+# methods (`get_view` / `list_view` / `list_view_paged`) route through
+# the client's codec, so they keep working over CBOR when this feature
+# is off.
+codec-json = ["cratestack-client-rust/codec-json"]
 # Replace the default `ring`-backed rustls provider with `aws-lc-rs`, which
 # is the only provider with current FIPS 140-3 validation among the
 # pure-Rust rustls backends. Selecting this feature does not make a build

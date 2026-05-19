@@ -88,7 +88,7 @@ cratestack-client-dart = { path = "crates/cratestack-client-dart", version = "0.
 cratestack-client-flutter = { path = "crates/cratestack-client-flutter", version = "0.4.0" }
 cratestack-client-typescript = { path = "crates/cratestack-client-typescript", version = "0.4.0" }
 cratestack-client-store-redis = { path = "crates/cratestack-client-store-redis", version = "0.4.0" }
-cratestack-client-rust = { path = "crates/cratestack-client-rust", version = "0.4.0" }
+cratestack-client-rust = { path = "crates/cratestack-client-rust", version = "0.4.0", default-features = false }
 cratestack-client-store-sqlite = { path = "crates/cratestack-client-store-sqlite", version = "0.4.0" }
 cratestack-codec-cbor = { path = "crates/cratestack-codec-cbor", version = "0.4.0" }
 cratestack-codec-json = { path = "crates/cratestack-codec-json", version = "0.4.0" }

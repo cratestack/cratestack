@@ -1,7 +1,6 @@
 use cratestack_core::CoolErrorResponse;
 use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
-use serde_json::Value as JsonValue;
 
 use crate::codec::{
     CBOR_SEQUENCE_CONTENT_TYPE, HttpClientCodec, decode_cbor_sequence, media_type_matches,
@@ -47,16 +46,6 @@ where
             message,
         })
     }
-}
-
-pub(crate) fn decode_json_value_response<C>(
-    codec: &C,
-    response: &RuntimeResponseWire,
-) -> Result<JsonValue, ClientError>
-where
-    C: HttpClientCodec,
-{
-    decode_typed_response(codec, response)
 }
 
 /// Build a `ClientError::Remote` from a non-2xx response, decoding the
