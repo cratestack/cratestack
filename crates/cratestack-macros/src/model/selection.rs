@@ -45,6 +45,33 @@ pub(super) fn build_selected_scalar_accessors(
             let method_ident = ident(&field.name);
             let field_name = &field.name;
             let field_type = rust_type_tokens(&field.ty);
+            // The arity drives the missing-field fallback in
+            // `decode_projected_field`. The model field's
+            // `#[serde(default)]` only applies when serde
+            // deserializes the whole struct; the per-accessor path
+            // here calls `serde_json::from_value::<T>(...)` on a
+            // bare `T`, so we have to feed serde a value it can
+            // accept for the missing case:
+            //
+            // - **Required** → no fallback. Missing key is a hard
+            //   "missing field" error so a route that forgot to
+            //   project the primary key still surfaces.
+            // - **Optional** → fallback is `null`. Serde maps
+            //   `Value::Null` into `Option::None`.
+            // - **List** → fallback is `[]`. Serde refuses to
+            //   deserialize `Vec<T>` from `null`, so we have to
+            //   produce an empty JSON array explicitly.
+            let fallback = match field.ty.arity {
+                cratestack_core::TypeArity::Optional => {
+                    quote! { MissingFieldFallback::Null }
+                }
+                cratestack_core::TypeArity::List => {
+                    quote! { MissingFieldFallback::EmptyArray }
+                }
+                cratestack_core::TypeArity::Required => {
+                    quote! { MissingFieldFallback::Reject }
+                }
+            };
             quote! {
                 #[allow(non_snake_case)]
                 pub fn #method_ident(&self) -> Result<#field_type, ::cratestack::CoolError> {
@@ -53,6 +80,7 @@ pub(super) fn build_selected_scalar_accessors(
                         self.allows_field(#field_name),
                         #model_name,
                         #field_name,
+                        #fallback,
                     )
                 }
             }

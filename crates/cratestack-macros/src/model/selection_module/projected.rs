@@ -81,11 +81,43 @@ pub(super) fn build_projected_block(
             #(#include_accessors)*
         }
 
+        /// Per-arity fallback for a JSON object that omits the
+        /// projected field's key. See [`decode_projected_field`].
+        #[derive(Debug, Clone, Copy)]
+        enum MissingFieldFallback {
+            /// Required arity — missing key is a hard
+            /// `CoolError::Internal("missing field …")`.
+            Reject,
+            /// Optional arity — missing key is treated as
+            /// `Value::Null`, which serde maps to `Option::None`.
+            Null,
+            /// List arity — missing key is treated as
+            /// `Value::Array(vec![])`. Serde refuses to
+            /// deserialize `Vec<T>` from `null`, and the
+            /// `#[serde(default)]` on the model field only fires
+            /// at whole-struct deserialization time, so we have
+            /// to produce an empty JSON array explicitly.
+            EmptyArray,
+        }
+
+        /// Decode one projected scalar out of a `Projected`'s JSON
+        /// object.
+        ///
+        /// The whole point of per-arity fallbacks is that adding a
+        /// new optional / list projection field to a server is no
+        /// longer a breaking change for clients (real or mocked)
+        /// that haven't been updated to include the field in their
+        /// payloads — the decoder degrades to `None` / `Vec::new()`
+        /// instead of failing the whole round-trip with a
+        /// "missing field" error. Required-arity strictness is
+        /// preserved so a route that forgets to project the
+        /// primary key still surfaces.
         fn decode_projected_field<T>(
             object: &::cratestack::serde_json::Map<String, ::cratestack::serde_json::Value>,
             selected: bool,
             model_name: &str,
             field_name: &str,
+            fallback: MissingFieldFallback,
         ) -> Result<T, ::cratestack::CoolError>
         where
             T: ::cratestack::serde::de::DeserializeOwned,
@@ -98,13 +130,22 @@ pub(super) fn build_projected_block(
                 )));
             }
 
-            let value = object.get(field_name).cloned().ok_or_else(|| {
-                ::cratestack::CoolError::Internal(format!(
-                    "projected {} payload is missing field '{}'",
-                    model_name,
-                    field_name,
-                ))
-            })?;
+            let value = match (object.get(field_name).cloned(), fallback) {
+                (Some(value), _) => value,
+                (None, MissingFieldFallback::Null) => {
+                    ::cratestack::serde_json::Value::Null
+                }
+                (None, MissingFieldFallback::EmptyArray) => {
+                    ::cratestack::serde_json::Value::Array(::std::vec::Vec::new())
+                }
+                (None, MissingFieldFallback::Reject) => {
+                    return Err(::cratestack::CoolError::Internal(format!(
+                        "projected {} payload is missing field '{}'",
+                        model_name,
+                        field_name,
+                    )));
+                }
+            };
 
             ::cratestack::serde_json::from_value(value).map_err(|error| {
                 ::cratestack::CoolError::Internal(format!(

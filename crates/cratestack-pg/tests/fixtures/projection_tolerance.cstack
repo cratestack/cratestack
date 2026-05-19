@@ -1,0 +1,9 @@
+datasource db {
+  provider = "postgresql"
+}
+
+model Vendor {
+  id Int @id
+  name String
+  refundWindowSeconds Int?
+}
