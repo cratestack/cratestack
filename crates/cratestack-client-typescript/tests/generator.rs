@@ -2,7 +2,7 @@ use cratestack_client_typescript::{TypeScriptGeneratorConfig, generate_package};
 
 #[test]
 fn generates_fetch_client_and_tanstack_hooks_for_blog_schema() {
-    let schema = cratestack_parser::parse_schema_file("../cratestack/tests/fixtures/blog.cstack")
+    let schema = cratestack_parser::parse_schema_file("../cratestack-pg/tests/fixtures/blog.cstack")
         .expect("fixture schema should parse");
 
     let package = generate_package(
@@ -62,7 +62,7 @@ fn generates_fetch_client_and_tanstack_hooks_for_blog_schema() {
 
 #[test]
 fn preserves_enums_and_scalar_mappings() {
-    let schema = cratestack_parser::parse_schema_file("../cratestack/tests/fixtures/enums.cstack")
+    let schema = cratestack_parser::parse_schema_file("../cratestack-pg/tests/fixtures/enums.cstack")
         .expect("fixture schema should parse");
 
     let package = generate_package(&schema, &TypeScriptGeneratorConfig::default())
