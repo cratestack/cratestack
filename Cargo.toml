@@ -64,7 +64,7 @@ version = "0.4.3"
 edition = "2024"
 license = "MIT"
 description = "Rust-native schema-first framework for typed HTTP APIs, generated clients, and backend services."
-repository = "https://github.com/vaam-store/cratestack"
+repository = "https://github.com/cratestack/cratestack"
 homepage = "https://cratestack.dev"
 documentation = "https://rust-doc.cratestack.dev/cratestack"
 # readme set per-package
