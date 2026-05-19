@@ -1,22 +1,44 @@
 // `get_view` / `list_view` / `list_view_paged` are projection-view
 // reads. The server projection routes always respond with JSON
 // (the `?select=…` shape isn't currently exposed over CBOR), so
-// these methods hard-require `JsonCodec` and the whole impl is
-// gated on the `codec-json` feature. Disabling `codec-json`
-// drops the projection-view client surface; plain model reads
-// keep working over whichever codec the client was constructed
-// with.
-#![cfg(feature = "codec-json")]
+// these methods always negotiate `application/json` and decode the
+// body with `serde_json` directly — they do **not** route through
+// the client's underlying `HttpClientCodec`. That keeps them
+// available regardless of the `codec-json` feature, which only
+// gates the `JsonCodec` wrapper type and JSON content-negotiation
+// fallback on `CborCodec`.
 
-use cratestack_codec_json::JsonCodec;
-use cratestack_core::{CoolCodec, Page, ProjectionDecoder};
-use reqwest::Method;
+use cratestack_core::{CoolErrorResponse, Page, ProjectionDecoder};
+use reqwest::{Method, StatusCode};
+use serde_json::Value as JsonValue;
 
 use crate::client::core::CratestackClient;
-use crate::client::decode::decode_json_value_response;
 use crate::client::helpers::canonical_query_from_selection;
 use crate::codec::HttpClientCodec;
 use crate::error::{ClientError, HeaderPair, QueryPair};
+use crate::runtime::wire::RuntimeResponseWire;
+
+const VIEW_CONTENT_TYPE: &str = "application/json";
+
+fn decode_view_json_response(response: &RuntimeResponseWire) -> Result<JsonValue, ClientError> {
+    if (200..=299).contains(&response.status_code) {
+        serde_json::from_slice(&response.body).map_err(|error| {
+            ClientError::InvalidResponse(format!("failed to decode view response as JSON: {error}"))
+        })
+    } else {
+        let error: Option<CoolErrorResponse> = serde_json::from_slice(&response.body).ok();
+        let message = error
+            .as_ref()
+            .map(|value| value.message.clone())
+            .unwrap_or_else(|| format!("unexpected error body for status {}", response.status_code));
+        Err(ClientError::Remote {
+            status: StatusCode::from_u16(response.status_code)
+                .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+            error,
+            message,
+        })
+    }
+}
 
 impl<C> CratestackClient<C>
 where
@@ -40,10 +62,10 @@ where
                 None,
                 canonical_query.as_deref(),
                 headers,
-                Some(JsonCodec::CONTENT_TYPE),
+                Some(VIEW_CONTENT_TYPE),
             )
             .await?;
-        let value = decode_json_value_response(&JsonCodec, &response)?;
+        let value = decode_view_json_response(&response)?;
         projection.decode_one(value).map_err(ClientError::from)
     }
 
@@ -66,10 +88,10 @@ where
                 None,
                 canonical_query.as_deref(),
                 headers,
-                Some(JsonCodec::CONTENT_TYPE),
+                Some(VIEW_CONTENT_TYPE),
             )
             .await?;
-        let value = decode_json_value_response(&JsonCodec, &response)?;
+        let value = decode_view_json_response(&response)?;
         projection.decode_many(value).map_err(ClientError::from)
     }
 
@@ -92,10 +114,10 @@ where
                 None,
                 canonical_query.as_deref(),
                 headers,
-                Some(JsonCodec::CONTENT_TYPE),
+                Some(VIEW_CONTENT_TYPE),
             )
             .await?;
-        let value = decode_json_value_response(&JsonCodec, &response)?;
+        let value = decode_view_json_response(&response)?;
         projection.decode_page(value).map_err(ClientError::from)
     }
 }

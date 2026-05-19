@@ -12,6 +12,15 @@ readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 
+[features]
+# The Flutter bridge surface exposes `FlutterRuntimeCodec::Json` as a
+# selectable transport, so the JSON codec has to be linked in or
+# `RuntimeHandle::new` rejects the Json variant at runtime. Keep it
+# on by default; a host shell that locks the bridge to CBOR can
+# `default-features = false` to drop it.
+default = ["codec-json"]
+codec-json = ["cratestack-client-rust/codec-json"]
+
 [dependencies]
 cratestack-client-rust.workspace = true
 serde.workspace = true
