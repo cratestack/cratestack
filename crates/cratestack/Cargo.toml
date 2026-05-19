@@ -1,0 +1,27 @@
+[package]
+name = "cratestack"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "CrateStack — Rust-native, schema-first framework for typed HTTP APIs, generated clients, and backend services. This crate is a documentation-only landing page; depend on `cratestack-pg` for backend services or `cratestack-sqlite` for embedded targets."
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+# Documentation-only crate. Intentionally has no dependencies — the
+# framework code lives in `cratestack-pg` (server) and
+# `cratestack-sqlite` (embedded), which both expose their library as
+# `cratestack` via Cargo's `package =` rename. See README.md for the
+# rationale and migration guide.
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

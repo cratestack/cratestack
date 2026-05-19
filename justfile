@@ -38,14 +38,18 @@ test-pg *args='':
 	just pg-up
 	CRATESTACK_TEST_DATABASE_URL='{{PG_URL}}' cargo test --workspace --exclude embedded_flutter_native {{args}}
 
-# Run only the cratestack-crate integration tests against PG (faster inner loop).
+# Run only the cratestack-pg integration tests against PG (faster inner loop).
+# Targets the server-facade package explicitly — the workspace also
+# ships a documentation-only `cratestack` vitrine crate, so
+# `-p cratestack` would silently select the empty crate and return a
+# false-green here.
 test-pg-only *args='':
 	#!/usr/bin/env bash
 	set -euo pipefail
 	cleanup() { docker compose down >/dev/null 2>&1 || true; echo "postgres stopped"; }
 	trap cleanup EXIT
 	just pg-up
-	CRATESTACK_TEST_DATABASE_URL='{{PG_URL}}' cargo test -p cratestack {{args}}
+	CRATESTACK_TEST_DATABASE_URL='{{PG_URL}}' cargo test -p cratestack-pg {{args}}
 
 # Run the workspace test suite via testcontainers (per-binary ephemeral PG, recommended for CI).
 test-pg-tc *args='':
