@@ -90,7 +90,7 @@ pub use cratestack_sqlx::{
     MIGRATIONS_TABLE_DDL, Migration, MigrationState, MigrationStatus, apply_pending,
     ensure_migrations_table, status,
 };
-pub use cratestack_sqlx::{run_in_isolated_tx, run_in_isolated_tx_with_retries};
+pub use cratestack_sqlx::{cool_error_from_sqlx, run_in_isolated_tx, run_in_isolated_tx_with_retries};
 
 /// Crypto provider selection — banks running on FIPS-validated hardware
 /// enable the `crypto-aws-lc-rs` feature. The function below surfaces an

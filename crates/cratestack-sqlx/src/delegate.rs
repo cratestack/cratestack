@@ -20,7 +20,6 @@ mod scoped_writes;
 mod view;
 
 pub use model::ModelDelegate;
-pub use view::{ViewDelegate, ViewDelegateNoUnique};
 pub use scoped::ScopedModelDelegate;
 pub use scoped_aggregate::{ScopedAggregate, ScopedAggregateColumn, ScopedAggregateCount};
 pub use scoped_batch::{
@@ -35,3 +34,4 @@ pub use scoped_update_many::{ScopedUpdateMany, ScopedUpdateManySet};
 pub use scoped_writes::{
     ScopedCreateRecord, ScopedUpdateRecord, ScopedUpdateRecordSet, ScopedUpsertRecord,
 };
+pub use view::{ViewDelegate, ViewDelegateNoUnique};

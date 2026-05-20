@@ -167,7 +167,10 @@ impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
             return order_by;
         }
 
-        order_by.push(OrderClause::column(self.descriptor.primary_key(), direction));
+        order_by.push(OrderClause::column(
+            self.descriptor.primary_key(),
+            direction,
+        ));
         order_by
     }
 

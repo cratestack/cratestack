@@ -66,6 +66,7 @@ pub mod sqlx {
 mod audit;
 mod delegate;
 mod descriptor;
+mod error;
 mod idempotency;
 mod isolation;
 mod migrations;
@@ -98,6 +99,7 @@ mod tests_update_many;
 pub use partial_row::FromPartialPgRow;
 
 pub use audit::{AUDIT_TABLE_DDL, primary_key_from_snapshot, snapshot_model};
+pub use error::cool_error_from_sqlx;
 pub use idempotency::{SqlxIdempotencyStore, expiry_from};
 pub use isolation::{run_in_isolated_tx, run_in_isolated_tx_with_retries};
 pub use migrations::{

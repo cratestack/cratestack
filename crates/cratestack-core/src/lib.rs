@@ -72,7 +72,7 @@ pub use context::{
 pub use envelope::{
     HmacEnvelope, InMemoryNonceStore, KeyProvider, NonceStore, SealedEnvelope, StaticKeyProvider,
 };
-pub use error::{CoolError, CoolErrorResponse, parse_cuid};
+pub use error::{CoolError, CoolErrorResponse, DbErrorInfo, parse_cuid};
 pub use events::{
     CoolEventBus, CoolEventEnvelope, CoolEventFuture, ModelEvent, ModelEventKind, event_topic,
     parse_emit_attribute,
