@@ -22,6 +22,26 @@ pub struct CoolErrorResponse {
     pub details: Option<Value>,
 }
 
+/// Structured information extracted from a driver-level database error.
+///
+/// Produced by `cratestack-sqlx`'s [`cool_error_from_sqlx`] when the
+/// underlying `sqlx::Error` carries a typed `DatabaseError` (e.g.
+/// `PgDatabaseError`). Consumers can inspect `constraint` and `code` without
+/// substring-matching the stringified error message.
+///
+/// [`cool_error_from_sqlx`]: cratestack_sqlx::cool_error_from_sqlx
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+pub struct DbErrorInfo {
+    /// The operator-visible detail string (equivalent to `error.to_string()`).
+    pub detail: String,
+    /// The five-character SQLSTATE code (`"23505"` for unique_violation, etc.).
+    /// `None` when the driver did not surface a code.
+    pub sqlstate: Option<String>,
+    /// The constraint name reported by the database (`"accounts_email_key"`,
+    /// etc.). `None` when the error is not constraint-related.
+    pub constraint: Option<String>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum CoolError {
     /// 4xx — `String` is the public message returned to the client.
@@ -47,8 +67,17 @@ pub enum CoolError {
     /// the public message is a fixed canned string per variant.
     #[error("codec: {0}")]
     Codec(String),
+    /// Database error with only a stringified detail. Preserved for
+    /// back-compat; new code should prefer `DatabaseTyped` produced by
+    /// `cratestack_sqlx::cool_error_from_sqlx`.
     #[error("database: {0}")]
     Database(String),
+    /// Database error with structured information preserved from the driver.
+    ///
+    /// Use [`CoolError::db_sqlstate`] and [`CoolError::db_constraint`] to
+    /// access the typed fields without matching on this variant directly.
+    #[error("database: {}", .0.detail)]
+    DatabaseTyped(DbErrorInfo),
     #[error("internal: {0}")]
     Internal(String),
 }
@@ -66,7 +95,7 @@ impl CoolError {
             Self::Validation(_) => "VALIDATION_ERROR",
             Self::PreconditionFailed(_) => "PRECONDITION_FAILED",
             Self::Codec(_) => "CODEC_ERROR",
-            Self::Database(_) => "DATABASE_ERROR",
+            Self::Database(_) | Self::DatabaseTyped(_) => "DATABASE_ERROR",
             Self::Internal(_) => "INTERNAL_ERROR",
         }
     }
@@ -83,7 +112,7 @@ impl CoolError {
             Self::Validation(_) => StatusCode::UNPROCESSABLE_ENTITY,
             Self::PreconditionFailed(_) => StatusCode::PRECONDITION_FAILED,
             Self::Codec(_) => StatusCode::BAD_REQUEST,
-            Self::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::Database(_) | Self::DatabaseTyped(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -105,7 +134,7 @@ impl CoolError {
             | Self::Validation(s)
             | Self::PreconditionFailed(s) => Cow::Borrowed(s.as_str()),
             Self::Codec(_) => Cow::Borrowed("invalid request payload"),
-            Self::Database(_) => Cow::Borrowed("internal error"),
+            Self::Database(_) | Self::DatabaseTyped(_) => Cow::Borrowed("internal error"),
             Self::Internal(_) => Cow::Borrowed("internal error"),
         }
     }
@@ -134,6 +163,39 @@ impl CoolError {
                     Some(s.as_str())
                 }
             }
+            Self::DatabaseTyped(info) => {
+                if info.detail.is_empty() {
+                    None
+                } else {
+                    Some(info.detail.as_str())
+                }
+            }
+        }
+    }
+
+    /// Returns the SQLSTATE code if this is a `DatabaseTyped` error with a
+    /// known code (e.g. `"23505"` for unique_violation).
+    ///
+    /// Always returns `None` for the legacy `Database(String)` variant; to
+    /// get typed access, use `cratestack_sqlx::cool_error_from_sqlx` at the
+    /// conversion site.
+    pub fn db_sqlstate(&self) -> Option<&str> {
+        match self {
+            Self::DatabaseTyped(info) => info.sqlstate.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// Returns the constraint name if this is a `DatabaseTyped` error that
+    /// carries constraint information (e.g. `"accounts_email_key"`).
+    ///
+    /// Always returns `None` for the legacy `Database(String)` variant; to
+    /// get typed access, use `cratestack_sqlx::cool_error_from_sqlx` at the
+    /// conversion site.
+    pub fn db_constraint(&self) -> Option<&str> {
+        match self {
+            Self::DatabaseTyped(info) => info.constraint.as_deref(),
+            _ => None,
         }
     }
 

@@ -122,7 +122,7 @@ pub const fn rpc_code(error: &CoolError) -> &'static str {
         CoolError::NotFound(_) => "not_found",
         CoolError::Conflict(_) => "conflict",
         CoolError::PreconditionFailed(_) => "failed_precondition",
-        CoolError::Database(_) | CoolError::Internal(_) => "internal",
+        CoolError::Database(_) | CoolError::DatabaseTyped(_) | CoolError::Internal(_) => "internal",
     }
 }
 

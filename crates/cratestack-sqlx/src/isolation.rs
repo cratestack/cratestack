@@ -12,6 +12,8 @@ use std::future::Future;
 
 use cratestack_core::{CoolError, TransactionIsolation};
 
+use crate::error::cool_error_from_sqlx;
+
 const MAX_RETRIES_DEFAULT: u32 = 3;
 const PG_SERIALIZATION_FAILURE_SQLSTATE: &str = "40001";
 const PG_DEADLOCK_DETECTED_SQLSTATE: &str = "40P01";
@@ -53,15 +55,12 @@ where
     let mut attempts = 0u32;
     loop {
         attempts += 1;
-        let mut tx = pool
-            .begin()
-            .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+        let mut tx = pool.begin().await.map_err(cool_error_from_sqlx)?;
         let set_stmt = format!("SET TRANSACTION ISOLATION LEVEL {}", isolation.as_sql());
         sqlx::query(&set_stmt)
             .execute(&mut *tx)
             .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+            .map_err(cool_error_from_sqlx)?;
 
         match body(tx).await {
             Ok((value, tx)) => match tx.commit().await {
@@ -76,7 +75,7 @@ where
                     // branch we'd advertise automatic retries but still
                     // leak a transient 40001 to callers when the conflict
                     // is detected at the commit boundary.
-                    let promoted = CoolError::Database(commit_error.to_string());
+                    let promoted = cool_error_from_sqlx(commit_error);
                     if attempts <= max_retries && is_retriable(&promoted) {
                         tokio::task::yield_now().await;
                         continue;
@@ -100,6 +99,12 @@ where
 }
 
 fn is_retriable(error: &CoolError) -> bool {
+    // Fast path: typed variant surfaces the SQLSTATE directly.
+    if let Some(code) = error.db_sqlstate() {
+        return code == PG_SERIALIZATION_FAILURE_SQLSTATE || code == PG_DEADLOCK_DETECTED_SQLSTATE;
+    }
+    // Fallback: legacy `Database(String)` variant — substring-match the detail
+    // string the way the original code did, so existing behaviour is preserved.
     let detail = error.detail().unwrap_or_default();
     detail.contains(PG_SERIALIZATION_FAILURE_SQLSTATE)
         || detail.contains(PG_DEADLOCK_DETECTED_SQLSTATE)
@@ -182,5 +187,64 @@ mod tests {
                 .to_owned(),
         );
         assert!(is_retriable(&err));
+    }
+
+    // --- typed-variant paths ---
+
+    #[test]
+    fn retriable_typed_serialization_failure() {
+        use cratestack_core::DbErrorInfo;
+        let err = CoolError::DatabaseTyped(DbErrorInfo {
+            detail: "could not serialize access due to concurrent update".to_owned(),
+            sqlstate: Some("40001".to_owned()),
+            constraint: None,
+        });
+        assert!(
+            is_retriable(&err),
+            "DatabaseTyped with 40001 sqlstate must be retriable via the fast path",
+        );
+    }
+
+    #[test]
+    fn retriable_typed_deadlock() {
+        use cratestack_core::DbErrorInfo;
+        let err = CoolError::DatabaseTyped(DbErrorInfo {
+            detail: "deadlock detected".to_owned(),
+            sqlstate: Some("40P01".to_owned()),
+            constraint: None,
+        });
+        assert!(
+            is_retriable(&err),
+            "DatabaseTyped with 40P01 sqlstate must be retriable via the fast path",
+        );
+    }
+
+    #[test]
+    fn not_retriable_typed_unique_violation() {
+        use cratestack_core::DbErrorInfo;
+        let err = CoolError::DatabaseTyped(DbErrorInfo {
+            detail: "duplicate key value violates unique constraint \"accounts_pkey\"".to_owned(),
+            sqlstate: Some("23505".to_owned()),
+            constraint: Some("accounts_pkey".to_owned()),
+        });
+        assert!(
+            !is_retriable(&err),
+            "unique_violation (23505) must not be retried",
+        );
+    }
+
+    #[test]
+    fn typed_variant_exposes_constraint_for_unique_violation() {
+        use cratestack_core::DbErrorInfo;
+        let err = CoolError::DatabaseTyped(DbErrorInfo {
+            detail: "duplicate key value violates unique constraint \"wallets_owner_key\""
+                .to_owned(),
+            sqlstate: Some("23505".to_owned()),
+            constraint: Some("wallets_owner_key".to_owned()),
+        });
+        assert_eq!(err.db_sqlstate(), Some("23505"));
+        assert_eq!(err.db_constraint(), Some("wallets_owner_key"));
+        // Public message must remain canned — no detail leak.
+        assert_eq!(err.public_message(), "internal error");
     }
 }

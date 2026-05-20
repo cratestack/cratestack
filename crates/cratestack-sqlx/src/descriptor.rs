@@ -4,6 +4,8 @@ use cratestack_core::{
     CoolError, CoolEventBus, CoolEventEnvelope, CoolEventFuture, ModelEventKind,
 };
 
+use crate::error::cool_error_from_sqlx;
+
 #[derive(Debug, Clone)]
 pub struct SqlxRuntime {
     pool: sqlx::PgPool,
@@ -42,7 +44,7 @@ impl SqlxRuntime {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(|error| CoolError::Database(error.to_string()))?;
+        .map_err(cool_error_from_sqlx)?;
 
         let mut delivered = 0usize;
         for row in rows {
@@ -58,7 +60,7 @@ impl SqlxRuntime {
                     .bind(event_id)
                     .execute(&self.pool)
                     .await
-                    .map_err(|error| CoolError::Database(error.to_string()))?;
+                    .map_err(cool_error_from_sqlx)?;
                     delivered += 1;
                 }
                 Err(error) => {
@@ -71,7 +73,7 @@ impl SqlxRuntime {
                     .bind(error.to_string())
                     .execute(&self.pool)
                     .await
-                    .map_err(|db_error| CoolError::Database(db_error.to_string()))?;
+                    .map_err(cool_error_from_sqlx)?;
                 }
             }
         }
@@ -141,7 +143,7 @@ where
     )
     .execute(executor)
     .await
-    .map_err(|error| CoolError::Database(error.to_string()))?;
+    .map_err(cool_error_from_sqlx)?;
 
     Ok(())
 }
@@ -169,7 +171,7 @@ where
     .bind(payload)
     .execute(executor)
     .await
-    .map_err(|error| CoolError::Database(error.to_string()))?;
+    .map_err(cool_error_from_sqlx)?;
 
     Ok(())
 }
