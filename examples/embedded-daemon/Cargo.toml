@@ -19,9 +19,9 @@ clap = { workspace = true }
 # NOTE(0.3.x): the macro currently emits `::cratestack::*` paths for shared
 # helpers (IntoSqlValue, FilterExpr, ...) so embedded consumers transitively
 # pull in the facade.
-cratestack = { package = "cratestack-sqlite", path = "../../crates/cratestack-sqlite", version = "0.4.3" }
-cratestack-macros = { path = "../../crates/cratestack-macros", version = "0.4.3" }
-cratestack-rusqlite = { path = "../../crates/cratestack-rusqlite", version = "0.4.3" }
+cratestack = { package = "cratestack-sqlite", path = "../../crates/cratestack-sqlite", version = "0.4.4" }
+cratestack-macros = { path = "../../crates/cratestack-macros", version = "0.4.4" }
+cratestack-rusqlite = { path = "../../crates/cratestack-rusqlite", version = "0.4.4" }
 notify = "8"
 serde = { workspace = true }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time", "signal"] }

@@ -10,9 +10,9 @@ name = "bff"
 path = "src/main.rs"
 
 [dependencies]
-cratestack = { package = "cratestack-pg", path = "../../crates/cratestack-pg", version = "0.4.3" }
-cratestack-client-rust = { path = "../../crates/cratestack-client-rust", version = "0.4.3" }
-cratestack-codec-cbor = { path = "../../crates/cratestack-codec-cbor", version = "0.4.3" }
+cratestack = { package = "cratestack-pg", path = "../../crates/cratestack-pg", version = "0.4.4" }
+cratestack-client-rust = { path = "../../crates/cratestack-client-rust", version = "0.4.4" }
+cratestack-codec-cbor = { path = "../../crates/cratestack-codec-cbor", version = "0.4.4" }
 serde = { workspace = true }
 tokio = { workspace = true }
 url = { workspace = true }
