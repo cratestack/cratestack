@@ -257,7 +257,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-studio-ui"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "console_error_panic_hook",
  "gloo-net 0.7.0",
