@@ -44,7 +44,9 @@ assert_eq!(err.public_message(), "internal error");
 assert_eq!(err.detail(), Some("connection refused"));
 ```
 
-Variants: `BadRequest`, `NotAcceptable`, `Unauthorized`, `UnsupportedMediaType`, `Forbidden`, `NotFound`, `Conflict`, `Validation`, `PreconditionFailed`, `Codec`, `Database`, `Internal`. The codec/database/internal variants are 5xx-mapped.
+Variants: `BadRequest`, `NotAcceptable`, `Unauthorized`, `UnsupportedMediaType`, `Forbidden`, `NotFound`, `Conflict`, `Validation`, `PreconditionFailed`, `Codec`, `Database`, `DatabaseTyped`, `Internal`. The codec/database/internal variants are 5xx-mapped. `CoolError` is `#[non_exhaustive]`, so downstream matches must include a wildcard arm.
+
+`DatabaseTyped` carries a `DbErrorInfo { detail, sqlstate, constraint }` and is produced by `cratestack_sqlx::cool_error_from_sqlx` at sqlx call sites. Use `err.db_sqlstate()` and `err.db_constraint()` to inspect the typed fields instead of substring-matching the stringified detail.
 
 ## Auth Context
 
