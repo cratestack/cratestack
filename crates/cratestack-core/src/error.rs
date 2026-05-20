@@ -43,6 +43,7 @@ pub struct DbErrorInfo {
 }
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum CoolError {
     /// 4xx — `String` is the public message returned to the client.
     #[error("bad request: {0}")]

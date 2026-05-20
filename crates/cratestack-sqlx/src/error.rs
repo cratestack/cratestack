@@ -8,6 +8,11 @@
 //! [`CoolError::DatabaseTyped`] variant so consumers can call
 //! [`CoolError::db_sqlstate`] / [`CoolError::db_constraint`] instead of
 //! substring-matching the stringified detail.
+//!
+//! `sqlx::Error::RowNotFound` is mapped to `CoolError::NotFound` so a missing
+//! row surfaces as a 404 rather than a 500. Callers that want a custom
+//! not-found message should construct it themselves before calling this
+//! helper.
 
 use cratestack_core::{CoolError, DbErrorInfo};
 
@@ -54,6 +59,7 @@ pub fn cool_error_from_sqlx(error: sqlx::Error) -> CoolError {
                 constraint,
             })
         }
+        sqlx::Error::RowNotFound => CoolError::NotFound("not found".to_owned()),
         other => CoolError::Database(other.to_string()),
     }
 }
@@ -62,16 +68,33 @@ pub fn cool_error_from_sqlx(error: sqlx::Error) -> CoolError {
 mod tests {
     use super::*;
 
-    /// Round-trip: a non-database sqlx error (e.g. a pool / network error)
-    /// must produce the legacy `Database(String)` variant so existing
-    /// `detail()` callers keep working.
+    /// `RowNotFound` is a missing-row signal and must map to `NotFound`
+    /// so callers see a 404 instead of a 500.
     #[test]
-    fn non_database_sqlx_error_produces_legacy_variant() {
-        // `RowNotFound` is a non-Database sqlx error — no PgDatabaseError.
+    fn row_not_found_maps_to_not_found() {
         let err = cool_error_from_sqlx(sqlx::Error::RowNotFound);
         assert!(
+            matches!(err, CoolError::NotFound(_)),
+            "RowNotFound should map to CoolError::NotFound",
+        );
+        assert_eq!(err.status_code().as_u16(), 404);
+        // Typed accessors are not applicable to NotFound.
+        assert_eq!(err.db_sqlstate(), None);
+        assert_eq!(err.db_constraint(), None);
+    }
+
+    /// Round-trip: a non-database, non-RowNotFound sqlx error (e.g. a
+    /// configuration / protocol error) must produce the legacy
+    /// `Database(String)` variant so existing `detail()` callers keep
+    /// working.
+    #[test]
+    fn non_database_sqlx_error_produces_legacy_variant() {
+        let err = cool_error_from_sqlx(sqlx::Error::Protocol(
+            "unexpected EOF from server".to_owned(),
+        ));
+        assert!(
             matches!(err, CoolError::Database(_)),
-            "RowNotFound should map to CoolError::Database",
+            "Protocol error should fall back to CoolError::Database",
         );
         assert!(
             err.detail().is_some(),

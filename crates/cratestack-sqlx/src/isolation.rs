@@ -99,9 +99,15 @@ where
 }
 
 fn is_retriable(error: &CoolError) -> bool {
-    // Fast path: typed variant surfaces the SQLSTATE directly.
+    // Fast path: typed variant surfaces the SQLSTATE directly. Only treat
+    // it as authoritative when the code matches a known retriable state;
+    // an unrecognized SQLSTATE falls through so the substring fallback
+    // still has a chance (drivers may surface retriable conditions in
+    // ways the typed path doesn't capture).
     if let Some(code) = error.db_sqlstate() {
-        return code == PG_SERIALIZATION_FAILURE_SQLSTATE || code == PG_DEADLOCK_DETECTED_SQLSTATE;
+        if code == PG_SERIALIZATION_FAILURE_SQLSTATE || code == PG_DEADLOCK_DETECTED_SQLSTATE {
+            return true;
+        }
     }
     // Fallback: legacy `Database(String)` variant — substring-match the detail
     // string the way the original code did, so existing behaviour is preserved.
@@ -230,6 +236,23 @@ mod tests {
         assert!(
             !is_retriable(&err),
             "unique_violation (23505) must not be retried",
+        );
+    }
+
+    #[test]
+    fn typed_variant_with_unknown_sqlstate_falls_through_to_detail_match() {
+        // A driver reports an unfamiliar SQLSTATE but the detail still
+        // contains a known retriable substring. The typed fast path must
+        // not short-circuit — the substring fallback must run.
+        use cratestack_core::DbErrorInfo;
+        let err = CoolError::DatabaseTyped(DbErrorInfo {
+            detail: "could not serialize access due to read/write dependencies".to_owned(),
+            sqlstate: Some("XX999".to_owned()),
+            constraint: None,
+        });
+        assert!(
+            is_retriable(&err),
+            "unknown sqlstate must fall through to detail-substring fallback",
         );
     }
 
