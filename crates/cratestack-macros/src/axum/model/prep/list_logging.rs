@@ -49,17 +49,13 @@ pub(super) fn list_success_tokens(paged: bool) -> proc_macro2::TokenStream {
     }}
 }
 
-pub(super) fn list_result_log_tokens(
-    paged: bool,
-    list_route_path: &str,
-    model_name: &str,
-) -> proc_macro2::TokenStream {
+pub(super) fn list_result_log_tokens(paged: bool, model_name: &str) -> proc_macro2::TokenStream {
     if paged {
         quote! {
             match &result {
                 Ok(page) => ::cratestack::tracing::info!(
                     target: "cratestack",
-                    cratestack_route = #list_route_path,
+                    cratestack_route = canonical_route,
                     cratestack_model = #model_name,
                     cratestack_operation = "list",
                     cratestack_paged = true,
@@ -73,7 +69,7 @@ pub(super) fn list_result_log_tokens(
                 ),
                 Err(error) => ::cratestack::tracing::warn!(
                     target: "cratestack",
-                    cratestack_route = #list_route_path,
+                    cratestack_route = canonical_route,
                     cratestack_model = #model_name,
                     cratestack_operation = "list",
                     cratestack_paged = true,
@@ -90,7 +86,7 @@ pub(super) fn list_result_log_tokens(
             match &result {
                 Ok(values) => ::cratestack::tracing::info!(
                     target: "cratestack",
-                    cratestack_route = #list_route_path,
+                    cratestack_route = canonical_route,
                     cratestack_model = #model_name,
                     cratestack_operation = "list",
                     cratestack_paged = false,
@@ -103,7 +99,7 @@ pub(super) fn list_result_log_tokens(
                 ),
                 Err(error) => ::cratestack::tracing::warn!(
                     target: "cratestack",
-                    cratestack_route = #list_route_path,
+                    cratestack_route = canonical_route,
                     cratestack_model = #model_name,
                     cratestack_operation = "list",
                     cratestack_paged = false,

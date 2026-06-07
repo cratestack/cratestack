@@ -230,15 +230,27 @@ the service directly.
 
 ## 5. Canonical request signing
 
-`canonical_request_string` in `cratestack-core` is unchanged.
+`canonical_request_string` in `cratestack-core` is unchanged — only the
+**path** component fed into it differs per binding (see below).
 
-- HTTP unary and batch: signed exactly as REST today. Body bytes already
-  cover everything an attacker could mutate.
+- HTTP unary and batch: same canonical string as REST, except the path is the
+  op id rather than a REST route (see below). Body bytes already cover
+  everything else an attacker could mutate.
 - WS: the upgrade request is signed once via the existing
   `canonical_request_string` over the upgrade HTTP request. Frames inside
   the channel are not individually signed.
 
 No new signing primitives are introduced.
+
+**Canonical path under `transport rpc` is the op id, not the REST shape.**
+On RPC dispatch the canonical request path used for *both* signature
+verification (`request_context.path`) and the `cratestack_route` tracing
+field is the op id (`procedure.<name>`, `model.<M>.{list,get,create,update,delete}`)
+— never the REST `/$procs/<name>` or `/<plural>[/<id>]` shape. The op id is
+the single identity for url, dispatch, signing, and logs. Clients signing an
+RPC request must therefore sign over the op id, not a synthesized REST path.
+On the REST binding the canonical remains the REST route path, byte for byte
+as before.
 
 ## 6. What is explicitly out of scope for v1
 

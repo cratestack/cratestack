@@ -9,6 +9,7 @@ use super::prep::ModelHandlerPrep;
 
 pub(super) fn build_list_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStream {
     let list_handler_ident = &p.list_handler_ident;
+    let list_dispatch_ident = &p.list_dispatch_ident;
     let list_route_path = &p.list_route_path;
     let model_name = &p.model_name;
     let paged = p.paged;
@@ -24,6 +25,7 @@ pub(super) fn build_list_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStre
     let list_result_log = &p.list_result_log;
 
     quote! {
+        // REST mount (`GET /<plural>`): canonical request identity is the REST route path.
         async fn #list_handler_ident<C, Auth>(
             State(state): State<ModelRouterState<C, Auth>>,
             headers: HeaderMap,
@@ -33,10 +35,27 @@ pub(super) fn build_list_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStre
             C: HttpTransport,
             Auth: ::cratestack::AuthProvider,
         {
+            #list_dispatch_ident(state, #list_route_path, headers, raw_query).await
+        }
+
+        // Shared body. `canonical_route` is the request's canonical identity used for
+        // BOTH signature verification (`request_context.path`) and the `cratestack_route`
+        // tracing field. REST passes `/<plural>`; RPC dispatch passes the op id
+        // (`model.<M>.list`).
+        async fn #list_dispatch_ident<C, Auth>(
+            state: ModelRouterState<C, Auth>,
+            canonical_route: &str,
+            headers: HeaderMap,
+            raw_query: Option<String>,
+        ) -> Response
+        where
+            C: HttpTransport,
+            Auth: ::cratestack::AuthProvider,
+        {
             const CAPABILITIES: ::cratestack::RouteTransportCapabilities = #list_capabilities;
             let span = ::cratestack::tracing::info_span!(
                 "cratestack_model_list_route",
-                cratestack_route = #list_route_path,
+                cratestack_route = canonical_route,
                 cratestack_model = #model_name,
                 cratestack_operation = "list",
                 cratestack_paged = #paged,
@@ -47,7 +66,7 @@ pub(super) fn build_list_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStre
             if let Err(error) = ::cratestack::validate_transport_response_headers_for(&state.codec, &headers, &CAPABILITIES) {
                 ::cratestack::tracing::warn!(
                     target: "cratestack",
-                    cratestack_route = #list_route_path,
+                    cratestack_route = canonical_route,
                     cratestack_model = #model_name,
                     cratestack_operation = "list",
                     cratestack_error = error.code(),
@@ -56,14 +75,14 @@ pub(super) fn build_list_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStre
                 );
                 return #list_header_error_encoder;
             }
-            let request = request_context("GET", #list_route_path, raw_query.as_deref(), &headers, &[]);
+            let request = request_context("GET", canonical_route, raw_query.as_deref(), &headers, &[]);
             let ctx = match state.auth_provider.authenticate(&request).await {
                 Ok(ctx) => ::cratestack::enrich_context_from_headers(ctx, &headers),
                 Err(error) => {
                     let error: CoolError = error.into();
                     ::cratestack::tracing::warn!(
                         target: "cratestack",
-                        cratestack_route = #list_route_path,
+                        cratestack_route = canonical_route,
                         cratestack_model = #model_name,
                         cratestack_operation = "list",
                         cratestack_error = error.code(),
@@ -78,7 +97,7 @@ pub(super) fn build_list_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStre
                 Err(error) => {
                     ::cratestack::tracing::warn!(
                         target: "cratestack",
-                        cratestack_route = #list_route_path,
+                        cratestack_route = canonical_route,
                         cratestack_model = #model_name,
                         cratestack_operation = "list",
                         cratestack_error = error.code(),
@@ -89,15 +108,15 @@ pub(super) fn build_list_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStre
                 }
             };
             if query.limit.is_some_and(|limit| limit < 0) {
-                ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = #list_route_path, cratestack_model = #model_name, cratestack_operation = "list", "cratestack model list rejected negative limit");
+                ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = canonical_route, cratestack_model = #model_name, cratestack_operation = "list", "cratestack model list rejected negative limit");
                 return ::cratestack::encode_transport_result_with_status_for::<_, #list_response_type>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(CoolError::BadRequest("limit must be greater than or equal to 0".to_owned())));
             }
             if query.offset.is_some_and(|offset| offset < 0) {
-                ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = #list_route_path, cratestack_model = #model_name, cratestack_operation = "list", "cratestack model list rejected negative offset");
+                ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = canonical_route, cratestack_model = #model_name, cratestack_operation = "list", "cratestack model list rejected negative offset");
                 return ::cratestack::encode_transport_result_with_status_for::<_, #list_response_type>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(CoolError::BadRequest("offset must be greater than or equal to 0".to_owned())));
             }
             if let Err(error) = #validate_selection_ident(&query.selection, state.db.#accessor_ident().descriptor()) {
-                ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = #list_route_path, cratestack_model = #model_name, cratestack_operation = "list", cratestack_error = error.code(),
+                ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = canonical_route, cratestack_model = #model_name, cratestack_operation = "list", cratestack_error = error.code(),
                     cratestack_detail = error.detail().unwrap_or(""), "cratestack model list selection validation failed");
                 return ::cratestack::encode_transport_result_with_status_for::<_, #list_response_type>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error));
             }
