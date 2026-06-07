@@ -35,16 +35,28 @@ pub(super) fn build_list_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStre
             C: HttpTransport,
             Auth: ::cratestack::AuthProvider,
         {
-            #list_dispatch_ident(state, #list_route_path, headers, raw_query).await
+            let canonical_query = raw_query.clone();
+            #list_dispatch_ident(
+                state,
+                CanonicalRequest {
+                    method: "GET",
+                    path: #list_route_path,
+                    query: canonical_query.as_deref(),
+                    body: &[],
+                },
+                headers,
+                raw_query,
+            ).await
         }
 
-        // Shared body. `canonical_route` is the request's canonical identity used for
-        // BOTH signature verification (`request_context.path`) and the `cratestack_route`
-        // tracing field. REST passes `/<plural>`; RPC dispatch passes the op id
-        // (`model.<M>.list`).
+        // Shared body. `canonical` carries the request's canonical identity
+        // (method/path/query/body) used for BOTH signature verification
+        // (`request_context`) and the `cratestack_route` tracing field. REST
+        // passes `GET /<plural>` with an empty body; RPC dispatch passes
+        // `POST /rpc/model.<M>.list` with the raw frame bytes.
         async fn #list_dispatch_ident<C, Auth>(
             state: ModelRouterState<C, Auth>,
-            canonical_route: &str,
+            canonical: CanonicalRequest<'_>,
             headers: HeaderMap,
             raw_query: Option<String>,
         ) -> Response
@@ -53,6 +65,7 @@ pub(super) fn build_list_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStre
             Auth: ::cratestack::AuthProvider,
         {
             const CAPABILITIES: ::cratestack::RouteTransportCapabilities = #list_capabilities;
+            let canonical_route = canonical.path;
             let span = ::cratestack::tracing::info_span!(
                 "cratestack_model_list_route",
                 cratestack_route = canonical_route,
@@ -75,7 +88,7 @@ pub(super) fn build_list_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStre
                 );
                 return #list_header_error_encoder;
             }
-            let request = request_context("GET", canonical_route, raw_query.as_deref(), &headers, &[]);
+            let request = request_context(canonical.method, canonical.path, canonical.query, &headers, canonical.body);
             let ctx = match state.auth_provider.authenticate(&request).await {
                 Ok(ctx) => ::cratestack::enrich_context_from_headers(ctx, &headers),
                 Err(error) => {

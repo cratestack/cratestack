@@ -35,15 +35,32 @@ pub(super) fn build_update_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenSt
             Auth: ::cratestack::AuthProvider,
         {
             let request_path = format!("{}/{}", #list_route_path, id);
-            #update_dispatch_ident(state, &request_path, headers, id, body).await
+            let canonical_body = body.clone();
+            #update_dispatch_ident(
+                state,
+                CanonicalRequest {
+                    method: "PATCH",
+                    path: &request_path,
+                    query: None,
+                    body: canonical_body.as_ref(),
+                },
+                headers,
+                id,
+                body,
+            ).await
         }
 
-        // Shared body. `canonical_route` is the canonical identity for signature
-        // verification and tracing. REST passes `/<plural>/<id>`; RPC dispatch passes
-        // the op id (`model.<M>.update`). `id` is still used for the update.
+        // Shared body. `canonical` carries the canonical identity (method/path/
+        // query/body) for signature verification and tracing. REST passes
+        // `PATCH /<plural>/<id>` with the REST patch body; RPC dispatch passes
+        // `POST /rpc/model.<M>.update` with the raw `{id, patch}` frame bytes (so
+        // both the id and the patch are bound to the signature). The `body` arg
+        // carries the codec-encoded patch the update logic consumes; on RPC that
+        // is the re-encoded `patch` while `canonical.body` is the full frame.
+        // `id` is still used for the update.
         async fn #update_dispatch_ident<C, Auth>(
             state: ModelRouterState<C, Auth>,
-            canonical_route: &str,
+            canonical: CanonicalRequest<'_>,
             headers: HeaderMap,
             id: #primary_key_type,
             body: Bytes,
@@ -57,7 +74,7 @@ pub(super) fn build_update_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenSt
             if let Err(error) = ::cratestack::validate_transport_request_headers_for(&state.codec, &headers, &CAPABILITIES) {
                 return ::cratestack::encode_transport_result_with_status_for::<_, super::models::#model_ident>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error));
             }
-            let request = request_context("PATCH", canonical_route, None, &headers, body.as_ref());
+            let request = request_context(canonical.method, canonical.path, canonical.query, &headers, canonical.body);
             let ctx = match state.auth_provider.authenticate(&request).await {
                 Ok(ctx) => ::cratestack::enrich_context_from_headers(ctx, &headers),
                 Err(error) => {

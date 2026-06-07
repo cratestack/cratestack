@@ -37,18 +37,30 @@ pub(crate) fn generate_procedure_axum_handler(
             C: HttpTransport,
             Auth: ::cratestack::AuthProvider,
         {
-            #dispatch_ident(state, #route_path, headers, body).await
+            let canonical_body = body.clone();
+            #dispatch_ident(
+                state,
+                CanonicalRequest {
+                    method: "POST",
+                    path: #route_path,
+                    query: None,
+                    body: canonical_body.as_ref(),
+                },
+                headers,
+                body,
+            ).await
         }
 
-        // Shared body. `canonical_route` is the request's canonical identity used
-        // for BOTH signature verification (`request_context.path`) and the
-        // `cratestack_route` tracing field. REST passes the `/$procs/<name>`
-        // route; RPC dispatch passes the op id (`procedure.<name>`) so on
-        // `transport rpc` the op id is the single identity for url, dispatch,
-        // signing, and logs — `/$procs/*` never appears.
+        // Shared body. `canonical` carries the request's canonical identity
+        // (method/path/query/body) used for BOTH signature verification
+        // (`request_context`) and the `cratestack_route` tracing field. REST
+        // passes the `/$procs/<name>` route with the REST body; RPC dispatch
+        // passes `POST /rpc/procedure.<name>` with the raw frame bytes so on
+        // `transport rpc` the actual rpc request is the single canonical for
+        // url, dispatch, signing, and logs — `/$procs/*` never appears.
         async fn #dispatch_ident<R, C, Auth>(
             state: ProcedureRouterState<R, C, Auth>,
-            canonical_route: &str,
+            canonical: CanonicalRequest<'_>,
             headers: HeaderMap,
             body: Bytes,
         ) -> Response
@@ -58,6 +70,7 @@ pub(crate) fn generate_procedure_axum_handler(
             Auth: ::cratestack::AuthProvider,
         {
             const CAPABILITIES: ::cratestack::RouteTransportCapabilities = #procedure_capabilities;
+            let canonical_route = canonical.path;
             let span = ::cratestack::tracing::info_span!(
                 "cratestack_procedure_route",
                 cratestack_route = canonical_route,
@@ -73,7 +86,7 @@ pub(crate) fn generate_procedure_axum_handler(
                 let result: Result<super::procedures::#module_ident::Output, ::cratestack::CoolError> = Err(error);
                 return #result_encoder;
             }
-            let request = request_context("POST", canonical_route, None, &headers, body.as_ref());
+            let request = request_context(canonical.method, canonical.path, canonical.query, &headers, canonical.body);
             let ctx = match state.auth_provider.authenticate(&request).await {
                 Ok(ctx) => ::cratestack::enrich_context_from_headers(ctx, &headers),
                 Err(error) => {

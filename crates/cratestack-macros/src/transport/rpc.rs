@@ -2,10 +2,12 @@
 //! `rpc_dispatch` fn. Each model verb constructs a `ModelRouterState`
 //! from the unified `RpcRouterState`, decodes the RPC body into the
 //! right input shape, and delegates to the verb's `_dispatch` fn —
-//! passing the op id (`model.<M>.<verb>`) as the canonical request
-//! identity so on `transport rpc` the op id is the single identity for
-//! url, dispatch, signing, and tracing (the REST `/<plural>` shape
-//! never appears).
+//! passing a `CanonicalRequest` describing the ACTUAL rpc request
+//! (`POST /rpc/model.<M>.<verb>`, no query, the raw frame bytes) as the
+//! canonical signed identity. On `transport rpc` that concrete rpc URL +
+//! frame body is the single identity for url, dispatch, signing, and
+//! tracing — it matches the rpc client byte-for-byte and the REST
+//! `/<plural>` shape never appears.
 
 use cratestack_core::{Model, Procedure};
 use quote::quote;
@@ -16,11 +18,15 @@ pub(crate) fn generate_procedure_rpc_dispatch_arm(
     procedure: &Procedure,
 ) -> proc_macro2::TokenStream {
     let op_id = format!("procedure.{}", procedure.name);
+    let canonical_path = format!("/rpc/{op_id}");
     let dispatch_ident = ident(&format!("handle_{}_dispatch", to_snake_case(&procedure.name)));
     quote! {
         #op_id => {
-            // Pass the op id as the canonical request identity so auth + tracing
-            // use `procedure.<name>`, not the REST `/$procs/<name>` shape.
+            // The canonical signed request IS the actual rpc request:
+            // `POST /rpc/procedure.<name>` with the raw frame bytes. This
+            // matches the rpc client byte-for-byte; `/$procs/<name>` never
+            // appears on `transport rpc`.
+            let canonical_body = body.clone();
             #dispatch_ident(
                 ProcedureRouterState {
                     db: state.db.clone(),
@@ -28,7 +34,12 @@ pub(crate) fn generate_procedure_rpc_dispatch_arm(
                     codec: state.codec.clone(),
                     auth_provider: state.auth_provider.clone(),
                 },
-                #op_id,
+                CanonicalRequest {
+                    method: "POST",
+                    path: #canonical_path,
+                    query: None,
+                    body: canonical_body.as_ref(),
+                },
                 headers,
                 body,
             ).await
@@ -58,6 +69,13 @@ pub(crate) fn generate_model_rpc_dispatch_arms(model: &Model) -> Vec<proc_macro2
     let create_id = format!("model.{m}.create");
     let update_id = format!("model.{m}.update");
     let delete_id = format!("model.{m}.delete");
+
+    // Concrete rpc URLs the client signs byte-for-byte: `/rpc/<op_id>`.
+    let list_path = format!("/rpc/{list_id}");
+    let get_path = format!("/rpc/{get_id}");
+    let create_path = format!("/rpc/{create_id}");
+    let update_path = format!("/rpc/{update_id}");
+    let delete_path = format!("/rpc/{delete_id}");
 
     // Models without a primary key can't have get/update/delete ops
     // dispatch (no id to extract). The parser already rejects PK-less
@@ -100,7 +118,17 @@ pub(crate) fn generate_model_rpc_dispatch_arms(model: &Model) -> Vec<proc_macro2
                     Err(error) => return rpc_dispatch_error(&state, &headers, error),
                 };
                 let raw_query = ::cratestack::rpc::synthesize_list_query(&input);
-                #list_dispatch(model_state, #list_id, headers, raw_query).await
+                #list_dispatch(
+                    model_state,
+                    CanonicalRequest {
+                        method: "POST",
+                        path: #list_path,
+                        query: None,
+                        body: body.as_ref(),
+                    },
+                    headers,
+                    raw_query,
+                ).await
             }
         },
         quote! {
@@ -117,7 +145,18 @@ pub(crate) fn generate_model_rpc_dispatch_arms(model: &Model) -> Vec<proc_macro2
                     Ok(input) => input,
                     Err(error) => return rpc_dispatch_error(&state, &headers, error),
                 };
-                #get_dispatch(model_state, #get_id, headers, input.id, None).await
+                #get_dispatch(
+                    model_state,
+                    CanonicalRequest {
+                        method: "POST",
+                        path: #get_path,
+                        query: None,
+                        body: body.as_ref(),
+                    },
+                    headers,
+                    input.id,
+                    None,
+                ).await
             }
         },
         quote! {
@@ -127,7 +166,18 @@ pub(crate) fn generate_model_rpc_dispatch_arms(model: &Model) -> Vec<proc_macro2
                     codec: state.codec.clone(),
                     auth_provider: state.auth_provider.clone(),
                 };
-                #create_dispatch(model_state, #create_id, headers, body).await
+                let canonical_body = body.clone();
+                #create_dispatch(
+                    model_state,
+                    CanonicalRequest {
+                        method: "POST",
+                        path: #create_path,
+                        query: None,
+                        body: canonical_body.as_ref(),
+                    },
+                    headers,
+                    body,
+                ).await
             }
         },
         quote! {
@@ -154,7 +204,16 @@ pub(crate) fn generate_model_rpc_dispatch_arms(model: &Model) -> Vec<proc_macro2
                 };
                 #update_dispatch(
                     model_state,
-                    #update_id,
+                    CanonicalRequest {
+                        method: "POST",
+                        path: #update_path,
+                        // The full `{id, patch}` frame is the canonical body so
+                        // both the id and the patch are bound to the signature;
+                        // the re-encoded `patch` below is only the update logic's
+                        // input, not the signed material.
+                        query: None,
+                        body: body.as_ref(),
+                    },
                     headers,
                     input.id,
                     ::cratestack::axum::body::Bytes::from(patch_bytes),
@@ -175,7 +234,17 @@ pub(crate) fn generate_model_rpc_dispatch_arms(model: &Model) -> Vec<proc_macro2
                     Ok(input) => input,
                     Err(error) => return rpc_dispatch_error(&state, &headers, error),
                 };
-                #delete_dispatch(model_state, #delete_id, headers, input.id).await
+                #delete_dispatch(
+                    model_state,
+                    CanonicalRequest {
+                        method: "POST",
+                        path: #delete_path,
+                        query: None,
+                        body: body.as_ref(),
+                    },
+                    headers,
+                    input.id,
+                ).await
             }
         },
     ]
