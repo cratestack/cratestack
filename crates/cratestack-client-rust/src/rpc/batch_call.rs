@@ -11,6 +11,28 @@ use crate::rpc::batch::BatchBuilder;
 use crate::rpc::client::RpcClient;
 use crate::rpc::error::RpcClientError;
 
+/// Recursively remove `null`-valued entries from JSON objects, descending into
+/// nested objects and array elements. Array `null` *elements* are left intact
+/// (their position is significant); only object *entries* are dropped — the
+/// shape that `None` optional fields serialize to. Keeps `serde_json::Value::Null`
+/// off the CBOR wire, where it would otherwise mis-encode as an empty array.
+fn strip_json_null_entries(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            map.retain(|_, child| !child.is_null());
+            for child in map.values_mut() {
+                strip_json_null_entries(child);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items.iter_mut() {
+                strip_json_null_entries(item);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// A typed unary RPC call that has been *prepared* but not yet sent.
 ///
 /// Produced by every macro-generated unary RPC method on the typed
@@ -49,6 +71,22 @@ where
         I: serde::Serialize,
     {
         let input_value = serde_json::to_value(input)
+            .map(|mut value| {
+                // Strip `null` object entries before the value is handed to the
+                // codec. `serde::Serialize` emits `None` optional fields as
+                // `serde_json::Value::Null`, and the CBOR codec encodes
+                // `serde_json::Value::Null` as the empty-array marker (`0x80`),
+                // NOT CBOR null (`0xf6`) — see `cratestack-codec-cbor`. A server
+                // decoding the corresponding `Option<T>` field then fails with
+                // "expected text, got array". The generated request structs
+                // carry `#[serde(default)]` on optional fields, so an absent key
+                // decodes as `None` exactly as an explicit null would have. This
+                // mirrors the server-side projection that strips null map
+                // entries before its own encode, keeping both directions
+                // null-free on the wire.
+                strip_json_null_entries(&mut value);
+                value
+            })
             .map_err(|error| CoolError::Codec(format!("encode batch input: {error}")));
         Self {
             rpc,
@@ -123,5 +161,69 @@ impl<O> Copy for BatchHandle<O> {}
 impl<O> std::fmt::Debug for BatchHandle<O> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BatchHandle").field("id", &self.id).finish()
+    }
+}
+
+#[cfg(test)]
+mod null_strip_tests {
+    use super::strip_json_null_entries;
+    use cratestack_codec_cbor::CborCodec;
+    use cratestack_core::CoolCodec;
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Serialize, Deserialize, PartialEq, Debug)]
+    struct Req {
+        required: String,
+        // Generated request structs carry `#[serde(default)]` on optionals so an
+        // absent key decodes as `None` — the property the strip relies on.
+        #[serde(default)]
+        optional: Option<String>,
+        #[serde(default)]
+        nested: Option<Inner>,
+    }
+
+    #[derive(Serialize, Deserialize, PartialEq, Debug)]
+    struct Inner {
+        #[serde(default)]
+        maybe: Option<String>,
+        kept: String,
+    }
+
+    /// The `BatchableCall::new` path: serde -> `serde_json::Value` -> strip nulls.
+    /// After stripping, the value encodes to CBOR cleanly and the typed struct
+    /// decodes its `None` optionals back from the absent keys.
+    #[test]
+    fn stripped_none_optionals_round_trip_through_cbor() {
+        let req = Req {
+            required: "x".to_owned(),
+            optional: None,
+            nested: Some(Inner { maybe: None, kept: "k".to_owned() }),
+        };
+        let mut value = serde_json::to_value(&req).expect("to_value");
+        assert!(value.get("optional").expect("present").is_null());
+        strip_json_null_entries(&mut value);
+        assert!(value.get("optional").is_none(), "top-level null entry dropped");
+        assert!(
+            value["nested"].get("maybe").is_none(),
+            "nested null entry dropped"
+        );
+        assert_eq!(value["nested"]["kept"], serde_json::json!("k"));
+
+        let bytes = CborCodec.encode(&value).expect("encode");
+        let decoded: Req = CborCodec.decode(&bytes).expect("decode");
+        assert_eq!(decoded, req);
+    }
+
+    /// Regression guard: WITHOUT the strip, a `serde_json::Value::Null` optional
+    /// mis-encodes as the CBOR empty-array marker and the typed `Option<String>`
+    /// decode fails ("expected text, got array") — the exact cross-service bug.
+    #[test]
+    fn unstripped_null_breaks_typed_decode() {
+        let value = serde_json::json!({ "required": "x", "optional": null });
+        let bytes = CborCodec.encode(&value).expect("encode");
+        assert!(
+            CborCodec.decode::<Req>(&bytes).is_err(),
+            "unstripped Value::Null must break the typed decode"
+        );
     }
 }
