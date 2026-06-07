@@ -230,15 +230,39 @@ the service directly.
 
 ## 5. Canonical request signing
 
-`canonical_request_string` in `cratestack-core` is unchanged.
+`canonical_request_string` in `cratestack-core` is unchanged — only the
+method / path / body components fed into it differ per binding (see below).
 
-- HTTP unary and batch: signed exactly as REST today. Body bytes already
-  cover everything an attacker could mutate.
+- HTTP unary and batch: the canonical request *is the actual rpc request*.
+  Method `POST`, path `/rpc/<op_id>` (the concrete URL the client hit), no
+  query, and the raw rpc frame bytes as the body. The frame body carries the
+  primary key / patch / args, so signing it binds them.
 - WS: the upgrade request is signed once via the existing
   `canonical_request_string` over the upgrade HTTP request. Frames inside
   the channel are not individually signed.
 
 No new signing primitives are introduced.
+
+**Canonical request under `transport rpc` is the concrete rpc request, not
+the REST shape.** On RPC dispatch the canonical fed into *both* signature
+verification (`request_context`) and the `cratestack_route` tracing field is:
+
+- **method** = `POST`
+- **path** = `/rpc/<op_id>` — the real URL, e.g. `/rpc/procedure.<name>`,
+  `/rpc/model.<M>.{list,get,create,update,delete}`. NOT the bare op id and
+  NOT the REST `/$procs/<name>` or `/<plural>[/<id>]` shape.
+- **query** = none
+- **body** = the raw rpc frame bytes the dispatch received (the unwrapped
+  unary payload, or the `{id}` / `{id, patch}` frame for CRUD verbs) —
+  *before* any re-decoding. This is what binds the id / patch / args to the
+  signature, so e.g. `model.<M>.get` with a different `id` is a different
+  signed request.
+
+This matches the rpc client byte-for-byte — it signs `path =
+format!("/rpc/{op_id}")`, method `POST`, with the same frame body
+(`cratestack-client-rust/src/rpc/client.rs`). On the REST binding the
+canonical remains the REST method / path / query / body, byte for byte as
+before.
 
 ## 6. What is explicitly out of scope for v1
 

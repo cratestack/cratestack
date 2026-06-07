@@ -48,6 +48,20 @@ pub(super) fn build_axum_module(c: &ServerCollected) -> proc_macro2::TokenStream
                 pub auth_provider: Auth,
             }
 
+            /// The four request components that make up a canonical signed
+            /// request. On `transport rest` these are the REST method/path/
+            /// query/body; on `transport rpc` they are the ACTUAL rpc request
+            /// (`POST /rpc/<op_id>`, no query, the raw frame bytes). A handler's
+            /// `_dispatch` fn takes one of these so signature verification and
+            /// tracing share a single source of truth that matches the client
+            /// byte-for-byte.
+            struct CanonicalRequest<'a> {
+                method: &'a str,
+                path: &'a str,
+                query: Option<&'a str>,
+                body: &'a [u8],
+            }
+
             fn request_context<'a>(
                 method: &'a str,
                 path: &'a str,

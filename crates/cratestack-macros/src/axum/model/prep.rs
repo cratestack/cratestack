@@ -23,6 +23,11 @@ pub(super) struct ModelHandlerPrep {
     pub(super) get_handler_ident: syn::Ident,
     pub(super) update_handler_ident: syn::Ident,
     pub(super) delete_handler_ident: syn::Ident,
+    pub(super) list_dispatch_ident: syn::Ident,
+    pub(super) create_dispatch_ident: syn::Ident,
+    pub(super) get_dispatch_ident: syn::Ident,
+    pub(super) update_dispatch_ident: syn::Ident,
+    pub(super) delete_dispatch_ident: syn::Ident,
     pub(super) model_ident: syn::Ident,
     pub(super) field_module_ident: syn::Ident,
     pub(super) accessor_ident: syn::Ident,
@@ -122,8 +127,7 @@ pub(super) fn build_prep(model: &Model) -> Result<ModelHandlerPrep, String> {
     let total_count_block =
         list_logging::total_count_tokens(paged, &list_builder_ident, &list_response_type);
     let list_success_value = list_logging::list_success_tokens(paged);
-    let list_result_log =
-        list_logging::list_result_log_tokens(paged, &list_route_path, &model.name);
+    let list_result_log = list_logging::list_result_log_tokens(paged, &model.name);
 
     Ok(ModelHandlerPrep {
         list_handler_ident: ident(&format!("handle_list_{}", plural)),
@@ -131,6 +135,11 @@ pub(super) fn build_prep(model: &Model) -> Result<ModelHandlerPrep, String> {
         get_handler_ident: ident(&format!("handle_get_{}", snake)),
         update_handler_ident: ident(&format!("handle_update_{}", snake)),
         delete_handler_ident: ident(&format!("handle_delete_{}", snake)),
+        list_dispatch_ident: ident(&format!("handle_list_{}_dispatch", plural)),
+        create_dispatch_ident: ident(&format!("handle_create_{}_dispatch", plural)),
+        get_dispatch_ident: ident(&format!("handle_get_{}_dispatch", snake)),
+        update_dispatch_ident: ident(&format!("handle_update_{}_dispatch", snake)),
+        delete_dispatch_ident: ident(&format!("handle_delete_{}_dispatch", snake)),
         model_ident,
         field_module_ident: ident(&snake),
         accessor_ident: ident(&snake),

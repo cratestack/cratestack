@@ -11,6 +11,7 @@ pub(crate) fn generate_procedure_axum_handler(
     procedure: &Procedure,
 ) -> Result<proc_macro2::TokenStream, String> {
     let handler_ident = ident(&format!("handle_{}", to_snake_case(&procedure.name)));
+    let dispatch_ident = ident(&format!("handle_{}_dispatch", to_snake_case(&procedure.name)));
     let method_ident = ident(&to_snake_case(&procedure.name));
     let module_ident = ident(&to_snake_case(&procedure.name));
     let procedure_name = &procedure.name;
@@ -24,6 +25,8 @@ pub(crate) fn generate_procedure_axum_handler(
     };
 
     Ok(quote! {
+        // REST mount (`transport rest` / the `/$procs/<name>` route): the
+        // canonical request identity IS the REST route path.
         async fn #handler_ident<R, C, Auth>(
             State(state): State<ProcedureRouterState<R, C, Auth>>,
             headers: HeaderMap,
@@ -34,10 +37,43 @@ pub(crate) fn generate_procedure_axum_handler(
             C: HttpTransport,
             Auth: ::cratestack::AuthProvider,
         {
+            let canonical_body = body.clone();
+            #dispatch_ident(
+                state,
+                CanonicalRequest {
+                    method: "POST",
+                    path: #route_path,
+                    query: None,
+                    body: canonical_body.as_ref(),
+                },
+                headers,
+                body,
+            ).await
+        }
+
+        // Shared body. `canonical` carries the request's canonical identity
+        // (method/path/query/body) used for BOTH signature verification
+        // (`request_context`) and the `cratestack_route` tracing field. REST
+        // passes the `/$procs/<name>` route with the REST body; RPC dispatch
+        // passes `POST /rpc/procedure.<name>` with the raw frame bytes so on
+        // `transport rpc` the actual rpc request is the single canonical for
+        // url, dispatch, signing, and logs — `/$procs/*` never appears.
+        async fn #dispatch_ident<R, C, Auth>(
+            state: ProcedureRouterState<R, C, Auth>,
+            canonical: CanonicalRequest<'_>,
+            headers: HeaderMap,
+            body: Bytes,
+        ) -> Response
+        where
+            R: super::procedures::ProcedureRegistry,
+            C: HttpTransport,
+            Auth: ::cratestack::AuthProvider,
+        {
             const CAPABILITIES: ::cratestack::RouteTransportCapabilities = #procedure_capabilities;
+            let canonical_route = canonical.path;
             let span = ::cratestack::tracing::info_span!(
                 "cratestack_procedure_route",
-                cratestack_route = #route_path,
+                cratestack_route = canonical_route,
                 cratestack_procedure = #procedure_name,
                 cratestack_operation = "procedure",
             );
@@ -45,17 +81,17 @@ pub(crate) fn generate_procedure_axum_handler(
             let started = ::std::time::Instant::now();
 
             if let Err(error) = ::cratestack::validate_transport_request_headers_for(&state.codec, &headers, &CAPABILITIES) {
-                ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = #route_path, cratestack_procedure = #procedure_name, cratestack_operation = "procedure", cratestack_error = error.code(),
+                ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = canonical_route, cratestack_procedure = #procedure_name, cratestack_operation = "procedure", cratestack_error = error.code(),
                     cratestack_detail = error.detail().unwrap_or(""), "cratestack procedure preflight failed");
                 let result: Result<super::procedures::#module_ident::Output, ::cratestack::CoolError> = Err(error);
                 return #result_encoder;
             }
-            let request = request_context("POST", #route_path, None, &headers, body.as_ref());
+            let request = request_context(canonical.method, canonical.path, canonical.query, &headers, canonical.body);
             let ctx = match state.auth_provider.authenticate(&request).await {
                 Ok(ctx) => ::cratestack::enrich_context_from_headers(ctx, &headers),
                 Err(error) => {
                     let error: ::cratestack::CoolError = error.into();
-                    ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = #route_path, cratestack_procedure = #procedure_name, cratestack_operation = "procedure", cratestack_error = error.code(),
+                    ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = canonical_route, cratestack_procedure = #procedure_name, cratestack_operation = "procedure", cratestack_error = error.code(),
                     cratestack_detail = error.detail().unwrap_or(""), "cratestack procedure auth failed");
                     let result: Result<super::procedures::#module_ident::Output, ::cratestack::CoolError> = Err(error);
                     return #result_encoder;
@@ -64,7 +100,7 @@ pub(crate) fn generate_procedure_axum_handler(
             let args = match ::cratestack::decode_transport_request_for::<_, super::procedures::#module_ident::Args>(&state.codec, &headers, &CAPABILITIES, &body) {
                 Ok(args) => args,
                 Err(error) => {
-                    ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = #route_path, cratestack_procedure = #procedure_name, cratestack_operation = "procedure", cratestack_error = error.code(),
+                    ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = canonical_route, cratestack_procedure = #procedure_name, cratestack_operation = "procedure", cratestack_error = error.code(),
                     cratestack_detail = error.detail().unwrap_or(""), "cratestack procedure decode failed");
                     let result: Result<super::procedures::#module_ident::Output, ::cratestack::CoolError> = Err(error);
                     return #result_encoder;
@@ -83,7 +119,7 @@ pub(crate) fn generate_procedure_axum_handler(
             match &result {
                 Ok(_) => ::cratestack::tracing::info!(
                     target: "cratestack",
-                    cratestack_route = #route_path,
+                    cratestack_route = canonical_route,
                     cratestack_procedure = #procedure_name,
                     cratestack_operation = "procedure",
                     cratestack_authenticated = ctx.is_authenticated(),
@@ -93,7 +129,7 @@ pub(crate) fn generate_procedure_axum_handler(
                 ),
                 Err(error) => ::cratestack::tracing::warn!(
                     target: "cratestack",
-                    cratestack_route = #route_path,
+                    cratestack_route = canonical_route,
                     cratestack_procedure = #procedure_name,
                     cratestack_operation = "procedure",
                     cratestack_authenticated = ctx.is_authenticated(),
