@@ -25,7 +25,8 @@ Most workflows are encoded in the `justfile` (`just --list`). The important ones
   faster inner loop (server facade only). `just test-pg-tc` uses ephemeral per-binary testcontainers
   (what CI uses; stronger isolation, per-binary spin-up cost).
 - **Single test:** `cargo test -p <crate> <test_name>`, or under PG:
-  `just test-pg -- -p cratestack-pg <test_name>` (extra args pass through to `cargo test`).
+  `just test-pg-only -- <test_name>` (extra args pass through to `cargo test`). Note: `just test-pg`
+  hardcodes `--workspace`, which conflicts with `-p`, so use `test-pg-only` to scope to one crate.
 - **Release validation:** `just release-check` (check + tests, retried 3× to absorb the known-flaky
   `generated_routes_emit_tracing_events`; `SKIP_TESTS=1` overrides).
 - **Version bump:** `just bump 0.x.y` rewrites every `Cargo.toml` version literal and refreshes the lock.
