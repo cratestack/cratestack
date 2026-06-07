@@ -13,9 +13,15 @@ workspace `version` in the root `Cargo.toml`.
 
 Most workflows are encoded in the `justfile` (`just --list`). The important ones:
 
+> **Linux prerequisite:** the workspace includes the `tauri-*` example crates, whose Linux backend pulls
+> `glib-sys`/`webkit2gtk-sys` — so a fresh `--workspace` build/test on Linux needs the GTK/WebKit dev
+> packages installed (`libgtk-3-dev`, `libwebkit2gtk-4.1-dev`, …). macOS uses the system WebKit and needs
+> nothing extra. The rustdoc CI job sidesteps this by building the framework crates by name, not `--workspace`.
+
 - **Pre-PR gate:** `just all-checks` — runs `cargo fmt`, `cargo fix`, `cargo clippy --fix -D warnings`,
-  `cargo check --all-targets --all-features`, and `cargo deny check`. This is the canonical formatting +
-  lint pass; run it before opening a PR.
+  `cargo check --all-targets`, and `cargo deny check`, all scoped `--workspace --exclude
+  embedded_flutter_native`. This is the canonical formatting + lint pass; run it before opening a PR.
+  (Deliberately **not** `--all-features` — see the plain-tests note below.)
 - **Build:** `cargo build --workspace --exclude embedded_flutter_native` (the Flutter native crate needs
   flutter_rust_bridge-generated glue that isn't checked in — see the test note below).
 - **Plain tests (no DB):** `cargo test --workspace --exclude embedded_flutter_native`. PG-backed
