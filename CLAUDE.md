@@ -16,7 +16,8 @@ Most workflows are encoded in the `justfile` (`just --list`). The important ones
 - **Pre-PR gate:** `just all-checks` — runs `cargo fmt`, `cargo fix`, `cargo clippy --fix -D warnings`,
   `cargo check --all-targets --all-features`, and `cargo deny check`. This is the canonical formatting +
   lint pass; run it before opening a PR.
-- **Build:** `cargo build --workspace`
+- **Build:** `cargo build --workspace --exclude embedded_flutter_native` (the Flutter native crate needs
+  flutter_rust_bridge-generated glue that isn't checked in — see the test note below).
 - **Plain tests (no DB):** `cargo test --workspace --exclude embedded_flutter_native`. PG-backed
   integration tests (`banking_*`, `policy_db_*`, `generated_client_rust`) **skip silently** when
   `CRATESTACK_TEST_DATABASE_URL` is unset — a green run here does *not* mean full coverage.
