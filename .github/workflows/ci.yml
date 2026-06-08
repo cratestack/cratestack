@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ---- Blocking gates --------------------------------------------------
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/tauri-linux-deps
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: cargo check (workspace, all targets)
+        run: just check
+
+  tests:
+    name: tests (ephemeral Postgres)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/tauri-linux-deps
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      # `test-pg-tc` sets CRATESTACK_USE_TESTCONTAINERS=1, so each test
+      # binary spins up its own ephemeral Postgres via testcontainers
+      # (Docker is preinstalled on ubuntu-latest). This exercises the
+      # PG-backed integration tests that skip silently without a DB URL.
+      - name: cargo test (testcontainers Postgres)
+        # Retry up to 3x to absorb the known-flaky
+        # `generated_routes_emit_tracing_events` (which intermittently
+        # misses tracing events under workspace concurrency — same
+        # rationale as the `release-check` recipe). A genuine regression
+        # fails all three attempts and still blocks the PR.
+        run: |
+          for attempt in 1 2 3; do
+            echo "::group::test attempt $attempt/3"
+            if just test-pg-tc; then echo "::endgroup::"; exit 0; fi
+            echo "::endgroup::"
+            echo "attempt $attempt failed"
+          done
+          echo "tests failed after 3 attempts" >&2
+          exit 1
+
+  # ---- Informational (non-blocking) -----------------------------------
+  # clippy and rustfmt are not yet blocking: `main` carries pre-existing
+  # lint findings and rustfmt drift that predate any enforced gate, and
+  # the toolchain isn't pinned. These jobs surface the state on every PR;
+  # once the workspace is clean under a pinned toolchain, drop the
+  # `continue-on-error` flags to promote them to blocking gates.
+  clippy:
+    name: clippy (informational)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/tauri-linux-deps
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: cargo clippy -D warnings
+        run: just lint
+
+  rustfmt:
+    name: rustfmt (informational)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: cargo fmt --check
+        run: just fmt-check
