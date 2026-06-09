@@ -40,18 +40,27 @@ all-checks:
 _fmt extra='':
 	#!/usr/bin/env bash
 	set -euo pipefail
+	# Capture in a command substitution (not process substitution) so a
+	# failure of cargo-metadata or python aborts the recipe under
+	# `set -e`/pipefail instead of silently yielding an empty list — an
+	# empty list would make `cargo fmt` format the whole workspace
+	# (including the Flutter crate) and fail on its missing module.
+	pkgs=$(cargo metadata --no-deps --format-version 1 \
+	  | python3 -c "import json,sys;print(' '.join(x['name'] for x in json.load(sys.stdin)['packages'] if x['name']!='embedded_flutter_native'))")
 	args=()
-	while IFS= read -r p; do args+=(-p "$p"); done < <(
-	  cargo metadata --no-deps --format-version 1 \
-	    | python3 -c "import json,sys;[print(x['name']) for x in json.load(sys.stdin)['packages'] if x['name']!='embedded_flutter_native']"
-	)
+	for p in $pkgs; do args+=(-p "$p"); done
+	if [ ${#args[@]} -eq 0 ]; then
+	  echo "_fmt: no workspace packages resolved from cargo metadata" >&2
+	  exit 1
+	fi
 	cargo fmt "${args[@]}" {{extra}}
 
 # Type-check the whole workspace. Blocking CI gate. Same `--exclude`
 # (Flutter glue → E0583) and no-`--all-features` (mutually-exclusive
 # `decimal-*` backends → compile_error!) scoping as `all-checks`.
-check:
-	cargo check --workspace --exclude embedded_flutter_native --all-targets
+# Extra args pass through (CI appends `--locked` to catch lockfile drift).
+check *args='':
+	cargo check --workspace --exclude embedded_flutter_native --all-targets {{args}}
 
 # Clippy as `-D warnings`. Currently an INFORMATIONAL (non-blocking) CI
 # job until the workspace is clippy-clean under a pinned toolchain.

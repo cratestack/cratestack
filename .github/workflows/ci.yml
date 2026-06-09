@@ -28,33 +28,47 @@ jobs:
         with:
           tool: just
       - name: cargo check (workspace, all targets)
-        run: just check
+        # `--locked` fails the build if Cargo.lock would change, catching
+        # PRs that bump a dependency without committing the lockfile.
+        run: just check --locked
 
   tests:
     name: tests (ephemeral Postgres)
     runs-on: ubuntu-latest
+    env:
+      # Turn a failed testcontainer/DB connection into a hard error
+      # instead of a silent per-test skip — otherwise a broken Docker
+      # runner would pass this gate green while skipping all PG coverage.
+      CRATESTACK_REQUIRE_DB: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/tauri-linux-deps
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          # Needed to build the Studio UI (below), a wasm32 Trunk app.
+          targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
-          tool: just
-      # `test-pg-tc` sets CRATESTACK_USE_TESTCONTAINERS=1, so each test
-      # binary spins up its own ephemeral Postgres via testcontainers
-      # (Docker is preinstalled on ubuntu-latest). This exercises the
-      # PG-backed integration tests that skip silently without a DB URL.
+          tool: just,trunk
+      # The `embed-ui` feature (default) embeds the Trunk-built Studio UI
+      # via rust-embed, and cratestack-studio's api_smoke tests assert the
+      # real index.html is served. The dist isn't checked in, so build it
+      # here; cratestack-studio's build.rs picks up the sibling `dist/`.
+      - name: Build Studio UI (Trunk)
+        run: trunk build
+        working-directory: crates/cratestack-studio-ui
       - name: cargo test (testcontainers Postgres)
         # Retry up to 3x to absorb the known-flaky
         # `generated_routes_emit_tracing_events` (which intermittently
         # misses tracing events under workspace concurrency — same
         # rationale as the `release-check` recipe). A genuine regression
-        # fails all three attempts and still blocks the PR.
+        # fails all three attempts and still blocks the PR. `--locked`
+        # also asserts the committed Cargo.lock is up to date.
         run: |
           for attempt in 1 2 3; do
             echo "::group::test attempt $attempt/3"
-            if just test-pg-tc; then echo "::endgroup::"; exit 0; fi
+            if just test-pg-tc --locked; then echo "::endgroup::"; exit 0; fi
             echo "::endgroup::"
             echo "attempt $attempt failed"
           done
