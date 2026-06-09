@@ -23,13 +23,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/tauri-linux-deps
       - uses: dtolnay/rust-toolchain@stable
+      - name: Assert Cargo.lock is up to date
+        # Must run BEFORE rust-cache: that action invokes `cargo metadata`
+        # without `--locked`, which would silently regenerate a stale
+        # lockfile on the runner and mask the drift the `--locked` gate
+        # below is meant to catch. This is the un-maskable assertion.
+        run: cargo metadata --locked --format-version=1 > /dev/null
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
           tool: just
       - name: cargo check (workspace, all targets)
-        # `--locked` fails the build if Cargo.lock would change, catching
-        # PRs that bump a dependency without committing the lockfile.
+        # `--locked` also fails if the build itself would change the lock.
         run: just check --locked
 
   tests:
@@ -56,7 +61,11 @@ jobs:
       # real index.html is served. The dist isn't checked in, so build it
       # here; cratestack-studio's build.rs picks up the sibling `dist/`.
       - name: Build Studio UI (Trunk)
-        run: trunk build
+        # `--locked` asserts the studio-ui's own (separate, tracked)
+        # Cargo.lock is up to date — the root-workspace `--locked` flags
+        # don't cover this excluded sub-workspace. rust-cache only touches
+        # the root lock, so nothing masks this assertion.
+        run: trunk build --locked
         working-directory: crates/cratestack-studio-ui
       - name: cargo test (testcontainers Postgres)
         # Retry up to 3x to absorb the known-flaky
