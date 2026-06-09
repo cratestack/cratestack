@@ -48,10 +48,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/tauri-linux-deps
+      # wasm32 (for the Studio UI build below) is installed by rustup from
+      # rust-toolchain.toml's `targets`, for the pinned channel — adding it
+      # to @stable here wouldn't apply to the pinned toolchain trunk uses.
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          # Needed to build the Studio UI (below), a wasm32 Trunk app.
-          targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:

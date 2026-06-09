@@ -6,3 +6,8 @@
 [toolchain]
 channel = "1.95.0"
 components = ["rustfmt", "clippy"]
+# The studio UI and several examples build for wasm32 (Trunk/Leptos,
+# embedded-browser, tauri-web). Declaring the target here means rustup
+# installs it for the pinned toolchain wherever it's used — without this,
+# `trunk build` under the pinned channel fails with E0463 (missing `core`).
+targets = ["wasm32-unknown-unknown"]
