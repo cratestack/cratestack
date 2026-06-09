@@ -19,7 +19,10 @@ pub(crate) fn generate_procedure_rpc_dispatch_arm(
 ) -> proc_macro2::TokenStream {
     let op_id = format!("procedure.{}", procedure.name);
     let canonical_path = format!("/rpc/{op_id}");
-    let dispatch_ident = ident(&format!("handle_{}_dispatch", to_snake_case(&procedure.name)));
+    let dispatch_ident = ident(&format!(
+        "handle_{}_dispatch",
+        to_snake_case(&procedure.name)
+    ));
     quote! {
         #op_id => {
             // The canonical signed request IS the actual rpc request:

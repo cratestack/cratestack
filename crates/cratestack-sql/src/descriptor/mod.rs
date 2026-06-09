@@ -167,7 +167,7 @@ impl<M, PK> ModelDescriptor<M, PK> {
         let mut sql = String::new();
         let mut emitted = false;
         for column in self.columns.iter() {
-            if columns.iter().any(|name| *name == column.sql_name) && {
+            if columns.contains(&column.sql_name) && {
                 if emitted {
                     sql.push_str(", ");
                 }

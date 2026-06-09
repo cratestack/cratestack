@@ -93,8 +93,7 @@ async fn exhausting_the_bucket_yields_429_with_retry_after() {
         .headers()
         .get("retry-after")
         .and_then(|v| v.to_str().ok())
-        .map(|s| s.parse::<u32>().ok())
-        .flatten();
+        .and_then(|s| s.parse::<u32>().ok());
     assert!(
         retry_after.is_some(),
         "Retry-After header should be present and numeric on 429",

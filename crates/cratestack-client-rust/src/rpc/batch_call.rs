@@ -148,11 +148,11 @@ pub struct BatchHandle<O> {
 }
 
 impl<O> Clone for BatchHandle<O> {
+    // Hand-written (not derived) so the impl doesn't pick up a spurious
+    // `O: Clone` bound — `O` is purely a phantom. `BatchHandle` is `Copy`,
+    // so the canonical clone is just a copy of `*self`.
     fn clone(&self) -> Self {
-        Self {
-            id: self.id,
-            _output: std::marker::PhantomData,
-        }
+        *self
     }
 }
 
@@ -197,12 +197,18 @@ mod null_strip_tests {
         let req = Req {
             required: "x".to_owned(),
             optional: None,
-            nested: Some(Inner { maybe: None, kept: "k".to_owned() }),
+            nested: Some(Inner {
+                maybe: None,
+                kept: "k".to_owned(),
+            }),
         };
         let mut value = serde_json::to_value(&req).expect("to_value");
         assert!(value.get("optional").expect("present").is_null());
         strip_json_null_entries(&mut value);
-        assert!(value.get("optional").is_none(), "top-level null entry dropped");
+        assert!(
+            value.get("optional").is_none(),
+            "top-level null entry dropped"
+        );
         assert!(
             value["nested"].get("maybe").is_none(),
             "nested null entry dropped"

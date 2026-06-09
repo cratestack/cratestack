@@ -77,6 +77,9 @@ impl CreateModelInput<Task> for CreateTaskInput {
     }
 }
 
+// Update path isn't exercised by this filter-focused test, but the input
+// type completes the model's generated surface for the fixture.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
 struct UpdateTaskInput;
 impl UpdateModelInput<Task> for UpdateTaskInput {

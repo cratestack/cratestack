@@ -108,12 +108,11 @@ mod addon {
             return Ok(());
         }
         let path = PathBuf::from(&db_path);
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent).map_err(|error| {
-                    napi::Error::from_reason(format!("create parent dir: {error}"))
-                })?;
-            }
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent)
+                .map_err(|error| napi::Error::from_reason(format!("create parent dir: {error}")))?;
         }
         let opened = RusqliteRuntime::open(&path)
             .map_err(|error| napi::Error::from_reason(format!("open failed: {error}")))?;

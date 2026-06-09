@@ -57,12 +57,15 @@ impl AuthProvider for RecordingAuthProvider {
         &self,
         request: &RequestContext<'_>,
     ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
-        self.captured.lock().expect("capture lock").push(CapturedRequest {
-            method: request.method.to_owned(),
-            path: request.path.to_owned(),
-            query: request.query.map(|q| q.to_owned()),
-            body: request.body.to_vec(),
-        });
+        self.captured
+            .lock()
+            .expect("capture lock")
+            .push(CapturedRequest {
+                method: request.method.to_owned(),
+                path: request.path.to_owned(),
+                query: request.query.map(|q| q.to_owned()),
+                body: request.body.to_vec(),
+            });
         // Authenticated so the Widget `auth() != null` policy and the
         // procedure `@allow(auth() != null)` pass and we exercise the
         // full dispatch path.
@@ -170,7 +173,10 @@ async fn rpc_canonical_is_concrete_rpc_url_with_raw_frame_body() {
         let guard = captured.lock().expect("capture lock");
         guard.last().expect("procedure recorded a request").clone()
     };
-    assert_eq!(ping_canonical.method, "POST", "rpc canonical method is POST");
+    assert_eq!(
+        ping_canonical.method, "POST",
+        "rpc canonical method is POST"
+    );
     assert_eq!(
         ping_canonical.path, "/rpc/procedure.ping",
         "rpc canonical path is the concrete /rpc/<op_id> URL, not the bare op id",

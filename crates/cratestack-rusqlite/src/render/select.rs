@@ -95,5 +95,5 @@ pub fn render_select_by_pk<M, PK>(
     if let Some(deleted_at) = descriptor.soft_delete_column() {
         let _ = write!(&mut sql, " AND {deleted_at} IS NULL");
     }
-    (sql, binds.drain(..).collect())
+    (sql, std::mem::take(&mut binds))
 }

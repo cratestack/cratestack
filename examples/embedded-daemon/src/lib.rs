@@ -206,7 +206,7 @@ mod tests {
         let ready = deb.drain_ready(ts(base, 70), Utc::now());
         assert_eq!(ready.len(), 1, "only /tmp/a should be drained");
         assert_eq!(ready[0].path, PathBuf::from("/tmp/a"));
-        assert_eq!(deb.is_empty(), false);
+        assert!(!deb.is_empty());
 
         let ready = deb.drain_ready(ts(base, 200), Utc::now());
         assert_eq!(ready.len(), 1);

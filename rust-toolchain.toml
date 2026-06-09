@@ -1,0 +1,8 @@
+# Pin the toolchain so `cargo fmt --check` and `cargo clippy -D warnings`
+# are deterministic: a floating `stable` would surface new rustfmt
+# formatting and new clippy lints over time and spontaneously turn CI
+# red. Bump this deliberately (and re-run `just _fmt` / `just lint`) when
+# adopting a newer Rust.
+[toolchain]
+channel = "1.95.0"
+components = ["rustfmt", "clippy"]

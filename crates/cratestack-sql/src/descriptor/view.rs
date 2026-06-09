@@ -144,4 +144,3 @@ impl<V, PK> ReadSource<V, PK> for ViewDescriptor<V, PK> {
     // default impls (they iterate `self.columns()`), which match
     // `ModelDescriptor`'s behavior exactly.
 }
-

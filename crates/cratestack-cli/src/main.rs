@@ -26,7 +26,7 @@ mod tests {
 
     #[test]
     fn json_success_payload_has_empty_diagnostics() {
-        let payload = json_check_success(&Path::new("schema.cstack").to_path_buf());
+        let payload = json_check_success(Path::new("schema.cstack"));
         assert_eq!(payload["ok"], true);
         assert_eq!(payload["schema"], "schema.cstack");
         assert_eq!(payload["diagnostics"], serde_json::json!([]));
@@ -36,7 +36,7 @@ mod tests {
     fn json_failure_payload_exposes_structured_diagnostic_fields() {
         let error = cratestack_parser::parse_schema("model User {\n  email String\n}\n")
             .expect_err("schema should fail validation");
-        let payload = json_check_failure(&Path::new("schema.cstack").to_path_buf(), &error);
+        let payload = json_check_failure(Path::new("schema.cstack"), &error);
         let diagnostic = &payload["diagnostics"][0];
 
         assert_eq!(payload["ok"], false);

@@ -36,6 +36,6 @@ impl<T> Projection<T> {
     /// snake_case form). Reading the corresponding Rust field is
     /// only meaningful when this returns `true`.
     pub fn is_selected(&self, column: &str) -> bool {
-        self.selected.iter().any(|name| *name == column)
+        self.selected.contains(&column)
     }
 }

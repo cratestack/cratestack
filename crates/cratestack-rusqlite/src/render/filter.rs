@@ -17,7 +17,7 @@ pub(crate) fn render_filter_expr(
         FilterExpr::Filter(filter) => match filter.op {
             FilterOp::Eq => render_binary(
                 dialect,
-                &filter.column,
+                filter.column,
                 "=",
                 &filter.value,
                 sql,
@@ -26,7 +26,7 @@ pub(crate) fn render_filter_expr(
             ),
             FilterOp::Ne => render_binary(
                 dialect,
-                &filter.column,
+                filter.column,
                 "!=",
                 &filter.value,
                 sql,
@@ -35,7 +35,7 @@ pub(crate) fn render_filter_expr(
             ),
             FilterOp::Lt => render_binary(
                 dialect,
-                &filter.column,
+                filter.column,
                 "<",
                 &filter.value,
                 sql,
@@ -44,7 +44,7 @@ pub(crate) fn render_filter_expr(
             ),
             FilterOp::Lte => render_binary(
                 dialect,
-                &filter.column,
+                filter.column,
                 "<=",
                 &filter.value,
                 sql,
@@ -53,7 +53,7 @@ pub(crate) fn render_filter_expr(
             ),
             FilterOp::Gt => render_binary(
                 dialect,
-                &filter.column,
+                filter.column,
                 ">",
                 &filter.value,
                 sql,
@@ -62,7 +62,7 @@ pub(crate) fn render_filter_expr(
             ),
             FilterOp::Gte => render_binary(
                 dialect,
-                &filter.column,
+                filter.column,
                 ">=",
                 &filter.value,
                 sql,
@@ -87,7 +87,7 @@ pub(crate) fn render_filter_expr(
             }
             FilterOp::Contains | FilterOp::StartsWith => render_binary(
                 dialect,
-                &filter.column,
+                filter.column,
                 "LIKE",
                 &filter.value,
                 sql,

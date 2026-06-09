@@ -37,22 +37,22 @@ impl FromRusqliteRow for PaymentIntent {
 impl FromPartialRusqliteRow for PaymentIntent {
     fn from_partial_rusqlite_row(row: &Row<'_>, selected: &[&str]) -> rusqlite::Result<Self> {
         Ok(Self {
-            id: if selected.iter().any(|c| *c == "id") {
+            id: if selected.contains(&"id") {
                 row.get("id")?
             } else {
                 Default::default()
             },
-            connector_id: if selected.iter().any(|c| *c == "connector_id") {
+            connector_id: if selected.contains(&"connector_id") {
                 row.get("connector_id")?
             } else {
                 Default::default()
             },
-            status: if selected.iter().any(|c| *c == "status") {
+            status: if selected.contains(&"status") {
                 row.get("status")?
             } else {
                 Default::default()
             },
-            amount: if selected.iter().any(|c| *c == "amount") {
+            amount: if selected.contains(&"amount") {
                 row.get("amount")?
             } else {
                 Default::default()

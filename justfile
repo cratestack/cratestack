@@ -6,6 +6,17 @@ set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 # fight any locally-running pg.
 PG_URL := "postgres://cratestack:cratestack@localhost:55432/cratestack_test"
 
+# Clippy lints allowed workspace-wide (shared by `lint` and `all-checks`).
+# Each is a deliberate stance for a schema-codegen framework, not a
+# blanket mute:
+#   * too_many_arguments  — generated `const fn` constructors and internal
+#     per-item helpers take one positional arg per field/concern.
+#   * type_complexity     — sqlx query-result tuples and generated bounds.
+#   * manual_async_fn     — examples/tests return `impl Future` by hand.
+#   * missing_safety_doc  — only ever fires in the FFI example crates;
+#     library `unsafe` is forbidden workspace-wide.
+clippy_allow := "-A clippy::too_many_arguments -A clippy::type_complexity -A clippy::manual_async_fn -A clippy::missing_safety_doc"
+
 default:
   @just --list
 
@@ -27,7 +38,7 @@ all-checks:
 	@echo "Running Rust formatting, lint, and checks"
 	just _fmt
 	cargo fix --workspace --exclude embedded_flutter_native --allow-dirty
-	cargo clippy --workspace --exclude embedded_flutter_native --all-targets --fix --allow-dirty -- -D warnings
+	cargo clippy --workspace --exclude embedded_flutter_native --all-targets --fix --allow-dirty -- -D warnings {{clippy_allow}}
 	cargo check --workspace --exclude embedded_flutter_native --all-targets
 	cargo deny check
 
@@ -62,13 +73,12 @@ _fmt extra='':
 check *args='':
 	cargo check --workspace --exclude embedded_flutter_native --all-targets {{args}}
 
-# Clippy as `-D warnings`. Currently an INFORMATIONAL (non-blocking) CI
-# job until the workspace is clippy-clean under a pinned toolchain.
+# Clippy as `-D warnings` — blocking CI gate. `clippy_allow` permits a
+# small, documented set of codegen-friendly lints (see top of file).
 lint:
-	cargo clippy --workspace --exclude embedded_flutter_native --all-targets -- -D warnings
+	cargo clippy --workspace --exclude embedded_flutter_native --all-targets -- -D warnings {{clippy_allow}}
 
-# Verify formatting without writing. Currently INFORMATIONAL (non-blocking)
-# in CI until the existing rustfmt drift is normalized.
+# Verify formatting without writing — blocking CI gate.
 fmt-check:
 	just _fmt --check
 

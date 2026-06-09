@@ -21,10 +21,10 @@ pub fn redact_snapshot(
             *slot = serde_json::Value::String("[redacted-pii]".to_owned());
         }
         let camel = snake_to_camel(col);
-        if camel != *col {
-            if let Some(slot) = map.get_mut(&camel) {
-                *slot = serde_json::Value::String("[redacted-pii]".to_owned());
-            }
+        if camel != *col
+            && let Some(slot) = map.get_mut(&camel)
+        {
+            *slot = serde_json::Value::String("[redacted-pii]".to_owned());
         }
     }
     for col in sensitive_columns {
@@ -32,10 +32,10 @@ pub fn redact_snapshot(
             *slot = serde_json::Value::String("[redacted-sensitive]".to_owned());
         }
         let camel = snake_to_camel(col);
-        if camel != *col {
-            if let Some(slot) = map.get_mut(&camel) {
-                *slot = serde_json::Value::String("[redacted-sensitive]".to_owned());
-            }
+        if camel != *col
+            && let Some(slot) = map.get_mut(&camel)
+        {
+            *slot = serde_json::Value::String("[redacted-sensitive]".to_owned());
         }
     }
 }

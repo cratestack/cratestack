@@ -95,7 +95,11 @@ pub async fn connect_or_skip() -> Option<TestPg> {
             require,
             "starting the Postgres testcontainer (is Docker available?)",
         )?;
-        let host = need(container.get_host().await, require, "resolving testcontainer host")?;
+        let host = need(
+            container.get_host().await,
+            require,
+            "resolving testcontainer host",
+        )?;
         let port = need(
             container.get_host_port_ipv4(5432).await,
             require,

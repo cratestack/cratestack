@@ -84,16 +84,15 @@ jobs:
           echo "tests failed after 3 attempts" >&2
           exit 1
 
-  # ---- Informational (non-blocking) -----------------------------------
-  # clippy and rustfmt are not yet blocking: `main` carries pre-existing
-  # lint findings and rustfmt drift that predate any enforced gate, and
-  # the toolchain isn't pinned. These jobs surface the state on every PR;
-  # once the workspace is clean under a pinned toolchain, drop the
-  # `continue-on-error` flags to promote them to blocking gates.
+  # ---- Lint gates ------------------------------------------------------
+  # Blocking. Determinism comes from rust-toolchain.toml pinning the
+  # version (and clippy/rustfmt components), so new stable lints/format
+  # changes can't spontaneously turn these red between Rust releases —
+  # bump the pin deliberately. `just lint` allows a small, documented set
+  # of codegen-friendly lints (see the justfile).
   clippy:
-    name: clippy (informational)
+    name: clippy
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/tauri-linux-deps
@@ -108,9 +107,8 @@ jobs:
         run: just lint
 
   rustfmt:
-    name: rustfmt (informational)
+    name: rustfmt
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

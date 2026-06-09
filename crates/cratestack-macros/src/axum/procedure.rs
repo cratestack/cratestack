@@ -11,7 +11,10 @@ pub(crate) fn generate_procedure_axum_handler(
     procedure: &Procedure,
 ) -> Result<proc_macro2::TokenStream, String> {
     let handler_ident = ident(&format!("handle_{}", to_snake_case(&procedure.name)));
-    let dispatch_ident = ident(&format!("handle_{}_dispatch", to_snake_case(&procedure.name)));
+    let dispatch_ident = ident(&format!(
+        "handle_{}_dispatch",
+        to_snake_case(&procedure.name)
+    ));
     let method_ident = ident(&to_snake_case(&procedure.name));
     let module_ident = ident(&to_snake_case(&procedure.name));
     let procedure_name = &procedure.name;

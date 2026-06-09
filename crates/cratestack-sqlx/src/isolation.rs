@@ -104,10 +104,10 @@ fn is_retriable(error: &CoolError) -> bool {
     // an unrecognized SQLSTATE falls through so the substring fallback
     // still has a chance (drivers may surface retriable conditions in
     // ways the typed path doesn't capture).
-    if let Some(code) = error.db_sqlstate() {
-        if code == PG_SERIALIZATION_FAILURE_SQLSTATE || code == PG_DEADLOCK_DETECTED_SQLSTATE {
-            return true;
-        }
+    if let Some(code) = error.db_sqlstate()
+        && (code == PG_SERIALIZATION_FAILURE_SQLSTATE || code == PG_DEADLOCK_DETECTED_SQLSTATE)
+    {
+        return true;
     }
     // Fallback: legacy `Database(String)` variant — substring-match the detail
     // string the way the original code did, so existing behaviour is preserved.

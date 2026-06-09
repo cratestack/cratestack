@@ -108,9 +108,9 @@ impl Op {
             // View creates and replaces never destroy data (the view
             // is a read-only projection over existing tables; replace
             // swaps the SQL body, not the underlying rows).
-            Op::CreateView(_)
-            | Op::ReplaceView(_)
-            | Op::CreateMaterializedView(_) => Destructiveness::Safe,
+            Op::CreateView(_) | Op::ReplaceView(_) | Op::CreateMaterializedView(_) => {
+                Destructiveness::Safe
+            }
             // Dropping a view doesn't destroy source rows but does
             // destroy a queryable surface — treat as Lossy so the
             // generator requires explicit opt-in, mirroring DropTable

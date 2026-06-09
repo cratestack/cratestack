@@ -71,13 +71,16 @@ fn parse_view_header(
             header.number,
         )
     })?;
-    let header_body = after_keyword.strip_suffix('{').map(str::trim).ok_or_else(|| {
-        SchemaError::new(
-            "view block header must end with `{`".to_owned(),
-            header.start..header.start + header.raw.len(),
-            header.number,
-        )
-    })?;
+    let header_body = after_keyword
+        .strip_suffix('{')
+        .map(str::trim)
+        .ok_or_else(|| {
+            SchemaError::new(
+                "view block header must end with `{`".to_owned(),
+                header.start..header.start + header.raw.len(),
+                header.number,
+            )
+        })?;
 
     // Split on ` from ` (with surrounding whitespace). If absent, the
     // view has no declared source models — the validator will error,
@@ -167,9 +170,7 @@ fn collect_attribute_text(
 
     // Only `@@server_sql` / `@@embedded_sql` / `@@sql` support multi-
     // line capture. Any other `@@…` attribute is a single line.
-    let opens_multiline_sql = SQL_ATTRS
-        .iter()
-        .any(|prefix| trimmed.starts_with(prefix))
+    let opens_multiline_sql = SQL_ATTRS.iter().any(|prefix| trimmed.starts_with(prefix))
         && trimmed.contains("(\"\"\"")
         && !single_line_triple_closed(trimmed);
 
@@ -222,5 +223,7 @@ fn span_of_substring(line: &Line<'_>, needle: &str) -> Option<SourceSpan> {
 }
 
 fn leading_ws(raw: &str) -> usize {
-    raw.bytes().take_while(|byte| byte.is_ascii_whitespace()).count()
+    raw.bytes()
+        .take_while(|byte| byte.is_ascii_whitespace())
+        .count()
 }

@@ -44,12 +44,12 @@ pub fn create_table_sql<M, PK>(descriptor: &ModelDescriptor<M, PK>) -> String {
             sql.push_str(" PRIMARY KEY");
         }
     }
-    if let Some(deleted_at) = descriptor.soft_delete_column {
-        if !descriptor.columns.iter().any(|c| c.sql_name == deleted_at) {
-            sql.push_str(",\n    ");
-            sql.push_str(deleted_at);
-            sql.push_str(" BLOB");
-        }
+    if let Some(deleted_at) = descriptor.soft_delete_column
+        && !descriptor.columns.iter().any(|c| c.sql_name == deleted_at)
+    {
+        sql.push_str(",\n    ");
+        sql.push_str(deleted_at);
+        sql.push_str(" BLOB");
     }
     sql.push_str("\n)");
     sql
