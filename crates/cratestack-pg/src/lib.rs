@@ -21,6 +21,13 @@
 //! cratestack = { package = "cratestack-pg", version = "0.4" }
 //! ```
 
+// Both `cratestack_core` and `cratestack_axum` expose `codec` and
+// `transport` modules, and the facade re-exports both crates with a glob.
+// The overlap is intentional — consumers reach those via the originating
+// crate's path, not the facade root — so silence the ambiguity warning
+// rather than dropping either glob.
+#![allow(ambiguous_glob_reexports)]
+
 pub use chrono;
 pub use cratestack_client_rust as client_rust;
 pub use cratestack_core::*;
@@ -90,7 +97,9 @@ pub use cratestack_sqlx::{
     MIGRATIONS_TABLE_DDL, Migration, MigrationState, MigrationStatus, apply_pending,
     ensure_migrations_table, status,
 };
-pub use cratestack_sqlx::{cool_error_from_sqlx, run_in_isolated_tx, run_in_isolated_tx_with_retries};
+pub use cratestack_sqlx::{
+    cool_error_from_sqlx, run_in_isolated_tx, run_in_isolated_tx_with_retries,
+};
 
 /// Crypto provider selection — banks running on FIPS-validated hardware
 /// enable the `crypto-aws-lc-rs` feature. The function below surfaces an

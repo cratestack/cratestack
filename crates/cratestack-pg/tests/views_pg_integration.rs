@@ -3,9 +3,9 @@
 //! runtime → `find_many` / `find_unique` over a `CREATE VIEW`,
 //! including `@@allow("read", ...)` policy enforcement.
 
+use cratestack::include_server_schema;
 use cratestack::sqlx::{PgPool, query};
 use cratestack::{CoolContext, Value};
-use cratestack::include_server_schema;
 
 include_server_schema!("tests/fixtures/views_integration.cstack", db = Postgres);
 
@@ -51,10 +51,7 @@ async fn seed_customers(pool: &PgPool) {
 }
 
 fn authenticated() -> CoolContext {
-    CoolContext::authenticated([(
-        "id".to_owned(),
-        Value::String("user-7".to_owned()),
-    )])
+    CoolContext::authenticated([("id".to_owned(), Value::String("user-7".to_owned()))])
 }
 
 #[tokio::test]

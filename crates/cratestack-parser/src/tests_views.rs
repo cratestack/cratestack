@@ -156,7 +156,8 @@ view Bad from Customer {
     )
     .expect_err("should reject materialized + no_unique");
     assert!(
-        err.message().contains("cannot be both `@@materialized` and `@@no_unique`"),
+        err.message()
+            .contains("cannot be both `@@materialized` and `@@no_unique`"),
         "unexpected error: {}",
         err.message()
     );
@@ -205,7 +206,8 @@ view Bad from Customer {
     )
     .expect_err("should reject missing @id");
     assert!(
-        err.message().contains("must declare exactly one `@id` field"),
+        err.message()
+            .contains("must declare exactly one `@id` field"),
         "unexpected error: {}",
         err.message()
     );

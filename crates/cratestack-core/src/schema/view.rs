@@ -74,7 +74,7 @@ impl View {
     fn has_bare_attribute(&self, name: &str) -> bool {
         self.attributes.iter().any(|attr| {
             let trimmed = attr.raw.trim();
-            trimmed == name || trimmed.starts_with(&format!("{name}(")) || trimmed == name
+            trimmed == name || trimmed.starts_with(&format!("{name}("))
         })
     }
 }

@@ -34,7 +34,7 @@ pub(super) fn diff_enums(prev: &Schema, next: &Schema) -> (Vec<Op>, Vec<Op>, Vec
     let mut alter_enums = Vec::new();
     let mut drop_enums = Vec::new();
 
-    for (name, _) in &prev_enums {
+    for name in prev_enums.keys() {
         if !next_enums.contains_key(name) {
             drop_enums.push(Op::DropEnum(DropEnum {
                 name: (*name).to_owned(),

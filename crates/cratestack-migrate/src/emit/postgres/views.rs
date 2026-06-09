@@ -11,9 +11,7 @@
 
 use std::fmt::Write;
 
-use crate::ir::{
-    CreateMaterializedView, CreateView, DropMaterializedView, DropView, ReplaceView,
-};
+use crate::ir::{CreateMaterializedView, CreateView, DropMaterializedView, DropView, ReplaceView};
 
 use super::idents::quote_ident;
 
@@ -64,10 +62,5 @@ pub(super) fn emit_create_materialized_view(sql: &mut String, view: &CreateMater
 }
 
 pub(super) fn emit_drop_materialized_view(sql: &mut String, view: &DropMaterializedView) {
-    writeln!(
-        sql,
-        "DROP MATERIALIZED VIEW {};",
-        quote_ident(&view.name)
-    )
-    .unwrap();
+    writeln!(sql, "DROP MATERIALIZED VIEW {};", quote_ident(&view.name)).unwrap();
 }

@@ -58,10 +58,9 @@ impl AuthProvider for HeaderAuthProvider {
             .headers
             .get("x-auth-id")
             .and_then(|v| v.to_str().ok())
+            && let Ok(id) = id.parse::<i64>()
         {
-            if let Ok(id) = id.parse::<i64>() {
-                fields.push(("id".to_owned(), Value::Int(id)));
-            }
+            fields.push(("id".to_owned(), Value::Int(id)));
         }
         core::future::ready(Ok(if fields.is_empty() {
             CoolContext::anonymous()

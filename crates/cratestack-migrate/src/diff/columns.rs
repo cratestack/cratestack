@@ -64,7 +64,7 @@ pub(super) fn diff_columns(prev: &TableProjection, next: &TableProjection) -> Co
         }));
     }
 
-    for (column_name, _) in &prev_columns {
+    for column_name in prev_columns.keys() {
         if consumed_prev_columns.contains(column_name) {
             continue;
         }

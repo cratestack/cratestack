@@ -172,8 +172,10 @@ pub(super) fn collect_server_schema(
             crate::view::generate_view_descriptor(view, &schema.models, &schema.types, auth)
                 .map_err(|e| compile_error(schema_path, e))?;
         view_descriptors.push(descriptor);
-        view_pg_from_row_impls
-            .push(crate::view::generate_view_pg_from_row_impl(view, &enum_name_set));
+        view_pg_from_row_impls.push(crate::view::generate_view_pg_from_row_impl(
+            view,
+            &enum_name_set,
+        ));
         view_accessors.push(crate::view::generate_view_accessor(view));
     }
 

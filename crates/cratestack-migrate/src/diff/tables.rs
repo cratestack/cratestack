@@ -51,7 +51,7 @@ pub(super) fn collect_drops(
 ) -> Vec<Op> {
     let consumed_old: BTreeSet<&str> = renamed_from.values().copied().collect();
     let mut drops = Vec::new();
-    for (name, _projection) in prev_tables {
+    for name in prev_tables.keys() {
         if consumed_old.contains(name.as_str()) {
             continue;
         }

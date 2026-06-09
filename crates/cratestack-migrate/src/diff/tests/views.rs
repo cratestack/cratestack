@@ -179,9 +179,7 @@ datasource db {
 "#
     .to_owned();
     let prev = schema(&prev_with_sqlite_datasource);
-    let next = schema(&format!(
-        "{prev_with_sqlite_datasource}{sqlite_models}"
-    ));
+    let next = schema(&format!("{prev_with_sqlite_datasource}{sqlite_models}"));
     let ops = diff(&prev, &next);
 
     // No view ops at all — the materialized view was filtered out

@@ -132,7 +132,7 @@ pub(super) fn build_quantifier_relation_entry(
         target_model,
         nested_model,
         root_link.related_table.as_str(),
-        &[nested_relation.name.clone()],
+        std::slice::from_ref(&nested_relation.name),
         nested_relation,
         &nested_wrappers,
         &nested_visited,

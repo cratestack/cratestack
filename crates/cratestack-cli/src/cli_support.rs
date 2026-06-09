@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Result, anyhow};
 
@@ -12,7 +12,7 @@ pub(crate) fn render_schema_error(
     )
 }
 
-pub(crate) fn json_check_success(schema: &PathBuf) -> serde_json::Value {
+pub(crate) fn json_check_success(schema: &Path) -> serde_json::Value {
     serde_json::json!({
         "ok": true,
         "schema": schema.display().to_string(),
@@ -21,7 +21,7 @@ pub(crate) fn json_check_success(schema: &PathBuf) -> serde_json::Value {
 }
 
 pub(crate) fn json_check_failure(
-    schema: &PathBuf,
+    schema: &Path,
     error: &cratestack_parser::SchemaError,
 ) -> serde_json::Value {
     let span = error.span();

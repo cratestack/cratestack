@@ -56,17 +56,33 @@ pub struct TestPg {
 /// Connect to PG, picking the backend by environment, or return `None`
 /// to signal that the caller should skip.
 ///
-/// See module docs for the priority order. Connect failures map to
-/// `None` rather than panicking — same as every existing
-/// `connect_or_skip()` in the workspace — so a misconfigured local
-/// machine just skips quietly instead of failing the whole test run.
+/// See module docs for the priority order. By default, connect failures
+/// map to `None` rather than panicking — so a misconfigured local machine
+/// just skips quietly instead of failing the whole test run.
+///
+/// **CI override:** set `CRATESTACK_REQUIRE_DB` to turn those failures
+/// into hard panics. Without it, a CI runner whose Docker can't start the
+/// testcontainer would skip every PG-backed test and the suite would pass
+/// green while exercising none of that coverage — so the CI gate sets it.
 pub async fn connect_or_skip() -> Option<TestPg> {
+    let require = std::env::var("CRATESTACK_REQUIRE_DB").is_ok();
+
+    // Collapse a Result into Option, but panic instead of skipping when a
+    // DB is required (CI). `ctx` names the failed step for the message.
+    fn need<T, E: std::fmt::Display>(r: Result<T, E>, require: bool, ctx: &str) -> Option<T> {
+        match r {
+            Ok(v) => Some(v),
+            Err(e) if require => panic!("CRATESTACK_REQUIRE_DB is set but {ctx} failed: {e}"),
+            Err(_) => None,
+        }
+    }
+
     if let Ok(url) = std::env::var("CRATESTACK_TEST_DATABASE_URL") {
-        let pool = PgPoolOptions::new()
-            .max_connections(2)
-            .connect(&url)
-            .await
-            .ok()?;
+        let pool = need(
+            PgPoolOptions::new().max_connections(2).connect(&url).await,
+            require,
+            "connecting to CRATESTACK_TEST_DATABASE_URL",
+        )?;
         return Some(TestPg {
             pool,
             _container: None,
@@ -74,15 +90,27 @@ pub async fn connect_or_skip() -> Option<TestPg> {
     }
 
     if std::env::var("CRATESTACK_USE_TESTCONTAINERS").is_ok() {
-        let container = Postgres::default().start().await.ok()?;
-        let host = container.get_host().await.ok()?;
-        let port = container.get_host_port_ipv4(5432).await.ok()?;
+        let container = need(
+            Postgres::default().start().await,
+            require,
+            "starting the Postgres testcontainer (is Docker available?)",
+        )?;
+        let host = need(
+            container.get_host().await,
+            require,
+            "resolving testcontainer host",
+        )?;
+        let port = need(
+            container.get_host_port_ipv4(5432).await,
+            require,
+            "resolving testcontainer port",
+        )?;
         let url = format!("postgres://postgres:postgres@{host}:{port}/postgres");
-        let pool = PgPoolOptions::new()
-            .max_connections(2)
-            .connect(&url)
-            .await
-            .ok()?;
+        let pool = need(
+            PgPoolOptions::new().max_connections(2).connect(&url).await,
+            require,
+            "connecting to the Postgres testcontainer",
+        )?;
         return Some(TestPg {
             pool,
             _container: Some(container),

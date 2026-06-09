@@ -80,9 +80,7 @@ where
                     "router does not have a CBOR codec for cbor-seq responses".to_owned(),
                 ))
             }
-        } else if content_type == Primary::CONTENT_TYPE {
-            self.encode_response(content_type, status, values)
-        } else if content_type == Secondary::CONTENT_TYPE {
+        } else if content_type == Primary::CONTENT_TYPE || content_type == Secondary::CONTENT_TYPE {
             self.encode_response(content_type, status, values)
         } else {
             Err(CoolError::NotAcceptable(format!(
@@ -107,9 +105,7 @@ where
                     "router does not have a CBOR codec for cbor-seq responses".to_owned(),
                 ))
             }
-        } else if content_type == Primary::CONTENT_TYPE {
-            self.encode_response(content_type, status, value)
-        } else if content_type == Secondary::CONTENT_TYPE {
+        } else if content_type == Primary::CONTENT_TYPE || content_type == Secondary::CONTENT_TYPE {
             self.encode_response(content_type, status, value)
         } else {
             Err(CoolError::NotAcceptable(format!(

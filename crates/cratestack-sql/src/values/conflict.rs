@@ -15,9 +15,10 @@
 /// Composite-constraint-by-name (`ON CONFLICT ON CONSTRAINT
 /// my_unique_idx_v2`) is not yet exposed; pass the matching column
 /// tuple via [`Self::Columns`] instead.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ConflictTarget {
     /// The model's `@id` primary key. Default.
+    #[default]
     PrimaryKey,
     /// A caller-supplied tuple of columns forming a unique key on the
     /// target table.
@@ -28,11 +29,5 @@ impl ConflictTarget {
     /// Sugar for `ConflictTarget::Columns(&[...])`.
     pub const fn columns(cols: &'static [&'static str]) -> Self {
         Self::Columns(cols)
-    }
-}
-
-impl Default for ConflictTarget {
-    fn default() -> Self {
-        Self::PrimaryKey
     }
 }

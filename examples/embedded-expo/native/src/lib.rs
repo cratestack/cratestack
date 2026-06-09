@@ -72,10 +72,10 @@ pub fn init_database(db_path: &str) -> Result<(), String> {
         return Ok(());
     }
     let path = PathBuf::from(db_path);
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-        }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
     let opened = RusqliteRuntime::open(&path).map_err(|error| error.to_string())?;
     opened

@@ -1,0 +1,13 @@
+# Pin the toolchain so `cargo fmt --check` and `cargo clippy -D warnings`
+# are deterministic: a floating `stable` would surface new rustfmt
+# formatting and new clippy lints over time and spontaneously turn CI
+# red. Bump this deliberately (and re-run `just _fmt` / `just lint`) when
+# adopting a newer Rust.
+[toolchain]
+channel = "1.95.0"
+components = ["rustfmt", "clippy"]
+# The studio UI and several examples build for wasm32 (Trunk/Leptos,
+# embedded-browser, tauri-web). Declaring the target here means rustup
+# installs it for the pinned toolchain wherever it's used — without this,
+# `trunk build` under the pinned channel fails with E0463 (missing `core`).
+targets = ["wasm32-unknown-unknown"]

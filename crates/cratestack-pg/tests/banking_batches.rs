@@ -43,9 +43,9 @@ fn operator() -> CoolContext {
         .with_request_id("batch-trace-id-001")
 }
 
-fn ok_value<'a>(
-    item: &'a cratestack::BatchItemResult<cratestack_schema::BatchRow>,
-) -> &'a cratestack_schema::BatchRow {
+fn ok_value(
+    item: &cratestack::BatchItemResult<cratestack_schema::BatchRow>,
+) -> &cratestack_schema::BatchRow {
     match &item.status {
         BatchItemStatus::Ok { value } => value,
         BatchItemStatus::Error { error } => {

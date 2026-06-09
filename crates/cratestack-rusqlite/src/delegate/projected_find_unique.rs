@@ -24,7 +24,9 @@ where
         let projection_sql = self.descriptor.select_projection_subset(&self.selected);
         let mut sql = format!(
             "SELECT {} FROM {} WHERE {} = ?1",
-            projection_sql, self.descriptor.table_name(), self.descriptor.primary_key(),
+            projection_sql,
+            self.descriptor.table_name(),
+            self.descriptor.primary_key(),
         );
         if let Some(soft_delete) = self.descriptor.soft_delete_column() {
             sql.push_str(&format!(" AND {soft_delete} IS NULL"));
@@ -55,7 +57,9 @@ where
         let projection_sql = self.descriptor.select_projection_subset(&self.selected);
         let mut sql = format!(
             "SELECT {} FROM {} WHERE {} = ?1",
-            projection_sql, self.descriptor.table_name(), self.descriptor.primary_key(),
+            projection_sql,
+            self.descriptor.table_name(),
+            self.descriptor.primary_key(),
         );
         if let Some(soft_delete) = self.descriptor.soft_delete_column() {
             sql.push_str(&format!(" AND {soft_delete} IS NULL"));

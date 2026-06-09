@@ -25,21 +25,11 @@ pub(super) fn emit_create_view(sql: &mut String, view: &CreateView) {
 }
 
 pub(super) fn emit_drop_view(sql: &mut String, view: &DropView) {
-    writeln!(
-        sql,
-        "DROP VIEW IF EXISTS {};",
-        quote_ident(&view.name)
-    )
-    .unwrap();
+    writeln!(sql, "DROP VIEW IF EXISTS {};", quote_ident(&view.name)).unwrap();
 }
 
 pub(super) fn emit_replace_view(sql: &mut String, view: &ReplaceView) {
-    writeln!(
-        sql,
-        "DROP VIEW IF EXISTS {};",
-        quote_ident(&view.name)
-    )
-    .unwrap();
+    writeln!(sql, "DROP VIEW IF EXISTS {};", quote_ident(&view.name)).unwrap();
     writeln!(
         sql,
         "CREATE VIEW {} AS {};",

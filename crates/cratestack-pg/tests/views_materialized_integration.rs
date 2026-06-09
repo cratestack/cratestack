@@ -65,10 +65,7 @@ async fn refresh_makes_new_rows_visible_on_materialized_view() {
     // `@@allow("read", auth() != null)` on the matview — supply a
     // populated context so the policy lets rows through. The refresh
     // semantics are what's under test, not the policy machinery.
-    let ctx = CoolContext::authenticated([(
-        "id".to_owned(),
-        Value::String("user-1".to_owned()),
-    )]);
+    let ctx = CoolContext::authenticated([("id".to_owned(), Value::String("user-1".to_owned()))]);
 
     // Empty matview at this point — no rows in `sales` and no
     // refresh has run since CREATE MATERIALIZED VIEW.

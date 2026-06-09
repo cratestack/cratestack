@@ -72,6 +72,9 @@ impl FilterExpr {
         Self::Any(filters.into_iter().collect())
     }
 
+    // A builder-style combinator alongside `all`/`any`; intentionally a
+    // by-value method (with double-negation folding), not `ops::Not`.
+    #[allow(clippy::should_implement_trait)]
     pub fn not(self) -> Self {
         match self {
             Self::Not(inner) => *inner,

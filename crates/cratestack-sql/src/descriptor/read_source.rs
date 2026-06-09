@@ -122,7 +122,7 @@ pub trait ReadSource<M, PK>: Send + Sync {
         let mut sql = String::new();
         let mut emitted = false;
         for column in self.columns().iter() {
-            if columns.iter().any(|name| *name == column.sql_name) {
+            if columns.contains(&column.sql_name) {
                 if emitted {
                     sql.push_str(", ");
                 }
@@ -130,14 +130,13 @@ pub trait ReadSource<M, PK>: Send + Sync {
                 emitted = true;
             }
         }
-        if !emitted {
-            if let Some(pk_column) = self
+        if !emitted
+            && let Some(pk_column) = self
                 .columns()
                 .iter()
                 .find(|column| column.sql_name == self.primary_key())
-            {
-                let _ = write!(sql, "{} AS \"{}\"", pk_column.sql_name, pk_column.rust_name);
-            }
+        {
+            let _ = write!(sql, "{} AS \"{}\"", pk_column.sql_name, pk_column.rust_name);
         }
         sql
     }
