@@ -1,0 +1,168 @@
+name: Development Ticket
+description: Implementation work, bugs, refactors, technical tasks, spikes, or operational work.
+title: "[Ticket]: "
+labels: ["ticket"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for **implementation work**, bugs, refactors, technical tasks, spikes, or operational work.
+
+        If the developer cannot explain the intent, the ticket is not ready.
+        See the governance source of truth: https://adorsys-gis.github.io/ai-governance/
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: Type
+      description: Select one.
+      options:
+        - Feature
+        - Bug
+        - Refactor
+        - Technical debt
+        - Spike / Investigation
+        - Security
+        - Performance
+        - Documentation
+        - Operational task
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: We need to [do what] because [why]. Describe the expected result in plain but precise language.
+      placeholder: |
+        We need to … because …
+
+        Expected result:
+        >
+    validations:
+      required: true
+
+  - type: textarea
+    id: intent
+    attributes:
+      label: Intent
+      description: The real intention of this ticket. If the developer cannot explain this intent, the ticket is not ready.
+    validations:
+      required: true
+
+  - type: textarea
+    id: source-of-truth
+    attributes:
+      label: Source of truth (links)
+      description: Epic/story, product decision, bug report/incident, customer request, ADR, technical investigation, security requirement. Use full URLs or #123 references.
+      placeholder: |
+        Link the epic/story, product decision, incident, customer request, ADR, or security requirement.
+        No source of truth means this ticket must be challenged — no source of truth = not ready.
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-behavior
+    attributes:
+      label: Current Behavior
+      description: How the system behaves today, with evidence (logs, screenshots, error messages, metrics, user reports).
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected Behavior
+      description: How the system should behave after this ticket is completed.
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      description: Testable Given/When/Then criteria, safe error handling, no regressions, tests added/updated, verification evidence provided.
+      placeholder: |
+        - [ ] Given …, when …, then …
+        - [ ] Error cases are handled safely.
+        - [ ] Existing behavior is not broken.
+        - [ ] Relevant tests are added or updated.
+        - [ ] Verification evidence is provided.
+    validations:
+      required: true
+
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of Scope
+      description: What this ticket does not include. Do not silently implement out-of-scope work.
+
+  - type: textarea
+    id: technical-context
+    attributes:
+      label: Technical Context
+      description: Relevant files, services, modules, or systems; important technical notes; known constraints.
+
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks
+      description: Potential risks and their mitigations.
+
+  - type: textarea
+    id: test-plan
+    attributes:
+      label: Test Plan
+      description: Required checks (unit/integration/e2e/manual/regression/security/performance), commands to run, and expected results.
+
+  - type: textarea
+    id: verification-evidence
+    attributes:
+      label: Verification evidence
+      description: Test output, manual verification steps, screenshots/video, logs checked, metrics checked, known remaining limitations.
+      placeholder: |
+        Test output: …
+        Manual verification steps: …
+        Logs / metrics checked: …
+    validations:
+      required: true
+
+  - type: input
+    id: human-owner
+    attributes:
+      label: Human accountable owner
+      description: The person who accepts responsibility for the final result.
+      placeholder: "@github-handle / Name"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: ai-usage
+    attributes:
+      label: AI Usage Declaration
+      description: Declare how AI was used — select all that apply, or "Not used". AI output is not truth.
+      multiple: true
+      options:
+        - Drafting the ticket
+        - Understanding code
+        - Proposing implementation
+        - Generating code
+        - Refactoring
+        - Generating tests
+        - Reviewing the diff
+        - Writing documentation
+        - Not used
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: human-verification
+    attributes:
+      label: Human verification completed
+      description: Tick what you completed. The final accountability box is required; the governance CI check on the PR is the substantive gate.
+      options:
+        - label: I understood the intent
+        - label: I checked the source of truth
+        - label: I reviewed all AI-generated text/code
+        - label: I verified the implementation manually
+        - label: I verified the tests
+        - label: I checked for hallucinated assumptions
+        - label: I documented remaining risks
+        - label: I am the accountable owner and accept responsibility for this ticket.
+          required: true

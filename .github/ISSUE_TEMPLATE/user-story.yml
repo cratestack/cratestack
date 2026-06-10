@@ -1,0 +1,149 @@
+name: User Story
+description: A user need or a valuable capability, with testable acceptance criteria.
+title: "[Story]: "
+labels: ["user-story"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this when the work describes **a user need** or **a valuable capability**.
+
+        A story is not ready if its intent is only copied from an AI-generated summary.
+        See the governance source of truth: https://adorsys-gis.github.io/ai-governance/
+
+  - type: textarea
+    id: story-statement
+    attributes:
+      label: Story Statement
+      description: As a [user/actor], I want [capability/action], so that [benefit/outcome].
+      placeholder: |
+        As a …,
+        I want …,
+        so that …
+    validations:
+      required: true
+
+  - type: textarea
+    id: real-intent
+    attributes:
+      label: Real Intent
+      description: Explain why this story matters. Not ready if the intention is only copied from an AI-generated summary.
+    validations:
+      required: true
+
+  - type: textarea
+    id: background
+    attributes:
+      label: Background and Context
+      description: Current behavior, limitation, and pain; and why we need to change it.
+
+  - type: textarea
+    id: source-of-truth
+    attributes:
+      label: Source of truth (links)
+      description: Customer/user request, product decision, design, incident/bug report, data/metric, architecture decision. Use full URLs or #123 references.
+      placeholder: |
+        Link the customer request, product decision, design, incident, metric, or ADR.
+        If the source of truth is missing, the story must NOT enter sprint planning — no source of truth means not ready.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      description: Functional (Given/When/Then), negative/edge cases, and non-functional criteria. Must be testable.
+      placeholder: |
+        ### Functional
+        - [ ] Given …, when …, then …
+
+        ### Negative / Edge Cases
+        - [ ] Given …, when …, then …
+
+        ### Non-Functional
+        - [ ] Performance / Security / Observability / Accessibility / Compatibility
+    validations:
+      required: true
+
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of Scope
+      description: What this story does not include. If someone wants these, they must create a separate story.
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies and Blockers
+      description: What this story depends on and what blocks it.
+
+  - type: textarea
+    id: assumptions
+    attributes:
+      label: Assumptions
+      description: Before implementation, the developer must decide whether each assumption is acceptable or needs clarification.
+
+  - type: textarea
+    id: implementation-notes
+    attributes:
+      label: Implementation Notes
+      description: Suggested approach — guidance, not unquestionable truth. The developer may challenge it for a safer, simpler, more maintainable option.
+
+  - type: textarea
+    id: test-expectations
+    attributes:
+      label: Test Expectations
+      description: Unit / integration / e2e / manual / regression / security / performance, plus required test cases.
+
+  - type: textarea
+    id: verification-evidence
+    attributes:
+      label: Verification evidence
+      description: Test results (link/command/screenshot), manual verification notes, logs/metrics checked, recordings, reviewer focus. No verification evidence means the story is not done.
+      placeholder: |
+        Test results: …
+        Manual verification notes: …
+        Logs / metrics checked: …
+    validations:
+      required: true
+
+  - type: input
+    id: human-owner
+    attributes:
+      label: Human accountable owner
+      description: The person who owns the final decision and accepts responsibility for this story.
+      placeholder: "@github-handle / Name"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: ai-usage
+    attributes:
+      label: AI Usage Declaration
+      description: Declare how AI was used — select all that apply, or "Not used". AI output is not truth.
+      multiple: true
+      options:
+        - Drafting this story
+        - Refining acceptance criteria
+        - Suggesting implementation
+        - Generating code
+        - Generating tests
+        - Reviewing code
+        - Not used
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: human-verification
+    attributes:
+      label: Human verification completed
+      description: Tick what you completed. The final accountability box is required; the governance CI check on the PR is the substantive gate.
+      options:
+        - label: I checked the story against the source of truth
+        - label: I confirmed the acceptance criteria
+        - label: I reviewed the implementation approach
+        - label: I verified generated code manually
+        - label: I verified generated tests manually
+        - label: I removed or corrected unsupported AI claims
+        - label: I am the accountable owner and accept responsibility for this story.
+          required: true
