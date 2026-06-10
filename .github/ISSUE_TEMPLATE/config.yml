@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: AI Governance — source of truth
+    url: https://adorsys-gis.github.io/ai-governance/
+    about: The canonical governance home. Read this before opening issues or PRs.
+  - name: AI Working Agreement
+    url: https://adorsys-gis.github.io/ai-governance/12-ai-working-agreement
+    about: Humans own intent, verification, and consequences. AI output is not truth.
+  - name: The Doctrine
+    url: https://adorsys-gis.github.io/ai-governance/13-doctrine
+    about: AI may accelerate the work, but it must not launder ignorance into polished artifacts.

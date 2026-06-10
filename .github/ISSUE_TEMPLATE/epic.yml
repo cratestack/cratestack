@@ -1,0 +1,152 @@
+name: Epic
+description: A large initiative spanning multiple stories with a meaningful business or technical objective.
+title: "[Epic]: "
+labels: ["epic"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this when the work is **large**, spans multiple tickets, and represents a meaningful business or technical objective.
+
+        An epic exists to solve a real problem — not merely to produce code, tickets, documentation, or AI-generated artifacts.
+        See the governance source of truth: https://adorsys-gis.github.io/ai-governance/
+
+  - type: textarea
+    id: executive-summary
+    attributes:
+      label: Executive Summary
+      description: We want to [outcome] because [business, user, operational, or technical reason]. This epic exists to solve [the real problem].
+      placeholder: |
+        We want to … because …
+        This epic exists to solve …
+    validations:
+      required: true
+
+  - type: textarea
+    id: strategic-intent
+    attributes:
+      label: Strategic Intent
+      description: The core intention in 1–3 sentences. A person must be able to explain this verbally without reading this document.
+      placeholder: The intent of this epic is …
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem-statement
+    attributes:
+      label: Problem Statement
+      description: Current pains/problems, and the impact on users, developers/operations, and business/security/compliance.
+    validations:
+      required: true
+
+  - type: textarea
+    id: desired-outcome
+    attributes:
+      label: Desired Outcome
+      description: What is true when this epic is complete. Describe the observable improvement.
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope (In / Out)
+      description: What is clearly included and what is explicitly excluded. Anything not listed must be clarified before implementation.
+      placeholder: |
+        ### In Scope
+        -
+
+        ### Out of Scope
+        -
+    validations:
+      required: true
+
+  - type: textarea
+    id: source-of-truth
+    attributes:
+      label: Source of truth (links)
+      description: Product decisions, stakeholder input, incidents, ADRs, designs, compliance requirements. Use full URLs or #123 references.
+      placeholder: |
+        Link the product decision, stakeholder request, incident, ADR, design, or compliance requirement.
+        If no source of truth exists, this epic is NOT ready — do not proceed.
+    validations:
+      required: true
+
+  - type: textarea
+    id: stakeholders
+    attributes:
+      label: Stakeholders
+      description: Product Owner, Technical Lead, Delivery Owner, Security/Compliance, Engineering Team.
+
+  - type: textarea
+    id: assumptions
+    attributes:
+      label: Key Assumptions
+      description: Each assumption must be validated, rejected, or converted into a risk before delivery.
+
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints
+      description: Technical, security, compliance, timeline, dependency, and operational constraints.
+
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks
+      description: Risk / Probability / Impact / Mitigation.
+
+  - type: textarea
+    id: success-metrics
+    attributes:
+      label: Success metrics
+      description: How we will know this epic succeeded. Metric / current value / target value / measurement source. Measure outcomes, not activity.
+      placeholder: |
+        | Metric | Current | Target | Source |
+        | ------ | ------- | ------ | ------ |
+    validations:
+      required: true
+
+  - type: textarea
+    id: child-stories
+    attributes:
+      label: Child User Stories
+      description: Each child story must have its own acceptance criteria and verification evidence.
+
+  - type: input
+    id: human-owner
+    attributes:
+      label: Human accountable owner
+      description: The person who owns the final decision and accepts responsibility for this epic.
+      placeholder: "@github-handle / Name"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: ai-usage
+    attributes:
+      label: AI Usage Declaration
+      description: Declare how AI was used — select all that apply, or "Not used". AI output is not truth.
+      multiple: true
+      options:
+        - Drafting
+        - Summarization
+        - Research
+        - Ticket decomposition
+        - Technical proposal
+        - Not used
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: human-verification
+    attributes:
+      label: Human verification completed
+      description: Tick what you completed. The final accountability box is required; the governance CI check on the PR is the substantive gate.
+      options:
+        - label: Intent checked against source of truth
+        - label: Scope reviewed by Product Owner
+        - label: Technical feasibility reviewed by Technical Lead
+        - label: Risks reviewed
+        - label: Acceptance criteria reviewed
+        - label: No unverified AI claim remains
+        - label: I am the accountable owner and accept responsibility for this epic.
+          required: true

@@ -12,3 +12,21 @@ Before opening a pull request:
 5. Run package-specific checks for editor or generated-client changes when applicable.
 
 Do not commit generated build output, local database state, or registry tokens.
+
+## AI Governance
+
+This repository follows the [ADORSYS-GIS AI Governance](https://adorsys-gis.github.io/ai-governance/) discipline:
+**AI may accelerate the work, but humans own intent, verification, and consequences.**
+
+- **Open issues** with the structured forms — [Epic](.github/ISSUE_TEMPLATE/epic.yml),
+  [User Story](.github/ISSUE_TEMPLATE/user-story.yml), or
+  [Development Ticket](.github/ISSUE_TEMPLATE/dev-ticket.yml). Blank issues are disabled on purpose.
+- **Open pull requests** using the [pull request template](.github/PULL_REQUEST_TEMPLATE.md). Fill in every section.
+- Always complete the **AI Usage Declaration**, link a **source of truth** (a URL or `#123` reference), and attach **verification evidence** (commands, logs, links, or checked boxes).
+
+A governance CI check (`.github/workflows/governance.yml`) enforces that every PR body declares AI usage,
+references a source of truth, and shows verification evidence. Work is **Ready** only when its intent is clear,
+its source of truth is linked, and any AI-generated content has been reviewed by a human; it is **Done** only
+when acceptance criteria are met, tests pass, evidence is attached, and a named human owner accepts
+responsibility — see the [AI Working Agreement](https://adorsys-gis.github.io/ai-governance/12-ai-working-agreement)
+and the [Doctrine](https://adorsys-gis.github.io/ai-governance/13-doctrine).

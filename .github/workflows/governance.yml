@@ -1,0 +1,24 @@
+# Per-repo caller workflow for AI Governance PR enforcement.
+#
+# Drop this file at .github/workflows/governance.yml in a consuming repo to opt in.
+# It delegates to the reusable workflow hosted in ADORSYS-GIS/ai-governance, which
+# fails the PR if its body is missing an AI Usage Declaration, a source-of-truth
+# reference, or verification evidence — and posts a sticky comment listing what's missing.
+#
+# Source of truth: https://adorsys-gis.github.io/ai-governance/
+#
+# The reusable workflow is pinned to an immutable release tag (not @main), so a future
+# push to ai-governance cannot change what runs here with write access. Bump the tag
+# deliberately when you want to adopt new governance behaviour.
+name: AI Governance
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  governance:
+    uses: ADORSYS-GIS/ai-governance/.github/workflows/governance-check.yml@v1.0.0
+    permissions:
+      pull-requests: write
+      contents: read
