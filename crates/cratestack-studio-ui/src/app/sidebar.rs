@@ -14,14 +14,12 @@ pub fn Sidebar(
     drift: ReadSignal<Vec<ModelDrift>>,
 ) -> impl IntoView {
     view! {
-        <aside class="w-60 shrink-0 border-r border-slate-200 bg-white px-3 py-4 overflow-y-auto">
-            <div class="flex items-center justify-between px-2 mb-2">
-                <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">"Models"</span>
-                <span class="text-[11px] font-medium text-slate-400 bg-slate-100 rounded-full px-1.5 leading-5 min-w-5 text-center">
-                    {move || models.get().len()}
-                </span>
-            </div>
-            <ul class="space-y-0.5">
+        <aside class="w-52 shrink-0 border-r border-base-300 bg-base-100 overflow-y-auto">
+            <ul class="menu menu-sm gap-0.5">
+                <li class="menu-title flex-row items-center justify-between">
+                    <span>"Models"</span>
+                    <span class="badge badge-ghost badge-sm">{move || models.get().len()}</span>
+                </li>
                 {move || models.get().into_iter().map(|m| {
                     let name = m.name.clone();
                     let selected_name = name.clone();
@@ -31,15 +29,15 @@ pub fn Sidebar(
                     let class = move || {
                         let is_active = selected.get().as_deref() == Some(selected_name.as_str());
                         if is_active {
-                            "group w-full flex items-center gap-2 text-left px-2 py-1.5 rounded-lg text-sm font-semibold bg-indigo-50 text-indigo-700"
+                            "group flex items-center gap-2 text-sm font-semibold active"
                         } else {
-                            "group w-full flex items-center gap-2 text-left px-2 py-1.5 rounded-lg text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                            "group flex items-center gap-2 text-sm text-base-content/70"
                         }
                     };
                     let dot_class = move || {
                         let is_active = selected.get().as_deref() == Some(dot_name.as_str());
-                        if is_active { "w-1.5 h-1.5 rounded-sm bg-indigo-500 shrink-0" }
-                        else { "w-1.5 h-1.5 rounded-sm bg-slate-300 group-hover:bg-slate-400 shrink-0" }
+                        if is_active { "w-1.5 h-1.5 rounded-sm bg-primary-content shrink-0" }
+                        else { "w-1.5 h-1.5 rounded-sm bg-base-content/30 group-hover:bg-base-content/50 shrink-0" }
                     };
                     view! {
                         <li>

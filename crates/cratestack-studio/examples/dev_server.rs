@@ -39,6 +39,42 @@ model Product {
   price Int
   inStock Boolean
 }
+
+// Procedures live in the schema regardless of transport. The Studio is a
+// data browser and does not execute procedures, but it does surface them
+// in schema search (HitKind::Procedure) — so declaring them here lets the
+// demo show how procedures appear in Studio. The *callable* path is the
+// generated RPC server/client (see examples/rpc-procedures).
+auth Caller {
+  id Int
+}
+
+type RecountArgs {
+  postId String
+}
+
+type RecountReply {
+  postId String
+  views Int
+}
+
+type UpgradeTierArgs {
+  customerId Int
+  tier String
+}
+
+type UpgradeTierReply {
+  customerId Int
+  tier String
+}
+
+// Read-shaped procedure.
+procedure recount_post_views(args: RecountArgs): RecountReply
+  @allow(auth() != null)
+
+// Mutation-shaped procedure.
+mutation procedure upgrade_customer_tier(args: UpgradeTierArgs): UpgradeTierReply
+  @allow(auth() != null)
 "#;
 
 fn catalog_conn() -> rusqlite::Connection {

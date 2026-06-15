@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="corporate">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -11,8 +11,17 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
+    <!-- DaisyUI component classes + themes (prebuilt). Loaded before the
+         Tailwind Play CDN so runtime-injected utilities win on conflicts. -->
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4/dist/full.min.css" rel="stylesheet" type="text/css" />
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
+      // Mirror DaisyUI's `corporate` palette into Tailwind so semantic
+      // color utilities (bg-base-200, btn uses var, text-base-content,
+      // bg-primary, …) resolve under the Play CDN, which cannot register
+      // the DaisyUI plugin itself. Component classes still draw their
+      // colors from `data-theme="corporate"` in the prebuilt CSS, so the
+      // two stay in lockstep.
       tailwind.config = {
         theme: {
           extend: {
@@ -20,19 +29,34 @@
               sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
               mono: ["JetBrains Mono", "ui-monospace", "SFMono-Regular", "monospace"],
             },
+            colors: {
+              primary: { DEFAULT: "#4b6bfb", content: "#ffffff" },
+              secondary: { DEFAULT: "#7b92b2", content: "#ffffff" },
+              accent: { DEFAULT: "#67cba0", content: "#ffffff" },
+              neutral: { DEFAULT: "#181a2a", content: "#edeef1" },
+              "base-100": "#ffffff",
+              "base-200": "#f3f4f6",
+              "base-300": "#e5e7eb",
+              "base-content": "#1f2937",
+              info: { DEFAULT: "#3abff8", content: "#002b3d" },
+              success: { DEFAULT: "#16a34a", content: "#ffffff" },
+              warning: { DEFAULT: "#fbbd23", content: "#382800" },
+              error: { DEFAULT: "#ef4444", content: "#ffffff" },
+            },
           },
         },
       };
     </script>
     <style>
-      html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+      /* Denser baseline: shrink the rem unit so all DaisyUI/Tailwind
+         rem-based spacing and type scale down proportionally. */
+      html { font-size: 14px; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
       body { font-family: "Inter", ui-sans-serif, system-ui, sans-serif; }
       /* Calm, narrow scrollbars that don't fight the chrome. */
       ::-webkit-scrollbar { width: 10px; height: 10px; }
       ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; border: 2px solid transparent; background-clip: content-box; }
       ::-webkit-scrollbar-thumb:hover { background: #94a3b8; background-clip: content-box; }
-      ::selection { background: #c7d2fe; }
     </style>
   </head>
-  <body class="bg-slate-50 text-slate-900 antialiased"></body>
+  <body class="bg-base-200 text-base-content antialiased"></body>
 </html>

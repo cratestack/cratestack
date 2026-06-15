@@ -43,17 +43,17 @@ pub fn Workspace(
     });
 
     view! {
-        <div class="flex-1 flex">
+        <div class="flex-1 flex min-h-0">
             <Sidebar
                 models
                 selected=selected_model
                 set_selected=set_selected_model
                 drift=drift
             />
-            <section class="flex-1 p-6 overflow-auto">
+            <section class="flex-1 p-4 overflow-auto">
                 {move || match load_error.get() {
                     Some(e) => view! {
-                        <div class="p-4 bg-red-50 border border-red-200 rounded text-red-800 text-sm">{e}</div>
+                        <div role="alert" class="alert alert-error">{e}</div>
                     }.into_any(),
                     None => view! {
                         <RecordsPane target_key target_mode models selected_model />

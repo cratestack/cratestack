@@ -34,48 +34,49 @@ pub fn SearchBar(target: Signal<Option<String>>) -> impl IntoView {
     };
 
     view! {
-        <div class="relative">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                 stroke-linecap="round" stroke-linejoin="round"
-                 class="w-4 h-4 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
-                <circle cx="11" cy="11" r="7" />
-                <path d="m21 21-4.3-4.3" />
-            </svg>
-            <input
-                type="search"
-                class="border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-sm w-60 bg-slate-50 \
-                       placeholder:text-slate-400 focus:bg-white focus:border-indigo-400 \
-                       focus:ring-2 focus:ring-indigo-100 focus:outline-none transition-colors"
-                placeholder="Search schema…"
-                prop:value=move || query.get()
-                on:input=move |ev| {
-                    set_query.set(event_target_value(&ev));
-                    trigger();
-                }
-                on:focus=move |_| {
-                    if !hits.get_untracked().is_empty() {
-                        set_open.set(true);
+        <div class="dropdown dropdown-end" class:dropdown-open=move || open.get() && !hits.get().is_empty()>
+            <label class="input input-bordered input-sm flex items-center gap-2 w-60">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 opacity-40">
+                    <circle cx="11" cy="11" r="7" />
+                    <path d="m21 21-4.3-4.3" />
+                </svg>
+                <input
+                    type="search"
+                    class="grow"
+                    placeholder="Search schema…"
+                    prop:value=move || query.get()
+                    on:input=move |ev| {
+                        set_query.set(event_target_value(&ev));
+                        trigger();
                     }
-                }
-                on:blur=move |_| {
-                    // Defer so click handlers on the dropdown still fire.
-                    let s = set_open;
-                    leptos::task::spawn_local(async move {
-                        gloo_timers::future::TimeoutFuture::new(120).await;
-                        s.set(false);
-                    });
-                }
-            />
+                    on:focus=move |_| {
+                        if !hits.get_untracked().is_empty() {
+                            set_open.set(true);
+                        }
+                    }
+                    on:blur=move |_| {
+                        // Defer so click handlers on the dropdown still fire.
+                        let s = set_open;
+                        leptos::task::spawn_local(async move {
+                            gloo_timers::future::TimeoutFuture::new(120).await;
+                            s.set(false);
+                        });
+                    }
+                />
+            </label>
             {move || if open.get() && !hits.get().is_empty() {
                 view! {
-                    <ul class="absolute right-0 mt-2 w-80 max-h-80 overflow-auto bg-white border border-slate-200 rounded-xl shadow-xl text-sm z-30 p-1">
+                    <ul class="dropdown-content menu bg-base-100 rounded-box shadow-xl w-80 max-h-80 flex-nowrap overflow-auto mt-2 z-30">
                         {hits.get().into_iter().take(30).map(|h| {
                             let header = format!("{} · {}", h.kind, h.model.clone().unwrap_or_default());
                             view! {
-                                <li class="px-2.5 py-1.5 rounded-lg hover:bg-slate-50">
-                                    <div class="text-[10px] uppercase tracking-wide text-slate-400">{header}</div>
-                                    <div class="font-medium text-slate-800">{h.name.clone()}</div>
-                                    <div class="text-xs text-slate-500">{h.detail.clone()}</div>
+                                <li>
+                                    <a class="flex flex-col items-start gap-0">
+                                        <span class="text-xs uppercase tracking-wide opacity-40">{header}</span>
+                                        <span class="font-medium">{h.name.clone()}</span>
+                                        <span class="text-xs opacity-60">{h.detail.clone()}</span>
+                                    </a>
                                 </li>
                             }
                         }).collect_view()}

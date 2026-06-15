@@ -88,8 +88,8 @@ pub fn RecordsPane(
     });
 
     view! {
-        <div class="flex gap-6 h-full">
-            <div class="flex-1 min-w-0 space-y-3">
+        <div class="flex gap-4 h-full">
+            <div class="flex-1 min-w-0 space-y-2">
                 <ToolsRow target=target_signal model=model_signal pk=pk_signal />
                 <ModelHeaderRow
                     current_model
@@ -116,9 +116,9 @@ pub fn RecordsPane(
                 } else { ().into_any() }}
 
                 {move || match (current_model.get(), load_error.get(), page.get()) {
-                    (None, _, _) => view! { <p class="text-slate-500 text-sm">"Select a model."</p> }.into_any(),
+                    (None, _, _) => view! { <p class="text-base-content/50 text-sm">"Select a model."</p> }.into_any(),
                     (_, Some(e), _) => view! {
-                        <div class="p-4 bg-red-50 border border-red-200 rounded text-red-800 text-sm">{e}</div>
+                        <div role="alert" class="alert alert-error">{e}</div>
                     }.into_any(),
                     (Some(m), None, Some(p)) => view! {
                         <Table
@@ -130,7 +130,7 @@ pub fn RecordsPane(
                             can_prev=Signal::derive(move || cursor_stack.get().len() > 1)
                         />
                     }.into_any(),
-                    _ => view! { <p class="text-slate-500 text-sm">"Loading…"</p> }.into_any(),
+                    _ => view! { <span class="loading loading-dots loading-sm text-base-content/40" /> }.into_any(),
                 }}
             </div>
             <Drawer
@@ -158,14 +158,14 @@ fn ModelHeaderRow(
     view! {
         <div class="flex items-center gap-2.5 text-sm">
             {move || current_model.get().map(|m| view! {
-                <h2 class="text-lg font-semibold text-slate-900 tracking-tight">{m.name.clone()}</h2>
+                <h2 class="text-base font-semibold text-base-content tracking-tight">{m.name.clone()}</h2>
             }.into_any()).unwrap_or_else(|| ().into_any())}
             {move || target_mode.get().map(|m| {
                 let upper = m.to_uppercase();
                 let class = if m == "rw" {
-                    "text-[10px] font-semibold tracking-wide px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
+                    "badge badge-success badge-sm font-semibold"
                 } else {
-                    "text-[10px] font-semibold tracking-wide px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 ring-1 ring-slate-200"
+                    "badge badge-ghost badge-sm font-semibold"
                 };
                 view! { <span class=class>{upper}</span> }.into_any()
             }).unwrap_or_else(|| ().into_any())}
@@ -173,8 +173,7 @@ fn ModelHeaderRow(
             {move || if is_rw.get() && !creating.get() {
                 view! {
                     <button
-                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg \
-                               bg-indigo-600 text-white shadow-sm hover:bg-indigo-700 transition-colors"
+                        class="btn btn-primary btn-sm gap-1.5"
                         on:click=move |_| set_creating.set(true)
                     >
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
