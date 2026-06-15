@@ -20,7 +20,7 @@ jobs:
     name: check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/tauri-linux-deps
       - uses: dtolnay/rust-toolchain@stable
       - name: Assert Cargo.lock is up to date
@@ -46,7 +46,7 @@ jobs:
       # runner would pass this gate green while skipping all PG coverage.
       CRATESTACK_REQUIRE_DB: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/tauri-linux-deps
       # wasm32 (for the Studio UI build below) is installed by rustup from
       # rust-toolchain.toml's `targets`, for the pinned channel — adding it
@@ -94,7 +94,7 @@ jobs:
     name: clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/tauri-linux-deps
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -110,7 +110,7 @@ jobs:
     name: rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
