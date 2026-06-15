@@ -14,6 +14,7 @@ mod records_pane;
 mod relations;
 mod sidebar;
 mod table;
+mod target_switcher;
 mod workspace;
 
 use leptos::prelude::*;
@@ -55,19 +56,21 @@ pub fn App() -> impl IntoView {
     });
 
     view! {
-        <div class="min-h-screen flex flex-col">
+        <div class="min-h-screen flex flex-col bg-base-200">
             <Header
                 workspace_name
                 target_list=targets
                 selected=selected_target
                 set_selected=set_selected_target
             />
-            <main class="flex-1 flex">
+            <main class="flex-1 flex min-h-0">
                 {move || match boot_error.get() {
                     Some(e) => view! {
-                        <div class="m-8 p-4 bg-red-50 border border-red-200 rounded text-red-800 text-sm">
-                            <strong class="block mb-1">"Failed to load workspace"</strong>
-                            {e}
+                        <div role="alert" class="alert alert-error m-8 max-w-xl">
+                            <span>
+                                <strong class="block">"Failed to load workspace"</strong>
+                                {e}
+                            </span>
                         </div>
                     }.into_any(),
                     None => view! {

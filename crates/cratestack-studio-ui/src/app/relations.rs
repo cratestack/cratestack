@@ -22,15 +22,15 @@ pub fn RelationPicker(
                 .collect();
             if relations.is_empty() {
                 return view! {
-                    <p class="text-xs text-slate-500">"No relations on this model."</p>
+                    <p class="text-xs text-base-content/50">"No relations on this model."</p>
                 }.into_any();
             }
             view! {
-                <div class="pt-2 border-t border-slate-200 space-y-1">
-                    <div class="text-xs uppercase tracking-wide text-slate-500">"Follow relation"</div>
+                <div class="pt-3 border-t border-base-300 space-y-1.5">
+                    <div class="text-xs font-semibold uppercase tracking-wider text-base-content/40">"Follow relation"</div>
                     <div class="flex items-center gap-2">
                         <select
-                            class="flex-1 border border-slate-300 rounded px-2 py-1 text-sm bg-white"
+                            class="select select-bordered select-sm flex-1"
                             on:change=move |ev| set_selected_field.set(event_target_value(&ev))
                         >
                             <option value="">"Select…"</option>
@@ -43,7 +43,7 @@ pub fn RelationPicker(
                             }).collect_view()}
                         </select>
                         <button
-                            class="px-2 py-1 text-sm rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40"
+                            class="btn btn-sm"
                             on:click=move |_| on_follow.run(())
                             disabled=move || selected_field.get().is_empty()
                         >
@@ -77,27 +77,27 @@ pub fn FollowPanel(panel: ReadSignal<Option<FollowResult>>) -> impl IntoView {
         {move || match panel.get() {
             None => ().into_any(),
             Some(FollowResult::Loading { field }) => view! {
-                <div class="text-xs text-slate-500">"loading "{field}"…"</div>
+                <div class="text-xs text-base-content/50">"loading "{field}"…"</div>
             }.into_any(),
             Some(FollowResult::Error { field, message }) => view! {
-                <div class="text-xs text-red-700">{field}": "{message}</div>
+                <div class="text-xs text-error">{field}": "{message}</div>
             }.into_any(),
             Some(FollowResult::Loaded { field, response }) => match response {
                 FollowResponse::Single { row: None } => view! {
-                    <div class="text-xs text-slate-500">{field}": no related row"</div>
+                    <div class="text-xs text-base-content/50">{field}": no related row"</div>
                 }.into_any(),
                 FollowResponse::Single { row: Some(row) } => view! {
                     <div class="text-xs space-y-1">
-                        <div class="font-medium text-slate-700">{field}":"</div>
-                        <pre class="p-2 bg-slate-50 border border-slate-200 rounded font-mono break-all">
+                        <div class="font-medium text-base-content/70">{field}":"</div>
+                        <pre class="p-2 bg-base-200 border border-base-300 rounded-box font-mono break-all">
                             {serde_json::to_string_pretty(&row).unwrap_or_default()}
                         </pre>
                     </div>
                 }.into_any(),
                 FollowResponse::Page(page) => view! {
                     <div class="text-xs space-y-1">
-                        <div class="font-medium text-slate-700">{field}": "{page.rows.len()}" rows"</div>
-                        <pre class="p-2 bg-slate-50 border border-slate-200 rounded font-mono max-h-64 overflow-auto whitespace-pre-wrap break-all">
+                        <div class="font-medium text-base-content/70">{field}": "{page.rows.len()}" rows"</div>
+                        <pre class="p-2 bg-base-200 border border-base-300 rounded-box font-mono max-h-64 overflow-auto whitespace-pre-wrap break-all">
                             {serde_json::to_string_pretty(&page.rows).unwrap_or_default()}
                         </pre>
                     </div>

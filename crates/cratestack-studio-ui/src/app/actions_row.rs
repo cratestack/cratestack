@@ -19,23 +19,23 @@ pub fn ActionsRow(
     snippet_status: ReadSignal<String>,
 ) -> impl IntoView {
     view! {
-        <div class="pt-2 border-t border-slate-200 space-y-2">
+        <div class="pt-3 border-t border-base-300 space-y-3">
             {move || if is_rw.get() {
                 if editing.get().is_some() {
                     view! {
                         <div class="flex items-center gap-2">
-                            <button class="px-3 py-1 text-sm rounded bg-slate-900 text-white hover:bg-slate-700"
+                            <button class="btn btn-primary btn-sm"
                                 on:click=move |_| save_edit.run(())>"Save"</button>
-                            <button class="px-3 py-1 text-sm rounded border border-slate-300 hover:bg-slate-100"
+                            <button class="btn btn-ghost btn-sm"
                                 on:click=move |_| cancel_edit.run(())>"Cancel"</button>
                         </div>
                     }.into_any()
                 } else {
                     view! {
                         <div class="flex items-center gap-2">
-                            <button class="px-3 py-1 text-sm rounded border border-slate-300 hover:bg-slate-100"
+                            <button class="btn btn-sm"
                                 on:click=move |_| start_edit.run(())>"Edit"</button>
-                            <button class="px-3 py-1 text-sm rounded border border-red-200 text-red-700 hover:bg-red-50"
+                            <button class="btn btn-sm btn-outline btn-error"
                                 on:click=move |_| delete_row.run(())>"Delete"</button>
                         </div>
                     }.into_any()
@@ -44,14 +44,20 @@ pub fn ActionsRow(
                 ().into_any()
             }}
             {move || action_status.get().map(|s| view! {
-                <p class="text-xs text-slate-600">{s}</p>
+                <p class="text-xs text-base-content/60">{s}</p>
             }.into_any()).unwrap_or_else(|| ().into_any())}
             <div>
-                <button class="px-3 py-1 text-sm rounded bg-slate-900 text-white hover:bg-slate-700"
-                    on:click=move |_| copy_snippet.run(())>"Copy Rust query"</button>
-                <span class="ml-2 text-xs text-slate-500">{move || snippet_status.get()}</span>
+                <button class="btn btn-sm gap-1.5"
+                    on:click=move |_| copy_snippet.run(())>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                         stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 opacity-60">
+                        <rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
+                    "Copy Rust query"
+                </button>
+                <span class="ml-2 text-xs text-base-content/40">{move || snippet_status.get()}</span>
                 {move || snippet.get().map(|s| view! {
-                    <pre class="mt-2 p-2 bg-slate-50 border border-slate-200 rounded text-xs whitespace-pre-wrap break-all">{s}</pre>
+                    <pre class="mt-2 p-3 bg-neutral text-success rounded-box text-xs whitespace-pre-wrap break-all shadow-sm">{s}</pre>
                 }.into_any()).unwrap_or_else(|| ().into_any())}
             </div>
         </div>

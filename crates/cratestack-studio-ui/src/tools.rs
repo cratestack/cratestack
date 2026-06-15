@@ -17,16 +17,10 @@ pub use sql_preview::ToolsRow;
 /// Per-model drift indicator rendered in the sidebar.
 pub fn render_drift_dot(status: Option<&str>) -> impl IntoView + use<> {
     let (label, class) = match status {
-        Some("drift") => (
-            "⚠ drift",
-            "ml-2 text-[10px] text-amber-800 bg-amber-100 px-1 rounded",
-        ),
-        Some("missing_table") => (
-            "✕ table",
-            "ml-2 text-[10px] text-red-800 bg-red-100 px-1 rounded",
-        ),
-        Some("unsupported") => ("·", "ml-2 text-[10px] text-slate-400"),
-        Some("skipped") => ("?", "ml-2 text-[10px] text-slate-400"),
+        Some("drift") => ("⚠ drift", "badge badge-warning badge-xs ml-auto"),
+        Some("missing_table") => ("✕ table", "badge badge-error badge-xs ml-auto"),
+        Some("unsupported") => ("·", "ml-auto text-xs text-base-content/40"),
+        Some("skipped") => ("?", "ml-auto text-xs text-base-content/40"),
         Some("ok") => ("", "hidden"),
         _ => ("", "hidden"),
     };

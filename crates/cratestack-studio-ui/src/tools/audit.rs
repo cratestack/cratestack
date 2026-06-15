@@ -24,51 +24,61 @@ pub fn AuditButton() -> impl IntoView {
     };
 
     view! {
-        <button
-            class="px-2 py-1 rounded border border-slate-300 bg-white text-sm hover:bg-slate-100"
-            on:click=move |_| {
-                let was = open.get();
-                set_open.set(!was);
-                if !was {
-                    load();
+        <div class="dropdown dropdown-end" class:dropdown-open=move || open.get()>
+            <div tabindex="0" role="button"
+                class="btn btn-sm gap-1.5"
+                on:click=move |_| {
+                    let was = open.get();
+                    set_open.set(!was);
+                    if !was {
+                        load();
+                    }
                 }
-            }
-        >
-            "Audit"
-        </button>
-        {move || if open.get() {
-            view! {
-                <div class="absolute right-6 top-14 w-[28rem] max-h-[28rem] overflow-auto bg-white border border-slate-200 rounded shadow-lg z-20">
-                    <div class="p-2 border-b border-slate-100 flex items-center justify-between">
-                        <span class="text-sm font-semibold">"Recent writes"</span>
-                        {move || if loading.get() {
-                            view! { <span class="text-xs text-slate-500">"loading…"</span> }.into_any()
-                        } else {
-                            ().into_any()
-                        }}
+            >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 opacity-60">
+                    <path d="M12 8v4l3 2" />
+                    <circle cx="12" cy="12" r="9" />
+                </svg>
+                "Audit"
+            </div>
+            {move || if open.get() {
+                view! {
+                    <div class="fixed inset-0 z-20" on:click=move |_| set_open.set(false) />
+                    <div tabindex="0" class="dropdown-content card card-compact bg-base-100 shadow-xl w-[28rem] mt-2 z-30">
+                        <div class="card-body">
+                            <div class="flex items-center justify-between">
+                                <span class="card-title text-sm">"Recent writes"</span>
+                                {move || if loading.get() {
+                                    view! { <span class="loading loading-spinner loading-xs opacity-40" /> }.into_any()
+                                } else {
+                                    ().into_any()
+                                }}
+                            </div>
+                            {move || if entries.get().is_empty() {
+                                view! { <p class="text-xs opacity-50">"No writes captured yet."</p> }.into_any()
+                            } else {
+                                view! {
+                                    <ul class="text-xs max-h-80 overflow-auto divide-y divide-base-200">
+                                        {entries.get().into_iter().map(|e| {
+                                            let pk = e.pk.unwrap_or_else(|| "·".to_owned());
+                                            view! {
+                                                <li class="py-1.5 grid grid-cols-[6.5rem_3.5rem_1fr] gap-2">
+                                                    <span class="opacity-50 font-mono">{e.at.clone()}</span>
+                                                    <span class="font-semibold">{e.op.clone()}</span>
+                                                    <span class="font-mono break-all">{format!("{}/{} → {}", e.target, e.model, pk)}</span>
+                                                </li>
+                                            }
+                                        }).collect_view()}
+                                    </ul>
+                                }.into_any()
+                            }}
+                        </div>
                     </div>
-                    {move || if entries.get().is_empty() {
-                        view! { <p class="p-3 text-xs text-slate-500">"No writes captured yet."</p> }.into_any()
-                    } else {
-                        view! {
-                            <ul class="text-xs">
-                                {entries.get().into_iter().map(|e| {
-                                    let pk = e.pk.unwrap_or_else(|| "·".to_owned());
-                                    view! {
-                                        <li class="px-3 py-1.5 border-b border-slate-100 grid grid-cols-[6.5rem_3.5rem_1fr] gap-2">
-                                            <span class="text-slate-500 font-mono">{e.at.clone()}</span>
-                                            <span class="font-semibold">{e.op.clone()}</span>
-                                            <span class="font-mono break-all">{format!("{}/{} → {}", e.target, e.model, pk)}</span>
-                                        </li>
-                                    }
-                                }).collect_view()}
-                            </ul>
-                        }.into_any()
-                    }}
-                </div>
-            }.into_any()
-        } else {
-            ().into_any()
-        }}
+                }.into_any()
+            } else {
+                ().into_any()
+            }}
+        </div>
     }
 }

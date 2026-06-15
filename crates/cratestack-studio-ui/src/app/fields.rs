@@ -11,18 +11,22 @@ use super::format::{format_cell, format_value_html};
 #[component]
 pub fn FieldList(row: serde_json::Map<String, serde_json::Value>) -> impl IntoView {
     view! {
-        <dl class="text-sm">
-            {row.iter().map(|(k, v)| {
-                let key = k.clone();
-                let value = format_value_html(v);
-                view! {
-                    <div class="grid grid-cols-3 gap-2 py-1 border-b border-slate-100">
-                        <dt class="text-slate-500">{key}</dt>
-                        <dd class="col-span-2 font-mono text-xs break-all">{value}</dd>
-                    </div>
-                }
-            }).collect_view()}
-        </dl>
+        <div class="overflow-hidden rounded-box border border-base-300">
+            <table class="table table-zebra table-xs">
+                <tbody>
+                    {row.iter().map(|(k, v)| {
+                        let key = k.clone();
+                        let value = format_value_html(v);
+                        view! {
+                            <tr>
+                                <td class="font-medium opacity-50 align-top w-1/3">{key}</td>
+                                <td class="font-mono text-xs break-all whitespace-pre-wrap">{value}</td>
+                            </tr>
+                        }
+                    }).collect_view()}
+                </tbody>
+            </table>
+        </div>
     }
 }
 
@@ -47,13 +51,13 @@ pub fn EditFields(
                 let field_for_input = f.clone();
                 view! {
                     <div class="grid grid-cols-3 gap-2 items-start">
-                        <dt class="text-slate-500 pt-1">{name.clone()}</dt>
+                        <dt class="text-base-content/50 pt-1">{name.clone()}</dt>
                         <dd class="col-span-2">
                             {render_typed_input_optional(field_for_input, values, set_values)}
                             {move || errors.get().iter()
                                 .find(|e| e.field == name_for_error)
                                 .map(|e| view! {
-                                    <p class="text-xs text-red-700 mt-0.5">{e.message.clone()}</p>
+                                    <p class="text-xs text-error mt-0.5">{e.message.clone()}</p>
                                 }.into_any())
                                 .unwrap_or_else(|| ().into_any())}
                         </dd>

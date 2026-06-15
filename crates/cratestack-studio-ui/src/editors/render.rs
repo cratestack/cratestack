@@ -10,7 +10,9 @@ use leptos::prelude::*;
 
 use crate::types::FieldSummary;
 
-const CLASS: &str = "w-full border border-slate-300 rounded px-2 py-1 text-xs font-mono";
+const INPUT_CLASS: &str = "input input-bordered input-sm w-full font-mono text-xs";
+const TEXTAREA_CLASS: &str = "textarea textarea-bordered textarea-sm w-full font-mono text-xs";
+const SELECT_CLASS: &str = "select select-bordered select-sm w-full font-mono text-xs";
 
 /// Read/write accessor pair for a single field's text value. Both
 /// closures are `Copy` because Leptos signal handles are `Copy`.
@@ -53,7 +55,7 @@ where
     view! {
         <input
             type=ty
-            class=CLASS
+            class=INPUT_CLASS
             step=step
             placeholder=placeholder
             on:input=move |ev| { write(event_target_value(&ev)); }
@@ -71,7 +73,7 @@ where
     let ValueIo { read, write } = io;
     view! {
         <textarea
-            class=CLASS
+            class=TEXTAREA_CLASS
             rows="4"
             placeholder="{ … }"
             on:input=move |ev| { write(event_target_value(&ev)); }
@@ -89,7 +91,7 @@ where
     let ValueIo { read, write } = io;
     let placeholder = if optional { "—" } else { "Select…" };
     view! {
-        <select class=CLASS
+        <select class=SELECT_CLASS
             on:change=move |ev| { write(event_target_value(&ev)); }
             prop:value=read
         >
@@ -109,7 +111,7 @@ where
     let ValueIo { read, write } = io;
     let placeholder = if optional { "—" } else { "Select…" };
     view! {
-        <select class=CLASS
+        <select class=SELECT_CLASS
             on:change=move |ev| { write(event_target_value(&ev)); }
             prop:value=read
         >

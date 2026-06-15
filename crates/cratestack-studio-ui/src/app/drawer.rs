@@ -156,12 +156,12 @@ pub fn Drawer(
     };
 
     view! {
-        <aside class="w-96 border-l border-slate-200 bg-white p-4 overflow-auto">
-            <h3 class="font-semibold text-slate-900 mb-2">"Record"</h3>
+        <aside class="w-80 shrink-0 border-l border-base-300 bg-base-100 p-4 overflow-auto">
+            <h3 class="text-xs font-semibold uppercase tracking-wider text-base-content/40 mb-2">"Record"</h3>
             {move || match selected_row.get() {
-                None => view! { <p class="text-slate-500 text-sm">"Select a row."</p> }.into_any(),
+                None => view! { <p class="text-sm text-base-content/40">"Select a row to inspect it."</p> }.into_any(),
                 Some(row) => view! {
-                    <div class="space-y-4">
+                    <div class="space-y-3">
                         {move || match edit_values.get() {
                             None => view! { <FieldList row=row.clone() /> }.into_any(),
                             Some(_) => view! {
