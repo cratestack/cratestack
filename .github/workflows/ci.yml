@@ -84,6 +84,39 @@ jobs:
           echo "tests failed after 3 attempts" >&2
           exit 1
 
+  # ---- Embedded-isolation gate -----------------------------------------
+  # Blocking. Builds the embedded (rusqlite) surface and its examples WITHOUT
+  # any Postgres crate in the build graph. The `check` job above builds
+  # `--workspace`, where Cargo unifies features across every member — and
+  # `sqlx-postgres` pulls `rust_decimal` with its `std` feature, which the
+  # embedded facade intentionally does not. That unification can make
+  # embedded-only code compile on the workspace runner while failing for a
+  # real embedded consumer (and via the example's own documented
+  # `cargo run -p cratestack-sqlite --example …` command). Building these
+  # packages in isolation reproduces the embedded consumer's feature set,
+  # so the masking can't happen. (Regression guard: sqlite_offline_first,
+  # which compiled under `--workspace` but not standalone.)
+  embedded-examples:
+    name: embedded examples (isolated build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Assert Cargo.lock is up to date
+        run: cargo metadata --locked --format-version=1 > /dev/null
+      - uses: Swatinem/rust-cache@v2
+      - name: Build embedded facade + its examples in isolation
+        # A single `-p cratestack-sqlite` (no other members) keeps Postgres
+        # crates out of the graph, so rust_decimal resolves without `std` —
+        # the exact config the examples must compile under.
+        run: cargo build --locked -p cratestack-sqlite --examples
+      - name: Build standalone embedded example crates in isolation
+        run: |
+          cargo build --locked \
+            -p embedded-cli-example \
+            -p embedded-daemon-example \
+            -p embedded-webhook-example
+
   # ---- Lint gates ------------------------------------------------------
   # Blocking. Determinism comes from rust-toolchain.toml pinning the
   # version (and clippy/rustfmt components), so new stable lints/format

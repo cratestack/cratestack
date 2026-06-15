@@ -67,7 +67,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .create(CreateAccountInput {
             id: alice_id,
             ownerName: "Alice".to_string(),
-            balance: "1234.5600".parse::<Decimal>()?,
+            balance: "1234.5600"
+                .parse::<Decimal>()
+                .expect("valid decimal literal"),
             active: true,
             openedAt: chrono::Utc::now(),
         })
@@ -76,7 +78,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .create(CreateAccountInput {
             id: bob_id,
             ownerName: "Bob".to_string(),
-            balance: "42.00".parse::<Decimal>()?,
+            balance: "42.00".parse::<Decimal>().expect("valid decimal literal"),
             active: true,
             openedAt: chrono::Utc::now(),
         })
@@ -92,7 +94,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .create(CreateTransferInput {
                 id: uuid::Uuid::new_v4(),
                 accountId: alice_id,
-                amount: amount.parse::<Decimal>()?,
+                amount: amount.parse::<Decimal>().expect("valid decimal literal"),
                 memo: memo.to_string(),
                 createdAt: chrono::Utc::now(),
             })
