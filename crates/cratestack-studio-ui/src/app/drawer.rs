@@ -156,10 +156,10 @@ pub fn Drawer(
     };
 
     view! {
-        <aside class="w-96 border-l border-slate-200 bg-white p-4 overflow-auto">
-            <h3 class="font-semibold text-slate-900 mb-2">"Record"</h3>
+        <aside class="w-96 shrink-0 border-l border-slate-200 bg-white p-5 overflow-auto">
+            <h3 class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-3">"Record"</h3>
             {move || match selected_row.get() {
-                None => view! { <p class="text-slate-500 text-sm">"Select a row."</p> }.into_any(),
+                None => view! { <p class="text-sm text-slate-400">"Select a row to inspect it."</p> }.into_any(),
                 Some(row) => view! {
                     <div class="space-y-4">
                         {move || match edit_values.get() {

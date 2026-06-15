@@ -14,6 +14,7 @@ mod records_pane;
 mod relations;
 mod sidebar;
 mod table;
+mod target_switcher;
 mod workspace;
 
 use leptos::prelude::*;

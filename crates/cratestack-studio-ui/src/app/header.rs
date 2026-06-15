@@ -1,9 +1,12 @@
-//! Top-bar with workspace name + target switcher.
+//! Top-bar: brand mark + workspace name, the multi-cstack target
+//! switcher, and the schema search / audit tools.
 
 use leptos::prelude::*;
 
 use crate::tools::{AuditButton, SearchBar};
 use crate::types::TargetSummary;
+
+use super::target_switcher::TargetSwitcher;
 
 #[component]
 pub fn Header(
@@ -14,37 +17,34 @@ pub fn Header(
 ) -> impl IntoView {
     let target_signal = Signal::derive(move || selected.get());
     view! {
-        <header class="relative border-b border-slate-200 bg-white px-6 py-3 flex items-center gap-4">
-            <div>
-                <span class="text-xs uppercase tracking-wide text-slate-500">"workspace"</span>
-                <div class="font-semibold text-slate-900">{move || workspace_name.get()}</div>
+        <header class="relative z-10 border-b border-slate-200 bg-white/90 backdrop-blur px-5 h-14 flex items-center gap-4">
+            <div class="flex items-center gap-2.5 pr-1">
+                <BrandMark />
+                <div class="flex flex-col leading-tight">
+                    <span class="text-sm font-semibold text-slate-900">"CrateStack Studio"</span>
+                    <span class="text-xs text-slate-400">{move || workspace_name.get()}</span>
+                </div>
             </div>
+            <div class="h-7 w-px bg-slate-200" />
+            <TargetSwitcher target_list selected set_selected />
             <div class="flex-1" />
             <SearchBar target=target_signal />
             <AuditButton />
-            <label class="flex items-center gap-2 text-sm text-slate-600">
-                "Target"
-                <select
-                    class="border border-slate-300 rounded px-2 py-1 text-sm bg-white"
-                    on:change=move |ev| {
-                        let value = event_target_value(&ev);
-                        set_selected.set(Some(value));
-                    }
-                >
-                    {move || target_list.get().into_iter().map(|t| {
-                        let is_selected = selected.get().as_deref() == Some(t.key.as_str());
-                        let label = format!(
-                            "{} ({} · {})",
-                            t.display_name,
-                            t.mode,
-                            if t.has_db { "db" } else { "api" },
-                        );
-                        view! {
-                            <option value=t.key.clone() selected=is_selected>{label}</option>
-                        }
-                    }).collect_view()}
-                </select>
-            </label>
         </header>
+    }
+}
+
+/// Stacked-crates glyph in an indigo tile — the Studio brand mark.
+#[component]
+fn BrandMark() -> impl IntoView {
+    view! {
+        <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 text-white shadow-sm">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                 stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5">
+                <path d="M12 3 3 7.5 12 12l9-4.5L12 3Z" />
+                <path d="m3 12 9 4.5L21 12" />
+                <path d="m3 16.5 9 4.5 9-4.5" />
+            </svg>
+        </span>
     }
 }

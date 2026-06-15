@@ -10,7 +10,9 @@ use leptos::prelude::*;
 
 use crate::types::FieldSummary;
 
-const CLASS: &str = "w-full border border-slate-300 rounded px-2 py-1 text-xs font-mono";
+const CLASS: &str = "w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-mono bg-white \
+                     text-slate-700 placeholder:text-slate-300 focus:border-indigo-400 \
+                     focus:ring-2 focus:ring-indigo-100 focus:outline-none transition-colors";
 
 /// Read/write accessor pair for a single field's text value. Both
 /// closures are `Copy` because Leptos signal handles are `Copy`.

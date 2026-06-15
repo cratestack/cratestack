@@ -26,11 +26,12 @@ pub fn RelationPicker(
                 }.into_any();
             }
             view! {
-                <div class="pt-2 border-t border-slate-200 space-y-1">
-                    <div class="text-xs uppercase tracking-wide text-slate-500">"Follow relation"</div>
+                <div class="pt-3 border-t border-slate-200 space-y-1.5">
+                    <div class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">"Follow relation"</div>
                     <div class="flex items-center gap-2">
                         <select
-                            class="flex-1 border border-slate-300 rounded px-2 py-1 text-sm bg-white"
+                            class="flex-1 border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm bg-white text-slate-700 \
+                                   focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none"
                             on:change=move |ev| set_selected_field.set(event_target_value(&ev))
                         >
                             <option value="">"Select…"</option>
@@ -43,7 +44,8 @@ pub fn RelationPicker(
                             }).collect_view()}
                         </select>
                         <button
-                            class="px-2 py-1 text-sm rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40"
+                            class="px-3 py-1.5 text-sm font-medium rounded-lg border border-slate-200 bg-white text-slate-700 \
+                                   shadow-sm hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                             on:click=move |_| on_follow.run(())
                             disabled=move || selected_field.get().is_empty()
                         >

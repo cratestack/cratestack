@@ -38,56 +38,72 @@ pub fn ToolsRow(
     };
 
     view! {
-        <div class="flex flex-wrap items-center gap-2 text-xs">
-            <select
-                class="border border-slate-300 rounded px-2 py-1 bg-white"
-                on:change=move |ev| set_op.set(event_target_value(&ev))
-            >
-                <option value="list">"list"</option>
-                <option value="get">"get"</option>
-                <option value="create">"create"</option>
-                <option value="update">"update"</option>
-                <option value="delete">"delete"</option>
-            </select>
-            <button
-                class="px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100"
-                on:click=load_preview
-            >
-                "Show SQL"
-            </button>
-            <span class="text-slate-400">"|"</span>
+        <div class="flex flex-wrap items-center gap-2 text-sm">
+            <div class="flex items-center rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden">
+                <select
+                    class="px-2.5 py-1.5 bg-transparent text-slate-700 focus:outline-none border-r border-slate-200"
+                    on:change=move |ev| set_op.set(event_target_value(&ev))
+                >
+                    <option value="list">"list"</option>
+                    <option value="get">"get"</option>
+                    <option value="create">"create"</option>
+                    <option value="update">"update"</option>
+                    <option value="delete">"delete"</option>
+                </select>
+                <button
+                    class="flex items-center gap-1.5 px-2.5 py-1.5 font-medium text-slate-700 hover:bg-slate-50"
+                    on:click=load_preview
+                >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                         stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-slate-400">
+                        <path d="m18 16 4-4-4-4" /><path d="m6 8-4 4 4 4" /><path d="m14.5 4-5 16" />
+                    </svg>
+                    "Show SQL"
+                </button>
+            </div>
+            <div class="flex-1" />
             <a
-                class="px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white \
+                       font-medium text-slate-700 shadow-sm hover:bg-slate-50 transition-colors"
                 href=move || export_href("json")
                 target="_blank"
                 rel="noopener"
             >
-                "Export JSON"
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-slate-400">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="M7 10l5 5 5-5" /><path d="M12 15V3" />
+                </svg>
+                "JSON"
             </a>
             <a
-                class="px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-100"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white \
+                       font-medium text-slate-700 shadow-sm hover:bg-slate-50 transition-colors"
                 href=move || export_href("csv")
                 target="_blank"
                 rel="noopener"
             >
-                "Export CSV"
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-slate-400">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="M7 10l5 5 5-5" /><path d="M12 15V3" />
+                </svg>
+                "CSV"
             </a>
         </div>
         {move || preview_error.get().map(|e| view! {
-            <div class="p-2 mt-2 bg-red-50 border border-red-200 rounded text-xs text-red-800">{e}</div>
+            <div class="p-3 mt-2 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-800">{e}</div>
         }.into_any()).unwrap_or_else(|| ().into_any())}
         {move || preview.get().map(|p| view! {
-            <div class="mt-2 p-2 bg-slate-50 border border-slate-200 rounded text-xs space-y-1">
-                <div class="text-slate-500">
-                    <span class="font-medium">"driver:"</span>" "{p.driver.clone()}
+            <div class="mt-2 p-3 bg-slate-900 text-slate-100 border border-slate-800 rounded-xl text-xs space-y-1.5 shadow-sm">
+                <div class="text-slate-400">
+                    <span class="font-medium text-slate-300">"driver"</span>" · "{p.driver.clone()}
                 </div>
-                <pre class="font-mono whitespace-pre-wrap break-all">{p.sql.clone()}</pre>
+                <pre class="font-mono whitespace-pre-wrap break-all text-emerald-300">{p.sql.clone()}</pre>
                 {p.params.iter().map(|param| {
                     let label = format!("  ${} = <{}> {}", param.index, param.kind, param.binding);
-                    view! { <div class="font-mono text-slate-600">{label}</div> }
+                    view! { <div class="font-mono text-slate-400">{label}</div> }
                 }).collect_view()}
                 {p.notes.clone().map(|n| view! {
-                    <div class="text-amber-700">{n}</div>
+                    <div class="text-amber-300">{n}</div>
                 }.into_any()).unwrap_or_else(|| ().into_any())}
             </div>
         }.into_any()).unwrap_or_else(|| ().into_any())}

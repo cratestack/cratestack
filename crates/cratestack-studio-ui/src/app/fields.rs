@@ -11,14 +11,14 @@ use super::format::{format_cell, format_value_html};
 #[component]
 pub fn FieldList(row: serde_json::Map<String, serde_json::Value>) -> impl IntoView {
     view! {
-        <dl class="text-sm">
+        <dl class="text-sm rounded-xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
             {row.iter().map(|(k, v)| {
                 let key = k.clone();
                 let value = format_value_html(v);
                 view! {
-                    <div class="grid grid-cols-3 gap-2 py-1 border-b border-slate-100">
-                        <dt class="text-slate-500">{key}</dt>
-                        <dd class="col-span-2 font-mono text-xs break-all">{value}</dd>
+                    <div class="grid grid-cols-3 gap-2 px-3 py-2 even:bg-slate-50/60">
+                        <dt class="text-xs font-medium text-slate-400 pt-0.5">{key}</dt>
+                        <dd class="col-span-2 font-mono text-xs text-slate-700 break-all">{value}</dd>
                     </div>
                 }
             }).collect_view()}

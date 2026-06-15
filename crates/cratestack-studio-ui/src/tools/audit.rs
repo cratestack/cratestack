@@ -25,7 +25,8 @@ pub fn AuditButton() -> impl IntoView {
 
     view! {
         <button
-            class="px-2 py-1 rounded border border-slate-300 bg-white text-sm hover:bg-slate-100"
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm \
+                   font-medium text-slate-700 shadow-sm hover:bg-slate-50 hover:border-slate-300 transition-colors"
             on:click=move |_| {
                 let was = open.get();
                 set_open.set(!was);
@@ -34,11 +35,16 @@ pub fn AuditButton() -> impl IntoView {
                 }
             }
         >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-slate-400">
+                <path d="M12 8v4l3 2" />
+                <circle cx="12" cy="12" r="9" />
+            </svg>
             "Audit"
         </button>
         {move || if open.get() {
             view! {
-                <div class="absolute right-6 top-14 w-[28rem] max-h-[28rem] overflow-auto bg-white border border-slate-200 rounded shadow-lg z-20">
+                <div class="absolute right-4 top-14 w-[28rem] max-h-[28rem] overflow-auto bg-white border border-slate-200 rounded-xl shadow-xl z-30">
                     <div class="p-2 border-b border-slate-100 flex items-center justify-between">
                         <span class="text-sm font-semibold">"Recent writes"</span>
                         {move || if loading.get() {

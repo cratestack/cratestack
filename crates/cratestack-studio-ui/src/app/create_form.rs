@@ -61,29 +61,29 @@ pub fn CreateForm(
 
     let writable_for_view = writable;
     view! {
-        <div class="p-4 border border-slate-200 rounded bg-white space-y-3">
+        <div class="p-4 border border-slate-200 rounded-xl bg-white shadow-sm space-y-3">
             <div class="flex items-center justify-between">
                 <h3 class="font-semibold text-slate-900">"New "{model.name.clone()}</h3>
                 <button
-                    class="text-sm text-slate-500 hover:text-slate-900"
+                    class="text-sm text-slate-400 hover:text-slate-700"
                     on:click=move |_| on_close.run(false)
                 >
                     "Cancel"
                 </button>
             </div>
-            <div class="space-y-2">
+            <div class="grid grid-cols-2 gap-x-4 gap-y-3">
                 {writable_for_view.into_iter().map(|f| {
                     let name = f.name.clone();
                     let name_for_error = name.clone();
                     let field_for_input = f.clone();
                     view! {
                         <div>
-                            <label class="block text-xs text-slate-600 mb-0.5">{name.clone()}</label>
+                            <label class="block text-xs font-medium text-slate-500 mb-1">{name.clone()}</label>
                             {render_typed_input(field_for_input, values, set_values)}
                             {move || errors.get().iter()
                                 .find(|e| e.field == name_for_error)
                                 .map(|e| view! {
-                                    <p class="text-xs text-red-700 mt-0.5">{e.message.clone()}</p>
+                                    <p class="text-xs text-rose-600 mt-0.5">{e.message.clone()}</p>
                                 }.into_any())
                                 .unwrap_or_else(|| ().into_any())}
                         </div>
@@ -91,11 +91,11 @@ pub fn CreateForm(
                 }).collect_view()}
             </div>
             {move || general_error.get().map(|e| view! {
-                <div class="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-800">{e}</div>
+                <div class="p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-800">{e}</div>
             }.into_any()).unwrap_or_else(|| ().into_any())}
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 pt-1">
                 <button
-                    class="px-3 py-1 text-sm rounded bg-slate-900 text-white hover:bg-slate-700 disabled:opacity-40"
+                    class="px-4 py-1.5 text-sm font-medium rounded-lg bg-indigo-600 text-white shadow-sm hover:bg-indigo-700 disabled:opacity-40 transition-colors"
                     on:click=submit
                     disabled=move || submitting.get()
                 >

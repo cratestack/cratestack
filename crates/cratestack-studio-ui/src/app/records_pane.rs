@@ -156,17 +156,16 @@ fn ModelHeaderRow(
     set_creating: WriteSignal<bool>,
 ) -> impl IntoView {
     view! {
-        <div class="flex items-center gap-2 text-sm">
+        <div class="flex items-center gap-2.5 text-sm">
             {move || current_model.get().map(|m| view! {
-                <h2 class="font-semibold text-slate-900">{m.name.clone()}</h2>
+                <h2 class="text-lg font-semibold text-slate-900 tracking-tight">{m.name.clone()}</h2>
             }.into_any()).unwrap_or_else(|| ().into_any())}
-            <span class="text-slate-500">"·"</span>
             {move || target_mode.get().map(|m| {
                 let upper = m.to_uppercase();
                 let class = if m == "rw" {
-                    "text-xs px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800"
+                    "text-[10px] font-semibold tracking-wide px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
                 } else {
-                    "text-xs px-1.5 py-0.5 rounded bg-slate-200 text-slate-700"
+                    "text-[10px] font-semibold tracking-wide px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 ring-1 ring-slate-200"
                 };
                 view! { <span class=class>{upper}</span> }.into_any()
             }).unwrap_or_else(|| ().into_any())}
@@ -174,10 +173,15 @@ fn ModelHeaderRow(
             {move || if is_rw.get() && !creating.get() {
                 view! {
                     <button
-                        class="px-3 py-1 text-sm rounded bg-slate-900 text-white hover:bg-slate-700"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg \
+                               bg-indigo-600 text-white shadow-sm hover:bg-indigo-700 transition-colors"
                         on:click=move |_| set_creating.set(true)
                     >
-                        "+ New"
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                             stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
+                            <path d="M12 5v14M5 12h14" />
+                        </svg>
+                        "New"
                     </button>
                 }.into_any()
             } else {
