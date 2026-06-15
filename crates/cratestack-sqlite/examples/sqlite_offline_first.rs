@@ -67,7 +67,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .create(CreateAccountInput {
             id: alice_id,
             ownerName: "Alice".to_string(),
-            balance: "1234.5600".parse::<Decimal>().expect("valid decimal literal"),
+            balance: "1234.5600"
+                .parse::<Decimal>()
+                .expect("valid decimal literal"),
             active: true,
             openedAt: chrono::Utc::now(),
         })
