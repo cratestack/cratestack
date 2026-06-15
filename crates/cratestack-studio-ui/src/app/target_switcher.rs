@@ -52,7 +52,7 @@ pub fn TargetSwitcher(
 
     let current = Signal::derive(move || {
         let key = selected.get()?;
-        target_list.get().into_iter().find(|t| t.key == key)
+        target_list.with(|list| list.iter().find(|t| t.key == key).cloned())
     });
 
     view! {
@@ -79,7 +79,7 @@ pub fn TargetSwitcher(
                     <div class="fixed inset-0 z-20" on:click=move |_| set_open.set(false) />
                     <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box shadow-xl w-80 mt-2 z-30">
                         <li class="menu-title">"Schemas in this workspace"</li>
-                        {move || target_list.get().into_iter().map(|t| {
+                        {move || target_list.with(|list| list.iter().map(|t| {
                             let key = t.key.clone();
                             let key_click = key.clone();
                             let is_active = selected.get().as_deref() == Some(key.as_str());
@@ -104,7 +104,7 @@ pub fn TargetSwitcher(
                                     </a>
                                 </li>
                             }
-                        }).collect_view()}
+                        }).collect_view())}
                     </ul>
                 }.into_any()
             } else {

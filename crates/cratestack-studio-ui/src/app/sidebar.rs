@@ -20,7 +20,7 @@ pub fn Sidebar(
                     <span>"Models"</span>
                     <span class="badge badge-ghost badge-sm">{move || models.get().len()}</span>
                 </li>
-                {move || models.get().into_iter().map(|m| {
+                {move || models.with(|list| list.iter().map(|m| {
                     let name = m.name.clone();
                     let selected_name = name.clone();
                     let dot_name = name.clone();
@@ -54,7 +54,7 @@ pub fn Sidebar(
                             </button>
                         </li>
                     }
-                }).collect_view()}
+                }).collect_view())}
             </ul>
         </aside>
     }
