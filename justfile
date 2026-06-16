@@ -119,6 +119,50 @@ test-pg-only *args='':
 test-pg-tc *args='':
 	CRATESTACK_USE_TESTCONTAINERS=1 cargo test --workspace --exclude embedded_flutter_native {{args}}
 
+# --- CI test shards -------------------------------------------------------
+# CI runs the suite as three parallel shards (see .github/workflows/ci.yml)
+# so no single runner compiles the whole workspace — the tauri/wasm/napi
+# example crates otherwise push the runner past its disk limit. Each shard
+# is also usable locally.
+
+# Shard: the Postgres-backed crate via testcontainers. The flaky
+# `generated_routes_emit_tracing_events` lives here, so CI wraps this shard
+# in a 3x retry. (cratestack-redis's e2e tests gate on CRATESTACK_REDIS_TEST_URL
+# and skip without it, so they ride along in `test-ci-host`, unchanged.)
+test-ci-db *args='':
+	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg {{args}}
+
+# Shard: the Studio crate, whose api_smoke tests assert the Trunk-built UI
+# is embedded. CI runs `trunk build` first; no database needed.
+test-ci-studio *args='':
+	cargo test -p cratestack-studio {{args}}
+
+# Shard: everything else — the remaining framework crates + light example
+# smoke tests, with no container, no wasm/desktop toolchain, and no GTK.
+# Uses --exclude (a denylist) rather than -p so inline `#[cfg(test)]` unit
+# tests in crates without a tests/ dir (core, parser, sqlx, macros, …) keep
+# running. Excludes the two shards above, the flutter glue crate, and the
+# heavy example crates that have zero tests (already compiled by `check` and
+# the `embedded-examples` gate).
+test-ci-host *args='':
+	#!/usr/bin/env bash
+	set -euo pipefail
+	cargo test --workspace \
+		--exclude embedded_flutter_native \
+		--exclude cratestack-pg \
+		--exclude cratestack-studio \
+		--exclude tauri-web-shell-example \
+		--exclude tauri-native-shell-example \
+		--exclude tauri-web-wasm-example \
+		--exclude embedded-browser-vite-example \
+		--exclude embedded-browser-vite-pwa-example \
+		--exclude embedded-browser-webpack-example \
+		--exclude react-vite-daisyui-example \
+		--exclude react-nextjs-daisyui-wasm \
+		--exclude react-nextjs-daisyui-napi \
+		--exclude embedded-expo-native \
+		{{args}}
+
 # Bundle the Studio UI for publishing: source tarball (for `studio
 # eject --with-ui`) and the Trunk-built wasm/JS dist (embedded into
 # the served binary so `cratestack studio run` ships a real admin app
