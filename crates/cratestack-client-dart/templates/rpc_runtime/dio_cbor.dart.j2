@@ -101,7 +101,7 @@ class CratestackRpcCborDioAdapter implements CratestackRpcAdapter {
     }
     final contentType = response.headers.value(Headers.contentTypeHeader) ?? '';
     if (_isCborContentType(contentType)) {
-      return cbor.cbor.decode(Uint8List.fromList(bytes));
+      return cratestackNormalizeWire(cbor.cbor.decode(Uint8List.fromList(bytes)));
     }
     if (_isJsonContentType(contentType)) {
       return jsonDecode(utf8.decode(bytes));
@@ -145,7 +145,7 @@ CratestackRpcException _exceptionFromDio(DioException error) {
         response?.headers.value(Headers.contentTypeHeader) ?? '';
     if (_isCborContentType(contentType)) {
       try {
-        data = cbor.cbor.decode(Uint8List.fromList(data));
+        data = cratestackNormalizeWire(cbor.cbor.decode(Uint8List.fromList(data)));
       } catch (_) {
         data = null;
       }
