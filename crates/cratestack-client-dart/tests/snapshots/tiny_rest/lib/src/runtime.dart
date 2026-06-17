@@ -22,6 +22,13 @@ typedef CratestackValueMap = Map<String, Object?>;
 /// of Map<String, dynamic>` at runtime. JSON-decoded bodies already have
 /// `String` keys, so for them this is a cheap structural walk.
 Object? cratestackNormalizeWire(Object? value) {
+  // `Uint8List` implements `List<int>`, so it must be matched before the
+  // generic `List` branch — otherwise CBOR byte strings (`Bytes` fields)
+  // get exploded into per-byte `List<Object?>`, breaking `is Uint8List`
+  // decoders and recursing over every byte.
+  if (value is Uint8List) {
+    return value;
+  }
   if (value is Map) {
     return value.map(
       (key, entry) => MapEntry(key.toString(), cratestackNormalizeWire(entry)),
@@ -34,11 +41,17 @@ Object? cratestackNormalizeWire(Object? value) {
 }
 
 CratestackValueMap cratestackAsValueMap(Object? value) {
+  if (value is CratestackValueMap) {
+    return value;
+  }
   final map = value as Map;
   return map.map((key, entry) => MapEntry(key.toString(), entry as Object?));
 }
 
 List<Object?> cratestackAsValueList(Object? value) {
+  if (value is List<Object?>) {
+    return value;
+  }
   return List<Object?>.from(value as List);
 }
 
