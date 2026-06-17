@@ -17,13 +17,33 @@ import 'package:dio/dio.dart';
 
 typedef CratestackValueMap = Map<String, Object?>;
 
+/// Recursively rewrites decoded containers into the `Map<String, Object?>`
+/// / `List<Object?>` shapes the generated `fromWire` decoders expect.
+///
+/// The `cbor` package hands maps back as `Map<Object?, Object?>` (and
+/// nested maps/lists likewise), which is *not* a `Map<String, dynamic>`
+/// — casting it directly throws `_Map<Object?, Object?> is not a subtype
+/// of Map<String, dynamic>` at runtime. JSON-decoded bodies already have
+/// `String` keys, so for them this is a cheap structural walk.
+Object? cratestackNormalizeWire(Object? value) {
+  if (value is Map) {
+    return value.map(
+      (key, entry) => MapEntry(key.toString(), cratestackNormalizeWire(entry)),
+    );
+  }
+  if (value is List) {
+    return value.map(cratestackNormalizeWire).toList(growable: false);
+  }
+  return value;
+}
+
 CratestackValueMap cratestackAsValueMap(Object? value) {
-  final map = value as Map<String, dynamic>;
-  return map.map((key, entry) => MapEntry(key, entry as Object?));
+  final map = value as Map;
+  return map.map((key, entry) => MapEntry(key.toString(), entry as Object?));
 }
 
 List<Object?> cratestackAsValueList(Object? value) {
-  return List<Object?>.from(value as List<dynamic>);
+  return List<Object?>.from(value as List);
 }
 
 Object cratestackRequireWireValue(String ownerName, String fieldName, Object? value) {
@@ -370,7 +390,7 @@ class CratestackRpcCborDioAdapter implements CratestackRpcAdapter {
     }
     final contentType = response.headers.value(Headers.contentTypeHeader) ?? '';
     if (_isCborContentType(contentType)) {
-      return cbor.cbor.decode(Uint8List.fromList(bytes));
+      return cratestackNormalizeWire(cbor.cbor.decode(Uint8List.fromList(bytes)));
     }
     if (_isJsonContentType(contentType)) {
       return jsonDecode(utf8.decode(bytes));
@@ -414,7 +434,7 @@ CratestackRpcException _exceptionFromDio(DioException error) {
         response?.headers.value(Headers.contentTypeHeader) ?? '';
     if (_isCborContentType(contentType)) {
       try {
-        data = cbor.cbor.decode(Uint8List.fromList(data));
+        data = cratestackNormalizeWire(cbor.cbor.decode(Uint8List.fromList(data)));
       } catch (_) {
         data = null;
       }
