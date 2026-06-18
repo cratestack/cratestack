@@ -37,52 +37,83 @@ jobs:
         # `--locked` also fails if the build itself would change the lock.
         run: just check --locked
 
-  tests:
-    name: tests (ephemeral Postgres)
+  # ---- Test shards -----------------------------------------------------
+  # The suite is split into three parallel jobs so no single runner has to
+  # compile the whole workspace — pulling the tauri/wasm/napi example crates
+  # into one `cargo test --workspace` exhausts the runner's disk. Each shard
+  # needs only its own slice of the toolchain (Docker / Trunk / neither), and
+  # none needs the GTK/WebKit deps since the tauri examples are excluded.
+  # Recipes: `test-ci-{db,studio,host}` in the justfile.
+  tests-db:
+    name: tests (db — Postgres)
     runs-on: ubuntu-latest
     env:
-      # Turn a failed testcontainer/DB connection into a hard error
-      # instead of a silent per-test skip — otherwise a broken Docker
-      # runner would pass this gate green while skipping all PG coverage.
+      # Turn a failed testcontainer/DB connection into a hard error instead
+      # of a silent per-test skip — a broken Docker runner would otherwise
+      # pass this gate green while skipping all PG coverage.
       CRATESTACK_REQUIRE_DB: "1"
     steps:
       - uses: actions/checkout@v6
-      - uses: ./.github/actions/tauri-linux-deps
-      # wasm32 (for the Studio UI build below) is installed by rustup from
-      # rust-toolchain.toml's `targets`, for the pinned channel — adding it
-      # to @stable here wouldn't apply to the pinned toolchain trunk uses.
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
-          tool: just,trunk
-      # The `embed-ui` feature (default) embeds the Trunk-built Studio UI
-      # via rust-embed, and cratestack-studio's api_smoke tests assert the
-      # real index.html is served. The dist isn't checked in, so build it
-      # here; cratestack-studio's build.rs picks up the sibling `dist/`.
-      - name: Build Studio UI (Trunk)
-        # `--locked` asserts the studio-ui's own (separate, tracked)
-        # Cargo.lock is up to date — the root-workspace `--locked` flags
-        # don't cover this excluded sub-workspace. rust-cache only touches
-        # the root lock, so nothing masks this assertion.
-        run: trunk build --locked
-        working-directory: crates/cratestack-studio-ui
+          tool: just
       - name: cargo test (testcontainers Postgres)
         # Retry up to 3x to absorb the known-flaky
-        # `generated_routes_emit_tracing_events` (which intermittently
-        # misses tracing events under workspace concurrency — same
-        # rationale as the `release-check` recipe). A genuine regression
-        # fails all three attempts and still blocks the PR. `--locked`
-        # also asserts the committed Cargo.lock is up to date.
+        # `generated_routes_emit_tracing_events` (cratestack-pg; intermittently
+        # misses tracing events under concurrency — same rationale as the
+        # `release-check` recipe). A genuine regression fails all three and
+        # still blocks. `--locked` also asserts the committed Cargo.lock.
         run: |
           for attempt in 1 2 3; do
             echo "::group::test attempt $attempt/3"
-            if just test-pg-tc --locked; then echo "::endgroup::"; exit 0; fi
+            if just test-ci-db --locked; then echo "::endgroup::"; exit 0; fi
             echo "::endgroup::"
             echo "attempt $attempt failed"
           done
           echo "tests failed after 3 attempts" >&2
           exit 1
+
+  tests-studio:
+    name: tests (studio + Trunk UI)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      # wasm32 (for the Trunk build below) is installed by rustup from
+      # rust-toolchain.toml's `targets` for the pinned channel.
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,trunk
+      # The `embed-ui` feature (default) embeds the Trunk-built Studio UI via
+      # rust-embed, and cratestack-studio's api_smoke tests assert the real
+      # index.html is served. The dist isn't checked in, so build it here;
+      # cratestack-studio's build.rs picks up the sibling `dist/`. `--locked`
+      # asserts the studio-ui's own (separate, tracked) Cargo.lock — the
+      # root-workspace `--locked` flags don't cover this excluded sub-workspace.
+      - name: Build Studio UI (Trunk)
+        run: trunk build --locked
+        working-directory: crates/cratestack-studio-ui
+      - name: cargo test (studio)
+        run: just test-ci-studio --locked
+
+  tests-host:
+    name: tests (host — everything else)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: cargo test (host — no DB, no wasm/desktop toolchain)
+        # All remaining crates + light example smoke tests. DB- and
+        # Redis-gated tests skip cleanly here (no REQUIRE_DB). `--locked`
+        # asserts the committed Cargo.lock.
+        run: just test-ci-host --locked
 
   # ---- Embedded-isolation gate -----------------------------------------
   # Blocking. Builds the embedded (rusqlite) surface and its examples WITHOUT
