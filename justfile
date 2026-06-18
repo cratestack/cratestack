@@ -160,8 +160,7 @@ test-ci-host *args='':
 		--exclude react-vite-daisyui-example \
 		--exclude react-nextjs-daisyui-wasm \
 		--exclude react-nextjs-daisyui-napi \
-		--exclude embedded-expo-native \
-		{{args}}
+		--exclude embedded-expo-native {{args}}
 
 # Bundle the Studio UI for publishing: source tarball (for `studio
 # eject --with-ui`) and the Trunk-built wasm/JS dist (embedded into
