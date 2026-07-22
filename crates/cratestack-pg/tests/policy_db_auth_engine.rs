@@ -105,7 +105,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for AuthEngineProcedures {
         Output = Result<cratestack_schema::procedures::inspect_post::Output, cratestack::CoolError>,
     > + Send {
         async move {
-            Ok(cratestack_schema::Post {
+            Ok(cratestack_schema::EnginePost {
                 id: args.args.postId,
                 title: "Visible".to_owned(),
                 published: true,
@@ -123,7 +123,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for AuthEngineProcedures {
         Output = Result<cratestack_schema::procedures::admin_pulse::Output, cratestack::CoolError>,
     > + Send {
         async move {
-            Ok(cratestack_schema::Post {
+            Ok(cratestack_schema::EnginePost {
                 id: args.args.postId,
                 title: "Admin Pulse".to_owned(),
                 published: true,
@@ -148,7 +148,7 @@ async fn db_backed_auth_engine_supports_all_deny_and_auth_defaults() {
     };
     let pool = &test_pg.pool;
 
-    cratestack::sqlx::query("DROP TABLE IF EXISTS posts, todos, scoped_notes")
+    cratestack::sqlx::query("DROP TABLE IF EXISTS engine_posts, todos, scoped_notes")
         .execute(pool)
         .await
         .expect("auth engine test tables should reset");
@@ -157,7 +157,7 @@ async fn db_backed_auth_engine_supports_all_deny_and_auth_defaults() {
         .await
         .expect("auth engine test tables should reset");
     cratestack::sqlx::query(
-        "CREATE TABLE posts (id TEXT PRIMARY KEY DEFAULT ('post_' || md5(random()::text)), title TEXT NOT NULL, published BOOLEAN NOT NULL, author_id TEXT NOT NULL)",
+        "CREATE TABLE engine_posts (id TEXT PRIMARY KEY DEFAULT ('post_' || md5(random()::text)), title TEXT NOT NULL, published BOOLEAN NOT NULL, author_id TEXT NOT NULL)",
     )
     .execute(pool)
     .await
@@ -181,7 +181,7 @@ async fn db_backed_auth_engine_supports_all_deny_and_auth_defaults() {
     .await
     .expect("admin_panels table should exist");
     cratestack::sqlx::query(
-        "INSERT INTO posts (id, title, published, author_id) VALUES ('post_1', 'Draft', FALSE, 'usr_1'), ('post_2', 'Published', TRUE, 'usr_2')",
+        "INSERT INTO engine_posts (id, title, published, author_id) VALUES ('post_1', 'Draft', FALSE, 'usr_1'), ('post_2', 'Published', TRUE, 'usr_2')",
     )
     .execute(pool)
     .await
@@ -237,7 +237,7 @@ async fn db_backed_auth_engine_supports_all_deny_and_auth_defaults() {
     let anonymous = CoolContext::anonymous();
 
     let owner_post = cool
-        .post()
+        .engine_post()
         .find_unique("post_1".to_owned())
         .run(&owner)
         .await
@@ -246,7 +246,7 @@ async fn db_backed_auth_engine_supports_all_deny_and_auth_defaults() {
     assert_eq!(owner_post.id, "post_1");
 
     let published_post = cool
-        .post()
+        .engine_post()
         .find_unique("post_2".to_owned())
         .run(&owner)
         .await
@@ -255,7 +255,7 @@ async fn db_backed_auth_engine_supports_all_deny_and_auth_defaults() {
     assert_eq!(published_post.id, "post_2");
 
     let anonymous_post = cool
-        .post()
+        .engine_post()
         .find_unique("post_2".to_owned())
         .run(&anonymous)
         .await
@@ -334,8 +334,8 @@ async fn db_backed_auth_engine_supports_all_deny_and_auth_defaults() {
     assert!(matches!(wrong_tenant_pulse, CoolError::Forbidden(_)));
 
     let denied_create = cool
-        .post()
-        .create(cratestack_schema::CreatePostInput {
+        .engine_post()
+        .create(cratestack_schema::CreateEnginePostInput {
             title: "Wrong Author".to_owned(),
             published: false,
             authorId: "usr_2".to_owned(),

@@ -478,7 +478,7 @@ mod auth_engine_schema {
             })))
             .expect("principal should bind");
 
-        let post_sql = scoped.post().find_many().preview_scoped_sql();
+        let post_sql = scoped.engine_post().find_many().preview_scoped_sql();
         assert!(post_sql.contains("author_id = "));
         assert!(post_sql.contains("published = TRUE"));
 

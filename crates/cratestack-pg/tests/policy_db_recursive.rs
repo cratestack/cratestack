@@ -28,7 +28,7 @@ async fn db_backed_recursive_relation_policies_cover_quantifiers_and_create_chec
     let pool = &test_pg.pool;
 
     cratestack::sqlx::query(
-        "DROP TABLE IF EXISTS tasks, memberships, projects, users, organizations",
+        "DROP TABLE IF EXISTS tasks, memberships, projects, recursive_users, organizations",
     )
     .execute(pool)
     .await
@@ -40,7 +40,7 @@ async fn db_backed_recursive_relation_policies_cover_quantifiers_and_create_chec
     .await
     .expect("organizations table should exist");
     cratestack::sqlx::query(
-        "CREATE TABLE users (id BIGINT PRIMARY KEY, email TEXT NOT NULL, banned BOOLEAN NOT NULL)",
+        "CREATE TABLE recursive_users (id BIGINT PRIMARY KEY, email TEXT NOT NULL, banned BOOLEAN NOT NULL)",
     )
     .execute(pool)
     .await
@@ -75,7 +75,7 @@ async fn db_backed_recursive_relation_policies_cover_quantifiers_and_create_chec
     .await
     .expect("organizations should seed");
     cratestack::sqlx::query(
-        "INSERT INTO users (id, email, banned) VALUES (1, 'owner@example.com', FALSE), (2, 'other@example.com', FALSE), (3, 'banned@example.com', TRUE)",
+        "INSERT INTO recursive_users (id, email, banned) VALUES (1, 'owner@example.com', FALSE), (2, 'other@example.com', FALSE), (3, 'banned@example.com', TRUE)",
     )
     .execute(pool)
     .await

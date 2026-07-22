@@ -20,7 +20,12 @@ auth SessionUser {
   tenant TenantScope
 }
 
-model Post {
+// Model name is `EnginePost` (not `Post`) so its auto-derived table
+// (`engine_posts`) doesn't collide with the unrelated `posts` table
+// `policy_db_advanced.rs` creates against the same shared test
+// Postgres — same fix-up as the `customers` collision between
+// `banking_soft_delete.rs` and `views_pg_integration.rs`.
+model EnginePost {
   id String @id @default(dbgenerated())
   title String
   published Boolean
@@ -60,9 +65,9 @@ type InspectPostInput {
   postId String
 }
 
-procedure inspectPost(args: InspectPostInput): Post
+procedure inspectPost(args: InspectPostInput): EnginePost
   @allow(auth() != null)
-  @authorize(Post, detail, args.postId)
+  @authorize(EnginePost, detail, args.postId)
 
-procedure adminPulse(args: InspectPostInput): Post
+procedure adminPulse(args: InspectPostInput): EnginePost
   @allow(hasRole('admin') && inTenant('tenant_1'))

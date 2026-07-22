@@ -20,12 +20,12 @@ async fn reset_schema(pool: &PgPool) {
         .execute(pool)
         .await
         .expect("drop view");
-    query("DROP TABLE IF EXISTS customers")
+    query("DROP TABLE IF EXISTS view_customers")
         .execute(pool)
         .await
         .expect("drop table");
     query(
-        "CREATE TABLE customers (
+        "CREATE TABLE view_customers (
             id BIGINT PRIMARY KEY,
             email TEXT NOT NULL,
             active BOOLEAN NOT NULL
@@ -36,7 +36,7 @@ async fn reset_schema(pool: &PgPool) {
     .expect("create table");
     query(
         "CREATE VIEW active_customer_summarys AS \
-         SELECT id, email FROM customers WHERE active = true",
+         SELECT id, email FROM view_customers WHERE active = true",
     )
     .execute(pool)
     .await
@@ -44,7 +44,7 @@ async fn reset_schema(pool: &PgPool) {
 }
 
 async fn seed_customers(pool: &PgPool) {
-    query("INSERT INTO customers (id, email, active) VALUES (1, 'a@x.dev', true), (2, 'b@x.dev', false), (3, 'c@x.dev', true)")
+    query("INSERT INTO view_customers (id, email, active) VALUES (1, 'a@x.dev', true), (2, 'b@x.dev', false), (3, 'c@x.dev', true)")
         .execute(pool)
         .await
         .expect("seed");
