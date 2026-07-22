@@ -2,7 +2,7 @@
 
 [package]
 name = "cratestack-studio-ui"
-version = "0.4.12"
+version = "0.4.13"
 edition = "2024"
 license = "MIT"
 description = "Leptos+Trunk web UI for CrateStack Studio. Built independently of the workspace because it targets wasm32-unknown-unknown."

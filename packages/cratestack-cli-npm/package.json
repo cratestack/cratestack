@@ -1,6 +1,6 @@
 {
   "name": "@cratestack/cli",
-  "version": "0.4.12",
+  "version": "0.4.13",
   "description": "Prebuilt cratestack-cli binary, fetched from GitHub Releases on install. No Rust toolchain required.",
   "license": "MIT",
   "repository": {
