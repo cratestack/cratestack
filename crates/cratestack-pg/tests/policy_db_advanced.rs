@@ -93,42 +93,38 @@ async fn db_backed_advanced_policy_enforcement() {
     };
     let pool = &test_pg.pool;
 
-    // Other test binaries create a `users` table without a `banned`
-    // column, then leave it behind. Drop the shared tables first so
-    // this test always starts from a known shape. We DON'T drop
-    // `cratestack_event_outbox` etc. — those are framework-owned.
-    cratestack::sqlx::query("DROP TABLE IF EXISTS posts, users CASCADE")
+    cratestack::sqlx::query("DROP TABLE IF EXISTS advanced_posts, advanced_users CASCADE")
         .execute(pool)
         .await
         .expect("drop stale tables");
     cratestack::sqlx::query(
-        "CREATE TABLE users (id BIGINT PRIMARY KEY, email TEXT NOT NULL, banned BOOLEAN NOT NULL)",
+        "CREATE TABLE advanced_users (id BIGINT PRIMARY KEY, email TEXT NOT NULL, banned BOOLEAN NOT NULL)",
     )
     .execute(pool)
     .await
-    .expect("users table should exist");
+    .expect("advanced_users table should exist");
     cratestack::sqlx::query(
-        "CREATE TABLE posts (id BIGINT PRIMARY KEY, title TEXT NOT NULL, published BOOLEAN NOT NULL, author_id BIGINT NOT NULL)",
+        "CREATE TABLE advanced_posts (id BIGINT PRIMARY KEY, title TEXT NOT NULL, published BOOLEAN NOT NULL, author_id BIGINT NOT NULL)",
     )
     .execute(pool)
     .await
-    .expect("posts table should exist");
-    cratestack::sqlx::query("TRUNCATE TABLE posts, users")
+    .expect("advanced_posts table should exist");
+    cratestack::sqlx::query("TRUNCATE TABLE advanced_posts, advanced_users")
         .execute(pool)
         .await
         .expect("tables should truncate");
     cratestack::sqlx::query(
-        "INSERT INTO users (id, email, banned) VALUES (1, 'owner@example.com', FALSE), (2, 'other@example.com', FALSE), (3, 'blocked@example.com', TRUE)",
+        "INSERT INTO advanced_users (id, email, banned) VALUES (1, 'owner@example.com', FALSE), (2, 'other@example.com', FALSE), (3, 'blocked@example.com', TRUE)",
     )
     .execute(pool)
     .await
-    .expect("users should seed");
+    .expect("advanced_users should seed");
     cratestack::sqlx::query(
-        "INSERT INTO posts (id, title, published, author_id) VALUES (1, 'Draft', FALSE, 1), (2, 'Other Draft', FALSE, 2), (3, 'Blocked Published', TRUE, 3)",
+        "INSERT INTO advanced_posts (id, title, published, author_id) VALUES (1, 'Draft', FALSE, 1), (2, 'Other Draft', FALSE, 2), (3, 'Blocked Published', TRUE, 3)",
     )
     .execute(pool)
     .await
-    .expect("posts should seed");
+    .expect("advanced_posts should seed");
 
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
 
@@ -159,9 +155,9 @@ async fn db_backed_advanced_policy_enforcement() {
     let anonymous = CoolContext::anonymous();
 
     let updated = cool
-        .post()
+        .advanced_post()
         .update(1_i64)
-        .set(cratestack_schema::UpdatePostInput {
+        .set(cratestack_schema::UpdateAdvancedPostInput {
             title: Some("Updated By Owner Admin".to_owned()),
             published: Some(true),
             authorId: None,
@@ -172,7 +168,7 @@ async fn db_backed_advanced_policy_enforcement() {
     assert_eq!(updated.title, "Updated By Owner Admin");
 
     let owner_read = cool
-        .post()
+        .advanced_post()
         .find_unique(1_i64)
         .run(&owner_member)
         .await
@@ -181,7 +177,7 @@ async fn db_backed_advanced_policy_enforcement() {
     assert_eq!(owner_read.id, 1);
 
     let other_read = cool
-        .post()
+        .advanced_post()
         .find_unique(1_i64)
         .run(&other_admin)
         .await
@@ -189,7 +185,7 @@ async fn db_backed_advanced_policy_enforcement() {
     assert!(other_read.is_none());
 
     let blocked_read = cool
-        .post()
+        .advanced_post()
         .find_unique(3_i64)
         .run(&owner_admin)
         .await
@@ -197,9 +193,9 @@ async fn db_backed_advanced_policy_enforcement() {
     assert!(blocked_read.is_none());
 
     let owner_member_error = cool
-        .post()
+        .advanced_post()
         .update(1_i64)
-        .set(cratestack_schema::UpdatePostInput {
+        .set(cratestack_schema::UpdateAdvancedPostInput {
             title: Some("Blocked Member".to_owned()),
             published: None,
             authorId: None,
@@ -213,9 +209,9 @@ async fn db_backed_advanced_policy_enforcement() {
     ));
 
     let other_admin_error = cool
-        .post()
+        .advanced_post()
         .update(1_i64)
-        .set(cratestack_schema::UpdatePostInput {
+        .set(cratestack_schema::UpdateAdvancedPostInput {
             title: Some("Blocked Other Admin".to_owned()),
             published: None,
             authorId: None,
@@ -229,9 +225,9 @@ async fn db_backed_advanced_policy_enforcement() {
     ));
 
     let anonymous_error = cool
-        .post()
+        .advanced_post()
         .update(1_i64)
-        .set(cratestack_schema::UpdatePostInput {
+        .set(cratestack_schema::UpdateAdvancedPostInput {
             title: Some("Blocked Anonymous".to_owned()),
             published: None,
             authorId: None,
@@ -247,7 +243,7 @@ async fn db_backed_advanced_policy_enforcement() {
     let router = cratestack_schema::axum::model_router(cool, CborCodec, AdvancedPolicyAuthProvider);
     let codec = CborCodec;
     let body = codec
-        .encode(&cratestack_schema::UpdatePostInput {
+        .encode(&cratestack_schema::UpdateAdvancedPostInput {
             title: Some("Updated Through Route".to_owned()),
             published: Some(true),
             authorId: None,
@@ -257,7 +253,7 @@ async fn db_backed_advanced_policy_enforcement() {
     let allowed = router
         .clone()
         .oneshot(
-            Request::patch("/posts/1")
+            Request::patch("/advanced_posts/1")
                 .header("accept", CborCodec::CONTENT_TYPE)
                 .header("content-type", CborCodec::CONTENT_TYPE)
                 .header("x-auth-id", "1")
@@ -273,7 +269,7 @@ async fn db_backed_advanced_policy_enforcement() {
     let denied = router
         .clone()
         .oneshot(
-            Request::patch("/posts/1")
+            Request::patch("/advanced_posts/1")
                 .header("accept", CborCodec::CONTENT_TYPE)
                 .header("content-type", CborCodec::CONTENT_TYPE)
                 .header("x-auth-id", "1")
@@ -296,7 +292,7 @@ async fn db_backed_advanced_policy_enforcement() {
     let owner_draft_read = router
         .clone()
         .oneshot(
-            Request::get("/posts/1")
+            Request::get("/advanced_posts/1")
                 .header("accept", CborCodec::CONTENT_TYPE)
                 .header("x-auth-id", "1")
                 .header("x-role", "member")
@@ -311,7 +307,7 @@ async fn db_backed_advanced_policy_enforcement() {
     let other_draft_read = router
         .clone()
         .oneshot(
-            Request::get("/posts/1")
+            Request::get("/advanced_posts/1")
                 .header("accept", CborCodec::CONTENT_TYPE)
                 .header("x-auth-id", "2")
                 .header("x-role", "admin")
@@ -326,7 +322,7 @@ async fn db_backed_advanced_policy_enforcement() {
     let blocked_author_read = router
         .clone()
         .oneshot(
-            Request::get("/posts/3")
+            Request::get("/advanced_posts/3")
                 .header("accept", CborCodec::CONTENT_TYPE)
                 .header("x-auth-id", "1")
                 .header("x-role", "admin")
