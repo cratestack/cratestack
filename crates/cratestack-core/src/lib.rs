@@ -78,7 +78,7 @@ pub use events::{
     parse_emit_attribute,
 };
 pub use json::Json;
-pub use page::{Page, PageInfo};
+pub use page::{MAX_LIST_LIMIT, Page, PageInfo};
 pub use projection::ProjectionDecoder;
 pub use schema::{
     Attribute, AuthBlock, ConfigBlock, ConfigEntry, Datasource, EnumDecl, EnumVariant, Field,

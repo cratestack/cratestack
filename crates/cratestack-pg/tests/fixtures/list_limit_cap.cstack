@@ -1,0 +1,22 @@
+// Minimal fixture for the MAX_LIST_LIMIT boundary test (#123). REST
+// transport (the default) — the RPC-side equivalent test reuses
+// `transport_rpc.cstack`'s own paged model instead of duplicating a
+// second fixture, since the limit-cap check lives in the one dispatch
+// function both transports share.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Item {
+  id Int @id
+  label String
+
+  @@paged
+  @@allow("read", auth() != null)
+}
