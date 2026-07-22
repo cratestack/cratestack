@@ -1,0 +1,43 @@
+{
+  "name": "@cratestack/cli",
+  "version": "0.4.12",
+  "description": "Prebuilt cratestack-cli binary, fetched from GitHub Releases on install. No Rust toolchain required.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cratestack/cratestack.git",
+    "directory": "packages/cratestack-cli-npm"
+  },
+  "homepage": "https://cratestack.dev",
+  "bugs": "https://github.com/cratestack/cratestack/issues",
+  "keywords": [
+    "cratestack",
+    "cstack",
+    "cli",
+    "codegen"
+  ],
+  "bin": {
+    "cratestack": "bin/cratestack.js"
+  },
+  "files": [
+    "bin",
+    "scripts",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "postinstall": "node ./scripts/install.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ]
+}
