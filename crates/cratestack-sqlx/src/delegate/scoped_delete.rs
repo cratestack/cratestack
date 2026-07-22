@@ -23,7 +23,7 @@ impl<'a, M: 'static, PK: 'static> ScopedDeleteRecord<'a, M, PK> {
     pub async fn run(self) -> Result<M, CoolError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
-        PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
+        PK: Send + Clone + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
         self.request.run(&self.ctx).await
     }
@@ -34,7 +34,7 @@ impl<'a, M: 'static, PK: 'static> ScopedDeleteRecord<'a, M, PK> {
     ) -> Result<M, CoolError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
-        PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
+        PK: Send + Clone + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
         self.request.run_in_tx(tx, &self.ctx).await
     }

@@ -1,0 +1,14 @@
+// Regression fixture for the `@server_only` leak reported in #118:
+// a field masked from outbound JSON must not appear in the generated
+// model, Create<X>Input, or Update<X>Input interfaces.
+
+model Widget {
+  id Cuid @id
+  name String
+  secretHash String @server_only
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}

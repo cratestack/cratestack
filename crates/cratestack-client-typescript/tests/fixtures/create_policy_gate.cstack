@@ -1,0 +1,22 @@
+// Regression fixture for #119: a model with no @@allow("create", ...)
+// must not get a generated `.create()` / auto-derived Create<X>Input
+// — the generic create verb fail-closes by policy, so it's dead on
+// arrival. Creation goes exclusively through `createWidget`, whose
+// own hand-declared `CreateWidgetInput` must survive untouched
+// (previously it got merged/polluted by the auto-derived duplicate).
+
+model Widget {
+  id Cuid @id
+  name String
+
+  @@allow("read", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
+
+type CreateWidgetInput {
+  name String
+}
+
+mutation procedure createWidget(args: CreateWidgetInput): Widget
+  @allow(auth() != null)

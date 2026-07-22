@@ -1,0 +1,21 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model SoftAuditCustomer {
+  id Int @id
+  name String
+  email String
+  version Int @version
+
+  @@soft_delete
+  @@audit
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("delete", auth() != null)
+}

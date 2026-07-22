@@ -7,7 +7,7 @@ use cratestack_core::{AuditOperation, CoolContext, CoolError, ModelEventKind};
 use crate::audit::{build_audit_event, enqueue_audit_event, ensure_audit_table};
 use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
 use crate::query::support::{apply_create_defaults, evaluate_create_policies, find_column_value};
-use crate::{ConflictTarget, ModelDescriptor, SqlValue, UpsertModelInput, sqlx};
+use crate::{ConflictTarget, ModelDescriptor, SqlValue, SqlxRuntime, UpsertModelInput, sqlx};
 
 use super::upsert_sql::{
     row_passes_update_policy, select_for_update_by_conflict_target, upsert_returning_record,
@@ -17,7 +17,7 @@ use super::upsert_sql::{
 /// decide whether to drain the outbox post-commit.
 pub(super) async fn run_upsert_in_tx<'tx, M, PK, I>(
     tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-    policy_pool: &sqlx::PgPool,
+    runtime: &SqlxRuntime,
     descriptor: &'static ModelDescriptor<M, PK>,
     input: I,
     conflict_target: ConflictTarget,
@@ -75,7 +75,7 @@ where
     // than "evaluate the path that runs," but pre-flighting a read
     // just to pick the policy slot would leak row existence.
     if !evaluate_create_policies(
-        policy_pool,
+        runtime.pool(),
         descriptor.create_allow_policies,
         descriptor.create_deny_policies,
         &insert_values,
@@ -96,7 +96,7 @@ where
         ensure_event_outbox_table(&mut **tx).await?;
     }
     if audit_enabled {
-        ensure_audit_table(policy_pool).await?;
+        ensure_audit_table(runtime).await?;
     }
 
     // Probe the conflict target under a row-level lock. If a row
@@ -107,7 +107,7 @@ where
     let inserted = before_record.is_none();
 
     if !inserted
-        && !row_passes_update_policy(policy_pool, descriptor, &conflict_columns, ctx).await?
+        && !row_passes_update_policy(runtime.pool(), descriptor, &conflict_columns, ctx).await?
     {
         return Err(CoolError::Forbidden(
             "update policy denied this upsert".to_owned(),

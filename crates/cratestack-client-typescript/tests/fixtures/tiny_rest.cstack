@@ -6,6 +6,8 @@ model Widget {
   id Int @id
   name String
   weight Int?
+
+  @@allow("create", auth() != null)
 }
 
 procedure echoName(name: String): String

@@ -95,7 +95,7 @@ where
             .map_err(|error| CoolError::Database(error.to_string()))?;
         let (record, emits_event) = run_upsert_in_tx(
             &mut tx,
-            runtime.pool(),
+            runtime,
             self.descriptor,
             self.input,
             self.conflict_target,
@@ -126,7 +126,7 @@ where
     {
         let (record, _) = run_upsert_in_tx(
             tx,
-            self.runtime.pool(),
+            self.runtime,
             self.descriptor,
             self.input,
             self.conflict_target,

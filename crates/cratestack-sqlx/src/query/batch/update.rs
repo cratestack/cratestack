@@ -57,7 +57,7 @@ where
             ensure_event_outbox_table(&mut *tx).await?;
         }
         if audit_enabled {
-            ensure_audit_table(self.runtime.pool()).await?;
+            ensure_audit_table(self.runtime).await?;
         }
 
         let mut per_item: Vec<Result<M, CoolError>> = Vec::with_capacity(self.items.len());

@@ -45,12 +45,57 @@ pub(crate) fn scalar_model_fields<'a>(
     model
         .fields
         .iter()
-        .filter(|field| !is_relation_field(model_names, field))
+        .filter(|field| !is_relation_field(model_names, field) && !is_server_only_field(field))
+        .collect()
+}
+
+/// Fields visible on the generated model interface: everything except
+/// `@server_only`. Unlike [`scalar_model_fields`], relation fields
+/// stay in — the model interface (unlike Create/Update inputs) does
+/// project relations.
+pub(crate) fn visible_model_fields(model: &Model) -> Vec<&Field> {
+    model
+        .fields
+        .iter()
+        .filter(|field| !is_server_only_field(field))
         .collect()
 }
 
 fn is_relation_field(model_names: &BTreeSet<&str>, field: &Field) -> bool {
     model_names.contains(field.ty.name.as_str())
+}
+
+/// Field carries `@server_only` — masked from outbound JSON, so it
+/// must never appear in a generated client's model/Create/Update
+/// interfaces.
+fn is_server_only_field(field: &Field) -> bool {
+    field
+        .attributes
+        .iter()
+        .any(|attribute| attribute.raw == "@server_only")
+}
+
+/// Model has at least one `@@allow("create", ...)` or
+/// `@@allow("all", ...)` rule. Mirrors the create verb's policy gate —
+/// a model without one fail-closes on the server, so the generated
+/// client shouldn't expose a `.create()` that can only ever 403.
+pub(crate) fn model_allows_create(model: &Model) -> bool {
+    model
+        .attributes
+        .iter()
+        .filter_map(|attribute| allow_action(&attribute.raw))
+        .any(|action| action == "create" || action == "all")
+}
+
+fn allow_action(raw: &str) -> Option<&str> {
+    let inner = raw.trim().strip_prefix("@@allow(")?;
+    let quote = inner.chars().next()?;
+    if quote != '"' && quote != '\'' {
+        return None;
+    }
+    let rest = &inner[quote.len_utf8()..];
+    let end = rest.find(quote)?;
+    Some(&rest[..end])
 }
 
 pub(crate) fn primary_key_field(model: &Model) -> Option<&Field> {

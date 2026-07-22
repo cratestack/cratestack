@@ -1,3 +1,6 @@
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+
 use crate::sqlx;
 
 use cratestack_core::{
@@ -10,6 +13,13 @@ use crate::error::cool_error_from_sqlx;
 pub struct SqlxRuntime {
     pool: sqlx::PgPool,
     events: CoolEventBus,
+    // Shared (not per-clone) so every handle onto the same logical
+    // runtime agrees on whether `cratestack_audit` has been
+    // bootstrapped. See `crate::audit::ensure_audit_table` — this is
+    // what lets it skip re-issuing `CREATE INDEX IF NOT EXISTS` after
+    // the first call, which is what self-deadlocked chained
+    // `run_in_tx` audit writes in a caller-managed transaction.
+    audit_table_ensured: Arc<AtomicBool>,
 }
 
 impl SqlxRuntime {
@@ -17,11 +27,16 @@ impl SqlxRuntime {
         Self {
             pool,
             events: CoolEventBus::default(),
+            audit_table_ensured: Arc::new(AtomicBool::new(false)),
         }
     }
 
     pub fn pool(&self) -> &sqlx::PgPool {
         &self.pool
+    }
+
+    pub(crate) fn audit_table_ensured(&self) -> &AtomicBool {
+        &self.audit_table_ensured
     }
 
     #[doc(hidden)]

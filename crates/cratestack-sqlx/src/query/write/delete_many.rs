@@ -78,7 +78,7 @@ impl<'a, M: 'static, PK: 'static> DeleteMany<'a, M, PK> {
             .await
             .map_err(|error| CoolError::Database(error.to_string()))?;
         let (summary, emits_event) =
-            run_delete_many_in_tx(&mut tx, runtime.pool(), descriptor, &self.filters, ctx).await?;
+            run_delete_many_in_tx(&mut tx, runtime, descriptor, &self.filters, ctx).await?;
         tx.commit()
             .await
             .map_err(|error| CoolError::Database(error.to_string()))?;
@@ -97,8 +97,7 @@ impl<'a, M: 'static, PK: 'static> DeleteMany<'a, M, PK> {
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
     {
         let (summary, _) =
-            run_delete_many_in_tx(tx, self.runtime.pool(), self.descriptor, &self.filters, ctx)
-                .await?;
+            run_delete_many_in_tx(tx, self.runtime, self.descriptor, &self.filters, ctx).await?;
         Ok(summary)
     }
 }
