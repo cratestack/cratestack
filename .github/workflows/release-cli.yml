@@ -1,0 +1,194 @@
+# Builds and publishes prebuilt `cratestack-cli` binaries to a GitHub
+# Release, so consumers can install without a Rust toolchain (see #131).
+#
+# Triggers on the `vX.Y.Z` tag push that `just release VERSION` produces
+# (`git push origin HEAD "v{{VERSION}}"` when run with PUSH=1). Also
+# accepts a manual `workflow_dispatch` against an existing tag, for
+# re-running a failed release or a dry-run against a throwaway test tag.
+#
+# Artifact naming follows the cargo-binstall convention declared in
+# crates/cratestack-cli/Cargo.toml's [package.metadata.binstall] — the
+# two must stay in sync; see that file for the pkg-url template.
+name: Release CLI Binaries
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)build and attach binaries to, e.g. v0.4.13"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-cli-${{ github.event.inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Resolve the tag once so every downstream job (checkout ref, archive
+  # names, release target) agrees, whether triggered by a tag push or a
+  # manual dispatch against an existing tag.
+  prepare:
+    name: resolve tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+    steps:
+      - name: Resolve release tag
+        id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+  # The Studio UI (embedded in cratestack-cli via cratestack-studio's
+  # default `embed-ui` feature) needs a Trunk build of the wasm app.
+  # Built once here and shared with every platform job below — Trunk
+  # output isn't target-specific, and re-running it per matrix leg would
+  # just burn CI time for an identical artifact. Without this, a fresh
+  # checkout in each build job has no `dist/`, and cratestack-studio's
+  # build.rs falls back to a placeholder admin UI (see its doc comment).
+  studio-ui:
+    name: bundle studio UI
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,trunk
+      - name: Bundle Studio UI
+        run: just bundle-studio-ui
+      - uses: actions/upload-artifact@v4
+        with:
+          name: studio-ui-bundle
+          path: |
+            crates/cratestack-studio/embedded-ui.tar.gz
+            crates/cratestack-studio/embedded-ui-dist.tar.gz
+          retention-days: 1
+
+  build:
+    name: build (${{ matrix.target }})
+    needs: [prepare, studio-ui]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-${{ matrix.target }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: studio-ui-bundle
+          path: crates/cratestack-studio
+      - name: Build cratestack-cli
+        run: cargo build --release --locked -p cratestack-cli --target ${{ matrix.target }}
+      - name: Package archive
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ needs.prepare.outputs.tag }}"
+          target="${{ matrix.target }}"
+          bin_dir="target/${target}/release"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            asset="cratestack-cli-${target}-${tag}.zip"
+            powershell -NoProfile -Command "Compress-Archive -Path '${bin_dir}/cratestack.exe' -DestinationPath '${asset}'"
+          else
+            asset="cratestack-cli-${target}-${tag}.tar.gz"
+            tar -czf "$asset" -C "$bin_dir" cratestack
+          fi
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "$asset" > "$asset.sha256"
+          else
+            shasum -a 256 "$asset" > "$asset.sha256"
+          fi
+          echo "asset=$asset" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-asset-${{ matrix.target }}
+          path: |
+            ${{ steps.package.outputs.asset }}
+            ${{ steps.package.outputs.asset }}.sha256
+          if-no-files-found: error
+
+  release:
+    name: publish release
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-asset-*
+          path: dist
+          merge-multiple: true
+      - name: List assets
+        run: ls -la dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          files: dist/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+
+  # Only on a real tag push, never on a manual workflow_dispatch test run —
+  # unlike a GitHub Release, an npm publish can't be deleted and retried
+  # cleanly, so a throwaway test tag must not reach the registry. Requires
+  # an NPM_TOKEN repo secret (an npmjs.com token for the @cratestack org,
+  # which someone with org access has to create and add manually); until
+  # then this step logs and no-ops instead of failing the whole release.
+  publish-npm:
+    name: publish npm package
+    if: github.event_name == 'push'
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+      - name: Publish @cratestack/cli
+        working-directory: packages/cratestack-cli-npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "NPM_TOKEN secret not set; skipping npm publish." >&2
+            echo "See docs: tooling/cli-install.md for setup." >&2
+            exit 0
+          fi
+          npm publish --access public

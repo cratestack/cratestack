@@ -16,6 +16,18 @@ categories.workspace = true
 name = "cratestack"
 path = "src/main.rs"
 
+# Resolved by `cargo binstall cratestack-cli` against the GitHub Release
+# assets published by .github/workflows/release-cli.yml — the archive
+# naming here must stay in sync with that workflow's `Package archive`
+# step.
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }-v{ version }{ archive-suffix }"
+bin-dir = "{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-fmt = "zip"
+
 [dependencies]
 anyhow.workspace = true
 chrono.workspace = true

@@ -4,8 +4,27 @@ Command-line tool for `.cstack` schema validation and client/Studio code generat
 
 ## Installation
 
+Prebuilt binaries (macOS x64/arm64, Linux x64/arm64, Windows x64) are attached to every
+[GitHub Release](https://github.com/cratestack/cratestack/releases) — no Rust toolchain required.
+
+Via [`cargo-binstall`](https://github.com/cargo-bins/cargo-binstall):
+
 ```bash
-cargo install cratestack-cli --version 0.2.2
+cargo binstall cratestack-cli
+```
+
+Via npm (downloads the matching platform binary from GitHub Releases on install):
+
+```bash
+npm install --global @cratestack/cli
+# or run without installing:
+npx @cratestack/cli --help
+```
+
+From source, with a Rust toolchain:
+
+```bash
+cargo install cratestack-cli
 ```
 
 Or from the workspace:
