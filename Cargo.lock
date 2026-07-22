@@ -1021,6 +1021,7 @@ dependencies = [
  "cratestack-migrate",
  "cratestack-parser",
  "cratestack-studio",
+ "serde",
  "serde_json",
  "tempfile",
  "tokio",

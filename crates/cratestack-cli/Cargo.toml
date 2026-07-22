@@ -38,6 +38,7 @@ cratestack-core.workspace = true
 cratestack-migrate.workspace = true
 cratestack-parser.workspace = true
 cratestack-studio.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 url.workspace = true
