@@ -80,5 +80,83 @@ pub(super) fn parse_schema_literal(
             )
         })?;
 
+    reject_composite_primary_keys(schema_path, &schema)?;
+
     Ok((schema_relative, resolved, schema))
+}
+
+/// `@@id([...])` composite primary keys are parsed and validated by
+/// `cratestack-parser`, and `cratestack-migrate` already emits correct
+/// composite `PRIMARY KEY` DDL for them — but query builders, axum/RPC
+/// routing, and all three client generators still assume exactly one
+/// scalar PK column throughout (`ModelDescriptor<M, PK>` and friends).
+/// Fail here with one clear message instead of letting a model with
+/// `@@id(...)` reach codegen and panic somewhere deep in a `.find(...)
+/// .expect(...)` call with no useful context.
+///
+/// Tracking: <https://github.com/cratestack/cratestack/issues/136>.
+fn reject_composite_primary_keys(
+    schema_path: &LitStr,
+    schema: &cratestack_core::Schema,
+) -> Result<(), TokenStream> {
+    if let Some(model) = find_composite_id_model(schema) {
+        return Err(TokenStream::from(
+            syn::Error::new(
+                schema_path.span(),
+                format!(
+                    "model `{}` declares a composite primary key via `@@id([...])`, which is not yet supported by codegen (query builders, routing, and generated clients still assume a single scalar `@id`); see https://github.com/cratestack/cratestack/issues/136 for status",
+                    model.name,
+                ),
+            )
+            .to_compile_error(),
+        ));
+    }
+    Ok(())
+}
+
+fn find_composite_id_model(schema: &cratestack_core::Schema) -> Option<&cratestack_core::Model> {
+    schema
+        .models
+        .iter()
+        .find(|model| model.attributes.iter().any(|a| a.raw.starts_with("@@id(")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::find_composite_id_model;
+
+    #[test]
+    fn flags_model_with_composite_id_attribute() {
+        let schema = cratestack_parser::parse_schema(
+            r#"
+model AccountMembership {
+  accountId Int
+  subject String
+
+  @@id([accountId, subject])
+}
+"#,
+        )
+        .expect("schema should parse");
+
+        let flagged = find_composite_id_model(&schema);
+        assert_eq!(
+            flagged.map(|model| model.name.as_str()),
+            Some("AccountMembership")
+        );
+    }
+
+    #[test]
+    fn does_not_flag_single_field_id() {
+        let schema = cratestack_parser::parse_schema(
+            r#"
+model Account {
+  id Int @id
+}
+"#,
+        )
+        .expect("schema should parse");
+
+        assert!(find_composite_id_model(&schema).is_none());
+    }
 }

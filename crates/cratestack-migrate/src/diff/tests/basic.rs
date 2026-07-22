@@ -36,6 +36,47 @@ model Account {
 }
 
 #[test]
+fn adding_a_composite_key_model_marks_every_listed_column_primary_key() {
+    let prev = schema(&with_models(""));
+    let next = schema(&with_models(
+        r#"
+model Account {
+  id Int @id
+}
+
+model AccountMembership {
+  accountId Int
+  subject String
+  active Boolean
+
+  @@id([accountId, subject])
+}
+"#,
+    ));
+    let ops = diff(&prev, &next);
+    let membership = ops
+        .iter()
+        .find_map(|op| match op {
+            Op::CreateTable(create) if create.name == "account_memberships" => Some(create),
+            _ => None,
+        })
+        .expect("expected CreateTable for account_memberships");
+    let pk_columns: Vec<&str> = membership
+        .columns
+        .iter()
+        .filter(|column| column.primary_key)
+        .map(|column| column.name.as_str())
+        .collect();
+    assert_eq!(pk_columns, vec!["account_id", "subject"]);
+    let active = membership
+        .columns
+        .iter()
+        .find(|column| column.name == "active")
+        .expect("expected active column");
+    assert!(!active.primary_key);
+}
+
+#[test]
 fn removing_a_model_emits_drop_table() {
     let prev = schema(&with_models(
         r#"

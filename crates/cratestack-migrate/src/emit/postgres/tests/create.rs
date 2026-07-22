@@ -135,6 +135,39 @@ model Tag {
 }
 
 #[test]
+fn composite_primary_key_emits_multi_column_constraint() {
+    let prev = schema(&with_models(""));
+    let next = schema(&with_models(
+        r#"
+model Account {
+  id Int @id
+}
+
+model AccountMembership {
+  accountId Int
+  subject String
+  active Boolean
+
+  @@id([accountId, subject])
+}
+"#,
+    ));
+    let migration = emit(&diff(&prev, &next));
+    assert!(
+        migration.up.contains("CREATE TABLE account_memberships"),
+        "up was: {}",
+        migration.up
+    );
+    assert!(
+        migration.up.contains("PRIMARY KEY (account_id, subject)"),
+        "up was: {}",
+        migration.up
+    );
+    assert!(!migration.up.contains("PRIMARY KEY (account_id)"));
+    assert!(!migration.up.contains("PRIMARY KEY (subject)"));
+}
+
+#[test]
 fn empty_diff_produces_empty_migration() {
     let s = schema(&with_models(
         r#"

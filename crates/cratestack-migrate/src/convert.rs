@@ -13,7 +13,7 @@ mod renames;
 
 use std::collections::HashSet;
 
-use cratestack_core::{Model, Schema};
+use cratestack_core::{Model, Schema, parse_composite_id_attribute};
 
 use crate::ir::{AddCheck, AddIndex, Column};
 use crate::naming::{check_name, column_name, index_name_unique, table_name};
@@ -54,6 +54,20 @@ pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
     // database, not what's in the .cstack source.
     let rename_from = model_rename_from(model);
 
+    // `@@id([field1, field2, ...])` marks a composite primary key: every
+    // listed field's column becomes part of a multi-column `PRIMARY KEY`
+    // constraint (see `emit::postgres::tables`/`emit::sqlite::tables`,
+    // which already join every `primary_key`-flagged column into one
+    // constraint). Mutually exclusive with a field-level `@id`, enforced
+    // by `cratestack-parser`.
+    let composite_id_fields: HashSet<String> = model
+        .attributes
+        .iter()
+        .find(|attribute| attribute.raw.starts_with("@@id("))
+        .and_then(|attribute| parse_composite_id_attribute(&attribute.raw).ok())
+        .map(|fields| fields.into_iter().collect())
+        .unwrap_or_default();
+
     let mut columns = Vec::with_capacity(model.fields.len());
     let mut column_renames = Vec::new();
     let mut indexes = Vec::new();
@@ -68,7 +82,10 @@ pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
             continue;
         }
 
-        let column = field_to_column(field, &known_enums, &known_types);
+        let mut column = field_to_column(field, &known_enums, &known_types);
+        if composite_id_fields.contains(field.name.as_str()) {
+            column.primary_key = true;
+        }
         if let Some(old_name) = field_rename_from(field) {
             column_renames.push((column.name.clone(), column_name(&old_name)));
         }

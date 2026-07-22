@@ -172,3 +172,184 @@ model Account {
         "error: {error}",
     );
 }
+
+#[test]
+fn accepts_composite_id_attribute() {
+    let schema = parse_schema(
+        r#"
+model Account {
+  id Int @id
+}
+
+model AccountMembership {
+  accountId Int
+  subject String
+  active Boolean
+  account Account @relation(fields:[accountId],references:[id])
+
+  @@id([accountId, subject])
+}
+"#,
+    )
+    .expect("composite @@id should parse");
+
+    let membership = &schema.models[1];
+    assert!(
+        membership
+            .attributes
+            .iter()
+            .any(|a| a.raw == "@@id([accountId, subject])")
+    );
+}
+
+#[test]
+fn rejects_composite_id_with_single_field() {
+    let error = parse_schema(
+        r#"
+model AccountMembership {
+  accountId Int
+  subject String
+
+  @@id([accountId])
+}
+"#,
+    )
+    .expect_err("single-field @@id should fail");
+
+    assert!(
+        error.to_string().contains("at least two fields"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn rejects_composite_id_referencing_unknown_field() {
+    let error = parse_schema(
+        r#"
+model AccountMembership {
+  accountId Int
+  subject String
+
+  @@id([accountId, role])
+}
+"#,
+    )
+    .expect_err("@@id referencing unknown field should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("references unknown field `role`"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn rejects_composite_id_alongside_field_level_id() {
+    let error = parse_schema(
+        r#"
+model AccountMembership {
+  id Cuid @id
+  accountId Int
+  subject String
+
+  @@id([accountId, subject])
+}
+"#,
+    )
+    .expect_err("field-level @id plus @@id should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("use exactly one primary key declaration"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn rejects_duplicate_composite_id_attribute() {
+    let error = parse_schema(
+        r#"
+model AccountMembership {
+  accountId Int
+  subject String
+
+  @@id([accountId, subject])
+  @@id([accountId, subject])
+}
+"#,
+    )
+    .expect_err("duplicate @@id attributes should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("must not declare more than one @@id(...) attribute"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn rejects_composite_id_field_that_is_a_relation() {
+    let error = parse_schema(
+        r#"
+model Account {
+  id Int @id
+}
+
+model AccountMembership {
+  accountId Int
+  subject String
+  account Account @relation(fields:[accountId],references:[id])
+
+  @@id([account, subject])
+}
+"#,
+    )
+    .expect_err("@@id listing a relation field should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("must be a scalar column, not a relation field"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn rejects_composite_id_field_with_readonly() {
+    let error = parse_schema(
+        r#"
+model AccountMembership {
+  accountId Int @readonly
+  subject String
+
+  @@id([accountId, subject])
+}
+"#,
+    )
+    .expect_err("@@id field carrying @readonly should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("must not declare @readonly or @server_only"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn model_missing_primary_key_error_mentions_composite_form() {
+    let error = parse_schema(
+        r#"
+model AccountMembership {
+  accountId Int
+  subject String
+}
+"#,
+    )
+    .expect_err("model without any primary key should fail");
+
+    assert!(error.to_string().contains("@@id([...])"), "error: {error}",);
+}
