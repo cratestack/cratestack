@@ -1,0 +1,16 @@
+// Regression fixture for issue #137: a `type` block field referencing a
+// `model` type failed codegen with "cannot find type in scope" because the
+// `type`/`model` field-emission logic never module-qualified the reference.
+// Mirrors crates/cratestack-pg/tests/fixtures/type_references_model.cstack
+// but exercises the embedded (rusqlite) composer, which shares the same
+// `generate_type_struct` generator.
+
+model SomeModel {
+  id Int @id
+  name String
+}
+
+type ApiKeySecret {
+  model SomeModel
+  secret String
+}

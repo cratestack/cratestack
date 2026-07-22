@@ -21,10 +21,15 @@ pub(crate) fn generate_type_struct(
 ) -> proc_macro2::TokenStream {
     let type_ident = ident(&ty.name);
     let docs = doc_attrs(&ty.docs);
+    // `custom_in_super = true`: a `type` block's fields can reference not
+    // just sibling types/enums (also declared in this `types` module) but
+    // also a `model`, which lives in the sibling `models` module. `super::`
+    // resolves either way — `pub use types::*` / `pub use models::*` at the
+    // `cratestack_schema` level re-export both into scope from `super`.
     let fields = ty
         .fields
         .iter()
-        .map(|field| field_definition(field, false, false));
+        .map(|field| field_definition(field, false, true));
     let arg_matches = ty.fields.iter().map(|field| {
         let field_name = &field.name;
         let field_ident = ident(&field.name);
@@ -58,7 +63,7 @@ pub(crate) fn generate_client_type_struct(ty: &TypeDecl) -> proc_macro2::TokenSt
     let fields = ty
         .fields
         .iter()
-        .map(|field| field_definition(field, false, false));
+        .map(|field| field_definition(field, false, true));
 
     quote! {
         #docs
