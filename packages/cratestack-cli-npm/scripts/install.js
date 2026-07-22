@@ -106,7 +106,7 @@ async function main() {
   const target = resolveTarget();
   const version = pkg.version;
   const ext = process.platform === "win32" ? "zip" : "tar.gz";
-  const assetName = `cratestack-${target}-v${version}.${ext}`;
+  const assetName = `cratestack-cli-${target}-v${version}.${ext}`;
   const assetUrl = `${REPO}/releases/download/v${version}/${assetName}`;
 
   console.log(`Downloading ${assetName} ...`);

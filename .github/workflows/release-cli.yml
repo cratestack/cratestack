@@ -122,10 +122,10 @@ jobs:
           target="${{ matrix.target }}"
           bin_dir="target/${target}/release"
           if [ "${{ runner.os }}" = "Windows" ]; then
-            asset="cratestack-${target}-${tag}.zip"
+            asset="cratestack-cli-${target}-${tag}.zip"
             powershell -NoProfile -Command "Compress-Archive -Path '${bin_dir}/cratestack.exe' -DestinationPath '${asset}'"
           else
-            asset="cratestack-${target}-${tag}.tar.gz"
+            asset="cratestack-cli-${target}-${tag}.tar.gz"
             tar -czf "$asset" -C "$bin_dir" cratestack
           fi
           if command -v sha256sum >/dev/null 2>&1; then
