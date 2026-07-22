@@ -123,7 +123,7 @@ export class CratestackRpcRuntime {
   readonly basePath: string;
   readonly fetchFn: typeof fetch;
   readonly codec: CratestackRpcCodec;
-  readonly defaultHeaders?: HeadersInit | (() => HeadersInit | Promise<HeadersInit>);
+  readonly defaultHeaders: HeadersInit | (() => HeadersInit | Promise<HeadersInit>) | undefined;
 
   constructor(origin: string, options: CratestackRpcClientOptions = {}) {
     this.origin = origin.replace(/\/+$/, "");
@@ -146,7 +146,7 @@ export class CratestackRpcRuntime {
       method: "POST",
       headers,
       body: this.codec.encode(input ?? null),
-      signal: options.signal,
+      signal: options.signal ?? null,
     });
 
     return (await this.readUnaryResponse(response)) as O;
@@ -167,7 +167,7 @@ export class CratestackRpcRuntime {
       method: "POST",
       headers,
       body: this.codec.encode(requests),
-      signal: options.signal,
+      signal: options.signal ?? null,
     });
 
     return (await this.readUnaryResponse(response)) as RpcResponseFrame<O>[];
@@ -190,7 +190,7 @@ export class CratestackRpcRuntime {
       method: "POST",
       headers,
       body: this.codec.encode(input ?? null),
-      signal: options.signal,
+      signal: options.signal ?? null,
     });
 
     if (!response.ok) {

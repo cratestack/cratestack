@@ -9,9 +9,9 @@ export interface CratestackClientOptions {
 
 export interface CratestackRequestOptions {
   body?: unknown;
-  headers?: HeadersInit;
-  query?: Record<string, unknown>;
-  signal?: AbortSignal;
+  headers?: HeadersInit | undefined;
+  query?: Record<string, unknown> | undefined;
+  signal?: AbortSignal | undefined;
 }
 
 export class CratestackHttpError extends Error {
@@ -32,7 +32,7 @@ export class CratestackRuntime {
   readonly origin: string;
   readonly basePath: string;
   readonly fetchFn: typeof fetch;
-  readonly defaultHeaders?: HeadersInit | (() => HeadersInit | Promise<HeadersInit>);
+  readonly defaultHeaders: HeadersInit | (() => HeadersInit | Promise<HeadersInit>) | undefined;
 
   constructor(origin: string, options: CratestackClientOptions = {}) {
     this.origin = origin.replace(/\/+$/, "");
@@ -62,8 +62,8 @@ export class CratestackRuntime {
     const response = await this.fetchFn(this.url(path, options.query), {
       method,
       headers,
-      body,
-      signal: options.signal,
+      body: body ?? null,
+      signal: options.signal ?? null,
     });
 
     const payload = await readResponsePayload(response);
