@@ -105,7 +105,7 @@ pub(super) fn build_list_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStre
                     return ::cratestack::encode_transport_result_with_status_for::<_, #list_response_type>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error));
                 }
             };
-            let query = match parse_model_list_query(raw_query.as_deref()) {
+            let mut query = match parse_model_list_query(raw_query.as_deref()) {
                 Ok(query) => query,
                 Err(error) => {
                     ::cratestack::tracing::warn!(
@@ -120,9 +120,21 @@ pub(super) fn build_list_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStre
                     return ::cratestack::encode_transport_result_with_status_for::<_, #list_response_type>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error));
                 }
             };
+            // An omitted `limit` is not "no limit" — it's the same
+            // MAX_LIST_LIMIT ceiling as an explicit one. Otherwise the
+            // cap below is trivially bypassed by just not sending
+            // `limit` at all, which is easier than sending an oversized
+            // one.
+            if query.limit.is_none() {
+                query.limit = Some(::cratestack::MAX_LIST_LIMIT);
+            }
             if query.limit.is_some_and(|limit| limit < 0) {
                 ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = canonical_route, cratestack_model = #model_name, cratestack_operation = "list", "cratestack model list rejected negative limit");
                 return ::cratestack::encode_transport_result_with_status_for::<_, #list_response_type>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(CoolError::BadRequest("limit must be greater than or equal to 0".to_owned())));
+            }
+            if query.limit.is_some_and(|limit| limit > ::cratestack::MAX_LIST_LIMIT) {
+                ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = canonical_route, cratestack_model = #model_name, cratestack_operation = "list", "cratestack model list rejected oversized limit");
+                return ::cratestack::encode_transport_result_with_status_for::<_, #list_response_type>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(CoolError::BadRequest(format!("limit must not exceed {}", ::cratestack::MAX_LIST_LIMIT))));
             }
             if query.offset.is_some_and(|offset| offset < 0) {
                 ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = canonical_route, cratestack_model = #model_name, cratestack_operation = "list", "cratestack model list rejected negative offset");

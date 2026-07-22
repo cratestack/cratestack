@@ -1,7 +1,6 @@
-// Smoke fixture for the `transport rpc` generation style. The vocabulary
-// patch only changes which descriptor slice the macro populates — the
-// underlying server runtime is still REST-shaped for now. Once the RPC
-// runtime lands, this fixture also exercises that path.
+// Smoke fixture for the `transport rpc` generation style, and the real
+// end-to-end fixture for `rpc_canonical_request.rs` (drives the actual
+// generated `rpc_router`, not a mock).
 
 transport rpc
 
@@ -22,6 +21,18 @@ model Widget {
   @@allow("create", auth() != null)
   @@allow("update", auth() != null)
   @@allow("delete", auth() != null)
+}
+
+// `@@paged` model, RPC transport — model.PagedItem.list must go
+// through the exact same paging/limit-cap logic REST does (they share
+// one generated dispatch function; RPC just synthesizes the
+// equivalent query string). See rpc_pagination.rs.
+model PagedItem {
+  id Int @id
+  label String
+
+  @@paged
+  @@allow("read", auth() != null)
 }
 
 type PingArgs {
