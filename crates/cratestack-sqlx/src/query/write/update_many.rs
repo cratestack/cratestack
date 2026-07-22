@@ -99,15 +99,9 @@ where
             .begin()
             .await
             .map_err(|error| CoolError::Database(error.to_string()))?;
-        let (summary, emits_event) = run_update_many_in_tx(
-            &mut tx,
-            runtime.pool(),
-            descriptor,
-            &self.filters,
-            self.input,
-            ctx,
-        )
-        .await?;
+        let (summary, emits_event) =
+            run_update_many_in_tx(&mut tx, runtime, descriptor, &self.filters, self.input, ctx)
+                .await?;
         tx.commit()
             .await
             .map_err(|error| CoolError::Database(error.to_string()))?;
@@ -129,7 +123,7 @@ where
     {
         let (summary, _) = run_update_many_in_tx(
             tx,
-            self.runtime.pool(),
+            self.runtime,
             self.descriptor,
             &self.filters,
             self.input,

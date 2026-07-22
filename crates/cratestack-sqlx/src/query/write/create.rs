@@ -60,7 +60,7 @@ where
             ensure_event_outbox_table(&mut **tx).await?;
         }
         if audit_enabled {
-            ensure_audit_table(self.runtime.pool()).await?;
+            ensure_audit_table(self.runtime).await?;
         }
         let record = create_record_with_executor(
             &mut **tx,
@@ -106,7 +106,7 @@ where
                 ensure_event_outbox_table(&mut *tx).await?;
             }
             if audit_enabled {
-                ensure_audit_table(self.runtime.pool()).await?;
+                ensure_audit_table(self.runtime).await?;
             }
             let record = create_record_with_executor(
                 &mut *tx,

@@ -1,7 +1,9 @@
 //! Generic-over-Executor delete helper used by both the pool and
 //! transaction paths in [`super::delete`]. Soft-delete and hard-delete
-//! both end in `RETURNING projection` so the audit "before" snapshot
-//! is the row's pre-delete state.
+//! both end in `RETURNING projection`, but that row is the pre-delete
+//! state only for a hard delete — a soft delete is an `UPDATE`, so its
+//! `RETURNING` row is post-tombstone. `super::delete` accounts for
+//! that when it builds the audit snapshot.
 
 use cratestack_core::{CoolContext, CoolError};
 

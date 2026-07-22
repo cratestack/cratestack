@@ -51,6 +51,7 @@ export class {{ model.api_name }} {
     );
   }
 
+{% if model.allows_create %}
   create(input: {{ model.create_input_name }}, options: CratestackRpcCallOptions = {}): Promise<{{ model.name }}> {
     return this.runtime.call<{{ model.create_input_name }}, {{ model.name }}>(
       "model.{{ model.name }}.create",
@@ -59,6 +60,7 @@ export class {{ model.api_name }} {
     );
   }
 
+{% endif %}
   update(
     id: {{ model.primary_key_type }},
     patch: {{ model.update_input_name }},

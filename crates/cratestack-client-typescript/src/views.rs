@@ -7,7 +7,7 @@ use crate::naming::{
     escape_ts_string, pluralize, procedure_wrapper_name, to_camel_case, to_pascal_case,
     to_snake_case, ts_identifier,
 };
-use crate::types::{is_paged_model, primary_key_field, ts_type};
+use crate::types::{is_paged_model, model_allows_create, primary_key_field, ts_type};
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct EnumView {
@@ -38,6 +38,7 @@ pub(crate) struct ModelApiView {
     pub(crate) accessor: String,
     pub(crate) route: String,
     pub(crate) primary_key_type: String,
+    pub(crate) allows_create: bool,
     pub(crate) create_input_name: String,
     pub(crate) update_input_name: String,
     pub(crate) list_return_type: String,
@@ -123,6 +124,7 @@ pub(crate) fn build_model_api(model: &Model) -> ModelApiView {
         accessor,
         route,
         primary_key_type: ts_type(&primary_key.ty, &BTreeSet::new()),
+        allows_create: model_allows_create(model),
         create_input_name: format!("Create{}Input", model.name),
         update_input_name: format!("Update{}Input", model.name),
         list_return_type: if is_paged_model(model) {

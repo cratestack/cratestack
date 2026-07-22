@@ -8,11 +8,11 @@ use cratestack_core::{AuditOperation, BatchSummary, CoolContext, CoolError, Mode
 use crate::audit::{build_audit_event, enqueue_audit_event, ensure_audit_table};
 use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
 use crate::query::support::{push_action_policy_query, push_filter_query};
-use crate::{FilterExpr, ModelDescriptor, sqlx};
+use crate::{FilterExpr, ModelDescriptor, SqlxRuntime, sqlx};
 
 pub(super) async fn run_delete_many_in_tx<'tx, M, PK>(
     tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-    policy_pool: &sqlx::PgPool,
+    runtime: &SqlxRuntime,
     descriptor: &'static ModelDescriptor<M, PK>,
     filters: &[FilterExpr],
     ctx: &CoolContext,
@@ -32,7 +32,7 @@ where
         ensure_event_outbox_table(&mut **tx).await?;
     }
     if audit_enabled {
-        ensure_audit_table(policy_pool).await?;
+        ensure_audit_table(runtime).await?;
     }
 
     let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("");

@@ -43,7 +43,7 @@ where
             ensure_event_outbox_table(&mut *tx).await?;
         }
         if audit_enabled {
-            ensure_audit_table(runtime.pool()).await?;
+            ensure_audit_table(runtime).await?;
         }
         // Before-snapshot under row lock so concurrent mutations
         // can't race.

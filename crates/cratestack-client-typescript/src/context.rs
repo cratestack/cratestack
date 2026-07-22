@@ -4,7 +4,8 @@ use serde::Serialize;
 use crate::config::TypeScriptGeneratorConfig;
 use crate::naming::{occupied_type_names, package_class_stem, to_pascal_case};
 use crate::types::{
-    enum_name_set, is_generated_on_create, is_primary_key, model_name_set, scalar_model_fields,
+    enum_name_set, is_generated_on_create, is_primary_key, model_allows_create, model_name_set,
+    scalar_model_fields, visible_model_fields,
 };
 use crate::views::{
     EnumView, InterfaceKind, InterfaceView, ModelApiView, ProcedureView, build_enum_view,
@@ -50,20 +51,22 @@ pub(crate) fn build_template_context(
         let scalar_fields = scalar_model_fields(model, &model_names);
         interfaces.push(build_interface(
             &model.name,
-            &model.fields.iter().collect::<Vec<_>>(),
+            &visible_model_fields(model),
             InterfaceKind::Model,
             &enum_names,
         ));
-        interfaces.push(build_interface(
-            &format!("Create{}Input", model.name),
-            &scalar_fields
-                .iter()
-                .copied()
-                .filter(|field| !is_generated_on_create(field))
-                .collect::<Vec<_>>(),
-            InterfaceKind::Plain,
-            &enum_names,
-        ));
+        if model_allows_create(model) {
+            interfaces.push(build_interface(
+                &format!("Create{}Input", model.name),
+                &scalar_fields
+                    .iter()
+                    .copied()
+                    .filter(|field| !is_generated_on_create(field))
+                    .collect::<Vec<_>>(),
+                InterfaceKind::Plain,
+                &enum_names,
+            ));
+        }
         interfaces.push(build_interface(
             &format!("Update{}Input", model.name),
             &scalar_fields

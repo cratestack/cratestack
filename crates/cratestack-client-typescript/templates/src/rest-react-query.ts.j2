@@ -54,6 +54,7 @@ export function use{{ model.name }}Query(
   });
 }
 
+{% if model.allows_create %}
 export function useCreate{{ model.name }}Mutation(
   client: {{ client_class_name }},
   options?: UseMutationOptions<{{ model.name }}, Error, {{ model.create_input_name }}>,
@@ -65,6 +66,7 @@ export function useCreate{{ model.name }}Mutation(
   });
 }
 
+{% endif %}
 export function useUpdate{{ model.name }}Mutation(
   client: {{ client_class_name }},
   options?: UseMutationOptions<{{ model.name }}, Error, { id: {{ model.primary_key_type }}; input: {{ model.update_input_name }} }>,

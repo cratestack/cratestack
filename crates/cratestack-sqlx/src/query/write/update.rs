@@ -80,7 +80,7 @@ where
             ensure_event_outbox_table(&mut **tx).await?;
         }
         if audit_enabled {
-            ensure_audit_table(self.runtime.pool()).await?;
+            ensure_audit_table(self.runtime).await?;
         }
         let before_record = if audit_enabled {
             fetch_for_audit(&mut **tx, self.descriptor, self.id.clone()).await?

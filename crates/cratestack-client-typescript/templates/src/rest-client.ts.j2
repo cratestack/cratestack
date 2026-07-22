@@ -48,10 +48,12 @@ export class {{ model.api_name }} {
     });
   }
 
+{% if model.allows_create %}
   create(input: {{ model.create_input_name }}, options: CratestackRequestConfig = {}): Promise<{{ model.name }}> {
     return this.runtime.post<{{ model.name }}>("{{ model.route }}", input, options);
   }
 
+{% endif %}
   update(
     id: {{ model.primary_key_type }},
     input: {{ model.update_input_name }},

@@ -55,7 +55,7 @@ impl<'a, M: 'static, PK: 'static> BatchDelete<'a, M, PK> {
             ensure_event_outbox_table(&mut *tx).await?;
         }
         if audit_enabled {
-            ensure_audit_table(self.runtime.pool()).await?;
+            ensure_audit_table(self.runtime).await?;
         }
 
         let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("");

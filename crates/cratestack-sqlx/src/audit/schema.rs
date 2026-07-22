@@ -1,7 +1,10 @@
 //! Audit-log table DDL + idempotent bootstrap.
 
+use std::sync::atomic::Ordering;
+
 use cratestack_core::CoolError;
 
+use crate::SqlxRuntime;
 use crate::sqlx;
 
 /// DDL for the audit log table. Banks typically run migrations
@@ -38,7 +41,20 @@ CREATE INDEX IF NOT EXISTS cratestack_audit_undelivered_idx
     WHERE delivered_at IS NULL;
 "#;
 
-pub(crate) async fn ensure_audit_table(pool: &sqlx::PgPool) -> Result<(), CoolError> {
+/// Idempotently bootstraps `cratestack_audit`, but only actually runs
+/// the DDL once per [`SqlxRuntime`] (cached on a shared flag, so every
+/// clone of the same runtime agrees). This is load-bearing, not just
+/// an optimization: `CREATE INDEX IF NOT EXISTS` still takes a
+/// `ShareLock` on the table even when it's a no-op, which self-
+/// deadlocks against a `RowExclusiveLock` a prior audited write in the
+/// same caller-managed transaction is already holding. Skipping the
+/// DDL entirely after the first successful run avoids taking that
+/// lock at all on every subsequent call.
+pub(crate) async fn ensure_audit_table(runtime: &SqlxRuntime) -> Result<(), CoolError> {
+    if runtime.audit_table_ensured().load(Ordering::Acquire) {
+        return Ok(());
+    }
+
     // sqlx prepared statements accept only one statement per query;
     // multi-statement DDL is split on `;`. Sub-statements are
     // idempotent (`CREATE ... IF NOT EXISTS`), so this stays safe
@@ -49,9 +65,11 @@ pub(crate) async fn ensure_audit_table(pool: &sqlx::PgPool) -> Result<(), CoolEr
         .filter(|s| !s.is_empty())
     {
         sqlx::query(statement)
-            .execute(pool)
+            .execute(runtime.pool())
             .await
             .map_err(|error| CoolError::Database(error.to_string()))?;
     }
+
+    runtime.audit_table_ensured().store(true, Ordering::Release);
     Ok(())
 }
