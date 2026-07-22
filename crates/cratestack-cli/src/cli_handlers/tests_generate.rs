@@ -48,6 +48,7 @@ fn generate_ts(schema: PathBuf, out: PathBuf, check: bool) -> anyhow::Result<()>
         "/api".to_owned(),
         None,
         check,
+        false,
     )
 }
 
