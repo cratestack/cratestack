@@ -81,6 +81,43 @@ fn rpc_runtime_exports_rpc_error_class() {
 }
 
 #[test]
+fn rpc_runtime_exposes_pluggable_codec_option() {
+    // Regression test for #125: the generated RPC runtime used to
+    // hardcode "application/json" as both Content-Type and Accept in
+    // call()/batch()/stream(), with no way for a consumer whose backend
+    // defaults to CBOR to plug in a different codec.
+    let package = generate_for("tiny_rpc", "tiny-rpc-client");
+    let runtime = package_file(&package, "src/runtime.ts");
+    assert!(
+        runtime.contains("export interface CratestackRpcCodec"),
+        "runtime.ts must define a CratestackRpcCodec extension point"
+    );
+    assert!(
+        runtime.contains("export const jsonRpcCodec: CratestackRpcCodec"),
+        "runtime.ts must export a default jsonRpcCodec"
+    );
+    assert!(
+        runtime.contains("codec?: CratestackRpcCodec;"),
+        "CratestackRpcClientOptions must accept a codec override"
+    );
+    assert!(
+        runtime.contains("this.codec = options.codec ?? jsonRpcCodec;"),
+        "runtime must default to jsonRpcCodec when no codec option is supplied"
+    );
+    assert!(
+        runtime.contains("headers.set(\"Accept\", this.codec.contentType);")
+            && runtime.contains("headers.set(\"Content-Type\", this.codec.contentType);"),
+        "call()/batch()/stream() must derive Accept/Content-Type from the configured codec"
+    );
+    assert_eq!(
+        runtime.matches("\"application/json\"").count(),
+        1,
+        "\"application/json\" must appear exactly once — as jsonRpcCodec's own \
+         contentType literal — not hardcoded again in call()/batch()/stream():\n{runtime}"
+    );
+}
+
+#[test]
 fn rest_client_keeps_rest_style_methods() {
     let package = generate_for("tiny_rest", "tiny-rest-client");
     let runtime = package_file(&package, "src/runtime.ts");

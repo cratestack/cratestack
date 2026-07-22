@@ -8,10 +8,39 @@
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 
+/** Plugs into {@link CratestackRpcRuntime} to control how request bodies
+ *  are encoded and response bodies are decoded. `contentType` is sent as
+ *  both the request `Content-Type` and the response `Accept` header, so
+ *  it must match a `Content-Type` the server's `CodecSet` actually
+ *  serves — e.g. `"application/cbor"` for a backend whose `CodecSet`
+ *  defaults to CBOR in production. The runtime ships {@link jsonRpcCodec}
+ *  by default; pass a different one via `CratestackRpcClientOptions.codec`. */
+export interface CratestackRpcCodec {
+  readonly contentType: string;
+  encode(value: unknown): BodyInit;
+  decode(bytes: Uint8Array): unknown;
+}
+
+/** Default codec — the runtime's behavior before `codec` existed. */
+export const jsonRpcCodec: CratestackRpcCodec = {
+  contentType: "application/json",
+  encode(value: unknown): BodyInit {
+    return JSON.stringify(value ?? null);
+  },
+  decode(bytes: Uint8Array): unknown {
+    if (bytes.length === 0) {
+      return undefined;
+    }
+    return JSON.parse(new TextDecoder().decode(bytes));
+  },
+};
+
 export interface CratestackRpcClientOptions {
   basePath?: string;
   fetch?: typeof fetch;
   headers?: HeadersInit | (() => HeadersInit | Promise<HeadersInit>);
+  /** Codec for request/response bodies. Defaults to {@link jsonRpcCodec}. */
+  codec?: CratestackRpcCodec;
 }
 
 export interface CratestackRpcCallOptions {
@@ -93,20 +122,22 @@ export class CratestackRpcRuntime {
   readonly origin: string;
   readonly basePath: string;
   readonly fetchFn: typeof fetch;
+  readonly codec: CratestackRpcCodec;
   readonly defaultHeaders?: HeadersInit | (() => HeadersInit | Promise<HeadersInit>);
 
   constructor(origin: string, options: CratestackRpcClientOptions = {}) {
     this.origin = origin.replace(/\/+$/, "");
     this.basePath = options.basePath ?? "{{ base_path }}";
     this.fetchFn = options.fetch ?? fetch;
+    this.codec = options.codec ?? jsonRpcCodec;
     this.defaultHeaders = options.headers;
   }
 
   /** POST /rpc/{op_id} — unary call. */
   async call<I, O>(opId: string, input: I, options: CratestackRpcCallOptions = {}): Promise<O> {
     const headers = await this.buildHeaders(options.headers);
-    headers.set("Accept", "application/json");
-    headers.set("Content-Type", "application/json");
+    headers.set("Accept", this.codec.contentType);
+    headers.set("Content-Type", this.codec.contentType);
     if (options.idempotencyKey !== undefined) {
       headers.set("Idempotency-Key", options.idempotencyKey);
     }
@@ -114,7 +145,7 @@ export class CratestackRpcRuntime {
     const response = await this.fetchFn(this.url(`/rpc/${encodeURIComponent(opId)}`), {
       method: "POST",
       headers,
-      body: JSON.stringify(input ?? null),
+      body: this.codec.encode(input ?? null),
       signal: options.signal,
     });
 
@@ -129,13 +160,13 @@ export class CratestackRpcRuntime {
     options: CratestackRpcCallOptions = {},
   ): Promise<RpcResponseFrame<O>[]> {
     const headers = await this.buildHeaders(options.headers);
-    headers.set("Accept", "application/json");
-    headers.set("Content-Type", "application/json");
+    headers.set("Accept", this.codec.contentType);
+    headers.set("Content-Type", this.codec.contentType);
 
     const response = await this.fetchFn(this.url("/rpc/batch"), {
       method: "POST",
       headers,
-      body: JSON.stringify(requests),
+      body: this.codec.encode(requests),
       signal: options.signal,
     });
 
@@ -143,38 +174,38 @@ export class CratestackRpcRuntime {
   }
 
   /** POST /rpc/{op_id} — sequence-returning call. Yields one `O` per
-   *  frame the server emits. Decoded from `application/cbor-seq` when
-   *  the server picks CBOR, or from a JSON array body when it picks
-   *  JSON. */
+   *  frame the server emits. Decoded from a single body matching
+   *  `codec.contentType` when the server picks that codec; CBOR-seq
+   *  streaming responses aren't supported by any codec yet (see below). */
   async *stream<O>(
     opId: string,
     input: unknown,
     options: CratestackRpcCallOptions = {},
   ): AsyncIterable<O> {
     const headers = await this.buildHeaders(options.headers);
-    headers.set("Accept", `${CBOR_SEQ_CONTENT_TYPE}, application/json`);
-    headers.set("Content-Type", "application/json");
+    headers.set("Accept", `${CBOR_SEQ_CONTENT_TYPE}, ${this.codec.contentType}`);
+    headers.set("Content-Type", this.codec.contentType);
 
     const response = await this.fetchFn(this.url(`/rpc/${encodeURIComponent(opId)}`), {
       method: "POST",
       headers,
-      body: JSON.stringify(input ?? null),
+      body: this.codec.encode(input ?? null),
       signal: options.signal,
     });
 
     if (!response.ok) {
-      const body = await readErrorBody(response);
+      const body = await readErrorBody(response, this.codec);
       throw new CratestackRpcError(response.status, body);
     }
 
     const contentType = response.headers.get("Content-Type") ?? "";
-    if (contentType.includes("application/json")) {
-      // Server picked JSON — body is a single array of `O`.
-      const text = await response.text();
-      if (text.length === 0) {
+    if (matchesContentType(contentType, this.codec.contentType)) {
+      // Server picked the configured codec — body is a single array of `O`.
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (bytes.length === 0) {
         return;
       }
-      const items = JSON.parse(text) as O[];
+      const items = this.codec.decode(bytes) as O[];
       for (const item of items) {
         yield item;
       }
@@ -197,18 +228,11 @@ export class CratestackRpcRuntime {
       if (response.status === 204) {
         return undefined;
       }
-      const text = await response.text();
-      if (text.length === 0) {
-        return undefined;
-      }
-      const contentType = response.headers.get("Content-Type") ?? "";
-      if (contentType.includes("application/json")) {
-        return JSON.parse(text);
-      }
-      return text;
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      return this.codec.decode(bytes);
     }
 
-    throw new CratestackRpcError(response.status, await readErrorBody(response));
+    throw new CratestackRpcError(response.status, await readErrorBody(response, this.codec));
   }
 
   private async buildHeaders(extra?: HeadersInit): Promise<Headers> {
@@ -226,6 +250,14 @@ export class CratestackRpcRuntime {
   }
 }
 
+// Compares against the media type only (ignores `; charset=...` etc.) so
+// e.g. a `codec.contentType` of `"application/cbor"` doesn't accidentally
+// match an `"application/cbor-seq"` response — `includes()` would.
+function matchesContentType(header: string, expected: string): boolean {
+  const mediaType = header.split(";", 1)[0]?.trim() ?? "";
+  return mediaType === expected;
+}
+
 async function resolveHeaders(
   headers: HeadersInit | (() => HeadersInit | Promise<HeadersInit>) | undefined,
 ): Promise<HeadersInit | undefined> {
@@ -235,18 +267,24 @@ async function resolveHeaders(
   return headers;
 }
 
-async function readErrorBody(response: Response): Promise<RpcErrorBody> {
-  const text = await response.text().catch(() => "");
-  if (text.length === 0) {
+async function readErrorBody(response: Response, codec: CratestackRpcCodec): Promise<RpcErrorBody> {
+  const bytes = new Uint8Array(await response.arrayBuffer().catch(() => new ArrayBuffer(0)));
+  if (bytes.length === 0) {
     return { code: "internal", message: `RPC call returned status ${response.status}` };
   }
   try {
-    const parsed = JSON.parse(text) as RpcErrorBody;
+    const parsed = codec.decode(bytes) as RpcErrorBody;
     if (typeof parsed === "object" && parsed !== null && typeof parsed.code === "string") {
       return parsed;
     }
-    return { code: "internal", message: text };
+    return {
+      code: "internal",
+      message: `RPC call returned status ${response.status} with an unrecognized error body`,
+    };
   } catch {
-    return { code: "internal", message: text };
+    return {
+      code: "internal",
+      message: `RPC call returned status ${response.status} with an undecodable error body`,
+    };
   }
 }
