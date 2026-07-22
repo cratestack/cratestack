@@ -29,6 +29,11 @@ pub(crate) enum Command {
         base_path: String,
         #[arg(long)]
         template_dir: Option<PathBuf>,
+        /// Drift-detection mode: generate in memory and diff against
+        /// `--out` instead of writing. Exits non-zero and lists the
+        /// files that differ if the two don't match.
+        #[arg(long)]
+        check: bool,
     },
     #[command(name = "generate-typescript", alias = "generate-ts")]
     GenerateTypeScript {
@@ -42,6 +47,11 @@ pub(crate) enum Command {
         base_path: String,
         #[arg(long)]
         template_dir: Option<PathBuf>,
+        /// Drift-detection mode: generate in memory and diff against
+        /// `--out` instead of writing. Exits non-zero and lists the
+        /// files that differ if the two don't match.
+        #[arg(long)]
+        check: bool,
     },
     /// Studio: admin and testing surface for `.cstack` schemas.
     Studio {

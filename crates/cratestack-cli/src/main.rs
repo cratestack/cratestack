@@ -1,6 +1,7 @@
 mod cli_handlers;
 mod cli_support;
 mod cli_types;
+mod drift;
 mod migrate;
 
 use anyhow::Result;
@@ -69,12 +70,14 @@ mod tests {
                 package_name,
                 base_path,
                 template_dir,
+                check,
             } => {
                 assert_eq!(schema, PathBuf::from("schema.cstack"));
                 assert_eq!(out, PathBuf::from("out"));
                 assert_eq!(package_name, "cratestack-client");
                 assert_eq!(base_path, "/api");
                 assert_eq!(template_dir, None);
+                assert!(!check);
             }
             _ => panic!("expected generate-typescript command"),
         }
