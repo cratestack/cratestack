@@ -84,7 +84,7 @@ pub use schema::{
     Attribute, AuthBlock, ConfigBlock, ConfigEntry, Datasource, EnumDecl, EnumVariant, Field,
     MixinDecl, Model, OwnedSchemaSummary, Procedure, ProcedureArg, ProcedureKind, Schema,
     SchemaSummary, SelectionQuery, SourceSpan, TransportStyle, TypeArity, TypeDecl, TypeRef, View,
-    ViewSource,
+    ViewSource, parse_composite_id_attribute,
 };
 pub use transport::{
     OpDescriptor, OpKind, RouteTransportCapabilities, RouteTransportDescriptor,

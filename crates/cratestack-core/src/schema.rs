@@ -2,6 +2,7 @@
 //! carries source-span back-pointers so consumers can map errors to
 //! positions in the original text.
 
+pub mod composite_key;
 pub mod model;
 pub mod procedure;
 pub mod selection;
@@ -9,6 +10,7 @@ pub mod view;
 
 use serde::{Deserialize, Serialize};
 
+pub use composite_key::parse_composite_id_attribute;
 pub use model::{
     Attribute, EnumDecl, EnumVariant, Field, MixinDecl, Model, TypeArity, TypeDecl, TypeRef,
 };
