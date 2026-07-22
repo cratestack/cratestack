@@ -86,6 +86,7 @@ Flags:
 - `--base-path <PATH>` (default `/api`)
 - `--template-dir <PATH>` (optional)
 - `--check` (drift-detection mode — see below)
+- `--full-selection` (emit fully-required model interfaces, driven by the schema's own nullability, instead of the projection-driven optional-everywhere default — for consumers that never do partial `fields`/`include` selection)
 
 ### `--check` — drift detection (CI guard)
 
