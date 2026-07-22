@@ -72,6 +72,19 @@ pub(crate) enum Command {
         #[command(subcommand)]
         action: MigrateAction,
     },
+    /// Diff two `.cstack` schemas and classify each change by its
+    /// effect on the generated wire contract (breaking / additive /
+    /// internal-only). Exits non-zero if any breaking change is
+    /// found, so it can gate CI on schema PRs.
+    Diff {
+        /// Path to the baseline schema.
+        old: PathBuf,
+        /// Path to the candidate schema.
+        new: PathBuf,
+        /// Emit machine-readable JSON instead of the human report.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]

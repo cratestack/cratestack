@@ -52,6 +52,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 allow_destructive,
             } => crate::migrate::handle_diff(schema, out_dir, backend, name, allow_destructive)?,
         },
+        Command::Diff { old, new, json } => handle_diff_schemas(old, new, json)?,
     }
 
     Ok(())
@@ -142,6 +143,33 @@ fn handle_generate_typescript(
 
     write_generated_files(&out, files)?;
     println!("generated TypeScript client package: {}", out.display());
+    Ok(())
+}
+
+fn handle_diff_schemas(old: PathBuf, new: PathBuf, json: bool) -> Result<()> {
+    let old_schema = parse_schema_or_render(&old)?;
+    let new_schema = parse_schema_or_render(&new)?;
+    let diff = crate::schema_diff::diff_schemas(&old_schema, &new_schema);
+
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&crate::schema_diff::render_json(&diff))?
+        );
+    } else {
+        print!(
+            "{}",
+            crate::schema_diff::render_human(
+                &diff,
+                &old.display().to_string(),
+                &new.display().to_string()
+            )
+        );
+    }
+
+    if diff.has_breaking() {
+        std::process::exit(1);
+    }
     Ok(())
 }
 

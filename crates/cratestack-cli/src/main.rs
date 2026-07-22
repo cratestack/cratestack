@@ -3,6 +3,7 @@ mod cli_support;
 mod cli_types;
 mod drift;
 mod migrate;
+mod schema_diff;
 
 use anyhow::Result;
 use clap::Parser;
@@ -130,6 +131,19 @@ mod tests {
                 assert!(!force);
             }
             _ => panic!("expected studio init command"),
+        }
+    }
+
+    #[test]
+    fn diff_clap_defaults() {
+        let cli = Cli::parse_from(["cratestack", "diff", "old.cstack", "new.cstack"]);
+        match cli.command {
+            Command::Diff { old, new, json } => {
+                assert_eq!(old, PathBuf::from("old.cstack"));
+                assert_eq!(new, PathBuf::from("new.cstack"));
+                assert!(!json);
+            }
+            _ => panic!("expected diff command"),
         }
     }
 
