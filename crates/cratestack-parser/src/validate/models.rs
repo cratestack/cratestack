@@ -5,7 +5,8 @@ use cratestack_core::{Field, Model, Schema};
 use crate::diagnostics::{SchemaError, span_error};
 use crate::relation_helpers::{parse_relation_attribute, validate_relation_scalar_compatibility};
 use crate::validate::fields::{
-    CustomFieldSupport, validate_custom_field_attribute, validate_field_policy_attributes,
+    CustomFieldSupport, validate_custom_field_attribute, validate_default_dbgenerated_no_args,
+    validate_field_policy_attributes,
 };
 use crate::validate::model_attributes::{validate_model_attributes, validate_model_version_field};
 use crate::validate::type_names::validate_type_ref;
@@ -54,6 +55,7 @@ pub(super) fn validate_models(
             )?;
             validate_validator_attributes(&model.name, field)?;
             validate_field_policy_attributes(&model.name, field)?;
+            validate_default_dbgenerated_no_args(&model.name, field)?;
             validate_field_relation(schema, model, field, &model_names)?;
         }
 

@@ -119,3 +119,40 @@ impl Op {
         }
     }
 }
+
+/// `(table, column)` pairs, across `CreateTable` and `AddColumn` ops,
+/// for `Required` columns whose default is `@default(dbgenerated())`.
+///
+/// This is a distinct, non-destructive risk from [`Destructiveness`]:
+/// the DDL itself always succeeds (no `DEFAULT` clause is emitted —
+/// see [`ColumnDefault::DbGenerated`]), but if the column doesn't
+/// actually have a real Postgres-level default set some other way,
+/// every `INSERT` that omits it will fail with a `NOT NULL` violation
+/// at runtime. cratestack cannot verify that from the `.cstack`
+/// schema alone, so callers (see `emit::postgres`/`emit::sqlite` and
+/// the CLI's `migrate diff`) surface this list as an explicit,
+/// non-fatal warning instead.
+pub fn unverified_dbgenerated_columns(ops: &[Op]) -> Vec<(String, String)> {
+    fn is_unverified(column: &Column) -> bool {
+        matches!(column.arity, ColumnArity::Required)
+            && matches!(column.default, Some(ColumnDefault::DbGenerated))
+    }
+
+    let mut found = Vec::new();
+    for op in ops {
+        match op {
+            Op::CreateTable(create) => {
+                for column in &create.columns {
+                    if is_unverified(column) {
+                        found.push((create.name.clone(), column.name.clone()));
+                    }
+                }
+            }
+            Op::AddColumn(add) if is_unverified(&add.column) => {
+                found.push((add.table.clone(), add.column.name.clone()));
+            }
+            _ => {}
+        }
+    }
+    found
+}

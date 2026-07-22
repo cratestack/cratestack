@@ -58,6 +58,39 @@ model Account {
 }
 
 #[test]
+fn adding_dbgenerated_required_column_is_blocking() {
+    // A `dbgenerated()` default backfills nothing the diff engine can
+    // prove — adding it as a Required, non-PK column to an existing
+    // table must be classified the same as "no default at all".
+    let prev = schema(&with_models(
+        r#"
+model Account {
+  id Int @id
+}
+"#,
+    ));
+    let next = schema(&with_models(
+        r#"
+model Account {
+  id Int @id
+  status String @default(dbgenerated())
+}
+"#,
+    ));
+    let migration = emit(&diff(&prev, &next));
+    assert!(migration.has_blocking);
+    assert!(migration.up.contains("WARNING"));
+    assert!(
+        migration
+            .up
+            .contains("ALTER TABLE accounts ADD COLUMN status TEXT NOT NULL;"),
+        "up was: {}",
+        migration.up
+    );
+    assert!(!migration.up.contains("DEFAULT dbgenerated()"));
+}
+
+#[test]
 fn unique_field_creates_unique_index() {
     let prev = schema(&with_models(""));
     let next = schema(&with_models(
@@ -113,6 +146,78 @@ model Order {
         "up was: {}",
         migration.up
     );
+}
+
+#[test]
+fn dbgenerated_default_emits_no_default_clause() {
+    let prev = schema(&with_models(""));
+    let next = schema(&with_models(
+        r#"
+model Article {
+  id String @id @default(dbgenerated())
+  createdAt DateTime @default(dbgenerated())
+}
+"#,
+    ));
+    let migration = emit(&diff(&prev, &next));
+    assert!(
+        !migration.up.contains("DEFAULT dbgenerated()"),
+        "emitted DDL must never contain the literal invalid `DEFAULT dbgenerated()` call: {}",
+        migration.up
+    );
+    assert!(
+        migration.up.contains("id TEXT NOT NULL,"),
+        "id column should carry NOT NULL but no DEFAULT clause: {}",
+        migration.up
+    );
+    assert!(
+        migration.up.contains("created_at TIMESTAMPTZ NOT NULL,"),
+        "created_at column should carry NOT NULL but no DEFAULT clause: {}",
+        migration.up
+    );
+}
+
+#[test]
+fn dbgenerated_required_column_is_flagged_as_unverified() {
+    let prev = schema(&with_models(""));
+    let next = schema(&with_models(
+        r#"
+model Article {
+  id String @id @default(dbgenerated())
+  createdAt DateTime @default(dbgenerated())
+  title String
+}
+"#,
+    ));
+    let migration = emit(&diff(&prev, &next));
+    assert_eq!(
+        migration.unverified_dbgenerated,
+        vec![
+            ("articles".to_owned(), "id".to_owned()),
+            ("articles".to_owned(), "created_at".to_owned()),
+        ]
+    );
+    assert!(migration.up.contains("articles.id"), "up: {}", migration.up);
+    assert!(
+        migration.up.contains("articles.created_at"),
+        "up: {}",
+        migration.up
+    );
+}
+
+#[test]
+fn optional_dbgenerated_column_is_not_flagged() {
+    let prev = schema(&with_models(""));
+    let next = schema(&with_models(
+        r#"
+model Article {
+  id Int @id
+  publishedAt DateTime? @default(dbgenerated())
+}
+"#,
+    ));
+    let migration = emit(&diff(&prev, &next));
+    assert!(migration.unverified_dbgenerated.is_empty());
 }
 
 #[test]

@@ -1213,6 +1213,7 @@ dependencies = [
  "cratestack-codec-json",
  "cratestack-core",
  "cratestack-macros",
+ "cratestack-migrate",
  "cratestack-parser",
  "cratestack-policy",
  "cratestack-sql",

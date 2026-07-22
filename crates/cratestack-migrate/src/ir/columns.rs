@@ -51,6 +51,16 @@ pub enum ColumnDefault {
     Literal(String),
     /// Database function (e.g. `now()`, `gen_random_uuid()`).
     Function(String),
+    /// `@default(dbgenerated())` — a marker, not a value. It asserts
+    /// that the column already has (or will separately be given) a
+    /// real Postgres-level default set some other way: hand-authored
+    /// migration SQL, a trigger, `GENERATED ... AS IDENTITY`, etc.
+    /// cratestack has no way to verify that claim from the `.cstack`
+    /// schema alone, so emitters must never invent a `DEFAULT` clause
+    /// for it — see `Op::destructiveness` and
+    /// `crate::ir::unverified_dbgenerated_columns` for the
+    /// corresponding safety checks.
+    DbGenerated,
 }
 
 impl Column {
@@ -69,7 +79,14 @@ impl Column {
         match self.arity {
             ColumnArity::Optional | ColumnArity::List => Destructiveness::Safe,
             ColumnArity::Required => {
-                if self.default.is_some() || self.primary_key {
+                // `DbGenerated` is a marker, not a real DDL default —
+                // it backfills nothing, so it must not count as "has
+                // a default" here any more than no default at all.
+                let has_real_default = matches!(
+                    self.default,
+                    Some(ColumnDefault::Literal(_)) | Some(ColumnDefault::Function(_))
+                );
+                if has_real_default || self.primary_key {
                     Destructiveness::Safe
                 } else {
                     Destructiveness::Blocking

@@ -62,6 +62,24 @@ pub(crate) fn handle_diff(
             );
         }
 
+        if !migration.unverified_dbgenerated.is_empty() {
+            let columns = migration
+                .unverified_dbgenerated
+                .iter()
+                .map(|(table, column)| format!("{table}.{column}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            eprintln!(
+                "migrate diff [{}]: warning: {} column(s) use `@default(dbgenerated())` \
+                 with no way to verify a real Postgres-level default exists ({columns}). \
+                 See the generated migration for details — INSERTs that omit these \
+                 columns will fail with a NOT NULL violation unless a default is set \
+                 some other way.",
+                backend.slug(),
+                migration.unverified_dbgenerated.len()
+            );
+        }
+
         let migration_dir = backend_dir.join(&directory_name);
         write_migration(&migration_dir, &migration)
             .with_context(|| format!("writing migration to {}", migration_dir.display()))?;

@@ -90,12 +90,17 @@ pub(super) fn render_column(column: &Column) -> String {
     if matches!(column.arity, ColumnArity::Required | ColumnArity::List) {
         buf.push_str(" NOT NULL");
     }
-    if let Some(default) = &column.default {
-        buf.push_str(" DEFAULT ");
-        match default {
-            ColumnDefault::Literal(value) => buf.push_str(value),
-            ColumnDefault::Function(call) => buf.push_str(call),
+    match &column.default {
+        Some(ColumnDefault::Literal(value)) => {
+            buf.push_str(" DEFAULT ");
+            buf.push_str(value);
         }
+        Some(ColumnDefault::Function(call)) => {
+            buf.push_str(" DEFAULT ");
+            buf.push_str(call);
+        }
+        // No DDL default for `dbgenerated()` — see `ColumnDefault::DbGenerated`.
+        Some(ColumnDefault::DbGenerated) | None => {}
     }
     buf
 }

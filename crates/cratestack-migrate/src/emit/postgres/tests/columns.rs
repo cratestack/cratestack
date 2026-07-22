@@ -217,3 +217,64 @@ model Order {
         migration.up
     );
 }
+
+#[test]
+fn switching_to_dbgenerated_emits_drop_default_not_literal() {
+    let prev = schema(&with_models(
+        r#"
+model Order {
+  id Int @id
+  status String @default('pending')
+}
+"#,
+    ));
+    let next = schema(&with_models(
+        r#"
+model Order {
+  id Int @id
+  status String @default(dbgenerated())
+}
+"#,
+    ));
+    let migration = emit(&diff(&prev, &next));
+    assert!(
+        !migration.up.contains("dbgenerated"),
+        "up must never contain the literal `dbgenerated()` call: {}",
+        migration.up
+    );
+    assert!(
+        migration
+            .up
+            .contains("ALTER TABLE orders ALTER COLUMN status DROP DEFAULT;"),
+        "up was: {}",
+        migration.up
+    );
+}
+
+#[test]
+fn switching_from_dbgenerated_emits_real_set_default() {
+    let prev = schema(&with_models(
+        r#"
+model Order {
+  id Int @id
+  status String @default(dbgenerated())
+}
+"#,
+    ));
+    let next = schema(&with_models(
+        r#"
+model Order {
+  id Int @id
+  status String @default('pending')
+}
+"#,
+    ));
+    let migration = emit(&diff(&prev, &next));
+    assert!(
+        migration
+            .up
+            .contains("ALTER TABLE orders ALTER COLUMN status SET DEFAULT 'pending';"),
+        "up was: {}",
+        migration.up
+    );
+}
