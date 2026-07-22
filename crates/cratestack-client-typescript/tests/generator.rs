@@ -114,6 +114,26 @@ fn preserves_enums_and_scalar_mappings() {
     assert!(client.contains("resolveUser(args: ResolveUserArgs"));
 }
 
+/// Regression test for issue #137 — a `type` block field referencing a
+/// `model` type. TypeScript emits every model/type/enum interface into one
+/// flat `models.ts` file, so there's no module-qualification concern like
+/// the Rust macro output has, but this locks the shape in regardless.
+#[test]
+fn type_block_field_referencing_a_model_generates_correctly() {
+    let schema = cratestack_parser::parse_schema_file(
+        "../cratestack-pg/tests/fixtures/type_references_model.cstack",
+    )
+    .expect("fixture schema should parse");
+
+    let package = generate_package(&schema, &TypeScriptGeneratorConfig::default())
+        .expect("default template should render");
+    let models = package_file(&package, "src/models.ts");
+
+    assert!(models.contains("export interface SomeModel"));
+    assert!(models.contains("export interface ApiKeySecret"));
+    assert!(models.contains("model: SomeModel;"));
+}
+
 /// Regression test for #118: `@server_only` fields must not leak into
 /// the generated model, Create<X>Input, or Update<X>Input interfaces.
 #[test]

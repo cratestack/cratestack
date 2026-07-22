@@ -194,6 +194,27 @@ fn preserves_custom_fields_on_generated_types() {
     assert!(models.contains("'thumbnailUrl': thumbnailUrl,"));
 }
 
+/// Regression test for issue #137 — a `type` block field referencing a
+/// `model` type. Dart emits every model/type/enum class into one flat
+/// `models.dart` file, so there's no module-qualification concern like the
+/// Rust macro output has, but this locks the shape in regardless.
+#[test]
+fn type_block_field_referencing_a_model_generates_correctly() {
+    let schema = cratestack_parser::parse_schema_file(
+        "../cratestack-pg/tests/fixtures/type_references_model.cstack",
+    )
+    .expect("fixture schema should parse");
+
+    let package = generate_package(&schema, &DartGeneratorConfig::default())
+        .expect("default template should render");
+    let models = package_file(&package, "lib/src/models.dart");
+
+    assert!(models.contains("class SomeModel {"));
+    assert!(models.contains("class ApiKeySecret {"));
+    assert!(models.contains("required this.model,"));
+    assert!(models.contains("final SomeModel model;"));
+}
+
 #[test]
 fn avoids_procedure_arg_name_collisions_with_schema_types() {
     let schema = parse_schema(
