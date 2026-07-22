@@ -9,7 +9,13 @@ auth SessionUser {
   email String
 }
 
-model User {
+// Model names are `AdvancedUser`/`AdvancedPost` (not `User`/`Post`) so
+// their auto-derived tables (`advanced_users`/`advanced_posts`) don't
+// collide with the unrelated `users`/`posts` tables `policy_db.rs`
+// creates (from `blog.cstack`) against the same shared test Postgres —
+// same fix-up as the `customers` collision between
+// `banking_soft_delete.rs` and `views_pg_integration.rs`.
+model AdvancedUser {
   id Int @id
   email String
   banned Boolean
@@ -17,12 +23,12 @@ model User {
   @@allow("read", auth() != null)
 }
 
-model Post {
+model AdvancedPost {
   id Int @id
   title String
   published Boolean
   authorId Int
-  author User @relation(fields:[authorId],references:[id])
+  author AdvancedUser @relation(fields:[authorId],references:[id])
 
   @@deny("read", author.banned)
   @@allow("read", auth() != null && published)
@@ -43,10 +49,10 @@ type ReviewPostInput {
   mirrorEmail String
 }
 
-mutation procedure approvePost(args: ApprovePostInput): Post
+mutation procedure approvePost(args: ApprovePostInput): AdvancedPost
   @allow(auth() != null && auth().role == "admin" && publishNow)
   @deny(postId == 2)
 
-mutation procedure reviewPost(args: ReviewPostInput): Post
+mutation procedure reviewPost(args: ReviewPostInput): AdvancedPost
   @allow((auth() == null && args.dryRun) || (auth().role == "admin" && args.publishNow && args.ownerEmail == auth().email))
   @deny(args.postId == 2 || args.ownerEmail != auth().email || args.ownerEmail != args.mirrorEmail)

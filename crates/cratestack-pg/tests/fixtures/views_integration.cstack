@@ -2,16 +2,22 @@ datasource db {
   provider = "postgresql"
 }
 
-model Customer {
+// Model name is `ViewCustomer` (not `Customer`) so its auto-derived
+// table (`view_customers`) doesn't collide with the unrelated
+// `customers` table `banking_soft_delete.rs` creates against the same
+// shared test Postgres — two integration-test files racing DROP/CREATE
+// on a literally-named `customers` table caused nondeterministic
+// cross-binary test failures.
+model ViewCustomer {
   id Int @id
   email String
   active Boolean
 }
 
-view ActiveCustomerSummary from Customer {
-  id Int @id @from(Customer.id)
-  email String @from(Customer.email)
+view ActiveCustomerSummary from ViewCustomer {
+  id Int @id @from(ViewCustomer.id)
+  email String @from(ViewCustomer.email)
 
-  @@server_sql("SELECT id, email FROM customers WHERE active = true")
+  @@server_sql("SELECT id, email FROM view_customers WHERE active = true")
   @@allow("read", auth() != null)
 }

@@ -96,7 +96,7 @@ mod advanced_policy_schema {
             let invocations = std::sync::Arc::clone(&self.invocations);
             async move {
                 invocations.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                Ok(cratestack_schema::Post {
+                Ok(cratestack_schema::AdvancedPost {
                     id: args.args.postId,
                     title: "Approved".to_owned(),
                     published: args.args.publishNow,
@@ -117,7 +117,7 @@ mod advanced_policy_schema {
             >,
         > + Send {
             async move {
-                Ok(cratestack_schema::Post {
+                Ok(cratestack_schema::AdvancedPost {
                     id: args.args.postId,
                     title: if args.args.dryRun {
                         "Dry Run"
@@ -144,7 +144,7 @@ mod advanced_policy_schema {
             })))
             .expect("principal should bind");
 
-        let sql = bound.post().find_many().preview_scoped_sql();
+        let sql = bound.advanced_post().find_many().preview_scoped_sql();
 
         assert!(sql.contains("published = TRUE"));
         assert!(sql.contains("email = $1"));
@@ -163,13 +163,13 @@ mod advanced_policy_schema {
         ]);
 
         let sql = db
-            .post()
+            .advanced_post()
             .update(9)
-            .set(cratestack_schema::UpdatePostInput::default())
+            .set(cratestack_schema::UpdateAdvancedPostInput::default())
             .preview_sql();
-        assert!(sql.contains("UPDATE posts SET "));
+        assert!(sql.contains("UPDATE advanced_posts SET "));
 
-        let scoped_sql = db.post().find_many().preview_scoped_sql(&ctx);
+        let scoped_sql = db.advanced_post().find_many().preview_scoped_sql(&ctx);
         assert!(scoped_sql.contains("published = TRUE"));
         assert!(scoped_sql.contains("email = $1"));
         assert!(scoped_sql.contains("banned = TRUE"));
@@ -478,7 +478,7 @@ mod auth_engine_schema {
             })))
             .expect("principal should bind");
 
-        let post_sql = scoped.post().find_many().preview_scoped_sql();
+        let post_sql = scoped.engine_post().find_many().preview_scoped_sql();
         assert!(post_sql.contains("author_id = "));
         assert!(post_sql.contains("published = TRUE"));
 

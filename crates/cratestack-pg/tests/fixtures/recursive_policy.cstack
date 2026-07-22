@@ -16,7 +16,12 @@ model Organization {
   @@allow("read", auth() != null)
 }
 
-model User {
+// Model name is `RecursiveUser` (not `User`) so its auto-derived table
+// (`recursive_users`) doesn't collide with the unrelated `users` table
+// `policy_db_advanced.rs` creates against the same shared test
+// Postgres — same fix-up as the `customers` collision between
+// `banking_soft_delete.rs` and `views_pg_integration.rs`.
+model RecursiveUser {
   id Int @id
   email String
   banned Boolean
@@ -41,7 +46,7 @@ model Membership {
   active Boolean
   blocked Boolean
   project Project @relation(fields:[projectId],references:[id])
-  user User @relation(fields:[userId],references:[id])
+  user RecursiveUser @relation(fields:[userId],references:[id])
 
   @@allow("read", auth() != null)
 }
