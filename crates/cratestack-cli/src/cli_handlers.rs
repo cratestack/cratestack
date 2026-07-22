@@ -31,7 +31,16 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             base_path,
             template_dir,
             check,
-        } => handle_generate_typescript(schema, out, package_name, base_path, template_dir, check)?,
+            full_selection,
+        } => handle_generate_typescript(
+            schema,
+            out,
+            package_name,
+            base_path,
+            template_dir,
+            check,
+            full_selection,
+        )?,
         Command::Studio { cmd } => handle_studio(cmd)?,
         Command::PrintIr { schema } => handle_print_ir(schema)?,
         Command::Migrate { action } => match action {
@@ -113,6 +122,7 @@ fn handle_generate_typescript(
     base_path: String,
     template_dir: Option<PathBuf>,
     check: bool,
+    full_selection: bool,
 ) -> Result<()> {
     let parsed = parse_schema_or_render(&schema)?;
     let package = cratestack_client_typescript::generate_package(
@@ -121,6 +131,7 @@ fn handle_generate_typescript(
             package_name,
             base_path,
             template_dir,
+            full_selection,
         },
     )?;
     let files = into_generated_files(package.files);

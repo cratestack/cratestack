@@ -198,6 +198,51 @@ fn rest_client_keeps_rest_style_methods() {
 }
 
 #[test]
+fn full_selection_emits_fully_required_model_interface() {
+    // tiny_rest.cstack's Widget has a mix of required (`id`, `name`) and
+    // nullable (`weight Int?`) scalars — exactly the mix the flag needs to
+    // tell apart from projection-driven optionality.
+    let package = generate_for_full_selection("tiny_rest", "tiny-rest-full-client");
+    let models = package_file(&package, "src/models.ts");
+    assert!(
+        models.contains("export interface Widget {\n  id: number;\n  name: string;\n  weight?: number | null;\n}"),
+        "--full-selection should require id/name (non-nullable in the schema) and keep weight \
+         optional (nullable in the schema), rather than forcing every field optional:\n{models}"
+    );
+}
+
+#[test]
+fn full_selection_does_not_change_default_generation() {
+    let default_package = generate_for("tiny_rest", "tiny-rest-client");
+    let default_models = package_file(&default_package, "src/models.ts");
+    assert!(
+        default_models.contains("export interface Widget {\n  id?: number;\n  name?: string;\n  weight?: number | null;\n}"),
+        "default (no flag) generation must keep every scalar field optional:\n{default_models}"
+    );
+}
+
+#[test]
+fn full_selection_leaves_create_and_update_inputs_unchanged() {
+    // The flag targets read-model interfaces only — Create/Update inputs
+    // already derive optionality from schema nullability (Create) or are
+    // inherently partial by PATCH semantics (Update), so they must be
+    // byte-identical with or without the flag.
+    let default_package = generate_for("tiny_rest", "tiny-rest-client");
+    let full_package = generate_for_full_selection("tiny_rest", "tiny-rest-full-client");
+    let default_models = package_file(&default_package, "src/models.ts");
+    let full_models = package_file(&full_package, "src/models.ts");
+
+    for interface in ["CreateWidgetInput", "UpdateWidgetInput", "EchoNameArgs"] {
+        let default_block = extract_interface_block(default_models, interface);
+        let full_block = extract_interface_block(full_models, interface);
+        assert_eq!(
+            default_block, full_block,
+            "{interface} should be unaffected by --full-selection"
+        );
+    }
+}
+
+#[test]
 fn rest_and_rpc_share_models_ts() {
     let rest = generate_for("tiny_rest", "tiny-rest-client");
     let rpc = generate_for("tiny_rpc", "tiny-rpc-client");
@@ -220,6 +265,21 @@ fn run_snapshot(fixture_stem: &str, package_name: &str) {
 }
 
 fn generate_for(fixture_stem: &str, package_name: &str) -> GeneratedTypeScriptPackage {
+    generate_for_with_config(fixture_stem, package_name, false)
+}
+
+fn generate_for_full_selection(
+    fixture_stem: &str,
+    package_name: &str,
+) -> GeneratedTypeScriptPackage {
+    generate_for_with_config(fixture_stem, package_name, true)
+}
+
+fn generate_for_with_config(
+    fixture_stem: &str,
+    package_name: &str,
+    full_selection: bool,
+) -> GeneratedTypeScriptPackage {
     let fixture_path = fixture_root().join(format!("{fixture_stem}.cstack"));
     let schema = cratestack_parser::parse_schema_file(&fixture_path)
         .unwrap_or_else(|error| panic!("fixture {fixture_path:?} should parse: {error}"));
@@ -229,6 +289,7 @@ fn generate_for(fixture_stem: &str, package_name: &str) -> GeneratedTypeScriptPa
             package_name: package_name.to_owned(),
             base_path: "/api".to_owned(),
             template_dir: None,
+            full_selection,
         },
     )
     .expect("default template should render")
@@ -275,6 +336,18 @@ fn fixture_root() -> PathBuf {
 
 fn snapshot_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/snapshots")
+}
+
+fn extract_interface_block<'a>(models: &'a str, interface_name: &str) -> &'a str {
+    let start_marker = format!("export interface {interface_name} {{");
+    let start = models
+        .find(&start_marker)
+        .unwrap_or_else(|| panic!("missing interface {interface_name} in:\n{models}"));
+    let end = models[start..]
+        .find("\n}")
+        .map(|offset| start + offset + "\n}".len())
+        .unwrap_or_else(|| panic!("unterminated interface {interface_name} in:\n{models}"));
+    &models[start..end]
 }
 
 fn package_file<'a>(package: &'a GeneratedTypeScriptPackage, file_name: &str) -> &'a str {

@@ -52,6 +52,12 @@ pub(crate) enum Command {
         /// files that differ if the two don't match.
         #[arg(long)]
         check: bool,
+        /// Emit model interfaces with every scalar field required, matching
+        /// the schema's own nullability instead of forcing every field
+        /// optional for partial `fields`/`include` projection. For
+        /// consumers that always fetch full objects.
+        #[arg(long)]
+        full_selection: bool,
     },
     /// Studio: admin and testing surface for `.cstack` schemas.
     Studio {

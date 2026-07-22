@@ -71,6 +71,7 @@ mod tests {
                 base_path,
                 template_dir,
                 check,
+                full_selection,
             } => {
                 assert_eq!(schema, PathBuf::from("schema.cstack"));
                 assert_eq!(out, PathBuf::from("out"));
@@ -78,6 +79,27 @@ mod tests {
                 assert_eq!(base_path, "/api");
                 assert_eq!(template_dir, None);
                 assert!(!check);
+                assert!(!full_selection);
+            }
+            _ => panic!("expected generate-typescript command"),
+        }
+    }
+
+    #[test]
+    fn generate_typescript_clap_accepts_full_selection_flag() {
+        let cli = Cli::parse_from([
+            "cratestack",
+            "generate-typescript",
+            "--schema",
+            "schema.cstack",
+            "--out",
+            "out",
+            "--full-selection",
+        ]);
+
+        match cli.command {
+            Command::GenerateTypeScript { full_selection, .. } => {
+                assert!(full_selection);
             }
             _ => panic!("expected generate-typescript command"),
         }

@@ -47,12 +47,23 @@ pub(crate) fn build_template_context(
             &enum_names,
         ));
     }
+    // `InterfaceKind::Model` forces every field optional to account for
+    // partial `fields`/`include` projection on the wire. `--full-selection`
+    // opts a generation run out of that: reuse `Plain`'s arity-driven
+    // optionality (the schema's own nullable/required split) so consumers
+    // who always fetch full objects get fully-required interfaces instead
+    // of hand-rolling a narrowing type on top of the generator's output.
+    let model_interface_kind = if config.full_selection {
+        InterfaceKind::Plain
+    } else {
+        InterfaceKind::Model
+    };
     for model in &schema.models {
         let scalar_fields = scalar_model_fields(model, &model_names);
         interfaces.push(build_interface(
             &model.name,
             &visible_model_fields(model),
-            InterfaceKind::Model,
+            model_interface_kind,
             &enum_names,
         ));
         if model_allows_create(model) {
