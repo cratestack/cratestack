@@ -118,6 +118,62 @@ fn rpc_runtime_exposes_pluggable_codec_option() {
 }
 
 #[test]
+fn generated_rpc_runtime_satisfies_exact_optional_property_types() {
+    // Regression test: the generator's own tsconfig.json.j2 sets
+    // exactOptionalPropertyTypes, but the generated runtime didn't
+    // actually satisfy it — `this.defaultHeaders = options.headers;`
+    // and three `signal: options.signal,` fetch-options fields all
+    // failed a real `tsc --noEmit` run under that config (verified
+    // manually; this repo has no tsc-in-CI harness, so this test
+    // pins the source patterns that were confirmed to fix it).
+    let package = generate_for("tiny_rpc", "tiny-rpc-client");
+    let runtime = package_file(&package, "src/runtime.ts");
+    assert!(
+        runtime.contains(
+            "readonly defaultHeaders: HeadersInit | (() => HeadersInit | Promise<HeadersInit>) | undefined;"
+        ),
+        "defaultHeaders must explicitly include `| undefined` in its type so assigning a \
+         possibly-undefined value type-checks under exactOptionalPropertyTypes:\n{runtime}"
+    );
+    assert!(
+        !runtime.contains("signal: options.signal,"),
+        "fetch()'s RequestInit.signal is `AbortSignal | null` (no `| undefined`) — passing \
+         `options.signal` directly fails under exactOptionalPropertyTypes; must coalesce to null:\n{runtime}"
+    );
+    assert_eq!(
+        runtime.matches("signal: options.signal ?? null,").count(),
+        3,
+        "call()/batch()/stream() should all coalesce signal to null:\n{runtime}"
+    );
+}
+
+#[test]
+fn generated_rest_runtime_satisfies_exact_optional_property_types() {
+    let package = generate_for("tiny_rest", "tiny-rest-client");
+    let runtime = package_file(&package, "src/runtime.ts");
+    assert!(
+        runtime.contains(
+            "readonly defaultHeaders: HeadersInit | (() => HeadersInit | Promise<HeadersInit>) | undefined;"
+        ),
+        "defaultHeaders must explicitly include `| undefined`:\n{runtime}"
+    );
+    assert!(
+        runtime.contains("body: body ?? null,")
+            && runtime.contains("signal: options.signal ?? null,"),
+        "fetch()'s RequestInit.body/signal are typed without `| undefined` — must coalesce to null:\n{runtime}"
+    );
+    assert!(
+        runtime.contains("headers?: HeadersInit | undefined;")
+            && runtime.contains("query?: Record<string, unknown> | undefined;")
+            && runtime.contains("signal?: AbortSignal | undefined;"),
+        "CratestackRequestOptions' fields must explicitly include `| undefined` — otherwise \
+         generated client.ts methods that spread `{{ headers: options.headers, ... }}` fail to \
+         type-check under exactOptionalPropertyTypes, since the source config types \
+         (CratestackRequestConfig etc.) are themselves optional-without-undefined:\n{runtime}"
+    );
+}
+
+#[test]
 fn rest_client_keeps_rest_style_methods() {
     let package = generate_for("tiny_rest", "tiny-rest-client");
     let runtime = package_file(&package, "src/runtime.ts");
