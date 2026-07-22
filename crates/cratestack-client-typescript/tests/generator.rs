@@ -61,6 +61,41 @@ fn generates_fetch_client_and_tanstack_hooks_for_blog_schema() {
     assert!(index.contains("export * from \"./react-query\";"));
 }
 
+/// Regression test: `Page<T>`/`PageInfo` must match
+/// `cratestack_core::page::{Page, PageInfo}` field-for-field — that
+/// Rust struct is what every `@@paged` list route actually serializes
+/// (`#[serde(rename_all = "camelCase")]`), so the generated TS types
+/// are a hardcoded mirror of it, not independently designed. This
+/// previously drifted silently (wrong field names, a `nextOffset`
+/// field that doesn't exist on the wire, a missing `hasPreviousPage`)
+/// because nothing checked it against the real shape.
+#[test]
+fn page_and_page_info_match_the_core_wire_shape() {
+    let schema =
+        cratestack_parser::parse_schema_file("../cratestack-pg/tests/fixtures/blog.cstack")
+            .expect("fixture schema should parse");
+
+    let package = generate_package(&schema, &TypeScriptGeneratorConfig::default())
+        .expect("default template should render");
+    let models = package_file(&package, "src/models.ts");
+
+    assert!(models.contains(
+        "export interface PageInfo {\n  \
+         limit: number | null;\n  \
+         offset: number | null;\n  \
+         hasNextPage: boolean;\n  \
+         hasPreviousPage: boolean;\n\
+         }"
+    ));
+    assert!(models.contains(
+        "export interface Page<T> {\n  \
+         items: T[];\n  \
+         totalCount: number | null;\n  \
+         pageInfo: PageInfo;\n\
+         }"
+    ));
+}
+
 #[test]
 fn preserves_enums_and_scalar_mappings() {
     let schema =
