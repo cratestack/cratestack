@@ -3,7 +3,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use cratestack_core::Schema;
 
 use crate::diagnostics::{SchemaError, span_error};
-use crate::validate::fields::{CustomFieldSupport, validate_custom_field_attribute};
+use crate::validate::fields::{
+    CustomFieldSupport, validate_custom_field_attribute, validate_default_dbgenerated_no_args,
+};
 use crate::validate::type_names::validate_type_ref;
 
 pub(super) fn validate_mixins(
@@ -59,6 +61,7 @@ pub(super) fn validate_mixins(
                 field.span,
                 false,
             )?;
+            validate_default_dbgenerated_no_args(&mixin.name, field)?;
         }
     }
     Ok(())

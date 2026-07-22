@@ -77,6 +77,13 @@ fn field_default(field: &Field) -> Option<ColumnDefault> {
     if inner.is_empty() {
         return None;
     }
+    // `dbgenerated()` is a marker, not a real function call — see
+    // `ColumnDefault::DbGenerated`. The parser rejects any argument
+    // (`validate_default_dbgenerated_no_args`), so the only form that
+    // reaches here is the bare call.
+    if inner == "dbgenerated()" {
+        return Some(ColumnDefault::DbGenerated);
+    }
     if inner.ends_with(')') && !inner.starts_with('\'') {
         Some(ColumnDefault::Function(inner))
     } else {

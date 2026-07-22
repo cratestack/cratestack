@@ -85,6 +85,44 @@ model Account {
 }
 
 #[test]
+fn accepts_bare_dbgenerated_default() {
+    let schema = parse_schema(
+        r#"
+model Article {
+  id String @id @default(dbgenerated())
+  createdAt DateTime @default(dbgenerated())
+}
+"#,
+    )
+    .expect("bare @default(dbgenerated()) should parse");
+
+    let fields = &schema.models[0].fields;
+    assert!(
+        fields[0]
+            .attributes
+            .iter()
+            .any(|a| a.raw == "@default(dbgenerated())"),
+    );
+}
+
+#[test]
+fn rejects_dbgenerated_with_argument() {
+    let error = parse_schema(
+        r#"
+model Article {
+  id String @id @default(dbgenerated("gen_random_uuid()"))
+}
+"#,
+    )
+    .expect_err("dbgenerated() with an argument should fail");
+
+    assert!(
+        error.to_string().contains("takes no argument"),
+        "error: {error}",
+    );
+}
+
+#[test]
 fn accepts_pii_and_sensitive_field_attributes() {
     let schema = parse_schema(
         r#"

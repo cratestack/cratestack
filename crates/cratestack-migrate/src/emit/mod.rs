@@ -28,4 +28,11 @@ pub struct EmittedMigration {
     /// this to surface a clear "needs `@default` or `up.pre.sql`"
     /// warning.
     pub has_blocking: bool,
+    /// `(table, column)` pairs for `Required` columns using
+    /// `@default(dbgenerated())` that this migration introduces. See
+    /// [`crate::ir::unverified_dbgenerated_columns`] — non-empty
+    /// means the CLI should warn that these columns need a real
+    /// Postgres-level default set some other way, or inserts that
+    /// omit them will fail with a `NOT NULL` violation at runtime.
+    pub unverified_dbgenerated: Vec<(String, String)>,
 }

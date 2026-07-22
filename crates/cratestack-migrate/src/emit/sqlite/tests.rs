@@ -167,6 +167,33 @@ model Order {
 }
 
 #[test]
+fn dbgenerated_default_emits_no_default_clause() {
+    let prev = schema(&with_models(""));
+    let next = schema(&with_models(
+        r#"
+model Article {
+  id String @id @default(dbgenerated())
+}
+"#,
+    ));
+    let migration = emit(&diff(&prev, &next));
+    assert!(
+        !migration.up.contains("DEFAULT dbgenerated()"),
+        "emitted DDL must never contain the literal invalid `DEFAULT dbgenerated()` call: {}",
+        migration.up
+    );
+    assert!(
+        migration.up.contains("id BLOB NOT NULL,"),
+        "up was: {}",
+        migration.up
+    );
+    assert_eq!(
+        migration.unverified_dbgenerated,
+        vec![("articles".to_owned(), "id".to_owned())]
+    );
+}
+
+#[test]
 fn enum_changes_produce_no_sqlite_ddl() {
     let prev = schema(&with_models(
         r#"

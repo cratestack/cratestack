@@ -81,21 +81,12 @@ pub(super) fn emit_alter_column_nullability(sql: &mut String, alter: &AlterColum
 
 pub(super) fn emit_alter_column_default(sql: &mut String, alter: &AlterColumnDefault) {
     match &alter.to {
-        Some(default) => {
-            let rendered = match default {
-                ColumnDefault::Literal(value) => value.as_str(),
-                ColumnDefault::Function(call) => call.as_str(),
-            };
-            writeln!(
-                sql,
-                "ALTER TABLE {} ALTER COLUMN {} SET DEFAULT {};",
-                quote_ident(&alter.table),
-                quote_ident(&alter.column),
-                rendered
-            )
-            .unwrap();
-        }
-        None => writeln!(
+        Some(ColumnDefault::Literal(value)) => emit_set_default(sql, alter, value),
+        Some(ColumnDefault::Function(call)) => emit_set_default(sql, alter, call),
+        // `dbgenerated()` never has DDL to set — dropping any
+        // previously-managed default hands the column back to
+        // whatever external mechanism is expected to supply it.
+        Some(ColumnDefault::DbGenerated) | None => writeln!(
             sql,
             "ALTER TABLE {} ALTER COLUMN {} DROP DEFAULT;",
             quote_ident(&alter.table),
@@ -105,6 +96,17 @@ pub(super) fn emit_alter_column_default(sql: &mut String, alter: &AlterColumnDef
     }
 }
 
+fn emit_set_default(sql: &mut String, alter: &AlterColumnDefault, rendered: &str) {
+    writeln!(
+        sql,
+        "ALTER TABLE {} ALTER COLUMN {} SET DEFAULT {};",
+        quote_ident(&alter.table),
+        quote_ident(&alter.column),
+        rendered
+    )
+    .unwrap();
+}
+
 pub(super) fn render_column(column: &Column) -> String {
     let mut buf = quote_ident(&column.name);
     buf.push(' ');
@@ -112,12 +114,17 @@ pub(super) fn render_column(column: &Column) -> String {
     if matches!(column.arity, ColumnArity::Required | ColumnArity::List) {
         buf.push_str(" NOT NULL");
     }
-    if let Some(default) = &column.default {
-        buf.push_str(" DEFAULT ");
-        match default {
-            ColumnDefault::Literal(value) => buf.push_str(value),
-            ColumnDefault::Function(call) => buf.push_str(call),
+    match &column.default {
+        Some(ColumnDefault::Literal(value)) => {
+            buf.push_str(" DEFAULT ");
+            buf.push_str(value);
         }
+        Some(ColumnDefault::Function(call)) => {
+            buf.push_str(" DEFAULT ");
+            buf.push_str(call);
+        }
+        // No DDL default for `dbgenerated()` — see `ColumnDefault::DbGenerated`.
+        Some(ColumnDefault::DbGenerated) | None => {}
     }
     buf
 }

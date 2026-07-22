@@ -25,7 +25,7 @@ mod tests;
 use std::fmt::Write as _;
 
 use crate::emit::EmittedMigration;
-use crate::ir::{Destructiveness, Op};
+use crate::ir::{Destructiveness, Op, unverified_dbgenerated_columns};
 
 use checks::{emit_add_check, emit_drop_check};
 use columns::{
@@ -53,21 +53,36 @@ pub fn emit(ops: &[Op]) -> EmittedMigration {
         }
     }
 
+    let unverified_dbgenerated = unverified_dbgenerated_columns(ops);
+
     EmittedMigration {
-        up: emit_up(ops, has_blocking),
+        up: emit_up(ops, has_blocking, &unverified_dbgenerated),
         down: emit_down(ops, has_lossy),
         has_lossy,
         has_blocking,
+        unverified_dbgenerated,
     }
 }
 
-fn emit_up(ops: &[Op], has_blocking: bool) -> String {
+fn emit_up(ops: &[Op], has_blocking: bool, unverified_dbgenerated: &[(String, String)]) -> String {
     let mut sql = String::new();
     if has_blocking {
         sql.push_str("-- WARNING: this migration contains blocking operations.\n");
         sql.push_str("-- A required column was added without a default. The migration\n");
         sql.push_str("-- will fail on a non-empty table unless an `up.pre.sql` backfills\n");
         sql.push_str("-- the affected columns before this statement runs.\n\n");
+    }
+    if !unverified_dbgenerated.is_empty() {
+        sql.push_str("-- NOTE: the following column(s) use `@default(dbgenerated())`, a\n");
+        sql.push_str("-- marker meaning the value is expected to come from a real\n");
+        sql.push_str("-- Postgres-level default set some other way (hand-authored SQL, a\n");
+        sql.push_str("-- trigger, GENERATED ... AS IDENTITY, etc). cratestack does not\n");
+        sql.push_str("-- emit a DEFAULT clause for it. If no such default exists,\n");
+        sql.push_str("-- INSERTs that omit the column will fail with a NOT NULL violation:\n");
+        for (table, column) in unverified_dbgenerated {
+            writeln!(sql, "--   - {table}.{column}").ok();
+        }
+        sql.push('\n');
     }
     for op in ops {
         emit_up_op(&mut sql, op);

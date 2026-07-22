@@ -34,7 +34,7 @@ mod tests;
 use std::fmt::Write as _;
 
 use crate::emit::EmittedMigration;
-use crate::ir::{Destructiveness, Op};
+use crate::ir::{Destructiveness, Op, unverified_dbgenerated_columns};
 
 use checks::{emit_add_check, emit_drop_check};
 use columns::{
@@ -65,21 +65,36 @@ pub fn emit(ops: &[Op]) -> EmittedMigration {
         }
     }
 
+    let unverified_dbgenerated = unverified_dbgenerated_columns(ops);
+
     EmittedMigration {
-        up: emit_up(ops, has_blocking),
+        up: emit_up(ops, has_blocking, &unverified_dbgenerated),
         down: emit_down(ops, has_lossy),
         has_lossy,
         has_blocking,
+        unverified_dbgenerated,
     }
 }
 
-fn emit_up(ops: &[Op], has_blocking: bool) -> String {
+fn emit_up(ops: &[Op], has_blocking: bool, unverified_dbgenerated: &[(String, String)]) -> String {
     let mut sql = String::new();
     if has_blocking {
         sql.push_str("-- WARNING: this migration contains blocking operations.\n");
         sql.push_str("-- A required column was added without a default. SQLite will\n");
         sql.push_str("-- reject the ALTER TABLE … ADD COLUMN if the table is non-empty\n");
         sql.push_str("-- — supply a default in the schema or backfill via up.pre.sql.\n\n");
+    }
+    if !unverified_dbgenerated.is_empty() {
+        sql.push_str("-- NOTE: the following column(s) use `@default(dbgenerated())`, a\n");
+        sql.push_str("-- marker meaning the value is expected to come from a real\n");
+        sql.push_str("-- default set some other way (hand-authored SQL, a trigger,\n");
+        sql.push_str("-- etc). cratestack does not emit a DEFAULT clause for it. If no\n");
+        sql.push_str("-- such default exists, INSERTs that omit the column will fail\n");
+        sql.push_str("-- with a NOT NULL violation:\n");
+        for (table, column) in unverified_dbgenerated {
+            writeln!(sql, "--   - {table}.{column}").ok();
+        }
+        sql.push('\n');
     }
     for op in ops {
         emit_up_op(&mut sql, op);

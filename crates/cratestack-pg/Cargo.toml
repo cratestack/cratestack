@@ -71,6 +71,7 @@ async-stream = "0.3"
 axum.workspace = true
 cratestack-codec-cbor.workspace = true
 cratestack-codec-json.workspace = true
+cratestack-migrate.workspace = true
 minicbor-serde.workspace = true
 testcontainers.workspace = true
 testcontainers-modules.workspace = true
