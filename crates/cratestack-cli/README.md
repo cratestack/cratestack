@@ -47,6 +47,7 @@ Flags:
 - `--library-name <NAME>` (default `cratestack_client`)
 - `--base-path <PATH>` (default `/api`)
 - `--template-dir <PATH>` (optional)
+- `--check` (drift-detection mode — see below)
 
 ### `generate-typescript` (alias `generate-ts`)
 
@@ -65,6 +66,27 @@ Flags:
 - `--package-name <NAME>` (default `cratestack-client`)
 - `--base-path <PATH>` (default `/api`)
 - `--template-dir <PATH>` (optional)
+- `--check` (drift-detection mode — see below)
+
+### `--check` — drift detection (CI guard)
+
+Both `generate-dart` and `generate-typescript` accept `--check`: instead of writing
+to `--out`, the command generates in memory and diffs the result file-by-file
+against what's already on disk. It exits `0` if they match, and non-zero with a
+list of drifted files (modified, missing, or unexpected) otherwise. No files
+under `--out` are written or modified in `--check` mode.
+
+```bash
+cratestack generate-typescript \
+  --schema schemas/catalog.cstack \
+  --out packages/catalog-client \
+  --package-name @example/catalog-client \
+  --base-path /api \
+  --check
+```
+
+Use this in CI to catch a schema change that nobody regenerated the client for,
+or a hand-edit to committed generated code.
 
 ### `studio` — admin and testing surface
 

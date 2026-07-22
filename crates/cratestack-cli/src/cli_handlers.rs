@@ -8,6 +8,10 @@ use crate::cli_support::{
     render_schema_error, write_generated_files,
 };
 use crate::cli_types::{Cli, Command, MigrateAction, OutputFormat, StudioCmd};
+use crate::drift::check_drift;
+
+#[cfg(test)]
+mod tests_generate;
 
 pub(crate) fn run(cli: Cli) -> Result<()> {
     match cli.command {
@@ -18,14 +22,16 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             library_name,
             base_path,
             template_dir,
-        } => handle_generate_dart(schema, out, library_name, base_path, template_dir)?,
+            check,
+        } => handle_generate_dart(schema, out, library_name, base_path, template_dir, check)?,
         Command::GenerateTypeScript {
             schema,
             out,
             package_name,
             base_path,
             template_dir,
-        } => handle_generate_typescript(schema, out, package_name, base_path, template_dir)?,
+            check,
+        } => handle_generate_typescript(schema, out, package_name, base_path, template_dir, check)?,
         Command::Studio { cmd } => handle_studio(cmd)?,
         Command::PrintIr { schema } => handle_print_ir(schema)?,
         Command::Migrate { action } => match action {
@@ -78,6 +84,7 @@ fn handle_generate_dart(
     library_name: String,
     base_path: String,
     template_dir: Option<PathBuf>,
+    check: bool,
 ) -> Result<()> {
     let parsed = parse_schema_or_render(&schema)?;
     let package = cratestack_client_dart::generate_package(
@@ -88,8 +95,13 @@ fn handle_generate_dart(
             template_dir,
         },
     )?;
+    let files = into_generated_files(package.files);
 
-    write_generated_files(&out, into_generated_files(package.files))?;
+    if check {
+        return check_drift(&out, &files, "Dart");
+    }
+
+    write_generated_files(&out, files)?;
     println!("generated Dart client package: {}", out.display());
     Ok(())
 }
@@ -100,6 +112,7 @@ fn handle_generate_typescript(
     package_name: String,
     base_path: String,
     template_dir: Option<PathBuf>,
+    check: bool,
 ) -> Result<()> {
     let parsed = parse_schema_or_render(&schema)?;
     let package = cratestack_client_typescript::generate_package(
@@ -110,8 +123,13 @@ fn handle_generate_typescript(
             template_dir,
         },
     )?;
+    let files = into_generated_files(package.files);
 
-    write_generated_files(&out, into_generated_files(package.files))?;
+    if check {
+        return check_drift(&out, &files, "TypeScript");
+    }
+
+    write_generated_files(&out, files)?;
     println!("generated TypeScript client package: {}", out.display());
     Ok(())
 }
