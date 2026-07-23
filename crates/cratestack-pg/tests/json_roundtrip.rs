@@ -9,9 +9,9 @@ use support::pg;
 include_server_schema!("tests/fixtures/json_roundtrip.cstack", db = Postgres);
 
 async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
-    query("DROP TABLE IF EXISTS roundtrip").execute(pool).await.expect("drop table");
+    query("DROP TABLE IF EXISTS roundtrips").execute(pool).await.expect("drop table");
     query(
-        "CREATE TABLE roundtrip (
+        "CREATE TABLE roundtrips (
             id BIGINT PRIMARY KEY,
             payload JSONB
         )",
@@ -62,7 +62,7 @@ async fn create_and_read_roundtrip_json_field() {
     assert_eq!(found.payload.0, payload);
 
     // Also verify the raw JSONB in the DB is plain JSON (not tagged enum).
-    let row = query("SELECT payload FROM roundtrip WHERE id = $1")
+    let row = query("SELECT payload FROM roundtrips WHERE id = $1")
         .bind(42_i64)
         .fetch_one(pool)
         .await
