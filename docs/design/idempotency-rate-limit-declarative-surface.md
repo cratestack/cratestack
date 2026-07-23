@@ -1,6 +1,10 @@
 # Idempotency & rate limiting on the declarative surface — decision
 
-Status: **decided** (2026-07-22) — split decision, no implementation in this change.
+Status: **partially superseded** (2026-07-23) — the rate-limiting finding
+below (§4.1) has been reframed by [extensions.md](extensions.md), which
+proposes a `rate_limit` **extension** that declares capability-participation
+only (never tunable numbers). The idempotency finding (§4.2 onward) is
+unaffected and remains the current decision.
 Scope: whether `@@idempotent`/`@@rate_limit(...)`-style `.cstack` attributes should
 join `@@audit`/`@@soft_delete`/`@@paged`, or whether `IdempotencyLayer`/`RateLimitLayer`
 stay imperative Rust middleware.
@@ -168,7 +172,10 @@ This should not be opened until `OpExecutor` has a concrete plan, per §4.2.
 
 ## 7. Non-goals
 
-- `@@rate_limit(...)` in any form — closed permanently, see §4.1.
+- `@@rate_limit(...)` carrying tunable numbers (burst, refill, window) —
+  still closed permanently, see §4.1. Superseded only on the narrower
+  question of a participation-only `rate_limit` extension with no
+  numeric config; see [extensions.md](extensions.md) §2.
 - Moving store selection (in-memory/Postgres/Redis) into `.cstack` — backend
   selection is a macro-invocation/app-wiring concern today (mirroring `db =
   Postgres` on `include_server_schema!`, which lives outside the `.cstack`
