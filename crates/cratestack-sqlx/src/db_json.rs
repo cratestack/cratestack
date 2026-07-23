@@ -75,4 +75,39 @@ mod tests {
             _ => panic!("expected map"),
         }
     }
+
+    #[test]
+    fn bytes_roundtrip_via_dbjson_base64() {
+        let v = Value::Bytes(vec![1, 2, 3, 250]);
+        let db = DbJson(v.clone());
+        let s = serde_json::to_string(&db).expect("serialize failed");
+        // Should be an object with __Bytes key
+        assert!(s.contains("__Bytes"));
+        let parsed: DbJson = serde_json::from_str(&s).expect("deserialize failed");
+        assert_eq!(parsed.0, v);
+    }
+
+    #[test]
+    fn non_finite_float_roundtrip_via_dbjson() {
+        let v = Value::Float(f64::NAN);
+        let db = DbJson(v.clone());
+        let s = serde_json::to_string(&db).expect("serialize failed");
+        // Should be an object with __Float key
+        assert!(s.contains("__Float"));
+        let parsed: DbJson = serde_json::from_str(&s).expect("deserialize failed");
+        match parsed.0 {
+            Value::Float(f) => assert!(f.is_nan()),
+            _ => panic!("expected float"),
+        }
+
+        let v_inf = Value::Float(f64::INFINITY);
+        let db_inf = DbJson(v_inf.clone());
+        let s_inf = serde_json::to_string(&db_inf).expect("serialize failed");
+        assert!(s_inf.contains("__Float"));
+        let parsed_inf: DbJson = serde_json::from_str(&s_inf).expect("deserialize failed");
+        match parsed_inf.0 {
+            Value::Float(f) => assert!(f.is_infinite() && f.is_sign_positive()),
+            _ => panic!("expected float"),
+        }
+    }
 }
