@@ -18,7 +18,8 @@ pub enum Value {
 }
 
 impl Value {
-    /// Convert this Value into a serde_json::Value for storage as plain JSON.
+    /// Convert this Value into a `serde_json::Value` for storage as plain JSON.
+    #[must_use]
     pub fn into_json(self) -> serde_json::Value {
         use serde_json::{Number as JsonNumber, Value as JsonVal};
         match self {
@@ -28,7 +29,8 @@ impl Value {
             Value::Float(f) => JsonVal::Number(JsonNumber::from_f64(f).unwrap_or(JsonNumber::from(0))),
             Value::String(s) => JsonVal::String(s),
             Value::Bytes(b) => JsonVal::Array(b.into_iter().map(|byte| JsonVal::Number(JsonNumber::from(byte))).collect()),
-            Value::List(vec) => JsonVal::Array(vec.into_iter().map(|v| v.into_json()).collect()),
+            // use direct method reference instead of closure for pedantic clippy
+            Value::List(vec) => JsonVal::Array(vec.into_iter().map(Value::into_json).collect()),
             Value::Map(map) => {
                 let mut obj = serde_json::Map::new();
                 for (k, v) in map {
@@ -39,7 +41,8 @@ impl Value {
         }
     }
 
-    /// Convert from a serde_json::Value (plain JSON) into the internal Value.
+    /// Convert from a `serde_json::Value` (plain JSON) into the internal `Value`.
+    #[must_use]
     pub fn from_json(v: serde_json::Value) -> Self {
         use serde_json::Value as JsonVal;
         match v {
@@ -55,7 +58,13 @@ impl Value {
                     if let Ok(i) = i64::try_from(u) {
                         Value::Int(i)
                     } else {
-                        Value::Float(u as f64)
+                        // Converting large u64 to f64 can lose precision; this
+                        // fallback is rare and documented. Silence the pedantic
+                        // lint for this cast only.
+                        #[allow(clippy::cast_precision_loss)]
+                        {
+                            Value::Float(u as f64)
+                        }
                     }
                 } else {
                     // fallback

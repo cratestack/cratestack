@@ -3,7 +3,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use cratestack_core::Value;
 
 /// Wrapper used solely for SQL persistence: serializes `Value` as plain
-/// JSON (via serde_json::Value) and deserializes plain JSON back into
+/// JSON (via `serde_json::Value`) and deserializes plain JSON back into
 /// `Value`. This keeps the internal `Value` serde representation
 /// (external tagging) unchanged for the rest of the framework.
 #[derive(Debug, Clone, PartialEq)]
