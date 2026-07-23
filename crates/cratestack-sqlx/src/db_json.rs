@@ -6,7 +6,7 @@ use cratestack_core::Value;
 /// JSON (via serde_json::Value) and deserializes plain JSON back into
 /// `Value`. This keeps the internal `Value` serde representation
 /// (external tagging) unchanged for the rest of the framework.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DbJson(pub Value);
 
 impl From<Value> for DbJson {
