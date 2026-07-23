@@ -64,6 +64,7 @@ pub mod sqlx {
 }
 
 mod audit;
+mod db_json;
 mod delegate;
 mod descriptor;
 mod error;
@@ -73,7 +74,6 @@ mod migrations;
 mod partial_row;
 mod query;
 mod render;
-mod db_json;
 #[cfg(test)]
 mod tests_coalesce;
 #[cfg(test)]

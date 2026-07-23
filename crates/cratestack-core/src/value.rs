@@ -26,9 +26,15 @@ impl Value {
             Value::Null => JsonVal::Null,
             Value::Bool(b) => JsonVal::Bool(b),
             Value::Int(i) => JsonVal::Number(JsonNumber::from(i)),
-            Value::Float(f) => JsonVal::Number(JsonNumber::from_f64(f).unwrap_or(JsonNumber::from(0))),
+            Value::Float(f) => {
+                JsonVal::Number(JsonNumber::from_f64(f).unwrap_or(JsonNumber::from(0)))
+            }
             Value::String(s) => JsonVal::String(s),
-            Value::Bytes(b) => JsonVal::Array(b.into_iter().map(|byte| JsonVal::Number(JsonNumber::from(byte))).collect()),
+            Value::Bytes(b) => JsonVal::Array(
+                b.into_iter()
+                    .map(|byte| JsonVal::Number(JsonNumber::from(byte)))
+                    .collect(),
+            ),
             // use direct method reference instead of closure for pedantic clippy
             Value::List(vec) => JsonVal::Array(vec.into_iter().map(Value::into_json).collect()),
             Value::Map(map) => {
