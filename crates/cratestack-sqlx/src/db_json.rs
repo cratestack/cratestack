@@ -40,3 +40,40 @@ impl<'de> Deserialize<'de> for DbJson {
         Ok(DbJson(Value::from_json(json)))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::DbJson;
+    use cratestack_core::Value;
+    use serde_json;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn serialize_empty_map_as_object() {
+        let map: BTreeMap<String, Value> = BTreeMap::new();
+        let v = Value::Map(map);
+        let db = DbJson(v);
+        let s = serde_json::to_string(&db).expect("serialize failed");
+        assert_eq!(s, "{}");
+    }
+
+    #[test]
+    fn serialize_list_of_string_as_array() {
+        let list = Value::List(vec![Value::String("x".to_string())]);
+        let db = DbJson(list);
+        let s = serde_json::to_string(&db).expect("serialize failed");
+        assert_eq!(s, "[\"x\"]");
+    }
+
+    #[test]
+    fn deserialize_plain_json_object_to_value_map() {
+        let s = "{\"a\": 1}";
+        let db: DbJson = serde_json::from_str(s).expect("deserialize failed");
+        match db.0 {
+            Value::Map(m) => {
+                assert!(m.contains_key("a"));
+            }
+            _ => panic!("expected map"),
+        }
+    }
+}
