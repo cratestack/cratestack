@@ -73,6 +73,7 @@ mod migrations;
 mod partial_row;
 mod query;
 mod render;
+mod db_json;
 #[cfg(test)]
 mod tests_coalesce;
 #[cfg(test)]
@@ -131,3 +132,5 @@ pub use query::{
     FindUnique, ProjectedFindMany, ProjectedFindUnique, UpdateMany, UpdateManySet, UpdateRecord,
     UpdateRecordSet, UpsertRecord, create_record_with_executor, update_record_with_executor,
 };
+
+pub use db_json::DbJson;
