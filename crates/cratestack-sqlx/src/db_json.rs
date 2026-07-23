@@ -45,7 +45,6 @@ impl<'de> Deserialize<'de> for DbJson {
 mod tests {
     use super::DbJson;
     use cratestack_core::Value;
-    use serde_json;
     use std::collections::BTreeMap;
 
     #[test]
