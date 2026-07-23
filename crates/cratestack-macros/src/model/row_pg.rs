@@ -77,6 +77,32 @@ fn partial_row_field_tokens(
 /// branch of [`partial_row_field_tokens`].
 fn row_field_decode_expr(field: &Field, enum_names: &BTreeSet<&str>) -> proc_macro2::TokenStream {
     let field_name = &field.name;
+
+    // Special-case JSON columns: decode through DbJson so plain JSONB is
+    // accepted and then convert into the public Json<Value> wrapper.
+    if field.ty.name == "Json" {
+        match field.ty.arity {
+            TypeArity::Required => {
+                return quote! {{
+                    let raw: ::cratestack::sqlx::types::Json<::cratestack::DbJson> = row.try_get(#field_name)?;
+                    ::cratestack::sqlx::types::Json(raw.0.into())
+                }};
+            }
+            TypeArity::Optional => {
+                return quote! {{
+                    let raw: Option<::cratestack::sqlx::types::Json<::cratestack::DbJson>> = row.try_get(#field_name)?;
+                    raw.map(|r| ::cratestack::sqlx::types::Json(r.0.into()))
+                }};
+            }
+            TypeArity::List => {
+                return quote! {{
+                    let raw: Vec<::cratestack::sqlx::types::Json<::cratestack::DbJson>> = row.try_get(#field_name)?;
+                    raw.into_iter().map(|r| ::cratestack::sqlx::types::Json(r.0.into())).collect::<Vec<_>>()
+                }};
+            }
+        }
+    }
+
     if !enum_names.contains(field.ty.name.as_str()) {
         return quote! { row.try_get(#field_name)? };
     }
@@ -126,6 +152,38 @@ fn row_field_decode_expr(field: &Field, enum_names: &BTreeSet<&str>) -> proc_mac
 fn row_field_tokens(field: &Field, enum_names: &BTreeSet<&str>) -> proc_macro2::TokenStream {
     let field_ident = ident(&field.name);
     let field_name = &field.name;
+
+    // Special-case JSON columns: decode through DbJson and convert into
+    // the public Json<Value> wrapper so the stored plain JSONB is accepted.
+    if field.ty.name == "Json" {
+        match field.ty.arity {
+            TypeArity::Required => {
+                return quote! {
+                    #field_ident: {
+                        let raw: ::cratestack::sqlx::types::Json<::cratestack::DbJson> = row.try_get(#field_name)?;
+                        ::cratestack::sqlx::types::Json(raw.0.into())
+                    },
+                };
+            }
+            TypeArity::Optional => {
+                return quote! {
+                    #field_ident: {
+                        let raw: Option<::cratestack::sqlx::types::Json<::cratestack::DbJson>> = row.try_get(#field_name)?;
+                        raw.map(|r| ::cratestack::sqlx::types::Json(r.0.into()))
+                    },
+                };
+            }
+            TypeArity::List => {
+                return quote! {
+                    #field_ident: {
+                        let raw: Vec<::cratestack::sqlx::types::Json<::cratestack::DbJson>> = row.try_get(#field_name)?;
+                        raw.into_iter().map(|r| ::cratestack::sqlx::types::Json(r.0.into())).collect::<Vec<_>>()
+                    },
+                };
+            }
+        }
+    }
+
     if !enum_names.contains(field.ty.name.as_str()) {
         return quote! {
             #field_ident: row.try_get(#field_name)?,

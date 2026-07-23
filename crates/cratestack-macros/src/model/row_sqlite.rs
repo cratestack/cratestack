@@ -118,12 +118,13 @@ fn sqlite_row_field_decode_expr(
         ("Json", TypeArity::Required) => quote! {
             {
                 let raw: String = row.get(#field_name)?;
-                let value: ::cratestack::Value = ::serde_json::from_str(&raw)
+                let serde_val: ::serde_json::Value = ::serde_json::from_str(&raw)
                     .map_err(|error| ::cratestack::rusqlite::Error::FromSqlConversionFailure(
                         0,
                         ::cratestack::rusqlite::types::Type::Text,
                         Box::new(error),
                     ))?;
+                let value: ::cratestack::Value = ::cratestack::Value::from_json(serde_val);
                 ::cratestack::Json(value)
             }
         },
@@ -132,12 +133,13 @@ fn sqlite_row_field_decode_expr(
                 let raw: Option<String> = row.get(#field_name)?;
                 match raw {
                     Some(text) => {
-                        let value: ::cratestack::Value = ::serde_json::from_str(&text)
+                        let serde_val: ::serde_json::Value = ::serde_json::from_str(&text)
                             .map_err(|error| ::cratestack::rusqlite::Error::FromSqlConversionFailure(
                                 0,
                                 ::cratestack::rusqlite::types::Type::Text,
                                 Box::new(error),
                             ))?;
+                        let value = ::cratestack::Value::from_json(serde_val);
                         Some(::cratestack::Json(value))
                     }
                     None => None,

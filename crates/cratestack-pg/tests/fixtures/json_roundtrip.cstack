@@ -1,0 +1,17 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth SessionUser {
+  id Int
+}
+
+model Roundtrip {
+  id Int @id
+  payload Json
+
+  @@allow("create", auth() != null)
+  @@allow("list", auth() != null)
+  @@allow("detail", auth() != null)
+}

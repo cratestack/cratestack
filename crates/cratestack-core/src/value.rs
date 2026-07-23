@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
+use base64::Engine;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Value {
@@ -27,26 +28,48 @@ impl Value {
             Value::Bool(b) => JsonVal::Bool(b),
             Value::Int(i) => JsonVal::Number(JsonNumber::from(i)),
             Value::Float(f) => {
-                JsonVal::Number(JsonNumber::from_f64(f).unwrap_or(JsonNumber::from(0)))
-            }
-            Value::String(s) => JsonVal::String(s),
-            Value::Bytes(b) => JsonVal::Array(
-                b.into_iter()
-                    .map(|byte| JsonVal::Number(JsonNumber::from(byte)))
-                    .collect(),
-            ),
-            // use direct method reference instead of closure for pedantic clippy
-            Value::List(vec) => JsonVal::Array(vec.into_iter().map(Value::into_json).collect()),
-            Value::Map(map) => {
-                let mut obj = serde_json::Map::new();
-                for (k, v) in map {
-                    obj.insert(k, v.into_json());
-                }
-                JsonVal::Object(obj)
-            }
-        }
+               if f.is_finite() {
+                   JsonVal::Number(JsonNumber::from_f64(f).expect("finite floats convert to JsonNumber"))
+               } else {
+                   // Represent non-finite floats as a tagged object so they
+                   // round-trip through JSON (NaN / Infinity are not valid
+                   // JSON numbers).
+                   let mut obj = serde_json::Map::new();
+                   let tag = if f.is_nan() {
+                       "NaN"
+                   } else if f.is_sign_positive() {
+                       "Infinity"
+                   } else {
+                       "-Infinity"
+                   };
+                   obj.insert("__Float".to_string(), JsonVal::String(tag.to_string()));
+                   JsonVal::Object(obj)
+               }
+           }
+           Value::String(s) => JsonVal::String(s),
+           Value::Bytes(b) => {
+               // Encode bytes as a tagged base64 string so they round-trip
+               // through JSON while staying unambiguous from regular
+               // string content.
+               let mut obj = serde_json::Map::new();
+               obj.insert(
+                   "__Bytes".to_string(),
+                   JsonVal::String(base64::engine::general_purpose::STANDARD.encode(&b)),
+               );
+               JsonVal::Object(obj)
+           }
+           // use direct method reference instead of closure for pedantic clippy
+           Value::List(vec) => JsonVal::Array(vec.into_iter().map(Value::into_json).collect()),
+           Value::Map(map) => {
+               let mut obj = serde_json::Map::new();
+               for (k, v) in map {
+                   obj.insert(k, v.into_json());
+               }
+               JsonVal::Object(obj)
+           }
+       }
     }
-
+ 
     /// Convert from a `serde_json::Value` (plain JSON) into the internal `Value`.
     #[must_use]
     pub fn from_json(v: serde_json::Value) -> Self {
@@ -83,6 +106,27 @@ impl Value {
                 Value::List(arr.into_iter().map(Value::from_json).collect())
             }
             JsonVal::Object(obj) => {
+                // Detect tagged forms we emit for Bytes and non-finite floats.
+                if obj.len() == 1 {
+                    if let Some(v) = obj.get("__Bytes") {
+                        if let JsonVal::String(s) = v {
+                            let decoded = base64::engine::general_purpose::STANDARD
+                                .decode(s)
+                                .unwrap_or_default();
+                            return Value::Bytes(decoded);
+                        }
+                    }
+                    if let Some(v) = obj.get("__Float") {
+                        if let JsonVal::String(tag) = v {
+                            match tag.as_str() {
+                                "NaN" => return Value::Float(f64::NAN),
+                                "Infinity" => return Value::Float(f64::INFINITY),
+                                "-Infinity" => return Value::Float(f64::NEG_INFINITY),
+                                _ => {}
+                            }
+                        }
+                    }
+                }
                 let mut map = std::collections::BTreeMap::new();
                 for (k, v) in obj {
                     map.insert(k, Value::from_json(v));

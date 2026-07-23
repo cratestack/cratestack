@@ -62,6 +62,9 @@ pub use uuid;
 // `sqlx::FromRow` decodes Postgres `jsonb` columns into it directly.
 pub use cratestack_sqlx::sqlx::types::Json;
 
+// Storage wrapper used to persist `Value` as plain JSON in the database.
+pub use cratestack_sqlx::DbJson;
+
 // -----------------------------------------------------------------------------
 // Server surface — sqlx, axum, audit/idempotency/migrations/isolation.
 // -----------------------------------------------------------------------------
