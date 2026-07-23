@@ -60,7 +60,7 @@ pub use uuid;
 
 // `Json<T>` resolves to `sqlx::types::Json<T>` on the server so
 // `sqlx::FromRow` decodes Postgres `jsonb` columns into it directly.
-pub use cratestack_sqlx::DbJson as Json;
+pub use cratestack_sqlx::sqlx::types::Json;
 
 // -----------------------------------------------------------------------------
 // Server surface — sqlx, axum, audit/idempotency/migrations/isolation.
