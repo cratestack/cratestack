@@ -41,6 +41,42 @@ let client = redis::Client::open("redis://cluster:6379")?;
 let store = RedisIdempotencyStore::from_client(client, "myapp");
 ```
 
+### TLS (`rediss://`)
+
+Managed/HA Redis often exposes only a TLS listener, sometimes behind a
+private or internal CA. Enable the `tls-rustls` feature to connect over
+`rediss://`:
+
+```toml
+[dependencies]
+cratestack-redis = { version = "0.2.2", features = ["tls-rustls"] }
+```
+
+```rust
+use redis::TlsCertificates;
+use cratestack_redis::RedisIdempotencyStore;
+
+// System/webpki trust store (covers most managed Redis providers):
+let store = RedisIdempotencyStore::open_with_tls(
+    "rediss://redis.example.internal:6380",
+    "myapp",
+    TlsCertificates { client_tls: None, root_cert: None },
+)?;
+
+// Private/internal CA — pass a PEM-encoded bundle instead:
+let root_cert = std::fs::read("internal-ca.pem")?;
+let store = RedisIdempotencyStore::open_with_tls(
+    "rediss://redis.example.internal:6380",
+    "myapp",
+    TlsCertificates { client_tls: None, root_cert: Some(root_cert) },
+)?;
+```
+
+`RedisRateLimitStore` has the same `open_with_tls` constructor. Both stores
+are async-only (`tokio-comp`), so `tls-rustls` forwards to the upstream
+`redis` crate's `tokio-rustls-comp` feature — the one that actually wires
+up the async TLS stream, not just URL parsing.
+
 `RedisIdempotencyStoreConfig` exposes a single `key_prefix` field; the prefix is normalised (leading/trailing colons stripped) and falls back to a built-in default when empty. TTL is owned by the layer (via `IdempotencyLayer::new(..., ttl)`), not the store, and is applied per record through `PEXPIREAT`.
 
 ### Rate limit store

@@ -34,6 +34,8 @@ mod tests_helpers;
 mod tests_parse;
 #[cfg(test)]
 mod tests_time;
+#[cfg(all(test, feature = "tls-rustls"))]
+mod tests_tls;
 
 pub use config::RedisIdempotencyStoreConfig;
 pub use store::RedisIdempotencyStore;
