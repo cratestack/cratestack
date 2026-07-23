@@ -62,6 +62,56 @@ fn detail_is_none_for_empty_string() {
 }
 
 #[test]
+fn parse_cuid_accepts_cuid_v1_style_id() {
+    // Legacy cuid v1 ids: 'c' prefix + lowercase alphanumeric, 25 chars.
+    let id = "ch72gsb320000udocl363eofy";
+    assert_eq!(parse_cuid(id).unwrap(), id);
+}
+
+#[test]
+fn parse_cuid_accepts_cuid2_style_id() {
+    // cuid2 ids: 24 lowercase-alphanumeric chars, no fixed leading 'c'.
+    let id = "go17t93z1vbd99yl5toj7eu5";
+    let result = parse_cuid(id);
+    assert_eq!(result.unwrap(), id);
+}
+
+#[test]
+fn parse_cuid_rejects_empty_string() {
+    assert!(parse_cuid("").is_err());
+}
+
+#[test]
+fn parse_cuid_rejects_uppercase_chars() {
+    assert!(parse_cuid("Go17t93z1vbd99yl5toj7eu5").is_err());
+}
+
+#[test]
+fn parse_cuid_rejects_non_alphanumeric_chars() {
+    assert!(parse_cuid("go17t93z1vbd-9yl5toj7eu5").is_err());
+    assert!(parse_cuid("go17t93z1vbd_9yl5toj7eu5").is_err());
+    assert!(parse_cuid("go17t93z1vbd 9yl5toj7eu5").is_err());
+}
+
+#[test]
+fn parse_cuid_rejects_single_char() {
+    assert!(parse_cuid("a").is_err());
+}
+
+#[test]
+fn parse_cuid_rejects_absurdly_long_string() {
+    let too_long = "a".repeat(64);
+    assert!(parse_cuid(&too_long).is_err());
+}
+
+#[test]
+fn parse_cuid_accepts_boundary_lengths() {
+    assert!(parse_cuid("ab").is_ok());
+    assert!(parse_cuid(&"a".repeat(32)).is_ok());
+    assert!(parse_cuid(&"a".repeat(33)).is_err());
+}
+
+#[test]
 fn into_response_never_populates_details_field() {
     for err in [
         CoolError::BadRequest("x".to_owned()),
