@@ -1,12 +1,16 @@
 # Extensions — a declarative surface for opt-in framework capabilities
 
-Status: **proposed** (2026-07-23, revised) — design only, no code shipped.
-This document supersedes the rate-limiting half of the decision recorded in
+Status: **in progress** (2026-07-23) — design accepted, implementation
+under way. Tickets #153 (grammar) and #161 (Cargo-feature enforcement) are
+shipped (see §8); #154/#155/#156/#157 remain open. This document
+supersedes the rate-limiting half of the decision recorded in
 [idempotency-rate-limit-declarative-surface.md][prior-doc] and folds it into
-a new, more general concept. It does not implement anything; §8 scopes the
-follow-up tickets. Revised from the original proposal to make explicit that
-an extension is declared in three separate layers (§2), not just parsed —
-see the revision note at the end of §2.
+a new, more general concept. Revised twice since the original proposal:
+once to make explicit that an extension is declared in three separate
+layers (§2), and again after #161's implementation found the originally
+proposed enforcement mechanism (`CARGO_FEATURE_<NAME>` env vars) doesn't
+actually work inside a proc-macro — see §2's "Enforcement mechanism
+(revised after implementation)" note for what was built instead.
 Scope: `cratestack-parser` grammar, `cratestack-macros` codegen, Cargo
 feature surface of `cratestack-migrate`/`cratestack-sqlx`/`cratestack-pg`/
 `cratestack-axum`, DDL emission, rate-limit wiring.
@@ -81,12 +85,38 @@ not any schema they compile ever declares the extension, and it would mean
    code paths that non-TLS users never pay for). If a schema's `.cstack`
    declares `extension pgvector { }` but the crate compiling it wasn't
    built with the `pgvector` feature, the generating macro must fail the
-   build with a clear `compile_error!` — proc-macros can read a crate's
-   enabled features at expansion time via the `CARGO_FEATURE_<NAME>`
-   environment variables Cargo sets for the crate currently being built,
-   the same mechanism already used for the `decimal-*` mutual-exclusion
-   check in `cratestack-core`. This is a real compile-time check, not a
-   runtime `if`.
+   build with a clear `compile_error!`.
+
+   **Enforcement mechanism (revised after implementation — see #161):**
+   the original version of this doc proposed reading `CARGO_FEATURE_<NAME>`
+   environment variables at proc-macro expansion time, on the assumption
+   this worked like the `decimal-*` mutual-exclusion check in
+   `cratestack-core`. Verified empirically while building #161 (a
+   standalone probe proc-macro crate dumping every `CARGO*` env var it
+   could see) and found to be **wrong**: `CARGO_FEATURE_<NAME>` is
+   build-script-only — a proc-macro expands inside the `rustc` process
+   compiling the invoking crate, which never receives those variables.
+   The `decimal-*` precedent doesn't use env vars either; it's a plain
+   `#[cfg(feature = "...")]`/`compile_error!` pair evaluated by rustc
+   while compiling `cratestack-core` *against its own* features — not
+   transferable as-is to a proc-macro crate checking a different,
+   downstream crate's features.
+
+   **What actually works:** `cratestack-macros` declares the same-named
+   features (`rate_limit`, `pgvector`) itself, and the check uses
+   `cfg!(feature = "...")` evaluated against `cratestack-macros`' *own*
+   compiled-in feature set — not the invoking crate's. This works because
+   of Cargo's standard feature-forwarding/unification: a facade crate
+   (`cratestack-pg`, `cratestack-sqlite`) forwards its own `pgvector`
+   feature down to `cratestack-macros` via `pgvector =
+   ["cratestack-macros/pgvector"]` in its `Cargo.toml`, so enabling the
+   feature on the facade the app actually depends on transitively enables
+   it on `cratestack-macros` too — the same technique `sqlx`/`sqlx-macros`
+   use for exactly this kind of macro-visible feature gate. Confirmed
+   end-to-end in #161 with a throwaway scratch crate: a schema declaring
+   `extension pgvector {}` produced a real `compile_error!` by default,
+   and enabling the feature *on the `cratestack-macros` dependency edge*
+   turned it off, proving the forwarding chain actually works.
 3. **Implementation** (trait-level, swappable) — the extension's actual
    behavior is never hardcoded to one implementation. `rate_limit` already
    has this shape today (`Arc<dyn RateLimitStore>`, three interchangeable
@@ -196,11 +226,15 @@ doesn't know what Cargo features the consuming crate has.
 - **`.cstack` declares:** that the generated dispatch layer participates in
   rate limiting, and that `@no_rate_limit` is a valid procedure attribute
   in this schema.
-- **Cargo feature:** `rate_limit` on `cratestack-axum` (and re-exported
-  through the `cratestack-pg`/`cratestack-sqlite` facades). Gates the
-  dispatch-layer codegen that reads `rate_limited_by_default`; per §2,
-  this also means `RateLimitLayer`'s existing code moves behind this
-  feature rather than staying always-compiled.
+- **Cargo feature:** `rate_limit`, declared on `cratestack-macros` itself
+  (the enforcement check in #161 evaluates `cfg!(feature = "rate_limit")`
+  against `cratestack-macros`' own compiled features — see §2's revised
+  mechanism), forwarded down from `cratestack-axum` and the
+  `cratestack-pg`/`cratestack-sqlite` facades via `rate_limit =
+  ["cratestack-macros/rate_limit"]`. Gates the dispatch-layer codegen that
+  reads `rate_limited_by_default`; per §2, this also means
+  `RateLimitLayer`'s existing code moves behind this feature rather than
+  staying always-compiled.
 - **Does not declare:** burst, refill rate, window, key/fingerprint
   function, or store backend (in-memory/Postgres/Redis) — all of that
   stays exactly where it is today, constructed imperatively at app
@@ -218,10 +252,19 @@ doesn't know what Cargo features the consuming crate has.
 - **`.cstack` declares:** that this schema uses Postgres's `vector`
   extension. Unlocks the `Vector(n)` scalar field type (fixed-dimension
   float vector, `n` a compile-time literal) for use in `model` blocks.
-- **Cargo feature:** `pgvector` on `cratestack-migrate` (DDL emission) and
+- **Cargo feature:** `pgvector`, declared on `cratestack-macros` itself
+  (same mechanism as `rate_limit` above — see §2's revised mechanism),
+  forwarded down from `cratestack-migrate` (DDL emission) and
   `cratestack-sqlx`/`cratestack-pg` (column type support, query-builder
-  hooks once those phases land). A schema declaring `extension pgvector { }`
-  compiled against a crate without this feature is a compile error per §2.
+  hooks once those phases land) via `pgvector =
+  ["cratestack-macros/pgvector"]`. A schema declaring `extension pgvector {
+  }` compiled against a crate without this feature enabled anywhere along
+  the forwarding chain is a compile error per §2. Note: for
+  `include_embedded_schema!` specifically, `pgvector` is rejected
+  unconditionally regardless of any feature — it's inherently a Postgres
+  extension, so no Cargo feature could make it valid against the
+  rusqlite-only embedded backend; #161 gives this its own clearer error
+  rather than a generic "feature not enabled" message.
 - **DDL surface (phase 1 — see §8):** `cratestack-migrate` emits `CREATE
   EXTENSION IF NOT EXISTS vector;` once per schema that declares the
   extension, before any DDL referencing a `Vector(n)` column — currently
@@ -275,16 +318,20 @@ doesn't know what Cargo features the consuming crate has.
 Sequenced; each is independently shippable and should be opened as its own
 Dev Ticket once this doc is accepted, linked under the Epic in §9:
 
-1. **Extensions grammar** (Feature) — `extension <name> { }` top-level
-   parsing in `cratestack-parser`, recognizing exactly `rate_limit` and
-   `pgvector` as valid names (unknown name = parse error), threading a
-   `declared_extensions: BTreeSet<ExtensionKind>` onto the parsed
-   `Schema`. No behavior change in any backend yet — parse-and-record only.
-2. **Cargo feature enforcement mechanism** (Feature, depends on #1) — the
-   `CARGO_FEATURE_<NAME>`-based compile-time check in `cratestack-macros`
-   that turns "schema declares an extension the crate wasn't built with"
-   into a `compile_error!`, per §2 layer 2. Built once, reused by every
-   extension rather than each one reimplementing its own check.
+1. **Extensions grammar** (Feature) — **shipped**, `feat/153-extensions-grammar`
+   (#153). `extension <name> { }` top-level parsing in `cratestack-parser`,
+   recognizing exactly `rate_limit` and `pgvector` as valid names (unknown
+   name = parse error), threading a `declared_extensions:
+   BTreeSet<ExtensionKind>` onto the parsed `Schema`. No behavior change in
+   any backend — parse-and-record only.
+2. **Cargo feature enforcement mechanism** (Feature, depends on #1) —
+   **shipped**, `feat/161-extension-feature-enforcement` (#161). Turns
+   "schema declares an extension the crate wasn't built with" into a
+   `compile_error!` in all three entry macros, per §2 layer 2's revised
+   mechanism (features declared on `cratestack-macros` itself, forwarded
+   from facade crates — not `CARGO_FEATURE_<NAME>`, which doesn't work
+   inside a proc-macro; see §2). Built once, reused by every extension
+   rather than each one reimplementing its own check.
 3. **`rate_limit` extension wiring** (Feature, depends on #2) — gate
    `cratestack-axum`'s existing `RateLimitLayer`/`RateLimitConfig`/store
    code behind a new `rate_limit` Cargo feature (default-on vs default-off
