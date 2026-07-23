@@ -1,8 +1,10 @@
 # Extensions — a declarative surface for opt-in framework capabilities
 
-Status: **in progress** (2026-07-23) — design accepted, implementation
-under way. Tickets #153 (grammar) and #161 (Cargo-feature enforcement) are
-shipped (see §8); #154/#155/#156/#157 remain open. This document
+Status: **implemented** (2026-07-23) — all six original follow-up tickets
+resolved: #153, #161, #154, #155, and #156 shipped as code (branches not
+yet pushed/PR'd — see §8 for exact branch names); #157 resolved as a
+decision (closed, split into shipping the Rust query-builder half as
+#163 and deferring client codegen). This document
 supersedes the rate-limiting half of the decision recorded in
 [idempotency-rate-limit-declarative-surface.md][prior-doc] and folds it into
 a new, more general concept. Revised twice since the original proposal:
@@ -332,30 +334,29 @@ Dev Ticket once this doc is accepted, linked under the Epic in §9:
    from facade crates — not `CARGO_FEATURE_<NAME>`, which doesn't work
    inside a proc-macro; see §2). Built once, reused by every extension
    rather than each one reimplementing its own check.
-3. **`rate_limit` extension wiring** (Feature, depends on #2) — gate
+3. **`rate_limit` extension wiring** (Feature, depends on #2) —
+   **shipped**, `feat/154-rate-limit-extension` (#154). Gates
    `cratestack-axum`'s existing `RateLimitLayer`/`RateLimitConfig`/store
-   code behind a new `rate_limit` Cargo feature (default-on vs default-off
-   is this ticket's call to make, informed by §2's breaking-change note);
-   consume the parsed extension in `cratestack-macros`; add
-   `@no_rate_limit` as a valid procedure attribute (parser + codegen);
-   thread a `rate_limited_by_default` field onto generated procedure
-   descriptors.
+   code behind a new, **non-default** `rate_limit` Cargo feature (breaking
+   change, confirmed deliberately per §2's note); `@no_rate_limit`
+   procedure attribute (parser + codegen); `rate_limited_by_default`
+   threaded onto generated procedure descriptors.
 4. **`pgvector` phase 1: DDL + scalar type** (Feature, depends on #2) —
-   `Vector(n)` scalar recognition in `type_names.rs`/`shared/types.rs`
-   behind a new `pgvector` Cargo feature on `cratestack-migrate` and
-   `cratestack-sqlx`/`cratestack-pg`; `CREATE EXTENSION IF NOT EXISTS
-   vector;` emission in `cratestack-migrate` gated on the schema declaring
-   the extension; column DDL mapping to `vector(n)`.
-5. **`pgvector` phase 2: index DDL** (Feature, depends on #4) — `@@index`
-   attribute (currently doesn't exist at all) generalized enough to carry
-   `using: ivfflat` / `using: hnsw` + `opclass`, `AddIndex` IR extended
-   accordingly, with the index/distance-metric strategy behind a trait
-   boundary per §6's "implementation stays swappable" note.
-6. **`pgvector` client/query-builder support** (Spike first) — whether
-   distance-operator query-builder methods and client codegen are worth
-   the surface area before committing to a shape; spike per this repo's
-   own convention of scoping speculative surface as a spike before a
-   Feature ticket.
+   **shipped**, `feat/155-pgvector-phase1` (#155). `Vector(n)` scalar
+   (backed by the real `pgvector` Rust crate) behind a new `pgvector`
+   Cargo feature on `cratestack-migrate`/`cratestack-sqlx`/`cratestack-pg`;
+   `CREATE EXTENSION IF NOT EXISTS vector;` + `vector(n)` column DDL.
+5. **`pgvector` phase 2: index DDL** (Feature, depends on #4) —
+   **shipped**, `feat/156-pgvector-index-ddl` (#156). New `@@index([...],
+   using: ivfflat|hnsw, opclass: "...")` model attribute (also usable
+   bare, as a general multi-field index, beyond just vector use cases);
+   `AddIndex` IR extended with `using`/`opclass`; `@unique`-derived indexes
+   unaffected.
+6. **`pgvector` client/query-builder support** (Spike first) —
+   **decided**, split (#157, closed): proceed with a scoped Feature ticket
+   for Rust query-builder distance-operator support (#163); defer
+   multi-language client codegen, no concrete driving use case yet — same
+   pattern as the idempotency deferral in the prior doc.
 
 ## 9. Relationship to #139 and the prior doc
 
