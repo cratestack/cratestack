@@ -44,6 +44,8 @@ mod tests_parse;
 mod tests_randomized_keys;
 #[cfg(test)]
 mod tests_randomized_parse;
+#[cfg(all(test, feature = "tls-rustls"))]
+mod tests_tls;
 
 pub use config::RedisRateLimitStoreConfig;
 pub use store::RedisRateLimitStore;

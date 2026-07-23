@@ -25,3 +25,18 @@ axum.workspace = true
 http.workspace = true
 tokio.workspace = true
 tower.workspace = true
+
+[features]
+# Enables `rediss://` (TLS) connections against a Postgres-managed or
+# self-hosted Redis whose only listener is TLS — common for managed/HA
+# Redis behind a private CA. Forwards to the upstream `redis` crate's
+# `tokio-rustls-comp` (rather than the bare `tls-rustls`) because our
+# stores are async-only (`tokio-comp` + `get_multiplexed_async_connection`):
+# the actual async TLS stream implementation in `redis` is gated on the
+# `tokio-*-comp` features, not on `tls-rustls` alone. `tokio-rustls-comp`
+# transitively enables `tls-rustls`, which is what unlocks
+# `redis::Client::build_with_tls` and the `redis::TlsCertificates` /
+# `redis::ClientTlsConfig` types used by `open_with_tls` below, so a
+# private/internal CA bundle (or mTLS client cert) can be supplied
+# without forking the `redis` dependency.
+tls-rustls = ["redis/tokio-rustls-comp"]

@@ -19,6 +19,24 @@ impl RedisRateLimitStore {
         Ok(Self::from_client(client, key_prefix))
     }
 
+    /// Opens a `rediss://` (TLS) connection, optionally trusting a private
+    /// or internal CA instead of the system/webpki trust store.
+    ///
+    /// Requires the `tls-rustls` feature. Pass
+    /// `redis::TlsCertificates { client_tls: None, root_cert: None }` to
+    /// use the system trust store, or set `root_cert` to a PEM-encoded CA
+    /// bundle to trust a private CA (e.g. behind a managed/HA Redis
+    /// deployment that only exposes a TLS listener).
+    #[cfg(feature = "tls-rustls")]
+    pub fn open_with_tls(
+        redis_url: impl redis::IntoConnectionInfo,
+        key_prefix: impl Into<String>,
+        tls_certs: redis::TlsCertificates,
+    ) -> Result<Self, CoolError> {
+        let client = redis::Client::build_with_tls(redis_url, tls_certs).map_err(redis_error)?;
+        Ok(Self::from_client(client, key_prefix))
+    }
+
     pub fn from_client(client: redis::Client, key_prefix: impl Into<String>) -> Self {
         Self {
             client,
