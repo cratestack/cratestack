@@ -54,7 +54,7 @@ pub(super) fn build_list_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStre
         // (`request_context`) and the `cratestack_route` tracing field. REST
         // passes `GET /<plural>` with an empty body; RPC dispatch passes
         // `POST /rpc/model.<M>.list` with the raw frame bytes.
-        async fn #list_dispatch_ident<C, Auth>(
+        pub(super) async fn #list_dispatch_ident<C, Auth>(
             state: ModelRouterState<C, Auth>,
             canonical: CanonicalRequest<'_>,
             headers: HeaderMap,

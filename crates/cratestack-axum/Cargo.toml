@@ -26,4 +26,5 @@ url.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+cratestack-codec-cbor.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }

@@ -15,10 +15,29 @@ categories.workspace = true
 [lib]
 proc-macro = true
 
+[features]
+# Gates `transport grpc` Rust codegen under `include_server_schema!` — see
+# `crates/cratestack-macros/src/include/reject_grpc.rs`. Checked at macro-
+# expansion time via `cfg!(feature = "grpc")` against this crate's *own*
+# compiled feature set (proc-macros can't read a consumer's
+# `CARGO_FEATURE_*` env vars — those describe the crate being expanded
+# *into*, not this one). Forwarded from `cratestack-pg`'s own `grpc`
+# feature; see `docs/design/extensions.md` §2 for the mechanism this
+# mirrors. Off by default — a plain `cargo check --workspace` never touches
+# this path.
+grpc = []
+
 [dependencies]
 cratestack-core.workspace = true
 cratestack-parser.workspace = true
 cratestack-policy.workspace = true
+# Not gated behind the `grpc` feature: unlike `tonic`/`prost` (pulled in by
+# `cratestack-grpc`, only when a consumer opts in), `cratestack-proto` is
+# lightweight (toml/serde/thiserror on top of `cratestack-core` — no
+# protobuf runtime deps) and this crate needs its lock-reading/comparison
+# logic (`PbLock`, `lock_would_change`) unconditionally to decide whether
+# the `grpc` feature guard itself should even run.
+cratestack-proto.workspace = true
 proc-macro2.workspace = true
 quote.workspace = true
 syn.workspace = true

@@ -55,14 +55,24 @@ pub(super) fn build_axum_module(c: &ServerCollected) -> proc_macro2::TokenStream
             /// `_dispatch` fn takes one of these so signature verification and
             /// tracing share a single source of truth that matches the client
             /// byte-for-byte.
-            struct CanonicalRequest<'a> {
-                method: &'a str,
-                path: &'a str,
-                query: Option<&'a str>,
-                body: &'a [u8],
+            // `pub(super)` (not private): the gRPC service module
+            // (`super::grpc`, a sibling of this `axum` module, emitted only
+            // for `transport grpc` schemas under the `grpc` Cargo feature —
+            // see `crates/cratestack-macros/src/include/server/grpc/`)
+            // constructs `CanonicalRequest` and calls the `_dispatch` fns
+            // below directly, so gRPC method bodies delegate to the exact
+            // same dispatch functions REST/RPC already call — "no second
+            // dispatch path" (ticket #171 AC). `pub(super)` keeps them
+            // unreachable from outside the generated `cratestack_schema`
+            // module entirely (schema authors never see these).
+            pub(super) struct CanonicalRequest<'a> {
+                pub(super) method: &'a str,
+                pub(super) path: &'a str,
+                pub(super) query: Option<&'a str>,
+                pub(super) body: &'a [u8],
             }
 
-            fn request_context<'a>(
+            pub(super) fn request_context<'a>(
                 method: &'a str,
                 path: &'a str,
                 query: Option<&'a str>,

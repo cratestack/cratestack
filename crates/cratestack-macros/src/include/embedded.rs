@@ -22,6 +22,13 @@ pub(super) fn compose_embedded_schema(schema_path: &LitStr) -> TokenStream {
         Ok(parsed) => parsed,
         Err(error) => return error,
     };
+    if let Err(error) = super::reject_grpc::guard_client_or_embedded_grpc_transport(
+        schema_path,
+        &schema,
+        "include_embedded_schema",
+    ) {
+        return error;
+    }
     let resolved_literal = resolved.display().to_string();
 
     let mixin_names = schema.mixins.iter().map(|mixin| schema_lit(&mixin.name));

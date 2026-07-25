@@ -24,6 +24,13 @@ pub(super) fn compose_client_schema(schema_path: &LitStr) -> TokenStream {
         Ok(parsed) => parsed,
         Err(error) => return error,
     };
+    if let Err(error) = super::reject_grpc::guard_client_or_embedded_grpc_transport(
+        schema_path,
+        &schema,
+        "include_client_schema",
+    ) {
+        return error;
+    }
     let resolved_literal = resolved.display().to_string();
 
     let model_names = schema.models.iter().map(|model| schema_lit(&model.name));

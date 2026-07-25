@@ -81,7 +81,10 @@ pub(super) fn parse_schema_literal(
         })?;
 
     reject_composite_primary_keys(schema_path, &schema)?;
-    super::reject_grpc::reject_grpc_transport_without_runtime(schema_path, &schema)?;
+    // `transport grpc` gating differs per entry macro (server: feature-gated
+    // real codegen; client/embedded: unconditional reject) — each composer
+    // calls the matching `reject_grpc` guard itself, right after this
+    // shared loader returns. See `crates/cratestack-macros/src/include/reject_grpc.rs`.
 
     Ok((schema_relative, resolved, schema))
 }

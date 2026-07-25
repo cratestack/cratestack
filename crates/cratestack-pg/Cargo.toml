@@ -43,6 +43,28 @@ decimal-bigdecimal = [
 # the client's codec, so they keep working over CBOR when this feature
 # is off.
 codec-json = ["cratestack-client-rust/codec-json"]
+# Real `transport grpc` Rust codegen — a `Grpc` schema otherwise fails
+# `include_server_schema!` with a `compile_error!` pointing here (see
+# `crates/cratestack-macros/src/include/reject_grpc.rs`). Off by default:
+# pulls in `tonic`/`prost` (and `tonic`'s own `axum` dependency — verified
+# workspace-aligned with this crate's own `axum`, `docs/design/protobuf.md`
+# §7.2's first acceptance criterion) for every consumer otherwise, whether
+# or not they use gRPC.
+#
+# `dep:prost` (not just `dep:cratestack-grpc`) is required here, not a
+# belt-and-suspenders addition: `prost-derive`'s `#[derive(Message)]`
+# expansion hardcodes bare `::prost::...` paths in the code it generates
+# (verified against `prost-derive`'s own source — there is no `#[prost(crate
+# = "...")]` escape hatch, unlike e.g. serde's `#[serde(crate = "...")]`).
+# That means every crate whose generated `pb::` mirror structs derive
+# `Message` — i.e. every consumer enabling this feature — needs `prost`
+# resolvable as a literal top-level crate name in *their own* crate graph,
+# which only a direct (even if unused-by-name) Cargo dependency provides;
+# `::cratestack::grpc::prost::...` re-exports a *module path* to the same
+# crate for everything this crate's own code references by path, but
+# cannot satisfy `prost-derive`'s hardcoded `::prost::` — Rust's extern
+# prelude is per-crate, not transitive through a re-exporting dependency.
+grpc = ["cratestack-macros/grpc", "dep:cratestack-grpc", "dep:prost"]
 # Replace the default `ring`-backed rustls provider with `aws-lc-rs`, which
 # is the only provider with current FIPS 140-3 validation among the
 # pure-Rust rustls backends. Selecting this feature does not make a build
@@ -55,7 +77,9 @@ chrono.workspace = true
 cratestack-axum.workspace = true
 cratestack-client-rust.workspace = true
 cratestack-core.workspace = true
+cratestack-grpc = { workspace = true, optional = true }
 cratestack-macros.workspace = true
+prost = { workspace = true, optional = true }
 cratestack-parser.workspace = true
 cratestack-policy.workspace = true
 cratestack-sql.workspace = true

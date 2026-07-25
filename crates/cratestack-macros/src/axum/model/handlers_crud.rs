@@ -44,7 +44,7 @@ pub(super) fn build_create_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenSt
         // query/body) for signature verification and tracing. REST passes
         // `POST /<plural>` with the REST body; RPC dispatch passes
         // `POST /rpc/model.<M>.create` with the raw frame bytes.
-        async fn #create_dispatch_ident<C, Auth>(
+        pub(super) async fn #create_dispatch_ident<C, Auth>(
             state: ModelRouterState<C, Auth>,
             canonical: CanonicalRequest<'_>,
             headers: HeaderMap,
@@ -129,7 +129,7 @@ pub(super) fn build_get_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStrea
         // `GET /<plural>/<id>` with an empty body; RPC dispatch passes
         // `POST /rpc/model.<M>.get` with the raw `{id}` frame bytes (so the id
         // is bound to the signature). `id` is still used for `find_unique`.
-        async fn #get_dispatch_ident<C, Auth>(
+        pub(super) async fn #get_dispatch_ident<C, Auth>(
             state: ModelRouterState<C, Auth>,
             canonical: CanonicalRequest<'_>,
             headers: HeaderMap,
@@ -218,7 +218,7 @@ pub(super) fn build_delete_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenSt
         // `DELETE /<plural>/<id>` with an empty body; RPC dispatch passes
         // `POST /rpc/model.<M>.delete` with the raw `{id}` frame bytes (so the
         // id is bound to the signature). `id` is still used for `delete`.
-        async fn #delete_dispatch_ident<C, Auth>(
+        pub(super) async fn #delete_dispatch_ident<C, Auth>(
             state: ModelRouterState<C, Auth>,
             canonical: CanonicalRequest<'_>,
             headers: HeaderMap,

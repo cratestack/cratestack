@@ -1,0 +1,24 @@
+// `transport grpc` example schema (ticket #171) — a single `Widget`
+// model exposed as a real gRPC service, verifiable with `grpcurl` (no
+// REST/RPC surface: `transport grpc` is exclusive with both).
+
+transport grpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Widget {
+  id Int @id
+  name String
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}

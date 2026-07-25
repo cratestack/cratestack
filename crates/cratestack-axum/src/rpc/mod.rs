@@ -22,6 +22,7 @@
 mod batch;
 mod codec_helpers;
 mod error_encode;
+mod grpc_bridge;
 mod inputs;
 mod synthesize;
 mod util;
@@ -44,6 +45,7 @@ pub use cratestack_core::rpc::{
 pub use batch::response_to_frame;
 pub use codec_helpers::{decode_rpc_body, encode_rpc_value};
 pub use error_encode::{convert_handler_error_response, encode_rpc_error};
+pub use grpc_bridge::bridge_grpc_response;
 pub use inputs::{RpcListInput, RpcListPredicate, RpcPkInput, RpcUpdateInput};
 pub use synthesize::synthesize_list_query;
 

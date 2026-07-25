@@ -1,0 +1,25 @@
+// Smoke fixture for the `transport grpc` generation style (ticket #171).
+// Deliberately minimal — one model, no auth gate — so the fixture's job
+// is proving the generated tonic service compiles and dispatches
+// correctly, not exercising policy depth (already covered elsewhere).
+
+transport grpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Widget {
+  id Int @id
+  name String
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}

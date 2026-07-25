@@ -5,6 +5,7 @@
 mod axum_dtos;
 mod axum_module;
 mod collect;
+mod grpc;
 mod rpc_module;
 mod runtime;
 
@@ -21,10 +22,18 @@ pub(super) fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
         Ok(parsed) => parsed,
         Err(error) => return error,
     };
+    if let Err(error) = super::reject_grpc::guard_server_grpc_transport(schema_path, &schema) {
+        return error;
+    }
     let resolved_literal = resolved.display().to_string();
 
     let collected = match collect_server_schema(&schema, schema_path) {
         Ok(collected) => collected,
+        Err(error) => return error,
+    };
+
+    let grpc_module = match grpc::build_grpc_module(&schema, &resolved, schema_path) {
+        Ok(tokens) => tokens,
         Err(error) => return error,
     };
 
@@ -171,6 +180,8 @@ pub(super) fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
             #axum_module
 
             #runtime_block
+
+            #grpc_module
         }
     };
 

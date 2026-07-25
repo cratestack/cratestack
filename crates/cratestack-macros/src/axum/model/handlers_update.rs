@@ -58,7 +58,7 @@ pub(super) fn build_update_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenSt
         // carries the codec-encoded patch the update logic consumes; on RPC that
         // is the re-encoded `patch` while `canonical.body` is the full frame.
         // `id` is still used for the update.
-        async fn #update_dispatch_ident<C, Auth>(
+        pub(super) async fn #update_dispatch_ident<C, Auth>(
             state: ModelRouterState<C, Auth>,
             canonical: CanonicalRequest<'_>,
             headers: HeaderMap,

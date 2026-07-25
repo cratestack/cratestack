@@ -82,6 +82,16 @@ pub(super) fn collect_server_schema(
     let auth = schema.auth.as_ref();
     let auth_required_default = schema.auth.is_some();
     let is_rpc = matches!(schema.transport, cratestack_core::TransportStyle::Rpc);
+    // `transport grpc` gets neither the RPC op-registry surface nor the
+    // REST route-descriptor surface: gRPC's own service methods (built
+    // separately in `super::grpc`, spliced in by `compose_server_schema`)
+    // are the active binding, and `ROUTE_TRANSPORTS`/`OPS` staying empty is
+    // the honest signal that neither REST nor RPC introspection describes
+    // this schema. Without this, `TransportStyle::Grpc` would silently
+    // fall through the `else` branch below into the REST branch (`is_rpc`
+    // is `false` for `Grpc` too) — see `reject_grpc.rs`'s module doc for
+    // why that's the specific failure mode this guards against.
+    let is_grpc = matches!(schema.transport, cratestack_core::TransportStyle::Grpc);
 
     let mixin_names = schema.mixins.iter().map(|m| schema_lit(&m.name)).collect();
     let model_names = schema.models.iter().map(|m| schema_lit(&m.name)).collect();
@@ -117,7 +127,9 @@ pub(super) fn collect_server_schema(
     // Both `OPS` and `ROUTE_TRANSPORTS` consts are always emitted (for uniform
     // introspection), but the schema's `transport` directive picks which slice
     // is non-empty.
-    let (op_descriptor_entries, route_transport_entries) = if is_rpc {
+    let (op_descriptor_entries, route_transport_entries) = if is_grpc {
+        (Vec::new(), Vec::new())
+    } else if is_rpc {
         let mut ops = Vec::new();
         for procedure in &schema.procedures {
             ops.push(generate_procedure_op_descriptor(

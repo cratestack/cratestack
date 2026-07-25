@@ -69,6 +69,17 @@ pub use cratestack_sqlx::sqlx::types::Json;
 pub use cratestack_axum::axum;
 pub use cratestack_axum::*;
 
+// `transport grpc` server runtime (ticket #171) — only present when the
+// consumer opts into the `grpc` Cargo feature (`cratestack-macros/src/
+// include/server/grpc/` emits `::cratestack::grpc::...` paths that resolve
+// here). A `transport grpc` schema without the feature enabled fails
+// `include_server_schema!` with a `compile_error!` pointing at this
+// feature — see `crates/cratestack-macros/src/include/reject_grpc.rs`.
+#[cfg(feature = "grpc")]
+pub mod grpc {
+    pub use cratestack_grpc::*;
+}
+
 // Disambiguate the `rpc` module path. Both `cratestack_core` (wire shapes)
 // and `cratestack_axum` (binding helpers) expose an `rpc` module, so the
 // two `pub use ..::*` globs collide on the name and `::cratestack::rpc::*`
@@ -138,5 +149,7 @@ pub mod __private {
     /// Re-exports for the macro-emitted RPC dispatcher. Not part of the
     /// public API surface — schema authors should never reference these
     /// directly. Public helpers live at `cratestack::rpc::*`.
-    pub use cratestack_axum::rpc::{decode_rpc_body, encode_rpc_value, response_to_frame};
+    pub use cratestack_axum::rpc::{
+        bridge_grpc_response, decode_rpc_body, encode_rpc_value, response_to_frame,
+    };
 }

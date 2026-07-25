@@ -61,7 +61,7 @@ pub(crate) fn generate_procedure_axum_handler(
         // passes `POST /rpc/procedure.<name>` with the raw frame bytes so on
         // `transport rpc` the actual rpc request is the single canonical for
         // url, dispatch, signing, and logs — `/$procs/*` never appears.
-        async fn #dispatch_ident<R, C, Auth>(
+        pub(super) async fn #dispatch_ident<R, C, Auth>(
             state: ProcedureRouterState<R, C, Auth>,
             canonical: CanonicalRequest<'_>,
             headers: HeaderMap,

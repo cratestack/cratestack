@@ -1,0 +1,26 @@
+[package]
+name = "grpc-widgets-example"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Smallest possible `transport grpc` CrateStack server: one Widget model, CRUD over real gRPC, verifiable with grpcurl. Ticket #171."
+
+[[bin]]
+name = "grpc-widgets-server"
+path = "src/main.rs"
+
+[dependencies]
+cratestack = { package = "cratestack-pg", path = "../../crates/cratestack-pg", version = "0.4.4", features = ["grpc"] }
+cratestack-codec-cbor = { path = "../../crates/cratestack-codec-cbor", version = "0.4.4" }
+# `serde`/`prost` must be direct dependencies here, not just reachable via
+# `cratestack::{serde, grpc::prost}` re-exports: both `serde_derive` and
+# `prost_derive` emit code that resolves the crate by its literal name in
+# *this* crate's own dependency graph (`serde` via a `#[derive]`-generated
+# scoped `extern crate serde as _serde;`; `prost` via hardcoded `::prost::`
+# absolute paths with no `#[prost(crate = "...")]` escape hatch) — Rust's
+# extern prelude is per-crate, not transitive through a re-exporting
+# dependency. Every existing REST/RPC example already needs the same for
+# `serde`; `prost` is the same requirement, new with `transport grpc`.
+prost = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
