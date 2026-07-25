@@ -101,6 +101,15 @@ pub enum TypeScriptGeneratorError {
     TemplateRegistration(&'static str, #[source] minijinja::Error),
     #[error("failed to render template '{0}': {1}")]
     TemplateRender(&'static str, #[source] minijinja::Error),
+    /// Same rationale as `cratestack_client_dart::config::DartGeneratorError::UnsupportedGrpcTransport`:
+    /// `transport grpc` parses (ticket #170) but this crate's gRPC-Web
+    /// transport doesn't exist yet (ticket #172,
+    /// `docs/design/protobuf.md` §9).
+    #[error(
+        "schema declares `transport grpc`, which has no TypeScript client codegen yet \
+         (tracking: https://github.com/cratestack/cratestack/issues/172)"
+    )]
+    UnsupportedGrpcTransport,
 }
 
 /// Pick the right template specs for the schema's declared transport.
@@ -109,15 +118,18 @@ pub enum TypeScriptGeneratorError {
 /// that speaks the `/rpc/{op_id}` URL space and skip `queries.ts` entirely
 /// (no URL-query shaping needed when every call is a POST with a typed
 /// body).
-pub(crate) fn template_specs_for(transport: TransportStyle) -> Vec<TemplateSpec> {
+pub(crate) fn template_specs_for(
+    transport: TransportStyle,
+) -> Result<Vec<TemplateSpec>, TypeScriptGeneratorError> {
     let mode_specs = match transport {
         TransportStyle::Rest => REST_TEMPLATE_SPECS,
         TransportStyle::Rpc => RPC_TEMPLATE_SPECS,
+        TransportStyle::Grpc => return Err(TypeScriptGeneratorError::UnsupportedGrpcTransport),
     };
     let mut specs = Vec::with_capacity(COMMON_TEMPLATE_SPECS.len() + mode_specs.len());
     specs.extend_from_slice(COMMON_TEMPLATE_SPECS);
     specs.extend_from_slice(mode_specs);
-    specs
+    Ok(specs)
 }
 
 pub(crate) fn build_environment(

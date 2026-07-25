@@ -90,6 +90,16 @@ pub(crate) fn is_primary_key(field: &Field) -> bool {
         .any(|attribute| attribute.raw.starts_with("@id"))
 }
 
+/// The model's single scalar `@id` field, if it has one. `None` for a
+/// primary-key-less model — mirrors `cratestack-macros::transport::rpc`'s
+/// own `model.fields.iter().find(|field| is_primary_key(field))`
+/// (`generate_model_rpc_dispatch_arms`'s `pk_field`), which is what
+/// `emit::service` and the grpc-only request-message synthesis key off of
+/// to decide whether a model gets any CRUD service methods at all.
+pub(crate) fn model_primary_key_field(model: &Model) -> Option<&Field> {
+    model.fields.iter().find(|field| is_primary_key(field))
+}
+
 fn has_default(field: &Field) -> bool {
     field
         .attributes

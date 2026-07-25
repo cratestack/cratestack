@@ -19,6 +19,7 @@
 mod client;
 mod embedded;
 mod parse;
+mod reject_grpc;
 mod server;
 
 use proc_macro::TokenStream;

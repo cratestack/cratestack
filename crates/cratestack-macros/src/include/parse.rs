@@ -81,6 +81,7 @@ pub(super) fn parse_schema_literal(
         })?;
 
     reject_composite_primary_keys(schema_path, &schema)?;
+    super::reject_grpc::reject_grpc_transport_without_runtime(schema_path, &schema)?;
 
     Ok((schema_relative, resolved, schema))
 }

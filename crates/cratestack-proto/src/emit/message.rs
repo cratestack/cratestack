@@ -33,6 +33,19 @@ pub(super) fn render_message(
     let mut needs_timestamp_import = false;
     for field in fields {
         let number = lookup(numbers, name, &field.name)?;
+        // `<Model>RpcListInput.include_fields` (`rpc_input_synth.rs`) is
+        // the one field this crate emits that proto3's `map<K, V>` syntax
+        // is needed for — not expressible via an ordinary `TypeRef`/arity
+        // pair, so it bypasses `render_field` the same way `PageInfo`'s
+        // bool fields bypass it below. Maps can't be `optional` any more
+        // than `repeated` can (proto3 forbids both), so no presence
+        // keyword either.
+        if name.ends_with("RpcListInput") && field.name == "include_fields" {
+            text.push_str(&format!(
+                "  map<string, StringList> include_fields = {number};\n"
+            ));
+            continue;
+        }
         let rendered = render_field(&field.name, &field.ty, number);
         needs_timestamp_import |= rendered.needs_timestamp_import;
         text.push_str("  ");

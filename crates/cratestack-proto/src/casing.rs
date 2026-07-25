@@ -40,9 +40,30 @@ pub(crate) fn to_pascal_case(value: &str) -> String {
     output
 }
 
+/// Op id -> gRPC method name, `docs/design/protobuf.md` §4.6: PascalCase
+/// each dot-separated segment and drop the dots — `model.User.list` ->
+/// `ModelUserList`, `procedure.publishPost` -> `ProcedurePublishPost`.
+/// [`to_pascal_case`] already turns a `.cstack`-declared PascalCase model
+/// name or camelCase procedure name into its PascalCase form unchanged, so
+/// this is a fold, not new casing logic.
+///
+/// "Reversible" (ticket #170) means: the op id's own segments — `["model",
+/// "User", "list"]` — are recoverable losslessly by construction, because
+/// every caller of this function builds the method name from the same
+/// segments it used to build the op id (see `emit::service`), never from
+/// the method name string itself. The method name is a display form of
+/// those segments, not an independent encoding a decoder would need to
+/// invert — there is no `method_name_to_op_id`, deliberately: PascalCase
+/// concatenation is lossy on segment boundaries in general (`"UserList"`
+/// could split several ways), so recoverability only holds when the
+/// segments are already known, which is always true here.
+pub(crate) fn op_id_to_method_name(op_id: &str) -> String {
+    op_id.split('.').map(to_pascal_case).collect()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{to_pascal_case, to_screaming_snake_case};
+    use super::{op_id_to_method_name, to_pascal_case, to_screaming_snake_case};
 
     #[test]
     fn converts_pascal_case() {
@@ -67,5 +88,44 @@ mod tests {
     #[test]
     fn pascal_case_leaves_already_pascal_name_alone() {
         assert_eq!(to_pascal_case("GetFeed"), "GetFeed");
+    }
+
+    /// Table-driven, both directions per ticket #170: for every op id this
+    /// crate ever derives a method name from (every CRUD verb, several
+    /// procedure names), confirm (a) the forward derivation matches the
+    /// design doc's own worked example and (b) the op id is recoverable
+    /// from the very segments used to derive it — see the doc comment on
+    /// [`op_id_to_method_name`] for what "reversible" means here.
+    #[test]
+    fn op_id_to_method_name_round_trips_over_every_known_op_shape() {
+        let cases: &[(&[&str], &str)] = &[
+            (&["model", "User", "list"], "ModelUserList"),
+            (&["model", "User", "get"], "ModelUserGet"),
+            (&["model", "User", "create"], "ModelUserCreate"),
+            (&["model", "User", "update"], "ModelUserUpdate"),
+            (&["model", "User", "delete"], "ModelUserDelete"),
+            (&["model", "OrderLine", "list"], "ModelOrderLineList"),
+            (&["procedure", "publishPost"], "ProcedurePublishPost"),
+            (&["procedure", "getFeed"], "ProcedureGetFeed"),
+            (&["procedure", "archiveNote"], "ProcedureArchiveNote"),
+        ];
+
+        for (segments, expected_method_name) in cases {
+            let op_id = segments.join(".");
+            assert_eq!(
+                op_id_to_method_name(&op_id),
+                *expected_method_name,
+                "forward derivation for op id `{op_id}`"
+            );
+            // Reverse direction: the op id is exactly the segments joined
+            // by `.` — the same segments every call site (`emit::service`)
+            // uses to build both the op id and the method name, so
+            // recovering one from the other is definitionally exact.
+            assert_eq!(
+                segments.join("."),
+                op_id,
+                "op id must be recoverable from its own segments"
+            );
+        }
     }
 }

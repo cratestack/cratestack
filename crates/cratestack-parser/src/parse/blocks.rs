@@ -7,7 +7,7 @@ pub(super) fn parse_transport_directive(line: &Line<'_>) -> Result<TransportStyl
     let rest = line.trimmed.strip_prefix("transport").unwrap_or("").trim();
     if rest.is_empty() {
         return Err(SchemaError::new(
-            "expected transport style after `transport` (one of: rest, rpc)",
+            "expected transport style after `transport` (one of: rest, rpc, grpc)",
             line.start..line.start + line.raw.len(),
             line.number,
         ));
@@ -15,8 +15,9 @@ pub(super) fn parse_transport_directive(line: &Line<'_>) -> Result<TransportStyl
     match rest {
         "rest" => Ok(TransportStyle::Rest),
         "rpc" => Ok(TransportStyle::Rpc),
+        "grpc" => Ok(TransportStyle::Grpc),
         other => Err(SchemaError::new(
-            format!("unknown transport style `{other}` (expected one of: rest, rpc)"),
+            format!("unknown transport style `{other}` (expected one of: rest, rpc, grpc)"),
             line.start..line.start + line.raw.len(),
             line.number,
         )),

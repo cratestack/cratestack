@@ -15,6 +15,7 @@ use super::mirror::{
     is_generated_on_create, is_primary_key, model_allows_create, model_name_set,
     scalar_model_fields,
 };
+use super::rpc_input_synth::synthesize_rpc_inputs;
 use super::synth_page::{monomorphize_return_type, synthesize_pages};
 use crate::casing::to_pascal_case;
 
@@ -109,6 +110,7 @@ pub fn synthesize_messages(
     }
 
     synthesize_pages(schema, &mut occupied, &mut extra)?;
+    synthesize_rpc_inputs(schema, &mut occupied, &mut extra)?;
 
     Ok(extra)
 }

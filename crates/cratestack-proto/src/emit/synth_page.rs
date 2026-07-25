@@ -3,9 +3,10 @@
 
 use std::collections::BTreeMap;
 
-use cratestack_core::{Field, Schema, SourceSpan, TypeArity, TypeRef};
+use cratestack_core::{Field, Schema, SourceSpan, TransportStyle, TypeArity, TypeRef};
 
 use super::error::ProtoEmitError;
+use super::mirror::model_primary_key_field;
 use super::synth::insert_synth;
 
 /// `Page<T>` is parser-restricted to procedure-return-type position (see
@@ -29,6 +30,34 @@ pub(super) fn synthesize_pages(
             .entry(page_message_name(item))
             .or_insert_with(|| item.clone());
     }
+
+    // A `transport grpc` schema's `list` verb has an implicit `Page<Model>`
+    // response even though `Page<T>` syntax never appears written on a
+    // model field — `Page<T>` is parser-restricted to procedure-return
+    // position (see the doc comment on this fn). That's a schema-syntax
+    // restriction, not a semantic one: `op_descriptors.rs`'s own
+    // `output_ty: &page_ty` where `page_ty = format!("Page<{model_name}>")`
+    // treats every model's `list` op as returning `Page<Model>` regardless
+    // — see `docs/design/protobuf.md`'s ticket #170 spec. So every model
+    // with a `list` verb (i.e. every model with a primary key, mirroring
+    // `emit::service`'s own gate) needs `PageOf<Model>` too, deduplicated
+    // against any procedure that already returns `Page<Model>` by going
+    // through the same `page_items` map.
+    if schema.transport == TransportStyle::Grpc {
+        for model in &schema.models {
+            if model_primary_key_field(model).is_none() {
+                continue;
+            }
+            let item = TypeRef {
+                name: model.name.clone(),
+                name_span: model.name_span,
+                arity: TypeArity::Required,
+                generic_args: vec![],
+            };
+            page_items.entry(page_message_name(&item)).or_insert(item);
+        }
+    }
+
     if page_items.is_empty() {
         return Ok(());
     }

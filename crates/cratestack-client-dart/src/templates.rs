@@ -102,15 +102,20 @@ const RPC_TEMPLATE_SPECS: &[TemplateSpec] = &[
     },
 ];
 
-pub(crate) fn template_specs_for(transport: TransportStyle) -> Vec<TemplateSpec> {
+pub(crate) fn template_specs_for(
+    transport: TransportStyle,
+) -> Result<Vec<TemplateSpec>, crate::config::DartGeneratorError> {
     let mode_specs = match transport {
         TransportStyle::Rest => REST_TEMPLATE_SPECS,
         TransportStyle::Rpc => RPC_TEMPLATE_SPECS,
+        TransportStyle::Grpc => {
+            return Err(crate::config::DartGeneratorError::UnsupportedGrpcTransport);
+        }
     };
     let mut specs = Vec::with_capacity(COMMON_TEMPLATE_SPECS.len() + mode_specs.len());
     specs.extend_from_slice(COMMON_TEMPLATE_SPECS);
     specs.extend_from_slice(mode_specs);
-    specs
+    Ok(specs)
 }
 
 pub(crate) fn build_environment(

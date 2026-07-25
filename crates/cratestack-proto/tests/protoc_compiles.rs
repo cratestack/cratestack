@@ -97,6 +97,53 @@ mutation procedure archiveNote(args: TagList): Note
   @allow(auth() != null)
 "#;
 
+/// A `transport grpc` schema (ticket #170): `Post` has a relation to
+/// `Author` and a PK, exercising the `service` block's CRUD methods and
+/// their new `<Model>RpcPkInput`/`RpcUpdateInput`/`RpcListInput` request
+/// messages. `Author` has no `@@allow("create", ...)`, so it must get
+/// `list`/`get`/`update`/`delete` service methods but no `create` one
+/// (`emit::service`'s documented divergence from `op_descriptors.rs`'s
+/// unconditional registration). `listTitles` has a plain `List`-arity
+/// return (not `Page<T>`) so it hits `OpKind::Sequence` / `returns
+/// (stream ...)`; `listPosts` returns `Page<Post>` so `PageOfPost`
+/// synthesis is confirmed to still fire under `transport grpc` and get
+/// wired into `model.Post.list` too.
+const GRPC_FIXTURE: &str = r#"
+transport grpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Caller {
+  id Int
+}
+
+model Author {
+  id Int @id
+  name String
+
+  @@allow("read", auth() != null)
+}
+
+model Post {
+  id Int @id
+  title String
+  authorId Int
+  author Author @relation(fields:[authorId],references:[id])
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}
+
+procedure listTitles(): String[]
+  @allow(auth() != null)
+
+procedure listPosts(): Page<Post>
+  @allow(auth() != null)
+"#;
+
 fn assert_protoc_compiles(schema_source: &str, schema_path: &str, package: &str) -> String {
     let schema = cratestack_parser::parse_schema(schema_source).expect("fixture schema parses");
     let extra = synthesize_messages(&schema).expect("synthesize_messages");
@@ -170,4 +217,61 @@ fn rpc_fixture_with_list_field_and_mutation_compiles() {
     assert!(proto_text.contains("message ArchiveNoteInput {"));
     assert!(proto_text.contains("message ArchiveNoteOutput {"));
     assert!(proto_text.contains("This schema's `transport` is `rpc`"));
+}
+
+#[test]
+fn grpc_fixture_with_relation_and_service_block_compiles() {
+    if Command::new("protoc").arg("--version").output().is_err() {
+        eprintln!("protoc not found on PATH; skipping (see docs/design/protobuf.md §5)");
+        return;
+    }
+
+    let proto_text = assert_protoc_compiles(GRPC_FIXTURE, "fixtures/grpc.cstack", "blog_api");
+
+    // Relation + PK: full CRUD service surface for `Post`.
+    assert!(proto_text.contains("message Post {"));
+    assert!(proto_text.contains("optional Author author"));
+    assert!(proto_text.contains("rpc ModelPostList(PostRpcListInput) returns (PageOfPost);"));
+    assert!(proto_text.contains("rpc ModelPostGet(PostRpcPkInput) returns (Post);"));
+    assert!(proto_text.contains("rpc ModelPostCreate(CreatePostInput) returns (Post);"));
+    assert!(proto_text.contains("rpc ModelPostUpdate(PostRpcUpdateInput) returns (Post);"));
+    assert!(proto_text.contains("rpc ModelPostDelete(PostRpcPkInput) returns (Post);"));
+
+    // No create-allow policy on `Author`: every other CRUD method, no
+    // `create`, and no dangling `CreateAuthorInput` reference.
+    assert!(proto_text.contains("rpc ModelAuthorList(AuthorRpcListInput) returns (PageOfAuthor);"));
+    assert!(proto_text.contains("rpc ModelAuthorGet(AuthorRpcPkInput) returns (Author);"));
+    assert!(
+        !proto_text.contains("ModelAuthorCreate"),
+        "Author has no create-allow policy, so no create service method:\n{proto_text}"
+    );
+    assert!(!proto_text.contains("message CreateAuthorInput {"));
+
+    // `List`-arity return -> `OpKind::Sequence` -> `returns (stream ...)`.
+    assert!(
+        proto_text.contains(
+            "rpc ProcedureListTitles(ListTitlesInput) returns (stream ListTitlesOutput);"
+        )
+    );
+    assert!(proto_text.contains("repeated string result"));
+
+    // `Page<Post>` return still synthesizes `PageOfPost` under `transport
+    // grpc`, shared with `model.Post.list`'s own response type — protoc
+    // validating the whole file (including the service block's message
+    // references) is what actually proves this wiring is sound, not just
+    // that the string appears once.
+    assert_eq!(proto_text.matches("message PageOfPost {").count(), 1);
+    assert!(
+        proto_text.contains("rpc ProcedureListPosts(ListPostsInput) returns (ListPostsOutput);")
+    );
+    assert!(proto_text.contains("optional PageOfPost result"));
+
+    // Helper messages for the list-input shape, shared across both models.
+    assert_eq!(proto_text.matches("message StringList {").count(), 1);
+    assert_eq!(proto_text.matches("message RpcListPredicate {").count(), 1);
+    assert!(proto_text.contains("map<string, StringList> include_fields"));
+
+    assert!(proto_text.contains("service Api {"));
+    assert!(proto_text.contains("`transport grpc`"));
+    assert!(!proto_text.contains("does NOT describe the bytes on the wire"));
 }
