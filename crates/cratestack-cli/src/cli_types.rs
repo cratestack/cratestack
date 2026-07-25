@@ -59,6 +59,27 @@ pub(crate) enum Command {
         #[arg(long)]
         full_selection: bool,
     },
+    /// Emit a `.proto` file describing the schema's messages/enums
+    /// (no `service` block — that needs `transport grpc`, ticket #170)
+    /// plus its sibling field-number lockfile. See
+    /// `docs/design/protobuf.md` §4.6 for why `--package` is required on
+    /// first run and locked thereafter.
+    #[command(name = "generate-proto")]
+    GenerateProto {
+        #[arg(long)]
+        schema: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
+        /// Protobuf package name. Required on first run (no existing
+        /// `<schema>.pb.lock`); on later runs, must match what's already
+        /// locked or be omitted.
+        #[arg(long)]
+        package: Option<String>,
+        /// Drift-detection mode: rebuild the lock and `.proto` text in
+        /// memory and compare against what's on disk instead of writing.
+        #[arg(long)]
+        check: bool,
+    },
     /// Studio: admin and testing surface for `.cstack` schemas.
     Studio {
         #[command(subcommand)]

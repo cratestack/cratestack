@@ -41,6 +41,12 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             check,
             full_selection,
         )?,
+        Command::GenerateProto {
+            schema,
+            out,
+            package,
+            check,
+        } => crate::generate_proto::handle_generate_proto(schema, out, package, check)?,
         Command::Studio { cmd } => handle_studio(cmd)?,
         Command::PrintIr { schema } => handle_print_ir(schema)?,
         Command::Migrate { action } => match action {

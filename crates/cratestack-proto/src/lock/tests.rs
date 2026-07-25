@@ -98,7 +98,7 @@ fn fresh_schema_assigns_in_declaration_order() {
         ],
     ));
 
-    let lock = build_lock(&schema, None).expect("build_lock");
+    let lock = build_lock(&schema, None, &BTreeMap::new()).expect("build_lock");
     let user = &lock.messages["User"];
     assert_eq!(user.fields["id"], 1);
     assert_eq!(user.fields["email"], 2);
@@ -127,7 +127,7 @@ fn new_field_added_to_existing_lock_gets_next_number() {
         },
     );
 
-    let lock = build_lock(&schema, Some(&existing)).expect("build_lock");
+    let lock = build_lock(&schema, Some(&existing), &BTreeMap::new()).expect("build_lock");
     let user = &lock.messages["User"];
     assert_eq!(user.fields["id"], 1);
     assert_eq!(user.fields["email"], 2);
@@ -149,7 +149,7 @@ fn deleted_field_moves_to_reserved() {
         },
     );
 
-    let lock = build_lock(&schema, Some(&existing)).expect("build_lock");
+    let lock = build_lock(&schema, Some(&existing), &BTreeMap::new()).expect("build_lock");
     let user = &lock.messages["User"];
     assert_eq!(user.fields.get("legacyHandle"), None);
     assert_eq!(user.reserved, vec![2]);
@@ -161,18 +161,18 @@ fn reserved_number_never_reused_by_a_field_with_the_same_name() {
         "User",
         vec![field("id", &[]), field("legacyHandle", &[])],
     ));
-    let lock1 = build_lock(&with_legacy, None).expect("build_lock 1");
+    let lock1 = build_lock(&with_legacy, None, &BTreeMap::new()).expect("build_lock 1");
     assert_eq!(lock1.messages["User"].fields["legacyHandle"], 2);
 
     let without_legacy = schema_with_model(model("User", vec![field("id", &[])]));
-    let lock2 = build_lock(&without_legacy, Some(&lock1)).expect("build_lock 2");
+    let lock2 = build_lock(&without_legacy, Some(&lock1), &BTreeMap::new()).expect("build_lock 2");
     assert_eq!(lock2.messages["User"].reserved, vec![2]);
 
     let legacy_readded = schema_with_model(model(
         "User",
         vec![field("id", &[]), field("legacyHandle", &[])],
     ));
-    let lock3 = build_lock(&legacy_readded, Some(&lock2)).expect("build_lock 3");
+    let lock3 = build_lock(&legacy_readded, Some(&lock2), &BTreeMap::new()).expect("build_lock 3");
     assert_eq!(
         lock3.messages["User"].fields["legacyHandle"], 3,
         "re-added field must get a fresh number, not the reserved one"
@@ -187,7 +187,7 @@ fn pb_pin_is_honored() {
         vec![field("id", &[]), field("email", &["@pb(9)"])],
     ));
 
-    let lock = build_lock(&schema, None).expect("build_lock");
+    let lock = build_lock(&schema, None, &BTreeMap::new()).expect("build_lock");
     assert_eq!(lock.messages["User"].fields["email"], 9);
 }
 
@@ -214,7 +214,8 @@ fn pb_pin_colliding_with_used_number_errors() {
         ],
     ));
 
-    let error = build_lock(&schema, Some(&existing)).expect_err("collision should error");
+    let error =
+        build_lock(&schema, Some(&existing), &BTreeMap::new()).expect_err("collision should error");
     assert!(matches!(
         error,
         PbLockError::PinCollidesWithUsed { number: 2, .. }
@@ -239,7 +240,8 @@ fn pb_pin_colliding_with_reserved_number_errors() {
         vec![field("id", &[]), field("phone", &["@pb(5)"])],
     ));
 
-    let error = build_lock(&schema, Some(&existing)).expect_err("collision should error");
+    let error =
+        build_lock(&schema, Some(&existing), &BTreeMap::new()).expect_err("collision should error");
     assert!(matches!(
         error,
         PbLockError::PinCollidesWithReserved { number: 5, .. }
@@ -260,7 +262,7 @@ fn reserved_range_is_never_auto_assigned() {
     );
 
     let schema = schema_with_model(model("User", vec![field("a", &[]), field("b", &[])]));
-    let lock = build_lock(&schema, Some(&existing)).expect("build_lock");
+    let lock = build_lock(&schema, Some(&existing), &BTreeMap::new()).expect("build_lock");
     let assigned = lock.messages["User"].fields["b"];
     assert_eq!(assigned, 20000, "must skip straight over 19000-19999");
 }
@@ -276,8 +278,8 @@ fn build_lock_is_deterministic() {
         ],
     ));
 
-    let lock1 = build_lock(&schema, None).expect("build 1");
-    let lock2 = build_lock(&schema, None).expect("build 2");
+    let lock1 = build_lock(&schema, None, &BTreeMap::new()).expect("build 1");
+    let lock2 = build_lock(&schema, None, &BTreeMap::new()).expect("build 2");
     assert_eq!(lock1.to_toml(), lock2.to_toml());
 }
 
@@ -288,7 +290,7 @@ fn enum_unspecified_variant_is_always_present_at_zero() {
         ..empty_schema()
     };
 
-    let lock = build_lock(&schema, None).expect("build_lock");
+    let lock = build_lock(&schema, None, &BTreeMap::new()).expect("build_lock");
     let order_status = &lock.enums["OrderStatus"];
     assert_eq!(order_status.variants["ORDER_STATUS_UNSPECIFIED"], 0);
     assert_eq!(order_status.variants["PENDING"], 1);
@@ -348,7 +350,7 @@ fn deleted_model_keeps_a_tombstone_with_reserved_numbers() {
     );
 
     let schema = empty_schema();
-    let lock = build_lock(&schema, Some(&existing)).expect("build_lock");
+    let lock = build_lock(&schema, Some(&existing), &BTreeMap::new()).expect("build_lock");
     let user = &lock.messages["User"];
     assert!(user.fields.is_empty());
     assert_eq!(user.reserved, vec![1, 2]);

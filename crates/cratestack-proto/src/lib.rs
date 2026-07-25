@@ -10,6 +10,8 @@
 //! See [`build_lock`] for the algorithm and [`PbLock`] for the shape.
 
 mod casing;
+mod emit;
 mod lock;
 
+pub use emit::{ProtoEmitError, emit_proto, synthesize_messages};
 pub use lock::{EnumLock, MessageLock, PbLock, PbLockError, build_lock, lock_would_change};

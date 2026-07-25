@@ -17,9 +17,32 @@ pub(crate) fn to_screaming_snake_case(value: &str) -> String {
     output
 }
 
+/// `.cstack` procedure names are camelCase (`publishPost`); synthesized
+/// message names (`<Procedure>Input`/`Output`) need the PascalCase form.
+/// `cratestack-client-typescript::naming::to_pascal_case` does the same
+/// job — reimplemented here rather than depended on, same crate-layering
+/// rule as [`to_screaming_snake_case`] above.
+pub(crate) fn to_pascal_case(value: &str) -> String {
+    let mut output = String::new();
+    let mut capitalize_next = true;
+    for ch in value.chars() {
+        if ch == '_' || ch == '-' || ch == ' ' {
+            capitalize_next = true;
+            continue;
+        }
+        if capitalize_next {
+            output.extend(ch.to_uppercase());
+            capitalize_next = false;
+        } else {
+            output.push(ch);
+        }
+    }
+    output
+}
+
 #[cfg(test)]
 mod tests {
-    use super::to_screaming_snake_case;
+    use super::{to_pascal_case, to_screaming_snake_case};
 
     #[test]
     fn converts_pascal_case() {
@@ -34,5 +57,15 @@ mod tests {
     #[test]
     fn handles_consecutive_capitals() {
         assert_eq!(to_screaming_snake_case("HTTPStatus"), "H_T_T_P_STATUS");
+    }
+
+    #[test]
+    fn pascal_cases_camel_case_procedure_name() {
+        assert_eq!(to_pascal_case("publishPost"), "PublishPost");
+    }
+
+    #[test]
+    fn pascal_case_leaves_already_pascal_name_alone() {
+        assert_eq!(to_pascal_case("GetFeed"), "GetFeed");
     }
 }

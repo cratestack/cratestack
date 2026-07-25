@@ -1020,6 +1020,7 @@ dependencies = [
  "cratestack-core",
  "cratestack-migrate",
  "cratestack-parser",
+ "cratestack-proto",
  "cratestack-studio",
  "serde",
  "serde_json",
@@ -1245,7 +1246,9 @@ name = "cratestack-proto"
 version = "0.4.13"
 dependencies = [
  "cratestack-core",
+ "cratestack-parser",
  "serde",
+ "tempfile",
  "thiserror 2.0.18",
  "toml 0.9.12+spec-1.1.0",
 ]

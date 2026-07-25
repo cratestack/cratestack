@@ -1,0 +1,121 @@
+//! `Page<T>` monomorphization + the one shared `PageInfo` — split out of
+//! `synth.rs` to stay under the repo's 200-LoC file convention.
+
+use std::collections::BTreeMap;
+
+use cratestack_core::{Field, Schema, SourceSpan, TypeArity, TypeRef};
+
+use super::error::ProtoEmitError;
+use super::synth::insert_synth;
+
+/// `Page<T>` is parser-restricted to procedure-return-type position (see
+/// `cratestack-parser/src/validate/type_names.rs`), so scanning procedure
+/// return types is exhaustive — no need to also scan model/type fields.
+pub(super) fn synthesize_pages(
+    schema: &Schema,
+    occupied: &mut BTreeMap<String, &'static str>,
+    extra: &mut BTreeMap<String, Vec<Field>>,
+) -> Result<(), ProtoEmitError> {
+    let mut page_items: BTreeMap<String, TypeRef> = BTreeMap::new();
+    for procedure in &schema.procedures {
+        if !procedure.return_type.is_page() {
+            continue;
+        }
+        let item = procedure
+            .return_type
+            .page_item()
+            .expect("validated Page<T> return type carries an item type");
+        page_items
+            .entry(page_message_name(item))
+            .or_insert_with(|| item.clone());
+    }
+    if page_items.is_empty() {
+        return Ok(());
+    }
+
+    insert_synth(occupied, extra, "PageInfo".to_owned(), page_info_fields())?;
+    for (message_name, item) in page_items {
+        insert_synth(occupied, extra, message_name, page_of_fields(&item))?;
+    }
+    Ok(())
+}
+
+pub(super) fn monomorphize_return_type(return_type: &TypeRef) -> TypeRef {
+    if !return_type.is_page() {
+        return return_type.clone();
+    }
+    let item = return_type
+        .page_item()
+        .expect("validated Page<T> return type carries an item type");
+    TypeRef {
+        name: page_message_name(item),
+        name_span: return_type.name_span,
+        arity: TypeArity::Required,
+        generic_args: vec![],
+    }
+}
+
+fn page_message_name(item: &TypeRef) -> String {
+    format!("PageOf{}", item.name)
+}
+
+fn page_of_fields(item: &TypeRef) -> Vec<Field> {
+    vec![
+        synthetic_field(
+            "items",
+            TypeRef {
+                name: item.name.clone(),
+                name_span: item.name_span,
+                arity: TypeArity::List,
+                generic_args: vec![],
+            },
+        ),
+        synthetic_field("total_count", scalar_ty("Int", TypeArity::Optional)),
+        synthetic_field("page_info", scalar_ty("PageInfo", TypeArity::Required)),
+    ]
+}
+
+/// Field arity here documents the domain shape
+/// (`cratestack_core::page::PageInfo`) but does not drive rendering:
+/// `emit::message::render_message` hard-codes `PageInfo`'s own presence
+/// rule (bools are never `optional`; `emit::field::render_field` is not
+/// used for this message at all).
+fn page_info_fields() -> Vec<Field> {
+    vec![
+        synthetic_field("limit", scalar_ty("Int", TypeArity::Optional)),
+        synthetic_field("offset", scalar_ty("Int", TypeArity::Optional)),
+        synthetic_field("has_next_page", scalar_ty("Boolean", TypeArity::Required)),
+        synthetic_field(
+            "has_previous_page",
+            scalar_ty("Boolean", TypeArity::Required),
+        ),
+    ]
+}
+
+fn scalar_ty(name: &str, arity: TypeArity) -> TypeRef {
+    TypeRef {
+        name: name.to_owned(),
+        name_span: synthetic_span(),
+        arity,
+        generic_args: vec![],
+    }
+}
+
+fn synthetic_field(name: &str, ty: TypeRef) -> Field {
+    Field {
+        docs: vec![],
+        name: name.to_owned(),
+        name_span: synthetic_span(),
+        ty,
+        attributes: Vec::new(),
+        span: synthetic_span(),
+    }
+}
+
+fn synthetic_span() -> SourceSpan {
+    SourceSpan {
+        start: 0,
+        end: 0,
+        line: 0,
+    }
+}

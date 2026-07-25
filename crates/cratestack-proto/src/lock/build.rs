@@ -5,7 +5,7 @@
 
 use std::collections::BTreeSet;
 
-use cratestack_core::Schema;
+use cratestack_core::{Field, Schema};
 
 use super::assign::{build_enum_lock, build_message_lock};
 use super::{EnumLock, MessageLock, PbLock, PbLockError};
@@ -13,18 +13,20 @@ use super::{EnumLock, MessageLock, PbLock, PbLockError};
 /// Builds the lock a schema should have, given its (optional) previous
 /// lock.
 ///
-/// Message coverage for this ticket is deliberately narrow: every `model`
-/// and every `type` declaration becomes a lock entry (both become proto
-/// messages downstream), plus tombstones carried forward from `existing`
-/// for names no longer in the schema at all. `Create<M>Input` /
-/// `Update<M>Input` — the macro-synthesized per-model input messages
-/// ticket #169 will also need numbers for — are **not** built here: their
-/// field sets come from selection/macro logic this crate would otherwise
-/// have to duplicate. Ticket #169 is expected to call `build_lock` once per
-/// synthesized message shape it can materialize as a field list, using the
-/// same `MessageLock`/algorithm — not to extend this function with
-/// name-guessing.
-pub fn build_lock(schema: &Schema, existing: Option<&PbLock>) -> Result<PbLock, PbLockError> {
+/// Message coverage: every `model` and every `type` declaration becomes a
+/// lock entry (both become proto messages downstream), plus whatever
+/// `extra_messages` supplies — ticket #169's synthesized `Create<M>Input` /
+/// `Update<M>Input` / `<Procedure>Input` / `<Procedure>Output` /
+/// `PageOf<Item>` shapes, built from real `cratestack_core::Field` values
+/// by the caller (their field-selection semantics belong with the emitter,
+/// not here — this function only knows how to number a field list, not how
+/// to derive one). Tombstones carry forward from `existing` for any name
+/// —model, type, or synthesized— no longer supplied at all.
+pub fn build_lock(
+    schema: &Schema,
+    existing: Option<&PbLock>,
+    extra_messages: &std::collections::BTreeMap<String, Vec<Field>>,
+) -> Result<PbLock, PbLockError> {
     let version = existing.map(|lock| lock.version).unwrap_or(1);
     let package = existing.and_then(|lock| lock.package.clone());
 
@@ -33,6 +35,7 @@ pub fn build_lock(schema: &Schema, existing: Option<&PbLock>) -> Result<PbLock, 
         .iter()
         .map(|model| model.name.clone())
         .chain(schema.types.iter().map(|ty| ty.name.clone()))
+        .chain(extra_messages.keys().cloned())
         .collect();
     if let Some(existing) = existing {
         message_names.extend(existing.messages.keys().cloned());
@@ -51,7 +54,8 @@ pub fn build_lock(schema: &Schema, existing: Option<&PbLock>) -> Result<PbLock, 
                     .iter()
                     .find(|ty| ty.name == name)
                     .map(|ty| ty.fields.as_slice())
-            });
+            })
+            .or_else(|| extra_messages.get(&name).map(|fields| fields.as_slice()));
         let existing_lock = existing.and_then(|lock| lock.messages.get(&name));
         let built: MessageLock = build_message_lock(&name, current_fields, existing_lock)?;
         messages.insert(name, built);
