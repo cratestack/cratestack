@@ -1,0 +1,410 @@
+# Protobuf + gRPC — design
+
+Status: **proposed** (2026-07-25). Nothing here is implemented.
+Scope: `cratestack-parser` (field-number contract), a new
+`cratestack-proto` generator crate, `cratestack-cli` (`generate-proto`),
+`cratestack-macros` (message mirrors + a `transport grpc` binding), and a
+new `cratestack-grpc` server-integration crate.
+Tracking: [#166][166] (Epic) — the tickets in §9 hang off it.
+
+[166]: https://github.com/cratestack/cratestack/issues/166
+
+## Summary
+
+| Item | Decision |
+|---|---|
+| What "protobuf support" means | Four separable deliverables, sequenced: a **field-number contract**, a **`.proto` artifact**, **protobuf on the wire**, and a **`transport grpc` binding**. Only the first is a prerequisite for all the others. |
+| Where field numbers live | A committed **lockfile** (`<schema>.pb.lock`, TOML) that the generator maintains — numbers auto-assigned on first sight, never reused, deletions auto-`reserved`. `@pb(N)` is an explicit override for adopting a pre-existing `.proto`. Numbers are **not** required in `.cstack` by default. See §3. |
+| How protobuf reaches the wire | Via **`transport grpc`** — a third `TransportStyle`, sibling to `rest`/`rpc`, with its own generated tonic service. **Not** by adding an `application/protobuf` codec to the existing REST/RPC bindings. See §6 for why that route is blocked and §9 for how it stays reachable later. |
+| Message representation in Rust | **Mirror structs** (`pb::User`, `#[derive(prost::Message)]`) with `From`/`TryFrom` conversions to the domain struct — not `prost::Message` bolted onto the domain type. Keeps `chrono`/`Decimal`/`Uuid` in the domain layer. See §5.3. |
+| Field presence | Every model-message field is proto3 `optional` (explicit presence). CrateStack's partial `fields`/`include` projection makes "absent" a first-class state that implicit presence cannot express. Lists are the documented exception. See §4.4. |
+| What does **not** change | The embedded role (`include_embedded_schema!`) — it has no transport. The macro-split disjointness rule. REST and RPC schemas, which are untouched. |
+| Implementation status | None. This doc is design only; §9 splits it into tickets. |
+
+## 1. Why
+
+Three concrete pulls, in descending order of how often they actually come up:
+
+1. **Contract publication.** A `.cstack` schema is currently only legible to
+   consumers CrateStack itself generates a client for (Rust, Dart, TypeScript).
+   A `.proto` artifact makes the schema consumable by every language with a
+   protobuf toolchain, and by contract-registry tooling (Buf, schema
+   registries) that ecosystems already run in CI.
+2. **Interop with existing gRPC estates.** A service that must sit inside a
+   mesh where everything else speaks gRPC cannot today; it would have to be
+   fronted by a hand-written translation layer.
+3. **Payload size and decode cost.** CBOR is already compact and this is the
+   weakest of the three motivations — protobuf's win over CBOR is real but
+   modest, and it is not on its own worth the surface area. It is listed for
+   completeness, not as a driver.
+
+Point 2 is what makes this a *transport* question and not a codec question.
+Nobody asking for "protobuf support" in a mesh context wants
+`Content-Type: application/protobuf` on a bespoke HTTP binding; they want a
+service their existing tooling can call.
+
+## 2. What already lines up
+
+The RPC binding was designed gRPC-shaped without being gRPC, and that pays
+off here:
+
+- **Op identity.** `model.User.list` / `procedure.publishPost` is already a
+  flat, stable, dotted registry (rpc-transport.md §2.1). It maps onto gRPC
+  method names mechanically.
+- **Error codes.** `cratestack-core::rpc` already speaks `not_found`,
+  `invalid_argument`, `permission_denied`, `failed_precondition`,
+  `unauthenticated`, `internal`, `unavailable`, `deadline_exceeded`,
+  `canceled` — modeled on gRPC deliberately. The mapping to `tonic::Code` is
+  one match arm per variant, with no semantic loss.
+- **Op kinds.** `OpKind::{Unary, Sequence, Subscription}` maps to
+  `rpc M(In) returns (Out)` and `rpc M(In) returns (stream Out)`.
+- **Auth.** gRPC metadata *is* HTTP/2 headers; `tonic::metadata::MetadataMap`
+  converts to `http::HeaderMap`. The existing header-driven `AuthProvider`
+  ports rather than being rewritten.
+
+The notable knock-on: rpc-transport.md §6.5 lists **subscriptions** as the
+open gap, blocked on WebSocket frame-loop work. Under gRPC a subscription is
+just a server-streaming method. `transport grpc` would deliver subscriptions
+without the WS binding — worth knowing, but not a reason to pick gRPC.
+
+## 3. The field-number contract (phase 1)
+
+Everything downstream needs a stable field number per field. This is the one
+piece that is genuinely irreversible: get it wrong and every deployed client
+breaks silently, because protobuf decodes a wrong-typed field number as
+garbage rather than erroring.
+
+### 3.1 Rejected: derive from declaration order
+
+Assign `1..N` in the order fields appear. Zero new artifacts, zero schema
+noise — and unusable. Reordering fields, or deleting one, silently shifts
+every subsequent number. `.cstack` files get reordered in review all the
+time; nothing about the current schema surface treats field order as
+meaningful, and making it load-bearing retroactively is a trap.
+
+### 3.2 Rejected as the default: `@pb(N)` on every field
+
+Protobuf-honest, visible in review, single source of truth. But it demands a
+number on every field of every model, mixin, type, enum variant, and
+procedure argument in the schema — a large, permanent tax on a surface whose
+whole appeal is terseness. It also relies on humans never reusing a number
+after a delete, which is precisely the failure protobuf's `reserved` keyword
+exists to prevent.
+
+### 3.3 Chosen: a lockfile, with `@pb(N)` as an override
+
+`schema.cstack` gets a sibling `schema.pb.lock`, TOML, committed:
+
+```toml
+version = 1
+package = "shop_api"
+
+[messages.User]
+id         = 1
+email      = 2
+created_at = 3
+reserved   = [4]        # was `legacy_handle`, removed 2026-08-02
+
+[messages.CreateUserInput]
+email = 1
+
+[enums.OrderStatus]
+ORDER_STATUS_UNSPECIFIED = 0
+PENDING                  = 1
+SHIPPED                  = 2
+```
+
+Rules the generator enforces:
+
+- A field with no entry is assigned `max(used ∪ reserved) + 1`, walking
+  fields in declaration order so that early/hot fields land in 1–15 (the
+  one-byte tag range).
+- A field present in the lock but absent from the schema moves its number
+  into `reserved` and is never handed out again.
+- A rename is a delete plus an add: new number, old number reserved. This is
+  a wire break, and it is *already* classified as breaking by
+  `cratestack diff` — the two tools agree without extra wiring.
+- `19000–19999` is excluded (reserved by protobuf itself).
+- `@pb(N)` on a field pins that number explicitly. The only intended use is
+  adopting an existing `.proto` contract; the generator writes the pinned
+  value into the lock and errors if it collides.
+
+The generator gets a `--check` mode, matching the existing convention on
+`generate-dart` / `generate-typescript`: regenerate in memory, fail non-zero
+if the lock would change. That is the CI gate.
+
+**Known cost:** two branches that each add a field both claim `N+1` and
+conflict in the lock on merge. That is a real annoyance. It is also a
+*visible* one — a merge conflict in a small TOML file, resolved by bumping
+one of the two — which is strictly better than the silent number reuse the
+alternatives permit.
+
+## 4. Type mapping
+
+### 4.1 Scalars
+
+| `.cstack` | proto3 | Note |
+|---|---|---|
+| `String` | `string` | |
+| `Cuid` | `string` | |
+| `Uuid` | `string` | Canonical hyphenated form, not `bytes`. Consistency with the Dart/TS generators beats 20 bytes. |
+| `Int` | `int64` | `.cstack` `Int` is already `i64`-backed. |
+| `Float` | `double` | |
+| `Boolean` | `bool` | |
+| `Bytes` | `bytes` | |
+| `DateTime` | `google.protobuf.Timestamp` | Well-known type; every language runtime has it. |
+| `Decimal` | `string` | See §4.2. |
+| `Json` | `bytes` | See §4.3. |
+| `Vector(n)` | `repeated float` | `pgvector` stores `float4`. Packed by default in proto3. Not on `main` yet — the scalar arrives with the pgvector extension (#155), so this row is forward-looking. |
+| `Page<T>` | `PageOfT` message | proto has no generics; monomorphized per instantiation. |
+
+### 4.2 `Decimal` → `string`, not a units/nanos message
+
+Protobuf has no decimal type. The two candidates are a
+`{units: int64, nanos: int32}` message (Google's own `Money` shape) and the
+canonical decimal string. String wins: `rust_decimal` round-trips exactly
+through its string form, units/nanos caps precision at 9 fractional digits,
+and the schema's `Decimal` carries no declared scale for the generator to
+reason about. The cost is that arithmetic-minded consumers must parse — which
+they must do anyway to avoid float contamination.
+
+### 4.3 `Json` → `bytes`, not `google.protobuf.Struct`
+
+`Struct` is prettier and self-describing, and it is lossy: every number
+becomes an IEEE double, so `i64` values above 2^53 corrupt silently. Given
+that JSON handling already has an open correctness bug (#162), adding a
+lossy representation on a new wire is the wrong direction. `bytes` holding
+UTF-8 JSON is lossless and mechanically trivial; the generated `.proto`
+carries a `// json` comment on the field so consumers know how to read it.
+
+### 4.4 Presence: every field is `optional`
+
+CrateStack supports partial projection — a `fields`/`include` selection
+returns a model with some fields genuinely absent. That is why the
+TypeScript generator makes every field optional by default, and why
+`--full-selection` exists as the opt-out.
+
+proto3's implicit presence cannot express this: an absent `string` and `""`
+decode identically. So every field on a generated model message gets the
+proto3 `optional` keyword (explicit presence, protobuf ≥3.15, `Option<T>` in
+prost). Same for `Create<M>Input` — required-ness is validated server-side
+today and proto3 has no `required` to lean on anyway.
+
+**The exception is lists.** `repeated` fields cannot be `optional`; an empty
+list and an unprojected list are the same bytes. Wrapping each in a
+single-field message to recover presence is not worth the noise. Documented
+limitation: under protobuf, an unprojected list field reads as empty.
+
+### 4.5 Enums
+
+proto3 requires a zero value, and `.cstack` enums have none. The generator
+emits `<SCREAMING_ENUM_NAME>_UNSPECIFIED = 0` and numbers the declared
+variants from 1, recording all of it — including the synthetic zero — in the
+lock. Decoding `0` into a domain enum is an error, not a default.
+
+### 4.6 Messages and service
+
+Message names come straight from the existing generated-type vocabulary:
+`User`, `CreateUserInput`, `UpdateUserInput`, procedure `Args` as
+`<Procedure>Input`, procedure returns as `<Procedure>Output`.
+
+One `service` per schema, mirroring the flat op registry one-for-one — not
+one service per model. The registry is a single string-keyed table
+(rpc-transport.md, and "cross-schema dispatch" is an explicit non-goal
+there); splitting it into per-model services would introduce a second
+naming axis for no gain. Method names are the op id, PascalCased per
+segment with the dots dropped:
+
+| Op id | gRPC method | Full path |
+|---|---|---|
+| `model.User.list` | `ModelUserList` | `/shop_api.Api/ModelUserList` |
+| `procedure.publishPost` | `ProcedurePublishPost` | `/shop_api.Api/ProcedurePublishPost` |
+
+Package name defaults to the schema file stem, snake_cased, overridable via
+`--package` and recorded in the lock so it cannot drift.
+
+## 5. Phase 2: `cratestack generate-proto`
+
+A new CLI subcommand next to `generate-dart` / `generate-typescript`:
+
+```bash
+cargo run -p cratestack-cli -- generate-proto \
+  --schema schema.cstack --out api.proto --package shop_api
+```
+
+Flags mirror the existing generators: `--out`, `--package`, `--check`. The
+generator lives in a new `cratestack-proto` crate (schema IR → `.proto`
+text), so the macro can depend on the same emitter in phase 3 rather than
+duplicating the mapping table.
+
+Emitted for **every** schema, whatever its `transport` — the `service` block
+is only emitted for `transport grpc`. On a `rest`/`rpc` schema the artifact
+is messages and enums only, and is honestly a *shape* description, not a
+description of the bytes on the wire. The generated file header says so
+explicitly; a `.proto` that silently implies the server speaks protobuf when
+it speaks CBOR would be worse than no artifact.
+
+Verification for this phase is `protoc` itself: the emitted file must
+compile under `protoc --descriptor_set_out`, asserted in a test that skips
+when `protoc` is absent (same shape as the PG-backed tests skipping without
+`CRATESTACK_TEST_DATABASE_URL`).
+
+## 6. Why protobuf does **not** become a fourth codec
+
+The obvious-looking move is a `cratestack-codec-protobuf` next to
+`-codec-cbor` and `-codec-json`, selected by `Content-Type`. It does not
+work, for two independent reasons.
+
+**The codec trait is serde-generic and cannot carry field numbers.**
+
+```rust
+pub trait CoolCodec: Clone + Send + Sync + 'static {
+    const CONTENT_TYPE: &'static str;
+    fn encode<T: Serialize + ?Sized>(&self, value: &T) -> Result<Vec<u8>, CoolError>;
+    fn decode<T: for<'de> Deserialize<'de>>(&self, bytes: &[u8]) -> Result<T, CoolError>;
+}
+```
+
+`T: Serialize` gives the codec field *names* and nothing else. Protobuf needs
+numbers, which live per-type. A serde-protobuf bridge that invents numbers
+from field order produces bytes no `protoc`-generated consumer can read —
+that is not protobuf support, it is a binary format that resembles it.
+
+Making it work means tightening the bound to a trait the generated types
+implement (`WireValue: Serialize + DeserializeOwned + pb_encode/pb_decode`),
+which changes `CoolCodec`, `HttpTransport`, `CodecSet`, and every call site
+in `cratestack-axum` and `cratestack-macros`. The blast radius is bounded and
+countable — roughly ten framework envelope types need hand-written impls
+(`CoolErrorResponse`, `RpcErrorBody`, `RpcRequest`, `RpcResponseFrame`,
+`RpcListInput`, `RpcPkInput<T>`, `RpcUpdateInput<PK, Patch>`, `Page<T>`,
+`PageInfo`, plus slice-of-T for sequence responses) — but it is a core-trait
+change made to serve a binding nobody has asked for by name.
+
+**The RPC batch envelope is structurally JSON-shaped.**
+`RpcRequest.input` and `RpcResponseFrame.output` are
+`serde_json::Value` — deliberately, so each frame stays opaque until it is
+decoded against its own input type. Protobuf has no self-describing value
+that round-trips a `serde_json::Value` without loss. Supporting protobuf on
+`POST /rpc/batch` therefore means re-shaping the batch envelope to carry
+opaque `bytes` per frame, which is a wire break on the existing RPC binding.
+
+Under `transport grpc` neither problem exists: generated tonic services work
+with concrete prost types and never pass through `CoolCodec` at all, and
+gRPC has no batch envelope to re-shape.
+
+This is deferral with a stated reason, not a feature hidden behind a flag.
+If a concrete need for `application/protobuf` on a REST schema appears, §9's
+ticket 5 is the path, and phases 1–2 are exactly the groundwork it needs.
+
+## 7. Phase 3: `transport grpc`
+
+### 7.1 Schema surface
+
+```
+transport grpc
+```
+
+`TransportStyle` gains a third variant. It stays exclusive — a schema emits
+exactly one binding's worth of surface, per rpc-transport.md. `TransportStyle`
+is `#[serde(rename_all = "lowercase")]` and `#[serde(default)]`, so the IR
+change is additive for existing snapshots.
+
+### 7.2 Server
+
+A new `cratestack-grpc` crate, sibling to `cratestack-axum`, holding the
+runtime primitives; the macro emits a tonic service impl per schema whose
+method bodies delegate to the same `handle_*_dispatch` functions the RPC
+binding already calls. The dispatch layer, policy pipeline, audit sink, and
+idempotency store are unchanged — only the framing above them is new.
+
+Mounting: tonic's `Routes` is a tower service over `http::Request<Body>` and
+merges into an axum `Router`, so a schema can serve gRPC alongside existing
+axum routes in one process. **Concrete risk to pin early:** this only holds
+while the workspace's axum major version and the one tonic builds against
+agree. That version alignment is the first thing ticket 4 should verify,
+before any codegen work.
+
+### 7.3 Wire details that will bite if left implicit
+
+- **Envelope signing.** `canonical_request_string` takes
+  `(method, path, query, content_type, body)`. Under gRPC the path is
+  `/shop_api.Api/ModelUserList`, query is `None`, and **body is the unframed
+  message bytes** — gRPC's 5-byte length-prefix must be stripped before
+  hashing, on both seal and verify. Getting this wrong produces signatures
+  that fail only against real gRPC clients.
+- **Errors.** `RpcErrorBody.code` → `tonic::Code`, one arm per variant.
+  Structured `details` ride in `grpc-status-details-bin` as an encoded
+  `google.rpc.Status`; HTTP status mapping is not used.
+- **Content negotiation disappears.** gRPC pins `application/grpc+proto`.
+  The `Accept`/`Content-Type` validation path is simply not on this binding.
+- **Streaming.** `OpKind::Sequence` → `returns (stream T)`.
+  `OpKind::Subscription` → also server-streaming, closing the gap
+  rpc-transport.md §6.5 leaves open for WS — for gRPC schemas only.
+
+### 7.4 Clients
+
+- **Rust** — tonic client, generated by the macro under
+  `include_client_schema!`. Straightforward.
+- **Dart** — `package:grpc`. Straightforward.
+- **TypeScript / browser — the weak spot.** Browsers cannot speak raw gRPC;
+  it needs gRPC-Web plus a translating proxy (Envoy, or tonic-web in-process).
+  This is a genuine limitation of choosing gRPC, not an oversight. Ticket 6
+  scopes tonic-web + a gRPC-Web TS client; until it lands, `transport grpc`
+  is a server-to-server choice and the docs must say so plainly.
+
+## 8. Non-goals
+
+- **proto2**, `Any`, `oneof` beyond what enums need, custom options,
+  extensions.
+- **Client-streaming and bidirectional streaming.** Every CrateStack op is
+  one input; there is nothing to stream upward.
+- **gRPC server reflection.** Useful for `grpcurl`, but the `.proto`
+  artifact from phase 2 covers the discovery need. Revisit on demand.
+- **Protobuf for the embedded role.** `include_embedded_schema!` has no
+  transport.
+- **Automatic migration of existing REST/RPC schemas to gRPC.** Changing
+  `transport` is a wire break by construction; `cratestack diff` should
+  classify it as such.
+- **A protobuf codec on the REST/RPC bindings** — see §6, and ticket 5.
+
+## 9. Tickets
+
+Sequenced; each independently shippable, opened as its own Dev Ticket under
+[#166][166] once this doc is accepted.
+
+1. **Field-number contract** (Feature) — `<schema>.pb.lock` format, the
+   assignment/reservation algorithm, `@pb(N)` parsing in
+   `cratestack-parser`, `--check`. No `.proto` output yet: this ticket is
+   the lock and its rules, tested directly.
+2. **`cratestack-proto` emitter + `generate-proto`** (Feature, depends on 1)
+   — the §4 mapping table, message/enum emission, CLI subcommand,
+   `protoc`-compiles test. Messages and enums only; no `service` block.
+3. **`transport grpc` grammar + IR** (Feature, depends on 1) — third
+   `TransportStyle` variant, parser, `service` block in the phase-2 emitter,
+   op-id → method-name mapping. Parse-and-emit only; no runtime.
+4. **`cratestack-grpc` server runtime** (Feature, depends on 3) — *start by
+   verifying axum/tonic version alignment (§7.2)*, then the tonic service
+   impl, dispatch delegation, error mapping, unframed-body signing, server
+   streaming for `Sequence`. The large one; may need splitting once 3 lands.
+5. **Protobuf codec on REST/RPC** (Spike) — revisit §6 only if a concrete
+   consumer needs it. Deliverable is a decision, not code.
+6. **gRPC-Web + TypeScript client** (Feature, depends on 4) — tonic-web
+   layer, TS client generation. Gated on 4 proving out.
+
+Tickets 1–2 are useful on their own: a schema owner gets a publishable
+`.proto` contract without committing to gRPC at all. That is the natural
+stopping point if 3–4 turn out to be premature.
+
+## 10. Open questions for sign-off
+
+1. **Lockfile vs `@pb(N)`** (§3) — the recommendation is the lock, and it is
+   the decision with the longest half-life in this document. Worth an
+   explicit yes.
+2. **Package naming.** Schema-file stem is a weak default; `.cstack` has no
+   namespace concept to draw on. Should `datasource`'s name feed it instead,
+   or should `--package` be required rather than defaulted?
+3. **One flat `service` vs per-model services** (§4.6) — flat matches the op
+   registry; per-model reads as more idiomatic gRPC to someone arriving from
+   that ecosystem.
+4. **Is ticket 6 (gRPC-Web) in scope at all,** or is `transport grpc`
+   explicitly server-to-server, with browsers told to use `transport rpc`?
