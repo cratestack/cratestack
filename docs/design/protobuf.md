@@ -486,30 +486,29 @@ including rejecting the synthetic `_UNSPECIFIED = 0` enum value from §4.5.
 
 ## 9. Tickets
 
-Sequenced; each independently shippable, opened as its own Dev Ticket under
-[#166][166].
+Sequenced; each independently shippable. All six are open under [#166][166].
 
-1. **Field-number contract** (Feature) — `<schema>.pb.lock` format, the
+1. **Field-number contract** ([#168][168], Feature) — `<schema>.pb.lock` format, the
    assignment/reservation algorithm, `@pb(N)` parsing in
    `cratestack-parser`, `--check`. No `.proto` output yet: this ticket is
    the lock and its rules, tested directly.
-2. **`cratestack-proto` emitter + `generate-proto`** (Feature, depends on 1)
+2. **`cratestack-proto` emitter + `generate-proto`** ([#169][169], Feature, depends on 1)
    — the §4 mapping table, message/enum emission, CLI subcommand,
    `protoc`-compiles test. Messages and enums only; no `service` block.
-3. **`transport grpc` grammar + IR** (Feature, depends on 1) — third
+3. **`transport grpc` grammar + IR** ([#170][170], Feature, depends on 1) — third
    `TransportStyle` variant, parser, `service` block in the phase-2 emitter,
    op-id → method-name mapping. Parse-and-emit only; no runtime.
-4. **`cratestack-grpc` server runtime** (Feature, depends on 3) — *start by
+4. **`cratestack-grpc` server runtime** ([#171][171], Feature, depends on 3) — *start by
    verifying axum/tonic version alignment (§7.2)*, then the tonic service
    impl, dispatch delegation, error mapping, unframed-body signing, server
    streaming for `Sequence`. The large one; may need splitting once 3 lands.
-5. **gRPC-Web + TypeScript client** (Feature, depends on 4) — `tonic-web`
+5. **gRPC-Web + TypeScript client** ([#172][172], Feature, depends on 4) — `tonic-web`
    layer, CORS with `grpc-status` exposed, trailer-frame-aware envelope
    verification, and a gRPC-Web transport in the existing
    `cratestack-client-typescript` generator. **Committed, not gated** —
    see §7.4. Ordered after 4 because it layers on the server runtime, not
    because it is optional.
-6. **Protobuf codec on REST/RPC** (Spike) — revisit §6 only if a concrete
+6. **Protobuf codec on REST/RPC** ([#173][173], Spike) — revisit §6 only if a concrete
    consumer needs it. Deliverable is a decision, not code. This is the one
    genuinely deferred item.
 
@@ -543,3 +542,10 @@ ticket 2 emits its first `.proto`; after that, both are wire breaks.
 
 **Still unverified** (carried as risk, not decided): axum/tonic
 major-version alignment (§7.2) and the `Vector(n)` row (§4.1).
+
+[168]: https://github.com/cratestack/cratestack/issues/168
+[169]: https://github.com/cratestack/cratestack/issues/169
+[170]: https://github.com/cratestack/cratestack/issues/170
+[171]: https://github.com/cratestack/cratestack/issues/171
+[172]: https://github.com/cratestack/cratestack/issues/172
+[173]: https://github.com/cratestack/cratestack/issues/173
