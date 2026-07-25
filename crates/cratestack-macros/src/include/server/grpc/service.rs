@@ -125,13 +125,22 @@ pub(super) fn build_service(
         /// `Routes`, converted into an `axum::Router` — `tonic::service::
         /// Routes::into_axum_router` merges cleanly into the same
         /// `axum::Router` the REST/RPC bindings already return (verified
-        /// axum/tonic version alignment — see the module doc).
+        /// axum/tonic version alignment — see the module doc) — then
+        /// layers the gRPC-Web translation + CORS wiring on top
+        /// (`::cratestack::grpc::apply_grpc_web`, ticket #172,
+        /// `docs/design/protobuf.md` §7.4) so the same router is directly
+        /// callable from a browser, not just `grpcurl`/native gRPC
+        /// clients. That function — not inline codegen here — owns the
+        /// layer composition and is unit-tested on its own
+        /// (`cratestack-grpc::web`'s tests assert the exposed-headers set
+        /// on a real response), so this call site stays a one-liner.
         pub fn into_router<C, Auth>(state: super::axum::ModelRouterState<C, Auth>) -> ::cratestack::axum::Router
         where
             C: ::cratestack::HttpTransport + Send + Sync + 'static,
             Auth: ::cratestack::AuthProvider + Send + Sync + 'static,
         {
-            ::cratestack::grpc::tonic::service::Routes::new(ApiServer::new(state)).into_axum_router()
+            let router = ::cratestack::grpc::tonic::service::Routes::new(ApiServer::new(state)).into_axum_router();
+            ::cratestack::grpc::apply_grpc_web(router)
         }
     }
 }

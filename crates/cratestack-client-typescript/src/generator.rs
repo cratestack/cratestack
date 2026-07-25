@@ -12,7 +12,7 @@ pub fn generate_package(
 ) -> Result<GeneratedTypeScriptPackage, TypeScriptGeneratorError> {
     let specs = template_specs_for(schema.transport)?;
     let environment = build_environment(config.template_dir.as_deref(), &specs)?;
-    let context = build_template_context(schema, config);
+    let context = build_template_context(schema, config)?;
     let files = specs
         .iter()
         .map(|spec| {

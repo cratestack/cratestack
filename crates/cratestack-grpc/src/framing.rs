@@ -6,13 +6,51 @@
 //!
 //! Implemented directly from the public gRPC-over-HTTP/2 wire spec
 //! (<https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-HTTP2.md#length-prefixed-messages>)
-//! rather than reached through tonic's `Codec`/`Decoder` trait chain: this
-//! crate does not yet own a tonic service-trait implementation (out of
-//! scope for this cut — see the crate README), so there is no live call
-//! site inside tonic's own pipeline to intercept bytes at. The frame format
-//! is a fixed, public part of the gRPC wire protocol, not a tonic-internal
+//! rather than reached through tonic's `Codec`/`Decoder` trait chain: the
+//! generated tonic service impl (`cratestack-macros`' `grpc` feature)
+//! doesn't intercept raw wire bytes either — see the "Known gap" note on
+//! its `service.rs` module doc — so there is no live call site inside
+//! tonic's own pipeline to intercept bytes at. The frame format is a
+//! fixed, public part of the gRPC wire protocol, not a tonic-internal
 //! detail, so implementing it standalone here is correct and will remain
 //! the right place to plug a future service impl's codec layer into.
+//!
+//! ## gRPC-Web (ticket #172) does not sharpen this module's gap further
+//!
+//! `docs/design/protobuf.md` §7.4 flags two gRPC-Web-specific wire
+//! concerns for anything that touches raw framed bytes: (1) gRPC-Web
+//! appends a *trailer frame* to the response body (flagged via the frame
+//! header's MSB, `0x80`) that must never be treated as message bytes, and
+//! (2) gRPC-Web's text mode base64-encodes the whole body, so byte-level
+//! code must operate on *decoded* bytes in both modes. Neither concern
+//! reaches this module in practice, because `tonic_web::GrpcWebLayer`
+//! (applied by `cratestack::grpc::apply_grpc_web`, mounted by every
+//! macro-generated `into_router`) sits in front of the tonic service as
+//! an HTTP-body-level translation layer:
+//!
+//! - On the request path (the only path anything in this crate
+//!   canonicalizes — there is no framework-level response-signing step,
+//!   see `canonical`'s module doc), `GrpcWebLayer` decodes base64 (when
+//!   the client used `application/grpc-web-text+proto`) *before* handing
+//!   the body to the wrapped tonic service. There is no trailer frame on
+//!   the request side to begin with — gRPC-Web only supports unary and
+//!   server-streaming calls, so a request body is always exactly one
+//!   message frame, never a trailer frame.
+//! - On the response path, `GrpcWebLayer` is what *adds* the trailer
+//!   frame (translating tonic's real HTTP/2 trailers into it) and
+//!   base64-encodes the whole thing when applicable — again strictly
+//!   downstream of anything this crate's functions would see.
+//!
+//! So by the time [`strip_grpc_frame`] or [`crate::canonical::
+//! grpc_canonical_request_string`] runs — inside the generated tonic
+//! service, behind `GrpcWebLayer` — the bytes are always plain,
+//! binary-mode gRPC framing: one 5-byte header, no trailer frame, no
+//! base64, regardless of which content-type the original client spoke.
+//! gRPC-Web does not add a new byte-level case this module needs to
+//! handle; it only holds as long as every mount point uses
+//! `apply_grpc_web` (or composes `GrpcWebLayer` in the same position) —
+//! a hand-rolled mount that skips it, or that runs custom byte-level code
+//! *outside* the layer, would need to handle both concerns itself.
 
 const FRAME_HEADER_LEN: usize = 5;
 

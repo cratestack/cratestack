@@ -290,6 +290,7 @@ fn generate_for_with_config(
             base_path: "/api".to_owned(),
             template_dir: None,
             full_selection,
+            pb_lock: None,
         },
     )
     .expect("default template should render")

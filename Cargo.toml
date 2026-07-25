@@ -115,6 +115,7 @@ minijinja = "2"
 prost = "0.13"
 prost-types = "0.13"
 tonic = "0.13"
+tonic-web = "0.13"
 reqwest = { version = "0", default-features = false, features = ["rustls-tls", "stream"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 rusqlite = { version = "0.39", features = ["bundled", "fallible_uint"] }

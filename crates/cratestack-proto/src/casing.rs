@@ -47,6 +47,13 @@ pub(crate) fn to_pascal_case(value: &str) -> String {
 /// name or camelCase procedure name into its PascalCase form unchanged, so
 /// this is a fold, not new casing logic.
 ///
+/// `pub` (not `pub(crate)`) since ticket #172: `cratestack-client-
+/// typescript`'s gRPC-Web generator calls this directly from its own
+/// (Rust) generator code to derive the exact method name a generated
+/// TypeScript client dials, rather than re-deriving PascalCase-and-fold
+/// logic that could silently drift from what this crate's own `.proto`
+/// `service` block emits (`emit::service`).
+///
 /// "Reversible" (ticket #170) means: the op id's own segments — `["model",
 /// "User", "list"]` — are recoverable losslessly by construction, because
 /// every caller of this function builds the method name from the same
@@ -57,7 +64,7 @@ pub(crate) fn to_pascal_case(value: &str) -> String {
 /// concatenation is lossy on segment boundaries in general (`"UserList"`
 /// could split several ways), so recoverability only holds when the
 /// segments are already known, which is always true here.
-pub(crate) fn op_id_to_method_name(op_id: &str) -> String {
+pub fn op_id_to_method_name(op_id: &str) -> String {
     op_id.split('.').map(to_pascal_case).collect()
 }
 

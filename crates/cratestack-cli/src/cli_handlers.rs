@@ -132,6 +132,7 @@ fn handle_generate_typescript(
     full_selection: bool,
 ) -> Result<()> {
     let parsed = parse_schema_or_render(&schema)?;
+    let pb_lock = read_pb_lock_if_present(&schema)?;
     let package = cratestack_client_typescript::generate_package(
         &parsed,
         &cratestack_client_typescript::TypeScriptGeneratorConfig {
@@ -139,6 +140,7 @@ fn handle_generate_typescript(
             base_path,
             template_dir,
             full_selection,
+            pb_lock,
         },
     )?;
     let files = into_generated_files(package.files);
@@ -150,6 +152,26 @@ fn handle_generate_typescript(
     write_generated_files(&out, files)?;
     println!("generated TypeScript client package: {}", out.display());
     Ok(())
+}
+
+/// `transport grpc` schemas need the schema's `<schema>.pb.lock` to
+/// generate a gRPC-Web client (real field numbers, `docs/design/
+/// protobuf.md` §3.3) — same derived path `cratestack generate-proto`
+/// itself uses (`crate::generate_proto::handle_generate_proto`). REST/RPC
+/// schemas don't have (or need) one, so a missing file here is not an
+/// error at this layer — `cratestack_client_typescript::generate_package`
+/// is what turns "no lock" into a hard error, and only for `transport
+/// grpc` schemas.
+fn read_pb_lock_if_present(schema: &std::path::Path) -> Result<Option<cratestack_proto::PbLock>> {
+    let lock_path = schema.with_extension("pb.lock");
+    if !lock_path.exists() {
+        return Ok(None);
+    }
+    let source = std::fs::read_to_string(&lock_path)
+        .with_context(|| format!("failed to read '{}'", lock_path.display()))?;
+    let lock = cratestack_proto::PbLock::from_toml(&source)
+        .with_context(|| format!("failed to parse '{}'", lock_path.display()))?;
+    Ok(Some(lock))
 }
 
 fn handle_diff_schemas(old: PathBuf, new: PathBuf, json: bool) -> Result<()> {

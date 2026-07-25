@@ -14,6 +14,7 @@ categories.workspace = true
 
 [dependencies]
 cratestack-core.workspace = true
+cratestack-proto.workspace = true
 minijinja.workspace = true
 serde.workspace = true
 thiserror.workspace = true

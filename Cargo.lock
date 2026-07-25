@@ -1111,6 +1111,7 @@ version = "0.4.13"
 dependencies = [
  "cratestack-core",
  "cratestack-parser",
+ "cratestack-proto",
  "minijinja",
  "serde",
  "thiserror 2.0.18",
@@ -1161,6 +1162,7 @@ dependencies = [
 name = "cratestack-grpc"
 version = "0.4.13"
 dependencies = [
+ "axum",
  "base64 0.22.1",
  "cratestack-core",
  "http",
@@ -1168,7 +1170,11 @@ dependencies = [
  "prost-types 0.13.5",
  "serde_json",
  "thiserror 2.0.18",
+ "tokio",
  "tonic 0.13.1",
+ "tonic-web",
+ "tower",
+ "tower-http",
 ]
 
 [[package]]
@@ -6829,6 +6835,24 @@ dependencies = [
  "bytes",
  "prost 0.14.4",
  "tonic 0.14.6",
+]
+
+[[package]]
+name = "tonic-web"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "774cad0f35370f81b6c59e3a1f5d0c3188bdb4a2a1b8b7f0921c860bfbd3aec6"
+dependencies = [
+ "base64 0.22.1",
+ "bytes",
+ "http",
+ "http-body",
+ "pin-project",
+ "tokio-stream",
+ "tonic 0.13.1",
+ "tower-layer",
+ "tower-service",
+ "tracing",
 ]
 
 [[package]]

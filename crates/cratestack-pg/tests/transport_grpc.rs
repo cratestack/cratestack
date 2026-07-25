@@ -78,3 +78,49 @@ async fn grpc_service_mounts_into_axum_router() {
     };
     let _router: cratestack::axum::Router = cratestack_schema::grpc::into_router(state);
 }
+
+/// Ticket #172, Part A: the macro-generated `into_router` must come back
+/// wrapped in the gRPC-Web + CORS layering (`::cratestack::grpc::
+/// apply_grpc_web`), not just a bare tonic `Routes` translation.
+/// `cratestack-grpc::web`'s own unit tests already prove the layering
+/// primitive in isolation; this test proves the macro's call site actually
+/// applies it — a real request through the real generated router exposes
+/// `grpc-status`/`grpc-message`/`grpc-status-details-bin`, which is
+/// `docs/design/protobuf.md` §7.4's single highest-severity failure mode
+/// if silently missing (request "succeeds", browser sees no status).
+#[tokio::test]
+async fn generated_router_exposes_grpc_status_headers_for_browsers() {
+    use tower::ServiceExt;
+
+    let db = test_db();
+    let codec = CodecSet::new(CborCodec, JsonCodec);
+    let state = cratestack_schema::axum::ModelRouterState {
+        db,
+        codec,
+        auth_provider: AllowAllAuth,
+    };
+    let router: cratestack::axum::Router = cratestack_schema::grpc::into_router(state);
+
+    let request = cratestack::axum::http::Request::builder()
+        .method("POST")
+        .uri("/widgets_api.Api/ModelWidgetList")
+        .header("origin", "http://example.com")
+        .header("content-type", "application/grpc-web+proto")
+        .body(cratestack::axum::body::Body::empty())
+        .unwrap();
+
+    let response = router.oneshot(request).await.unwrap();
+
+    let exposed = response
+        .headers()
+        .get("access-control-expose-headers")
+        .expect("Access-Control-Expose-Headers must be present on the generated router")
+        .to_str()
+        .unwrap();
+    for header_name in ["grpc-status", "grpc-message", "grpc-status-details-bin"] {
+        assert!(
+            exposed.contains(header_name),
+            "expected '{header_name}' in Access-Control-Expose-Headers, got '{exposed}'"
+        );
+    }
+}

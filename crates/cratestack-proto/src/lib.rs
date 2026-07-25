@@ -13,5 +13,6 @@ mod casing;
 mod emit;
 mod lock;
 
+pub use casing::op_id_to_method_name;
 pub use emit::{ProtoEmitError, emit_proto, synthesize_messages};
 pub use lock::{EnumLock, MessageLock, PbLock, PbLockError, build_lock, lock_would_change};

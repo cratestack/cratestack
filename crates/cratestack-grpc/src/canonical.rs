@@ -18,6 +18,10 @@
 //! `AuthProvider` written for a `transport grpc` schema the same canonical
 //! string a REST/RPC `AuthProvider` would compute, from gRPC-native inputs,
 //! so hand-written signing logic doesn't have to re-derive it per schema.
+//!
+//! `framed_body` here is always plain (non-gRPC-Web) framing, even when
+//! the call arrived over gRPC-Web — see [`crate::framing`]'s module doc
+//! for why `tonic_web::GrpcWebLayer` guarantees that.
 
 use cratestack_core::canonical_request_string;
 

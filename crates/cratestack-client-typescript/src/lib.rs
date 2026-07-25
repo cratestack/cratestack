@@ -1,6 +1,7 @@
 mod config;
 mod context;
 mod generator;
+mod grpc;
 mod naming;
 mod templates;
 mod types;

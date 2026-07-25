@@ -1,8 +1,10 @@
-use cratestack_core::{Field, Schema};
+use cratestack_core::{Field, Schema, TransportStyle};
 use serde::Serialize;
 
 use crate::config::TypeScriptGeneratorConfig;
+use crate::grpc::GrpcContext;
 use crate::naming::{occupied_type_names, package_class_stem, to_pascal_case};
+use crate::templates::TypeScriptGeneratorError;
 use crate::types::{
     enum_name_set, is_generated_on_create, is_primary_key, model_allows_create, model_name_set,
     scalar_model_fields, visible_model_fields,
@@ -23,12 +25,16 @@ pub(crate) struct TemplateContext {
     procedures: Vec<ProcedureView>,
     query_procedures: Vec<ProcedureView>,
     mutation_procedures: Vec<ProcedureView>,
+    /// Only set for `transport grpc` schemas — see `crate::grpc`'s module
+    /// doc. `None` for REST/RPC, where the REST/RPC-specific templates
+    /// never reference `grpc.*` in the first place.
+    grpc: Option<GrpcContext>,
 }
 
 pub(crate) fn build_template_context(
     schema: &Schema,
     config: &TypeScriptGeneratorConfig,
-) -> TemplateContext {
+) -> Result<TemplateContext, TypeScriptGeneratorError> {
     let model_names = model_name_set(&schema.models);
     let enum_names = enum_name_set(&schema.enums);
     let occupied_type_names = occupied_type_names(schema);
@@ -115,23 +121,36 @@ pub(crate) fn build_template_context(
         .iter()
         .map(build_model_api)
         .collect::<Vec<_>>();
-    let procedures = schema
-        .procedures
-        .iter()
-        .map(|procedure| build_procedure(procedure, &occupied_type_names, &enum_names))
-        .collect::<Vec<_>>();
-    let query_procedures = procedures
-        .iter()
-        .filter(|procedure| procedure.kind == "query")
-        .cloned()
-        .collect();
-    let mutation_procedures = procedures
-        .iter()
-        .filter(|procedure| procedure.kind == "mutation")
-        .cloned()
-        .collect();
+    // `transport grpc` never routes procedures at all — ticket #171 didn't
+    // wire them into the generated tonic service (see `crate::grpc`'s
+    // module doc) — so a gRPC-Web client exposing `.procedures.foo()`
+    // would only ever hit `Unimplemented`. Empty rather than generated but
+    // dead.
+    let (procedures, query_procedures, mutation_procedures) =
+        if schema.transport == TransportStyle::Grpc {
+            (Vec::new(), Vec::new(), Vec::new())
+        } else {
+            let procedures = schema
+                .procedures
+                .iter()
+                .map(|procedure| build_procedure(procedure, &occupied_type_names, &enum_names))
+                .collect::<Vec<_>>();
+            let query_procedures = procedures
+                .iter()
+                .filter(|procedure| procedure.kind == "query")
+                .cloned()
+                .collect();
+            let mutation_procedures = procedures
+                .iter()
+                .filter(|procedure| procedure.kind == "mutation")
+                .cloned()
+                .collect();
+            (procedures, query_procedures, mutation_procedures)
+        };
 
-    TemplateContext {
+    let grpc = crate::grpc::build_grpc_context(schema, config.pb_lock.as_ref())?;
+
+    Ok(TemplateContext {
         package_name: config.package_name.clone(),
         client_class_name,
         base_path: config.base_path.clone(),
@@ -141,5 +160,6 @@ pub(crate) fn build_template_context(
         procedures,
         query_procedures,
         mutation_procedures,
-    }
+        grpc,
+    })
 }

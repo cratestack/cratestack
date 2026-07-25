@@ -13,6 +13,7 @@ fn generates_fetch_client_and_tanstack_hooks_for_blog_schema() {
             base_path: "/cstack".to_owned(),
             template_dir: None,
             full_selection: false,
+            pb_lock: None,
         },
     )
     .expect("default template should render");
