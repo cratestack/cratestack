@@ -19,6 +19,7 @@ members = [
     "crates/cratestack-parser",
     "crates/cratestack-pg",
     "crates/cratestack-policy",
+    "crates/cratestack-proto",
     "crates/cratestack-redis",
     "crates/cratestack-rusqlite",
     "crates/cratestack-sql",
@@ -99,6 +100,7 @@ cratestack-migrate = { path = "crates/cratestack-migrate", version = "0.4.13" }
 cratestack-parser = { path = "crates/cratestack-parser", version = "0.4.13" }
 cratestack-pg = { path = "crates/cratestack-pg", version = "0.4.13" }
 cratestack-policy = { path = "crates/cratestack-policy", version = "0.4.13" }
+cratestack-proto = { path = "crates/cratestack-proto", version = "0.4.13" }
 cratestack-redis = { path = "crates/cratestack-redis", version = "0.4.13" }
 cratestack-rusqlite = { path = "crates/cratestack-rusqlite", version = "0.4.13" }
 cratestack-sql = { path = "crates/cratestack-sql", version = "0.4.13" }

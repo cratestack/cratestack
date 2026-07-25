@@ -139,3 +139,95 @@ model Customer {
     assert!(fields[1].attributes.iter().any(|a| a.raw == "@pii"));
     assert!(fields[2].attributes.iter().any(|a| a.raw == "@sensitive"));
 }
+
+#[test]
+fn accepts_pb_field_attribute() {
+    let schema = parse_schema(
+        r#"
+model User {
+  id Int @id
+  email String @pb(5)
+}
+"#,
+    )
+    .expect("schema with @pb should parse");
+
+    let fields = &schema.models[0].fields;
+    assert!(fields[1].attributes.iter().any(|a| a.raw == "@pb(5)"));
+}
+
+#[test]
+fn rejects_duplicate_pb_attribute() {
+    let error = parse_schema(
+        r#"
+model User {
+  id Int @id
+  email String @pb(5) @pb(6)
+}
+"#,
+    )
+    .expect_err("duplicate @pb should fail");
+
+    assert!(
+        error.to_string().contains("declares `@pb` more than once"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn rejects_pb_with_no_args() {
+    let error = parse_schema(
+        r#"
+model User {
+  id Int @id
+  email String @pb
+}
+"#,
+    )
+    .expect_err("@pb with no args should fail");
+
+    assert!(
+        error.to_string().contains("invalid `@pb` attribute"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn rejects_pb_with_non_numeric_arg() {
+    let error = parse_schema(
+        r#"
+model User {
+  id Int @id
+  email String @pb(abc)
+}
+"#,
+    )
+    .expect_err("@pb(abc) should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("expected a non-negative integer"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn rejects_pb_in_protobuf_reserved_range() {
+    let error = parse_schema(
+        r#"
+model User {
+  id Int @id
+  email String @pb(19500)
+}
+"#,
+    )
+    .expect_err("@pb(19500) should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("protobuf's own reserved field-number range"),
+        "error: {error}",
+    );
+}

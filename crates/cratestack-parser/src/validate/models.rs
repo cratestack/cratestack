@@ -9,6 +9,7 @@ use crate::validate::fields::{
     validate_field_policy_attributes,
 };
 use crate::validate::model_attributes::{validate_model_attributes, validate_model_version_field};
+use crate::validate::pb::validate_pb_field_attribute;
 use crate::validate::type_names::validate_type_ref;
 use crate::validate::validators::validate_validator_attributes;
 
@@ -56,6 +57,7 @@ pub(super) fn validate_models(
             validate_validator_attributes(&model.name, field)?;
             validate_field_policy_attributes(&model.name, field)?;
             validate_default_dbgenerated_no_args(&model.name, field)?;
+            validate_pb_field_attribute("model", &model.name, field)?;
             validate_field_relation(schema, model, field, &model_names)?;
         }
 

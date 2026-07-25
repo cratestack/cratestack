@@ -6,6 +6,7 @@ use crate::diagnostics::{SchemaError, span_error};
 use crate::validate::fields::{
     CustomFieldSupport, validate_custom_field_attribute, validate_default_dbgenerated_no_args,
 };
+use crate::validate::pb::validate_pb_field_attribute;
 use crate::validate::type_names::validate_type_ref;
 
 pub(super) fn validate_mixins(
@@ -62,6 +63,7 @@ pub(super) fn validate_mixins(
                 false,
             )?;
             validate_default_dbgenerated_no_args(&mixin.name, field)?;
+            validate_pb_field_attribute("mixin", &mixin.name, field)?;
         }
     }
     Ok(())
@@ -89,6 +91,7 @@ pub(super) fn validate_types(
                 field.span,
                 false,
             )?;
+            validate_pb_field_attribute("type", &ty.name, field)?;
         }
     }
     Ok(())

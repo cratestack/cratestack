@@ -2,6 +2,7 @@ mod fields;
 mod mixins_types;
 mod model_attributes;
 mod models;
+mod pb;
 mod procedures;
 mod type_names;
 mod validator_args;

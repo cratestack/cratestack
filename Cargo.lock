@@ -1241,6 +1241,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cratestack-proto"
+version = "0.4.13"
+dependencies = [
+ "cratestack-core",
+ "serde",
+ "thiserror 2.0.18",
+ "toml 0.9.12+spec-1.1.0",
+]
+
+[[package]]
 name = "cratestack-redis"
 version = "0.4.13"
 dependencies = [
