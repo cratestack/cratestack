@@ -16,8 +16,9 @@ categories.workspace = true
 async-trait.workspace = true
 cratestack-axum.workspace = true
 cratestack-core.workspace = true
-redis = { workspace = true, features = ["aio", "tokio-comp", "script"] }
+redis = { workspace = true, features = ["aio", "tokio-comp", "script", "connection-manager"] }
 sha2.workspace = true
+tokio = { workspace = true, features = ["sync"] }
 uuid.workspace = true
 
 [dev-dependencies]
@@ -31,8 +32,8 @@ tower.workspace = true
 # self-hosted Redis whose only listener is TLS — common for managed/HA
 # Redis behind a private CA. Forwards to the upstream `redis` crate's
 # `tokio-rustls-comp` (rather than the bare `tls-rustls`) because our
-# stores are async-only (`tokio-comp` + `get_multiplexed_async_connection`):
-# the actual async TLS stream implementation in `redis` is gated on the
+# stores are async-only (`tokio-comp` + `ConnectionManager`): the actual
+# async TLS stream implementation in `redis` is gated on the
 # `tokio-*-comp` features, not on `tls-rustls` alone. `tokio-rustls-comp`
 # transitively enables `tls-rustls`, which is what unlocks
 # `redis::Client::build_with_tls` and the `redis::TlsCertificates` /

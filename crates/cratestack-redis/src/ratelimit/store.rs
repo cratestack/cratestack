@@ -1,5 +1,9 @@
+use std::sync::Arc;
+
 use cratestack_core::CoolError;
+use redis::aio::ConnectionManager;
 use sha2::{Digest, Sha256};
+use tokio::sync::OnceCell;
 
 use super::config::RedisRateLimitStoreConfig;
 use super::util::{nibble_hex, redis_error};
@@ -8,6 +12,7 @@ use super::util::{nibble_hex, redis_error};
 pub struct RedisRateLimitStore {
     pub(super) client: redis::Client,
     pub(super) config: RedisRateLimitStoreConfig,
+    pub(super) conn: Arc<OnceCell<ConnectionManager>>,
 }
 
 impl RedisRateLimitStore {
@@ -41,6 +46,7 @@ impl RedisRateLimitStore {
         Self {
             client,
             config: RedisRateLimitStoreConfig::new(key_prefix),
+            conn: Arc::new(OnceCell::new()),
         }
     }
 
@@ -62,10 +68,16 @@ impl RedisRateLimitStore {
         out
     }
 
-    pub(super) async fn connection(&self) -> Result<redis::aio::MultiplexedConnection, CoolError> {
-        self.client
-            .get_multiplexed_async_connection()
+    /// Returns a cheap clone of the shared, auto-reconnecting connection,
+    /// establishing it once on first use rather than opening a new TCP
+    /// connection to Redis on every call. A failed connection attempt is
+    /// not cached, so the next call retries instead of failing forever.
+    pub(super) async fn connection(&self) -> Result<ConnectionManager, CoolError> {
+        let manager = self
+            .conn
+            .get_or_try_init(|| async { ConnectionManager::new(self.client.clone()).await })
             .await
-            .map_err(redis_error)
+            .map_err(redis_error)?;
+        Ok(manager.clone())
     }
 }

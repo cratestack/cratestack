@@ -33,6 +33,8 @@ mod tests_helpers;
 #[cfg(test)]
 mod tests_parse;
 #[cfg(test)]
+mod tests_store;
+#[cfg(test)]
 mod tests_time;
 #[cfg(all(test, feature = "tls-rustls"))]
 mod tests_tls;
