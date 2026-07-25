@@ -1,0 +1,21 @@
+// Smoke fixture for the schema-fingerprint drift-detection header (issue
+// #178). Deliberately minimal — one model, no auth gate — since this
+// fixture's only job is proving the `x-cratestack-schema-sha` middleware
+// is really wired into the real generated router, not exercising policy
+// depth (already covered elsewhere).
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Widget {
+  id Int @id
+  name String
+
+  @@allow("read", auth() != null)
+}

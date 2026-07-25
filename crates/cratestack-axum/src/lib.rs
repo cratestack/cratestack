@@ -11,6 +11,8 @@
 //!   `POST /rpc/batch`).
 //! - [`idempotency`]: idempotency-key middleware and storage trait.
 //! - [`ratelimit`]: token-bucket rate-limit middleware and storage trait.
+//! - [`schema_fingerprint`]: warn-only client/server schema drift
+//!   detection via the `x-cratestack-schema-sha` header.
 
 pub use axum;
 
@@ -20,6 +22,7 @@ pub mod idempotency;
 pub mod query;
 pub mod ratelimit;
 pub mod rpc;
+pub mod schema_fingerprint;
 pub mod transport;
 
 // -----------------------------------------------------------------------------

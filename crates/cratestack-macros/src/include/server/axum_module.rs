@@ -126,6 +126,10 @@ pub(super) fn build_axum_module(c: &ServerCollected) -> proc_macro2::TokenStream
 
                 axum::Router::new()
                     #(#model_axum_routes)*
+                    .layer(::cratestack::axum::middleware::from_fn_with_state(
+                        super::SCHEMA_SHA256,
+                        ::cratestack::schema_fingerprint::warn_on_schema_mismatch,
+                    ))
                     .with_state(state)
             }
 
@@ -149,6 +153,10 @@ pub(super) fn build_axum_module(c: &ServerCollected) -> proc_macro2::TokenStream
 
                 axum::Router::new()
                     #(#procedure_axum_routes)*
+                    .layer(::cratestack::axum::middleware::from_fn_with_state(
+                        super::SCHEMA_SHA256,
+                        ::cratestack::schema_fingerprint::warn_on_schema_mismatch,
+                    ))
                     .with_state(state)
             }
 

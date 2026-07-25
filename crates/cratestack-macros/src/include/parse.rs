@@ -6,6 +6,7 @@
 use std::path::PathBuf;
 
 use proc_macro::TokenStream;
+use sha2::{Digest, Sha256};
 use syn::parse::{Parse, ParseStream};
 use syn::{LitStr, Token};
 
@@ -55,7 +56,7 @@ impl Parse for ServerSchemaArgs {
 
 pub(super) fn parse_schema_literal(
     schema_path: &LitStr,
-) -> Result<(String, PathBuf, cratestack_core::Schema), TokenStream> {
+) -> Result<(String, PathBuf, cratestack_core::Schema, String), TokenStream> {
     let schema_relative = schema_path.value();
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_default();
     let resolved = PathBuf::from(&manifest_dir).join(&schema_relative);
@@ -86,7 +87,25 @@ pub(super) fn parse_schema_literal(
     // calls the matching `reject_grpc` guard itself, right after this
     // shared loader returns. See `crates/cratestack-macros/src/include/reject_grpc.rs`.
 
-    Ok((schema_relative, resolved, schema))
+    let schema_sha256 = hash_schema_source(&source);
+
+    Ok((schema_relative, resolved, schema, schema_sha256))
+}
+
+/// Raw SHA-256 of the schema's source bytes, hex-encoded — deliberately not
+/// a canonicalized/semantic hash of the parsed IR. Two byte-identical
+/// schema files always agree; two schemas that differ only cosmetically
+/// (whitespace, comments) will disagree even though nothing meaningful
+/// changed. That's an accepted tradeoff, not an oversight: the value only
+/// ever feeds a `tracing::warn!` on the server side (`cratestack-axum`'s
+/// schema-fingerprint middleware) — never a rejection — so a false-positive
+/// warning on a cosmetic diff costs a stray log line, while the simplicity
+/// of "hash the bytes, no parsing required to compare" is worth more than
+/// perfect precision here.
+pub(super) fn hash_schema_source(source: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(source.as_bytes());
+    format!("{:x}", hasher.finalize())
 }
 
 /// `@@id([...])` composite primary keys are parsed and validated by
@@ -127,7 +146,25 @@ fn find_composite_id_model(schema: &cratestack_core::Schema) -> Option<&cratesta
 
 #[cfg(test)]
 mod tests {
-    use super::find_composite_id_model;
+    use super::{find_composite_id_model, hash_schema_source};
+
+    #[test]
+    fn hash_schema_source_matches_a_known_sha256() {
+        // printf '%s' 'model Widget { id Int @id }' | shasum -a 256
+        assert_eq!(
+            hash_schema_source("model Widget { id Int @id }"),
+            "50fa300ea14f963f4573be7bfff0fb95b58d728f2431afbecb43578370af6e3e"
+        );
+    }
+
+    #[test]
+    fn hash_schema_source_is_deterministic_and_content_sensitive() {
+        let a = hash_schema_source("model A { id Int @id }");
+        let b = hash_schema_source("model A { id Int @id }");
+        let c = hash_schema_source("model B { id Int @id }");
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
 
     #[test]
     fn flags_model_with_composite_id_attribute() {

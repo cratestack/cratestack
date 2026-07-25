@@ -54,7 +54,14 @@ pub(super) fn generate_generated_client_module(
                 C: ::cratestack::client_rust::HttpClientCodec,
             {
                 pub fn new(runtime: ::cratestack::client_rust::CratestackClient<C>) -> Self {
-                    Self { runtime }
+                    // Issue #178: stamp this schema's SHA-256 onto the
+                    // client automatically so every request carries
+                    // `x-cratestack-schema-sha` — the schema author's own
+                    // `CratestackClient::cbor(config)` call site needs no
+                    // changes.
+                    Self {
+                        runtime: runtime.with_schema_sha(super::SCHEMA_SHA256),
+                    }
                 }
 
                 pub fn runtime(&self) -> &::cratestack::client_rust::CratestackClient<C> {

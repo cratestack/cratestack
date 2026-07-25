@@ -20,7 +20,8 @@ use crate::types::{generate_client_enum_type, generate_client_type_struct};
 use super::parse::parse_schema_literal;
 
 pub(super) fn compose_client_schema(schema_path: &LitStr) -> TokenStream {
-    let (schema_relative, resolved, schema) = match parse_schema_literal(schema_path) {
+    let (schema_relative, resolved, schema, schema_sha256) = match parse_schema_literal(schema_path)
+    {
         Ok(parsed) => parsed,
         Err(error) => return error,
     };
@@ -106,6 +107,15 @@ pub(super) fn compose_client_schema(schema_path: &LitStr) -> TokenStream {
         pub mod cratestack_schema {
             pub const SCHEMA_PATH: &str = #schema_relative;
             pub const SCHEMA_SOURCE: &str = include_str!(#resolved_literal);
+            /// Hex-encoded SHA-256 of `SCHEMA_SOURCE`'s raw bytes, computed
+            /// once at macro-expansion time. Not cryptographic-strength
+            /// integrity — it's a drift-detection fingerprint: the generated
+            /// `client::Client::new` below stamps it onto every
+            /// `CratestackClient` it wraps, so it rides along as the
+            /// `x-cratestack-schema-sha` header on every request; the
+            /// server-side counterpart `tracing::warn!`s on mismatch, never
+            /// rejects. See issue #178.
+            pub const SCHEMA_SHA256: &str = #schema_sha256;
             pub const MODELS: &[&str] = &[#(#model_names),*];
             pub const TYPES: &[&str] = &[#(#type_names),*];
             pub const ENUMS: &[&str] = &[#(#enum_names),*];

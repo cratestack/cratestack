@@ -18,7 +18,8 @@ use super::parse::parse_schema_literal;
 use collect::collect_server_schema;
 
 pub(super) fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
-    let (schema_relative, resolved, schema) = match parse_schema_literal(schema_path) {
+    let (schema_relative, resolved, schema, schema_sha256) = match parse_schema_literal(schema_path)
+    {
         Ok(parsed) => parsed,
         Err(error) => return error,
     };
@@ -80,6 +81,13 @@ pub(super) fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
         pub mod cratestack_schema {
             pub const SCHEMA_PATH: &str = #schema_relative;
             pub const SCHEMA_SOURCE: &str = include_str!(#resolved_literal);
+            /// Hex-encoded SHA-256 of `SCHEMA_SOURCE`'s raw bytes, computed
+            /// once at macro-expansion time. Not cryptographic-strength
+            /// integrity — it's a drift-detection fingerprint: `axum::router()`
+            /// below layers on middleware that compares a client-sent copy of
+            /// this value against its own and `tracing::warn!`s on mismatch,
+            /// never rejects. See issue #178.
+            pub const SCHEMA_SHA256: &str = #schema_sha256;
             pub const MIXINS: &[&str] = &[#(#mixin_names),*];
             pub const MODELS: &[&str] = &[#(#model_names),*];
             pub const TYPES: &[&str] = &[#(#type_names),*];

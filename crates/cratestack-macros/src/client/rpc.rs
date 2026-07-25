@@ -77,8 +77,14 @@ pub(super) fn generate_generated_rpc_client_module(
                 /// `.with_request_authorizer(...)`) flows through to
                 /// every RPC call — auth headers, signing envelopes, etc.
                 pub fn new(runtime: ::cratestack::client_rust::CratestackClient<C>) -> Self {
+                    // Issue #178: stamp this schema's SHA-256 onto the
+                    // runtime before it's wrapped, so every RPC call
+                    // (which goes through this same `CratestackClient`
+                    // under the hood) carries `x-cratestack-schema-sha`.
                     Self {
-                        rpc: ::cratestack::client_rust::RpcClient::new(runtime),
+                        rpc: ::cratestack::client_rust::RpcClient::new(
+                            runtime.with_schema_sha(super::SCHEMA_SHA256),
+                        ),
                     }
                 }
 

@@ -1023,6 +1023,7 @@ dependencies = [
  "sha2",
  "tokio",
  "tower",
+ "tracing",
  "url",
  "uuid",
 ]
@@ -1215,6 +1216,7 @@ dependencies = [
  "cratestack-proto",
  "proc-macro2",
  "quote",
+ "sha2",
  "syn 2.0.117",
 ]
 
