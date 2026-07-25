@@ -8,6 +8,16 @@
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 
+// Hex-encoded SHA-256 of the schema's source bytes (issue #178) — baked in
+// at generation time from `TypeScriptGeneratorConfig::schema_sha256`. Sent
+// as `x-cratestack-schema-sha` on every unary/streaming/batch call so a
+// client compiled against a stale `.cstack` schema shows up as a
+// server-side `tracing::warn!`, never a rejection. Empty when the CLI
+// wasn't given a schema fingerprint (e.g. this crate used as a library
+// directly, or a test) — the header is simply omitted in that case.
+export const SCHEMA_SHA256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const SCHEMA_SHA_HEADER = "x-cratestack-schema-sha";
+
 /** Plugs into {@link CratestackRpcRuntime} to control how request bodies
  *  are encoded and response bodies are decoded. `contentType` is sent as
  *  both the request `Content-Type` and the response `Accept` header, so
@@ -237,6 +247,9 @@ export class CratestackRpcRuntime {
 
   private async buildHeaders(extra?: HeadersInit): Promise<Headers> {
     const headers = new Headers(await resolveHeaders(this.defaultHeaders));
+    if (SCHEMA_SHA256 !== "") {
+      headers.set(SCHEMA_SHA_HEADER, SCHEMA_SHA256);
+    }
     for (const [key, value] of new Headers(extra)) {
       headers.set(key, value);
     }

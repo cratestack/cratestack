@@ -14,6 +14,7 @@ fn generates_fetch_client_and_tanstack_hooks_for_blog_schema() {
             template_dir: None,
             full_selection: false,
             pb_lock: None,
+            schema_sha256: "blogschemasha256testvalue0000000000000000000000000000000000".to_owned(),
         },
     )
     .expect("default template should render");

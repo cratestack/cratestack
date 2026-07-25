@@ -28,6 +28,11 @@ fn config_with_lock(pb_lock: PbLock) -> TypeScriptGeneratorConfig {
         template_dir: None,
         full_selection: false,
         pb_lock: Some(pb_lock),
+        // gRPC-Web is out of scope for the schema-fingerprint header (issue
+        // #178) — this crate's TypeScriptGeneratorConfig::schema_sha256 doc
+        // comment states REST/RPC only. This value only needs to make the
+        // struct literal compile; grpc-web-runtime.ts.j2 never reads it.
+        schema_sha256: "unused-for-grpc-web".to_owned(),
     }
 }
 

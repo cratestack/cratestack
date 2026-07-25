@@ -243,6 +243,61 @@ fn full_selection_leaves_create_and_update_inputs_unchanged() {
 }
 
 #[test]
+fn schema_sha256_header_is_baked_into_rest_and_rpc_runtimes() {
+    // Issue #178, REST/RPC only. Both runtimes get a `SCHEMA_SHA256`
+    // constant and set `x-cratestack-schema-sha` from it whenever it's
+    // non-empty — REST via its single `request<T>` method (shared by
+    // get/post/patch/delete), RPC via its single `buildHeaders` method
+    // (shared by call/batch/stream).
+    let rest = generate_for("tiny_rest", "tiny-rest-client");
+    let rest_runtime = package_file(&rest, "src/runtime.ts");
+    assert!(
+        rest_runtime.contains(&format!(
+            "export const SCHEMA_SHA256 = \"{SNAPSHOT_SCHEMA_SHA256}\";"
+        )),
+        "REST runtime must bake the configured schema SHA-256:\n{rest_runtime}"
+    );
+    assert!(
+        rest_runtime.contains("headers.set(SCHEMA_SHA_HEADER, SCHEMA_SHA256);"),
+        "REST runtime's request() must set x-cratestack-schema-sha from SCHEMA_SHA256:\n{rest_runtime}"
+    );
+
+    let rpc = generate_for("tiny_rpc", "tiny-rpc-client");
+    let rpc_runtime = package_file(&rpc, "src/runtime.ts");
+    assert!(
+        rpc_runtime.contains(&format!(
+            "export const SCHEMA_SHA256 = \"{SNAPSHOT_SCHEMA_SHA256}\";"
+        )),
+        "RPC runtime must bake the configured schema SHA-256:\n{rpc_runtime}"
+    );
+    assert!(
+        rpc_runtime.contains("headers.set(SCHEMA_SHA_HEADER, SCHEMA_SHA256);"),
+        "RPC runtime's buildHeaders() must set x-cratestack-schema-sha from SCHEMA_SHA256:\n{rpc_runtime}"
+    );
+}
+
+#[test]
+fn empty_schema_sha256_bakes_an_empty_constant_that_omits_the_header_at_runtime() {
+    // Empty `TypeScriptGeneratorConfig::schema_sha256` (unsupplied — library-
+    // direct usage or a test) must not make the generated client send a
+    // blank `x-cratestack-schema-sha`. The generator always emits the same
+    // `if (SCHEMA_SHA256 !== "")` guard; here it's the baked value that's
+    // empty, so the guard is false at runtime and the header is skipped —
+    // same "omit, don't send empty" behavior as the Rust client's
+    // `Option<&'static str>`.
+    let package = generate_for_with_schema_sha("tiny_rest", "tiny-rest-client", "");
+    let runtime = package_file(&package, "src/runtime.ts");
+    assert!(
+        runtime.contains("export const SCHEMA_SHA256 = \"\";"),
+        "an unconfigured schema_sha256 must bake an empty SCHEMA_SHA256 constant:\n{runtime}"
+    );
+    assert!(
+        runtime.contains("if (SCHEMA_SHA256 !== \"\") {"),
+        "the header must only be sent when SCHEMA_SHA256 is non-empty:\n{runtime}"
+    );
+}
+
+#[test]
 fn rest_and_rpc_share_models_ts() {
     let rest = generate_for("tiny_rest", "tiny-rest-client");
     let rpc = generate_for("tiny_rpc", "tiny-rpc-client");
@@ -280,6 +335,31 @@ fn generate_for_with_config(
     package_name: &str,
     full_selection: bool,
 ) -> GeneratedTypeScriptPackage {
+    generate_for_with_full_config(
+        fixture_stem,
+        package_name,
+        full_selection,
+        SNAPSHOT_SCHEMA_SHA256,
+    )
+}
+
+/// Like [`generate_for`], but with an explicit `schema_sha256` (issue
+/// #178) instead of the shared [`SNAPSHOT_SCHEMA_SHA256`] fixture value —
+/// used to exercise the empty/omitted-header branch.
+fn generate_for_with_schema_sha(
+    fixture_stem: &str,
+    package_name: &str,
+    schema_sha256: &str,
+) -> GeneratedTypeScriptPackage {
+    generate_for_with_full_config(fixture_stem, package_name, false, schema_sha256)
+}
+
+fn generate_for_with_full_config(
+    fixture_stem: &str,
+    package_name: &str,
+    full_selection: bool,
+    schema_sha256: &str,
+) -> GeneratedTypeScriptPackage {
     let fixture_path = fixture_root().join(format!("{fixture_stem}.cstack"));
     let schema = cratestack_parser::parse_schema_file(&fixture_path)
         .unwrap_or_else(|error| panic!("fixture {fixture_path:?} should parse: {error}"));
@@ -291,10 +371,18 @@ fn generate_for_with_config(
             template_dir: None,
             full_selection,
             pb_lock: None,
+            schema_sha256: schema_sha256.to_owned(),
         },
     )
     .expect("default template should render")
 }
+
+/// Fixed, deterministic stand-in for a real SHA-256 hex digest (issue
+/// #178) — used everywhere the snapshot fixtures need a `schema_sha256` so
+/// the golden files exercise the non-empty/header-sent code path instead
+/// of always covering only the empty/omitted branch.
+const SNAPSHOT_SCHEMA_SHA256: &str =
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 fn write_snapshot(dir: &Path, package: &GeneratedTypeScriptPackage) {
     // Wipe the snapshot tree so deleted files don't linger.

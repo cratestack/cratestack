@@ -19,6 +19,10 @@ pub(crate) struct TemplateContext {
     package_name: String,
     client_class_name: String,
     base_path: String,
+    /// Issue #178, REST/RPC only — see `TypeScriptGeneratorConfig::schema_sha256`'s
+    /// doc comment for the scope decision. Baked into `runtime.ts` as
+    /// `SCHEMA_SHA256`; empty when the CLI wasn't given a schema fingerprint.
+    schema_sha256: String,
     enums: Vec<EnumView>,
     interfaces: Vec<InterfaceView>,
     models: Vec<ModelApiView>,
@@ -154,6 +158,7 @@ pub(crate) fn build_template_context(
         package_name: config.package_name.clone(),
         client_class_name,
         base_path: config.base_path.clone(),
+        schema_sha256: config.schema_sha256.clone(),
         enums,
         interfaces,
         models,
