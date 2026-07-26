@@ -426,6 +426,14 @@ release-publish mode='real':
 	  fi
 
 	  extra=""
+	  if [ "{{mode}}" = "dry" ]; then
+	    # Dry-run packaging verification is meant to work against an
+	    # uncommitted version bump too — e.g. a CI dry-run rehearsal that
+	    # deliberately never commits (unlike `just release VERSION dry`,
+	    # which always commits the bump first regardless of mode). Never
+	    # uploads anything, so allowing a dirty tree here is safe.
+	    extra="--allow-dirty"
+	  fi
 	  if [ "$pkg" = "cratestack-studio" ]; then
 	    # Re-bundle right before studio's publish so OUT_DIR matches the
 	    # current sibling state, even if a prior loop iteration cleaned it.
