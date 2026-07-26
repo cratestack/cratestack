@@ -1,0 +1,19 @@
+{
+  "name": "cratestack-js-workspace",
+  "private": true,
+  "description": "pnpm/Turborepo workspace for CrateStack's hand-written npm packages (packages/*). Rust crates and examples/* are not part of this workspace.",
+  "scripts": {
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "format": "biome format --write packages/cratestack-api"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0",
+    "turbo": "^2.3.0"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=18"
+  }
+}

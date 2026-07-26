@@ -1,0 +1,36 @@
+{
+  "name": "@cratestack/api",
+  "version": "0.4.13",
+  "description": "Composable links for CrateStack's generated TypeScript RPC client — batching, logging, and more.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cratestack/cratestack.git",
+    "directory": "packages/cratestack-api"
+  },
+  "homepage": "https://cratestack.dev",
+  "bugs": "https://github.com/cratestack/cratestack/issues",
+  "keywords": ["cratestack", "cstack", "rpc", "batching", "trpc-links"],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "lint": "biome check ."
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

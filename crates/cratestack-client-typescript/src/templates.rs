@@ -65,6 +65,11 @@ pub(crate) const RPC_TEMPLATE_SPECS: &[TemplateSpec] = &[
         default_source: include_str!("../templates/src/rpc-runtime.ts.j2"),
     },
     TemplateSpec {
+        template_name: "rpc-links.ts.j2",
+        output_path: "src/links.ts",
+        default_source: include_str!("../templates/src/rpc-links.ts.j2"),
+    },
+    TemplateSpec {
         template_name: "rpc-client.ts.j2",
         output_path: "src/client.ts",
         default_source: include_str!("../templates/src/rpc-client.ts.j2"),

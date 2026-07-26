@@ -183,3 +183,37 @@ jobs:
           tool: just
       - name: cargo fmt --check
         run: just fmt-check
+
+  # ---- JS packages (packages/*) -----------------------------------------
+  # Blocking. Covers the hand-written npm packages (currently
+  # @cratestack/api; @cratestack/cli and cratestack-vscode have no
+  # build/test/lint scripts, so turbo simply skips them). `examples/*` is
+  # NOT part of this pnpm workspace — those are self-contained consumer
+  # projects with their own toolchains (napi/wasm/tauri), scoped out via
+  # `pnpm-workspace.yaml`'s `packages/*` glob.
+  js:
+    name: js (pnpm + turbo)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
+      - name: Restore turbo cache
+        # Local (actions/cache) turbo cache, not Vercel's hosted Remote
+        # Cache — that would need a new external account and
+        # TURBO_TOKEN/TURBO_TEAM secrets neither of which exist yet.
+        # This is free and needs no new setup; upgrading to the hosted
+        # cache later is a drop-in env-var change, not a rewrite.
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+      - name: Build, test, lint (turbo)
+        run: pnpm turbo run build test lint

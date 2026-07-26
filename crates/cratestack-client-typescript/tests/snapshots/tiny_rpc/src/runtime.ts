@@ -4,6 +4,12 @@
 // `cratestack-axum::rpc`. Unary calls POST the codec-encoded input
 // directly; sequence/streaming calls POST the input and read back an
 // `application/cbor-seq`-shaped body.
+//
+// `call()`/`batch()` run through the composable `links` chain (see
+// `./links`, issue #182) before reaching the real network call;
+// `stream()` bypasses it entirely — see `./links` for why.
+
+import type { RpcLink, RpcLinkNext, RpcLinkRequest } from "./links";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
@@ -15,7 +21,7 @@ export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue
 // server-side `tracing::warn!`, never a rejection. Empty when the CLI
 // wasn't given a schema fingerprint (e.g. this crate used as a library
 // directly, or a test) — the header is simply omitted in that case.
-export const SCHEMA_SHA256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+export const SCHEMA_SHA256: string = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const SCHEMA_SHA_HEADER = "x-cratestack-schema-sha";
 
 /** Plugs into {@link CratestackRpcRuntime} to control how request bodies
@@ -51,6 +57,13 @@ export interface CratestackRpcClientOptions {
   headers?: HeadersInit | (() => HeadersInit | Promise<HeadersInit>);
   /** Codec for request/response bodies. Defaults to {@link jsonRpcCodec}. */
   codec?: CratestackRpcCodec;
+  /** Composable interceptor chain (issue #182) — logging, retry,
+   *  auth-refresh, batching, etc. Runs in array order, each link
+   *  wrapping the next, terminating in the real network call. Omitted
+   *  or empty is a true no-op: requests are byte-identical to not
+   *  having this option at all. Applies to `call()`/`batch()` only —
+   *  `stream()` bypasses the chain entirely (see `./links`). */
+  links?: RpcLink[];
 }
 
 export interface CratestackRpcCallOptions {
@@ -128,12 +141,27 @@ export class CratestackRpcTransportError extends Error {
 
 const CBOR_SEQ_CONTENT_TYPE = "application/cbor-seq";
 
+/** The chain's terminal link — performs the real network call. Always
+ *  runs last regardless of what `links` declares; `reduceRight` wraps
+ *  every declared link around this. */
+const terminalLink: RpcLinkNext = async (request) => {
+  const url = request.kind === "batch" ? request.urls.batch() : request.urls.unary(request.opId);
+  const response = await request.fetchFn(url, {
+    method: "POST",
+    headers: request.headers,
+    body: request.codec.encode(request.input),
+    signal: request.signal,
+  });
+  return { response };
+};
+
 export class CratestackRpcRuntime {
   readonly origin: string;
   readonly basePath: string;
   readonly fetchFn: typeof fetch;
   readonly codec: CratestackRpcCodec;
   readonly defaultHeaders: HeadersInit | (() => HeadersInit | Promise<HeadersInit>) | undefined;
+  private readonly chain: RpcLinkNext;
 
   constructor(origin: string, options: CratestackRpcClientOptions = {}) {
     this.origin = origin.replace(/\/+$/, "");
@@ -141,6 +169,12 @@ export class CratestackRpcRuntime {
     this.fetchFn = options.fetch ?? fetch;
     this.codec = options.codec ?? jsonRpcCodec;
     this.defaultHeaders = options.headers;
+    // Empty `links` collapses `reduceRight` to `terminalLink` unchanged
+    // — byte-identical request as before this option existed.
+    this.chain = (options.links ?? []).reduceRight<RpcLinkNext>(
+      (next, link) => (request) => link(request, next),
+      terminalLink,
+    );
   }
 
   /** POST /rpc/{op_id} — unary call. */
@@ -152,11 +186,16 @@ export class CratestackRpcRuntime {
       headers.set("Idempotency-Key", options.idempotencyKey);
     }
 
-    const response = await this.fetchFn(this.url(`/rpc/${encodeURIComponent(opId)}`), {
-      method: "POST",
+    const { response } = await this.chain({
+      kind: "unary",
+      opId,
+      input: input ?? null,
       headers,
-      body: this.codec.encode(input ?? null),
       signal: options.signal ?? null,
+      ...(options.idempotencyKey !== undefined ? { idempotencyKey: options.idempotencyKey } : {}),
+      codec: this.codec,
+      fetchFn: this.fetchFn,
+      urls: this.linkUrls(),
     });
 
     return (await this.readUnaryResponse(response)) as O;
@@ -173,11 +212,15 @@ export class CratestackRpcRuntime {
     headers.set("Accept", this.codec.contentType);
     headers.set("Content-Type", this.codec.contentType);
 
-    const response = await this.fetchFn(this.url("/rpc/batch"), {
-      method: "POST",
+    const { response } = await this.chain({
+      kind: "batch",
+      opId: "batch",
+      input: requests,
       headers,
-      body: this.codec.encode(requests),
       signal: options.signal ?? null,
+      codec: this.codec,
+      fetchFn: this.fetchFn,
+      urls: this.linkUrls(),
     });
 
     return (await this.readUnaryResponse(response)) as RpcResponseFrame<O>[];
@@ -260,6 +303,13 @@ export class CratestackRpcRuntime {
     const normalizedBase = this.basePath === "/" ? "" : this.basePath.replace(/\/+$/, "");
     const normalizedPath = path.startsWith("/") ? path : `/${path}`;
     return new URL(`${normalizedBase}${normalizedPath}`, `${this.origin}/`).toString();
+  }
+
+  private linkUrls(): RpcLinkRequest["urls"] {
+    return {
+      unary: (opId: string) => this.url(`/rpc/${encodeURIComponent(opId)}`),
+      batch: () => this.url("/rpc/batch"),
+    };
   }
 }
 

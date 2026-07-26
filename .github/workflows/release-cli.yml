@@ -1,10 +1,15 @@
 # Builds and publishes prebuilt `cratestack-cli` binaries to a GitHub
 # Release, so consumers can install without a Rust toolchain (see #131).
+# Also publishes both npm packages this repo ships — @cratestack/cli
+# (the binary-fetching npm wrapper) and @cratestack/api (hand-written,
+# ships its own compiled dist/) — with npm provenance attached.
 #
 # Triggers on the `vX.Y.Z` tag push that `just release VERSION` produces
 # (`git push origin HEAD "v{{VERSION}}"` when run with PUSH=1). Also
 # accepts a manual `workflow_dispatch` against an existing tag, for
-# re-running a failed release or a dry-run against a throwaway test tag.
+# re-running a failed release or a dry-run against a throwaway test tag
+# — this dispatch path only rebuilds/re-attaches binaries, it never
+# touches npm (see the publish-npm* jobs' own comments for why).
 #
 # Artifact naming follows the cargo-binstall convention declared in
 # crates/cratestack-cli/Cargo.toml's [package.metadata.binstall] — the
@@ -167,11 +172,16 @@ jobs:
   # an NPM_TOKEN repo secret (an npmjs.com token for the @cratestack org,
   # which someone with org access has to create and add manually); until
   # then this step logs and no-ops instead of failing the whole release.
+  # `id-token: write` (job-scoped, not workflow-wide) is npm provenance's
+  # Sigstore/OIDC requirement — needs a public repo, which this is.
   publish-npm:
-    name: publish npm package
+    name: publish npm package (@cratestack/cli)
     if: github.event_name == 'push'
     needs: [prepare, build]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v6
         with:
@@ -188,7 +198,47 @@ jobs:
           set -euo pipefail
           if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
             echo "NPM_TOKEN secret not set; skipping npm publish." >&2
-            echo "See docs: tooling/cli-install.md for setup." >&2
+            echo "See docs/tooling/npm-publishing.md for setup." >&2
             exit 0
           fi
-          npm publish --access public
+          npm publish --access public --provenance
+
+  # @cratestack/api ships its own compiled dist/ in the tarball and never
+  # fetches a GitHub Release binary (unlike @cratestack/cli), so it has
+  # no ordering dependency on the `build` matrix — only needs `prepare`
+  # for the resolved tag. Same tag-push-only gate and NPM_TOKEN soft-skip
+  # as publish-npm above, for the same reasons.
+  publish-npm-api:
+    name: publish npm package (@cratestack/api)
+    if: github.event_name == 'push'
+    needs: [prepare]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
+      - name: Build @cratestack/api
+        run: pnpm --filter @cratestack/api build
+      - name: Publish @cratestack/api
+        working-directory: packages/cratestack-api
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "NPM_TOKEN secret not set; skipping npm publish." >&2
+            echo "See docs/tooling/npm-publishing.md for setup." >&2
+            exit 0
+          fi
+          npm publish --access public --provenance

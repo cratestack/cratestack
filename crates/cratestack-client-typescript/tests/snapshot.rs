@@ -145,6 +145,28 @@ fn generated_rpc_runtime_satisfies_exact_optional_property_types() {
         3,
         "call()/batch()/stream() should all coalesce signal to null:\n{runtime}"
     );
+    assert!(
+        !runtime.contains("idempotencyKey: options.idempotencyKey,"),
+        "RpcLinkRequest.idempotencyKey is optional-without-undefined — assigning \
+         `options.idempotencyKey` (string | undefined) directly fails under \
+         exactOptionalPropertyTypes; the key must be conditionally spread instead \
+         (verified with a real `tsc --noEmit` run, issue #182's link-chain plumbing):\n{runtime}"
+    );
+    assert!(
+        runtime.contains(
+            "...(options.idempotencyKey !== undefined ? { idempotencyKey: options.idempotencyKey } : {}),"
+        ),
+        "call()'s RpcLinkRequest must conditionally spread idempotencyKey:\n{runtime}"
+    );
+    assert!(
+        runtime.contains("export const SCHEMA_SHA256: string ="),
+        "SCHEMA_SHA256 must be explicitly widened to `string` — otherwise TS infers the \
+         literal type of whatever hash was baked in at generation time, and comparing a \
+         non-empty literal against \"\" in buildHeaders() fails to type-check (verified with \
+         a real `tsc --noEmit` run against a schema with a real, non-empty schema_sha256 — \
+         this snapshot's SNAPSHOT_SCHEMA_SHA256 fixture value happens to be exactly that \
+         case):\n{runtime}"
+    );
 }
 
 #[test]
@@ -266,7 +288,7 @@ fn schema_sha256_header_is_baked_into_rest_and_rpc_runtimes() {
     let rpc_runtime = package_file(&rpc, "src/runtime.ts");
     assert!(
         rpc_runtime.contains(&format!(
-            "export const SCHEMA_SHA256 = \"{SNAPSHOT_SCHEMA_SHA256}\";"
+            "export const SCHEMA_SHA256: string = \"{SNAPSHOT_SCHEMA_SHA256}\";"
         )),
         "RPC runtime must bake the configured schema SHA-256:\n{rpc_runtime}"
     );
@@ -294,6 +316,59 @@ fn empty_schema_sha256_bakes_an_empty_constant_that_omits_the_header_at_runtime(
     assert!(
         runtime.contains("if (SCHEMA_SHA256 !== \"\") {"),
         "the header must only be sent when SCHEMA_SHA256 is non-empty:\n{runtime}"
+    );
+}
+
+#[test]
+fn rpc_runtime_supports_composable_links_chain() {
+    // Issue #182: `call()`/`batch()` run through an ordered `links` chain
+    // terminating in the real fetch; `stream()` deliberately bypasses it
+    // (a link would need to clone/replay a streamed body, defeating
+    // streaming). No links declared must reduce to the exact terminal
+    // call — proven structurally by the `reduceRight` construction, not
+    // just documented.
+    let package = generate_for("tiny_rpc", "tiny-rpc-client");
+    let runtime = package_file(&package, "src/runtime.ts");
+    assert!(
+        runtime.contains("links?: RpcLink[];"),
+        "CratestackRpcClientOptions must accept a links chain:\n{runtime}"
+    );
+    assert!(
+        runtime.contains("import type { RpcLink, RpcLinkNext, RpcLinkRequest } from \"./links\";"),
+        "runtime.ts must import the link chain types from ./links:\n{runtime}"
+    );
+    assert!(
+        runtime.contains("this.chain = (options.links ?? []).reduceRight<RpcLinkNext>("),
+        "runtime must build the chain via reduceRight so an empty array collapses to the \
+         terminal link unchanged:\n{runtime}"
+    );
+    assert!(
+        runtime.contains("await this.chain({")
+            && runtime.matches("await this.chain({").count() == 2,
+        "call() and batch() (exactly two call sites) must invoke the chain instead of \
+         fetching directly:\n{runtime}"
+    );
+    assert!(
+        !runtime.contains("stream")
+            || !runtime[runtime.find("async *stream").expect("stream() must exist")..]
+                .contains("this.chain"),
+        "stream() must bypass the links chain entirely:\n{runtime}"
+    );
+
+    let links = package_file(&package, "src/links.ts");
+    assert!(
+        links.contains("export type RpcLink ="),
+        "links.ts must export the RpcLink type:\n{links}"
+    );
+    assert!(
+        links.contains("export function createLoggerLink("),
+        "links.ts must ship a reference logger link (issue #182 acceptance criteria):\n{links}"
+    );
+
+    let index = package_file(&package, "src/index.ts");
+    assert!(
+        index.contains("export * from \"./links\";"),
+        "index.ts must re-export the links module:\n{index}"
     );
 }
 

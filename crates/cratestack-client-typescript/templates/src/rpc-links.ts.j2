@@ -1,0 +1,74 @@
+// Composable interceptor chain for `CratestackRpcRuntime` (issue #182).
+//
+// Each `RpcLink` wraps the next link in the chain and terminates in the
+// real network call. Passing no `links` reduces to exactly today's
+// behavior — the chain built in `CratestackRpcRuntime`'s constructor
+// collapses to the terminal call unchanged when the array is empty, so
+// this is a true no-op, not just a documented convention.
+//
+// `stream()` deliberately never enters this chain: a link that wants to
+// inspect or retry a response would need to clone a streamed body, which
+// forces buffering the whole stream and defeats the point of streaming.
+// Links only see unary `call()` and `batch()` traffic.
+//
+// A link's `next` re-runs everything below it in the chain — the real
+// fetch and any links declared after it — never just the terminal fetch.
+// A retry link that should retry only the network attempt belongs last
+// (closest to the terminal call); one that should also re-trigger e.g.
+// an auth-refresh link is composed by declaring that link earlier in
+// the array.
+
+import type { CratestackRpcCodec } from "./runtime";
+
+/** One request going through the chain — either a single unary call
+ *  (`kind: "unary"`) or an already-assembled `/rpc/batch` call
+ *  (`kind: "batch"`, `input` is the `RpcRequest[]` array). `input` is
+ *  raw, not-yet-codec-encoded — only the terminal call encodes it, so a
+ *  link can inspect or rewrite it before it's serialized. */
+export interface RpcLinkRequest {
+  readonly kind: "unary" | "batch";
+  readonly opId: string;
+  readonly input: unknown;
+  readonly headers: Headers;
+  readonly signal: AbortSignal | null;
+  readonly idempotencyKey?: string;
+  readonly codec: CratestackRpcCodec;
+  readonly fetchFn: typeof fetch;
+  readonly urls: {
+    unary(opId: string): string;
+    batch(): string;
+  };
+}
+
+/** A link's return value. Wraps the raw `Response`. A link may
+ *  `.clone()` it to inspect the body but must never consume the
+ *  original response itself — only the runtime's own response reader
+ *  may, so the body isn't double-consumed. */
+export interface RpcLinkResponse {
+  readonly response: Response;
+}
+
+export type RpcLinkNext = (request: RpcLinkRequest) => Promise<RpcLinkResponse>;
+
+/** Wraps `next` — call it to continue the chain (running the terminal
+ *  fetch and any links declared after this one), or skip it to
+ *  short-circuit entirely (e.g. a batching link that queues the call
+ *  instead of forwarding it downstream). */
+export type RpcLink = (request: RpcLinkRequest, next: RpcLinkNext) => Promise<RpcLinkResponse>;
+
+/** Reference link (issue #182 acceptance criteria): logs each call's
+ *  kind, op id, outcome, and duration. Never touches `response.body`. */
+export function createLoggerLink(logger: Pick<Console, "info" | "error"> = console): RpcLink {
+  return async (request, next) => {
+    const start = Date.now();
+    logger.info(`[rpc] -> ${request.kind} ${request.opId}`);
+    try {
+      const result = await next(request);
+      logger.info(`[rpc] <- ${request.opId} ${result.response.status} (${Date.now() - start}ms)`);
+      return result;
+    } catch (error) {
+      logger.error(`[rpc] x ${request.opId} failed (${Date.now() - start}ms)`, error);
+      throw error;
+    }
+  };
+}
