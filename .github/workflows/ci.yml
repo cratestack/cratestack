@@ -202,6 +202,18 @@ jobs:
           node-version: 20
           cache: pnpm
       - name: pnpm install
+        # pnpm install runs postinstall for every workspace package,
+        # including cratestack-cli-npm's — which downloads the GitHub
+        # Release binary matching whatever version is currently in its
+        # package.json. Between a version-bump PR merging and the
+        # matching tag/release actually existing (or on the bump PR's
+        # own branch before it merges at all), that release doesn't
+        # exist yet — a plain install would 404. Neither turbo's build/
+        # test/lint tasks nor anything else in this job touches the
+        # downloaded binary (cli-npm has no build/test script of its
+        # own), so skipping the download costs no real coverage.
+        env:
+          CRATESTACK_CLI_SKIP_DOWNLOAD: "1"
         run: pnpm install --frozen-lockfile
       - name: Restore turbo cache
         # Local (actions/cache) turbo cache, not Vercel's hosted Remote
