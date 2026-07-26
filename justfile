@@ -360,7 +360,21 @@ release-publish mode='real':
 	  exit 1
 	fi
 	dry=""
-	[ "{{mode}}" = "dry" ] && dry="--dry-run"
+	# --no-verify alongside --dry-run: `cargo publish` verifies by
+	# compiling the packaged crate against dependency versions resolved
+	# from the REAL crates.io index — but a dry-run publish always
+	# "aborts upload", so an earlier crate's brand-new version never
+	# actually lands in that index for a later crate to resolve against.
+	# For a version that has never been published anywhere before, this
+	# makes plain `--dry-run` verification fail on the *second* crate in
+	# the topo order, every time — not a flake, a structural limitation
+	# of dry-run dependency resolution. RELEASE.md's own manual
+	# instructions already route around this the same way
+	# (`cargo package -p cratestack-core --allow-dirty --no-verify`);
+	# this just automates it. Real mode is unaffected and still fully
+	# verifies each crate, since by the time it publishes, everything
+	# before it in the topo order has actually been uploaded.
+	[ "{{mode}}" = "dry" ] && dry="--dry-run --no-verify"
 	version=$(awk -F'"' '/^version = /{print $2; exit}' Cargo.toml)
 	from="${FROM:-}"
 	skipping=true
