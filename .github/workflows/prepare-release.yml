@@ -53,6 +53,11 @@ jobs:
           # (governance-check requires a real #123/URL reference, not just
           # a workflow-run link — see the "Open release PR" step below).
           fetch-depth: 0
+      # just bump / just release-check both run cargo check --workspace,
+      # which pulls in the tauri-* example crates transitively (no
+      # default-members) — needs GTK/WebKit dev packages on Linux, same as
+      # ci.yml's check/clippy jobs.
+      - uses: ./.github/actions/tauri-linux-deps
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
