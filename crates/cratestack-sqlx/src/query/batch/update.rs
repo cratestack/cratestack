@@ -61,13 +61,11 @@ where
         }
 
         let mut per_item: Vec<Result<M, CoolError>> = Vec::with_capacity(self.items.len());
-        for (id, input, if_match) in self.items {
+        for item in self.items {
             let outcome = run_update_item(
                 &mut tx,
                 self.descriptor,
-                id,
-                input,
-                if_match,
+                item,
                 ctx,
                 emits_event,
                 audit_enabled,

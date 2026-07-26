@@ -10,6 +10,32 @@ use cratestack_core::CoolError;
 
 use crate::sqlx;
 
+/// Row shape of the `RETURNING` clause on the reserve-or-reclaim upsert:
+/// `(request_hash, reservation_id, response_status, response_headers,
+/// response_body, created_at, expires_at, was_inserted)`.
+type UpsertRow = (
+    Vec<u8>,
+    uuid::Uuid,
+    Option<i32>,
+    Option<Vec<u8>>,
+    Option<Vec<u8>>,
+    chrono::DateTime<chrono::Utc>,
+    chrono::DateTime<chrono::Utc>,
+    bool,
+);
+
+/// Row shape of the existing-row lookup when the upsert's `WHERE` finds a
+/// live row: `(request_hash, response_status, response_headers,
+/// response_body, created_at, expires_at)`.
+type ExistingRow = (
+    Vec<u8>,
+    Option<i32>,
+    Option<Vec<u8>>,
+    Option<Vec<u8>>,
+    chrono::DateTime<chrono::Utc>,
+    chrono::DateTime<chrono::Utc>,
+);
+
 pub(super) async fn reserve_or_fetch(
     pool: &sqlx::PgPool,
     principal: &str,
@@ -28,16 +54,7 @@ pub(super) async fn reserve_or_fetch(
     // (`WHERE` filter on DO UPDATE), leave a live row alone.
     // `xmax = 0` distinguishes a real INSERT (true) from an
     // UPDATE-on-conflict (false).
-    let row: Option<(
-        Vec<u8>,
-        uuid::Uuid,
-        Option<i32>,
-        Option<Vec<u8>>,
-        Option<Vec<u8>>,
-        chrono::DateTime<chrono::Utc>,
-        chrono::DateTime<chrono::Utc>,
-        bool,
-    )> = sqlx::query_as(
+    let row: Option<UpsertRow> = sqlx::query_as(
         "INSERT INTO cratestack_idempotency (
             principal_fingerprint, key, request_hash, reservation_id, expires_at
          ) VALUES ($1, $2, $3, $4, $5)
@@ -70,14 +87,7 @@ pub(super) async fn reserve_or_fetch(
 
     // ON CONFLICT WHERE evaluated false (existing row is live).
     // Read it back and classify.
-    let existing: Option<(
-        Vec<u8>,
-        Option<i32>,
-        Option<Vec<u8>>,
-        Option<Vec<u8>>,
-        chrono::DateTime<chrono::Utc>,
-        chrono::DateTime<chrono::Utc>,
-    )> = sqlx::query_as(
+    let existing: Option<ExistingRow> = sqlx::query_as(
         "SELECT request_hash, response_status, response_headers,
                 response_body, created_at, expires_at
          FROM cratestack_idempotency

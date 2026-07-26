@@ -10,12 +10,12 @@ use crate::descriptor::enqueue_event_outbox;
 use crate::query::support::{push_action_policy_query, push_bind_value};
 use crate::{ModelDescriptor, UpdateModelInput, sqlx};
 
+use super::update::BatchUpdateItem;
+
 pub(super) async fn run_update_item<'tx, M, PK, I>(
     outer: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
     descriptor: &'static ModelDescriptor<M, PK>,
-    id: PK,
-    input: I,
-    if_match: Option<i64>,
+    item: BatchUpdateItem<PK, I>,
     ctx: &CoolContext,
     emits_event: bool,
     audit_enabled: bool,
@@ -25,6 +25,7 @@ where
     PK: Clone + Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
 {
+    let (id, input, if_match) = item;
     let mut item_tx = outer
         .begin()
         .await
