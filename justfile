@@ -254,6 +254,17 @@ bump NEW:
 # canonical pre-PR gate for those (it auto-fixes); release-check
 # focuses on what must hold for a clean publish.
 #
+# Bundles the Studio UI first (requires trunk + wasm32-unknown-unknown,
+# same as `just release-publish`'s own cratestack-studio step needs
+# later): without it, `cratestack-studio`'s build.rs falls back to a
+# placeholder admin UI, and its own `api_smoke` tests
+# (`root_serves_bundled_ui_index_when_feature_on`,
+# `unknown_static_path_falls_back_to_index_html`) assert on the REAL
+# trunk-built UI and fail on a fresh checkout with no prior local Trunk
+# build lying around. On a dev machine that already runs `trunk serve`
+# regularly this is usually masked by leftover build artifacts — it only
+# reliably surfaces on a clean environment (e.g. CI).
+#
 # Test stage is retried up to 3x to absorb known-flaky tests (notably
 # `generated_routes_emit_tracing_events`, which intermittently misses
 # tracing events under workspace concurrency — see its source comment).
@@ -266,6 +277,7 @@ bump NEW:
 release-check:
 	#!/usr/bin/env bash
 	set -euo pipefail
+	just bundle-studio-ui
 	cargo check --workspace --exclude embedded_flutter_native --all-targets
 	if [ "${SKIP_TESTS:-0}" = "1" ]; then
 	  echo "release-check: SKIP_TESTS=1 — bypassing workspace tests." >&2
