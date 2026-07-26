@@ -96,40 +96,32 @@ impl AuthProvider for AuthEngineAuthProvider {
 }
 
 impl cratestack_schema::procedures::ProcedureRegistry for AuthEngineProcedures {
-    fn inspect_post(
+    async fn inspect_post(
         &self,
         _db: &cratestack_schema::Cratestack,
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::inspect_post::Args,
-    ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::inspect_post::Output, cratestack::CoolError>,
-    > + Send {
-        async move {
-            Ok(cratestack_schema::EnginePost {
-                id: args.args.postId,
-                title: "Visible".to_owned(),
-                published: true,
-                authorId: "usr_1".to_owned(),
-            })
-        }
+    ) -> Result<cratestack_schema::procedures::inspect_post::Output, cratestack::CoolError> {
+        Ok(cratestack_schema::EnginePost {
+            id: args.args.postId,
+            title: "Visible".to_owned(),
+            published: true,
+            authorId: "usr_1".to_owned(),
+        })
     }
 
-    fn admin_pulse(
+    async fn admin_pulse(
         &self,
         _db: &cratestack_schema::Cratestack,
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::admin_pulse::Args,
-    ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::admin_pulse::Output, cratestack::CoolError>,
-    > + Send {
-        async move {
-            Ok(cratestack_schema::EnginePost {
-                id: args.args.postId,
-                title: "Admin Pulse".to_owned(),
-                published: true,
-                authorId: "usr_2".to_owned(),
-            })
-        }
+    ) -> Result<cratestack_schema::procedures::admin_pulse::Output, cratestack::CoolError> {
+        Ok(cratestack_schema::EnginePost {
+            id: args.args.postId,
+            title: "Admin Pulse".to_owned(),
+            published: true,
+            authorId: "usr_2".to_owned(),
+        })
     }
 }
 
