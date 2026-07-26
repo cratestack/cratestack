@@ -282,6 +282,16 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
       - name: pnpm install
+        # `pnpm install` runs postinstall for every workspace package,
+        # including cratestack-cli-npm's — which downloads the matching
+        # GitHub Release binary for whatever version is in its
+        # package.json (the same tag this job checked out). This job
+        # doesn't need that binary (it only builds/publishes
+        # @cratestack/api) and only depends on `prepare`, not `build`/
+        # `release`, so that GitHub Release may not exist yet at this
+        # point — skip the download rather than race it.
+        env:
+          CRATESTACK_CLI_SKIP_DOWNLOAD: "1"
         run: pnpm install --frozen-lockfile
       - name: Build @cratestack/api
         run: pnpm --filter @cratestack/api build

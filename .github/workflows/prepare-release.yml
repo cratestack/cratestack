@@ -90,6 +90,14 @@ jobs:
 
       - name: Dry-run rehearsal (crates.io + npm) — no git writes
         if: inputs.mode == 'dry'
+        env:
+          # `pnpm install` below runs postinstall for every workspace
+          # package, including cratestack-cli-npm's — which would try to
+          # download the GitHub Release binary for the version `just
+          # bump` just wrote into its package.json. No such release
+          # exists yet (this is a dry run, nothing was ever tagged or
+          # published) — skip the download rather than fail on a 404.
+          CRATESTACK_CLI_SKIP_DOWNLOAD: "1"
         run: |
           set -euo pipefail
           echo "::group::crates.io dry-run (just release-publish dry)"
