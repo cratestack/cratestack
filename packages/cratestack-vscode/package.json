@@ -2,17 +2,17 @@
   "name": "cratestack-vscode",
   "displayName": "CrateStack",
   "description": "VS Code support for CrateStack .cstack schemas",
-  "version": "0.1.0",
-  "publisher": "vaam-store",
+  "version": "0.4.16",
+  "publisher": "cratestack",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/vaam-store/cratestack.git",
+    "url": "https://github.com/cratestack/cratestack.git",
     "directory": "packages/cratestack-vscode"
   },
-  "homepage": "https://github.com/vaam-store/cratestack/tree/main/packages/cratestack-vscode#readme",
+  "homepage": "https://github.com/cratestack/cratestack/tree/main/packages/cratestack-vscode#readme",
   "bugs": {
-    "url": "https://github.com/vaam-store/cratestack/issues"
+    "url": "https://github.com/cratestack/cratestack/issues"
   },
   "keywords": [
     "cratestack",

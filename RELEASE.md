@@ -43,13 +43,19 @@ else happens on its own:
 1. **"Cut Release Tag"** (triggers on every push to `main`) notices the new
    version in `Cargo.toml` and creates + pushes tag `vX.Y.Z` — a no-op on
    every other ordinary commit.
-2. That tag push triggers **"Release CLI Binaries"**
+2. That same tag push also triggers **"Release CLI Binaries"**
    (`.github/workflows/release-cli.yml`): publishes every crate to
    crates.io (`CARGO_REGISTRY_TOKEN`), builds and attaches cross-platform
    `cratestack-cli` binaries to a GitHub Release, and publishes both npm
    packages (`@cratestack/cli`, `@cratestack/api`) with provenance
    (`NPM_TOKEN`). See [`docs/tooling/npm-publishing.md`](docs/tooling/npm-publishing.md)
    for one-time secret setup.
+3. ...and **"Release VS Code Extension"**
+   (`.github/workflows/release-vscode.yml`): builds `cratestack-lsp` per
+   platform and publishes `packages/cratestack-vscode` to both the Visual
+   Studio Marketplace (`VSCE_PAT`) and Open VSX (`OVSX_PAT`). See
+   [`docs/tooling/vscode-publishing.md`](docs/tooling/vscode-publishing.md)
+   for one-time publisher/namespace + secret setup.
 
 Step 1 only reliably cascades into step 2 because `cut-release-tag.yml`
 pushes the tag using a `RELEASE_PAT` repo secret instead of the default
@@ -62,16 +68,23 @@ tag exists first and fails with a clear message otherwise; it never touches
 crates.io/npm on that path (see the jobs' own comments for why an npm/crates
 publish can't safely be retried against a throwaway dispatch).
 
-**Known-good reference: `v0.4.16`** is the first release to go through this
-entire pipeline end-to-end with no manual publish steps (crates.io + both
-npm packages + GitHub Release binaries) — independently verified live
-against each registry, not just a green CI checkmark. See
+**Known-good reference: `v0.4.16`** is the first release to go through the
+crates.io/npm/GitHub-Release side of this pipeline end-to-end with no manual
+publish steps — independently verified live against each registry, not just
+a green CI checkmark. See
 [Verifying a release actually shipped](#verifying-a-release-actually-shipped)
 below for the exact commands. `v0.4.14` and `v0.4.15` each hit one of the two
 standing/historical issues described below; both are now understood and
 either documented as permanent workarounds (PR creation) or fixed and
 re-verified (the `RELEASE_PAT` trigger issue, and the `NPM_TOKEN` token-type
 issue).
+
+**`release-vscode.yml` is newer and not yet secret-configured**: as of
+`v0.4.16` there is no `VSCE_PAT`/`OVSX_PAT` secret yet, so every tag push
+soft-skips both publish steps (packaging still runs and uploads vsix build
+artifacts, proving the packaging side works). See
+[`docs/tooling/vscode-publishing.md`](docs/tooling/vscode-publishing.md) for
+the one-time publisher/namespace setup that unblocks this.
 
 ### Why `RELEASE_PAT` exists, and why the bump goes through a PR at all
 
@@ -272,6 +285,10 @@ Required credentials are intentionally read from the environment:
 * `VSCE_PAT` for Visual Studio Marketplace
 * `OVSX_PAT` for Open VSX
 * GitHub permissions to push tags and create releases
+
+See [`docs/tooling/npm-publishing.md`](docs/tooling/npm-publishing.md) and
+[`docs/tooling/vscode-publishing.md`](docs/tooling/vscode-publishing.md) for one-time setup of
+each of these.
 
 ## Validate
 

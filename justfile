@@ -238,12 +238,14 @@ bump NEW:
 	  -not -path '*/node_modules/*' \
 	  -print0 | xargs -0 perl -i -pe "s/\Q\"$current\"\E/\"{{NEW}}\"/g"
 	# Keep the @cratestack/cli npm wrapper's version (and the release
-	# asset tag it downloads) and the @cratestack/api package's version
-	# in lockstep with the workspace version — scoped to these two
-	# package.json files, not the unrelated example apps'.
+	# asset tag it downloads), the @cratestack/api package's version, and
+	# the cratestack-vscode extension's version in lockstep with the
+	# workspace version — scoped to these three package.json files, not
+	# the unrelated example apps'.
 	perl -i -pe "s/\Q\"version\": \"$current\"\E/\"version\": \"{{NEW}}\"/" \
 	  packages/cratestack-cli-npm/package.json \
-	  packages/cratestack-api/package.json
+	  packages/cratestack-api/package.json \
+	  packages/cratestack-vscode/package.json
 	# Refresh Cargo.lock so all entries pick up the new version.
 	# Exclude the Flutter crate (uncommitted frb_generated glue → E0583).
 	cargo check --workspace --exclude embedded_flutter_native --quiet

@@ -1,0 +1,142 @@
+# Builds and publishes the `cratestack-vscode` extension (packages/cratestack-vscode)
+# to the Visual Studio Marketplace and Open VSX on every `vX.Y.Z` tag push, alongside
+# the crates.io/npm/GitHub-Release publishes in release-cli.yml.
+#
+# The extension bundles a native `cratestack-lsp` binary under `server/<platform>/`
+# (see server-path.js), so a single vsix can't cover every OS/arch — instead this
+# builds cratestack-lsp on a native runner per target and packages a
+# platform-specific vsix via `vsce package --target <target>` — the same way
+# the Marketplace itself distributes per-platform extensions. Open VSX reads
+# the target back out of that vsix's manifest, so its publish step needs no
+# separate --target flag.
+#
+# Same tag-push-only gate as release-cli.yml's npm jobs: a Marketplace/Open VSX
+# publish can't be cleanly deleted and retried, so a throwaway workflow_dispatch
+# test run must never reach either registry.
+name: Release VS Code Extension
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: release-vscode-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: publish (${{ matrix.vsce_target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+            vsce_target: darwin-x64
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            vsce_target: darwin-arm64
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            vsce_target: linux-x64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            vsce_target: linux-arm64
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            vsce_target: win32-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-vscode-${{ matrix.target }}
+      # Scoped to -p cratestack-lsp, not --workspace, so this needs none of
+      # the GTK/WebKit dev packages the tauri-* example crates pull in on
+      # Linux (see CLAUDE.md's Linux prerequisite note).
+      - name: Build cratestack-lsp
+        run: cargo build --release --locked -p cratestack-lsp --target ${{ matrix.target }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: pnpm install
+        # pnpm resolves the whole workspace from here (see
+        # pnpm-workspace.yaml), which runs cratestack-cli-npm's postinstall
+        # too — that downloads the GitHub Release binary matching the tag
+        # this workflow just ran on. release-cli.yml's `build`/`release`
+        # jobs (which create that release asset) run independently of this
+        # workflow and may not have finished yet, so skip the download here
+        # the same way ci.yml does — this job never touches that binary.
+        working-directory: packages/cratestack-vscode
+        env:
+          CRATESTACK_CLI_SKIP_DOWNLOAD: "1"
+        run: pnpm install --frozen-lockfile
+      - name: Stage cratestack-lsp binary
+        shell: bash
+        working-directory: packages/cratestack-vscode
+        run: |
+          set -euo pipefail
+          exe="cratestack-lsp"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            exe="cratestack-lsp.exe"
+          fi
+          pnpm run stage-server -- "../../target/${{ matrix.target }}/release/${exe}"
+      - name: Package vsix
+        working-directory: packages/cratestack-vscode
+        run: npx @vscode/vsce package --no-dependencies --target ${{ matrix.vsce_target }}
+      - name: Find packaged vsix
+        id: vsix
+        shell: bash
+        working-directory: packages/cratestack-vscode
+        run: |
+          set -euo pipefail
+          file=$(find . -maxdepth 1 -name '*.vsix' -print -quit)
+          echo "file=$file" >> "$GITHUB_OUTPUT"
+          echo "path=packages/cratestack-vscode/$file" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix-${{ matrix.vsce_target }}
+          path: ${{ steps.vsix.outputs.path }}
+          if-no-files-found: error
+      # Requires a repo secret named VSCE_PAT: a personal access token for a
+      # Visual Studio Marketplace publisher named `cratestack`. See
+      # docs/tooling/vscode-publishing.md for one-time setup. Soft-skips
+      # (logs + exits 0) when the secret isn't set yet, matching
+      # release-cli.yml's publish-npm soft-skip convention — so this
+      # workflow succeeds end-to-end even before the secret exists.
+      - name: Publish to VS Code Marketplace
+        shell: bash
+        working-directory: packages/cratestack-vscode
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          set -euo pipefail
+          if [ -z "${VSCE_PAT:-}" ]; then
+            echo "VSCE_PAT secret not set; skipping Marketplace publish." >&2
+            echo "See docs/tooling/vscode-publishing.md for setup." >&2
+            exit 0
+          fi
+          npx @vscode/vsce publish --no-dependencies --skip-duplicate --packagePath "${{ steps.vsix.outputs.file }}" -p "$VSCE_PAT"
+      # Requires a repo secret named OVSX_PAT: an Open VSX access token for a
+      # namespace named `cratestack`. Same soft-skip convention as above.
+      - name: Publish to Open VSX
+        shell: bash
+        working-directory: packages/cratestack-vscode
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          set -euo pipefail
+          if [ -z "${OVSX_PAT:-}" ]; then
+            echo "OVSX_PAT secret not set; skipping Open VSX publish." >&2
+            echo "See docs/tooling/vscode-publishing.md for setup." >&2
+            exit 0
+          fi
+          npx ovsx publish "${{ steps.vsix.outputs.file }}" --skip-duplicate -p "$OVSX_PAT"
