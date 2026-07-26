@@ -1,6 +1,6 @@
 {
   "name": "@cratestack/api",
-  "version": "0.4.14",
+  "version": "0.4.15",
   "description": "Composable links for CrateStack's generated TypeScript RPC client — batching, logging, and more.",
   "license": "MIT",
   "repository": {
