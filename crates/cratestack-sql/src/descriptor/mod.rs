@@ -81,6 +81,9 @@ pub struct ModelDescriptor<M, PK> {
 }
 
 impl<M, PK> ModelDescriptor<M, PK> {
+    // The argument count mirrors the flat metadata struct this builds, not a
+    // design that's worth threading through a builder pattern.
+    #[allow(clippy::too_many_arguments)]
     pub const fn new(
         schema_name: &'static str,
         table_name: &'static str,
