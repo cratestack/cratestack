@@ -334,7 +334,15 @@ release-publish mode='real':
 	# packages from `cargo metadata`. Requires python3 (ubiquitous on
 	# dev machines). On failure (parse, cycle, missing python) the
 	# error is loud and the recipe aborts before touching crates.io.
-	publish_order=$(cargo metadata --format-version=1 --no-deps 2>/dev/null | \
+	#
+	# Also computes `dry_safe_packages`: the packages with NO internal
+	# cratestack-* dependency at all (currently just `cratestack` and
+	# `cratestack-core`). This is the actual set `dry` mode can ever
+	# meaningfully package-check for a version that has never been
+	# published anywhere before — see the `--allow-dirty`/dry-run
+	# handling below for why every other crate is structurally
+	# unpackageable in that situation, no matter what flags are passed.
+	topo_output=$(cargo metadata --format-version=1 --no-deps 2>/dev/null | \
 	  python3 -c "$(cat <<'PYEOF'
 	import json, sys, copy
 	m = json.load(sys.stdin)
@@ -343,6 +351,7 @@ release-publish mode='real':
 	graph = {n: {d["name"] for d in p["dependencies"]
 	             if d["name"] in pkgs and d["name"] != n}
 	         for n, p in pkgs.items()}
+	dry_safe = sorted(n for n, d in graph.items() if not d)
 	order, remaining = [], copy.deepcopy(graph)
 	while remaining:
 	    leaves = sorted(n for n, d in remaining.items() if not d)
@@ -353,27 +362,22 @@ release-publish mode='real':
 	    for d in remaining.values():
 	        d.difference_update(leaves)
 	print(" ".join(order))
+	print(" ".join(dry_safe))
 	PYEOF
 	)")
+	publish_order=$(printf '%s\n' "$topo_output" | sed -n '1p')
+	dry_safe_packages=$(printf '%s\n' "$topo_output" | sed -n '2p')
 	if [ -z "$publish_order" ]; then
 	  echo "failed to compute publish order from cargo metadata" >&2
 	  exit 1
 	fi
 	dry=""
-	# --no-verify alongside --dry-run: `cargo publish` verifies by
-	# compiling the packaged crate against dependency versions resolved
-	# from the REAL crates.io index — but a dry-run publish always
-	# "aborts upload", so an earlier crate's brand-new version never
-	# actually lands in that index for a later crate to resolve against.
-	# For a version that has never been published anywhere before, this
-	# makes plain `--dry-run` verification fail on the *second* crate in
-	# the topo order, every time — not a flake, a structural limitation
-	# of dry-run dependency resolution. RELEASE.md's own manual
-	# instructions already route around this the same way
-	# (`cargo package -p cratestack-core --allow-dirty --no-verify`);
-	# this just automates it. Real mode is unaffected and still fully
-	# verifies each crate, since by the time it publishes, everything
-	# before it in the topo order has actually been uploaded.
+	# --no-verify alongside --dry-run: for the handful of packages dry
+	# mode does attempt (see dry_safe_packages above), skip the
+	# compile-verification step — it's redundant with `release-check`'s
+	# own `cargo check --workspace` earlier in the same pipeline, and
+	# just wastes time. Real mode is unaffected and still fully
+	# verifies each crate.
 	[ "{{mode}}" = "dry" ] && dry="--dry-run --no-verify"
 	version=$(awk -F'"' '/^version = /{print $2; exit}' Cargo.toml)
 	from="${FROM:-}"
@@ -437,6 +441,34 @@ release-publish mode='real':
 	  if [ "{{mode}}" = "real" ] && is_published "$pkg" "$version"; then
 	    echo "  → already on crates.io, skipping"
 	    continue
+	  fi
+
+	  # A crate with an internal cratestack-* dependency can NEVER be
+	  # packaged in dry mode for a version that has never been published
+	  # anywhere before: cargo resolves path+version workspace deps
+	  # against the REAL crates.io index even just to build the package
+	  # manifest (not only to verify/compile it), and a dry-run publish
+	  # always "aborts upload" — so an earlier crate's new version never
+	  # actually lands in that index for a later one to resolve against.
+	  # This is a structural cargo limitation, not fixable with
+	  # --allow-dirty/--no-verify/any other flag (confirmed locally: even
+	  # RELEASE.md's own `cargo package --allow-dirty --no-verify`
+	  # recipe fails identically). Only the packages with zero internal
+	  # deps (dry_safe_packages, computed above) can ever be meaningfully
+	  # dry-run in this situation — skip everything else with a clear
+	  # explanation instead of attempting a guaranteed failure.
+	  if [ "{{mode}}" = "dry" ]; then
+	    case " $dry_safe_packages " in
+	      *" $pkg "*) ;;
+	      *)
+	        echo "  → skipping dry-run package check: $pkg depends on another"
+	        echo "    cratestack-* crate whose new version was never actually"
+	        echo "    published (dry-run never uploads) — cargo can't resolve"
+	        echo "    that dependency, no matter what flags are passed. See"
+	        echo "    release-publish's comments in the justfile for detail."
+	        continue
+	        ;;
+	    esac
 	  fi
 
 	  extra=""
