@@ -105,30 +105,24 @@ mod advanced_policy_schema {
             }
         }
 
-        fn review_post(
+        async fn review_post(
             &self,
             _db: &cratestack_schema::Cratestack,
             _ctx: &CoolContext,
             args: cratestack_schema::procedures::review_post::Args,
-        ) -> impl core::future::Future<
-            Output = Result<
-                cratestack_schema::procedures::review_post::Output,
-                cratestack::CoolError,
-            >,
-        > + Send {
-            async move {
-                Ok(cratestack_schema::AdvancedPost {
-                    id: args.args.postId,
-                    title: if args.args.dryRun {
-                        "Dry Run"
-                    } else {
-                        "Reviewed"
-                    }
-                    .to_owned(),
-                    published: args.args.publishNow,
-                    authorId: 1,
-                })
-            }
+        ) -> Result<cratestack_schema::procedures::review_post::Output, cratestack::CoolError>
+        {
+            Ok(cratestack_schema::AdvancedPost {
+                id: args.args.postId,
+                title: if args.args.dryRun {
+                    "Dry Run"
+                } else {
+                    "Reviewed"
+                }
+                .to_owned(),
+                published: args.args.publishNow,
+                authorId: 1,
+            })
         }
     }
 
@@ -543,56 +537,45 @@ mod auth_engine_schema {
 struct TestProcedures;
 
 impl cratestack_schema::procedures::ProcedureRegistry for TestProcedures {
-    fn get_feed(
+    async fn get_feed(
         &self,
         _db: &cratestack_schema::Cratestack,
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::get_feed::Args,
-    ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::get_feed::Output, cratestack::CoolError>,
-    > + Send {
-        async move {
-            Ok(vec![cratestack_schema::Post {
-                id: args.limit.unwrap_or(1),
-                title: "Feed".to_owned(),
-                subtitle: None,
-                published: true,
-                authorId: 1,
-            }])
-        }
+    ) -> Result<cratestack_schema::procedures::get_feed::Output, cratestack::CoolError> {
+        Ok(vec![cratestack_schema::Post {
+            id: args.limit.unwrap_or(1),
+            title: "Feed".to_owned(),
+            subtitle: None,
+            published: true,
+            authorId: 1,
+        }])
     }
 
-    fn get_feed_page(
+    async fn get_feed_page(
         &self,
         _db: &cratestack_schema::Cratestack,
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::get_feed_page::Args,
-    ) -> impl core::future::Future<
-        Output = Result<
-            cratestack_schema::procedures::get_feed_page::Output,
-            cratestack::CoolError,
-        >,
-    > + Send {
-        async move {
-            let limit = args.limit.unwrap_or(1);
-            let offset = args.offset.unwrap_or(0);
-            Ok(cratestack::Page::new(
-                vec![cratestack_schema::Post {
-                    id: limit + offset,
-                    title: "Feed Page".to_owned(),
-                    subtitle: Some("paged".to_owned()),
-                    published: true,
-                    authorId: 1,
-                }],
-                cratestack::PageInfo {
-                    limit: Some(limit),
-                    offset: Some(offset),
-                    has_next_page: true,
-                    has_previous_page: offset > 0,
-                },
-            )
-            .with_total_count(Some(3)))
-        }
+    ) -> Result<cratestack_schema::procedures::get_feed_page::Output, cratestack::CoolError> {
+        let limit = args.limit.unwrap_or(1);
+        let offset = args.offset.unwrap_or(0);
+        Ok(cratestack::Page::new(
+            vec![cratestack_schema::Post {
+                id: limit + offset,
+                title: "Feed Page".to_owned(),
+                subtitle: Some("paged".to_owned()),
+                published: true,
+                authorId: 1,
+            }],
+            cratestack::PageInfo {
+                limit: Some(limit),
+                offset: Some(offset),
+                has_next_page: true,
+                has_previous_page: offset > 0,
+            },
+        )
+        .with_total_count(Some(3)))
     }
 
     fn publish_post(
@@ -2426,57 +2409,45 @@ mod transport_rpc_schema {
     struct RpcTestProcedures;
 
     impl cratestack_schema::procedures::ProcedureRegistry for RpcTestProcedures {
-        fn ping(
+        async fn ping(
             &self,
             _db: &cratestack_schema::Cratestack,
             _ctx: &CoolContext,
             args: cratestack_schema::procedures::ping::Args,
-        ) -> impl core::future::Future<
-            Output = Result<cratestack_schema::procedures::ping::Output, cratestack::CoolError>,
-        > + Send {
-            async move { Ok(args.args) }
+        ) -> Result<cratestack_schema::procedures::ping::Output, cratestack::CoolError> {
+            Ok(args.args)
         }
 
-        fn bump(
+        async fn bump(
             &self,
             _db: &cratestack_schema::Cratestack,
             _ctx: &CoolContext,
             args: cratestack_schema::procedures::bump::Args,
-        ) -> impl core::future::Future<
-            Output = Result<cratestack_schema::procedures::bump::Output, cratestack::CoolError>,
-        > + Send {
-            async move {
-                Ok(cratestack_schema::PingArgs {
-                    nonce: format!("{}!", args.args.nonce),
-                })
-            }
+        ) -> Result<cratestack_schema::procedures::bump::Output, cratestack::CoolError> {
+            Ok(cratestack_schema::PingArgs {
+                nonce: format!("{}!", args.args.nonce),
+            })
         }
 
-        fn many_pings(
+        async fn many_pings(
             &self,
             _db: &cratestack_schema::Cratestack,
             _ctx: &CoolContext,
             args: cratestack_schema::procedures::many_pings::Args,
-        ) -> impl core::future::Future<
-            Output = Result<
-                cratestack_schema::procedures::many_pings::Output,
-                cratestack::CoolError,
-            >,
-        > + Send {
-            async move {
-                let base = args.args.nonce;
-                Ok(vec![
-                    cratestack_schema::PingArgs {
-                        nonce: format!("{base}-1"),
-                    },
-                    cratestack_schema::PingArgs {
-                        nonce: format!("{base}-2"),
-                    },
-                    cratestack_schema::PingArgs {
-                        nonce: format!("{base}-3"),
-                    },
-                ])
-            }
+        ) -> Result<cratestack_schema::procedures::many_pings::Output, cratestack::CoolError>
+        {
+            let base = args.args.nonce;
+            Ok(vec![
+                cratestack_schema::PingArgs {
+                    nonce: format!("{base}-1"),
+                },
+                cratestack_schema::PingArgs {
+                    nonce: format!("{base}-2"),
+                },
+                cratestack_schema::PingArgs {
+                    nonce: format!("{base}-3"),
+                },
+            ])
         }
     }
 
