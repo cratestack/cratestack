@@ -29,3 +29,4 @@ uuid.workspace = true
 [dev-dependencies]
 cratestack-codec-cbor.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+tracing-subscriber.workspace = true
