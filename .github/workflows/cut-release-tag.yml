@@ -1,8 +1,22 @@
 # Closes the loop after a "Prepare Release" PR (prepare-release.yml) merges:
 # reads the workspace version straight out of `Cargo.toml` on every push to
 # `main` and, if no `vX.Y.Z` tag exists for it yet, creates and pushes one.
-# That tag push is what triggers `release-cli.yml` (crates.io, binaries,
-# npm) — no manual step needed once the bump PR is merged.
+# That tag push is *meant* to trigger `release-cli.yml` (crates.io, binaries,
+# npm) — but GitHub deliberately does not fire other workflows' triggers for
+# an event caused by the default `GITHUB_TOKEN` (anti-recursion protection),
+# so a plain `git push` here would create a real tag that silently never
+# cascades into anything — confirmed the hard way on the first real release
+# through this pipeline (v0.4.14): the tag was created fine, `release-cli.yml`
+# never ran, nothing was actually published.
+#
+# Fix: push using a `RELEASE_PAT` repo secret (a personal access token,
+# `contents: write`/`repo` scope) instead of the default token — a PAT-
+# authored push is a normal external push as far as GitHub's trigger engine
+# is concerned, so it fires `release-cli.yml` normally. See
+# docs/tooling/npm-publishing.md for setup. Falls back to `github.token`
+# if the secret isn't set, so tagging itself still works either way — but
+# prints a loud warning in that case, since the tag would otherwise look
+# successful while silently not triggering anything downstream.
 #
 # Deliberately compares the committed version against existing tags rather
 # than matching the bump commit's message — the human merging a
@@ -17,9 +31,8 @@
 #
 # Pushing a brand-new tag is unaffected by `main`'s branch-protection
 # (required reviews apply to branch refs, not tags — confirmed no tag
-# protection rules exist on this repo either), so the default GITHUB_TOKEN
-# with `contents: write` is sufficient here, unlike prepare-release.yml's
-# PR-based approach for the bump commit itself.
+# protection rules exist on this repo either), so a PAT with plain
+# `contents: write` is sufficient — no admin/bypass privilege needed.
 name: Cut Release Tag
 
 on:
@@ -37,10 +50,18 @@ jobs:
   cut-tag:
     name: cut release tag if version changed
     runs-on: ubuntu-latest
+    env:
+      RELEASE_PAT_SET: ${{ secrets.RELEASE_PAT != '' }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          token: ${{ secrets.RELEASE_PAT || github.token }}
+
+      - name: Warn if RELEASE_PAT is not set
+        if: env.RELEASE_PAT_SET != 'true'
+        run: |
+          echo "::warning::RELEASE_PAT secret is not set — falling back to the default GITHUB_TOKEN. Any tag this job creates will NOT trigger release-cli.yml (GitHub doesn't fire workflow triggers for GITHUB_TOKEN-authored pushes). See docs/tooling/npm-publishing.md for how to add RELEASE_PAT; until then, a real release needs a manual 'gh workflow run \"Release CLI Binaries\" -f tag=vX.Y.Z' after this job runs, and that dispatch still won't publish crates.io/npm (those gate on a real push event)."
 
       - name: Tag vX.Y.Z if Cargo.toml's version isn't tagged yet
         run: |

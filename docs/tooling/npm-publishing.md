@@ -40,6 +40,24 @@ Once the secret exists, the next tag push publishes every workspace crate via `p
 (idempotent — already-published versions are skipped, so a re-run after a partial failure, e.g. a
 transient crates.io index lag, is safe).
 
+## Release-tag one-time setup (`RELEASE_PAT`)
+
+`.github/workflows/cut-release-tag.yml` creates and pushes the `vX.Y.Z` tag once a "Prepare
+Release" bump PR merges — but GitHub does not fire other workflows' triggers for a push made with
+the default `GITHUB_TOKEN` (anti-recursion protection), so without this secret the tag gets created
+correctly but **`release-cli.yml` never runs and nothing actually gets published** — confirmed the
+hard way on `v0.4.14`'s first real release through this pipeline. `cut-release-tag.yml` logs a
+loud `::warning::` when this secret is missing, precisely so that failure mode isn't silent again.
+
+1. On GitHub, create a **personal access token** with `contents: write` permission on
+   `cratestack/cratestack` (a fine-grained PAT scoped to just this repo is preferred over a classic
+   PAT with the broader `repo` scope, but either works).
+2. Add it as a repo secret named `RELEASE_PAT` (same Settings → Secrets and variables → Actions
+   page as `NPM_TOKEN`/`CARGO_REGISTRY_TOKEN`).
+
+Once the secret exists, the next "Prepare Release" bump PR that merges will have its auto-created
+tag genuinely trigger `release-cli.yml` — no manual `gh workflow run`/tag recreation needed.
+
 ## Provenance
 
 Both publish steps pass `npm publish --provenance`, which attaches a
