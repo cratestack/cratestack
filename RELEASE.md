@@ -7,11 +7,45 @@ CrateStack publishes through the common public Rust and editor channels:
 * VS Code extension: Visual Studio Marketplace and Open VSX
 * Documentation site: Mintlify or equivalent static docs hosting from `docs-site/`
 
-## Quickstart (automated)
+## Quickstart (CI-driven — preferred)
 
-End-to-end release in one command — bumps every workspace `Cargo.toml`,
-validates, publishes each crate in dependency order, and tags `vX.Y.Z`
-locally:
+Cutting a release no longer requires a local machine with crates.io/npm
+credentials. Run the **"Prepare Release"** GitHub Actions workflow
+(`workflow_dispatch`, inputs: `version`, `mode`):
+
+* `mode: dry` — bumps + validates + dry-runs crates.io and npm publishes,
+  entirely inside the CI job. No git writes at all (no commit, branch, PR,
+  or tag) — safe to run repeatedly against any version to rehearse.
+* `mode: real` — bumps versions and opens a normal PR
+  (`chore: bump workspace to vX.Y.Z`) against `main`, with the merged PRs
+  since the last release listed as the source-of-truth. **Review and merge
+  that PR like any other change** — this is the one human checkpoint in an
+  otherwise fully automated pipeline.
+
+Once merged, everything else happens on its own:
+
+1. **"Cut Release Tag"** (triggers on every push to `main`) notices the new
+   version in `Cargo.toml` and creates + pushes tag `vX.Y.Z` — a no-op on
+   every other ordinary commit.
+2. That tag push triggers **"Release CLI Binaries"**
+   (`.github/workflows/release-cli.yml`): publishes every crate to
+   crates.io (`CARGO_REGISTRY_TOKEN`), builds and attaches cross-platform
+   `cratestack-cli` binaries to a GitHub Release, and publishes both npm
+   packages (`@cratestack/cli`, `@cratestack/api`) with provenance
+   (`NPM_TOKEN`). See [`docs/tooling/npm-publishing.md`](docs/tooling/npm-publishing.md)
+   for one-time secret setup.
+
+`release-cli.yml` also accepts a manual `workflow_dispatch` against an
+**existing** tag, for re-running a failed binary build — it validates the
+tag exists first and fails with a clear message otherwise; it never touches
+crates.io/npm on that path (see the jobs' own comments for why an npm/crates
+publish can't safely be retried against a throwaway dispatch).
+
+## Quickstart (local fallback)
+
+The CI-driven path above wraps the same underlying `just` recipes, which
+remain fully usable directly if you'd rather run a release from a local
+machine with your own crates.io/npm credentials:
 
 ```sh
 just release 0.3.4              # publishes for real, tags locally
@@ -22,9 +56,10 @@ just release 0.3.4 dry          # rehearsal: dry-run publishes, no tag
 Underlying recipes you can also run individually:
 
 * `just bump 0.3.4` — rewrite `0.x.y` → `0.3.4` across every `Cargo.toml`
-  and refresh `Cargo.lock`. Idempotent.
-* `just release-check` — `cargo fmt --check` + workspace check + workspace
-  tests (skips `embedded_flutter_native`).
+  and the two npm `package.json`s (`packages/cratestack-cli-npm`,
+  `packages/cratestack-api`), and refresh `Cargo.lock`. Idempotent.
+* `just release-check` — workspace check + workspace tests (skips
+  `embedded_flutter_native`).
 * `just bundle-studio-ui` — refresh `embedded-ui.tar.gz` and
   `embedded-ui-dist.tar.gz` (requires `cargo install --locked trunk` +
   `rustup target add wasm32-unknown-unknown`).
@@ -34,8 +69,8 @@ Underlying recipes you can also run individually:
 * `just publish-studio` — single-crate publish for `cratestack-studio`
   with the studio's tarball-dirty allowance.
 
-The Rust-crate flow described in the rest of this document is the
-manual fallback. The VS Code extension still ships on its own
+The Rust-crate flow described in the rest of this document is the manual
+fallback these recipes wrap. The VS Code extension still ships on its own
 cadence — see [Publish Editor Extension](#publish-editor-extension).
 
 ## Prerequisites

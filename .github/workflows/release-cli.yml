@@ -1,15 +1,18 @@
 # Builds and publishes prebuilt `cratestack-cli` binaries to a GitHub
 # Release, so consumers can install without a Rust toolchain (see #131).
-# Also publishes both npm packages this repo ships — @cratestack/cli
-# (the binary-fetching npm wrapper) and @cratestack/api (hand-written,
-# ships its own compiled dist/) — with npm provenance attached.
+# Also publishes every workspace crate to crates.io and both npm packages
+# this repo ships — @cratestack/cli (the binary-fetching npm wrapper) and
+# @cratestack/api (hand-written, ships its own compiled dist/) — with npm
+# provenance attached.
 #
-# Triggers on the `vX.Y.Z` tag push that `just release VERSION` produces
-# (`git push origin HEAD "v{{VERSION}}"` when run with PUSH=1). Also
-# accepts a manual `workflow_dispatch` against an existing tag, for
-# re-running a failed release or a dry-run against a throwaway test tag
-# — this dispatch path only rebuilds/re-attaches binaries, it never
-# touches npm (see the publish-npm* jobs' own comments for why).
+# Triggers on a `vX.Y.Z` tag push. The normal way to produce one is the
+# "Prepare Release" workflow (bump versions → open a PR → merging it
+# auto-tags via "Cut Release Tag"); `just release VERSION PUSH=1` remains
+# available as a local/manual fallback that produces the same tag push.
+# This workflow also accepts a manual `workflow_dispatch` against an
+# EXISTING tag, for re-running a failed release — that dispatch path only
+# rebuilds/re-attaches binaries, it never touches crates.io or npm (see
+# the publish-crates/publish-npm* jobs' own comments for why).
 #
 # Artifact naming follows the cargo-binstall convention declared in
 # crates/cratestack-cli/Cargo.toml's [package.metadata.binstall] — the
@@ -54,6 +57,21 @@ jobs:
           else
             echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
           fi
+      # A manual dispatch against a tag that doesn't exist yet used to fail
+      # deep inside `actions/checkout` with an opaque `git fetch` error (no
+      # such ref). Fail fast here instead, with an actionable message — this
+      # dispatch path only rebuilds/re-attaches binaries for an EXISTING
+      # tag; cutting a NEW release goes through the "Prepare Release"
+      # workflow (bump → PR → merge → auto-tag), not this input.
+      - name: Validate tag exists
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          set -euo pipefail
+          tag="${{ steps.resolve.outputs.tag }}"
+          if ! git ls-remote --exit-code --tags "https://github.com/${{ github.repository }}" "refs/tags/${tag}" >/dev/null; then
+            echo "::error::Tag '${tag}' does not exist in ${{ github.repository }}. If you're trying to cut a NEW release, run the 'Prepare Release' workflow instead (it bumps versions and opens a PR; merging it auto-creates the tag). This workflow's manual dispatch only rebuilds binaries for an existing tag." >&2
+            exit 1
+          fi
 
   # The Studio UI (embedded in cratestack-cli via cratestack-studio's
   # default `embed-ui` feature) needs a Trunk build of the wasm app.
@@ -83,6 +101,43 @@ jobs:
             crates/cratestack-studio/embedded-ui.tar.gz
             crates/cratestack-studio/embedded-ui-dist.tar.gz
           retention-days: 1
+
+  # Publishes every workspace crate to crates.io in dependency order via the
+  # same `just release-publish real` a human would otherwise run locally.
+  # Idempotent (the recipe skips already-published versions), so a re-run
+  # after a partial failure — or a re-dispatch against the same tag — is
+  # safe. Independent of the binary build matrix / npm publish below, so it
+  # runs in parallel with `build` rather than gating on it. Needs its own
+  # trunk + wasm32 setup (not the studio-ui job's artifact) because
+  # `release-publish`'s `cratestack-studio` step unconditionally re-invokes
+  # `just bundle-studio-ui`, which always rebuilds via trunk regardless of
+  # whether a tarball already exists — a downloaded artifact would just be
+  # overwritten, so there's nothing to gain from depending on studio-ui here.
+  publish-crates:
+    name: publish crates.io
+    if: github.event_name == 'push'
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,trunk
+      - name: Publish crates (just release-publish real)
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CARGO_REGISTRY_TOKEN:-}" ]; then
+            echo "CARGO_REGISTRY_TOKEN secret not set; skipping crates.io publish." >&2
+            echo "See docs/tooling/npm-publishing.md for setup." >&2
+            exit 0
+          fi
+          just release-publish real
 
   build:
     name: build (${{ matrix.target }})

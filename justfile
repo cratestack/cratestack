@@ -458,9 +458,14 @@ release VERSION mode='real':
 	just bump {{VERSION}}
 	just release-check
 	# Commit the bump (unless already committed). Studio tarballs are
-	# gitignored by design and don't get staged.
-	if ! git diff --quiet -- '**/Cargo.toml' Cargo.lock; then
-	  git add ':(glob)**/Cargo.toml' Cargo.lock
+	# gitignored by design and don't get staged. `bump` also rewrites the
+	# two npm package.json files (cli-npm, api) in lockstep — stage those
+	# explicitly too, not just Cargo.toml/Cargo.lock, or their version
+	# bumps are silently left uncommitted.
+	if ! git diff --quiet -- '**/Cargo.toml' Cargo.lock packages/cratestack-cli-npm/package.json packages/cratestack-api/package.json; then
+	  git add ':(glob)**/Cargo.toml' Cargo.lock \
+	    packages/cratestack-cli-npm/package.json \
+	    packages/cratestack-api/package.json
 	  git commit -m "chore: bump workspace to v{{VERSION}}"
 	fi
 	just release-publish {{mode}}

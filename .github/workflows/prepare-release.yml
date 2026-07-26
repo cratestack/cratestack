@@ -1,0 +1,258 @@
+# Cuts the version-bump step of a release from CI instead of requiring a
+# human to run `just release VERSION PUSH=1` locally.
+#
+# `main` requires 1 approving + code-owner review, and this workflow's
+# GITHUB_TOKEN is not a repo admin — unlike a human admin's local push, it
+# cannot push a bump commit straight to `main`. So `mode: real` opens a
+# normal PR instead, going through the same review every other change does.
+# Merging that PR is what actually lands the bump; from there,
+# `cut-release-tag.yml` notices the new version on `main` and auto-creates
+# the `vX.Y.Z` tag, which triggers `release-cli.yml` (binaries, crates.io,
+# npm) with no further manual steps.
+#
+# `mode: dry` is a fully side-effect-free rehearsal: bump + validate +
+# dry-run crates.io/npm publishes, then stop — no commit, branch, PR, or
+# tag, ever. Safe to run against any version, repeatedly.
+name: Prepare Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, e.g. 0.4.14 (no leading 'v')"
+        required: true
+      mode:
+        description: "real: bump + open a release PR. dry: rehearse with no git writes at all."
+        required: true
+        default: real
+        type: choice
+        options:
+          - real
+          - dry
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: prepare-release-${{ inputs.version }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  prepare:
+    name: prepare release (${{ inputs.mode }})
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Full history + tags — needed to compute the last-release tag
+          # and the merged-PR list for the auto-opened PR's source-of-truth
+          # (governance-check requires a real #123/URL reference, not just
+          # a workflow-run link — see the "Open release PR" step below).
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,trunk
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Validate inputs
+        run: |
+          set -euo pipefail
+          version="${{ inputs.version }}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version must be X.Y.Z (no leading 'v'), got: '$version'" >&2
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/v${version}" >/dev/null 2>&1; then
+            echo "::error::tag v${version} already exists — pick a version that hasn't been released." >&2
+            exit 1
+          fi
+
+      - name: Bump workspace version
+        run: just bump ${{ inputs.version }}
+
+      - name: Validate (cargo check + tests)
+        run: just release-check
+
+      - name: Dry-run rehearsal (crates.io + npm) — no git writes
+        if: inputs.mode == 'dry'
+        run: |
+          set -euo pipefail
+          echo "::group::crates.io dry-run (just release-publish dry)"
+          just release-publish dry
+          echo "::endgroup::"
+
+          echo "::group::npm dry-run — @cratestack/cli"
+          (cd packages/cratestack-cli-npm && npm publish --dry-run --access public) \
+            || echo "npm dry-run for @cratestack/cli didn't complete (often just missing local npm auth) — not fatal for a rehearsal." >&2
+          echo "::endgroup::"
+
+          echo "::group::npm dry-run — @cratestack/api"
+          pnpm install --frozen-lockfile
+          pnpm --filter @cratestack/api build
+          (cd packages/cratestack-api && npm publish --dry-run --access public) \
+            || echo "npm dry-run for @cratestack/api didn't complete (often just missing local npm auth) — not fatal for a rehearsal." >&2
+          echo "::endgroup::"
+
+          echo "Dry run complete for v${{ inputs.version }} — no commit, branch, PR, or tag was created."
+
+      - name: Open release PR
+        if: inputs.mode == 'real'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="${{ inputs.version }}"
+          branch="release/v${version}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add ':(glob)**/Cargo.toml' Cargo.lock \
+            packages/cratestack-cli-npm/package.json \
+            packages/cratestack-api/package.json
+          git commit -m "chore: bump workspace to v${version}"
+          git push origin "$branch"
+
+          # Source-of-truth for governance-check: the actual merged PRs
+          # this release bundles, not just a link to this workflow run.
+          # `HEAD~1` is main's tip before the bump commit just created above.
+          #
+          # Deliberately NOT `git describe --tags --abbrev=0` — some past
+          # release tags in this repo were pushed pointing at a commit that
+          # never actually became an ancestor of main (a pre-existing mix of
+          # direct tag-pushes and squash-merged PRs), so `describe` can walk
+          # right past the real last release and land on a much older tag.
+          # The highest tag by version number is a more reliable "last
+          # release" signal than ancestry here.
+          last_tag=$(git tag --list 'v*' | sort -V | tail -1)
+          range="HEAD~1"
+          [ -n "$last_tag" ] && range="${last_tag}..HEAD~1"
+          pr_refs=$(git log "$range" --pretty=%s | grep -oE '#[0-9]+' | sort -t'#' -k2 -n -u || true)
+          if [ -n "$pr_refs" ]; then
+            # shellcheck disable=SC2086 # intentional word-split: $pr_refs is
+            # a whitespace-separated list of "#123" tokens, one printf arg each.
+            source_of_truth=$(printf -- '- %s\n' $pr_refs)
+          else
+            source_of_truth="- No merged PR references found since \`${last_tag:-the beginning of history}\` — see https://github.com/${{ github.repository }}/blob/main/RELEASE.md for the release process this automation follows."
+          fi
+
+          cat > /tmp/pr-body.md <<PRBODY
+          ## 1. Summary
+
+          This PR changes:
+
+          - Bumps the workspace version to \`${version}\` across every crate's \`Cargo.toml\`, \`Cargo.lock\`, and the two npm packages (\`packages/cratestack-cli-npm\`, \`packages/cratestack-api\`).
+
+          It solves:
+
+          - Prepares release \`v${version}\`, bundling everything merged to \`main\` since \`${last_tag:-the beginning of history}\`:
+
+          ${source_of_truth}
+
+          - **This PR does not publish anything itself** — merging it is the trigger for the rest of the pipeline: \`cut-release-tag.yml\` notices the new version on \`main\` and creates tag \`v${version}\`, which triggers \`release-cli.yml\` (crates.io publish, GitHub Release binaries, npm publish for both packages, all with no further manual steps).
+
+          ---
+
+          ## 2. Intent
+
+          > Automated by the "Prepare Release" GitHub Actions workflow, dispatched by a maintainer requesting version \`${version}\`, to cut a release covering:
+          >
+          ${source_of_truth}
+
+          ---
+
+          ## 3. Scope
+
+          ### In Scope
+
+          - Version bump only, everywhere \`just bump\` already touches.
+
+          ### Out of Scope
+
+          - Publishing to crates.io/npm, tagging, and building binaries — all happen automatically once this PR merges, not as part of it.
+
+          ---
+
+          ## 4. Verification
+
+          I verified this change by:
+
+          - [x] Running automated tests
+
+          Commands run:
+
+          \`\`\`bash
+          just bump ${version}
+          just release-check
+          \`\`\`
+
+          Results:
+
+          \`\`\`text
+          Both completed successfully in this workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          \`\`\`
+
+          ---
+
+          ## 5. Screenshots / Evidence
+
+          * Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          ---
+
+          ## 6. Risk Assessment
+
+          Risk level:
+
+          * [x] Low
+
+          Potential risks:
+
+          * A version-only diff merged without review would be a mistake if the bump itself were wrong (e.g. a crate silently missed) — the diff is small and mechanical, easy to eyeball.
+
+          Mitigation:
+
+          * This PR still goes through the repo's normal review before merging, like any other PR — that review is the deliberate human checkpoint in an otherwise fully automated release pipeline (see \`docs/tooling/npm-publishing.md\` and \`RELEASE.md\`).
+
+          ---
+
+          ## 7. AI Usage Declaration
+
+          AI was used for:
+
+          * [x] Generating code
+
+          Human verification:
+
+          * [ ] I understand every meaningful change in this PR
+          * [ ] I checked generated code manually
+          * [ ] I accept responsibility for this PR
+
+          (This PR was opened automatically by CI, not a human — the boxes above are for whoever reviews/merges it to check before doing so.)
+
+          ---
+
+          ## 8. Reviewer Focus
+
+          Please focus your review on:
+
+          * [x] Correctness
+
+          🤖 Generated by the "Prepare Release" GitHub Actions workflow.
+          PRBODY
+
+          gh pr create \
+            --title "chore: bump workspace to v${version}" \
+            --body-file /tmp/pr-body.md \
+            --base main \
+            --head "$branch"

@@ -1,0 +1,62 @@
+# Closes the loop after a "Prepare Release" PR (prepare-release.yml) merges:
+# reads the workspace version straight out of `Cargo.toml` on every push to
+# `main` and, if no `vX.Y.Z` tag exists for it yet, creates and pushes one.
+# That tag push is what triggers `release-cli.yml` (crates.io, binaries,
+# npm) — no manual step needed once the bump PR is merged.
+#
+# Deliberately compares the committed version against existing tags rather
+# than matching the bump commit's message — the human merging a
+# "Prepare Release" PR can pick squash / merge-commit / rebase, and only
+# squash/rebase reliably put that commit message on `main`'s tip; a merge
+# commit's own message ("Merge pull request #N ...") would not match. Version
+# diffing is agnostic to whichever merge strategy was used.
+#
+# Also correct for the routine case: an ordinary commit to `main` that
+# doesn't happen to be a version bump is a no-op (the tag for the current
+# version already exists), so this is safe and cheap to run on every push.
+#
+# Pushing a brand-new tag is unaffected by `main`'s branch-protection
+# (required reviews apply to branch refs, not tags — confirmed no tag
+# protection rules exist on this repo either), so the default GITHUB_TOKEN
+# with `contents: write` is sufficient here, unlike prepare-release.yml's
+# PR-based approach for the bump commit itself.
+name: Cut Release Tag
+
+on:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cut-release-tag
+  cancel-in-progress: false
+
+jobs:
+  cut-tag:
+    name: cut release tag if version changed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Tag vX.Y.Z if Cargo.toml's version isn't tagged yet
+        run: |
+          set -euo pipefail
+          version=$(awk -F'"' '/^version = /{print $2; exit}' Cargo.toml)
+          if [ -z "$version" ]; then
+            echo "::error::could not read workspace version from Cargo.toml" >&2
+            exit 1
+          fi
+          tag="v${version}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "already tagged ${tag} — nothing to do."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "$tag"
+          git push origin "$tag"
+          echo "created and pushed ${tag}."
