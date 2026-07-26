@@ -78,11 +78,11 @@ impl RateLimitStore for FailingStore {
     }
 }
 
-/// Records every event's fields as a single formatted string, so a test can
-/// assert on log content without a full `tracing-subscriber` fmt layer.
+/// Records every event's level + fields as a formatted string, so a test can
+/// assert on log level and content without a full `tracing-subscriber` fmt layer.
 #[derive(Default, Clone)]
 struct CapturingLayer {
-    events: Arc<Mutex<Vec<String>>>,
+    events: Arc<Mutex<Vec<(tracing::Level, String)>>>,
 }
 
 struct FieldsToString(String);
@@ -104,7 +104,10 @@ impl<S: tracing::Subscriber> TracingLayer<S> for CapturingLayer {
     ) {
         let mut visitor = FieldsToString(String::new());
         event.record(&mut visitor);
-        self.events.lock().unwrap().push(visitor.0);
+        self.events
+            .lock()
+            .unwrap()
+            .push((*event.metadata().level(), visitor.0));
     }
 }
 
@@ -112,7 +115,12 @@ impl<S: tracing::Subscriber> TracingLayer<S> for CapturingLayer {
 /// unreachable), the layer used to swallow it silently and return a bare
 /// 500 with no log line anywhere, making the failure undiagnosable in
 /// production. The response must still degrade gracefully, but the error
-/// (including the underlying store error text) must be logged.
+/// (including the underlying store error text) must be logged — at `WARN`,
+/// matching this crate's house convention for every other handled-error
+/// log site (`cratestack-macros`' generated procedure/list handlers, the
+/// schema-fingerprint mismatch check): `ERROR` is reserved for unhandled
+/// conditions, not a store failure that's already been turned into a
+/// well-formed error response.
 #[test]
 fn store_error_is_logged_before_returning_500() {
     let capture = CapturingLayer::default();
@@ -142,13 +150,20 @@ fn store_error_is_logged_before_returning_500() {
     assert!(
         captured
             .iter()
-            .any(|e| e.contains("rate limit store error")),
+            .any(|(_, msg)| msg.contains("rate limit store error")),
         "expected a 'rate limit store error' log event, got: {captured:?}"
     );
     assert!(
         captured
             .iter()
-            .any(|e| e.contains("redis rate limit: connection refused")),
+            .any(|(_, msg)| msg.contains("redis rate limit: connection refused")),
         "expected the underlying store error text in the log, got: {captured:?}"
+    );
+    assert!(
+        captured
+            .iter()
+            .any(|(level, msg)| *level == tracing::Level::WARN
+                && msg.contains("rate limit store error")),
+        "expected the 'rate limit store error' event at WARN (not ERROR), got: {captured:?}"
     );
 }
