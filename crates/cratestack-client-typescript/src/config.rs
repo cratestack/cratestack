@@ -19,6 +19,18 @@ pub struct TypeScriptGeneratorConfig {
     /// `None` for REST/RPC schemas (unused there) and is a hard error for a
     /// `transport grpc` schema — see `TypeScriptGeneratorError::MissingPbLock`.
     pub pb_lock: Option<PbLock>,
+    /// Hex-encoded SHA-256 of the schema file's raw bytes (issue #178) —
+    /// computed once by the CLI (`cli_support::hash_schema_source`, the
+    /// same computation `cratestack-macros` does for `include_*_schema!`)
+    /// and baked into the generated client as `SCHEMA_SHA256`, sent as
+    /// `x-cratestack-schema-sha` on every request so a drifted TypeScript
+    /// client shows up as a server-side `tracing::warn!`, not a silent
+    /// wire mismatch. Empty string when not supplied (e.g. this crate
+    /// used as a library directly, or in tests) — the generated client
+    /// simply omits the header in that case. REST and RPC only for this
+    /// pass, matching the Rust client's scope — the gRPC-Web transport
+    /// doesn't send it yet (tracked, not attempted).
+    pub schema_sha256: String,
 }
 
 impl Default for TypeScriptGeneratorConfig {
@@ -29,6 +41,7 @@ impl Default for TypeScriptGeneratorConfig {
             template_dir: None,
             full_selection: false,
             pb_lock: None,
+            schema_sha256: String::new(),
         }
     }
 }
