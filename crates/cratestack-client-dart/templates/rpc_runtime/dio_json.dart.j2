@@ -18,6 +18,8 @@ class CratestackRpcDioAdapter implements CratestackRpcAdapter {
           contentType: Headers.jsonContentType,
           responseType: ResponseType.json,
           headers: {
+            if (cratestackSchemaSha256 != null)
+              'x-cratestack-schema-sha': cratestackSchemaSha256!,
             ...?options?.headers,
             if (options?.idempotencyKey != null)
               'Idempotency-Key': options!.idempotencyKey!,
@@ -42,7 +44,11 @@ class CratestackRpcDioAdapter implements CratestackRpcAdapter {
         options: Options(
           contentType: Headers.jsonContentType,
           responseType: ResponseType.json,
-          headers: {...?options?.headers},
+          headers: {
+            if (cratestackSchemaSha256 != null)
+              'x-cratestack-schema-sha': cratestackSchemaSha256!,
+            ...?options?.headers,
+          },
         ),
       );
       final frames = response.data as List<dynamic>;
@@ -72,6 +78,8 @@ class CratestackRpcDioAdapter implements CratestackRpcAdapter {
           responseType: ResponseType.json,
           headers: {
             'Accept': '${Headers.jsonContentType}, application/cbor-seq;q=0.9',
+            if (cratestackSchemaSha256 != null)
+              'x-cratestack-schema-sha': cratestackSchemaSha256!,
             ...?options?.headers,
           },
         ),

@@ -5,6 +5,16 @@ pub struct DartGeneratorConfig {
     pub library_name: String,
     pub base_path: String,
     pub template_dir: Option<PathBuf>,
+    /// Hex-encoded SHA-256 of the schema file's raw bytes (issue #178) —
+    /// computed once by the CLI (`cli_support::hash_schema_source`, the
+    /// same computation `cratestack-macros` does for `include_*_schema!`)
+    /// and baked into the generated client as `Client.schemaSha256`, sent
+    /// as `x-cratestack-schema-sha` on every request so a drifted Dart
+    /// client shows up as a server-side `tracing::warn!`, not a silent
+    /// wire mismatch. Empty string when not supplied (e.g. this crate
+    /// used as a library directly, or in tests) — the generated client
+    /// simply omits the header in that case.
+    pub schema_sha256: String,
 }
 
 impl Default for DartGeneratorConfig {
@@ -13,6 +23,7 @@ impl Default for DartGeneratorConfig {
             library_name: "cratestack_client".to_owned(),
             base_path: "/api".to_owned(),
             template_dir: None,
+            schema_sha256: String::new(),
         }
     }
 }

@@ -7,6 +7,13 @@ use std::path::{Path, PathBuf};
 
 use cratestack_client_dart::{DartGeneratorConfig, GeneratedDartPackage, generate_package};
 
+/// Deterministic stand-in for `cli_support::hash_schema_source`'s real
+/// output (issue #178) — a real SHA-256 hex digest, distinct from
+/// `tests/generator.rs`'s own constant, purely so the snapshot fixtures
+/// carry a value obviously not copy-pasted from elsewhere.
+const SNAPSHOT_SCHEMA_SHA256: &str =
+    "9f1c1e3b6b7f27e0d2a5b1c4e8f0a3d6c9b2e5f8a1d4c7b0e3f6a9c2d5b8e1f4";
+
 #[test]
 fn rest_snapshot_matches_fixture() {
     run_snapshot("tiny_rest", "tiny_rest_client");
@@ -119,6 +126,7 @@ fn generate_for(fixture_stem: &str, library_name: &str) -> GeneratedDartPackage 
             library_name: library_name.to_owned(),
             base_path: "/api".to_owned(),
             template_dir: None,
+            schema_sha256: SNAPSHOT_SCHEMA_SHA256.to_owned(),
         },
     )
     .expect("default template should render")

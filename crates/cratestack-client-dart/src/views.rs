@@ -6,6 +6,14 @@ pub(crate) struct TemplateContext {
     pub(crate) client_class_name: String,
     pub(crate) provider_prefix: String,
     pub(crate) base_path_literal: String,
+    /// Escaped Dart string-literal body (no surrounding quotes, same
+    /// convention as `base_path_literal`) of the schema's SHA-256, or
+    /// `None` when the generator wasn't given one (issue #178) — the
+    /// `constants.dart` template renders `cratestackSchemaSha256` as
+    /// `null` in that case, and every runtime adapter omits the
+    /// `x-cratestack-schema-sha` header rather than sending an empty
+    /// value.
+    pub(crate) schema_sha256: Option<String>,
     pub(crate) enum_types: Vec<EnumView>,
     pub(crate) data_classes: Vec<DataClassView>,
     pub(crate) selection_groups: Vec<SelectionGroupView>,

@@ -20,6 +20,8 @@ class CratestackRpcCborDioAdapter implements CratestackRpcAdapter {
           responseType: ResponseType.bytes,
           headers: {
             'Accept': 'application/cbor, application/json;q=0.9',
+            if (cratestackSchemaSha256 != null)
+              'x-cratestack-schema-sha': cratestackSchemaSha256!,
             if (options?.idempotencyKey != null)
               'Idempotency-Key': options!.idempotencyKey!,
             ...?options?.headers,
@@ -48,6 +50,8 @@ class CratestackRpcCborDioAdapter implements CratestackRpcAdapter {
           responseType: ResponseType.bytes,
           headers: {
             'Accept': 'application/cbor, application/json;q=0.9',
+            if (cratestackSchemaSha256 != null)
+              'x-cratestack-schema-sha': cratestackSchemaSha256!,
             ...?options?.headers,
           },
         ),
@@ -80,6 +84,8 @@ class CratestackRpcCborDioAdapter implements CratestackRpcAdapter {
           responseType: ResponseType.bytes,
           headers: {
             'Accept': 'application/cbor-seq, application/cbor, application/json;q=0.9',
+            if (cratestackSchemaSha256 != null)
+              'x-cratestack-schema-sha': cratestackSchemaSha256!,
             ...?options?.headers,
           },
         ),

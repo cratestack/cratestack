@@ -25,6 +25,11 @@ pub(crate) fn build_template_context(
     let occupied_type_names = occupied_type_names(schema);
     let client_class_name = format!("{}CratestackClient", to_pascal_case(&config.library_name));
     let provider_prefix = to_camel_case(&config.library_name);
+    // Issue #178: empty string means "no hash supplied" (library-direct
+    // usage or tests bypassing the CLI) — mirrors the Rust client's
+    // `Option<&'static str>` rather than ever sending an empty header.
+    let schema_sha256 =
+        (!config.schema_sha256.is_empty()).then(|| escape_dart_string(&config.schema_sha256));
     let enum_types = schema.enums.iter().map(build_enum_view).collect();
 
     let mut data_classes = Vec::new();
@@ -171,6 +176,7 @@ pub(crate) fn build_template_context(
         client_class_name,
         provider_prefix,
         base_path_literal: escape_dart_string(&config.base_path),
+        schema_sha256,
         enum_types,
         data_classes,
         selection_groups,

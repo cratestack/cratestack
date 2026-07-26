@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use anyhow::{Context, Result, bail};
 
 use crate::cli_support::{
-    into_generated_files, json_check_failure, json_check_success, parse_schema_or_render,
-    render_schema_error, write_generated_files,
+    hash_schema_source, into_generated_files, json_check_failure, json_check_success,
+    parse_schema_or_render, render_schema_error, write_generated_files,
 };
 use crate::cli_types::{Cli, Command, MigrateAction, OutputFormat, StudioCmd};
 use crate::drift::check_drift;
@@ -103,12 +103,14 @@ fn handle_generate_dart(
     check: bool,
 ) -> Result<()> {
     let parsed = parse_schema_or_render(&schema)?;
+    let schema_sha256 = hash_schema_source(&schema)?;
     let package = cratestack_client_dart::generate_package(
         &parsed,
         &cratestack_client_dart::DartGeneratorConfig {
             library_name,
             base_path,
             template_dir,
+            schema_sha256,
         },
     )?;
     let files = into_generated_files(package.files);
@@ -133,6 +135,7 @@ fn handle_generate_typescript(
 ) -> Result<()> {
     let parsed = parse_schema_or_render(&schema)?;
     let pb_lock = read_pb_lock_if_present(&schema)?;
+    let schema_sha256 = hash_schema_source(&schema)?;
     let package = cratestack_client_typescript::generate_package(
         &parsed,
         &cratestack_client_typescript::TypeScriptGeneratorConfig {
@@ -141,6 +144,7 @@ fn handle_generate_typescript(
             template_dir,
             full_selection,
             pb_lock,
+            schema_sha256,
         },
     )?;
     let files = into_generated_files(package.files);

@@ -4,6 +4,12 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// Deterministic stand-in for `cli_support::hash_schema_source`'s real
+/// output (issue #178) — an actual SHA-256 hex digest so assertions
+/// exercise the same shape a generated client would really carry, not a
+/// contrived string.
+const TEST_SCHEMA_SHA256: &str = "13914fdc4b27216d09632c23cec2aa5ea971843166fec36df790de94f2fccccb";
+
 #[test]
 fn generates_runtime_based_and_riverpod_client_for_blog_schema() {
     let schema =
@@ -16,6 +22,7 @@ fn generates_runtime_based_and_riverpod_client_for_blog_schema() {
             library_name: "blog_client".to_owned(),
             base_path: "/api".to_owned(),
             template_dir: None,
+            schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
         },
     )
     .expect("default template should render");
@@ -175,6 +182,38 @@ fn generates_runtime_based_and_riverpod_client_for_blog_schema() {
     assert!(models.contains("final Profile? profile;"));
     assert!(models.contains("final List<Session>? sessions;"));
     assert!(runtime.contains("Missing required field $ownerName.$fieldName"));
+
+    // Issue #178: constants.dart carries the schema hash the generator
+    // was given, and every runtime adapter's header map sends it as
+    // `x-cratestack-schema-sha` when present.
+    assert!(constants.contains(&format!(
+        "const String? cratestackSchemaSha256 = '{TEST_SCHEMA_SHA256}';"
+    )));
+    assert!(runtime.contains("import 'constants.dart';"));
+    assert!(runtime.contains(
+        "if (cratestackSchemaSha256 != null)\n            'x-cratestack-schema-sha': cratestackSchemaSha256!,"
+    ));
+}
+
+#[test]
+fn omits_schema_sha_header_wiring_when_config_has_no_hash() {
+    // Mirrors the Rust client's `Option<&'static str>` contract: an
+    // empty `schema_sha256` (the `Default` value — library-direct usage
+    // or tests that don't go through the CLI) must render as `null`,
+    // never as an empty-string header value.
+    let schema =
+        cratestack_parser::parse_schema_file("../cratestack-pg/tests/fixtures/blog.cstack")
+            .expect("fixture schema should parse");
+
+    let package = generate_package(&schema, &DartGeneratorConfig::default())
+        .expect("default template should render");
+
+    let constants = package_file(&package, "lib/src/constants.dart");
+    let runtime = package_file(&package, "lib/src/runtime.dart");
+
+    assert!(constants.contains("const String? cratestackSchemaSha256 = null;"));
+    assert!(!constants.contains("cratestackSchemaSha256 = '"));
+    assert!(runtime.contains("if (cratestackSchemaSha256 != null)"));
 }
 
 #[test]
@@ -234,6 +273,7 @@ procedure searchOrders(args: SearchOrdersArgs): SearchOrdersArgs
             library_name: "order_client".to_owned(),
             base_path: "/api".to_owned(),
             template_dir: None,
+            schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
         },
     )
     .expect("order template should render");
@@ -259,6 +299,7 @@ fn generates_real_dart_enums_for_schema_enum_fields_and_procedures() {
             library_name: "enum_client".to_owned(),
             base_path: "/api".to_owned(),
             template_dir: None,
+            schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
         },
     )
     .expect("enum template should render");
@@ -344,6 +385,7 @@ fn prefers_template_override_directory_when_provided() {
             library_name: "blog_client".to_owned(),
             base_path: "/api".to_owned(),
             template_dir: Some(template_dir.clone()),
+            schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
         },
     )
     .expect("override template should render");

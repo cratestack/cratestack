@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:cbor/simple.dart' as cbor;
 import 'package:dio/dio.dart';
 
+import 'constants.dart';
+
 Object cratestackRequireWireValue(String ownerName, String fieldName, Object? value) {
   if (value == null) {
     throw FormatException('Missing required field $ownerName.$fieldName');
@@ -121,6 +123,8 @@ class CratestackDioAdapter implements CratestackClientAdapter {
       options: Options(
         method: request.method,
         headers: {
+          if (cratestackSchemaSha256 != null)
+            'x-cratestack-schema-sha': cratestackSchemaSha256!,
           ...request.headers,
           ...?options?.headers,
         },
@@ -154,6 +158,8 @@ class CratestackCborDioAdapter implements CratestackClientAdapter {
         headers: {
           'Accept': 'application/cbor, application/json;q=0.9',
           if (request.body != null) 'Content-Type': 'application/cbor',
+          if (cratestackSchemaSha256 != null)
+            'x-cratestack-schema-sha': cratestackSchemaSha256!,
           ...request.headers,
           ...?options?.headers,
         },
