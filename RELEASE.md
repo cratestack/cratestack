@@ -52,10 +52,13 @@ else happens on its own:
    for one-time secret setup.
 3. ...and **"Release VS Code Extension"**
    (`.github/workflows/release-vscode.yml`): builds `cratestack-lsp` per
-   platform and publishes `packages/cratestack-vscode` to both the Visual
-   Studio Marketplace (`VSCE_PAT`) and Open VSX (`OVSX_PAT`). See
+   platform, then publishes `packages/cratestack-vscode` to the Visual
+   Studio Marketplace via Entra ID workload identity (a managed identity,
+   no stored PAT — `AZURE_CLIENT_ID`/`AZURE_TENANT_ID`/
+   `AZURE_SUBSCRIPTION_ID` on a `vscode-marketplace` GitHub Environment)
+   and to Open VSX (`OVSX_PAT`). See
    [`docs/tooling/vscode-publishing.md`](docs/tooling/vscode-publishing.md)
-   for one-time publisher/namespace + secret setup.
+   for one-time publisher/namespace + identity setup.
 
 Step 1 only reliably cascades into step 2 because `cut-release-tag.yml`
 pushes the tag using a `RELEASE_PAT` repo secret instead of the default
@@ -79,12 +82,13 @@ either documented as permanent workarounds (PR creation) or fixed and
 re-verified (the `RELEASE_PAT` trigger issue, and the `NPM_TOKEN` token-type
 issue).
 
-**`release-vscode.yml` is newer and not yet secret-configured**: as of
-`v0.4.16` there is no `VSCE_PAT`/`OVSX_PAT` secret yet, so every tag push
-soft-skips both publish steps (packaging still runs and uploads vsix build
-artifacts, proving the packaging side works). See
+**`release-vscode.yml` is newer and not yet configured**: as of `v0.4.16`
+none of the Marketplace Entra ID identity, the `vscode-marketplace`
+Environment, or `OVSX_PAT` exist yet, so every tag push soft-skips both
+publish jobs (the `build` job still runs and uploads vsix artifacts per
+platform, proving the packaging side works). See
 [`docs/tooling/vscode-publishing.md`](docs/tooling/vscode-publishing.md) for
-the one-time publisher/namespace setup that unblocks this.
+the one-time publisher/namespace/identity setup that unblocks this.
 
 ### Why `RELEASE_PAT` exists, and why the bump goes through a PR at all
 
@@ -282,7 +286,10 @@ env var.
 Required credentials are intentionally read from the environment:
 
 * `CARGO_REGISTRY_TOKEN` for crates.io
-* `VSCE_PAT` for Visual Studio Marketplace
+* `AZURE_CLIENT_ID` / `AZURE_TENANT_ID` / `AZURE_SUBSCRIPTION_ID` for the Visual Studio Marketplace
+  (Entra ID workload identity federation — a managed identity, no PAT; a local manual publish
+  outside CI can still use `vsce login`/a personal PAT instead, see
+  [`docs/tooling/vscode-publishing.md`](docs/tooling/vscode-publishing.md))
 * `OVSX_PAT` for Open VSX
 * GitHub permissions to push tags and create releases
 
