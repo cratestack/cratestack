@@ -8,6 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 REPORTS_DIR="$PROJECT_ROOT/.ci/quality/reports"
 RULES_DIR="$PROJECT_ROOT/.ci/rules/semgrep"
+ACTIONLINT_SARIF_TEMPLATE="$PROJECT_ROOT/.ci/rules/actionlint/sarif.tmpl"
 
 SCAN_TYPE="${1:-pr}"
 if [[ "$SCAN_TYPE" == --scan-type=* ]]; then
@@ -73,7 +74,10 @@ scan_cargo_deny() {
   fi
 
   # cargo deny doesn't produce SARIF directly; capture human output
-  if ! cargo deny check --all 2>&1 | tee "$REPORTS_DIR/cargo-deny.txt"; then
+  # "all" is a positional check-selector value, not a flag (`--all` doesn't
+  # exist — confirmed via `cargo deny check --help` against a real binary;
+  # it errors "unexpected argument '--all' found").
+  if ! cargo deny check all 2>&1 | tee "$REPORTS_DIR/cargo-deny.txt"; then
     log "cargo deny found issues (expected in scans)"
   fi
 
@@ -122,30 +126,32 @@ scan_semgrep() {
     return
   fi
 
-  # Use --offline flag to prevent rule downloading; only use local rules
+  # --config points at a local directory (never the Semgrep registry), so
+  # no rule download happens regardless of --metrics; --metrics=off is set
+  # explicitly anyway rather than relying on the "auto" default. (There is
+  # no --offline flag — confirmed via `semgrep scan --help` against a real
+  # install; it errors "unknown option '--offline'".)
+  #
+  # --sarif/--sarif-output produce SARIF natively (with real fingerprints
+  # and code snippets) — no custom JSON→SARIF conversion needed.
   if semgrep scan \
     --config="$RULES_DIR" \
-    --json \
-    --output="$REPORTS_DIR/semgrep-raw.json" \
+    --sarif \
+    --sarif-output="$REPORTS_DIR/semgrep.sarif" \
     --no-git-ignore \
-    --offline \
+    --metrics=off \
     . 2>&1 | tee "$REPORTS_DIR/semgrep.log"; then
     log "Semgrep scan completed (no findings)"
   else
     # Non-zero exit is normal if findings exist
-    if [[ -f "$REPORTS_DIR/semgrep-raw.json" ]]; then
+    if [[ -f "$REPORTS_DIR/semgrep.sarif" ]]; then
       log "Semgrep found issues (expected in scans)"
     else
       error "Semgrep scan failed without producing output"
     fi
   fi
 
-  # Convert semgrep JSON to SARIF using a small utility
-  if [[ -f "$REPORTS_DIR/semgrep-raw.json" ]]; then
-    python3 "$SCRIPT_DIR/semgrep-to-sarif.py" \
-      "$REPORTS_DIR/semgrep-raw.json" \
-      "$REPORTS_DIR/semgrep.sarif"
-  else
+  if [[ ! -f "$REPORTS_DIR/semgrep.sarif" ]]; then
     create_sarif_stub "semgrep" "Semgrep scan produced no output"
   fi
 }
@@ -171,8 +177,10 @@ scan_gitleaks() {
     scan_opts+=(--log-opts="origin/main..HEAD")
   fi
 
+  # gitleaks detect scans git history by default (unless --no-git is passed),
+  # so no --source flag is needed to select that mode; --source/-s takes a
+  # path (default "."), not a "git" keyword.
   if gitleaks detect \
-    --source=git \
     --report-format=sarif \
     --report-path="$REPORTS_DIR/gitleaks.sarif" \
     "${scan_opts[@]}" \
@@ -185,7 +193,18 @@ scan_gitleaks() {
 }
 
 # ============================================================================
-# Scanner: Trivy config (GitHub Actions workflows)
+# Scanner: Trivy config (IaC misconfigurations — Terraform, CloudFormation,
+# Kubernetes, Helm, Dockerfile, Ansible)
+#
+# NOTE: trivy config's default --misconfig-scanners list does NOT include a
+# GitHub Actions checker (its scanners are azure-arm, cloudformation,
+# dockerfile, helm, kubernetes, terraform, terraformplan-json,
+# terraformplan-snapshot, ansible — confirmed against a real trivy binary).
+# This repo has none of those IaC file types today, so this scanner
+# currently has nothing to check and will always report 0 config files
+# found — that's an accurate "not applicable" result, not a bug, and it's
+# kept for when/if this repo adds Terraform/Dockerfile/etc. GitHub Actions
+# workflow files are covered by actionlint below instead.
 # ============================================================================
 
 scan_trivy_config() {
@@ -197,17 +216,56 @@ scan_trivy_config() {
     return
   fi
 
-  # Scan .github/workflows for misconfigurations
+  # --skip-db-update and --offline-scan are vulnerability-scanning flags
+  # (trivy image/fs), not valid for `trivy config` — confirmed via
+  # `trivy config --help` against a real binary; passing them is a hard
+  # "unknown flag" error, not a graceful no-op.
   if trivy config \
     --format=sarif \
     --output="$REPORTS_DIR/trivy-config.sarif" \
-    --skip-db-update \
-    --offline-scan \
     --skip-version-check \
-    .github/workflows 2>&1 | tee "$REPORTS_DIR/trivy-config.log"; then
+    . 2>&1 | tee "$REPORTS_DIR/trivy-config.log"; then
     log "Trivy config scan completed (no misconfigs found)"
   else
     log "Trivy config found issues (expected in scans)"
+  fi
+}
+
+# ============================================================================
+# Scanner: actionlint (GitHub Actions workflow correctness)
+# ============================================================================
+
+scan_actionlint() {
+  log "Running actionlint..."
+
+  if ! command -v actionlint &> /dev/null; then
+    warn "actionlint not found; skipping"
+    create_sarif_stub "actionlint" "actionlint not found on runner"
+    return
+  fi
+
+  if [[ ! -f "$ACTIONLINT_SARIF_TEMPLATE" ]]; then
+    warn "actionlint SARIF template not found at $ACTIONLINT_SARIF_TEMPLATE; skipping"
+    create_sarif_stub "actionlint" "SARIF template missing"
+    return
+  fi
+
+  # actionlint auto-discovers .github/workflows/*.yml from the project root
+  # (detected via git); -format takes a literal Go template string (not a
+  # file path), so the vendored template is read into the argument.
+  if actionlint \
+    -format "$(cat "$ACTIONLINT_SARIF_TEMPLATE")" \
+    > "$REPORTS_DIR/actionlint.sarif" 2> "$REPORTS_DIR/actionlint.log"; then
+    log "actionlint scan completed (no issues found)"
+  else
+    # actionlint exits 1 for found issues, 2 for bad CLI args, 3 for fatal
+    # errors — only 1 means "ran fine, found something to report."
+    exit_code=$?
+    if [[ $exit_code -eq 1 ]]; then
+      log "actionlint found issues (expected in scans)"
+    else
+      error "actionlint failed to run (exit $exit_code): $(cat "$REPORTS_DIR/actionlint.log")"
+    fi
   fi
 }
 
@@ -224,6 +282,7 @@ scan_cargo_audit || ((SCAN_ERRORS++))
 scan_semgrep || ((SCAN_ERRORS++))
 scan_gitleaks || ((SCAN_ERRORS++))
 scan_trivy_config || ((SCAN_ERRORS++))
+scan_actionlint || ((SCAN_ERRORS++))
 
 # Merge all SARIF reports
 log "Merging SARIF reports..."

@@ -8,7 +8,7 @@ Rules are organized by concern and committed to version control. They are used w
 
 1. Create a new `.yml` file, e.g. `rust-safety.yml`
 2. Follow Semgrep YAML structure (see examples below)
-3. Commit the file and verify it runs locally with `semgrep scan --config=. --offline`
+3. Commit the file and verify it runs locally with `semgrep scan --config=. --metrics=off`
 
 ## Rule Format
 

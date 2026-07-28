@@ -5,30 +5,34 @@ This document describes CrateStack's offline quality scanning pipeline, which re
 ## Overview
 
 The quality pipeline:
-- **Runs offline** on self-hosted or specified runners
-- **Scans for SAST, secrets, dependencies, and infrastructure issues** using language-appropriate tools
+- **Runs on GitHub-hosted `ubuntu-latest`** — no self-hosted runner or pre-provisioning needed. Every scanner is installed fresh at the start of each job via pinned GitHub Actions or checksum-verified downloads (see `.ci/quality/TOOLCHAIN.md`)
+- **Scans for SAST, secrets, dependencies, and GitHub Actions correctness** using language-appropriate tools
 - **Produces SARIF reports** for structured, parseable output
 - **Posts PR checks** via reviewdog with new findings only
 - **Retains full reports** as artifacts for history and compliance
-- **Fails PRs on error-level findings**, warns on warnings
+- **Fails PRs on new error-level findings**, warns on warnings
 
 ```
 [PR/Push/Schedule] → [GitHub Actions workflow]
                        ↓
-                    [Offline Scanners]
+                    [Install Scanners]
+                    (pinned actions / checksum-verified downloads)
+                       ↓
+                    [Run Scanners]
                     ├─ Semgrep (SAST)
                     ├─ Gitleaks (secrets)
                     ├─ cargo audit (Rust advisories)
-                    ├─ cargo deny (Rust deps)
-                    └─ Trivy (config)
+                    ├─ cargo deny (Rust deps/licenses)
+                    ├─ Trivy (IaC config — no matching file types yet)
+                    └─ actionlint (GitHub Actions correctness)
                        ↓
                     [SARIF Merge]
                        ↓
-                    [Quality Gate]
-                    ├─ [PR] → Fail on errors
-                    └─ [Main] → Advisory only
+                    [Quality Gate (gate.sh)]
+                    scanner execution/config health only
                        ↓
                     [reviewdog] → [GitHub PR Check]
+                    fails only on new errors on added lines (PRs only)
                        ↓
                     [Artifact Upload]
 ```
@@ -38,9 +42,9 @@ The quality pipeline:
 | SonarQube Capability | CrateStack Tool(s) | Notes |
 |---|---|---|
 | **SAST** (static analysis) | Semgrep + clippy + Biome | Semgrep handles patterns; clippy for Rust lint; Biome for TS/JS |
-| **Secrets scanning** | Gitleaks | Offline, fast; detects hardcoded secrets in git history |
+| **Secrets scanning** | Gitleaks | Fast; detects hardcoded secrets in git history |
 | **Dependency scanning** | cargo audit + cargo deny | Rust advisory DB + license policy |
-| **Container/OS vulns** | Trivy (if applicable) | Offline mode; for GitHub Actions workflow security |
+| **GitHub Actions correctness** | actionlint | Syntax/semantic checks for workflow files (Trivy's config scanner doesn't cover GitHub Actions — see below) |
 | **Code quality metrics** | Clippy + Biome warnings | Linting and formatting checks |
 | **PR reporting** | reviewdog + GitHub Checks | Unified PR check, not individual comments |
 | **Dashboards** | Not replicated | This pipeline focuses on scanning + PR gates, not history dashboards |
@@ -64,14 +68,12 @@ The quality pipeline:
 - **Scope:** Git history (PR diffs or full on scheduled scans)
 - **Detection:** Secrets, API keys, passwords
 - **Output:** SARIF
-- **Offline:** Yes; uses built-in patterns
 
 ### cargo audit
 
 - **Scope:** Rust crate dependencies
-- **Detection:** Known security advisories from Rustsec advisory DB
-- **Output:** Text (JSON also available)
-- **Note:** Requires pre-populated advisory DB on self-hosted runner
+- **Detection:** Known security advisories from the Rustsec advisory DB
+- **Output:** Text (JSON also available; SARIF conversion not yet implemented)
 
 ### cargo deny
 
@@ -82,66 +84,59 @@ The quality pipeline:
 
 ### Trivy config
 
-- **Scope:** GitHub Actions workflow files
-- **Detection:** Misconfigurations, hardcoded secrets, bad practices
+- **Scope:** IaC misconfigurations — Terraform, CloudFormation, Kubernetes, Helm, Dockerfile, Ansible
+- **Detection:** Misconfigurations and bad practices in the file types above
 - **Output:** SARIF
-- **Offline:** Yes; `--offline-scan` flag
+- **Note:** This repo has none of those file types yet, so it currently reports "0 config files found" — an accurate result, not a bug. It does **not** cover GitHub Actions workflows (see actionlint below).
 
-## Offline Guarantee
+### actionlint
 
-**Offline means:** Scanners do not download rules, binaries, or databases during a workflow run.
+- **Scope:** `.github/workflows/*.yml`
+- **Detection:** Syntax errors, invalid expressions, shellcheck issues in `run:` blocks, permission/typing mistakes
+- **Output:** SARIF, via a vendored official template (`.ci/rules/actionlint/sarif.tmpl`)
 
-- ✅ **Git/GitHub interaction** (fetch repo, post PR checks) — this is acceptable; it's how CI/CD works
-- ❌ **Rule downloads** during scan — not allowed
-- ❌ **Package manager installs** (pip, npm, cargo install) — not allowed
-- ❌ **External API calls** for scoring or enrichment — not allowed
+## Toolchain
 
-### Pre-Provisioning Required
+Every scanner is installed at the start of the `quality` job — see `.ci/quality/TOOLCHAIN.md` for the exact install method, pinned version, and checksum for each tool, plus a list of real CLI-flag mistakes that were only caught by actually running each tool against this repo (several looked correct on paper but weren't).
 
-Every self-hosted runner must have:
-1. Binary tools installed (semgrep, gitleaks, trivy)
-2. Vulnerability databases pre-loaded (Rustsec for cargo audit, Trivy's DB)
-3. Semgrep rules committed to the repo (`.ci/rules/semgrep/`)
-4. Python 3 for SARIF converters
-
-See `.ci/quality/README.md` → "Offline Provisioning" for setup script.
+"Offline" in this pipeline's naming means *no centralized SonarQube-style SaaS server* — not zero network access. Installing pinned tool versions during a run is fine; what's avoided is a hosted quality-analysis platform and floating/unpinned dependencies.
 
 ## Data Flow
 
 ### Scanning Phase
 
 1. **Checkout:** Fetch repository with full git history (`fetch-depth: 0`)
-2. **Verify toolchain:** Confirm required scanners are installed
-3. **Run scanners:** Each scanner writes its report to `.ci/quality/reports/`
+2. **Install scanners:** Each tool is installed fresh via pinned actions/downloads (see `.ci/quality/TOOLCHAIN.md`)
+3. **Verify toolchain:** Confirm every install actually succeeded — fails the job with a clear message if not
+4. **Run scanners:** Each scanner writes its report to `.ci/quality/reports/`
    - Semgrep → `semgrep.sarif` (converted from JSON)
    - Gitleaks → `gitleaks.sarif`
-   - cargo audit → `cargo-audit.txt` (text; SARIF stub created)
+   - cargo audit → `cargo-audit.txt` (text; SARIF stub created — conversion not yet implemented)
    - cargo deny → `cargo-deny.txt`
    - Trivy → `trivy-config.sarif`
+   - actionlint → `actionlint.sarif`
 
 ### Merge Phase
 
-4. **Merge SARIF:** Consolidate all reports into `.ci/quality/reports/quality.sarif`
-   - Deduplicates findings across runs
+5. **Merge SARIF:** Consolidate all reports into `.ci/quality/reports/quality.sarif`
+   - Deduplicates findings keyed on (tool, rule ID, path, line, message) — this also guards against a previous local `run.sh` invocation's leftover `quality.sarif` being folded into a fresh merge, since it matches the same `*.sarif` glob as the inputs
    - Normalizes paths (relative POSIX)
    - Preserves tool/rule metadata
 
 ### Gate Phase
 
-5. **Quality gate:** Evaluate merged SARIF
-   - On **PR:** Fail if any error-level *new* findings
-   - On **main:** Report advisory; never fail
+6. **Quality gate (`gate.sh`):** Confirms every scanner produced valid SARIF or skipped with a justified reason — fails on execution/configuration errors only, never on finding counts (see "Quality Gate Logic" below)
 
 ### Reporting Phase
 
-6. **GitHub PR Check:** reviewdog posts a unified check with:
+7. **GitHub PR Check:** reviewdog posts a unified check with:
    - Errors → fails PR
    - Warnings → warning status
    - Notes → informational
    - **Filter:** Only new findings (added lines in PR)
 
-7. **Artifacts:** Reports retained for 30 days
-8. **Code Scanning (optional):** Upload to GitHub dashboard if `vars.ENABLE_CODE_SCANNING == 'true'`
+8. **Artifacts:** Reports retained for 30 days
+9. **Code Scanning (optional):** Upload to GitHub dashboard if `vars.ENABLE_CODE_SCANNING == 'true'`
 
 ## Workflow Triggers
 
@@ -182,12 +177,12 @@ Suppressions are version-controlled and reviewed like any other code change.
 
 ### Updating Tool Versions
 
-1. For self-hosted runner: Update provisioning script, re-provision runners
-2. For workflow: No action needed if tools are already installed
-3. For Semgrep rules: Commit new rule files to repo
-4. For advisories: Depends on tool (Rustsec is automatic; Trivy needs cache refresh)
+1. Update the pinned version/SHA in `.github/workflows/quality.yml`'s install steps
+2. For checksum-verified downloads (gitleaks, actionlint): fetch the new release's checksums file and update the pinned sha256 alongside the version
+3. For Semgrep rules: commit new rule files to `.ci/rules/semgrep/`
+4. Test with a `workflow_dispatch` run — no runner provisioning needed
 
-See `.ci/quality/README.md` → "Maintenance Schedule" for timing recommendations.
+See `.ci/quality/TOOLCHAIN.md` for the exact pin locations and `.ci/quality/README.md` → "Maintenance Schedule" for timing recommendations.
 
 ## Quality Gate Logic
 
@@ -286,11 +281,15 @@ Simply unset the variable; pipeline continues to function without upload.
 ### Run one scanner
 
 ```bash
-semgrep scan --config=.ci/rules/semgrep --offline .
-gitleaks detect --source=git --report-format=sarif
+semgrep scan --config=.ci/rules/semgrep --metrics=off .
+gitleaks detect --report-format=sarif --report-path=/tmp/gitleaks.sarif
 cargo audit
-trivy config .github/workflows
+cargo deny check all
+trivy config --format=sarif --output=/tmp/trivy.sarif .
+actionlint -format "$(cat .ci/rules/actionlint/sarif.tmpl)"
 ```
+
+(These commands assume the tool is already installed locally — see `.ci/quality/TOOLCHAIN.md` for each tool's exact version and install method.)
 
 ### View merged SARIF
 
@@ -304,14 +303,11 @@ Add to `.ci/baselines/` files and re-run quality checks.
 
 ## Troubleshooting
 
-### "Scanner not found" on CI
+### "Tool not found" during "Verify toolchain"
 
-**Problem:** Workflow logs show "semgrep not found; skipping"
+**Problem:** Workflow logs show "error: semgrep not found — its install step above must have failed"
 
-**Solution:**
-1. Verify runner is pre-provisioned (see `.ci/quality/README.md`)
-2. Check runner labels in `.github/workflows/quality.yml`
-3. Re-run provisioning script on the runner
+**Solution:** This means the install step failed, not that a runner needs provisioning (there's no self-hosted runner in this design). Check the specific install step's own log for the actual error — a checksum mismatch, a changed download URL, a yanked pip version, etc. See `.ci/quality/TOOLCHAIN.md` → "Troubleshooting."
 
 ### SARIF validation error
 
@@ -348,22 +344,16 @@ Add to `.ci/baselines/` files and re-run quality checks.
 4. **Fine-grained reporting per module:** Reports are repository-wide
    - Workaround: Filter reports by path after merge
 
-5. **Actual scanning, today:** `quality.yml` currently runs on `ubuntu-latest`
-   as a placeholder, so semgrep/gitleaks/trivy/cargo-audit/cargo-deny all
-   skip with a "not found on runner" warning rather than producing real
-   findings — the pipeline's wiring (SARIF merge, gate, reviewdog reporting)
-   is verified end-to-end, but no scan coverage exists until a self-hosted
-   runner is provisioned
-   - Tracked in [#219](https://github.com/cratestack/cratestack/issues/219); see `.ci/quality/TOOLCHAIN.md` for the provisioning steps
+5. **Trivy doesn't cover GitHub Actions:** its config scanner's default checks are Terraform/CloudFormation/Kubernetes/Helm/Dockerfile/Ansible — none of which this repo has yet, so it currently finds "0 config files." GitHub Actions correctness is covered by actionlint instead.
 
 ### What This Pipeline DOES Provide
 
-✅ **Offline scanning** — no external dependencies during scan
+✅ **No SaaS quality platform** — runs entirely in GitHub Actions, no external server or account
 ✅ **Unified PR checks** — one check per PR, not spam of comments
 ✅ **Actionable findings** — only new findings for PRs
 ✅ **Suppression control** — version-controlled, auditable allowlists
 ✅ **Language diversity** — Rust, TypeScript, GitHub Actions
-✅ **Low maintenance** — self-hosted, no SaaS account management
+✅ **Low maintenance** — no self-hosted runner to provision or keep patched; tool updates are a one-line version bump in `quality.yml`
 
 ## Maintenance & Operations
 
@@ -392,6 +382,7 @@ Add to `.ci/baselines/` files and re-run quality checks.
 ## See Also
 
 - [Quality Pipeline Operations](.ci/quality/README.md)
+- [Toolchain Manifest](.ci/quality/TOOLCHAIN.md)
 - [Baseline & Suppression](.ci/baselines/README.md)
 - [Semgrep Rules](.ci/rules/semgrep/README.md)
 - [GitHub Actions Workflow](.github/workflows/quality.yml)

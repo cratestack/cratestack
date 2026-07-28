@@ -43,7 +43,7 @@ rules:
       Async function that may not actually be async.
       If the function doesn't await anything, it doesn't need async keyword.
     languages: [typescript, javascript]
-    severity: NOTE
+    severity: INFO
     metadata:
       category: style
 

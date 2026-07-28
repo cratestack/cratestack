@@ -53,10 +53,9 @@ section "Scripts"
 check_file "$SCRIPT_DIR/run.sh"
 check_file "$SCRIPT_DIR/merge-sarif.sh"
 check_file "$SCRIPT_DIR/gate.sh"
-check_file "$SCRIPT_DIR/semgrep-to-sarif.py"
 
 # Check executability
-for script in run.sh merge-sarif.sh gate.sh semgrep-to-sarif.py; do
+for script in run.sh merge-sarif.sh gate.sh; do
   if [[ -x "$SCRIPT_DIR/$script" ]]; then
     log_pass "Script is executable: $script"
   else
@@ -92,13 +91,11 @@ done
 
 section "Python Scripts"
 
-for script in merge-sarif.sh semgrep-to-sarif.py; do
-  if python3 -m py_compile "$SCRIPT_DIR/$script" 2>/dev/null; then
-    log_pass "Python script compiles: $script"
-  else
-    log_fail "Python script compilation failed: $script"
-  fi
-done
+if python3 -m py_compile "$SCRIPT_DIR/merge-sarif.sh" 2>/dev/null; then
+  log_pass "Python script compiles: merge-sarif.sh"
+else
+  log_fail "Python script compilation failed: merge-sarif.sh"
+fi
 
 # ============================================================================
 # Validate shell scripts
@@ -125,7 +122,7 @@ check_tool() {
     version=$("$1" --version 2>&1 | head -1 || echo "unknown version")
     log_pass "Tool found: $1 ($version)"
   else
-    log_warn "Tool not found: $1 (required for scans; install via provisioning)"
+    log_warn "Tool not found: $1 (this script runs locally; quality.yml installs it fresh in CI — see .ci/quality/TOOLCHAIN.md)"
   fi
 }
 
@@ -133,6 +130,9 @@ check_tool semgrep
 check_tool gitleaks
 check_tool trivy
 check_tool cargo-audit
+check_tool cargo-deny
+check_tool actionlint
+check_tool reviewdog
 check_tool python3
 
 # ============================================================================
@@ -173,6 +173,14 @@ if [[ $rule_files -gt 0 ]]; then
 else
   log_fail "No Semgrep rules found in .ci/rules/semgrep/"
 fi
+
+# ============================================================================
+# actionlint SARIF template
+# ============================================================================
+
+section "actionlint"
+
+check_file "$PROJECT_ROOT/.ci/rules/actionlint/sarif.tmpl"
 
 # ============================================================================
 # Summary

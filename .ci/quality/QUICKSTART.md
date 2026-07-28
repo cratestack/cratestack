@@ -86,41 +86,22 @@ When you open a PR to `main`, a **Quality** check appears in GitHub:
 2. (Optional) Remove `SONARQUBE_*` secrets from GitHub
 3. New quality checks run in GitHub Actions (built-in)
 
-### Use a self-hosted runner
+### Runner requirements
 
-By default, quality checks run on GitHub-hosted runners (`ubuntu-latest`).
-
-For complete scanning (all tools available), configure a self-hosted runner:
-
-1. Set runner label in `.github/workflows/quality.yml`:
-   ```yaml
-   runs-on: [self-hosted, linux, quality-offline]
-   ```
-
-2. Provision runner:
-   ```bash
-   # On the runner machine
-   bash .ci/quality/TOOLCHAIN.md  # Follow provisioning script
-   ```
-
-3. Verify:
-   ```bash
-   .ci/quality/validate.sh
-   ```
+Quality checks run on standard GitHub-hosted runners (`ubuntu-latest`) — no self-hosted runner or pre-provisioning needed. Every scanner is installed fresh at the start of each run via pinned GitHub Actions or checksum-verified downloads (see `.ci/quality/TOOLCHAIN.md`).
 
 ### Update tool versions
 
-1. Edit `.ci/quality/TOOLCHAIN.md`
-2. Update version numbers and checksums
-3. Re-run provisioning script on runners
+1. Edit the pinned version/SHA in `.github/workflows/quality.yml`'s install steps
+2. For checksum-verified downloads (gitleaks, actionlint): update the pinned sha256 alongside the version
+3. Test with a `workflow_dispatch` run
 4. Commit changes
 
 ## Troubleshooting
 
-### "Scanner not found; skipping"
+### "error: X not found — its install step above must have failed"
 
-**On GitHub-hosted runners:** Normal. Scanners aren't pre-installed.  
-**On self-hosted runners:** Run provisioning script from `.ci/quality/TOOLCHAIN.md`.
+This means one of the tool-install steps in `quality.yml` broke, not that a runner needs provisioning (there's no self-hosted runner). Check that install step's own log for the actual error — a checksum mismatch, a changed download URL, a yanked pip version, etc. See `.ci/quality/TOOLCHAIN.md` → "Troubleshooting."
 
 ### My finding is a false positive
 

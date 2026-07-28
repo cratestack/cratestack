@@ -1,8 +1,19 @@
 # SonarQube CE Replacement: Quality Pipeline Implementation
 
-**Date:** 2026-07-28  
-**Status:** ✓ Complete and validated  
-**Validation:** 26/26 checks passed
+**Date:** 2026-07-28
+**Status:** ⚠️ Historical snapshot of the original #216 implementation — superseded in several places
+
+> **This file describes the pipeline as it was originally merged in #216.**
+> Real end-to-end testing afterward (#217, #218, and the tool-install
+> rework that followed) found and fixed several defects this document
+> doesn't reflect: a non-existent GitHub Action, unpinned action versions,
+> a broken quality gate, several incorrect CLI flags (semgrep, gitleaks,
+> trivy, cargo-deny) that only surfaced once each tool was actually run,
+> and the shift from "self-hosted, pre-provisioned runner" to "install
+> every tool via pinned actions on each run." **For current, accurate
+> documentation, see [`docs/quality-pipeline.md`](docs/quality-pipeline.md)
+> and [`.ci/quality/TOOLCHAIN.md`](.ci/quality/TOOLCHAIN.md) instead.** This
+> file is kept only as a record of the initial design.
 
 ## Executive Summary
 

@@ -12,8 +12,8 @@ rules:
     paths:
       exclude:
         - examples/
-        - "*/bin/"
-        - "*/tests/"
+        - "**/*/bin/"
+        - "**/*/tests/"
     metadata:
       category: reliability
       cwe: CWE-252
@@ -80,6 +80,6 @@ rules:
       .to_string() used for String conversion.
       Prefer .into() for generic context or format!() for formatting.
     languages: [rust]
-    severity: NOTE
+    severity: INFO
     metadata:
       category: style

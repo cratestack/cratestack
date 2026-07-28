@@ -18,7 +18,14 @@ def merge_sarif_reports(reports_dir):
         print(f"error: {reports_dir} not found", file=sys.stderr)
         sys.exit(1)
 
-    sarif_files = sorted(reports_dir.glob("*.sarif"))
+    # Exclude quality.sarif itself: it's this script's own output filename,
+    # and matches the *.sarif glob just like every input report. Without
+    # this, re-running the pipeline locally (without wiping reports/ first)
+    # folds the previous merge's runs into the new one, silently doubling
+    # results on every repeated invocation instead of starting fresh.
+    sarif_files = sorted(
+        f for f in reports_dir.glob("*.sarif") if f.name != "quality.sarif"
+    )
 
     if not sarif_files:
         print(f"warn: no SARIF files found in {reports_dir}", file=sys.stderr)

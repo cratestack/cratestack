@@ -31,7 +31,7 @@ See `.github/workflows/quality.yml` for full configuration.
 - **Rules:** Local only from `.ci/rules/semgrep/`
 - **Languages:** Rust, TypeScript
 - **Output:** `semgrep.sarif` (converted from Semgrep JSON)
-- **Configuration:** Runs with `--offline` to prevent rule downloads
+- **Configuration:** `--config` always points at the local rules directory, never the Semgrep registry, so no rule download happens; `--metrics=off` is also set explicitly (there is no `--offline` flag)
 
 To add rules:
 
@@ -67,26 +67,40 @@ To suppress a finding:
 
 ### Trivy config
 
-- **Purpose:** GitHub Actions workflow security scanning
+- **Purpose:** IaC misconfiguration scanning (Terraform, CloudFormation, Kubernetes, Helm, Dockerfile, Ansible)
 - **Output:** `trivy-config.sarif`
-- **Scope:** `.github/workflows/`
-- **Configuration:** Runs with `--offline-scan --skip-db-update`
+- **Scope:** Whole repo (`trivy config .`)
+- **Note:** Its default scanners don't cover GitHub Actions — this repo has none of the covered file types yet, so it currently reports "0 config files found." GitHub Actions correctness is covered by actionlint instead. (`--skip-db-update`/`--offline-scan` are vulnerability-scanning flags, not valid for `trivy config`.)
+
+### actionlint (GitHub Actions correctness)
+
+- **Purpose:** Lints `.github/workflows/*.yml` for syntax errors, bad expressions, shellcheck issues in `run:` blocks
+- **Output:** `actionlint.sarif`, via the vendored official template at `.ci/rules/actionlint/sarif.tmpl`
+- **Scope:** Auto-discovers workflow files from the project root
 
 ## Running a Specific Scanner
 
 ```bash
 # Just Semgrep
-semgrep scan --config=.ci/rules/semgrep --sarif --offline .
+semgrep scan --config=.ci/rules/semgrep --metrics=off .
 
 # Just Gitleaks
-gitleaks detect --source=git --report-format=sarif
+gitleaks detect --report-format=sarif --report-path=/tmp/gitleaks.sarif
 
 # Just cargo audit
 cargo audit
 
+# Just cargo deny
+cargo deny check all
+
 # Just Trivy config
-trivy config --format=sarif .github/workflows
+trivy config --format=sarif --output=/tmp/trivy.sarif .
+
+# Just actionlint
+actionlint -format "$(cat .ci/rules/actionlint/sarif.tmpl)"
 ```
+
+Each command assumes the tool is already installed locally — see `.ci/quality/TOOLCHAIN.md` for exact versions and install methods.
 
 ## SARIF Report Structure
 
@@ -148,74 +162,22 @@ Findings can be suppressed using `.ci/baselines/`:
    - Document the reason (ticket reference, false positive explanation)
    - Review on every quarter sweep
 
-## Offline Provisioning (Self-Hosted Runner)
+## Toolchain
 
-The following tools must be pre-installed on any self-hosted runner:
+There is no self-hosted runner and no pre-provisioning step. Every tool
+(semgrep, gitleaks, trivy, cargo-audit, cargo-deny, actionlint, reviewdog) is
+installed fresh at the start of each `quality` job run, on GitHub-hosted
+`ubuntu-latest`, via pinned GitHub Actions or checksum-verified downloads —
+see the "Install scanners" steps in `.github/workflows/quality.yml`.
 
-```
-Tool              | Version    | Binary/Package
-------------------+------------+-----------------------------------
-semgrep           | >=1.50.0   | semgrep (GitHub releases)
-gitleaks          | >=8.18.0   | gitleaks (GitHub releases)
-trivy             | >=0.48.0   | trivy (GitHub releases)
-cargo-audit       | >=0.18.0   | cargo install cargo-audit
-cargo             | nightly    | From rust-toolchain.toml
-python3           | >=3.8      | System package (needed for converters)
-```
+"Offline" in this pipeline's naming means *no centralized SonarQube-style
+SaaS server* — not zero network access. Installing pinned tool versions
+during a run is fine; what's avoided is a hosted quality-analysis platform.
 
-### Setup Script (Recommended)
-
-Create a provisioning script in your infrastructure:
-
-```bash
-#!/bin/bash
-# Provision a self-hosted runner with offline quality tools
-
-RUNNER_HOME=/opt/github-runner
-
-# Semgrep
-curl -L https://github.com/returntocorp/semgrep/releases/download/v1.50.0/semgrep-1.50.0-alpine-x86_64.tar.gz \
-  | tar xz -C /usr/local/bin
-
-# Gitleaks
-curl -L https://github.com/gitleaks/gitleaks/releases/download/v8.18.0/gitleaks-linux-x64 \
-  -o /usr/local/bin/gitleaks && chmod +x /usr/local/bin/gitleaks
-
-# Trivy
-curl -L https://github.com/aquasecurity/trivy/releases/download/v0.48.0/trivy_0.48.0_Linux-64bit.tar.gz \
-  | tar xz -C /usr/local/bin
-
-# Rust tools
-rustup component add clippy rustfmt
-cargo install cargo-audit
-
-# Verify installation
-semgrep --version
-gitleaks --version
-trivy version
-cargo audit --version
-```
-
-## Offline Database Updates
-
-### Trivy
-
-Trivy caches databases locally. Pre-populate on your runner:
-
-```bash
-# On the runner provisioning step
-trivy image --skip-update busybox:latest  # Populates the cache
-trivy config --skip-update .github/workflows/
-```
-
-### Semgrep
-
-Semgrep rules are stored in `.ci/rules/semgrep/` (version-controlled).
-To update rules on the runner, commit changes to the repository.
-
-### Gitleaks
-
-Uses built-in patterns (no external database).
+See `.ci/quality/TOOLCHAIN.md` for the exact version/checksum pinned for
+each tool, why each install method was chosen, and a list of real CLI-flag
+mistakes only caught by actually running each tool (several looked correct
+on paper but weren't).
 
 ## GitHub Code Scanning (Optional)
 
@@ -262,12 +224,12 @@ If the JSON is valid but SARIF structure is wrong, check individual tool reports
 | Task | Frequency | Owner |
 |------|-----------|-------|
 | Semgrep rules update | Quarterly | Security lead |
-| Trivy DB sync | Monthly | Ops (via runner provisioning) |
 | Baseline cleanup | Quarterly | Security lead |
-| Tool version bumps | Annually | DevOps |
+| Tool version bumps (see TOOLCHAIN.md) | Annually | DevOps |
 
 ## See Also
 
 - [Quality Pipeline Architecture](../../docs/quality-pipeline.md)
+- [Toolchain Manifest](TOOLCHAIN.md)
 - [.github/workflows/quality.yml](../../.github/workflows/quality.yml)
 - [Baseline & Suppression Format](./)
