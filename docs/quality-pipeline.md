@@ -348,6 +348,14 @@ Add to `.ci/baselines/` files and re-run quality checks.
 4. **Fine-grained reporting per module:** Reports are repository-wide
    - Workaround: Filter reports by path after merge
 
+5. **Actual scanning, today:** `quality.yml` currently runs on `ubuntu-latest`
+   as a placeholder, so semgrep/gitleaks/trivy/cargo-audit/cargo-deny all
+   skip with a "not found on runner" warning rather than producing real
+   findings — the pipeline's wiring (SARIF merge, gate, reviewdog reporting)
+   is verified end-to-end, but no scan coverage exists until a self-hosted
+   runner is provisioned
+   - Tracked in [#219](https://github.com/cratestack/cratestack/issues/219); see `.ci/quality/TOOLCHAIN.md` for the provisioning steps
+
 ### What This Pipeline DOES Provide
 
 ✅ **Offline scanning** — no external dependencies during scan
