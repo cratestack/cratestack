@@ -426,6 +426,12 @@ pnpm install
 pnpm run test:smoke
 ```
 
+Run the offline quality pipeline (SAST, secrets, dependency scanning — see [`docs/quality-pipeline.md`](docs/quality-pipeline.md)):
+
+```sh
+.ci/quality/run.sh
+```
+
 ## Release
 
 See `RELEASE.md` for the public release process across crates.io, GitHub Releases, VS Code Marketplace, Open VSX, and the docs site.
