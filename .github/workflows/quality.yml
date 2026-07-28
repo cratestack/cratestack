@@ -30,7 +30,8 @@ jobs:
 
     steps:
       # Fetch full history so reviewdog can calculate PR diffs correctly
-      - uses: actions/checkout@v6
+      # actions/checkout v6.1.0
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           fetch-depth: 0
 
@@ -69,6 +70,24 @@ jobs:
             echo "✓ cargo-audit $(cargo audit --version)"
           fi
 
+          # cargo subcommands are separate binaries (cargo-<name>) on PATH;
+          # checking `cargo` itself is not enough, since it's always present
+          # in a Rust build environment regardless of whether cargo-deny is.
+          if ! command -v cargo-deny &> /dev/null; then
+            echo "warn: cargo-deny not found"
+          else
+            echo "✓ cargo-deny $(cargo deny --version)"
+          fi
+
+          # reviewdog is invoked directly (not via a setup action, which would
+          # download a binary at runtime) — it must be pre-provisioned like
+          # the scanners above. See .ci/quality/TOOLCHAIN.md.
+          if ! command -v reviewdog &> /dev/null; then
+            echo "warn: reviewdog not found"
+          else
+            echo "✓ reviewdog $(reviewdog -version 2>&1 | head -1)"
+          fi
+
           if ! command -v python3 &> /dev/null; then
             echo "error: python3 not found (required for converters)"
             exit 1
@@ -96,7 +115,8 @@ jobs:
 
       - name: Upload SARIF reports
         if: always()
-        uses: actions/upload-artifact@v4
+        # actions/upload-artifact v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: quality-reports
           path: .ci/quality/reports/
@@ -109,25 +129,49 @@ jobs:
       - name: Quality gate
         if: always()
         run: .ci/quality/gate.sh
-        env:
-          GITHUB_EVENT_NAME: ${{ github.event_name }}
-          GITHUB_SHA: ${{ github.sha }}
-          GITHUB_HEAD_REF: ${{ github.head_ref }}
-          GITHUB_BASE_REF: ${{ github.base_ref || 'main' }}
 
       # ====================================================================
       # Publish PR check via reviewdog
-      # (Only on pull requests; has necessary permissions)
+      #
+      # Invokes the locally provisioned reviewdog CLI directly (never the
+      # reviewdog hosted service/GitHub App). reviewdog is NOT installed via
+      # reviewdog/action-setup, since that action's install.sh downloads a
+      # binary over the network at runtime — the same "no downloads during a
+      # workflow run" rule that applies to semgrep/gitleaks/trivy applies
+      # here too. reviewdog must be pre-provisioned on the runner; see
+      # .ci/quality/TOOLCHAIN.md.
+      #
+      # -f=sarif            parse the merged SARIF as input
+      # -reporter=github-pr-check  post GitHub Check annotations for the PR;
+      #                      reviewdog automatically degrades to GitHub
+      #                      Actions log annotations for fork PRs where
+      #                      GITHUB_TOKEN is read-only (no pull_request_target
+      #                      used here, so untrusted fork code is never
+      #                      checked out or executed with elevated permissions)
+      # -filter-mode=added  only consider added/modified lines in the diff
+      # -fail-level=error   exit non-zero only for error-level findings on
+      #                      added lines; warnings/notes are reported but
+      #                      never fail the check
       # ====================================================================
 
       - name: Post PR check via reviewdog
         if: github.event_name == 'pull_request' && always()
-        uses: reviewdog/action-sarif@1ce9fe65cebd3be9f55d6f5a8c0b6e20e0a0f89e
-        with:
-          sarif_file: .ci/quality/reports/quality.sarif
-          fail_on_error: true
-          filter_mode: added
-          tool_name: quality-checks
+        run: |
+          set -uo pipefail
+
+          if ! command -v reviewdog &> /dev/null; then
+            echo "::warning::reviewdog not found on this runner; skipping PR check. See .ci/quality/TOOLCHAIN.md for provisioning."
+            exit 0
+          fi
+
+          reviewdog \
+            -f=sarif \
+            -reporter=github-pr-check \
+            -filter-mode=added \
+            -fail-level=error \
+            < .ci/quality/reports/quality.sarif
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # ====================================================================
       # Optional: Upload to GitHub Code Scanning
@@ -140,7 +184,8 @@ jobs:
           github.ref == 'refs/heads/main' &&
           vars.ENABLE_CODE_SCANNING == 'true' &&
           always()
-        uses: github/codeql-action/upload-sarif@v3
+        # github/codeql-action v3.37.3
+        uses: github/codeql-action/upload-sarif@f081e69141f6ea0aa740920b0c7012cd81a4fbe6
         with:
           sarif_file: .ci/quality/reports/quality.sarif
           category: quality-offline-pipeline

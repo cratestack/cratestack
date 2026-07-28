@@ -34,7 +34,7 @@ This implementation replaces SonarQube Community Edition with an offline, GitHub
 .ci/quality/
   ├─ run.sh                 (orchestrates all scanners)
   ├─ merge-sarif.sh         (consolidates SARIF reports)
-  ├─ gate.sh                (quality gate logic: fail PRs on errors)
+  ├─ gate.sh                (fails on scanner execution/config errors only)
   ├─ semgrep-to-sarif.py    (Semgrep JSON → SARIF converter)
   ├─ validate.sh            (validates pipeline configuration)
   ├─ README.md              (operations guide)
@@ -143,12 +143,13 @@ Configuration Checks:
    - Runs each scanner (Semgrep, Gitleaks, cargo audit, Trivy)
    - Converts all reports to SARIF
    - Merges into `.ci/quality/reports/quality.sarif`
-4. `.ci/quality/gate.sh` evaluates merged report:
-   - Checks for new **error-level** findings in PR diff
-   - Fails PR if errors introduced; warns if warnings only
-5. `reviewdog` posts a GitHub PR Check:
-   - Red check for errors; PR required to fix
-   - Yellow for warnings; PR can merge
+4. `.ci/quality/gate.sh` validates the scan itself succeeded:
+   - Fails only on scanner execution/configuration errors (corrupt or missing SARIF)
+   - Finding counts are logged for visibility, never used to fail here
+5. `reviewdog` (invoked directly, pre-provisioned on the runner) posts a GitHub PR Check:
+   - `-filter-mode=added -fail-level=error` — fails only on new error-level findings on added lines
+   - Pre-existing backlog errors elsewhere in the repo never fail the PR
+   - Warnings/notes are posted as annotations but never fail the check
 6. Full reports retained as artifacts (30 days)
 
 ### Local Development
@@ -201,7 +202,7 @@ bash /path/to/provision.sh
 | **Secrets** | ✓ | ✓ Gitleaks | Better secret detection |
 | **Dependency scanning** | ✓ | ✓ cargo audit + deny | Already integrated |
 | **PR reporting** | ✓ | ✓ reviewdog | Unified checks, not comments |
-| **Quality gates** | ✓ | ✓ gate.sh | Local logic, customizable |
+| **Quality gates** | ✓ | ✓ gate.sh + reviewdog | gate.sh checks scan health; reviewdog gates new errors on added lines |
 | **Dashboards** | ✓ | ⚠ GitHub Code Scanning (optional) | No history tracking |
 | **Centralized metrics** | ✓ | ✗ | Not replicated (use GitHub/Grafana) |
 | **Offline operation** | ✗ (always needs server) | ✓ | No external downloads |

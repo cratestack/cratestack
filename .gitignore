@@ -14,3 +14,10 @@ node_modules
 packages/*/dist/
 
 *.tar.gz
+
+# Quality pipeline: generated at scan time, never committed (see
+# .ci/quality/README.md). .gitkeep keeps the directory tracked.
+.ci/quality/reports/*
+!.ci/quality/reports/.gitkeep
+__pycache__/
+*.pyc

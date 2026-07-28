@@ -62,9 +62,13 @@ EOF
 scan_cargo_deny() {
   log "Running cargo deny..."
 
-  if ! command -v cargo &> /dev/null; then
-    warn "cargo not found; skipping cargo deny"
-    create_sarif_stub "cargo-deny" "cargo not found on runner"
+  # cargo subcommands are separate binaries (cargo-<name>) on PATH; checking
+  # `cargo` alone would let this fall through to `cargo deny` even when the
+  # cargo-deny subcommand itself isn't installed, misreporting "no such
+  # command: deny" as "found issues" instead of a real execution error.
+  if ! command -v cargo-deny &> /dev/null; then
+    warn "cargo-deny not found; skipping"
+    create_sarif_stub "cargo-deny" "cargo-deny not found on runner"
     return
   fi
 
