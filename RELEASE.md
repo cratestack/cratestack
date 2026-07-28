@@ -47,9 +47,10 @@ else happens on its own:
    (`.github/workflows/release-cli.yml`): publishes every crate to
    crates.io (`CARGO_REGISTRY_TOKEN`), builds and attaches cross-platform
    `cratestack-cli` binaries to a GitHub Release, and publishes both npm
-   packages (`@cratestack/cli`, `@cratestack/api`) with provenance
-   (`NPM_TOKEN`). See [`docs/tooling/npm-publishing.md`](docs/tooling/npm-publishing.md)
-   for one-time secret setup.
+   packages (`@cratestack/cli`, `@cratestack/api`) with provenance via
+   npm's OIDC Trusted Publishing (no token at all). See
+   [`docs/tooling/npm-publishing.md`](docs/tooling/npm-publishing.md) for
+   one-time setup.
 
 Step 1 only reliably cascades into step 2 because `cut-release-tag.yml`
 pushes the tag using a `RELEASE_PAT` repo secret instead of the default
@@ -72,6 +73,14 @@ standing/historical issues described below; both are now understood and
 either documented as permanent workarounds (PR creation) or fixed and
 re-verified (the `RELEASE_PAT` trigger issue, and the `NPM_TOKEN` token-type
 issue).
+
+**npm publishing switched to Trusted Publishing after `v0.4.16`**: `publish-npm` and
+`publish-npm-api` no longer read `NPM_TOKEN` at all — they authenticate via npm's OIDC Trusted
+Publishing instead, which needs no GitHub secret but does need a one-time Trusted Publisher
+configured per package on npmjs.com (see
+[`docs/tooling/npm-publishing.md`](docs/tooling/npm-publishing.md)). Unlike the old PAT, there's no
+secret to check for absence, so **until that's configured, both jobs fail** rather than
+soft-skipping — a deliberate hard cutover, not yet re-verified end-to-end against a real tag push.
 
 ### Why `RELEASE_PAT` exists, and why the bump goes through a PR at all
 
@@ -209,6 +218,11 @@ re-verified on `v0.4.15` and `v0.4.16` (`gh run view` on the resulting
 
 ### npm publish fails with `EOTP` / "This operation requires a one-time password"
 
+**Historical — no longer applicable.** Both npm jobs stopped reading `NPM_TOKEN` entirely in favor
+of OIDC Trusted Publishing (see [Prerequisites](#prerequisites) and
+[`docs/tooling/npm-publishing.md`](docs/tooling/npm-publishing.md)), which has no token to be the
+wrong type. Kept below for anyone tracing back through old `v0.4.15` run logs.
+
 **Symptom:** `publish-npm` and/or `publish-npm-api` fail with
 `npm error code EOTP` / `npm error This operation requires a one-time
 password from your authenticator.`
@@ -218,14 +232,7 @@ account with 2FA-on-publish enabled, not an **Automation**-type token.
 Only Automation tokens (npmjs.com → Access Tokens → Generate New Token →
 Automation) skip the OTP requirement for unattended/CI publishing — this
 is npm's design, not something the workflow can retry around. This hit
-both npm packages on `v0.4.15`.
-
-**Fix:** generate a new Automation token on npmjs.com and rotate the
-`NPM_TOKEN` repo secret to it, then re-run the release (a fresh version
-bump — npm publishes can't be retried against an already-attempted
-version/tarball). See
-[`docs/tooling/npm-publishing.md`](docs/tooling/npm-publishing.md#npm-one-time-setup-needs-cratestack-npm-org-access).
-Confirmed fixed on `v0.4.16`.
+both npm packages on `v0.4.15`, fixed by rotating to an Automation token for `v0.4.16`.
 
 ### Verifying a release actually shipped
 
@@ -269,6 +276,9 @@ env var.
 Required credentials are intentionally read from the environment:
 
 * `CARGO_REGISTRY_TOKEN` for crates.io
+* npm's OIDC Trusted Publishing for `@cratestack/cli` and `@cratestack/api` — no GitHub secret at
+  all, a per-package Trusted Publisher configured on npmjs.com instead (see
+  [`docs/tooling/npm-publishing.md`](docs/tooling/npm-publishing.md))
 * `VSCE_PAT` for Visual Studio Marketplace
 * `OVSX_PAT` for Open VSX
 * GitHub permissions to push tags and create releases

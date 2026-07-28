@@ -11,40 +11,56 @@ like a GitHub Release, so a throwaway test tag must never reach a registry):
 - **`@cratestack/api`** (`publish-npm-api` job, `packages/cratestack-api/`) — hand-written, ships
   its own compiled `dist/` in the tarball.
 
-All three jobs soft-skip (log a warning, exit 0, without failing the rest of the release) when
-their respective secret isn't set — so the release still succeeds even before every secret below
-is configured. This tag is normally produced by the **"Prepare Release"** →
-**"Cut Release Tag"** pipeline described in [`RELEASE.md`](../../RELEASE.md), not pushed by hand.
+`publish-crates` soft-skips (logs a warning, exits 0, without failing the rest of the release)
+when `CARGO_REGISTRY_TOKEN` isn't set. The two npm jobs are a **hard cutover, not a soft-skip**:
+they authenticate via npm's OIDC Trusted Publishing (see below), which has no repo secret to check
+for absence — until the Trusted Publisher is configured on npmjs.com for each package, these jobs
+just fail rather than quietly no-op'ing. This tag is normally produced by the
+**"Prepare Release"** → **"Cut Release Tag"** pipeline described in
+[`RELEASE.md`](../../RELEASE.md), not pushed by hand.
 
-## npm one-time setup (needs `@cratestack` npm org access)
+## npm one-time setup: Trusted Publishing (needs `@cratestack` npm org access)
 
-1. On npmjs.com, sign in as a member of the `@cratestack` org with publish rights.
-2. Create a new **Automation** access token (Settings → Access Tokens → Generate New Token →
-   Granular Access Token or Automation, scoped to `@cratestack/cli` and `@cratestack/api`). An
-   Automation token is required here — a token requiring 2FA-on-publish won't work in CI.
-3. In the GitHub repo (`cratestack/cratestack`) → Settings → Secrets and variables → Actions, add
-   a new repository secret named `NPM_TOKEN` with that token's value.
+Both npm packages authenticate with npm's [Trusted Publishing](https://docs.npmjs.com/trusted-publishers)
+(OIDC, GA since npm CLI 11.5.1 / Node 22.14+) instead of a long-lived token — no `NPM_TOKEN` at
+all, no rotation, no EOTP failure mode (see the superseded section below for what that used to
+look like).
 
-Once the secret exists, the next tag push publishes both npm packages — no other change needed.
+For **each** package — this is a one-per-package setting, not shared:
 
-**How to tell you got the token type wrong:** if `NPM_TOKEN` is a regular (non-Automation) token
-from an account with 2FA-on-publish enabled, both `publish-npm` and `publish-npm-api` fail with
-`npm error code EOTP` / `npm error This operation requires a one-time password from your
-authenticator.` This is the specific, recognizable symptom of this exact misconfiguration — npm
-has no way to satisfy an OTP challenge from unattended CI, so the fix is always "rotate to a real
-Automation token," never "retry." Confirmed the hard way on `v0.4.15` (both npm publishes failed
-with `EOTP`); rotating `NPM_TOKEN` to an Automation token and cutting `v0.4.16` instead confirmed
-the fix — see [`RELEASE.md`'s Troubleshooting section](../../RELEASE.md#npm-publish-fails-with-eotp--this-operation-requires-a-one-time-password)
-and the live verification commands there.
+1. On npmjs.com, sign in as a member of the `@cratestack` org with publish rights, and open the
+   package's Settings page (`npmjs.com/package/@cratestack/cli/access` and the equivalent for
+   `@cratestack/api`).
+2. Find the **Trusted Publisher** section and add a GitHub Actions trusted publisher with:
+   * **Organization or user:** `cratestack`
+   * **Repository:** `cratestack`
+   * **Workflow filename:** `release-cli.yml` (filename only — this matches both jobs, since npm's
+     trust check is scoped to org/repo/workflow file, not to the individual job or git ref within
+     it)
+   * **Environment:** leave blank (not used here)
+   * **Allowed actions:** `npm publish`
+
+Once both packages have a Trusted Publisher configured, the next tag push publishes them — no
+GitHub secret to add at all. Configuration changes take effect immediately for the *next* publish.
+
+**Superseded: the old `NPM_TOKEN` PAT setup.** Before this, both jobs read an npmjs.com
+Automation-type access token from an `NPM_TOKEN` repo secret — CI no longer reads this secret (the
+env var was removed from both jobs), so it can be deleted once Trusted Publishing is confirmed
+working, or just left inert. Kept here for history: `NPM_TOKEN` had to specifically be an
+**Automation**-type token, since a regular token from a 2FA-on-publish account fails with `npm
+error code EOTP` / `npm error This operation requires a one-time password from your
+authenticator.` — npm has no way to satisfy an OTP challenge from unattended CI. Confirmed the hard
+way on `v0.4.15` (both npm publishes failed with `EOTP`); rotating to an Automation token fixed it
+for `v0.4.16`. Trusted Publishing sidesteps this whole class of failure — there's no stored
+credential to be the wrong type.
 
 ## crates.io one-time setup
 
 1. On crates.io, sign in as an account with publish rights on every `cratestack-*` crate.
 2. Create a new API token (Account Settings → API Tokens → New Token), scoped at minimum to
    `publish-new` and `publish-update`.
-3. Add it as a repo secret named `CARGO_REGISTRY_TOKEN` (same Settings → Secrets and variables →
-   Actions page as `NPM_TOKEN`) — `cargo publish` reads this env var automatically, no extra
-   config needed.
+3. Add it as a repo secret named `CARGO_REGISTRY_TOKEN` (repo Settings → Secrets and variables →
+   Actions) — `cargo publish` reads this env var automatically, no extra config needed.
 
 Once the secret exists, the next tag push publishes every workspace crate via `publish-crates`
 (idempotent — already-published versions are skipped, so a re-run after a partial failure, e.g. a
@@ -63,7 +79,7 @@ loud `::warning::` when this secret is missing, precisely so that failure mode i
    `cratestack/cratestack` (a fine-grained PAT scoped to just this repo is preferred over a classic
    PAT with the broader `repo` scope, but either works).
 2. Add it as a repo secret named `RELEASE_PAT` (same Settings → Secrets and variables → Actions
-   page as `NPM_TOKEN`/`CARGO_REGISTRY_TOKEN`).
+   page as `CARGO_REGISTRY_TOKEN`).
 
 Once the secret exists, the next "Prepare Release" bump PR that merges will have its auto-created
 tag genuinely trigger `release-cli.yml` — no manual `gh workflow run`/tag recreation needed.
@@ -91,9 +107,13 @@ linking the published tarball back to this exact GitHub Actions run and commit. 
 
 - **A public repository** — provenance publishing is rejected for private repos. Already satisfied.
 - **`id-token: write` permission** — set at the job level on `publish-npm` and `publish-npm-api`
-  (not workflow-wide, since the other jobs in this file don't need it).
-- **npm >= 9.5.0** — whatever ships with the pinned `node-version: 20` in `actions/setup-node`
-  already satisfies this.
+  (not workflow-wide, since the other jobs in this file don't need it). This is the same permission
+  Trusted Publishing's OIDC exchange uses, so both features share one job-level setting.
+- **npm >= 9.5.0** — both jobs pin `node-version: 24` and additionally run `npm install -g
+  npm@latest` before publishing, since Trusted Publishing's own >= 11.5.1 requirement is stricter
+  than provenance's and isn't guaranteed by whatever npm version happens to ship bundled with a
+  given Node release.
 
-No additional secret or npmjs.com configuration is needed for provenance beyond the `NPM_TOKEN`
-above — it's purely a CI-side capability enabled by the permission and the flag.
+No additional GitHub secret is needed for provenance — it's purely a CI-side capability enabled by
+the permission and the flag, on top of whatever auth method (Trusted Publishing, here) gets the
+publish itself authorized.

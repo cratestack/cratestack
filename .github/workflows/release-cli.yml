@@ -223,16 +223,18 @@ jobs:
 
   # Only on a real tag push, never on a manual workflow_dispatch test run —
   # unlike a GitHub Release, an npm publish can't be deleted and retried
-  # cleanly, so a throwaway test tag must not reach the registry. Requires
-  # an NPM_TOKEN repo secret (an npmjs.com token for the @cratestack org,
-  # which someone with org access has to create and add manually); until
-  # then this step logs and no-ops instead of failing the whole release.
-  # NPM_TOKEN must specifically be an npmjs.com **Automation**-type token —
-  # a regular token from a 2FA-on-publish account fails here with `npm
-  # error code EOTP`, confirmed on v0.4.15 (fixed by rotating to an
-  # Automation token for v0.4.16). See docs/tooling/npm-publishing.md.
-  # `id-token: write` (job-scoped, not workflow-wide) is npm provenance's
-  # Sigstore/OIDC requirement — needs a public repo, which this is.
+  # cleanly, so a throwaway test tag must not reach the registry.
+  #
+  # Auth is npm's OIDC "Trusted Publishing" (GA since npm CLI 11.5.1 / Node
+  # 22.14+) — no NPM_TOKEN at all. This is a hard cutover, not a soft-skip:
+  # unlike the PAT it replaces, there's no secret to check for absence, so
+  # until the Trusted Publisher is configured on npmjs.com for this package
+  # (org `cratestack`, repo `cratestack/cratestack`, workflow filename
+  # `release-cli.yml`, no environment) this step just fails rather than
+  # quietly no-op'ing. See docs/tooling/npm-publishing.md for setup.
+  # `id-token: write` (job-scoped, not workflow-wide) is also npm
+  # provenance's Sigstore/OIDC requirement — needs a public repo, which
+  # this is — and is what the trusted-publish token exchange itself uses.
   publish-npm:
     name: publish npm package (@cratestack/cli)
     if: github.event_name == 'push'
@@ -247,26 +249,23 @@ jobs:
           ref: ${{ needs.prepare.outputs.tag }}
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           registry-url: https://registry.npmjs.org
+      # Trusted Publishing needs npm CLI >= 11.5.1; don't rely on whatever
+      # version happens to ship bundled with the pinned Node release.
+      - name: Ensure npm supports Trusted Publishing
+        run: npm install -g npm@latest
       - name: Publish @cratestack/cli
         working-directory: packages/cratestack-cli-npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
-            echo "NPM_TOKEN secret not set; skipping npm publish." >&2
-            echo "See docs/tooling/npm-publishing.md for setup." >&2
-            exit 0
-          fi
-          npm publish --access public --provenance
+        run: npm publish --access public --provenance
 
   # @cratestack/api ships its own compiled dist/ in the tarball and never
   # fetches a GitHub Release binary (unlike @cratestack/cli), so it has
   # no ordering dependency on the `build` matrix — only needs `prepare`
-  # for the resolved tag. Same tag-push-only gate and NPM_TOKEN soft-skip
-  # as publish-npm above, for the same reasons.
+  # for the resolved tag. Same tag-push-only gate and OIDC Trusted
+  # Publishing hard-cutover as publish-npm above, for the same reasons —
+  # needs its own separate Trusted Publisher entry on npmjs.com (one per
+  # package), same repo/workflow-filename values.
   publish-npm-api:
     name: publish npm package (@cratestack/api)
     if: github.event_name == 'push'
@@ -282,7 +281,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
           registry-url: https://registry.npmjs.org
       - name: pnpm install
@@ -299,15 +298,10 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build @cratestack/api
         run: pnpm --filter @cratestack/api build
+      # Trusted Publishing needs npm CLI >= 11.5.1; don't rely on whatever
+      # version happens to ship bundled with the pinned Node release.
+      - name: Ensure npm supports Trusted Publishing
+        run: npm install -g npm@latest
       - name: Publish @cratestack/api
         working-directory: packages/cratestack-api
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
-            echo "NPM_TOKEN secret not set; skipping npm publish." >&2
-            echo "See docs/tooling/npm-publishing.md for setup." >&2
-            exit 0
-          fi
-          npm publish --access public --provenance
+        run: npm publish --access public --provenance
