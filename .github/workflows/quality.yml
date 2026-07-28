@@ -89,6 +89,21 @@ jobs:
           tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
           sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
 
+      # actionlint has the same "no trustworthy dedicated action" situation
+      # as gitleaks: third-party "setup-actionlint" marketplace actions are
+      # low-visibility, unaudited projects. actionlint itself publishes
+      # checksummed releases, so install that directly, pinned + verified.
+      - name: Install actionlint
+        run: |
+          set -euo pipefail
+          ACTIONLINT_VERSION="1.7.12"
+          ACTIONLINT_SHA256="8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+          curl -sSL -o /tmp/actionlint.tar.gz \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  /tmp/actionlint.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
+          sudo install -m 0755 /tmp/actionlint /usr/local/bin/actionlint
+
       # ====================================================================
       # Verify the install steps above actually worked
       #
@@ -125,6 +140,7 @@ jobs:
           # checking `cargo` itself would not catch cargo-deny specifically
           # missing.
           check_tool cargo-deny "cargo deny --version"
+          check_tool actionlint "actionlint -version"
           check_tool reviewdog "reviewdog -version"
           check_tool python3 "python3 --version"
 
