@@ -10,6 +10,7 @@ This document specifies the required tools, versions, and offline databases for 
 | gitleaks | ≥8.18.0 | GitHub Releases | [verify](https://github.com/gitleaks/gitleaks/releases) | Secrets scanning |
 | trivy | ≥0.48.0 | GitHub Releases | [verify](https://github.com/aquasecurity/trivy/releases) | Config + dependency scanning |
 | cargo-audit | ≥0.18.0 | crates.io | `cargo install cargo-audit` | Rust advisory scanning |
+| cargo-deny | ≥0.14.0 | crates.io | `cargo install cargo-deny` | Rust dependency/license policy (`deny.toml`); checked via `command -v cargo-deny`, not just `cargo` |
 | reviewdog | ≥0.20.0 | [GitHub Releases](https://github.com/reviewdog/reviewdog/releases) | [verify](https://github.com/reviewdog/reviewdog/releases) | PR check reporting — invoked directly by `quality.yml`, never via `reviewdog/action-setup` (that action's `install.sh` downloads a binary over the network at runtime, which the offline rule forbids) |
 | python3 | ≥3.8 | System package | N/A | SARIF conversion scripts |
 | cargo | pinned | rust-toolchain.toml | See root `rust-toolchain.toml` | Rust toolchain |

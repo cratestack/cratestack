@@ -70,6 +70,15 @@ jobs:
             echo "✓ cargo-audit $(cargo audit --version)"
           fi
 
+          # cargo subcommands are separate binaries (cargo-<name>) on PATH;
+          # checking `cargo` itself is not enough, since it's always present
+          # in a Rust build environment regardless of whether cargo-deny is.
+          if ! command -v cargo-deny &> /dev/null; then
+            echo "warn: cargo-deny not found"
+          else
+            echo "✓ cargo-deny $(cargo deny --version)"
+          fi
+
           # reviewdog is invoked directly (not via a setup action, which would
           # download a binary at runtime) — it must be pre-provisioned like
           # the scanners above. See .ci/quality/TOOLCHAIN.md.
