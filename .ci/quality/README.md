@@ -127,15 +127,21 @@ The GitHub Actions workflow calls reviewdog with:
 
 ```bash
 reviewdog -f=sarif \
-  -reporter=github-pr-check \
+  -reporter=github-pr-review \
   -filter-mode=added \
-  -fail-on-error
+  -fail-level=error
 ```
 
-This posts one PR check with:
+This posts one PR review comment per new finding, visible under the PR's
+Conversation tab:
 - All new error-level findings → fails the PR
-- All new warning/note findings → warning status, does not fail
-- Uses GitHub Check annotations (not individual review comments)
+- All new warning/note findings → posted as comments, does not fail
+
+`github-pr-review` has no built-in fork-safe fallback (unlike
+`github-pr-check`), so `quality.yml` detects a fork PR explicitly
+(`github.event.pull_request.head.repo.full_name != github.repository`) and
+degrades to `-reporter=github-pr-annotations` in that case — plain GitHub
+Actions log annotations, which need no write permission at all.
 
 ## Baseline & Suppression
 
@@ -213,11 +219,12 @@ python3 -c "import json; json.load(open('.ci/quality/reports/quality.sarif'))"
 
 If the JSON is valid but SARIF structure is wrong, check individual tool reports.
 
-### reviewdog not posting PR checks
+### reviewdog not posting PR review comments
 
 - Verify `GITHUB_TOKEN` is available to the workflow
-- Check GitHub Actions logs: `reviewdog: posting PR check`
+- Check GitHub Actions logs for the "Post PR review via reviewdog" step's output
 - Ensure the workflow has `pull-requests: write` permission
+- If this is a fork PR, review comments are expected to be skipped in favor of plain log annotations (`::notice::Fork PR — ...` in the logs) — that's the intended fallback, not a bug
 
 ## Maintenance Schedule
 

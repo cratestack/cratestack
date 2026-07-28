@@ -31,7 +31,7 @@ The quality pipeline:
                     [Quality Gate (gate.sh)]
                     scanner execution/config health only
                        ↓
-                    [reviewdog] → [GitHub PR Check]
+                    [reviewdog] → [PR review comments]
                     fails only on new errors on added lines (PRs only)
                        ↓
                     [Artifact Upload]
@@ -46,7 +46,7 @@ The quality pipeline:
 | **Dependency scanning** | cargo audit + cargo deny | Rust advisory DB + license policy |
 | **GitHub Actions correctness** | actionlint | Syntax/semantic checks for workflow files (Trivy's config scanner doesn't cover GitHub Actions — see below) |
 | **Code quality metrics** | Clippy + Biome warnings | Linting and formatting checks |
-| **PR reporting** | reviewdog + GitHub Checks | Unified PR check, not individual comments |
+| **PR reporting** | reviewdog | Actual PR review comments (one per new finding), visible under Conversation; fork PRs degrade to plain log annotations |
 | **Dashboards** | Not replicated | This pipeline focuses on scanning + PR gates, not history dashboards |
 | **Quality gates** | `.ci/quality/gate.sh` + reviewdog | `gate.sh` fails on scanner execution errors; reviewdog fails the PR check on new error-level findings on added lines only |
 
@@ -129,9 +129,9 @@ Every scanner is installed at the start of the `quality` job — see `.ci/qualit
 
 ### Reporting Phase
 
-7. **GitHub PR Check:** reviewdog posts a unified check with:
+7. **PR review comments:** reviewdog posts review comments (fork PRs get plain log annotations instead — see below):
    - Errors → fails PR
-   - Warnings → warning status
+   - Warnings → posted as comments, non-blocking
    - Notes → informational
    - **Filter:** Only new findings (added lines in PR)
 
@@ -206,19 +206,27 @@ this script never fails a build because of finding counts.
 
 ### reviewdog — does this PR introduce new errors?
 
-The `Post PR check via reviewdog` step in `quality.yml` owns the PR-vs-backlog
+The `Post PR review via reviewdog` step in `quality.yml` owns the PR-vs-backlog
 distinction, using reviewdog's own diff-aware filtering rather than
 re-counting findings:
 
 ```
-reviewdog -f=sarif -reporter=github-pr-check \
+reviewdog -f=sarif -reporter=github-pr-review \
   -filter-mode=added -fail-level=error < quality.sarif
 
 IF any error-level finding lands on an added/modified line:
   exit 1 → step fails → PR check fails
 ELSE:
-  exit 0 (warnings/notes are still posted as annotations, non-blocking)
+  exit 0 (warnings/notes are still posted as review comments, non-blocking)
 ```
+
+Findings are posted as actual PR review comments (visible under the
+Conversation tab), not just Check Run annotations — `-reporter=github-pr-review`
+was chosen specifically for that visibility. It has no built-in fork-safe
+fallback the way `github-pr-check` does, so the workflow detects a fork PR
+explicitly (`github.event.pull_request.head.repo.full_name != github.repository`)
+and degrades to `-reporter=github-pr-annotations` in that case — plain
+GitHub Actions log annotations, which need no write permission at all.
 
 This step only runs on `pull_request` events, so pushes to `main` and
 scheduled scans are never gated on finding counts — they rely solely on
@@ -318,15 +326,16 @@ Add to `.ci/baselines/` files and re-run quality checks.
 2. Check converter logs in `.ci/quality/reports/*.log`
 3. Re-run `.ci/quality/run.sh` and inspect output
 
-### reviewdog not posting PR check
+### reviewdog not posting PR review comments
 
-**Problem:** PR check is missing but artifacts are present
+**Problem:** No review comments appear on the PR but artifacts are present
 
 **Solution:**
 1. Verify workflow has `pull-requests: write` permission
-2. Check GitHub Actions logs for "reviewdog" errors
+2. Check GitHub Actions logs for "reviewdog" errors in the "Post PR review via reviewdog" step
 3. Confirm `GITHUB_TOKEN` is available (it should be by default)
-4. Try re-running the workflow
+4. If this is a fork PR, no review comments is expected — check for the `::notice::Fork PR — ...` fallback message instead; findings show up as plain log annotations in that case
+5. Try re-running the workflow
 
 ## Limitations & Tradeoffs
 

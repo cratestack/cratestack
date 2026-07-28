@@ -16,8 +16,10 @@ concurrency:
 
 permissions:
   contents: read
-  checks: write
   pull-requests: write
+  # Required by github/codeql-action/upload-sarif in the optional Code
+  # Scanning step below (only runs when vars.ENABLE_CODE_SCANNING is set).
+  security-events: write
 
 jobs:
   quality-checks:
@@ -182,42 +184,65 @@ jobs:
         run: .ci/quality/gate.sh
 
       # ====================================================================
-      # Publish PR check via reviewdog
+      # Publish PR review comments via reviewdog
       #
       # Invokes the reviewdog CLI directly (installed via reviewdog/action-setup
-      # above) — never the reviewdog hosted service/GitHub App.
+      # above) — never the reviewdog hosted service/GitHub App. Confirmed via
+      # reviewdog's own source (cmd/reviewdog/doghouse.go: skipDoghouseServer())
+      # that both reporters below always take the direct-GitHub-API path when
+      # run inside GitHub Actions without REVIEWDOG_TOKEN set, never doghouse.
       #
       # -f=sarif            parse the merged SARIF as input
-      # -reporter=github-pr-check  post GitHub Check annotations for the PR;
-      #                      reviewdog automatically degrades to GitHub
-      #                      Actions log annotations for fork PRs where
-      #                      GITHUB_TOKEN is read-only (no pull_request_target
-      #                      used here, so untrusted fork code is never
-      #                      checked out or executed with elevated permissions)
+      # -reporter=github-pr-review   post actual PR review comments, one per
+      #                      finding, visible under the PR's Conversation tab
+      #                      (unlike github-pr-check, which only posts Check
+      #                      Run annotations under Checks/Files-changed).
+      #                      Unlike github-pr-check, github-pr-review has NO
+      #                      built-in fork-safe fallback (confirmed by reading
+      #                      reviewdog's source: only the github-check/
+      #                      github-pr-check case has fork-degradation logic;
+      #                      github-pr-review would just fail to post when
+      #                      GITHUB_TOKEN is read-only on a fork PR). So fork
+      #                      PRs are detected explicitly below and degraded to
+      #                      github-pr-annotations instead — plain GitHub
+      #                      Actions log annotations, which need no write
+      #                      permission at all (confirmed: its diff service
+      #                      falls back to local git CLI, and its comment
+      #                      service just prints `::error file=...::` lines).
+      #                      No pull_request_target is used here, so
+      #                      untrusted fork code is never checked out or
+      #                      executed with elevated permissions either way.
       # -filter-mode=added  only consider added/modified lines in the diff
       # -fail-level=error   exit non-zero only for error-level findings on
       #                      added lines; warnings/notes are reported but
       #                      never fail the check
       # ====================================================================
 
-      - name: Post PR check via reviewdog
+      - name: Post PR review via reviewdog
         if: github.event_name == 'pull_request' && always()
         run: |
           set -uo pipefail
 
           if ! command -v reviewdog &> /dev/null; then
-            echo "::warning::reviewdog not found on this runner; skipping PR check. See .ci/quality/TOOLCHAIN.md for provisioning."
+            echo "::warning::reviewdog not found on this runner; skipping PR review. See .ci/quality/TOOLCHAIN.md for provisioning."
             exit 0
+          fi
+
+          REPORTER=github-pr-review
+          if [[ "$IS_FORK_PR" == "true" ]]; then
+            echo "::notice::Fork PR — GITHUB_TOKEN is read-only here, so degrading to log annotations instead of PR review comments."
+            REPORTER=github-pr-annotations
           fi
 
           reviewdog \
             -f=sarif \
-            -reporter=github-pr-check \
+            -reporter="$REPORTER" \
             -filter-mode=added \
             -fail-level=error \
             < .ci/quality/reports/quality.sarif
         env:
           REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IS_FORK_PR: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
 
       # ====================================================================
       # Optional: Upload to GitHub Code Scanning
