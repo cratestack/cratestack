@@ -10,6 +10,7 @@ This document specifies the required tools, versions, and offline databases for 
 | gitleaks | ≥8.18.0 | GitHub Releases | [verify](https://github.com/gitleaks/gitleaks/releases) | Secrets scanning |
 | trivy | ≥0.48.0 | GitHub Releases | [verify](https://github.com/aquasecurity/trivy/releases) | Config + dependency scanning |
 | cargo-audit | ≥0.18.0 | crates.io | `cargo install cargo-audit` | Rust advisory scanning |
+| reviewdog | ≥0.20.0 | [GitHub Releases](https://github.com/reviewdog/reviewdog/releases) | [verify](https://github.com/reviewdog/reviewdog/releases) | PR check reporting — invoked directly by `quality.yml`, never via `reviewdog/action-setup` (that action's `install.sh` downloads a binary over the network at runtime, which the offline rule forbids) |
 | python3 | ≥3.8 | System package | N/A | SARIF conversion scripts |
 | cargo | pinned | rust-toolchain.toml | See root `rust-toolchain.toml` | Rust toolchain |
 
@@ -80,11 +81,16 @@ curl -L https://github.com/aquasecurity/trivy/releases/download/v0.48.0/trivy_0.
 # cargo-audit (via rustup)
 cargo install cargo-audit --force
 
+# reviewdog (installed once during provisioning; the workflow itself never
+# downloads it — see the note on the reviewdog row in Required Tools above)
+curl -L https://github.com/reviewdog/reviewdog/releases/download/v0.20.3/reviewdog_0.20.3_Linux_x86_64.tar.gz | tar xz -C /usr/local/bin reviewdog
+
 # Verify
 semgrep --version
 gitleaks --version
 trivy version
 cargo audit --version
+reviewdog -version
 python3 --version
 ```
 
@@ -108,6 +114,7 @@ For a self-hosted runner, verify:
 - [ ] gitleaks installed and in `$PATH`
 - [ ] trivy installed and in `$PATH`
 - [ ] cargo-audit installed via `cargo`
+- [ ] reviewdog installed and in `$PATH` (workflow invokes the CLI directly, not via `reviewdog/action-setup`)
 - [ ] python3 ≥3.8 available
 - [ ] Trivy cache pre-populated: `~/.cache/trivy/db/` has files
 - [ ] Rustsec cache pre-populated (run `cargo audit` once)

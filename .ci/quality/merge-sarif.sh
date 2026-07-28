@@ -48,9 +48,15 @@ def merge_sarif_reports(reports_dir):
             continue
 
         for run in report["runs"]:
-            # Normalize paths to be relative to project root
+            tool_name = run.get("tool", {}).get("driver", {}).get("name", "unknown")
+
             if "results" in run and isinstance(run["results"], list):
+                deduped_results = []
+
                 for result in run["results"]:
+                    # Normalize paths to be relative to project root
+                    first_uri = ""
+                    first_line = 0
                     if "locations" in result:
                         for location in result["locations"]:
                             if "physicalLocation" in location:
@@ -58,9 +64,36 @@ def merge_sarif_reports(reports_dir):
                                 if "artifactLocation" in phys:
                                     artifact = phys["artifactLocation"]
                                     uri = artifact.get("uri", "")
-                                    # Remove leading ./ for consistency
                                     if uri.startswith("./"):
-                                        artifact["uri"] = uri[2:]
+                                        uri = uri[2:]
+                                        artifact["uri"] = uri
+                                    if not first_uri:
+                                        first_uri = uri
+                                region = phys.get("region", {})
+                                if not first_line:
+                                    first_line = region.get("startLine", 0)
+
+                    # A finding is a duplicate only if the same tool reports
+                    # the same rule at the same location with the same
+                    # message — this guards against stale reports left over
+                    # from a prior local run.sh invocation being merged
+                    # alongside a fresh one, not against distinct tools
+                    # legitimately flagging the same line differently.
+                    message_text = result.get("message", {}).get("text", "")
+                    fingerprint = (
+                        tool_name,
+                        result.get("ruleId", ""),
+                        first_uri,
+                        first_line,
+                        message_text,
+                    )
+
+                    if fingerprint in seen_findings:
+                        continue
+                    seen_findings.add(fingerprint)
+                    deduped_results.append(result)
+
+                run["results"] = deduped_results
 
             all_runs.append(run)
 

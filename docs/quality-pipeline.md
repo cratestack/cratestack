@@ -44,7 +44,7 @@ The quality pipeline:
 | **Code quality metrics** | Clippy + Biome warnings | Linting and formatting checks |
 | **PR reporting** | reviewdog + GitHub Checks | Unified PR check, not individual comments |
 | **Dashboards** | Not replicated | This pipeline focuses on scanning + PR gates, not history dashboards |
-| **Quality gates** | `.ci/quality/gate.sh` | Fails on error-level findings; warnings advisory |
+| **Quality gates** | `.ci/quality/gate.sh` + reviewdog | `gate.sh` fails on scanner execution errors; reviewdog fails the PR check on new error-level findings on added lines only |
 
 ## Enabled Scanners & Language Coverage
 
@@ -191,25 +191,46 @@ See `.ci/quality/README.md` → "Maintenance Schedule" for timing recommendation
 
 ## Quality Gate Logic
 
-### PR Context
+Two separate mechanisms make up "the gate," each owning a distinct question:
+
+### `.ci/quality/gate.sh` — did the scan itself execute correctly?
+
+Runs on every trigger (PR, push, schedule). Its only question is whether each
+enabled scanner produced valid SARIF or was skipped with a clear, justified
+reason (tool not found, no local rules configured, etc.):
 
 ```
-IF (number of error-level findings in added lines > 0):
-  FAIL PR with message "Quality gate failed: error findings introduced"
+FOR each *.sarif report in .ci/quality/reports/:
+  IF report is missing or not valid JSON:
+    FAIL — scanner execution/configuration error
+  IF report.properties.status == "skipped":
+    LOG the skip reason (informational, does not fail)
+Merged quality.sarif finding counts are logged for visibility only —
+this script never fails a build because of finding counts.
+```
+
+### reviewdog — does this PR introduce new errors?
+
+The `Post PR check via reviewdog` step in `quality.yml` owns the PR-vs-backlog
+distinction, using reviewdog's own diff-aware filtering rather than
+re-counting findings:
+
+```
+reviewdog -f=sarif -reporter=github-pr-check \
+  -filter-mode=added -fail-level=error < quality.sarif
+
+IF any error-level finding lands on an added/modified line:
+  exit 1 → step fails → PR check fails
 ELSE:
-  PASS PR; post warnings as advisory
+  exit 0 (warnings/notes are still posted as annotations, non-blocking)
 ```
 
-### Main Branch
-
-```
-IF (number of error-level findings > 0):
-  LOG advisory message; do NOT fail
-ELSE:
-  PASS
-```
-
-This prevents introducing a regression (error findings must be fixed in the PR), while not blocking main-branch pushes for pre-existing issues.
+This step only runs on `pull_request` events, so pushes to `main` and
+scheduled scans are never gated on finding counts — they rely solely on
+`gate.sh`'s execution-correctness check. This is deliberate: re-implementing
+"new vs. backlog" in `gate.sh` by counting total errors would fail every PR
+on pre-existing repository backlog, which the pipeline is explicitly required
+not to do.
 
 ## Baseline & Suppression Strategy
 
