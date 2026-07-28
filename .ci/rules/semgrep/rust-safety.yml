@@ -1,0 +1,85 @@
+rules:
+  - id: rust-unwrap-in-lib
+    pattern-either:
+      - pattern: $X.unwrap()
+      - pattern: $X.expect(...)
+    message: |
+      .unwrap() or .expect() found in library code.
+      Library crates should propagate errors with ? operator or return Result types.
+      Panics in libraries make downstream users unhappy.
+    languages: [rust]
+    severity: WARNING
+    paths:
+      exclude:
+        - examples/
+        - "*/bin/"
+        - "*/tests/"
+    metadata:
+      category: reliability
+      cwe: CWE-252
+      references:
+        - https://doc.rust-lang.org/book/ch09-03-to-panic-or-not-to-panic.html
+
+  - id: rust-panic-explicit
+    patterns:
+      - pattern-either:
+          - pattern: panic!(...)
+          - pattern: panic_any(...)
+    message: |
+      Explicit panic!() found. Consider returning a Result instead.
+      Panics should be reserved for truly unrecoverable situations.
+    languages: [rust]
+    severity: WARNING
+    metadata:
+      category: reliability
+      cwe: CWE-252
+
+  - id: rust-todo-in-code
+    pattern: todo!(...)
+    message: |
+      todo!() macro found in code. Either implement the feature or remove the code.
+      Leaving TODO macros in merged code creates technical debt.
+    languages: [rust]
+    severity: WARNING
+    metadata:
+      category: maintainability
+
+  - id: rust-unsafe-without-comment
+    pattern: |
+      unsafe {
+        ...
+      }
+    message: |
+      unsafe block found without a safety comment.
+      The workspace forbids unsafe_code by default; if unsafe is necessary,
+      document the safety invariants above the block.
+    languages: [rust]
+    severity: ERROR
+    metadata:
+      category: safety
+      cwe: CWE-252
+
+  - id: rust-clone-without-reason
+    pattern: |
+      $X.clone()
+    message: |
+      .clone() called without clear reason.
+      Consider if this can be avoided with references or ownership transfer.
+      Cloning can hide performance issues in hot paths.
+    languages: [rust]
+    severity: WARNING
+    metadata:
+      category: performance
+      references:
+        - https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html
+
+  - id: rust-string-to_string
+    pattern: |
+      $X.to_string()
+    message: |
+      .to_string() used for String conversion.
+      Prefer .into() for generic context or format!() for formatting.
+    languages: [rust]
+    severity: NOTE
+    metadata:
+      category: style

@@ -1,0 +1,180 @@
+name: Quality
+
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+  schedule:
+    # Weekly scan: Sundays 02:00 UTC
+    - cron: "0 2 * * 0"
+  workflow_dispatch:
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+jobs:
+  quality-checks:
+    name: quality
+    # This is a PLACEHOLDER for self-hosted runner configuration.
+    # Replace 'ubuntu-latest' with your self-hosted runner label(s), e.g.:
+    #   runs-on: [self-hosted, linux, quality-offline]
+    # See .ci/quality/README.md for provisioning steps.
+    runs-on: ubuntu-latest
+
+    steps:
+      # Fetch full history so reviewdog can calculate PR diffs correctly
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      # ====================================================================
+      # Verify tool availability and version compatibility
+      # ====================================================================
+
+      - name: Verify offline toolchain
+        run: |
+          set -euo pipefail
+
+          echo "Checking required tools..."
+          MISSING=()
+
+          if ! command -v semgrep &> /dev/null; then
+            echo "warn: semgrep not found"
+          else
+            echo "✓ semgrep $(semgrep --version 2>&1 | head -1)"
+          fi
+
+          if ! command -v gitleaks &> /dev/null; then
+            echo "warn: gitleaks not found"
+          else
+            echo "✓ gitleaks $(gitleaks --version)"
+          fi
+
+          if ! command -v trivy &> /dev/null; then
+            echo "warn: trivy not found"
+          else
+            echo "✓ trivy $(trivy version | grep Version)"
+          fi
+
+          if ! command -v cargo-audit &> /dev/null; then
+            echo "warn: cargo-audit not found"
+          else
+            echo "✓ cargo-audit $(cargo audit --version)"
+          fi
+
+          if ! command -v python3 &> /dev/null; then
+            echo "error: python3 not found (required for converters)"
+            exit 1
+          else
+            echo "✓ python3 $(python3 --version)"
+          fi
+
+          echo ""
+          echo "Note: Missing tools will be skipped with a warning."
+          echo "See .ci/quality/README.md for offline provisioning steps."
+
+      # ====================================================================
+      # Run quality checks
+      # ====================================================================
+
+      - name: Run quality checks
+        run: .ci/quality/run.sh
+        env:
+          # Set scan type based on trigger
+          SCAN_TYPE: ${{ github.event_name == 'pull_request' && 'pr' || 'full' }}
+
+      # ====================================================================
+      # Publish reports as artifacts
+      # ====================================================================
+
+      - name: Upload SARIF reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-reports
+          path: .ci/quality/reports/
+          retention-days: 30
+
+      # ====================================================================
+      # Run quality gate
+      # ====================================================================
+
+      - name: Quality gate
+        if: always()
+        run: .ci/quality/gate.sh
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_HEAD_REF: ${{ github.head_ref }}
+          GITHUB_BASE_REF: ${{ github.base_ref || 'main' }}
+
+      # ====================================================================
+      # Publish PR check via reviewdog
+      # (Only on pull requests; has necessary permissions)
+      # ====================================================================
+
+      - name: Post PR check via reviewdog
+        if: github.event_name == 'pull_request' && always()
+        uses: reviewdog/action-sarif@1ce9fe65cebd3be9f55d6f5a8c0b6e20e0a0f89e
+        with:
+          sarif_file: .ci/quality/reports/quality.sarif
+          fail_on_error: true
+          filter_mode: added
+          tool_name: quality-checks
+
+      # ====================================================================
+      # Optional: Upload to GitHub Code Scanning
+      # (Only on main branch when explicitly enabled)
+      # ====================================================================
+
+      - name: Upload to GitHub Code Scanning
+        if: |
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          vars.ENABLE_CODE_SCANNING == 'true' &&
+          always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: .ci/quality/reports/quality.sarif
+          category: quality-offline-pipeline
+
+      # ====================================================================
+      # Summary
+      # ====================================================================
+
+      - name: Print summary
+        if: always()
+        run: |
+          cat > /tmp/summary.md << 'EOF'
+          ## Quality Checks Summary
+
+          **Merged SARIF Report:** `.ci/quality/reports/quality.sarif`
+
+          **Individual Tool Reports:**
+          - Semgrep: `.ci/quality/reports/semgrep.sarif`
+          - Gitleaks: `.ci/quality/reports/gitleaks.sarif`
+          - cargo audit: `.ci/quality/reports/cargo-audit.txt`
+          - cargo deny: `.ci/quality/reports/cargo-deny.txt`
+          - Trivy config: `.ci/quality/reports/trivy-config.sarif`
+
+          **Run Locally:**
+          ```bash
+          .ci/quality/run.sh
+          ```
+
+          **View Reports:**
+          - Artifacts → quality-reports
+          - Or: https://github.com/${{ github.repository }}/security/code-scanning (if enabled)
+
+          **Suppress Findings:**
+          See `.ci/baselines/README.md` for baseline management.
+          EOF
+
+          cat /tmp/summary.md >> $GITHUB_STEP_SUMMARY

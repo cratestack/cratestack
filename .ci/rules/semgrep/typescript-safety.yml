@@ -1,0 +1,89 @@
+rules:
+  - id: ts-console-log
+    pattern-either:
+      - pattern: console.log(...)
+      - pattern: console.debug(...)
+      - pattern: console.info(...)
+    message: |
+      console.log() called in code.
+      Use a structured logger (pino, winston, or similar) instead.
+      Console output is not suitable for production logging.
+    languages: [typescript, javascript]
+    severity: WARNING
+    paths:
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.spec.ts"
+        - "**/*.test.js"
+        - "**/*.spec.js"
+    metadata:
+      category: maintainability
+      cwe: CWE-532
+
+  - id: ts-any-type
+    pattern-either:
+      - pattern: ": any"
+      - pattern: "as any"
+    message: |
+      TypeScript any type used; this defeats type safety.
+      Use a concrete type, unknown with runtime checks, or generics instead.
+    languages: [typescript]
+    severity: WARNING
+    metadata:
+      category: reliability
+
+  - id: ts-async-without-await
+    pattern: |
+      async $FUNC(...) {
+        ...
+        $X(...)
+        ...
+      }
+    message: |
+      Async function that may not actually be async.
+      If the function doesn't await anything, it doesn't need async keyword.
+    languages: [typescript, javascript]
+    severity: NOTE
+    metadata:
+      category: style
+
+  - id: ts-no-non-null-assertion
+    pattern: "!$VAR"
+    message: |
+      Non-null assertion (!) used.
+      If the value might be null, handle it explicitly.
+      If it can't be null, the type system should reflect that.
+    languages: [typescript]
+    severity: WARNING
+    metadata:
+      category: reliability
+      cwe: CWE-476
+
+  - id: ts-hardcoded-secrets
+    pattern-either:
+      - pattern: "password: '...'"
+      - pattern: 'password: "..."'
+      - pattern: "apiKey: '...'"
+      - pattern: 'apiKey: "..."'
+      - pattern: "token: '...'"
+      - pattern: 'token: "..."'
+    message: |
+      Hardcoded secret found in code.
+      Use environment variables or secret management system instead.
+    languages: [typescript, javascript]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: CWE-798
+
+  - id: ts-http-hardcoded-url
+    pattern-either:
+      - pattern: "fetch('http://...')"
+      - pattern: 'fetch("http://...")'
+    message: |
+      Hardcoded HTTP URL found.
+      Use environment variables for service URLs, especially in tests.
+    languages: [typescript, javascript]
+    severity: WARNING
+    metadata:
+      category: maintainability
