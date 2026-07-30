@@ -11,11 +11,11 @@ mod checks;
 mod fields;
 mod renames;
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use cratestack_core::{Model, Schema, parse_composite_id_attribute};
 
-use crate::ir::{AddCheck, AddIndex, Column};
+use crate::ir::{AddCheck, AddIndex, CheckKind, Column, ColumnArity, ColumnType};
 use crate::naming::{check_name, column_name, index_name_unique, table_name};
 
 use checks::{check_kind_slug, collect_check_kinds, field_has_db_enforce};
@@ -45,6 +45,18 @@ pub(crate) struct TableProjection {
 pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
     let known_enums: HashSet<&str> = schema.enums.iter().map(|e| e.name.as_str()).collect();
     let known_types: HashSet<&str> = schema.types.iter().map(|t| t.name.as_str()).collect();
+    // Variants in declaration order, so the emitted `IN (...)` list
+    // reads the same way the `.cstack` enum does.
+    let enum_variants: BTreeMap<&str, Vec<String>> = schema
+        .enums
+        .iter()
+        .map(|decl| {
+            (
+                decl.name.as_str(),
+                decl.variants.iter().map(|v| v.name.clone()).collect(),
+            )
+        })
+        .collect();
 
     let table = table_name(&model.name);
     // `@@rename(from = "...")` and `@rename(from = "...")` take the
@@ -108,6 +120,14 @@ pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
                 });
             }
         }
+        if let Some(kind) = enum_check_kind(&column, &enum_variants) {
+            checks.push(AddCheck {
+                table: table.clone(),
+                column: column.name.clone(),
+                name: check_name(&table, &column.name, check_kind_slug(&kind)),
+                kind,
+            });
+        }
         columns.push(column);
     }
 
@@ -119,4 +139,26 @@ pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
         indexes,
         checks,
     }
+}
+
+/// The membership constraint that stands in for a native enum type on
+/// an enum-typed column (issue #228). Returns `None` for non-enum
+/// columns, and for the degenerate case of an enum declared with no
+/// variants — `IN ()` is not valid SQL, and there is nothing useful to
+/// constrain.
+fn enum_check_kind(
+    column: &Column,
+    enum_variants: &BTreeMap<&str, Vec<String>>,
+) -> Option<CheckKind> {
+    let ColumnType::Enum(name) = &column.ty else {
+        return None;
+    };
+    let variants = enum_variants.get(name.as_str())?;
+    if variants.is_empty() {
+        return None;
+    }
+    Some(CheckKind::Enum {
+        variants: variants.clone(),
+        list: matches!(column.arity, ColumnArity::List),
+    })
 }

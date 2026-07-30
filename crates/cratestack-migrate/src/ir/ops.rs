@@ -1,6 +1,6 @@
 //! Op-payload structs for table/column/index/rename operations.
-//! Enum-related ops live in [`super::enums`]; check-constraint ops in
-//! [`super::checks`].
+//! Check-constraint ops live in [`super::checks`] — including the
+//! enum membership constraint that stands in for a native enum type.
 
 use serde::{Deserialize, Serialize};
 

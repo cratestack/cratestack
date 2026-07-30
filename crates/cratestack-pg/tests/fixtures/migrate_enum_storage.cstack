@@ -1,0 +1,48 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+// Three variants. The `Service` variant is *added* by the second
+// migration the test generates — see `migrate_enum_storage.rs`, which
+// diffs a two-variant version of this same schema against this file to
+// exercise the add-a-variant migration path.
+enum PrincipalType {
+  Device
+  Person
+  Service
+}
+
+model Principal {
+  id Int @id
+  // `@default(Device)` is a bareword in the source. Emitted unquoted
+  // it becomes `DEFAULT Device`, which Postgres parses as a column
+  // reference and rejects (issue #227).
+  // A `@default` field is excluded from the generated create input, so
+  // an INSERT omits it and Postgres fills the DEFAULT in. That makes
+  // reading `kind` back a direct runtime test of #227: an unquoted
+  // `DEFAULT Device` never even applies.
+  kind PrincipalType @default(Device)
+  // No default — this one is written explicitly through the ORM.
+  role PrincipalType
+  // Nullable enum — the membership CHECK must still admit NULL.
+  fallback PrincipalType?
+  //
+  // NOTE: no enum *array* field here. The migration emitter and the
+  // generated row decoder both handle them (`TEXT[]` / `Vec<String>`),
+  // but the create/update input path does not: `cratestack-macros`'s
+  // `shared::sql::sql_value_tokens` panics at expansion time with
+  // "unsupported SQLx enum list type for this slice". Enum arrays are
+  // therefore not usable end-to-end today, independently of #227/#228.
+  // Emitter-level array coverage lives in the `cratestack-migrate`
+  // unit test `enum_list_column_is_text_array_with_containment_check`.
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}

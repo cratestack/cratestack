@@ -40,6 +40,7 @@ pub(super) fn check_kind_slug(kind: &CheckKind) -> &'static str {
         CheckKind::Range { .. } => "range",
         CheckKind::Length { .. } => "length",
         CheckKind::Iso4217 => "iso4217",
+        CheckKind::Enum { .. } => "enum",
     }
 }
 

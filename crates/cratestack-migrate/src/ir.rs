@@ -12,7 +12,6 @@
 
 mod checks;
 mod columns;
-mod enums;
 mod ops;
 mod views;
 
@@ -20,7 +19,6 @@ use serde::{Deserialize, Serialize};
 
 pub use checks::{AddCheck, CheckKind, DropCheck};
 pub use columns::{Column, ColumnArity, ColumnDefault, ColumnType};
-pub use enums::{AlterEnumAddVariant, CreateEnum, DropEnum};
 pub use ops::{
     AddColumn, AddIndex, AlterColumnDefault, AlterColumnNullability, AlterColumnType, CreateTable,
     DropColumn, DropIndex, DropTable, RenameColumn, RenameTable,
@@ -54,9 +52,6 @@ pub enum Op {
     AlterColumnDefault(AlterColumnDefault),
     RenameTable(RenameTable),
     RenameColumn(RenameColumn),
-    CreateEnum(CreateEnum),
-    AlterEnumAddVariant(AlterEnumAddVariant),
-    DropEnum(DropEnum),
     AddCheck(AddCheck),
     DropCheck(DropCheck),
     CreateView(CreateView),
@@ -93,16 +88,21 @@ impl Op {
             // Renames preserve all data; both backends support
             // ALTER TABLE … RENAME on modern versions.
             Op::RenameTable(_) | Op::RenameColumn(_) => Destructiveness::Safe,
-            // Creating an enum or adding a variant is safe. Dropping
-            // an enum entirely is lossy (rows that reference it on
-            // other tables would need to be migrated first; the
-            // generator does not attempt that automatically).
-            Op::CreateEnum(_) | Op::AlterEnumAddVariant(_) => Destructiveness::Safe,
-            Op::DropEnum(_) => Destructiveness::Lossy,
-            // Adding a CHECK constraint is conservatively Blocking —
-            // existing rows that don't satisfy it will block the
-            // ALTER on a non-empty table.
-            Op::AddCheck(_) => Destructiveness::Blocking,
+            // Adding a validator CHECK constraint is conservatively
+            // Blocking — existing rows that don't satisfy it will
+            // block the ALTER on a non-empty table.
+            //
+            // An enum CHECK is the exception. It is only ever emitted
+            // alongside the column it constrains (CREATE TABLE, ADD
+            // COLUMN — no pre-existing rows), or as the second half of
+            // a variant *addition*, which widens the accepted set and
+            // therefore cannot reject a row that already passed. The
+            // one case that can fail on existing data is removing a
+            // variant; see the note in `diff::checks`.
+            Op::AddCheck(check) => match check.kind {
+                CheckKind::Enum { .. } => Destructiveness::Safe,
+                _ => Destructiveness::Blocking,
+            },
             // Dropping a CHECK constraint never destroys data.
             Op::DropCheck(_) => Destructiveness::Safe,
             // View creates and replaces never destroy data (the view
@@ -114,7 +114,7 @@ impl Op {
             // Dropping a view doesn't destroy source rows but does
             // destroy a queryable surface — treat as Lossy so the
             // generator requires explicit opt-in, mirroring DropTable
-            // / DropEnum semantics.
+            // semantics.
             Op::DropView(_) | Op::DropMaterializedView(_) => Destructiveness::Lossy,
         }
     }

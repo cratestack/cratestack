@@ -29,13 +29,46 @@ pub(super) fn field_to_column(
         ColumnType::Scalar(ty_name.to_owned())
     };
 
+    let mut default = field_default(field);
+    if matches!(ty, ColumnType::Enum(_)) {
+        default = default.map(quote_bare_literal);
+    }
+
     Column {
         name: column_name(&field.name),
         ty,
         arity,
-        default: field_default(field),
+        default,
         primary_key,
     }
+}
+
+/// Normalise an enum column's literal default into a quoted SQL string
+/// literal.
+///
+/// Enum variants are written bare in `.cstack` (`@default(pending)`),
+/// but a bareword in a `DEFAULT` clause parses as a *column reference*,
+/// not a value — Postgres rejects it outright with "cannot use column
+/// reference in DEFAULT expression", and SQLite rejects it too. See
+/// issue #227.
+///
+/// Normalising here rather than in each emitter keeps the quoting in
+/// one place and keeps both sides of a `prev`/`next` default
+/// comparison in the same form, so no spurious `AlterColumnDefault`
+/// is produced. Only enum columns are touched: a bare literal on a
+/// scalar column may legitimately be an unquoted SQL keyword such as
+/// `CURRENT_TIMESTAMP`, which must not be quoted.
+fn quote_bare_literal(default: ColumnDefault) -> ColumnDefault {
+    match default {
+        ColumnDefault::Literal(value) if !is_quoted(&value) => {
+            ColumnDefault::Literal(format!("'{}'", value.replace('\'', "''")))
+        }
+        other => other,
+    }
+}
+
+fn is_quoted(value: &str) -> bool {
+    value.len() >= 2 && value.starts_with('\'') && value.ends_with('\'')
 }
 
 fn field_has_id(field: &Field) -> bool {

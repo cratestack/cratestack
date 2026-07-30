@@ -11,9 +11,11 @@
 //!    discussion. Migrations must match the runtime's expectation,
 //!    so every `.cstack` scalar maps to `BLOB` here.
 //!
-//! 2. **Enums are not emitted** (slice 10). Variant changes are a
-//!    Rust-side concern only — the runtime stores enum values as
-//!    text via BLOB affinity.
+//! 2. **Enums are not emitted.** Variant changes are a Rust-side
+//!    concern only — the runtime stores enum values as text via BLOB
+//!    affinity. The enum membership `CHECK` the Postgres emitter uses
+//!    to stand in for a native enum type (issue #228) is deliberately
+//!    dropped here; see `checks::is_enum_membership`.
 //!
 //! SQLite supports `ALTER TABLE … DROP COLUMN` from version 3.35
 //! (March 2021), well below any version cratestack-rusqlite cares
@@ -51,13 +53,6 @@ pub fn emit(ops: &[Op]) -> EmittedMigration {
     let mut has_lossy = false;
     let mut has_blocking = false;
     for op in ops {
-        // Enum ops have no SQLite footprint — skip them.
-        if matches!(
-            op,
-            Op::CreateEnum(_) | Op::AlterEnumAddVariant(_) | Op::DropEnum(_)
-        ) {
-            continue;
-        }
         match op.destructiveness() {
             Destructiveness::Safe => {}
             Destructiveness::Lossy => has_lossy = true,
@@ -143,9 +138,6 @@ fn emit_up_op(sql: &mut String, op: &Op) {
         Op::AlterColumnDefault(alter) => emit_alter_column_default(sql, alter),
         Op::RenameTable(rename) => emit_rename_table(sql, rename),
         Op::RenameColumn(rename) => emit_rename_column(sql, rename),
-        Op::CreateEnum(_) | Op::AlterEnumAddVariant(_) | Op::DropEnum(_) => {
-            // SQLite has no native enum type — see the module docs.
-        }
         Op::AddCheck(check) => emit_add_check(sql, check),
         Op::DropCheck(check) => emit_drop_check(sql, check),
         Op::CreateView(view) => emit_create_view(sql, view),

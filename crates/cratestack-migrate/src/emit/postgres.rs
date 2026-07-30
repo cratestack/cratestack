@@ -8,12 +8,18 @@
 //! This entry file owns the [`emit`] orchestration and the per-op
 //! dispatch in [`emit_up_op`]; reverse-direction emission lives in
 //! [`down`], and each operation group (tables, columns, indexes,
-//! checks, enums) lives in a sibling submodule.
+//! checks) lives in a sibling submodule.
+//!
+//! Enum-typed columns are emitted as `TEXT` plus a `CHECK (col IN
+//! (...))` membership constraint rather than a native `CREATE TYPE
+//! ... AS ENUM`. The generated ORM row decoders read enum fields as
+//! `String` (issue #228), so a native enum column fails to decode on
+//! every read; TEXT is also the representation the SQLite backend
+//! already uses, so both backends now agree.
 
 mod checks;
 mod columns;
 mod down;
-mod enums;
 mod idents;
 mod indexes;
 mod tables;
@@ -33,7 +39,6 @@ use columns::{
     emit_alter_column_type, emit_drop_column, emit_rename_column,
 };
 use down::{describe_lossy, emit_down_op};
-use enums::{emit_alter_enum_add, emit_create_enum, emit_drop_enum};
 use idents::quote_ident;
 use indexes::{emit_add_index, emit_drop_index};
 use tables::{emit_create_table, emit_rename_table};
@@ -132,9 +137,6 @@ fn emit_up_op(sql: &mut String, op: &Op) {
         Op::AlterColumnDefault(alter) => emit_alter_column_default(sql, alter),
         Op::RenameTable(rename) => emit_rename_table(sql, rename),
         Op::RenameColumn(rename) => emit_rename_column(sql, rename),
-        Op::CreateEnum(create) => emit_create_enum(sql, create),
-        Op::AlterEnumAddVariant(alter) => emit_alter_enum_add(sql, alter),
-        Op::DropEnum(drop) => emit_drop_enum(sql, drop),
         Op::AddCheck(check) => emit_add_check(sql, check),
         Op::DropCheck(check) => emit_drop_check(sql, check),
         Op::CreateView(view) => emit_create_view(sql, view),

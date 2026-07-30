@@ -18,7 +18,6 @@
 
 mod checks;
 mod columns;
-mod enums;
 mod indexes;
 mod tables;
 mod views;
@@ -38,7 +37,6 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
     let prev_tables = project_tables(prev);
     let next_tables = project_tables(next);
 
-    let (mut create_enums, mut alter_enums, mut drop_enums) = enums::diff_enums(prev, next);
     let rename_map = tables::resolve_renames(&prev_tables, &next_tables);
     let mut rename_tables = rename_map.renames;
     let mut drop_tables_ops =
@@ -76,9 +74,6 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
     let mut view_diff = views::diff_views(prev, next);
 
     let mut ops = Vec::new();
-    // Enum creates first so tables can reference them.
-    ops.append(&mut create_enums);
-    ops.append(&mut alter_enums);
     // Renames before table-level changes so subsequent ops can
     // reference the new names.
     ops.append(&mut rename_tables);
@@ -107,8 +102,6 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
     // both source tables and any new columns the view body
     // references exist before the view definition is parsed.
     ops.append(&mut view_diff.creates);
-    // Enum drops last — after any tables that depended on them.
-    ops.append(&mut drop_enums);
     ops
 }
 

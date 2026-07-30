@@ -132,14 +132,20 @@ pub(super) fn render_column(column: &Column) -> String {
 fn render_type(ty: &ColumnType, arity: ColumnArity) -> String {
     let base = match ty {
         ColumnType::Scalar(name) => scalar_to_postgres(name).to_owned(),
-        // Enum and composite type identifiers are snake-cased so the
-        // SQL type name matches the convention used elsewhere in the
-        // generator (tables, columns) and so that case-mismatched
-        // references don't silently resolve to different identifiers
-        // under Postgres's unquoted-lowercase rule.
-        ColumnType::Enum(name) | ColumnType::UserDefined(name) => {
-            quote_ident(&naming::column_name(name))
-        }
+        // Enums are stored as TEXT, not as a native `CREATE TYPE ...
+        // AS ENUM`. The generated row decoders read every enum field
+        // with `try_get::<String>` and `.parse()`, so a native enum
+        // column fails to decode on every read (issue #228). The
+        // validation the native type would have given is recovered by
+        // a `CHECK (col IN (...))` constraint — see
+        // `super::checks` and `crate::convert::enum_check_kind`.
+        ColumnType::Enum(_) => "TEXT".to_owned(),
+        // Composite type identifiers are snake-cased so the SQL type
+        // name matches the convention used elsewhere in the generator
+        // (tables, columns) and so that case-mismatched references
+        // don't silently resolve to different identifiers under
+        // Postgres's unquoted-lowercase rule.
+        ColumnType::UserDefined(name) => quote_ident(&naming::column_name(name)),
     };
     match arity {
         ColumnArity::List => format!("{base}[]"),
