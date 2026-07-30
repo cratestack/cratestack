@@ -147,6 +147,16 @@ fn render_type(ty: &ColumnType, arity: ColumnArity) -> String {
     }
 }
 
+/// Maps a `.cstack` builtin scalar name to its Postgres column type.
+///
+/// `name` is only ever one of `cratestack_parser::builtin_type_names()`
+/// (minus `Page`, which never reaches here — see `convert/fields.rs`'s
+/// `ColumnType::Scalar` vs `Enum`/`UserDefined` split) or an unrecognized
+/// name from a schema this crate doesn't validate directly. There is
+/// deliberately no `"Date"` arm: `BUILTIN_TYPES` has never contained a
+/// bare `Date` type (only `DateTime`), so that arm was unreachable dead
+/// code that read as a supported feature — see cratestack#232. New
+/// builtins need a matching arm added here.
 fn scalar_to_postgres(name: &str) -> &'static str {
     match name {
         "String" | "Cuid" => "TEXT",
@@ -155,7 +165,6 @@ fn scalar_to_postgres(name: &str) -> &'static str {
         "Decimal" => "NUMERIC",
         "Boolean" => "BOOLEAN",
         "DateTime" => "TIMESTAMPTZ",
-        "Date" => "DATE",
         "Json" => "JSONB",
         "Bytes" => "BYTEA",
         "Uuid" => "UUID",

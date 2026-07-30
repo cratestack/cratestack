@@ -37,6 +37,20 @@ use std::path::Path;
 
 pub use diagnostics::SchemaError;
 
+/// Canonical scalar type names built into the `.cstack` language (e.g.
+/// `String`, `Int`, `Decimal`, ...), including `Page` (which is valid only
+/// as a procedure return type — see `validate::type_names::validate_type_ref`
+/// — not as a plain field type).
+///
+/// This is the same list `cratestack-lsp`'s autocompletion and the
+/// `cratestack-pg`/`cratestack-sqlite` emitter/decoder round-trip tests
+/// assert against, so a new builtin scalar only has to be added here once —
+/// see cratestack#232 for why that matters (this list had already silently
+/// drifted from the LSP's hand-copied one before this accessor existed).
+pub fn builtin_type_names() -> &'static [&'static str] {
+    validate::builtin_type_names()
+}
+
 #[cfg(test)]
 use relation_helpers::parse_relation_attribute;
 

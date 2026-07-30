@@ -23,6 +23,18 @@ use self::procedures::{
 };
 use self::type_names::{collect_type_names, validate_type_ref};
 
+/// The canonical scalar type names built into the `.cstack` language today.
+///
+/// Exposed (via [`crate::builtin_type_names`]) so downstream test suites —
+/// notably the emitter/decoder round-trip coverage in `cratestack-pg` and
+/// `cratestack-sqlite` (see cratestack#232) — can assert against the same
+/// authoritative list the parser validates field types against, instead of
+/// hand-maintaining a second copy that can silently drift the way
+/// `cratestack-lsp`'s completion list once did.
+pub(crate) fn builtin_type_names() -> &'static [&'static str] {
+    type_names::BUILTIN_TYPES
+}
+
 pub(crate) fn validate_schema(
     path: &str,
     source: &str,

@@ -26,9 +26,16 @@ pub(crate) fn completion_items(schema: Option<&Schema>) -> Vec<CompletionItem> {
         "@custom",
         "@@allow",
     ];
-    let builtin_types = [
-        "String", "Cuid", "Int", "Float", "Boolean", "DateTime", "Json", "Bytes", "Uuid",
-    ];
+    // Sourced from the parser's authoritative list rather than hand-copied,
+    // so this can't silently drift the way it did before `Decimal` was
+    // added here (cratestack#232) — a real editor regression that shipped
+    // with nothing to catch it. `Page` is excluded: it's only valid as a
+    // procedure return type (`Page<T>`), never a plain completable field
+    // type — see `cratestack_parser::validate::type_names::validate_type_ref`.
+    let builtin_types = cratestack_parser::builtin_type_names()
+        .iter()
+        .copied()
+        .filter(|name| *name != "Page");
 
     let mut items = keywords
         .into_iter()
@@ -152,4 +159,35 @@ pub(crate) fn completion_items(schema: Option<&Schema>) -> Vec<CompletionItem> {
     }
 
     items
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression test for cratestack#232: the builtin-type completion list
+    /// had silently drifted from `cratestack_parser::builtin_type_names()`
+    /// (missing `Decimal`), and nothing caught it. This pins the two lists
+    /// together so a future drift fails the suite instead of shipping.
+    #[test]
+    fn builtin_type_completions_match_parser_list_minus_page() {
+        let labels: std::collections::BTreeSet<String> = completion_items(None)
+            .into_iter()
+            .filter(|item| item.kind == Some(CompletionItemKind::TYPE_PARAMETER))
+            .map(|item| item.label)
+            .collect();
+
+        let expected: std::collections::BTreeSet<String> = cratestack_parser::builtin_type_names()
+            .iter()
+            .copied()
+            .filter(|name| *name != "Page")
+            .map(str::to_owned)
+            .collect();
+
+        assert_eq!(
+            labels, expected,
+            "completion list must track cratestack_parser::builtin_type_names() \
+             (minus `Page`) — see cratestack#232",
+        );
+    }
 }
