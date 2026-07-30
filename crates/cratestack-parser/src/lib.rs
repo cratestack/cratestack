@@ -69,6 +69,31 @@ pub fn parse_schema_named(
     Ok(schema)
 }
 
+/// Parse a `.cstack` source into a [`cratestack_core::Schema`] WITHOUT
+/// running [`validate::validate_schema`].
+///
+/// Prefer [`parse_schema`] for any new source — this exists for two
+/// legitimate cases where the validated pipeline understates what a
+/// `Schema` value can actually be:
+///
+/// 1. A committed `migrations/*/schema.snapshot.json` can predate a
+///    validation rule added later. `cratestack-cli`'s `migrate diff`
+///    deserializes that "previous" snapshot directly and never re-runs
+///    `validate_schema` on it (only the *new* side, parsed fresh from the
+///    `.cstack` source, goes through [`parse_schema_file`]) — so an emitter
+///    can still legitimately be handed a shape the current validator would
+///    reject at the source level.
+/// 2. Tests that deliberately exercise an emitter's rendering logic for
+///    such an already-invalid shape, to prove the emitter itself still
+///    behaves sanely if that shape arrives via (1) — see
+///    `cratestack-migrate`'s `emit::postgres::tests::enums` for an example
+///    (a list-valued enum column, rejected by cratestack#229/#236 at parse
+///    time, but still real input to the Postgres emitter via a pre-#236
+///    snapshot).
+pub fn parse_schema_unvalidated(source: &str) -> Result<cratestack_core::Schema, SchemaError> {
+    parse::parse_schema_only(source)
+}
+
 pub fn parse_schema_file(path: impl AsRef<Path>) -> Result<cratestack_core::Schema, SchemaError> {
     let path = path.as_ref();
     let source = std::fs::read_to_string(path).map_err(|error| {

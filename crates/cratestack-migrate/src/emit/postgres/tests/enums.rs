@@ -6,6 +6,20 @@ use super::super::emit;
 use super::{schema, with_models};
 use crate::diff::diff;
 
+/// Cratestack#229/#236 made a list-valued enum field on a datasource-backed
+/// model a *parse*-time rejection — so it can no longer reach this emitter
+/// via [`schema`] (which validates). But a `migrations/*/schema.snapshot.json`
+/// committed before #236 landed can still contain this exact shape, and
+/// `cratestack-cli migrate diff` loads that "previous" snapshot without
+/// re-validating it (see `cratestack_parser::parse_schema_unvalidated`'s
+/// doc comment) — so the emitter must still render it sanely. This helper
+/// keeps that defense-in-depth coverage without weakening [`schema`]'s
+/// validation for every other test in this module.
+fn unvalidated_schema(source: &str) -> cratestack_core::Schema {
+    cratestack_parser::parse_schema_unvalidated(source)
+        .expect("source should still be syntactically parseable even though a validated `Schema` would reject it")
+}
+
 fn order_schema(variants: &str, field: &str) -> String {
     with_models(&format!(
         r#"
@@ -127,8 +141,13 @@ fn optional_enum_column_is_nullable_text_and_still_checked() {
 
 #[test]
 fn enum_list_column_is_text_array_with_containment_check() {
+    // `next` uses `unvalidated_schema`, not `schema`: cratestack#229/#236
+    // reject this exact shape (a list-valued enum on a datasource-backed
+    // model) at parse time, but a pre-#236 `schema.snapshot.json` can
+    // still hand it to this emitter unvalidated — see
+    // `unvalidated_schema`'s doc comment.
     let prev = schema(&with_models(""));
-    let next = schema(&order_schema(
+    let next = unvalidated_schema(&order_schema(
         "  Pending\n  Shipped",
         "history OrderStatus[]",
     ));
