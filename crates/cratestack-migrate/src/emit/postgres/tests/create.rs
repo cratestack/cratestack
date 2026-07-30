@@ -1,6 +1,7 @@
 use super::super::emit;
 use super::{schema, with_models};
 use crate::diff::diff;
+use cratestack_parser::parse_schema;
 
 #[test]
 fn create_table_emits_postgres_ddl() {
@@ -220,23 +221,36 @@ model Article {
     assert!(migration.unverified_dbgenerated.is_empty());
 }
 
+/// Before cratestack#229's fix, this fixture ("the emitter is happy" — the
+/// issue's own repro, step 2) parsed fine and reached `emit_create_table`,
+/// which happily rendered `names TEXT[] NOT NULL` — valid Postgres DDL for a
+/// column that `cratestack-macros` can never actually bind a value into
+/// (`sql_value_tokens` has no `TypeArity::List` arm for any scalar, so
+/// `include_server_schema!` panicked on the very same model). `cstack-parser`
+/// now rejects the field at `schema()` (step 1), before this test can even
+/// reach `diff`/`emit`, closing the gap between "check says OK" and "the
+/// macro can build it." `render_type`'s `ColumnArity::List` branch
+/// (`emit/postgres/columns.rs`) is unchanged and still renders `{base}[]`
+/// correctly — it is retained because nothing about it is wrong, only
+/// unreachable from any schema that can pass `check` today; deciding
+/// whether to also strip `ColumnArity::List` from the migrate IR is out of
+/// scope for this fix (see the PR body).
 #[test]
-fn list_column_renders_as_array() {
-    let prev = schema(&with_models(""));
-    let next = schema(&with_models(
+fn list_arity_scalar_field_is_rejected_before_ddl_emission() {
+    let error = parse_schema(&with_models(
         r#"
 model Tag {
   id Int @id
   names String[]
 }
 "#,
-    ));
-    let migration = emit(&diff(&prev, &next));
-    assert!(
-        migration.up.contains("names TEXT[] NOT NULL"),
-        "up was: {}",
-        migration.up
-    );
+    ))
+    .expect_err("list-arity scalar field must be rejected before migrate ever sees it");
+
+    let message = error.to_string();
+    assert!(message.contains("Tag"), "error: {message}");
+    assert!(message.contains("names"), "error: {message}");
+    assert!(message.contains("String[]"), "error: {message}");
 }
 
 #[test]

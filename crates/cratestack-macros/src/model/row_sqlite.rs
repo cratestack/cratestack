@@ -183,6 +183,9 @@ fn enum_decode_expr(field: &Field, field_name: &str) -> proc_macro2::TokenStream
                 }
             }
         }
+        // Unreachable as of #229; see the matching note in `row_pg.rs`.
+        // No write-side counterpart either: `cratestack-rusqlite`'s
+        // `ToSql` (`src/value/bind.rs`) has no array case.
         TypeArity::List => {
             let decode_error = parse_error(quote! { error.to_string() });
             quote! {

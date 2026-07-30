@@ -6,7 +6,7 @@ use crate::diagnostics::{SchemaError, span_error};
 use crate::relation_helpers::{parse_relation_attribute, validate_relation_scalar_compatibility};
 use crate::validate::fields::{
     CustomFieldSupport, validate_custom_field_attribute, validate_default_dbgenerated_no_args,
-    validate_field_policy_attributes,
+    validate_field_list_arity_support, validate_field_policy_attributes,
 };
 use crate::validate::model_attributes::{validate_model_attributes, validate_model_version_field};
 use crate::validate::pb::validate_pb_field_attribute;
@@ -23,6 +23,7 @@ pub(super) fn validate_models(
         .iter()
         .map(|model| model.name.as_str())
         .collect::<BTreeSet<_>>();
+    let schema_has_datasource = schema.datasource.is_some();
 
     for model in &schema.models {
         let mut fields = BTreeMap::new();
@@ -58,6 +59,12 @@ pub(super) fn validate_models(
             validate_field_policy_attributes(&model.name, field)?;
             validate_default_dbgenerated_no_args(&model.name, field)?;
             validate_pb_field_attribute("model", &model.name, field)?;
+            validate_field_list_arity_support(
+                schema_has_datasource,
+                &model.name,
+                &model_names,
+                field,
+            )?;
             validate_field_relation(schema, model, field, &model_names)?;
         }
 

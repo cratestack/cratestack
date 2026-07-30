@@ -1,4 +1,6 @@
-use cratestack_core::Field;
+use std::collections::BTreeSet;
+
+use cratestack_core::{Field, TypeArity};
 
 use crate::diagnostics::{SchemaError, span_error};
 
@@ -138,4 +140,55 @@ pub(super) fn validate_default_dbgenerated_no_args(
         ));
     }
     Ok(())
+}
+
+/// Reject list-arity scalar/enum model fields on any schema that declares a
+/// `datasource`. `TypeArity::List` is otherwise accepted by the parser and
+/// turned into real `{base}[]` Postgres DDL by `cratestack-migrate`, but
+/// `cratestack-macros`'s `sql_value_tokens` has no bind representation for
+/// any list-valued scalar or enum — every such field panics at
+/// `include_server_schema!` / `include_embedded_schema!` expansion instead
+/// of failing here, at the field that actually causes the problem (see
+/// cratestack#229).
+///
+/// Scoped to `datasource`-bearing schemas only: a schema with no
+/// `datasource` can only be consumed through `include_client_schema!`,
+/// which never binds SQL values, so list-valued scalar/enum fields are
+/// genuinely fine there (see
+/// `crates/cratestack-client-dart/tests/fixtures/enums.cstack`, whose
+/// `model User { roles Role[] }` is exercised as a passing test today).
+///
+/// A list-arity field whose type name is another model is a to-many
+/// `@relation` and is unaffected — those are validated separately in
+/// [`super::models::validate_field_relation`] and have real codegen support
+/// (`cratestack-macros/src/relation/`).
+pub(super) fn validate_field_list_arity_support(
+    schema_has_datasource: bool,
+    model_name: &str,
+    model_names: &BTreeSet<&str>,
+    field: &Field,
+) -> Result<(), SchemaError> {
+    if !schema_has_datasource {
+        return Ok(());
+    }
+    if field.ty.arity != TypeArity::List {
+        return Ok(());
+    }
+    if model_names.contains(field.ty.name.as_str()) {
+        return Ok(());
+    }
+
+    Err(span_error(
+        format!(
+            "model `{model_name}` field `{}`: list-valued type `{}[]` is not supported on a \
+             database-backed model — there is no SQL bind representation for a list-valued \
+             scalar or enum yet, so this schema would parse and emit valid DDL but panic at \
+             `include_server_schema!`/`include_embedded_schema!` expansion. Use a single \
+             `{}` value, model this as a `@relation` to another model, or drop the \
+             `datasource` block if this schema is only ever consumed via \
+             `include_client_schema!`.",
+            field.name, field.ty.name, field.ty.name,
+        ),
+        field.span,
+    ))
 }
