@@ -50,7 +50,7 @@ pub(super) fn emit_down_op(sql: &mut String, op: &Op) {
         Op::AddCheck(check) => {
             if !matches!(check.kind, CheckKind::Enum { .. }) {
                 sql.push_str(
-                    "-- SQLite CHECK constraint reversal requires the same table rebuild as the forward op.\n",
+                    "-- SQLite CHECK constraint reversal (DROP): removing a CHECK added by the forward op requires the same table rebuild as the forward op.\n",
                 );
             }
         }
@@ -59,7 +59,7 @@ pub(super) fn emit_down_op(sql: &mut String, op: &Op) {
             // either direction — see `super::checks`.
             if !matches!(check.kind, CheckKind::Enum { .. }) {
                 sql.push_str(
-                    "-- SQLite CHECK constraint reversal requires the same table rebuild as the forward op.\n",
+                    "-- SQLite CHECK constraint reversal (ADD): restoring a CHECK removed by the forward op requires the same table rebuild as the forward op.\n",
                 );
             }
         }
