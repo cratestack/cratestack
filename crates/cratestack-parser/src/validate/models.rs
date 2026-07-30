@@ -10,7 +10,9 @@ use crate::validate::fields::{
 };
 use crate::validate::model_attributes::{validate_model_attributes, validate_model_version_field};
 use crate::validate::pb::validate_pb_field_attribute;
-use crate::validate::type_names::validate_type_ref;
+use crate::validate::type_names::{
+    collect_type_decl_names, reject_type_decl_as_model_field_type, validate_type_ref,
+};
 use crate::validate::validators::validate_validator_attributes;
 
 pub(super) fn validate_models(
@@ -23,6 +25,10 @@ pub(super) fn validate_models(
         .iter()
         .map(|model| model.name.as_str())
         .collect::<BTreeSet<_>>();
+
+    // See `type_names::reject_type_decl_as_model_field_type` (#230): a
+    // `type` block cannot back a model field's storage column.
+    let type_decl_names = collect_type_decl_names(schema);
 
     for model in &schema.models {
         let mut fields = BTreeMap::new();
@@ -54,6 +60,7 @@ pub(super) fn validate_models(
                 field.span,
                 false,
             )?;
+            reject_type_decl_as_model_field_type(&type_decl_names, &model.name, field)?;
             validate_validator_attributes(&model.name, field)?;
             validate_field_policy_attributes(&model.name, field)?;
             validate_default_dbgenerated_no_args(&model.name, field)?;

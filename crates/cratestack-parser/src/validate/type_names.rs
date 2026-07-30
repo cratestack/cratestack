@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use cratestack_core::{Schema, SourceSpan, TypeRef};
+use cratestack_core::{Field, Schema, SourceSpan, TypeRef};
 
 use crate::diagnostics::{SchemaError, span_error};
 
@@ -131,6 +131,49 @@ pub(super) fn validate_type_ref(
         return Err(span_error(
             format!("unknown type `{}`", type_ref.name),
             span,
+        ));
+    }
+    Ok(())
+}
+
+pub(super) fn collect_type_decl_names(schema: &Schema) -> BTreeSet<&str> {
+    schema.types.iter().map(|ty| ty.name.as_str()).collect()
+}
+
+/// Reject a model field whose type resolves to a `type` declaration.
+///
+/// `type` blocks are not backed by a database column: the Postgres emitter
+/// has a `ColumnType::UserDefined` branch that renders a bare composite
+/// type name (e.g. `address`), but nothing in the migrate crate ever emits
+/// a matching `CREATE TYPE ... AS (...)` for it — only enums get a
+/// type-creating op. A model field typed with a `type` declaration
+/// therefore passed `check` before this fix but emitted DDL that fails at
+/// `psql` time (`type "address" does not exist`), and the schema macros
+/// panicked at expansion regardless (see #230). Reject it here, at the
+/// single place a developer already learns about schema problems, rather
+/// than downstream in the emitter or the macros.
+///
+/// This is scoped to a `type` used as a model field's *storage* type only.
+/// `type` blocks referencing a `model` (#137,
+/// `tests/type_block_model_reference.rs`) and `type` blocks used as
+/// procedure args/return types are unaffected — both flow through
+/// `validate_type_ref` elsewhere, not through this model-field check.
+pub(super) fn reject_type_decl_as_model_field_type(
+    type_decl_names: &BTreeSet<&str>,
+    model_name: &str,
+    field: &Field,
+) -> Result<(), SchemaError> {
+    if type_decl_names.contains(field.ty.name.as_str()) {
+        return Err(span_error(
+            format!(
+                "field `{}` on model `{}` cannot use `type {}` as its storage type — `type` \
+                 blocks are not backed by a database column (Postgres has no `CREATE TYPE` \
+                 emitted for it, and the schema macros cannot encode or decode it); use a \
+                 scalar, an `enum`, or a `@relation` to another `model` instead, or inline \
+                 `{}`'s fields directly on `{}`",
+                field.name, model_name, field.ty.name, field.ty.name, model_name
+            ),
+            field.span,
         ));
     }
     Ok(())

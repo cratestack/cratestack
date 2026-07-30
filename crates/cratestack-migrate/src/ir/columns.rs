@@ -40,6 +40,26 @@ pub enum ColumnType {
     /// User-defined enum declared via `enum Name { … }`.
     Enum(String),
     /// User-defined composite type declared via `type Name { … }`.
+    ///
+    /// As of #230, `cratestack-parser` rejects a model field whose type
+    /// resolves to a `type` declaration (`reject_type_decl_as_model_field_type`
+    /// in `cratestack-parser/src/validate/type_names.rs`), so this variant is
+    /// unreachable for any `Schema` produced by the parser: no `CREATE TYPE`
+    /// op exists for it (only enums get one — see `emit::postgres::enums`),
+    /// so a column typed this way could never round-trip through real DDL.
+    ///
+    /// It is intentionally kept rather than deleted: `diff()` and
+    /// `project_model()` in this crate take a plain `&Schema` and don't
+    /// re-run parser validation, and `Schema` is also deserialized directly
+    /// from an on-disk `snapshot.json` (`read_snapshot`) — so a
+    /// hand-constructed or hand-edited `Schema` could still reach this path.
+    /// Keeping the variant (and `emit::postgres::columns::render_type`'s
+    /// branch for it) means that hypothetical caller still gets a
+    /// deterministic composite-type-name rendering rather than a panic or a
+    /// silently wrong scalar fallback, even though it remains just as
+    /// unbacked by a real `CREATE TYPE` as before this fix. Composite-type
+    /// support (a real `CreateType`/`DropType` op, `SqlValue` encode/decode)
+    /// is tracked as a separate, larger effort — see #230's option (b).
     UserDefined(String),
 }
 

@@ -100,6 +100,88 @@ procedure getCounts(): Page<Int>
 }
 
 #[test]
+fn rejects_type_block_used_as_model_field_storage_type() {
+    // Regression test for #230: a model field typed with a user-declared
+    // `type` block used to pass `check` even though the Postgres emitter
+    // renders a composite type name that no `CREATE TYPE` ever backs, and
+    // the schema macros panic at expansion for the same shape. This is
+    // the issue's own `composite_probe.cstack` reproduction, verbatim
+    // (minus the `datasource`/`env()` bits, which need no special
+    // handling here — `validate_datasource` only checks the `provider`
+    // literal).
+    let source = r#"
+auth Operator {
+  id Int
+}
+
+type Address {
+  street String
+  city String
+}
+
+model Person {
+  id Int @id
+  addr Address
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}
+"#;
+
+    let error =
+        parse_schema(source).expect_err("a `type` block used as a model field should be rejected");
+
+    let message = error.to_string();
+    assert!(
+        message.contains("Person") && message.contains("addr") && message.contains("Address"),
+        "error should name the model, field, and type: {message}"
+    );
+    assert!(
+        message.contains("cannot use `type Address` as its storage type"),
+        "error should explain why `type` blocks can't be a column: {message}"
+    );
+
+    // The diagnostic must carry a real span pointing at the offending
+    // field, not just a bare message — this is what makes it a spanned
+    // parser error rather than a generic failure.
+    let span = error.span();
+    assert!(
+        span.start < span.end && span.end <= source.len(),
+        "span should be a non-empty range within the source: {span:?}"
+    );
+    let spanned_text = &source[span];
+    assert!(
+        spanned_text.contains("addr") && spanned_text.contains("Address"),
+        "span should point at the `addr Address` field declaration, got: {spanned_text:?}"
+    );
+}
+
+/// A `type` block referencing a `model` (#137) is a different, legitimate
+/// use of `type` and must keep working — this is not what #230 rejects.
+/// See `crates/cratestack-pg/tests/type_block_model_reference.rs` /
+/// `crates/cratestack-sqlite/tests/type_block_model_reference.rs` for the
+/// end-to-end codegen coverage; this is the parser-level counterpart.
+#[test]
+fn accepts_type_block_field_referencing_a_model() {
+    let schema = parse_schema(
+        r#"
+model SomeModel {
+  id Int @id
+  name String
+}
+
+type ApiKeySecret {
+  model SomeModel
+  secret String
+}
+"#,
+    )
+    .expect("a `type` block field referencing a `model` should still parse");
+
+    assert_eq!(schema.types[0].fields[0].ty.name, "SomeModel");
+}
+
+#[test]
 fn accepts_decimal_scalar_in_models_and_procedures() {
     let schema = parse_schema(
         r#"
