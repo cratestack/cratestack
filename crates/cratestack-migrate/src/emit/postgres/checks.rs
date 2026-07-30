@@ -29,7 +29,7 @@ pub(super) fn emit_drop_check(sql: &mut String, check: &DropCheck) {
     .unwrap();
 }
 
-pub(super) fn render_check_predicate_postgres(column: &str, kind: &CheckKind) -> String {
+fn render_check_predicate_postgres(column: &str, kind: &CheckKind) -> String {
     let c = quote_ident(column);
     match kind {
         CheckKind::Enum { variants, list } => {
