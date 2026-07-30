@@ -89,7 +89,9 @@ fn bareword_enum_default_is_quoted() {
     let migration = emit(&diff(&prev, &next));
 
     assert!(
-        migration.up.contains("status TEXT NOT NULL DEFAULT 'Pending'"),
+        migration
+            .up
+            .contains("status TEXT NOT NULL DEFAULT 'Pending'"),
         "up was: {}",
         migration.up
     );
@@ -103,10 +105,7 @@ fn bareword_enum_default_is_quoted() {
 #[test]
 fn optional_enum_column_is_nullable_text_and_still_checked() {
     let prev = schema(&with_models(""));
-    let next = schema(&order_schema(
-        "  Pending\n  Shipped",
-        "status OrderStatus?",
-    ));
+    let next = schema(&order_schema("  Pending\n  Shipped", "status OrderStatus?"));
     let migration = emit(&diff(&prev, &next));
 
     assert!(
@@ -166,7 +165,11 @@ fn adding_a_variant_rebuilds_the_membership_check() {
     ));
     let migration = emit(&diff(&prev, &next));
 
-    assert!(!migration.up.contains("ALTER TYPE"), "up was: {}", migration.up);
+    assert!(
+        !migration.up.contains("ALTER TYPE"),
+        "up was: {}",
+        migration.up
+    );
     let drop_idx = migration
         .up
         .find("DROP CONSTRAINT orders_status_enum_check")
@@ -216,7 +219,11 @@ fn removing_a_variant_rebuilds_the_check_narrower() {
         "up was: {}",
         migration.up
     );
-    assert!(!migration.up.contains("'Shipped'"), "up was: {}", migration.up);
+    assert!(
+        !migration.up.contains("'Shipped'"),
+        "up was: {}",
+        migration.up
+    );
 }
 
 /// Removing the enum declaration no longer emits `DROP TYPE`, so a
@@ -234,7 +241,11 @@ enum LegacyStatus {
     let next = schema(&with_models(""));
     let migration = emit(&diff(&prev, &next));
 
-    assert!(!migration.up.contains("DROP TYPE"), "up was: {}", migration.up);
+    assert!(
+        !migration.up.contains("DROP TYPE"),
+        "up was: {}",
+        migration.up
+    );
     assert!(!migration.has_lossy);
 }
 
@@ -243,10 +254,7 @@ enum LegacyStatus {
 #[test]
 fn enum_check_is_reversible() {
     let prev = schema(&with_models(""));
-    let next = schema(&order_schema(
-        "  Pending\n  Shipped",
-        "status OrderStatus",
-    ));
+    let next = schema(&order_schema("  Pending\n  Shipped", "status OrderStatus"));
     let migration = emit(&diff(&prev, &next));
 
     assert!(!migration.down.contains("destructive migration"));
