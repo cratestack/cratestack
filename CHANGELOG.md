@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.4.18 (2026-07-31)
+
+### Studio: Postgres row-keying fix, persistent audit log, EXPLAIN
+
+`Row` is documented as keyed by `.cstack` field name, and the UI, cursor
+pagination, relation-follow, and audit log all rely on that contract — but
+the Postgres data source keyed rows by raw snake_case column name instead.
+camelCase and snake_case coincide for single-word fields, which is why this
+went unnoticed; on a realistic schema, every multi-word field silently broke
+table rendering, pagination's "Next" button, relation follow, and the audit
+log's recorded PK. Fixed by aliasing each projected column to its field name.
+
+Also new: an opt-in persistent audit log (`[workspace] audit_file`, an
+append-only JSONL sidecar replayed on boot, replacing in-memory-only
+history), and query plans (`GET .../sql?explain=true` plus an "Explain"
+toggle in the Studio UI). (#240)
+
+### Studio: edit form no longer corrupts NULL columns on save
+
+Opening a row with a NULL nullable column, clicking Edit, and clicking Save
+without changing anything wrote the literal string `"—"` (the read-only
+table's display placeholder for NULL) into that column instead of leaving it
+NULL. The edit-form snapshot was reusing the display-formatting helper to
+seed the editable form; it now maps NULL to the same "no value" sentinel
+every editor widget already uses, matching what the save path already
+expects. (#242)
+
 ## 0.4.0 (unreleased)
 
 ### Breaking: the `cratestack` umbrella facade was split
