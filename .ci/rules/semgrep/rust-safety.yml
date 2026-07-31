@@ -25,7 +25,7 @@ rules:
         - "**/*_test.rs"
     metadata:
       category: reliability
-      cwe: CWE-252
+      cwe: "CWE-252: Unchecked Return Value"
       references:
         - https://doc.rust-lang.org/book/ch09-03-to-panic-or-not-to-panic.html
 
@@ -41,7 +41,7 @@ rules:
     severity: WARNING
     metadata:
       category: reliability
-      cwe: CWE-252
+      cwe: "CWE-248: Uncaught Exception"
 
   - id: rust-todo-in-code
     pattern: todo!(...)
@@ -66,7 +66,7 @@ rules:
     severity: ERROR
     metadata:
       category: safety
-      cwe: CWE-252
+      cwe: "CWE-710: Improper Adherence to Coding Standards"
 
   - id: rust-clone-without-reason
     pattern: |
