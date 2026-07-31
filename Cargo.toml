@@ -154,8 +154,42 @@ uuid = { version = "1", features = ["serde", "v4"] }
 [workspace.lints.rust]
 unsafe_code = "forbid"
 
+# `lto` is build-wide (Cargo can't scope it per package), so it's set once
+# here for the whole graph. `thin` LTO gets nearly all of fat LTO's size/perf
+# win at a fraction of the peak-memory and wall-clock cost during codegen —
+# that combination (fat LTO + a single codegen unit) is the single biggest
+# driver of exploding rustc/LLVM memory on schemas that expand into a lot of
+# generated code (`include_server_schema!` emits models × CRUD × policy ×
+# RPC dispatch × relations into one compilation unit). `opt-level`/
+# `codegen-units` ARE per-package overridable, so only the crates that ship
+# as size-constrained binaries (mobile native libs embedded in an app
+# bundle) opt back into the aggressive settings below.
 [profile.release]
+lto = "thin"
+opt-level = 3
+codegen-units = 16
+incremental = false
+
+# Mobile native libs: shipped inside an app bundle, so binary size is a real
+# constraint. `cratestack-studio-ui` needs the same tradeoff but is excluded
+# from this workspace (its own Trunk-built Cargo.toml already sets it).
+[profile.release.package.embedded_flutter_native]
+opt-level = "z"
+codegen-units = 1
+
+[profile.release.package.embedded-expo-native]
+opt-level = "z"
+codegen-units = 1
+
+# Max size squeeze for artifacts that are actually shipped/downloaded as a
+# binary — currently just the `cratestack-cli` prebuilt npm binaries (see
+# release-cli.yml). Fat LTO + a single codegen unit costs real build memory
+# and time, which is fine here: this profile runs once per release in CI,
+# not on every dev/service build, so it doesn't reintroduce the blanket tax
+# `[profile.release]` used to impose on every crate in the graph.
+[profile.dist]
+inherits = "release"
 lto = true
 opt-level = "z"
 codegen-units = 1
-incremental = false
+strip = true

@@ -172,7 +172,7 @@ jobs:
           name: studio-ui-bundle
           path: crates/cratestack-studio
       - name: Build cratestack-cli
-        run: cargo build --release --locked -p cratestack-cli --target ${{ matrix.target }}
+        run: cargo build --profile dist --locked -p cratestack-cli --target ${{ matrix.target }}
       - name: Package archive
         id: package
         shell: bash
@@ -180,7 +180,7 @@ jobs:
           set -euo pipefail
           tag="${{ needs.prepare.outputs.tag }}"
           target="${{ matrix.target }}"
-          bin_dir="target/${target}/release"
+          bin_dir="target/${target}/dist"
           if [ "${{ runner.os }}" = "Windows" ]; then
             asset="cratestack-cli-${target}-${tag}.zip"
             powershell -NoProfile -Command "Compress-Archive -Path '${bin_dir}/cratestack.exe' -DestinationPath '${asset}'"
