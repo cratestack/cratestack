@@ -166,6 +166,7 @@ async fn main() {
             name: "acme-platform".to_owned(),
             default_mode: TargetMode::Ro,
             cors_dev: true,
+            audit_file: None,
         },
         targets: vec![Arc::new(catalog), Arc::new(analytics), Arc::new(upstream)],
         audit: Arc::new(AuditLog::new()),

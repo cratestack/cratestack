@@ -11,6 +11,21 @@ name = "studio"
 # default_mode applies when a target omits `mode`. Values: "ro" | "rw".
 default_mode = "ro"
 
+# Optional: persist the audit log of Studio's own writes (CREATE /
+# UPDATE / DELETE) to an append-only JSONL file, replayed on boot so it
+# survives restarts. Relative paths resolve against this file's
+# directory.
+#
+# Left unset, the audit log lives in process memory only — Studio writes
+# nothing to your filesystem and creates nothing in your database. The
+# file is Studio-local either way: audit rows are never written into the
+# target database's schema.
+#
+# The file is append-only and Studio never rotates or truncates it; the
+# in-memory ring the API serves stays capped regardless of its size.
+#
+# audit_file = ".cratestack-studio/audit.jsonl"
+
 # Example target — replace with your own and remove this stub before booting.
 #
 # [[target]]

@@ -39,6 +39,16 @@ pub struct WorkspaceConfig {
     /// disable when binding to a wider interface.
     #[serde(default = "WorkspaceConfig::default_cors_dev")]
     pub cors_dev: bool,
+    /// Opt-in path to an append-only JSONL audit sidecar. Relative
+    /// paths resolve against the directory holding `studio.toml`.
+    ///
+    /// Unset (the default) keeps the audit log in process memory only,
+    /// which is Studio's zero-footprint posture: it neither writes to
+    /// the operator's filesystem nor creates anything in the target
+    /// database. Setting it trades that for a log that survives
+    /// restarts — see [`crate::audit::AuditLog::persistent`].
+    #[serde(default)]
+    pub audit_file: Option<PathBuf>,
 }
 
 impl Default for WorkspaceConfig {
@@ -47,6 +57,7 @@ impl Default for WorkspaceConfig {
             name: Self::default_name(),
             default_mode: TargetMode::default(),
             cors_dev: Self::default_cors_dev(),
+            audit_file: None,
         }
     }
 }

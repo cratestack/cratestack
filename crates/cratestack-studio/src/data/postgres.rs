@@ -10,6 +10,7 @@
 //! live in sibling submodules so they stay independently testable.
 
 mod bindings;
+mod explain;
 mod ops;
 mod preview;
 mod sql;
@@ -25,7 +26,9 @@ use sqlx_core::row::Row as _;
 use sqlx_postgres::{PgPool, PgRow};
 
 use super::model_info::{PkCast, resolve_model};
-use super::{ColumnSnapshot, DataError, DataSource, Page, PageRequest, Row, SqlOp, SqlPreview};
+use super::{
+    ColumnSnapshot, DataError, DataSource, Page, PageRequest, QueryPlan, Row, SqlOp, SqlPreview,
+};
 
 #[derive(Debug, Clone)]
 pub struct PostgresSource {
@@ -93,6 +96,16 @@ impl DataSource for PostgresSource {
     ) -> Result<SqlPreview, DataError> {
         let (_, info) = resolve_model(&self.schema, model)?;
         Ok(preview::render(&self.schema, &info, model, op, pk, payload))
+    }
+
+    async fn explain(
+        &self,
+        op: SqlOp,
+        model: &str,
+        pk: Option<&str>,
+    ) -> Result<QueryPlan, DataError> {
+        let (_, info) = resolve_model(&self.schema, model)?;
+        explain::explain(&self.pool, &info, op, pk).await
     }
 
     async fn inspect_columns(&self, model: &str) -> Result<Option<Vec<ColumnSnapshot>>, DataError> {

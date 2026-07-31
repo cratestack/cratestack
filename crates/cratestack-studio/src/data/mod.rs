@@ -84,6 +84,62 @@ pub struct SqlParam {
     pub kind: &'static str,
 }
 
+/// Outcome of a **plan-only** EXPLAIN.
+///
+/// Exactly one side is populated: `text` when the driver produced a
+/// plan, `note` when it declined to. "Declined" is a first-class
+/// answer here rather than an error, because the caller still wants the
+/// rendered SQL next to the explanation of why there's no plan
+/// beside it.
+#[derive(Debug, Clone)]
+pub struct QueryPlan {
+    pub text: Option<String>,
+    pub note: Option<String>,
+}
+
+impl QueryPlan {
+    pub(crate) fn text(plan: String) -> Self {
+        Self {
+            text: Some(plan),
+            note: None,
+        }
+    }
+
+    pub(crate) fn note(reason: impl Into<String>) -> Self {
+        Self {
+            text: None,
+            note: Some(reason.into()),
+        }
+    }
+}
+
+/// Why Studio refuses to plan a mutation.
+///
+/// Plain `EXPLAIN` (Postgres) and `EXPLAIN QUERY PLAN` (SQLite) only
+/// *plan* a statement — neither executes it, so explaining an INSERT
+/// would in fact be harmless. `EXPLAIN ANALYZE` is the one that runs
+/// the statement for real, and Studio never emits it: there is no
+/// config knob, no query parameter, and no code path that can produce
+/// it.
+///
+/// The read-only restriction is therefore belt-and-braces rather than
+/// strictly necessary, and it is kept for two reasons. First, it means
+/// no future edit can turn "we planned your DELETE" into "we ran your
+/// DELETE" by adding one keyword — the mutation never reaches a driver
+/// at all. Second, it is honest about what we could show anyway: the
+/// CREATE/UPDATE previews bind placeholder sample values (`…`) for
+/// columns whose real types are numeric, boolean or jsonb, so asking
+/// Postgres to plan them would fail on type inference rather than
+/// produce a plan worth reading.
+pub(crate) const EXPLAIN_READ_ONLY_NOTE: &str = concat!(
+    "EXPLAIN is limited to read operations (list, get). ",
+    "Studio never runs EXPLAIN ANALYZE, so a mutation is never planned or executed here.",
+);
+
+/// Get needs a concrete key to plan against.
+pub(crate) const EXPLAIN_NEEDS_PK_NOTE: &str =
+    "EXPLAIN for `get` needs a `pk=` value to bind — select a row first.";
+
 /// One physical column observed in the live database. Used by the
 /// drift endpoint to compare schema-declared shape against what the
 /// driver actually sees.

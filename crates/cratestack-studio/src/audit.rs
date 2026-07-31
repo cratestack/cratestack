@@ -1,25 +1,39 @@
-//! In-memory audit ring buffer for Studio writes.
+//! Audit ring buffer for Studio writes.
 //!
-//! Phase 4 adds an opt-in (always-on, but bounded) record of every
-//! successful CREATE / UPDATE / DELETE the studio performs. Entries
-//! live in process memory only — there's no on-disk persistence by
-//! design. The buffer caps at [`AuditLog::CAPACITY`]; older entries
-//! are dropped FIFO once the cap is reached.
+//! Every successful CREATE / UPDATE / DELETE Studio performs is
+//! captured here. The read path is always an in-memory ring capped at
+//! [`AuditLog::CAPACITY`] with FIFO eviction, so `GET /api/audit` stays
+//! bounded regardless of how long Studio has been running.
 //!
-//! Studio is a local admin tool, so a small bounded buffer is fine:
-//! the operator can see what they (or a teammate connected to the
-//! same target) just did without us inventing a logging pipeline.
+//! By default that ring is *all* there is: Studio is a local admin
+//! tool with a zero-footprint promise, and a process-lifetime buffer
+//! costs the operator nothing. Setting `[workspace] audit_file` in
+//! `studio.toml` additionally mirrors each entry to an append-only
+//! JSONL sidecar and replays it on boot, so the log survives restarts.
+//! That sink is Studio-local by construction — see [`store`] for why
+//! it is never a table in the target database.
+
+mod store;
+mod time;
+
+#[cfg(test)]
+mod tests;
 
 use std::collections::VecDeque;
+use std::path::Path;
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+
+pub use store::{AuditStore, AuditStoreError};
 
 /// One captured write. `at` is an RFC-3339 timestamp; `pk` is the
 /// row's primary-key value after the write (so for CREATE we capture
 /// the generated value if the DB filled one in).
-#[derive(Debug, Clone, Serialize)]
+///
+/// `Deserialize` is implemented because entries round-trip through the
+/// JSONL sink; it is not part of any request-parsing surface.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditEntry {
     pub id: u64,
     pub at: String,
@@ -29,7 +43,7 @@ pub struct AuditEntry {
     pub pk: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum AuditOp {
     Create,
@@ -37,133 +51,97 @@ pub enum AuditOp {
     Delete,
 }
 
+/// Ring contents and the id counter under one lock.
+///
+/// They are deliberately not separate mutexes: ids are allocated in the
+/// same critical section that appends to the ring and to the file, so
+/// the on-disk line order always matches id order even under concurrent
+/// requests.
+#[derive(Debug)]
+struct State {
+    entries: VecDeque<AuditEntry>,
+    next_id: u64,
+}
+
 #[derive(Debug)]
 pub struct AuditLog {
-    entries: Mutex<VecDeque<AuditEntry>>,
-    next_id: Mutex<u64>,
+    state: Mutex<State>,
+    store: Option<AuditStore>,
 }
 
 impl AuditLog {
     pub const CAPACITY: usize = 500;
 
+    /// In-memory only — the default, and what every target gets when
+    /// `studio.toml` doesn't ask for persistence.
     pub fn new() -> Self {
         Self {
-            entries: Mutex::new(VecDeque::with_capacity(Self::CAPACITY)),
-            next_id: Mutex::new(1),
+            state: Mutex::new(State {
+                entries: VecDeque::with_capacity(Self::CAPACITY),
+                next_id: 1,
+            }),
+            store: None,
         }
     }
 
+    /// Open (creating if needed) the JSONL sink at `path`, replay its
+    /// tail into the ring, and mirror future entries to it.
+    ///
+    /// Errors are propagated rather than swallowed: the operator asked
+    /// for persistence explicitly, so booting with a silently inert
+    /// sink would misrepresent what Studio is doing.
+    pub fn persistent(path: &Path) -> Result<Self, AuditStoreError> {
+        let (store, replay) = AuditStore::open(path, Self::CAPACITY)?;
+        if replay.skipped_lines > 0 {
+            tracing::warn!(
+                path = %path.display(),
+                skipped = replay.skipped_lines,
+                "skipped unparseable lines while replaying the audit log"
+            );
+        }
+        Ok(Self {
+            state: Mutex::new(State {
+                // Resume past the highest id in the *whole* file, not
+                // just the replayed tail, so ids stay unique across
+                // restarts even when the cap dropped older entries.
+                next_id: replay.max_id + 1,
+                entries: replay.entries.into(),
+            }),
+            store: Some(store),
+        })
+    }
+
     pub fn push(&self, target: &str, model: &str, op: AuditOp, pk: Option<String>) {
-        let id = {
-            let mut next = self.next_id.lock().expect("audit id mutex poisoned");
-            let id = *next;
-            *next += 1;
-            id
-        };
+        let mut state = self.state.lock().expect("audit mutex poisoned");
         let entry = AuditEntry {
-            id,
-            at: now_rfc3339(),
+            id: state.next_id,
+            at: time::now_rfc3339(),
             target: target.to_owned(),
             model: model.to_owned(),
             op,
             pk,
         };
-        let mut entries = self.entries.lock().expect("audit mutex poisoned");
-        if entries.len() == Self::CAPACITY {
-            entries.pop_front();
+        state.next_id += 1;
+        if let Some(store) = &self.store {
+            store.append(&entry);
         }
-        entries.push_back(entry);
+        if state.entries.len() == Self::CAPACITY {
+            state.entries.pop_front();
+        }
+        state.entries.push_back(entry);
     }
 
     /// Snapshot the most recent `limit` entries in reverse-chronological
     /// order (newest first). `limit` is clamped to the buffer capacity.
     pub fn snapshot(&self, limit: usize) -> Vec<AuditEntry> {
-        let entries = self.entries.lock().expect("audit mutex poisoned");
-        let limit = limit.min(entries.len());
-        entries.iter().rev().take(limit).cloned().collect()
+        let state = self.state.lock().expect("audit mutex poisoned");
+        let limit = limit.min(state.entries.len());
+        state.entries.iter().rev().take(limit).cloned().collect()
     }
 }
 
 impl Default for AuditLog {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-fn now_rfc3339() -> String {
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    rfc3339_from_unix(secs)
-}
-
-/// Minimal UTC RFC-3339 encoder so we don't need a chrono dep for one
-/// timestamp. Handles dates from 1970 onward, which covers anything
-/// `SystemTime::now()` produces on a running machine.
-fn rfc3339_from_unix(secs: i64) -> String {
-    let days = secs.div_euclid(86_400);
-    let seconds_of_day = secs.rem_euclid(86_400) as u32;
-    let (hour, rest) = (seconds_of_day / 3600, seconds_of_day % 3600);
-    let (minute, second) = (rest / 60, rest % 60);
-
-    let (year, month, day) = civil_from_days(days);
-    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
-}
-
-/// Howard Hinnant's `civil_from_days` algorithm. Converts days from
-/// 1970-01-01 to a (year, month, day) gregorian tuple.
-fn civil_from_days(z: i64) -> (i32, u32, u32) {
-    let z = z + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = (z - era * 146_097) as u64;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let y = yoe as i64 + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
-    let m = (if mp < 10 { mp + 3 } else { mp - 9 }) as u32;
-    let y = if m <= 2 { y + 1 } else { y };
-    (y as i32, m, d)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn push_and_snapshot_return_newest_first() {
-        let log = AuditLog::new();
-        log.push("t", "Post", AuditOp::Create, Some("p1".to_owned()));
-        log.push("t", "Post", AuditOp::Update, Some("p1".to_owned()));
-        let snap = log.snapshot(10);
-        assert_eq!(snap.len(), 2);
-        assert!(matches!(snap[0].op, AuditOp::Update));
-        assert!(matches!(snap[1].op, AuditOp::Create));
-    }
-
-    #[test]
-    fn buffer_drops_oldest_past_capacity() {
-        let log = AuditLog::new();
-        for i in 0..AuditLog::CAPACITY + 5 {
-            log.push("t", "Post", AuditOp::Create, Some(format!("p{i}")));
-        }
-        let snap = log.snapshot(AuditLog::CAPACITY * 2);
-        assert_eq!(snap.len(), AuditLog::CAPACITY);
-        // The first 5 entries should be gone (oldest dropped).
-        assert!(snap.iter().all(|e| e.pk.as_deref() != Some("p0")));
-        assert!(snap.iter().all(|e| e.pk.as_deref() != Some("p4")));
-        assert!(snap.iter().any(|e| e.pk.as_deref() == Some("p5")));
-    }
-
-    #[test]
-    fn rfc3339_encodes_epoch() {
-        assert_eq!(rfc3339_from_unix(0), "1970-01-01T00:00:00Z");
-    }
-
-    #[test]
-    fn rfc3339_encodes_known_date() {
-        // 2024-01-15T12:34:56Z = 1705322096
-        assert_eq!(rfc3339_from_unix(1_705_322_096), "2024-01-15T12:34:56Z");
     }
 }

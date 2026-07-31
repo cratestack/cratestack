@@ -23,7 +23,8 @@ use cratestack_core::Schema;
 use reqwest::Client;
 
 use super::{
-    ColumnSnapshot, DataError, DataSource, Page, PageRequest, PkCast, Row, SqlOp, SqlPreview,
+    ColumnSnapshot, DataError, DataSource, Page, PageRequest, PkCast, QueryPlan, Row, SqlOp,
+    SqlPreview,
 };
 use crate::config::ApiAuth;
 
@@ -115,6 +116,17 @@ impl DataSource for ApiSource {
     ) -> Result<SqlPreview, DataError> {
         Err(DataError::Unsupported {
             what: "SQL preview against API targets — the upstream service runs the query, not Studio",
+        })
+    }
+
+    async fn explain(
+        &self,
+        _op: SqlOp,
+        _model: &str,
+        _pk: Option<&str>,
+    ) -> Result<QueryPlan, DataError> {
+        Err(DataError::Unsupported {
+            what: "EXPLAIN against API targets — only the upstream service can plan its own queries",
         })
     }
 

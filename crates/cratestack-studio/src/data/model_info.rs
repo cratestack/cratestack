@@ -27,10 +27,11 @@ pub(crate) struct ModelSqlInfo<'a> {
 
 #[derive(Debug, Clone)]
 pub(crate) struct ColumnInfo<'a> {
-    /// The field's `.cstack` name (camelCase). Used by the snippet
-    /// generator's column-name lookup and by the JSON-object alias
-    /// labels emitted into projected rows.
-    #[allow(dead_code)]
+    /// The field's `.cstack` name (camelCase). Both dialects project
+    /// rows keyed by this rather than by `column_name`, which is what
+    /// makes [`crate::data::Row`]'s "keys are field names" contract
+    /// true: SQLite labels its `json_object(...)` pairs with it, and
+    /// Postgres aliases each selected column to it.
     pub field_name: &'a str,
     pub column_name: String,
 }

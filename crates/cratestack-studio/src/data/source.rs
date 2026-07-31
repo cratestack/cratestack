@@ -6,7 +6,7 @@
 //! is a Postgres pool, a SQLite connection, or a reqwest client.
 
 use super::model_info::PkCast;
-use super::{ColumnSnapshot, DataError, Page, PageRequest, Row, SqlOp, SqlPreview};
+use super::{ColumnSnapshot, DataError, Page, PageRequest, QueryPlan, Row, SqlOp, SqlPreview};
 
 /// Backend interface used by every Studio request handler. Each
 /// `LoadedTarget` holds an `Arc<dyn DataSource>` and delegates to it.
@@ -62,6 +62,26 @@ pub trait DataSource: Send + Sync + std::fmt::Debug {
         pk: Option<&str>,
         payload: Option<&Row>,
     ) -> Result<SqlPreview, DataError>;
+
+    /// Ask the driver for a **plan-only** EXPLAIN of `op` on `model`.
+    ///
+    /// Unlike [`DataSource::preview_sql`], which is pure string
+    /// rendering, this reaches the database: the planner needs live
+    /// statistics to say anything useful. It still never *executes* the
+    /// statement — see [`super::EXPLAIN_READ_ONLY_NOTE`] for the
+    /// EXPLAIN-vs-EXPLAIN-ANALYZE distinction and why mutations are
+    /// refused outright.
+    ///
+    /// A backend that can plan but chooses not to (a mutation, a `get`
+    /// with no key) returns `Ok` with a populated
+    /// [`QueryPlan::note`]. `Err(DataError::Unsupported)` is reserved
+    /// for backends that cannot plan at all.
+    async fn explain(
+        &self,
+        op: SqlOp,
+        model: &str,
+        pk: Option<&str>,
+    ) -> Result<QueryPlan, DataError>;
 
     /// Snapshot the live database columns for `model`'s table. Used by
     /// the drift endpoint to compare against schema-declared columns.

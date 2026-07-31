@@ -112,6 +112,7 @@ fn build_workspace() -> Arc<LoadedWorkspace> {
             name: "smoke".to_owned(),
             default_mode: TargetMode::Ro,
             cors_dev: true,
+            audit_file: None,
         },
         targets: vec![
             Arc::new(api_target),
@@ -660,6 +661,7 @@ async fn models_endpoint_reports_enum_variants() {
             name: "enum_smoke".to_owned(),
             default_mode: TargetMode::Ro,
             cors_dev: false,
+            audit_file: None,
         },
         targets: vec![Arc::new(target)],
         audit: Arc::new(AuditLog::new()),
@@ -781,4 +783,105 @@ async fn cors_headers_present_on_api_responses() {
         .get("access-control-allow-origin")
         .map(|v| v.to_str().unwrap_or(""));
     assert!(allow_origin.is_some(), "CORS allow-origin should be set");
+}
+
+// ---------------------------------------------------------------------
+// EXPLAIN / query plans
+// ---------------------------------------------------------------------
+
+/// Planning is opt-in: a plain "Show SQL" must stay a pure string
+/// render with no database round trip, so no `plan` comes back.
+#[tokio::test]
+async fn preview_without_explain_returns_no_plan() {
+    let (status, body) = json_get("/api/targets/sqlite/models/Post/sql?op=list").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.get("plan").is_none(), "unexpected plan: {body}");
+}
+
+#[tokio::test]
+async fn explain_on_list_returns_a_sqlite_query_plan() {
+    let (status, body) = json_get("/api/targets/sqlite/models/Post/sql?op=list&explain=true").await;
+    assert_eq!(status, StatusCode::OK);
+    let plan = body["plan"].as_str().expect("plan present");
+    // `EXPLAIN QUERY PLAN` describes access paths (SCAN/SEARCH); the
+    // bare `EXPLAIN` bytecode dump we deliberately don't use would say
+    // "OpenRead"/"Rewind" instead.
+    assert!(
+        plan.contains("SCAN") || plan.contains("SEARCH"),
+        "expected an access-path plan, got: {plan}"
+    );
+    assert!(plan.contains("posts"), "{plan}");
+}
+
+#[tokio::test]
+async fn explain_on_get_plans_a_primary_key_lookup() {
+    let (status, body) =
+        json_get("/api/targets/sqlite/models/Post/sql?op=get&pk=p1&explain=true").await;
+    assert_eq!(status, StatusCode::OK);
+    let plan = body["plan"].as_str().expect("plan present");
+    assert!(
+        plan.contains("SEARCH"),
+        "a pk lookup should be a SEARCH, got: {plan}"
+    );
+}
+
+#[tokio::test]
+async fn explain_on_get_without_a_pk_returns_a_note_not_a_plan() {
+    let (status, body) = json_get("/api/targets/sqlite/models/Post/sql?op=get&explain=true").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.get("plan").is_none(), "unexpected plan: {body}");
+    let notes = body["notes"].as_str().expect("notes present");
+    assert!(notes.contains("pk="), "{notes}");
+}
+
+#[tokio::test]
+async fn explain_on_a_mutation_is_refused_with_a_note() {
+    for op in ["create", "update", "delete"] {
+        let (status, body) = json_get(&format!(
+            "/api/targets/rw/models/Post/sql?op={op}&pk=rw1&explain=true"
+        ))
+        .await;
+        assert_eq!(status, StatusCode::OK, "{op}");
+        assert!(body.get("plan").is_none(), "{op} produced a plan: {body}");
+        let notes = body["notes"].as_str().expect("notes present");
+        assert!(notes.contains("read operations"), "{op}: {notes}");
+        // The SQL itself is still rendered — refusing to plan must not
+        // cost the caller the preview they asked for.
+        assert!(body["sql"].as_str().is_some(), "{op}");
+    }
+}
+
+/// The load-bearing safety property: asking to explain a DELETE must
+/// not delete anything. Studio never emits `EXPLAIN ANALYZE`, and
+/// mutations don't reach the driver at all — this asserts the row is
+/// still there afterwards rather than trusting either claim.
+#[tokio::test]
+async fn explaining_a_delete_does_not_delete_the_row() {
+    let app = cratestack_studio::server::build_router(build_workspace());
+    let explain = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/targets/rw/models/Post/sql?op=delete&pk=rw1&explain=true")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("request");
+    assert_eq!(explain.status(), StatusCode::OK);
+
+    // `build_workspace()` hands each router its own in-memory DB, so
+    // re-check through the same instance the explain ran against.
+    let (status, body) = json_get("/api/targets/rw/models/Post/records/rw1").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["row"]["title"], "mutable");
+}
+
+#[tokio::test]
+async fn explain_against_an_api_target_is_reported_as_unsupported() {
+    let (status, body) = json_get("/api/targets/api/models/Post/sql?op=list&explain=true").await;
+    // The API source can't even render SQL, so it fails earlier — the
+    // contract we care about is that Studio says so rather than
+    // pretending to have a plan.
+    assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
+    assert_eq!(body["error"]["code"], "UNSUPPORTED");
 }

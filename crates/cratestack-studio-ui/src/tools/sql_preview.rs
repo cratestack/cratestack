@@ -15,16 +15,21 @@ pub fn ToolsRow(
     let (preview, set_preview) = signal(Option::<SqlPreview>::None);
     let (preview_error, set_preview_error) = signal(Option::<String>::None);
     let (op, set_op) = signal(String::from("list"));
+    // Off by default: "Show SQL" should stay an instant, purely local
+    // render. Ticking this is the operator saying they'll accept a
+    // database round trip for the plan.
+    let (explain, set_explain) = signal(false);
 
     let load_preview = move |_| {
         let Some(t) = target.get() else { return };
         let Some(m) = model.get() else { return };
         let op_val = op.get();
         let pk_val = pk.get();
+        let explain_val = explain.get();
         set_preview.set(None);
         set_preview_error.set(None);
         leptos::task::spawn_local(async move {
-            match api::preview_sql(&t, &m, &op_val, pk_val.as_deref()).await {
+            match api::preview_sql(&t, &m, &op_val, pk_val.as_deref(), explain_val).await {
                 Ok(p) => set_preview.set(Some(p)),
                 Err(e) => set_preview_error.set(Some(e.message)),
             }
@@ -58,6 +63,15 @@ pub fn ToolsRow(
                     "Show SQL"
                 </button>
             </div>
+            <label class="label cursor-pointer gap-1.5 py-0" title="Ask the database to plan this query. Never runs it.">
+                <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs"
+                    prop:checked=move || explain.get()
+                    on:change=move |ev| set_explain.set(event_target_checked(&ev))
+                />
+                <span class="label-text text-xs opacity-70">"Explain"</span>
+            </label>
             <div class="flex-1" />
             <a class="btn btn-sm gap-1.5" href=move || export_href("json") target="_blank" rel="noopener">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -87,6 +101,12 @@ pub fn ToolsRow(
                     let label = format!("  ${} = <{}> {}", param.index, param.kind, param.binding);
                     view! { <div class="font-mono opacity-60">{label}</div> }
                 }).collect_view()}
+                {p.plan.clone().map(|plan| view! {
+                    <div class="pt-1.5 border-t border-neutral-content/15 space-y-1">
+                        <div class="opacity-60 font-medium">"query plan"</div>
+                        <pre class="font-mono whitespace-pre overflow-x-auto opacity-80">{plan}</pre>
+                    </div>
+                }.into_any()).unwrap_or_else(|| ().into_any())}
                 {p.notes.clone().map(|n| view! {
                     <div class="text-warning">{n}</div>
                 }.into_any()).unwrap_or_else(|| ().into_any())}

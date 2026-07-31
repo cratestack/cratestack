@@ -13,6 +13,7 @@
 //! independently testable.
 
 mod bindings;
+mod explain;
 mod ops;
 mod preview;
 mod runtime;
@@ -29,7 +30,9 @@ use rusqlite::Connection;
 use tokio::sync::Mutex;
 
 use super::model_info::{PkCast, resolve_model};
-use super::{ColumnSnapshot, DataError, DataSource, Page, PageRequest, Row, SqlOp, SqlPreview};
+use super::{
+    ColumnSnapshot, DataError, DataSource, Page, PageRequest, QueryPlan, Row, SqlOp, SqlPreview,
+};
 
 #[derive(Debug)]
 pub struct SqliteSource {
@@ -104,6 +107,23 @@ impl DataSource for SqliteSource {
     ) -> Result<SqlPreview, DataError> {
         let (_, info) = resolve_model(&self.schema, model)?;
         Ok(preview::render(&info, op, pk, payload))
+    }
+
+    async fn explain(
+        &self,
+        op: SqlOp,
+        model: &str,
+        pk: Option<&str>,
+    ) -> Result<QueryPlan, DataError> {
+        let (_, info) = resolve_model(&self.schema, model)?;
+        let (sql, bind) = match explain::plan_request(&info, op, pk) {
+            Ok(request) => request,
+            Err(declined) => return Ok(declined),
+        };
+        runtime::with_conn(self.connection.clone(), move |conn| {
+            explain::explain_blocking(conn, &sql, bind)
+        })
+        .await
     }
 
     async fn inspect_columns(&self, model: &str) -> Result<Option<Vec<ColumnSnapshot>>, DataError> {

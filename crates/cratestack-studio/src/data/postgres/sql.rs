@@ -6,10 +6,29 @@
 
 use crate::data::model_info::{ModelSqlInfo, PkCast};
 
+/// Project every column **aliased back to its `.cstack` field name**.
+///
+/// This alias is not cosmetic. [`crate::data::Row`] documents that row
+/// keys are field names as declared in the model, and every consumer
+/// relies on it: the UI looks up `row[field.name]`,
+/// [`crate::data::common::next_cursor`] extracts the cursor by PK field
+/// name, `relations::extract_filter_value` reads the FK by field name,
+/// and the audit log reads the new PK by field name. The SQLite source
+/// has always honoured that contract (its `json_object(...)` labels are
+/// field names); Postgres did not, because `row_to_json(t.*)` keys the
+/// object by whatever the subquery called its columns — i.e. the
+/// snake_cased *column* names.
+///
+/// The two only coincide for single-word fields (`id`, `status`), which
+/// is why the mismatch stayed invisible: on a schema with `subjectId`
+/// or `createdAt` every one of those lookups missed, blanking cells,
+/// stalling pagination, breaking relation follow, and — worst — making
+/// the drawer's edit form read `""` and write `null` back over
+/// untouched optional columns.
 fn projection(info: &ModelSqlInfo<'_>) -> String {
     info.columns
         .iter()
-        .map(|c| format!("\"{}\"", c.column_name))
+        .map(|c| format!("\"{}\" AS \"{}\"", c.column_name, c.field_name))
         .collect::<Vec<_>>()
         .join(", ")
 }
