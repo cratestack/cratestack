@@ -1149,37 +1149,6 @@ Semantics:
 
 ## 0.3.0 (2026-05-13)
 
-### New crate: `cratestack-rusqlite` — the embedded SQLite backend
-
-The embedded backend's actual implementation: `ddl`, `delegate`,
-`render`, `row`, `runtime`, and `value` modules, plus an `ffi` layer for
-non-Rust embedders. This is the concrete crate the three-macros split
-below routes `include_embedded_schema!` to, and what the wasm/OPFS
-capability under "New features" builds on.
-
-### New crate: `cratestack-redis` — idempotency and rate-limit stores
-
-Two server-side Redis-backed stores, siblings to `cratestack-sqlx`'s
-equivalents, for multi-replica deployments that need shared state
-across instances rather than per-process memory:
-
-- **`RedisIdempotencyStore`** implements
-  `cratestack_axum::idempotency::IdempotencyStore`. Atomicity comes from
-  three Lua scripts (`reserve_or_fetch`, `complete`, `release`) run via
-  `EVALSHA` with `NOSCRIPT` fallback; reservation lifetimes are driven
-  by `PEXPIREAT`, and token rotation on reclaim plus token/status guards
-  inside `complete`/`release` stop a stale handler from poisoning a
-  newer reservation. State lives in one Redis hash per
-  `(principal, key)` at `<prefix>:idem:<sha256(principal || 0x00 ||
-  key)>` (#5).
-- **`RedisRateLimitStore`** enforces a single global token-bucket per
-  key across replicas via one atomic read-refill-decrement-write Lua
-  script; bucket state lives at `<prefix>:rl:<sha256(key)>` with a
-  self-refreshing `EXPIRE` so idle keys evict themselves (#7).
-
-Both skip their live-Redis integration tests cleanly when no Redis is
-configured, matching the existing sqlx-store test pattern.
-
 ### Headline: three macros, one schema, no dead weight
 
 The single `include_schema!` macro is gone. In its place are three role-specific macros that emit only what each deployment needs. No more mobile apps transitively pulling `sqlx` they don't use; no more server builds carrying `rusqlite` for nothing.
@@ -1228,8 +1197,109 @@ The split is **strict**: `include_server_schema!` does not emit anything rusqlit
 - `cratestack-sqlx` could lose its `cratestack::sqlx::*` compatibility shim once we've validated nobody depends on it externally. Tracked as a 0.4.0 cleanup.
 - Multi-DB support (MySQL, SQLite-via-sqlx) for `include_server_schema!` — the `db = …` arg parser is ready; the codegen needs the abstraction.
 
-## 0.1.0
+## 0.2.3 (2026-05-12)
 
-Initial public extraction release.
+`cratestack-redis` gains **`RedisRateLimitStore`**, enforcing a single
+global token-bucket per key across replicas via one atomic
+read-refill-decrement-write Lua script; bucket state lives at
+`<prefix>:rl:<sha256(key)>` with a self-refreshing `EXPIRE` so idle
+keys evict themselves. Skips its live-Redis integration tests cleanly
+when no Redis is configured, matching the sqlx-store test pattern
+(#7).
 
-This release includes the Rust workspace, CLI, parser, macros, codecs, Axum and SQLx integration crates, generated Rust/Dart/TypeScript client support, the `.cstack` language server, and the VS Code extension package.
+## 0.2.2 (2026-05-12)
+
+Docs-only: every crate README rewritten against its actual API
+surface rather than aspirational/stale examples (#6).
+
+## 0.2.1 (2026-05-12)
+
+### New crate: `cratestack-rusqlite` — the embedded SQLite backend
+
+The embedded backend's real implementation: `ddl`, `delegate`,
+`render`, `row`, `runtime`, and `value` modules, plus an `ffi` layer
+for non-Rust embedders (#4).
+
+### New crate: `cratestack-redis` — `RedisIdempotencyStore`
+
+A server-side Redis-backed idempotency store, sibling to
+`cratestack-sqlx`'s `SqlxIdempotencyStore`, for multi-replica
+deployments that need shared idempotency state across instances rather
+than per-process memory. Atomicity comes from three Lua scripts
+(`reserve_or_fetch`, `complete`, `release`) run via `EVALSHA` with
+`NOSCRIPT` fallback; reservation lifetimes are driven by `PEXPIREAT`,
+and token rotation on reclaim plus token/status guards inside
+`complete`/`release` stop a stale handler from poisoning a newer
+reservation. State lives in one Redis hash per `(principal, key)` at
+`<prefix>:idem:<sha256(principal || 0x00 || key)>` (#5).
+
+## 0.2.0 (2026-05-12)
+
+The first version actually published to crates.io. (`v0.1.0` was never
+published under that number — see the note at the bottom of this file.)
+
+### Banking-readiness: a three-phase hardening pass
+
+The framework's first push from e-commerce-production-grade toward
+banking-grade, landed as one large merge (#2, #3):
+
+- **Phase 1 — correctness & money.** `Decimal` scalar
+  (feature-flagged `decimal-rust-decimal` / `decimal-bigdecimal`, the
+  latter still a `compile_error!` stub), error redaction (4xx messages
+  public, 5xx detail-only), optimistic locking (`@version` +
+  If-Match/ETag), schema validation attributes (`@length` / `@range` /
+  `@regex` / `@email` / `@uri` / `@iso4217`), idempotency
+  (`IdempotencyLayer` + `SqlxIdempotencyStore`, opt-in via
+  `Router::layer(...)`, not auto-wired into macro-generated routers).
+- **Phase 2 — compliance & integrity.** Audit log (`@@audit`,
+  before/after snapshots), field-level policy (`@readonly` /
+  `@server_only`), transaction isolation (`@isolation("...")`),
+  PII/data classification (`@pii` / `@sensitive`), correlation IDs
+  (traceparent propagation).
+- **Phase 3 — hardening & ecosystem.** HMAC signed envelope
+  (`COSE_Sign1`/ES256 trait-ready, not yet implemented), rate limiting
+  (`RateLimitLayer`), anti-replay nonce store, API versioning
+  (`@api_version`), soft-delete (`@@soft_delete`, GC left as a
+  follow-up), FIPS crypto feature flag (a real FIPS certification
+  still needs a vendor-validated libcrypto), and a migration engine
+  (`cratestack_migrations` table + `apply_pending` — schema-diff-driven
+  generation was explicitly out of scope at this point; that landed
+  later as `cratestack-migrate`, see `v0.3.1`).
+
+**Known-outstanding at this point:** `IdempotencyLayer` still isn't
+auto-wired into macro-generated routers by default; `RedisNonceStore`
+doesn't exist yet (`RedisIdempotencyStore` and `RedisRateLimitStore`
+land in `v0.2.1`/`v0.2.3`, right after this); `COSE_Sign1` has no real
+ES256/EdDSA signing behind it yet, trait surface only.
+
+### CLI, mixins, and the TypeScript client
+
+- **`cratestack` CLI** for schema tooling, the framework's first
+  command-line surface.
+- **Mixin support** — `@use` composes shared field groups into
+  `.cstack` models.
+- **Generated TypeScript client** gains TanStack Query hooks, and a
+  Rust **client-only macro** (the predecessor to what later became
+  `include_client_schema!` in the `v0.3.0` three-macro split) for
+  generated Rust clients, plus request-authorization support.
+- **`cratestack-client-store-redis`** — a Redis-backed client-side
+  state store.
+- Backend-to-backend client guidance defaults to the CBOR codec and
+  clarifies OAuth2 endpoint handling.
+
+### Public release housekeeping
+
+The repo's public GitHub Pages docs deployment (custom domain +
+rustdoc root redirect) is fixed, and the codebase is scrubbed of
+internal-only references from before the project's public rename —
+this is the release the rest of this changelog's history starts
+counting from.
+
+---
+
+`v0.1.0` doesn't have a section above because it was never published —
+no crates.io release, no tag. It was the version number in `Cargo.toml`
+during the project's pre-public "extraction" work (renaming from an
+internal codename, stripping internal-only references, standing up the
+CLI/docs/public-release plumbing) before the very first real release,
+which shipped as `v0.2.0` above instead.
