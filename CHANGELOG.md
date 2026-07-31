@@ -403,41 +403,37 @@ repo (`cratestack-docs` [#21](https://github.com/cratestack/cratestack-docs/pull
   release workflow gained a test-retry + `SKIP_TESTS` escape hatch for
   known-flaky suites (#81).
 
-## 0.3.3 (unreleased)
+## 0.3.7 (2026-05-18)
 
-### Workspace-wide 200-LoC refactor
+No code changes beyond the version bump itself.
 
-Every `.rs` file under `crates/*/src/` is now ≤200 LoC, landed across 16
-PRs (#57–#76). No public API changes — all splits preserve the crate
-surface via `pub use` re-exports. The major rewrites:
+## 0.3.6 (2026-05-18)
 
-- `cratestack-sqlx` and `cratestack-rusqlite` delegate / render / batch /
-  value modules split into focused submodules
-- `cratestack-axum` idempotency, rpc, transport, ratelimit, headers,
-  codec all broken into per-concern files
-- `cratestack-macros` four giants split (include / model / axum /
-  relation), medium files re-grouped
-- `cratestack-client-{dart,rust,typescript,flutter}` `lib.rs` split into
-  per-concern modules (largest: client-rust at 2369 → 18 submodules)
-- `cratestack-parser` 880-line `parse.rs`, 1086-line `validate.rs`, and
-  1336-line `tests.rs` split per topic
-- `cratestack-lsp` `main.rs` (1273 LoC) split into 11 submodules
-- `cratestack-client-dart` README and rpc-runtime jinja templates split
-  via `{% include %}` fragments (loader sets
-  `set_keep_trailing_newline(true)` for byte-identical output)
-- Inline `#[cfg(test)] mod tests` blocks throughout the workspace
-  extracted into `tests_<topic>.rs` siblings
+Release tooling: publish order is now computed from `cargo metadata`'s
+real dependency graph instead of a hand-maintained list, so a new crate
+gets the right publish position automatically instead of needing a
+manual list edit every time (#80).
 
-### README fixups
+## 0.3.5 (2026-05-18)
 
-Four crate READMEs (`cratestack-axum`, `cratestack-sqlx`,
-`cratestack-client-rust`, `cratestack-parser`) still referenced the
-pre-0.3.0 macro names (`include_schema!`,
-`include_client_macro!`) — updated to the current
-`include_server_schema!` / `include_client_schema!`. The `client-rust`
-README's two duplicate sections (one per old macro) collapse into one.
+Release tooling: `release-publish` is now idempotent and resumable — a
+partial failure partway through publishing the workspace can be re-run
+and picks up where it left off instead of re-attempting crates that
+already published successfully (#79).
 
-## 0.3.2 (unreleased)
+## 0.3.4 (2026-05-17)
+
+Studio's `eject` command is redesigned from a UI-fork-only tool into a
+full-project starter scaffold: `cratestack studio eject --out <dir>`
+now writes a runnable binary crate (`Cargo.toml`, `src/main.rs`,
+`studio.toml`, an example schema) with the Leptos UI already bundled
+in; `--with-ui` additionally unpacks the UI's Trunk sources for
+front-end customization. The UI itself moves to a sibling
+`crates/cratestack-studio/ui/` crate, embedded into the release binary
+as a tarball rather than generated from templates, and
+`cratestack-studio-generator` folds into `cratestack-studio` (#78).
+
+## 0.3.3 (2026-05-17)
 
 ### Studio rewrite — Phase 1d + 4 (typed editors + power tools)
 
@@ -891,6 +887,116 @@ strings, then `cratestack studio run`. There is no automated migration
 of the 0.3.x multi-crate output — it was generated code and should be
 regenerated from the new shape.
 
+### RPC transport (v1): `transport rpc` as an alternative to REST
+
+A `.cstack` schema now picks exactly one generation style via a
+top-level `transport rest|rpc` directive (default `rest`, so existing
+schemas parse unchanged) — one binding's worth of public surface, not
+both. Under `transport rpc`, every CRUD verb per model and every
+procedure gets an op id (`model.User.list`, `procedure.publishPost`),
+dispatched over two endpoints instead of a route per model/verb:
+
+```
+POST /rpc/:op_id       # unary
+POST /rpc/batch        # server may parallelize; no in-batch dependencies,
+                        # no transactional mode — use a procedure or two
+                        # round trips for composite ops
+```
+
+The op id lives in the URL rather than the request body — operationally
+honest, since nginx/CDN/HTTP tracing all work per-route that way — and
+client codegen branches on the schema's transport style, so a generated
+SDK ships one client's worth of code, not both (#20–#24, examples in
+#27). Error responses use gRPC-style codes in a stable `RpcErrorBody`
+shape (#23). Streaming (`application/cbor-seq`) needed no code change
+at all: content negotiation on the existing sequence encoder already
+handled it (#24).
+
+**Deferred:** the WebSocket binding and `@@subscribe`-driven
+subscriptions from the original design are not part of this release —
+today's audit/event-bus consumers are server-to-server and don't need
+a WS channel, so this is picked up when a concrete consumer needs it,
+not before (#25).
+
+### ORM additions
+
+Landed alongside the RPC work above, independent of transport style:
+
+- **Transaction-aware writes**: `.for_update()` and `update_many` join
+  the existing write surface, both participating correctly in an
+  ambient transaction (#26).
+- **Composite-key upsert** and **`find_unique` detail policy** support
+  (#28).
+- **Nullable-OR filter** and a **`COALESCE` multi-column filter** for
+  querying across nullable columns without hand-written SQL (#29).
+- **`aggregate`**, **`delete_many`**, and `NULLS FIRST`/`NULLS LAST`
+  ordering (#37).
+- **JSONB filter operators** — `json_has_key` + `json_get_text` (#42).
+- **`FindMany.include()`** — to-one relation side-loading in a single
+  round trip (#44).
+- **PostGIS spatial filters** — `covers_geography` + `dwithin_geography`
+  (#48).
+- **Column projection** — `find_*.select(...)` returning a typed
+  `Projection<T>` instead of the full model (#51).
+- **`ProjectedFindMany.run_in_tx`**, plus an `enum` `Default` fix (#55).
+
+### Client streaming (cbor-seq)
+
+The generated clients gain first-class consumers for the streaming
+transport introduced above:
+
+- **Rust**: `RpcClient::call_streaming` returns an `mpsc::Receiver`,
+  fed by a `cbor-seq` streaming decoder (#30, #34). Also gains a typed
+  batch API — same method, two consumption modes (#53).
+- **Dart**: `CborSeqStreamTransformer` + a decoder-handle contract
+  (#43), and an `rpc_call_streamed` FFI entrypoint for
+  `/rpc/{op_id}` (#39).
+- **Flutter**: `execute_streamed` FFI shim over the cbor-seq path
+  (#33), and `FlutterCborSeqDecoder` for `dio`-driven streaming (#40).
+- **Codegen**: client generators now branch on `Schema.transport` to
+  emit RPC clients where the schema calls for them (#32, #50).
+
+### Workspace-wide 200-LoC refactor
+
+Every `.rs` file under `crates/*/src/` is now ≤200 LoC, landed across 16
+PRs (#57–#76). No public API changes — all splits preserve the crate
+surface via `pub use` re-exports. The major rewrites:
+
+- `cratestack-sqlx` and `cratestack-rusqlite` delegate / render / batch /
+  value modules split into focused submodules
+- `cratestack-axum` idempotency, rpc, transport, ratelimit, headers,
+  codec all broken into per-concern files
+- `cratestack-macros` four giants split (include / model / axum /
+  relation), medium files re-grouped
+- `cratestack-client-{dart,rust,typescript,flutter}` `lib.rs` split into
+  per-concern modules (largest: client-rust at 2369 → 18 submodules)
+- `cratestack-parser` 880-line `parse.rs`, 1086-line `validate.rs`, and
+  1336-line `tests.rs` split per topic
+- `cratestack-lsp` `main.rs` (1273 LoC) split into 11 submodules
+- `cratestack-client-dart` README and rpc-runtime jinja templates split
+  via `{% include %}` fragments (loader sets
+  `set_keep_trailing_newline(true)` for byte-identical output)
+- Inline `#[cfg(test)] mod tests` blocks throughout the workspace
+  extracted into `tests_<topic>.rs` siblings
+
+### README fixups
+
+Four crate READMEs (`cratestack-axum`, `cratestack-sqlx`,
+`cratestack-client-rust`, `cratestack-parser`) still referenced the
+pre-0.3.0 macro names (`include_schema!`,
+`include_client_macro!`) — updated to the current
+`include_server_schema!` / `include_client_schema!`. The `client-rust`
+README's two duplicate sections (one per old macro) collapse into one.
+
+### Other
+
+Test-support scaffolding (`tests/support/pg.rs`) covering
+compose/testcontainers/skip backend selection for PG-backed integration
+tests (#19), and an internal `cratestack-axum` module split
+(codec/transport/headers/query) with deduped RPC helpers (#31).
+
+## 0.3.2 (2026-05-14)
+
 ### Batch primitives — tRPC-style per-item envelope
 
 Five new ORM methods on every model delegate, on both the sqlx (server) and rusqlite (embedded) backends:
@@ -966,7 +1072,53 @@ summary: 2 total, 1 ok, 1 err
 - **Auto-generated `POST /<model>/batch-*` axum routes**: the wire envelope types (`BatchRequest<I>` / `BatchResponse<T>`) are stable in `cratestack-core` so apps can hand-roll a thin handler against the ORM today. Macro-driven route emission per model lands in a follow-up.
 - **Per-item `if_match` on the embedded `batch_update`**: the rusqlite layer doesn't enforce `@version` for single rows either; consistency over surprise.
 
-## 0.3.1 (unreleased)
+## 0.3.1 (2026-05-14)
+
+### New crate: `cratestack-migrate` — schema diff + migration generator
+
+Implements ADR-0004, the *authoring* side of the migration story: a new
+`cratestack-migrate` crate diffs a parsed `.cstack` against a committed
+snapshot and emits per-backend SQL migrations. The runner (already in
+`cratestack-sqlx`) is unchanged — it consumes the generated SQL
+identically to hand-written migrations.
+
+```
+cratestack migrate diff --schema schema.cstack --out-dir migrations --backend both --name <slug>
+```
+
+Per-backend output lives under
+`migrations/<postgres|sqlite>/<timestamp>_<slug>/` as `up.sql` /
+`down.sql`, alongside a committed `schema.snapshot.json`. The diff
+engine produces a backend-agnostic op list ordered by DDL dependencies
+(enums → renames → drops → creates → adds → check constraints → enum
+drops), covering table/column add-drop, indexes (from `@unique`),
+column type/nullability/default changes, renames (`@@rename` /
+`@rename`), enums, and check constraints (`@db_enforce` promotion of
+`@range` / `@length` / `@iso4217`).
+
+**Destructiveness gating.** Every op is classified Safe / Lossy /
+Blocking; `--allow-destructive` is required to write any migration
+containing a lossy op, and `down.sql` for a lossy migration is an
+explicit error stub (`RAISE EXCEPTION` / `RAISE(FAIL, ...)`) rather
+than a real rollback — matching the runner's irreversible-by-default
+posture (#16).
+
+**Deferred (intentional):** `migrate verify` and `migrate drift` need
+ephemeral DB spawning and live introspection, each with its own CI
+footprint; view-block IR ops need the `view` block itself (ADR-0003)
+built out first; `DropEnumVariant` needs a Postgres swap-dance plus a
+backfill plan for referencing rows.
+
+### Examples, docs, and CI
+
+- Pure-Rust example set covering all three 0.3.0 macros side by side
+  (#10), and a root README rewrite for the macro split (#11).
+- In-browser embedded SQLite example plus a wasm32 facade refactor
+  (#12); `embedded-expo` × `embedded-flutter` × `tauri-native` (#14);
+  `embedded-daemon` + `embedded-webhook` showing async I/O layered
+  around the sync `ModelDelegate` (#15).
+- CI's rustdoc job now restricts to the framework crates so it doesn't
+  pull in GTK transitively via the Tauri examples (#13).
 
 ### Upsert primitive
 
@@ -995,7 +1147,38 @@ Semantics:
 
 - `ModelDescriptor::new(...)` gained one trailing argument (`upsert_update_columns`). Schemas built through `include_*_schema!` are unaffected; hand-rolled descriptors need the extra `&[]`.
 
-## 0.3.0 (unreleased)
+## 0.3.0 (2026-05-13)
+
+### New crate: `cratestack-rusqlite` — the embedded SQLite backend
+
+The embedded backend's actual implementation: `ddl`, `delegate`,
+`render`, `row`, `runtime`, and `value` modules, plus an `ffi` layer for
+non-Rust embedders. This is the concrete crate the three-macros split
+below routes `include_embedded_schema!` to, and what the wasm/OPFS
+capability under "New features" builds on.
+
+### New crate: `cratestack-redis` — idempotency and rate-limit stores
+
+Two server-side Redis-backed stores, siblings to `cratestack-sqlx`'s
+equivalents, for multi-replica deployments that need shared state
+across instances rather than per-process memory:
+
+- **`RedisIdempotencyStore`** implements
+  `cratestack_axum::idempotency::IdempotencyStore`. Atomicity comes from
+  three Lua scripts (`reserve_or_fetch`, `complete`, `release`) run via
+  `EVALSHA` with `NOSCRIPT` fallback; reservation lifetimes are driven
+  by `PEXPIREAT`, and token rotation on reclaim plus token/status guards
+  inside `complete`/`release` stop a stale handler from poisoning a
+  newer reservation. State lives in one Redis hash per
+  `(principal, key)` at `<prefix>:idem:<sha256(principal || 0x00 ||
+  key)>` (#5).
+- **`RedisRateLimitStore`** enforces a single global token-bucket per
+  key across replicas via one atomic read-refill-decrement-write Lua
+  script; bucket state lives at `<prefix>:rl:<sha256(key)>` with a
+  self-refreshing `EXPIRE` so idle keys evict themselves (#7).
+
+Both skip their live-Redis integration tests cleanly when no Redis is
+configured, matching the existing sqlx-store test pattern.
 
 ### Headline: three macros, one schema, no dead weight
 
