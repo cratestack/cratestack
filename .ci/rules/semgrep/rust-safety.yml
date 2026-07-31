@@ -14,6 +14,15 @@ rules:
         - examples/
         - "**/*/bin/"
         - "**/*/tests/"
+        # `**/*/tests/` only matches Cargo's *integration* test directory.
+        # Unit tests conventionally live in a `#[cfg(test)] mod tests;`
+        # backed by a `tests.rs` file under `src/`, which that glob misses
+        # entirely — so every `.unwrap()` in a unit test was reported as a
+        # library panic. `.unwrap()` in a test is the point: it *is* the
+        # assertion. Excluding the file form too, and `*_test.rs` for the
+        # other common convention.
+        - "**/tests.rs"
+        - "**/*_test.rs"
     metadata:
       category: reliability
       cwe: CWE-252
