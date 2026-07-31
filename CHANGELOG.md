@@ -27,7 +27,224 @@ seed the editable form; it now maps NULL to the same "no value" sentinel
 every editor widget already uses, matching what the save path already
 expects. (#242)
 
-## 0.4.0 (unreleased)
+## 0.4.17 (2026-07-30)
+
+### Parser and migrate hardening around storage-type edge cases
+
+A cluster of related fixes tightening what the parser accepts and what
+`cratestack-migrate` emits, found while generating a round-trip test for
+every builtin scalar/enum across Postgres, SQLite, and the LSP (#232, #237):
+
+* Postgres now stores enums as `TEXT` + `CHECK` (not a native `CREATE TYPE
+  ... AS ENUM`), and bareword enum defaults are quoted correctly in the
+  emitted DDL (#233).
+* `type` blocks can no longer be used as a model field's storage type —
+  they're a payload shape for procedures, not a column type (#235).
+* List-arity scalar/enum model fields are rejected on datasource-backed
+  schemas, since there's no portable column type for "array of enum" across
+  both backends (#229, via #236).
+* Reconciled `#233`'s enum-list emitter test with `#229`/`#236`'s new
+  list-arity parser rejection — the two landed close together and briefly
+  disagreed on enum-list fields (#238).
+* `Json` now derives `Default`, fixing a compile failure under
+  `include_embedded_schema!` for models with a default-valued `Json` field
+  (#234).
+
+### Other fixes
+
+* Rate-limit store errors are logged instead of failing the request
+  silently (#215).
+* A CI-only quality pipeline (informal replacement for a paid SonarQube
+  instance) landed across several follow-up PRs — pinned-action scanners,
+  PR review-comment output instead of Check annotations, and a documented
+  gap-until-landed note for interim coverage (#216, #218, #220, #222, #225).
+
+### Dart: native gRPC client generator
+
+`generate-dart` gains a native gRPC client generator for schemas declaring
+`transport grpc`, plus channel-shutdown and per-call option exposure on the
+generated client, and gRPC-specific example/test templates (a pre-existing
+RPC-transport example/test bug was caught and fixed during review) (#210,
+via #211, #213, #214).
+
+## 0.4.16 (2026-07-26)
+
+No code changes. A clean recut of the release pipeline after v0.4.14 (which
+shipped GitHub-Release-only by deliberate choice) and v0.4.15 (crates.io +
+GitHub Release succeeded, but both npm publishes failed with `EOTP` — the
+configured `NPM_TOKEN` wasn't an Automation-type token). v0.4.16 is the
+first release to publish successfully to crates.io, npm (`@cratestack/cli`
+and `@cratestack/api`), and GitHub Release binaries in one shot, with zero
+manual publish steps.
+
+## 0.4.15 (2026-07-26)
+
+`cut-release-tag.yml`'s tag push now uses a dedicated `RELEASE_PAT` instead
+of the default `GITHUB_TOKEN` (#197). GitHub's anti-recursion protection
+silently no-ops any downstream workflow trigger from a push made with the
+default token — the tag itself lands fine, but `release-cli.yml` never
+fires off it. A PAT-authored push is treated as a normal external push and
+correctly cascades into the rest of the pipeline.
+
+## 0.4.14 (2026-07-26)
+
+### Protobuf + gRPC support
+
+`.cstack` schemas can now declare `transport grpc`, generating `.proto`
+message/enum definitions (with a field-number lockfile so wire numbers
+don't silently renumber across schema edits) and gRPC service surfaces.
+Design doc (#166) and implementation (across #168–#172) landed same-day
+(#167, #176). CRUD-only for this release — procedure/streaming support and
+a Rust gRPC client were carved out as follow-up tickets.
+
+### Schema-fingerprint drift header
+
+Every response now carries an `x-cratestack-schema-sha` header — a
+warn-only fingerprint of the server's schema, so a client running against
+a stale generated SDK can detect drift without a hard version pin. Shipped
+for the Rust server first (#179), then Dart and TypeScript REST/RPC clients
+(#180).
+
+### RPC client DX: composable link chain
+
+The generated TypeScript RPC client gains a composable `RpcLink` chain
+(request/response middleware — logging, batching, auth injection, etc.),
+published alongside a new `@cratestack/api` npm package carrying the
+batching link and other cross-cutting concerns out of the generated code
+itself (#182, #186).
+
+### CI-driven release pipeline
+
+The first version of the fully automated release flow: a `prepare-release`
+workflow bumps versions and opens a PR, merging it auto-tags via
+`cut-release-tag.yml`, and the tag push triggers `release-cli.yml` to
+publish crates.io + npm + GitHub Release binaries with no manual steps
+(#188). Landed rough — this version alone needed eight follow-up fixes to
+get a real dry run and then a real dispatch through the pipeline end to
+end: missing GTK/WebKit deps in CI (#189), the release-check test stage
+needing a bundled Studio UI first (#190), `cargo publish --dry-run`
+needing `--allow-dirty` (#191) and `--no-verify` (#192) in dry mode, dry
+mode needing to skip non-leaf crates entirely since a never-published
+version can't resolve as a dependency (#193), and two npm `pnpm install`
+call sites needing to skip the `cratestack-cli` binary download since
+neither actually needs it (#194, #196). (The pipeline's tag-push
+anti-recursion bug that blocked this version's own crates.io/npm publish
+is the separate v0.4.15 fix above.)
+
+### Other fixes
+
+* `Cuid` scalar validation relaxed to accept `cuid2` ids, not just the
+  original `cuid` format (#150, via #158).
+* `cratestack-redis` gains a `tls-rustls` feature for `rediss://`
+  connections (#151, via #159), and later in this same version switches
+  to caching and reusing a single connection instead of opening one per
+  call (#175, decision recorded in #177).
+* Design doc proposing an `Extensions` concept, reframing the rate-limiting
+  half of #139's declarative-surface decision (#160).
+* Clippy `too_many_arguments`/`type_complexity` cleanup in `cratestack-sql`
+  and `cratestack-sqlx` (#184, #185).
+
+## 0.4.13 (2026-07-22)
+
+A dense release — nine PRs, several the direct result of a full backlog
+pass over long-open tickets:
+
+* **`--check` drift-detection mode** for `generate-typescript` /
+  `generate-dart`: exits non-zero if generated output would differ from
+  what's on disk, for CI gates (#141).
+* **Prebuilt `cratestack-cli` binaries** — GitHub Releases, `cargo-binstall`
+  support, and an npm-installable wrapper, so installing the CLI no longer
+  requires a Rust toolchain (#142).
+* **`--full-selection` flag** for `generate-typescript`, emitting a fully-
+  required model type alongside the normal partial-selection type (#140).
+* **`cratestack diff`** — a new CLI subcommand that diffs two `.cstack`
+  schemas and classifies each change by its effect on the generated wire
+  contract (breaking / additive / internal-only), exiting non-zero on any
+  breaking change so it can gate CI on schema PRs (#144).
+* **Migrate baselining design spike** — a doc-only PR spiking Postgres
+  live-schema introspection for baselining an existing database against a
+  `.cstack` schema, not yet implemented (#135, via #143).
+* **Composite primary keys** via `@@id([...])` — parser and
+  `cratestack-migrate` DDL support landed; query builders, clients, and
+  policy integration are follow-up work (#145).
+* **Idempotency/rate-limiting declarative-surface decision** — a design
+  doc settling that rate-limiting stays an imperative, hand-wired concern
+  permanently, while idempotency is deferred pending an `OpExecutor` gate
+  (#139, via #146).
+* **`dbgenerated()` fix** — emits valid SQL instead of a broken default
+  expression, and warns when the expression can't be verified against the
+  target dialect (#148).
+* **Type-block field-reference fix** — qualifies a `type` block's
+  references to model types correctly instead of emitting an ambiguous
+  reference (#137, via #147).
+
+## 0.4.12 (2026-07-22)
+
+The generated TypeScript RPC client runtime now satisfies its own
+`exactOptionalPropertyTypes` compiler setting — a previous release enabled
+the stricter TS option in the generated code but the runtime itself wasn't
+compliant, so consumers with the same setting on saw type errors (#129).
+
+## 0.4.11 (2026-07-22)
+
+* Fixed `Page<T>`/`PageInfo`'s generated TypeScript shape not matching
+  what the wire actually sends (#124).
+* Capped the `list` route's page-size limit consistently across REST and
+  RPC transports, and made the RPC codec pluggable rather than hardcoded
+  (#126, closing #123 and #125).
+
+## 0.4.10 (2026-07-22)
+
+A round of audit-driven correctness fixes: a self-deadlock in the audit
+path, a wrong soft-delete snapshot, a server-only field leaking into the
+generated TypeScript client, and incorrect gating on TypeScript's generated
+`create` calls (#120) — plus a fix for cross-binary test table-name
+collisions inside `cratestack-pg`'s own test suite (#121).
+
+## 0.4.9 (2026-06-17)
+
+* Dart's CBOR decoder now normalizes decoded maps to `Map<String,
+  Object?>` instead of a more loosely-typed map shape (#115).
+* Fixed the `sqlite_offline_first` example failing to compile standalone,
+  and guarded the embedded examples in CI (#106).
+
+## 0.4.8 (2026-06-15)
+
+Studio UI chrome revamp: reworked visual chrome and a multi-`.cstack`
+target switcher, so one running Studio instance can browse several
+schemas' targets from the same UI (#105). The repo also adopted an
+AI-governance kit for issue/PR templates and contribution process around
+this time (#104).
+
+## 0.4.7 (2026-06-08)
+
+For schemas using `transport rpc`, the op id is now the canonical request
+identity — the value request signing and tracing key off, rather than an
+incidental routing detail (#102).
+
+## 0.4.6 (2026-06-07)
+
+Fixed `BatchableCall` mis-encoding `None` optionals as a CBOR empty array
+instead of a CBOR null in the Rust client (#100).
+
+## 0.4.4 (2026-05-20)
+
+* Published a documentation-only `cratestack` landing crate to crates.io
+  — after the umbrella-facade split below removed the real `cratestack`
+  crate, this keeps the name from going orphaned/squattable and points
+  visitors at `cratestack-pg` / `cratestack-sqlite` (#97, doctests
+  disabled on it in a same-day follow-up, #98).
+* `CoolError` now preserves the full typed `DatabaseError` chain instead
+  of flattening it, so callers can match on the underlying driver error
+  (#99).
+
+## 0.4.3 (2026-05-19)
+
+Follow-up to the facade split below: fixed generator-fixture test paths
+that still pointed at the removed `cratestack` umbrella instead of
+`cratestack-pg` (#96).
+
+## 0.4.2 (2026-05-19)
 
 ### Breaking: the `cratestack` umbrella facade was split
 
@@ -173,6 +390,18 @@ repo (`cratestack-docs` [#21](https://github.com/cratestack/cratestack-docs/pull
   validation / generated-client integration tests are now under
   `crates/cratestack-pg/tests/`; the SQLite e2e test under
   `crates/cratestack-sqlite/tests/`. No test logic was changed.
+
+### Other fixes
+
+* Projected-query decoding now tolerates a missing optional field instead
+  of erroring, matching how a partial `SELECT` projection is actually
+  expected to behave (#93).
+* `codec-json` is now an opt-out feature on `cratestack-client-rust`
+  rather than always-on (#94).
+* CI's rustdoc build now points at `cratestack-pg`, the facade split's
+  replacement for the removed `cratestack` umbrella (#95), and the
+  release workflow gained a test-retry + `SKIP_TESTS` escape hatch for
+  known-flaky suites (#81).
 
 ## 0.3.3 (unreleased)
 
