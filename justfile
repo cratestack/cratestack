@@ -247,6 +247,15 @@ bump NEW:
 	# Refresh Cargo.lock so all entries pick up the new version.
 	# Exclude the Flutter crate (uncommitted frb_generated glue → E0583).
 	cargo check --workspace --exclude embedded_flutter_native --quiet
+	# cratestack-studio-ui is its own separate `[workspace]` (excluded from
+	# the root one so contributors aren't forced onto the wasm32 toolchain),
+	# so it has its own Cargo.lock that the check above never touches. Left
+	# unrefreshed here, it silently drifts stale — its own recorded version
+	# stays behind Cargo.toml's — which then breaks any `--locked` build of
+	# that crate until someone notices and hand-fixes it (see #242). A plain
+	# `cargo check` on the host target is enough to update the lock; it
+	# doesn't need the wasm32 target or a wasm-capable clang for that.
+	cd crates/cratestack-studio-ui && cargo check --quiet
 	echo "bumped to {{NEW}}. Review with: git diff -- '**/Cargo.toml' Cargo.lock"
 
 # Workspace-wide validation gate. Mirrors what `just release` runs
