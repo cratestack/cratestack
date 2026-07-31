@@ -79,6 +79,16 @@ pub fn row_pk(row: &serde_json::Map<String, serde_json::Value>) -> Option<String
 }
 
 /// Snapshot a row's writable fields into the edit-mode signal map.
+///
+/// JSON `null` is mapped to `""`, not through [`format_cell`]: that
+/// helper's `"—"` is a *display* placeholder for the read-only
+/// table/drawer, and every editor widget (text, number, boolean and
+/// enum `<select>`, see `editors::render`) already treats `""` as its
+/// "no value" sentinel — `build_payload` turns an empty string back
+/// into `Value::Null` for optional fields. Routing `null` through
+/// `format_cell` here would seed the form with the literal `"—"`
+/// string, so an untouched NULL field gets corrupted into that string
+/// the moment the user clicks Save.
 pub fn snapshot_for_edit(
     row: &serde_json::Map<String, serde_json::Value>,
     model: &ModelSummary,
@@ -88,8 +98,79 @@ pub fn snapshot_for_edit(
         .iter()
         .filter(|f| !f.is_relation && f.arity != "list" && !f.is_id)
         .map(|f| {
-            let v = row.get(&f.name).map(format_cell).unwrap_or_default();
+            let v = match row.get(&f.name) {
+                None | Some(serde_json::Value::Null) => String::new(),
+                Some(value) => format_cell(value),
+            };
             (f.name.clone(), v)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::FieldSummary;
+
+    fn field(name: &str, type_name: &str, arity: &str) -> FieldSummary {
+        FieldSummary {
+            name: name.to_owned(),
+            type_name: type_name.to_owned(),
+            arity: arity.to_owned(),
+            is_id: false,
+            is_relation: false,
+            is_enum: false,
+            enum_variants: Vec::new(),
+        }
+    }
+
+    fn model(fields: Vec<FieldSummary>) -> ModelSummary {
+        ModelSummary {
+            name: "Widget".to_owned(),
+            primary_key: Some("id".to_owned()),
+            fields,
+        }
+    }
+
+    #[test]
+    fn snapshot_maps_null_to_empty_string_not_display_placeholder() {
+        let model = model(vec![field("nickname", "String", "optional")]);
+        let mut row = serde_json::Map::new();
+        row.insert("nickname".to_owned(), serde_json::Value::Null);
+
+        let snapshot = snapshot_for_edit(&row, &model);
+
+        assert_eq!(snapshot.get("nickname"), Some(&String::new()));
+    }
+
+    #[test]
+    fn edit_then_save_with_no_changes_keeps_null_field_null() {
+        // Reproduces the reported bug end-to-end: open a row with a
+        // NULL optional column for edit, then Save without touching
+        // anything. The saved payload must omit the field as Null,
+        // never as the "—" display placeholder.
+        let fields = vec![field("nickname", "String", "optional")];
+        let model = model(fields.clone());
+        let mut row = serde_json::Map::new();
+        row.insert("nickname".to_owned(), serde_json::Value::Null);
+
+        let snapshot = snapshot_for_edit(&row, &model);
+        let payload = crate::editors::build_payload(&fields, &snapshot);
+
+        assert_eq!(payload.get("nickname"), Some(&serde_json::Value::Null));
+    }
+
+    #[test]
+    fn snapshot_preserves_non_null_values_via_format_cell() {
+        let model = model(vec![field("nickname", "String", "optional")]);
+        let mut row = serde_json::Map::new();
+        row.insert(
+            "nickname".to_owned(),
+            serde_json::Value::String("ada".to_owned()),
+        );
+
+        let snapshot = snapshot_for_edit(&row, &model);
+
+        assert_eq!(snapshot.get("nickname"), Some(&"ada".to_owned()));
+    }
 }
