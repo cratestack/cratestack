@@ -22,14 +22,22 @@ pub(crate) use specs::template_specs_for;
 /// preset's per-model template uses; every other spec (the entire
 /// default/REST/RPC/GRPC surface in `specs.rs`) stays `Fixed`, so their
 /// rendering is byte-for-byte what it was before this enum existed.
+///
+/// `PerModel` carries a filename suffix (issue #305): a model's plain,
+/// framework-free functions (`PerModel(".ts")`) and its SWR hooks
+/// (`PerModel(".hooks.ts")`) are two *separate* generated files sharing
+/// one model, not one file — see `crate::swr::mod`'s own doc comment for
+/// why. Both still fan out over the same model list and land under
+/// `src/models/`; the suffix is the only thing that differs between them.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum OutputPath {
     /// A single output file, known at compile time.
     Fixed(&'static str),
     /// Rendered once per model in the schema; the concrete path is
     /// computed at render time from the model's name (kebab-case, per
-    /// this repo's file-naming convention) under `src/models/`.
-    PerModel,
+    /// this repo's file-naming convention) under `src/models/`, with this
+    /// suffix appended (e.g. `.ts`, `.hooks.ts`).
+    PerModel(&'static str),
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -4,8 +4,16 @@ export * from "./links";
 // walk) — `./cbor-seq` is the public surface for boundary-scanning; see
 // its own header comment.
 export * from "./cbor-seq";
+export * from "./swr-keys";
 export * from "./models/shared";
 {% for model in models %}
 export * from "./models/{{ model.file_stem }}";
 {% endfor %}
 export * from "./procedures";
+// Hooks (issue #305) are deliberately NOT re-exported from this root
+// index: it must stay importable with nothing but the runtime installed
+// (see `src/swr/mod.rs`'s module doc), and a barrel `export *` here
+// would force `swr`/`react` to resolve for anyone importing anything
+// from the package root, even `CratestackRpcRuntime` alone. Import a
+// hook from its own model's `.hooks` module instead, e.g.
+// `{{ package_name }}/models/{{ models[0].file_stem if models else "<model>" }}.hooks`.

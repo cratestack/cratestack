@@ -41,20 +41,35 @@ pub(crate) struct SwrSharedView {
     pub(crate) imports: Vec<SwrImport>,
 }
 
-/// One entry in the model list `README.md`/`index.ts` iterate — just
-/// enough to print an import line and a usage snippet, not the full
-/// per-model file content (see [`SwrModelFileContext`] for that).
+/// One entry in the model list `README.md`/`index.ts`/`src/swr-keys.ts`
+/// iterate — just enough to print an import line, a usage snippet, and
+/// this model's cache-key branch, not the full per-model file content
+/// (see [`SwrModelFileContext`] for that). `route`/`primary_key_type`
+/// are `crate::views::ModelApiView`'s own fields, copied flat here
+/// rather than nesting the whole view, since `src/swr-keys.ts` (issue
+/// #305) is the only *shared* template that needs them alongside the
+/// function/hook names — see that template for why keys are built from
+/// `name`/`route` directly (parser-unique identifiers already used for
+/// real request dispatch) instead of the react-query-oriented
+/// `*_query_key` string fields on `ModelApiView`.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct SwrModelSummary {
     pub(crate) name: String,
     pub(crate) file_stem: String,
     pub(crate) accessor: String,
+    pub(crate) route: String,
+    pub(crate) primary_key_type: String,
     pub(crate) allows_create: bool,
     pub(crate) list_fn: String,
     pub(crate) get_fn: String,
     pub(crate) create_fn: String,
     pub(crate) update_fn: String,
     pub(crate) delete_fn: String,
+    pub(crate) list_hook: String,
+    pub(crate) get_hook: String,
+    pub(crate) create_hook: String,
+    pub(crate) update_hook: String,
+    pub(crate) delete_hook: String,
 }
 
 /// `src/procedures.ts`'s content.
@@ -112,4 +127,12 @@ pub(crate) struct SwrModelFileContext {
     pub(crate) create_fn: String,
     pub(crate) update_fn: String,
     pub(crate) delete_fn: String,
+    /// Issue #305: the `useSWR`/`useSWRMutation` hook wrapping each
+    /// function above — see `crate::swr::hook_naming` for the naming
+    /// rule (a read hook drops its verb, a write hook keeps it).
+    pub(crate) list_hook: String,
+    pub(crate) get_hook: String,
+    pub(crate) create_hook: String,
+    pub(crate) update_hook: String,
+    pub(crate) delete_hook: String,
 }

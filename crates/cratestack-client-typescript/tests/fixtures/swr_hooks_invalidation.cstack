@@ -1,0 +1,23 @@
+// Fixture for issue #305's invalidation proof (`tests/swr_hooks_invalidation.rs`,
+// a real vitest/@testing-library/react run, not a Rust string assertion).
+// Two independent RPC models with no relation between them — `Widget`'s
+// mutations must invalidate `Widget`'s own queries and must NOT cause a
+// refetch of `Gadget`'s, which is exactly what this fixture is shaped to
+// prove: a single-model schema can't distinguish "invalidated the right
+// thing" from "invalidated everything".
+
+transport rpc
+
+model Widget {
+  id Int @id
+  name String
+
+  @@allow("create", auth() != null)
+}
+
+model Gadget {
+  id Int @id
+  name String
+
+  @@allow("create", auth() != null)
+}

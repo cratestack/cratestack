@@ -41,10 +41,13 @@ fn swr_rest_file_set_matches_the_expected_layout() {
             "package.json",
             "src/index.ts",
             "src/models/shared.ts",
+            "src/models/widget.hooks.ts",
             "src/models/widget.ts",
+            "src/procedures.hooks.ts",
             "src/procedures.ts",
             "src/queries.ts",
             "src/runtime.ts",
+            "src/swr-keys.ts",
             "tsconfig.json",
         ],
         "swr preset's REST file set changed unexpectedly"
@@ -70,10 +73,13 @@ fn swr_rpc_file_set_matches_the_expected_layout() {
             "src/index.ts",
             "src/links.ts",
             "src/models/shared.ts",
+            "src/models/widget.hooks.ts",
             "src/models/widget.ts",
+            "src/procedures.hooks.ts",
             "src/procedures.ts",
             "src/runtime.ts",
             "src/stream-terminal.ts",
+            "src/swr-keys.ts",
             "tsconfig.json",
         ],
         "swr preset's RPC file set changed unexpectedly"
@@ -98,36 +104,101 @@ fn swr_per_model_file_has_types_and_plain_functions() {
 
 #[test]
 fn swr_per_model_functions_are_framework_free() {
-    // Static proof half of AC #5 — no React import, no hook. The runtime
-    // half (actually calling one against a stub server) is
+    // Static proof half of AC #9 (issue #305) — the plain-function files
+    // from #304 (`src/models/<model>.ts`, `src/procedures.ts`, and every
+    // other non-`.hooks.ts` file) still carry zero React/`swr` reference,
+    // even though hooks now exist elsewhere in the package — see
+    // `src/swr/mod.rs`'s module doc for why hooks live in a *sibling*
+    // `.hooks.ts` file instead of being appended here: an `import useSWR
+    // from "swr"` in the same file `getWidget` lives in would be eagerly
+    // resolved the moment that file loads, regardless of which export an
+    // importer asked for, breaking the zero-`node_modules` runtime proof
+    // below. The runtime half (actually calling a plain function against
+    // a stub server with no `swr`/`react` installed at all) is
     // `tests/swr_runtime.rs`.
     let package = generate_for("tiny_rest", TypeScriptPreset::Swr);
     for file in package
         .files
         .iter()
-        .filter(|f| f.file_name.ends_with(".ts"))
+        .filter(|f| f.file_name.ends_with(".ts") && !f.file_name.ends_with(".hooks.ts"))
     {
+        // Checks the actual `import ... from "swr"/"react"` statement, not
+        // bare mentions of the word "swr"/"react" in prose — several of
+        // these files' own header comments legitimately explain *why*
+        // they stay free of such an import (see e.g. `src/swr-keys.ts`'s
+        // header, or this file's own doc comment above), which would
+        // otherwise false-positive a plain substring check.
         assert!(
-            !file.contents.contains("\"react\"") && !file.contents.contains("'react'"),
+            !file.contents.contains("from \"react\"") && !file.contents.contains("from 'react'"),
             "{} must not import react:\n{}",
             file.file_name,
             file.contents
         );
         assert!(
-            !file.contents.contains("useSWR") && !file.contents.contains("use client"),
-            "{} must not reference a hook or client-component directive — issue #305, not #304:\n{}",
+            !file.contents.contains("from \"swr\"")
+                && !file.contents.contains("from 'swr'")
+                && !file.contents.contains("from \"swr/mutation\"")
+                && !file.contents.contains("use client"),
+            "{} must not import swr or reference a client-component directive:\n{}",
             file.file_name,
             file.contents
         );
     }
-    let package_json = file(&package, "package.json");
+    // The root index never re-exports a `.hooks` module either (same
+    // reasoning, one level up: `import { CratestackRuntime } from
+    // "<pkg>"` must not force `swr` to resolve).
+    let index = file(&package, "src/index.ts");
     assert!(
-        !package_json.contains("react")
-            && !package_json.contains("\"swr\":")
-            && !package_json.contains("peerDependencies"),
-        "swr preset's package.json must not declare any framework peer dependency yet \
-         (no hooks exist until #305):\n{package_json}"
+        !index
+            .lines()
+            .any(|line| line.starts_with("export") && line.contains(".hooks")),
+        "src/index.ts must not re-export any .hooks module:\n{index}"
     );
+}
+
+#[test]
+fn swr_model_hooks_file_is_a_sibling_of_the_plain_function_file() {
+    // Issue #305 AC #1/#2/#3: every model gets a `useSWR`/`useSWRMutation`
+    // hook per operation, emitted into a per-model file (not a whole-
+    // schema dump), as a thin wrapper over the plain function of the same
+    // operation — never a reimplementation of the fetch itself.
+    let package = generate_for("tiny_rest", TypeScriptPreset::Swr);
+    let hooks = file(&package, "src/models/widget.hooks.ts");
+
+    assert!(hooks.contains("export function useWidgets("));
+    assert!(hooks.contains("export function useWidget("));
+    assert!(hooks.contains("export function useCreateWidget("));
+    assert!(hooks.contains("export function useUpdateWidget("));
+    assert!(hooks.contains("export function useDeleteWidget("));
+    // Thin wrapper: hooks call the imported plain functions, they don't
+    // reimplement `runtime.get`/`.post`/etc. themselves.
+    assert!(hooks.contains("() => listWidgets(runtime, options)"));
+    assert!(!hooks.contains("runtime.get<"));
+    assert!(!hooks.contains("runtime.post<"));
+}
+
+#[test]
+fn swr_procedures_hooks_file_covers_query_and_mutation_kinds() {
+    let package = generate_for("tiny_rest", TypeScriptPreset::Swr);
+    let hooks = file(&package, "src/procedures.hooks.ts");
+    // `tiny_rest.cstack`'s `echoName` procedure — see its own fixture
+    // file for `kind`.
+    assert!(
+        hooks.contains("export function useEchoNameQuery(")
+            || hooks.contains("export function useEchoNameMutation(")
+    );
+}
+
+#[test]
+fn swr_package_json_declares_swr_and_react_as_peer_dependencies() {
+    // AC #8: `swr` (and the `react` it needs) are *peer* dependencies —
+    // consumers who never import a `.hooks` module don't need them
+    // installed at all.
+    let package = generate_for("tiny_rest", TypeScriptPreset::Swr);
+    let package_json = file(&package, "package.json");
+    assert!(package_json.contains("\"peerDependencies\""));
+    assert!(package_json.contains("\"swr\": \"^2.2.0\""));
+    assert!(package_json.contains("\"react\":"));
 }
 
 #[test]
@@ -250,6 +321,74 @@ fn relation_cycle_uses_type_only_cross_imports_with_no_value_level_cycle() {
     );
 }
 
+/// Acceptance test for issue #305 AC #4 ("A shared, exported key factory
+/// produces cache keys ... stable and collision-free across models ...
+/// prove with a fixture designed to collide"). `swr_key_collision.cstack`
+/// has two models (`UserGroup`, `User_Group`) whose react-query-oriented
+/// `ModelApiView::list_query_key` field — `to_camel_case(name) + "List"`
+/// — collapses to the identical string `"userGroupList"` for both (see
+/// the fixture's own header comment for the exact mechanism), which
+/// would silently overwrite one property in that preset's flat
+/// `cratestackQueryKeys` object. `src/swr-keys.ts` nests keys under each
+/// model's own literal, parser-unique schema name instead, so it must
+/// keep both models as distinct entries with distinct emitted key
+/// strings — this test proves that, not just that both models render at
+/// all.
+#[test]
+fn swr_key_factory_keeps_similarly_named_models_distinct() {
+    let package = generate_for("swr_key_collision", TypeScriptPreset::Swr);
+    let keys = file(&package, "src/swr-keys.ts");
+
+    // Both models get their own nested entry, keyed by their literal
+    // schema name — not the (colliding) camelCase-derived name.
+    assert!(
+        keys.contains("UserGroup: {"),
+        "missing UserGroup entry:\n{keys}"
+    );
+    assert!(
+        keys.contains("User_Group: {"),
+        "missing User_Group entry:\n{keys}"
+    );
+
+    // The actual emitted key strings stay distinct (dispatch-unique op
+    // ids), proving there is no overwrite: each model's dotted op id
+    // appears exactly twice — once in its own `list` key builder, once
+    // in its own `listMatches` filter — and, critically, `UserGroup`'s
+    // two occurrences are never counted against `User_Group`'s (a
+    // substring match would be a false pass here, since "UserGroup" is
+    // not a substring of "User_Group" or vice versa).
+    assert_eq!(
+        keys.matches("\"model.UserGroup.list\"").count(),
+        2,
+        "model.UserGroup.list key string should appear exactly twice (list + listMatches):\n{keys}"
+    );
+    assert_eq!(
+        keys.matches("\"model.User_Group.list\"").count(),
+        2,
+        "model.User_Group.list key string should appear exactly twice (list + listMatches):\n{keys}"
+    );
+
+    // Sanity check on the premise itself: the react-query-oriented field
+    // this preset deliberately does NOT reuse really does collide for
+    // this fixture, confirming the fixture actually exercises the risk
+    // (not a vacuous test) — the DEFAULT preset's flat `cratestackQueryKeys`
+    // object literal ends up with the *same* property name
+    // (`userGroupList`) written out twice, once per model: a literal
+    // duplicate object key (TypeScript error ts(1117): "An object
+    // literal cannot have multiple properties with the same name"), not
+    // just a hypothetical risk.
+    let default_package = generate_for("swr_key_collision", TypeScriptPreset::Default);
+    let react_query = file(&default_package, "src/react-query.ts");
+    assert_eq!(
+        react_query.matches("userGroupList:").count(),
+        2,
+        "expected `userGroupList:` written out twice in the DEFAULT preset's flat key object \
+         — once per model — proving react-query's `to_camel_case`-derived key genuinely \
+         collides (a literal duplicate object-key) for UserGroup/User_Group, which is exactly \
+         why `swr-keys.ts` doesn't reuse it:\n{react_query}"
+    );
+}
+
 fn generate_for(fixture_stem: &str, preset: TypeScriptPreset) -> GeneratedTypeScriptPackage {
     let fixture_path = format!("tests/fixtures/{fixture_stem}.cstack");
     let schema = cratestack_parser::parse_schema_file(&fixture_path)
@@ -262,7 +401,7 @@ fn generate_for(fixture_stem: &str, preset: TypeScriptPreset) -> GeneratedTypeSc
             ..TypeScriptGeneratorConfig::default()
         },
     )
-    .expect("swr preset should render")
+    .expect("generation should succeed for this fixture/preset combination")
 }
 
 fn file<'a>(package: &'a GeneratedTypeScriptPackage, file_name: &str) -> &'a str {

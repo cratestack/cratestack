@@ -1,10 +1,11 @@
 //! Builds the `swr` preset's template contexts (issue #304) from a
 //! `Schema` + the ownership computation (`crate::swr::ownership`). The
 //! lower-level import/ownership-splitting helpers live in
-//! `context_imports.rs` — split out to keep this file under this repo's
-//! ~200-LoC convention.
+//! `context_imports.rs`, and the model-summary builder lives in
+//! `model_summary.rs` — both split out to keep this file under this
+//! repo's ~200-LoC convention.
 
-use cratestack_core::{Model, Schema};
+use cratestack_core::Schema;
 
 use crate::config::TypeScriptGeneratorConfig;
 use crate::naming::{model_fn_names, procedure_wrapper_name, to_kebab_case};
@@ -18,8 +19,10 @@ use super::context_imports::{
     build_imports, model_refs_in_fields, owned_by, procedure_arg_fields, procedure_model_refs,
     type_decls_model_refs,
 };
+use super::hook_naming::model_hook_names;
+use super::model_summary::build_model_summary;
 use super::ownership::{TypeOwner, TypeOwnership};
-use super::views::{SwrModelFileContext, SwrModelSummary, SwrProceduresView, SwrSchemaContext};
+use super::views::{SwrModelFileContext, SwrProceduresView, SwrSchemaContext};
 
 pub(crate) fn build_shared_context(
     schema: &Schema,
@@ -41,7 +44,11 @@ pub(crate) fn build_shared_context(
         imports: build_imports(Vec::new(), shared_model_refs, None, "", "./"),
     };
 
-    let models = schema.models.iter().map(model_summary).collect::<Vec<_>>();
+    let models = schema
+        .models
+        .iter()
+        .map(build_model_summary)
+        .collect::<Vec<_>>();
 
     let (procedures_owned_enums, procedures_owned_interfaces) =
         owned_by(schema, ownership, &enum_names, |owner| {
@@ -172,6 +179,7 @@ pub(crate) fn build_model_file_contexts(
             );
 
             let fns = model_fn_names(&model.name);
+            let hooks = model_hook_names(&model.name);
             SwrModelFileContext {
                 file_stem: to_kebab_case(&model.name),
                 model: build_model_api(model),
@@ -186,23 +194,12 @@ pub(crate) fn build_model_file_contexts(
                 create_fn: fns.create,
                 update_fn: fns.update,
                 delete_fn: fns.delete,
+                list_hook: hooks.list,
+                get_hook: hooks.get,
+                create_hook: hooks.create,
+                update_hook: hooks.update,
+                delete_hook: hooks.delete,
             }
         })
         .collect()
-}
-
-fn model_summary(model: &Model) -> SwrModelSummary {
-    let api = build_model_api(model);
-    let fns = model_fn_names(&model.name);
-    SwrModelSummary {
-        name: model.name.clone(),
-        file_stem: to_kebab_case(&model.name),
-        accessor: api.accessor,
-        allows_create: api.allows_create,
-        list_fn: fns.list,
-        get_fn: fns.get,
-        create_fn: fns.create,
-        update_fn: fns.update,
-        delete_fn: fns.delete,
-    }
 }

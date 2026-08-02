@@ -1,0 +1,159 @@
+// Generated SWR hooks for this model (issue #305) — a sibling file to
+// `./{{ file_stem }}` (the plain, framework-free functions from issue
+// #304), not appended into it: see `cratestack-client-typescript`'s
+// `src/swr/mod.rs` module doc for why hooks and plain functions can't
+// share a file without breaking the framework-free guarantee (`import
+// useSWR from "swr"` is a top-level static import, eagerly resolved the
+// moment this file loads, regardless of which export the importer
+// asked for — that must never be true of `./{{ file_stem }}`).
+//
+// Every hook below is a thin wrapper: the fetching logic lives exactly
+// once, in the plain function it calls, never duplicated here. Cache
+// keys always come from `swrKeys` (`../swr-keys`), never a hand-written
+// literal — see that file's header comment for why (collision-freedom).
+//
+// Invalidation rule (mutations only — read hooks never invalidate):
+{% if create_input %}
+//   - `{{ create_hook }}` invalidates this model's list — every cached
+//     list, regardless of its `input` filter/pagination.
+{% endif %}
+//   - `{{ update_hook }}` invalidates the list AND the mutated entity's
+//     own detail (both refetch on the next render that reads them).
+//   - `{{ delete_hook }}` invalidates the list AND drops the deleted
+//     entity's detail from the cache outright (`revalidate: false` —
+//     there is nothing left to refetch).
+// This rule is fixed, not configurable per call. A consumer who needs
+// different invalidation should call `mutate`/`swrKeys` directly rather
+// than reach for these hooks.
+
+import useSWR, { useSWRConfig, type SWRConfiguration, type SWRResponse } from "swr";
+import useSWRMutation, {
+  type SWRMutationConfiguration,
+  type SWRMutationResponse,
+} from "swr/mutation";
+import type { CratestackRpcRuntime } from "../runtime";
+import { swrKeys } from "../swr-keys";
+import {
+  {{ list_fn }},
+  {{ get_fn }},
+{% if create_input %}
+  {{ create_fn }},
+{% endif %}
+  {{ update_fn }},
+  {{ delete_fn }},
+  type {{ model_interface.name }},
+{% if create_input %}
+  type {{ create_input.name }},
+{% endif %}
+  type {{ update_input.name }},
+} from "./{{ file_stem }}";
+
+export function {{ list_hook }}(
+  runtime: CratestackRpcRuntime,
+  input: Record<string, unknown> = {},
+  config?: SWRConfiguration<{{ model.list_return_type }}, Error>,
+): SWRResponse<{{ model.list_return_type }}, Error> {
+  return useSWR(swrKeys.model.{{ model.name }}.list(input), () => {{ list_fn }}(runtime, input), config);
+}
+
+// `id` accepts `null`/`undefined` so this hook can be called before its
+// argument is known (e.g. a route param that hasn't resolved yet) —
+// `swrKeys.model.{{ model.name }}.get` returns `null` in that case, which is
+// SWR's conditional-fetching idiom: `useSWR(null, ...)` never fires a
+// request, unlike calling {{ get_fn }} directly with `undefined` would.
+export function {{ get_hook }}(
+  runtime: CratestackRpcRuntime,
+  id: {{ model.primary_key_type }} | null | undefined,
+  config?: SWRConfiguration<{{ model_interface.name }}, Error>,
+): SWRResponse<{{ model_interface.name }}, Error> {
+  return useSWR(
+    swrKeys.model.{{ model.name }}.get(id),
+    () => {{ get_fn }}(runtime, id as {{ model.primary_key_type }}),
+    config,
+  );
+}
+
+{% if create_input %}
+export function {{ create_hook }}(
+  runtime: CratestackRpcRuntime,
+  config?: SWRMutationConfiguration<
+    {{ model_interface.name }},
+    Error,
+    ReturnType<typeof swrKeys.model.{{ model.name }}.create>,
+    {{ create_input.name }}
+  >,
+): SWRMutationResponse<
+  {{ model_interface.name }},
+  Error,
+  ReturnType<typeof swrKeys.model.{{ model.name }}.create>,
+  {{ create_input.name }}
+> {
+  const { mutate } = useSWRConfig();
+  return useSWRMutation(
+    swrKeys.model.{{ model.name }}.create(),
+    (_key, { arg }: { arg: {{ create_input.name }} }) => {{ create_fn }}(runtime, arg),
+    {
+      ...config,
+      onSuccess: (data, key, mutationConfig) => {
+        void mutate(swrKeys.model.{{ model.name }}.listMatches);
+        config?.onSuccess?.(data, key, mutationConfig);
+      },
+    },
+  );
+}
+
+{% endif %}
+export function {{ update_hook }}(
+  runtime: CratestackRpcRuntime,
+  id: {{ model.primary_key_type }},
+  config?: SWRMutationConfiguration<
+    {{ model_interface.name }},
+    Error,
+    ReturnType<typeof swrKeys.model.{{ model.name }}.update>,
+    {{ update_input.name }}
+  >,
+): SWRMutationResponse<
+  {{ model_interface.name }},
+  Error,
+  ReturnType<typeof swrKeys.model.{{ model.name }}.update>,
+  {{ update_input.name }}
+> {
+  const { mutate } = useSWRConfig();
+  return useSWRMutation(
+    swrKeys.model.{{ model.name }}.update(id),
+    (_key, { arg }: { arg: {{ update_input.name }} }) => {{ update_fn }}(runtime, id, arg),
+    {
+      ...config,
+      onSuccess: (data, key, mutationConfig) => {
+        void mutate(swrKeys.model.{{ model.name }}.listMatches);
+        void mutate(swrKeys.model.{{ model.name }}.get(id));
+        config?.onSuccess?.(data, key, mutationConfig);
+      },
+    },
+  );
+}
+
+export function {{ delete_hook }}(
+  runtime: CratestackRpcRuntime,
+  id: {{ model.primary_key_type }},
+  config?: SWRMutationConfiguration<
+    void,
+    Error,
+    ReturnType<typeof swrKeys.model.{{ model.name }}.delete>,
+    void
+  >,
+): SWRMutationResponse<void, Error, ReturnType<typeof swrKeys.model.{{ model.name }}.delete>, void> {
+  const { mutate } = useSWRConfig();
+  return useSWRMutation(
+    swrKeys.model.{{ model.name }}.delete(id),
+    () => {{ delete_fn }}(runtime, id),
+    {
+      ...config,
+      onSuccess: (data, key, mutationConfig) => {
+        void mutate(swrKeys.model.{{ model.name }}.listMatches);
+        void mutate(swrKeys.model.{{ model.name }}.get(id), undefined, { revalidate: false });
+        config?.onSuccess?.(data, key, mutationConfig);
+      },
+    },
+  );
+}

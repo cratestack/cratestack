@@ -1,10 +1,14 @@
-//! Template specs for the `swr` preset (issue #304). A handful of specs
-//! reuse the default preset's own compiled-in templates verbatim —
+//! Template specs for the `swr` preset (issues #304/#305). A handful of
+//! specs reuse the default preset's own compiled-in templates verbatim —
 //! `runtime.ts`/`queries.ts`/`links.ts`/`cbor-*.ts`/`stream-terminal.ts`
 //! and `tsconfig.json` need no per-preset changes, since they're already
 //! model-agnostic (see each `.j2` file's own header comment) — everything
-//! else (`package.json`, `README.md`, the per-model file, `shared.ts`,
-//! `procedures.ts`, `index.ts`) is new and preset-specific.
+//! else (`package.json`, `README.md`, the per-model file + its sibling
+//! hooks file, `shared.ts`, `swr-keys.ts`, `procedures.ts` + its sibling
+//! hooks file, `index.ts`) is new and preset-specific. See `super`'s own
+//! doc comment for why each model/`procedures.ts` gets a *separate*
+//! `.hooks.ts` file rather than the hooks living in the same file as the
+//! plain functions.
 
 use cratestack_core::TransportStyle;
 
@@ -46,13 +50,28 @@ const REST: &[TemplateSpec] = &[
     },
     TemplateSpec {
         template_name: "swr-models-rest.ts.j2",
-        output_path: OutputPath::PerModel,
+        output_path: OutputPath::PerModel(".ts"),
         default_source: include_str!("../../templates/src/swr/models-rest.ts.j2"),
+    },
+    TemplateSpec {
+        template_name: "swr-models-hooks-rest.ts.j2",
+        output_path: OutputPath::PerModel(".hooks.ts"),
+        default_source: include_str!("../../templates/src/swr/models-hooks-rest.ts.j2"),
     },
     TemplateSpec {
         template_name: "swr-procedures-rest.ts.j2",
         output_path: OutputPath::Fixed("src/procedures.ts"),
         default_source: include_str!("../../templates/src/swr/procedures-rest.ts.j2"),
+    },
+    TemplateSpec {
+        template_name: "swr-procedures-hooks-rest.ts.j2",
+        output_path: OutputPath::Fixed("src/procedures.hooks.ts"),
+        default_source: include_str!("../../templates/src/swr/procedures-hooks-rest.ts.j2"),
+    },
+    TemplateSpec {
+        template_name: "swr-keys-rest.ts.j2",
+        output_path: OutputPath::Fixed("src/swr-keys.ts"),
+        default_source: include_str!("../../templates/src/swr/keys-rest.ts.j2"),
     },
     TemplateSpec {
         template_name: "swr-index-rest.ts.j2",
@@ -89,13 +108,28 @@ const RPC: &[TemplateSpec] = &[
     },
     TemplateSpec {
         template_name: "swr-models-rpc.ts.j2",
-        output_path: OutputPath::PerModel,
+        output_path: OutputPath::PerModel(".ts"),
         default_source: include_str!("../../templates/src/swr/models-rpc.ts.j2"),
+    },
+    TemplateSpec {
+        template_name: "swr-models-hooks-rpc.ts.j2",
+        output_path: OutputPath::PerModel(".hooks.ts"),
+        default_source: include_str!("../../templates/src/swr/models-hooks-rpc.ts.j2"),
     },
     TemplateSpec {
         template_name: "swr-procedures-rpc.ts.j2",
         output_path: OutputPath::Fixed("src/procedures.ts"),
         default_source: include_str!("../../templates/src/swr/procedures-rpc.ts.j2"),
+    },
+    TemplateSpec {
+        template_name: "swr-procedures-hooks-rpc.ts.j2",
+        output_path: OutputPath::Fixed("src/procedures.hooks.ts"),
+        default_source: include_str!("../../templates/src/swr/procedures-hooks-rpc.ts.j2"),
+    },
+    TemplateSpec {
+        template_name: "swr-keys-rpc.ts.j2",
+        output_path: OutputPath::Fixed("src/swr-keys.ts"),
+        default_source: include_str!("../../templates/src/swr/keys-rpc.ts.j2"),
     },
     TemplateSpec {
         template_name: "swr-index-rpc.ts.j2",

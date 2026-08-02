@@ -1,14 +1,37 @@
-//! The `swr` preset (issue #304, epic #298): one `src/models/<model>.ts`
-//! file per model (types + plain framework-free async functions), a
-//! shared-types file for types 2+ models reference, and a
-//! `src/procedures.ts` for procedures in the same shape. This module is
-//! a sibling pipeline to `crate::generator`'s default path, not a
+//! The `swr` preset (issues #304/#305, epic #298): one
+//! `src/models/<model>.ts` file per model (types + plain framework-free
+//! async functions), a shared-types file for types 2+ models reference,
+//! and a `src/procedures.ts` for procedures in the same shape — plus,
+//! per model/procedures file, a sibling `.hooks.ts` file of `useSWR`/
+//! `useSWRMutation` hooks wrapping those functions. This module is a
+//! sibling pipeline to `crate::generator`'s default path, not a
 //! modification of it — see `generator.rs`'s doc comment for why keeping
 //! them separate is what makes the default preset's byte-identical
 //! guarantee easy to trust.
+//!
+//! ## Why hooks are a *sibling* file, not appended to the plain-function
+//! ## file (issue #305)
+//!
+//! The epic's own desired-output sketch shows one file per model holding
+//! both; a literal reading of that would append the hooks straight into
+//! `src/models/<model>.ts`. That's incompatible with issue #304's own
+//! framework-free guarantee, `tests/swr_runtime.rs`: ECMAScript modules
+//! resolve and evaluate *every* top-level static import in a file the
+//! moment that file is loaded, regardless of which named export the
+//! importer actually asked for — `import { getWidget } from
+//! "./models/widget"` would still eagerly resolve a same-file `import
+//! useSWR from "swr"`, and fail outright with zero `node_modules`
+//! present (exactly the scenario that test exercises). So the plain
+//! functions and their hooks are two files sharing one model directory
+//! entry (`widget.ts` / `widget.hooks.ts`) — "per-model", matching
+//! issue #305's "no separate whole-schema hooks dump file" requirement,
+//! without smuggling a hook-framework dependency into a file that must
+//! stay importable with nothing but the runtime installed.
 
 mod context;
 mod context_imports;
+mod hook_naming;
+mod model_summary;
 mod ownership;
 mod ownership_graph;
 mod templates;
@@ -49,13 +72,13 @@ pub(crate) fn generate(
                     contents,
                 });
             }
-            OutputPath::PerModel => {
+            OutputPath::PerModel(suffix) => {
                 for model_context in &model_contexts {
                     let contents = template.render(model_context).map_err(|error| {
                         TypeScriptGeneratorError::TemplateRender(spec.template_name, error)
                     })?;
                     files.push(GeneratedTypeScriptFile {
-                        file_name: format!("src/models/{}.ts", model_context.file_stem),
+                        file_name: format!("src/models/{}{suffix}", model_context.file_stem),
                         contents,
                     });
                 }

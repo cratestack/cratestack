@@ -1,8 +1,11 @@
 # {{ package_name }}
 
-Generated CrateStack TypeScript client package (`swr` preset — issue #304). One file per model
-under `src/models/`, holding that model's types **and** plain, framework-free `async` functions —
-no client class, no React import. Import exactly the functions you call.
+Generated CrateStack TypeScript client package (`swr` preset — issues #304, #305). One file per
+model under `src/models/`, holding that model's types and plain, framework-free `async` functions,
+plus a sibling `<model>.hooks.ts` with one `useSWR`/`useSWRMutation` hook per operation. Import
+exactly the functions/hooks you call — the plain-function file and its hooks file are separate
+modules on purpose (see `src/swr/mod.rs`'s module doc): importing `<model>.ts` alone never requires
+`swr`/React to be installed at all.
 
 ```ts
 import { CratestackRuntime } from "{{ package_name }}";
@@ -15,13 +18,16 @@ const runtime = new CratestackRuntime("https://api.example.com", {
 });
 ```
 
-Every function takes the runtime as its first argument, so it's callable from a React component, a
-server action, a plain Node script, or a test — the same shape everywhere, with no hook required.
+Every plain function takes the runtime as its first argument, so it's callable from a React
+component, a server action, a plain Node script, or a test — importing one never pulls in React or
+`swr` (see `tests/swr_runtime.rs` for the framework-free proof). The hooks are an optional layer on
+top: install the peer dependencies (`swr`, `react`) only if you import a `.hooks` module.
 
 ## Models
 
 {% for model in models %}
 - `src/models/{{ model.file_stem }}.ts` — `{{ model.list_fn }}`, `{{ model.get_fn }}`{% if model.allows_create %}, `{{ model.create_fn }}`{% endif %}, `{{ model.update_fn }}`, `{{ model.delete_fn }}`
+- `src/models/{{ model.file_stem }}.hooks.ts` — `{{ model.list_hook }}`, `{{ model.get_hook }}`{% if model.allows_create %}, `{{ model.create_hook }}`{% endif %}, `{{ model.update_hook }}`, `{{ model.delete_hook }}`
 {% endfor %}
 
 {% if models %}
@@ -37,12 +43,27 @@ const created = await {{ models[0].create_fn }}(runtime, input);
 const updated = await {{ models[0].update_fn }}(runtime, id, patch);
 await {{ models[0].delete_fn }}(runtime, id);
 ```
+
+The same operations as hooks, inside a component (note the `.hooks` subpath):
+
+```tsx
+import { {{ models[0].list_hook }}, {{ models[0].get_hook }} } from "{{ package_name }}/models/{{ models[0].file_stem }}.hooks";
+
+const { data: items } = {{ models[0].list_hook }}(runtime);
+const { data: item } = {{ models[0].get_hook }}(runtime, id); // id may be null/undefined — skips the request
+{% if models[0].allows_create %}
+const { trigger: create{{ models[0].name }} } = {{ models[0].create_hook }}(runtime);
+{% endif %}
+const { trigger: update{{ models[0].name }} } = {{ models[0].update_hook }}(runtime, id);
+const { trigger: delete{{ models[0].name }} } = {{ models[0].delete_hook }}(runtime, id);
+```
 {% endif %}
 
 ## Procedures
 
 {% for procedure in procedures_file.procedures %}
-- `src/procedures.ts` — `{{ procedure.method_name }}`
+- `src/procedures.ts` — `{{ procedure.method_name }}`; `src/procedures.hooks.ts` —
+  {% if procedure.kind == "query" %}`use{{ procedure.hook_name }}Query`{% else %}`use{{ procedure.hook_name }}Mutation`{% endif %}
 {% endfor %}
 
 {% if procedures_file.procedures %}
@@ -52,6 +73,24 @@ import { {{ procedures_file.procedures[0].method_name }} } from "{{ package_name
 const result = await {{ procedures_file.procedures[0].method_name }}(runtime, args);
 ```
 {% endif %}
+
+## Hooks and cache invalidation
+
+`src/swr-keys.ts` exports `swrKeys`, the single, shared key factory every hook builds its cache
+key through — keys are nested under each model's/procedure's own schema-unique name (or route, for
+REST), never derived through a lossy casing transform, so two similarly-named operations can never
+collide (see that file's header comment).
+
+Mutation hooks invalidate per a fixed rule, stated once per model's hooks file
+(`src/models/*.hooks.ts`'s own header comment) and applied identically everywhere:
+
+- **create** invalidates the model's list (every cached list, regardless of filter/pagination args).
+- **update** invalidates the list **and** the mutated entity's own detail (both refetch).
+- **delete** invalidates the list **and** drops the deleted entity's detail from the cache outright
+  (no refetch — the entity is gone).
+
+This rule is fixed, not configurable per call. Call `mutate`/`swrKeys` directly if you need
+different invalidation. Procedure hooks never invalidate anything — that is model CRUD's job.
 
 ## Shared types
 
