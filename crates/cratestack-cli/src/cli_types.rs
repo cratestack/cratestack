@@ -58,6 +58,15 @@ pub(crate) enum Command {
         /// consumers that always fetch full objects.
         #[arg(long)]
         full_selection: bool,
+        /// Output layout (issue #304). `default` is today's monolithic
+        /// layout (`src/models.ts`, `src/client.ts`, ...) and stays
+        /// byte-identical forever. `swr` emits one `src/models/<model>.ts`
+        /// per model (types + plain framework-free async functions) and a
+        /// `src/procedures.ts` for procedures — the structural foundation
+        /// #305 builds SWR hooks on top of. `swr` does not support
+        /// `transport grpc` schemas yet.
+        #[arg(long, value_enum, default_value_t = TypeScriptPresetArg::Default)]
+        preset: TypeScriptPresetArg,
     },
     /// Emit a `.proto` file describing the schema's messages/enums
     /// (no `service` block — that needs `transport grpc`, ticket #170)
@@ -187,4 +196,16 @@ pub(crate) enum MigrateBackendArg {
 pub(crate) enum OutputFormat {
     Human,
     Json,
+}
+
+/// CLI-facing mirror of `cratestack_client_typescript::TypeScriptPreset`
+/// (issue #304) — `clap::ValueEnum` needs its own type, not the library's,
+/// so `cli_handlers::handle_generate_typescript` converts one to the
+/// other. Variant names and the default match the Dart CLI's sibling flag
+/// (#297) so `generate-typescript --preset swr` and `generate-dart
+/// --preset swr` stay consistent for anyone using both.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub(crate) enum TypeScriptPresetArg {
+    Default,
+    Swr,
 }

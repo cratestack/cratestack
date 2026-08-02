@@ -18,7 +18,7 @@ use super::synth_fields::{
     page_info_wire_fields, page_of_wire_fields, scalar_fields_for_create, scalar_fields_for_update,
     scalar_ty, synthetic_field,
 };
-use crate::templates::TypeScriptGeneratorError;
+use crate::error::TypeScriptGeneratorError;
 
 pub(crate) fn build_grpc_messages(
     schema: &Schema,

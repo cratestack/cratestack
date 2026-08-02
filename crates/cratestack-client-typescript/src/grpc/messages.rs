@@ -22,8 +22,8 @@ use cratestack_proto::PbLock;
 use serde::Serialize;
 
 use super::wire::{GrpcWireKind, build_field_descriptor};
+use crate::error::TypeScriptGeneratorError;
 use crate::naming::to_camel_case;
-use crate::templates::TypeScriptGeneratorError;
 use crate::types::visible_model_fields;
 
 #[derive(Debug, Clone, Serialize)]

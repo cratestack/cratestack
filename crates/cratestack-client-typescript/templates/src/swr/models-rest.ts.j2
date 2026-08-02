@@ -1,0 +1,117 @@
+// Generated per-model module for the `swr` preset (issue #304): this
+// model's types plus a plain, framework-free `async` function per CRUD
+// operation. No client class, no React import — every function takes a
+// `CratestackRuntime` as its first argument, so it's callable from a
+// React component, a server action, a plain Node script, or a test.
+//
+// Ownership rule: a type used by exactly one model is defined here,
+// inline; a type used by two or more models (or referenced only by a
+// procedure, or declared but unused) lives in `./shared` and is imported
+// instead. See `cratestack-client-typescript`'s
+// `src/swr/ownership.rs::compute_type_ownership` for the computation
+// that decided this file's inline types vs. its imports. Imports of
+// another model's own type (a relation field, e.g. `author: User`) are
+// always `import type` — never a value import — so two models that
+// reference each other (a relation cycle) can never become a runtime
+// import cycle, only a type-only one, which TypeScript tolerates fine.
+
+import type { CratestackRuntime } from "../runtime";
+import { toSearchQuery, type CratestackQueryRequestConfig, type CratestackRequestConfig } from "../queries";
+{% for import in imports %}
+import type { {{ import.type_names_joined }} } from "{{ import.path }}";
+{% endfor %}
+
+{% for enum in owned_enums %}
+export type {{ enum.name }} = {{ enum.union }};
+export const {{ enum.name }}Values = [
+{% for value in enum.values %}
+  "{{ value }}",
+{% endfor %}
+] as const satisfies readonly {{ enum.name }}[];
+
+{% endfor %}
+{% for interface in owned_interfaces %}
+export interface {{ interface.name }} {
+{% if interface.has_fields %}
+{% for field in interface.fields %}
+  {{ field.property }}{% if field.optional %}?{% endif %}: {{ field.type_name }};
+{% endfor %}
+{% endif %}
+}
+
+{% endfor %}
+export interface {{ model_interface.name }} {
+{% if model_interface.has_fields %}
+{% for field in model_interface.fields %}
+  {{ field.property }}{% if field.optional %}?{% endif %}: {{ field.type_name }};
+{% endfor %}
+{% endif %}
+}
+
+{% if create_input %}
+export interface {{ create_input.name }} {
+{% if create_input.has_fields %}
+{% for field in create_input.fields %}
+  {{ field.property }}{% if field.optional %}?{% endif %}: {{ field.type_name }};
+{% endfor %}
+{% endif %}
+}
+
+{% endif %}
+export interface {{ update_input.name }} {
+{% if update_input.has_fields %}
+{% for field in update_input.fields %}
+  {{ field.property }}{% if field.optional %}?{% endif %}: {{ field.type_name }};
+{% endfor %}
+{% endif %}
+}
+
+export async function {{ list_fn }}(
+  runtime: CratestackRuntime,
+  options: CratestackQueryRequestConfig = {},
+): Promise<{{ model.list_return_type }}> {
+  return runtime.get<{{ model.list_return_type }}>("{{ model.route }}", {
+    headers: options.headers,
+    query: toSearchQuery(options.query),
+    signal: options.signal,
+  });
+}
+
+export async function {{ get_fn }}(
+  runtime: CratestackRuntime,
+  id: {{ model.primary_key_type }},
+  options: CratestackQueryRequestConfig = {},
+): Promise<{{ model_interface.name }}> {
+  return runtime.get<{{ model_interface.name }}>(`{{ model.route }}/${encodeURIComponent(String(id))}`, {
+    headers: options.headers,
+    query: toSearchQuery(options.query),
+    signal: options.signal,
+  });
+}
+
+{% if create_input %}
+export async function {{ create_fn }}(
+  runtime: CratestackRuntime,
+  input: {{ create_input.name }},
+  options: CratestackRequestConfig = {},
+): Promise<{{ model_interface.name }}> {
+  return runtime.post<{{ model_interface.name }}>("{{ model.route }}", input, options);
+}
+
+{% endif %}
+export async function {{ update_fn }}(
+  runtime: CratestackRuntime,
+  id: {{ model.primary_key_type }},
+  input: {{ update_input.name }},
+  options: CratestackRequestConfig = {},
+): Promise<{{ model_interface.name }}> {
+  return runtime.patch<{{ model_interface.name }}>(`{{ model.route }}/${encodeURIComponent(String(id))}`, input, options);
+}
+
+export async function {{ delete_fn }}(
+  runtime: CratestackRuntime,
+  id: {{ model.primary_key_type }},
+  options: CratestackRequestConfig = {},
+): Promise<void> {
+  return runtime.delete<void>(`{{ model.route }}/${encodeURIComponent(String(id))}`, options);
+}

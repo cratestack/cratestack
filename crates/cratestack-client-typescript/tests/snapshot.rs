@@ -540,6 +540,7 @@ fn generate_for_with_full_config(
             package_name: package_name.to_owned(),
             base_path: "/api".to_owned(),
             template_dir: None,
+            preset: cratestack_client_typescript::TypeScriptPreset::Default,
             full_selection,
             pb_lock: None,
             schema_sha256: schema_sha256.to_owned(),

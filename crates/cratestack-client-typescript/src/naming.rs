@@ -128,6 +128,18 @@ pub(crate) fn to_snake_case(value: &str) -> String {
         .join("_")
 }
 
+/// Issue #304: per-model file names under the `swr` preset's
+/// `src/models/` directory follow this repo's kebab-case file-naming
+/// convention (root `CLAUDE.md`), not the model's own PascalCase schema
+/// name — `BlogPost` becomes `blog-post.ts`, not `BlogPost.ts`.
+pub(crate) fn to_kebab_case(value: &str) -> String {
+    split_words(value)
+        .into_iter()
+        .map(|word| word.to_lowercase())
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
 fn split_words(value: &str) -> Vec<String> {
     let mut words = Vec::new();
     let mut current = String::new();
@@ -173,4 +185,28 @@ pub(crate) fn pluralize(value: &str) -> String {
 
 pub(crate) fn escape_ts_string(value: &str) -> String {
     value.replace('\\', "\\\\").replace('\'', "\\'")
+}
+
+/// The five plain-function names a model gets under the `swr` preset
+/// (issue #304) — `crate::swr::context` derives them once per model and
+/// shares the result between the per-model file (which needs them
+/// alongside the full generated content) and the model summary
+/// (`README.md`/`index.ts`, which only need the names).
+pub(crate) struct ModelFnNames {
+    pub(crate) list: String,
+    pub(crate) get: String,
+    pub(crate) create: String,
+    pub(crate) update: String,
+    pub(crate) delete: String,
+}
+
+pub(crate) fn model_fn_names(model_name: &str) -> ModelFnNames {
+    let pascal = to_pascal_case(model_name);
+    ModelFnNames {
+        list: format!("list{}", pluralize(&pascal)),
+        get: format!("get{pascal}"),
+        create: format!("create{pascal}"),
+        update: format!("update{pascal}"),
+        delete: format!("delete{pascal}"),
+    }
 }

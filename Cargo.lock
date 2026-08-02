@@ -1175,6 +1175,7 @@ dependencies = [
  "cratestack-proto",
  "minijinja",
  "serde",
+ "tempfile",
  "thiserror 2.0.18",
 ]
 

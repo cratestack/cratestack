@@ -1,0 +1,23 @@
+{
+  "name": "{{ package_name }}",
+  "version": "0.0.0",
+  "description": "Generated CrateStack TypeScript client package (swr preset — file-per-model, framework-free).",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

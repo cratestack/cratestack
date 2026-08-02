@@ -2,11 +2,33 @@ use std::path::PathBuf;
 
 use cratestack_proto::PbLock;
 
+/// Which output layout `generate_package` emits (issue #304, epic #298).
+///
+/// `Default` is today's monolithic layout (`src/models.ts`, `src/client.ts`,
+/// ...) and stays byte-identical forever — every existing consumer depends
+/// on it. `Swr` is the new file-per-model layout: `src/models/<model>.ts`
+/// per model (types + plain framework-free async functions) and
+/// `src/procedures.ts` for procedures. The name and default value are
+/// deliberately kept in lockstep with the Dart generator's sibling flag
+/// (#297) so the two CLIs stay consistent for anyone using both.
+///
+/// `Swr` only lays out files this way — it does not yet emit any SWR hook.
+/// That's #305, built on top of this preset's file layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TypeScriptPreset {
+    #[default]
+    Default,
+    Swr,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeScriptGeneratorConfig {
     pub package_name: String,
     pub base_path: String,
     pub template_dir: Option<PathBuf>,
+    /// See [`TypeScriptPreset`]. Defaults to `TypeScriptPreset::Default`,
+    /// today's byte-identical output.
+    pub preset: TypeScriptPreset,
     /// Emit model interfaces with every scalar field required (matching the
     /// schema's own nullability) instead of forcing every field optional to
     /// account for partial `fields`/`include` projection. For consumers that
@@ -39,6 +61,7 @@ impl Default for TypeScriptGeneratorConfig {
             package_name: "cratestack-client".to_owned(),
             base_path: "/api".to_owned(),
             template_dir: None,
+            preset: TypeScriptPreset::Default,
             full_selection: false,
             pb_lock: None,
             schema_sha256: String::new(),
