@@ -43,8 +43,9 @@ pub(super) fn compose_server_schema(schema_path: &LitStr, db: ServerDb) -> Token
         Err(error) => return error,
     };
 
-    let axum_module = axum_module::build_axum_module(&collected);
+    let axum_module = axum_module::build_axum_module(&collected, db);
     let runtime_block = runtime::build_runtime_block(
+        db,
         &collected.model_accessors,
         &collected.bound_model_accessors,
         &collected.view_accessors,
@@ -81,6 +82,19 @@ pub(super) fn compose_server_schema(schema_path: &LitStr, db: ServerDb) -> Token
         generated_event_module,
         ..
     } = collected;
+
+    // `datasource { provider = "none" }` schemas can never declare a
+    // `model` (cratestack#327's guard), so `generated_event_module` is
+    // always an empty-bodied `pub mod events { ... }` shell under
+    // `db = None` — a `Subscriptions::new` that nothing in the crate ever
+    // calls (there is no `Cratestack::events()` accessor for `db = None`;
+    // see `runtime::none`'s module doc), which would trip `dead_code`
+    // under this workspace's `-D warnings` gate. Drop it entirely instead
+    // of keeping it as unreachable API surface.
+    let generated_event_module = match db {
+        ServerDb::Postgres => generated_event_module,
+        ServerDb::None => proc_macro2::TokenStream::new(),
+    };
 
     let expanded = quote! {
         pub mod cratestack_schema {

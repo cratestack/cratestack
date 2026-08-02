@@ -15,3 +15,4 @@ type PingReply {
 }
 
 procedure ping(args: PingArgs): PingReply
+  @allow(auth() != null)

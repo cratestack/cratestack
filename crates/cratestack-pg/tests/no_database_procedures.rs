@@ -1,19 +1,28 @@
-//! cratestack#327 regression: `datasource { provider = "none" }` paired
-//! with `db = None` compiles cleanly for a procedures-only, zero-model
-//! schema — the positive half of the datasource/macro-argument cross-check
-//! (`crates/cratestack-macros/src/include/datasource_guard.rs`). The
-//! negative half (a mismatch failing to compile) is demonstrated manually
-//! per this story's PR description, following the same precedent as
-//! `reject_grpc.rs`/`parse.rs`'s composite-PK guard: a `proc_macro::TokenStream`
-//! compile-error path can't be exercised from a plain `cargo test` run.
+//! cratestack#328: under `db = None`, `Cratestack::builder()` and the
+//! generated router state carry **zero** `PgPool`/connection-string/`sqlx`
+//! shape anywhere — not an unused parameter, not an `Option<PgPool>` that
+//! happens to always be `None`. This test's own setup code proves it: no
+//! `cratestack::sqlx` import, no connection string, no pool of any kind.
 //!
-//! `Cratestack::builder(pool)` still takes a `sqlx::PgPool` here — codegen
-//! changes to that signature for the no-database mode are explicitly out of
-//! scope for this story (see the epic's later stories).
+//! Compare with cratestack#327's original version of this file (see git
+//! history), which still built a `sqlx::PgPool` via `connect_lazy` to
+//! satisfy `Cratestack::builder(pool)` — that workaround is exactly what
+//! this story removes. `Cratestack::builder()` now takes no arguments at
+//! all under `db = None`.
+//!
+//! The negative half of the datasource/macro-argument cross-check (a
+//! mismatch failing to compile) is still demonstrated manually per the
+//! PR description, following the same precedent as `reject_grpc.rs`'s
+//! composite-PK guard: a `proc_macro::TokenStream` compile-error path
+//! can't be exercised from a plain `cargo test` run.
 
+use cratestack::CoolCodec;
+use cratestack::axum::body::{Body, to_bytes};
+use cratestack::axum::http::{Request, StatusCode};
 use cratestack::include_server_schema;
-use cratestack::sqlx::postgres::PgPoolOptions;
 use cratestack::{CoolContext, CoolError};
+use cratestack_codec_json::JsonCodec;
+use tower::ServiceExt;
 
 include_server_schema!("tests/fixtures/no_database_procedures.cstack", db = None);
 
@@ -37,11 +46,32 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     }
 }
 
-fn test_db() -> cratestack_schema::Cratestack {
-    let pool = PgPoolOptions::new()
-        .connect_lazy("postgres://cratestack:cratestack@localhost/cratestack")
-        .expect("lazy pool should parse without opening a socket");
-    cratestack_schema::Cratestack::builder(pool).build()
+/// The fixture's `ping` procedure declares `@allow(auth() != null)`, so
+/// this test's auth provider always returns an authenticated context —
+/// what it authenticates has nothing to do with a database (there isn't
+/// one under `db = None`), it's purely a `CoolContext` predicate.
+#[derive(Clone)]
+struct AllowAllAuth;
+
+impl cratestack::AuthProvider for AllowAllAuth {
+    type Error = CoolError;
+
+    fn authenticate(
+        &self,
+        _request: &cratestack::RequestContext<'_>,
+    ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
+        core::future::ready(Ok(CoolContext::authenticated([(
+            "id".to_owned(),
+            cratestack::Value::Int(1),
+        )])))
+    }
+}
+
+/// `Cratestack::builder()` — no `PgPool` parameter, no connection string,
+/// no `sqlx` type in sight. This is the whole point of cratestack#328.
+fn build_router() -> cratestack::axum::Router {
+    let db = cratestack_schema::Cratestack::builder().build();
+    cratestack_schema::axum::router(db, Procedures, JsonCodec, AllowAllAuth)
 }
 
 #[test]
@@ -53,7 +83,7 @@ fn no_database_schema_declares_zero_models_and_one_procedure() {
 
 #[tokio::test]
 async fn no_database_schema_procedure_handler_still_dispatches() {
-    let db = test_db();
+    let db = cratestack_schema::Cratestack::builder().build();
     let procedures = Procedures;
     let output = cratestack_schema::procedures::ProcedureRegistry::ping(
         &procedures,
@@ -69,4 +99,29 @@ async fn no_database_schema_procedure_handler_still_dispatches() {
     .expect("ping handler should succeed");
 
     assert_eq!(output.echo, "hello");
+}
+
+/// The story's headline evidence: the *generated router* — built from a
+/// `db = None` `Cratestack` with no pool anywhere — round-trips a real
+/// HTTP procedure call end to end.
+#[tokio::test]
+async fn no_database_router_round_trips_ping_procedure_over_http() {
+    let app = build_router();
+
+    let body = serde_json::json!({ "args": { "message": "hello" } });
+    let response = app
+        .oneshot(
+            Request::post("/$procs/ping")
+                .header("content-type", JsonCodec::CONTENT_TYPE)
+                .header("accept", JsonCodec::CONTENT_TYPE)
+                .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let reply: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(reply["echo"], "hello");
 }
