@@ -1,4 +1,4 @@
-# dart_verify_riverpod_collision
+# flutter_riverpod_client
 
 Generated CrateStack Flutter package.
 
@@ -17,14 +17,14 @@ This generated package is Flutter-shaped because it includes Riverpod providers.
 
 ```yaml
 dependencies:
-  dart_verify_riverpod_collision:
-    path: ../dart_verify_riverpod_collision
+  flutter_riverpod_client:
+    path: ../flutter_riverpod_client
 ```
 
 Main import:
 
 ```dart
-import 'package:dart_verify_riverpod_collision/dart_verify_riverpod_collision.dart';
+import 'package:flutter_riverpod_client/flutter_riverpod_client.dart';
 ```
 
 ## Project Layout
@@ -33,16 +33,16 @@ import 'package:dart_verify_riverpod_collision/dart_verify_riverpod_collision.da
 - `README.md`
 - `CHANGELOG.md`
 - `analysis_options.yaml`
-- `lib/dart_verify_riverpod_collision.dart`
+- `lib/flutter_riverpod_client.dart`
 - `lib/src/runtime.dart`
 - `lib/src/queries.dart`
 - `lib/src/constants.dart`
 - `lib/src/models.dart`
 - `lib/src/apis.dart`
 - `example/main.dart`
-- `test/dart_verify_riverpod_collision_test.dart`
+- `test/flutter_riverpod_client_test.dart`
 
-Import only `package:dart_verify_riverpod_collision/dart_verify_riverpod_collision.dart` from application code. Files under `lib/src/` are implementation details.
+Import only `package:flutter_riverpod_client/flutter_riverpod_client.dart` from application code. Files under `lib/src/` are implementation details.
 
 ## Adapter Setup
 
@@ -65,7 +65,7 @@ class MyAdapter implements CratestackClientAdapter {
 Client construction:
 
 ```dart
-final client = DartVerifyRiverpodCollisionCratestackClient(
+final client = FlutterRiverpodClientCratestackClient(
   myAdapter,
   basePath: '/api',
 );
@@ -79,7 +79,7 @@ final adapter = CratestackDioAdapter(
   useRustTransport: true,
 );
 
-final client = DartVerifyRiverpodCollisionCratestackClient(
+final client = FlutterRiverpodClientCratestackClient(
   adapter,
   basePath: '/api',
 );
@@ -90,7 +90,7 @@ CBOR-over-Dio setup for web or non-Rust platforms:
 ```dart
 final adapter = CratestackCborDioAdapter(dio: myDio);
 
-final client = DartVerifyRiverpodCollisionCratestackClient(
+final client = FlutterRiverpodClientCratestackClient(
   adapter,
   basePath: '/api',
 );
@@ -114,22 +114,22 @@ const options = CratestackCallOptions(
 
 Generated providers include:
 
-- `dartVerifyRiverpodCollisionAdapterProvider`
-- `dartVerifyRiverpodCollisionBasePathProvider`
-- `dartVerifyRiverpodCollisionClientProvider`
-- `dartVerifyRiverpodCollisionWidgetApiProvider`
-- `dartVerifyRiverpodCollisionWidgetListApiProvider`
-- `dartVerifyRiverpodCollisionProceduresApiProvider`
+- `flutterRiverpodClientAdapterProvider`
+- `flutterRiverpodClientBasePathProvider`
+- `flutterRiverpodClientClientProvider`
+- `flutterRiverpodClientBoardApiProvider`
+- `flutterRiverpodClientTaskApiProvider`
+- `flutterRiverpodClientProceduresApiProvider`
 
 Typical overrides:
 
 ```dart
 final container = ProviderContainer(
   overrides: [
-    dartVerifyRiverpodCollisionAdapterProvider.overrideWithValue(
+    flutterRiverpodClientAdapterProvider.overrideWithValue(
       CratestackDioAdapter(dio: myDio, useRustTransport: true),
     ),
-    dartVerifyRiverpodCollisionBasePathProvider.overrideWith((ref) => '/api'),
+    flutterRiverpodClientBasePathProvider.overrideWith((ref) => '/api'),
   ],
 );
 ```
@@ -159,13 +159,13 @@ cratestack generate-dart --schema schema.cstack --out . --preset riverpod --run-
 Selection-shaped list query in Flutter or Riverpod:
 
 ```dart
-final dartVerifyRiverpodCollisionWidgetListProvider = FutureProvider((ref) async {
-  final client = ref.watch(dartVerifyRiverpodCollisionClientProvider);
-  final selection = WidgetSelection()
+final flutterRiverpodClientBoardListProvider = FutureProvider((ref) async {
+  final client = ref.watch(flutterRiverpodClientClientProvider);
+  final selection = BoardSelection()
     ..id()
 ;
 
-  return client.widgets.list(
+  return client.boards.list(
     query: selection.toListQuery(
       sort: '-id',
       limit: 20,
@@ -178,13 +178,13 @@ final dartVerifyRiverpodCollisionWidgetListProvider = FutureProvider((ref) async
 Projection-backed detail query in Flutter or Riverpod:
 
 ```dart
-final dartVerifyRiverpodCollisionWidgetCardProvider = FutureProvider.family((ref, int id) async {
-  final client = ref.watch(dartVerifyRiverpodCollisionClientProvider);
-  final selection = WidgetSelection()
+final flutterRiverpodClientBoardCardProvider = FutureProvider.family((ref, int id) async {
+  final client = ref.watch(flutterRiverpodClientClientProvider);
+  final selection = BoardSelection()
     ..id()
 ;
 
-  return client.widgets.getView(
+  return client.boards.getView(
     id,
     projection: selection.asProjection(),
   );
@@ -203,13 +203,13 @@ When a model opts into `@@paged`, generated Dart list APIs switch from `List<T>`
 Full-model paged Flutter example:
 
 ```dart
-final dartVerifyRiverpodCollisionWidgetPagedProvider = FutureProvider((ref) async {
-  final client = ref.watch(dartVerifyRiverpodCollisionClientProvider);
-  final selection = WidgetSelection()
+final flutterRiverpodClientBoardPagedProvider = FutureProvider((ref) async {
+  final client = ref.watch(flutterRiverpodClientClientProvider);
+  final selection = BoardSelection()
     ..id()
 ;
 
-  return client.widgets.list(
+  return client.boards.list(
     query: selection.toListQuery(
       sort: '-id',
       limit: 20,
@@ -220,7 +220,7 @@ final dartVerifyRiverpodCollisionWidgetPagedProvider = FutureProvider((ref) asyn
 });
 
 Widget buildPagedList(WidgetRef ref) {
-  final page = ref.watch(dartVerifyRiverpodCollisionWidgetPagedProvider);
+  final page = ref.watch(flutterRiverpodClientBoardPagedProvider);
 
   return page.when(
     data: (page) => ListView.builder(
@@ -239,13 +239,13 @@ Widget buildPagedList(WidgetRef ref) {
 Projected paged Flutter example:
 
 ```dart
-final dartVerifyRiverpodCollisionWidgetProjectedPageProvider = FutureProvider((ref) async {
-  final client = ref.watch(dartVerifyRiverpodCollisionClientProvider);
-  final selection = WidgetSelection()
+final flutterRiverpodClientBoardProjectedPageProvider = FutureProvider((ref) async {
+  final client = ref.watch(flutterRiverpodClientClientProvider);
+  final selection = BoardSelection()
     ..id()
 ;
 
-  return client.widgets.listView(
+  return client.boards.listView(
     projection: selection.asProjection(),
     query: const CratestackListQuery(
       limit: 20,
@@ -256,7 +256,7 @@ final dartVerifyRiverpodCollisionWidgetProjectedPageProvider = FutureProvider((r
   );
 });
 
-String describePage(Page<ProjectedWidget> page) {
+String describePage(Page<ProjectedBoard> page) {
   final count = page.items.length;
   final total = page.totalCount;
   final hasNext = page.pageInfo.hasNextPage;
@@ -267,15 +267,15 @@ String describePage(Page<ProjectedWidget> page) {
 Flutter UI example using those providers:
 
 ```dart
-class WidgetPagedScreen extends ConsumerWidget {
-  const WidgetPagedScreen({super.key});
+class BoardPagedScreen extends ConsumerWidget {
+  const BoardPagedScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final page = ref.watch(dartVerifyRiverpodCollisionWidgetPagedProvider);
+    final page = ref.watch(flutterRiverpodClientBoardPagedProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Widgets')),
+      appBar: AppBar(title: const Text('Boards')),
       body: page.when(
         data: (page) => Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -305,14 +305,14 @@ class WidgetPagedScreen extends ConsumerWidget {
   }
 }
 
-class WidgetCardView extends ConsumerWidget {
-  const WidgetCardView({super.key, required this.id});
+class BoardCardView extends ConsumerWidget {
+  const BoardCardView({super.key, required this.id});
 
   final int id;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final item = ref.watch(dartVerifyRiverpodCollisionWidgetCardProvider(id));
+    final item = ref.watch(flutterRiverpodClientBoardCardProvider(id));
 
     return item.when(
       data: (item) => Card(
@@ -337,7 +337,7 @@ For `@@paged` models:
 ## CRUD Usage
 
 ```dart
-final listSelection = WidgetSelection();
+final listSelection = BoardSelection();
 listSelection.id();
 
 final listQuery = listSelection.toListQuery(
@@ -349,12 +349,12 @@ final listQuery = listSelection.toListQuery(
   filters: {'status': 'active'},
 );
 
-final items = await client.widgets.list(
+final items = await client.boards.list(
   query: listQuery,
   options: options,
 );
 
-final item = await client.widgets.get(
+final item = await client.boards.get(
   1,
   query: const CratestackFetchQuery(),
   options: options,
@@ -363,8 +363,8 @@ final item = await client.widgets.get(
 
 Generated model entry points:
 
-- `client.widgets`
-- `client.widgetLists`
+- `client.boards`
+- `client.tasks`
 
 ## Procedure Usage
 
@@ -372,15 +372,15 @@ All generated procedures use `POST` at the HTTP layer, but the package exposes t
 
 Query procedures:
 
-- none in this schema
+- `client.procedures.estimateFocusMinutes(EstimateFocusMinutesArgs(...), options: options)`
 
 Mutation procedures:
 
-- `client.procedures.widgetCreate(WidgetCreateArgs(...), options: options)`
+- none in this schema
 
 Full generated procedure inventory:
 
-- `mutation` `client.procedures.widgetCreate(...)` returns `Widget`
+- `query` `client.procedures.estimateFocusMinutes(...)` returns `FocusEstimateResult`
 
 ## Query Parameters
 
@@ -400,7 +400,7 @@ The generated query helpers cover the canonical client-side query contract:
 Example:
 
 ```dart
-final params = (WidgetSelection()
+final params = (BoardSelection()
   ..id()
 ).toListQuery(
   sort: '-id',
@@ -416,15 +416,15 @@ final params = (WidgetSelection()
 
 Use the generated constant groups to avoid stringly-typed `fields` and `include` selections.
 
-- `WidgetFieldNames`
-- `WidgetIncludeNames`
-- `WidgetListFieldNames`
-- `WidgetListIncludeNames`
+- `BoardFieldNames`
+- `BoardIncludeNames`
+- `TaskFieldNames`
+- `TaskIncludeNames`
 
 Example:
 
 ```dart
-final fields = <String>[WidgetFieldNames.id];
+final fields = <String>[BoardFieldNames.id];
 final include = <String>[];
 ```
 
@@ -433,17 +433,17 @@ final include = <String>[];
 Generated selection builders can still express projected reads without hand-writing `fields`, `include`, and `includeFields[path]` strings.
 
 ```dart
-final selection = WidgetSelection();
+final selection = BoardSelection();
 selection.id();
 final projection = selection.asProjection();
 
-final item = await client.widgets.getView(
+final item = await client.boards.getView(
   1,
   projection: projection,
   options: options,
 );
 
-final items = await client.widgets.listView(
+final items = await client.boards.listView(
   projection: projection,
   query: const CratestackListQuery(limit: 20),
   options: options,
@@ -458,9 +458,9 @@ Why this speeds development:
 
 ```dart
 // Before
-final posts = await client.widgets.list(
+final posts = await client.boards.list(
   query: const CratestackListQuery(
-    fields: [WidgetFieldNames.id],
+    fields: [BoardFieldNames.id],
     sort: '-id',
     limit: 20,
     where: 'published=true',
@@ -468,11 +468,11 @@ final posts = await client.widgets.list(
 );
 
 // After
-final selection = WidgetSelection()
+final selection = BoardSelection()
   ..id()
 ;
 
-final posts = await client.widgets.list(
+final posts = await client.boards.list(
   query: selection.toListQuery(
     sort: '-id',
     limit: 20,
@@ -489,12 +489,12 @@ The generated field/include constants are still useful. Keep them for low-level 
 
 Model entry points:
 
-- `client.widgets`
-- `client.widgetLists`
+- `client.boards`
+- `client.tasks`
 
 Procedure entry points:
 
-- `client.procedures.widgetCreate(...)`
+- `client.procedures.estimateFocusMinutes(...)`
 
 ## Bridge Contract
 

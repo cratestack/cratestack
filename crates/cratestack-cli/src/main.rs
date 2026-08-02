@@ -1,3 +1,4 @@
+mod build_runner;
 mod cli_handlers;
 mod cli_support;
 mod cli_types;
@@ -74,6 +75,7 @@ mod tests {
                 template_dir,
                 check,
                 preset,
+                run_build_runner,
             } => {
                 assert_eq!(schema, PathBuf::from("schema.cstack"));
                 assert_eq!(out, PathBuf::from("out"));
@@ -82,6 +84,10 @@ mod tests {
                 assert_eq!(template_dir, None);
                 assert!(!check);
                 assert_eq!(preset, DartPresetArg::Default);
+                assert!(
+                    !run_build_runner,
+                    "--run-build-runner must default to off (issue #303: opt-in, not default)"
+                );
             }
             _ => panic!("expected generate-dart command"),
         }
@@ -103,6 +109,33 @@ mod tests {
         match cli.command {
             Command::GenerateDart { preset, .. } => {
                 assert_eq!(preset, DartPresetArg::Riverpod);
+            }
+            _ => panic!("expected generate-dart command"),
+        }
+    }
+
+    #[test]
+    fn generate_dart_clap_accepts_run_build_runner_flag() {
+        let cli = Cli::parse_from([
+            "cratestack",
+            "generate-dart",
+            "--schema",
+            "schema.cstack",
+            "--out",
+            "out",
+            "--preset",
+            "riverpod",
+            "--run-build-runner",
+        ]);
+
+        match cli.command {
+            Command::GenerateDart {
+                preset,
+                run_build_runner,
+                ..
+            } => {
+                assert_eq!(preset, DartPresetArg::Riverpod);
+                assert!(run_build_runner);
             }
             _ => panic!("expected generate-dart command"),
         }

@@ -1,0 +1,21 @@
+# Not committed alongside `client/` itself (unlike react-vite-swr's
+# analogous `client/dist/`/`client/node_modules/` pattern, this file
+# lives at the example root, not inside `client/`): `cratestack
+# generate-dart --check` treats every file under `--out` as either
+# generator output or drift, so a `.gitignore` living *inside* `client/`
+# would make `--check` permanently report it as "unexpected" even with
+# zero real drift. Keeping generator-external ignore rules up here
+# avoids that false positive.
+
+# `client/`: not a "generated but checked in" package like
+# react-vite-swr/client — this package's `@riverpod` annotations only
+# become working code after `dart run build_runner build` runs (issue
+# #303), so its `.g.dart` outputs are build artifacts, not generator
+# output. Regenerate them (`dart run build_runner build
+# --delete-conflicting-outputs`, or `cratestack generate-dart
+# --run-build-runner`) rather than committing them — see the top-level
+# README's "full path" section.
+client/**/*.g.dart
+client/.dart_tool/
+client/build/
+client/pubspec.lock

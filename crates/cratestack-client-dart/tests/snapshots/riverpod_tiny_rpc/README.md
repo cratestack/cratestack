@@ -133,6 +133,26 @@ final container = ProviderContainer(
 );
 ```
 
+## Code Generation (`build_runner`)
+
+This package's per-operation `@riverpod` providers (one `Future` provider per read, one
+`AsyncNotifier` controller per write — see `lib/src/models/*.dart`) are annotations, not working
+code, until `build_runner` expands them. Without this step the package will not compile, let alone
+`flutter analyze` clean.
+
+Run it after every regeneration:
+
+```sh
+dart run build_runner build --delete-conflicting-outputs
+```
+
+Or pass `--run-build-runner` to `cratestack generate-dart` to have the CLI run it for you right
+after generation (opt-in; requires a Dart SDK on `PATH`):
+
+```sh
+cratestack generate-dart --schema schema.cstack --out . --preset riverpod --run-build-runner
+```
+
 ## Flutter Usage
 
 Selection-shaped list query in Flutter or Riverpod:

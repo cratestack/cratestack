@@ -26,6 +26,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             template_dir,
             check,
             preset,
+            run_build_runner,
         } => handle_generate_dart(
             schema,
             out,
@@ -34,6 +35,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             template_dir,
             check,
             preset,
+            run_build_runner,
         )?,
         Command::GenerateTypeScript {
             schema,
@@ -115,6 +117,7 @@ fn handle_generate_dart(
     template_dir: Option<PathBuf>,
     check: bool,
     preset: DartPresetArg,
+    run_build_runner: bool,
 ) -> Result<()> {
     let parsed = parse_schema_or_render(&schema)?;
     let pb_lock = read_pb_lock_if_present(&schema)?;
@@ -138,6 +141,16 @@ fn handle_generate_dart(
 
     write_generated_files(&out, files)?;
     println!("generated Dart client package: {}", out.display());
+
+    if run_build_runner {
+        println!(
+            "running `dart run build_runner build --delete-conflicting-outputs` in {}...",
+            out.display()
+        );
+        crate::build_runner::run_build_runner(&out)?;
+        println!("build_runner finished");
+    }
+
     Ok(())
 }
 

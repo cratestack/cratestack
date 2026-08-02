@@ -233,6 +233,76 @@ jobs:
       - name: Generate + flutter analyze (default + riverpod presets, REST + RPC)
         run: just verify-dart
 
+  # ---- Flutter + Riverpod example app (issue #303, epic #297's last story) ----
+  # Blocking. Proves the `riverpod` preset end to end in a real Flutter app,
+  # the same "example app, not just fixtures" bar `react-vite-swr-example`
+  # sets for the TypeScript `swr` preset. Reuses `react-vite-swr`'s own
+  # schema/server (`examples/react-vite-swr/schema.cstack`) rather than
+  # standing up a second Postgres-backed server crate — see this example's
+  # README for why.
+  #
+  # `examples/flutter-riverpod/app` deliberately never gets `flutter build`/
+  # `flutter run` here: it has no committed platform scaffolding (`android/`,
+  # `ios/`, `macos/` are gitignored and regenerated locally via
+  # `flutter create .`, the same precedent `embedded-flutter` set), and
+  # building one would need a real device/simulator target this runner
+  # doesn't have. What *is* covered: the committed `client/` matches the
+  # real generator (`--check`, same drift-check discipline
+  # `react-vite-swr-example` uses), `dart run build_runner build` actually
+  # expands the checked-in `@riverpod` annotations (via `generate-dart
+  # --run-build-runner` itself — this job doubles as CI coverage for that
+  # flag), `flutter analyze` is clean on both `client/` and `app/`, and
+  # `flutter test` passes for both — including `app/test/boards_screen_test.dart`,
+  # a real `flutter_test` widget test that pumps the actual `BoardsScreen`
+  # against a fake adapter and asserts on rendered text, not just a
+  # `ProviderContainer.read`. What's NOT covered here: an actual
+  # `flutter run` against a live server — see the PR description's manual
+  # verification section for that (run locally with the pinned SDK).
+  flutter-riverpod-example:
+    name: flutter (flutter-riverpod example)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Assert the committed client matches the real generator
+        run: |
+          cargo run -p cratestack-cli -- generate-dart \
+            --schema examples/react-vite-swr/schema.cstack \
+            --out examples/flutter-riverpod/client \
+            --library-name flutter_riverpod_client \
+            --preset riverpod \
+            --check
+      - name: Regenerate + run build_runner via --run-build-runner (issue #303)
+        run: |
+          cd examples/flutter-riverpod/client && flutter pub get
+          cd "$GITHUB_WORKSPACE"
+          cargo run -p cratestack-cli -- generate-dart \
+            --schema examples/react-vite-swr/schema.cstack \
+            --out examples/flutter-riverpod/client \
+            --library-name flutter_riverpod_client \
+            --preset riverpod \
+            --run-build-runner
+      - name: flutter analyze (client)
+        working-directory: examples/flutter-riverpod/client
+        run: flutter analyze --fatal-warnings --no-fatal-infos
+      - name: flutter test (client)
+        working-directory: examples/flutter-riverpod/client
+        run: flutter test
+      - name: flutter pub get (app)
+        working-directory: examples/flutter-riverpod/app
+        run: flutter pub get
+      - name: flutter analyze (app)
+        working-directory: examples/flutter-riverpod/app
+        run: flutter analyze --fatal-warnings --no-fatal-infos
+      - name: flutter test (app)
+        working-directory: examples/flutter-riverpod/app
+        run: flutter test
+
   # ---- JS packages (packages/*) -----------------------------------------
   # Blocking. Covers the hand-written npm packages — @cratestack/api's
   # split family (ts-types, link-batch, link-logger, runtime-fetch,

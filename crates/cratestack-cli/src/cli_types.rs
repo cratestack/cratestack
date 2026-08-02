@@ -41,6 +41,20 @@ pub(crate) enum Command {
         /// file, and the package-wide DI providers in `lib/src/client.dart`).
         #[arg(long, value_enum, default_value_t = DartPresetArg::Default)]
         preset: DartPresetArg,
+        /// Opt-in (issue #303): after generation, shell out to `dart run
+        /// build_runner build --delete-conflicting-outputs` in `--out` so
+        /// a `--preset riverpod` package's `@riverpod` annotations are
+        /// actually expanded — the annotated Dart alone does not
+        /// compile/analyze until `build_runner` runs. Off by default: a
+        /// Rust CLI invoking another toolchain unprompted would be a
+        /// surprising behaviour change for existing/scripted callers. No
+        /// effect together with `--check` (drift-detection mode never
+        /// writes files to run `build_runner` against). Requires a Dart
+        /// SDK on `PATH` — see `crate::build_runner::BuildRunnerError`
+        /// for the failure modes when it's missing or `build_runner`
+        /// itself fails.
+        #[arg(long)]
+        run_build_runner: bool,
     },
     #[command(name = "generate-typescript", alias = "generate-ts")]
     GenerateTypeScript {

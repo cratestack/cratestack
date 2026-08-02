@@ -28,6 +28,14 @@ pub(crate) struct TemplateContext {
     /// doc. `None` for REST/RPC, where the REST/RPC-specific templates
     /// never reference `grpc.*` in the first place.
     pub(crate) grpc: Option<crate::grpc::GrpcContext>,
+    /// `config.preset == DartPreset::Riverpod` (issue #303). `README.md.j2`
+    /// is one of the files `crate::riverpod::generate_package` reuses
+    /// verbatim from `generate_default_package` (see that module's doc),
+    /// so this flag is how the shared template gates the riverpod-only
+    /// `build_runner` section without forking the template — `false` for
+    /// every `DartPreset::Default` render, which is exactly what keeps
+    /// the default preset's output byte-identical (`tests/snapshot.rs`).
+    pub(crate) is_riverpod_preset: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

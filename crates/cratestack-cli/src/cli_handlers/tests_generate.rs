@@ -81,6 +81,7 @@ fn generate_dart_with_preset(
         None,
         check,
         preset,
+        false,
     )
 }
 
@@ -260,3 +261,28 @@ fn dart_check_does_not_conflate_default_and_riverpod_file_sets() {
     generate_dart_with_preset(schema, riverpod_out, true, DartPresetArg::Riverpod)
         .expect("riverpod check should stay clean");
 }
+
+// Issue #303: `--run-build-runner`.
+//
+// Deliberately does NOT exercise `handle_generate_dart(..., run_build_runner:
+// true)` against the real `dart` binary here: `dart run` auto-fetches
+// missing dependencies (a real `pub get`), which means a test that
+// actually invokes it would depend on network access and could hang or
+// flake in a sandboxed/offline CI runner — exactly the kind of
+// unreliability a unit-test suite must not have. There is also no clean,
+// `unsafe`-free way to force "no Dart SDK" for a specific test by
+// mutating `PATH` (this workspace forbids `unsafe_code`, and mutating
+// process-wide env vars from a multi-threaded `cargo test` run is racy
+// and requires `unsafe` as of the 2024 edition), so `handle_generate_dart`
+// itself is intentionally not the seam for this.
+//
+// `crate::build_runner`'s own unit tests are the seam instead: `program`
+// is injectable there, so those tests spawn a guaranteed-missing binary
+// name and a guaranteed-nonzero real process (`false`) to prove
+// `DartNotFound`/`Failed` actually fire — hermetically, no network, no
+// possibility of hanging. What's left to prove here is just the flag's
+// plumbing: that `run_build_runner: false` behaves exactly as before
+// (already covered by every other `dart_*` test above, none of which
+// pass `run_build_runner: true`), and that clap parses the flag at all
+// (see `generate_dart_clap_accepts_run_build_runner_flag` in
+// `src/main.rs`).

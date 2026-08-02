@@ -5,7 +5,7 @@ use crate::builders_model::{
     build_model_accessor, build_model_api, build_procedure, build_selection_group,
     build_selection_model,
 };
-use crate::config::{DartGeneratorConfig, DartGeneratorError};
+use crate::config::{DartGeneratorConfig, DartGeneratorError, DartPreset};
 use crate::idents::{
     dart_identifier, escape_dart_string, pluralize, to_camel_case, to_pascal_case,
 };
@@ -185,5 +185,6 @@ pub(crate) fn build_template_context(
         mutation_procedures,
         sample_model,
         grpc,
+        is_riverpod_preset: config.preset == DartPreset::Riverpod,
     })
 }

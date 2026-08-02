@@ -90,6 +90,38 @@ fn rest_runtime_keeps_existing_adapter_interface() {
     );
 }
 
+/// Regression test for a real bug found while building the
+/// `examples/flutter-riverpod` end-to-end example (issue #303):
+/// `CratestackDioAdapter.execute` never set an `Accept` header, unlike
+/// `CratestackCborDioAdapter` right below it (which always has) and the
+/// TypeScript REST runtime's `headers.set("Accept", "application/json")`
+/// (`crates/cratestack-client-typescript/templates/rest-runtime.ts.j2`).
+/// Reproduced live: a plain `curl` with no `Accept` header against a
+/// real `--preset riverpod` example server (Postgres + axum, wired with
+/// only `JsonCodec`) returned "no encoder configured for response
+/// Content-Type application/cbor", not JSON — the router's own
+/// content-negotiation default doesn't fall back to the one codec that
+/// was actually registered. Every REST JSON adapter call must state its
+/// preference explicitly rather than rely on that default.
+#[test]
+fn rest_dio_adapter_sends_an_explicit_json_accept_header() {
+    let package = generate_for("tiny_rest", "tiny_rest_client");
+    let runtime = package_file(&package, "lib/src/runtime.dart");
+    let dio_adapter_start = runtime
+        .find("class CratestackDioAdapter")
+        .expect("runtime.dart should declare CratestackDioAdapter");
+    let cbor_adapter_start = runtime
+        .find("class CratestackCborDioAdapter")
+        .expect("runtime.dart should declare CratestackCborDioAdapter");
+    let dio_adapter_body = &runtime[dio_adapter_start..cbor_adapter_start];
+    assert!(
+        dio_adapter_body.contains("'Accept': 'application/json'"),
+        "CratestackDioAdapter must send an explicit Accept: application/json \
+         header, matching CratestackCborDioAdapter's own explicit Accept and \
+         the TypeScript REST runtime's parity behaviour:\n{dio_adapter_body}"
+    );
+}
+
 #[test]
 fn rpc_skips_queries_dart() {
     let rpc = generate_for("tiny_rpc", "tiny_rpc_client");

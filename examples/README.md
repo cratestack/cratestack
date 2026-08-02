@@ -118,6 +118,22 @@ cd examples/react-vite-swr && pnpm install && pnpm --filter react-vite-swr-web r
 
 See [`react-vite-swr/README.md`](react-vite-swr/README.md) for the full schema → generate → run path.
 
+## Phase F — Generated Dart/Flutter client presets
+
+| Example | Macro(s) | Shape |
+|---|---|---|
+| [`flutter-riverpod/`](flutter-riverpod) | `include_server_schema!` (`transport rest`, reused from `react-vite-swr`) | A `cratestack generate-dart --preset riverpod` client (checked in under `client/`) consumed by a real Flutter app with **zero hand-written providers** — every `ref.watch(boardListProvider)` / controller call is generated. Also the end-to-end proof for `generate-dart --run-build-runner` (issue #303): the CLI flag that runs `dart run build_runner build --delete-conflicting-outputs` for you after generation. |
+
+```bash
+docker compose up -d postgres
+DATABASE_URL=postgres://cratestack:cratestack@localhost:55432/cratestack_test cargo run -p react-vite-swr-example
+cd examples/flutter-riverpod/app && flutter create . --org dev.cratestack.examples --platforms=macos,ios,android
+flutter run -d macos
+```
+
+See [`flutter-riverpod/README.md`](flutter-riverpod/README.md) for the full schema → generate →
+build_runner → run path.
+
 ## Verification matrix
 
 Snapshot of what's been actually exercised end-to-end against a real runtime, vs. what's only been built and unit-tested. Point-in-time as of the linked commit; rerun whenever the matrix drifts.
@@ -141,6 +157,7 @@ Snapshot of what's been actually exercised end-to-end against a real runtime, vs
 | `embedded-expo` | ✅ | ✅ Android emulator | `npx expo run:android` on Pixel_10_Pro: 6 CRUD rows via React Native UI, persisted to `/data/data/.../files/cratestack-notes.db` (SQLite + WAL). **iOS: not tested — out of scope for now.** Build path is set up (podspec vendors `libembedded_expo_native.a`, Swift uses `@_silgen_name` against the same C ABI), but full `expo run:ios` needs an installed iOS Simulator runtime (Xcode → Settings → Components) that wasn't on the verification host. |
 | `grpc-widgets` | ✅ | ✅ | Real server booted against Postgres; both `ts-client-e2e.mjs` (Node/`tsx`, gRPC-Web over `fetch`) and `dart-client/tool/e2e.dart` (`dart run`, native HTTP/2 via `package:grpc`) ran create/get/list/update/delete/get-after-delete against it live, including the typed error path (`not_found`) on both clients |
 | `react-vite-swr` | ✅ | ✅ | Real server booted against Postgres; `pnpm --filter react-vite-swr-web run dev` in a real browser (Claude Preview) — created a board via `useCreateBoard` and watched the list refresh with no manual refetch, opened its detail screen, toggled/deleted tasks via `useUpdateTask`/`useDeleteTask` (both invalidated the list live), watched the `estimateFocusMinutes` procedure hook's estimate recompute automatically each time. `pnpm run seed` (`tsx`, plain generated functions, no React) separately created data and called the procedure outside any component. |
+| `flutter-riverpod` | n/a (no Rust crate — reuses `react-vite-swr`'s server; `client/`'s own `flutter test` is the analog) | ✅ macOS desktop | Real `react-vite-swr` server booted against Postgres; `flutter run -d macos` — created a board via the generated `BoardCreateController` and watched the list refresh (`ref.invalidate(boardListProvider)`, no manual refetch), opened its detail screen, toggled/deleted tasks via the generated `TaskUpdateController`/`TaskDeleteController` (both invalidated the list live), watched the `estimateFocusMinutes` procedure provider's estimate recompute automatically each time. Two real bugs found and fixed live during this run (a missing `Accept` header in `CratestackDioAdapter`, and a controller auto-dispose race) — see `flutter-riverpod/README.md`. |
 
 What "end-to-end" means here:
 
@@ -187,3 +204,4 @@ cargo run -p microservice-pair-example
 | Drive the schema from React Native + Expo | [`embedded-expo`](embedded-expo) |
 | Expose the schema over real gRPC (mesh interop, browser gRPC-Web, Dart/Flutter) | [`grpc-widgets`](grpc-widgets) |
 | Consume a generated REST/RPC TypeScript client with zero hand-written data-fetching code (SWR hooks) | [`react-vite-swr`](react-vite-swr) |
+| Consume a generated Dart/Flutter client with zero hand-written Riverpod providers | [`flutter-riverpod`](flutter-riverpod) |
