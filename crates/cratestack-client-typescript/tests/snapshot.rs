@@ -322,11 +322,13 @@ fn empty_schema_sha256_bakes_an_empty_constant_that_omits_the_header_at_runtime(
 #[test]
 fn rpc_runtime_supports_composable_links_chain() {
     // Issue #182: `call()`/`batch()` run through an ordered `links` chain
-    // terminating in the real fetch; `stream()` deliberately bypasses it
-    // (a link would need to clone/replay a streamed body, defeating
-    // streaming). No links declared must reduce to the exact terminal
-    // call — proven structurally by the `reduceRight` construction, not
-    // just documented.
+    // terminating in the real fetch. No links declared must reduce to
+    // the exact terminal call — proven structurally by the
+    // `reduceRight` construction, not just documented. `stream()` used
+    // to bypass this chain entirely; issue #277 gave it its own
+    // separate `streamChain` instead (see
+    // `rpc_runtime_supports_composable_stream_links_chain`) — it no
+    // longer touches `this.chain` at all, which this test still pins.
     let package = generate_for("tiny_rpc", "tiny-rpc-client");
     let runtime = package_file(&package, "src/runtime.ts");
     assert!(
@@ -334,7 +336,10 @@ fn rpc_runtime_supports_composable_links_chain() {
         "CratestackRpcClientOptions must accept a links chain:\n{runtime}"
     );
     assert!(
-        runtime.contains("import type { RpcLink, RpcLinkNext, RpcLinkRequest } from \"./links\";"),
+        runtime.contains(
+            "import type { RpcLink, RpcLinkNext, RpcLinkRequest, RpcStreamLink, RpcStreamLinkNext } \
+             from \"./links\";"
+        ),
         "runtime.ts must import the link chain types from ./links:\n{runtime}"
     );
     assert!(
@@ -349,10 +354,10 @@ fn rpc_runtime_supports_composable_links_chain() {
          fetching directly:\n{runtime}"
     );
     assert!(
-        !runtime.contains("stream")
-            || !runtime[runtime.find("async *stream").expect("stream() must exist")..]
-                .contains("this.chain"),
-        "stream() must bypass the links chain entirely:\n{runtime}"
+        !runtime[runtime.find("async *stream").expect("stream() must exist")..]
+            .contains("this.chain"),
+        "stream() must never touch the unary/batch `this.chain` — it has its own \
+         `this.streamChain` (issue #277):\n{runtime}"
     );
 
     let links = package_file(&package, "src/links.ts");
@@ -369,6 +374,97 @@ fn rpc_runtime_supports_composable_links_chain() {
     assert!(
         index.contains("export * from \"./links\";"),
         "index.ts must re-export the links module:\n{index}"
+    );
+}
+
+#[test]
+fn rpc_runtime_supports_composable_stream_links_chain() {
+    // Issue #277: `stream()` runs through its own `streamLinks` chain —
+    // same `reduceRight`/no-op-when-empty contract `links` already has,
+    // but frame-shaped (`RpcStreamFrame`) instead of `Response`-shaped,
+    // and terminating in a real boundary-scan of `application/cbor-seq`
+    // bytes instead of a single `Response` read.
+    let package = generate_for("tiny_rpc", "tiny-rpc-client");
+    let runtime = package_file(&package, "src/runtime.ts");
+    assert!(
+        runtime.contains("streamLinks?: RpcStreamLink[];"),
+        "CratestackRpcClientOptions must accept a streamLinks chain:\n{runtime}"
+    );
+    assert!(
+        runtime.contains(
+            "this.streamChain = (options.streamLinks ?? []).reduceRight<RpcStreamLinkNext>("
+        ),
+        "runtime must build the stream chain via reduceRight so an empty array collapses to \
+         the terminal stream link unchanged:\n{runtime}"
+    );
+    assert!(
+        runtime.contains("import { terminalStreamLink } from \"./stream-terminal\";"),
+        "runtime.ts must import the stream chain's terminal link from ./stream-terminal:\n{runtime}"
+    );
+    let stream_body = &runtime[runtime.find("async *stream").expect("stream() must exist")..];
+    assert!(
+        stream_body.contains("for await (const frame of this.streamChain({"),
+        "stream() must consume this.streamChain instead of fetching directly:\n{runtime}"
+    );
+    assert!(
+        stream_body.contains("throw new CratestackRpcStreamError(frame.error);"),
+        "stream() must convert a mid-stream `{{ kind: \"error\" }}` frame into a thrown \
+         CratestackRpcStreamError, outside the chain, mirroring how call()/batch() already \
+         throw CratestackRpcError outside their chain:\n{runtime}"
+    );
+
+    let links = package_file(&package, "src/links.ts");
+    assert!(
+        links.contains("export type RpcStreamLink ="),
+        "links.ts must export the RpcStreamLink type:\n{links}"
+    );
+    assert!(
+        links.contains("export type RpcStreamLinkNext ="),
+        "links.ts must export the RpcStreamLinkNext type:\n{links}"
+    );
+    assert!(
+        links.contains("export interface RpcStreamLinkRequest"),
+        "links.ts must export the RpcStreamLinkRequest type:\n{links}"
+    );
+    assert!(
+        links.contains("export type RpcStreamFrame<O = unknown> ="),
+        "links.ts must export the RpcStreamFrame discriminated union:\n{links}"
+    );
+    assert!(
+        links.contains("export function createLoggerStreamLink("),
+        "links.ts must ship a reference stream link mirroring createLoggerLink:\n{links}"
+    );
+
+    let stream_terminal = package_file(&package, "src/stream-terminal.ts");
+    assert!(
+        stream_terminal.contains("export const terminalStreamLink: RpcStreamLinkNext ="),
+        "stream-terminal.ts must export the terminal stream link:\n{stream_terminal}"
+    );
+
+    let cbor_seq = package_file(&package, "src/cbor-seq.ts");
+    assert!(
+        cbor_seq.contains("export const RPC_STREAM_ERROR_TAG = 48900;"),
+        "cbor-seq.ts must pin the RPC_STREAM_ERROR_TAG constant to the same value as \
+         cratestack_core::rpc::RPC_STREAM_ERROR_TAG:\n{cbor_seq}"
+    );
+    assert!(
+        cbor_seq.contains("export class CborSeqBoundaryScanner"),
+        "cbor-seq.ts must export the boundary scanner:\n{cbor_seq}"
+    );
+    assert!(
+        cbor_seq.contains("export function classifyCborSeqItem"),
+        "cbor-seq.ts must export the error-sentinel classification helper:\n{cbor_seq}"
+    );
+
+    let index = package_file(&package, "src/index.ts");
+    assert!(
+        index.contains("export * from \"./cbor-seq\";"),
+        "index.ts must re-export the public cbor-seq module:\n{index}"
+    );
+    assert!(
+        !index.contains("export * from \"./cbor-item\";"),
+        "src/cbor-item.ts is an internal implementation detail (the low-level single-item \
+         walk) — it must not be re-exported from index.ts:\n{index}"
     );
 }
 

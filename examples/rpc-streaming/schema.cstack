@@ -37,3 +37,14 @@ type Tick {
 procedure ticks(args: TickerArgs): Tick[]
   @allow(auth() != null)
   @stream
+
+// Same shape as `ticks`, but always fails partway through — a
+// genuinely-streaming server that hits a mid-stream error (issue #281).
+// `Accept: application/cbor-seq` gets a real response ending in the
+// CBOR-tagged error sentinel; `packages/cratestack-ts-types` uses this
+// procedure's real wire bytes as a fixture for the TypeScript
+// boundary-scanner's error-recognition path (issue #277), rather than a
+// hand-rolled one, per that ticket's own risk mitigation.
+procedure flakyTicks(args: TickerArgs): Tick[]
+  @allow(auth() != null)
+  @stream

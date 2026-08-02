@@ -98,6 +98,35 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
             }
         }
     }
+
+    /// Same shape as `ticks`, but always fails on the item after the
+    /// last successful one it yields — a genuinely-streaming server
+    /// hitting a mid-stream error. `cratestack-axum`'s incremental
+    /// encoder (cratestack#283) turns that trailing `Err` into the
+    /// real, wire-accurate CBOR-tagged error sentinel (cratestack#281)
+    /// via the exact same production code path `ticks` uses for its
+    /// successful items — no hand-rolled bytes. See
+    /// `tests/stream_ts_fixture_bytes.rs`, which captures this
+    /// procedure's real response bytes as a fixture for
+    /// `packages/cratestack-ts-types`'s TypeScript boundary-scanner
+    /// tests (issue #277).
+    fn flaky_ticks(
+        &self,
+        _db: &cratestack_schema::Cratestack,
+        _ctx: &CoolContext,
+        args: cratestack_schema::procedures::flaky_ticks::Args,
+    ) -> impl Stream<Item = Result<cratestack_schema::Tick, CoolError>> + Send {
+        async_stream::stream! {
+            let count = args.args.count.max(0);
+            for index in 0..count {
+                yield Ok(cratestack_schema::Tick {
+                    index,
+                    value: args.args.start + index,
+                });
+            }
+            yield Err(CoolError::Internal("flakyTicks always fails after its successful items".to_owned()));
+        }
+    }
 }
 
 #[derive(Clone)]

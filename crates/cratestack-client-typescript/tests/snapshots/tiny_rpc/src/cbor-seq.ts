@@ -1,0 +1,135 @@
+// `application/cbor-seq` boundary scanner (issue #277) — the stateful,
+// chunk-buffering half. `./cbor-item` owns the low-level single-item
+// structural walk this builds on; see that file's header for why it's a
+// direct port of the Rust reference implementation
+// (`CborSeqChunkDecoder`, `crates/cratestack-client-rust/src/streaming.rs`)
+// rather than a fresh implementation from a spec reading.
+//
+// `RPC_STREAM_ERROR_TAG` mirrors the server-side constant
+// (`cratestack_core::rpc::RPC_STREAM_ERROR_TAG`, issue #281): a failed
+// `@stream` procedure's response ends in
+// `Tag(48900, RpcErrorBody-as-CBOR-map)` as its final item, in place of
+// what would otherwise be the next unwrapped output — see
+// `docs/design/rpc-transport.md` §3.3.
+
+import type { CratestackRpcCodec, RpcErrorBody } from "./runtime";
+import type { RpcStreamFrame } from "./links";
+import { MalformedCborSeqError, NeedMoreBytesError, readArgument, skipItem } from "./cbor-item";
+
+export { MalformedCborSeqError } from "./cbor-item";
+
+/** Mirrors `cratestack_core::rpc::RPC_STREAM_ERROR_TAG`. Not an
+ *  IANA-registered tag — see that constant's own doc comment for the
+ *  collision-risk note this repo already accepted. */
+export const RPC_STREAM_ERROR_TAG = 48900;
+
+/** Stateful boundary scanner for `application/cbor-seq` streams. A
+ *  `fetch` `ReadableStream` gives no guarantee that a chunk boundary
+ *  lines up with an item boundary, so this buffers bytes across calls
+ *  and returns the byte ranges of every complete top-level CBOR item
+ *  observed so far, leaving any trailing partial item buffered for the
+ *  next chunk. */
+export class CborSeqBoundaryScanner {
+  // Explicitly typed (not inferred from the initializer): `new
+  // Uint8Array(0)` infers the narrower `Uint8Array<ArrayBuffer>`, but
+  // bytes fed in later (e.g. a `fetch` reader's chunks) are the wider
+  // `Uint8Array<ArrayBufferLike>` — an explicit bare `Uint8Array`
+  // annotation (which itself defaults to `Uint8Array<ArrayBufferLike>`)
+  // avoids a spurious `exactOptionalPropertyTypes`-adjacent assignment
+  // error under TypeScript 5.7+'s generic typed-array types.
+  private buffer: Uint8Array = new Uint8Array(0);
+
+  /** Append `chunk` and return every complete top-level item now
+   *  available, oldest first. Throws (a `MalformedCborSeqError`) only
+   *  for structurally invalid CBOR — a genuinely truncated final item
+   *  just stays buffered, it never throws here. */
+  feedChunk(chunk: Uint8Array): Uint8Array[] {
+    this.buffer = concatBytes(this.buffer, chunk);
+    const items: Uint8Array[] = [];
+    let consumed = 0;
+    for (;;) {
+      if (consumed >= this.buffer.length) {
+        break;
+      }
+      let end: number;
+      try {
+        end = skipItem(this.buffer, consumed);
+      } catch (error) {
+        if (error instanceof NeedMoreBytesError) {
+          break;
+        }
+        throw error;
+      }
+      if (end <= consumed) {
+        throw new MalformedCborSeqError("cbor-seq boundary scanner made no progress on an item");
+      }
+      items.push(this.buffer.slice(consumed, end));
+      consumed = end;
+    }
+    if (consumed > 0) {
+      this.buffer = this.buffer.slice(consumed);
+    }
+    return items;
+  }
+
+  /** Bytes currently buffered, waiting for a frame to complete. Check
+   *  this once the upstream stream has closed: non-zero means the final
+   *  item was truncated (e.g. the connection dropped mid-item). */
+  get pendingLength(): number {
+    return this.buffer.length;
+  }
+}
+
+/** Classify one already-boundary-scanned, complete cbor-seq item: an
+ *  ordinary output value, or — if its leading bytes are
+ *  `Tag(RPC_STREAM_ERROR_TAG, ...)` — the mid-stream error sentinel.
+ *  Detected structurally from the tag header alone, without decoding
+ *  the tagged content as anything other than `RpcErrorBody` first,
+ *  mirroring the Rust side's equivalent classification. */
+export function classifyCborSeqItem<O>(
+  itemBytes: Uint8Array,
+  codec: CratestackRpcCodec,
+): RpcStreamFrame<O> {
+  const tag = readLeadingTag(itemBytes);
+  if (tag !== null && tag.tagNumber === RPC_STREAM_ERROR_TAG) {
+    const error = codec.decode(itemBytes.slice(tag.headerLength)) as RpcErrorBody;
+    return { kind: "error", error };
+  }
+  return { kind: "output", output: codec.decode(itemBytes) as O };
+}
+
+function concatBytes(a: Uint8Array, b: Uint8Array): Uint8Array {
+  if (a.length === 0) {
+    return b;
+  }
+  if (b.length === 0) {
+    return a;
+  }
+  const out = new Uint8Array(a.length + b.length);
+  out.set(a, 0);
+  out.set(b, a.length);
+  return out;
+}
+
+/** If `itemBytes` starts with a CBOR tag (major type 6), return its tag
+ *  number and how many leading bytes the tag header occupies;
+ *  otherwise `null`. Only reads the initial byte(s), never the tagged
+ *  content. `itemBytes` already passed `skipItem` as a complete item,
+ *  so a malformed/truncated tag header here can't happen in practice —
+ *  this stays defensive rather than assuming that invariant. */
+function readLeadingTag(itemBytes: Uint8Array): { tagNumber: number; headerLength: number } | null {
+  if (itemBytes.length === 0) {
+    return null;
+  }
+  const initial = itemBytes[0]!;
+  if (initial >> 5 !== 6) {
+    return null;
+  }
+  const additionalInfo = initial & 0x1f;
+  try {
+    const { value, next } = readArgument(itemBytes, 1, additionalInfo);
+    return { tagNumber: value, headerLength: next };
+  } catch {
+    return null;
+  }
+}

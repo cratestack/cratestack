@@ -69,6 +69,30 @@ pub(crate) const RPC_TEMPLATE_SPECS: &[TemplateSpec] = &[
         output_path: "src/links.ts",
         default_source: include_str!("../templates/src/rpc-links.ts.j2"),
     },
+    // Issue #277's `application/cbor-seq` boundary scanner, split across
+    // two files by concern (see each file's own header comment): the
+    // low-level single-item structural walk, and the stateful
+    // chunk-buffering scanner + error-sentinel classification built on
+    // it. Both stay under this repo's ~200-LoC convention individually;
+    // a single merged file wouldn't have.
+    TemplateSpec {
+        template_name: "rpc-cbor-item.ts.j2",
+        output_path: "src/cbor-item.ts",
+        default_source: include_str!("../templates/src/rpc-cbor-item.ts.j2"),
+    },
+    TemplateSpec {
+        template_name: "rpc-cbor-seq.ts.j2",
+        output_path: "src/cbor-seq.ts",
+        default_source: include_str!("../templates/src/rpc-cbor-seq.ts.j2"),
+    },
+    // The `streamLinks` chain's terminal link (issue #277) — split out
+    // of `rpc-runtime.ts.j2` to avoid growing that already-over-budget
+    // file further; see its own header comment.
+    TemplateSpec {
+        template_name: "rpc-stream-terminal.ts.j2",
+        output_path: "src/stream-terminal.ts",
+        default_source: include_str!("../templates/src/rpc-stream-terminal.ts.j2"),
+    },
     TemplateSpec {
         template_name: "rpc-client.ts.j2",
         output_path: "src/client.ts",

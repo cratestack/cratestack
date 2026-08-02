@@ -1,5 +1,9 @@
 export * from "./runtime";
 export * from "./links";
+// `./cbor-item` is deliberately internal (the low-level single-item
+// walk) — `./cbor-seq` is the public surface for boundary-scanning; see
+// its own header comment.
+export * from "./cbor-seq";
 export * from "./models";
 export * from "./client";
 export * from "./react-query";
