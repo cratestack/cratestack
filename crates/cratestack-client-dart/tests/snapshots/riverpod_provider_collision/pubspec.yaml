@@ -19,6 +19,7 @@ dependencies:
   riverpod_annotation: 4.0.3
   cbor: ^6.5.1
   dio: ^5.8.0+1
+  fast_immutable_collections: ^11.2.0
 
 dev_dependencies:
   flutter_lints: ^6.0.0

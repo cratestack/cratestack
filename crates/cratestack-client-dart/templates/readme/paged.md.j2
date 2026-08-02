@@ -1,6 +1,6 @@
 ## Paged Models
 
-When a model opts into `@@paged`, generated Dart list APIs switch from `List<T>` to `Page<T>` for that model.
+When a model opts into `@@paged`, generated Dart list APIs switch from {% if is_riverpod_preset %}`IList<T>`{% else %}`List<T>`{% endif %} to `Page<T>` for that model.
 
 Full-model paged Flutter example:
 

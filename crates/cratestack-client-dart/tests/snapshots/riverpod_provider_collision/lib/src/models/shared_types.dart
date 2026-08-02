@@ -4,6 +4,8 @@
 // documented at `crate::riverpod::partition::Owner`.
 import 'dart:typed_data';
 
+import 'package:fast_immutable_collections/fast_immutable_collections.dart';
+
 import '../runtime.dart';
 
 class PageInfo {
@@ -45,7 +47,7 @@ class Page<T> {
     required this.pageInfo,
   });
 
-  final List<T> items;
+  final IList<T> items;
   final int? totalCount;
   final PageInfo pageInfo;
 
@@ -56,7 +58,7 @@ class Page<T> {
     return Page<T>(
       items: cratestackAsValueList(cratestackRequireWireValue('Page', 'items', value['items']))
           .map((item) => decodeItem(item))
-          .toList(growable: false),
+          .toIList(),
       totalCount: value['totalCount'] == null ? null : (value['totalCount'] as num).toInt(),
       pageInfo: PageInfo.fromWire(
         cratestackAsValueMap(cratestackRequireWireValue('Page', 'pageInfo', value['pageInfo'])),

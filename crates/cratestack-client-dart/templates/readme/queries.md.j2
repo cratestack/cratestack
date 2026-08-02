@@ -73,7 +73,7 @@ final items = await client.{{ sample_model.accessor }}.listView(
 {% endif %}
 ```
 
-Projection views return `T` for `getView(...)` and `List<T>` or `Page<T>` for `listView(...)`, depending on whether the model list route is paged.
+Projection views return `T` for `getView(...)` and {% if is_riverpod_preset %}`IList<T>`{% else %}`List<T>`{% endif %} or `Page<T>` for `listView(...)`, depending on whether the model list route is paged.
 
 Use `selection.toListQuery(...)` when you want the plain `list(...)` or `get(...)` APIs but do not want to hand-write `fields`, `include`, and `includeFields[path]`. Use `selection.asProjection()` with `getView(...)` or `listView(...)` when you want projected wrapper types back.
 

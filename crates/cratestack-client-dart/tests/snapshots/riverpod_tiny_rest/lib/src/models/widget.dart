@@ -1,6 +1,7 @@
 import '../client.dart';
 import '../queries.dart';
 import '../runtime.dart';
+import 'package:fast_immutable_collections/fast_immutable_collections.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -104,7 +105,7 @@ class WidgetApi {
 
   final TinyRestClientCratestackClient _client;
 
-  Future<List<Widget>> list({
+  Future<IList<Widget>> list({
     CratestackListQuery? query,
     CratestackCallOptions? options,
   }) async {
@@ -114,10 +115,10 @@ class WidgetApi {
       queryParameters: query?.toQueryParameters(),
       options: options,
     );
-    return cratestackAsValueList(body).map((item) => Widget.fromWire(cratestackAsValueMap(item))).toList(growable: false);
+    return cratestackAsValueList(body).map((item) => Widget.fromWire(cratestackAsValueMap(item))).toIList();
   }
 
-  Future<List<T>> listView<T>({
+  Future<IList<T>> listView<T>({
     required CratestackProjection<T> projection,
     CratestackListQuery? query,
     CratestackCallOptions? options,
@@ -130,7 +131,7 @@ class WidgetApi {
     );
     return cratestackAsValueList(body)
         .map((item) => projection.fromWire(cratestackAsValueMap(item)))
-        .toList(growable: false);
+        .toIList();
   }
 
   Future<Widget> get(int id, {
@@ -212,7 +213,7 @@ Future<Widget> widget(Ref ref, int id) {
 }
 
 @riverpod
-Future<List<Widget>> widgetList(Ref ref) {
+Future<IList<Widget>> widgetList(Ref ref) {
   return ref.watch(tinyRestClientWidgetApiProvider).list();
 }
 

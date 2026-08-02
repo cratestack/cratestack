@@ -23,7 +23,29 @@ use crate::riverpod::imports::{
 use crate::riverpod::partition::{Owner, TypePartition};
 use crate::riverpod::provider_naming::reserve_operation_symbol;
 use crate::riverpod::views::{ModelFileContext, ModelOperationsView};
-use crate::views::DataClassKind;
+use crate::views::{DataClassKind, ModelApiView};
+
+/// `build_model_api` is shared verbatim with the `default` preset (its
+/// output is a byte-identical contract — see `tests/snapshot.rs`), so an
+/// unpaged model's `list()` return type/decode can't be forked in there.
+/// Riverpod additionally depends on `fast_immutable_collections`, so its
+/// own per-model file gets `IList<Model>` instead of `List<Model>` for
+/// this one field, computed on top of the shared view rather than inside
+/// it — mirrors `build_pubspec.rs`'s "own builder, not a conditional
+/// branch in the shared one" precedent. Paged models are untouched here:
+/// `Page<T>.items` becomes `IList<T>` separately, in
+/// `shared_types.dart.j2`, since `Page` itself doesn't change name.
+fn build_riverpod_model_api(model: &Model) -> ModelApiView {
+    let mut view = build_model_api(model);
+    if !view.is_paged {
+        view.list_return_type = format!("IList<{}>", model.name);
+        view.list_decode_expr = format!(
+            "cratestackAsValueList(body).map((item) => {}.fromWire(cratestackAsValueMap(item))).toIList()",
+            model.name
+        );
+    }
+    view
+}
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_model_file(
@@ -97,7 +119,7 @@ pub(crate) fn build_model_file(
         .collect();
 
     let selection = build_selection_model(model, &schema.models, &model_names, &enum_names);
-    let model_api = build_model_api(model);
+    let model_api = build_riverpod_model_api(model);
     let accessor = build_model_accessor(model, provider_prefix);
 
     let operations = ModelOperationsView {
@@ -146,6 +168,19 @@ pub(crate) fn build_model_file(
     // type needs it even when the partition found nothing else to share.
     if model_api.is_paged || !partition.shared_refs(&locus).is_empty() {
         imports.insert("import 'shared_types.dart';".to_owned());
+    }
+    // An unpaged model's own `list()`/`listView()` return `IList<...>`
+    // (see `build_riverpod_model_api`'s doc), and a list-arity relation
+    // getter does too regardless of whether this model itself is paged —
+    // only import the package when this file actually references it, per
+    // this module's "only import what's used" rule (`dart analyze
+    // --fatal-warnings` fails on an unused import).
+    let has_list_relation = selection.relations.iter().any(|relation| relation.is_list);
+    if !model_api.is_paged || has_list_relation {
+        imports.insert(
+            "import 'package:fast_immutable_collections/fast_immutable_collections.dart';"
+                .to_owned(),
+        );
     }
 
     let mut related_models = model_relation_targets(model, &model_names);

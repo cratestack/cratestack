@@ -198,7 +198,7 @@ Rule of thumb:
 
 ## Paged Models
 
-When a model opts into `@@paged`, generated Dart list APIs switch from `List<T>` to `Page<T>` for that model.
+When a model opts into `@@paged`, generated Dart list APIs switch from `IList<T>` to `Page<T>` for that model.
 
 Full-model paged Flutter example:
 
@@ -450,7 +450,7 @@ final items = await client.widgets.listView(
 );
 ```
 
-Projection views return `T` for `getView(...)` and `List<T>` or `Page<T>` for `listView(...)`, depending on whether the model list route is paged.
+Projection views return `T` for `getView(...)` and `IList<T>` or `Page<T>` for `listView(...)`, depending on whether the model list route is paged.
 
 Use `selection.toListQuery(...)` when you want the plain `list(...)` or `get(...)` APIs but do not want to hand-write `fields`, `include`, and `includeFields[path]`. Use `selection.asProjection()` with `getView(...)` or `listView(...)` when you want projected wrapper types back.
 
