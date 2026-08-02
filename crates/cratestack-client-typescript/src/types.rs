@@ -27,6 +27,18 @@ pub(crate) fn ts_type(type_ref: &TypeRef, enum_names: &BTreeSet<&str>) -> String
     }
 }
 
+/// The type name a field's `TypeRef` actually names, unwrapping `Page<T>`
+/// to `T` — the same unwrap `ts_type` does internally, factored out so
+/// `crate::swr::ownership` and `crate::swr::context` (issue #304) can
+/// classify a field's *referenced name* without re-deriving the full TS
+/// type string `ts_type` produces.
+pub(crate) fn base_type_name(type_ref: &TypeRef) -> &str {
+    match type_ref.page_item() {
+        Some(item) => base_type_name(item),
+        None => &type_ref.name,
+    }
+}
+
 pub(crate) fn model_name_set(models: &[Model]) -> BTreeSet<&str> {
     models.iter().map(|model| model.name.as_str()).collect()
 }

@@ -1,0 +1,61 @@
+# {{ package_name }}
+
+Generated CrateStack TypeScript client package (`swr` preset — issue #304). One file per model
+under `src/models/`, holding that model's types **and** plain, framework-free `async` functions —
+no client class, no React import. Import exactly the functions you call.
+
+```ts
+import { CratestackRuntime } from "{{ package_name }}";
+{% if models %}
+import { {{ models[0].get_fn }}, {{ models[0].list_fn }} } from "{{ package_name }}/models/{{ models[0].file_stem }}";
+{% endif %}
+
+const runtime = new CratestackRuntime("https://api.example.com", {
+  basePath: "{{ base_path }}",
+});
+```
+
+Every function takes the runtime as its first argument, so it's callable from a React component, a
+server action, a plain Node script, or a test — the same shape everywhere, with no hook required.
+
+## Models
+
+{% for model in models %}
+- `src/models/{{ model.file_stem }}.ts` — `{{ model.list_fn }}`, `{{ model.get_fn }}`{% if model.allows_create %}, `{{ model.create_fn }}`{% endif %}, `{{ model.update_fn }}`, `{{ model.delete_fn }}`
+{% endfor %}
+
+{% if models %}
+```ts
+const items = await {{ models[0].list_fn }}(runtime, {
+  query: { limit: 20, sort: ["-id"] },
+});
+
+const item = await {{ models[0].get_fn }}(runtime, id);
+{% if models[0].allows_create %}
+const created = await {{ models[0].create_fn }}(runtime, input);
+{% endif %}
+const updated = await {{ models[0].update_fn }}(runtime, id, patch);
+await {{ models[0].delete_fn }}(runtime, id);
+```
+{% endif %}
+
+## Procedures
+
+{% for procedure in procedures_file.procedures %}
+- `src/procedures.ts` — `{{ procedure.method_name }}`
+{% endfor %}
+
+{% if procedures_file.procedures %}
+```ts
+import { {{ procedures_file.procedures[0].method_name }} } from "{{ package_name }}/procedures";
+
+const result = await {{ procedures_file.procedures[0].method_name }}(runtime, args);
+```
+{% endif %}
+
+## Shared types
+
+Enums and `type` blocks referenced by more than one model (or by no model at all — a declared but
+unused type) live in `src/models/shared.ts` and are imported by their consumers. A type referenced
+by exactly one model is defined inline in that model's own file instead. See
+`cratestack-client-typescript`'s `src/swr/ownership.rs` for the computation that decides this.

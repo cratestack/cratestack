@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 
 use super::{handle_generate_dart, handle_generate_typescript};
-use crate::cli_types::DartPresetArg;
+use crate::cli_types::{DartPresetArg, TypeScriptPresetArg};
 
 fn write_schema(dir: &TempDir, source: &str) -> PathBuf {
     let path = dir.path().join("schema.cstack");
@@ -42,6 +42,15 @@ model Account {
 "#;
 
 fn generate_ts(schema: PathBuf, out: PathBuf, check: bool) -> anyhow::Result<()> {
+    generate_ts_with_preset(schema, out, check, TypeScriptPresetArg::Default)
+}
+
+fn generate_ts_with_preset(
+    schema: PathBuf,
+    out: PathBuf,
+    check: bool,
+    preset: TypeScriptPresetArg,
+) -> anyhow::Result<()> {
     handle_generate_typescript(
         schema,
         out,
@@ -50,6 +59,7 @@ fn generate_ts(schema: PathBuf, out: PathBuf, check: bool) -> anyhow::Result<()>
         None,
         check,
         false,
+        preset,
     )
 }
 
@@ -131,6 +141,59 @@ fn typescript_check_does_not_write_files() {
     assert_eq!(
         before, after,
         "--check must not modify the output directory"
+    );
+}
+
+// Issue #304: `--check` must be preset-aware — the expected file *set*
+// differs between `default` and `swr` (`src/models.ts` vs.
+// `src/models/<model>.ts` + `src/models/shared.ts` + `src/procedures.ts`,
+// no `src/client.ts`/`src/react-query.ts`), and neither direction should
+// be treated as spurious drift just because the file lists don't match
+// each other.
+
+#[test]
+fn typescript_swr_check_passes_when_output_matches_schema() {
+    let dir = TempDir::new().expect("tempdir");
+    let schema = write_schema(&dir, INITIAL_SCHEMA);
+    let out = dir.path().join("client");
+
+    generate_ts_with_preset(schema.clone(), out.clone(), false, TypeScriptPresetArg::Swr)
+        .expect("initial swr generate");
+    generate_ts_with_preset(schema, out, true, TypeScriptPresetArg::Swr)
+        .expect("check --preset swr should pass against its own unmodified output");
+}
+
+#[test]
+fn typescript_swr_check_flags_default_preset_output_as_real_drift() {
+    // Generate with the default preset, then run `--check --preset swr`
+    // against the same directory: this must fail with real `missing`
+    // (swr's files) and `unexpected` (default's `src/models.ts`, etc.)
+    // entries — not silently pass just because both runs are "generated
+    // TypeScript output". A drift-check that swallowed the differing file
+    // set here would defeat the point of `--check` for anyone switching
+    // presets.
+    let dir = TempDir::new().expect("tempdir");
+    let schema = write_schema(&dir, INITIAL_SCHEMA);
+    let out = dir.path().join("client");
+
+    generate_ts_with_preset(
+        schema.clone(),
+        out.clone(),
+        false,
+        TypeScriptPresetArg::Default,
+    )
+    .expect("initial default generate");
+
+    let error = generate_ts_with_preset(schema, out, true, TypeScriptPresetArg::Swr)
+        .expect_err("check --preset swr against default-preset output should report drift");
+    let message = error.to_string();
+    assert!(
+        message.contains("missing: src/models/account.ts"),
+        "swr's per-model file should be reported missing:\n{message}"
+    );
+    assert!(
+        message.contains("unexpected: src/models.ts"),
+        "default's monolithic models.ts should be reported unexpected:\n{message}"
     );
 }
 

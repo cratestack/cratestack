@@ -1,0 +1,24 @@
+// Relation-cycle fixture for issue #304 (`User` -> `Post[]` -> `User`):
+// proves the `swr` preset's per-model file layout handles a mutual
+// relation without a runtime import cycle. `src/models/user.ts` and
+// `src/models/post.ts` end up importing each other's model type — always
+// as `import type`, never a value import (see `models-rest.ts.j2` /
+// `models-rpc.ts.j2`'s header comment) — so it's a type-only cycle,
+// which TypeScript tolerates fine, not a runtime one.
+
+model User {
+  id Int @id
+  name String
+  posts Post[] @relation(fields:[id],references:[authorId])
+
+  @@allow("create", auth() != null)
+}
+
+model Post {
+  id Int @id
+  title String
+  authorId Int
+  author User @relation(fields:[authorId],references:[id])
+
+  @@allow("create", auth() != null)
+}

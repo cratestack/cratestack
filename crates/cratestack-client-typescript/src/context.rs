@@ -2,9 +2,9 @@ use cratestack_core::{Field, Schema, TransportStyle};
 use serde::Serialize;
 
 use crate::config::TypeScriptGeneratorConfig;
+use crate::error::TypeScriptGeneratorError;
 use crate::grpc::GrpcContext;
 use crate::naming::{occupied_type_names, package_class_stem, to_pascal_case};
-use crate::templates::TypeScriptGeneratorError;
 use crate::types::{
     enum_name_set, is_generated_on_create, is_primary_key, model_allows_create, model_name_set,
     scalar_model_fields, visible_model_fields,

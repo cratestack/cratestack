@@ -25,7 +25,7 @@ mod tests {
 
     use crate::Cli;
     use crate::cli_support::{json_check_failure, json_check_success};
-    use crate::cli_types::{Command, DartPresetArg, StudioCmd};
+    use crate::cli_types::{Command, DartPresetArg, StudioCmd, TypeScriptPresetArg};
 
     #[test]
     fn json_success_payload_has_empty_diagnostics() {
@@ -128,6 +128,7 @@ mod tests {
                 template_dir,
                 check,
                 full_selection,
+                preset,
             } => {
                 assert_eq!(schema, PathBuf::from("schema.cstack"));
                 assert_eq!(out, PathBuf::from("out"));
@@ -136,6 +137,31 @@ mod tests {
                 assert_eq!(template_dir, None);
                 assert!(!check);
                 assert!(!full_selection);
+                assert_eq!(preset, TypeScriptPresetArg::Default);
+            }
+            _ => panic!("expected generate-typescript command"),
+        }
+    }
+
+    #[test]
+    fn generate_typescript_clap_accepts_swr_preset_flag() {
+        // Issue #304: `--preset swr` selects the new file-per-model
+        // layout; the value must clap-parse to the `Swr` variant (kebab
+        // renamed to the literal string `swr`).
+        let cli = Cli::parse_from([
+            "cratestack",
+            "generate-typescript",
+            "--schema",
+            "schema.cstack",
+            "--out",
+            "out",
+            "--preset",
+            "swr",
+        ]);
+
+        match cli.command {
+            Command::GenerateTypeScript { preset, .. } => {
+                assert_eq!(preset, TypeScriptPresetArg::Swr);
             }
             _ => panic!("expected generate-typescript command"),
         }

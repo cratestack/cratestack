@@ -21,3 +21,4 @@ thiserror.workspace = true
 
 [dev-dependencies]
 cratestack-parser.workspace = true
+tempfile = "3"
