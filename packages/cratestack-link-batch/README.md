@@ -41,9 +41,11 @@ const [a, b, c] = await Promise.all([
   overwhelmingly common case, still collapse into exactly one request; calls that don't (e.g. two
   different `Authorization` headers) each keep their own, in a separate request, rather than one
   silently overwriting the other's.
-- **Aggregate headers**: pass `headers` to `createBatchLink({ headers })` to declare the baseline
-  headers a synthesized `/rpc/batch` request carries, merged under each partition's own — instead
-  of relying on whichever call happens to be first in a partition.
+- **Aggregate headers**: pass `headers` to `createBatchLink({ headers })` to declare headers that
+  every synthesized `/rpc/batch` request carries, merged **over** each partition's own — a
+  same-named per-call header is overridden by this value, not the other way around. Use this for
+  service-level headers (e.g. an API key) rather than per-tenant auth, which should come from
+  per-call headers that drive partitioning.
 - **`maxBatchSize`** is enforced **per partition**, not globally across the flush — a single
   oversized partition chunks into several concurrent requests; it never borrows headroom from a
   different partition.

@@ -55,7 +55,10 @@ export class FakeRuntime {
     // `RpcLinkRequest.idempotencyKey` field — a link that only reads one
     // of the two (e.g. deriving a batch signature from headers) needs a
     // harness that actually sets both, or its coverage of that case is
-    // vacuous.
+    // vacuous. Set AFTER `opts.headers` (deliberately, matching the real
+    // runtime's own order) so `opts.idempotencyKey`, the explicit typed
+    // option, always wins over a same-named header the caller happened
+    // to also pass in `opts.headers` — not a merge, an override.
     const headers = new Headers(opts.headers);
     if (opts.idempotencyKey !== undefined) {
       headers.set("Idempotency-Key", opts.idempotencyKey);

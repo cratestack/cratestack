@@ -23,6 +23,9 @@ export function effectiveConfig(
 ): EffectiveConfig {
   const headers = new Headers(request.headers);
   if (options.headers) {
+    // `options.headers` OVERRIDES same-named request headers, not the
+    // other way around — `.set()` here, applied after seeding `headers`
+    // from the request, is what makes link-level config win.
     new Headers(options.headers).forEach((value, key) => headers.set(key, value));
   }
   return {
@@ -55,11 +58,12 @@ function headerSignature(headers: Headers): string {
   const parts: string[] = [];
   // `.forEach()` rather than `.entries()`/`for...of`: it is the one
   // iteration style declared consistently across the DOM `Headers` lib
-  // type and the Node/undici one.
+  // type and the Node/undici one. `key` is already lowercase — the
+  // WHATWG `Headers` spec normalizes names on the way in, so no
+  // `.toLowerCase()` is needed here.
   headers.forEach((value, key) => {
-    const name = key.toLowerCase();
-    if (!FRAME_LEVEL_HEADERS.has(name)) {
-      parts.push(`${name}:${value}`);
+    if (!FRAME_LEVEL_HEADERS.has(key)) {
+      parts.push(`${key}:${value}`);
     }
   });
   // `Headers` iteration order is not guaranteed stable across
