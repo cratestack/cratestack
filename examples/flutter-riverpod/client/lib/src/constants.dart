@@ -7,6 +7,11 @@
 /// a schema hash (e.g. this crate used as a library directly, bypassing
 /// `cratestack generate-dart`), in which case every runtime adapter
 /// omits the header entirely rather than sending an empty value.
+// The nullable type below is structurally correct across the space of
+// possible generator configs (see the doc comment above) even though it's
+// provably non-null for this one generated instance — narrowing it would
+// break the no-hash case, which is a real, exercised code path.
+// ignore: unnecessary_nullable_for_final_variable_declarations
 const String? cratestackSchemaSha256 = 'bf6114909166eaec95db3236963d9aeb1002d49c9d7e1fa07c77ed7f6df3db34';
 
 abstract final class BoardFieldNames {

@@ -24,9 +24,10 @@ typedef CratestackValueMap = Map<String, Object?>;
 ///
 /// The `cbor` package hands maps back as `Map<Object?, Object?>` (and
 /// nested maps/lists likewise), which is *not* a `Map<String, dynamic>`
-/// — casting it directly throws `_Map<Object?, Object?> is not a subtype
-/// of Map<String, dynamic>` at runtime. JSON-decoded bodies already have
-/// `String` keys, so for them this is a cheap structural walk.
+/// — casting it directly throws a `TypeError` (`_Map<Object?, Object?>`
+/// is not a subtype of `Map<String, dynamic>`) at runtime. JSON-decoded
+/// bodies already have `String` keys, so for them this is a cheap
+/// structural walk.
 Object? cratestackNormalizeWire(Object? value) {
   // `Uint8List` implements `List<int>`, so it must be matched before the
   // generic `List` branch — otherwise CBOR byte strings (`Bytes` fields)
