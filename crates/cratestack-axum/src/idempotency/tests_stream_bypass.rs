@@ -1,12 +1,12 @@
 //! Integration-shaped regression test for cratestack#283: a genuinely
-//! streamed response (marked via `STREAM_RESPONSE_HEADER`, exactly as
-//! `crate::transport::stream_sequence` sets it) must pass through
-//! `IdempotencyService` untouched, with its reservation released rather
-//! than left dangling — not silently re-buffered into a replay record.
-//! Drives the real `Service` impl (not just the `is_streamed_response`
-//! predicate unit-tested in `stream_bypass`), with an in-memory
-//! `IdempotencyStore` double standing in for the sqlx/redis
-//! implementations this crate doesn't depend on.
+//! streamed response (marked via the `StreamedResponseMarker` extension,
+//! exactly as `crate::transport::stream_sequence` sets it) must pass
+//! through `IdempotencyService` untouched, with its reservation released
+//! rather than left dangling — not silently re-buffered into a replay
+//! record. Drives the real `Service` impl (not just the
+//! `is_streamed_response` predicate unit-tested in `stream_bypass`),
+//! with an in-memory `IdempotencyStore` double standing in for the
+//! sqlx/redis implementations this crate doesn't depend on.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -16,7 +16,6 @@ use std::time::{Duration, SystemTime};
 use async_trait::async_trait;
 use axum::body::{Body, Bytes};
 use axum::extract::Request;
-use axum::http::HeaderValue;
 use axum::response::Response;
 use cratestack_core::CoolError;
 use futures_util::stream;
@@ -26,7 +25,7 @@ use tower::{Layer, Service};
 use super::layer::IdempotencyLayer;
 use super::record::{IdempotencyRecord, ReservationOutcome};
 use super::store::IdempotencyStore;
-use crate::transport::STREAM_RESPONSE_HEADER;
+use crate::transport::StreamedResponseMarker;
 
 #[derive(Default)]
 struct InMemoryIdempotencyStore {
@@ -130,10 +129,7 @@ fn streamed_response() -> Response {
         Bytes::from_static(b"chunk"),
     )]));
     let mut response = Response::new(body);
-    response.headers_mut().insert(
-        STREAM_RESPONSE_HEADER,
-        HeaderValue::from_static("incremental"),
-    );
+    response.extensions_mut().insert(StreamedResponseMarker);
     response
 }
 
@@ -152,13 +148,13 @@ async fn stream_response_bypasses_buffering_and_releases_its_reservation() {
     let mut svc = IdempotencyLayer::new(store, Duration::from_secs(60)).layer(inner);
 
     let first = svc.call(streamed_request()).await.unwrap();
-    assert_eq!(
-        first
-            .headers()
-            .get(STREAM_RESPONSE_HEADER)
-            .and_then(|v| v.to_str().ok()),
-        Some("incremental"),
-        "the live stream must pass through untouched, marker header included"
+    assert!(
+        first.extensions().get::<StreamedResponseMarker>().is_some(),
+        "the live stream must pass through untouched, marker extension included"
+    );
+    assert!(
+        first.headers().is_empty(),
+        "the marker must never surface as a header — it would leak to the real client"
     );
     let first_body = axum::body::to_bytes(first.into_body(), usize::MAX)
         .await

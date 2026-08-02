@@ -33,30 +33,31 @@
 
 use axum::response::Response;
 
-use crate::transport::STREAM_RESPONSE_HEADER;
+use crate::transport::StreamedResponseMarker;
 
 /// True when `response` was produced by the genuinely incremental
 /// `application/cbor-seq` encoder
 /// (`crate::transport::stream_sequence::encode_cbor_sequence_stream_response`),
-/// not the ordinary buffered one.
+/// not the ordinary buffered one. Checked via `extensions()`, not a
+/// header — see [`StreamedResponseMarker`]'s doc comment for why the
+/// signal never touches `headers()` at all.
 pub(super) fn is_streamed_response(response: &Response) -> bool {
-    response.headers().contains_key(STREAM_RESPONSE_HEADER)
+    response
+        .extensions()
+        .get::<StreamedResponseMarker>()
+        .is_some()
 }
 
 #[cfg(test)]
 mod tests {
     use axum::body::Body;
-    use axum::http::HeaderValue;
 
     use super::*;
 
     #[test]
-    fn detects_the_stream_marker_header() {
+    fn detects_the_stream_marker_extension() {
         let mut response = Response::new(Body::empty());
-        response.headers_mut().insert(
-            STREAM_RESPONSE_HEADER,
-            HeaderValue::from_static("incremental"),
-        );
+        response.extensions_mut().insert(StreamedResponseMarker);
         assert!(is_streamed_response(&response));
     }
 
@@ -64,5 +65,20 @@ mod tests {
     fn ordinary_response_is_not_flagged() {
         let response = Response::new(Body::empty());
         assert!(!is_streamed_response(&response));
+    }
+
+    #[test]
+    fn the_marker_never_touches_headers_so_it_cannot_leak_onto_the_wire() {
+        // The whole point of using an extension instead of a header: even
+        // if something upstream forgets to check is_streamed_response()
+        // and forwards the response as-is, there is no header for a real
+        // client to ever observe — extensions have no wire
+        // representation at all, by construction of `http::Response`.
+        let mut response = Response::new(Body::empty());
+        response.extensions_mut().insert(StreamedResponseMarker);
+        assert!(
+            response.headers().is_empty(),
+            "the stream marker must never be set as a header — it would leak to real clients"
+        );
     }
 }

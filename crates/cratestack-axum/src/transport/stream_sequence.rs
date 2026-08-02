@@ -30,7 +30,7 @@ use serde::Serialize;
 
 use super::CBOR_SEQUENCE_CONTENT_TYPE;
 use super::http_transport::CborCodecMarker;
-use crate::transport::STREAM_RESPONSE_HEADER;
+use crate::transport::StreamedResponseMarker;
 
 #[cfg(test)]
 mod tests;
@@ -57,16 +57,14 @@ where
         header::CONTENT_TYPE,
         HeaderValue::from_static(CBOR_SEQUENCE_CONTENT_TYPE),
     );
-    // Internal-only signal (never part of the documented wire contract)
-    // so response-buffering middleware — today just `IdempotencyService`
-    // — can tell a genuinely incremental body apart from an ordinary
+    // Internal-only signal (an extension, never a header — see
+    // `StreamedResponseMarker`'s own doc comment for why) so
+    // response-buffering middleware — today just `IdempotencyService` —
+    // can tell a genuinely incremental body apart from an ordinary
     // buffered `application/cbor-seq` response and bypass buffering
     // instead of silently re-collecting a partial stream. See
     // `crate::idempotency::service`.
-    response.headers_mut().insert(
-        STREAM_RESPONSE_HEADER,
-        HeaderValue::from_static("incremental"),
-    );
+    response.extensions_mut().insert(StreamedResponseMarker);
     Ok(response)
 }
 

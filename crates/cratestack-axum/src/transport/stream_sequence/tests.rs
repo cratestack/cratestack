@@ -19,12 +19,17 @@ async fn encodes_each_item_and_stops_cleanly_at_end_of_stream() {
             .and_then(|v| v.to_str().ok()),
         Some(CBOR_SEQUENCE_CONTENT_TYPE)
     );
-    assert_eq!(
+    assert!(
         response
-            .headers()
-            .get(STREAM_RESPONSE_HEADER)
-            .and_then(|v| v.to_str().ok()),
-        Some("incremental")
+            .extensions()
+            .get::<StreamedResponseMarker>()
+            .is_some(),
+        "incremental responses must carry the StreamedResponseMarker extension"
+    );
+    assert!(
+        !response.headers().contains_key("x-cratestack-stream"),
+        "the stream marker must never appear as a header (it would leak to real clients) — \
+         see StreamedResponseMarker's doc comment"
     );
 
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
