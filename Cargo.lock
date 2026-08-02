@@ -1030,6 +1030,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "cratestack-cbor-napi"
+version = "0.5.2"
+dependencies = [
+ "cratestack-codec-cbor",
+ "cratestack-core",
+ "napi",
+ "napi-build",
+ "napi-derive",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "cratestack-cli"
 version = "0.5.2"
 dependencies = [

@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/cratestack",
     "crates/cratestack-axum",
+    "crates/cratestack-cbor-napi",
     "crates/cratestack-cli",
     "crates/cratestack-client-dart",
     "crates/cratestack-client-flutter",

@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "ignore": ["**/dist/**"]
+    "ignore": ["**/dist/**", "**/native.mjs", "**/native.d.mts"]
   },
   "formatter": {
     "enabled": true,

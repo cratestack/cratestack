@@ -11,6 +11,13 @@
     },
     "lint": {
       "outputs": []
+    },
+    "cratestack-cbor-node#build": {
+      "dependsOn": ["^build"],
+      // Native napi-rs build output lands at the package root (not
+      // dist/), alongside the tsc-compiled wrapper — see
+      // packages/cratestack-cbor-node/package.json's "build" script.
+      "outputs": ["dist/**", "native.mjs", "native.d.mts", "*.node"]
     }
   }
 }

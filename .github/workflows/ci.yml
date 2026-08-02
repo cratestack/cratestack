@@ -194,6 +194,13 @@ jobs:
   # are self-contained consumer projects with their own toolchains
   # (napi/wasm/tauri), scoped out via `pnpm-workspace.yaml`'s
   # `packages/*` glob.
+  #
+  # `cratestack-cbor-node` (issue #286) IS part of this pnpm workspace
+  # (packages/*) but is excluded from this job's turbo run via `--filter`
+  # — unlike every other package here, its "build" script invokes `napi
+  # build`, which needs a Rust toolchain this job deliberately doesn't
+  # set up (that's the whole point of keeping `js` napi/wasm/tauri-free,
+  # per the comment above). See the dedicated `js-cbor-napi` job instead.
   js:
     name: js (pnpm + turbo)
     runs-on: ubuntu-latest
@@ -231,4 +238,36 @@ jobs:
           restore-keys: |
             turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
       - name: Build, test, lint (turbo)
-        run: pnpm turbo run build test lint
+        run: pnpm turbo run build test lint --filter='!./packages/cratestack-cbor-node'
+
+  # ---- @cratestack/cbor-node (native N-API addon) -----------------------
+  # Blocking, but split out of `js` above: this is the one packages/*
+  # package whose "build" script needs a real Rust toolchain (`napi build`
+  # compiles crates/cratestack-cbor-napi), so it gets its own toolchain
+  # setup instead of adding that requirement to every other JS package's
+  # job. Single-platform (this runner's host target) sanity build+test —
+  # NOT the full per-platform release matrix `release-cli.yml` uses for
+  # `cratestack-cli`. That matrix (multiple OS/arch legs, `napi artifacts`,
+  # `napi prepublish -t npm`, optionalDependencies subpackage publishing)
+  # is deliberately deferred — see the PR that introduced this job (issue
+  # #286) for the explicit scope note. This job only proves the crate +
+  # package genuinely build and pass tests on CI, not that every published
+  # target does.
+  js-cbor-napi:
+    name: js (@cratestack/cbor-node)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: pnpm install
+        env:
+          CRATESTACK_CLI_SKIP_DOWNLOAD: "1"
+        run: pnpm install --frozen-lockfile
+      - name: Build, test, lint @cratestack/cbor-node
+        run: pnpm turbo run build test lint --filter='./packages/cratestack-cbor-node'

@@ -94,6 +94,9 @@ The dependency flow is roughly: **parser → core/policy/sql → macros → back
 - Clients: `cratestack-client-rust`, `-dart`, `-typescript`, `-flutter`, plus client state stores
   (`-store-sqlite`, `-store-redis`).
 - Codecs: `cratestack-codec-cbor` (default wire format), `cratestack-codec-json`.
+- Native bindings: `cratestack-cbor-napi` — napi-rs Node addon wrapping `cratestack-codec-cbor` for
+  `@cratestack/cbor-node` (`packages/cratestack-cbor-node`, issue #286). `publish = false`; ships
+  only as a compiled `.node` addon inside that npm package, never as a Cargo dependency.
 - Tooling: `cratestack-cli`, `cratestack-lsp` (tower-lsp-server LSP for `.cstack`), `cratestack-migrate`,
   `cratestack-studio` (+ `-studio-generator` shim, `-studio-ui` wasm app — see below).
 

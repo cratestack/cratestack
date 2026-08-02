@@ -1,0 +1,55 @@
+{
+  "name": "@cratestack/cbor-node",
+  "version": "0.5.2",
+  "description": "Native N-API CBOR codec for CrateStack's generated TypeScript clients, wrapping the framework's own cratestack-codec-cbor Rust crate (crates/cratestack-cbor-napi) for byte-identical wire behavior with the server and Rust client.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cratestack/cratestack.git",
+    "directory": "packages/cratestack-cbor-node"
+  },
+  "homepage": "https://cratestack.dev",
+  "bugs": "https://github.com/cratestack/cratestack/issues",
+  "keywords": ["cratestack", "cstack", "cbor", "codec", "napi", "rpc"],
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "native.mjs", "native.d.mts", "*.node", "README.md", "LICENSE"],
+  "napi": {
+    "binaryName": "cratestack-cbor-node",
+    "packageName": "@cratestack/cbor-node",
+    "targets": [
+      "x86_64-apple-darwin",
+      "aarch64-apple-darwin",
+      "x86_64-unknown-linux-gnu",
+      "aarch64-unknown-linux-gnu",
+      "x86_64-pc-windows-msvc"
+    ]
+  },
+  "scripts": {
+    "build:napi": "napi build --manifest-path ../../crates/cratestack-cbor-napi/Cargo.toml --platform --release --esm --js native.mjs --dts native.d.mts --output-dir .",
+    "build:napi:debug": "napi build --manifest-path ../../crates/cratestack-cbor-napi/Cargo.toml --platform --esm --js native.mjs --dts native.d.mts --output-dir .",
+    "build": "pnpm run build:napi && tsc -p tsconfig.json",
+    "build:debug": "pnpm run build:napi:debug && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.test.json --noEmit",
+    "test": "pnpm run typecheck && vitest run",
+    "lint": "biome check .",
+    "prepublishOnly": "napi prepublish -t npm"
+  },
+  "devDependencies": {
+    "@cratestack/ts-types": "0.5.2",
+    "@napi-rs/cli": "^3.6.2",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
