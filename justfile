@@ -162,6 +162,57 @@ test-ci-host *args='':
 		--exclude react-nextjs-daisyui-napi \
 		--exclude embedded-expo-native {{args}}
 
+# Verify the Dart client generator's OUTPUT actually compiles, not just
+# that its generated text matches a Rust-side snapshot (issue #300).
+# Generates a REST and an RPC package during the run from committed
+# fixtures (crates/cratestack-client-dart/tests/fixtures/ci_{rest,rpc}.cstack
+# — multiple models, an enum, a relation, and a procedure each) via the
+# real `cratestack generate-dart` CLI, then runs `flutter analyze` on
+# each. This is the same check CI's `dart (generated packages)` job runs.
+#
+# Requires the Flutter SDK on PATH, not just the Dart SDK: the generated
+# `pubspec.yaml` depends on `sdk: flutter` (the `flutter`/`flutter_test`
+# packages) and `flutter_riverpod` — a standalone Dart SDK install has no
+# Flutter pub cache to resolve those against (verified empirically before
+# choosing this over `dart-lang/setup-dart`).
+verify-dart:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if ! command -v flutter >/dev/null; then
+	  echo "flutter not found on PATH — install the Flutter SDK: https://docs.flutter.dev/get-started/install" >&2
+	  exit 1
+	fi
+	out=target/dart-verify
+	rm -rf "$out"
+	fixtures=(ci_rest ci_rpc)
+	for fixture in "${fixtures[@]}"; do
+	  pkg="$out/$fixture"
+	  echo "=== generate-dart: $fixture -> $pkg ==="
+	  cargo run --quiet -p cratestack-cli -- generate-dart \
+	    --schema "crates/cratestack-client-dart/tests/fixtures/$fixture.cstack" \
+	    --out "$pkg" \
+	    --library-name "dart_verify_${fixture}"
+	  echo "=== flutter pub get: $fixture ==="
+	  (cd "$pkg" && flutter pub get)
+	  echo "=== flutter analyze: $fixture ==="
+	  # --fatal-warnings (Dart's own default): a warning-level finding
+	  # fails the build — unused imports, dead code, deprecated API use
+	  # are real signal on generated code that should never carry them.
+	  # --no-fatal-infos: info-level style suggestions don't fail the
+	  # build here. `flutter analyze` (unlike plain `dart analyze`)
+	  # defaults `--fatal-infos` to ON; the two pre-existing info
+	  # findings this surfaced on today's templates (a doc-comment
+	  # angle-bracket lint in runtime.dart, and a nullable-narrowing
+	  # suggestion on constants.dart's schema-hash constant that's a
+	  # structural false positive — the field is `String?` because it
+	  # can be null for hash-less configs, even though this particular
+	  # generated instance's literal happens to be non-null) are noise,
+	  # not evidence the generator is broken, so they don't gate the
+	  # build. See the PR that introduced this recipe for the follow-up
+	  # issue tracking them.
+	  (cd "$pkg" && flutter analyze --fatal-warnings --no-fatal-infos)
+	done
+
 # Bundle the Studio UI for publishing: source tarball (for `studio
 # eject --with-ui`) and the Trunk-built wasm/JS dist (embedded into
 # the served binary so `cratestack studio run` ships a real admin app

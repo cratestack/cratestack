@@ -1,0 +1,52 @@
+// Richer RPC fixture for the Dart CI-verification harness (issue #300).
+// Same shape as `ci_rest.cstack` (multiple models, a relation, an enum used
+// as a field/array field/procedure-return type, a query and a mutation
+// procedure) but under `transport rpc`, so the RPC-specific templates
+// (`rpc-library.dart.j2`, `rpc-apis.dart.j2`, `rpc-runtime.dart.j2`, ...)
+// get exercised by `dart analyze`/`flutter analyze` too, not just REST.
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth SessionUser {
+  id Int
+}
+
+enum PostStatus {
+  draft
+  published
+  archived
+}
+
+type PostStatusFilter {
+  statuses PostStatus[]
+}
+
+model Author {
+  id Int @id
+  name String
+  posts Post[] @relation(fields:[id],references:[authorId])
+}
+
+model Post {
+  id Int @id
+  title String
+  status PostStatus
+  published Boolean
+  authorId Int
+  author Author @relation(fields:[authorId],references:[id])
+
+  @@allow("read", published || authorId == auth().id)
+  @@allow("create", auth() != null)
+  @@paged
+}
+
+procedure listPosts(filter: PostStatusFilter?): Post[]
+  @allow(auth() != null)
+
+mutation procedure currentStatus(postId: Int): PostStatus
+  @allow(auth() != null)
