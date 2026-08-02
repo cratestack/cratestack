@@ -94,4 +94,32 @@ mod tests {
         let field = field_with_relation("@relation(fields:[userId], ref:[id])");
         assert!(parse_relation_attribute(&field).is_none());
     }
+
+    #[test]
+    fn parse_relation_attribute_tolerates_on_delete_and_on_update() {
+        // Codegen doesn't act on these — cratestack-migrate does — but
+        // it must not reject a relation just because they're present.
+        let field = field_with_relation(
+            "@relation(fields:[userId], references:[id], onDelete: Cascade, onUpdate: Restrict)",
+        );
+        let parsed = parse_relation_attribute(&field).expect("relation attribute should parse");
+        assert_eq!(parsed.fields, vec!["userId".to_owned()]);
+        assert_eq!(parsed.references, vec!["id".to_owned()]);
+    }
+
+    #[test]
+    fn parse_relation_attribute_tolerates_any_other_unrecognised_key() {
+        // Review finding on #261 (the same parser shape, different
+        // crate): an unrecognised key used to drop the whole relation
+        // instead of just being ignored. `cratestack-parser` is the
+        // real vocabulary gatekeeper; this crate only needs
+        // `fields`/`references` and shouldn't re-reject a schema that
+        // already passed `check` just because its own match doesn't
+        // name every key that parser accepts.
+        let field =
+            field_with_relation("@relation(fields:[userId], references:[id], futureKey: Whatever)");
+        let parsed = parse_relation_attribute(&field).expect("relation attribute should parse");
+        assert_eq!(parsed.fields, vec!["userId".to_owned()]);
+        assert_eq!(parsed.references, vec!["id".to_owned()]);
+    }
 }

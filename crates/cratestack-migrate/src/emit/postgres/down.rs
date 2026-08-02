@@ -5,13 +5,15 @@
 use std::fmt::Write as _;
 
 use crate::ir::{
-    AddCheck, AlterColumnDefault, AlterColumnNullability, DropCheck, Op, RenameColumn, RenameTable,
+    AddCheck, AddForeignKey, AlterColumnDefault, AlterColumnNullability, DropCheck, DropForeignKey,
+    Op, RenameColumn, RenameTable,
 };
 
 use super::checks::{emit_add_check, emit_drop_check};
 use super::columns::{
     emit_alter_column_default, emit_alter_column_nullability, emit_rename_column,
 };
+use super::foreign_keys::{emit_add_foreign_key, emit_drop_foreign_key};
 use super::idents::quote_ident;
 use super::tables::emit_rename_table;
 
@@ -81,6 +83,30 @@ pub(super) fn emit_down_op(sql: &mut String, op: &Op) {
                 kind: check.kind.clone(),
             };
             emit_add_check(sql, &reverse);
+        }
+        Op::AddForeignKey(fk) => {
+            let reverse = DropForeignKey {
+                name: fk.name.clone(),
+                table: fk.table.clone(),
+                column: fk.column.clone(),
+                referenced_table: fk.referenced_table.clone(),
+                referenced_column: fk.referenced_column.clone(),
+                on_delete: fk.on_delete,
+                on_update: fk.on_update,
+            };
+            emit_drop_foreign_key(sql, &reverse);
+        }
+        Op::DropForeignKey(fk) => {
+            let reverse = AddForeignKey {
+                name: fk.name.clone(),
+                table: fk.table.clone(),
+                column: fk.column.clone(),
+                referenced_table: fk.referenced_table.clone(),
+                referenced_column: fk.referenced_column.clone(),
+                on_delete: fk.on_delete,
+                on_update: fk.on_update,
+            };
+            emit_add_foreign_key(sql, &reverse);
         }
         Op::CreateView(view) => {
             writeln!(sql, "DROP VIEW {};", quote_ident(&view.name)).unwrap();

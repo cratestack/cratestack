@@ -1,6 +1,7 @@
 mod diagnostics;
 mod line_helpers;
 mod parse;
+mod relation_actions;
 mod relation_helpers;
 mod validate;
 
@@ -22,6 +23,8 @@ mod tests_model_attrs;
 mod tests_model_unique;
 #[cfg(test)]
 mod tests_procedures;
+#[cfg(test)]
+mod tests_relation_actions;
 #[cfg(test)]
 mod tests_relations;
 #[cfg(test)]

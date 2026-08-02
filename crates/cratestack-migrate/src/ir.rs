@@ -12,6 +12,7 @@
 
 mod checks;
 mod columns;
+mod foreign_keys;
 mod ops;
 mod views;
 
@@ -19,6 +20,7 @@ use serde::{Deserialize, Serialize};
 
 pub use checks::{AddCheck, CheckKind, DropCheck};
 pub use columns::{Column, ColumnArity, ColumnDefault, ColumnType};
+pub use foreign_keys::{AddForeignKey, DropForeignKey, ForeignKeyAction};
 pub use ops::{
     AddColumn, AddIndex, AlterColumnDefault, AlterColumnNullability, AlterColumnType, CreateTable,
     DropColumn, DropIndex, DropTable, RenameColumn, RenameTable,
@@ -54,6 +56,8 @@ pub enum Op {
     RenameColumn(RenameColumn),
     AddCheck(AddCheck),
     DropCheck(DropCheck),
+    AddForeignKey(AddForeignKey),
+    DropForeignKey(DropForeignKey),
     CreateView(CreateView),
     DropView(DropView),
     ReplaceView(ReplaceView),
@@ -105,6 +109,14 @@ impl Op {
             },
             // Dropping a CHECK constraint never destroys data.
             Op::DropCheck(_) => Destructiveness::Safe,
+            // A foreign key can fail to validate against existing
+            // orphaned rows, but so can a UNIQUE index against
+            // existing duplicates (`Op::AddIndex`, above) — both are
+            // classified Safe for the same reason: the DDL either
+            // succeeds outright or the migration transaction aborts
+            // with no partial data loss. Dropping a foreign key, like
+            // dropping any other constraint, never destroys data.
+            Op::AddForeignKey(_) | Op::DropForeignKey(_) => Destructiveness::Safe,
             // View creates and replaces never destroy data (the view
             // is a read-only projection over existing tables; replace
             // swaps the SQL body, not the underlying rows).

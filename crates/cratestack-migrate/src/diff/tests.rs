@@ -4,6 +4,8 @@
 mod basic;
 mod composite_unique;
 mod indexes;
+mod relation_actions;
+mod relations;
 mod views;
 
 use cratestack_core::Schema;
