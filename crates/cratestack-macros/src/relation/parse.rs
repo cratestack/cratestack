@@ -21,6 +21,10 @@ pub(crate) fn parse_relation_attribute(field: &Field) -> Option<ParsedRelationAt
         match key.trim() {
             "fields" => fields = Some(parse_relation_list(value.trim())?),
             "references" => references = Some(parse_relation_list(value.trim())?),
+            // `onDelete`/`onUpdate` are a DB-constraint concern that
+            // `cratestack-migrate` acts on — Rust codegen here doesn't
+            // need the value, just to not choke on the key.
+            "onDelete" | "onUpdate" => {}
             _ => return None,
         }
     }

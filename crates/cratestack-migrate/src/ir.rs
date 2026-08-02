@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 
 pub use checks::{AddCheck, CheckKind, DropCheck};
 pub use columns::{Column, ColumnArity, ColumnDefault, ColumnType};
-pub use foreign_keys::{AddForeignKey, DropForeignKey};
+pub use foreign_keys::{AddForeignKey, DropForeignKey, ForeignKeyAction};
 pub use ops::{
     AddColumn, AddIndex, AlterColumnDefault, AlterColumnNullability, AlterColumnType, CreateTable,
     DropColumn, DropIndex, DropTable, RenameColumn, RenameTable,

@@ -91,6 +91,8 @@ pub(super) fn emit_down_op(sql: &mut String, op: &Op) {
                 column: fk.column.clone(),
                 referenced_table: fk.referenced_table.clone(),
                 referenced_column: fk.referenced_column.clone(),
+                on_delete: fk.on_delete,
+                on_update: fk.on_update,
             };
             emit_drop_foreign_key(sql, &reverse);
         }
@@ -101,6 +103,8 @@ pub(super) fn emit_down_op(sql: &mut String, op: &Op) {
                 column: fk.column.clone(),
                 referenced_table: fk.referenced_table.clone(),
                 referenced_column: fk.referenced_column.clone(),
+                on_delete: fk.on_delete,
+                on_update: fk.on_update,
             };
             emit_add_foreign_key(sql, &reverse);
         }

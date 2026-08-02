@@ -3,6 +3,7 @@
 
 mod basic;
 mod indexes;
+mod relation_actions;
 mod relations;
 mod views;
 

@@ -33,9 +33,10 @@ pub(super) fn diff_foreign_keys(prev: &TableProjection, next: &TableProjection) 
     for fk in &next.foreign_keys {
         match prev_by_name.get(fk.name.as_str()) {
             None => out.adds.push(Op::AddForeignKey(fk.clone())),
-            // Same name (same table + column), but the target changed
-            // — the relation now points somewhere else. Drop the old
-            // constraint and add the new one.
+            // Same name (same table + column), but something about the
+            // definition changed — the target, or an `onDelete`/
+            // `onUpdate` action. Postgres has no `ALTER TABLE ... ALTER
+            // CONSTRAINT` for this; drop the old one and add the new.
             Some(prev_fk) if *prev_fk != fk => {
                 out.drops.push(Op::DropForeignKey(to_drop(prev_fk)));
                 out.adds.push(Op::AddForeignKey(fk.clone()));
@@ -54,5 +55,7 @@ fn to_drop(fk: &AddForeignKey) -> DropForeignKey {
         column: fk.column.clone(),
         referenced_table: fk.referenced_table.clone(),
         referenced_column: fk.referenced_column.clone(),
+        on_delete: fk.on_delete,
+        on_update: fk.on_update,
     }
 }

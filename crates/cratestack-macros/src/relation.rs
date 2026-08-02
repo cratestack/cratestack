@@ -94,4 +94,16 @@ mod tests {
         let field = field_with_relation("@relation(fields:[userId], ref:[id])");
         assert!(parse_relation_attribute(&field).is_none());
     }
+
+    #[test]
+    fn parse_relation_attribute_tolerates_on_delete_and_on_update() {
+        // Codegen doesn't act on these — cratestack-migrate does — but
+        // it must not reject a relation just because they're present.
+        let field = field_with_relation(
+            "@relation(fields:[userId], references:[id], onDelete: Cascade, onUpdate: Restrict)",
+        );
+        let parsed = parse_relation_attribute(&field).expect("relation attribute should parse");
+        assert_eq!(parsed.fields, vec!["userId".to_owned()]);
+        assert_eq!(parsed.references, vec!["id".to_owned()]);
+    }
 }
