@@ -235,8 +235,16 @@ fn riverpod_pubspec_adds_riverpod_annotation_generator_and_build_runner() {
         "riverpod_generator should be a dev dependency:\n{pubspec}"
     );
     assert!(
-        pubspec.contains("build_runner: ^2.16.0"),
-        "build_runner should be a dev dependency:\n{pubspec}"
+        pubspec.contains(r#"build_runner: ">=2.15.0 <2.15.2""#),
+        "build_runner must stay upper-bounded below 2.15.2 — from there its own constraint \
+         requires analyzer >=13.3.0, which requires meta ^1.18.3, incompatible with Flutter \
+         stable's meta 1.18.0 pin (verified against pub.dev's real version history, and CI \
+         caught this for real once already):\n{pubspec}"
+    );
+    assert!(
+        pubspec.contains(r#"analyzer: ">=13.0.0 <13.1.0""#),
+        "analyzer must be pinned to the 13.0.x line explicitly so pub's resolver can't float \
+         it to 13.1.0+ (which needs meta ^1.18.3):\n{pubspec}"
     );
     // A bare, non-Flutter `riverpod:` package must never be added
     // alongside `flutter_riverpod` — it already re-exports what

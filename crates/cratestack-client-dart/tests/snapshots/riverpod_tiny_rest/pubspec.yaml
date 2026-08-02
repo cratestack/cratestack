@@ -18,5 +18,18 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   flutter_test:
     sdk: flutter
-  build_runner: ^2.16.0
+  # `build_runner` upper-bounded below 2.15.2, and `analyzer` pinned to
+  # the 13.0.x line explicitly (not otherwise a direct dependency): from
+  # `build_runner` 2.15.2 on, its own constraint requires
+  # `analyzer >=13.3.0`, and `analyzer` 13.1.0+ requires `meta ^1.18.3` —
+  # but Flutter's `stable` channel pins `meta` to exactly `1.18.0`
+  # (confirmed via pub.dev's analyzer version history: 13.0.0 is the
+  # last release still on `meta ^1.18.0`), so CI's `flutter pub get`
+  # fails version solving with any newer `build_runner`/`analyzer` pair.
+  # `riverpod_generator: ^4.0.8` accepts `analyzer ^13.0.0`, so 13.0.0
+  # satisfies every constraint at once. Verified: `dart run build_runner
+  # build` actually runs and generates real `.g.dart` output at these
+  # exact pinned versions, not just that `pub get` resolves.
+  build_runner: ">=2.15.0 <2.15.2"
+  analyzer: ">=13.0.0 <13.1.0"
   riverpod_generator: ^4.0.8
