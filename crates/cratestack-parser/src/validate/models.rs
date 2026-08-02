@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cratestack_core::{Field, Model, Schema};
 
 use crate::diagnostics::{SchemaError, span_error};
+use crate::relation_actions::validate_relation_actions;
 use crate::relation_helpers::{parse_relation_attribute, validate_relation_scalar_compatibility};
 use crate::validate::fields::{
     CustomFieldSupport, validate_custom_field_attribute, validate_default_dbgenerated_no_args,
@@ -187,6 +188,7 @@ fn validate_field_relation(
             ));
         }
         validate_relation_scalar_compatibility(field, model, local_field, target_field)?;
+        validate_relation_actions(field, model, local_field, &relation)?;
     } else if relation_attribute.is_some() {
         return Err(span_error(
             format!(

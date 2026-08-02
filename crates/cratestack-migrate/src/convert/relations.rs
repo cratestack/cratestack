@@ -9,10 +9,16 @@
 //! columns, `references` names columns on the target model — so the
 //! only thing that distinguishes the owning side is arity: a `List`
 //! field is the inverse accessor, not a real foreign key.
+//!
+//! `onDelete`/`onUpdate` are optional and only meaningful on the
+//! owning side — `cratestack-parser` rejects them on the `List` side
+//! (see `validate_relation_actions`), so a `List` field's own
+//! `on_delete`/`on_update` are simply never read: this function
+//! already returns `None` for it above before either is inspected.
 
 use cratestack_core::{Field, Schema, TypeArity};
 
-use crate::ir::AddForeignKey;
+use crate::ir::{AddForeignKey, ForeignKeyAction};
 use crate::naming::{column_name, fk_name, table_name};
 
 pub(super) fn relation_foreign_key(
@@ -39,12 +45,24 @@ pub(super) fn relation_foreign_key(
         column,
         referenced_table: table_name(&target_model.name),
         referenced_column: column_name(target_field),
+        on_delete: relation
+            .on_delete
+            .as_deref()
+            .map(ForeignKeyAction::parse)
+            .unwrap_or_default(),
+        on_update: relation
+            .on_update
+            .as_deref()
+            .map(ForeignKeyAction::parse)
+            .unwrap_or_default(),
     })
 }
 
 struct ParsedRelationAttribute {
     fields: Vec<String>,
     references: Vec<String>,
+    on_delete: Option<String>,
+    on_update: Option<String>,
 }
 
 /// Parses `@relation(fields:[...],references:[...])`. Mirrors
@@ -57,27 +75,32 @@ fn parse_relation_attribute(raw: &str) -> Option<ParsedRelationAttribute> {
     let inner = raw.strip_prefix("@relation(")?.strip_suffix(')')?;
     let mut fields = None;
     let mut references = None;
+    let mut on_delete = None;
+    let mut on_update = None;
     for entry in split_top_level(inner) {
         let (key, value) = entry.split_once(':')?;
         match key.trim() {
             "fields" => fields = Some(parse_bracket_list(value.trim())?),
             "references" => references = Some(parse_bracket_list(value.trim())?),
+            "onDelete" => on_delete = Some(value.trim().to_owned()),
+            "onUpdate" => on_update = Some(value.trim().to_owned()),
             // Ignore any other key rather than dropping the whole
             // relation. `cratestack-parser` is the sole vocabulary
             // gatekeeper — it rejects a genuinely unknown key with a
             // diagnostic before a schema ever reaches this crate — so
             // by the time this runs, an unrecognised key here just
             // means the parser's vocabulary has grown past what this
-            // FK-only parser cares about (e.g. `onDelete`/`onUpdate`
-            // before support for them existed here). Returning `None`
-            // silently dropped the foreign key entirely with no error
-            // at all — worse than ignoring the extra key.
+            // FK-only parser cares about. Returning `None` silently
+            // dropped the foreign key entirely with no error at all —
+            // worse than ignoring the extra key.
             _ => {}
         }
     }
     Some(ParsedRelationAttribute {
         fields: fields?,
         references: references?,
+        on_delete,
+        on_update,
     })
 }
 

@@ -14,16 +14,22 @@ use crate::ir::{AddForeignKey, DropForeignKey};
 use super::idents::quote_ident;
 
 pub(super) fn emit_add_foreign_key(sql: &mut String, fk: &AddForeignKey) {
-    writeln!(
+    write!(
         sql,
-        "-- SQLite: ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({}) — \
-         requires table rebuild on SQLite. Hand-write up.pre.sql.",
+        "-- SQLite: ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({})",
         quote_ident(&fk.name),
         quote_ident(&fk.column),
         quote_ident(&fk.referenced_table),
         quote_ident(&fk.referenced_column),
     )
     .unwrap();
+    if let Some(action) = fk.on_delete.sql_keyword() {
+        write!(sql, " ON DELETE {action}").unwrap();
+    }
+    if let Some(action) = fk.on_update.sql_keyword() {
+        write!(sql, " ON UPDATE {action}").unwrap();
+    }
+    sql.push_str(" — requires table rebuild on SQLite. Hand-write up.pre.sql.\n");
 }
 
 pub(super) fn emit_drop_foreign_key(sql: &mut String, drop: &DropForeignKey) {

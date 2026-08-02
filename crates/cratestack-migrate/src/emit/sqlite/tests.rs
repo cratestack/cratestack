@@ -345,6 +345,34 @@ model Application {
 }
 
 #[test]
+fn relation_with_actions_mentions_them_in_the_rebuild_marker_comment() {
+    let prev = schema(&with_models(""));
+    let next = schema(&with_models(
+        r#"
+model Tenant {
+  id String @id
+}
+
+model Application {
+  id String @id
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+}
+"#,
+    ));
+    let migration = emit(&diff(&prev, &next));
+    assert!(
+        migration.up.contains(
+            "-- SQLite: ADD CONSTRAINT applications_tenant_id_fkey FOREIGN KEY (tenant_id) \
+             REFERENCES tenants (id) ON DELETE CASCADE ON UPDATE RESTRICT — requires table \
+             rebuild on SQLite."
+        ),
+        "up was: {}",
+        migration.up
+    );
+}
+
+#[test]
 fn relation_marker_comment_quotes_reserved_local_column_name() {
     // Review finding: the marker comment's identifiers weren't quoted,
     // so a local FK column that collides with a SQLite reserved word
