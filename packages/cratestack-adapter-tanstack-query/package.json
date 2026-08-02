@@ -33,6 +33,9 @@
   "peerDependencies": {
     "@tanstack/query-core": "^5.0.0"
   },
+  "peerDependenciesMeta": {
+    "@tanstack/query-core": { "optional": true }
+  },
   "devDependencies": {
     "@tanstack/query-core": "^5.0.0",
     "typescript": "^5.7.0",

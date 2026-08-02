@@ -1,15 +1,23 @@
+import { createBatchLink, createLoggerLink } from "@cratestack/api";
+import { createRpcBaseQuery } from "@cratestack/api/adapter-rtk";
+import { rpcQueryOptions } from "@cratestack/api/adapter-tanstack-query";
+import { createAxiosRuntime } from "@cratestack/api/runtime-axios";
+import { createFetchRuntime } from "@cratestack/api/runtime-fetch";
+import { createYupValidatorLink } from "@cratestack/api/validator-yup";
+import { createZodValidatorLink } from "@cratestack/api/validator-zod";
 // Proves the compat re-exports actually resolve to real, working
 // implementations from the split packages — not just that the import
 // graph type-checks. Behavioral coverage for each link/runtime/
 // validator/adapter itself lives in its own package's tests.
+//
+// Imports go through the package's own name ("@cratestack/api", and its
+// subpaths), not "../src/*.js" — self-referencing a package by its own
+// name resolves through the published `exports` map (Node.js's
+// self-reference resolution, since Node 12.16 / npm 7), so this suite
+// also catches a broken/mistyped `exports` entry in package.json, which
+// a source-relative import would silently sidestep. This is why `test`
+// depends on `build` in turbo.json: `exports` points at `./dist/*`.
 import { describe, expect, it } from "vitest";
-import { createRpcBaseQuery } from "../src/adapter-rtk.js";
-import { rpcQueryOptions } from "../src/adapter-tanstack-query.js";
-import { createBatchLink, createLoggerLink } from "../src/index.js";
-import { createAxiosRuntime } from "../src/runtime-axios.js";
-import { createFetchRuntime } from "../src/runtime-fetch.js";
-import { createYupValidatorLink } from "../src/validator-yup.js";
-import { createZodValidatorLink } from "../src/validator-zod.js";
 
 describe("@cratestack/api compat re-exports", () => {
   it("root entry point re-exports the original createBatchLink/createLoggerLink", () => {

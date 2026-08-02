@@ -332,6 +332,14 @@ jobs:
             cratestack-adapter-tanstack-query cratestack-adapter-rtk \
             cratestack-api; do
             echo "::group::npm publish $pkg"
-            (cd "packages/$pkg" && npm publish --access public --provenance)
+            # Not just `(cd ... && npm publish ...)` directly under
+            # `set -e` — that would exit the script the instant a publish
+            # fails, skipping the `::endgroup::` below and leaving that
+            # log group open (and misleadingly labeled) in the Actions
+            # UI for the rest of the (now-aborted) run.
+            if ! (cd "packages/$pkg" && npm publish --access public --provenance); then
+              echo "::endgroup::"
+              exit 1
+            fi
             echo "::endgroup::"
           done

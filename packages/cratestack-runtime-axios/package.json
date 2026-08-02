@@ -30,6 +30,9 @@
   "peerDependencies": {
     "axios": "^1.7.0"
   },
+  "peerDependenciesMeta": {
+    "axios": { "optional": true }
+  },
   "devDependencies": {
     "axios": "^1.7.0",
     "typescript": "^5.7.0",

@@ -61,4 +61,37 @@ describe("createAxiosRuntime", () => {
 
     expect(request).toHaveBeenCalledTimes(1);
   });
+
+  it("carries a Request object's own method/headers/body through when no init is given", async () => {
+    const request = vi.fn(async (config: AxiosRequestConfig) => {
+      expect(config.url).toBe("https://example.test/rpc/procedure.echo");
+      expect(config.method).toBe("POST");
+      expect(config.headers).toEqual({ "content-type": "application/json" });
+      expect(await new Response(config.data as ArrayBuffer).text()).toBe('{"hi":true}');
+      return { status: 204, statusText: "No Content", headers: {}, data: new ArrayBuffer(0) };
+    });
+    const fetchFn = createAxiosRuntime({ instance: fakeInstance(request) });
+    const req = new Request("https://example.test/rpc/procedure.echo", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: '{"hi":true}',
+    });
+
+    await fetchFn(req);
+
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets an explicit init field override the same field on a Request object", async () => {
+    const request = vi.fn(async (config: AxiosRequestConfig) => {
+      expect(config.method).toBe("DELETE");
+      return { status: 204, statusText: "No Content", headers: {}, data: new ArrayBuffer(0) };
+    });
+    const fetchFn = createAxiosRuntime({ instance: fakeInstance(request) });
+    const req = new Request("https://example.test/rpc/procedure.echo", { method: "POST" });
+
+    await fetchFn(req, { method: "DELETE" });
+
+    expect(request).toHaveBeenCalledTimes(1);
+  });
 });

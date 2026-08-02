@@ -25,17 +25,18 @@ export function createAxiosRuntime(options: AxiosRuntimeOptions = {}): typeof fe
   const instance = options.instance ?? axios;
 
   return (async (input, init) => {
+    const resolved = await resolveRequest(input, init);
     const config: AxiosRequestConfig = {
-      url: resolveUrl(input),
-      method: (init?.method ?? "GET") as Method,
-      headers: headersToObject(init?.headers),
-      data: init?.body,
-      // Built via conditional spread, not `signal: init?.signal ??
+      url: resolved.url,
+      method: resolved.method as Method,
+      headers: headersToObject(resolved.headers),
+      data: resolved.body,
+      // Built via conditional spread, not `signal: resolved.signal ??
       // undefined` — with `exactOptionalPropertyTypes: true`, explicitly
       // assigning `undefined` to `signal` isn't the same as omitting the
       // key, and axios's `GenericAbortSignal` type (unlike `data`, which
       // is `any`) rejects it.
-      ...(init?.signal ? { signal: init.signal } : {}),
+      ...(resolved.signal ? { signal: resolved.signal } : {}),
       responseType: "arraybuffer",
       // The generated runtime and every `RpcLink` decide success/failure
       // from `response.status`/`response.ok` themselves (see
@@ -59,17 +60,45 @@ export function createAxiosRuntime(options: AxiosRuntimeOptions = {}): typeof fe
   }) as typeof fetch;
 }
 
-function resolveUrl(input: RequestInfo | URL): string {
-  if (typeof input === "string") {
-    return input;
+interface ResolvedRequest {
+  url: string;
+  method: string;
+  headers: HeadersInit | undefined;
+  body: BodyInit | null | undefined;
+  signal: AbortSignal | undefined;
+}
+
+/** The generated runtime only ever calls `fetchFn(url, init)` with a
+ *  string URL and a populated `init` — this function's `Request`
+ *  handling exists purely for `typeof fetch` compatibility with callers
+ *  that pass a pre-built `Request` (e.g. from another link/middleware).
+ *  `init`'s fields, when present, override the `Request`'s own — same
+ *  precedence the real Fetch API gives `fetch(request, init)`. */
+async function resolveRequest(
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+): Promise<ResolvedRequest> {
+  if (typeof input === "string" || input instanceof URL) {
+    return {
+      url: input.toString(),
+      method: init?.method ?? "GET",
+      headers: init?.headers,
+      body: init?.body ?? undefined,
+      signal: init?.signal ?? undefined,
+    };
   }
-  if (input instanceof URL) {
-    return input.toString();
-  }
-  // The generated runtime only ever calls `fetchFn(url, init)` with a
-  // string URL — this branch exists for `typeof fetch` compatibility
-  // with callers that pass a `Request` object directly.
-  return input.url;
+  return {
+    url: input.url,
+    method: init?.method ?? input.method,
+    headers: init?.headers ?? input.headers,
+    body:
+      init?.body !== undefined
+        ? init.body
+        : input.body !== null
+          ? await input.clone().arrayBuffer()
+          : undefined,
+    signal: init?.signal ?? input.signal,
+  };
 }
 
 function headersToObject(headers: HeadersInit | undefined): Record<string, string> {
