@@ -1,9 +1,11 @@
 # Builds and publishes prebuilt `cratestack-cli` binaries to a GitHub
 # Release, so consumers can install without a Rust toolchain (see #131).
-# Also publishes every workspace crate to crates.io and both npm packages
-# this repo ships — @cratestack/cli (the binary-fetching npm wrapper) and
-# @cratestack/api (hand-written, ships its own compiled dist/) — with npm
-# provenance attached.
+# Also publishes every workspace crate to crates.io and every npm package
+# this repo ships, with npm provenance attached: @cratestack/cli (the
+# binary-fetching npm wrapper), the @cratestack/api family (10 hand-written
+# packages shipping their own compiled dist/), and the @cratestack/cbor
+# family (cbor, cbor-node — a real napi-rs multi-platform native addon,
+# cbor-web).
 #
 # Triggers on a `vX.Y.Z` tag push. The normal way to produce one is the
 # "Prepare Release" workflow (bump versions → open a PR → merging it
@@ -343,3 +345,221 @@ jobs:
             fi
             echo "::endgroup::"
           done
+
+  # ---- @cratestack/cbor family (issue #285) ------------------------------
+  # Unlike the API family above, @cratestack/cbor-node is a real napi-rs
+  # native addon (crates/cratestack-cbor-napi) — it needs a per-platform
+  # release binary for each of `napi.targets` in its package.json, matching
+  # the same 5 platforms `build` builds `cratestack-cli` for above. CI's
+  # own `js-cbor-napi` job (ci.yml) deliberately only proves a single-host
+  # sanity build; this is the real release matrix that job's own comment
+  # said was deferred (issue #286's explicit scope note).
+  build-cbor-node:
+    name: build @cratestack/cbor-node (${{ matrix.target }})
+    if: github.event_name == 'push'
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-cbor-node-${{ matrix.target }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: pnpm install
+        env:
+          CRATESTACK_CLI_SKIP_DOWNLOAD: "1"
+        run: pnpm install --frozen-lockfile
+      # Same underlying command as the package's own `build:napi` script,
+      # plus `--target` to cross-build for this matrix leg instead of the
+      # runner's host target. `native.mjs`/`native.d.mts` (the platform-
+      # dispatch JS/TS loader `napi build --platform` generates) come out
+      # identical on every leg — uploaded from each anyway so the publish
+      # job below doesn't need to special-case which leg "owns" them.
+      - name: Build native addon (napi build)
+        working-directory: packages/cratestack-cbor-node
+        run: |
+          pnpm exec napi build \
+            --manifest-path ../../crates/cratestack-cbor-napi/Cargo.toml \
+            --platform --release --esm \
+            --js native.mjs --dts native.d.mts \
+            --output-dir . \
+            --target ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cbor-node-binary-${{ matrix.target }}
+          path: |
+            packages/cratestack-cbor-node/*.node
+            packages/cratestack-cbor-node/native.mjs
+            packages/cratestack-cbor-node/native.d.mts
+          if-no-files-found: error
+
+  # Downloads every platform's `.node` binary built above straight into the
+  # package root (no `napi artifacts` step needed — that command exists to
+  # sort per-leg artifacts into `npm/<platform>/`, but a flat
+  # `merge-multiple` download already puts them exactly where
+  # `napi.targets` expects to find them). `npm publish`'s own
+  # `prepublishOnly` hook (see the package's package.json) then runs `napi
+  # prepublish -t npm`, which — for each target whose `.node` file is
+  # present — scaffolds a `npm/<platform>/package.json` on the fly and
+  # publishes that platform-specific subpackage (e.g.
+  # `@cratestack/cbor-node-darwin-arm64`) BEFORE npm packs and publishes
+  # this main package with `optionalDependencies` pointing at them: the
+  # standard `@napi-rs/cli` release flow. Same tag-push-only gate and OIDC
+  # Trusted Publishing hard-cutover as the other publish-npm* jobs, except
+  # EACH of the 5 auto-generated platform subpackages ALSO needs its own
+  # separate Trusted Publisher entry on npmjs.com, on top of
+  # `@cratestack/cbor-node` itself — see docs/tooling/npm-publishing.md.
+  publish-npm-cbor-node:
+    name: publish npm package (@cratestack/cbor-node)
+    if: github.event_name == 'push'
+    needs: [prepare, build-cbor-node]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - name: pnpm install
+        env:
+          CRATESTACK_CLI_SKIP_DOWNLOAD: "1"
+        run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cbor-node-binary-*
+          path: packages/cratestack-cbor-node
+          merge-multiple: true
+      - name: List downloaded platform binaries
+        run: ls -la packages/cratestack-cbor-node/*.node
+      - name: Compile TypeScript wrapper (native artifacts already built above)
+        working-directory: packages/cratestack-cbor-node
+        run: pnpm exec tsc -p tsconfig.json
+      # Trusted Publishing needs npm CLI >= 11.5.1; don't rely on whatever
+      # version happens to ship bundled with the pinned Node release.
+      - name: Ensure npm supports Trusted Publishing
+        run: npm install -g npm@latest
+      # `--provenance` on the outer `npm publish` only covers THIS command
+      # — it doesn't propagate into the per-platform `npm publish` calls
+      # `napi prepublish` makes internally via the prepublishOnly hook, so
+      # provenance is requested via npm config instead, covering both.
+      - name: Publish @cratestack/cbor-node (+ per-platform subpackages)
+        working-directory: packages/cratestack-cbor-node
+        run: |
+          npm config set provenance true
+          npm publish --access public
+
+  # Same rationale as js-cbor-wasm in ci.yml: needs a real Rust wasm32
+  # toolchain (the package's `prebuild` hook runs `wasm-pack build` against
+  # crates/cratestack-cbor-wasm), so it gets its own toolchain setup rather
+  # than reusing publish-npm-api-family's plain-Node job. No ordering
+  # dependency on `build`/`build-cbor-node` — this package ships its own
+  # compiled wasm bundle in the tarball, same as the API family.
+  publish-npm-cbor-web:
+    name: publish npm package (@cratestack/cbor-web)
+    if: github.event_name == 'push'
+    needs: [prepare]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      # wasm32-unknown-unknown is installed by rustup from
+      # rust-toolchain.toml's `targets` for the pinned channel (same
+      # mechanism ci.yml's js-cbor-wasm job relies on).
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-cbor-web
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - name: pnpm install
+        env:
+          CRATESTACK_CLI_SKIP_DOWNLOAD: "1"
+        run: pnpm install --frozen-lockfile
+      - name: Build @cratestack/cbor-web (wasm-pack + tsc)
+        run: pnpm turbo run build --filter='./packages/cratestack-cbor-web'
+      - name: Ensure npm supports Trusted Publishing
+        run: npm install -g npm@latest
+      - name: Publish @cratestack/cbor-web
+        working-directory: packages/cratestack-cbor-web
+        run: npm publish --access public --provenance
+
+  # The umbrella package (issue #288) — pure TS, conditional node/browser
+  # exports. Gated on both platform packages above (not just `prepare`)
+  # for the same "avoid a window where `npm view` sees an unresolvable
+  # dependency" reason publish-npm-api-family's ordering comment gives,
+  # even though `.npmrc`'s `link-workspace-packages=true` means the local
+  # `pnpm install` below resolves cbor-node/cbor-web from the workspace
+  # symlink either way, not the registry. `turbo.json` deliberately scopes
+  # this package's build dependency to `ts-types#build` only (see that
+  # file's comment) — an ambient-types fallback + graceful test-skip means
+  # this build doesn't actually need cbor-node/cbor-web's dist/ on disk.
+  publish-npm-cbor:
+    name: publish npm package (@cratestack/cbor)
+    if: github.event_name == 'push'
+    needs: [prepare, publish-npm-cbor-node, publish-npm-cbor-web]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - name: pnpm install
+        env:
+          CRATESTACK_CLI_SKIP_DOWNLOAD: "1"
+        run: pnpm install --frozen-lockfile
+      - name: Build @cratestack/cbor
+        run: pnpm turbo run build --filter='./packages/cratestack-cbor'
+      - name: Ensure npm supports Trusted Publishing
+        run: npm install -g npm@latest
+      - name: Publish @cratestack/cbor
+        working-directory: packages/cratestack-cbor
+        run: npm publish --access public --provenance

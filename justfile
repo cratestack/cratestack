@@ -373,15 +373,15 @@ bump NEW:
 	  -not -path '*/node_modules/*' \
 	  -print0 | xargs -0 perl -i -pe "s/\Q\"$current\"\E/\"{{NEW}}\"/g"
 	# Keep the @cratestack/cli npm wrapper's version (and the release
-	# asset tag it downloads) and every package in the split
-	# @cratestack/api family (ts-types, link-*, runtime-*, validator-*,
-	# adapter-*, and the api compat shim itself) in lockstep with the
-	# workspace version — scoped to these package.json files, not
-	# cratestack-vscode (versioned independently) or the unrelated
-	# example apps'. A single literal-string replace (not just the
-	# `"version": "..."` key) also catches each package's own pinned
-	# `"@cratestack/xyz": "$current"` cross-references to its siblings,
-	# which need to move in lockstep too.
+	# asset tag it downloads), every package in the split @cratestack/api
+	# family (ts-types, link-*, runtime-*, validator-*, adapter-*, and the
+	# api compat shim itself), and the @cratestack/cbor family (cbor,
+	# cbor-node, cbor-web) in lockstep with the workspace version —
+	# scoped to these package.json files, not cratestack-vscode (versioned
+	# independently) or the unrelated example apps'. A single
+	# literal-string replace (not just the `"version": "..."` key) also
+	# catches each package's own pinned `"@cratestack/xyz": "$current"`
+	# cross-references to its siblings, which need to move in lockstep too.
 	perl -i -pe "s/\Q\"$current\"\E/\"{{NEW}}\"/g" \
 	  packages/cratestack-cli-npm/package.json \
 	  packages/cratestack-api/package.json \
@@ -393,7 +393,10 @@ bump NEW:
 	  packages/cratestack-validator-zod/package.json \
 	  packages/cratestack-validator-yup/package.json \
 	  packages/cratestack-adapter-tanstack-query/package.json \
-	  packages/cratestack-adapter-rtk/package.json
+	  packages/cratestack-adapter-rtk/package.json \
+	  packages/cratestack-cbor/package.json \
+	  packages/cratestack-cbor-node/package.json \
+	  packages/cratestack-cbor-web/package.json
 	# Refresh pnpm-lock.yaml so the version-literal edits above (which change
 	# specifiers like `"@cratestack/ts-types": "{{NEW}}"`) are reflected in the
 	# lockfile's `specifier:` entries too — otherwise a later `pnpm install

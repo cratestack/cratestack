@@ -14,6 +14,13 @@ like a GitHub Release, so a throwaway test tag must never reach a registry):
   `@cratestack/ts-types`, `@cratestack/link-batch`, `@cratestack/link-logger`,
   `@cratestack/runtime-fetch`, `@cratestack/runtime-axios`, `@cratestack/validator-zod`,
   `@cratestack/validator-yup`, `@cratestack/adapter-tanstack-query`, `@cratestack/adapter-rtk`.
+- **The `@cratestack/cbor` family** (issue #285) — `@cratestack/cbor-web`
+  (`publish-npm-cbor-web` job, wasm-bindgen), `@cratestack/cbor` (`publish-npm-cbor` job, the pure-TS
+  umbrella), and `@cratestack/cbor-node` (`build-cbor-node` + `publish-npm-cbor-node` jobs), which is
+  different from every other package here: it's a real napi-rs native addon, built once per platform
+  across a 5-target matrix (same targets as the `cratestack-cli` binary matrix above) and published
+  as **6 separate npm packages** — the main `@cratestack/cbor-node` plus one auto-generated
+  platform-specific subpackage per target (see below).
 
 `publish-crates` soft-skips (logs a warning, exits 0, without failing the rest of the release)
 when `CARGO_REGISTRY_TOKEN` isn't set. The npm jobs are a **hard cutover, not a soft-skip**: they
@@ -29,13 +36,29 @@ Every npm package authenticates with npm's [Trusted Publishing](https://docs.npm
 all, no rotation, no EOTP failure mode (see the superseded section below for what that used to
 look like).
 
-For **each** of the 11 packages — this is a one-per-package setting, not shared, and not inherited
+For **each** of the 19 packages — this is a one-per-package setting, not shared, and not inherited
 by a new package just because a sibling already has one configured:
 
 - `@cratestack/cli`
 - `@cratestack/api`, `@cratestack/ts-types`, `@cratestack/link-batch`, `@cratestack/link-logger`,
   `@cratestack/runtime-fetch`, `@cratestack/runtime-axios`, `@cratestack/validator-zod`,
   `@cratestack/validator-yup`, `@cratestack/adapter-tanstack-query`, `@cratestack/adapter-rtk`
+- `@cratestack/cbor`, `@cratestack/cbor-web`
+- `@cratestack/cbor-node` **plus its 5 auto-generated platform subpackages** — `napi prepublish`
+  names these `<packageName>-<platform>` (scope preserved), one per `napi.targets` entry in
+  `packages/cratestack-cbor-node/package.json`:
+  `@cratestack/cbor-node-darwin-x64`, `@cratestack/cbor-node-darwin-arm64`,
+  `@cratestack/cbor-node-linux-x64-gnu`, `@cratestack/cbor-node-linux-arm64-gnu`,
+  `@cratestack/cbor-node-win32-x64-msvc`. Each is a genuinely separate npm package name needing its
+  own Trusted Publisher entry, same as every package above — but since none of these 6 names have
+  ever been published, step 1 below (name must already exist to open its Settings page) needs a
+  real bootstrap here, not just "reserve the name": build the native addon locally for at least
+  your own host platform (`pnpm --filter ./packages/cratestack-cbor-node run build:napi`) and run
+  `napi prepublish -t npm --dry-run` first to see what it *would* publish, then a real
+  `napi prepublish -t npm` from a maintainer's machine to actually create+publish the main package
+  and whichever subpackage(s) your local `.node` file covers. Repeat per-platform (e.g. in a VM or
+  by asking a teammate on that OS) for the remaining 4 subpackages — each is small and has no
+  further dependencies, so this is a one-time, per-package-name cost, not a repeated one.
 
 1. On npmjs.com, sign in as a member of the `@cratestack` org with publish rights, and open the
    package's Settings page (`npmjs.com/package/@cratestack/<name>/access`) — the package must
@@ -54,7 +77,11 @@ Once a package has a Trusted Publisher configured, the next tag push publishes i
 secret to add at all. Configuration changes take effect immediately for the *next* publish. A
 package with no Trusted Publisher configured yet just makes its own `npm publish` step in
 `publish-npm-api-family` fail — it does not block the other packages in the same job, since each
-runs as a separate loop iteration, but the job as a whole still exits non-zero.
+runs as a separate loop iteration, but the job as a whole still exits non-zero. `publish-npm-cbor-node`
+has no such per-package isolation — its single `npm publish` invocation drives `napi prepublish`'s
+internal per-subpackage publishes as one step, so the first missing Trusted Publisher (main package
+or any of the 5 subpackages) fails that whole step immediately, before later subpackages are
+attempted.
 
 **Superseded: the old `NPM_TOKEN` PAT setup.** Before this, the npm jobs read an npmjs.com
 Automation-type access token from an `NPM_TOKEN` repo secret — CI no longer reads this secret (the
@@ -119,14 +146,18 @@ Both publish steps pass `npm publish --provenance`, which attaches a
 linking the published tarball back to this exact GitHub Actions run and commit. This needs:
 
 - **A public repository** — provenance publishing is rejected for private repos. Already satisfied.
-- **`id-token: write` permission** — set at the job level on `publish-npm` and
-  `publish-npm-api-family` (not workflow-wide, since the other jobs in this file don't need it).
-  This is the same permission Trusted Publishing's OIDC exchange uses, so both features share one
-  job-level setting.
-- **npm >= 9.5.0** — both jobs pin `node-version: 24` and additionally run `npm install -g
-  npm@latest` before publishing, since Trusted Publishing's own >= 11.5.1 requirement is stricter
-  than provenance's and isn't guaranteed by whatever npm version happens to ship bundled with a
-  given Node release.
+- **`id-token: write` permission** — set at the job level on `publish-npm`, `publish-npm-api-family`,
+  `publish-npm-cbor-node`, `publish-npm-cbor-web`, and `publish-npm-cbor` (not workflow-wide, since
+  the other jobs in this file don't need it). This is the same permission Trusted Publishing's OIDC
+  exchange uses, so both features share one job-level setting.
+- **npm >= 9.5.0** — every publish-npm* job pins `node-version: 24` and additionally runs
+  `npm install -g npm@latest` before publishing, since Trusted Publishing's own >= 11.5.1
+  requirement is stricter than provenance's and isn't guaranteed by whatever npm version happens to
+  ship bundled with a given Node release.
+- `publish-npm-cbor-node` is the one exception to the `--provenance` flag itself: `napi
+  prepublish`'s internal per-subpackage `npm publish` calls don't see a flag passed to the *outer*
+  command, so that job does `npm config set provenance true` instead — equivalent, but set globally
+  so it also covers the subpackage publishes, not just the main package's.
 
 No additional GitHub secret is needed for provenance — it's purely a CI-side capability enabled by
 the permission and the flag, on top of whatever auth method (Trusted Publishing, here) gets the
