@@ -3,6 +3,7 @@ import '../queries.dart';
 import '../runtime.dart';
 import 'board.dart';
 import 'package:dart_mappable/dart_mappable.dart';
+import 'package:fast_immutable_collections/fast_immutable_collections.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -194,7 +195,7 @@ class TaskApi {
 
   final FlutterRiverpodClientCratestackClient _client;
 
-  Future<List<Task>> list({
+  Future<IList<Task>> list({
     CratestackListQuery? query,
     CratestackCallOptions? options,
   }) async {
@@ -204,10 +205,10 @@ class TaskApi {
       queryParameters: query?.toQueryParameters(),
       options: options,
     );
-    return cratestackAsValueList(body).map((item) => Task.fromWire(cratestackAsValueMap(item))).toList(growable: false);
+    return cratestackAsValueList(body).map((item) => Task.fromWire(cratestackAsValueMap(item))).toIList();
   }
 
-  Future<List<T>> listView<T>({
+  Future<IList<T>> listView<T>({
     required CratestackProjection<T> projection,
     CratestackListQuery? query,
     CratestackCallOptions? options,
@@ -220,7 +221,7 @@ class TaskApi {
     );
     return cratestackAsValueList(body)
         .map((item) => projection.fromWire(cratestackAsValueMap(item)))
-        .toList(growable: false);
+        .toIList();
   }
 
   Future<Task> get(int id, {
@@ -302,7 +303,7 @@ Future<Task> task(Ref ref, int id) {
 }
 
 @riverpod
-Future<List<Task>> taskList(Ref ref) {
+Future<IList<Task>> taskList(Ref ref) {
   return ref.watch(flutterRiverpodClientTaskApiProvider).list();
 }
 

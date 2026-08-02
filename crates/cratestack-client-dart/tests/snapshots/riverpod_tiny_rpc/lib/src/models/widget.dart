@@ -1,6 +1,7 @@
 import '../client.dart';
 import '../runtime.dart';
 import 'package:dart_mappable/dart_mappable.dart';
+import 'package:fast_immutable_collections/fast_immutable_collections.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -168,7 +169,7 @@ class WidgetApi {
 
   final TinyRpcClientCratestackClient _client;
 
-  Future<List<Widget>> list({
+  Future<IList<Widget>> list({
     Map<String, Object?> input = const <String, Object?>{},
     CratestackRpcCallOptions? options,
   }) async {
@@ -177,7 +178,7 @@ class WidgetApi {
       input,
       options: options,
     );
-    return cratestackAsValueList(body).map((item) => Widget.fromWire(cratestackAsValueMap(item))).toList(growable: false);
+    return cratestackAsValueList(body).map((item) => Widget.fromWire(cratestackAsValueMap(item))).toIList();
   }
 
   Future<Widget> get(int id, {
@@ -242,7 +243,7 @@ Future<Widget> widget(Ref ref, int id) {
 }
 
 @riverpod
-Future<List<Widget>> widgetList(Ref ref) {
+Future<IList<Widget>> widgetList(Ref ref) {
   return ref.watch(tinyRpcClientWidgetApiProvider).list();
 }
 

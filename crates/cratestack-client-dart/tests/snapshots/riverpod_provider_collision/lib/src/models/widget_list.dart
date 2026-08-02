@@ -2,6 +2,7 @@ import '../client.dart';
 import '../queries.dart';
 import '../runtime.dart';
 import 'package:dart_mappable/dart_mappable.dart';
+import 'package:fast_immutable_collections/fast_immutable_collections.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -155,7 +156,7 @@ class WidgetListApi {
 
   final DartVerifyRiverpodCollisionCratestackClient _client;
 
-  Future<List<WidgetList>> list({
+  Future<IList<WidgetList>> list({
     CratestackListQuery? query,
     CratestackCallOptions? options,
   }) async {
@@ -165,10 +166,10 @@ class WidgetListApi {
       queryParameters: query?.toQueryParameters(),
       options: options,
     );
-    return cratestackAsValueList(body).map((item) => WidgetList.fromWire(cratestackAsValueMap(item))).toList(growable: false);
+    return cratestackAsValueList(body).map((item) => WidgetList.fromWire(cratestackAsValueMap(item))).toIList();
   }
 
-  Future<List<T>> listView<T>({
+  Future<IList<T>> listView<T>({
     required CratestackProjection<T> projection,
     CratestackListQuery? query,
     CratestackCallOptions? options,
@@ -181,7 +182,7 @@ class WidgetListApi {
     );
     return cratestackAsValueList(body)
         .map((item) => projection.fromWire(cratestackAsValueMap(item)))
-        .toList(growable: false);
+        .toIList();
   }
 
   Future<WidgetList> get(int id, {
@@ -263,7 +264,7 @@ Future<WidgetList> dartVerifyRiverpodCollisionWidgetList(Ref ref, int id) {
 }
 
 @riverpod
-Future<List<WidgetList>> widgetListList(Ref ref) {
+Future<IList<WidgetList>> widgetListList(Ref ref) {
   return ref.watch(dartVerifyRiverpodCollisionWidgetListApiProvider).list();
 }
 

@@ -26,6 +26,12 @@ dependencies:
   # of its own; see `dart_mappable_builder` below (dev_dependencies) for
   # the pin that actually matters.
   dart_mappable: ^4.8.0
+  # issue #336: relation-list fields use `IList<T>` (immutable) instead
+  # of `List<T>`. `dart_mappable`'s generated `==`/`hashCode` handles
+  # `IList` field-by-field the same way it handles `List` — verified as
+  # part of resolving this merge conflict, see this PR's own comment
+  # for the real `flutter analyze`/`flutter test` run proving it.
+  fast_immutable_collections: ^11.2.0
 
 dev_dependencies:
   flutter_lints: ^6.0.0
