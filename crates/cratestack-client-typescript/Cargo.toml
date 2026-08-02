@@ -20,5 +20,6 @@ serde.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+cratestack-axum.workspace = true
 cratestack-parser.workspace = true
 tempfile = "3"

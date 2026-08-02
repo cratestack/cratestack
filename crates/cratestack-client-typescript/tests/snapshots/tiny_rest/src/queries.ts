@@ -5,9 +5,12 @@ export interface CratestackFetchQuery {
   sort?: string[];
   limit?: number;
   offset?: number;
-  where?: Record<string, unknown>;
-  filters?: Record<string, unknown>[];
-  orFilters?: Record<string, unknown>[];
+  /** Top-level filter expression in the server's `?where=` DSL, e.g. `"published=true,authorId=42"`. */
+  where?: string;
+  /** Disjunction filter in the server's `?or=` DSL, e.g. `"role=admin|role=owner"`. */
+  or?: string;
+  /** Arbitrary `key=value` predicates spread as individual query params, e.g. `{ published: "true" }` → `?published=true`. */
+  filters?: Record<string, string>;
 }
 
 export interface CratestackRequestConfig {
@@ -25,6 +28,9 @@ export function toSearchQuery(query?: CratestackFetchQuery): Record<string, unkn
   }
 
   const output: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(query.filters ?? {})) {
+    output[key] = value;
+  }
   if (query.fields?.length) {
     output.fields = query.fields.join(",");
   }
@@ -43,11 +49,8 @@ export function toSearchQuery(query?: CratestackFetchQuery): Record<string, unkn
   if (query.where) {
     output.where = query.where;
   }
-  if (query.filters?.length) {
-    output.filters = query.filters;
-  }
-  if (query.orFilters?.length) {
-    output.orFilters = query.orFilters;
+  if (query.or) {
+    output.or = query.or;
   }
 
   for (const [path, fields] of Object.entries(query.includeFields ?? {})) {
