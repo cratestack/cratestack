@@ -21,11 +21,17 @@ pub(crate) fn parse_relation_attribute(field: &Field) -> Option<ParsedRelationAt
         match key.trim() {
             "fields" => fields = Some(parse_relation_list(value.trim())?),
             "references" => references = Some(parse_relation_list(value.trim())?),
-            // `onDelete`/`onUpdate` are a DB-constraint concern that
-            // `cratestack-migrate` acts on — Rust codegen here doesn't
-            // need the value, just to not choke on the key.
-            "onDelete" | "onUpdate" => {}
-            _ => return None,
+            // Ignore any other key (including, but not limited to,
+            // `onDelete`/`onUpdate` — a DB-constraint concern that
+            // `cratestack-migrate` acts on, not Rust codegen) rather
+            // than dropping the whole relation. `cratestack-parser` is
+            // the sole vocabulary gatekeeper and already rejects a
+            // genuinely unknown key with a diagnostic before a schema
+            // reaches this crate; returning `None` here on top of that
+            // would silently produce a relation with no path/include
+            // support at all instead of an error, the moment the
+            // parser's vocabulary grows past what this match expects.
+            _ => {}
         }
     }
 
