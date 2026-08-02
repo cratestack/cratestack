@@ -8,6 +8,7 @@ mod list_logging;
 use cratestack_core::Model;
 use quote::quote;
 
+use crate::relation::order_catalog_ident;
 use crate::shared::{
     ident, is_paged_model, is_primary_key, pluralize, rust_type_tokens, to_snake_case,
 };
@@ -45,6 +46,7 @@ pub(super) struct ModelHandlerPrep {
     pub(super) serialize_model_value_ident: syn::Ident,
     pub(super) filter_expr_builder_ident: syn::Ident,
     pub(super) query_expr_builder_ident: syn::Ident,
+    pub(super) order_catalog_ident: syn::Ident,
     pub(super) list_capabilities: proc_macro2::TokenStream,
     pub(super) write_capabilities: proc_macro2::TokenStream,
     pub(super) detail_capabilities: proc_macro2::TokenStream,
@@ -160,6 +162,7 @@ pub(super) fn build_prep(model: &Model) -> Result<ModelHandlerPrep, String> {
         serialize_model_value_ident: ident(&format!("serialize_{}_model_value", snake)),
         filter_expr_builder_ident: ident(&format!("build_{}_filter_expr", snake)),
         query_expr_builder_ident: ident(&format!("build_{}_query_expr", snake)),
+        order_catalog_ident: order_catalog_ident(&model.name),
         list_capabilities: model_read_transport_capabilities_tokens(),
         write_capabilities: model_write_transport_capabilities_tokens(),
         detail_capabilities: model_read_transport_capabilities_tokens(),

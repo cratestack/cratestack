@@ -840,12 +840,13 @@ fn generated_model_descriptor_exposes_query_contract_metadata() {
         &["id", "title", "subtitle", "published", "authorId"]
     );
     assert_eq!(descriptor.allowed_includes, &["author"]);
-    assert!(descriptor.allowed_sorts.contains(&"id"));
-    assert!(descriptor.allowed_sorts.contains(&"author.email"));
-    assert!(
-        descriptor
-            .allowed_sorts
-            .contains(&"author.profile.nickname")
+    // `allowed_sorts` only ever held the model's own top-level scalar
+    // names cheaply; relation-nested keys like "author.profile.nickname"
+    // are validated by the runtime hop resolver instead (cratestack#256),
+    // exercised end to end by the `axum_model_route_*sort*` tests below.
+    assert_eq!(
+        descriptor.allowed_sorts,
+        &["id", "title", "subtitle", "published", "authorId"]
     );
 }
 
@@ -2104,6 +2105,32 @@ async fn axum_model_route_rejects_invalid_nested_relation_order_by_path() {
         .expect("request should succeed");
 
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn axum_model_route_accepts_valid_nested_relation_order_by_path() {
+    // Regression coverage for cratestack#256: the runtime hop resolver
+    // (`cratestack::resolve_order_target` against the generated
+    // `OrderCatalog`) must still accept a two-hop to-one sort key that
+    // was valid under the old pre-enumerated match arms. The test pool
+    // is lazy and never reaches a live database, so a request that
+    // clears sort validation fails later at the DB call (500) rather
+    // than succeeding (200) -- the boundary this test pins is that it
+    // must NOT be rejected as an unsupported sort field (422), which is
+    // exactly what the old exponential match-arm list also guaranteed.
+    let codec = CborCodec;
+    let router = test_model_router(codec);
+
+    let response = router
+        .oneshot(
+            Request::get("/posts?sort=author.profile.nickname")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("request should succeed");
+
+    assert_ne!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
 #[tokio::test]

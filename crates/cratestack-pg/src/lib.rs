@@ -47,10 +47,11 @@ pub use cratestack_sql::{
     CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault, CreateDefaultType,
     CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName, IntoSqlValue,
     JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder,
-    OrderClause, Orderable, Projection, ReadSource, RelationFilter, RelationHop, RelationInclude,
-    SortDirection, SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue, Unorderable,
-    UpdateModelInput, UpsertModelInput, ViewDescriptor, WriteSource, coalesce, is_orderable,
-    order_value_sql, point, wrap_filter,
+    OrderCatalog, OrderClause, OrderRelationEdge, Orderable, Projection, ReadSource,
+    RelationFilter, RelationHop, RelationInclude, ResolvedOrderTarget, SortDirection,
+    SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue, Unorderable, UpdateModelInput,
+    UpsertModelInput, ViewDescriptor, WriteSource, coalesce, is_orderable, order_value_sql, point,
+    resolve_order_target, wrap_filter,
 };
 
 pub use regex;

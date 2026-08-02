@@ -18,6 +18,7 @@ mod descriptor;
 mod dialect;
 mod filter;
 mod order;
+mod order_catalog;
 mod relation_path;
 mod values;
 
@@ -32,6 +33,9 @@ pub use filter::{
     coalesce, point,
 };
 pub use order::{NullOrder, OrderClause, OrderTarget, SortDirection};
+pub use order_catalog::{
+    OrderCatalog, OrderRelationEdge, ResolvedOrderTarget, resolve_order_target,
+};
 pub use relation_path::{
     Orderable, RelationHop, Unorderable, is_orderable, order_value_sql, wrap_filter,
 };

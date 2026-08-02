@@ -1,0 +1,201 @@
+// Regression fixture for cratestack#256: `collect_relation_order_targets`
+// (the REST `?orderBy=`/`?sort=` match-arm generator) enumerated every
+// simple to-one path through the relation graph at macro-expansion time
+// -- exponential in to-one *connectivity* (fan-out), the same shape as
+// the codegen bug fixed for the typed builder in #253/#252, just in the
+// REST string-key surface instead of the typed relation-path types.
+//
+// A linear *chain* (each model with a single `parent`, like
+// `relation_stress.cstack`) does not reproduce this: it never branches,
+// so the old walk stayed O(n) on it regardless. This fixture instead
+// fans each model in to its 3 most recent predecessors (`parent0..2`),
+// which multiplies the simple-path count combinatorially. Measured
+// against the pre-fix walk: 16 models with this shape took ~60s to
+// `cargo check`, and 18 models did not finish within 5 minutes -- just
+// building the `?orderBy=` match arms, no typed builder involved. Fixed
+// by replacing the pre-enumerated
+// match arms with a per-model `OrderCatalog` the REST dispatcher walks
+// hop by hop at request time (see `cratestack_sql::order_catalog`) --
+// codegen is now linear in `models × fields` however densely the models
+// fan in to one another. Compiling within the normal test suite's time
+// budget IS the regression guard, mirroring `relation_stress.rs`.
+
+model OrderFanNode0 {
+  id Cuid @id @default(dbgenerated())
+  name String @length(min: 2, max: 64)
+  count Int @range(min: 0, max: 1000)
+}
+
+model OrderFanNode1 {
+  id Cuid @id @default(dbgenerated())
+  name String @length(min: 2, max: 64)
+  count Int @range(min: 0, max: 1000)
+  parent0Id Cuid
+  parent0 OrderFanNode0 @relation(fields: [parent0Id], references: [id])
+}
+
+model OrderFanNode2 {
+  id Cuid @id @default(dbgenerated())
+  name String @length(min: 2, max: 64)
+  count Int @range(min: 0, max: 1000)
+  parent0Id Cuid
+  parent0 OrderFanNode0 @relation(fields: [parent0Id], references: [id])
+  parent1Id Cuid
+  parent1 OrderFanNode1 @relation(fields: [parent1Id], references: [id])
+}
+
+model OrderFanNode3 {
+  id Cuid @id @default(dbgenerated())
+  name String @length(min: 2, max: 64)
+  count Int @range(min: 0, max: 1000)
+  parent0Id Cuid
+  parent0 OrderFanNode0 @relation(fields: [parent0Id], references: [id])
+  parent1Id Cuid
+  parent1 OrderFanNode1 @relation(fields: [parent1Id], references: [id])
+  parent2Id Cuid
+  parent2 OrderFanNode2 @relation(fields: [parent2Id], references: [id])
+}
+
+model OrderFanNode4 {
+  id Cuid @id @default(dbgenerated())
+  name String @length(min: 2, max: 64)
+  count Int @range(min: 0, max: 1000)
+  parent1Id Cuid
+  parent1 OrderFanNode1 @relation(fields: [parent1Id], references: [id])
+  parent2Id Cuid
+  parent2 OrderFanNode2 @relation(fields: [parent2Id], references: [id])
+  parent3Id Cuid
+  parent3 OrderFanNode3 @relation(fields: [parent3Id], references: [id])
+}
+
+model OrderFanNode5 {
+  id Cuid @id @default(dbgenerated())
+  name String @length(min: 2, max: 64)
+  count Int @range(min: 0, max: 1000)
+  parent2Id Cuid
+  parent2 OrderFanNode2 @relation(fields: [parent2Id], references: [id])
+  parent3Id Cuid
+  parent3 OrderFanNode3 @relation(fields: [parent3Id], references: [id])
+  parent4Id Cuid
+  parent4 OrderFanNode4 @relation(fields: [parent4Id], references: [id])
+}
+
+model OrderFanNode6 {
+  id Cuid @id @default(dbgenerated())
+  name String @length(min: 2, max: 64)
+  count Int @range(min: 0, max: 1000)
+  parent3Id Cuid
+  parent3 OrderFanNode3 @relation(fields: [parent3Id], references: [id])
+  parent4Id Cuid
+  parent4 OrderFanNode4 @relation(fields: [parent4Id], references: [id])
+  parent5Id Cuid
+  parent5 OrderFanNode5 @relation(fields: [parent5Id], references: [id])
+}
+
+model OrderFanNode7 {
+  id Cuid @id @default(dbgenerated())
+  name String @length(min: 2, max: 64)
+  count Int @range(min: 0, max: 1000)
+  parent4Id Cuid
+  parent4 OrderFanNode4 @relation(fields: [parent4Id], references: [id])
+  parent5Id Cuid
+  parent5 OrderFanNode5 @relation(fields: [parent5Id], references: [id])
+  parent6Id Cuid
+  parent6 OrderFanNode6 @relation(fields: [parent6Id], references: [id])
+}
+
+model OrderFanNode8 {
+  id Cuid @id @default(dbgenerated())
+  name String @length(min: 2, max: 64)
+  count Int @range(min: 0, max: 1000)
+  parent5Id Cuid
+  parent5 OrderFanNode5 @relation(fields: [parent5Id], references: [id])
+  parent6Id Cuid
+  parent6 OrderFanNode6 @relation(fields: [parent6Id], references: [id])
+  parent7Id Cuid
+  parent7 OrderFanNode7 @relation(fields: [parent7Id], references: [id])
+}
+
+model OrderFanNode9 {
+  id Cuid @id @default(dbgenerated())
+  name String @length(min: 2, max: 64)
+  count Int @range(min: 0, max: 1000)
+  parent6Id Cuid
+  parent6 OrderFanNode6 @relation(fields: [parent6Id], references: [id])
+  parent7Id Cuid
+  parent7 OrderFanNode7 @relation(fields: [parent7Id], references: [id])
+  parent8Id Cuid
+  parent8 OrderFanNode8 @relation(fields: [parent8Id], references: [id])
+}
+
+model OrderFanNode10 {
+  id Cuid @id @default(dbgenerated())
+  name String @length(min: 2, max: 64)
+  count Int @range(min: 0, max: 1000)
+  parent7Id Cuid
+  parent7 OrderFanNode7 @relation(fields: [parent7Id], references: [id])
+  parent8Id Cuid
+  parent8 OrderFanNode8 @relation(fields: [parent8Id], references: [id])
+  parent9Id Cuid
+  parent9 OrderFanNode9 @relation(fields: [parent9Id], references: [id])
+}
+
+model OrderFanNode11 {
+  id Cuid @id @default(dbgenerated())
+  name String @length(min: 2, max: 64)
+  count Int @range(min: 0, max: 1000)
+  parent8Id Cuid
+  parent8 OrderFanNode8 @relation(fields: [parent8Id], references: [id])
+  parent9Id Cuid
+  parent9 OrderFanNode9 @relation(fields: [parent9Id], references: [id])
+  parent10Id Cuid
+  parent10 OrderFanNode10 @relation(fields: [parent10Id], references: [id])
+}
+
+model OrderFanNode12 {
+  id Cuid @id @default(dbgenerated())
+  name String @length(min: 2, max: 64)
+  count Int @range(min: 0, max: 1000)
+  parent9Id Cuid
+  parent9 OrderFanNode9 @relation(fields: [parent9Id], references: [id])
+  parent10Id Cuid
+  parent10 OrderFanNode10 @relation(fields: [parent10Id], references: [id])
+  parent11Id Cuid
+  parent11 OrderFanNode11 @relation(fields: [parent11Id], references: [id])
+}
+
+model OrderFanNode13 {
+  id Cuid @id @default(dbgenerated())
+  name String @length(min: 2, max: 64)
+  count Int @range(min: 0, max: 1000)
+  parent10Id Cuid
+  parent10 OrderFanNode10 @relation(fields: [parent10Id], references: [id])
+  parent11Id Cuid
+  parent11 OrderFanNode11 @relation(fields: [parent11Id], references: [id])
+  parent12Id Cuid
+  parent12 OrderFanNode12 @relation(fields: [parent12Id], references: [id])
+}
+
+model OrderFanNode14 {
+  id Cuid @id @default(dbgenerated())
+  name String @length(min: 2, max: 64)
+  count Int @range(min: 0, max: 1000)
+  parent11Id Cuid
+  parent11 OrderFanNode11 @relation(fields: [parent11Id], references: [id])
+  parent12Id Cuid
+  parent12 OrderFanNode12 @relation(fields: [parent12Id], references: [id])
+  parent13Id Cuid
+  parent13 OrderFanNode13 @relation(fields: [parent13Id], references: [id])
+}
+
+model OrderFanNode15 {
+  id Cuid @id @default(dbgenerated())
+  name String @length(min: 2, max: 64)
+  count Int @range(min: 0, max: 1000)
+  parent12Id Cuid
+  parent12 OrderFanNode12 @relation(fields: [parent12Id], references: [id])
+  parent13Id Cuid
+  parent13 OrderFanNode13 @relation(fields: [parent13Id], references: [id])
+  parent14Id Cuid
+  parent14 OrderFanNode14 @relation(fields: [parent14Id], references: [id])
+}

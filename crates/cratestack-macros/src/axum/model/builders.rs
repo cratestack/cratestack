@@ -11,7 +11,6 @@ pub(super) struct RelationArmCollections {
     pub(super) query_filter_arms: Vec<proc_macro2::TokenStream>,
     pub(super) relation_filter_guards: Vec<proc_macro2::TokenStream>,
     pub(super) order_by_arms: Vec<proc_macro2::TokenStream>,
-    pub(super) relation_order_by_arms: Vec<proc_macro2::TokenStream>,
     pub(super) relation_include_arms: Vec<proc_macro2::TokenStream>,
     pub(super) relation_include_path_validation_arms: Vec<proc_macro2::TokenStream>,
     pub(super) relation_include_fields_validation_arms: Vec<proc_macro2::TokenStream>,

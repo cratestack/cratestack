@@ -5,8 +5,11 @@
 //! Submodules:
 //! - [`types`] / [`parse`]: parser + shared types (`RelationLink`).
 //! - [`query_guard`]: prefix-match guard for `where`-side relation filters.
-//! - [`order_arms`] / [`order_targets`]: orderBy arm + SQL fragment
-//!   computation through to-one relation chains.
+//! - [`order_arms`]: the model's own top-level sortable field names
+//!   (`allowed_sorts`).
+//! - [`order_catalog`]: per-model `OrderCatalog` static emission for the
+//!   REST `?orderBy=`/`?sort=` runtime resolver — replaces the old
+//!   per-path match-arm enumeration (cratestack#256).
 //! - [`flat`]: the per-model `RelPath` / `RelToMany` / `Field` emitter.
 //!   One arrival type per model, path carried as runtime data — see the
 //!   module docs for why this replaced the per-path recursive emitter
@@ -21,7 +24,7 @@ mod flat;
 mod include_arm;
 mod include_validation;
 mod order_arms;
-mod order_targets;
+mod order_catalog;
 mod parse;
 mod root;
 mod types;
@@ -33,7 +36,8 @@ pub(crate) use include_arm::generate_relation_include_arm;
 pub(crate) use include_validation::{
     generate_relation_include_fields_validation_arm, generate_relation_include_path_validation_arm,
 };
-pub(crate) use order_arms::{collect_allowed_sort_keys, generate_relation_order_by_arms};
+pub(crate) use order_arms::collect_allowed_sort_keys;
+pub(crate) use order_catalog::{generate_model_order_catalog, order_catalog_ident};
 pub(crate) use parse::parse_relation_attribute;
 pub(crate) use query_guard::generate_relation_query_guard;
 pub(crate) use root::generate_relation_root_module;

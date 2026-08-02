@@ -20,10 +20,6 @@ pub(crate) struct ParsedRelationAttribute {
     pub(crate) references: Vec<String>,
 }
 
-pub(crate) fn relation_visit_key(model: &Model, relation_field: &Field) -> String {
-    format!("{}.{}", model.name, relation_field.name)
-}
-
 pub(crate) fn relation_link(
     model: &Model,
     relation_field: &Field,
