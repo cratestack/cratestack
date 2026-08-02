@@ -184,6 +184,47 @@ jobs:
       - name: cargo fmt --check
         run: just fmt-check
 
+  # ---- Dart generator verification --------------------------------------
+  # Blocking. Closes a pre-existing hole (issue #300, first story of epic
+  # #297): before this job, nothing in CI ever ran the emitted Dart through
+  # a Dart/Flutter toolchain — `grep -rn "dart\|flutter" .github/workflows/`
+  # matched only rustdoc-pages.yml, and the Rust-side snapshot tests under
+  # crates/cratestack-client-dart/tests/ only assert on generated *text*,
+  # which can't catch a missing import, an undefined symbol, or a type
+  # error in the emitted Dart. That gap is real: see `templates.rs`'s
+  # `REST_TEMPLATE_SPECS` comment for a historical case where an RPC
+  # package reusing a REST-only template failed `flutter analyze` with 3
+  # undefined-symbol errors, caught only by a one-off manual run.
+  #
+  # Follows the sibling-job pattern established by `js (@cratestack/cbor-
+  # node)` / `js (@cratestack/cbor-web)`: a dedicated job with its own
+  # toolchain setup, not folded into an existing Rust job.
+  #
+  # `just verify-dart` generates a REST and an RPC package DURING the job
+  # from committed fixtures (crates/cratestack-client-dart/tests/fixtures/
+  # ci_{rest,rpc}.cstack — multiple models, an enum, a relation, and a
+  # procedure each, richer than the tiny_* snapshot fixtures) via the real
+  # `cratestack generate-dart` CLI, then runs `flutter analyze` on each —
+  # see the justfile recipe's own comment for why Flutter (not the plain
+  # Dart SDK) is required and for the analyzer-severity decision
+  # (`--fatal-warnings`, `--no-fatal-infos`).
+  dart-verify:
+    name: dart (generated packages)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate + flutter analyze (REST + RPC)
+        run: just verify-dart
+
   # ---- JS packages (packages/*) -----------------------------------------
   # Blocking. Covers the hand-written npm packages — @cratestack/api's
   # split family (ts-types, link-batch, link-logger, runtime-fetch,
