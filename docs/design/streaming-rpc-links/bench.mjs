@@ -25,24 +25,23 @@ const DEPTH = 4; // mirrors the ticket's "realistic depth (3-5 links)"
 const ITERATIONS = 200_000;
 const SIMULATED_NETWORK_MS = 5; // a fast same-region HTTP round trip
 
-function composeAsync(links, terminal) {
+// Same reduceRight for both chain shapes — only the link bodies differ
+// (async-function vs async-generator), so one compose function keeps
+// that the only difference, rather than risking two copies drifting.
+function compose(links, terminal) {
   return links.reduceRight((next, link) => (req) => link(req, next), terminal);
 }
 
 function makeAsyncChain(depth, terminal) {
   const links = Array.from({ length: depth }, () => async (req, next) => next(req));
-  return composeAsync(links, terminal);
-}
-
-function composeGen(links, terminal) {
-  return links.reduceRight((next, link) => (req) => link(req, next), terminal);
+  return compose(links, terminal);
 }
 
 function makeGenChain(depth, terminal) {
   const links = Array.from({ length: depth }, () => async function* (req, next) {
     yield* next(req);
   });
-  return composeGen(links, terminal);
+  return compose(links, terminal);
 }
 
 async function drain(asyncIterable) {
@@ -60,8 +59,15 @@ function delay(ms) {
 async function timeIt(label, iterations, run) {
   // Warm up the JIT before measuring, same reasoning as any
   // microbenchmark: the first few thousand calls are dominated by
-  // deopt/inline-cache churn, not steady-state cost.
-  for (let i = 0; i < 2_000; i++) {
+  // deopt/inline-cache churn, not steady-state cost. Scaled to at most
+  // 1% of `iterations` (capped at 2,000) rather than a flat 2,000 —
+  // the isolation section's 200k iterations still gets a full 2,000-call
+  // warmup, but the network section's 2,000 iterations no longer burns
+  // 2,000 * 5ms = 10s warming up before the timed run even starts,
+  // for zero JIT benefit (steady-state generator dispatch is reached
+  // well under 100 calls).
+  const warmupIterations = Math.min(2_000, Math.floor(iterations * 0.01));
+  for (let i = 0; i < warmupIterations; i++) {
     await run(i);
   }
   const start = process.hrtime.bigint();

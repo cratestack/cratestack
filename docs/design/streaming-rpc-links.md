@@ -37,10 +37,14 @@ export function createMyLink(): AsyncGenerator<RpcLink, TReturn, TNext> {
 }
 ```
 
-This does not typecheck as written (`AsyncGenerator<RpcLink, ...>` yields `RpcLink` values, not
-response frames — a link *is* the generator, it doesn't return one), but the underlying instinct —
-"generators are how you compose streams" — is directionally right for `stream()` and directionally
-**wrong** for `call()`/`batch()`. §3 has the numbers.
+This does not typecheck as written: `createMyLink()`'s declared return type, `AsyncGenerator<...>`,
+is not assignable to `RpcLink` (`(req, next) => Promise<RpcLinkResponse>`) — a link *is* the
+generator function itself, not something a generator returns. (The snippet's
+`AsyncGenerator<RpcLink, TReturn, TNext>` annotation compounds the confusion further: it claims to
+*yield* `RpcLink` values, when the body actually yields `next(request)`'s
+`Promise<RpcLinkResponse>`.) The underlying instinct — "generators are how you compose streams" —
+is directionally right for `stream()` and directionally **wrong** for `call()`/`batch()`. §3 has
+the numbers.
 
 ## 3. Benchmark: async-function chain vs async-generator chain
 
@@ -52,24 +56,30 @@ depth, 3-5 links"), 200k iterations, warmed up before measuring.
 depth=4 iterations=200000 node=v24.14.1
 
 -- chain overhead in isolation (no network) --
-async-function chain                   total 62.5ms  per-call 0.312us
-async-generator chain                  total 292.8ms  per-call 1.464us
+async-function chain                   total 45.0ms  per-call 0.225us
+async-generator chain                  total 188.1ms  per-call 0.941us
 
-generator overhead vs async-function: 368.4%
+generator overhead vs async-function: 318.3%
 
 -- chain overhead as a fraction of a realistic call (+5ms network) --
-async-function chain + network         total 11156.0ms  per-call 5578.013us
-async-generator chain + network        total 11192.7ms  per-call 5596.362us
+async-function chain + network         total 11434.5ms  per-call 5717.233us
+async-generator chain + network        total 11177.0ms  per-call 5588.514us
 
-generator overhead vs async-function, with network: 0.329%
+generator overhead vs async-function, with network: -2.251%
 ```
+
+Run three times back to back: the isolation figure is consistently ~300-370% (noisy in the exact
+number, never small); the network figure bounces between -2.3% and +0.7% run to run — i.e. it's
+**below the measurement noise floor**, not a real, signed effect in either direction.
 
 **Reading this honestly** (this is a correction of an overstated claim made in chat before this
 spike ran — worth being precise here rather than just confirming the prior): a blanket
-generator-based unification is a *real* per-call regression (368%, i.e. ~4.7x), but the *absolute*
-cost is ~1.15 microseconds. Once a call does real I/O — even a fast 5ms same-region round trip —
-that difference is 0.33% of the call and unmeasurable in practice. **The perf argument alone does
-not decide this** for the common case of a call that hits the network.
+generator-based unification is a *real* per-call regression in isolation (300-370%, i.e. ~4-4.7x),
+but the *absolute* cost is roughly one microsecond. Once a call does real I/O — even a fast 5ms
+same-region round trip — that microsecond is smaller than the run-to-run jitter of `setTimeout`
+itself, and vanishes into noise. **The perf argument alone does not decide this** for the common
+case of a call that hits the network — there is no measurable case to make against generators
+there.
 
 Where it *does* matter: calls that resolve **without** any network I/O.
 
@@ -79,9 +89,9 @@ Where it *does* matter: calls that resolve **without** any network I/O.
   `next()` is ever called.
 - Any future cache-read link.
 
-For these, chain overhead **is** the visible cost, and 368% is real (though still, at ~1.15us,
-below the threshold most applications would notice — this is a "don't make it worse for free"
-argument, not a "this is currently a problem" one).
+For these, chain overhead **is** the visible cost, and 300%+ is real (though still, at roughly one
+microsecond, below the threshold most applications would notice — this is a "don't make it worse
+for free" argument, not a "this is currently a problem" one).
 
 ## 4. Recommendation: two chains, not one
 
@@ -89,30 +99,78 @@ argument, not a "this is currently a problem" one).
 // Unchanged — this is #182's existing contract, untouched.
 export type RpcLink = (request: RpcLinkRequest, next: RpcLinkNext) => Promise<RpcLinkResponse>;
 
-// New — only stream() runs through this one.
-export interface RpcStreamFrame<O = unknown> {
-  readonly output: O;
+// New — deliberately NOT a variant of RpcLinkRequest. `RpcLinkRequest.kind`
+// is `"unary" | "batch"`, and existing/future `RpcLink`s may switch on it
+// exhaustively — adding a `"stream"` value there to represent streaming
+// would be a breaking change for any such link, and would bake a lie into
+// the wire types Dart/Rust/Flutter clients also consume (a stream call is
+// neither a unary call nor a batch). A stream also has no `urls.batch()`
+// to speak of, so reusing the whole shape would carry a dead field too.
+export interface RpcStreamLinkRequest {
+  readonly opId: string;
+  readonly input: unknown;
+  readonly headers: Headers;
+  readonly signal: AbortSignal | null;
+  readonly codec: CratestackRpcCodec;
+  readonly fetchFn: typeof fetch;
+  readonly url: string;
 }
-export type RpcStreamLinkNext = (request: RpcLinkRequest) => AsyncIterable<RpcStreamFrame>;
+
+// The wire contract (rpc-transport.md §3.3) has two chunk shapes: any
+// number of unwrapped `out` payloads, then an OPTIONAL trailing
+// `application/cratestack.error+cbor` chunk that ends the stream.
+// RpcStreamFrame mirrors that as a discriminated union rather than
+// throwing mid-generator — keeping the *link chain itself*
+// exception-free is consistent with how the existing unary/batch
+// contract already works: `RpcLink` deals in `{ response: Response }`
+// values, including error responses (see @cratestack/link-batch's
+// `resolveGroups`, which resolves an error frame as a value, never a
+// throw) — only code OUTSIDE the chain (`CratestackRpcRuntime.call()`)
+// decides to turn that value into a thrown `CratestackRpcError`. A link
+// author who wants to observe a mid-stream failure just checks
+// `frame.kind`, the same way they'd check `response.ok` today.
+export type RpcStreamFrame<O = unknown> =
+  | { readonly kind: "output"; readonly output: O }
+  | { readonly kind: "error"; readonly error: RpcErrorBody };
+
+export type RpcStreamLinkNext = (
+  request: RpcStreamLinkRequest,
+) => AsyncIterable<RpcStreamFrame>;
 export type RpcStreamLink = (
-  request: RpcLinkRequest,
+  request: RpcStreamLinkRequest,
   next: RpcStreamLinkNext,
 ) => AsyncIterable<RpcStreamFrame>;
 ```
 
 `stream()` builds its chain the same way `call()`/`batch()` already do (`reduceRight` wrapping a
 terminal), just with `RpcStreamLink` and an async-generator terminal instead of a promise-returning
-one:
+one. The terminal is where the trailing error chunk (if any) becomes a `{ kind: "error" }` frame —
+every link above it, and `stream()` itself at the top, just observes that frame as a value:
 
 ```ts
 const terminalStreamLink: RpcStreamLinkNext = async function* (request) {
-  // ... same fetchFn call as today's stream(), decode each frame, yield it.
+  const response = await request.fetchFn(request.url, { /* ... */ });
+  // decode each unwrapped `out` chunk as it arrives:
+  //   yield { kind: "output", output: decoded };
+  // on the trailing application/cratestack.error+cbor chunk, decode it
+  // and yield the error frame, then return — the spec guarantees this
+  // chunk is always last, so the generator ends here, not on a `break`
+  // a consumer forgot to add.
+  //   yield { kind: "error", error: decodedBody };
 };
 this.streamChain = (options.streamLinks ?? []).reduceRight<RpcStreamLinkNext>(
   (next, link) => (request) => link(request, next),
   terminalStreamLink,
 );
 ```
+
+`stream()` itself, above the chain, converts a `{ kind: "error" }` frame into a thrown
+`CratestackRpcError` (or its own new subclass — this one specific decision, unlike the frame
+contract, is left to #277: `CratestackRpcError`'s constructor currently takes an HTTP `status`,
+which a mid-stream error doesn't cleanly have, since headers were already sent as `200` before the
+trailing chunk arrived) rather than yielding it onward to the external `AsyncIterable<O>` caller —
+matching the existing precedent of `call()` throwing outside the chain rather than the chain itself
+throwing.
 
 A link implementer who wants to log/retry a stream now can, by consuming and re-yielding:
 
@@ -122,7 +180,11 @@ export function createLoggerStreamLink(logger = console): RpcStreamLink {
     logger.info(`[rpc] -> stream ${request.opId}`);
     let count = 0;
     for await (const frame of next(request)) {
-      count++;
+      if (frame.kind === "error") {
+        logger.error(`[rpc] x stream ${request.opId} failed after ${count} frames`, frame.error);
+      } else {
+        count++;
+      }
       yield frame;
     }
     logger.info(`[rpc] <- stream ${request.opId} (${count} frames)`);
