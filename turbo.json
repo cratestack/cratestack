@@ -12,7 +12,7 @@
     "lint": {
       "outputs": []
     },
-    "cratestack-cbor-node#build": {
+    "@cratestack/cbor-node#build": {
       "dependsOn": ["^build"],
       // Native napi-rs build output lands at the package root (not
       // dist/), alongside the tsc-compiled wrapper — see
@@ -52,12 +52,10 @@
     // their own top-level targets there, regardless of this edge).
     //
     // Note the task ID here uses this package's real, scoped npm name
-    // (`@cratestack/cbor`), not a hyphenated alias — unlike the
-    // pre-existing `cratestack-cbor-node#build` override above, which
-    // (confirmed via `turbo run --dry=json`) does NOT actually match
-    // turbo's real task ID (`@cratestack/cbor-node#build`) and is
-    // therefore currently inert. Flagged separately; not fixed here to
-    // keep this PR scoped to issue #288.
+    // (`@cratestack/cbor`), matching the `@cratestack/cbor-node#build`
+    // override above (previously keyed as the hyphenated, unscoped
+    // `cratestack-cbor-node#build`, which did not match turbo's real
+    // task ID and was silently inert — fixed separately from #288).
     "@cratestack/cbor#build": {
       "dependsOn": ["@cratestack/ts-types#build"],
       "outputs": ["dist/**"]
