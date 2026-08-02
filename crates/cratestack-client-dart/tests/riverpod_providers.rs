@@ -227,24 +227,26 @@ fn riverpod_pubspec_adds_riverpod_annotation_generator_and_build_runner() {
         "flutter_riverpod must stay exactly as the default preset already pins it:\n{pubspec}"
     );
     assert!(
-        pubspec.contains("riverpod_annotation: ^4.0.6"),
-        "riverpod_annotation should be a real (non-dev) dependency:\n{pubspec}"
+        pubspec.contains("riverpod_annotation: 4.0.3"),
+        "riverpod_annotation must be pinned to exactly 4.0.3 — riverpod_generator 4.0.4 (below) \
+         itself depends on riverpod_annotation '4.0.3' as an exact pin, not a range:\n{pubspec}"
     );
     assert!(
-        pubspec.contains("riverpod_generator: ^4.0.8"),
-        "riverpod_generator should be a dev dependency:\n{pubspec}"
+        pubspec.contains("riverpod_generator: 4.0.4"),
+        "riverpod_generator must be pinned to exactly 4.0.4 — the newest release still on \
+         analyzer ^12.0.0, which resolves against Flutter stable's meta 1.18.0 pin on the real \
+         SDK (Flutter 3.44.8/Dart 3.12.2), unlike newer riverpod_generator/build_runner \
+         releases (verified by downloading that exact SDK and reproducing the failure for \
+         real, not just reasoning from pub.dev version tables — see the pubspec.yaml.j2 \
+         template's own comment for the full chain, including why a bare analyzer version pin \
+         or a dependency_overrides resolves `pub get` but genuinely breaks `build_runner build` \
+         at codegen time):\n{pubspec}"
     );
     assert!(
-        pubspec.contains(r#"build_runner: ">=2.15.0 <2.15.2""#),
-        "build_runner must stay upper-bounded below 2.15.2 — from there its own constraint \
-         requires analyzer >=13.3.0, which requires meta ^1.18.3, incompatible with Flutter \
-         stable's meta 1.18.0 pin (verified against pub.dev's real version history, and CI \
-         caught this for real once already):\n{pubspec}"
-    );
-    assert!(
-        pubspec.contains(r#"analyzer: ">=13.0.0 <13.1.0""#),
-        "analyzer must be pinned to the 13.0.x line explicitly so pub's resolver can't float \
-         it to 13.1.0+ (which needs meta ^1.18.3):\n{pubspec}"
+        pubspec.contains(r#"build_runner: ">=2.14.0 <2.15.0""#),
+        "build_runner must stay capped below 2.15.0 to match the riverpod_generator 4.0.4 pin \
+         above — 2.15.x tightened its own analyzer floor past what analyzer 12.x (what 4.0.4 \
+         needs) satisfies:\n{pubspec}"
     );
     // A bare, non-Flutter `riverpod:` package must never be added
     // alongside `flutter_riverpod` — it already re-exports what
