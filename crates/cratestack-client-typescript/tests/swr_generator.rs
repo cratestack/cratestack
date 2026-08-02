@@ -368,25 +368,63 @@ fn swr_key_factory_keeps_similarly_named_models_distinct() {
         "model.User_Group.list key string should appear exactly twice (list + listMatches):\n{keys}"
     );
 
-    // Sanity check on the premise itself: the react-query-oriented field
-    // this preset deliberately does NOT reuse really does collide for
-    // this fixture, confirming the fixture actually exercises the risk
-    // (not a vacuous test) — the DEFAULT preset's flat `cratestackQueryKeys`
-    // object literal ends up with the *same* property name
-    // (`userGroupList`) written out twice, once per model: a literal
-    // duplicate object key (TypeScript error ts(1117): "An object
-    // literal cannot have multiple properties with the same name"), not
-    // just a hypothetical risk.
-    let default_package = generate_for("swr_key_collision", TypeScriptPreset::Default);
-    let react_query = file(&default_package, "src/react-query.ts");
+    // The DEFAULT preset's `react-query.ts` used to collide on this exact
+    // fixture (`to_camel_case`-derived keys collapsed UserGroup/User_Group
+    // to the same `userGroupList` property, a literal duplicate
+    // object-key and TypeScript compile error) — `swr-keys.ts` sidesteps
+    // that by nesting under each model's raw, parser-unique name instead
+    // of reusing the lossy transform. See
+    // `default_preset_disambiguates_colliding_query_keys` below for the
+    // DEFAULT preset's own fix (found and patched independently of this
+    // preset, out of scope for #305).
+}
+
+/// Found while implementing #305's `swr-keys.ts` (see this file's
+/// `swr_key_factory_keeps_similarly_named_models_distinct`, whose docs
+/// explain why `swr-keys.ts` nests under raw model names rather than
+/// reusing `ModelApiView::list_query_key` &c.): the DEFAULT/react-query
+/// preset's `views::build_model_api` derived those same fields purely
+/// per-model, via `to_camel_case(&model.name)` — a lossy transform two
+/// distinct, parser-guaranteed-unique model names (`UserGroup` and
+/// `User_Group`) can collapse onto identically. `rest-react-query.ts.j2`/
+/// `rpc-react-query.ts.j2` render `list_query_key`/`get_query_key` as
+/// sibling property names in the same `cratestackQueryKeys` object
+/// literal, so an undetected collision was a genuine TypeScript compile
+/// error (`ts(1117)`), not just a cache-key overlap.
+/// `views::disambiguate_model_api_keys` now runs once per schema, after
+/// every model's `ModelApiView` is built, and suffixes any colliding key
+/// with its own model's raw name (parser-unique, so the suffixed key is
+/// guaranteed unique too).
+#[test]
+fn default_preset_disambiguates_colliding_query_keys() {
+    let package = generate_for("swr_key_collision", TypeScriptPreset::Default);
+    let react_query = file(&package, "src/react-query.ts");
+
+    // No more literal duplicate property name.
     assert_eq!(
         react_query.matches("userGroupList:").count(),
-        2,
-        "expected `userGroupList:` written out twice in the DEFAULT preset's flat key object \
-         — once per model — proving react-query's `to_camel_case`-derived key genuinely \
-         collides (a literal duplicate object-key) for UserGroup/User_Group, which is exactly \
-         why `swr-keys.ts` doesn't reuse it:\n{react_query}"
+        0,
+        "the bare, undisambiguated `userGroupList:` property should no longer appear once \
+         collisions are suffixed:\n{react_query}"
     );
+
+    // Each model gets its own distinct, suffixed property for every one
+    // of the five derived keys — proving the disambiguation covers
+    // list/get (object-literal properties, the compile-error risk) and
+    // create/update/delete (mutationKey array values, a lower-severity
+    // but same-root-cause TanStack cache-key overlap).
+    for suffix in ["List", "Detail", "Create", "Update", "Delete"] {
+        let user_group_key = format!("userGroup{suffix}_UserGroup");
+        let user_underscore_group_key = format!("userGroup{suffix}_User_Group");
+        assert!(
+            react_query.contains(&user_group_key),
+            "missing disambiguated key {user_group_key:?}:\n{react_query}"
+        );
+        assert!(
+            react_query.contains(&user_underscore_group_key),
+            "missing disambiguated key {user_underscore_group_key:?}:\n{react_query}"
+        );
+    }
 }
 
 fn generate_for(fixture_stem: &str, preset: TypeScriptPreset) -> GeneratedTypeScriptPackage {

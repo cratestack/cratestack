@@ -11,7 +11,7 @@ use crate::types::{
 };
 use crate::views::{
     EnumView, InterfaceKind, InterfaceView, ModelApiView, ProcedureView, build_enum_view,
-    build_interface, build_model_api, build_procedure,
+    build_interface, build_model_api, build_procedure, disambiguate_model_api_keys,
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -120,11 +120,12 @@ pub(crate) fn build_template_context(
         ));
     }
 
-    let models = schema
+    let mut models = schema
         .models
         .iter()
         .map(build_model_api)
         .collect::<Vec<_>>();
+    disambiguate_model_api_keys(&mut models);
     // `transport grpc` never routes procedures at all — ticket #171 didn't
     // wire them into the generated tonic service (see `crate::grpc`'s
     // module doc) — so a gRPC-Web client exposing `.procedures.foo()`
