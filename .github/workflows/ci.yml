@@ -273,6 +273,22 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build, test, lint @cratestack/cbor-node
         run: pnpm turbo run build test lint --filter='./packages/cratestack-cbor-node'
+      # @cratestack/cbor (issue #288, the umbrella package) deliberately has
+      # no `^build` dependency on @cratestack/cbor-node in turbo.json (see
+      # that file's comment) — the plain `js` job above excludes cbor-node,
+      # so the umbrella's own build/test can't require it there. Its Node
+      # round-trip suite (tests/node.test.ts) self-skips when
+      # @cratestack/cbor-node isn't actually built on disk, which would make
+      # every `js` job run skip it silently forever if this were its only
+      # exercise. Running it here — as its own step, AFTER cbor-node's own
+      # build step above already produced real dist/native.mjs output — is
+      # what gives it real, non-skipped Node-side coverage. (Separate step,
+      # not a combined `--filter`, on purpose: two packages passed to one
+      # turbo invocation with no dependency edge between them have no
+      # guaranteed build order, which would make this a race instead of a
+      # guarantee.)
+      - name: Build, test, lint @cratestack/cbor (Node-side real coverage)
+        run: pnpm turbo run build test lint --filter='./packages/cratestack-cbor'
 
   # ---- @cratestack/cbor-web (wasm-bindgen addon) -------------------------
   # Same rationale as js-cbor-napi above, for the other Rust-toolchain-

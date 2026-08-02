@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@cratestack/cbor": "link:../../../packages/cratestack-cbor",
     "@cratestack/cbor-web": "link:../../../packages/cratestack-cbor-web"
   },
   "devDependencies": {

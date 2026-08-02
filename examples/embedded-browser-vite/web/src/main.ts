@@ -3,6 +3,9 @@
 
 // Independent of the notes app below — see cbor-smoke.ts for why it's here.
 import './cbor-smoke.ts';
+// Independent of the notes app below — see cbor-umbrella-smoke.ts for why
+// it's here.
+import './cbor-umbrella-smoke.ts';
 import type {
   NoteView,
   Operation,

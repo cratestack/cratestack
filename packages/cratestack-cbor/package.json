@@ -1,0 +1,60 @@
+{
+  "name": "@cratestack/cbor",
+  "version": "0.5.2",
+  "description": "Umbrella CBOR codec for CrateStack's generated TypeScript RPC clients: conditional exports auto-select @cratestack/cbor-node in Node and @cratestack/cbor-web in the browser behind one import path, one uniform async createCborCodec() API on both platforms.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cratestack/cratestack.git",
+    "directory": "packages/cratestack-cbor"
+  },
+  "homepage": "https://cratestack.dev",
+  "bugs": "https://github.com/cratestack/cratestack/issues",
+  "keywords": ["cratestack", "cstack", "cbor", "codec", "rpc", "isomorphic"],
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/web.js",
+  "types": "./dist/web.d.ts",
+  "exports": {
+    ".": {
+      "node": {
+        "types": "./dist/node.d.ts",
+        "import": "./dist/node.js"
+      },
+      "browser": {
+        "types": "./dist/web.d.ts",
+        "import": "./dist/web.js"
+      },
+      "default": {
+        "types": "./dist/web.d.ts",
+        "import": "./dist/web.js"
+      }
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js"
+    },
+    "./web": {
+      "types": "./dist/web.d.ts",
+      "import": "./dist/web.js"
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "lint": "biome check ."
+  },
+  "dependencies": {
+    "@cratestack/cbor-node": "0.5.2",
+    "@cratestack/cbor-web": "0.5.2",
+    "@cratestack/ts-types": "0.5.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

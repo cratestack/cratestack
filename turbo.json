@@ -18,6 +18,49 @@
       // dist/), alongside the tsc-compiled wrapper — see
       // packages/cratestack-cbor-node/package.json's "build" script.
       "outputs": ["dist/**", "native.mjs", "native.d.mts", "*.node"]
+    },
+    // @cratestack/cbor (issue #288) deliberately does NOT use the global
+    // `^build` (all workspace dependencies' build tasks) here. It has
+    // three real npm `dependencies`: @cratestack/ts-types (plain
+    // TypeScript, builds anywhere), and @cratestack/cbor-node /
+    // @cratestack/cbor-web (exact-pinned per this npm family's
+    // convention — see packages/cratestack-cbor/package.json), whose own
+    // builds need Rust/wasm toolchains this repo's toolchain-free `js`
+    // CI job deliberately doesn't set up (same reason that job's turbo
+    // invocation excludes those two packages via `--filter`). A plain
+    // `^build` would make turbo schedule `napi build`/`wasm-pack build`
+    // as a prerequisite of *this* package's build the moment it's
+    // included in ANY turbo run that also includes those two packages —
+    // which is every run, since they're real dependencies — breaking the
+    // `js` job even though this package's own build is pure TypeScript.
+    // Depending on ts-types' build task specifically (not the `^build`
+    // wildcard) keeps that one real, needed prerequisite while dropping
+    // the two toolchain-gated ones. See src/ambient.d.ts and
+    // tests/node.test.ts for the two matching accommodations this still
+    // requires for the *cbor-node/-web* half specifically (typecheck
+    // falls back to ambient types when those two aren't built; the test
+    // suite skips gracefully, not fails, when they're not loadable at
+    // runtime) and the package README for the full reasoning. Building
+    // this package for REAL coverage (not just typecheck) still requires
+    // @cratestack/cbor-node/-web to be built first — just not
+    // automatically via this graph; do it explicitly (`pnpm turbo run
+    // build --filter='./packages/cratestack-cbor-node'
+    // --filter='./packages/cratestack-cbor-web'`) or rely on turbo's
+    // cache from a prior build, as the full unfiltered
+    // `pnpm turbo run build test lint` at the repo root already does
+    // (ts-types/cbor-node/cbor-web are each still independently built as
+    // their own top-level targets there, regardless of this edge).
+    //
+    // Note the task ID here uses this package's real, scoped npm name
+    // (`@cratestack/cbor`), not a hyphenated alias — unlike the
+    // pre-existing `cratestack-cbor-node#build` override above, which
+    // (confirmed via `turbo run --dry=json`) does NOT actually match
+    // turbo's real task ID (`@cratestack/cbor-node#build`) and is
+    // therefore currently inert. Flagged separately; not fixed here to
+    // keep this PR scoped to issue #288.
+    "@cratestack/cbor#build": {
+      "dependsOn": ["@cratestack/ts-types#build"],
+      "outputs": ["dist/**"]
     }
   }
 }

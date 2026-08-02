@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@cratestack/cbor':
+        specifier: link:../../../packages/cratestack-cbor
+        version: link:../../../packages/cratestack-cbor
       '@cratestack/cbor-web':
         specifier: link:../../../packages/cratestack-cbor-web
         version: link:../../../packages/cratestack-cbor-web
