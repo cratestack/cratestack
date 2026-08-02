@@ -27,6 +27,9 @@
     "test": "vitest run",
     "lint": "biome check ."
   },
+  "dependencies": {
+    "@cratestack/ts-types": "0.5.2"
+  },
   "peerDependencies": {
     "@reduxjs/toolkit": "^2.0.0"
   },

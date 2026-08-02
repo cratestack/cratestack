@@ -65,3 +65,16 @@ export interface RpcErrorBody {
   message: string;
   details?: unknown;
 }
+
+/** Structural match for `CratestackRpcRuntime.call()` (see
+ *  `crates/cratestack-client-typescript/templates/src/rpc-runtime.ts.j2`)
+ *  — a generated client exposes this as its public `.runtime` field, so
+ *  e.g. `rpcQueryOptions(client.runtime, opId, input)`
+ *  (`@cratestack/adapter-tanstack-query`) or
+ *  `createRpcBaseQuery(client.runtime)` (`@cratestack/adapter-rtk`) work
+ *  against any generated project without either package importing its
+ *  (per-project, unshared) class. Shared here rather than duplicated
+ *  per adapter package, since both need the exact same contract. */
+export interface RpcCaller {
+  call<I, O>(opId: string, input: I, options?: { signal?: AbortSignal }): Promise<O>;
+}

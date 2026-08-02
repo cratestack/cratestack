@@ -16,6 +16,10 @@ importers:
         version: 2.10.7
 
   packages/cratestack-adapter-rtk:
+    dependencies:
+      '@cratestack/ts-types':
+        specifier: 0.5.2
+        version: link:../cratestack-ts-types
     devDependencies:
       '@reduxjs/toolkit':
         specifier: ^2.0.0
@@ -28,6 +32,10 @@ importers:
         version: 3.2.7
 
   packages/cratestack-adapter-tanstack-query:
+    dependencies:
+      '@cratestack/ts-types':
+        specifier: 0.5.2
+        version: link:../cratestack-ts-types
     devDependencies:
       '@tanstack/query-core':
         specifier: ^5.0.0

@@ -1,14 +1,7 @@
+import type { RpcCaller } from "@cratestack/ts-types";
 import type { QueryKey } from "@tanstack/query-core";
 
-/** Structural match for `CratestackRpcRuntime.call()` (see
- *  `crates/cratestack-client-typescript/templates/src/rpc-runtime.ts.j2`)
- *  — a generated client exposes this as its public `.runtime` field, so
- *  `rpcQueryOptions(client.runtime, opId, input)` works against any
- *  generated project without this package importing its (per-project,
- *  unshared) class. */
-export interface RpcCaller {
-  call<I, O>(opId: string, input: I, options?: { signal?: AbortSignal }): Promise<O>;
-}
+export type { RpcCaller } from "@cratestack/ts-types";
 
 /** The `[opId, input]` tuple every helper below keys its query/mutation
  *  on — exported so callers can `queryClient.invalidateQueries({ queryKey: rpcQueryKey(opId, input) })`

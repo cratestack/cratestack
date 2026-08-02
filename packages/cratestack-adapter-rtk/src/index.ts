@@ -1,14 +1,7 @@
+import type { RpcCaller } from "@cratestack/ts-types";
 import type { BaseQueryFn } from "@reduxjs/toolkit/query";
 
-/** Structural match for `CratestackRpcRuntime.call()` (see
- *  `crates/cratestack-client-typescript/templates/src/rpc-runtime.ts.j2`)
- *  — a generated client exposes this as its public `.runtime` field, so
- *  `createRpcBaseQuery(client.runtime)` works against any generated
- *  project without this package importing its (per-project, unshared)
- *  class. */
-export interface RpcCaller {
-  call<I, O>(opId: string, input: I, options?: { signal?: AbortSignal }): Promise<O>;
-}
+export type { RpcCaller } from "@cratestack/ts-types";
 
 /** A single RTK Query endpoint request — the `args` shape every
  *  endpoint defined against {@link createRpcBaseQuery} passes to
