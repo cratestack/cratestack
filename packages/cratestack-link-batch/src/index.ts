@@ -5,7 +5,7 @@ import type {
   RpcLinkResponse,
   RpcRequest,
   RpcResponseFrame,
-} from "./types.js";
+} from "@cratestack/ts-types";
 
 export interface BatchLinkOptions {
   /** Scheduling window. Omitted (default) uses `queueMicrotask` — calls

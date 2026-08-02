@@ -6,8 +6,8 @@
 // generated chain-construction logic exactly. See the implementation
 // plan for why this split is deliberate.
 import { describe, expect, it, vi } from "vitest";
-import type { RpcLink } from "../src/types.js";
-import { FakeRuntime } from "./harness.js";
+import type { RpcLink } from "../src/index.js";
+import { FakeRuntime } from "../src/test-harness.js";
 
 function okResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), { status: 200 });

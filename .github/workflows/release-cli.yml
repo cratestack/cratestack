@@ -259,15 +259,25 @@ jobs:
         working-directory: packages/cratestack-cli-npm
         run: npm publish --access public --provenance
 
-  # @cratestack/api ships its own compiled dist/ in the tarball and never
-  # fetches a GitHub Release binary (unlike @cratestack/cli), so it has
-  # no ordering dependency on the `build` matrix — only needs `prepare`
-  # for the resolved tag. Same tag-push-only gate and OIDC Trusted
-  # Publishing hard-cutover as publish-npm above, for the same reasons —
-  # needs its own separate Trusted Publisher entry on npmjs.com (one per
-  # package), same repo/workflow-filename values.
-  publish-npm-api:
-    name: publish npm package (@cratestack/api)
+  # @cratestack/api and its split family (ts-types, link-*, runtime-*,
+  # validator-*, adapter-*) all ship their own compiled dist/ in the
+  # tarball and never fetch a GitHub Release binary (unlike
+  # @cratestack/cli), so this job has no ordering dependency on the
+  # `build` matrix — only needs `prepare` for the resolved tag. Same
+  # tag-push-only gate and OIDC Trusted Publishing hard-cutover as
+  # publish-npm above, for the same reasons — EACH of these 10 packages
+  # needs its own separate Trusted Publisher entry on npmjs.com (same
+  # repo/workflow-filename values; see docs/tooling/npm-publishing.md),
+  # not just @cratestack/api's.
+  #
+  # Published in dependency order (ts-types has no `@cratestack/*` deps;
+  # link-*/runtime-*/validator-*/adapter-* depend only on ts-types;
+  # api depends on all of them) even though a registry publish doesn't
+  # strictly require its dependency to already be live — this just
+  # avoids a brief window where `npm view` on a mid-publish package
+  # would show an unresolvable dependency.
+  publish-npm-api-family:
+    name: publish npm packages (@cratestack/api family)
     if: github.event_name == 'push'
     needs: [prepare]
     runs-on: ubuntu-latest
@@ -289,19 +299,39 @@ jobs:
         # including cratestack-cli-npm's — which downloads the matching
         # GitHub Release binary for whatever version is in its
         # package.json (the same tag this job checked out). This job
-        # doesn't need that binary (it only builds/publishes
-        # @cratestack/api) and only depends on `prepare`, not `build`/
-        # `release`, so that GitHub Release may not exist yet at this
-        # point — skip the download rather than race it.
+        # doesn't need that binary and only depends on `prepare`, not
+        # `build`/`release`, so that GitHub Release may not exist yet at
+        # this point — skip the download rather than race it.
         env:
           CRATESTACK_CLI_SKIP_DOWNLOAD: "1"
         run: pnpm install --frozen-lockfile
-      - name: Build @cratestack/api
-        run: pnpm --filter @cratestack/api build
+      - name: Build @cratestack/api family
+        run: |
+          pnpm turbo run build \
+            --filter='./packages/cratestack-ts-types' \
+            --filter='./packages/cratestack-link-batch' \
+            --filter='./packages/cratestack-link-logger' \
+            --filter='./packages/cratestack-runtime-fetch' \
+            --filter='./packages/cratestack-runtime-axios' \
+            --filter='./packages/cratestack-validator-zod' \
+            --filter='./packages/cratestack-validator-yup' \
+            --filter='./packages/cratestack-adapter-tanstack-query' \
+            --filter='./packages/cratestack-adapter-rtk' \
+            --filter='./packages/cratestack-api'
       # Trusted Publishing needs npm CLI >= 11.5.1; don't rely on whatever
       # version happens to ship bundled with the pinned Node release.
       - name: Ensure npm supports Trusted Publishing
         run: npm install -g npm@latest
-      - name: Publish @cratestack/api
-        working-directory: packages/cratestack-api
-        run: npm publish --access public --provenance
+      - name: Publish @cratestack/api family
+        run: |
+          set -euo pipefail
+          for pkg in \
+            cratestack-ts-types cratestack-link-batch cratestack-link-logger \
+            cratestack-runtime-fetch cratestack-runtime-axios \
+            cratestack-validator-zod cratestack-validator-yup \
+            cratestack-adapter-tanstack-query cratestack-adapter-rtk \
+            cratestack-api; do
+            echo "::group::npm publish $pkg"
+            (cd "packages/$pkg" && npm publish --access public --provenance)
+            echo "::endgroup::"
+          done

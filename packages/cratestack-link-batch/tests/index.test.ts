@@ -1,7 +1,7 @@
+import type { RpcRequest, RpcResponseFrame } from "@cratestack/ts-types";
+import { FakeRuntime } from "@cratestack/ts-types/test-harness";
 import { describe, expect, it, vi } from "vitest";
-import { createBatchLink } from "../src/batch-link.js";
-import type { RpcRequest, RpcResponseFrame } from "../src/types.js";
-import { FakeRuntime } from "./harness.js";
+import { createBatchLink } from "../src/index.js";
 
 /** Fake `/rpc/batch` server: decodes the request array, resolves each
  *  frame via `resolver(op, input)`, returns frames in request order —

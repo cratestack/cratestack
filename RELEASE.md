@@ -46,9 +46,12 @@ else happens on its own:
 2. That tag push triggers **"Release CLI Binaries"**
    (`.github/workflows/release-cli.yml`): publishes every crate to
    crates.io (`CARGO_REGISTRY_TOKEN`), builds and attaches cross-platform
-   `cratestack-cli` binaries to a GitHub Release, and publishes both npm
-   packages (`@cratestack/cli`, `@cratestack/api`) with provenance via
-   npm's OIDC Trusted Publishing (no token at all). See
+   `cratestack-cli` binaries to a GitHub Release, and publishes every npm
+   package (`@cratestack/cli` plus the 10-package `@cratestack/api`
+   family — `api`, `ts-types`, `link-batch`, `link-logger`,
+   `runtime-fetch`, `runtime-axios`, `validator-zod`, `validator-yup`,
+   `adapter-tanstack-query`, `adapter-rtk`) with provenance via npm's
+   OIDC Trusted Publishing (no token at all). See
    [`docs/tooling/npm-publishing.md`](docs/tooling/npm-publishing.md) for
    one-time setup.
 
@@ -122,8 +125,9 @@ just release 0.3.4 dry          # rehearsal: dry-run publishes, no tag
 Underlying recipes you can also run individually:
 
 * `just bump 0.3.4` — rewrite `0.x.y` → `0.3.4` across every `Cargo.toml`
-  and the two npm `package.json`s (`packages/cratestack-cli-npm`,
-  `packages/cratestack-api`), and refresh `Cargo.lock`. Idempotent.
+  and every npm `package.json` (`packages/cratestack-cli-npm` and the
+  10-package `@cratestack/api` family), and refresh `Cargo.lock`.
+  Idempotent.
 * `just release-check` — workspace check + workspace tests (skips
   `embedded_flutter_native`).
 * `just bundle-studio-ui` — refresh `embedded-ui.tar.gz` and
@@ -245,9 +249,10 @@ live:
 # it isn't.
 curl -A "cratestack-release-check" https://crates.io/api/v1/crates/cratestack-core/0.4.16
 
-# npm — both packages
+# npm — @cratestack/cli plus the @cratestack/api family (repeat per package)
 curl https://registry.npmjs.org/@cratestack/cli/0.4.16
 curl https://registry.npmjs.org/@cratestack/api/0.4.16
+curl https://registry.npmjs.org/@cratestack/ts-types/0.4.16
 
 # GitHub Release — expect 5 platform binaries + 5 matching .sha256 files
 gh release view v0.4.16
@@ -267,7 +272,7 @@ binary matching its own `package.json` version — which `just bump` just
 wrote to the new, not-yet-released version. This is already fixed by
 setting `CRATESTACK_CLI_SKIP_DOWNLOAD=1` on the relevant `pnpm install`
 steps (`ci.yml`'s `js` job, `prepare-release.yml`'s dry-run rehearsal, and
-`release-cli.yml`'s `publish-npm-api` job) — if this resurfaces, check
+`release-cli.yml`'s `publish-npm-api-family` job) — if this resurfaces, check
 that a new `pnpm install` call site added elsewhere hasn't missed the same
 env var.
 
@@ -276,9 +281,9 @@ env var.
 Required credentials are intentionally read from the environment:
 
 * `CARGO_REGISTRY_TOKEN` for crates.io
-* npm's OIDC Trusted Publishing for `@cratestack/cli` and `@cratestack/api` — no GitHub secret at
-  all, a per-package Trusted Publisher configured on npmjs.com instead (see
-  [`docs/tooling/npm-publishing.md`](docs/tooling/npm-publishing.md))
+* npm's OIDC Trusted Publishing for `@cratestack/cli` and every package in the `@cratestack/api`
+  family — no GitHub secret at all, a per-package Trusted Publisher configured on npmjs.com
+  instead (see [`docs/tooling/npm-publishing.md`](docs/tooling/npm-publishing.md))
 * `VSCE_PAT` for Visual Studio Marketplace
 * `OVSX_PAT` for Open VSX
 * GitHub permissions to push tags and create releases

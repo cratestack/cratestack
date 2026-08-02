@@ -1,4 +1,4 @@
-import type { RpcLink } from "./types.js";
+import type { RpcLink } from "@cratestack/ts-types";
 
 /** Convenience copy of the reference link generated into every
  *  `transport rpc` project's `src/links.ts` (issue #182). Not a

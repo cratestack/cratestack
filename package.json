@@ -6,7 +6,7 @@
     "build": "turbo run build",
     "test": "turbo run test",
     "lint": "turbo run lint",
-    "format": "biome format --write packages/cratestack-api"
+    "format": "biome format --write packages"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.0",

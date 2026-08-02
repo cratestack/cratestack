@@ -1,19 +1,29 @@
 # @cratestack/api
 
-Composable links for CrateStack's generated TypeScript RPC client (`transport rpc` schemas).
+Compat umbrella over the split `@cratestack/*` npm family for CrateStack's generated TypeScript
+RPC client (`transport rpc` schemas). If you're starting fresh, prefer depending on the individual
+packages below directly — smaller install, no unused peer dependencies. `@cratestack/api` exists
+so existing `import { createBatchLink } from "@cratestack/api"` code keeps working unchanged.
 
-Every `cratestack generate-typescript` project ships a `links?: RpcLink[]` option on
-`CratestackRpcClientOptions` ([issue #182](https://github.com/cratestack/cratestack/issues/182)) —
-an ordered chain of interceptors, each wrapping the next, terminating in the real network call.
-This package ships two of them:
+## The split
 
-- **`createBatchLink()`** — a [batshit](https://github.com/yornaath/batshit)-style automatic batch
-  scheduler. Multiple unary calls issued in the same tick collapse into a single `POST /rpc/batch`
-  request instead of firing one `POST /rpc/{op_id}` each.
-- **`createLoggerLink()`** — a small reference link that logs each call's op id, outcome, and
-  duration.
+| Package | What it does |
+| --- | --- |
+| [`@cratestack/ts-types`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-ts-types) | Shared `RpcLink`/wire-frame interfaces. Types only — no runtime code. |
+| [`@cratestack/link-batch`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-link-batch) | Automatic batch-scheduler `RpcLink`. |
+| [`@cratestack/link-logger`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-link-logger) | Reference logging `RpcLink`. |
+| [`@cratestack/runtime-fetch`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-runtime-fetch) | `typeof fetch` transport with an optional timeout. |
+| [`@cratestack/runtime-axios`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-runtime-axios) | `typeof fetch` transport backed by axios. |
+| [`@cratestack/validator-zod`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-validator-zod) | Input-validating `RpcLink`, zod schemas. |
+| [`@cratestack/validator-yup`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-validator-yup) | Input-validating `RpcLink`, yup schemas. |
+| [`@cratestack/adapter-tanstack-query`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-adapter-tanstack-query) | Generic TanStack Query option builders. |
+| [`@cratestack/adapter-rtk`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-adapter-rtk) | RTK Query `BaseQueryFn` adapter. |
 
 ## Usage
+
+The root import is unchanged from before the split — it re-exports exactly `ts-types` +
+`link-batch` + `link-logger`, so importing it never pulls in zod/yup/axios/tanstack-query/rtk as
+implicit peer dependencies:
 
 ```ts
 import { createBatchLink, createLoggerLink } from "@cratestack/api";
@@ -32,33 +42,20 @@ const [a, b, c] = await Promise.all([
 ]);
 ```
 
+Everything else added since the split is available as a named subpath — each pulls in only its
+own peer dependency, not every package's:
+
+```ts
+import { createFetchRuntime } from "@cratestack/api/runtime-fetch";
+import { createAxiosRuntime } from "@cratestack/api/runtime-axios";
+import { createZodValidatorLink } from "@cratestack/api/validator-zod";
+import { createYupValidatorLink } from "@cratestack/api/validator-yup";
+import { rpcQueryOptions, rpcMutationOptions } from "@cratestack/api/adapter-tanstack-query";
+import { createRpcBaseQuery } from "@cratestack/api/adapter-rtk";
+```
+
+See each package's own README (linked in the table above) for its full API and semantics.
+
 Order matters: a link's `next` reruns everything below it (the real fetch and any links declared
-after it), never just the terminal fetch. Put `createBatchLink()` last (closest to the network) if
-you also want a logger or retry link to see the real per-call outcome; put it first if you want
-logging/retry to apply to the *batched* request instead.
-
-`stream()` calls bypass the chain entirely — a link that wants to inspect/retry a response would
-need to clone a streamed body, which defeats streaming.
-
-## Batching semantics
-
-- **Window**: defaults to `queueMicrotask` — calls fired synchronously in the same tick (e.g.
-  inside `Promise.all`) collapse. Pass `windowMs` to widen the window across ticks.
-- **Dedup**: only calls sharing an explicit `idempotencyKey` are collapsed into one request frame
-  by default — that's already the caller's own signal that the call is a safe repeat. Calls with
-  no idempotency key are never auto-collapsed, since the server does no dedup of its own and
-  silently merging two textually-identical but unmarked mutations would be unsafe. Pass a custom
-  `dedupe` for full value-based collapsing, or `() => null` to disable dedup and only batch.
-- **Correlation**: results are fanned back out by matching each response frame's `id`, not array
-  position — the server's `/rpc/batch` contract already guarantees order (see
-  `docs/design/rpc-transport.md` §3.2), but id-based matching is strictly more robust and mirrors
-  the repo's own Rust client-side batch debouncer (`examples/rpc-batch-debounce`).
-
-### Known limitations
-
-- The synthesized `/rpc/batch` request reuses the **first** queued call's `headers`/`fetchFn`/
-  `codec` for the whole flush — per-call custom headers on later calls in the same window are not
-  applied to the aggregate request. Pass shared headers via the runtime's own `headers` option
-  rather than per-call `CratestackRpcCallOptions.headers` when using this link.
-- Aborting an individual call's `AbortSignal` only cancels it if its batch hasn't been sent yet —
-  it does not cancel an in-flight `/rpc/batch` request.
+after it), never just the terminal fetch. `stream()` calls bypass the chain entirely — a link that
+wants to inspect/retry a response would need to clone a streamed body, which defeats streaming.

@@ -238,12 +238,27 @@ bump NEW:
 	  -not -path '*/node_modules/*' \
 	  -print0 | xargs -0 perl -i -pe "s/\Q\"$current\"\E/\"{{NEW}}\"/g"
 	# Keep the @cratestack/cli npm wrapper's version (and the release
-	# asset tag it downloads) and the @cratestack/api package's version
-	# in lockstep with the workspace version — scoped to these two
-	# package.json files, not the unrelated example apps'.
-	perl -i -pe "s/\Q\"version\": \"$current\"\E/\"version\": \"{{NEW}}\"/" \
+	# asset tag it downloads) and every package in the split
+	# @cratestack/api family (ts-types, link-*, runtime-*, validator-*,
+	# adapter-*, and the api compat shim itself) in lockstep with the
+	# workspace version — scoped to these package.json files, not
+	# cratestack-vscode (versioned independently) or the unrelated
+	# example apps'. A single literal-string replace (not just the
+	# `"version": "..."` key) also catches each package's own pinned
+	# `"@cratestack/xyz": "$current"` cross-references to its siblings,
+	# which need to move in lockstep too.
+	perl -i -pe "s/\Q\"$current\"\E/\"{{NEW}}\"/g" \
 	  packages/cratestack-cli-npm/package.json \
-	  packages/cratestack-api/package.json
+	  packages/cratestack-api/package.json \
+	  packages/cratestack-ts-types/package.json \
+	  packages/cratestack-link-batch/package.json \
+	  packages/cratestack-link-logger/package.json \
+	  packages/cratestack-runtime-fetch/package.json \
+	  packages/cratestack-runtime-axios/package.json \
+	  packages/cratestack-validator-zod/package.json \
+	  packages/cratestack-validator-yup/package.json \
+	  packages/cratestack-adapter-tanstack-query/package.json \
+	  packages/cratestack-adapter-rtk/package.json
 	# Refresh Cargo.lock so all entries pick up the new version.
 	# Exclude the Flutter crate (uncommitted frb_generated glue → E0583).
 	cargo check --workspace --exclude embedded_flutter_native --quiet

@@ -119,11 +119,21 @@ jobs:
             || echo "npm dry-run for @cratestack/cli didn't complete (often just missing local npm auth) — not fatal for a rehearsal." >&2
           echo "::endgroup::"
 
-          echo "::group::npm dry-run — @cratestack/api"
+          echo "::group::npm dry-run — @cratestack/api family"
           pnpm install --frozen-lockfile
-          pnpm --filter @cratestack/api build
-          (cd packages/cratestack-api && npm publish --dry-run --access public) \
-            || echo "npm dry-run for @cratestack/api didn't complete (often just missing local npm auth) — not fatal for a rehearsal." >&2
+          pnpm turbo run build --filter='./packages/cratestack-ts-types' --filter='./packages/cratestack-link-batch' --filter='./packages/cratestack-link-logger' --filter='./packages/cratestack-runtime-fetch' --filter='./packages/cratestack-runtime-axios' --filter='./packages/cratestack-validator-zod' --filter='./packages/cratestack-validator-yup' --filter='./packages/cratestack-adapter-tanstack-query' --filter='./packages/cratestack-adapter-rtk' --filter='./packages/cratestack-api'
+          # ts-types has no dependents needing it published first for a
+          # dry-run (nothing actually hits the registry), but the order
+          # mirrors the real publish-npm-api-family job for consistency.
+          for pkg in \
+            cratestack-ts-types cratestack-link-batch cratestack-link-logger \
+            cratestack-runtime-fetch cratestack-runtime-axios \
+            cratestack-validator-zod cratestack-validator-yup \
+            cratestack-adapter-tanstack-query cratestack-adapter-rtk \
+            cratestack-api; do
+            (cd "packages/$pkg" && npm publish --dry-run --access public) \
+              || echo "npm dry-run for $pkg didn't complete (often just missing local npm auth) — not fatal for a rehearsal." >&2
+          done
           echo "::endgroup::"
 
           echo "Dry run complete for v${{ inputs.version }} — no commit, branch, PR, or tag was created."
@@ -146,7 +156,16 @@ jobs:
           git switch -c "$branch"
           git add ':(glob)**/Cargo.toml' Cargo.lock \
             packages/cratestack-cli-npm/package.json \
-            packages/cratestack-api/package.json
+            packages/cratestack-api/package.json \
+            packages/cratestack-ts-types/package.json \
+            packages/cratestack-link-batch/package.json \
+            packages/cratestack-link-logger/package.json \
+            packages/cratestack-runtime-fetch/package.json \
+            packages/cratestack-runtime-axios/package.json \
+            packages/cratestack-validator-zod/package.json \
+            packages/cratestack-validator-yup/package.json \
+            packages/cratestack-adapter-tanstack-query/package.json \
+            packages/cratestack-adapter-rtk/package.json
           git commit -m "chore: bump workspace to v${version}"
           git push origin "$branch"
 
@@ -178,7 +197,7 @@ jobs:
 
           This PR changes:
 
-          - Bumps the workspace version to \`${version}\` across every crate's \`Cargo.toml\`, \`Cargo.lock\`, and the two npm packages (\`packages/cratestack-cli-npm\`, \`packages/cratestack-api\`).
+          - Bumps the workspace version to \`${version}\` across every crate's \`Cargo.toml\`, \`Cargo.lock\`, and every npm package (\`packages/cratestack-cli-npm\` and the split \`@cratestack/api\` family: \`cratestack-api\`, \`cratestack-ts-types\`, \`cratestack-link-batch\`, \`cratestack-link-logger\`, \`cratestack-runtime-fetch\`, \`cratestack-runtime-axios\`, \`cratestack-validator-zod\`, \`cratestack-validator-yup\`, \`cratestack-adapter-tanstack-query\`, \`cratestack-adapter-rtk\`).
 
           It solves:
 
@@ -186,7 +205,7 @@ jobs:
 
           ${source_of_truth}
 
-          - **This PR does not publish anything itself** — merging it is the trigger for the rest of the pipeline: \`cut-release-tag.yml\` notices the new version on \`main\` and creates tag \`v${version}\`, which triggers \`release-cli.yml\` (crates.io publish, GitHub Release binaries, npm publish for both packages, all with no further manual steps).
+          - **This PR does not publish anything itself** — merging it is the trigger for the rest of the pipeline: \`cut-release-tag.yml\` notices the new version on \`main\` and creates tag \`v${version}\`, which triggers \`release-cli.yml\` (crates.io publish, GitHub Release binaries, npm publish for every package, all with no further manual steps).
 
           ---
 

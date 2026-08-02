@@ -1,4 +1,4 @@
-import type { RpcLink, RpcLinkNext, RpcLinkRequest } from "../src/types.js";
+import type { RpcLink, RpcLinkNext, RpcLinkRequest } from "./index.js";
 
 export const jsonCodec = {
   contentType: "application/json",
@@ -28,7 +28,10 @@ const terminalLink: RpcLinkNext = async (request) => {
  *  `batch()` request-building exactly (see
  *  `crates/cratestack-client-typescript/templates/src/rpc-runtime.ts.j2`),
  *  so these tests exercise the real generated contract rather than a
- *  reimplementation of it. */
+ *  reimplementation of it. Exported (as `@cratestack/ts-types/test-harness`,
+ *  not part of the public `.` entry point) so every other `@cratestack/*`
+ *  package's own test suite can exercise its `RpcLink` against a real
+ *  chain instead of each maintaining its own copy. */
 export class FakeRuntime {
   private readonly chain: RpcLinkNext;
   private readonly fetchFn: typeof fetch;
