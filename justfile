@@ -342,7 +342,12 @@ bump NEW:
 	# publish) fails with ERR_PNPM_OUTDATED_LOCKFILE. CRATESTACK_CLI_SKIP_DOWNLOAD
 	# skips cratestack-cli-npm's postinstall download of a release binary that
 	# doesn't exist yet at bump time (nothing has been tagged/published).
-	CRATESTACK_CLI_SKIP_DOWNLOAD=1 pnpm install
+	# `--no-frozen-lockfile` is required explicitly: pnpm auto-detects CI
+	# environments and defaults to frozen-lockfile there even without the
+	# flag, which would make this step fail on the exact staleness it's
+	# meant to fix (confirmed the hard way — this recipe's own first version
+	# broke `prepare-release.yml`'s "Bump workspace version" step in CI).
+	CRATESTACK_CLI_SKIP_DOWNLOAD=1 pnpm install --no-frozen-lockfile
 	# Refresh Cargo.lock so all entries pick up the new version.
 	# Exclude the Flutter crate (uncommitted frb_generated glue → E0583).
 	cargo check --workspace --exclude embedded_flutter_native --quiet
