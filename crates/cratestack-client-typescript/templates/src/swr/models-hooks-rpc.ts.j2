@@ -32,6 +32,9 @@ import useSWRMutation, {
   type SWRMutationResponse,
 } from "swr/mutation";
 import type { CratestackRpcRuntime } from "../runtime";
+{% if is_paged %}
+import type { Page } from "./shared";
+{% endif %}
 import { swrKeys } from "../swr-keys";
 import {
   {{ list_fn }},

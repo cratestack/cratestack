@@ -33,6 +33,9 @@ import useSWRMutation, {
 } from "swr/mutation";
 import type { CratestackRuntime } from "../runtime";
 import type { CratestackQueryRequestConfig } from "../queries";
+{% if is_paged %}
+import type { Page } from "./shared";
+{% endif %}
 import { swrKeys } from "../swr-keys";
 import {
   {{ list_fn }},

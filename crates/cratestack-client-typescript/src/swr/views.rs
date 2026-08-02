@@ -122,6 +122,11 @@ pub(crate) struct SwrModelFileContext {
     pub(crate) owned_enums: Vec<EnumView>,
     pub(crate) owned_interfaces: Vec<InterfaceView>,
     pub(crate) imports: Vec<SwrImport>,
+    /// Whether `model.list_return_type` is `Page<{Model}>` rather than
+    /// `{Model}[]` — `./{{ file_stem }}.hooks.ts` doesn't render
+    /// `imports` (it hand-lists its own), so it needs this to know
+    /// whether to add its own `import type { Page } from "./shared"`.
+    pub(crate) is_paged: bool,
     pub(crate) list_fn: String,
     pub(crate) get_fn: String,
     pub(crate) create_fn: String,

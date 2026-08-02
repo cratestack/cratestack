@@ -1,0 +1,16 @@
+// RPC-transport counterpart of `swr_paged_model.cstack` — same gap
+// (see that fixture's header comment), exercised through
+// `models-rpc.ts.j2`/`procedures-rpc.ts.j2` instead of the REST
+// templates.
+
+transport rpc
+
+model Widget {
+  id Int @id
+  name String
+
+  @@allow("create", auth() != null)
+  @@paged
+}
+
+procedure searchWidgets(term: String): Page<Widget>

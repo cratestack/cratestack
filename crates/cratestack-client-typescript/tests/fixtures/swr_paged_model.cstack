@@ -1,0 +1,21 @@
+// Regression fixture for the `@@paged` + `swr` preset codegen gap: a
+// paged model's `list_return_type` (`Page<{Model}>`, computed by
+// `crate::views::build_model_api`) and a procedure returning `Page<T>`
+// directly are both literal-inlined into generated function/hook
+// signatures rather than imported as a named model type — the
+// ownership graph (`src/swr/ownership.rs::compute_type_ownership`)
+// never sees either as a consumer edge, since it only tracks
+// user-declared enums/`type` blocks, not the `Page`/`PageInfo` builtins.
+// `src/swr/context.rs` has to add that import by hand. This fixture
+// exercises both entry points: a `@@paged` model and a procedure whose
+// return type is `Page<Widget>`.
+
+model Widget {
+  id Int @id
+  name String
+
+  @@allow("create", auth() != null)
+  @@paged
+}
+
+procedure searchWidgets(term: String): Page<Widget>

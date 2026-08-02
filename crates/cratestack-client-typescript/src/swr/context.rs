@@ -10,8 +10,8 @@ use cratestack_core::Schema;
 use crate::config::TypeScriptGeneratorConfig;
 use crate::naming::{model_fn_names, procedure_wrapper_name, to_kebab_case};
 use crate::types::{
-    enum_name_set, is_generated_on_create, is_primary_key, model_allows_create, model_name_set,
-    scalar_model_fields, visible_model_fields,
+    enum_name_set, is_generated_on_create, is_paged_model, is_primary_key, model_allows_create,
+    model_name_set, scalar_model_fields, visible_model_fields,
 };
 use crate::views::{InterfaceKind, build_interface, build_model_api, build_procedure};
 
@@ -54,7 +54,19 @@ pub(crate) fn build_shared_context(
         owned_by(schema, ownership, &enum_names, |owner| {
             matches!(owner, TypeOwner::Procedures)
         });
-    let procedures_shared_names = ownership.shared_imports_for_procedures();
+    let mut procedures_shared_names = ownership.shared_imports_for_procedures();
+    // `ts_type` inlines a `Page<T>` return type as a literal in the
+    // generated function/hook signatures rather than importing it as a
+    // named model type (see `crate::types::ts_type`'s `is_page` branch),
+    // so the ownership graph never sees it as a consumer edge — add it
+    // by hand whenever any procedure's return type actually needs it.
+    if schema
+        .procedures
+        .iter()
+        .any(|procedure| procedure.return_type.is_page())
+    {
+        procedures_shared_names.push("Page".to_owned());
+    }
     let mut procedures_model_refs = procedure_model_refs(schema, &model_names);
     procedures_model_refs.extend(type_decls_model_refs(
         schema,
@@ -158,7 +170,15 @@ pub(crate) fn build_model_file_contexts(
                 |owner| matches!(owner, TypeOwner::Model(name) if name == &model.name),
             );
 
-            let shared_names = ownership.shared_imports_for_model(&model.name);
+            let is_paged = is_paged_model(model);
+            let mut shared_names = ownership.shared_imports_for_model(&model.name);
+            // Same reasoning as `procedures_shared_names` above: a paged
+            // model's `list_return_type` is `Page<{Model}>` inlined as a
+            // literal (`crate::views::build_model_api`), which the
+            // ownership graph never sees as a consumer edge.
+            if is_paged {
+                shared_names.push("Page".to_owned());
+            }
             let mut model_refs =
                 model_refs_in_fields(visible_model_fields(model).into_iter(), &model_names);
             model_refs.extend(type_decls_model_refs(
@@ -189,6 +209,7 @@ pub(crate) fn build_model_file_contexts(
                 owned_enums,
                 owned_interfaces,
                 imports,
+                is_paged,
                 list_fn: fns.list,
                 get_fn: fns.get,
                 create_fn: fns.create,

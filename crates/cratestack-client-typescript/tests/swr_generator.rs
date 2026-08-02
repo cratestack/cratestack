@@ -190,6 +190,51 @@ fn swr_procedures_hooks_file_covers_query_and_mutation_kinds() {
 }
 
 #[test]
+fn paged_model_imports_page_in_every_file_that_uses_it() {
+    // Regression test: a `@@paged` model's `list_return_type` is
+    // `Page<{Model}>` (`crate::views::build_model_api`), and a
+    // procedure can directly return `Page<T>` too — both are literal-
+    // inlined into generated signatures rather than imported as a named
+    // model type, so the ownership graph (`src/swr/ownership.rs`) never
+    // sees either as a consumer edge. Before this fix, every file below
+    // used `Page<Widget>` with no `import type { Page }` anywhere,
+    // which fails `tsc --noEmit` with `TS2304: Cannot find name 'Page'`
+    // (see `paged_model_output_type_checks` for the real-compiler
+    // proof).
+    for fixture in ["swr_paged_model", "swr_paged_model_rpc"] {
+        let package = generate_for(fixture, TypeScriptPreset::Swr);
+
+        let model = file(&package, "src/models/widget.ts");
+        assert!(
+            model.contains("import type { Page } from \"./shared\";"),
+            "{fixture}: src/models/widget.ts should import Page from ./shared:\n{model}"
+        );
+        assert!(model.contains("Page<Widget>"));
+
+        let model_hooks = file(&package, "src/models/widget.hooks.ts");
+        assert!(
+            model_hooks.contains("import type { Page } from \"./shared\";"),
+            "{fixture}: src/models/widget.hooks.ts should import Page from ./shared:\n{model_hooks}"
+        );
+        assert!(model_hooks.contains("Page<Widget>"));
+
+        let procedures = file(&package, "src/procedures.ts");
+        assert!(
+            procedures.contains("import type { Page } from \"./models/shared\";"),
+            "{fixture}: src/procedures.ts should import Page from ./models/shared:\n{procedures}"
+        );
+        assert!(procedures.contains("Page<Widget>"));
+
+        let procedures_hooks = file(&package, "src/procedures.hooks.ts");
+        assert!(
+            procedures_hooks.contains("import type { Page } from \"./models/shared\";"),
+            "{fixture}: src/procedures.hooks.ts should import Page from ./models/shared:\n{procedures_hooks}"
+        );
+        assert!(procedures_hooks.contains("Page<Widget>"));
+    }
+}
+
+#[test]
 fn swr_package_json_declares_swr_and_react_as_peer_dependencies() {
     // AC #8: `swr` (and the `react` it needs) are *peer* dependencies —
     // consumers who never import a `.hooks` module don't need them
