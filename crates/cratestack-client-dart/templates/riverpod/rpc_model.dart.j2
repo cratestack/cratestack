@@ -2,6 +2,8 @@
 {{ import }}
 {% endfor %}
 
+part '{{ part_file_name }}';
+
 {% include "riverpod/enums_and_data_classes.dart.j2" %}
 class {{ selection.projected_class_name }} {
   const {{ selection.projected_class_name }}.fromWire(this._value);
@@ -98,3 +100,5 @@ class {{ model_api.api_class_name }} {
 final {{ accessor.provider_name }} = Provider<{{ accessor.api_class_name }}>((ref) {
   return ref.watch({{ provider_prefix }}ClientProvider).{{ accessor.accessor }};
 });
+
+{% include "riverpod/model_providers.dart.j2" %}

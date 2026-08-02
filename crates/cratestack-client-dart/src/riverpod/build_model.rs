@@ -14,12 +14,15 @@ use cratestack_core::{EnumDecl, Model, Schema, TypeDecl};
 
 use crate::builders::{build_data_class, build_enum_view};
 use crate::builders_model::{build_model_accessor, build_model_api, build_selection_model};
+use crate::idents::to_camel_case;
 use crate::naming::{is_generated_on_create, is_primary_key, model_name_set, scalar_model_fields};
 use crate::riverpod::imports::{
-    direct_model_refs, model_file_path, model_relation_targets, render_import_lines,
+    direct_model_refs, model_file_path, model_file_stem, model_relation_targets,
+    render_import_lines,
 };
 use crate::riverpod::partition::{Owner, TypePartition};
-use crate::riverpod::views::ModelFileContext;
+use crate::riverpod::provider_naming::reserve_operation_symbol;
+use crate::riverpod::views::{ModelFileContext, ModelOperationsView};
 use crate::views::DataClassKind;
 
 #[allow(clippy::too_many_arguments)]
@@ -32,6 +35,7 @@ pub(crate) fn build_model_file(
     provider_prefix: &str,
     client_class_name: &str,
     is_rest: bool,
+    occupied_provider_symbols: &mut BTreeSet<String>,
 ) -> (String, ModelFileContext) {
     let model_names = model_name_set(&schema.models);
     let enum_names: BTreeSet<&str> = schema.enums.iter().map(|e| e.name.as_str()).collect();
@@ -96,8 +100,42 @@ pub(crate) fn build_model_file(
     let model_api = build_model_api(model);
     let accessor = build_model_accessor(model, provider_prefix);
 
+    let operations = ModelOperationsView {
+        get_function_name: reserve_operation_symbol(
+            &to_camel_case(&model.name),
+            false,
+            provider_prefix,
+            occupied_provider_symbols,
+        ),
+        list_function_name: reserve_operation_symbol(
+            &format!("{}List", to_camel_case(&model.name)),
+            false,
+            provider_prefix,
+            occupied_provider_symbols,
+        ),
+        create_controller_name: reserve_operation_symbol(
+            &format!("{}CreateController", model.name),
+            true,
+            provider_prefix,
+            occupied_provider_symbols,
+        ),
+        update_controller_name: reserve_operation_symbol(
+            &format!("{}UpdateController", model.name),
+            true,
+            provider_prefix,
+            occupied_provider_symbols,
+        ),
+        delete_controller_name: reserve_operation_symbol(
+            &format!("{}DeleteController", model.name),
+            true,
+            provider_prefix,
+            occupied_provider_symbols,
+        ),
+    };
+
     let mut imports: BTreeSet<String> = BTreeSet::new();
     imports.insert("import 'package:flutter_riverpod/flutter_riverpod.dart';".to_owned());
+    imports.insert("import 'package:riverpod_annotation/riverpod_annotation.dart';".to_owned());
     imports.insert("import '../runtime.dart';".to_owned());
     imports.insert("import '../client.dart';".to_owned());
     if is_rest {
@@ -122,11 +160,13 @@ pub(crate) fn build_model_file(
         client_class_name: client_class_name.to_owned(),
         provider_prefix: provider_prefix.to_owned(),
         imports: render_import_lines(imports),
+        part_file_name: format!("{}.g.dart", model_file_stem(&model.name)),
         enum_types,
         data_classes,
         selection,
         model_api,
         accessor,
+        operations,
     };
 
     (model_file_path(&model.name), context)

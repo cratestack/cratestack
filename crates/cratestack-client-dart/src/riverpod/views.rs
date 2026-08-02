@@ -18,11 +18,39 @@ pub(crate) struct ModelFileContext {
     pub(crate) client_class_name: String,
     pub(crate) provider_prefix: String,
     pub(crate) imports: Vec<String>,
+    /// `part '<file_stem>.g.dart';` target (issue #302) — the
+    /// `build_runner`-expanded companion this file's `@riverpod`
+    /// annotations need. Rendered as a plain string rather than a bool
+    /// gate: every riverpod-preset model file carries at least the
+    /// `get`/`list` providers, so the directive is unconditional.
+    pub(crate) part_file_name: String,
     pub(crate) enum_types: Vec<EnumView>,
     pub(crate) data_classes: Vec<DataClassView>,
     pub(crate) selection: SelectionModelView,
     pub(crate) model_api: ModelApiView,
     pub(crate) accessor: ModelAccessorView,
+    /// Issue #302's per-operation `@riverpod` providers, built on top of
+    /// `accessor`/`model_api` — see `crate::riverpod::provider_naming`'s
+    /// module doc for the naming/collision rule.
+    pub(crate) operations: ModelOperationsView,
+}
+
+/// Collision-checked identifiers (`crate::riverpod::provider_naming`) for
+/// one model's five `@riverpod` operation providers — always all five,
+/// mirroring `model_api`'s own unconditional list/get/create/update/
+/// delete surface (this generator's REST/RPC paths never gate `create`
+/// on `@@allow`; only the gRPC path does — see
+/// `crate::naming::model_allows_create`'s doc).
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct ModelOperationsView {
+    /// `@riverpod Future<Model> {get_function_name}(Ref ref, K id)`.
+    pub(crate) get_function_name: String,
+    /// `@riverpod Future<List<Model>|Page<Model>> {list_function_name}(Ref ref)`.
+    pub(crate) list_function_name: String,
+    /// `@riverpod class {create_controller_name} extends _$...`.
+    pub(crate) create_controller_name: String,
+    pub(crate) update_controller_name: String,
+    pub(crate) delete_controller_name: String,
 }
 
 /// Renders `lib/src/models/shared_types.dart` — always emitted (unlike
@@ -66,9 +94,55 @@ pub(crate) struct ProceduresFileContext {
     pub(crate) client_class_name: String,
     pub(crate) provider_prefix: String,
     pub(crate) imports: Vec<String>,
+    /// `part 'procedures.g.dart';` — see `ModelFileContext::part_file_name`.
+    /// Always `"procedures.g.dart"` (never gated on `!procedures.is_empty()`
+    /// like the `default` preset's own `{% if procedures %}`-free
+    /// `ProceduresApi` class isn't either — an empty `part` file is a
+    /// harmless no-op `build_runner` output).
+    pub(crate) part_file_name: String,
     pub(crate) enum_types: Vec<EnumView>,
     pub(crate) data_classes: Vec<DataClassView>,
+    /// Issue #302: `procedures[i]` and `procedure_operations[i]` are the
+    /// same procedure, in the same order — kept as two parallel `Vec`s
+    /// rather than folding `ProcedureOperationView` into `ProcedureView`
+    /// so `crate::builders_model::build_procedure` (shared with the
+    /// `default` preset) never needs to know about riverpod-only naming.
     pub(crate) procedures: Vec<ProcedureView>,
+    pub(crate) procedure_operations: Vec<ProcedureOperationView>,
+}
+
+/// One procedure's `@riverpod` provider identifier plus which shape it
+/// needs — a function (`ProcedureKind::Query`) or a controller class
+/// (`ProcedureKind::Mutation`), matching `ProcedureView::kind`'s already-
+/// computed `"query"`/`"mutation"` literal so the template can gate on
+/// the same field it already has.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct ProcedureOperationView {
+    pub(crate) kind: &'static str,
+    /// The function name (query) or class name (mutation) —
+    /// collision-checked the same way as `ModelOperationsView`'s fields.
+    pub(crate) symbol: String,
+    /// `ProcedureView::return_type` with `dart_type(..., force_nullable:
+    /// true)` — a mutation controller's `build()` always starts at
+    /// `null` (no result yet), so its declared state type must be
+    /// nullable even when the procedure's own return type isn't. Can't
+    /// just template-append `?` to `return_type`: a procedure whose
+    /// schema return type is itself already optional (`Foo?`) already
+    /// carries a trailing `?`, and Dart doesn't allow `Foo??`. Only
+    /// meaningful for `kind == "mutation"`.
+    pub(crate) nullable_return_type: String,
+    /// Dart method name for the mutation controller's own action method
+    /// — `ProcedureView::method_name` verbatim, *unless* it collides
+    /// with a name `riverpod_generator`'s `_$AsyncClassModifier` base
+    /// class already declares (`update`, confirmed empirically to
+    /// produce a real `invalid_override` `dart analyze` error — see
+    /// `templates/riverpod/model_providers.dart.j2`'s `save` rename for
+    /// the same collision on the model side, where it's unconditional
+    /// rather than schema-dependent). Only meaningful for
+    /// `kind == "mutation"`; query providers are top-level functions,
+    /// not class methods, so they're never subject to this override
+    /// check.
+    pub(crate) mutation_method_name: String,
 }
 
 /// Renders `lib/src/client.dart` — the package-wide DI surface

@@ -1,4 +1,4 @@
-name: tiny_rpc_client
+name: dart_verify_riverpod_collision
 description: Generated CrateStack Flutter client package.
 publish_to: 'none'
 version: 0.1.0

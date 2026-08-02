@@ -12,10 +12,13 @@ use cratestack_core::Schema;
 
 use crate::builders::{build_data_class, build_enum_view};
 use crate::builders_model::build_procedure;
+use crate::dart_types::dart_type;
+use crate::idents::to_pascal_case;
 use crate::naming::{enum_name_set, model_name_set, occupied_type_names, procedure_wrapper_name};
 use crate::riverpod::imports::{model_file_path, render_import_lines};
 use crate::riverpod::partition::{Owner, TypePartition, referenced_name};
-use crate::riverpod::views::ProceduresFileContext;
+use crate::riverpod::provider_naming::reserve_operation_symbol;
+use crate::riverpod::views::{ProcedureOperationView, ProceduresFileContext};
 use crate::views::DataClassKind;
 
 pub(crate) fn build_procedures_file(
@@ -23,6 +26,7 @@ pub(crate) fn build_procedures_file(
     partition: &TypePartition,
     provider_prefix: &str,
     client_class_name: &str,
+    occupied_provider_symbols: &mut BTreeSet<String>,
 ) -> ProceduresFileContext {
     let model_names = model_name_set(&schema.models);
     let enum_names = enum_name_set(&schema.enums);
@@ -32,6 +36,56 @@ pub(crate) fn build_procedures_file(
         .procedures
         .iter()
         .map(|procedure| build_procedure(procedure, &occupied, &enum_names))
+        .collect::<Vec<_>>();
+
+    // Issue #302: one `@riverpod` provider per procedure — a function for
+    // `query`-kind procedures (mirrors `ModelOperationsView::get_function_name`/
+    // `list_function_name`), a controller class for `mutation`-kind ones
+    // (mirrors `create_controller_name`/etc). `procedures`/`procedure_operations`
+    // stay index-parallel (`build_procedure` doesn't know about riverpod
+    // naming — see `ProceduresFileContext::procedure_operations`'s doc).
+    let procedure_operations = schema
+        .procedures
+        .iter()
+        .zip(&procedures)
+        .map(|(procedure, view)| {
+            let is_mutation = procedure.kind == cratestack_core::ProcedureKind::Mutation;
+            let symbol = if is_mutation {
+                reserve_operation_symbol(
+                    &format!("{}Controller", to_pascal_case(&procedure.name)),
+                    true,
+                    provider_prefix,
+                    occupied_provider_symbols,
+                )
+            } else {
+                reserve_operation_symbol(
+                    &view.method_name,
+                    false,
+                    provider_prefix,
+                    occupied_provider_symbols,
+                )
+            };
+            // See `ProcedureOperationView::mutation_method_name`'s doc —
+            // `update` is the one name `_$AsyncClassModifier` (riverpod
+            // codegen's own base class) already declares, so a procedure
+            // that happens to be named `update` needs a non-colliding
+            // method name the same way a model's own update controller
+            // does (there: always renamed, since a model always has an
+            // `update` operation; here: only when the schema's procedure
+            // name actually produces `update`).
+            let mutation_method_name = if is_mutation && view.method_name == "update" {
+                format!("{}Mutation", view.method_name)
+            } else {
+                view.method_name.clone()
+            };
+
+            ProcedureOperationView {
+                kind: view.kind,
+                symbol,
+                nullable_return_type: dart_type(&procedure.return_type, true),
+                mutation_method_name,
+            }
+        })
         .collect::<Vec<_>>();
 
     let mut data_classes = Vec::new();
@@ -80,6 +134,7 @@ pub(crate) fn build_procedures_file(
 
     let mut imports: BTreeSet<String> = BTreeSet::new();
     imports.insert("import 'package:flutter_riverpod/flutter_riverpod.dart';".to_owned());
+    imports.insert("import 'package:riverpod_annotation/riverpod_annotation.dart';".to_owned());
     imports.insert("import 'runtime.dart';".to_owned());
     imports.insert("import 'client.dart';".to_owned());
     // `shared_types.dart` also carries `Page`/`PageInfo` (see
@@ -114,8 +169,10 @@ pub(crate) fn build_procedures_file(
         client_class_name: client_class_name.to_owned(),
         provider_prefix: provider_prefix.to_owned(),
         imports: render_import_lines(imports),
+        part_file_name: "procedures.g.dart".to_owned(),
         enum_types,
         data_classes,
         procedures,
+        procedure_operations,
     }
 }

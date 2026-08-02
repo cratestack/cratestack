@@ -1,13 +1,14 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tiny_rest_client/tiny_rest_client.dart';
+import 'package:{{ package_name }}/{{ package_name }}.dart';
 
+{% if override_proof %}
 /// A fake [CratestackClientAdapter] the test below overrides
-/// `tinyRestClientAdapterProvider` with — the *existing*,
+/// `{{ override_proof.adapter_provider_name }}` with — the *existing*,
 /// unmodified Dio override point (issue #302's acceptance criterion:
 /// generated operation providers must be reachable through it, not
 /// through a new one). Recording `requests` proves the generated
-/// `WidgetApi.list()` method itself ran (not
+/// `{{ override_proof.model_name }}Api.list()` method itself ran (not
 /// bypassed), and returning a canned body proves the decoded result
 /// downstream came from *this* adapter, not a real network call.
 class _FakeClientAdapter implements CratestackClientAdapter {
@@ -19,11 +20,18 @@ class _FakeClientAdapter implements CratestackClientAdapter {
     return <Object?>[<String, Object?>{}];
   }
 }
+{% endif %}
 
 void main() {
   const fetchQuery = CratestackFetchQuery();
-  final selection = WidgetSelection();
-  selection.id();
+{% if sample_model %}
+  final selection = {{ sample_model.model_name }}Selection();
+{% if sample_model.first_field %}
+  selection.{{ sample_model.first_field.value }}();
+{% endif %}
+{% if sample_model.first_include %}
+  selection.{{ sample_model.first_include.value }}();
+{% endif %}
   final listQuery = selection.toListQuery(
     sort: '-id',
     limit: 20,
@@ -33,6 +41,16 @@ void main() {
     filters: {'status': 'active'},
   );
   final projection = selection.asProjection();
+{% else %}
+  const listQuery = CratestackListQuery(
+    sort: '-id',
+    limit: 20,
+    offset: 0,
+    where: 'published=true',
+    orFilters: ['published=true', 'published=false'],
+    filters: {'status': 'active'},
+  );
+{% endif %}
 
   assert(listQuery.toQueryParameters()['sort'] == '-id');
   assert(listQuery.toQueryParameters()['limit'] == 20);
@@ -41,26 +59,30 @@ void main() {
   assert(listQuery.toQueryParameters()['or'] == 'published=true|published=false');
   assert(listQuery.toQueryParameters()['status'] == 'active');
   assert(fetchQuery.toQueryParameters().isEmpty);
+{% if sample_model %}
   assert(listQuery.toQueryParameters()['fields'] != null);
   assert(selection.toFetchQuery().toQueryParameters().isNotEmpty);
   assert(projection.toFetchQuery().toQueryParameters().isNotEmpty);
+{% endif %}
 
+{% if override_proof %}
   test(
-    'overriding tinyRestClientAdapterProvider alone reaches widgetListProvider '
+    'overriding {{ override_proof.adapter_provider_name }} alone reaches {{ override_proof.list_provider_name }} '
     '(issue #302: generated providers never construct their own adapter/client)',
     () async {
       final fakeAdapter = _FakeClientAdapter();
       final container = ProviderContainer(
         overrides: [
-          tinyRestClientAdapterProvider.overrideWithValue(fakeAdapter),
+          {{ override_proof.adapter_provider_name }}.overrideWithValue(fakeAdapter),
         ],
       );
       addTearDown(container.dispose);
 
-      final result = await container.read(widgetListProvider.future);
+      final result = await container.read({{ override_proof.list_provider_name }}.future);
 
       expect(fakeAdapter.requests, hasLength(1));
       expect(result, hasLength(1));
     },
   );
+{% endif %}
 }

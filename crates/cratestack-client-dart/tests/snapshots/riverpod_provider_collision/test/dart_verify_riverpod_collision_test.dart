@@ -1,9 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tiny_rest_client/tiny_rest_client.dart';
+import 'package:dart_verify_riverpod_collision/dart_verify_riverpod_collision.dart';
 
 /// A fake [CratestackClientAdapter] the test below overrides
-/// `tinyRestClientAdapterProvider` with — the *existing*,
+/// `dartVerifyRiverpodCollisionAdapterProvider` with — the *existing*,
 /// unmodified Dio override point (issue #302's acceptance criterion:
 /// generated operation providers must be reachable through it, not
 /// through a new one). Recording `requests` proves the generated
@@ -46,13 +46,13 @@ void main() {
   assert(projection.toFetchQuery().toQueryParameters().isNotEmpty);
 
   test(
-    'overriding tinyRestClientAdapterProvider alone reaches widgetListProvider '
+    'overriding dartVerifyRiverpodCollisionAdapterProvider alone reaches widgetListProvider '
     '(issue #302: generated providers never construct their own adapter/client)',
     () async {
       final fakeAdapter = _FakeClientAdapter();
       final container = ProviderContainer(
         overrides: [
-          tinyRestClientAdapterProvider.overrideWithValue(fakeAdapter),
+          dartVerifyRiverpodCollisionAdapterProvider.overrideWithValue(fakeAdapter),
         ],
       );
       addTearDown(container.dispose);

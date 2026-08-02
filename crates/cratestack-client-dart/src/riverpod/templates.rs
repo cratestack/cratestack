@@ -19,14 +19,27 @@ pub(crate) const REST_PROCEDURES: &str = "riverpod/rest_procedures.dart.j2";
 pub(crate) const RPC_PROCEDURES: &str = "riverpod/rpc_procedures.dart.j2";
 pub(crate) const QUERIES: &str = "riverpod/queries.dart.j2";
 pub(crate) const LIBRARY: &str = "riverpod/library.dart.j2";
+pub(crate) const PUBSPEC: &str = "riverpod/pubspec.yaml.j2";
+pub(crate) const REST_PACKAGE_TEST: &str = "riverpod/rest_package_test.dart.j2";
+pub(crate) const RPC_PACKAGE_TEST: &str = "riverpod/rpc_package_test.dart.j2";
 
-/// `(template_name, default_source)`. The first entry is include-only —
+/// `(template_name, default_source)`. The first two entries are
+/// include-only (issue #301's `enums_and_data_classes.dart.j2` and issue
+/// #302's `model_providers.dart.j2`/`procedure_providers.dart.j2`) —
 /// registered so `{% include %}` resolves, never rendered to disk
 /// directly, mirroring `crate::templates_fragments`.
 const TEMPLATE_SOURCES: &[(&str, &str)] = &[
     (
         "riverpod/enums_and_data_classes.dart.j2",
         include_str!("../../templates/riverpod/enums_and_data_classes.dart.j2"),
+    ),
+    (
+        "riverpod/model_providers.dart.j2",
+        include_str!("../../templates/riverpod/model_providers.dart.j2"),
+    ),
+    (
+        "riverpod/procedure_providers.dart.j2",
+        include_str!("../../templates/riverpod/procedure_providers.dart.j2"),
     ),
     (
         REST_MODEL,
@@ -63,6 +76,18 @@ const TEMPLATE_SOURCES: &[(&str, &str)] = &[
     (
         LIBRARY,
         include_str!("../../templates/riverpod/library.dart.j2"),
+    ),
+    (
+        PUBSPEC,
+        include_str!("../../templates/riverpod/pubspec.yaml.j2"),
+    ),
+    (
+        REST_PACKAGE_TEST,
+        include_str!("../../templates/riverpod/rest_package_test.dart.j2"),
+    ),
+    (
+        RPC_PACKAGE_TEST,
+        include_str!("../../templates/riverpod/rpc_package_test.dart.j2"),
     ),
 ];
 

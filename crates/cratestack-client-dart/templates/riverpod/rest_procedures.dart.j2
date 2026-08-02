@@ -2,6 +2,8 @@
 {{ import }}
 {% endfor %}
 
+part '{{ part_file_name }}';
+
 {% include "riverpod/enums_and_data_classes.dart.j2" %}
 class ProceduresApi {
   const ProceduresApi(this._client);
@@ -27,3 +29,5 @@ class ProceduresApi {
 final {{ provider_prefix }}ProceduresApiProvider = Provider<ProceduresApi>((ref) {
   return ref.watch({{ provider_prefix }}ClientProvider).procedures;
 });
+
+{% include "riverpod/procedure_providers.dart.j2" %}

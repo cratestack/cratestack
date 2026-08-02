@@ -1,13 +1,14 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tiny_rpc_client/tiny_rpc_client.dart';
+import 'package:{{ package_name }}/{{ package_name }}.dart';
 
+{% if override_proof %}
 /// A fake [CratestackRpcAdapter] the test below overrides
-/// `tinyRpcClientAdapterProvider` with — the *existing*,
+/// `{{ override_proof.adapter_provider_name }}` with — the *existing*,
 /// unmodified Dio override point (issue #302's acceptance criterion:
 /// generated operation providers must be reachable through it, not
 /// through a new one). Recording `calls` proves the generated
-/// `WidgetApi.list()` method itself ran (not
+/// `{{ override_proof.model_name }}Api.list()` method itself ran (not
 /// bypassed), and returning a canned frame proves the decoded result
 /// downstream came from *this* adapter, not a real network call.
 class _FakeRpcAdapter implements CratestackRpcAdapter {
@@ -29,6 +30,7 @@ class _FakeRpcAdapter implements CratestackRpcAdapter {
     throw UnimplementedError('unused by this override-propagation test');
   }
 }
+{% endif %}
 
 void main() {
   // `CratestackRpcCallOptions` (headers/idempotency key) is the RPC
@@ -44,33 +46,46 @@ void main() {
   assert(options.headers['x-client'] == 'example');
 
   // Generated model API entry points:
-  // - widgets
+{% for accessor in model_accessors %}
+  // - {{ accessor.accessor }}
+{% endfor %}
 
   // Generated procedures:
-  // - echoName(...)
+{% for procedure in procedures %}
+  // - {{ procedure.method_name }}(...)
+{% endfor %}
 
+{% if sample_model %}
   // Round-trips the generated model class through the same
   // fromWire/toWire pair every RPC response and request body uses.
-  final sample = Widget.fromWire(const <String, Object?>{});
+  final sample = {{ sample_model.model_name }}.fromWire(const <String, Object?>{});
   final wire = sample.toWire();
-  assert(wire.containsKey('id'));
+{% if sample_model.first_field %}
+  assert(wire.containsKey('{{ sample_model.first_field.value }}'));
+{% endif %}
+{% if sample_model.first_include %}
+  assert(wire.containsKey('{{ sample_model.first_include.value }}'));
+{% endif %}
+{% endif %}
 
+{% if override_proof %}
   test(
-    'overriding tinyRpcClientAdapterProvider alone reaches widgetListProvider '
+    'overriding {{ override_proof.adapter_provider_name }} alone reaches {{ override_proof.list_provider_name }} '
     '(issue #302: generated providers never construct their own adapter/client)',
     () async {
       final fakeAdapter = _FakeRpcAdapter();
       final container = ProviderContainer(
         overrides: [
-          tinyRpcClientAdapterProvider.overrideWithValue(fakeAdapter),
+          {{ override_proof.adapter_provider_name }}.overrideWithValue(fakeAdapter),
         ],
       );
       addTearDown(container.dispose);
 
-      final result = await container.read(widgetListProvider.future);
+      final result = await container.read({{ override_proof.list_provider_name }}.future);
 
-      expect(fakeAdapter.calls, ['model.Widget.list']);
+      expect(fakeAdapter.calls, ['model.{{ override_proof.model_name }}.list']);
       expect(result, hasLength(1));
     },
   );
+{% endif %}
 }

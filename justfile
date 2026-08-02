@@ -177,6 +177,22 @@ test-ci-host *args='':
 # nested type reached only through a procedure, and a User -> Post[] ->
 # User relation cycle across two per-model files).
 #
+# Issue #302 extends the riverpod-preset loop further: every riverpod
+# fixture now also runs `dart run build_runner build
+# --delete-conflicting-outputs` BEFORE `flutter analyze` — the ticket's
+# load-bearing check, since a malformed `@riverpod` annotation surfaces
+# as a `build_runner` error, not a `dart analyze` one, so analyze alone
+# would not catch it — and `flutter test` after, which actually exercises
+# the generated `test/*_test.dart`'s override-propagation proof (a fake
+# adapter overrides the existing `xAdapterProvider`, then a generated
+# operation provider is read and asserted to have gone through it).
+# `riverpod_provider_collision.cstack` is a new fixture in this set: two
+# models whose *naive* per-operation provider names would collide, plus a
+# procedure that collides with one of the models' own controller name —
+# proving the collision escalation in `provider_naming.rs` produces
+# distinct names that still compile end to end (not just distinct in a
+# Rust-side text assertion).
+#
 # Requires the Flutter SDK on PATH, not just the Dart SDK: the generated
 # `pubspec.yaml` depends on `sdk: flutter` (the `flutter`/`flutter_test`
 # packages) and `flutter_riverpod` — a standalone Dart SDK install has no
@@ -215,6 +231,30 @@ verify-dart:
 	  (cd "$pkg" && flutter analyze --fatal-warnings --no-fatal-infos)
 	}
 
+	# riverpod-preset-only: deliberately does NOT call `verify_pkg` (which
+	# runs `flutter analyze` first) — `flutter analyze` on a freshly
+	# generated riverpod package, before `build_runner` has run, reports
+	# real `uri_has_not_been_generated`/`undefined_identifier` errors for
+	# every `part '<file>.g.dart'` directive and every `@riverpod`
+	# annotation's `ref`/`state` usage (verified empirically; this is
+	# exactly the ticket's "a malformed annotation surfaces as a
+	# build_runner error, not an analyzer error" risk, but the inverse
+	# also holds — analyze alone, run too early, is *always* red here,
+	# which would make this recipe permanently fail). Order is therefore
+	# pub get -> build_runner -> analyze -> test, matching the acceptance
+	# criteria's own "dart analyze is clean AFTER build_runner" wording.
+	verify_riverpod_pkg() {
+	  local pkg="$1"
+	  echo "=== flutter pub get: $pkg ==="
+	  (cd "$pkg" && flutter pub get)
+	  echo "=== dart run build_runner build: $pkg ==="
+	  (cd "$pkg" && dart run build_runner build --delete-conflicting-outputs)
+	  echo "=== flutter analyze (post build_runner): $pkg ==="
+	  (cd "$pkg" && flutter analyze --fatal-warnings --no-fatal-infos)
+	  echo "=== flutter test: $pkg ==="
+	  (cd "$pkg" && flutter test)
+	}
+
 	fixtures=(ci_rest ci_rpc)
 	for fixture in "${fixtures[@]}"; do
 	  pkg="$out/default/$fixture"
@@ -226,7 +266,7 @@ verify-dart:
 	  verify_pkg "$pkg"
 	done
 
-	riverpod_fixtures=(ci_rest ci_rpc riverpod_shared_ownership)
+	riverpod_fixtures=(ci_rest ci_rpc riverpod_shared_ownership riverpod_provider_collision)
 	for fixture in "${riverpod_fixtures[@]}"; do
 	  pkg="$out/riverpod/$fixture"
 	  echo "=== generate-dart --preset riverpod: $fixture -> $pkg ==="
@@ -235,7 +275,7 @@ verify-dart:
 	    --out "$pkg" \
 	    --library-name "dart_verify_riverpod_${fixture}" \
 	    --preset riverpod
-	  verify_pkg "$pkg"
+	  verify_riverpod_pkg "$pkg"
 	done
 
 # Bundle the Studio UI for publishing: source tarball (for `studio

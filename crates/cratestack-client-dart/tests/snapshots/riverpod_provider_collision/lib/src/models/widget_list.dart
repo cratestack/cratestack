@@ -4,117 +4,103 @@ import '../runtime.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
-part 'widget.g.dart';
+part 'widget_list.g.dart';
 
-class Widget {
-  const Widget({
+class WidgetList {
+  const WidgetList({
 this.id,
-this.name,
-this.weight,
+this.label,
   });
 
   final int? id;
-  final String? name;
-  final int? weight;
+  final String? label;
 
-  factory Widget.fromWire(CratestackValueMap value) {
-    return Widget(
+  factory WidgetList.fromWire(CratestackValueMap value) {
+    return WidgetList(
       id: value['id'] == null ? null : (value['id'] as num).toInt(),
-      name: value['name'] == null ? null : value['name'] as String,
-      weight: value['weight'] == null ? null : (value['weight'] as num).toInt(),
+      label: value['label'] == null ? null : value['label'] as String,
     );
   }
 
   CratestackValueMap toWire() {
     return <String, Object?>{
       'id': id,
-      'name': name,
-      'weight': weight,
+      'label': label,
     };
   }
 }
 
-class CreateWidgetInput {
-  const CreateWidgetInput({
+class CreateWidgetListInput {
+  const CreateWidgetListInput({
 required this.id,
-required this.name,
-this.weight,
+required this.label,
   });
 
   final int id;
-  final String name;
-  final int? weight;
+  final String label;
 
-  factory CreateWidgetInput.fromWire(CratestackValueMap value) {
-    return CreateWidgetInput(
-      id: (cratestackRequireWireValue('CreateWidgetInput', 'id', value['id']) as num).toInt(),
-      name: cratestackRequireWireValue('CreateWidgetInput', 'name', value['name']) as String,
-      weight: value['weight'] == null ? null : (value['weight'] as num).toInt(),
+  factory CreateWidgetListInput.fromWire(CratestackValueMap value) {
+    return CreateWidgetListInput(
+      id: (cratestackRequireWireValue('CreateWidgetListInput', 'id', value['id']) as num).toInt(),
+      label: cratestackRequireWireValue('CreateWidgetListInput', 'label', value['label']) as String,
     );
   }
 
   CratestackValueMap toWire() {
     return <String, Object?>{
       'id': id,
-      'name': name,
-      'weight': weight,
+      'label': label,
     };
   }
 }
 
-class UpdateWidgetInput {
-  const UpdateWidgetInput({
-this.name,
-this.weight,
+class UpdateWidgetListInput {
+  const UpdateWidgetListInput({
+this.label,
   });
 
-  final String? name;
-  final int? weight;
+  final String? label;
 
-  factory UpdateWidgetInput.fromWire(CratestackValueMap value) {
-    return UpdateWidgetInput(
-      name: value['name'] == null ? null : value['name'] as String,
-      weight: value['weight'] == null ? null : (value['weight'] as num).toInt(),
+  factory UpdateWidgetListInput.fromWire(CratestackValueMap value) {
+    return UpdateWidgetListInput(
+      label: value['label'] == null ? null : value['label'] as String,
     );
   }
 
   CratestackValueMap toWire() {
     return <String, Object?>{
-      'name': name,
-      'weight': weight,
+      'label': label,
     };
   }
 }
 
-class ProjectedWidget {
-  const ProjectedWidget.fromWire(this._value);
+class ProjectedWidgetList {
+  const ProjectedWidgetList.fromWire(this._value);
 
   final CratestackValueMap _value;
 
   int? get id => _value['id'] == null ? null : (_value['id'] as num).toInt();
 
-  String? get name => _value['name'] == null ? null : _value['name'] as String;
-
-  int? get weight => _value['weight'] == null ? null : (_value['weight'] as num).toInt();
+  String? get label => _value['label'] == null ? null : _value['label'] as String;
 
 }
 
-class WidgetApi {
-  const WidgetApi(this._client);
+class WidgetListApi {
+  const WidgetListApi(this._client);
 
-  final TinyRestClientCratestackClient _client;
+  final DartVerifyRiverpodCollisionCratestackClient _client;
 
-  Future<List<Widget>> list({
+  Future<List<WidgetList>> list({
     CratestackListQuery? query,
     CratestackCallOptions? options,
   }) async {
     final body = await _client.execute(
       'GET',
-      '/widgets',
+      '/widget_lists',
       queryParameters: query?.toQueryParameters(),
       options: options,
     );
-    return cratestackAsValueList(body).map((item) => Widget.fromWire(cratestackAsValueMap(item))).toList(growable: false);
+    return cratestackAsValueList(body).map((item) => WidgetList.fromWire(cratestackAsValueMap(item))).toList(growable: false);
   }
 
   Future<List<T>> listView<T>({
@@ -124,7 +110,7 @@ class WidgetApi {
   }) async {
     final body = await _client.execute(
       'GET',
-      '/widgets',
+      '/widget_lists',
       queryParameters: cratestackMergeFetchIntoListQuery(query, projection.toFetchQuery()).toQueryParameters(),
       options: options,
     );
@@ -133,17 +119,17 @@ class WidgetApi {
         .toList(growable: false);
   }
 
-  Future<Widget> get(int id, {
+  Future<WidgetList> get(int id, {
     CratestackFetchQuery? query,
     CratestackCallOptions? options,
   }) async {
     final body = await _client.execute(
       'GET',
-      '/widgets/$id',
+      '/widget_lists/$id',
       queryParameters: query?.toQueryParameters(),
       options: options,
     );
-    return Widget.fromWire(cratestackAsValueMap(body));
+    return WidgetList.fromWire(cratestackAsValueMap(body));
   }
 
   Future<T> getView<T>(int id, {
@@ -152,68 +138,68 @@ class WidgetApi {
   }) async {
     final body = await _client.execute(
       'GET',
-      '/widgets/$id',
+      '/widget_lists/$id',
       queryParameters: projection.toFetchQuery().toQueryParameters(),
       options: options,
     );
     return projection.fromWire(cratestackAsValueMap(body));
   }
 
-  Future<Widget> create(CreateWidgetInput input, {
+  Future<WidgetList> create(CreateWidgetListInput input, {
     CratestackCallOptions? options,
   }) async {
     final body = await _client.execute(
       'POST',
-      '/widgets',
+      '/widget_lists',
       body: input.toWire(),
       options: options,
     );
-    return Widget.fromWire(cratestackAsValueMap(body));
+    return WidgetList.fromWire(cratestackAsValueMap(body));
   }
 
-  Future<Widget> update(int id, UpdateWidgetInput input, {
+  Future<WidgetList> update(int id, UpdateWidgetListInput input, {
     CratestackCallOptions? options,
   }) async {
     final body = await _client.execute(
       'PATCH',
-      '/widgets/$id',
+      '/widget_lists/$id',
       body: input.toWire(),
       options: options,
     );
-    return Widget.fromWire(cratestackAsValueMap(body));
+    return WidgetList.fromWire(cratestackAsValueMap(body));
   }
 
-  Future<Widget> delete(int id, {
+  Future<WidgetList> delete(int id, {
     CratestackCallOptions? options,
   }) async {
     final body = await _client.execute(
       'DELETE',
-      '/widgets/$id',
+      '/widget_lists/$id',
       options: options,
     );
-    return Widget.fromWire(cratestackAsValueMap(body));
+    return WidgetList.fromWire(cratestackAsValueMap(body));
   }
 }
 
-final tinyRestClientWidgetApiProvider = Provider<WidgetApi>((ref) {
-  return ref.watch(tinyRestClientClientProvider).widgets;
+final dartVerifyRiverpodCollisionWidgetListApiProvider = Provider<WidgetListApi>((ref) {
+  return ref.watch(dartVerifyRiverpodCollisionClientProvider).widgetLists;
 });
 
 // Issue #302: one `@riverpod` provider per operation, built by watching
-// `tinyRestClientWidgetApiProvider` — the existing `Provider<WidgetApi>`
+// `dartVerifyRiverpodCollisionWidgetListApiProvider` — the existing `Provider<WidgetListApi>`
 // relocated by #301 (right above this block) — never the adapter/client
 // providers in `client.dart` directly. Overriding
-// `tinyRestClientAdapterProvider` alone (the pre-existing Dio
+// `dartVerifyRiverpodCollisionAdapterProvider` alone (the pre-existing Dio
 // override point) is enough to change what every provider below does.
 
 @riverpod
-Future<Widget> widget(Ref ref, int id) {
-  return ref.watch(tinyRestClientWidgetApiProvider).get(id);
+Future<WidgetList> dartVerifyRiverpodCollisionWidgetList(Ref ref, int id) {
+  return ref.watch(dartVerifyRiverpodCollisionWidgetListApiProvider).get(id);
 }
 
 @riverpod
-Future<List<Widget>> widgetList(Ref ref) {
-  return ref.watch(tinyRestClientWidgetApiProvider).list();
+Future<List<WidgetList>> widgetListList(Ref ref) {
+  return ref.watch(dartVerifyRiverpodCollisionWidgetListApiProvider).list();
 }
 
 // Writes are controllers, not `FutureProvider`s: a mutation isn't a value
@@ -224,14 +210,14 @@ Future<List<Widget>> widgetList(Ref ref) {
 // record directly for callers that just want the result.
 
 @riverpod
-class WidgetCreateController extends _$WidgetCreateController {
+class WidgetListCreateController extends _$WidgetListCreateController {
   @override
-  FutureOr<Widget?> build() => null;
+  FutureOr<WidgetList?> build() => null;
 
-  Future<Widget> create(CreateWidgetInput input) async {
+  Future<WidgetList> create(CreateWidgetListInput input) async {
     state = const AsyncValue.loading();
     try {
-      final result = await ref.read(tinyRestClientWidgetApiProvider).create(input);
+      final result = await ref.read(dartVerifyRiverpodCollisionWidgetListApiProvider).create(input);
       state = AsyncValue.data(result);
       return result;
     } catch (error, stackTrace) {
@@ -242,9 +228,9 @@ class WidgetCreateController extends _$WidgetCreateController {
 }
 
 @riverpod
-class WidgetUpdateController extends _$WidgetUpdateController {
+class WidgetListUpdateController extends _$WidgetListUpdateController {
   @override
-  FutureOr<Widget?> build() => null;
+  FutureOr<WidgetList?> build() => null;
 
   // Named `save`, not `update`: `AsyncNotifier`/`_$AsyncClassModifier`
   // (the riverpod_generator-produced base class) already declares its
@@ -252,13 +238,13 @@ class WidgetUpdateController extends _$WidgetUpdateController {
   // for mutating `state` from its previous value. A same-named override
   // here with an incompatible signature is a real `dart analyze`
   // `invalid_override` error (confirmed empirically), not a style
-  // choice — `tinyRestClientWidgetApiProvider`'s own `.update(id, patch)`
+  // choice — `dartVerifyRiverpodCollisionWidgetListApiProvider`'s own `.update(id, patch)`
   // call below is unaffected; only this controller's own method needed
   // renaming.
-  Future<Widget> save(int id, UpdateWidgetInput patch) async {
+  Future<WidgetList> save(int id, UpdateWidgetListInput patch) async {
     state = const AsyncValue.loading();
     try {
-      final result = await ref.read(tinyRestClientWidgetApiProvider).update(id, patch);
+      final result = await ref.read(dartVerifyRiverpodCollisionWidgetListApiProvider).update(id, patch);
       state = AsyncValue.data(result);
       return result;
     } catch (error, stackTrace) {
@@ -269,14 +255,14 @@ class WidgetUpdateController extends _$WidgetUpdateController {
 }
 
 @riverpod
-class WidgetDeleteController extends _$WidgetDeleteController {
+class WidgetListDeleteController extends _$WidgetListDeleteController {
   @override
-  FutureOr<Widget?> build() => null;
+  FutureOr<WidgetList?> build() => null;
 
-  Future<Widget> delete(int id) async {
+  Future<WidgetList> delete(int id) async {
     state = const AsyncValue.loading();
     try {
-      final result = await ref.read(tinyRestClientWidgetApiProvider).delete(id);
+      final result = await ref.read(dartVerifyRiverpodCollisionWidgetListApiProvider).delete(id);
       state = AsyncValue.data(result);
       return result;
     } catch (error, stackTrace) {

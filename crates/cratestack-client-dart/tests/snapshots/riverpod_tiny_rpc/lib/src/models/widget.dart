@@ -1,6 +1,9 @@
 import '../client.dart';
 import '../runtime.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
+
+part 'widget.g.dart';
 
 class Widget {
   const Widget({
@@ -160,3 +163,90 @@ class WidgetApi {
 final tinyRpcClientWidgetApiProvider = Provider<WidgetApi>((ref) {
   return ref.watch(tinyRpcClientClientProvider).widgets;
 });
+
+// Issue #302: one `@riverpod` provider per operation, built by watching
+// `tinyRpcClientWidgetApiProvider` — the existing `Provider<WidgetApi>`
+// relocated by #301 (right above this block) — never the adapter/client
+// providers in `client.dart` directly. Overriding
+// `tinyRpcClientAdapterProvider` alone (the pre-existing Dio
+// override point) is enough to change what every provider below does.
+
+@riverpod
+Future<Widget> widget(Ref ref, int id) {
+  return ref.watch(tinyRpcClientWidgetApiProvider).get(id);
+}
+
+@riverpod
+Future<List<Widget>> widgetList(Ref ref) {
+  return ref.watch(tinyRpcClientWidgetApiProvider).list();
+}
+
+// Writes are controllers, not `FutureProvider`s: a mutation isn't a value
+// to cache and re-fetch on every listener, it's an action with its own
+// loading/error/success lifecycle. `AsyncNotifier`'s `state` gives
+// widgets that lifecycle for free (`.isLoading`, `.hasError`, `.value`)
+// while the method itself still returns the created/updated/deleted
+// record directly for callers that just want the result.
+
+@riverpod
+class WidgetCreateController extends _$WidgetCreateController {
+  @override
+  FutureOr<Widget?> build() => null;
+
+  Future<Widget> create(CreateWidgetInput input) async {
+    state = const AsyncValue.loading();
+    try {
+      final result = await ref.read(tinyRpcClientWidgetApiProvider).create(input);
+      state = AsyncValue.data(result);
+      return result;
+    } catch (error, stackTrace) {
+      state = AsyncValue.error(error, stackTrace);
+      rethrow;
+    }
+  }
+}
+
+@riverpod
+class WidgetUpdateController extends _$WidgetUpdateController {
+  @override
+  FutureOr<Widget?> build() => null;
+
+  // Named `save`, not `update`: `AsyncNotifier`/`_$AsyncClassModifier`
+  // (the riverpod_generator-produced base class) already declares its
+  // own `update(FutureOr<ValueT> Function(ValueT) cb, {onError})` method
+  // for mutating `state` from its previous value. A same-named override
+  // here with an incompatible signature is a real `dart analyze`
+  // `invalid_override` error (confirmed empirically), not a style
+  // choice — `tinyRpcClientWidgetApiProvider`'s own `.update(id, patch)`
+  // call below is unaffected; only this controller's own method needed
+  // renaming.
+  Future<Widget> save(int id, UpdateWidgetInput patch) async {
+    state = const AsyncValue.loading();
+    try {
+      final result = await ref.read(tinyRpcClientWidgetApiProvider).update(id, patch);
+      state = AsyncValue.data(result);
+      return result;
+    } catch (error, stackTrace) {
+      state = AsyncValue.error(error, stackTrace);
+      rethrow;
+    }
+  }
+}
+
+@riverpod
+class WidgetDeleteController extends _$WidgetDeleteController {
+  @override
+  FutureOr<Widget?> build() => null;
+
+  Future<Widget> delete(int id) async {
+    state = const AsyncValue.loading();
+    try {
+      final result = await ref.read(tinyRpcClientWidgetApiProvider).delete(id);
+      state = AsyncValue.data(result);
+      return result;
+    } catch (error, stackTrace) {
+      state = AsyncValue.error(error, stackTrace);
+      rethrow;
+    }
+  }
+}
