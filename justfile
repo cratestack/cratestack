@@ -375,6 +375,14 @@ bump NEW:
 	  packages/cratestack-validator-yup/package.json \
 	  packages/cratestack-adapter-tanstack-query/package.json \
 	  packages/cratestack-adapter-rtk/package.json
+	# Refresh pnpm-lock.yaml so the version-literal edits above (which change
+	# specifiers like `"@cratestack/ts-types": "{{NEW}}"`) are reflected in the
+	# lockfile's `specifier:` entries too — otherwise a later `pnpm install
+	# --frozen-lockfile` (every CI job, including release-cli.yml's npm
+	# publish) fails with ERR_PNPM_OUTDATED_LOCKFILE. CRATESTACK_CLI_SKIP_DOWNLOAD
+	# skips cratestack-cli-npm's postinstall download of a release binary that
+	# doesn't exist yet at bump time (nothing has been tagged/published).
+	CRATESTACK_CLI_SKIP_DOWNLOAD=1 pnpm install
 	# Refresh Cargo.lock so all entries pick up the new version.
 	# Exclude the Flutter crate (uncommitted frb_generated glue → E0583).
 	cargo check --workspace --exclude embedded_flutter_native --quiet

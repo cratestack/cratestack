@@ -1,0 +1,68 @@
+// Shared cache-key factory for the `swr` preset's hooks (issue #305).
+// Every `useSWR`/`useSWRMutation` hook in this package builds its key
+// exclusively through `swrKeys` below, never by hand-writing a key
+// literal in a hook body — see `src/models/*.ts`/`src/procedures.ts`'s
+// own header comments for the invalidation rule these keys feed.
+//
+// Collision-freedom: keys are nested under each model's own literal
+// route (`swrKeys.model.User` keys off `/users`, ...) and each
+// procedure's own literal route (`/$procs/<name>`) — both are already
+// required to be unique per schema for real request routing to work at
+// all, so `cratestack-parser`'s checks already guarantee no two entries
+// can collide. This is a deliberately different derivation from
+// `crate::views::ModelApiView`'s `*_query_key` fields (e.g.
+// `list_query_key` = "<model>List", built for the react-query preset's
+// flat *named* key object): those are derived through `to_camel_case`,
+// which can collapse two differently-named models to the same property
+// name (see `cratestack-client-typescript`'s swr_generator.rs test
+// fixture `swr_key_collision.cstack` for a real example) — nesting
+// under the raw route sidesteps that risk entirely rather than working
+// around it.
+//
+// `get`/query-procedure keys return `null` when their argument is
+// nullish, which is SWR's documented conditional-fetching idiom — see
+// https://swr.vercel.app/docs/conditional-fetching — a `useSWR(null,
+// ...)` never fires a request, so a hook can be called before its id/
+// args are known without firing a request with `undefined`.
+//
+// `<Model>.listMatches` is a key *filter* (not a key) for `mutate()`'s
+// filter-function overload: it matches every cached list key for this
+// model regardless of its `query` argument, so invalidating "the list"
+// after a mutation doesn't require knowing which filtered/paginated
+// variants happen to be in cache.
+
+import type { CratestackFetchQuery } from "./queries";
+{% for procedure in procedures_file.procedures %}
+{% if procedure.kind == "query" %}
+import type { {{ procedure.args_name }} } from "./procedures";
+{% endif %}
+{% endfor %}
+
+export const swrKeys = {
+  model: {
+{% for model in models %}
+    {{ model.name }}: {
+      list: (query?: CratestackFetchQuery) => ["{{ model.route }}", "list", query] as const,
+      get: (id: {{ model.primary_key_type }} | null | undefined, query?: CratestackFetchQuery) =>
+        id == null ? null : (["{{ model.route }}", "detail", id, query] as const),
+      listMatches: (key: unknown): boolean =>
+        Array.isArray(key) && key[0] === "{{ model.route }}" && key[1] === "list",
+{% if model.allows_create %}
+      create: () => ["{{ model.route }}", "create"] as const,
+{% endif %}
+      update: (id: {{ model.primary_key_type }}) => ["{{ model.route }}", "update", id] as const,
+      delete: (id: {{ model.primary_key_type }}) => ["{{ model.route }}", "delete", id] as const,
+    },
+{% endfor %}
+  },
+  procedure: {
+{% for procedure in procedures_file.procedures %}
+{% if procedure.kind == "query" %}
+    {{ procedure.name }}: (args: {{ procedure.args_name }} | null | undefined) =>
+      args == null ? null : (["{{ procedure.route }}", args] as const),
+{% else %}
+    {{ procedure.name }}: () => ["{{ procedure.route }}"] as const,
+{% endif %}
+{% endfor %}
+  },
+} as const;

@@ -154,7 +154,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "$branch"
-          git add ':(glob)**/Cargo.toml' Cargo.lock \
+          git add ':(glob)**/Cargo.toml' Cargo.lock pnpm-lock.yaml \
             packages/cratestack-cli-npm/package.json \
             packages/cratestack-api/package.json \
             packages/cratestack-ts-types/package.json \
@@ -197,7 +197,7 @@ jobs:
 
           This PR changes:
 
-          - Bumps the workspace version to \`${version}\` across every crate's \`Cargo.toml\`, \`Cargo.lock\`, and every npm package (\`packages/cratestack-cli-npm\` and the split \`@cratestack/api\` family: \`cratestack-api\`, \`cratestack-ts-types\`, \`cratestack-link-batch\`, \`cratestack-link-logger\`, \`cratestack-runtime-fetch\`, \`cratestack-runtime-axios\`, \`cratestack-validator-zod\`, \`cratestack-validator-yup\`, \`cratestack-adapter-tanstack-query\`, \`cratestack-adapter-rtk\`).
+          - Bumps the workspace version to \`${version}\` across every crate's \`Cargo.toml\`, \`Cargo.lock\`, and every npm package (\`packages/cratestack-cli-npm\` and the split \`@cratestack/api\` family: \`cratestack-api\`, \`cratestack-ts-types\`, \`cratestack-link-batch\`, \`cratestack-link-logger\`, \`cratestack-runtime-fetch\`, \`cratestack-runtime-axios\`, \`cratestack-validator-zod\`, \`cratestack-validator-yup\`, \`cratestack-adapter-tanstack-query\`, \`cratestack-adapter-rtk\`), refreshing \`pnpm-lock.yaml\` to match.
 
           It solves:
 
