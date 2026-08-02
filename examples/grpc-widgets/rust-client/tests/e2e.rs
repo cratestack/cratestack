@@ -18,6 +18,15 @@
 //! Every widget this test creates uses a random `id` (the model's PK is
 //! caller-supplied, not server-generated — see `schemas/widgets.cstack`)
 //! so repeated runs against the same long-lived server don't collide.
+//!
+//! Unlike `../ts-client-e2e.mjs`/`../dart-client/tool/e2e.dart`, this is a
+//! genuine `#[tokio::test]` — Rust's `cargo test` auto-discovers every
+//! file under `tests/`, so it rides along in `test-ci-host`'s blanket
+//! `cargo test --workspace` (`justfile`) unless it skips itself. This
+//! repo's established convention for "requires an external resource that
+//! CI doesn't provision" (see e.g. `cratestack-pg/tests/banking_batches.rs`)
+//! is a quiet runtime skip, not `#[ignore]` — so a connection failure here
+//! prints a skip message and returns rather than panicking/failing.
 
 use std::sync::Arc;
 
@@ -53,15 +62,17 @@ fn random_id() -> i64 {
 async fn full_crud_lifecycle_against_a_real_grpc_server() {
     let endpoint =
         std::env::var("GRPC_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:50061".to_owned());
-    let client = cratestack_schema::grpc::Client::connect(endpoint.clone())
-        .await
-        .unwrap_or_else(|error| {
-            panic!(
-                "could not connect to {endpoint} ({error}) — is `cargo run -p grpc-widgets-example` \
-                 running? See this file's module doc."
-            )
-        })
-        .with_request_authorizer(Arc::new(StaticAuthIdHeader));
+    let client = match cratestack_schema::grpc::Client::connect(endpoint.clone()).await {
+        Ok(client) => client.with_request_authorizer(Arc::new(StaticAuthIdHeader)),
+        Err(error) => {
+            eprintln!(
+                "skipping full_crud_lifecycle_against_a_real_grpc_server: could not connect to \
+                 {endpoint} ({error}) — is `cargo run -p grpc-widgets-example` running? Not \
+                 provisioned by CI's default test job, see this file's module doc."
+            );
+            return;
+        }
+    };
 
     let id = random_id();
 
