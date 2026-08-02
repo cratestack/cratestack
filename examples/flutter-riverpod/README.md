@@ -132,12 +132,18 @@ CI).
    live tapping a checkbox). This is an app-code bug, not a generator bug — fixed by `ref.watch`-ing
    both controllers at the screen level, the same pattern the app already used correctly for
    `taskCreateControllerProvider`'s loading state.
-3. **Generated data classes have no `operator ==`/`hashCode`, breaking family-provider caching for
+3. **Generated data classes had no `operator ==`/`hashCode`, breaking family-provider caching for
    non-primitive arguments.** `estimateFocusMinutesProvider(EstimateFocusMinutesArgs(...))` never
    settled — a fresh `EstimateFocusMinutesArgs` built on every rebuild is never `==` to the previous
-   one, so every rebuild started a brand-new `loading` provider. This is a real generator gap, broad
-   enough (shared `build_data_class`, both presets, a real deep-vs-shallow-equality design decision for
-   relation fields) that it's filed as a follow-up rather than fixed inline —
-   [cratestack#325](https://github.com/cratestack/cratestack/issues/325). Worked around in
+   one, so every rebuild started a brand-new `loading` provider. Originally worked around in
    `board_detail_screen.dart` by memoizing the family provider's argument object per distinct
-   `openCount` (ordinary Riverpod practice regardless of this bug).
+   `openCount`; fixed for real in
+   [cratestack#325](https://github.com/cratestack/cratestack/issues/325) by adopting
+   [`dart_mappable`](https://pub.dev/packages/dart_mappable) (`@MappableClass()` + a `build_runner`-
+   generated mixin, alongside `riverpod_generator`) for every `riverpod`-preset generated data class —
+   real `operator ==`/`hashCode`/`copyWith`, scoped to the `riverpod` preset only. The memoization
+   workaround is gone from `board_detail_screen.dart`; `_FocusEstimate` now gets a brand-new
+   `EstimateFocusMinutesArgs` on every rebuild and still resolves correctly, and
+   `app/test/estimate_focus_minutes_family_cache_test.dart` is a regression test proving a fresh,
+   value-equal argument instance reuses the family provider's cache entry instead of restarting
+   `AsyncLoading`.

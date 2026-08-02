@@ -3,11 +3,37 @@
 // file that needs them rather than duplicated — see the ownership rule
 // documented at `crate::riverpod::partition::Owner`.
 import 'dart:typed_data';
+{% if data_classes | length > 0 %}
+import 'package:dart_mappable/dart_mappable.dart';
+{% endif %}
 
 import '../runtime.dart';
 {% for import in imports %}
 {{ import }}
 {% endfor %}
+
+{% if data_classes | length > 0 %}
+// issue #325: no `@riverpod`-generated surface lives in this file (see
+// `crate::riverpod::views::SharedTypesFileContext`'s doc for why), so
+// unlike `models/<model>.dart`/`procedures.dart` this file carries no
+// `riverpod_generator` part directive — but any `type`/`enum` the
+// partition assigned to `Owner::Shared` still gets `@MappableClass()`
+// (see `enums_and_data_classes.dart.j2`), so `build_runner`'s
+// `dart_mappable_builder` pass still needs somewhere to expand into.
+// Gated on `data_classes | length > 0`, unlike `models/<model>.dart`'s
+// always-unconditional `part` directive: that file
+// files always declare at least one data class (a model always has
+// itself plus `Create`/`Update` inputs; `procedures.dart` — see below),
+// but this file can genuinely have zero when the partition finds
+// nothing to share, and `dart_mappable_builder` (unlike
+// `riverpod_generator`) skips writing a part file entirely rather than
+// emitting an empty no-op one when its target file has no
+// `@MappableClass()` in it — an unconditional directive here would be a
+// real `uri_does_not_exist` `flutter analyze` error, confirmed
+// empirically against `examples/flutter-riverpod`'s own schema (it has
+// no shared types, so this is the common case, not an edge case).
+part 'shared_types.mapper.dart';
+{% endif %}
 
 class PageInfo {
   const PageInfo({

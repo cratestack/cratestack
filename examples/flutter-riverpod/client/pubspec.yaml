@@ -19,6 +19,13 @@ dependencies:
   riverpod_annotation: 4.0.3
   cbor: ^6.5.1
   dio: ^5.8.0+1
+  # issue #325: gives every generated data class real `operator ==`/
+  # `hashCode`/`copyWith` via `@MappableClass()` (see
+  # `enums_and_data_classes.dart.j2`) — a range, not an exact pin, since
+  # the runtime annotation package has no analyzer-version entanglement
+  # of its own; see `dart_mappable_builder` below (dev_dependencies) for
+  # the pin that actually matters.
+  dart_mappable: ^4.8.0
 
 dev_dependencies:
   flutter_lints: ^6.0.0
@@ -62,3 +69,29 @@ dev_dependencies:
   # two pre-existing, unrelated info-level findings tracked separately).
   build_runner: ">=2.14.0 <2.15.0"
   riverpod_generator: 4.0.4
+  # issue #325: `dart_mappable_builder` joins the trio above as a fourth
+  # pinned-together package, not an independent constraint — it runs in
+  # the same `build_runner` pass as `riverpod_generator` and is subject
+  # to the exact same `analyzer`-version wall.
+  #
+  # Pinned to *exactly* `4.8.0`, not a range and not latest. Verified
+  # against the real CI SDK (Flutter 3.44.8 / Dart 3.12.2, same one used
+  # to root-cause the trio's own pin above):
+  #
+  #   `dart_mappable_builder` 4.9.0 requires `analyzer >=13.0.0` — the
+  #   exact wall the trio above already hit (Flutter stable's
+  #   `flutter_test` transitive chain pins `meta` to exactly `1.18.0`,
+  #   which only `analyzer <13.0.0` releases tolerate on this SDK).
+  #
+  #   `dart_mappable_builder: 4.8.0` declares `analyzer: '>=10.0.0
+  #   <13.0.0'`, which overlaps `riverpod_generator: 4.0.4`'s own
+  #   `analyzer: ^12.0.0` requirement at exactly the `12.x` band pub's
+  #   resolver already lands on for the trio above — so adding this
+  #   fourth package does not move the resolved `analyzer` version at
+  #   all. Confirmed end to end on the real SDK: `flutter pub get`
+  #   resolves cleanly, `dart run build_runner build` runs
+  #   `riverpod_generator` and `dart_mappable_builder` in the same pass
+  #   and emits real `.mapper.dart` output with genuine `operator ==`/
+  #   `hashCode`/`copyWith`, and `flutter analyze --fatal-warnings
+  #   --no-fatal-infos` is clean afterward.
+  dart_mappable_builder: 4.8.0

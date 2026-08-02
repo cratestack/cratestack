@@ -3,6 +3,7 @@
 {% endfor %}
 
 part '{{ part_file_name }}';
+part '{{ mapper_part_file_name }}';
 
 {% include "riverpod/enums_and_data_classes.dart.j2" %}
 class {{ selection.projected_class_name }} {

@@ -24,6 +24,11 @@ pub(crate) struct ModelFileContext {
     /// gate: every riverpod-preset model file carries at least the
     /// `get`/`list` providers, so the directive is unconditional.
     pub(crate) part_file_name: String,
+    /// `part '<file_stem>.mapper.dart';` target (issue #325) — the
+    /// `dart_mappable_builder`-expanded companion every generated data
+    /// class's `@MappableClass()` needs, run in the same `build_runner`
+    /// pass as `part_file_name`'s `riverpod_generator` output above.
+    pub(crate) mapper_part_file_name: String,
     pub(crate) enum_types: Vec<EnumView>,
     pub(crate) data_classes: Vec<DataClassView>,
     pub(crate) selection: SelectionModelView,
@@ -100,6 +105,15 @@ pub(crate) struct ProceduresFileContext {
     /// `ProceduresApi` class isn't either — an empty `part` file is a
     /// harmless no-op `build_runner` output).
     pub(crate) part_file_name: String,
+    /// `part 'procedures.mapper.dart';` — see
+    /// `ModelFileContext::mapper_part_file_name`'s doc. The *value* is
+    /// always `"procedures.mapper.dart"`, but unlike `part_file_name`
+    /// above, `rest_procedures.dart.j2`/`rpc_procedures.dart.j2` only
+    /// emit the directive itself when `data_classes` is non-empty — see
+    /// those templates' own comment for why an unconditional directive
+    /// here would be a real `flutter analyze` failure on a schema with
+    /// zero procedures.
+    pub(crate) mapper_part_file_name: String,
     pub(crate) enum_types: Vec<EnumView>,
     pub(crate) data_classes: Vec<DataClassView>,
     /// Issue #302: `procedures[i]` and `procedure_operations[i]` are the

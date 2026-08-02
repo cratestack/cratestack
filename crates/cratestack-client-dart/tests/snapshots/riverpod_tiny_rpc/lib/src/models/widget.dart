@@ -1,11 +1,34 @@
 import '../client.dart';
 import '../runtime.dart';
+import 'package:dart_mappable/dart_mappable.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'widget.g.dart';
+part 'widget.mapper.dart';
 
-class Widget {
+// issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
+// alongside `riverpod_generator` in the same `build_runner` pass) gives
+// this class real `operator ==`/`hashCode`/`copyWith` — every generated
+// data class needs this under the `riverpod` preset because any of them
+// can end up as a `@riverpod` family provider's argument type (see
+// `EstimateFocusMinutesArgs` in `procedures.dart`), and riverpod's family
+// cache dedupes provider instances by argument *value* equality, not
+// identity. `generateMethods: GenerateMethods.equals | GenerateMethods.copy`
+// deliberately does NOT ask for `encode`/`decode`/`stringify` — this
+// generator already hand-rolls `fromWire`/`toWire` below (different
+// method names, so there's no collision either way), and duplicating a
+// second, unused `toMap`/`fromMap`/`toJson`/`fromJson` surface per class
+// would be pure noise. Relation fields (e.g. `Task.board` -> `Board?`)
+// get deep equality "for free": the referenced type is itself a
+// `@MappableClass()`-annotated generated class in this same preset, so
+// the field-by-field comparison this class's own `==` performs recurses
+// into the related type's generated `==` rather than falling back to
+// object identity; list-valued relations get the same element-wise
+// (not `List.==`/identity) comparison automatically from
+// `dart_mappable`'s own list handling.
+@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+class Widget with WidgetMappable {
   const Widget({
 this.id,
 this.name,
@@ -33,7 +56,28 @@ this.weight,
   }
 }
 
-class CreateWidgetInput {
+// issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
+// alongside `riverpod_generator` in the same `build_runner` pass) gives
+// this class real `operator ==`/`hashCode`/`copyWith` — every generated
+// data class needs this under the `riverpod` preset because any of them
+// can end up as a `@riverpod` family provider's argument type (see
+// `EstimateFocusMinutesArgs` in `procedures.dart`), and riverpod's family
+// cache dedupes provider instances by argument *value* equality, not
+// identity. `generateMethods: GenerateMethods.equals | GenerateMethods.copy`
+// deliberately does NOT ask for `encode`/`decode`/`stringify` — this
+// generator already hand-rolls `fromWire`/`toWire` below (different
+// method names, so there's no collision either way), and duplicating a
+// second, unused `toMap`/`fromMap`/`toJson`/`fromJson` surface per class
+// would be pure noise. Relation fields (e.g. `Task.board` -> `Board?`)
+// get deep equality "for free": the referenced type is itself a
+// `@MappableClass()`-annotated generated class in this same preset, so
+// the field-by-field comparison this class's own `==` performs recurses
+// into the related type's generated `==` rather than falling back to
+// object identity; list-valued relations get the same element-wise
+// (not `List.==`/identity) comparison automatically from
+// `dart_mappable`'s own list handling.
+@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+class CreateWidgetInput with CreateWidgetInputMappable {
   const CreateWidgetInput({
 required this.id,
 required this.name,
@@ -61,7 +105,28 @@ this.weight,
   }
 }
 
-class UpdateWidgetInput {
+// issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
+// alongside `riverpod_generator` in the same `build_runner` pass) gives
+// this class real `operator ==`/`hashCode`/`copyWith` — every generated
+// data class needs this under the `riverpod` preset because any of them
+// can end up as a `@riverpod` family provider's argument type (see
+// `EstimateFocusMinutesArgs` in `procedures.dart`), and riverpod's family
+// cache dedupes provider instances by argument *value* equality, not
+// identity. `generateMethods: GenerateMethods.equals | GenerateMethods.copy`
+// deliberately does NOT ask for `encode`/`decode`/`stringify` — this
+// generator already hand-rolls `fromWire`/`toWire` below (different
+// method names, so there's no collision either way), and duplicating a
+// second, unused `toMap`/`fromMap`/`toJson`/`fromJson` surface per class
+// would be pure noise. Relation fields (e.g. `Task.board` -> `Board?`)
+// get deep equality "for free": the referenced type is itself a
+// `@MappableClass()`-annotated generated class in this same preset, so
+// the field-by-field comparison this class's own `==` performs recurses
+// into the related type's generated `==` rather than falling back to
+// object identity; list-valued relations get the same element-wise
+// (not `List.==`/identity) comparison automatically from
+// `dart_mappable`'s own list handling.
+@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+class UpdateWidgetInput with UpdateWidgetInputMappable {
   const UpdateWidgetInput({
 this.name,
 this.weight,

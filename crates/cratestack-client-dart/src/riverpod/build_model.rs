@@ -136,6 +136,7 @@ pub(crate) fn build_model_file(
     let mut imports: BTreeSet<String> = BTreeSet::new();
     imports.insert("import 'package:flutter_riverpod/flutter_riverpod.dart';".to_owned());
     imports.insert("import 'package:riverpod_annotation/riverpod_annotation.dart';".to_owned());
+    imports.insert("import 'package:dart_mappable/dart_mappable.dart';".to_owned());
     imports.insert("import '../runtime.dart';".to_owned());
     imports.insert("import '../client.dart';".to_owned());
     if is_rest {
@@ -161,6 +162,7 @@ pub(crate) fn build_model_file(
         provider_prefix: provider_prefix.to_owned(),
         imports: render_import_lines(imports),
         part_file_name: format!("{}.g.dart", model_file_stem(&model.name)),
+        mapper_part_file_name: format!("{}.mapper.dart", model_file_stem(&model.name)),
         enum_types,
         data_classes,
         selection,

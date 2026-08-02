@@ -135,6 +135,16 @@ pub(crate) fn build_procedures_file(
     let mut imports: BTreeSet<String> = BTreeSet::new();
     imports.insert("import 'package:flutter_riverpod/flutter_riverpod.dart';".to_owned());
     imports.insert("import 'package:riverpod_annotation/riverpod_annotation.dart';".to_owned());
+    // issue #325: only when this file actually declares a
+    // `@MappableClass()` — a schema with zero procedures and no
+    // procedure-owned nested `type`s has zero `data_classes` here, and an
+    // unconditional import would be a real `unused_import`
+    // `flutter analyze --fatal-warnings` failure (see the matching
+    // `mapper_part_file_name` gate in `rest_procedures.dart.j2`/
+    // `rpc_procedures.dart.j2` for the paired part-directive concern).
+    if !data_classes.is_empty() {
+        imports.insert("import 'package:dart_mappable/dart_mappable.dart';".to_owned());
+    }
     imports.insert("import 'runtime.dart';".to_owned());
     imports.insert("import 'client.dart';".to_owned());
     // `shared_types.dart` also carries `Page`/`PageInfo` (see
@@ -170,6 +180,7 @@ pub(crate) fn build_procedures_file(
         provider_prefix: provider_prefix.to_owned(),
         imports: render_import_lines(imports),
         part_file_name: "procedures.g.dart".to_owned(),
+        mapper_part_file_name: "procedures.mapper.dart".to_owned(),
         enum_types,
         data_classes,
         procedures,

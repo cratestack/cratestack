@@ -3,6 +3,16 @@
 {% endfor %}
 
 part '{{ part_file_name }}';
+{% if data_classes | length > 0 %}
+// issue #325: gated (unlike `part_file_name` above) because
+// `dart_mappable_builder`, unlike `riverpod_generator`, skips writing a
+// part file entirely rather than emitting an empty no-op one when its
+// target file has zero `@MappableClass()` classes in it — a schema with
+// zero procedures and no procedure-owned nested `type`s would otherwise
+// hit a real `uri_does_not_exist` `flutter analyze` error (confirmed
+// empirically — see `shared_types.dart.j2`'s identical guard).
+part '{{ mapper_part_file_name }}';
+{% endif %}
 
 {% include "riverpod/enums_and_data_classes.dart.j2" %}
 class ProceduresApi {

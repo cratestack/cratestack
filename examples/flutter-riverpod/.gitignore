@@ -14,8 +14,11 @@
 # output. Regenerate them (`dart run build_runner build
 # --delete-conflicting-outputs`, or `cratestack generate-dart
 # --run-build-runner`) rather than committing them — see the top-level
-# README's "full path" section.
+# README's "full path" section. `.mapper.dart` (issue #325's
+# `dart_mappable_builder` output, expanded in the same `build_runner`
+# pass) is the same kind of artifact for the same reason.
 client/**/*.g.dart
+client/**/*.mapper.dart
 client/.dart_tool/
 client/build/
 client/pubspec.lock

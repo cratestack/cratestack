@@ -178,15 +178,15 @@ fn riverpod_shared_ownership_inlines_procedure_only_types_into_procedures_dart()
     let shared = package_file(&package, "lib/src/models/shared_types.dart");
 
     assert!(
-        procedures.contains("class SearchFilter {"),
+        procedures.contains("class SearchFilter with SearchFilterMappable {"),
         "SearchFilter is reached only via the search procedure, so it belongs in procedures.dart:\n{procedures}"
     );
     assert!(
-        procedures.contains("class Address {"),
+        procedures.contains("class Address with AddressMappable {"),
         "Address is reached transitively (search -> SearchFilter -> Address), so it also belongs in procedures.dart:\n{procedures}"
     );
     assert!(
-        !shared.contains("class Address {"),
+        !shared.contains("class Address with AddressMappable {"),
         "Address is single-locus (Procedures only), so it must not also appear in shared_types.dart:\n{shared}"
     );
 }

@@ -156,14 +156,61 @@ fn model_and_procedure_files_carry_the_part_directive() {
     );
 
     assert!(package_file(&package, "lib/src/models/author.dart").contains("part 'author.g.dart';"));
+    assert!(
+        package_file(&package, "lib/src/models/author.dart").contains("part 'author.mapper.dart';")
+    );
     assert!(package_file(&package, "lib/src/models/post.dart").contains("part 'post.g.dart';"));
+    assert!(
+        package_file(&package, "lib/src/models/post.dart").contains("part 'post.mapper.dart';")
+    );
     assert!(
         package_file(&package, "lib/src/procedures.dart").contains("part 'procedures.g.dart';")
     );
-    // No `@riverpod` surface lives in these two files, so no `part`
-    // directive should appear in them either.
+    assert!(
+        package_file(&package, "lib/src/procedures.dart")
+            .contains("part 'procedures.mapper.dart';")
+    );
+    // No `@riverpod` surface lives in these two files, so no
+    // `riverpod_generator` `.g.dart` part directive should appear in
+    // them — `client.dart` has no `@MappableClass()` surface either (no
+    // data classes are declared there), so it stays part-free too.
+    // `shared_types.dart` in *this* fixture also has zero data classes
+    // (`ci_rpc.cstack`'s only shared name is the `PostStatus` enum —
+    // `type`/`enum` are different lists; `PostStatusFilter`, its one
+    // `type`, is Procedures-owned, not Shared — see
+    // `every_riverpod_data_class_gets_mappable_class_and_mixin` above),
+    // so it also has no `dart_mappable` mapper part directive here — see
+    // `shared_types_file_gets_the_mapper_part_directive_when_it_has_data_classes`
+    // below for the fixture that exercises the positive case.
     assert!(!package_file(&package, "lib/src/client.dart").contains("part '"));
     assert!(!package_file(&package, "lib/src/models/shared_types.dart").contains("part '"));
+}
+
+#[test]
+fn shared_types_file_gets_the_mapper_part_directive_when_it_has_data_classes() {
+    let package = generate(
+        "riverpod_shared_type_orphan",
+        "dart_verify_riverpod_shared_type_orphan",
+        DartPreset::Riverpod,
+    );
+
+    let shared_types = package_file(&package, "lib/src/models/shared_types.dart");
+    assert!(
+        shared_types.contains("import 'package:dart_mappable/dart_mappable.dart';"),
+        "shared_types.dart has a real @MappableClass() data class (Coordinates) in this fixture, \
+         so the dart_mappable import must be present:\n{shared_types}"
+    );
+    assert!(
+        shared_types.contains("part 'shared_types.mapper.dart';"),
+        "shared_types.dart has a real @MappableClass() data class (Coordinates) in this fixture, \
+         so the mapper part directive must be present:\n{shared_types}"
+    );
+    assert!(
+        shared_types.contains(
+            "@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)\nclass Coordinates with CoordinatesMappable {"
+        ),
+        "{shared_types}"
+    );
 }
 
 /// The naming collision this fixture deliberately constructs (see the
@@ -295,6 +342,99 @@ fn override_proof_test_file_watches_the_existing_adapter_provider_and_the_new_li
     assert!(test_file.contains("tinyRpcClientAdapterProvider.overrideWithValue(fakeAdapter)"));
     assert!(test_file.contains("container.read(widgetListProvider.future)"));
     assert!(test_file.contains("class _FakeRpcAdapter implements CratestackRpcAdapter"));
+}
+
+// ---- Issue #325: `dart_mappable` adoption. ----
+
+#[test]
+fn every_riverpod_data_class_gets_mappable_class_and_mixin() {
+    let package = generate(
+        "ci_rpc",
+        "dart_verify_riverpod_ci_rpc",
+        DartPreset::Riverpod,
+    );
+
+    // A model class (`Post`), its `Create`/`Update` inputs, a shared
+    // `type` (`PostStatusFilter`, owned by `Owner::Shared` since both
+    // the procedure and no single model reach it exclusively), and a
+    // procedure argument wrapper (`ListPostsArgs`) — every shape
+    // `build_data_class` produces — must all carry the annotation and
+    // the generated mixin, not just models.
+    let post = package_file(&package, "lib/src/models/post.dart");
+    for name in ["Post", "CreatePostInput", "UpdatePostInput"] {
+        assert!(
+            post.contains(&format!(
+                "@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)\nclass {name} with {name}Mappable {{"
+            )),
+            "{name} should be annotated with @MappableClass() and carry the generated mixin:\n{post}"
+        );
+    }
+
+    let procedures = package_file(&package, "lib/src/procedures.dart");
+    assert!(
+        procedures.contains(
+            "@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)\nclass ListPostsArgs with ListPostsArgsMappable {"
+        ),
+        "the listPosts procedure's generated argument wrapper should be @MappableClass()-annotated \
+         (this is the exact shape issue #325's bug report reproduced against: a generated class used \
+         as a riverpod family provider's argument, e.g. `listPosts(Ref ref, ListPostsArgs args)`):\n{procedures}"
+    );
+    // `PostStatusFilter` is reached only by the `listPosts` procedure (no
+    // model references it), so the partition (`Owner::Procedures`) inlines
+    // it into `procedures.dart` rather than `shared_types.dart` — same
+    // ownership rule `riverpod_shared_ownership_inlines_procedure_only_types_into_procedures_dart`
+    // in `tests/riverpod_generator.rs` exercises, just confirming
+    // `@MappableClass()` reaches a procedure-owned nested `type` too, not
+    // just the procedure's own top-level args wrapper.
+    assert!(
+        procedures.contains(
+            "@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)\nclass PostStatusFilter with PostStatusFilterMappable {"
+        ),
+        "a procedure-owned nested `type` must also get @MappableClass():\n{procedures}"
+    );
+}
+
+#[test]
+fn dart_mappable_import_and_mapper_part_directive_present_everywhere_data_classes_live() {
+    let package = generate(
+        "ci_rpc",
+        "dart_verify_riverpod_ci_rpc",
+        DartPreset::Riverpod,
+    );
+
+    // `shared_types.dart` isn't included here — this fixture's
+    // shared_types.dart has zero data classes (see
+    // `model_and_procedure_files_carry_the_part_directive`'s comment),
+    // so it correctly has neither the import nor the part directive;
+    // `shared_types_file_gets_the_mapper_part_directive_when_it_has_data_classes`
+    // covers the positive case with a fixture that actually has one.
+    for file_name in [
+        "lib/src/models/author.dart",
+        "lib/src/models/post.dart",
+        "lib/src/procedures.dart",
+    ] {
+        let contents = package_file(&package, file_name);
+        assert!(
+            contents.contains("import 'package:dart_mappable/dart_mappable.dart';"),
+            "{file_name} declares an @MappableClass() but is missing the dart_mappable import:\n{contents}"
+        );
+    }
+}
+
+#[test]
+fn default_preset_data_classes_stay_free_of_mappable_class() {
+    // Scope guard (issue #325 is `riverpod`-preset-only, per its own
+    // "Scope" section): the `default` preset's `models.dart` must never
+    // pick up `@MappableClass()`/the generated mixin/the dart_mappable
+    // import — `enums_and_data_classes.dart.j2` (riverpod-only) is a
+    // completely separate template file from `models.dart.j2` (default),
+    // but this guards against the two ever being merged carelessly.
+    let package = generate("ci_rpc", "dart_verify_default_ci_rpc", DartPreset::Default);
+    let models = package_file(&package, "lib/src/models.dart");
+
+    assert!(!models.contains("@MappableClass"));
+    assert!(!models.contains("Mappable {"));
+    assert!(!models.contains("dart_mappable"));
 }
 
 // ---- Snapshot: the collision fixture's full generated output. ----

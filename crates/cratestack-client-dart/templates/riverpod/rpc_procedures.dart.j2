@@ -3,6 +3,11 @@
 {% endfor %}
 
 part '{{ part_file_name }}';
+{% if data_classes | length > 0 %}
+// issue #325: gated (unlike `part_file_name` above) — see
+// `rest_procedures.dart.j2`'s identical guard for why.
+part '{{ mapper_part_file_name }}';
+{% endif %}
 
 {% include "riverpod/enums_and_data_classes.dart.j2" %}
 class ProceduresApi {

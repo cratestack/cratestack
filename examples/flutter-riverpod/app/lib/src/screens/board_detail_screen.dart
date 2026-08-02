@@ -33,40 +33,6 @@ class BoardDetailScreen extends ConsumerStatefulWidget {
 class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
   final _titleController = TextEditingController();
 
-  // Real bug #2 found running this app against a live server (issue
-  // #303): `EstimateFocusMinutesArgs`/`FocusEstimateArgs` are generated
-  // plain Dart classes with no `operator ==`/`hashCode` override.
-  // `estimateFocusMinutesProvider(args)` is a riverpod-generator
-  // "family" provider, which caches/reuses a provider instance by
-  // *value* equality of its argument — without `==`, two structurally
-  // identical `EstimateFocusMinutesArgs` instances are only `==` by
-  // object identity, so a *new* instance built on every rebuild (e.g.
-  // every time `openCount` is recomputed below) always misses the
-  // cache and starts a brand-new `loading` provider, which then never
-  // gets a chance to resolve before the next rebuild starts another one
-  // — reproduced live: the estimate text never appeared, permanently
-  // stuck in `AsyncLoading`. This is a real generator gap (filed as a
-  // follow-up issue — see this example's README), not something an app
-  // should have to work around, but the workaround itself is ordinary,
-  // good Riverpod practice regardless: memoize a family provider's
-  // argument object so its identity is stable across rebuilds unless
-  // its actual value changed.
-  int? _memoizedOpenCount;
-  EstimateFocusMinutesArgs? _memoizedEstimateArgs;
-
-  EstimateFocusMinutesArgs _estimateArgsFor(int openCount) {
-    if (_memoizedOpenCount != openCount) {
-      _memoizedOpenCount = openCount;
-      _memoizedEstimateArgs = EstimateFocusMinutesArgs(
-        args: FocusEstimateArgs(
-          taskCount: openCount,
-          minutesPerTask: _minutesPerTask,
-        ),
-      );
-    }
-    return _memoizedEstimateArgs!;
-  }
-
   @override
   void dispose() {
     _titleController.dispose();
@@ -145,9 +111,25 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // Constructed fresh on every rebuild — deliberately not
+                // memoized. Issue #325 fixed the real bug that used to
+                // force a memoization workaround here (see this file's
+                // `git log`/the linked issue for the removed code): with
+                // `dart_mappable`-generated `operator ==`/`hashCode` on
+                // `EstimateFocusMinutesArgs`, a brand-new instance with
+                // the same field values is `==` to the last one, so
+                // riverpod's family provider cache still dedupes it
+                // correctly and `estimateFocusMinutesProvider` resolves
+                // instead of restarting from `AsyncLoading` on every
+                // rebuild.
                 _FocusEstimate(
                   openCount: openCount,
-                  args: _estimateArgsFor(openCount),
+                  args: EstimateFocusMinutesArgs(
+                    args: FocusEstimateArgs(
+                      taskCount: openCount,
+                      minutesPerTask: _minutesPerTask,
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Row(
