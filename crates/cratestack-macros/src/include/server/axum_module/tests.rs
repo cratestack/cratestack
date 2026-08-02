@@ -3,8 +3,8 @@
 //! `datasource { provider = "none" }` schemas can never declare a
 //! `model`), while `db = Postgres` keeps emitting both, unchanged.
 
-use super::super::collect::ServerCollected;
 use super::super::super::parse::ServerDb;
+use super::super::collect::ServerCollected;
 use super::build_axum_module;
 
 fn empty_collected() -> ServerCollected {
