@@ -1,0 +1,5 @@
+# Default wasm-pack output dir when built without an explicit --out-dir
+# (e.g. following this crate's own README). The real build target,
+# packages/cratestack-cbor-web, points --out-dir at its own src/wasm-pkg
+# instead (see its package.json), which is gitignored there.
+/pkg

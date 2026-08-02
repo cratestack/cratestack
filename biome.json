@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "ignore": ["**/dist/**"]
+    "ignore": ["**/dist/**", "**/wasm-pkg/**"]
   },
   "formatter": {
     "enabled": true,

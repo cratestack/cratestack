@@ -10,6 +10,9 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "@cratestack/cbor-web": "link:../../../packages/cratestack-cbor-web"
+  },
   "devDependencies": {
     "typescript": "^5.9.3",
     "vite": "^8.0.12"

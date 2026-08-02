@@ -1,0 +1,51 @@
+[package]
+name = "cratestack-cbor-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "wasm-bindgen bindings exposing cratestack-codec-cbor's CborCodec to browser JavaScript. Builds @cratestack/cbor-web (issue #287); ships no useful Rust API of its own (cdylib-only)."
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+# cdylib-only: this crate produces no rlib, so it can't be depended on by
+# other Rust crates. Its only artifact is the wasm-pack-built .wasm/.js
+# glue consumed by packages/cratestack-cbor-web. Publishing it to crates.io
+# would be misleading (nothing could `cargo add` it usefully), so it opts
+# out — same reasoning as cratestack-studio-ui, minus the workspace split
+# that crate needs for its own unrelated (Trunk/Leptos) reasons.
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+cratestack-codec-cbor.workspace = true
+cratestack-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+# wasm32-only deps, mirroring the pattern already proven by
+# crates/cratestack-rusqlite and examples/embedded-browser-vite: keeping
+# wasm-bindgen and friends target-gated means `cargo check --workspace` /
+# `cargo test --workspace` on a plain host toolchain never needs the
+# wasm32 target or wasm-bindgen-cli — only `wasm-pack build --target
+# wasm32-unknown-unknown` does. `uuid`'s `js` feature is required here for
+# the SAME reason cratestack-rusqlite adds it: `cratestack-core` (pulled in
+# transitively via cratestack-codec-cbor) depends on `uuid` without a wasm32
+# randomness source, and Cargo unifies features for a shared dependency
+# across the whole per-target build graph — enabling `js` here is enough to
+# make cratestack-core's own uuid usage build clean under this crate's
+# wasm32 target, no cratestack-core changes required.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+console_error_panic_hook = "0.1"
+serde-wasm-bindgen = "0.6"
+uuid = { workspace = true, features = ["js"] }
+wasm-bindgen = "0.2"
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+js-sys = "0.3"
+wasm-bindgen-test = "0.3"
