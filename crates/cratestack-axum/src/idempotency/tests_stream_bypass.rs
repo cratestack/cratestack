@@ -82,18 +82,19 @@ impl IdempotencyStore for InMemoryIdempotencyStore {
     ) -> Result<(), CoolError> {
         let mut entries = self.entries.lock().unwrap();
         if let Some(entry) = entries.get_mut(&(principal.to_owned(), key.to_owned()))
-            && entry.token == token {
-                entry.record = Some(IdempotencyRecord {
-                    key: key.to_owned(),
-                    principal_fingerprint: principal.to_owned(),
-                    request_hash: entry.hash,
-                    response_status: status,
-                    response_headers: headers.to_vec(),
-                    response_body: body.to_vec(),
-                    created_at: SystemTime::now(),
-                    expires_at: SystemTime::now(),
-                });
-            }
+            && entry.token == token
+        {
+            entry.record = Some(IdempotencyRecord {
+                key: key.to_owned(),
+                principal_fingerprint: principal.to_owned(),
+                request_hash: entry.hash,
+                response_status: status,
+                response_headers: headers.to_vec(),
+                response_body: body.to_vec(),
+                created_at: SystemTime::now(),
+                expires_at: SystemTime::now(),
+            });
+        }
         Ok(())
     }
 
