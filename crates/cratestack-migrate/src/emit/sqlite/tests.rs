@@ -263,3 +263,83 @@ model Account {
     assert_eq!(migration.up.trim(), "");
     assert_eq!(migration.down.trim(), "");
 }
+
+// Regression coverage for issue #260. SQLite has no `ALTER TABLE ADD
+// CONSTRAINT`, so unlike Postgres a declared `@relation` can't become
+// a real, enforced constraint without a full table-rebuild dance —
+// out of scope here (see `emit::sqlite::foreign_keys` docs). What
+// SQLite *can* do, and previously didn't, is say so: a marker comment
+// naming the constraint that would otherwise silently not exist.
+
+#[test]
+fn relation_emits_rebuild_marker_comment() {
+    let prev = schema(&with_models(""));
+    let next = schema(&with_models(
+        r#"
+model Tenant {
+  id String @id
+}
+
+model Application {
+  id String @id
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+}
+"#,
+    ));
+    let migration = emit(&diff(&prev, &next));
+    assert!(!migration.has_lossy);
+    assert!(
+        migration.up.contains(
+            "-- SQLite: ADD CONSTRAINT applications_tenant_id_fkey FOREIGN KEY (tenant_id) \
+             REFERENCES tenants (id) — requires table rebuild on SQLite."
+        ),
+        "up was: {}",
+        migration.up
+    );
+    // No real constraint is emitted — SQLite genuinely can't add one
+    // outside CREATE TABLE.
+    assert!(
+        !migration
+            .up
+            .contains("ALTER TABLE applications ADD CONSTRAINT")
+    );
+}
+
+#[test]
+fn removing_a_relation_emits_rebuild_marker_comment() {
+    let prev = schema(&with_models(
+        r#"
+model Tenant {
+  id String @id
+}
+
+model Application {
+  id String @id
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+}
+"#,
+    ));
+    let next = schema(&with_models(
+        r#"
+model Tenant {
+  id String @id
+}
+
+model Application {
+  id String @id
+  tenantId String
+}
+"#,
+    ));
+    let migration = emit(&diff(&prev, &next));
+    assert!(!migration.has_lossy);
+    assert!(
+        migration
+            .up
+            .contains("-- SQLite: DROP CONSTRAINT applications_tenant_id_fkey"),
+        "up was: {}",
+        migration.up
+    );
+}

@@ -30,6 +30,14 @@ pub fn check_name(table: &str, column: &str, validator: &str) -> String {
     format!("{table}_{column}_{validator}_check")
 }
 
+/// `<table>_<column>_fkey` — matches Postgres's own auto-generated
+/// name for a single-column foreign key constraint, so the diff
+/// engine's name-based add/drop matching agrees with what Postgres
+/// itself would call the constraint.
+pub fn fk_name(table: &str, column: &str) -> String {
+    format!("{table}_{column}_fkey")
+}
+
 /// Convert PascalCase or camelCase to snake_case. Mirrors
 /// `cratestack-macros::shared::to_snake_case`.
 fn to_snake_case(value: &str) -> String {
@@ -85,6 +93,14 @@ mod tests {
         assert_eq!(
             index_name_unique("customers", "email"),
             "customers_email_key"
+        );
+    }
+
+    #[test]
+    fn fk_name_matches_postgres_convention() {
+        assert_eq!(
+            fk_name("applications", "tenant_id"),
+            "applications_tenant_id_fkey"
         );
     }
 }

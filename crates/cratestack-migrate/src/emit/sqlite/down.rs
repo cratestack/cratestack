@@ -63,6 +63,11 @@ pub(super) fn emit_down_op(sql: &mut String, op: &Op) {
                 );
             }
         }
+        Op::AddForeignKey(_) | Op::DropForeignKey(_) => {
+            sql.push_str(
+                "-- SQLite foreign key reversal requires the same table rebuild as the forward op.\n",
+            );
+        }
         Op::CreateView(view) => {
             writeln!(sql, "DROP VIEW IF EXISTS {};", quote_ident(&view.name)).unwrap();
         }

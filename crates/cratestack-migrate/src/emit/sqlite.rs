@@ -25,6 +25,7 @@
 mod checks;
 mod columns;
 mod down;
+mod foreign_keys;
 mod idents;
 mod indexes;
 mod tables;
@@ -44,6 +45,7 @@ use columns::{
     emit_alter_column_type, emit_drop_column, emit_rename_column,
 };
 use down::{describe_lossy, emit_down_op};
+use foreign_keys::{emit_add_foreign_key, emit_drop_foreign_key};
 use idents::quote_ident;
 use indexes::{emit_add_index, emit_drop_index};
 use tables::{emit_create_table, emit_rename_table};
@@ -140,6 +142,8 @@ fn emit_up_op(sql: &mut String, op: &Op) {
         Op::RenameColumn(rename) => emit_rename_column(sql, rename),
         Op::AddCheck(check) => emit_add_check(sql, check),
         Op::DropCheck(check) => emit_drop_check(sql, check),
+        Op::AddForeignKey(fk) => emit_add_foreign_key(sql, fk),
+        Op::DropForeignKey(fk) => emit_drop_foreign_key(sql, fk),
         Op::CreateView(view) => emit_create_view(sql, view),
         Op::DropView(view) => emit_drop_view(sql, view),
         Op::ReplaceView(view) => emit_replace_view(sql, view),

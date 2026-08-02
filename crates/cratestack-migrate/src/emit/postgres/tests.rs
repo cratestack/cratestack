@@ -5,6 +5,7 @@ mod checks;
 mod columns;
 mod create;
 mod enums;
+mod relations;
 mod renames;
 mod views;
 

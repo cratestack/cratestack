@@ -8,16 +8,21 @@
 //!   exactly the same here, and the engine treats them as drop + add.
 //! * Column *changes* (type, nullability, default) are detected in
 //!   [`columns::diff_columns`].
-//! * Index changes follow the same drop/add pattern in
-//!   [`indexes::diff_indexes`].
+//! * Index and foreign-key changes follow the same drop/add pattern in
+//!   [`indexes::diff_indexes`] and [`foreign_keys::diff_foreign_keys`].
+//!   A foreign key is promoted from the owning side of a `@relation`
+//!   field (see `convert::relations`).
 //!
 //! Ops are emitted in an order that respects DDL dependencies:
-//! drops first (with dependent index drops before column/table drops),
-//! then creates, then index adds (after the columns that back them
-//! exist).
+//! drops first (with dependent index/FK drops before column/table
+//! drops — table drops are themselves topologically sorted so a
+//! table referencing another table in the same drop set drops
+//! first), then creates, then index and foreign-key adds (after the
+//! columns and tables they depend on exist).
 
 mod checks;
 mod columns;
+mod foreign_keys;
 mod indexes;
 mod tables;
 mod views;
@@ -41,7 +46,7 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
     let mut rename_tables = rename_map.renames;
     let mut drop_tables_ops =
         tables::collect_drops(&prev_tables, &next_tables, &rename_map.renamed_from);
-    let (mut create_tables, mut add_indexes, mut add_checks) =
+    let (mut create_tables, mut add_indexes, mut add_checks, mut add_foreign_keys) =
         tables::collect_creates(&prev_tables, &next_tables, &rename_map.renamed_from);
 
     let mut rename_columns = Vec::new();
@@ -50,6 +55,7 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
     let mut alter_columns = Vec::new();
     let mut drop_indexes_ops = Vec::new();
     let mut drop_checks_ops = Vec::new();
+    let mut drop_foreign_keys_ops = Vec::new();
 
     for (name, prev_projection) in &prev_tables {
         let Some(next_projection) = find_next(name, &next_tables, &rename_map.renamed_from) else {
@@ -69,6 +75,10 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
         let mut idx_ops = indexes::diff_indexes(prev_projection, next_projection);
         add_indexes.append(&mut idx_ops.adds);
         drop_indexes_ops.append(&mut idx_ops.drops);
+
+        let mut fk_ops = foreign_keys::diff_foreign_keys(prev_projection, next_projection);
+        add_foreign_keys.append(&mut fk_ops.adds);
+        drop_foreign_keys_ops.append(&mut fk_ops.drops);
     }
 
     let mut view_diff = views::diff_views(prev, next);
@@ -78,8 +88,10 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
     // reference the new names.
     ops.append(&mut rename_tables);
     ops.append(&mut rename_columns);
-    // Drop CHECK constraints before drops on the columns they protect.
+    // Drop CHECK constraints and foreign keys before drops on the
+    // columns/tables they protect.
     ops.append(&mut drop_checks_ops);
+    ops.append(&mut drop_foreign_keys_ops);
     ops.append(&mut drop_indexes_ops);
     // View drops land BEFORE column drops and table drops (ADR-0003
     // §"Migration emission"). Postgres rejects a `DROP COLUMN` /
@@ -98,6 +110,10 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
     ops.append(&mut add_indexes);
     // Add CHECK constraints after the columns they protect exist.
     ops.append(&mut add_checks);
+    // Add foreign keys last, after every table/column this migration
+    // creates exists — a relation's referenced table may be one of
+    // the tables `create_tables` just added.
+    ops.append(&mut add_foreign_keys);
     // View creates land AFTER all column adds + table creates so
     // both source tables and any new columns the view body
     // references exist before the view definition is parsed.

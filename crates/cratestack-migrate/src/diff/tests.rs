@@ -3,6 +3,7 @@
 
 mod basic;
 mod indexes;
+mod relations;
 mod views;
 
 use cratestack_core::Schema;

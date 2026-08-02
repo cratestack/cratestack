@@ -50,27 +50,92 @@ pub(super) fn collect_drops(
     renamed_from: &BTreeMap<&str, &str>,
 ) -> Vec<Op> {
     let consumed_old: BTreeSet<&str> = renamed_from.values().copied().collect();
-    let mut drops = Vec::new();
+    let mut dropped: BTreeSet<&str> = BTreeSet::new();
     for name in prev_tables.keys() {
         if consumed_old.contains(name.as_str()) {
             continue;
         }
         if !next_tables.contains_key(name) {
-            drops.push(Op::DropTable(DropTable { name: name.clone() }));
+            dropped.insert(name.as_str());
         }
     }
-    drops
+    topo_sort_drops(prev_tables, dropped)
+        .into_iter()
+        .map(|name| {
+            Op::DropTable(DropTable {
+                name: name.to_owned(),
+            })
+        })
+        .collect()
 }
 
-/// Returns `(create_tables, add_indexes_for_new_tables, add_checks_for_new_tables)`.
+/// Orders a set of tables being dropped so that a table with a
+/// foreign key to another table in the same drop set drops first.
+/// Postgres refuses `DROP TABLE parent` while `child`'s FK constraint
+/// still references it, so alphabetical (the `BTreeSet` default)
+/// isn't safe once relations carry real constraints (issue #260).
+///
+/// A cycle between two tables in the drop set (mutual FKs) can't be
+/// satisfied by any order — the remainder is emitted in its original
+/// order rather than looping forever; a real cycle needs `CASCADE` or
+/// a hand-written migration, which is out of scope here.
+fn topo_sort_drops<'a>(
+    prev_tables: &'a BTreeMap<String, TableProjection>,
+    names: BTreeSet<&'a str>,
+) -> Vec<&'a str> {
+    let mut in_degree: BTreeMap<&str, usize> = names.iter().map(|name| (*name, 0)).collect();
+    let mut edges: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for &name in &names {
+        let Some(projection) = prev_tables.get(name) else {
+            continue;
+        };
+        for fk in &projection.foreign_keys {
+            let target = fk.referenced_table.as_str();
+            if target != name && names.contains(target) {
+                edges.entry(name).or_default().push(target);
+                *in_degree.get_mut(target).expect("target is in names") += 1;
+            }
+        }
+    }
+
+    let mut ready: BTreeSet<&str> = in_degree
+        .iter()
+        .filter(|(_, degree)| **degree == 0)
+        .map(|(name, _)| *name)
+        .collect();
+    let mut result = Vec::with_capacity(names.len());
+    while let Some(&node) = ready.iter().next() {
+        ready.remove(node);
+        result.push(node);
+        for &target in edges.get(node).into_iter().flatten() {
+            let degree = in_degree.get_mut(target).expect("target is in names");
+            *degree -= 1;
+            if *degree == 0 {
+                ready.insert(target);
+            }
+        }
+    }
+    if result.len() < names.len() {
+        for &name in &names {
+            if !result.contains(&name) {
+                result.push(name);
+            }
+        }
+    }
+    result
+}
+
+/// Returns `(create_tables, add_indexes, add_checks, add_foreign_keys)`
+/// for every newly created table.
 pub(super) fn collect_creates(
     prev_tables: &BTreeMap<String, TableProjection>,
     next_tables: &BTreeMap<String, TableProjection>,
     renamed_from: &BTreeMap<&str, &str>,
-) -> (Vec<Op>, Vec<Op>, Vec<Op>) {
+) -> (Vec<Op>, Vec<Op>, Vec<Op>, Vec<Op>) {
     let mut create_tables = Vec::new();
     let mut add_indexes = Vec::new();
     let mut add_checks = Vec::new();
+    let mut add_foreign_keys = Vec::new();
     for (name, projection) in next_tables {
         if renamed_from.contains_key(name.as_str()) {
             continue;
@@ -86,7 +151,10 @@ pub(super) fn collect_creates(
             for check in &projection.checks {
                 add_checks.push(Op::AddCheck(check.clone()));
             }
+            for fk in &projection.foreign_keys {
+                add_foreign_keys.push(Op::AddForeignKey(fk.clone()));
+            }
         }
     }
-    (create_tables, add_indexes, add_checks)
+    (create_tables, add_indexes, add_checks, add_foreign_keys)
 }

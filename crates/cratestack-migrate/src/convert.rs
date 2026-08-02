@@ -9,17 +9,19 @@
 
 mod checks;
 mod fields;
+mod relations;
 mod renames;
 
 use std::collections::{BTreeMap, HashSet};
 
 use cratestack_core::{Model, Schema, parse_composite_id_attribute};
 
-use crate::ir::{AddCheck, AddIndex, CheckKind, Column, ColumnArity, ColumnType};
+use crate::ir::{AddCheck, AddForeignKey, AddIndex, CheckKind, Column, ColumnArity, ColumnType};
 use crate::naming::{check_name, column_name, index_name_unique, table_name};
 
 use checks::{check_kind_slug, collect_check_kinds, field_has_db_enforce};
 use fields::{field_has_unique, field_to_column, is_relation_field};
+use relations::relation_foreign_key;
 use renames::{field_rename_from, model_rename_from};
 
 /// IR-side projection of a model: the table plus any indexes implied
@@ -40,6 +42,10 @@ pub(crate) struct TableProjection {
     /// CHECK constraints implied by `@db_enforce` on validator
     /// attributes (`@range`, `@length`, `@iso4217`).
     pub(crate) checks: Vec<AddCheck>,
+    /// Foreign keys promoted from the owning side of a
+    /// `@relation(fields:[...], references:[...])` field. Empty for
+    /// the "many" side of a relation, which has no physical column.
+    pub(crate) foreign_keys: Vec<AddForeignKey>,
 }
 
 pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
@@ -84,13 +90,17 @@ pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
     let mut column_renames = Vec::new();
     let mut indexes = Vec::new();
     let mut checks = Vec::new();
+    let mut foreign_keys = Vec::new();
 
     for field in &model.fields {
         if is_relation_field(field) {
             // Relation virtual fields (`@relation`) don't produce a
             // column themselves; the foreign-key column lives on the
-            // owning side as a regular scalar field. Slice 8+ will
-            // promote relations to foreign-key IR ops.
+            // owning side as a regular scalar field. The relation
+            // itself is promoted to a foreign-key constraint here.
+            if let Some(fk) = relation_foreign_key(field, schema, &table) {
+                foreign_keys.push(fk);
+            }
             continue;
         }
 
@@ -138,6 +148,7 @@ pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
         column_renames,
         indexes,
         checks,
+        foreign_keys,
     }
 }
 
