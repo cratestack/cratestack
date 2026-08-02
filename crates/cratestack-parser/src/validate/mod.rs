@@ -5,6 +5,7 @@ mod model_attributes;
 mod models;
 mod pb;
 mod procedures;
+mod stream_attribute;
 mod type_names;
 mod validator_args;
 mod validators;
@@ -22,6 +23,7 @@ use self::procedures::{
     validate_procedure_api_version_attribute, validate_procedure_deprecated_attribute,
     validate_procedure_isolation_attribute,
 };
+use self::stream_attribute::validate_procedure_stream_attribute;
 use self::type_names::{collect_type_names, validate_type_ref};
 
 /// The canonical scalar type names built into the `.cstack` language today.
@@ -122,6 +124,7 @@ fn validate_procedures(
         validate_procedure_isolation_attribute(procedure)?;
         validate_procedure_api_version_attribute(procedure)?;
         validate_procedure_deprecated_attribute(procedure)?;
+        validate_procedure_stream_attribute(procedure)?;
     }
     Ok(())
 }

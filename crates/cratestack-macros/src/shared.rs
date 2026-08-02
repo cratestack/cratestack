@@ -2,6 +2,7 @@
 //! generator. Anything bigger lives in sibling submodules.
 
 mod attrs;
+mod procedure_attrs;
 mod sql;
 mod types;
 mod value;
@@ -17,6 +18,7 @@ pub(crate) use attrs::{
     is_primary_key, is_readonly_field, is_sensitive_field, is_server_only_field, is_version_field,
     supports_comparison,
 };
+pub(crate) use procedure_attrs::is_stream_procedure;
 pub(crate) use sql::{create_sql_value, sql_value_tokens, update_sql_value};
 pub(crate) use types::{
     field_definition, query_scalar_list_parser_tokens, query_scalar_parser_tokens,

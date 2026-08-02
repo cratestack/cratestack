@@ -26,9 +26,14 @@ type Tick {
   value Int
 }
 
-// Returns N ticks of `value = start + index`. With
-// `Accept: application/cbor-seq` each chunk arrives independently — try
-// pointing at this from a streaming-aware client to see backpressure work.
-// With the default Accept the same op returns a single CBOR `Vec<Tick>`.
+// Returns N ticks of `value = start + index`, produced one at a time
+// (see `@stream` on `Procedures::ticks` in `src/lib.rs`) rather than
+// collected into a `Vec` up front. With `Accept: application/cbor-seq`
+// each chunk arrives independently — try pointing at this from a
+// streaming-aware client to see backpressure work. With the default
+// Accept the same op still returns a single CBOR `Vec<Tick>`; `@stream`
+// only changes how the *implementer* produces items, not the wire
+// contract (that's cratestack#283's concern, not this schema's).
 procedure ticks(args: TickerArgs): Tick[]
   @allow(auth() != null)
+  @stream

@@ -79,6 +79,7 @@ cratestack-client-rust.workspace = true
 cratestack-core.workspace = true
 cratestack-grpc = { workspace = true, optional = true }
 cratestack-macros.workspace = true
+futures-util.workspace = true
 prost = { workspace = true, optional = true }
 cratestack-parser.workspace = true
 cratestack-policy.workspace = true

@@ -31,6 +31,15 @@
 pub use chrono;
 pub use cratestack_client_rust as client_rust;
 pub use cratestack_core::*;
+// Re-exported (renamed from the `futures-util` crate, which is what
+// actually implements it) so `@stream` procedures' generated
+// `ProcedureRegistry` trait method — `impl ::cratestack::futures::Stream<
+// Item = Result<T, CoolError>> + Send` (see
+// `cratestack-macros/src/procedure.rs`) — has somewhere to point without
+// every consumer adding its own `futures`/`futures-core`/`futures-util`
+// dependency. Mirrors how `chrono`/`uuid` are re-exported above for the
+// same "codegen references a fixed path, consumers shouldn't have to
+// duplicate the dependency" reason.
 pub use cratestack_macros::{
     include_client_schema, include_embedded_schema, include_server_schema,
 };
@@ -40,6 +49,7 @@ pub use cratestack_policy::{
     ProcedurePolicyLiteral, ProcedurePredicate, ReadPolicy, ReadPredicate, RelationQuantifier,
     authorize_procedure,
 };
+pub use futures_util as futures;
 
 // SQL primitives shared by every backend — re-exported directly from
 // `cratestack-sql` so consumers don't transit through `cratestack-sqlx`.

@@ -10,12 +10,13 @@ name = "rpc-streaming-server"
 path = "src/main.rs"
 
 [dependencies]
+async-stream = "0.3"
 cratestack = { package = "cratestack-pg", path = "../../crates/cratestack-pg" }
 cratestack-codec-cbor = { path = "../../crates/cratestack-codec-cbor" }
 cratestack-codec-json = { path = "../../crates/cratestack-codec-json" }
 minicbor-serde = { workspace = true }
 serde = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["time"] }
 
 [dev-dependencies]
 serde_json = { workspace = true }

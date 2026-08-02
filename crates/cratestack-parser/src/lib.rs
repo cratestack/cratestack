@@ -30,6 +30,8 @@ mod tests_relations;
 #[cfg(test)]
 mod tests_relations_policy;
 #[cfg(test)]
+mod tests_stream_attribute;
+#[cfg(test)]
 mod tests_transport;
 #[cfg(test)]
 mod tests_types;

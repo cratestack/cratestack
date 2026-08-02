@@ -142,7 +142,27 @@ fn procedure_type_tokens(
         return quote! { ::cratestack::Page<#item_type> };
     }
 
-    let inner = match type_ref.name.as_str() {
+    let inner = procedure_item_type_tokens(type_ref, types, enum_names);
+
+    match type_ref.arity {
+        TypeArity::Required => inner,
+        TypeArity::Optional => quote! { Option<#inner> },
+        TypeArity::List => quote! { Vec<#inner> },
+    }
+}
+
+/// Scalar/model mapping for one element of `type_ref`, ignoring arity and
+/// the `Page<T>` wrapper entirely — i.e. what a `Vec<T>`'s `T` is. Shared
+/// by [`procedure_type_tokens`] (which wraps it per `type_ref.arity`) and
+/// [`procedure_stream_item_tokens`] (which never wraps it: a `@stream`
+/// procedure's `Stream<Item = Result<T, _>>` wants the element type
+/// directly, not `Vec<T>`).
+fn procedure_item_type_tokens(
+    type_ref: &TypeRef,
+    types: &[TypeDecl],
+    enum_names: &BTreeSet<&str>,
+) -> proc_macro2::TokenStream {
+    match type_ref.name.as_str() {
         "String" => quote! { String },
         "Cuid" => quote! { String },
         "Int" => quote! { i64 },
@@ -161,11 +181,18 @@ fn procedure_type_tokens(
                 quote! { super::super::#item_ident }
             }
         }
-    };
-
-    match type_ref.arity {
-        TypeArity::Required => inner,
-        TypeArity::Optional => quote! { Option<#inner> },
-        TypeArity::List => quote! { Vec<#inner> },
     }
+}
+
+/// Item type tokens for a `@stream`-marked procedure's stream-shaped
+/// `ProcedureRegistry` trait method. Callers must only invoke this once
+/// `cratestack-parser` has confirmed `type_ref.arity == TypeArity::List`
+/// (`@stream` on anything else is a semantic-check error, not something
+/// this function needs to defend against).
+pub(super) fn procedure_stream_item_tokens(
+    type_ref: &TypeRef,
+    types: &[TypeDecl],
+    enum_names: &BTreeSet<&str>,
+) -> proc_macro2::TokenStream {
+    procedure_item_type_tokens(type_ref, types, enum_names)
 }
