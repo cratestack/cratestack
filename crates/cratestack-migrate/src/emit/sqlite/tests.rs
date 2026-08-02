@@ -371,3 +371,33 @@ model Application {
         migration.up
     );
 }
+
+#[test]
+fn relation_marker_comment_quotes_reserved_local_column_name() {
+    // Review finding: the marker comment's identifiers weren't quoted,
+    // so a local FK column that collides with a SQLite reserved word
+    // (like `order`) rendered as a bare, ambiguous-looking token —
+    // mirrors the Postgres emitter's `reserved_column_name_is_quoted`.
+    let prev = schema(&with_models(""));
+    let next = schema(&with_models(
+        r#"
+model Target {
+  id Int @id
+}
+
+model Item {
+  id Int @id
+  order Int
+  ref Target @relation(fields: [order], references: [id])
+}
+"#,
+    ));
+    let migration = emit(&diff(&prev, &next));
+    assert!(
+        migration
+            .up
+            .contains("FOREIGN KEY (\"order\") REFERENCES targets (id)"),
+        "up was: {}",
+        migration.up
+    );
+}
