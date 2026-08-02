@@ -29,7 +29,7 @@ Both crates expose their library as `cratestack` (the schema macros emit `::crat
 * **Embedded** — same schema, rusqlite delegate, sync API, identical scalar round-tripping (`Decimal`, `Uuid`, `DateTime`, `Json` through canonical TEXT storage). One source, three targets (native mobile, desktop, wasm).
 * **Typed clients** — generated Rust client (CBOR by default, optional JSON), Dart package, TypeScript package, each consuming the same canonical HTTP contract.
 * **SQL views** — `view <Name> from <Model>, ...` produces a typed Rust struct and `ViewDelegate`, with per-backend SQL bodies and optional `@@materialized` (Postgres only).
-* **Banking-readiness primitives** — `@version` optimistic locking, `@@audit`, `IdempotencyLayer`, `RateLimitLayer`, FIPS-validated TLS via `crypto-aws-lc-rs`, soft delete, transactional audit log.
+* **Banking-readiness primitives** — `@version` optimistic locking, `@@audit`, `IdempotencyLayer`, `RateLimitLayer`, soft delete, transactional audit log. (FIPS-validated TLS via `crypto-aws-lc-rs` is reserved but not implemented yet — see [#334](https://github.com/cratestack/cratestack/issues/334).)
 
 See the [Current State](https://cratestack.dev/overview/current-state) page for the authoritative feature matrix.
 

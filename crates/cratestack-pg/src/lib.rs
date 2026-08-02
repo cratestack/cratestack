@@ -140,25 +140,30 @@ pub use cratestack_sqlx::{
     cool_error_from_sqlx, run_in_isolated_tx, run_in_isolated_tx_with_retries,
 };
 
-/// Crypto provider selection — banks running on FIPS-validated hardware
-/// enable the `crypto-aws-lc-rs` feature. The function below surfaces an
-/// error early when the feature is missing so the wrong build can't slip
-/// into a regulated production cluster.
+/// Crypto provider selection for FIPS-validated deployments.
 ///
-/// Operational steps for a real FIPS deployment (out of scope for the
-/// framework itself):
+/// **`crypto-aws-lc-rs` is not implemented yet.** Enabling it is a hard
+/// `compile_error!`, not a working FIPS mode — this used to return `Ok(())`
+/// without installing any provider, which is a false assurance in a
+/// compliance-facing API: a service that called this and checked for `Ok`
+/// got an affirmative return while still running on the non-FIPS `ring`
+/// backend. See <https://github.com/cratestack/cratestack/issues/334>.
 ///
-/// 1. Build with `--features crypto-aws-lc-rs`.
-/// 2. Use an `aws-lc-rs`/`rustls` build configured against the vendor's
-///    FIPS-validated `libcrypto`.
-/// 3. Call [`install_fips_crypto_provider`] from your service's `main`
-///    *before* any TLS-using code runs.
-/// 4. Pin the binary's `cargo audit` report and the validated module's
-///    certificate id in your release process.
+/// Making this real requires the TLS backend becoming a genuine choice
+/// across `cratestack-sqlx` and `cratestack-client-rust` (both currently
+/// hard-select `ring`), not just adding `aws-lc-rs` as a dependency here —
+/// Cargo features are additive, so enabling `crypto-aws-lc-rs` today would
+/// only add a second provider alongside `ring`, not replace it. Until that
+/// backend-selection work lands, this function fails to compile under the
+/// feature rather than silently lying about what it installed.
 pub fn install_fips_crypto_provider() -> Result<(), cratestack_core::CoolError> {
     #[cfg(feature = "crypto-aws-lc-rs")]
     {
-        Ok(())
+        compile_error!(
+            "cratestack-pg's `crypto-aws-lc-rs` feature does not install a FIPS-validated \
+             crypto provider yet — see install_fips_crypto_provider's doc comment and \
+             https://github.com/cratestack/cratestack/issues/334. Do not enable this feature."
+        )
     }
     #[cfg(not(feature = "crypto-aws-lc-rs"))]
     {

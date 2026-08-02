@@ -49,5 +49,7 @@ and [ADR-0003](https://cratestack.dev/internals/views-adr).
 
 - `decimal-rust-decimal` *(default)* — `Decimal` columns use `rust_decimal`.
 - `decimal-bigdecimal` — alternative `bigdecimal` backend.
-- `crypto-aws-lc-rs` — opt into the `aws-lc-rs` rustls provider for
-  FIPS-validated deployments. See `install_fips_crypto_provider()`.
+- `crypto-aws-lc-rs` — **not implemented yet**, enabling it is a hard
+  `compile_error!`. Reserved for a future FIPS-validated `aws-lc-rs`
+  rustls provider; see `install_fips_crypto_provider()`'s doc comment
+  and [#334](https://github.com/cratestack/cratestack/issues/334).
