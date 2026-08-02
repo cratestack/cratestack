@@ -5,7 +5,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use cratestack_client_dart::{DartGeneratorConfig, GeneratedDartPackage, generate_package};
+use cratestack_client_dart::{
+    DartGeneratorConfig, DartPreset, GeneratedDartPackage, generate_package,
+};
 
 /// Deterministic stand-in for `cli_support::hash_schema_source`'s real
 /// output (issue #178) — a real SHA-256 hex digest, distinct from
@@ -161,6 +163,7 @@ fn generate_for(fixture_stem: &str, library_name: &str) -> GeneratedDartPackage 
             library_name: library_name.to_owned(),
             base_path: "/api".to_owned(),
             template_dir: None,
+            preset: DartPreset::Default,
             pb_lock: None,
             schema_sha256: SNAPSHOT_SCHEMA_SHA256.to_owned(),
         },

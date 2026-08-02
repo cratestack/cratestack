@@ -1,4 +1,4 @@
-use cratestack_client_dart::{DartGeneratorConfig, generate_package};
+use cratestack_client_dart::{DartGeneratorConfig, DartPreset, generate_package};
 use cratestack_parser::parse_schema;
 use std::fs;
 use std::path::PathBuf;
@@ -22,6 +22,7 @@ fn generates_runtime_based_and_riverpod_client_for_blog_schema() {
             library_name: "blog_client".to_owned(),
             base_path: "/api".to_owned(),
             template_dir: None,
+            preset: DartPreset::Default,
             pb_lock: None,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
         },
@@ -274,6 +275,7 @@ procedure searchOrders(args: SearchOrdersArgs): SearchOrdersArgs
             library_name: "order_client".to_owned(),
             base_path: "/api".to_owned(),
             template_dir: None,
+            preset: DartPreset::Default,
             pb_lock: None,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
         },
@@ -301,6 +303,7 @@ fn generates_real_dart_enums_for_schema_enum_fields_and_procedures() {
             library_name: "enum_client".to_owned(),
             base_path: "/api".to_owned(),
             template_dir: None,
+            preset: DartPreset::Default,
             pb_lock: None,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
         },
@@ -388,6 +391,7 @@ fn prefers_template_override_directory_when_provided() {
             library_name: "blog_client".to_owned(),
             base_path: "/api".to_owned(),
             template_dir: Some(template_dir.clone()),
+            preset: DartPreset::Default,
             pb_lock: None,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
         },

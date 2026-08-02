@@ -170,6 +170,13 @@ test-ci-host *args='':
 # real `cratestack generate-dart` CLI, then runs `flutter analyze` on
 # each. This is the same check CI's `dart (generated packages)` job runs.
 #
+# Issue #301 extends this to also cover `--preset riverpod`: the same
+# ci_rest/ci_rpc fixtures (proving the fan-out layout compiles under both
+# transports) plus riverpod_shared_ownership.cstack (a dedicated fixture
+# for the ownership rule — an enum genuinely shared by two models, a
+# nested type reached only through a procedure, and a User -> Post[] ->
+# User relation cycle across two per-model files).
+#
 # Requires the Flutter SDK on PATH, not just the Dart SDK: the generated
 # `pubspec.yaml` depends on `sdk: flutter` (the `flutter`/`flutter_test`
 # packages) and `flutter_riverpod` — a standalone Dart SDK install has no
@@ -184,17 +191,12 @@ verify-dart:
 	fi
 	out=target/dart-verify
 	rm -rf "$out"
-	fixtures=(ci_rest ci_rpc)
-	for fixture in "${fixtures[@]}"; do
-	  pkg="$out/$fixture"
-	  echo "=== generate-dart: $fixture -> $pkg ==="
-	  cargo run --quiet -p cratestack-cli -- generate-dart \
-	    --schema "crates/cratestack-client-dart/tests/fixtures/$fixture.cstack" \
-	    --out "$pkg" \
-	    --library-name "dart_verify_${fixture}"
-	  echo "=== flutter pub get: $fixture ==="
+
+	verify_pkg() {
+	  local pkg="$1"
+	  echo "=== flutter pub get: $pkg ==="
 	  (cd "$pkg" && flutter pub get)
-	  echo "=== flutter analyze: $fixture ==="
+	  echo "=== flutter analyze: $pkg ==="
 	  # --fatal-warnings (Dart's own default): a warning-level finding
 	  # fails the build — unused imports, dead code, deprecated API use
 	  # are real signal on generated code that should never carry them.
@@ -211,6 +213,29 @@ verify-dart:
 	  # build. See the PR that introduced this recipe for the follow-up
 	  # issue tracking them.
 	  (cd "$pkg" && flutter analyze --fatal-warnings --no-fatal-infos)
+	}
+
+	fixtures=(ci_rest ci_rpc)
+	for fixture in "${fixtures[@]}"; do
+	  pkg="$out/default/$fixture"
+	  echo "=== generate-dart --preset default: $fixture -> $pkg ==="
+	  cargo run --quiet -p cratestack-cli -- generate-dart \
+	    --schema "crates/cratestack-client-dart/tests/fixtures/$fixture.cstack" \
+	    --out "$pkg" \
+	    --library-name "dart_verify_${fixture}"
+	  verify_pkg "$pkg"
+	done
+
+	riverpod_fixtures=(ci_rest ci_rpc riverpod_shared_ownership)
+	for fixture in "${riverpod_fixtures[@]}"; do
+	  pkg="$out/riverpod/$fixture"
+	  echo "=== generate-dart --preset riverpod: $fixture -> $pkg ==="
+	  cargo run --quiet -p cratestack-cli -- generate-dart \
+	    --schema "crates/cratestack-client-dart/tests/fixtures/$fixture.cstack" \
+	    --out "$pkg" \
+	    --library-name "dart_verify_riverpod_${fixture}" \
+	    --preset riverpod
+	  verify_pkg "$pkg"
 	done
 
 # Bundle the Studio UI for publishing: source tarball (for `studio

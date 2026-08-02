@@ -1,0 +1,68 @@
+// Acceptance fixture for issue #301's `--preset riverpod`. Exercises the
+// full ownership partition (`crate::riverpod::partition`) end to end.
+//
+// **Note on the fixture's shape vs. the ticket's literal wording:** the
+// ticket asks for "an enum used by two models, and a nested type used by
+// two models". The enum half is real and demonstrated below (`Role`).
+// The "nested type" half turned out to be impossible to construct: a
+// model field can never be typed with a `type` block at all —
+// `crates/cratestack-parser/src/validate/type_names.rs`'s
+// `reject_type_decl_as_model_field_type` rejects it at parse time (only
+// a scalar, an `enum`, or a `@relation` to another `model` are legal
+// model field types). So a `type` block can only ever be reached from
+// the schema's procedures (which all collapse into the one
+// `procedures.dart` locus) or be an unreferenced orphan — never
+// genuinely shared between two *models* the way an `enum` can. This
+// fixture instead demonstrates the closest real equivalent: `Address` is
+// a `type` reached only transitively (`SearchFilter` -> `Address`), which
+// still exercises the transitive-reachability half of the ownership rule
+// and lands correctly in `procedures.dart` rather than
+// `shared_types.dart`, without duplicating the fixture on false pretense.
+// See `crate::riverpod::partition`'s module doc for the verified rule.
+//
+// - `Role` (enum) is referenced by both `User.role` and `Post.editorRole`
+//   — genuinely owned by more than one model, so it must land in
+//   `lib/src/models/shared_types.dart`, not be duplicated into both
+//   `user.dart` and `post.dart`.
+// - `Address` (nested `type`) is only reachable via the `search`
+//   procedure's `SearchFilter` arg — `Owner::Procedures`, inlined into
+//   `procedures.dart`, proving the BFS traversal through a `type`-to-
+//   `type` chain (not just a direct reference).
+// - `User.posts: Post[]` / `Post.author: User` is a genuine relation
+//   cycle (`User` -> `Post[]` -> `User`), so `user.dart` and `post.dart`
+//   mutually import each other — this is the fixture covering issue
+//   #301's "relation cycle" acceptance criterion (`ci_rest.cstack`/
+//   `ci_rpc.cstack` already cover an equivalent Author/Post cycle too;
+//   this fixture keeps its own for a self-contained, purpose-named case).
+
+enum Role {
+  admin
+  member
+}
+
+type Address {
+  city String
+  postalCode String
+}
+
+type SearchFilter {
+  role Role?
+  location Address?
+}
+
+model User {
+  id Int @id
+  name String
+  role Role
+  posts Post[] @relation(fields:[id],references:[authorId])
+}
+
+model Post {
+  id Int @id
+  title String
+  editorRole Role
+  authorId Int
+  author User @relation(fields:[authorId],references:[id])
+}
+
+procedure search(filter: SearchFilter?): User[]

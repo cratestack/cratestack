@@ -1,0 +1,29 @@
+{% for import in imports %}
+{{ import }}
+{% endfor %}
+
+{% include "riverpod/enums_and_data_classes.dart.j2" %}
+class ProceduresApi {
+  const ProceduresApi(this._client);
+
+  final {{ client_class_name }} _client;
+
+{% for procedure in procedures %}
+  Future<{{ procedure.return_type }}> {{ procedure.method_name }}({{ procedure.args_name }} args, {
+    CratestackCallOptions? options,
+  }) async {
+    final body = await _client.execute(
+      'POST',
+      '{{ procedure.route }}',
+      body: args.toWire(),
+      options: options,
+    );
+    return {{ procedure.return_decode_expr }};
+  }
+
+{% endfor %}
+}
+
+final {{ provider_prefix }}ProceduresApiProvider = Provider<ProceduresApi>((ref) {
+  return ref.watch({{ provider_prefix }}ClientProvider).procedures;
+});

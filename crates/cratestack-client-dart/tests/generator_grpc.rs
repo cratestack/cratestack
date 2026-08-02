@@ -8,7 +8,7 @@
 //! and `allows_create`-gating paths the widgets fixture (one flat model)
 //! doesn't exercise.
 
-use cratestack_client_dart::{DartGeneratorConfig, generate_package};
+use cratestack_client_dart::{DartGeneratorConfig, DartPreset, generate_package};
 use cratestack_proto::PbLock;
 
 fn widgets_schema() -> cratestack_core::Schema {
@@ -27,6 +27,7 @@ fn config_with_lock(pb_lock: PbLock) -> DartGeneratorConfig {
         library_name: "widgets_grpc_client".to_owned(),
         base_path: "/".to_owned(),
         template_dir: None,
+        preset: DartPreset::Default,
         pb_lock: Some(pb_lock),
         // gRPC is out of scope for the schema-fingerprint header (issue
         // #178) for this pass, matching the TypeScript gRPC-Web client's

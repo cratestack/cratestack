@@ -9,7 +9,7 @@ use crate::naming::{
     scalar_model_fields,
 };
 use crate::views::{
-    ConstantView, ModelApiView, ProcedureView, SelectedFieldAccessorView,
+    ConstantView, ModelAccessorView, ModelApiView, ProcedureView, SelectedFieldAccessorView,
     SelectedRelationAccessorView, SelectionGroupView, SelectionModelView,
 };
 use crate::wire_decode::decode_value_expr;
@@ -97,6 +97,14 @@ pub(crate) fn build_selection_model(
         projected_class_name: format!("Projected{}", model.name),
         scalar_fields,
         relations,
+    }
+}
+
+pub(crate) fn build_model_accessor(model: &Model, provider_prefix: &str) -> ModelAccessorView {
+    ModelAccessorView {
+        accessor: pluralize(&to_camel_case(&model.name)),
+        api_class_name: format!("{}Api", model.name),
+        provider_name: format!("{provider_prefix}{}ApiProvider", model.name),
     }
 }
 

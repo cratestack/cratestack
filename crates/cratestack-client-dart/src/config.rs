@@ -2,11 +2,30 @@ use std::path::PathBuf;
 
 use cratestack_proto::PbLock;
 
+/// Selects the generated package's file layout. See issue #301 — the
+/// `riverpod` preset is a strict superset of `default`'s content,
+/// repartitioned into one file per model (types + `XApi` client +
+/// relocated `Provider<XApi>`), never a redesign of what's generated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DartPreset {
+    /// Today's monolithic `lib/src/models.dart`/`lib/src/apis.dart`
+    /// layout. Byte-identical output is a hard contract — see
+    /// `tests/snapshot.rs`.
+    #[default]
+    Default,
+    /// One file per model (`lib/src/models/<model>.dart`), a shared
+    /// file for types referenced by more than one model, procedures in
+    /// their own file, and the package-wide DI providers
+    /// (`xAdapterProvider`/`xClientProvider`) in a shared `client.dart`.
+    Riverpod,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DartGeneratorConfig {
     pub library_name: String,
     pub base_path: String,
     pub template_dir: Option<PathBuf>,
+    pub preset: DartPreset,
     /// `transport grpc` schemas only: the parsed `<schema>.pb.lock` — the
     /// gRPC wire codec needs the *real* field numbers `cratestack-proto`
     /// assigned (ticket #168) to encode/decode protobuf correctly, the
@@ -34,6 +53,7 @@ impl Default for DartGeneratorConfig {
             library_name: "cratestack_client".to_owned(),
             base_path: "/api".to_owned(),
             template_dir: None,
+            preset: DartPreset::Default,
             pb_lock: None,
             schema_sha256: String::new(),
         }
@@ -94,4 +114,12 @@ pub enum DartGeneratorError {
         "`.pb.lock` is missing an entry for message `{message}`{field}: re-run `cratestack generate-proto` to refresh it"
     )]
     MissingPbLockEntry { message: String, field: String },
+    /// Epic #297's `riverpod` preset targets REST and RPC only for its
+    /// first pass (see the epic's Scope/Out section) — `transport grpc`
+    /// schemas keep using `DartPreset::Default`.
+    #[error(
+        "the `riverpod` preset does not support `transport grpc` schemas yet — use `DartPreset::Default` \
+         for this schema, or drop `transport grpc`"
+    )]
+    RiverpodPresetGrpcUnsupported,
 }

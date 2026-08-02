@@ -34,6 +34,13 @@ pub(crate) enum Command {
         /// files that differ if the two don't match.
         #[arg(long)]
         check: bool,
+        /// `default` (today's monolithic `lib/src/models.dart`/
+        /// `lib/src/apis.dart`, byte-identical to pre-#301 output) or
+        /// `riverpod` (one file per model under `lib/src/models/`, plus
+        /// a shared file for cross-model types, procedures in their own
+        /// file, and the package-wide DI providers in `lib/src/client.dart`).
+        #[arg(long, value_enum, default_value_t = DartPresetArg::Default)]
+        preset: DartPresetArg,
     },
     #[command(name = "generate-typescript", alias = "generate-ts")]
     GenerateTypeScript {
@@ -174,6 +181,24 @@ pub(crate) enum MigrateAction {
         #[arg(long)]
         allow_destructive: bool,
     },
+}
+
+/// CLI-facing mirror of `cratestack_client_dart::DartPreset` — kept as a
+/// separate `ValueEnum` (rather than deriving `ValueEnum` on the library
+/// type itself) so the library crate doesn't need a `clap` dependency.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub(crate) enum DartPresetArg {
+    Default,
+    Riverpod,
+}
+
+impl From<DartPresetArg> for cratestack_client_dart::DartPreset {
+    fn from(value: DartPresetArg) -> Self {
+        match value {
+            DartPresetArg::Default => cratestack_client_dart::DartPreset::Default,
+            DartPresetArg::Riverpod => cratestack_client_dart::DartPreset::Riverpod,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]

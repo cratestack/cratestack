@@ -7,7 +7,7 @@ use crate::cli_support::{
     hash_schema_source, into_generated_files, json_check_failure, json_check_success,
     parse_schema_or_render, render_schema_error, write_generated_files,
 };
-use crate::cli_types::{Cli, Command, MigrateAction, OutputFormat, StudioCmd};
+use crate::cli_types::{Cli, Command, DartPresetArg, MigrateAction, OutputFormat, StudioCmd};
 use crate::drift::check_drift;
 
 #[cfg(test)]
@@ -23,7 +23,16 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             base_path,
             template_dir,
             check,
-        } => handle_generate_dart(schema, out, library_name, base_path, template_dir, check)?,
+            preset,
+        } => handle_generate_dart(
+            schema,
+            out,
+            library_name,
+            base_path,
+            template_dir,
+            check,
+            preset,
+        )?,
         Command::GenerateTypeScript {
             schema,
             out,
@@ -101,6 +110,7 @@ fn handle_generate_dart(
     base_path: String,
     template_dir: Option<PathBuf>,
     check: bool,
+    preset: DartPresetArg,
 ) -> Result<()> {
     let parsed = parse_schema_or_render(&schema)?;
     let pb_lock = read_pb_lock_if_present(&schema)?;
@@ -111,6 +121,7 @@ fn handle_generate_dart(
             library_name,
             base_path,
             template_dir,
+            preset: preset.into(),
             pb_lock,
             schema_sha256,
         },

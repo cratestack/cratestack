@@ -1,0 +1,19 @@
+name: tiny_rpc_client
+description: Generated CrateStack Flutter client package.
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^3.3.1
+  cbor: ^6.5.1
+  dio: ^5.8.0+1
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter

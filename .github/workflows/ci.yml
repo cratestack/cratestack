@@ -208,6 +208,14 @@ jobs:
   # see the justfile recipe's own comment for why Flutter (not the plain
   # Dart SDK) is required and for the analyzer-severity decision
   # (`--fatal-warnings`, `--no-fatal-infos`).
+  #
+  # Issue #301 extended the recipe to also cover `--preset riverpod`: the
+  # same ci_rest/ci_rpc fixtures plus a dedicated
+  # riverpod_shared_ownership.cstack fixture for the per-model fan-out
+  # layout's ownership rule (a genuinely shared enum, a procedure-only
+  # nested type, and a relation cycle across mutually-importing model
+  # files) — still one job, the preset matrix lives inside `just
+  # verify-dart` itself.
   dart-verify:
     name: dart (generated packages)
     runs-on: ubuntu-latest
@@ -222,7 +230,7 @@ jobs:
         with:
           channel: stable
           cache: true
-      - name: Generate + flutter analyze (REST + RPC)
+      - name: Generate + flutter analyze (default + riverpod presets, REST + RPC)
         run: just verify-dart
 
   # ---- JS packages (packages/*) -----------------------------------------

@@ -1,0 +1,61 @@
+{% for enum_type in enum_types %}
+enum {{ enum_type.name }} {
+{% for variant in enum_type.variants %}
+  {{ variant.identifier }}('{{ variant.wire_name }}'){% if loop.last %};{% else %},{% endif %}
+{% endfor %}
+
+  const {{ enum_type.name }}(this.wireName);
+
+  final String wireName;
+
+  static {{ enum_type.name }} fromWire(Object? value) {
+    final wireName = value as String;
+    switch (wireName) {
+{% for variant in enum_type.variants %}
+      case '{{ variant.wire_name }}':
+        return {{ enum_type.name }}.{{ variant.identifier }};
+{% endfor %}
+    }
+    throw ArgumentError.value(wireName, 'value', 'Unknown {{ enum_type.name }} value');
+  }
+
+  Object toWire() => wireName;
+}
+
+{% endfor %}
+{% for data_class in data_classes %}
+class {{ data_class.name }} {
+{% if not data_class.has_fields %}
+  const {{ data_class.name }}();
+{% else %}
+  const {{ data_class.name }}({
+{% for field in data_class.fields %}
+    {% if field.required %}required {% endif %}this.{{ field.identifier }},
+{% endfor %}
+  });
+{% endif %}
+
+{% for field in data_class.fields %}
+  final {{ field.dart_type }} {{ field.identifier }};
+{% endfor %}
+{% if data_class.has_fields %}
+
+{% endif %}
+  factory {{ data_class.name }}.fromWire(CratestackValueMap value) {
+    return {{ data_class.name }}(
+{% for field in data_class.fields %}
+      {{ field.identifier }}: {{ field.from_wire_expr }},
+{% endfor %}
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+{% for field in data_class.fields %}
+      '{{ field.wire_name }}': {{ field.to_wire_expr }},
+{% endfor %}
+    };
+  }
+}
+
+{% endfor %}

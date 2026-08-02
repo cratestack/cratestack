@@ -25,7 +25,7 @@ mod tests {
 
     use crate::Cli;
     use crate::cli_support::{json_check_failure, json_check_success};
-    use crate::cli_types::{Command, StudioCmd};
+    use crate::cli_types::{Command, DartPresetArg, StudioCmd};
 
     #[test]
     fn json_success_payload_has_empty_diagnostics() {
@@ -52,6 +52,60 @@ mod tests {
                 .expect("message should be a string")
                 .contains("missing an @id field")
         );
+    }
+
+    #[test]
+    fn generate_dart_clap_defaults() {
+        let cli = Cli::parse_from([
+            "cratestack",
+            "generate-dart",
+            "--schema",
+            "schema.cstack",
+            "--out",
+            "out",
+        ]);
+
+        match cli.command {
+            Command::GenerateDart {
+                schema,
+                out,
+                library_name,
+                base_path,
+                template_dir,
+                check,
+                preset,
+            } => {
+                assert_eq!(schema, PathBuf::from("schema.cstack"));
+                assert_eq!(out, PathBuf::from("out"));
+                assert_eq!(library_name, "cratestack_client");
+                assert_eq!(base_path, "/api");
+                assert_eq!(template_dir, None);
+                assert!(!check);
+                assert_eq!(preset, DartPresetArg::Default);
+            }
+            _ => panic!("expected generate-dart command"),
+        }
+    }
+
+    #[test]
+    fn generate_dart_clap_accepts_riverpod_preset() {
+        let cli = Cli::parse_from([
+            "cratestack",
+            "generate-dart",
+            "--schema",
+            "schema.cstack",
+            "--out",
+            "out",
+            "--preset",
+            "riverpod",
+        ]);
+
+        match cli.command {
+            Command::GenerateDart { preset, .. } => {
+                assert_eq!(preset, DartPresetArg::Riverpod);
+            }
+            _ => panic!("expected generate-dart command"),
+        }
     }
 
     #[test]

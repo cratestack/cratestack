@@ -2,7 +2,8 @@ use cratestack_core::{Field, Schema};
 
 use crate::builders::{build_data_class, build_enum_view};
 use crate::builders_model::{
-    build_model_api, build_procedure, build_selection_group, build_selection_model,
+    build_model_accessor, build_model_api, build_procedure, build_selection_group,
+    build_selection_model,
 };
 use crate::config::{DartGeneratorConfig, DartGeneratorError};
 use crate::idents::{
@@ -12,9 +13,7 @@ use crate::naming::{
     enum_name_set, is_generated_on_create, is_primary_key, is_relation_field, model_name_set,
     occupied_type_names, procedure_wrapper_name, scalar_model_fields,
 };
-use crate::views::{
-    ConstantView, DataClassKind, ModelAccessorView, SampleModelView, TemplateContext,
-};
+use crate::views::{ConstantView, DataClassKind, SampleModelView, TemplateContext};
 
 pub(crate) fn build_template_context(
     schema: &Schema,
@@ -117,11 +116,7 @@ pub(crate) fn build_template_context(
     let model_accessors = schema
         .models
         .iter()
-        .map(|model| ModelAccessorView {
-            accessor: pluralize(&to_camel_case(&model.name)),
-            api_class_name: format!("{}Api", model.name),
-            provider_name: format!("{provider_prefix}{}ApiProvider", model.name),
-        })
+        .map(|model| build_model_accessor(model, &provider_prefix))
         .collect();
 
     let model_apis = schema.models.iter().map(build_model_api).collect();
