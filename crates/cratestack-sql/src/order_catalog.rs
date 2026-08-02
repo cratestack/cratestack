@@ -152,6 +152,27 @@ mod tests {
     }
 
     #[test]
+    fn resolved_hops_render_the_expected_nested_correlated_subquery() {
+        // Closes the loop between "the resolver walked the right edges"
+        // (above) and "those hops render the right SQL" -- the REST
+        // dispatcher's only other consumer of `resolved.hops` is
+        // `order_value_sql`, exercised here with the exact same output
+        // `resolve_order_target` produces for a two-hop key. Mirrors the
+        // typed-builder assertion in
+        // `cratestack-pg/tests/include_schema.rs`'s
+        // `generated_nested_relation_order_preview_renders_nested_subqueries`,
+        // which hits the identical `order_value_sql` primitive through the
+        // chained-accessor path instead of the REST dotted-key path.
+        let resolved =
+            resolve_order_target(&POST_CATALOG, "author.profile.nickname").expect("known path");
+        assert_eq!(
+            crate::order_value_sql(&resolved.hops, resolved.column),
+            "(SELECT profiles.nickname FROM profiles \
+             WHERE profiles.id = users.profile_id LIMIT 1)",
+        );
+    }
+
+    #[test]
     fn rejects_unknown_top_level_field() {
         assert!(resolve_order_target(&POST_CATALOG, "unknownField").is_none());
     }
