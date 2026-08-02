@@ -106,6 +106,14 @@ const RPC: &[TemplateSpec] = &[
         output_path: OutputPath::Fixed("src/stream-terminal.ts"),
         default_source: include_str!("../../templates/src/rpc-stream-terminal.ts.j2"),
     },
+    // Typed `model.<X>.list` query builder (issue #333) — reused verbatim
+    // from the default preset, same as `rest-queries.ts.j2` is reused for
+    // the REST arm above: model-agnostic, so no swr-specific variant.
+    TemplateSpec {
+        template_name: "rpc-queries.ts.j2",
+        output_path: OutputPath::Fixed("src/queries.ts"),
+        default_source: include_str!("../../templates/src/rpc-queries.ts.j2"),
+    },
     TemplateSpec {
         template_name: "swr-models-rpc.ts.j2",
         output_path: OutputPath::PerModel(".ts"),

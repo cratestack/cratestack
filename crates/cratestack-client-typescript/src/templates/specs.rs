@@ -93,6 +93,15 @@ pub(crate) const RPC_TEMPLATE_SPECS: &[TemplateSpec] = &[
         output_path: OutputPath::Fixed("src/stream-terminal.ts"),
         default_source: include_str!("../../templates/src/rpc-stream-terminal.ts.j2"),
     },
+    // Typed `model.<X>.list` query builder (issue #333) — mirrors
+    // `rest-queries.ts.j2`'s position ahead of `rest-client.ts.j2` above:
+    // the client template imports `toRpcListInput`/`CratestackRpcListQuery`
+    // from here.
+    TemplateSpec {
+        template_name: "rpc-queries.ts.j2",
+        output_path: OutputPath::Fixed("src/queries.ts"),
+        default_source: include_str!("../../templates/src/rpc-queries.ts.j2"),
+    },
     TemplateSpec {
         template_name: "rpc-client.ts.j2",
         output_path: OutputPath::Fixed("src/client.ts"),
@@ -142,9 +151,13 @@ pub(crate) const GRPC_TEMPLATE_SPECS: &[TemplateSpec] = &[
 /// Pick the right template specs for the schema's declared transport.
 /// REST schemas get the historical fetch-based client + the
 /// `CratestackFetchQuery` helpers; RPC schemas get a CratestackRpcRuntime
-/// that speaks the `/rpc/{op_id}` URL space and skip `queries.ts` entirely
-/// (no URL-query shaping needed when every call is a POST with a typed
-/// body).
+/// that speaks the `/rpc/{op_id}` URL space, plus their own `queries.ts`
+/// (issue #333) — `CratestackRpcListQuery`/`toRpcListInput`, the RPC
+/// counterpart of `CratestackFetchQuery`/`toSearchQuery`. RPC's version
+/// builds a plain object for the codec-encoded POST body rather than a
+/// URL query string (no URL-query shaping needed when every call is a
+/// POST with a typed body), but both transports now have a real typed
+/// `list` input.
 pub(crate) fn template_specs_for(
     transport: TransportStyle,
 ) -> Result<Vec<TemplateSpec>, TypeScriptGeneratorError> {

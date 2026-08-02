@@ -58,6 +58,54 @@ fn rpc_client_invokes_runtime_call_with_dotted_op_ids() {
     );
 }
 
+/// Issue #333: `list()` must take the typed `CratestackRpcListQuery`
+/// (not a bare `Record<string, unknown>`) and forward it through
+/// `toRpcListInput()`, and `queries.ts` — the RPC counterpart of REST's
+/// `queries.ts` — must actually be generated and exported from the
+/// package root.
+#[test]
+fn rpc_client_uses_typed_list_query_builder() {
+    let package = generate_for("tiny_rpc", "tiny-rpc-client");
+
+    let queries = package_file(&package, "src/queries.ts");
+    assert!(
+        queries.contains("export interface CratestackRpcListQuery"),
+        "queries.ts is missing CratestackRpcListQuery:\n{queries}"
+    );
+    assert!(
+        queries.contains("export function toRpcListInput("),
+        "queries.ts is missing toRpcListInput:\n{queries}"
+    );
+
+    let client = package_file(&package, "src/client.ts");
+    assert!(
+        client.contains(
+            "import { toRpcListInput, type CratestackRpcListQuery } from \"./queries.js\";"
+        ),
+        "client.ts does not import the typed list-query builder:\n{client}"
+    );
+    assert!(
+        !client.contains("list(input: Record<string, unknown>"),
+        "client.ts's list() is still typed as a bare Record, not CratestackRpcListQuery:\n{client}"
+    );
+    assert!(
+        client.contains(
+            "list(query: CratestackRpcListQuery = {}, options: CratestackRpcCallOptions = {})"
+        ),
+        "client.ts's list() is not typed as CratestackRpcListQuery:\n{client}"
+    );
+    assert!(
+        client.contains("toRpcListInput(query)"),
+        "client.ts's list() does not forward its query through toRpcListInput:\n{client}"
+    );
+
+    let index = package_file(&package, "src/index.ts");
+    assert!(
+        index.contains("export * from \"./queries.js\";"),
+        "index.ts does not re-export queries.ts:\n{index}"
+    );
+}
+
 #[test]
 fn rpc_runtime_exports_rpc_error_class() {
     let package = generate_for("tiny_rpc", "tiny-rpc-client");

@@ -32,6 +32,7 @@ import useSWRMutation, {
   type SWRMutationResponse,
 } from "swr/mutation";
 import type { CratestackRpcRuntime } from "../runtime.js";
+import type { CratestackRpcListQuery } from "../queries.js";
 {% if is_paged %}
 import type { Page } from "./shared.js";
 {% endif %}
@@ -53,10 +54,10 @@ import {
 
 export function {{ list_hook }}(
   runtime: CratestackRpcRuntime,
-  input: Record<string, unknown> = {},
+  query: CratestackRpcListQuery = {},
   config?: SWRConfiguration<{{ model.list_return_type }}, Error>,
 ): SWRResponse<{{ model.list_return_type }}, Error> {
-  return useSWR(swrKeys.model.{{ model.name }}.list(input), () => {{ list_fn }}(runtime, input), config);
+  return useSWR(swrKeys.model.{{ model.name }}.list(query), () => {{ list_fn }}(runtime, query), config);
 }
 
 // `id` accepts `null`/`undefined` so this hook can be called before its

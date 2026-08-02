@@ -20,6 +20,11 @@ serde.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+# Used by `tests/rpc_list_query_wire_format.rs` (issue #333) to compare
+# the generated TypeScript's `toRpcListInput()` output against a real
+# `serde_json::to_value(&RpcListInput { .. })` — the actual server-side
+# wire contract, not a hand-copied guess at its shape.
 cratestack-axum.workspace = true
 cratestack-parser.workspace = true
+serde_json.workspace = true
 tempfile = "3"

@@ -29,10 +29,11 @@
 //
 // `<Model>.listMatches` is a key *filter* (not a key) for `mutate()`'s
 // filter-function overload: it matches every cached list key for this
-// model regardless of its `input` argument, so invalidating "the list"
+// model regardless of its `query` argument, so invalidating "the list"
 // after a mutation doesn't require knowing which filtered/paginated
 // variants happen to be in cache.
 
+import type { CratestackRpcListQuery } from "./queries.js";
 {% for procedure in procedures_file.procedures %}
 {% if procedure.kind == "query" %}
 import type { {{ procedure.args_name }} } from "./procedures.js";
@@ -43,7 +44,7 @@ export const swrKeys = {
   model: {
 {% for model in models %}
     {{ model.name }}: {
-      list: (input: Record<string, unknown> = {}) => ["model.{{ model.name }}.list", input] as const,
+      list: (query: CratestackRpcListQuery = {}) => ["model.{{ model.name }}.list", query] as const,
       get: (id: {{ model.primary_key_type }} | null | undefined) =>
         id == null ? null : (["model.{{ model.name }}.get", id] as const),
       listMatches: (key: unknown): boolean =>

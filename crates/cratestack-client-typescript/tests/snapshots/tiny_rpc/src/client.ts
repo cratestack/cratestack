@@ -3,6 +3,7 @@ import {
   type CratestackRpcCallOptions,
   type CratestackRpcClientOptions,
 } from "./runtime.js";
+import { toRpcListInput, type CratestackRpcListQuery } from "./queries.js";
 import type {
   Widget,
   CreateWidgetInput,
@@ -28,10 +29,10 @@ export class TinyRpcClientClient {
 export class WidgetApi {
   constructor(private readonly runtime: CratestackRpcRuntime) {}
 
-  list(input: Record<string, unknown> = {}, options: CratestackRpcCallOptions = {}): Promise<Widget[]> {
+  list(query: CratestackRpcListQuery = {}, options: CratestackRpcCallOptions = {}): Promise<Widget[]> {
     return this.runtime.call<Record<string, unknown>, Widget[]>(
       "model.Widget.list",
-      input,
+      toRpcListInput(query),
       options,
     );
   }

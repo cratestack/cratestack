@@ -16,6 +16,7 @@
 // import cycle, only a type-only one, which TypeScript tolerates fine.
 
 import type { CratestackRpcRuntime, CratestackRpcCallOptions } from "../runtime.js";
+import { toRpcListInput, type CratestackRpcListQuery } from "../queries.js";
 {% for import in imports %}
 import type { {{ import.type_names_joined }} } from "{{ import.path }}";
 {% endfor %}
@@ -67,12 +68,12 @@ export interface {{ update_input.name }} {
 
 export async function {{ list_fn }}(
   runtime: CratestackRpcRuntime,
-  input: Record<string, unknown> = {},
+  query: CratestackRpcListQuery = {},
   options: CratestackRpcCallOptions = {},
 ): Promise<{{ model.list_return_type }}> {
   return runtime.call<Record<string, unknown>, {{ model.list_return_type }}>(
     "model.{{ model.name }}.list",
-    input,
+    toRpcListInput(query),
     options,
   );
 }

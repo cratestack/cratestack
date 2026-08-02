@@ -77,12 +77,59 @@ fn swr_rpc_file_set_matches_the_expected_layout() {
             "src/models/widget.ts",
             "src/procedures.hooks.ts",
             "src/procedures.ts",
+            "src/queries.ts",
             "src/runtime.ts",
             "src/stream-terminal.ts",
             "src/swr-keys.ts",
             "tsconfig.json",
         ],
         "swr preset's RPC file set changed unexpectedly"
+    );
+}
+
+/// Issue #333: the `swr` preset's per-model plain function, its sibling
+/// hook, and `swrKeys` must all use the typed `CratestackRpcListQuery`
+/// (not a bare `Record<string, unknown>`), and forward it through
+/// `toRpcListInput()` exactly once — inside the plain function, never
+/// re-serialized again in the hook that wraps it.
+#[test]
+fn swr_rpc_list_uses_typed_query_builder() {
+    let package = generate_for("tiny_rpc", TypeScriptPreset::Swr);
+
+    let widget = file(&package, "src/models/widget.ts");
+    assert!(
+        widget.contains(
+            "import { toRpcListInput, type CratestackRpcListQuery } from \"../queries.js\";"
+        ),
+        "src/models/widget.ts does not import the typed list-query builder:\n{widget}"
+    );
+    assert!(
+        widget.contains("export async function listWidgets(\n  runtime: CratestackRpcRuntime,\n  query: CratestackRpcListQuery = {},"),
+        "listWidgets is not typed as CratestackRpcListQuery:\n{widget}"
+    );
+    assert!(
+        widget.contains("toRpcListInput(query)"),
+        "listWidgets does not forward its query through toRpcListInput:\n{widget}"
+    );
+
+    let hooks = file(&package, "src/models/widget.hooks.ts");
+    assert!(
+        hooks.contains("import type { CratestackRpcListQuery } from \"../queries.js\";"),
+        "src/models/widget.hooks.ts does not import CratestackRpcListQuery:\n{hooks}"
+    );
+    assert!(
+        hooks.contains("query: CratestackRpcListQuery = {}"),
+        "useWidgets is not typed as CratestackRpcListQuery:\n{hooks}"
+    );
+    assert!(
+        !hooks.contains("Record<string, unknown>"),
+        "src/models/widget.hooks.ts still references the untyped Record shape:\n{hooks}"
+    );
+
+    let keys = file(&package, "src/swr-keys.ts");
+    assert!(
+        keys.contains("list: (query: CratestackRpcListQuery = {})"),
+        "swrKeys.model.Widget.list is not typed as CratestackRpcListQuery:\n{keys}"
     );
 }
 
