@@ -17,12 +17,12 @@ class {{ selection.projected_class_name }} {
 {% endfor %}
 {% for relation in selection.relations %}
 {% if relation.is_list %}
-  List<{{ relation.target_projected_class_name }}>? get {{ relation.identifier }} {
+  IList<{{ relation.target_projected_class_name }}>? get {{ relation.identifier }} {
     final value = _value['{{ relation.wire_name }}'];
     if (value == null) return null;
     return cratestackAsValueList(value)
         .map((item) => {{ relation.target_projected_class_name }}.fromWire(cratestackAsValueMap(item)))
-        .toList(growable: false);
+        .toIList();
   }
 
 {% else %}
@@ -54,7 +54,7 @@ class {{ model_api.api_class_name }} {
     return {{ model_api.list_decode_expr }};
   }
 
-  Future<{% if model_api.is_paged %}Page<T>{% else %}List<T>{% endif %}> listView<T>({
+  Future<{% if model_api.is_paged %}Page<T>{% else %}IList<T>{% endif %}> listView<T>({
     required CratestackProjection<T> projection,
     CratestackListQuery? query,
     CratestackCallOptions? options,
@@ -73,7 +73,7 @@ class {{ model_api.api_class_name }} {
 {% else %}
     return cratestackAsValueList(body)
         .map((item) => projection.fromWire(cratestackAsValueMap(item)))
-        .toList(growable: false);
+        .toIList();
 {% endif %}
   }
 

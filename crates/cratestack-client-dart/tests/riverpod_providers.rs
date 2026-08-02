@@ -64,7 +64,7 @@ fn every_model_operation_gets_a_provider_built_on_the_existing_api_provider() {
         "get provider missing or not built on the existing WidgetApi provider:\n{widget}"
     );
     assert!(
-        widget.contains("Future<List<Widget>> widgetList(Ref ref) {\n  return ref.watch(tinyRpcClientWidgetApiProvider).list();\n}"),
+        widget.contains("Future<IList<Widget>> widgetList(Ref ref) {\n  return ref.watch(tinyRpcClientWidgetApiProvider).list();\n}"),
         "list provider missing or not built on the existing WidgetApi provider:\n{widget}"
     );
 
@@ -235,7 +235,7 @@ fn colliding_provider_names_escalate_to_distinct_symbols() {
 
     // Widget claims the naive names first (declared first in the schema).
     assert!(widget.contains("Future<Widget> widget(Ref ref, int id)"));
-    assert!(widget.contains("Future<List<Widget>> widgetList(Ref ref)"));
+    assert!(widget.contains("Future<IList<Widget>> widgetList(Ref ref)"));
     assert!(widget.contains("class WidgetCreateController extends _$WidgetCreateController {"));
 
     // WidgetList's own `get` provider wanted the name `widgetList` too —
