@@ -87,7 +87,7 @@ pub(super) fn validate_model_attributes(
             }
             validate_composite_id_attribute(model, attribute, model_names)?;
             saw_id_attribute = true;
-        } else if attribute.raw.starts_with("@@unique") {
+        } else if attribute.raw == "@@unique" || attribute.raw.starts_with("@@unique(") {
             validate_composite_unique_attribute(
                 model,
                 attribute,

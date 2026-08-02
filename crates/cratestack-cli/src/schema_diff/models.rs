@@ -55,11 +55,18 @@ fn index(models: &[Model]) -> BTreeMap<&str, &Model> {
 /// a distinct constraint, so the argument list is part of the identity.
 /// Keying them all as `@@unique` would collapse them into one entry and
 /// under-report adds and removals.
-fn attribute_key(raw: &str) -> &str {
+///
+/// The field list is whitespace-normalised before becoming part of the
+/// key: `Attribute::raw` preserves the source line verbatim, so
+/// `@@unique([a, b])` and `@@unique([a,b])` are the same constraint but
+/// would otherwise produce different keys — reporting a cosmetic edit
+/// as a remove-then-add rather than the value-only `Changed` every
+/// other parenthesized attribute gets on a literal-text difference.
+fn attribute_key(raw: &str) -> String {
     if raw.starts_with("@@unique") {
-        return raw;
+        return raw.chars().filter(|ch| !ch.is_ascii_whitespace()).collect();
     }
-    raw.split('(').next().unwrap_or(raw)
+    raw.split('(').next().unwrap_or(raw).to_owned()
 }
 
 fn diff_attributes(model_name: &str, prev: &Model, next: &Model, changes: &mut Vec<Change>) {
@@ -86,7 +93,7 @@ fn diff_attributes(model_name: &str, prev: &Model, next: &Model, changes: &mut V
     }
 }
 
-fn index_attributes(attributes: &[cratestack_core::Attribute]) -> BTreeMap<&str, &str> {
+fn index_attributes(attributes: &[cratestack_core::Attribute]) -> BTreeMap<String, &str> {
     attributes
         .iter()
         .map(|attribute| (attribute_key(&attribute.raw), attribute.raw.as_str()))

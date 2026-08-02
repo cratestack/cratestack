@@ -212,3 +212,36 @@ model Application {
         "error: {error}",
     );
 }
+
+#[test]
+fn does_not_misroute_an_unrelated_attribute_starting_with_unique() {
+    // The dispatch guard in `validate_model_attributes` must require the
+    // opening paren (or an exact bare match), the same discipline
+    // `@@id(` already uses — otherwise a hypothetical future attribute
+    // like `@@unique_per_tenant(...)` would be misrouted into the
+    // composite-unique validator and fail with a confusing "requires a
+    // field list" error instead of being treated as an unrecognised
+    // attribute.
+    //
+    // There is no such attribute today, so this asserts the *absence*
+    // of the "@@unique` requires a field list" message for an attribute
+    // that merely starts with the string `@@unique`.
+    let error = parse_schema(
+        r#"
+model Application {
+  id String @id
+  name String
+
+  @@unique_per_tenant(name)
+}
+"#,
+    );
+
+    if let Err(error) = error {
+        assert!(
+            !error.to_string().contains("requires a field list"),
+            "an unrelated `@@unique_per_tenant` attribute must not be misrouted into the \
+             composite-unique validator: {error}",
+        );
+    }
+}
