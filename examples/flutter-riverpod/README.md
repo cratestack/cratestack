@@ -1,7 +1,7 @@
 # flutter-riverpod example
 
 The epic #297 payoff: a real, running Flutter app that consumes a `cratestack generate-dart --preset
-riverpod` client with **zero hand-written providers** — every `ref.watch(boardListProvider)` /
+riverpod` client with **zero hand-written providers** — every `ref.watch(boardListProvider())` /
 `ref.read(boardCreateControllerProvider.notifier).create(...)` call in `app/lib` comes from the
 generator, not from this app.
 
@@ -14,11 +14,17 @@ generator, not from this app.
 - **A real Flutter app** (`app/lib`) that only imports generated code:
   - `BoardsScreen` — `boardListProvider` (a list read) and `boardCreateControllerProvider` (a
     mutation), with no manual refetch call anywhere in the file — just `ref.invalidate
-    (boardListProvider)` after a write, which is ordinary Riverpod usage, not a hand-written provider.
+    (boardListProvider())` after a write, which is ordinary Riverpod usage, not a hand-written provider.
   - `BoardDetailScreen` — `board(id)`, `taskList` (filtered client-side by `boardId` — the generated
-    `list()` has no server-side filter yet, same known gap `react-vite-swr`'s README documents for its
-    TypeScript sibling), the three `Task*Controller`s, and `estimateFocusMinutes` — a query-kind
-    procedure provider that recomputes automatically as the open-task count changes.
+    `list()` now *can* filter server-side too via an optional `CratestackListQuery? query`
+    (issue #331), but this screen still filters client-side to keep the diff that added it scoped to
+    the call-syntax change the new parameter forces, not a rewrite of this demo's data flow), the
+    three `Task*Controller`s, and `estimateFocusMinutes` — a query-kind procedure provider that
+    recomputes automatically as the open-task count changes.
+  - Both `board(id)`/`boardList` (and their `Task` equivalents) now always take an optional
+    `query` — `CratestackFetchQuery?`/`CratestackListQuery?` respectively — which is why every call
+    site above is `boardListProvider()`, not the bare identifier: a parameterized `@riverpod` function
+    compiles to a `riverpod_generator` *family*, and even its zero-argument default has to be invoked.
 - **Overrides the adapter provider to point at a real local server** — `flutterRiverpodClientAdapterProvider.overrideWithValue(CratestackDioAdapter(dio: myDio))` in `app/lib/main.dart`, the one and only override every consumer of this preset needs (see `client/README.md`'s "Riverpod Setup").
 - **Reuses `react-vite-swr`'s schema and server** rather than standing up a second Postgres-backed
   crate: `examples/react-vite-swr/schema.cstack` (`Board`/`Task` models with a relation, plus an
@@ -107,9 +113,11 @@ CI).
 
 ## Scope / known gaps
 
-- The riverpod preset doesn't support `@@paged` models yet, and `list()`'s server-side filtering
-  (`where`/structured filters) isn't wired into generated functions yet — same gaps `react-vite-swr`'s
-  README documents for the `swr` preset; this schema and app avoid/work around them the same way.
+- The riverpod preset doesn't support `@@paged` models yet — same gap `react-vite-swr`'s README
+  documents for the `swr` preset; this schema and app avoid it the same way. `list()`'s server-side
+  filtering (`where`/structured filters) **is** wired into the generated `@riverpod` providers as of
+  issue #331 (`board`/`boardList`/`task`/`taskList` all take an optional typed `query`); this app just
+  doesn't exercise it on-screen yet (see `BoardDetailScreen`'s doc comment above).
 - No login screen — a static `x-auth-id: 1` header (`app/lib/src/runtime.dart`) stands in for real
   auth, matching every other example in this repo.
 - `TaskUpdateController`/`TaskDeleteController` are single global controllers (their `save`/`delete`
@@ -147,3 +155,15 @@ CI).
    `app/test/estimate_focus_minutes_family_cache_test.dart` is a regression test proving a fresh,
    value-equal argument instance reuses the family provider's cache entry instead of restarting
    `AsyncLoading`.
+4. **The same bug class resurfaced while wiring up issue #331** (`list()`/`get()` query forwarding):
+   `CratestackListQuery`/`CratestackFetchQuery` (`rest-queries.dart.j2`) had no `operator ==`/
+   `hashCode` either — plain classes, default identity equality — which would have made
+   `boardListProvider(query: ...)` restart `AsyncLoading` on every rebuild the moment a real screen
+   passed a freshly-built query, exactly like item 3 above. Fixed with hand-rolled `operator ==`/
+   `hashCode` on both classes (not `dart_mappable`: they're small, fixed-shape, and shared by every
+   preset, including `default`, which has no `dart_mappable` dependency to reach for) —
+   `client/test/flutter_riverpod_client_test.dart`'s `boardListProvider caches by query value, not
+   identity` test is the regression proof, mirroring item 3's test. RPC's own `list` provider forwards
+   an `IMap<String, Object?>` filter/pagination bag for the same reason (a bare `Map` has the identical
+   identity-equality problem) — see `model_providers.dart.j2`'s comment and this story's PR body for
+   the full RPC design decision.

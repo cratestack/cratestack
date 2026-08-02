@@ -9,6 +9,11 @@ import 'board_detail_screen.dart';
 /// (`boardCreateControllerProvider`) — every provider read/written here
 /// comes from `client/`; this file only supplies `ConsumerWidget`/
 /// `TextEditingController` glue, no `@riverpod` annotation anywhere.
+///
+/// `boardListProvider` now takes an optional `query` (issue #331), which
+/// makes `riverpod_generator` emit it as a family — even this screen's
+/// unfiltered, default-query usage has to call it, `boardListProvider()`,
+/// rather than watch/invalidate the bare identifier.
 class BoardsScreen extends ConsumerStatefulWidget {
   const BoardsScreen({super.key});
 
@@ -40,12 +45,12 @@ class _BoardsScreenState extends ConsumerState<BoardsScreen> {
     // TypeScript `swr` preset's fixed invalidation rule) — refreshing
     // after a write is ordinary Riverpod usage (`ref.invalidate` on an
     // already-generated provider), not a hand-written provider.
-    ref.invalidate(boardListProvider);
+    ref.invalidate(boardListProvider());
   }
 
   @override
   Widget build(BuildContext context) {
-    final boards = ref.watch(boardListProvider);
+    final boards = ref.watch(boardListProvider());
     final creating = ref.watch(boardCreateControllerProvider).isLoading;
 
     return Scaffold(

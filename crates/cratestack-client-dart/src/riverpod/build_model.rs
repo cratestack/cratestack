@@ -172,12 +172,16 @@ pub(crate) fn build_model_file(
     }
     // An unpaged model's own `list()`/`listView()` return `IList<...>`
     // (see `build_riverpod_model_api`'s doc), and a list-arity relation
-    // getter does too regardless of whether this model itself is paged —
-    // only import the package when this file actually references it, per
-    // this module's "only import what's used" rule (`dart analyze
+    // getter does too regardless of whether this model itself is paged.
+    // Issue #331: the RPC `list` provider's own `input` parameter is
+    // always `IMap<String, Object?>` (see `ModelFileContext::is_rest`'s
+    // doc), so an RPC model file needs this import unconditionally too,
+    // not just when paging/relations already demanded it. Otherwise
+    // only import the package when this file actually references it,
+    // per this module's "only import what's used" rule (`dart analyze
     // --fatal-warnings` fails on an unused import).
     let has_list_relation = selection.relations.iter().any(|relation| relation.is_list);
-    if !model_api.is_paged || has_list_relation {
+    if !model_api.is_paged || has_list_relation || !is_rest {
         imports.insert(
             "import 'package:fast_immutable_collections/fast_immutable_collections.dart';"
                 .to_owned(),
@@ -204,6 +208,7 @@ pub(crate) fn build_model_file(
         model_api,
         accessor,
         operations,
+        is_rest,
     };
 
     (model_file_path(&model.name), context)

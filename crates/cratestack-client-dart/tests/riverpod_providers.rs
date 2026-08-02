@@ -58,14 +58,19 @@ fn every_model_operation_gets_a_provider_built_on_the_existing_api_provider() {
     let package = generate("tiny_rpc", "tiny_rpc_client", DartPreset::Riverpod);
     let widget = package_file(&package, "lib/src/models/widget.dart");
 
-    // Reads: functions.
+    // Reads: functions. This fixture is RPC (`tiny_rpc`) — `get` takes
+    // no query (RPC has no per-record field-selection contract), but
+    // issue #331 gives `list` an `IMap<String, Object?>? input` (not a
+    // bare `Map` — see `model_providers.dart.j2`'s own comment for why:
+    // `Map`'s identity-based `==` would reintroduce the exact
+    // family-provider caching bug this story's REST fix addresses).
     assert!(
         widget.contains("Future<Widget> widget(Ref ref, int id) {\n  return ref.watch(tinyRpcClientWidgetApiProvider).get(id);\n}"),
         "get provider missing or not built on the existing WidgetApi provider:\n{widget}"
     );
     assert!(
-        widget.contains("Future<IList<Widget>> widgetList(Ref ref) {\n  return ref.watch(tinyRpcClientWidgetApiProvider).list();\n}"),
-        "list provider missing or not built on the existing WidgetApi provider:\n{widget}"
+        widget.contains("Future<IList<Widget>> widgetList(Ref ref, {\n  IMap<String, Object?>? input,\n}) {\n  return ref.watch(tinyRpcClientWidgetApiProvider).list(input: input?.unlock ?? const <String, Object?>{});\n}"),
+        "list provider missing, or not forwarding its IMap input to the existing WidgetApi provider:\n{widget}"
     );
 
     // Writes: controllers, each reading (not watching) the same existing
@@ -233,23 +238,35 @@ fn colliding_provider_names_escalate_to_distinct_symbols() {
     let widget_list = package_file(&package, "lib/src/models/widget_list.dart");
     let procedures = package_file(&package, "lib/src/procedures.dart");
 
-    // Widget claims the naive names first (declared first in the schema).
-    assert!(widget.contains("Future<Widget> widget(Ref ref, int id)"));
-    assert!(widget.contains("Future<IList<Widget>> widgetList(Ref ref)"));
+    // Widget claims the naive names first (declared first in the
+    // schema). This fixture is REST (default transport), so issue #331
+    // gives both providers an optional typed `query` parameter — `get`
+    // takes `CratestackFetchQuery?`, `list` takes `CratestackListQuery?`
+    // — which is why `id`/`Ref ref` now sit on their own line ahead of
+    // the `{...}` optional-parameter block (`dart format`-shaped, not
+    // this test's own choice).
+    assert!(widget.contains(
+        "Future<Widget> widget(\n  Ref ref,\n  int id, {\n  CratestackFetchQuery? query,\n})"
+    ));
+    assert!(widget.contains(
+        "Future<IList<Widget>> widgetList(Ref ref, {\n  CratestackListQuery? query,\n})"
+    ));
     assert!(widget.contains("class WidgetCreateController extends _$WidgetCreateController {"));
 
     // WidgetList's own `get` provider wanted the name `widgetList` too —
     // already taken, so it must have escalated to something else, and
     // that something else must actually appear as a real symbol (not
-    // just "not the naive name").
+    // just "not the naive name") — still forwarding its own `query`.
     assert!(
-        !widget_list.contains("Future<WidgetList> widgetList(Ref ref, int id)"),
+        !widget_list.contains("Future<WidgetList> widgetList(\n  Ref ref,\n  int id, {"),
         "WidgetList's get provider should not have kept the colliding name:\n{widget_list}"
     );
     assert!(
         widget_list.contains("Future<WidgetList>")
-            && widget_list.contains("(Ref ref, int id) {\n  return ref.watch(dartVerifyRiverpodCollisionWidgetListApiProvider).get(id);\n}"),
-        "WidgetList's get provider should still exist under an escalated name:\n{widget_list}"
+            && widget_list.contains(
+                "  Ref ref,\n  int id, {\n  CratestackFetchQuery? query,\n}) {\n  return ref.watch(dartVerifyRiverpodCollisionWidgetListApiProvider).get(id, query: query);\n}"
+            ),
+        "WidgetList's get provider should still exist under an escalated name, still forwarding query:\n{widget_list}"
     );
 
     // The `widgetCreate` mutation procedure wanted `WidgetCreateController`
@@ -340,7 +357,11 @@ fn override_proof_test_file_watches_the_existing_adapter_provider_and_the_new_li
     let test_file = package_file(&package, "test/tiny_rpc_client_test.dart");
 
     assert!(test_file.contains("tinyRpcClientAdapterProvider.overrideWithValue(fakeAdapter)"));
-    assert!(test_file.contains("container.read(widgetListProvider.future)"));
+    // Issue #331: `widgetListProvider` now always takes an optional
+    // `input`, so `riverpod_generator` emits it as a family — even the
+    // zero-argument default has to be called (`widgetListProvider()`),
+    // not read bare.
+    assert!(test_file.contains("container.read(widgetListProvider().future)"));
     assert!(test_file.contains("class _FakeRpcAdapter implements CratestackRpcAdapter"));
 }
 

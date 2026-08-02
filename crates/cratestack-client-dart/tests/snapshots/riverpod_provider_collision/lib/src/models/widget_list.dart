@@ -258,14 +258,30 @@ final dartVerifyRiverpodCollisionWidgetListApiProvider = Provider<WidgetListApi>
 // `dartVerifyRiverpodCollisionAdapterProvider` alone (the pre-existing Dio
 // override point) is enough to change what every provider below does.
 
+// Issue #331: `query` forwards straight to the underlying `XApi`
+// method's own `CratestackFetchQuery?`/`CratestackListQuery?` parameter
+// — the same fully-featured filter/pagination/sort/field-selection
+// builder `rest-queries.dart.j2` already gives the plain, non-Riverpod
+// client. Both query classes carry hand-rolled `operator ==`/
+// `hashCode` (see `rest-queries.dart.j2`'s own comment) specifically so
+// this works as a `@riverpod` family argument: a freshly-constructed
+// query with the same values as a previous one must be `==` to it, or
+// Riverpod's family cache never dedupes and the provider restarts
+// `AsyncLoading` on every rebuild.
 @riverpod
-Future<WidgetList> dartVerifyRiverpodCollisionWidgetList(Ref ref, int id) {
-  return ref.watch(dartVerifyRiverpodCollisionWidgetListApiProvider).get(id);
+Future<WidgetList> dartVerifyRiverpodCollisionWidgetList(
+  Ref ref,
+  int id, {
+  CratestackFetchQuery? query,
+}) {
+  return ref.watch(dartVerifyRiverpodCollisionWidgetListApiProvider).get(id, query: query);
 }
 
 @riverpod
-Future<IList<WidgetList>> widgetListList(Ref ref) {
-  return ref.watch(dartVerifyRiverpodCollisionWidgetListApiProvider).list();
+Future<IList<WidgetList>> widgetListList(Ref ref, {
+  CratestackListQuery? query,
+}) {
+  return ref.watch(dartVerifyRiverpodCollisionWidgetListApiProvider).list(query: query);
 }
 
 // Writes are controllers, not `FutureProvider`s: a mutation isn't a value

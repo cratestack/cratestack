@@ -85,6 +85,56 @@ CratestackListQuery cratestackMergeFetchIntoListQuery(
   );
 }
 
+/// Deep, order-sensitive equality for the `List<String>` fields
+/// `CratestackListQuery`/`CratestackFetchQuery` carry — Dart's default
+/// `List.==` is identity-based, which is exactly the bug these two
+/// classes must not have: without real value equality, a
+/// freshly-constructed query with the same values as a previous one is
+/// never `==` to it, so a `@riverpod` family provider (riverpod preset)
+/// taking one as an argument never dedupes and restarts `AsyncLoading`
+/// on every rebuild — the same failure mode issue #325 fixed for
+/// generated data classes via `dart_mappable`. Hand-rolled here instead
+/// of pulling in a package: these two classes are small, fixed-shape,
+/// and shared by every preset (including `default`, which has no
+/// `dart_mappable`/`collection` dependency to reach for).
+bool _cratestackListEquals(List<String> a, List<String> b) {
+  if (identical(a, b)) return true;
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
+
+int _cratestackListHash(List<String> list) => Object.hashAll(list);
+
+bool _cratestackMapEquals<V>(
+  Map<String, V> a,
+  Map<String, V> b, {
+  bool Function(V left, V right)? valueEquals,
+}) {
+  if (identical(a, b)) return true;
+  if (a.length != b.length) return false;
+  final equals = valueEquals ?? (V left, V right) => left == right;
+  for (final entry in a.entries) {
+    if (!b.containsKey(entry.key)) return false;
+    if (!equals(entry.value, b[entry.key] as V)) return false;
+  }
+  return true;
+}
+
+int _cratestackMapHash<V>(
+  Map<String, V> map, {
+  int Function(V value)? valueHash,
+}) {
+  final hash = valueHash ?? (V value) => value.hashCode;
+  var result = 0;
+  for (final entry in map.entries) {
+    result ^= Object.hash(entry.key, hash(entry.value));
+  }
+  return result;
+}
+
 class CratestackListQuery {
   const CratestackListQuery({
     this.fields = const <String>[],
@@ -133,6 +183,40 @@ class CratestackListQuery {
     if (orFilters.isNotEmpty) query['or'] = orFilters.join('|');
     return query;
   }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is CratestackListQuery &&
+        _cratestackListEquals(fields, other.fields) &&
+        _cratestackListEquals(include, other.include) &&
+        _cratestackMapEquals<List<String>>(
+          includeFields,
+          other.includeFields,
+          valueEquals: _cratestackListEquals,
+        ) &&
+        limit == other.limit &&
+        offset == other.offset &&
+        sort == other.sort &&
+        orderBy == other.orderBy &&
+        where == other.where &&
+        _cratestackListEquals(orFilters, other.orFilters) &&
+        _cratestackMapEquals<String>(filters, other.filters);
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        _cratestackListHash(fields),
+        _cratestackListHash(include),
+        _cratestackMapHash<List<String>>(includeFields, valueHash: _cratestackListHash),
+        limit,
+        offset,
+        sort,
+        orderBy,
+        where,
+        _cratestackListHash(orFilters),
+        _cratestackMapHash<String>(filters),
+      );
 }
 
 class CratestackFetchQuery {
@@ -160,6 +244,26 @@ class CratestackFetchQuery {
     }
     return query;
   }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is CratestackFetchQuery &&
+        _cratestackListEquals(fields, other.fields) &&
+        _cratestackListEquals(include, other.include) &&
+        _cratestackMapEquals<List<String>>(
+          includeFields,
+          other.includeFields,
+          valueEquals: _cratestackListEquals,
+        );
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        _cratestackListHash(fields),
+        _cratestackListHash(include),
+        _cratestackMapHash<List<String>>(includeFields, valueHash: _cratestackListHash),
+      );
 }
 
 {% for selection in selection_models %}

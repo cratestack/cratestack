@@ -38,6 +38,21 @@ pub(crate) struct ModelFileContext {
     /// `accessor`/`model_api` — see `crate::riverpod::provider_naming`'s
     /// module doc for the naming/collision rule.
     pub(crate) operations: ModelOperationsView,
+    /// Issue #331: `model_providers.dart.j2` is `{% include %}`d
+    /// verbatim from both `rest_model.dart.j2` and `rpc_model.dart.j2`
+    /// (see `build_model_file`'s `is_rest` parameter) — REST's `get`/
+    /// `list` providers forward a typed `CratestackFetchQuery`/
+    /// `CratestackListQuery` (already imported unconditionally on the
+    /// REST path via `../queries.dart`), RPC's `list` provider forwards
+    /// an `IMap<String, Object?>` filter/pagination bag instead (no
+    /// RPC-side typed query builder exists — see this story's PR body
+    /// for why `IMap`, not a bare `Map`: the same missing-value-equality
+    /// bug this story's REST fix addresses on `CratestackListQuery`
+    /// would otherwise reappear on the RPC `list` provider's own family
+    /// argument). One shared template with this flag, not two forked
+    /// templates, since every other line (the five providers' shapes,
+    /// the write controllers) is identical either way.
+    pub(crate) is_rest: bool,
 }
 
 /// Collision-checked identifiers (`crate::riverpod::provider_naming`) for

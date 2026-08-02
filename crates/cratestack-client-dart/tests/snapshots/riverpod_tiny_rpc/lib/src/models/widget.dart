@@ -242,9 +242,22 @@ Future<Widget> widget(Ref ref, int id) {
   return ref.watch(tinyRpcClientWidgetApiProvider).get(id);
 }
 
+// Issue #331: RPC transport has no typed query-builder class (unlike
+// REST's `CratestackListQuery` — see this story's PR body for the
+// explicit, documented decision). `WidgetApi.list()` itself still
+// takes a bare `Map<String, Object?> input` (unchanged, `rpc_model.dart.j2`), but
+// this provider's own parameter is `IMap<String, Object?>` — not
+// `Map<String, Object?>` — because `Map`'s default `==` is
+// identity-based (the exact caching bug just described for REST's
+// `query` param above would reappear here otherwise); `IMap`
+// (`fast_immutable_collections`, already a riverpod-preset dependency)
+// has real value equality, so a `@riverpod` family lookup with a
+// freshly-built-but-equal input actually dedupes.
 @riverpod
-Future<IList<Widget>> widgetList(Ref ref) {
-  return ref.watch(tinyRpcClientWidgetApiProvider).list();
+Future<IList<Widget>> widgetList(Ref ref, {
+  IMap<String, Object?>? input,
+}) {
+  return ref.watch(tinyRpcClientWidgetApiProvider).list(input: input?.unlock ?? const <String, Object?>{});
 }
 
 // Writes are controllers, not `FutureProvider`s: a mutation isn't a value

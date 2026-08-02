@@ -15,7 +15,16 @@ const _minutesPerTask = 25;
 /// this board" filter wired up yet — the same known preset gap
 /// `react-vite-swr/README.md` documents for its TypeScript sibling — so
 /// this reads the full task list (still 100% generated) and filters
-/// client-side, exactly like `BoardDetailScreen.tsx` does.
+/// client-side, exactly like `BoardDetailScreen.tsx` does. It could
+/// filter server-side via `taskListProvider(query: CratestackListQuery(where: ...))`
+/// (issue #331) instead — left as client-side filtering here to keep
+/// this diff scoped to the call-syntax change the new optional `query`
+/// parameter forces (see below), not a rewrite of this demo's data flow.
+///
+/// `taskListProvider` now takes an optional `query` (issue #331), which
+/// makes `riverpod_generator` emit it as a family — even this screen's
+/// unfiltered, default-query usage has to call it, `taskListProvider()`,
+/// rather than watch/invalidate the bare identifier.
 ///
 /// Every provider read/written here comes from `client/`: `board(id)`,
 /// `taskList`, `TaskCreateController`, `TaskUpdateController`,
@@ -51,7 +60,7 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
           ),
         );
     _titleController.clear();
-    ref.invalidate(taskListProvider);
+    ref.invalidate(taskListProvider());
   }
 
   Future<void> _toggleDone(Task task) async {
@@ -65,18 +74,18 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
           task.id!,
           UpdateTaskInput(done: !(task.done ?? false)),
         );
-    ref.invalidate(taskListProvider);
+    ref.invalidate(taskListProvider());
   }
 
   Future<void> _deleteTask(Task task) async {
     await ref.read(taskDeleteControllerProvider.notifier).delete(task.id!);
-    ref.invalidate(taskListProvider);
+    ref.invalidate(taskListProvider());
   }
 
   @override
   Widget build(BuildContext context) {
     final board = ref.watch(boardProvider(widget.boardId));
-    final allTasks = ref.watch(taskListProvider);
+    final allTasks = ref.watch(taskListProvider());
     final creating = ref.watch(taskCreateControllerProvider).isLoading;
     // Real bug found running this app against a live server (issue #303):
     // `TaskUpdateController`/`TaskDeleteController` are `@riverpod`

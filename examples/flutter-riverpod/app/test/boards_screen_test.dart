@@ -30,7 +30,7 @@ class _FakeAdapter implements CratestackClientAdapter {
       // Stateful, not a static fixture: a create below must actually
       // show up on the next list call, the same way a real server
       // would, or this test would prove nothing about the generated
-      // `ref.invalidate(boardListProvider)` refresh actually working.
+      // `ref.invalidate(boardListProvider())` refresh actually working.
       return List<Object?>.of(_boards);
     }
     if (request.method == 'POST' && request.path == '/api/boards') {
