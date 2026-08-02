@@ -193,6 +193,15 @@ fn generated_rest_runtime_satisfies_exact_optional_property_types() {
          type-check under exactOptionalPropertyTypes, since the source config types \
          (CratestackRequestConfig etc.) are themselves optional-without-undefined:\n{runtime}"
     );
+    assert!(
+        runtime.contains("export const SCHEMA_SHA256: string ="),
+        "SCHEMA_SHA256 must be explicitly widened to `string` — otherwise TS infers the \
+         literal type of whatever hash was baked in at generation time, and comparing a \
+         non-empty literal against \"\" in request() fails to type-check (verified with \
+         a real `tsc --noEmit` run against a schema with a real, non-empty schema_sha256 — \
+         this snapshot's SNAPSHOT_SCHEMA_SHA256 fixture value happens to be exactly that \
+         case):\n{runtime}"
+    );
 }
 
 #[test]
@@ -275,9 +284,9 @@ fn schema_sha256_header_is_baked_into_rest_and_rpc_runtimes() {
     let rest_runtime = package_file(&rest, "src/runtime.ts");
     assert!(
         rest_runtime.contains(&format!(
-            "export const SCHEMA_SHA256 = \"{SNAPSHOT_SCHEMA_SHA256}\";"
+            "export const SCHEMA_SHA256: string = \"{SNAPSHOT_SCHEMA_SHA256}\";"
         )),
-        "REST runtime must bake the configured schema SHA-256:\n{rest_runtime}"
+        "REST runtime must bake the configured schema SHA-256, widened to `string`:\n{rest_runtime}"
     );
     assert!(
         rest_runtime.contains("headers.set(SCHEMA_SHA_HEADER, SCHEMA_SHA256);"),
@@ -310,7 +319,7 @@ fn empty_schema_sha256_bakes_an_empty_constant_that_omits_the_header_at_runtime(
     let package = generate_for_with_schema_sha("tiny_rest", "tiny-rest-client", "");
     let runtime = package_file(&package, "src/runtime.ts");
     assert!(
-        runtime.contains("export const SCHEMA_SHA256 = \"\";"),
+        runtime.contains("export const SCHEMA_SHA256: string = \"\";"),
         "an unconfigured schema_sha256 must bake an empty SCHEMA_SHA256 constant:\n{runtime}"
     );
     assert!(
