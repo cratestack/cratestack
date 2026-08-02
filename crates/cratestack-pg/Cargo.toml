@@ -34,8 +34,13 @@ default = ["postgres", "decimal-rust-decimal", "codec-json"]
 # { provider = "none" }` schemas can never declare a `model`, so nothing
 # generated under `db = None` ever references the sqlx-backed symbols this
 # feature gates — see `crates/cratestack-macros/src/include/server.rs` and
-# `include/server/runtime/none.rs`.
-postgres = ["dep:cratestack-sqlx"]
+# `include/server/runtime/none.rs`. Also forwards `cratestack-macros`'s own
+# `postgres` feature (cratestack#347), which
+# `datasource_guard::guard_server_postgres_backend` checks before emitting
+# any sqlx-flavored codegen — this crate has it on by default (via this very
+# line), so nothing changes here; the guard exists to give a clear
+# `compile_error!` under facades that don't, like `cratestack-api`.
+postgres = ["dep:cratestack-sqlx", "cratestack-macros/postgres"]
 # `cratestack-sqlx?/...` (weak-dependency syntax, not plain `cratestack-sqlx/...`)
 # is required here: a plain `pkg/feature` edge unconditionally activates the
 # optional `cratestack-sqlx` dependency as a side effect, which would defeat

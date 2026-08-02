@@ -3,7 +3,7 @@
 **Rust-native, schema-first framework for typed HTTP APIs, generated clients, and backend services.** Write one `.cstack` schema; the framework emits the server, the embedded SQLite slice, and the typed Rust / Dart / TypeScript clients from the same source of truth.
 
 > This crate is a **documentation-only landing page** for the framework. It exports no items.
-> Depend on one of the two facade crates below depending on what you're building.
+> Depend on one of the facade crates below depending on what you're building.
 
 ## Pick a facade
 
@@ -13,15 +13,21 @@
 # owns its own database.
 cratestack = { package = "cratestack-pg", version = "0.4" }
 
+# Procedures-only, no-database backend service — Axum HTTP bindings +
+# generated Rust client runtime, with `sqlx` genuinely absent from the
+# dependency graph. The shape you want for a pure RPC/REST facade, a
+# stateless computation endpoint, or a gateway with no persisted models.
+cratestack = { package = "cratestack-api", version = "0.6" }
+
 # Embedded — rusqlite-backed SQLite on native (mobile, desktop) and
 # wasm32-unknown-unknown (browser, OPFS-backed). The shape you want
 # for an on-device storage layer that ships with a host app.
 cratestack = { package = "cratestack-sqlite", version = "0.4" }
 ```
 
-The two facades are **strictly disjoint by design**. `cratestack-pg` does not pull in `libsqlite3-sys`, so backend services can keep depending on the official `sqlx` umbrella alongside it without `links = "sqlite3"` conflicts. `cratestack-sqlite` does not pull in `sqlx` or `axum`, so the embedded slice compiles to wasm without forcing every consumer onto a tokio-net dep graph.
+The three facades are **strictly disjoint by design** — no shared "backend" trait between them. `cratestack-pg` does not pull in `libsqlite3-sys`, so backend services can keep depending on the official `sqlx` umbrella alongside it without `links = "sqlite3"` conflicts. `cratestack-api` never depends on `cratestack-sqlx` at all (see [`docs/design/no-database-mode.md`](https://github.com/cratestack/cratestack/blob/main/docs/design/no-database-mode.md) §7) — pick it for `db = None` schemas instead of `cratestack-pg` with `default-features = false` (which still works, and isn't going away). `cratestack-sqlite` does not pull in `sqlx` or `axum`, so the embedded slice compiles to wasm without forcing every consumer onto a tokio-net dep graph.
 
-Both crates expose their library as `cratestack` (the schema macros emit `::cratestack::*` paths), so the rename via Cargo's `package =` field is invisible inside your code.
+All three crates expose their library as `cratestack` (the schema macros emit `::cratestack::*` paths), so the rename via Cargo's `package =` field is invisible inside your code.
 
 ## What you get from one `.cstack` file
 

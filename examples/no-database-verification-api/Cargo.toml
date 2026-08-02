@@ -1,0 +1,23 @@
+[workspace]
+# Deliberately its own workspace root — see the description below and this
+# crate's entry in the parent repo's `[workspace] exclude` list. Mirrors
+# `examples/no-database-verification` (cratestack#329) exactly, but proves
+# the same absence for `cratestack-api` (cratestack#347) instead of
+# `cratestack-pg` with `default-features = false`.
+
+[package]
+name = "no-database-verification-api"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Standalone crate (cratestack#347) that is NOT a workspace member on purpose — it exists to prove, with a real `cargo tree`, that `sqlx`/`cratestack-sqlx` are absent from a `cratestack-api` consumer's dependency graph. Unlike `examples/no-database-verification` (cratestack#329, which proves absence-by-default and presence-behind-a-feature for `cratestack-pg`), there is no feature to toggle here: `cratestack-api` never depends on `cratestack-sqlx` under any feature, so this crate only has one state to prove. See this crate's README and the parent PR's Verification section for the exact commands and their output."
+
+[dependencies]
+cratestack = { package = "cratestack-api", path = "../../crates/cratestack-api" }
+cratestack-codec-json = { path = "../../crates/cratestack-codec-json" }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[dev-dependencies]
+serde_json = "1"
+tower = { version = "0.5", default-features = false, features = ["util"] }

@@ -1,0 +1,21 @@
+// cratestack#347 verification fixture: a genuinely procedures-only,
+// `datasource { provider = "none" }` schema. No `model` blocks — the parser
+// rejects them under `provider = "none"` (cratestack#327). Same shape as
+// `examples/no-database-verification/schema.cstack` (cratestack#329's own
+// proof fixture) — this crate proves the same absence for `cratestack-api`
+// instead of `cratestack-pg` with `default-features = false`.
+
+datasource db {
+  provider = "none"
+}
+
+type PingArgs {
+  message String
+}
+
+type PingReply {
+  echo String
+}
+
+procedure ping(args: PingArgs): PingReply
+  @allow(auth() != null)

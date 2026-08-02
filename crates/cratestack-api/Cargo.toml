@@ -1,0 +1,61 @@
+[package]
+name = "cratestack-api"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "CrateStack server facade for procedures-only, no-database services — Axum HTTP bindings, generated Rust client runtime, and the shared schema/parser/policy/SQL surface, with `cratestack-sqlx` genuinely absent from the dependency graph. Pick this crate via `cratestack = { package = \"cratestack-api\" }` for `db = None` servers; pick `cratestack-pg` instead the moment a schema needs even one `model`."
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+# Same `[lib]` rename trick as `cratestack-pg`/`cratestack-sqlite`: package is
+# `cratestack-api` on crates.io, but the library is named `cratestack` so
+# integration tests resolve `::cratestack::*` paths (which the schema macros
+# emit) without per-file aliasing. External consumers depend on the package
+# as `cratestack = { package = "cratestack-api" }`.
+[lib]
+name = "cratestack"
+path = "src/lib.rs"
+
+[features]
+default = ["decimal-rust-decimal", "codec-json"]
+# Unlike `cratestack-pg`, there is no `postgres` feature here to gate: this
+# crate structurally never depends on `cratestack-sqlx` (see `Cargo.toml`'s
+# `[dependencies]` below and `src/lib.rs`'s doc comment), so these two
+# features only ever need to forward to `cratestack-core` — there is no
+# sqlx-backed half to conditionally re-add.
+decimal-rust-decimal = ["cratestack-core/decimal-rust-decimal"]
+decimal-bigdecimal = ["cratestack-core/decimal-bigdecimal"]
+# Forwards the JSON codec to the generated client runtime. See
+# `cratestack-pg` for rationale. On by default so `include_client_schema!`
+# keeps offering both CBOR and JSON.
+codec-json = ["cratestack-client-rust/codec-json"]
+
+[dependencies]
+async-stream.workspace = true
+chrono.workspace = true
+cratestack-axum.workspace = true
+cratestack-client-rust.workspace = true
+cratestack-core.workspace = true
+cratestack-macros.workspace = true
+cratestack-parser.workspace = true
+cratestack-policy.workspace = true
+cratestack-sql.workspace = true
+futures-util.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+cratestack-codec-cbor.workspace = true
+cratestack-codec-json.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tower.workspace = true
+tracing-subscriber.workspace = true

@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "crates/cratestack",
+    "crates/cratestack-api",
     "crates/cratestack-axum",
     "crates/cratestack-cbor-napi",
     "crates/cratestack-cbor-wasm",
@@ -72,6 +73,11 @@ exclude = [
     # `Cargo.toml`. Run its `cargo tree` checks from inside its own
     # directory (a standalone workspace root) instead of via `-p` here.
     "examples/no-database-verification",
+    # cratestack#347: same reasoning as `examples/no-database-verification`
+    # directly above, but proving `sqlx` absence for a `cratestack-api`
+    # consumer instead of a `cratestack-pg` with `default-features = false`
+    # one.
+    "examples/no-database-verification-api",
 ]
 
 [workspace.package]
@@ -100,6 +106,7 @@ minicbor = "2.2.1"
 minicbor-serde = { version = "0.6.2", features = ["std"] }
 chrono = { version = "0", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
+cratestack-api = { path = "crates/cratestack-api", version = "0.6.4" }
 cratestack-axum = { path = "crates/cratestack-axum", version = "0.6.4" }
 cratestack-client-dart = { path = "crates/cratestack-client-dart", version = "0.6.4" }
 cratestack-client-flutter = { path = "crates/cratestack-client-flutter", version = "0.6.4" }

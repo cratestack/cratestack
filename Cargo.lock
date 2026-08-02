@@ -1015,6 +1015,32 @@ name = "cratestack"
 version = "0.6.4"
 
 [[package]]
+name = "cratestack-api"
+version = "0.6.4"
+dependencies = [
+ "async-stream",
+ "chrono",
+ "cratestack-axum",
+ "cratestack-client-rust",
+ "cratestack-codec-cbor",
+ "cratestack-codec-json",
+ "cratestack-core",
+ "cratestack-macros",
+ "cratestack-parser",
+ "cratestack-policy",
+ "cratestack-sql",
+ "futures-util",
+ "regex",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "cratestack-axum"
 version = "0.6.4"
 dependencies = [
@@ -5180,9 +5206,9 @@ dependencies = [
 name = "rpc-batch-debounce-example"
 version = "0.1.0"
 dependencies = [
+ "cratestack-api",
  "cratestack-codec-cbor",
  "cratestack-codec-json",
- "cratestack-pg",
  "serde",
  "serde_json",
  "tokio",
@@ -5193,9 +5219,9 @@ dependencies = [
 name = "rpc-batch-example"
 version = "0.1.0"
 dependencies = [
+ "cratestack-api",
  "cratestack-codec-cbor",
  "cratestack-codec-json",
- "cratestack-pg",
  "serde",
  "serde_json",
  "tokio",
@@ -5206,9 +5232,9 @@ dependencies = [
 name = "rpc-procedures-example"
 version = "0.1.0"
 dependencies = [
+ "cratestack-api",
  "cratestack-codec-cbor",
  "cratestack-codec-json",
- "cratestack-pg",
  "serde",
  "serde_json",
  "tokio",
@@ -5236,10 +5262,10 @@ name = "rpc-streaming-example"
 version = "0.1.0"
 dependencies = [
  "async-stream",
+ "cratestack-api",
  "cratestack-client-rust",
  "cratestack-codec-cbor",
  "cratestack-codec-json",
- "cratestack-pg",
  "minicbor-serde",
  "reqwest 0.12.28",
  "serde",

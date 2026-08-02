@@ -28,6 +28,9 @@ pub(super) fn compose_server_schema(schema_path: &LitStr, db: ServerDb) -> Token
     {
         return error;
     }
+    if let Err(error) = super::datasource_guard::guard_server_postgres_backend(schema_path, db) {
+        return error;
+    }
     if let Err(error) = super::reject_grpc::guard_server_grpc_transport(schema_path, &schema) {
         return error;
     }

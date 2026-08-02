@@ -2,12 +2,14 @@
 
 Status: **implemented** across three stories under epic #326 ("No-database
 procedures-only server mode"): #327 (parser/semantic-checker support),
-#328 (macro codegen — `db = None`), #329 (this doc — Cargo-feature-gating
-`sqlx` out of the dependency graph, migrating this repo's own examples off
-the `connect_lazy` workaround).
+#328 (macro codegen — `db = None`), #329 (Cargo-feature-gating `sqlx` out of
+the dependency graph, migrating this repo's own examples off the
+`connect_lazy` workaround), plus a direct follow-up, #347 (a dedicated
+`cratestack-api` facade crate — see §7).
 Scope: `cratestack-parser` grammar/semantic checks, `cratestack-macros`
-`include_server_schema!` codegen, `cratestack-pg`'s Cargo feature surface.
-Tracking: epic #326; stories #327, #328, #329.
+`include_server_schema!` codegen, `cratestack-pg`'s Cargo feature surface,
+`cratestack-api`'s Cargo dependency surface.
+Tracking: epic #326; stories #327, #328, #329, #347.
 
 ## 1. The idea
 
@@ -136,13 +138,12 @@ example even though it works correctly for an external consumer).
 
 `examples/rpc-procedures`, `rpc-batch`, `rpc-streaming`, and
 `rpc-batch-debounce` are genuinely procedures-only (verified: zero `model`
-blocks in any of their schemas) and are migrated to `datasource { provider
-= "none" }` + `db = None` + `default-features = false` on their `cratestack`
-dependency. `examples/microservice-pair` keeps `db = Postgres` deliberately
-— its `orders.cstack` schema owns a real `Order` model; the `connect_lazy`
-call in that example is confined to its own `router_builds_offline` test
-(an offline router-construction smoke test), not a stand-in for the whole
-service being database-free.
+blocks in any of their schemas) and depend on `cratestack-api` (§7) — the
+first-class no-database facade. `examples/microservice-pair` keeps
+`db = Postgres` deliberately — its `orders.cstack` schema owns a real
+`Order` model; the `connect_lazy` call in that example is confined to its
+own `router_builds_offline` test (an offline router-construction smoke
+test), not a stand-in for the whole service being database-free.
 
 ## 6. When to use `db = None`
 
@@ -153,3 +154,60 @@ even one persisted model, it needs `db = Postgres` (or, for embedded/wasm
 targets, `include_embedded_schema!`'s rusqlite backend) — `db = None` is
 not a "start here and add models later" default; adding a model to a
 `provider = "none"` schema is a parse error by design (§2).
+
+## 7. `cratestack-api` — a facade named for what it is (#347)
+
+§4 closed the `sqlx` dependency-graph gap with a Cargo feature: a `db =
+None`-only consumer depends on `cratestack-pg` (the crate literally named
+for the Postgres backend) with `default-features = false` to turn that
+backend off. That works, but it reads backwards — a service that, by
+definition, never touches Postgres shouldn't have to depend on a crate
+named "pg" and then switch the pg part off to prove it.
+
+`cratestack-api` (`crates/cratestack-api`) is a **third facade**, following
+the exact structural pattern `cratestack-pg`/`cratestack-sqlite` already
+established: its own `Cargo.toml`, its own `[lib] name = "cratestack"`
+rename trick, its own `src/lib.rs` re-exporting the shared schema / parser
+/ policy / SQL surface plus `cratestack-axum` and `cratestack-client-rust`.
+It is not a thin wrapper around `cratestack-pg` — there is no shared
+"backend" trait between any of the three facades, by the same deliberate
+choice documented in `cratestack-pg`/`cratestack-sqlite`'s own doc comments.
+
+The difference from `cratestack-pg` is structural, not a feature flag:
+`cratestack-api`'s `Cargo.toml` has no `cratestack-sqlx` entry in
+`[dependencies]` at all, optional or otherwise, and no `postgres` feature to
+gate one. Since `datasource { provider = "none" }` schemas can never
+declare a `model` (§2), and `db = Postgres` codegen is the only path that
+ever references sqlx-backed symbols, a facade that structurally never has
+`cratestack-sqlx` available can only ever support `db = None` — which is
+exactly this crate's scope, not a limitation to work around. A schema
+compiled with `include_server_schema!(schema, db = Postgres)` under
+`cratestack-api` fails to compile with a single clear `compile_error!`
+(`cratestack-macros`' `guard_server_postgres_backend`, mirroring the
+existing `guard_server_grpc_transport`/`cfg!(feature = "grpc")` mechanism)
+instead of a wall of unrelated "cannot find `sqlx`/`SqlxRuntime` in
+`cratestack`" resolution errors. `cratestack-api` also omits
+`cratestack-grpc`/`prost`: `transport grpc` codegen is entirely
+model-driven, so it could only ever produce a zero-method service under
+`db = None` — there is nothing for gRPC to add here.
+
+**Both entry points are supported and neither is deprecated:**
+
+```toml
+# Recommended for new `db = None` services — named for what it is.
+cratestack = { package = "cratestack-api", version = "0.6" }
+```
+
+```toml
+# Still works, unchanged, for existing consumers of this pattern (#329).
+cratestack = { package = "cratestack-pg", version = "0.6", default-features = false }
+```
+
+Pick `cratestack-api` for a new procedures-only service. If a project
+already depends on `cratestack-pg` with `default-features = false`, there is
+no requirement to migrate — nothing about that pattern changes or is
+scheduled for removal. This repo's own four procedures-only examples
+(`rpc-procedures`, `rpc-batch`, `rpc-streaming`, `rpc-batch-debounce`) have
+migrated to `cratestack-api` (§5); see `crates/cratestack-api/README.md` and
+`examples/no-database-verification-api` for the crate's own docs and
+dependency-graph proof.

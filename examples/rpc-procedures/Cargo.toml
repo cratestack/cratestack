@@ -10,11 +10,12 @@ name = "rpc-procedures-server"
 path = "src/main.rs"
 
 [dependencies]
-# `default-features = false` drops the `postgres` feature (cratestack#329),
-# so `sqlx`/`cratestack-sqlx` are not compiled into this example at all —
-# this schema is `db = None` and never needed them. Verified with
-# `examples/no-database-verification`'s `cargo tree` check.
-cratestack = { package = "cratestack-pg", path = "../../crates/cratestack-pg", default-features = false }
+# `cratestack-api` (cratestack#347) is the first-class no-database facade —
+# `sqlx`/`cratestack-sqlx` are not a dependency of this crate at all, under
+# any feature, so there's nothing to opt out of. This schema is `db = None`
+# and never needed them. Verified with
+# `examples/no-database-verification-api`'s `cargo tree` check.
+cratestack = { package = "cratestack-api", path = "../../crates/cratestack-api" }
 cratestack-codec-cbor = { path = "../../crates/cratestack-codec-cbor" }
 cratestack-codec-json = { path = "../../crates/cratestack-codec-json" }
 serde = { workspace = true }

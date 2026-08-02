@@ -26,6 +26,16 @@ proc-macro = true
 # mirrors. Off by default — a plain `cargo check --workspace` never touches
 # this path.
 grpc = []
+# Marks whether the facade crate being compiled into has `cratestack-sqlx`
+# available at all — see
+# `crates/cratestack-macros/src/include/datasource_guard.rs`'s
+# `guard_server_postgres_backend` (cratestack#347). Same `cfg!(feature =
+# "postgres")`-against-this-crate's-own-feature-set mechanism as `grpc`
+# above. Forwarded from `cratestack-pg`'s own (default-on) `postgres`
+# feature; `cratestack-api` never forwards it, so `db = Postgres` under that
+# facade fails this guard with a clear `compile_error!` instead of a wall of
+# unrelated "cannot find `sqlx`/`SqlxRuntime` in `cratestack`" errors.
+postgres = []
 
 [dependencies]
 cratestack-core.workspace = true

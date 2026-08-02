@@ -1,0 +1,19 @@
+// cratestack#347: this crate's own `db = None` fixture, mirroring
+// `crates/cratestack-pg/tests/fixtures/no_database_procedures.cstack`
+// (cratestack#328's proof fixture) — no `model` blocks are allowed under
+// `datasource { provider = "none" }` (the parser rejects them, cratestack#327).
+
+datasource db {
+  provider = "none"
+}
+
+type PingArgs {
+  message String
+}
+
+type PingReply {
+  echo String
+}
+
+procedure ping(args: PingArgs): PingReply
+  @allow(auth() != null)
