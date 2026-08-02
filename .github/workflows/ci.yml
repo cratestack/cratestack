@@ -368,3 +368,64 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build, test, lint @cratestack/cbor-web
         run: pnpm turbo run build test lint --filter='./packages/cratestack-cbor-web'
+
+  # ---- react-vite-swr example (generated `swr`-preset client) -----------
+  # Blocking. Issue #306 (epic #298's last story): the example under
+  # examples/react-vite-swr is NOT part of the `packages/*` pnpm workspace
+  # (see the `js` job's own comment on why examples/* is scoped out) — it's
+  # its own two-package pnpm workspace (`client/` + `web/`, via its own
+  # pnpm-workspace.yaml, mirroring react-nextjs-daisyui's napi+web split).
+  # Gets its own toolchain setup (Rust, for the drift check against the
+  # real generator + the example server's offline test) rather than
+  # folding into `js` above.
+  #
+  # Covered here: the checked-in `client/` matches the real
+  # `cratestack generate-typescript --preset swr` output (`--check`, so it
+  # can't silently drift), the example server crate builds and its offline
+  # test passes, and both the generated client and the web app typecheck,
+  # with the web app additionally linted.
+  #
+  # NOT covered here (deliberately, cost-consciously — this repo's own
+  # `dart-verify` job takes the same generate-and-typecheck-only approach
+  # rather than actually running the generated app): a real Postgres-
+  # backed run of the server (the example's
+  # `crud_and_procedure_round_trip_over_http` test skips silently here,
+  # same as every other `CRATESTACK_TEST_DATABASE_URL`-gated test outside
+  # `tests-db`/`just test-pg`) and driving the React app in a real browser
+  # to observe mutation invalidation — both were run manually against a
+  # real Postgres instance; see the PR description for what was run and
+  # observed.
+  react-vite-swr-example:
+    name: js (react-vite-swr example)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Assert the committed generated client matches the real generator
+        run: |
+          cargo run -p cratestack-cli -- generate-typescript \
+            --schema examples/react-vite-swr/schema.cstack \
+            --out examples/react-vite-swr/client \
+            --preset swr \
+            --package-name react-vite-swr-client \
+            --check
+      - name: cargo test (offline — the DB-gated test skips cleanly without CRATESTACK_TEST_DATABASE_URL)
+        run: cargo test -p react-vite-swr-example
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: examples/react-vite-swr/pnpm-lock.yaml
+      - name: pnpm install
+        working-directory: examples/react-vite-swr
+        run: pnpm install --frozen-lockfile
+      - name: Build the generated client (typechecks client/ for real)
+        working-directory: examples/react-vite-swr
+        run: pnpm --filter react-vite-swr-client run build
+      - name: Typecheck + lint the web app
+        working-directory: examples/react-vite-swr
+        run: |
+          pnpm --filter react-vite-swr-web run typecheck
+          pnpm --filter react-vite-swr-web run lint

@@ -104,6 +104,20 @@ cargo run -p grpc-widgets-example
 
 See [`grpc-widgets/README.md`](grpc-widgets/README.md) for the client-side run steps (`ts-client-e2e.mjs`, `dart-client/tool/e2e.dart`) and `grpcurl` verification.
 
+## Phase E — Generated TypeScript client presets
+
+| Example | Macro(s) | Shape |
+|---|---|---|
+| [`react-vite-swr/`](react-vite-swr) | `include_server_schema!` (`transport rest`) | Postgres + axum REST server, plus a `cratestack generate-typescript --preset swr` client (checked in under `client/`) consumed by a real React + Vite app with **zero hand-written data-fetching code** — every `useSWR`/`useSWRMutation` call, cache key, and fetcher is generated. Also calls a plain generated function from a Node script, outside React, proving the preset's two-layer (plain functions + hooks) design is real. |
+
+```bash
+docker compose up -d postgres
+DATABASE_URL=postgres://cratestack:cratestack@localhost:55432/cratestack_test cargo run -p react-vite-swr-example
+cd examples/react-vite-swr && pnpm install && pnpm --filter react-vite-swr-web run dev
+```
+
+See [`react-vite-swr/README.md`](react-vite-swr/README.md) for the full schema → generate → run path.
+
 ## Verification matrix
 
 Snapshot of what's been actually exercised end-to-end against a real runtime, vs. what's only been built and unit-tested. Point-in-time as of the linked commit; rerun whenever the matrix drifts.
@@ -126,6 +140,7 @@ Snapshot of what's been actually exercised end-to-end against a real runtime, vs
 | `embedded-flutter` | ✅ | ✅ macOS desktop + ✅ Android APK | `flutter run -d macos`: 6 CRUD rows via the Material 3 UI, persisted to the sandboxed app-data SQLite. `flutter build apk` for arm64-v8a / armeabi-v7a / x86_64 lands `libembedded_flutter_native.so` in the APK. **iOS: not tested — out of scope for now.** |
 | `embedded-expo` | ✅ | ✅ Android emulator | `npx expo run:android` on Pixel_10_Pro: 6 CRUD rows via React Native UI, persisted to `/data/data/.../files/cratestack-notes.db` (SQLite + WAL). **iOS: not tested — out of scope for now.** Build path is set up (podspec vendors `libembedded_expo_native.a`, Swift uses `@_silgen_name` against the same C ABI), but full `expo run:ios` needs an installed iOS Simulator runtime (Xcode → Settings → Components) that wasn't on the verification host. |
 | `grpc-widgets` | ✅ | ✅ | Real server booted against Postgres; both `ts-client-e2e.mjs` (Node/`tsx`, gRPC-Web over `fetch`) and `dart-client/tool/e2e.dart` (`dart run`, native HTTP/2 via `package:grpc`) ran create/get/list/update/delete/get-after-delete against it live, including the typed error path (`not_found`) on both clients |
+| `react-vite-swr` | ✅ | ✅ | Real server booted against Postgres; `pnpm --filter react-vite-swr-web run dev` in a real browser (Claude Preview) — created a board via `useCreateBoard` and watched the list refresh with no manual refetch, opened its detail screen, toggled/deleted tasks via `useUpdateTask`/`useDeleteTask` (both invalidated the list live), watched the `estimateFocusMinutes` procedure hook's estimate recompute automatically each time. `pnpm run seed` (`tsx`, plain generated functions, no React) separately created data and called the procedure outside any component. |
 
 What "end-to-end" means here:
 
@@ -171,3 +186,4 @@ cargo run -p microservice-pair-example
 | Drive the schema from Flutter (iOS + Android + desktop) | [`embedded-flutter`](embedded-flutter) |
 | Drive the schema from React Native + Expo | [`embedded-expo`](embedded-expo) |
 | Expose the schema over real gRPC (mesh interop, browser gRPC-Web, Dart/Flutter) | [`grpc-widgets`](grpc-widgets) |
+| Consume a generated REST/RPC TypeScript client with zero hand-written data-fetching code (SWR hooks) | [`react-vite-swr`](react-vite-swr) |

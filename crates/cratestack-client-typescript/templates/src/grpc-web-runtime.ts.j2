@@ -511,7 +511,11 @@ export class CratestackGrpcWebRuntime {
 
   constructor(origin: string, options: CratestackGrpcClientOptions = {}) {
     this.origin = origin.replace(/\/+$/, "");
-    this.fetchFn = options.fetch ?? fetch;
+    // `.bind(globalThis)` — see `rest-runtime.ts.j2`'s identical line
+    // for why: some browsers' `fetch` throws `TypeError: Illegal
+    // invocation` when invoked with a receiver other than the global
+    // object, which storing the bare function on `this.fetchFn` does.
+    this.fetchFn = options.fetch ?? fetch.bind(globalThis);
     this.defaultHeaders = options.headers;
   }
 

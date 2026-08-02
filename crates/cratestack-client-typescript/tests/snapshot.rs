@@ -196,6 +196,33 @@ fn generated_rest_runtime_satisfies_exact_optional_property_types() {
 }
 
 #[test]
+fn runtimes_bind_the_default_fetch_to_globalthis() {
+    // Real bug found while running the issue #306 example app for real
+    // in a browser (Vite dev, Chrome): `this.fetchFn = options.fetch ??
+    // fetch;` stores the *unbound* global `fetch` function, and calling
+    // it later as `this.fetchFn(...)` invokes it with `this ===
+    // <runtime instance>` instead of the global object. Some browsers'
+    // `fetch` is spec'd to throw `TypeError: Illegal invocation` for a
+    // wrong receiver — reproduced for real (`useBoards()` failed with
+    // exactly that message on first render). Node's `fetch` doesn't
+    // enforce this, which is why no existing (Node-only) test caught
+    // it. All three fetch-based runtimes must bind to `globalThis`.
+    let rest = generate_for("tiny_rest", "tiny-rest-client");
+    let rest_runtime = package_file(&rest, "src/runtime.ts");
+    assert!(
+        rest_runtime.contains("options.fetch ?? fetch.bind(globalThis)"),
+        "REST runtime must bind the default fetch to globalThis:\n{rest_runtime}"
+    );
+
+    let rpc = generate_for("tiny_rpc", "tiny-rpc-client");
+    let rpc_runtime = package_file(&rpc, "src/runtime.ts");
+    assert!(
+        rpc_runtime.contains("options.fetch ?? fetch.bind(globalThis)"),
+        "RPC runtime must bind the default fetch to globalThis:\n{rpc_runtime}"
+    );
+}
+
+#[test]
 fn rest_client_keeps_rest_style_methods() {
     let package = generate_for("tiny_rest", "tiny-rest-client");
     let runtime = package_file(&package, "src/runtime.ts");
@@ -271,13 +298,27 @@ fn schema_sha256_header_is_baked_into_rest_and_rpc_runtimes() {
     // non-empty — REST via its single `request<T>` method (shared by
     // get/post/patch/delete), RPC via its single `buildHeaders` method
     // (shared by call/batch/stream).
+    //
+    // Real bug found while building the issue #306 example app: this
+    // assertion used to expect the REST runtime's constant WITHOUT the
+    // `: string` widening `generated_rpc_runtime_satisfies_exact_optional_property_types`
+    // (below) already required and explains for RPC — meaning the REST
+    // template (`rest-runtime.ts.j2`) shipped without it, and a real
+    // `tsc --noEmit` against any REST package generated with a real,
+    // non-empty `schema_sha256` (i.e. every real `cratestack
+    // generate-typescript` invocation, both presets — this template is
+    // shared) failed with TS2367 on `if (SCHEMA_SHA256 !== "")`: a
+    // `const` initializer's inferred literal type can never equal `""`,
+    // which TypeScript treats as a comparison error. Fixed in
+    // `rest-runtime.ts.j2` to match the RPC template; this assertion now
+    // locks in the fix instead of the bug.
     let rest = generate_for("tiny_rest", "tiny-rest-client");
     let rest_runtime = package_file(&rest, "src/runtime.ts");
     assert!(
         rest_runtime.contains(&format!(
-            "export const SCHEMA_SHA256 = \"{SNAPSHOT_SCHEMA_SHA256}\";"
+            "export const SCHEMA_SHA256: string = \"{SNAPSHOT_SCHEMA_SHA256}\";"
         )),
-        "REST runtime must bake the configured schema SHA-256:\n{rest_runtime}"
+        "REST runtime must bake the configured schema SHA-256, widened to `string`:\n{rest_runtime}"
     );
     assert!(
         rest_runtime.contains("headers.set(SCHEMA_SHA_HEADER, SCHEMA_SHA256);"),
@@ -310,7 +351,7 @@ fn empty_schema_sha256_bakes_an_empty_constant_that_omits_the_header_at_runtime(
     let package = generate_for_with_schema_sha("tiny_rest", "tiny-rest-client", "");
     let runtime = package_file(&package, "src/runtime.ts");
     assert!(
-        runtime.contains("export const SCHEMA_SHA256 = \"\";"),
+        runtime.contains("export const SCHEMA_SHA256: string = \"\";"),
         "an unconfigured schema_sha256 must bake an empty SCHEMA_SHA256 constant:\n{runtime}"
     );
     assert!(

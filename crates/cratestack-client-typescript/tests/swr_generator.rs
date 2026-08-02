@@ -202,6 +202,61 @@ fn swr_package_json_declares_swr_and_react_as_peer_dependencies() {
 }
 
 #[test]
+fn swr_package_json_dev_dependency_react_range_matches_the_peer_range() {
+    // Real bug found while running the issue #306 example app for real in
+    // a browser: the generated `devDependencies.react` used to be pinned
+    // to exactly `^18.0.0` while `peerDependencies.react` allows `^18.0.0
+    // || ^19.0.0`. In a pnpm workspace where the *consuming* app depends
+    // on React 19 (as any new app reasonably would — this generated
+    // package's own devDependency has nothing to do with what a real
+    // consumer installs), pnpm cannot dedupe two non-overlapping ranges
+    // and installs two separate React copies — one in the generated
+    // package's own `node_modules` (18.x, to satisfy its devDependency),
+    // one in the consumer's (19.x). Two React instances in one bundle is
+    // the textbook "Invalid hook call" runtime crash, reproduced for real
+    // (`useBoards`/`useCreateBoard` etc. threw immediately on mount) while
+    // building `examples/react-vite-swr`. `devDependencies` must offer
+    // the same range as `peerDependencies` so pnpm's resolver can settle
+    // on one shared version whenever a consumer's own React version is
+    // anywhere in that range.
+    let package = generate_for("tiny_rest", TypeScriptPreset::Swr);
+    let package_json = file(&package, "package.json");
+    assert!(
+        package_json.contains("\"react\": \"^18.0.0 || ^19.0.0\""),
+        "devDependencies.react must allow the same range as peerDependencies \
+         (^18.0.0 || ^19.0.0), not a single pinned major, or pnpm/npm can install \
+         two incompatible React copies in a consumer's workspace:\n{package_json}"
+    );
+}
+
+#[test]
+fn swr_package_json_declares_subpath_exports_for_hooks_modules() {
+    // Real bug found while building the end-to-end example app for
+    // issue #306: the package's own README (`swr-README.md.j2`) tells
+    // consumers to import hooks via a subpath — `<pkg>/models/<model>.hooks`
+    // — because `.hooks` files are deliberately not re-exported from the
+    // root barrel (see `src/swr/mod.rs`'s module doc). But `package.json`
+    // only declared `exports["."]`, and a package.json with an `exports`
+    // map blocks every subpath *not* listed in it (Node's package-exports
+    // encapsulation, honored by bundlers and by TypeScript's `Bundler`/
+    // `node16`/`nodenext` module resolution, all three of which this
+    // generator's own `tsconfig.json.j2` and every JS example in this
+    // repo use). Without this, `import { useWidget } from
+    // "<pkg>/models/widget.hooks"` fails to resolve for every real
+    // consumer, even though the README told them to write exactly that.
+    let package = generate_for("tiny_rest", TypeScriptPreset::Swr);
+    let package_json = file(&package, "package.json");
+    assert!(
+        package_json.contains("\"./models/*\""),
+        "package.json must export a subpath pattern covering src/models/*.ts \
+         and src/models/*.hooks.ts, or subpath imports the README itself \
+         recommends can't resolve"
+    );
+    assert!(package_json.contains("\"./procedures\""));
+    assert!(package_json.contains("\"./procedures.hooks\""));
+}
+
+#[test]
 fn swr_procedures_file_has_args_type_and_plain_function() {
     let package = generate_for("tiny_rest", TypeScriptPreset::Swr);
     let procedures = file(&package, "src/procedures.ts");

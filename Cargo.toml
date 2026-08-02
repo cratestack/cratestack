@@ -46,6 +46,7 @@ members = [
     "examples/embedded-browser-vite-pwa",
     "examples/embedded-browser-webpack",
     "examples/react-vite-daisyui",
+    "examples/react-vite-swr",
     "examples/react-nextjs-daisyui/wasm",
     "examples/react-nextjs-daisyui/napi",
     "examples/tauri-web",
