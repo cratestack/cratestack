@@ -62,7 +62,17 @@ fn parse_relation_attribute(raw: &str) -> Option<ParsedRelationAttribute> {
         match key.trim() {
             "fields" => fields = Some(parse_bracket_list(value.trim())?),
             "references" => references = Some(parse_bracket_list(value.trim())?),
-            _ => return None,
+            // Ignore any other key rather than dropping the whole
+            // relation. `cratestack-parser` is the sole vocabulary
+            // gatekeeper — it rejects a genuinely unknown key with a
+            // diagnostic before a schema ever reaches this crate — so
+            // by the time this runs, an unrecognised key here just
+            // means the parser's vocabulary has grown past what this
+            // FK-only parser cares about (e.g. `onDelete`/`onUpdate`
+            // before support for them existed here). Returning `None`
+            // silently dropped the foreign key entirely with no error
+            // at all — worse than ignoring the extra key.
+            _ => {}
         }
     }
     Some(ParsedRelationAttribute {
