@@ -130,3 +130,54 @@ fn no_change_produces_no_foreign_key_ops() {
     let ops = diff(&s, &s);
     assert!(ops.is_empty());
 }
+
+#[test]
+fn unrecognised_relation_key_does_not_silently_drop_the_foreign_key() {
+    // Review finding: `cratestack-migrate` has its own small, private
+    // `@relation(...)` parser (it doesn't depend on `cratestack-parser`
+    // — see the module docs). That parser used to bail out entirely on
+    // any key it didn't recognize, silently producing zero FK for the
+    // whole relation rather than an error. `cratestack-parser` is the
+    // real vocabulary gatekeeper and already rejects a genuinely
+    // invalid schema before it reaches this crate — but if the
+    // parser's vocabulary ever grows a key this crate doesn't parse
+    // yet, a fully valid schema should still get its FK, not silently
+    // lose it. Simulated here by editing the raw attribute after
+    // parsing, standing in for "a future, more permissive parser
+    // accepted a key this crate doesn't know about yet".
+    let prev = schema(&with_models(""));
+    let mut next = schema(&with_models(
+        r#"
+model Tenant {
+  id String @id
+}
+
+model Application {
+  id String @id
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+}
+"#,
+    ));
+    let application = &mut next.models[1];
+    let relation_field = application
+        .fields
+        .iter_mut()
+        .find(|field| field.name == "tenant")
+        .expect("expected the `tenant` relation field");
+    relation_field.attributes[0].raw =
+        "@relation(fields: [tenantId], references: [id], futureKey: Whatever)".to_owned();
+
+    let ops = diff(&prev, &next);
+    let fk = ops
+        .iter()
+        .find_map(|op| match op {
+            Op::AddForeignKey(fk) => Some(fk),
+            _ => None,
+        })
+        .expect(
+            "an unrecognised extra key in @relation(...) must not silently drop the foreign key",
+        );
+    assert_eq!(fk.table, "applications");
+    assert_eq!(fk.column, "tenant_id");
+}
