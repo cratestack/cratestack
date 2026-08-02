@@ -11,15 +11,21 @@ Scope: schemas declaring `transport rpc` in `.cstack`.
 | Unary runtime for procedures + `cratestack-axum::rpc` primitives | shipped | #21 |
 | CRUD over RPC unary + `POST /rpc/batch` | shipped | #22 |
 | `RpcErrorBody` with gRPC-style codes (uniform on every error path) | shipped | #23 |
-| Streaming for `Sequence`-kind ops via `Accept: application/cbor-seq` | shipped | #24 (test coverage only — no code change needed) |
+| Streaming wire format for `Sequence`-kind ops via `Accept: application/cbor-seq` | shipped (content negotiation + framing only — **not** incremental delivery) | #24, corrected #281 |
 | WebSocket binding + subscriptions (`@@subscribe` schema directive) | **pending** | — |
 | Batch parallelization | deferred (no observed contention) | — |
 
-Streaming turned out to be free: list-return procedures already get
+Streaming is only *partially* free. List-return procedures already get
 `OpKind::Sequence` from the macro, and the existing axum handler does
-content-negotiated `application/cbor-seq` encoding. The RPC dispatcher
-delegates unchanged, so no new code path was needed beyond the test
-fixture that pins the contract.
+content-negotiated `application/cbor-seq` encoding, so no new dispatch code
+path was needed for the wire format itself. But `encode_cbor_sequence_response`
+(`crates/cratestack-axum/src/transport/internal.rs`) builds the entire
+`Vec<u8>` for every item before constructing the one `axum::Response` —
+today's `/rpc/:op_id` streaming is content-negotiation-and-wire-format-compatible
+only, not genuinely incrementally delivered. A client sees no bytes until the
+whole sequence has finished on the server. Real incremental delivery (the
+server flushing each item as it's produced) is unbuilt and tracked separately
+as issue #283.
 
 Subscriptions are the only HTTP-surface gap left, and unlike streaming
 the use cases are not yet concrete enough to motivate the schema-syntax
@@ -178,8 +184,50 @@ future, `model.User.list @stream`).
   `encode_cbor_sequence_response`) or `text/event-stream` for SSE.
 - Each chunk is *one* unwrapped `out` payload — no frame wrapper, no `id`.
   End of stream is end of body.
-- Errors mid-stream are signaled by a trailing
-  `application/cratestack.error+cbor` chunk (SSE: `event: error`).
+- **Mid-stream errors on `application/cbor-seq`: an in-band CBOR tag, not a
+  second content-type and not an HTTP trailer.** An earlier version of this
+  section described the error signal as "a trailing chunk with content-type
+  `application/cratestack.error+cbor`," which is not physically realizable:
+  an HTTP response has exactly one `Content-Type` header, set once, before
+  any body bytes — there is no such thing as a second content-type
+  appearing mid-body. The other plausible reading, an HTTP trailer, does not
+  work either: the Fetch API spec does not expose HTTP trailers to
+  JavaScript in any browser, and this framework's TypeScript client
+  streaming (`stream()`) is built on browser `fetch()`. The corrected,
+  implementable mechanism:
+
+  - When the underlying operation ultimately fails, the *last* item in the
+    `application/cbor-seq` sequence is `Tag(48900, RpcErrorBody-as-CBOR-map)`
+    — CBOR major type 6 (tag), tag number **48900**, wrapping the
+    `RpcErrorBody` (§2.3) encoded as a plain CBOR map, in place of what
+    would otherwise be the next unwrapped `out` item.
+  - Tag 48900 is reserved exclusively for this purpose: it never wraps a
+    successful `out` value, and it is only ever the *last* item of a
+    sequence. A stream that emits a tag-48900 item never resumes normal
+    output afterward — end of body follows immediately after it.
+  - A boundary-scanner walking the byte stream (see
+    `CborSeqChunkDecoder` in `cratestack-client-rust/src/streaming.rs`, and
+    its planned TypeScript port) detects this *structurally*: once its
+    existing `minicbor`-based boundary detection lands on a complete
+    top-level item, checking whether that item's leading byte(s) decode to
+    major type 6 with tag number 48900 classifies it as an error envelope
+    versus a normal output item — the scanner does not need to fully decode
+    the item's payload to make that call, only recognize the tag header.
+  - **Tag number provenance:** 48900 was picked from IANA's CBOR tags
+    registry "First Come First Served" range (32768 –
+    18446744073709551615; see
+    <https://www.iana.org/assignments/cbor-tags/cbor-tags.xhtml>) and was
+    unassigned as of 2026-08-02, the date this section was corrected. It is
+    **not** formally registered with IANA — the PR that introduced this
+    correction (source: issue #281) documents the verification method used
+    and flags this number for a pre-merge human double-check, per the
+    collision risk noted in that ticket.
+  - SSE framing (`text/event-stream`) is unaffected by this correction: SSE
+    natively supports multiple named event types within a single response,
+    so `event: error` was always a physically realizable signal there. This
+    fix only concerns the `application/cbor-seq` encoding, where a second
+    content-type or a trailer were the (unrealizable) options originally
+    described.
 - **No subscriptions over HTTP streaming.** SSE cancellation is "close the
   connection," which races with backpressure on the server side. Subscriptions
   live on WS only.

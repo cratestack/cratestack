@@ -1,0 +1,44 @@
+[package]
+name = "cratestack-cbor-napi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Native N-API addon wrapping cratestack-codec-cbor's CborCodec for @cratestack/cbor-node (issue #286). Node-only glue crate — not meant to be depended on by other Cargo crates, so it opts out of the crates.io publish rotation via publish = false."
+# This crate ships only as a compiled .node addon inside an npm package
+# (packages/cratestack-cbor-node), never as a Cargo dependency of anything
+# else in this workspace — publishing it to crates.io would just be dead
+# weight in the release pipeline. Mirrors cratestack-studio-ui's reasoning.
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[lints.rust]
+# napi-derive expands to unsafe extern "C" trampolines for the JS interop.
+# That's exactly the boundary unsafe is *for*; lift the workspace forbid.
+# Mirrors examples/react-nextjs-daisyui/napi/Cargo.toml's justification.
+unsafe_code = "allow"
+
+[dependencies]
+cratestack-codec-cbor.workspace = true
+cratestack-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+# napi-rs is host-only — mirrors the react-nextjs-daisyui/napi example's
+# gating pattern, keeping this crate theoretically dual-targetable later
+# even though it is Node-only in practice today. No async entry points are
+# needed (encode/decode are pure CPU-bound work), so this pulls a narrower
+# feature set than the example (no "async"/"tokio_rt"/"chrono_date").
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+napi = { version = "3", default-features = false, features = ["napi9", "serde-json"] }
+napi-derive = "3"
+
+[target.'cfg(not(target_arch = "wasm32"))'.build-dependencies]
+napi-build = "2"

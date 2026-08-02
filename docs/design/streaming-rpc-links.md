@@ -116,10 +116,17 @@ export interface RpcStreamLinkRequest {
   readonly url: string;
 }
 
-// The wire contract (rpc-transport.md §3.3) has two chunk shapes: any
-// number of unwrapped `out` payloads, then an OPTIONAL trailing
-// `application/cratestack.error+cbor` chunk that ends the stream.
-// RpcStreamFrame mirrors that as a discriminated union rather than
+// The wire contract (rpc-transport.md §3.3) has two item shapes: any
+// number of unwrapped `out` payloads, then an OPTIONAL trailing item
+// wrapped in CBOR tag 48900 (`Tag(48900, RpcErrorBody-as-CBOR-map)`) that
+// always ends the stream when present. The terminal link's boundary
+// scanner distinguishes the two structurally — checking whether a
+// decoded top-level item's leading byte(s) are CBOR major type 6 with
+// tag number 48900, without needing to fully decode the item first — the
+// same structural detection the minicbor-based `CborSeqChunkDecoder`
+// (`cratestack-client-rust/src/streaming.rs`) already performs on the
+// Rust side. RpcStreamFrame surfaces that classification as a
+// discriminated union rather than
 // throwing mid-generator — keeping the *link chain itself*
 // exception-free is consistent with how the existing unary/batch
 // contract already works: `RpcLink` deals in `{ response: Response }`
@@ -150,11 +157,12 @@ every link above it, and `stream()` itself at the top, just observes that frame 
 ```ts
 const terminalStreamLink: RpcStreamLinkNext = async function* (request) {
   const response = await request.fetchFn(request.url, { /* ... */ });
-  // decode each unwrapped `out` chunk as it arrives:
+  // decode each unwrapped `out` item as it arrives:
   //   yield { kind: "output", output: decoded };
-  // on the trailing application/cratestack.error+cbor chunk, decode it
-  // and yield the error frame, then return — the spec guarantees this
-  // chunk is always last, so the generator ends here, not on a `break`
+  // on a top-level item whose leading byte(s) are CBOR tag 48900
+  // (rpc-transport.md §3.3), decode its inner map as RpcErrorBody and
+  // yield the error frame, then return — the spec guarantees a tag-48900
+  // item is always last, so the generator ends here, not on a `break`
   // a consumer forgot to add.
   //   yield { kind: "error", error: decodedBody };
 };

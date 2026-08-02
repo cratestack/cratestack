@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "ignore": ["**/dist/**", "**/wasm-pkg/**"]
+    "ignore": ["**/dist/**", "**/wasm-pkg/**", "**/native.mjs", "**/native.d.mts"]
   },
   "formatter": {
     "enabled": true,
