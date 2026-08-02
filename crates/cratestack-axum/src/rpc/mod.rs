@@ -38,8 +38,8 @@ mod tests_list;
 // binding and every generated client agree on those shapes, and lifting
 // them into core means the client crates don't need to depend on axum.
 pub use cratestack_core::rpc::{
-    RPC_BATCH_PATH, RPC_UNARY_PATH, RpcErrorBody, RpcRequest, RpcResponseFrame,
-    cool_error_code_to_rpc_code, rpc_code,
+    RPC_BATCH_PATH, RPC_STREAM_ERROR_TAG, RPC_UNARY_PATH, RpcErrorBody, RpcRequest,
+    RpcResponseFrame, cool_error_code_to_rpc_code, rpc_code,
 };
 
 pub use batch::response_to_frame;

@@ -28,6 +28,22 @@
 // rather than dropping either glob.
 #![allow(ambiguous_glob_reexports)]
 
+// Re-exported so the axum dispatch tokens `cratestack-macros` generates
+// for `@stream` procedures (`crate::axum::procedure::invoke_call`) can
+// reference `::cratestack::async_stream::stream!` without every
+// consumer adding `async-stream` to their own `Cargo.toml`. Needed
+// because the `ProcedureRegistry` trait method's `db`/`ctx` parameters
+// are borrowed (`&Cratestack`/`&CoolContext`), and — per return-position
+// `impl Trait` in traits' default lifetime-capture rules — the returned
+// `Stream` is only valid as long as those borrows are; wrapping the
+// call in a self-contained `async_stream::stream!` generator that owns
+// `db`/`ctx`/`registry`/`args` internally is what lets the resulting
+// `Stream` outlive the dispatch function's own stack frame (needed
+// since it travels all the way into the HTTP response body). Mirrors
+// how `futures` is re-exported below for the same
+// "codegen references a fixed path, consumers shouldn't have to
+// duplicate the dependency" reason.
+pub use async_stream;
 pub use chrono;
 pub use cratestack_client_rust as client_rust;
 pub use cratestack_core::*;

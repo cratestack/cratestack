@@ -11,21 +11,45 @@ Scope: schemas declaring `transport rpc` in `.cstack`.
 | Unary runtime for procedures + `cratestack-axum::rpc` primitives | shipped | #21 |
 | CRUD over RPC unary + `POST /rpc/batch` | shipped | #22 |
 | `RpcErrorBody` with gRPC-style codes (uniform on every error path) | shipped | #23 |
-| Streaming wire format for `Sequence`-kind ops via `Accept: application/cbor-seq` | shipped (content negotiation + framing only — **not** incremental delivery) | #24, corrected #281 |
+| Streaming wire format for `Sequence`-kind ops via `Accept: application/cbor-seq` | shipped (content negotiation + framing) | #24, corrected #281 |
+| `@stream` schema directive + stream-shaped `ProcedureRegistry` trait method | shipped | #282 |
+| Genuinely incremental delivery for `@stream` ops (`Body::from_stream`, mid-stream error sentinel, client-disconnect cancellation) | shipped | #283 |
 | WebSocket binding + subscriptions (`@@subscribe` schema directive) | **pending** | — |
 | Batch parallelization | deferred (no observed contention) | — |
 
-Streaming is only *partially* free. List-return procedures already get
-`OpKind::Sequence` from the macro, and the existing axum handler does
-content-negotiated `application/cbor-seq` encoding, so no new dispatch code
-path was needed for the wire format itself. But `encode_cbor_sequence_response`
-(`crates/cratestack-axum/src/transport/internal.rs`) builds the entire
-`Vec<u8>` for every item before constructing the one `axum::Response` —
-today's `/rpc/:op_id` streaming is content-negotiation-and-wire-format-compatible
-only, not genuinely incrementally delivered. A client sees no bytes until the
-whole sequence has finished on the server. Real incremental delivery (the
-server flushing each item as it's produced) is unbuilt and tracked separately
-as issue #283.
+Streaming now delivers incrementally, but only for ops explicitly marked
+`@stream` (#282) — a plain `T[]`-returning procedure still gets
+`OpKind::Sequence` at the wire-descriptor level (content negotiation,
+`application/cbor-seq` framing) but keeps the original buffered
+behavior: `encode_cbor_sequence_response`
+(`crates/cratestack-axum/src/transport/internal.rs`) still builds the
+entire `Vec<u8>` before constructing the one `axum::Response`, unchanged
+by #283 by design (see that ticket's non-breaking acceptance criterion).
+
+For `@stream` ops, `crates/cratestack-axum/src/transport/
+stream_sequence.rs` (`encode_transport_stream_result_with_status_for` in
+`encode_sequence.rs` is the entry point) builds an `axum::body::Body::
+from_stream` response instead: each item is encoded and flushed onto the
+wire as it's produced, with no `Vec<u8>` ever fully materialized
+server-side. A mid-stream failure is signaled per §3.3 (the tag-48900
+CBOR sentinel) as the final item, never a status-code change (the
+response has already committed to 200 by the time any body byte can be
+written). Client disconnect mid-stream drops the underlying item
+producer promptly — proven by a real TCP-level integration test
+(`examples/rpc-streaming/tests/stream_disconnect.rs`), not just asserted
+in a docstring. `IdempotencyService` detects a genuinely streamed
+response (an internal marker header, not content-type sniffing — see
+`crates/cratestack-axum/src/idempotency/stream_bypass.rs`) and bypasses
+buffering/replay for it entirely rather than silently re-collecting a
+partial stream, since the handler has already run by the time that
+decision point is reached and idempotency-replaying a partial stream has
+no defined semantics.
+
+Non-cbor-seq negotiated responses to a `@stream` op (e.g. a plain JSON
+`Accept`) still fall back to draining the stream into a `Vec` and
+reusing the buffered encoder — arrays can't be flushed incrementally the
+same way, and this section's incremental-delivery guarantee is scoped to
+`application/cbor-seq`, matching §3.3.
 
 Subscriptions are the only HTTP-surface gap left, and unlike streaming
 the use cases are not yet concrete enough to motivate the schema-syntax

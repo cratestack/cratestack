@@ -23,6 +23,24 @@ pub const RPC_UNARY_PATH: &str = "/rpc/{op_id}";
 /// of [`RpcRequest`] frames.
 pub const RPC_BATCH_PATH: &str = "/rpc/batch";
 
+/// CBOR tag number reserved for the mid-stream error sentinel described
+/// in `docs/design/rpc-transport.md` §3.3: when a genuinely incremental
+/// `application/cbor-seq` sequence response (a `@stream` procedure, see
+/// cratestack#282/#283) fails partway through, the *last* item of the
+/// sequence is `Tag(RPC_STREAM_ERROR_TAG, RpcErrorBody-as-CBOR-map)` —
+/// CBOR major type 6, this tag number, wrapping [`RpcErrorBody`] encoded
+/// as a plain CBOR map — in place of what would otherwise be the next
+/// unwrapped `out` item. No further items follow it; end of body comes
+/// immediately after.
+///
+/// Not IANA-registered. Picked from the CBOR tags registry's "First Come
+/// First Served" range (32768–18446744073709551615;
+/// <https://www.iana.org/assignments/cbor-tags/cbor-tags.xhtml>) and
+/// confirmed unassigned as of 2026-08-02 — see cratestack#281 for the
+/// verification method and the collision-risk flag for a pre-merge
+/// human double-check.
+pub const RPC_STREAM_ERROR_TAG: u64 = 48900;
+
 /// Wire shape of a single error returned by an RPC call. Maps from
 /// [`CoolError`] via [`rpc_code`] + [`CoolError::public_message`].
 #[derive(Debug, Clone, Serialize, Deserialize)]

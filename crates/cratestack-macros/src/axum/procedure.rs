@@ -1,14 +1,18 @@
 //! Per-procedure axum handler + route emission, plus the
 //! `@api_version` / `@deprecated` attribute helpers it consumes.
 
+mod dispatch_tail;
 mod invoke_call;
 mod route_attrs;
+#[cfg(test)]
+mod tests;
 
 use cratestack_core::{Procedure, TypeArity};
 use quote::quote;
 
 use crate::shared::{ident, to_snake_case};
 use crate::transport::procedure_transport_capabilities_tokens;
+use dispatch_tail::procedure_dispatch_tail_tokens;
 use invoke_call::procedure_invoke_call_tokens;
 use route_attrs::{
     procedure_axum_route_tokens, procedure_deprecation_header_tokens, procedure_route_path,
@@ -34,6 +38,12 @@ pub(crate) fn generate_procedure_axum_handler(
         quote! { ::cratestack::encode_transport_result_with_status_for(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, result) }
     };
     let invoke_call = procedure_invoke_call_tokens(procedure, &method_ident);
+    let dispatch_tail = procedure_dispatch_tail_tokens(
+        procedure,
+        procedure_name,
+        &result_encoder,
+        &deprecation_header,
+    );
 
     Ok(quote! {
         // REST mount (`transport rest` / the `/$procs/<name>` route): the
@@ -127,34 +137,7 @@ pub(crate) fn generate_procedure_axum_handler(
             })
             .await;
 
-            match &result {
-                Ok(_) => ::cratestack::tracing::info!(
-                    target: "cratestack",
-                    cratestack_route = canonical_route,
-                    cratestack_procedure = #procedure_name,
-                    cratestack_operation = "procedure",
-                    cratestack_authenticated = ctx.is_authenticated(),
-                    cratestack_duration_ms = started.elapsed().as_millis() as u64,
-                    cratestack_request_id = ctx.request_id().unwrap_or(""),
-                    "cratestack procedure route completed",
-                ),
-                Err(error) => ::cratestack::tracing::warn!(
-                    target: "cratestack",
-                    cratestack_route = canonical_route,
-                    cratestack_procedure = #procedure_name,
-                    cratestack_operation = "procedure",
-                    cratestack_authenticated = ctx.is_authenticated(),
-                    cratestack_error = error.code(),
-                    cratestack_detail = error.detail().unwrap_or(""),
-                    cratestack_duration_ms = started.elapsed().as_millis() as u64,
-                    cratestack_request_id = ctx.request_id().unwrap_or(""),
-                    "cratestack procedure route failed",
-                ),
-            }
-
-            let mut response = #result_encoder;
-            #deprecation_header
-            response
+            #dispatch_tail
         }
     })
 }

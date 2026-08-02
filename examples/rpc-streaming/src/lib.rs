@@ -15,19 +15,30 @@
 //!   first item arrives long before the last one — not just that the
 //!   final content happens to be correct.
 //!
-//! The HTTP response itself is still buffered end-to-end for now (see
-//! `procedure_invoke_call_tokens` in `cratestack-macros`) — wiring
-//! `@stream` into a genuinely incremental `Body::from_stream` response is
-//! cratestack-axum's concern, tracked separately as cratestack#283. This
-//! example's job is only to prove the new trait shape is real and usable,
-//! not to change the wire behavior.
+//! The HTTP response itself is now genuinely incremental too
+//! (cratestack#283): `cratestack-axum`'s `Body::from_stream`-backed
+//! encoder (`crates/cratestack-axum/src/transport/stream_sequence.rs`)
+//! flushes each item onto the wire as it's produced, instead of
+//! buffering the whole sequence first. `tests/stream_wire_timing.rs`
+//! proves this over a real HTTP response (item N arrives before item
+//! N+1 is even produced server-side); `tests/stream_disconnect.rs`
+//! proves a client disconnect actually stops server-side production
+//! instead of leaking it. Non-`@stream` `T[]` procedures are
+//! deliberately unaffected — see `procedure_invoke_call_tokens` in
+//! `cratestack-macros` for the byte-identical-behavior guarantee.
 //!
 //! The macro emits `OpKind::Sequence` for any procedure whose return type
-//! is `T[]`, `@stream` or not. The framework's existing sequence encoder
-//! (`encode_transport_sequence_result_with_status_for`) does the rest —
-//! the RPC dispatcher just delegates.
+//! is `T[]`, `@stream` or not. `@stream`-marked ones additionally route
+//! through the incremental encoder
+//! (`encode_transport_stream_result_with_status_for`) when
+//! `application/cbor-seq` is negotiated; everything else — including a
+//! `@stream` op under a plain JSON `Accept` — still goes through the
+//! original buffered `encode_transport_sequence_result_with_status_for`.
 
-use std::time::Duration;
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 use cratestack::axum::Router;
 use cratestack::futures::Stream;
@@ -48,8 +59,22 @@ pub use cratestack_schema as schema;
 /// suite noticeably slower.
 const TICK_INTERVAL: Duration = Duration::from_millis(20);
 
+/// `produced`/`produced_at` are test-only instrumentation (unused by
+/// the real server binary, which only ever constructs
+/// `Procedures::default()`): they let integration tests observe *when*
+/// each item was actually produced server-side, independent of when it
+/// reaches a client over the wire —
+/// `tests/stream_disconnect.rs` uses `produced` to prove item
+/// production actually stops shortly after a client disconnects (not
+/// silently running to completion), and
+/// `tests/stream_wire_timing.rs` uses `produced_at` to prove item N
+/// arrives over the real HTTP response before item N+1 was even
+/// produced server-side.
 #[derive(Clone, Default)]
-pub struct Procedures;
+pub struct Procedures {
+    pub produced: Arc<AtomicUsize>,
+    pub produced_at: Arc<Mutex<Vec<Instant>>>,
+}
 
 impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     fn ticks(
@@ -58,10 +83,14 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::ticks::Args,
     ) -> impl Stream<Item = Result<cratestack_schema::Tick, CoolError>> + Send {
+        let produced = self.produced.clone();
+        let produced_at = self.produced_at.clone();
         async_stream::stream! {
             let count = args.args.count.max(0);
             for index in 0..count {
                 tokio::time::sleep(TICK_INTERVAL).await;
+                produced.fetch_add(1, Ordering::SeqCst);
+                produced_at.lock().unwrap().push(Instant::now());
                 yield Ok(cratestack_schema::Tick {
                     index,
                     value: args.args.start + index,
@@ -107,9 +136,18 @@ pub fn build_db() -> cratestack_schema::Cratestack {
 }
 
 pub fn build_router() -> Router {
+    build_router_with(Procedures::default())
+}
+
+/// Same router the real server (and `build_router`) mounts, parameterized
+/// over the `Procedures` instance — lets tests supply one whose
+/// `produced`/`produced_at` fields they've kept a handle to, so they can
+/// observe server-side production behavior (timing, cancellation)
+/// alongside driving the router over real HTTP.
+pub fn build_router_with(procedures: Procedures) -> Router {
     cratestack_schema::axum::rpc_router(
         build_db(),
-        Procedures,
+        procedures,
         CodecSet::new(CborCodec, JsonCodec),
         HeaderAuthProvider,
     )

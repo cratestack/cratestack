@@ -43,8 +43,9 @@ pub use transport::{
     encode_transport_result, encode_transport_result_with_status,
     encode_transport_result_with_status_for, encode_transport_sequence_result,
     encode_transport_sequence_result_with_status, encode_transport_sequence_result_with_status_for,
-    validate_transport_request_headers, validate_transport_request_headers_for,
-    validate_transport_response_headers, validate_transport_response_headers_for,
+    encode_transport_stream_result_with_status_for, validate_transport_request_headers,
+    validate_transport_request_headers_for, validate_transport_response_headers,
+    validate_transport_response_headers_for,
 };
 
 pub use headers::{

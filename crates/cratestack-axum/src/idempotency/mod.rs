@@ -18,6 +18,7 @@
 //! wire it into macro-generated routers by default, gated by a
 //! `@no_idempotency` opt-out attribute already recognised by the parser.
 
+mod complete;
 mod hash;
 mod headers;
 mod layer;
@@ -26,6 +27,7 @@ mod record;
 mod responses;
 mod service;
 mod store;
+mod stream_bypass;
 
 #[cfg(test)]
 mod tests_hash;
@@ -33,6 +35,8 @@ mod tests_hash;
 mod tests_headers;
 #[cfg(test)]
 mod tests_parse;
+#[cfg(test)]
+mod tests_stream_bypass;
 
 pub use hash::{hash_request, is_idempotent_target_method};
 pub use headers::{decode_headers, encode_headers};

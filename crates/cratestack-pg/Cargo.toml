@@ -73,6 +73,7 @@ grpc = ["cratestack-macros/grpc", "dep:cratestack-grpc", "dep:prost"]
 crypto-aws-lc-rs = []
 
 [dependencies]
+async-stream.workspace = true
 chrono.workspace = true
 cratestack-axum.workspace = true
 cratestack-client-rust.workspace = true
@@ -92,7 +93,6 @@ tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-async-stream = "0.3"
 axum.workspace = true
 cratestack-codec-cbor.workspace = true
 cratestack-codec-json.workspace = true

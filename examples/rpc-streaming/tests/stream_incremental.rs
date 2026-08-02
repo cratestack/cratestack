@@ -6,13 +6,16 @@
 //! will add.
 //!
 //! This talks to `Procedures::ticks` directly, not through
-//! `build_router`/HTTP: the HTTP path still buffers the whole sequence
-//! before responding (see `procedure_invoke_call_tokens` in
-//! `cratestack-macros` — that's `@stream`'s deliberate scope boundary for
-//! this ticket, not an oversight), so an HTTP-level timing test could
-//! only ever measure buffering, not streaming. Polling the trait method's
-//! returned `Stream` directly is the only place in the system right now
-//! where incrementality is actually observable.
+//! `build_router`/HTTP — at the time this test was written (cratestack#282)
+//! the HTTP path still buffered the whole sequence before responding, so
+//! an HTTP-level timing test could only ever have measured buffering,
+//! not streaming; polling the trait method's returned `Stream` directly
+//! was the only place incrementality was observable at all. HTTP-level
+//! incrementality shipped in cratestack#283 — see
+//! `tests/stream_wire_timing.rs` for the equivalent proof against the
+//! real generated router over a real HTTP response. Both tests are kept:
+//! this one still pins the trait-boundary guarantee independently of the
+//! transport layer built on top of it.
 
 use std::time::Instant;
 
@@ -37,7 +40,8 @@ async fn ticks_stream_yields_first_item_well_before_the_stream_completes() {
     // necessarily `Unpin` (the `async_stream::stream!`-generated state
     // machine isn't) — `Box::pin` gets us something `StreamExt::next` can
     // poll without pinning it to the stack by hand.
-    let mut stream = Box::pin(Procedures.ticks(&db, &ctx, args));
+    let procedures = Procedures::default();
+    let mut stream = Box::pin(procedures.ticks(&db, &ctx, args));
 
     let started = Instant::now();
     let first = stream
