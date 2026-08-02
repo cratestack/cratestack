@@ -131,13 +131,19 @@ pub(super) fn build_imports(
 ) -> Vec<SwrImport> {
     let mut imports = Vec::new();
     if !shared_names.is_empty() {
-        imports.push(SwrImport::new(shared_path.to_owned(), shared_names));
+        imports.push(SwrImport::new(format!("{shared_path}.js"), shared_names));
     }
     for name in model_refs {
         if Some(name.as_str()) == self_model {
             continue;
         }
-        let path = format!("{model_path_prefix}{}", to_kebab_case(&name));
+        // Node's native ESM resolver requires explicit extensions on
+        // relative specifiers (issue #315) — a bundler/tsx tolerates the
+        // extensionless form, but `tsc`'s compiled `dist/*.js` output does
+        // not get these specifiers rewritten, so they must carry `.js`
+        // from generation, same as every other relative import/export in
+        // this crate's templates.
+        let path = format!("{model_path_prefix}{}.js", to_kebab_case(&name));
         imports.push(SwrImport::new(path, vec![name]));
     }
     imports

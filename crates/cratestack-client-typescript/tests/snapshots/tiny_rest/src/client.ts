@@ -1,12 +1,12 @@
-import { CratestackRuntime, type CratestackClientOptions } from "./runtime";
+import { CratestackRuntime, type CratestackClientOptions } from "./runtime.js";
 import type {
   Widget,
   CreateWidgetInput,
   UpdateWidgetInput,
   EchoNameArgs,
   Page,
-} from "./models";
-import { toSearchQuery, type CratestackQueryRequestConfig, type CratestackRequestConfig } from "./queries";
+} from "./models.js";
+import { toSearchQuery, type CratestackQueryRequestConfig, type CratestackRequestConfig } from "./queries.js";
 
 export class TinyRestClientClient {
   readonly runtime: CratestackRuntime;

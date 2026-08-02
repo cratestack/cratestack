@@ -62,7 +62,7 @@ fn generates_fetch_client_and_tanstack_hooks_for_blog_schema() {
     assert!(react_query.contains("useMutation"));
     assert!(react_query.contains("usePostListQuery"));
     assert!(react_query.contains("usePublishPostMutation"));
-    assert!(index.contains("export * from \"./react-query\";"));
+    assert!(index.contains("export * from \"./react-query.js\";"));
 }
 
 /// Regression test: `Page<T>`/`PageInfo` must match

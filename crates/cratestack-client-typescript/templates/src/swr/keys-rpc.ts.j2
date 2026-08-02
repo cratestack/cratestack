@@ -35,7 +35,7 @@
 
 {% for procedure in procedures_file.procedures %}
 {% if procedure.kind == "query" %}
-import type { {{ procedure.args_name }} } from "./procedures";
+import type { {{ procedure.args_name }} } from "./procedures.js";
 {% endif %}
 {% endfor %}
 

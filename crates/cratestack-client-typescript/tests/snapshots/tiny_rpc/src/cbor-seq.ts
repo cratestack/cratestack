@@ -12,11 +12,11 @@
 // what would otherwise be the next unwrapped output — see
 // `docs/design/rpc-transport.md` §3.3.
 
-import type { CratestackRpcCodec, RpcErrorBody } from "./runtime";
-import type { RpcStreamFrame } from "./links";
-import { MalformedCborSeqError, NeedMoreBytesError, readArgument, skipItem } from "./cbor-item";
+import type { CratestackRpcCodec, RpcErrorBody } from "./runtime.js";
+import type { RpcStreamFrame } from "./links.js";
+import { MalformedCborSeqError, NeedMoreBytesError, readArgument, skipItem } from "./cbor-item.js";
 
-export { MalformedCborSeqError } from "./cbor-item";
+export { MalformedCborSeqError } from "./cbor-item.js";
 
 /** Mirrors `cratestack_core::rpc::RPC_STREAM_ERROR_TAG`. Not an
  *  IANA-registered tag — see that constant's own doc comment for the

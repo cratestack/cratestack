@@ -4,15 +4,15 @@ import {
   type UseMutationOptions,
   type UseQueryOptions,
 } from "@tanstack/react-query";
-import type { TinyRpcClientClient } from "./client";
+import type { TinyRpcClientClient } from "./client.js";
 import type {
   Widget,
   CreateWidgetInput,
   UpdateWidgetInput,
   EchoNameArgs,
   Page,
-} from "./models";
-import type { CratestackRpcCallOptions } from "./runtime";
+} from "./models.js";
+import type { CratestackRpcCallOptions } from "./runtime.js";
 
 export const cratestackQueryKeys = {
   widgetList: (input?: Record<string, unknown>) => ["model.Widget.list", input] as const,

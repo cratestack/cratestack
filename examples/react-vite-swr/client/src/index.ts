@@ -1,10 +1,10 @@
-export * from "./runtime";
-export * from "./queries";
-export * from "./swr-keys";
-export * from "./models/shared";
-export * from "./models/board";
-export * from "./models/task";
-export * from "./procedures";
+export * from "./runtime.js";
+export * from "./queries.js";
+export * from "./swr-keys.js";
+export * from "./models/shared.js";
+export * from "./models/board.js";
+export * from "./models/task.js";
+export * from "./procedures.js";
 // Hooks (issue #305) are deliberately NOT re-exported from this root
 // index: it must stay importable with nothing but the runtime installed
 // (see `src/swr/mod.rs`'s module doc), and a barrel `export *` here

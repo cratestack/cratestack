@@ -4,7 +4,7 @@ import {
   type UseMutationOptions,
   type UseQueryOptions,
 } from "@tanstack/react-query";
-import type { {{ client_class_name }} } from "./client";
+import type { {{ client_class_name }} } from "./client.js";
 import type {
 {% for interface in interfaces %}
   {{ interface.name }},
@@ -13,8 +13,8 @@ import type {
   {{ enum.name }},
 {% endfor %}
   Page,
-} from "./models";
-import type { CratestackQueryRequestConfig, CratestackRequestConfig } from "./queries";
+} from "./models.js";
+import type { CratestackQueryRequestConfig, CratestackRequestConfig } from "./queries.js";
 
 export const cratestackQueryKeys = {
 {% for model in models %}

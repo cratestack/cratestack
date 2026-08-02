@@ -29,9 +29,9 @@ import useSWRMutation, {
   type SWRMutationConfiguration,
   type SWRMutationResponse,
 } from "swr/mutation";
-import type { CratestackRuntime } from "../runtime";
-import type { CratestackQueryRequestConfig } from "../queries";
-import { swrKeys } from "../swr-keys";
+import type { CratestackRuntime } from "../runtime.js";
+import type { CratestackQueryRequestConfig } from "../queries.js";
+import { swrKeys } from "../swr-keys.js";
 import {
   listTasks,
   getTask,
@@ -41,7 +41,7 @@ import {
   type Task,
   type CreateTaskInput,
   type UpdateTaskInput,
-} from "./task";
+} from "./task.js";
 
 export function useTasks(
   runtime: CratestackRuntime,

@@ -26,7 +26,7 @@
 // design rationale (why two chains, not one; why not just reuse
 // `RpcLinkRequest`).
 
-import type { CratestackRpcCodec, RpcErrorBody } from "./runtime";
+import type { CratestackRpcCodec, RpcErrorBody } from "./runtime.js";
 
 /** One request going through the chain — either a single unary call
  *  (`kind: "unary"`) or an already-assembled `/rpc/batch` call

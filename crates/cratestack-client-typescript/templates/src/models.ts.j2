@@ -1,4 +1,4 @@
-import type { JsonValue } from "./runtime";
+import type { JsonValue } from "./runtime.js";
 
 // Mirrors cratestack-core::page::{Page, PageInfo} exactly — this is
 // the literal wire shape every `@@paged` list route serializes with

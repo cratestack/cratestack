@@ -31,12 +31,12 @@ import useSWRMutation, {
   type SWRMutationConfiguration,
   type SWRMutationResponse,
 } from "swr/mutation";
-import type { CratestackRuntime } from "../runtime";
-import type { CratestackQueryRequestConfig } from "../queries";
+import type { CratestackRuntime } from "../runtime.js";
+import type { CratestackQueryRequestConfig } from "../queries.js";
 {% if is_paged %}
-import type { Page } from "./shared";
+import type { Page } from "./shared.js";
 {% endif %}
-import { swrKeys } from "../swr-keys";
+import { swrKeys } from "../swr-keys.js";
 import {
   {{ list_fn }},
   {{ get_fn }},
@@ -50,7 +50,7 @@ import {
   type {{ create_input.name }},
 {% endif %}
   type {{ update_input.name }},
-} from "./{{ file_stem }}";
+} from "./{{ file_stem }}.js";
 
 export function {{ list_hook }}(
   runtime: CratestackRuntime,

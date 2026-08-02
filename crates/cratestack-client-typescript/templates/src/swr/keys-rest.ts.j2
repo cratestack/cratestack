@@ -31,10 +31,10 @@
 // after a mutation doesn't require knowing which filtered/paginated
 // variants happen to be in cache.
 
-import type { CratestackFetchQuery } from "./queries";
+import type { CratestackFetchQuery } from "./queries.js";
 {% for procedure in procedures_file.procedures %}
 {% if procedure.kind == "query" %}
-import type { {{ procedure.args_name }} } from "./procedures";
+import type { {{ procedure.args_name }} } from "./procedures.js";
 {% endif %}
 {% endfor %}
 

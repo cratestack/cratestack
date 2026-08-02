@@ -206,28 +206,28 @@ fn paged_model_imports_page_in_every_file_that_uses_it() {
 
         let model = file(&package, "src/models/widget.ts");
         assert!(
-            model.contains("import type { Page } from \"./shared\";"),
+            model.contains("import type { Page } from \"./shared.js\";"),
             "{fixture}: src/models/widget.ts should import Page from ./shared:\n{model}"
         );
         assert!(model.contains("Page<Widget>"));
 
         let model_hooks = file(&package, "src/models/widget.hooks.ts");
         assert!(
-            model_hooks.contains("import type { Page } from \"./shared\";"),
+            model_hooks.contains("import type { Page } from \"./shared.js\";"),
             "{fixture}: src/models/widget.hooks.ts should import Page from ./shared:\n{model_hooks}"
         );
         assert!(model_hooks.contains("Page<Widget>"));
 
         let procedures = file(&package, "src/procedures.ts");
         assert!(
-            procedures.contains("import type { Page } from \"./models/shared\";"),
+            procedures.contains("import type { Page } from \"./models/shared.js\";"),
             "{fixture}: src/procedures.ts should import Page from ./models/shared:\n{procedures}"
         );
         assert!(procedures.contains("Page<Widget>"));
 
         let procedures_hooks = file(&package, "src/procedures.hooks.ts");
         assert!(
-            procedures_hooks.contains("import type { Page } from \"./models/shared\";"),
+            procedures_hooks.contains("import type { Page } from \"./models/shared.js\";"),
             "{fixture}: src/procedures.hooks.ts should import Page from ./models/shared:\n{procedures_hooks}"
         );
         assert!(procedures_hooks.contains("Page<Widget>"));
@@ -314,9 +314,9 @@ fn swr_procedures_file_has_args_type_and_plain_function() {
 fn swr_index_reexports_every_model_and_procedures() {
     let package = generate_for("tiny_rest", TypeScriptPreset::Swr);
     let index = file(&package, "src/index.ts");
-    assert!(index.contains("export * from \"./models/shared\";"));
-    assert!(index.contains("export * from \"./models/widget\";"));
-    assert!(index.contains("export * from \"./procedures\";"));
+    assert!(index.contains("export * from \"./models/shared.js\";"));
+    assert!(index.contains("export * from \"./models/widget.js\";"));
+    assert!(index.contains("export * from \"./procedures.js\";"));
 }
 
 #[test]
@@ -355,14 +355,14 @@ fn cross_model_type_reuse_places_each_type_in_exactly_one_file() {
 
     // Status: shared, imported by both models, defined nowhere else.
     assert!(shared.contains("export type Status ="));
-    assert!(project.contains("import type { Status } from \"./shared\";"));
-    assert!(task.contains("import type { Status } from \"./shared\";"));
+    assert!(project.contains("import type { Status } from \"./shared.js\";"));
+    assert!(task.contains("import type { Status } from \"./shared.js\";"));
     assert!(!project.contains("export type Status ="));
     assert!(!task.contains("export type Status ="));
 
     // Address: shared, imported by procedures.ts, defined nowhere else.
     assert!(shared.contains("export interface Address {"));
-    assert!(procedures.contains("import type { Address } from \"./models/shared\";"));
+    assert!(procedures.contains("import type { Address } from \"./models/shared.js\";"));
     assert!(!procedures.contains("export interface Address {"));
     assert!(!project.contains("Address"));
 
@@ -402,11 +402,11 @@ fn relation_cycle_uses_type_only_cross_imports_with_no_value_level_cycle() {
     let post = file(&package, "src/models/post.ts");
 
     assert!(
-        user.contains("import type { Post } from \"./post\";"),
+        user.contains("import type { Post } from \"./post.js\";"),
         "user.ts must import Post as a type-only import:\n{user}"
     );
     assert!(
-        post.contains("import type { User } from \"./user\";"),
+        post.contains("import type { User } from \"./user.js\";"),
         "post.ts must import User as a type-only import:\n{post}"
     );
     // Not a value import of the sibling model anywhere — grep for a

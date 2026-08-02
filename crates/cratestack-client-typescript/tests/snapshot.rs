@@ -388,7 +388,7 @@ fn rpc_runtime_supports_composable_links_chain() {
     assert!(
         runtime.contains(
             "import type { RpcLink, RpcLinkNext, RpcLinkRequest, RpcStreamLink, RpcStreamLinkNext } \
-             from \"./links\";"
+             from \"./links.js\";"
         ),
         "runtime.ts must import the link chain types from ./links:\n{runtime}"
     );
@@ -422,7 +422,7 @@ fn rpc_runtime_supports_composable_links_chain() {
 
     let index = package_file(&package, "src/index.ts");
     assert!(
-        index.contains("export * from \"./links\";"),
+        index.contains("export * from \"./links.js\";"),
         "index.ts must re-export the links module:\n{index}"
     );
 }
@@ -448,7 +448,7 @@ fn rpc_runtime_supports_composable_stream_links_chain() {
          the terminal stream link unchanged:\n{runtime}"
     );
     assert!(
-        runtime.contains("import { terminalStreamLink } from \"./stream-terminal\";"),
+        runtime.contains("import { terminalStreamLink } from \"./stream-terminal.js\";"),
         "runtime.ts must import the stream chain's terminal link from ./stream-terminal:\n{runtime}"
     );
     let stream_body = &runtime[runtime.find("async *stream").expect("stream() must exist")..];
@@ -508,11 +508,11 @@ fn rpc_runtime_supports_composable_stream_links_chain() {
 
     let index = package_file(&package, "src/index.ts");
     assert!(
-        index.contains("export * from \"./cbor-seq\";"),
+        index.contains("export * from \"./cbor-seq.js\";"),
         "index.ts must re-export the public cbor-seq module:\n{index}"
     );
     assert!(
-        !index.contains("export * from \"./cbor-item\";"),
+        !index.contains("export * from \"./cbor-item.js\";"),
         "src/cbor-item.ts is an internal implementation detail (the low-level single-item \
          walk) — it must not be re-exported from index.ts:\n{index}"
     );

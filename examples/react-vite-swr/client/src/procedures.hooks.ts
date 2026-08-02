@@ -21,14 +21,14 @@ import useSWRMutation, {
   type SWRMutationConfiguration,
   type SWRMutationResponse,
 } from "swr/mutation";
-import type { CratestackRuntime } from "./runtime";
-import { swrKeys } from "./swr-keys";
+import type { CratestackRuntime } from "./runtime.js";
+import { swrKeys } from "./swr-keys.js";
 import {
   estimateFocusMinutes,
   type EstimateFocusMinutesArgs,
   type FocusEstimateArgs,
   type FocusEstimateResult,
-} from "./procedures";
+} from "./procedures.js";
 
 export function useEstimateFocusMinutesQuery(
   runtime: CratestackRuntime,

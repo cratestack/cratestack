@@ -12,8 +12,8 @@
 // single `Response` read — see `./links` for why the two chains are
 // separate contracts.
 
-import type { RpcLink, RpcLinkNext, RpcLinkRequest, RpcStreamLink, RpcStreamLinkNext } from "./links";
-import { terminalStreamLink } from "./stream-terminal";
+import type { RpcLink, RpcLinkNext, RpcLinkRequest, RpcStreamLink, RpcStreamLinkNext } from "./links.js";
+import { terminalStreamLink } from "./stream-terminal.js";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };

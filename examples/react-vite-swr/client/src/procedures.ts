@@ -12,8 +12,8 @@
 // `cratestack-client-typescript`'s
 // `src/swr/ownership.rs::compute_type_ownership`.
 
-import type { CratestackRuntime } from "./runtime";
-import type { CratestackRequestConfig } from "./queries";
+import type { CratestackRuntime } from "./runtime.js";
+import type { CratestackRequestConfig } from "./queries.js";
 
 export interface FocusEstimateArgs {
   taskCount: number;

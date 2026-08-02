@@ -2,14 +2,14 @@ import {
   CratestackRpcRuntime,
   type CratestackRpcCallOptions,
   type CratestackRpcClientOptions,
-} from "./runtime";
+} from "./runtime.js";
 import type {
   Widget,
   CreateWidgetInput,
   UpdateWidgetInput,
   EchoNameArgs,
   Page,
-} from "./models";
+} from "./models.js";
 
 export class TinyRpcClientClient {
   readonly runtime: CratestackRpcRuntime;

@@ -15,8 +15,8 @@
 // reference each other (a relation cycle) can never become a runtime
 // import cycle, only a type-only one, which TypeScript tolerates fine.
 
-import type { CratestackRuntime } from "../runtime";
-import { toSearchQuery, type CratestackQueryRequestConfig, type CratestackRequestConfig } from "../queries";
+import type { CratestackRuntime } from "../runtime.js";
+import { toSearchQuery, type CratestackQueryRequestConfig, type CratestackRequestConfig } from "../queries.js";
 
 export interface Board {
   id?: number;

@@ -31,8 +31,8 @@
 // after a mutation doesn't require knowing which filtered/paginated
 // variants happen to be in cache.
 
-import type { CratestackFetchQuery } from "./queries";
-import type { EstimateFocusMinutesArgs } from "./procedures";
+import type { CratestackFetchQuery } from "./queries.js";
+import type { EstimateFocusMinutesArgs } from "./procedures.js";
 
 export const swrKeys = {
   model: {

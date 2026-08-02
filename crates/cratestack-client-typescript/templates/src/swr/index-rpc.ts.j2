@@ -1,15 +1,15 @@
-export * from "./runtime";
-export * from "./links";
+export * from "./runtime.js";
+export * from "./links.js";
 // `./cbor-item` is deliberately internal (the low-level single-item
 // walk) — `./cbor-seq` is the public surface for boundary-scanning; see
 // its own header comment.
-export * from "./cbor-seq";
-export * from "./swr-keys";
-export * from "./models/shared";
+export * from "./cbor-seq.js";
+export * from "./swr-keys.js";
+export * from "./models/shared.js";
 {% for model in models %}
-export * from "./models/{{ model.file_stem }}";
+export * from "./models/{{ model.file_stem }}.js";
 {% endfor %}
-export * from "./procedures";
+export * from "./procedures.js";
 // Hooks (issue #305) are deliberately NOT re-exported from this root
 // index: it must stay importable with nothing but the runtime installed
 // (see `src/swr/mod.rs`'s module doc), and a barrel `export *` here

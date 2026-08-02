@@ -19,9 +19,9 @@ import {
   CratestackRpcTransportError,
   matchesContentType,
   readErrorBody,
-} from "./runtime";
-import type { RpcStreamLinkNext } from "./links";
-import { CborSeqBoundaryScanner, classifyCborSeqItem } from "./cbor-seq";
+} from "./runtime.js";
+import type { RpcStreamLinkNext } from "./links.js";
+import { CborSeqBoundaryScanner, classifyCborSeqItem } from "./cbor-seq.js";
 
 export const terminalStreamLink: RpcStreamLinkNext = async function* (request) {
   const response = await request.fetchFn(request.url, {

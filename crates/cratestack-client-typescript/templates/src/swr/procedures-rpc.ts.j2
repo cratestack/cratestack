@@ -12,7 +12,7 @@
 // `cratestack-client-typescript`'s
 // `src/swr/ownership.rs::compute_type_ownership`.
 
-import type { CratestackRpcRuntime, CratestackRpcCallOptions } from "./runtime";
+import type { CratestackRpcRuntime, CratestackRpcCallOptions } from "./runtime.js";
 {% for import in procedures_file.imports %}
 import type { {{ import.type_names_joined }} } from "{{ import.path }}";
 {% endfor %}

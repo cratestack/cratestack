@@ -29,9 +29,9 @@ import useSWRMutation, {
   type SWRMutationConfiguration,
   type SWRMutationResponse,
 } from "swr/mutation";
-import type { CratestackRuntime } from "../runtime";
-import type { CratestackQueryRequestConfig } from "../queries";
-import { swrKeys } from "../swr-keys";
+import type { CratestackRuntime } from "../runtime.js";
+import type { CratestackQueryRequestConfig } from "../queries.js";
+import { swrKeys } from "../swr-keys.js";
 import {
   listBoards,
   getBoard,
@@ -41,7 +41,7 @@ import {
   type Board,
   type CreateBoardInput,
   type UpdateBoardInput,
-} from "./board";
+} from "./board.js";
 
 export function useBoards(
   runtime: CratestackRuntime,
