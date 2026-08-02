@@ -1,5 +1,162 @@
 # Changelog
 
+## 0.6.4 (2026-08-02)
+
+### Dart Riverpod preset: build_runner integration + example app (epic #297 done)
+
+`generate-dart` gains an opt-in `--run-build-runner` flag that shells out to
+`dart run build_runner build --delete-conflicting-outputs` after
+generation, with a clear "no Dart SDK found on `PATH`" error (naming the
+manual fallback command) rather than a panic or a silent no-op when the
+tool isn't there. A real Flutter app, `examples/flutter-riverpod`, consumes
+a `--preset riverpod` client with zero hand-written providers — the
+epic's own success metric — overriding the adapter provider to point at a
+real local server. This is the fourth and final story of epic #297,
+closing it (#303).
+
+### `datasource none`: procedures-only servers without a database (epic #326, in progress)
+
+`.cstack` schemas can now declare `datasource { provider = "none" }`,
+rejecting any `model` block in the same schema, and `include_server_schema!`
+cross-checks this against its own `db` argument for the first time — until
+now `db = Postgres` was the macro's only accepted value and the argument
+was silently discarded rather than checked against anything. `db = None`
+then generates a genuinely `PgPool`-free `Cratestack`/router — not an
+unused parameter or an always-`None` `Option<PgPool>`, a structurally
+different generated type, with `ModelRouterState` and the event module
+omitted entirely rather than compiled in as dead code. A real integration
+test round-trips a procedure call over HTTP with zero `sqlx` import
+anywhere in its own setup (#327, #335). `sqlx` Cargo-feature-gating and
+migrating the framework's own examples off their `connect_lazy` workaround
+are tracked separately and still open (#329).
+
+### Dart Riverpod preset: real equality for generated data classes
+
+Every `riverpod`-preset generated Dart data class (models, `Create<M>Input`/
+`Update<M>Input`, procedure argument wrapper types) now gets real
+`operator ==`/`hashCode`/`copyWith` via `dart_mappable`. Without this, a
+`@riverpod` "family" provider taking a generated class as its argument
+never settled — Riverpod dedupes family providers by argument *value*
+equality, and a freshly-constructed instance on every rebuild (an entirely
+ordinary pattern) never matched a prior instance by identity, so the
+provider restarted `AsyncLoading` forever. Reproduced live against a real
+server before the fix. Relation-list fields also switched to
+`fast_immutable_collections`' `IList<T>` in place of `List<T>` (#325, #336).
+
+## 0.6.3 (2026-08-02)
+
+Small follow-ups to the two client-preset epics landed in 0.6.1:
+
+* One `@riverpod` provider per operation for the Dart `riverpod` preset —
+  parameterized `Future` providers for reads, `AsyncNotifier` controllers
+  for writes — built by watching the preset's existing per-model DI layer
+  rather than reconstructing adapter access from scratch (#302).
+* TypeScript `swr` preset: a `@@paged` model's generated file was missing
+  its `Page`/`PageInfo` import, a real `tsc` failure (#318).
+* TypeScript REST client: widened the `SCHEMA_SHA256` constant's type to
+  `string` — with a real, non-empty schema hash baked in, TypeScript
+  inferred a literal type and flagged the runtime's own `=== ""` check as
+  having no possible overlap (#323).
+
+## 0.6.1 (2026-08-02)
+
+### TypeScript SWR preset
+
+A second, opinionated TypeScript client preset, `--preset swr`: one file
+per model with plain, framework-free async functions underneath and a
+`useSWR`/`useSWRMutation` hook per operation on top, so the functions stay
+usable from a script, a server action, or a test with zero React/SWR in
+the import graph. Cache invalidation follows an explicit, documented rule
+(create invalidates the list; update invalidates the list and the detail;
+delete invalidates the list and drops the detail) proven by a real test
+asserting exact refetch counts, not just that the code compiles. A real
+end-to-end example app, `examples/react-vite-swr`, demonstrates it against
+a live server with browser-observed cascading invalidation (#304, #305,
+#320). Also fixes a real duplicate-key collision in the *default*
+react-query preset's key object, surfaced while building the example
+(#319).
+
+### Dart Riverpod preset (started)
+
+First story of a new, parallel Dart preset: `--preset riverpod` fans
+generated output out to one file per model instead of a single monolithic
+`models.dart`/`apis.dart` (#301). Also closes a real, pre-existing gap —
+nothing in CI had ever run generated Dart through an actual Dart/Flutter
+toolchain before this; the existing snapshot tests only assert on
+generated *text*, which can't catch a missing import or an undefined
+symbol (#300).
+
+## 0.6.0 (2026-08-02)
+
+### `@cratestack/api` split into a 9-package family
+
+`@cratestack/api` is split into `ts-types`, `link-batch`, `link-logger`,
+`runtime-fetch`, `runtime-axios`, `validator-zod`, `validator-yup`,
+`adapter-tanstack-query`, and `adapter-rtk`, so a client that only needs
+types isn't forced to ship batching/logging/HTTP-adapter code it never
+calls. `@cratestack/api` itself becomes a backward-compatible re-export
+shim over the new packages (#265). A follow-up fixes `link-batch`
+silently dropping per-call headers/fetch overrides/codec choice when
+partitioning a batch — flushes are now grouped by transport signature
+instead of merged blindly (#273).
+
+### RPC streaming: genuine incremental delivery + a first-party CBOR codec family
+
+`@stream`-marked procedures now stream for real: the server encodes and
+flushes each item onto the HTTP body as it's produced instead of
+buffering the whole sequence before the first byte goes out, with a
+CBOR-tagged sentinel (tag 48900) as the final item on a mid-stream
+failure (#292, #294). The original design's mid-stream error mechanism (a
+trailing content-type chunk) turned out to be physically unrealizable
+over HTTP/browser `fetch` and was corrected before implementation, not
+after (#289). The generated TypeScript RPC client gets a matching
+`RpcStreamLink` chain and a hand-rolled CBOR-seq boundary scanner, tested
+against real wire bytes captured from the generated server rather than
+hand-built fixtures (#277, #299).
+
+Alongside this, a new first-party CBOR codec family —
+`@cratestack/cbor-node` (napi-rs), `@cratestack/cbor-web` (wasm-bindgen),
+and `@cratestack/cbor` (an umbrella package with conditional `node`/
+`browser`/default exports) — wraps the existing Rust `cratestack-codec-cbor`
+crate for both native Node and browser targets (#286, #287, #288, #291,
+#293).
+
+### Migrations: foreign keys, `onDelete`/`onUpdate`, unique indexes
+
+`@relation` fields now emit real `FOREIGN KEY` constraints (#260, #261),
+with `onDelete`/`onUpdate` actions declarable in the schema (#268), and
+model-level `@@unique([...])` now emits a real `CREATE UNIQUE INDEX`
+(#266).
+
+### Other fixes
+
+* Two `sqlx` fixes preserve SQLSTATE/constraint-name classification on
+  generated write queries and batch write queries, instead of collapsing
+  every constraint violation into a generic error.
+* Migration/DDL SQL is no longer split on literal `;` characters, which
+  broke on any statement containing one inside a string or comment.
+* Two macro-side fixes replace an exponential REST `orderBy` match-arm
+  enumeration with runtime relation-hop resolution (#279), and drop a
+  vestigial `Result` that was masking a real SQL-correctness gap (#280).
+
+## 0.5.2 (2026-08-02)
+
+Infra only: `npm publish` switched from long-lived tokens to OIDC trusted
+publishing — no user-facing change (#221).
+
+## 0.5.1 (2026-08-01)
+
+Test-only: adds a relation-connectivity regression fixture closing a gap
+left by the exponential-relation-codegen fix in 0.5.0 — no user-facing
+change (#257).
+
+## 0.5.0 (2026-08-01)
+
+**Breaking:** relation codegen for models with many interrelated `@relation`
+fields was exponential in the number of relations, making some real-world
+schemas fail to compile at all. Fixed to be linear (#253). Also drops
+stale version pins from example crates' path dependencies (#254).
+
 ## 0.4.18 (2026-07-31)
 
 ### Studio: Postgres row-keying fix, persistent audit log, EXPLAIN
