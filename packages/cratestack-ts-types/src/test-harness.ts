@@ -47,13 +47,24 @@ export class FakeRuntime {
   async call<O>(
     opId: string,
     input: unknown,
-    opts: { signal?: AbortSignal; idempotencyKey?: string } = {},
+    opts: { signal?: AbortSignal; idempotencyKey?: string; headers?: HeadersInit } = {},
   ): Promise<O> {
+    // Mirrors `CratestackRpcRuntime.call()`/`buildHeaders()`: per-call
+    // `options.headers` are merged in, and the caller's `idempotencyKey`
+    // is written into the `Idempotency-Key` header too, not just the
+    // `RpcLinkRequest.idempotencyKey` field — a link that only reads one
+    // of the two (e.g. deriving a batch signature from headers) needs a
+    // harness that actually sets both, or its coverage of that case is
+    // vacuous.
+    const headers = new Headers(opts.headers);
+    if (opts.idempotencyKey !== undefined) {
+      headers.set("Idempotency-Key", opts.idempotencyKey);
+    }
     const request: RpcLinkRequest = {
       kind: "unary",
       opId,
       input: input ?? null,
-      headers: new Headers(),
+      headers,
       signal: opts.signal ?? null,
       ...(opts.idempotencyKey !== undefined ? { idempotencyKey: opts.idempotencyKey } : {}),
       codec: jsonCodec,

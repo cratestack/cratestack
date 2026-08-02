@@ -146,3 +146,145 @@ describe("createBatchLink", () => {
     expect(result).toEqual([{ id: 0, output: { op: "procedure.echo", input: { hi: true } } }]);
   });
 });
+
+// Issue #273: calls with a divergent transport envelope (headers,
+// fetchFn, codec) must never have that envelope silently discarded in
+// favor of whichever call happened to be queued first.
+describe("createBatchLink partitioning (#273)", () => {
+  it("issues one /rpc/batch request per distinct set of headers, each carrying its own headers verbatim", async () => {
+    const seenAuth: (string | null)[] = [];
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      seenAuth.push(new Headers(init.headers).get("authorization"));
+      const requests = JSON.parse(init.body as string) as RpcRequest[];
+      const frames: RpcResponseFrame[] = requests.map((r) => ({ id: r.id, output: r.input }));
+      return new Response(JSON.stringify(frames), { status: 200 });
+    });
+    const runtime = new FakeRuntime(fetchMock as unknown as typeof fetch, [createBatchLink()]);
+
+    const [a, b] = await Promise.all([
+      runtime.call(
+        "model.Widget.get",
+        { who: "tenant-a" },
+        { headers: { authorization: "Bearer a" } },
+      ),
+      runtime.call(
+        "model.Widget.get",
+        { who: "tenant-b" },
+        { headers: { authorization: "Bearer b" } },
+      ),
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(a).toEqual({ who: "tenant-a" });
+    expect(b).toEqual({ who: "tenant-b" });
+    expect(seenAuth.sort()).toEqual(["Bearer a", "Bearer b"]);
+  });
+
+  it("still collapses calls that share identical headers into one request", async () => {
+    const fetchMock = fakeBatchFetch((op, input) => ({ op, input }));
+    const runtime = new FakeRuntime(fetchMock as unknown as typeof fetch, [createBatchLink()]);
+
+    await Promise.all([
+      runtime.call("model.Widget.get", { id: 1 }, { headers: { authorization: "Bearer shared" } }),
+      runtime.call("model.Widget.get", { id: 2 }, { headers: { authorization: "Bearer shared" } }),
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0]!;
+    const requests = JSON.parse((init as RequestInit).body as string) as RpcRequest[];
+    expect(requests).toHaveLength(2);
+  });
+
+  it("does NOT partition on Idempotency-Key — it's carried per-frame, not per-request", async () => {
+    // Each call sets a DIFFERENT Idempotency-Key header (mirroring what
+    // the real generated runtime does for every idempotencyKey-bearing
+    // call), but that alone must not fragment the batch — the header is
+    // frame-level (RpcRequest.idem), not part of the request envelope.
+    const fetchMock = fakeBatchFetch((op, input) => ({ op, input }));
+    const runtime = new FakeRuntime(fetchMock as unknown as typeof fetch, [createBatchLink()]);
+
+    await Promise.all([
+      runtime.call("model.Order.create", { total: 1 }, { idempotencyKey: "order-a" }),
+      runtime.call("model.Order.create", { total: 2 }, { idempotencyKey: "order-b" }),
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0]!;
+    const requests = JSON.parse((init as RequestInit).body as string) as RpcRequest[];
+    expect(requests.map((r) => r.idem).sort()).toEqual(["order-a", "order-b"]);
+  });
+
+  it("issues one request per distinct fetchFn — never merges calls that shouldn't share a transport", async () => {
+    const fetchA = fakeBatchFetch((op, input) => ({ via: "a", op, input }));
+    const fetchB = fakeBatchFetch((op, input) => ({ via: "b", op, input }));
+    const link = createBatchLink();
+    const runtimeA = new FakeRuntime(fetchA as unknown as typeof fetch, [link]);
+    const runtimeB = new FakeRuntime(fetchB as unknown as typeof fetch, [link]);
+
+    const [a, b] = await Promise.all([
+      runtimeA.call<{ via: string }>("procedure.echo", { id: 1 }),
+      runtimeB.call<{ via: string }>("procedure.echo", { id: 2 }),
+    ]);
+
+    expect(fetchA).toHaveBeenCalledTimes(1);
+    expect(fetchB).toHaveBeenCalledTimes(1);
+    expect(a.via).toBe("a");
+    expect(b.via).toBe("b");
+  });
+
+  it("scopes maxBatchSize to each partition independently, not to the whole flush", async () => {
+    const fetchMock = fakeBatchFetch((op, input) => ({ op, input }));
+    const runtime = new FakeRuntime(fetchMock as unknown as typeof fetch, [
+      createBatchLink({ maxBatchSize: 2 }),
+    ]);
+
+    await Promise.all([
+      runtime.call("model.Widget.get", { id: 1 }, { headers: { authorization: "Bearer a" } }),
+      runtime.call("model.Widget.get", { id: 2 }, { headers: { authorization: "Bearer a" } }),
+      runtime.call("model.Widget.get", { id: 3 }, { headers: { authorization: "Bearer a" } }),
+      runtime.call("model.Widget.get", { id: 4 }, { headers: { authorization: "Bearer b" } }),
+    ]);
+
+    // Partition "a" (3 calls) chunks into 2+1 under maxBatchSize 2;
+    // partition "b" (1 call) is its own single request — 3 total, not
+    // a single global chunk of 2 that would straddle both partitions.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("a failure in one partition rejects only that partition's callers", async () => {
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      const auth = new Headers(init.headers).get("authorization");
+      if (auth === "Bearer bad") {
+        throw new Error("network down for tenant-bad");
+      }
+      const requests = JSON.parse(init.body as string) as RpcRequest[];
+      const frames: RpcResponseFrame[] = requests.map((r) => ({ id: r.id, output: r.input }));
+      return new Response(JSON.stringify(frames), { status: 200 });
+    });
+    const runtime = new FakeRuntime(fetchMock as unknown as typeof fetch, [createBatchLink()]);
+
+    const [good, bad] = await Promise.allSettled([
+      runtime.call("model.Widget.get", { id: 1 }, { headers: { authorization: "Bearer good" } }),
+      runtime.call("model.Widget.get", { id: 2 }, { headers: { authorization: "Bearer bad" } }),
+    ]);
+
+    expect(good.status).toBe("fulfilled");
+    expect(bad.status).toBe("rejected");
+  });
+
+  it("createBatchLink({ headers }) sets the aggregate request's baseline headers", async () => {
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      expect(new Headers(init.headers).get("x-batch-source")).toBe("link-default");
+      const requests = JSON.parse(init.body as string) as RpcRequest[];
+      const frames: RpcResponseFrame[] = requests.map((r) => ({ id: r.id, output: r.input }));
+      return new Response(JSON.stringify(frames), { status: 200 });
+    });
+    const runtime = new FakeRuntime(fetchMock as unknown as typeof fetch, [
+      createBatchLink({ headers: { "x-batch-source": "link-default" } }),
+    ]);
+
+    await runtime.call("model.Widget.get", { id: 1 });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
