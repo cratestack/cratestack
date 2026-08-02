@@ -95,3 +95,68 @@ model Customer {
         vec!["model_attribute_other"]
     );
 }
+
+#[test]
+fn each_composite_unique_is_tracked_separately() {
+    // Keyed on the whole attribute, not just `@@unique`: dropping one
+    // of two constraints has to read as a removal, not vanish because
+    // the surviving one occupies the same key (issue #262).
+    let prev = r#"
+model Application {
+  id String @id
+  tenantId String
+  name String
+  slug String
+
+  @@unique([tenantId, name])
+  @@unique([tenantId, slug])
+}
+"#;
+    let next = r#"
+model Application {
+  id String @id
+  tenantId String
+  name String
+  slug String
+
+  @@unique([tenantId, name])
+}
+"#;
+    let result = diff(prev, next);
+    assert!(!result.has_breaking());
+    assert_eq!(
+        categories(&result, Severity::Internal),
+        vec!["model_attribute_other"]
+    );
+    let message = &result.changes[0].message;
+    assert!(
+        message.contains("lost `@@unique([tenantId, slug])`"),
+        "message: {message}"
+    );
+}
+
+#[test]
+fn adding_a_composite_unique_is_internal_only() {
+    let prev = r#"
+model Application {
+  id String @id
+  tenantId String
+  name String
+}
+"#;
+    let next = r#"
+model Application {
+  id String @id
+  tenantId String
+  name String
+
+  @@unique([tenantId, name])
+}
+"#;
+    let result = diff(prev, next);
+    assert!(!result.has_breaking());
+    assert_eq!(
+        categories(&result, Severity::Internal),
+        vec!["model_attribute_other"]
+    );
+}

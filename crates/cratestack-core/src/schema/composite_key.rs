@@ -2,60 +2,28 @@
 //! attribute (Prisma's spelling). Mirrors [`crate::events::parse_emit_attribute`]'s
 //! shape: syntax parsing lives here in `cratestack-core` so both the
 //! parser's semantic checker and any other consumer share one
-//! implementation.
+//! implementation. The bracketed-field-list syntax itself is shared
+//! with `@@unique([...])` — see [`super::field_list`].
+
+use super::field_list::{FieldListSpec, parse_field_list};
+
+const SPEC: FieldListSpec = FieldListSpec {
+    prefix: "@@id(",
+    label: "composite id attribute",
+    example: "@@id([field1, field2])",
+};
 
 /// Parses `@@id([field1, field2, ...])` into its ordered list of local
 /// field names. Callers are responsible for checking that each name
 /// resolves to a real scalar field on the model.
 pub fn parse_composite_id_attribute(raw: &str) -> Result<Vec<String>, String> {
-    let Some(inner) = raw
-        .strip_prefix("@@id(")
-        .and_then(|value| value.strip_suffix(')'))
-    else {
-        return Err(format!("unsupported composite id attribute `{raw}`"));
-    };
-
-    let Some(list) = inner
-        .trim()
-        .strip_prefix('[')
-        .and_then(|value| value.strip_suffix(']'))
-    else {
-        return Err(format!(
-            "composite id attribute `{raw}` must list fields as `@@id([field1, field2])`"
-        ));
-    };
-
-    let mut fields = Vec::new();
-    for part in list.split(',').map(str::trim) {
-        if part.is_empty() {
-            continue;
-        }
-        if !is_valid_field_name(part) {
-            return Err(format!(
-                "composite id attribute `{raw}` lists invalid field name `{part}`"
-            ));
-        }
-        if fields.contains(&part.to_owned()) {
-            return Err(format!(
-                "composite id attribute `{raw}` lists field `{part}` more than once"
-            ));
-        }
-        fields.push(part.to_owned());
-    }
-
+    let fields = parse_field_list(raw, &SPEC)?;
     if fields.len() < 2 {
         return Err(format!(
             "composite id attribute `{raw}` must list at least two fields; use a single-field `@id` instead"
         ));
     }
-
     Ok(fields)
-}
-
-fn is_valid_field_name(value: &str) -> bool {
-    let mut chars = value.chars();
-    matches!(chars.next(), Some(first) if first.is_ascii_alphabetic() || first == '_')
-        && chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
 }
 
 #[cfg(test)]

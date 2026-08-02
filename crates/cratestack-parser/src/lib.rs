@@ -19,6 +19,8 @@ mod tests_mixins;
 #[cfg(test)]
 mod tests_model_attrs;
 #[cfg(test)]
+mod tests_model_unique;
+#[cfg(test)]
 mod tests_procedures;
 #[cfg(test)]
 mod tests_relations;

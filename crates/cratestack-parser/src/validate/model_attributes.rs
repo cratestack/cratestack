@@ -1,8 +1,12 @@
 use std::collections::BTreeSet;
 
-use cratestack_core::{Model, parse_composite_id_attribute, parse_emit_attribute};
+use cratestack_core::{Model, parse_emit_attribute};
 
 use crate::diagnostics::{SchemaError, span_error};
+
+use super::composite_attributes::{
+    validate_composite_id_attribute, validate_composite_unique_attribute,
+};
 
 pub(super) fn validate_model_attributes(
     model: &Model,
@@ -11,6 +15,10 @@ pub(super) fn validate_model_attributes(
     let mut saw_emit_attribute = false;
     let mut saw_paged_attribute = false;
     let mut saw_id_attribute = false;
+    // Every `@@unique([...])` list seen so far on this model, so a
+    // repeated constraint (which would collide on the generated index
+    // name) is caught rather than emitted twice.
+    let mut unique_field_lists: Vec<Vec<String>> = Vec::new();
     for attribute in &model.attributes {
         if attribute.raw.starts_with("@@emit(") {
             if saw_emit_attribute {
@@ -79,86 +87,15 @@ pub(super) fn validate_model_attributes(
             }
             validate_composite_id_attribute(model, attribute, model_names)?;
             saw_id_attribute = true;
+        } else if attribute.raw.starts_with("@@unique") {
+            validate_composite_unique_attribute(
+                model,
+                attribute,
+                model_names,
+                &mut unique_field_lists,
+            )?;
         }
     }
-    Ok(())
-}
-
-/// Validates a `@@id([field1, field2, ...])` composite-primary-key
-/// attribute: syntax, mutual exclusivity with a field-level `@id`, and
-/// that every listed field is a real scalar field on this model.
-fn validate_composite_id_attribute(
-    model: &Model,
-    attribute: &cratestack_core::Attribute,
-    model_names: &BTreeSet<&str>,
-) -> Result<(), SchemaError> {
-    let field_names = parse_composite_id_attribute(&attribute.raw)
-        .map_err(|message| span_error(message, attribute.span))?;
-
-    if let Some(single_id_field) = model
-        .fields
-        .iter()
-        .find(|field| field.attributes.iter().any(|a| a.raw.starts_with("@id")))
-    {
-        return Err(span_error(
-            format!(
-                "model `{}` declares both a field-level `@id` on `{}` and `@@id([...])`; use exactly one primary key declaration",
-                model.name, single_id_field.name,
-            ),
-            attribute.span,
-        ));
-    }
-
-    for field_name in &field_names {
-        let field = model
-            .fields
-            .iter()
-            .find(|candidate| &candidate.name == field_name)
-            .ok_or_else(|| {
-                span_error(
-                    format!(
-                        "model `{}` `@@id([...])` references unknown field `{}`",
-                        model.name, field_name,
-                    ),
-                    attribute.span,
-                )
-            })?;
-
-        if model_names.contains(field.ty.name.as_str()) {
-            return Err(span_error(
-                format!(
-                    "model `{}` `@@id([...])` field `{}` must be a scalar column, not a relation field",
-                    model.name, field_name,
-                ),
-                attribute.span,
-            ));
-        }
-
-        if field
-            .attributes
-            .iter()
-            .any(|a| a.raw == "@readonly" || a.raw == "@server_only")
-        {
-            return Err(span_error(
-                format!(
-                    "model `{}` `@@id([...])` field `{}` is part of the primary key and must not declare @readonly or @server_only",
-                    model.name, field_name,
-                ),
-                attribute.span,
-            ));
-        }
-
-        if field.attributes.iter().any(|a| a.raw == "@version") {
-            return Err(span_error(
-                format!(
-                    "model `{}` `@@id([...])` field `{}` must not also be the @version field",
-                    model.name, field_name,
-                ),
-                attribute.span,
-            ));
-        }
-    }
-
     Ok(())
 }
 

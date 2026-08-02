@@ -10,6 +10,7 @@
 mod checks;
 mod fields;
 mod renames;
+mod uniques;
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -21,6 +22,7 @@ use crate::naming::{check_name, column_name, index_name_unique, table_name};
 use checks::{check_kind_slug, collect_check_kinds, field_has_db_enforce};
 use fields::{field_has_unique, field_to_column, is_relation_field};
 use renames::{field_rename_from, model_rename_from};
+use uniques::composite_unique_indexes;
 
 /// IR-side projection of a model: the table plus any indexes implied
 /// by field-level attributes.
@@ -103,7 +105,7 @@ pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
         }
         if field_has_unique(field) && !column.primary_key {
             indexes.push(AddIndex {
-                name: index_name_unique(&table, &column.name),
+                name: index_name_unique(&table, &[column.name.as_str()]),
                 table: table.clone(),
                 columns: vec![column.name.clone()],
                 unique: true,
@@ -130,6 +132,10 @@ pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
         }
         columns.push(column);
     }
+
+    // Model-level `@@unique([...])` composite constraints, projected
+    // once the columns they reference are known (issue #262).
+    indexes.extend(composite_unique_indexes(model, &table, &columns));
 
     TableProjection {
         name: table,

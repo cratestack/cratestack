@@ -50,7 +50,15 @@ fn index(models: &[Model]) -> BTreeMap<&str, &Model> {
 /// The attribute's identity ignoring any parenthesized arguments, e.g.
 /// `@@retain(days: 5)` and `@@retain(days: 10)` share the key
 /// `@@retain` — a value-only change, not an add/remove.
+///
+/// `@@unique([...])` is the exception: a model may carry several, each
+/// a distinct constraint, so the argument list is part of the identity.
+/// Keying them all as `@@unique` would collapse them into one entry and
+/// under-report adds and removals.
 fn attribute_key(raw: &str) -> &str {
+    if raw.starts_with("@@unique") {
+        return raw;
+    }
     raw.split('(').next().unwrap_or(raw)
 }
 

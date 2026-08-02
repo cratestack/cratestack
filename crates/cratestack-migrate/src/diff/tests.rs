@@ -2,6 +2,7 @@
 //! under the 200-LoC budget.
 
 mod basic;
+mod composite_unique;
 mod indexes;
 mod views;
 

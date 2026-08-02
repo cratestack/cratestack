@@ -17,9 +17,11 @@ pub fn column_name(field: &str) -> String {
 
 /// `<table>_<column>_key` — Postgres's own convention for unique
 /// constraints, and the name we use for `@unique`-implied indexes
-/// across both backends so the diff is stable.
-pub fn index_name_unique(table: &str, column: &str) -> String {
-    format!("{table}_{column}_key")
+/// across both backends so the diff is stable. A model-level
+/// `@@unique([a, b])` extends the same convention across every listed
+/// column in declaration order: `<table>_<a>_<b>_key`.
+pub fn index_name_unique(table: &str, columns: &[&str]) -> String {
+    format!("{table}_{}_key", columns.join("_"))
 }
 
 /// `<table>_<column>_<validator>_check` — stable, predictable name
@@ -83,8 +85,21 @@ mod tests {
     #[test]
     fn unique_index_name_is_stable() {
         assert_eq!(
-            index_name_unique("customers", "email"),
+            index_name_unique("customers", &["email"]),
             "customers_email_key"
+        );
+    }
+
+    #[test]
+    fn composite_unique_index_name_joins_columns_in_order() {
+        assert_eq!(
+            index_name_unique("applications", &["tenant_id", "name", "environment"]),
+            "applications_tenant_id_name_environment_key"
+        );
+        // Order is significant: it is the index's column order too.
+        assert_eq!(
+            index_name_unique("applications", &["name", "tenant_id"]),
+            "applications_name_tenant_id_key"
         );
     }
 }

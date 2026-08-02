@@ -6,6 +6,7 @@ mod columns;
 mod create;
 mod enums;
 mod renames;
+mod uniques;
 mod views;
 
 use cratestack_core::Schema;

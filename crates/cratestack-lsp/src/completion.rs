@@ -25,6 +25,8 @@ pub(crate) fn completion_items(schema: Option<&Schema>) -> Vec<CompletionItem> {
         "@allow",
         "@custom",
         "@@allow",
+        "@@id",
+        "@@unique",
     ];
     // Sourced from the parser's authoritative list rather than hand-copied,
     // so this can't silently drift the way it did before `Decimal` was

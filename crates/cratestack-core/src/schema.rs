@@ -3,6 +3,8 @@
 //! positions in the original text.
 
 pub mod composite_key;
+pub mod composite_unique;
+mod field_list;
 pub mod model;
 pub mod procedure;
 pub mod selection;
@@ -11,6 +13,7 @@ pub mod view;
 use serde::{Deserialize, Serialize};
 
 pub use composite_key::parse_composite_id_attribute;
+pub use composite_unique::parse_composite_unique_attribute;
 pub use model::{
     Attribute, EnumDecl, EnumVariant, Field, MixinDecl, Model, TypeArity, TypeDecl, TypeRef,
 };

@@ -1,3 +1,5 @@
+mod uniques;
+
 use super::emit;
 use crate::diff::diff;
 use cratestack_core::Schema;

@@ -1,3 +1,4 @@
+mod composite_attributes;
 mod fields;
 mod mixins_types;
 mod model_attributes;
