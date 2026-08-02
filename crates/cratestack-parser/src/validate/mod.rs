@@ -56,6 +56,7 @@ pub(crate) fn validate_schema(
     }
 
     validate_datasource(schema)?;
+    validate_no_models_under_datasource_none(schema)?;
 
     let page_item_type_names = schema
         .models
@@ -78,23 +79,59 @@ pub(crate) fn validate_schema(
 
 fn validate_datasource(schema: &Schema) -> Result<(), SchemaError> {
     if let Some(datasource) = &schema.datasource {
-        let provider = datasource
-            .entries
-            .iter()
-            .find(|entry| entry.key == "provider")
-            .map(|entry| entry.value.trim_matches('"'));
+        let provider = datasource_provider(schema);
 
         if let Some(provider) = provider
             && provider != "postgresql"
             && provider != "sqlite"
+            && provider != "none"
         {
             return Err(span_error(
                 format!(
-                    "unsupported datasource provider `{provider}`; expected `postgresql` or `sqlite`"
+                    "unsupported datasource provider `{provider}`; expected `postgresql`, `sqlite`, or `none`"
                 ),
                 datasource.span,
             ));
         }
+    }
+    Ok(())
+}
+
+/// The `provider` config entry off `schema.datasource`, with surrounding
+/// quotes stripped — `None` when there's no `datasource` block at all, or
+/// the block has no `provider` entry. Shared by [`validate_datasource`] and
+/// [`validate_no_models_under_datasource_none`] so both read the exact same
+/// value.
+fn datasource_provider(schema: &Schema) -> Option<&str> {
+    schema
+        .datasource
+        .as_ref()?
+        .entries
+        .iter()
+        .find(|entry| entry.key == "provider")
+        .map(|entry| entry.value.trim_matches('"'))
+}
+
+/// `datasource { provider = "none" }` declares a no-database, procedures-only
+/// schema (cratestack#327): the whole point is that no table-backed `model`
+/// exists to accidentally query against a database that was never
+/// configured. Zero-model schemas are already valid today (procedures-only
+/// or even zero-procedure — see `examples/rpc-procedures/schema.cstack`), so
+/// this only ever rejects, never requires, a model list.
+fn validate_no_models_under_datasource_none(schema: &Schema) -> Result<(), SchemaError> {
+    if datasource_provider(schema) != Some("none") {
+        return Ok(());
+    }
+    if let Some(model) = schema.models.first() {
+        return Err(span_error(
+            format!(
+                "model `{}` is not allowed: schema declares `datasource {{ provider = \"none\" }}`, \
+                 which forbids any `model` block (this schema is procedures-only, no database is \
+                 configured)",
+                model.name
+            ),
+            model.span,
+        ));
     }
     Ok(())
 }

@@ -39,6 +39,19 @@ pub(crate) fn completion_items(schema: Option<&Schema>) -> Vec<CompletionItem> {
         .copied()
         .filter(|name| *name != "Page");
 
+    // The three values `validate_datasource` (cratestack-parser) accepts for
+    // `datasource { provider = "..." }`. `"none"` (cratestack#327) declares
+    // a no-database, procedures-only schema — surfaced here so schema
+    // authors discover it without reading source.
+    let datasource_providers = [
+        ("\"postgresql\"", "sqlx Postgres backend"),
+        ("\"sqlite\"", "rusqlite embedded backend"),
+        (
+            "\"none\"",
+            "no database (procedures-only server mode, cratestack#327) — no `model` block allowed",
+        ),
+    ];
+
     let mut items = keywords
         .into_iter()
         .map(|label| CompletionItem {
@@ -53,6 +66,17 @@ pub(crate) fn completion_items(schema: Option<&Schema>) -> Vec<CompletionItem> {
         kind: Some(CompletionItemKind::TYPE_PARAMETER),
         ..CompletionItem::default()
     }));
+
+    items.extend(
+        datasource_providers
+            .into_iter()
+            .map(|(label, detail)| CompletionItem {
+                label: label.to_owned(),
+                kind: Some(CompletionItemKind::ENUM_MEMBER),
+                detail: Some(detail.to_owned()),
+                ..CompletionItem::default()
+            }),
+    );
 
     let mut seen = BTreeSet::new();
     if let Some(schema) = schema {
@@ -190,6 +214,26 @@ mod tests {
             labels, expected,
             "completion list must track cratestack_parser::builtin_type_names() \
              (minus `Page`) — see cratestack#232",
+        );
+    }
+
+    /// cratestack#327: `datasource { provider = "none" }` must be offered
+    /// alongside the existing `"postgresql"`/`"sqlite"` provider values.
+    #[test]
+    fn datasource_provider_completions_include_none_alongside_postgresql_and_sqlite() {
+        let labels: std::collections::BTreeSet<String> = completion_items(None)
+            .into_iter()
+            .filter(|item| item.kind == Some(CompletionItemKind::ENUM_MEMBER))
+            .map(|item| item.label)
+            .collect();
+
+        assert_eq!(
+            labels,
+            std::collections::BTreeSet::from([
+                "\"postgresql\"".to_owned(),
+                "\"sqlite\"".to_owned(),
+                "\"none\"".to_owned(),
+            ])
         );
     }
 }

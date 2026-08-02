@@ -1,7 +1,8 @@
 //! Argument parsing for the three top-level include macros + shared
-//! schema file loader. `include_server_schema!` takes `db = Postgres`
-//! (only Postgres is wired today); `include_embedded_schema!` and
-//! `include_client_schema!` take a bare path literal.
+//! schema file loader. `include_server_schema!` takes `db = Postgres` or
+//! `db = None` (cratestack#327 — "no database" procedures-only server
+//! mode); `include_embedded_schema!` and `include_client_schema!` take a
+//! bare path literal.
 
 use std::path::PathBuf;
 
@@ -10,14 +11,19 @@ use sha2::{Digest, Sha256};
 use syn::parse::{Parse, ParseStream};
 use syn::{LitStr, Token};
 
-/// Supported sqlx database backends for `include_server_schema!`.
+/// Supported `db` arguments for `include_server_schema!`.
 ///
-/// Today only `Postgres` is accepted; the parser is wired so adding
-/// `MySql` / `Sqlite`-via-sqlx (when we want them) is a non-breaking
-/// change at call sites that already pass `db = Postgres`.
+/// `Postgres` is the sqlx-backed database mode; `None` is cratestack#327's
+/// "no database" procedures-only mode. Both are cross-checked against the
+/// schema's own `datasource.provider` (`postgresql` / `none` respectively)
+/// by [`super::datasource_guard::guard_server_datasource_provider`] — a
+/// mismatch is a compile-time error, not silently ignored. The parser is
+/// wired so adding `MySql` / `Sqlite`-via-sqlx (when we want them) is a
+/// non-breaking change at call sites that already pass `db = Postgres`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ServerDb {
     Postgres,
+    None,
 }
 
 /// Parsed arguments for `include_server_schema!("schema.cstack", db = Postgres)`.
@@ -41,11 +47,12 @@ impl Parse for ServerSchemaArgs {
         let value: syn::Ident = input.parse()?;
         let db = match value.to_string().as_str() {
             "Postgres" => ServerDb::Postgres,
+            "None" => ServerDb::None,
             other => {
                 return Err(syn::Error::new(
                     value.span(),
                     format!(
-                        "unsupported db backend `{other}`. supported: Postgres. (MySql / sqlite-via-sqlx will land in a future release.)"
+                        "unsupported db backend `{other}`. supported: Postgres, None. (MySql / sqlite-via-sqlx will land in a future release.)"
                     ),
                 ));
             }

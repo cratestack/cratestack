@@ -13,16 +13,21 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::LitStr;
 
-use super::parse::parse_schema_literal;
+use super::parse::{ServerDb, parse_schema_literal};
 
 use collect::collect_server_schema;
 
-pub(super) fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
+pub(super) fn compose_server_schema(schema_path: &LitStr, db: ServerDb) -> TokenStream {
     let (schema_relative, resolved, schema, schema_sha256) = match parse_schema_literal(schema_path)
     {
         Ok(parsed) => parsed,
         Err(error) => return error,
     };
+    if let Err(error) =
+        super::datasource_guard::guard_server_datasource_provider(schema_path, &schema, db)
+    {
+        return error;
+    }
     if let Err(error) = super::reject_grpc::guard_server_grpc_transport(schema_path, &schema) {
         return error;
     }
