@@ -1,6 +1,10 @@
 //! `include_client_schema!` composer — emits the HTTP client surface:
 //! model/input/procedure stubs for talking to a server over the wire.
-//! No DB at all.
+//! No DB at all. For a `transport grpc` schema (ticket #209), also emits a
+//! native `tonic`-based gRPC client under `cratestack_schema::grpc` — see
+//! [`grpc`]'s module doc.
+
+mod grpc;
 
 use std::collections::BTreeSet;
 
@@ -25,13 +29,13 @@ pub(super) fn compose_client_schema(schema_path: &LitStr) -> TokenStream {
         Ok(parsed) => parsed,
         Err(error) => return error,
     };
-    if let Err(error) = super::reject_grpc::guard_client_or_embedded_grpc_transport(
-        schema_path,
-        &schema,
-        "include_client_schema",
-    ) {
+    if let Err(error) = super::reject_grpc::guard_client_grpc_transport(schema_path, &schema) {
         return error;
     }
+    let grpc_module = match grpc::build_client_grpc_module(&schema, &resolved, schema_path) {
+        Ok(tokens) => tokens,
+        Err(error) => return error,
+    };
     let resolved_literal = resolved.display().to_string();
 
     let model_names = schema.models.iter().map(|model| schema_lit(&model.name));
@@ -161,6 +165,8 @@ pub(super) fn compose_client_schema(schema_path: &LitStr) -> TokenStream {
 
                 #(#procedure_modules)*
             }
+
+            #grpc_module
         }
     };
 

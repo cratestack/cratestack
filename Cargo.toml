@@ -34,6 +34,7 @@ members = [
     "examples/embedded-daemon",
     "examples/embedded-webhook",
     "examples/grpc-widgets",
+    "examples/grpc-widgets/rust-client",
     "examples/client-stub-rust",
     "examples/client-multi-service",
     "examples/microservice-pair",

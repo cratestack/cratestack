@@ -17,21 +17,24 @@ pub(crate) fn generate_client_module(
     match transport {
         TransportStyle::Rest => rest::generate_generated_client_module(models, procedures),
         TransportStyle::Rpc => rpc::generate_generated_rpc_client_module(models, procedures),
-        // `include_client_schema!` against a `transport grpc` schema is
-        // rejected up front by
-        // `reject_grpc::guard_client_or_embedded_grpc_transport` — no Rust
-        // gRPC client codegen exists (tracking:
-        // https://github.com/cratestack/cratestack/issues/172). This call
-        // site is different: `include_server_schema!` calls
-        // `generate_client_module` unconditionally too, to build the
-        // server's own embedded self/peer-calling client
-        // (`cratestack_schema::client::Client`) — and ticket #171's
-        // `guard_server_grpc_transport` *does* let a `Grpc` schema reach
-        // this fn (behind the `grpc` feature). Erroring here would make
-        // every `transport grpc` server schema uncompilable, so this arm
-        // emits nothing instead: `cratestack_schema::client` simply
-        // doesn't exist for a `transport grpc` schema today. A Rust gRPC
-        // client (tonic-based) is future work, not this ticket's scope.
+        // A `transport grpc` schema never builds a `cratestack_schema::
+        // client::Client` (this fn's own `client` module shape) — its
+        // generated client lives at `cratestack_schema::grpc::Client`
+        // instead (`include::client::grpc`, ticket #209), parallel to how
+        // `include::server::grpc` mounts its tonic service at
+        // `cratestack_schema::grpc::into_router` rather than reusing the
+        // REST/RPC `axum_module`. This call site is shared by both
+        // `include_server_schema!` (building the server's own embedded
+        // self/peer-calling client) and `include_client_schema!`
+        // (building the consumer-facing client) — both `guard_server_
+        // grpc_transport` (#171) and `guard_client_grpc_transport` (#209)
+        // let a `Grpc` schema reach this fn behind the `grpc` feature, so
+        // erroring here would make every `transport grpc` schema
+        // uncompilable under either macro. Emitting nothing is correct
+        // for both: `cratestack_schema::client` simply doesn't exist for
+        // a `transport grpc` schema, full stop — the real client (or
+        // service) is built by the schema-transport-aware `grpc` module
+        // each composer splices in separately.
         TransportStyle::Grpc => Ok(quote::quote! {}),
     }
 }

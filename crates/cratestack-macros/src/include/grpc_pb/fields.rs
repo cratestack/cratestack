@@ -18,7 +18,7 @@ use cratestack_core::{Field, Model, TypeDecl};
 /// Fields on the generated `Model` pb message: everything except
 /// `@server_only`. Relations stay in (rendered as message references by
 /// `super::message::render_field`).
-pub(super) fn visible_model_fields(model: &Model) -> Vec<&Field> {
+pub(crate) fn visible_model_fields(model: &Model) -> Vec<&Field> {
     model
         .fields
         .iter()
@@ -28,7 +28,7 @@ pub(super) fn visible_model_fields(model: &Model) -> Vec<&Field> {
 
 /// Fields on the generated `TypeDecl` pb message: everything except
 /// `@server_only`.
-pub(super) fn visible_type_fields(ty: &TypeDecl) -> Vec<&Field> {
+pub(crate) fn visible_type_fields(ty: &TypeDecl) -> Vec<&Field> {
     ty.fields
         .iter()
         .filter(|field| !is_server_only_field(field))
@@ -37,7 +37,7 @@ pub(super) fn visible_type_fields(ty: &TypeDecl) -> Vec<&Field> {
 
 /// Base field set for `Create<M>Input`/`Update<M>Input`: relations and
 /// `@server_only` fields excluded.
-pub(super) fn scalar_model_fields<'a>(
+pub(crate) fn scalar_model_fields<'a>(
     model: &'a Model,
     model_names: &BTreeSet<&str>,
 ) -> Vec<&'a Field> {
@@ -64,7 +64,7 @@ fn is_server_only_field(field: &Field) -> bool {
 /// `Create<M>Input` message exists for it (`cratestack-proto`'s
 /// `emit::service` gates the gRPC `Create` method identically, on
 /// `extra_messages.contains_key("Create<M>Input")`).
-pub(super) fn model_allows_create(model: &Model) -> bool {
+pub(crate) fn model_allows_create(model: &Model) -> bool {
     model
         .attributes
         .iter()

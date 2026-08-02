@@ -1133,12 +1133,14 @@ dependencies = [
  "futures-util",
  "minicbor",
  "minicbor-serde",
+ "prost 0.13.5",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
  "serde_urlencoded",
  "thiserror 2.0.18",
  "tokio",
+ "tonic 0.13.1",
  "url",
 ]
 
@@ -2681,6 +2683,16 @@ name = "grpc-widgets-example"
 version = "0.1.0"
 dependencies = [
  "cratestack-codec-cbor",
+ "cratestack-pg",
+ "prost 0.13.5",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "grpc-widgets-rust-client-example"
+version = "0.1.0"
+dependencies = [
  "cratestack-pg",
  "prost 0.13.5",
  "serde",

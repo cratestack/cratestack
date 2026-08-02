@@ -12,13 +12,13 @@
 
 use quote::quote;
 
-pub(super) struct ScalarWire {
+pub(crate) struct ScalarWire {
     /// The prost field's Rust type, unwrapped (before `Option<_>`/`Vec<_>`
     /// arity wrapping).
-    pub(super) rust_type: proc_macro2::TokenStream,
+    pub(crate) rust_type: proc_macro2::TokenStream,
     /// The bare `#[prost(...)]` kind token(s), e.g. `string`, `int64`,
     /// `bytes = "vec"`, `message`.
-    pub(super) prost_kind: proc_macro2::TokenStream,
+    pub(crate) prost_kind: proc_macro2::TokenStream,
 }
 
 /// `None` for a name this table doesn't know about — the caller resolves
@@ -26,7 +26,7 @@ pub(super) struct ScalarWire {
 /// `cratestack-proto::emit::scalar::map_scalar`'s `other => plain(other)`
 /// passthrough, except this table needs to distinguish "no mapping" from
 /// "the literal string type" so the caller can pick the right dispatch).
-pub(super) fn scalar_wire(name: &str) -> Option<ScalarWire> {
+pub(crate) fn scalar_wire(name: &str) -> Option<ScalarWire> {
     Some(match name {
         "String" | "Cuid" | "Uuid" | "Decimal" => ScalarWire {
             rust_type: quote! { String },
@@ -61,7 +61,7 @@ pub(super) fn scalar_wire(name: &str) -> Option<ScalarWire> {
 /// (`Uuid`/`Decimal`/`Json`/`DateTime`) has a lossless string/bytes/message
 /// representation on the way *out*; only the way back in (parsing
 /// untrusted wire bytes) can fail. See [`domain_from_wire_expr`].
-pub(super) fn wire_from_domain_expr(
+pub(crate) fn wire_from_domain_expr(
     scalar_name: &str,
     domain_expr: proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
@@ -84,7 +84,7 @@ pub(super) fn wire_from_domain_expr(
 /// Wire inner value expression -> `Result<DomainInner, ::cratestack::CoolError>`.
 /// `owner`/`field` name the message/field this conversion belongs to, for
 /// error messages.
-pub(super) fn domain_from_wire_expr(
+pub(crate) fn domain_from_wire_expr(
     scalar_name: &str,
     wire_expr: proc_macro2::TokenStream,
     owner: &str,

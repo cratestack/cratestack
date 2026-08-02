@@ -21,8 +21,8 @@ use crate::shared::ident;
 
 use super::scalar::{domain_from_wire_expr, scalar_wire, wire_from_domain_expr};
 
-pub(super) struct RenderedMessage {
-    pub(super) tokens: proc_macro2::TokenStream,
+pub(crate) struct RenderedMessage {
+    pub(crate) tokens: proc_macro2::TokenStream,
 }
 
 /// `message_name`: the pb struct's name (`User`, `CreateUserInput`, ...).
@@ -30,7 +30,7 @@ pub(super) struct RenderedMessage {
 /// (`super::super::User`) — a sibling of the `pb` module, reachable via
 /// `cratestack_schema`'s own `pub use models::*;` / `pub use inputs::*;`
 /// glob re-exports.
-pub(super) fn render_message(
+pub(crate) fn render_message(
     message_name: &str,
     domain_path: proc_macro2::TokenStream,
     fields: &[&Field],

@@ -35,7 +35,7 @@ use quote::quote;
 
 use crate::shared::{ident, pluralize, to_snake_case};
 
-use super::fields::model_allows_create;
+use crate::include::grpc_pb::fields::model_allows_create;
 
 pub(super) fn build_service(
     schema: &Schema,

@@ -82,7 +82,25 @@ codec-json = ["cratestack-client-rust/codec-json"]
 # crate for everything this crate's own code references by path, but
 # cannot satisfy `prost-derive`'s hardcoded `::prost::` — Rust's extern
 # prelude is per-crate, not transitive through a re-exporting dependency.
-grpc = ["cratestack-macros/grpc", "dep:cratestack-grpc", "dep:prost"]
+#
+# `cratestack-client-rust/grpc` (ticket #209): forwards the native Rust
+# gRPC *client* runtime (`::cratestack::client_rust::grpc::
+# CratestackGrpcClient`) that `include_client_schema!`'s `transport grpc`
+# codegen references. Both server and client gRPC codegen share this one
+# Cargo feature (same reasoning `cratestack-macros/grpc` already applies
+# to both `include_server_schema!` and `include_client_schema!` — see
+# `cratestack-macros/src/include/reject_grpc.rs`'s module doc): a crate
+# using this facade purely as a gRPC client still needs the client-runtime
+# half, not the server (`cratestack-grpc`/`dep:prost` for the tonic
+# service) half, but there is currently no split finer than "the `grpc`
+# feature is on or off" — narrowing that is future work if the unified
+# cost (tonic pulled in either way) ever becomes a problem in practice.
+grpc = [
+    "cratestack-macros/grpc",
+    "dep:cratestack-grpc",
+    "dep:prost",
+    "cratestack-client-rust/grpc",
+]
 # NOT YET FUNCTIONAL — enabling this feature is a hard compile_error!, not a
 # working FIPS mode. It exists only as a reserved name so a future PR can
 # wire it up without a breaking rename. `aws-lc-rs` is not a dependency of
