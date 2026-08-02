@@ -2,7 +2,7 @@
 
 use std::fmt::Write as _;
 
-use crate::ir::{AddForeignKey, DropForeignKey, ForeignKeyAction};
+use crate::ir::{AddForeignKey, DropForeignKey};
 
 use super::idents::quote_ident;
 
@@ -20,23 +20,13 @@ pub(super) fn emit_add_foreign_key(sql: &mut String, fk: &AddForeignKey) {
     // `NoAction` is Postgres's own default for both clauses — omit it
     // rather than spelling out the default every schema without an
     // explicit `onDelete`/`onUpdate` already gets for free.
-    if let Some(action) = render_action(fk.on_delete) {
+    if let Some(action) = fk.on_delete.sql_keyword() {
         write!(sql, " ON DELETE {action}").unwrap();
     }
-    if let Some(action) = render_action(fk.on_update) {
+    if let Some(action) = fk.on_update.sql_keyword() {
         write!(sql, " ON UPDATE {action}").unwrap();
     }
     sql.push_str(";\n");
-}
-
-fn render_action(action: ForeignKeyAction) -> Option<&'static str> {
-    match action {
-        ForeignKeyAction::Cascade => Some("CASCADE"),
-        ForeignKeyAction::Restrict => Some("RESTRICT"),
-        ForeignKeyAction::SetNull => Some("SET NULL"),
-        ForeignKeyAction::SetDefault => Some("SET DEFAULT"),
-        ForeignKeyAction::NoAction => None,
-    }
 }
 
 pub(super) fn emit_drop_foreign_key(sql: &mut String, drop: &DropForeignKey) {

@@ -9,7 +9,7 @@
 
 use std::fmt::Write as _;
 
-use crate::ir::{AddForeignKey, DropForeignKey, ForeignKeyAction};
+use crate::ir::{AddForeignKey, DropForeignKey};
 
 pub(super) fn emit_add_foreign_key(sql: &mut String, fk: &AddForeignKey) {
     write!(
@@ -18,10 +18,10 @@ pub(super) fn emit_add_foreign_key(sql: &mut String, fk: &AddForeignKey) {
         fk.name, fk.column, fk.referenced_table, fk.referenced_column,
     )
     .unwrap();
-    if let Some(action) = render_action(fk.on_delete) {
+    if let Some(action) = fk.on_delete.sql_keyword() {
         write!(sql, " ON DELETE {action}").unwrap();
     }
-    if let Some(action) = render_action(fk.on_update) {
+    if let Some(action) = fk.on_update.sql_keyword() {
         write!(sql, " ON UPDATE {action}").unwrap();
     }
     sql.push_str(" — requires table rebuild on SQLite. Hand-write up.pre.sql.\n");
@@ -34,14 +34,4 @@ pub(super) fn emit_drop_foreign_key(sql: &mut String, drop: &DropForeignKey) {
         drop.name
     )
     .unwrap();
-}
-
-fn render_action(action: ForeignKeyAction) -> Option<&'static str> {
-    match action {
-        ForeignKeyAction::Cascade => Some("CASCADE"),
-        ForeignKeyAction::Restrict => Some("RESTRICT"),
-        ForeignKeyAction::SetNull => Some("SET NULL"),
-        ForeignKeyAction::SetDefault => Some("SET DEFAULT"),
-        ForeignKeyAction::NoAction => None,
-    }
 }

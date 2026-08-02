@@ -59,7 +59,26 @@ impl ForeignKeyAction {
             "Restrict" => Self::Restrict,
             "SetNull" => Self::SetNull,
             "SetDefault" => Self::SetDefault,
+            "NoAction" => Self::NoAction,
+            // Defense in depth: schemas reaching here have already
+            // passed `cratestack-parser` validation, so an
+            // unrecognised word shouldn't occur; fall back to
+            // `NoAction` rather than panic.
             _ => Self::NoAction,
+        }
+    }
+
+    /// The SQL keyword for this action, or `None` for `NoAction` —
+    /// both Postgres and SQLite emitters omit the clause entirely for
+    /// the default rather than spelling it out. Shared here so the
+    /// two dialect emitters can't drift on the mapping.
+    pub(crate) fn sql_keyword(self) -> Option<&'static str> {
+        match self {
+            Self::Cascade => Some("CASCADE"),
+            Self::Restrict => Some("RESTRICT"),
+            Self::SetNull => Some("SET NULL"),
+            Self::SetDefault => Some("SET DEFAULT"),
+            Self::NoAction => None,
         }
     }
 }
