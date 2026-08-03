@@ -120,14 +120,6 @@ pub(crate) fn to_pascal_case(value: &str) -> String {
         .collect::<String>()
 }
 
-pub(crate) fn to_snake_case(value: &str) -> String {
-    split_words(value)
-        .into_iter()
-        .map(|word| word.to_lowercase())
-        .collect::<Vec<_>>()
-        .join("_")
-}
-
 /// Issue #304: per-model file names under the `swr` preset's
 /// `src/models/` directory follow this repo's kebab-case file-naming
 /// convention (root `CLAUDE.md`), not the model's own PascalCase schema

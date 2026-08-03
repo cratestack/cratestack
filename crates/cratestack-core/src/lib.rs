@@ -20,6 +20,7 @@ pub mod find_many;
 pub mod json;
 pub mod page;
 pub mod projection;
+pub mod route_naming;
 pub mod rpc;
 pub mod schema;
 pub mod transport;

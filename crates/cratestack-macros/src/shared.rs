@@ -93,27 +93,11 @@ pub(crate) fn find_model<'a>(models: &'a [Model], name: &str) -> Option<&'a Mode
     models.iter().find(|model| model.name == name)
 }
 
-pub(crate) fn to_snake_case(value: &str) -> String {
-    let mut output = String::new();
-    for (index, character) in value.chars().enumerate() {
-        if character.is_uppercase() {
-            if index > 0 {
-                output.push('_');
-            }
-            for lowercase in character.to_lowercase() {
-                output.push(lowercase);
-            }
-        } else {
-            output.push(character);
-        }
-    }
-    output
-}
-
-pub(crate) fn pluralize(value: &str) -> String {
-    if value.ends_with('s') {
-        format!("{value}es")
-    } else {
-        format!("{value}s")
-    }
-}
+// cratestack#345: this is the server's real, load-bearing REST route
+// algorithm (see `axum::model::routes::generate_model_axum_routes`).
+// Sourced from `cratestack_core::route_naming` — already a shared
+// dependency of this crate and of `cratestack-client-typescript` /
+// `cratestack-client-dart` — so the client generators import the exact
+// same implementation instead of reimplementing it. Do not redefine these
+// locally.
+pub(crate) use cratestack_core::route_naming::{pluralize, to_snake_case};

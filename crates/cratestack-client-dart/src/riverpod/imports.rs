@@ -4,17 +4,18 @@
 //! analyze --fatal-warnings` failure (see `justfile`'s `verify-dart`).
 use std::collections::BTreeSet;
 
+use cratestack_core::route_naming;
 use cratestack_core::{Field, Model};
 
-use crate::idents::to_snake_case;
 use crate::riverpod::partition::referenced_name;
 
 /// `lib/src/models/<file_stem>.dart` — the snake_case convention
 /// `analysis_options.yaml` (`file_names` lint) requires for Dart source
-/// files, matching `crate::idents::to_snake_case`'s existing convention
-/// for routes/identifiers elsewhere in this generator.
+/// files, matching `cratestack_core::route_naming::to_snake_case`'s
+/// canonical convention for routes elsewhere in this generator
+/// (cratestack#345).
 pub(crate) fn model_file_stem(model_name: &str) -> String {
-    to_snake_case(model_name)
+    route_naming::to_snake_case(model_name)
 }
 
 pub(crate) fn model_file_path(model_name: &str) -> String {

@@ -1,11 +1,12 @@
 use std::collections::{BTreeSet, HashMap};
 
+use cratestack_core::route_naming;
 use cratestack_core::{EnumDecl, Field, Model, Procedure, ProcedureKind, TypeArity};
 use serde::Serialize;
 
 use crate::naming::{
     escape_ts_string, pluralize, procedure_wrapper_name, to_camel_case, to_pascal_case,
-    to_snake_case, ts_identifier,
+    ts_identifier,
 };
 use crate::types::{is_paged_model, model_allows_create, primary_key_field, ts_type};
 
@@ -116,7 +117,13 @@ pub(crate) fn build_interface(
 
 pub(crate) fn build_model_api(model: &Model) -> ModelApiView {
     let primary_key = primary_key_field(model).expect("validated schemas always have an id field");
-    let route = format!("/{}", pluralize(&to_snake_case(&model.name)));
+    // cratestack#345: this route must match the server's real Axum route
+    // registration exactly (`cratestack-macros::axum::model::routes`), so
+    // it's derived through the shared canonical algorithm rather than
+    // this crate's own `to_snake_case`/`pluralize` (which exist for
+    // client-only identifier naming — accessor/hook/method names below —
+    // and are not wire-format contracts).
+    let route = format!("/{}", route_naming::model_route_segment(&model.name));
     let accessor = pluralize(&to_camel_case(&model.name));
     ModelApiView {
         name: model.name.clone(),
