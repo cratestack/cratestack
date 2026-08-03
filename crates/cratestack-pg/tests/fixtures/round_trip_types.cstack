@@ -22,9 +22,11 @@
 // `jsonReq`/`jsonOpt` are both present here (Postgres backend only): the
 // generated model struct derives `Default` (needed for column-projection
 // placeholders), and on this backend `Json` resolves to
-// `sqlx::types::Json<T>`, which derives `Default` conditionally on
-// `T: Default` — satisfied here since `cratestack::Value` implements
-// `Default`. The embedded/SQLite mirror of this fixture omits `jsonReq`:
+// `cratestack_sqlx::Json<T>` (cratestack#162 — a local newtype with its
+// own plain-JSON jsonb codec, not a re-export of `sqlx::types::Json<T>`),
+// which derives `Default` conditionally on `T: Default` — satisfied here
+// since `cratestack::Value` implements `Default`. The embedded/SQLite
+// mirror of this fixture omits `jsonReq`:
 // there, `Json` resolves to `cratestack_core::Json<T>`, which has no
 // `Default` impl at all, so a *required* `Json` field fails to compile
 // there today (a real, independently-confirmed backend asymmetry — filed

@@ -69,6 +69,7 @@ mod descriptor;
 mod error;
 mod idempotency;
 mod isolation;
+mod json;
 mod migrations;
 mod partial_row;
 mod query;
@@ -97,6 +98,8 @@ mod tests_update;
 mod tests_update_many;
 
 pub use partial_row::FromPartialPgRow;
+
+pub use json::Json;
 
 pub use audit::{AUDIT_TABLE_DDL, primary_key_from_snapshot, snapshot_model};
 pub use error::cool_error_from_sqlx;

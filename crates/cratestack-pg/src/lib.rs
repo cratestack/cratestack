@@ -99,8 +99,10 @@ pub use serde_json;
 pub use tracing;
 pub use uuid;
 
-// `Json<T>` resolves to `sqlx::types::Json<T>` on the server so
-// `sqlx::FromRow` decodes Postgres `jsonb` columns into it directly. This is
+// `Json<T>` resolves to `cratestack_sqlx::Json<T>` on the server so
+// `sqlx::FromRow` decodes Postgres `jsonb` columns into it directly, using
+// the plain/untagged codec (cratestack#162) rather than `T`'s own
+// (externally-tagged, for `T = Value`) `Serialize`/`Deserialize`. This is
 // only possible with the `postgres` feature enabled (cratestack#329): models
 // (the only place a "Json" column is decoded from a row) can never exist
 // under `db = None` (cratestack#327's guard), so a `postgres`-disabled build
@@ -110,7 +112,7 @@ pub use uuid;
 #[cfg(not(feature = "postgres"))]
 pub use cratestack_core::json::Json;
 #[cfg(feature = "postgres")]
-pub use cratestack_sqlx::sqlx::types::Json;
+pub use cratestack_sqlx::Json;
 
 // -----------------------------------------------------------------------------
 // Server surface — axum, audit/idempotency/migrations/isolation.
