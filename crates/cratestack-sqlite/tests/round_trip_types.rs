@@ -49,15 +49,19 @@ fn setup() -> RusqliteRuntime {
 
 #[test]
 fn covered_scalar_types_match_parser_builtin_type_names_minus_page() {
+    // `Page`/`PageInput` aren't model-field-storable scalars — `Page<T>` is
+    // restricted to procedure return types and `PageInput` to procedure
+    // argument types, neither round-trippable through a model's own ORM
+    // columns — so both are excluded here, same as `Page` already was.
     let builtin: BTreeSet<&str> = cratestack_parser::builtin_type_names()
         .iter()
         .copied()
-        .filter(|name| *name != "Page")
+        .filter(|name| *name != "Page" && *name != "PageInput")
         .collect();
     let covered: BTreeSet<&str> = COVERED_SCALAR_TYPES.iter().copied().collect();
     assert_eq!(
         builtin, covered,
-        "cratestack_parser::builtin_type_names() (minus `Page`) and this test's \
+        "cratestack_parser::builtin_type_names() (minus `Page`/`PageInput`) and this test's \
          COVERED_SCALAR_TYPES have drifted — add a field plus write/assert coverage \
          above for the new/removed type. See cratestack#232.",
     );

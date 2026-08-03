@@ -5,8 +5,18 @@ use cratestack_core::{Field, Schema, SourceSpan, TypeRef};
 use crate::diagnostics::{SchemaError, span_error};
 
 pub(super) const BUILTIN_TYPES: &[&str] = &[
-    "String", "Cuid", "Int", "Float", "Boolean", "DateTime", "Decimal", "Json", "Bytes", "Uuid",
+    "String",
+    "Cuid",
+    "Int",
+    "Float",
+    "Boolean",
+    "DateTime",
+    "Decimal",
+    "Json",
+    "Bytes",
+    "Uuid",
     "Page",
+    "PageInput",
 ];
 
 pub(super) fn collect_type_names(schema: &Schema) -> Result<BTreeSet<String>, SchemaError> {
@@ -70,7 +80,31 @@ pub(super) fn validate_type_ref(
     type_ref: &TypeRef,
     span: SourceSpan,
     allow_page: bool,
+    allow_page_input: bool,
 ) -> Result<(), SchemaError> {
+    if type_ref.is_page_input() {
+        if !allow_page_input {
+            return Err(span_error(
+                "built-in `PageInput` is currently only supported as a procedure argument type"
+                    .to_owned(),
+                span,
+            ));
+        }
+        if type_ref.arity == cratestack_core::TypeArity::List {
+            return Err(span_error(
+                "built-in `PageInput` cannot be list-valued".to_owned(),
+                span,
+            ));
+        }
+        if !type_ref.generic_args.is_empty() {
+            return Err(span_error(
+                "built-in `PageInput` does not take generic arguments".to_owned(),
+                span,
+            ));
+        }
+        return Ok(());
+    }
+
     if type_ref.is_page() {
         if !allow_page {
             return Err(span_error(

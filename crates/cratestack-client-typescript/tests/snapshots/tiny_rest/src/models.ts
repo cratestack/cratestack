@@ -19,6 +19,15 @@ export interface Page<T> {
   pageInfo: PageInfo;
 }
 
+// Mirrors cratestack-core::page::PageInput exactly — the request-side
+// counterpart to Page/PageInfo above, currently usable only as a
+// procedure argument type. Keep field names and optionality in lockstep
+// with that struct.
+export interface PageInput {
+  limit: number | null;
+  offset: number | null;
+}
+
 export interface Widget {
   id?: number;
   name?: string;

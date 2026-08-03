@@ -1,0 +1,16 @@
+// Regression fixture for the built-in `PageInput` + `swr` preset codegen
+// gap: a `PageInput` procedure argument is literal-inlined into the
+// generated args interface (`ts_type`'s generic fallback) rather than
+// imported as a named model type, so the ownership graph
+// (`src/swr/ownership.rs::compute_type_ownership`) never sees it as a
+// consumer edge — it only tracks user-declared enums/`type` blocks, not
+// the `Page`/`PageInfo`/`PageInput` builtins. `src/swr/context.rs` has
+// to add that import by hand, mirroring `swr_paged_model.cstack`'s own
+// `Page` regression coverage.
+
+type FeedReply {
+  limit Int
+  offset Int
+}
+
+procedure listFeed(page: PageInput): FeedReply

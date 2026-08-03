@@ -173,6 +173,7 @@ fn procedure_item_type_tokens(
         "Json" => quote! { ::cratestack::Json<::cratestack::Value> },
         "Bytes" => quote! { Vec<u8> },
         "Uuid" => quote! { ::cratestack::uuid::Uuid },
+        "PageInput" => quote! { ::cratestack::PageInput },
         other => {
             let item_ident = ident(other);
             if types.iter().any(|ty| ty.name == other) || enum_names.contains(other) {

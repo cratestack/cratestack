@@ -101,6 +101,35 @@ fn page_and_page_info_match_the_core_wire_shape() {
 }
 
 #[test]
+fn page_input_procedure_argument_generates_correctly() {
+    let schema = cratestack_parser::parse_schema(
+        r#"
+type FeedReply {
+  limit Int
+  offset Int
+}
+
+procedure listFeed(page: PageInput): FeedReply
+"#,
+    )
+    .expect("PageInput fixture schema should parse");
+
+    let package = generate_package(&schema, &TypeScriptGeneratorConfig::default())
+        .expect("default template should render");
+    let models = package_file(&package, "src/models.ts");
+    let client = package_file(&package, "src/client.ts");
+
+    assert!(models.contains(
+        "export interface PageInput {\n  \
+         limit: number | null;\n  \
+         offset: number | null;\n\
+         }"
+    ));
+    assert!(models.contains("export interface ListFeedArgs {\n  page: PageInput;\n}"));
+    assert!(client.contains("listFeed(args: ListFeedArgs"));
+}
+
+#[test]
 fn preserves_enums_and_scalar_mappings() {
     let schema =
         cratestack_parser::parse_schema_file("../cratestack-pg/tests/fixtures/enums.cstack")

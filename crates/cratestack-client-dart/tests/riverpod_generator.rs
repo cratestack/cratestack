@@ -247,3 +247,37 @@ fn riverpod_preset_relocates_the_provider_alongside_its_model_api() {
         "client.dart must not also carry UserApi — it was relocated, not duplicated:\n{client}"
     );
 }
+
+#[test]
+fn page_input_procedure_argument_generates_correctly_under_default_preset() {
+    let package = generate(
+        "page_input_procedure",
+        "page_input_client",
+        DartPreset::Default,
+    );
+    let models = package_file(&package, "lib/src/models.dart");
+
+    assert!(models.contains("class PageInput {"));
+    assert!(models.contains("class ListFeedArgs {"));
+    assert!(models.contains("required this.page,"));
+    assert!(models.contains("final PageInput page;"));
+}
+
+#[test]
+fn page_input_procedure_argument_imports_page_input_under_riverpod_preset() {
+    let package = generate(
+        "page_input_procedure",
+        "page_input_client",
+        DartPreset::Riverpod,
+    );
+
+    let shared = package_file(&package, "lib/src/models/shared_types.dart");
+    assert!(shared.contains("class PageInput {"));
+
+    let procedures = package_file(&package, "lib/src/procedures.dart");
+    assert!(
+        procedures.contains("import 'models/shared_types.dart';"),
+        "procedures.dart should import shared_types.dart for PageInput:\n{procedures}"
+    );
+    assert!(procedures.contains("page: PageInput"));
+}

@@ -81,6 +81,10 @@ impl TypeRef {
             None
         }
     }
+
+    pub fn is_page_input(&self) -> bool {
+        self.name == "PageInput"
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

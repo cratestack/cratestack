@@ -147,12 +147,16 @@ pub(crate) fn build_procedures_file(
     }
     imports.insert("import 'runtime.dart';".to_owned());
     imports.insert("import 'client.dart';".to_owned());
-    // `shared_types.dart` also carries `Page`/`PageInfo` (see
+    // `shared_types.dart` also carries `Page`/`PageInfo`/`PageInput` (see
     // `build_shared_types`'s doc) — a procedure returning/accepting
-    // `Page<T>` needs it even when the partition found nothing else to
-    // share.
+    // `Page<T>`, or taking a `PageInput` argument, needs it even when the
+    // partition found nothing else to share.
     let uses_page = schema.procedures.iter().any(|procedure| {
-        procedure.return_type.is_page() || procedure.args.iter().any(|arg| arg.ty.is_page())
+        procedure.return_type.is_page()
+            || procedure
+                .args
+                .iter()
+                .any(|arg| arg.ty.is_page() || arg.ty.is_page_input())
     });
     if uses_page || !partition.shared_refs(&locus).is_empty() {
         imports.insert("import 'models/shared_types.dart';".to_owned());

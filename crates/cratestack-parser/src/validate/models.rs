@@ -61,6 +61,7 @@ pub(super) fn validate_models(
                 &field.ty,
                 field.span,
                 false,
+                false,
             )?;
             reject_type_decl_as_model_field_type(&type_decl_names, &model.name, field)?;
             validate_validator_attributes(&model.name, field)?;

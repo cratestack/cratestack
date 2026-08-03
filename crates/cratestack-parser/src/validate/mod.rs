@@ -149,6 +149,7 @@ fn validate_procedures(
                 &arg.ty,
                 procedure.span,
                 false,
+                true,
             )?;
         }
         validate_type_ref(
@@ -157,6 +158,7 @@ fn validate_procedures(
             &procedure.return_type,
             procedure.span,
             true,
+            false,
         )?;
         validate_procedure_isolation_attribute(procedure)?;
         validate_procedure_api_version_attribute(procedure)?;

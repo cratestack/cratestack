@@ -67,6 +67,18 @@ pub(crate) fn build_shared_context(
     {
         procedures_shared_names.push("Page".to_owned());
     }
+    // Same reasoning, for `PageInput` argument fields: `ts_type` inlines
+    // the bare name as a literal rather than the ownership graph seeing a
+    // consumer edge (`PageInput` isn't a declared `type`), so a procedure
+    // arg wrapper interface referencing it needs the import added by hand
+    // too.
+    if schema
+        .procedures
+        .iter()
+        .any(|procedure| procedure.args.iter().any(|arg| arg.ty.is_page_input()))
+    {
+        procedures_shared_names.push("PageInput".to_owned());
+    }
     let mut procedures_model_refs = procedure_model_refs(schema, &model_names);
     procedures_model_refs.extend(type_decls_model_refs(
         schema,

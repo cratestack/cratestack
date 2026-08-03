@@ -1,0 +1,14 @@
+// Regression fixture for the built-in `PageInput` procedure-argument
+// type: `{ limit: Int?, offset: Int? }`, the request-side counterpart to
+// `Page<T>`. Exercises both the `default` preset (hardcoded directly in
+// `models.dart.j2`, same file as the args wrapper class that references
+// it — no import needed) and the `riverpod` preset (hardcoded in
+// `riverpod/shared_types.dart.j2`, imported by `procedures.dart` via the
+// same by-hand mechanism `Page`/`PageInfo` already use).
+
+type FeedReply {
+  limit Int
+  offset Int
+}
+
+procedure listFeed(page: PageInput): FeedReply

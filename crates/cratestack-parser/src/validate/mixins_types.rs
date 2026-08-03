@@ -61,6 +61,7 @@ pub(super) fn validate_mixins(
                 &field.ty,
                 field.span,
                 false,
+                false,
             )?;
             validate_default_dbgenerated_no_args(&mixin.name, field)?;
             validate_pb_field_attribute("mixin", &mixin.name, field)?;
@@ -89,6 +90,7 @@ pub(super) fn validate_types(
                 page_item_type_names,
                 &field.ty,
                 field.span,
+                false,
                 false,
             )?;
             validate_pb_field_attribute("type", &ty.name, field)?;
@@ -143,6 +145,7 @@ pub(super) fn validate_auth(
                 page_item_type_names,
                 &field.ty,
                 field.span,
+                false,
                 false,
             )?;
         }

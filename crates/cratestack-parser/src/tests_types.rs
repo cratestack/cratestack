@@ -182,6 +182,68 @@ type ApiKeySecret {
 }
 
 #[test]
+fn parses_built_in_page_input_procedure_argument() {
+    let source = r#"
+model Post {
+  id Int @id
+}
+
+procedure listPosts(page: PageInput): Post[]
+"#;
+    let schema = parse_schema(source).expect("schema with PageInput arg should parse");
+    let arg_type = &schema.procedures[0].args[0].ty;
+
+    assert_eq!(arg_type.name, "PageInput");
+    assert!(arg_type.generic_args.is_empty());
+}
+
+#[test]
+fn rejects_page_input_outside_procedure_arguments() {
+    let error = parse_schema(
+        r#"
+type Feed {
+  page PageInput
+}
+"#,
+    )
+    .expect_err("PageInput fields should fail validation");
+
+    assert!(
+        error
+            .to_string()
+            .contains("only supported as a procedure argument type")
+    );
+}
+
+#[test]
+fn rejects_page_input_as_procedure_return_type() {
+    let error = parse_schema(
+        r#"
+procedure getPage(): PageInput
+"#,
+    )
+    .expect_err("PageInput return type should fail validation");
+
+    assert!(
+        error
+            .to_string()
+            .contains("only supported as a procedure argument type")
+    );
+}
+
+#[test]
+fn rejects_list_valued_page_input() {
+    let error = parse_schema(
+        r#"
+procedure listPosts(pages: PageInput[]): Int
+"#,
+    )
+    .expect_err("list-valued PageInput should fail validation");
+
+    assert!(error.to_string().contains("cannot be list-valued"));
+}
+
+#[test]
 fn accepts_decimal_scalar_in_models_and_procedures() {
     let schema = parse_schema(
         r#"

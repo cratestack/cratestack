@@ -74,6 +74,27 @@ class Page<T> {
   }
 }
 
+class PageInput {
+  const PageInput({this.limit, this.offset});
+
+  final int? limit;
+  final int? offset;
+
+  factory PageInput.fromWire(CratestackValueMap value) {
+    return PageInput(
+      limit: value['limit'] == null ? null : (value['limit'] as num).toInt(),
+      offset: value['offset'] == null ? null : (value['offset'] as num).toInt(),
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+      'limit': limit,
+      'offset': offset,
+    };
+  }
+}
+
 class Widget {
   const Widget({
 this.id,

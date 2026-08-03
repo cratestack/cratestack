@@ -26,6 +26,35 @@ pub(super) fn compose_embedded_schema(schema_path: &LitStr) -> TokenStream {
     if let Err(error) = super::reject_grpc::guard_embedded_grpc_transport(schema_path, &schema) {
         return error;
     }
+
+    // `@@paged` shapes a generated `list` **route**'s response envelope
+    // (`Page<Model>` vs. a bare `Vec<Model>` — see
+    // docs/design/idempotency-rate-limit-declarative-surface.md). The
+    // embedded composer never generates routes: consumers call rusqlite
+    // delegate methods (`find_many`/`find_many_with`) directly and pass
+    // `limit`/`offset` themselves. A `@@paged` model here is silently
+    // meaningless, so reject it loudly instead of letting it compile with
+    // no effect — same pattern as the `@@materialized` view guard below.
+    if let Some(model) = schema
+        .models
+        .iter()
+        .find(|model| crate::shared::is_paged_model(model))
+    {
+        return syn::Error::new(
+            schema_path.span(),
+            format!(
+                "model `{}` is `@@paged`, which has no effect on the embedded backend — \
+                 `include_embedded_schema!` generates no `list` route to shape (no REST, RPC, \
+                 or gRPC surface exists here at all; queries go through direct rusqlite \
+                 delegate calls). Remove `@@paged` from this model, or move it to a \
+                 `include_server_schema!`/`include_client_schema!` schema instead.",
+                model.name
+            ),
+        )
+        .to_compile_error()
+        .into();
+    }
+
     let resolved_literal = resolved.display().to_string();
 
     let mixin_names = schema.mixins.iter().map(|mixin| schema_lit(&mixin.name));

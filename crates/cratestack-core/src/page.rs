@@ -50,3 +50,31 @@ impl<T> Page<T> {
         self
     }
 }
+
+/// Built-in pagination-input argument type (`PageInput` in `.cstack`),
+/// currently valid only as a procedure argument — the request-side mirror
+/// of [`Page`]/[`PageInfo`] on the response side. Field names and
+/// optionality match `PageInfo`'s own `limit`/`offset` exactly, so a
+/// generated `list` route and a hand-written `PageInput`-accepting
+/// procedure decode the same wire shape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PageInput {
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+}
+
+impl PageInput {
+    /// Resolves `limit`/`offset` into concrete, safe values: `limit`
+    /// defaults to `max_limit` when unset and is clamped to `[0,
+    /// max_limit]`; `offset` defaults to `0` and is clamped to `>= 0`.
+    /// Mirrors the same rule generated `list` routes already apply to
+    /// their own `limit`/`offset` input — see [`MAX_LIST_LIMIT`] — so a
+    /// procedure using `PageInput` gets the identical resource-exhaustion
+    /// guard for free instead of reimplementing it by hand.
+    pub fn resolve(&self, max_limit: i64) -> (i64, i64) {
+        let limit = self.limit.unwrap_or(max_limit).clamp(0, max_limit);
+        let offset = self.offset.unwrap_or(0).max(0);
+        (limit, offset)
+    }
+}

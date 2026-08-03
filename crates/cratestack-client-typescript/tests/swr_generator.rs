@@ -282,6 +282,35 @@ fn paged_model_imports_page_in_every_file_that_uses_it() {
 }
 
 #[test]
+fn page_input_procedure_argument_imports_page_input_in_every_file_that_uses_it() {
+    // Same gap as `paged_model_imports_page_in_every_file_that_uses_it`,
+    // for `PageInput` argument fields instead of a `Page<T>` return type:
+    // literal-inlined by `ts_type`'s generic fallback, invisible to the
+    // ownership graph, so `src/swr/context.rs` has to add the import by
+    // hand.
+    for fixture in ["swr_page_input_procedure", "swr_page_input_procedure_rpc"] {
+        let package = generate_for(fixture, TypeScriptPreset::Swr);
+
+        let procedures = file(&package, "src/procedures.ts");
+        assert!(
+            procedures.contains("import type { PageInput } from \"./models/shared.js\";"),
+            "{fixture}: src/procedures.ts should import PageInput from ./models/shared:\n{procedures}"
+        );
+        assert!(procedures.contains("page: PageInput"));
+
+        // `procedures.hooks.ts` is a thin wrapper around the plain
+        // function's already-typed `ListFeedArgs` (which itself carries
+        // `page: PageInput`, asserted above) rather than re-declaring the
+        // `PageInput` field inline — see this file's own header doc.
+        let procedures_hooks = file(&package, "src/procedures.hooks.ts");
+        assert!(
+            procedures_hooks.contains("ListFeedArgs"),
+            "{fixture}: src/procedures.hooks.ts should reference ListFeedArgs:\n{procedures_hooks}"
+        );
+    }
+}
+
+#[test]
 fn swr_package_json_declares_swr_and_react_as_peer_dependencies() {
     // AC #8: `swr` (and the `react` it needs) are *peer* dependencies —
     // consumers who never import a `.hooks` module don't need them
