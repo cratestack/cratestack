@@ -499,3 +499,53 @@ jobs:
         run: |
           pnpm --filter react-vite-swr-web run typecheck
           pnpm --filter react-vite-swr-web run lint
+
+  # ---- install-cratestack-cli action smoke test --------------------------
+  # Blocking. Proves the composite action in
+  # .github/actions/install-cratestack-cli actually works, not just that its
+  # YAML parses — same 5-target matrix release-cli.yml's own `build` job
+  # uses, so every OS/arch the action claims to support gets a real,
+  # network-backed download + checksum-verify + exec on its real runner
+  # type. `version: latest` resolves whatever the newest real release is
+  # (this repo always has one), so the test doesn't need updating on every
+  # bump. `cratestack --help` is the actual proof the binary runs, not just
+  # that it downloaded — a checksum match alone doesn't prove the archive
+  # contains a working executable for that platform. Not `--version`:
+  # confirmed by hand against a real downloaded binary that this CLI has
+  # no top-level version flag, only `-h`/`--help` (`Cli`'s clap derive
+  # doesn't expose one).
+  install-cratestack-cli-smoke-test:
+    name: install-cratestack-cli (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/install-cratestack-cli
+        id: install
+        with:
+          version: latest
+      - name: Confirm the resolved version was actually reported
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${{ steps.install.outputs.version }}" ]; then
+            echo "::error::install-cratestack-cli produced no version output" >&2
+            exit 1
+          fi
+          echo "Resolved version: ${{ steps.install.outputs.version }}"
+      - name: cratestack --help actually runs
+        shell: bash
+        run: cratestack --help

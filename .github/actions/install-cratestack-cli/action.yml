@@ -1,0 +1,127 @@
+name: Install cratestack-cli
+description: >
+  Downloads a prebuilt cratestack-cli binary from this repo's GitHub Releases,
+  verifies its SHA-256 checksum against the published .sha256 sidecar, and
+  adds it to PATH — no Rust toolchain required. Mirrors the same asset
+  naming and target-triple convention as
+  packages/cratestack-cli-npm/scripts/install.js and
+  crates/cratestack-cli/Cargo.toml's [package.metadata.binstall]; keep all
+  three in sync if the release asset layout ever changes.
+
+inputs:
+  version:
+    description: >
+      Version to install, e.g. "0.6.7" (no leading "v"). Defaults to
+      "latest", which resolves the newest GitHub Release via the API.
+    required: false
+    default: latest
+  github-token:
+    description: >
+      Token used only to resolve "latest" via the GitHub API (avoids
+      unauthenticated rate limiting on public runners). Defaults to the
+      workflow's own token, which is sufficient for a public-repo read.
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  version:
+    description: The resolved version that was installed (no leading "v").
+    value: ${{ steps.install.outputs.version }}
+  cratestack-cli-path:
+    description: Absolute path to the installed cratestack binary.
+    value: ${{ steps.install.outputs.path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve target triple, download, verify, and install
+      id: install
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+
+        repo="https://github.com/cratestack/cratestack"
+
+        # --- 1. Resolve version --------------------------------------------
+        version="$INPUT_VERSION"
+        if [ "$version" = "latest" ] || [ -z "$version" ]; then
+          tag=$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" \
+            https://api.github.com/repos/cratestack/cratestack/releases/latest \
+            | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name": *"v?([^"]+)".*/\1/')
+          if [ -z "$tag" ]; then
+            echo "::error::could not resolve the latest cratestack release via the GitHub API" >&2
+            exit 1
+          fi
+          version="$tag"
+        fi
+        version="${version#v}"
+
+        # --- 2. Resolve target triple ---------------------------------------
+        # Same mapping as packages/cratestack-cli-npm/scripts/install.js —
+        # keep both in sync.
+        os="${RUNNER_OS}"
+        arch="${RUNNER_ARCH}"
+        case "${os}:${arch}" in
+          macOS:X64) target=x86_64-apple-darwin ;;
+          macOS:ARM64) target=aarch64-apple-darwin ;;
+          Linux:X64) target=x86_64-unknown-linux-gnu ;;
+          Linux:ARM64) target=aarch64-unknown-linux-gnu ;;
+          Windows:X64) target=x86_64-pc-windows-msvc ;;
+          *)
+            echo "::error::no prebuilt cratestack-cli binary for ${os}/${arch}. Supported: macOS/X64, macOS/ARM64, Linux/X64, Linux/ARM64, Windows/X64." >&2
+            exit 1
+            ;;
+        esac
+
+        # --- 3. Resolve asset name/URL --------------------------------------
+        ext=tar.gz
+        [ "$os" = "Windows" ] && ext=zip
+        asset="cratestack-cli-${target}-v${version}.${ext}"
+        asset_url="${repo}/releases/download/v${version}/${asset}"
+
+        workdir=$(mktemp -d)
+        echo "Downloading ${asset} ..."
+        curl -fsSL -o "${workdir}/${asset}" "${asset_url}"
+        curl -fsSL -o "${workdir}/${asset}.sha256" "${asset_url}.sha256"
+
+        # --- 4. Verify checksum ----------------------------------------------
+        cd "$workdir"
+        expected=$(cut -d' ' -f1 "${asset}.sha256")
+        if command -v sha256sum >/dev/null 2>&1; then
+          actual=$(sha256sum "${asset}" | cut -d' ' -f1)
+        else
+          actual=$(shasum -a 256 "${asset}" | cut -d' ' -f1)
+        fi
+        if [ "$expected" != "$actual" ]; then
+          echo "::error::checksum mismatch for ${asset}: expected ${expected}, got ${actual}" >&2
+          exit 1
+        fi
+        echo "Checksum verified: ${actual}"
+
+        # --- 5. Extract + install ---------------------------------------------
+        # `tar -xf` auto-detects the archive format on both bsdtar (macOS's
+        # and Windows 10+'s built-in tar — handles .zip too) and GNU tar
+        # (Linux, only ever sees .tar.gz here), so one command works
+        # everywhere without a separate unzip/Expand-Archive branch.
+        tar -xf "${asset}" -C "$workdir"
+
+        bin_name=cratestack
+        [ "$os" = "Windows" ] && bin_name=cratestack.exe
+        if [ ! -f "${workdir}/${bin_name}" ]; then
+          echo "::error::expected ${bin_name} inside ${asset}, but it was not found" >&2
+          exit 1
+        fi
+
+        install_dir="${RUNNER_TEMP}/cratestack-cli-bin"
+        mkdir -p "$install_dir"
+        mv "${workdir}/${bin_name}" "${install_dir}/${bin_name}"
+        [ "$os" != "Windows" ] && chmod +x "${install_dir}/${bin_name}"
+
+        echo "$install_dir" >> "$GITHUB_PATH"
+        echo "version=${version}" >> "$GITHUB_OUTPUT"
+        echo "path=${install_dir}/${bin_name}" >> "$GITHUB_OUTPUT"
+
+        echo "Installed cratestack-cli ${version} (${target}) to ${install_dir}/${bin_name}"
