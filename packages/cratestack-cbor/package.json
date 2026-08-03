@@ -1,6 +1,6 @@
 {
   "name": "@cratestack/cbor",
-  "version": "0.5.2",
+  "version": "0.6.5",
   "description": "Umbrella CBOR codec for CrateStack's generated TypeScript RPC clients: conditional exports auto-select @cratestack/cbor-node in Node and @cratestack/cbor-web in the browser behind one import path, one uniform async createCborCodec() API on both platforms.",
   "license": "MIT",
   "repository": {
@@ -46,9 +46,9 @@
     "lint": "biome check ."
   },
   "dependencies": {
-    "@cratestack/cbor-node": "0.5.2",
-    "@cratestack/cbor-web": "0.5.2",
-    "@cratestack/ts-types": "0.5.2"
+    "@cratestack/cbor-node": "0.6.5",
+    "@cratestack/cbor-web": "0.6.5",
+    "@cratestack/ts-types": "0.6.5"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

@@ -102,14 +102,14 @@ importers:
   packages/cratestack-cbor:
     dependencies:
       '@cratestack/cbor-node':
-        specifier: 0.5.2
+        specifier: 0.6.5
         version: link:../cratestack-cbor-node
       '@cratestack/cbor-web':
-        specifier: 0.5.2
+        specifier: 0.6.5
         version: link:../cratestack-cbor-web
       '@cratestack/ts-types':
-        specifier: 0.5.2
-        version: 0.5.2
+        specifier: 0.6.5
+        version: link:../cratestack-ts-types
     devDependencies:
       typescript:
         specifier: ^5.7.0
@@ -121,8 +121,8 @@ importers:
   packages/cratestack-cbor-node:
     devDependencies:
       '@cratestack/ts-types':
-        specifier: 0.5.2
-        version: 0.5.2
+        specifier: 0.6.5
+        version: link:../cratestack-ts-types
       '@napi-rs/cli':
         specifier: ^3.6.2
         version: 3.8.2(@emnapi/runtime@1.9.2)
@@ -136,8 +136,8 @@ importers:
   packages/cratestack-cbor-web:
     dependencies:
       '@cratestack/ts-types':
-        specifier: 0.5.2
-        version: 0.5.2
+        specifier: 0.6.5
+        version: link:../cratestack-ts-types
     devDependencies:
       typescript:
         specifier: ^5.7.0
@@ -361,10 +361,6 @@ packages:
     engines: {node: '>=14.21.3'}
     cpu: [x64]
     os: [win32]
-
-  '@cratestack/ts-types@0.5.2':
-    resolution: {integrity: sha512-i4P2QPW+aIuuDk2sWTNSSZLlqa2RtpuTuPEIqdlACybMTviL7IEHbLReQxg5VdLQySc/c/mvabE1nSRvxVn6Ew==}
-    engines: {node: '>=18'}
 
   '@emnapi/core@1.11.2':
     resolution: {integrity: sha512-TC8MkTuZUtcTSiFeuC0ksCh9QIJ5+F21MvZ4Wn4ORfYaFJ/0dsiudv5tVkejgwZlwQ39jL9WWDe2lz8x0WglOA==}
@@ -2876,8 +2872,6 @@ snapshots:
 
   '@biomejs/cli-win32-x64@1.9.4':
     optional: true
-
-  '@cratestack/ts-types@0.5.2': {}
 
   '@emnapi/core@1.11.2':
     dependencies:
