@@ -12,7 +12,7 @@ The types here are `Copy + 'static` so generated code can embed them as `const`s
 
 ```toml
 [dependencies]
-cratestack-policy = "0.2.2"
+cratestack-policy = "0.6.7"
 ```
 
 ## Schema Surface

@@ -21,7 +21,7 @@ Core types, traits, and error handling shared across the CrateStack workspace.
 
 ```toml
 [dependencies]
-cratestack-core = "0.2.2"
+cratestack-core = "0.6.7"
 ```
 
 A `Decimal` backend feature must be selected. `decimal-rust-decimal` is the default; `decimal-bigdecimal` is reserved and not yet implemented (selecting it today is a compile error).
@@ -124,7 +124,7 @@ let event = AuditEvent {
 
 ```toml
 [dependencies]
-cratestack-core = { version = "0.2.2", features = ["decimal-rust-decimal"] }
+cratestack-core = { version = "0.6.7", features = ["decimal-rust-decimal"] }
 ```
 
 ```rust

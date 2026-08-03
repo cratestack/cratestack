@@ -16,11 +16,11 @@ full design.
 
 - Serializes a parsed `cratestack_core::Schema` into a committable
   snapshot (`schema.snapshot.json`).
-- (Future slices) Diffs two snapshots into a backend-agnostic IR.
-- (Future slices) Emits per-backend SQL — Postgres for sqlx targets,
-  SQLite for rusqlite targets.
-- (Future slices) Powers the `cratestack migrate diff` / `verify` /
-  `drift` CLI commands.
+- Diffs two snapshots into a backend-agnostic IR.
+- Emits per-backend SQL — Postgres for sqlx targets, SQLite for
+  rusqlite targets.
+- Powers the `cratestack migrate diff` CLI command. `verify` and
+  `drift` are not yet implemented — see below.
 
 ## Current scope
 

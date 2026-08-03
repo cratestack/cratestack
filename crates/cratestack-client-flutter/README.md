@@ -12,7 +12,7 @@ The public surface is purely `FlutterRuntime` plus wire-shaped POD structs (`Flu
 
 ```toml
 [dependencies]
-cratestack-client-flutter = "0.2.2"
+cratestack-client-flutter = "0.6.7"
 ```
 
 ## Usage
