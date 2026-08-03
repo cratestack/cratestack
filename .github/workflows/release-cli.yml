@@ -356,7 +356,6 @@ jobs:
   # said was deferred (issue #286's explicit scope note).
   build-cbor-node:
     name: build @cratestack/cbor-node (${{ matrix.target }})
-    if: github.event_name == 'push'
     needs: prepare
     strategy:
       fail-fast: false
