@@ -26,7 +26,9 @@ export function effectiveConfig(
     // `options.headers` OVERRIDES same-named request headers, not the
     // other way around — `.set()` here, applied after seeding `headers`
     // from the request, is what makes link-level config win.
-    new Headers(options.headers).forEach((value, key) => headers.set(key, value));
+    new Headers(options.headers).forEach((value, key) => {
+      headers.set(key, value);
+    });
   }
   return {
     headers,

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { type RpcCaller, createRpcBaseQuery } from "../src/index.js";
+import { createRpcBaseQuery, type RpcCaller } from "../src/index.js";
 
 function fakeApi(signal: AbortSignal) {
   return { signal } as Parameters<ReturnType<typeof createRpcBaseQuery>>[1];

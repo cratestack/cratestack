@@ -10,7 +10,13 @@
   },
   "homepage": "https://cratestack.dev",
   "bugs": "https://github.com/cratestack/cratestack/issues",
-  "keywords": ["cratestack", "cstack", "rpc", "batching", "trpc-links"],
+  "keywords": [
+    "cratestack",
+    "cstack",
+    "rpc",
+    "batching",
+    "trpc-links"
+  ],
   "type": "module",
   "sideEffects": false,
   "main": "./dist/index.js",
@@ -45,7 +51,11 @@
       "import": "./dist/adapter-rtk.js"
     }
   },
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
@@ -66,8 +76,8 @@
     "@reduxjs/toolkit": "^2.0.0",
     "@tanstack/query-core": "^5.0.0",
     "axios": "^1.7.0",
-    "typescript": "^5.7.0",
-    "vitest": "^3.0.0",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10",
     "yup": "^1.4.0",
     "zod": "^4.0.0"
   },

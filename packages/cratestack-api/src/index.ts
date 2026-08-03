@@ -5,6 +5,7 @@
 // just to `import from "@cratestack/api"`); everything net-new is a
 // named subpath import instead, so e.g. zod/yup/axios/tanstack-query/
 // rtk never become implicit peer requirements of the root import.
-export * from "@cratestack/ts-types";
+
 export * from "@cratestack/link-batch";
 export * from "@cratestack/link-logger";
+export * from "@cratestack/ts-types";

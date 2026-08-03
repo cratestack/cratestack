@@ -10,7 +10,14 @@
   },
   "homepage": "https://cratestack.dev",
   "bugs": "https://github.com/cratestack/cratestack/issues",
-  "keywords": ["cratestack", "cstack", "rpc", "cbor", "wasm", "codec"],
+  "keywords": [
+    "cratestack",
+    "cstack",
+    "rpc",
+    "cbor",
+    "wasm",
+    "codec"
+  ],
   "type": "module",
   "sideEffects": false,
   "main": "./dist/index.js",
@@ -21,7 +28,11 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "wasm:build": "node ../../examples/scripts/wasm-build.mjs --crate ../../crates/cratestack-cbor-wasm --target web --out-dir ../../packages/cratestack-cbor-web/src/wasm-pkg",
     "wasm:build:dev": "node ../../examples/scripts/wasm-build.mjs --crate ../../crates/cratestack-cbor-wasm --target web --out-dir ../../packages/cratestack-cbor-web/src/wasm-pkg --dev",
@@ -35,8 +46,8 @@
     "@cratestack/ts-types": "0.6.5"
   },
   "devDependencies": {
-    "typescript": "^5.7.0",
-    "vitest": "^3.0.0"
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
   },
   "engines": {
     "node": ">=18"

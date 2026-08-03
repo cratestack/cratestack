@@ -307,10 +307,11 @@ fn riverpod_pubspec_adds_riverpod_annotation_generator_and_build_runner() {
          at codegen time):\n{pubspec}"
     );
     assert!(
-        pubspec.contains(r#"build_runner: ">=2.14.0 <2.15.0""#),
-        "build_runner must stay capped below 2.15.0 to match the riverpod_generator 4.0.4 pin \
-         above — 2.15.x tightened its own analyzer floor past what analyzer 12.x (what 4.0.4 \
-         needs) satisfies:\n{pubspec}"
+        pubspec.contains(r#"build_runner: ">=2.14.0 <2.15.2""#),
+        "build_runner must stay capped below 2.15.2 (not 2.15.0 — 2.15.0/2.15.1 still declare \
+         analyzer '>=8.0.0 <14.0.0', the same band 2.14.x accepts; only 2.15.2 tightens the \
+         floor past what analyzer 12.x, what riverpod_generator 4.0.4 above needs, satisfies; \
+         see issue #358):\n{pubspec}"
     );
     // A bare, non-Flutter `riverpod:` package must never be added
     // alongside `flutter_riverpod` — it already re-exports what

@@ -10,7 +10,13 @@
   },
   "homepage": "https://cratestack.dev",
   "bugs": "https://github.com/cratestack/cratestack/issues",
-  "keywords": ["cratestack", "cstack", "rpc", "rtk-query", "redux-toolkit"],
+  "keywords": [
+    "cratestack",
+    "cstack",
+    "rpc",
+    "rtk-query",
+    "redux-toolkit"
+  ],
   "type": "module",
   "sideEffects": false,
   "main": "./dist/index.js",
@@ -21,7 +27,11 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
@@ -34,12 +44,14 @@
     "@reduxjs/toolkit": "^2.0.0"
   },
   "peerDependenciesMeta": {
-    "@reduxjs/toolkit": { "optional": true }
+    "@reduxjs/toolkit": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@reduxjs/toolkit": "^2.0.0",
-    "typescript": "^5.7.0",
-    "vitest": "^3.0.0"
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
   },
   "engines": {
     "node": ">=18"

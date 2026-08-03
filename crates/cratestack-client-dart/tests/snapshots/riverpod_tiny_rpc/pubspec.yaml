@@ -66,14 +66,17 @@ dev_dependencies:
   # `analyzer: ^12.0.0`, which satisfies the `flutter_test` chain's
   # `<13.0.0` requirement for real (no override needed) — but 4.0.4 only
   # accepts `riverpod_annotation: '4.0.3'` exactly, hence pinning that
-  # too. `build_runner` is capped below 2.15.0 (2.15.x tightened its own
-  # `analyzer` floor past what 12.x satisfies).
+  # too. `build_runner` is capped below 2.15.2, not below 2.15.0 — 2.15.0
+  # and 2.15.1 both still declare `analyzer: '>=8.0.0 <14.0.0'`, the same
+  # band 2.14.x accepts; only 2.15.2 tightens the floor to `>=13.3.0`,
+  # past what 12.x satisfies (confirmed via pub.dev's per-version API,
+  # not just the version-table UI). See issue #358.
   #
   # Verified end to end against the real Flutter 3.44.8/Dart 3.12.2 SDK:
   # `flutter pub get` resolves, `dart run build_runner build` actually
   # generates `.g.dart` output, and `flutter analyze` is clean (only the
   # two pre-existing, unrelated info-level findings tracked separately).
-  build_runner: ">=2.14.0 <2.15.0"
+  build_runner: ">=2.14.0 <2.15.2"
   riverpod_generator: 4.0.4
   # issue #325: `dart_mappable_builder` joins the trio above as a fourth
   # pinned-together package, not an independent constraint — it runs in

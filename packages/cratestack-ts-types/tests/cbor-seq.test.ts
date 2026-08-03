@@ -20,8 +20,8 @@ import { describe, expect, it } from "vitest";
 import { readArgument, skipItem } from "../src/cbor-item.js";
 import {
   CborSeqBoundaryScanner,
-  MalformedCborSeqError,
   classifyCborSeqItem,
+  MalformedCborSeqError,
 } from "../src/cbor-seq.js";
 import { miniCborCodec } from "./helpers/mini-cbor-codec.js";
 

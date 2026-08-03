@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  type RpcCaller,
   isRpcErrorCode,
+  type RpcCaller,
   rpcMutationOptions,
   rpcQueryKey,
   rpcQueryOptions,
