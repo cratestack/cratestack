@@ -475,12 +475,33 @@ jobs:
           path: cbor-node-artifacts
       - name: List downloaded platform binaries
         run: find cbor-node-artifacts -name '*.node'
+      # `napi artifacts` (below) only handles the `.node` binaries — it
+      # does NOT copy `native.mjs`/`native.d.mts` (the JS/TS loader `napi
+      # build --platform` generates), confirmed the hard way: a first
+      # version of this job without this step failed tsc with "Cannot
+      # find module '../native.mjs'". Every leg's copy is identical (see
+      # build-cbor-node's own comment), so grabbing the first match found
+      # is enough.
+      - name: Copy the native.mjs/native.d.mts loader (identical on every leg)
+        run: |
+          find cbor-node-artifacts -name 'native.mjs' -exec cp {} packages/cratestack-cbor-node/ \; -quit
+          find cbor-node-artifacts -name 'native.d.mts' -exec cp {} packages/cratestack-cbor-node/ \; -quit
       - name: Scaffold per-platform npm packages
         working-directory: packages/cratestack-cbor-node
         run: pnpm exec napi create-npm-dirs
       - name: Move each platform's binary into its npm/<platform>/ dir
         working-directory: packages/cratestack-cbor-node
         run: pnpm exec napi artifacts --output-dir ../../cbor-node-artifacts
+      # cbor-node's own `tsc` doesn't build its workspace dependency
+      # (`@cratestack/ts-types`) — that only happens automatically via
+      # turbo's `^build` dependency graph, which this job deliberately
+      # doesn't invoke for cbor-node itself (its full `build` script also
+      # runs `build:napi`, needing a Rust toolchain this job doesn't set
+      # up). Confirmed the hard way: without this, tsc fails with "Cannot
+      # find module '@cratestack/ts-types'" (no `dist/` to resolve types
+      # against).
+      - name: Build @cratestack/ts-types (cbor-node's only workspace dependency)
+        run: pnpm --filter ./packages/cratestack-ts-types run build
       - name: Compile TypeScript wrapper (native artifacts already built above)
         working-directory: packages/cratestack-cbor-node
         run: pnpm exec tsc -p tsconfig.json
