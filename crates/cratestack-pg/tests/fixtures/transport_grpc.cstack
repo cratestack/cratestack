@@ -23,3 +23,13 @@ model Widget {
   @@allow("update", auth() != null)
   @@allow("delete", auth() != null)
 }
+
+// Ticket #208: a unary procedure and a `List`-arity (server-streaming)
+// procedure, exercised end to end by `transport_grpc.rs`'s
+// `grpc_unary_procedure_dispatches_through_router`/
+// `grpc_streaming_procedure_dispatches_through_router` tests.
+procedure echoWidgetName(name: String): String
+  @allow(auth() != null)
+
+procedure widgetNameSamples(): String[]
+  @allow(auth() != null)

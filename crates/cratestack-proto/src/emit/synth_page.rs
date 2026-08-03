@@ -69,7 +69,13 @@ pub(super) fn synthesize_pages(
     Ok(())
 }
 
-pub(super) fn monomorphize_return_type(return_type: &TypeRef) -> TypeRef {
+/// `pub` (not `pub(super)`) since ticket #208: `emit::mod` re-exports
+/// this so `cratestack-macros::include::server::grpc::procedures` can
+/// compute the exact same `<Base>Output.result` field type this crate's
+/// own [`super::synth::synthesize_messages`] already used to number that
+/// field in the `.pb.lock` — reusing the monomorphization rule rather
+/// than re-deriving `Page<T>` -> `PageOf<Item>` a second time.
+pub fn monomorphize_return_type(return_type: &TypeRef) -> TypeRef {
     if !return_type.is_page() {
         return return_type.clone();
     }

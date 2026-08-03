@@ -29,20 +29,55 @@
 //! different-but-equivalent protobuf bytes). Closing this gap for real
 //! needs a custom `tonic::codec::Decoder` that captures raw bytes
 //! alongside the parsed message — not attempted in this pass.
+//!
+//! **Procedures (ticket #208).** Every `procedure` declaration gets a
+//! method arm too, dispatched through the exact same `super::axum::
+//! handle_<name>_dispatch` fn REST/RPC already call (no second dispatch
+//! path, same requirement #171 already met for CRUD) — see
+//! [`build_procedure_unary_arm`]. A `List`-arity return (`OpKind::
+//! Sequence`, mirroring `cratestack-proto::emit::service`'s and
+//! `crate::transport::op_descriptors`'s identical `arity == List` check)
+//! instead gets [`build_procedure_stream_arm`], using tonic's
+//! `ServerStreamingService` — genuinely different wire framing from
+//! unary, exercised for the first time in this runtime by this ticket.
+//! **What "streaming" means here, stated plainly:** the already-shipped
+//! `.proto` contract (ticket #169/#170, `cratestack-proto::emit::
+//! service`, protoc-validated in `crates/cratestack-proto/tests/
+//! protoc_compiles.rs`) gives a `List`-arity procedure's `<Base>Output`
+//! a `repeated result` field — the *whole* list travels in one message,
+//! not one item per message. This module honors that existing, tested
+//! shape rather than redesigning it: the dispatch call still fully
+//! resolves (mirroring how gRPC pins `Content-Type: application/cbor`,
+//! never `cbor-seq`, in [`request_prelude`] — even a `@stream`-attributed
+//! procedure's incremental HTTP path never activates over gRPC, see
+//! `crate::axum::procedure::dispatch_tail`'s content-type branch), then
+//! the one resulting `<Base>Output` is sent as a single-item
+//! `ServerStreamingService` stream (`tokio_stream::once`) rather than a
+//! unary response. That is genuine, wire-level gRPC server streaming —
+//! `ServerStreamingService`/`Grpc::server_streaming`, unused anywhere in
+//! this runtime before this ticket — just not itemwise-incremental
+//! production. True incremental item-by-item delivery (matching a
+//! `@stream` procedure's own incremental REST/RPC behavior,
+//! cratestack#283) would need a custom decoder that consumes the
+//! dispatch response's body as it arrives rather than buffering it
+//! first; flagged as a smaller, separately-scoped follow-up rather than
+//! attempted here.
 
-use cratestack_core::{Field, Model, Schema};
+use cratestack_core::{Field, Model, Schema, TypeArity};
 use quote::quote;
 
 use crate::shared::{ident, pluralize, to_snake_case};
 
 use crate::include::grpc_pb::fields::model_allows_create;
 
+use super::procedure_arms::{build_procedure_stream_arm, build_procedure_unary_arm};
+
 pub(super) fn build_service(
     schema: &Schema,
     package: &str,
     models_with_pk: &[(&Model, &Field)],
 ) -> proc_macro2::TokenStream {
-    if models_with_pk.is_empty() {
+    if models_with_pk.is_empty() && schema.procedures.is_empty() {
         return quote! {};
     }
     let service_full_name = format!("{package}.Api");
@@ -56,28 +91,35 @@ pub(super) fn build_service(
         arms.push(build_update_arm(package, model, pk));
         arms.push(build_delete_arm(package, model, pk));
     }
-    let _ = schema;
+    for procedure in &schema.procedures {
+        if matches!(procedure.return_type.arity, TypeArity::List) {
+            arms.push(build_procedure_stream_arm(package, procedure));
+        } else {
+            arms.push(build_procedure_unary_arm(package, procedure));
+        }
+    }
 
     quote! {
-        pub struct ApiServer<C, Auth> {
-            state: super::axum::ModelRouterState<C, Auth>,
+        pub struct ApiServer<R, C, Auth> {
+            state: super::axum::ProcedureRouterState<R, C, Auth>,
         }
 
-        impl<C, Auth> ApiServer<C, Auth> {
-            pub fn new(state: super::axum::ModelRouterState<C, Auth>) -> Self {
+        impl<R, C, Auth> ApiServer<R, C, Auth> {
+            pub fn new(state: super::axum::ProcedureRouterState<R, C, Auth>) -> Self {
                 Self { state }
             }
         }
 
-        impl<C: Clone, Auth: Clone> Clone for ApiServer<C, Auth> {
+        impl<R: Clone, C: Clone, Auth: Clone> Clone for ApiServer<R, C, Auth> {
             fn clone(&self) -> Self {
                 Self { state: self.state.clone() }
             }
         }
 
-        impl<C, Auth, B> ::cratestack::grpc::tonic::codegen::Service<::cratestack::grpc::tonic::codegen::http::Request<B>>
-            for ApiServer<C, Auth>
+        impl<R, C, Auth, B> ::cratestack::grpc::tonic::codegen::Service<::cratestack::grpc::tonic::codegen::http::Request<B>>
+            for ApiServer<R, C, Auth>
         where
+            R: super::procedures::ProcedureRegistry,
             C: ::cratestack::HttpTransport + Send + Sync + 'static,
             Auth: ::cratestack::AuthProvider + Send + Sync + 'static,
             B: ::cratestack::grpc::tonic::codegen::Body + ::core::marker::Send + 'static,
@@ -117,7 +159,7 @@ pub(super) fn build_service(
             }
         }
 
-        impl<C, Auth> ::cratestack::grpc::tonic::server::NamedService for ApiServer<C, Auth> {
+        impl<R, C, Auth> ::cratestack::grpc::tonic::server::NamedService for ApiServer<R, C, Auth> {
             const NAME: &'static str = #service_full_name;
         }
 
@@ -134,13 +176,43 @@ pub(super) fn build_service(
         /// layer composition and is unit-tested on its own
         /// (`cratestack-grpc::web`'s tests assert the exposed-headers set
         /// on a real response), so this call site stays a one-liner.
-        pub fn into_router<C, Auth>(state: super::axum::ModelRouterState<C, Auth>) -> ::cratestack::axum::Router
+        ///
+        /// Signature mirrors `axum::router(db, registry, codec,
+        /// auth_provider)` (ticket #208 — previously this took an
+        /// already-built `ModelRouterState`, which had no room for a
+        /// procedure registry; every other entrypoint in this schema
+        /// already takes these four arguments separately, so this one
+        /// now does too rather than growing a second, gRPC-only calling
+        /// convention).
+        pub fn into_router<R, C, Auth>(
+            db: super::Cratestack,
+            registry: R,
+            codec: C,
+            auth_provider: Auth,
+        ) -> ::cratestack::axum::Router
         where
+            R: super::procedures::ProcedureRegistry,
             C: ::cratestack::HttpTransport + Send + Sync + 'static,
             Auth: ::cratestack::AuthProvider + Send + Sync + 'static,
         {
+            let state = super::axum::ProcedureRouterState { db, registry, codec, auth_provider };
             let router = ::cratestack::grpc::tonic::service::Routes::new(ApiServer::new(state)).into_axum_router();
             ::cratestack::grpc::apply_grpc_web(router)
+        }
+    }
+}
+
+/// `super::axum::ModelRouterState<C, Auth>` built ad hoc from the
+/// `ProcedureRouterState<R, C, Auth>` `ApiServer` actually carries —
+/// mirrors `crate::transport::rpc::generate_model_rpc_dispatch_arms`,
+/// which does exactly this to call a model `_dispatch` fn from the
+/// unified `RpcRouterState` the RPC binding threads through instead.
+fn model_state_from_procedure_state() -> proc_macro2::TokenStream {
+    quote! {
+        super::axum::ModelRouterState {
+            db: state.db.clone(),
+            codec: state.codec.clone(),
+            auth_provider: state.auth_provider.clone(),
         }
     }
 }
@@ -155,7 +227,7 @@ fn method_path(package: &str, model: &str, verb_pascal: &str) -> String {
 /// `cratestack_axum::rpc::bridge_grpc_response`'s doc for why that
 /// matters), and the canonical request path/body used for both auth and
 /// the "known gap" signing note in this file's module doc.
-fn request_prelude(path: &str) -> proc_macro2::TokenStream {
+pub(super) fn request_prelude(path: &str) -> proc_macro2::TokenStream {
     quote! {
         let mut headers = ::cratestack::grpc::metadata_to_headers(request.metadata());
         // The dispatch fn's own request/response codec negotiation reads
@@ -181,7 +253,7 @@ fn request_prelude(path: &str) -> proc_macro2::TokenStream {
     }
 }
 
-fn status_from_bridge_error(
+pub(super) fn status_from_bridge_error(
     code_expr: proc_macro2::TokenStream,
     message_expr: proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
@@ -203,6 +275,7 @@ fn build_get_arm(package: &str, model: &Model, pk: &Field) -> proc_macro2::Token
     let response_ty = ident(&model.name);
     let svc_ident = ident(&format!("Grpc{}GetSvc", model.name));
     let prelude = request_prelude(&path);
+    let model_state = model_state_from_procedure_state();
     let status = status_from_bridge_error(quote! { code }, quote! { message });
     let _ = pk;
     quote! {
@@ -237,7 +310,7 @@ fn build_get_arm(package: &str, model: &Model, pk: &Field) -> proc_macro2::Token
                     })
                 }
             }
-            let svc = #svc_ident(state);
+            let svc = #svc_ident(#model_state);
             let codec = ::cratestack::grpc::tonic::codec::ProstCodec::default();
             let mut grpc = ::cratestack::grpc::tonic::server::Grpc::new(codec);
             Box::pin(async move { Ok(grpc.unary(svc, req).await) })
@@ -255,6 +328,7 @@ fn build_delete_arm(package: &str, model: &Model, pk: &Field) -> proc_macro2::To
     let response_ty = ident(&model.name);
     let svc_ident = ident(&format!("Grpc{}DeleteSvc", model.name));
     let prelude = request_prelude(&path);
+    let model_state = model_state_from_procedure_state();
     let status = status_from_bridge_error(quote! { code }, quote! { message });
     let _ = pk;
     quote! {
@@ -289,7 +363,7 @@ fn build_delete_arm(package: &str, model: &Model, pk: &Field) -> proc_macro2::To
                     })
                 }
             }
-            let svc = #svc_ident(state);
+            let svc = #svc_ident(#model_state);
             let codec = ::cratestack::grpc::tonic::codec::ProstCodec::default();
             let mut grpc = ::cratestack::grpc::tonic::server::Grpc::new(codec);
             Box::pin(async move { Ok(grpc.unary(svc, req).await) })
@@ -307,6 +381,7 @@ fn build_create_arm(package: &str, model: &Model) -> proc_macro2::TokenStream {
     let response_ty = ident(&model.name);
     let svc_ident = ident(&format!("Grpc{}CreateSvc", model.name));
     let prelude = request_prelude(&path);
+    let model_state = model_state_from_procedure_state();
     let status = status_from_bridge_error(quote! { code }, quote! { message });
     quote! {
         #path => {
@@ -354,7 +429,7 @@ fn build_create_arm(package: &str, model: &Model) -> proc_macro2::TokenStream {
                     })
                 }
             }
-            let svc = #svc_ident(state);
+            let svc = #svc_ident(#model_state);
             let codec = ::cratestack::grpc::tonic::codec::ProstCodec::default();
             let mut grpc = ::cratestack::grpc::tonic::server::Grpc::new(codec);
             Box::pin(async move { Ok(grpc.unary(svc, req).await) })
@@ -372,6 +447,7 @@ fn build_update_arm(package: &str, model: &Model, pk: &Field) -> proc_macro2::To
     let response_ty = ident(&model.name);
     let svc_ident = ident(&format!("Grpc{}UpdateSvc", model.name));
     let prelude = request_prelude(&path);
+    let model_state = model_state_from_procedure_state();
     let status = status_from_bridge_error(quote! { code }, quote! { message });
     let _ = pk;
     quote! {
@@ -418,7 +494,7 @@ fn build_update_arm(package: &str, model: &Model, pk: &Field) -> proc_macro2::To
                     })
                 }
             }
-            let svc = #svc_ident(state);
+            let svc = #svc_ident(#model_state);
             let codec = ::cratestack::grpc::tonic::codec::ProstCodec::default();
             let mut grpc = ::cratestack::grpc::tonic::server::Grpc::new(codec);
             Box::pin(async move { Ok(grpc.unary(svc, req).await) })
@@ -437,6 +513,7 @@ fn build_list_arm(package: &str, model: &Model) -> proc_macro2::TokenStream {
     let svc_ident = ident(&format!("Grpc{}ListSvc", model.name));
     let model_ident = ident(&model.name);
     let prelude = request_prelude(&path);
+    let model_state = model_state_from_procedure_state();
     let status = status_from_bridge_error(quote! { code }, quote! { message });
     // The wire contract always wraps `list` in `PageOf<Model>` (§4.6's
     // gRPC-specific rule — `cratestack-proto::emit::synth_page`'s module
@@ -499,7 +576,7 @@ fn build_list_arm(package: &str, model: &Model) -> proc_macro2::TokenStream {
                     })
                 }
             }
-            let svc = #svc_ident(state);
+            let svc = #svc_ident(#model_state);
             let codec = ::cratestack::grpc::tonic::codec::ProstCodec::default();
             let mut grpc = ::cratestack::grpc::tonic::server::Grpc::new(codec);
             Box::pin(async move { Ok(grpc.unary(svc, req).await) })

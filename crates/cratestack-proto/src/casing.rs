@@ -22,7 +22,14 @@ pub(crate) fn to_screaming_snake_case(value: &str) -> String {
 /// `cratestack-client-typescript::naming::to_pascal_case` does the same
 /// job — reimplemented here rather than depended on, same crate-layering
 /// rule as [`to_screaming_snake_case`] above.
-pub(crate) fn to_pascal_case(value: &str) -> String {
+///
+/// `pub` (not `pub(crate)`) since ticket #208: `cratestack-macros::
+/// include::server::grpc::procedures` calls this directly to derive the
+/// exact `<Base>Input`/`<Base>Output` mirror-struct names this crate's
+/// own [`crate::emit::synthesize_messages`] already used to name the
+/// same messages in the `.pb.lock`/`.proto` — same reasoning as
+/// [`op_id_to_method_name`]'s own `pub` visibility below.
+pub fn to_pascal_case(value: &str) -> String {
     let mut output = String::new();
     let mut capitalize_next = true;
     for ch in value.chars() {

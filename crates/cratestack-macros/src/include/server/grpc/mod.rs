@@ -31,17 +31,23 @@
 //! rejected the schema with a `compile_error!` before this module runs
 //! otherwise, so everything below can assume the feature is live.
 //!
-//! **Scope note (ticket #171, judgment call):** this pass covers model
-//! CRUD (`list`/`get`/`create`/`update`/`delete`) end to end, including
-//! server streaming plumbing shared with procedures. `transport grpc`
-//! *procedures* are not yet wired into the generated service — a model
-//! with no primary key or with `create` policy-gated off already narrows
-//! correctly (mirroring `cratestack-proto::emit::service`'s own gating),
-//! but a schema with `procedure` declarations gets no gRPC method for
-//! them yet. Tracked as follow-up rather than attempted here given the
-//! ticket's own risk register ("may need splitting once ticket 3 lands
-//! and the shape is concrete").
+//! **Scope (ticket #171 model CRUD, ticket #208 procedures):** this pass
+//! covers model CRUD (`list`/`get`/`create`/`update`/`delete`) end to
+//! end — a model with no primary key or with `create` policy-gated off
+//! already narrows correctly (mirroring `cratestack-proto::emit::
+//! service`'s own gating) — *and* `procedure` declarations, unary or
+//! server-streaming per [`cratestack_core::TypeArity::List`] (see
+//! [`service::build_service`]'s doc for exactly what "server-streaming"
+//! means here). [`procedures`] builds the per-procedure `pb::<Base>
+//! {Input,Output}` mirror messages; any `Page<T>` a procedure returns
+//! that isn't already covered by a model-with-pk's own `PageOf<Model>`
+//! (below) gets its `PageOf<Item>` synthesized here too, deduplicated
+//! against both sources the same way `cratestack-proto::emit::
+//! synth_page::synthesize_pages` already deduplicates them in the
+//! `.pb.lock`/`.proto`.
 
+mod procedure_arms;
+mod procedures;
 mod rpc_inputs;
 mod rpc_list;
 mod service;
@@ -124,6 +130,50 @@ pub(super) fn build_grpc_module(
                     .map_err(|error| super::collect::compile_error(schema_path, error))?,
             );
         }
+    }
+
+    // Ticket #208: per-procedure `<Base>Input`/`<Base>Output` mirrors,
+    // plus any `PageOf<Item>` a `Page<T>`-returning procedure needs that
+    // the models-with-pk loop above didn't already emit — deduplicated
+    // the same way `cratestack-proto::emit::synth_page::synthesize_pages`
+    // deduplicates the two sources in the `.pb.lock`/`.proto` itself, so
+    // a schema where a model's own `list` and a procedure both return
+    // `Page<SameModel>` gets exactly one `PageOfSameModel` mirror.
+    let covered_pages: BTreeSet<String> = models_with_pk
+        .iter()
+        .map(|(model, _)| format!("PageOf{}", model.name))
+        .collect();
+    let mut extra_pages_emitted: BTreeSet<String> = BTreeSet::new();
+    for procedure in &schema.procedures {
+        let base = cratestack_proto::to_pascal_case(&procedure.name);
+        let input_numbers = numbers_for(&pb_lock, &format!("{base}Input"))
+            .map_err(|error| super::collect::compile_error(schema_path, error))?;
+        pb_items.push(
+            procedures::render_procedure_input(procedure, input_numbers, &enum_names)
+                .map_err(|error| super::collect::compile_error(schema_path, error))?,
+        );
+        let output_numbers = numbers_for(&pb_lock, &format!("{base}Output"))
+            .map_err(|error| super::collect::compile_error(schema_path, error))?;
+        pb_items.push(
+            procedures::render_procedure_output(procedure, output_numbers, &enum_names)
+                .map_err(|error| super::collect::compile_error(schema_path, error))?,
+        );
+
+        let Some(item) = procedure.return_type.page_item() else {
+            continue;
+        };
+        let message_name = format!("PageOf{}", item.name);
+        if covered_pages.contains(&message_name)
+            || !extra_pages_emitted.insert(message_name.clone())
+        {
+            continue;
+        }
+        let page_numbers = numbers_for(&pb_lock, &message_name)
+            .map_err(|error| super::collect::compile_error(schema_path, error))?;
+        pb_items.push(
+            rpc_list::render_page_of(&item.name, page_numbers)
+                .map_err(|error| super::collect::compile_error(schema_path, error))?,
+        );
     }
 
     let package = pb_lock.package.clone().unwrap_or_default();

@@ -12,10 +12,11 @@ Part of the [CrateStack](https://cratestack.dev) framework. See
 
 Status: runtime primitives (this crate) plus, behind `cratestack-pg`'s
 `grpc` Cargo feature, macro-generated pb mirror structs and a hand-rolled
-tonic service covering model CRUD, mountable into an `axum::Router` via
-`cratestack_schema::grpc::into_router`. `transport grpc` *procedures*
-(unary and server-streaming) are not yet wired into the generated
-service — see ticket #171 for exact status.
+tonic service covering model CRUD (ticket #171) and `procedure`
+declarations, unary or server-streaming per their return type's arity
+(ticket #208) — mountable into an `axum::Router` via
+`cratestack_schema::grpc::into_router(db, registry, codec,
+auth_provider)`.
 
 Consumers enabling the `grpc` feature need `prost` as a direct
 `Cargo.toml` dependency too (not just reachable via

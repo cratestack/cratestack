@@ -1,8 +1,10 @@
-//! Smallest possible `transport grpc` CrateStack server (ticket #171):
-//! one `Widget` model, CRUD over real gRPC — `ModelWidgetList/Get/Create/
-//! Update/Delete` on `widgets_api.Api`, mounted as a plain `axum::Router`
-//! via `cratestack_schema::grpc::into_router` (§7.2's axum/tonic
-//! alignment, exercised for real here, not just asserted).
+//! Smallest possible `transport grpc` CrateStack server: one `Widget`
+//! model, CRUD over real gRPC (ticket #171) — `ModelWidgetList/Get/
+//! Create/Update/Delete` — plus two procedures over real gRPC (ticket
+//! #208): `echoWidgetName` (unary) and `widgetNameSamples` (`List`-arity,
+//! server-streaming). All mounted as a plain `axum::Router` via
+//! `cratestack_schema::grpc::into_router` (§7.2's axum/tonic alignment,
+//! exercised for real here, not just asserted).
 //!
 //! ### Run
 //!
@@ -22,6 +24,16 @@
 //! grpcurl -plaintext -import-path examples/grpc-widgets/schemas -proto widgets.proto \
 //!   -H 'x-auth-id: 1' -d '{}' \
 //!   localhost:50061 widgets_api.Api/ModelWidgetList
+//!
+//! # Ticket #208: unary procedure.
+//! grpcurl -plaintext -import-path examples/grpc-widgets/schemas -proto widgets.proto \
+//!   -H 'x-auth-id: 1' -d '{"name": "gizmo"}' \
+//!   localhost:50061 widgets_api.Api/ProcedureEchoWidgetName
+//!
+//! # Ticket #208: server-streaming procedure (`List`-arity return).
+//! grpcurl -plaintext -import-path examples/grpc-widgets/schemas -proto widgets.proto \
+//!   -H 'x-auth-id: 1' -d '{}' \
+//!   localhost:50061 widgets_api.Api/ProcedureWidgetNameSamples
 //! ```
 
 use cratestack::include_server_schema;
@@ -30,6 +42,44 @@ use cratestack::{AuthProvider, CoolContext, CoolError, RequestContext, Value};
 use cratestack_codec_cbor::CborCodec;
 
 include_server_schema!("schemas/widgets.cstack", db = Postgres);
+
+/// Ticket #208: the two procedures declared in `schemas/widgets.cstack`
+/// (`echoWidgetName`, a unary op; `widgetNameSamples`, a `List`-arity —
+/// server-streaming — op) don't touch the database, mirroring
+/// `examples/rpc-procedures`' own minimal `Procedures` registry: the
+/// point of this example is proving the gRPC wiring, not business logic.
+#[derive(Clone, Default)]
+struct Procedures;
+
+impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
+    fn echo_widget_name(
+        &self,
+        _db: &cratestack_schema::Cratestack,
+        _ctx: &CoolContext,
+        args: cratestack_schema::procedures::echo_widget_name::Args,
+    ) -> impl core::future::Future<
+        Output = Result<cratestack_schema::procedures::echo_widget_name::Output, CoolError>,
+    > + Send {
+        async move { Ok(format!("echo: {}", args.name)) }
+    }
+
+    fn widget_name_samples(
+        &self,
+        _db: &cratestack_schema::Cratestack,
+        _ctx: &CoolContext,
+        _args: cratestack_schema::procedures::widget_name_samples::Args,
+    ) -> impl core::future::Future<
+        Output = Result<cratestack_schema::procedures::widget_name_samples::Output, CoolError>,
+    > + Send {
+        async move {
+            Ok(vec![
+                "alpha".to_owned(),
+                "beta".to_owned(),
+                "gizmo".to_owned(),
+            ])
+        }
+    }
+}
 
 /// Reads `x-auth-id` from gRPC metadata (converted to `http::HeaderMap` by
 /// `cratestack::grpc::metadata_to_headers` — see `into_router`'s call
@@ -75,12 +125,7 @@ async fn main() {
     .expect("create widgets table");
 
     let db = cratestack_schema::Cratestack::builder(pool).build();
-    let state = cratestack_schema::axum::ModelRouterState {
-        db,
-        codec: CborCodec,
-        auth_provider: HeaderAuthProvider,
-    };
-    let app = cratestack_schema::grpc::into_router(state);
+    let app = cratestack_schema::grpc::into_router(db, Procedures, CborCodec, HeaderAuthProvider);
 
     let addr: std::net::SocketAddr = "127.0.0.1:50061".parse().expect("addr parses");
     println!("grpc-widgets-server listening on http://{addr} (h2c, plaintext gRPC)");

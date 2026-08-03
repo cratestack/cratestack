@@ -14,7 +14,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cratestack_core::{Field, TypeArity};
+use cratestack_core::{Field, TypeArity, TypeRef};
 use quote::quote;
 
 use crate::shared::ident;
@@ -47,11 +47,19 @@ pub(crate) fn render_message(
         let number = *numbers
             .get(&field.name)
             .ok_or_else(|| format!("no `.pb.lock` entry for `{message_name}.{}`", field.name))?;
-        let plan = render_field(message_name, field, number, enum_names);
+        let field_ident = ident(&field.name);
+        let domain_expr = quote! { value.#field_ident.clone() };
+        let plan = render_field(
+            message_name,
+            &field.name,
+            &field.ty,
+            domain_expr,
+            number,
+            enum_names,
+        );
         prost_fields.push(plan.prost_field);
         from_domain_inits.push(plan.from_domain_init);
         try_from_wire_lets.push(plan.try_from_wire_let);
-        let field_ident = ident(&field.name);
         try_from_wire_inits.push(quote! { #field_ident, });
     }
 
@@ -84,10 +92,10 @@ pub(crate) fn render_message(
     Ok(RenderedMessage { tokens })
 }
 
-struct FieldPlan {
-    prost_field: proc_macro2::TokenStream,
-    from_domain_init: proc_macro2::TokenStream,
-    try_from_wire_let: proc_macro2::TokenStream,
+pub(crate) struct FieldPlan {
+    pub(crate) prost_field: proc_macro2::TokenStream,
+    pub(crate) from_domain_init: proc_macro2::TokenStream,
+    pub(crate) try_from_wire_let: proc_macro2::TokenStream,
 }
 
 fn missing_field_error(owner: &str, field: &str) -> proc_macro2::TokenStream {
@@ -96,13 +104,28 @@ fn missing_field_error(owner: &str, field: &str) -> proc_macro2::TokenStream {
     }
 }
 
-fn render_field(owner: &str, field: &Field, number: i32, enum_names: &BTreeSet<&str>) -> FieldPlan {
-    let field_ident = ident(&field.name);
-    let field_name = field.name.as_str();
-    let type_name = field.ty.name.as_str();
+/// Builds one field's prost attribute plus both conversion directions.
+/// `domain_expr` is the *owned* expression that yields the field's domain
+/// value — ordinary message fields pass `value.<field>.clone()`
+/// (`render_message`'s call site); [`super::super::server::grpc::
+/// procedures::render_procedure_output`] (ticket #208) reuses this same
+/// per-type/per-arity logic for a procedure's single synthetic `result`
+/// field, passing `(*value).clone()` instead since there is no struct
+/// field to project through — the domain value *is* `value` there.
+/// `owner`/`field_name` only feed error messages and the wire ident, so
+/// this generalizes without needing a real [`Field`] to exist.
+pub(crate) fn render_field(
+    owner: &str,
+    field_name: &str,
+    ty: &TypeRef,
+    domain_expr: proc_macro2::TokenStream,
+    number: i32,
+    enum_names: &BTreeSet<&str>,
+) -> FieldPlan {
+    let field_ident = ident(field_name);
+    let type_name = ty.name.as_str();
     let number_lit = proc_macro2::Literal::i32_unsuffixed(number);
     let missing = missing_field_error(owner, field_name);
-    let domain_expr = quote! { value.#field_ident.clone() };
 
     if let Some(wire) = scalar_wire(type_name) {
         let rust_inner = &wire.rust_type;
@@ -110,7 +133,7 @@ fn render_field(owner: &str, field: &Field, number: i32, enum_names: &BTreeSet<&
         let to_wire = |expr| wire_from_domain_expr(type_name, expr);
         let to_domain = |expr| domain_from_wire_expr(type_name, expr, owner, field_name);
 
-        return match field.ty.arity {
+        return match ty.arity {
             TypeArity::Required => {
                 let wire_expr = to_wire(domain_expr);
                 let domain_conv = to_domain(quote! { raw });
@@ -178,7 +201,7 @@ fn render_field(owner: &str, field: &Field, number: i32, enum_names: &BTreeSet<&
         // the i32 <-> domain-enum mapping directly by hand.
         let enum_ident = ident(type_name);
         let domain_enum_path = quote! { super::super::#enum_ident };
-        return match field.ty.arity {
+        return match ty.arity {
             TypeArity::Required => FieldPlan {
                 prost_field: quote! {
                     #[prost(int32, optional, tag = #number_lit)]
@@ -232,7 +255,7 @@ fn render_field(owner: &str, field: &Field, number: i32, enum_names: &BTreeSet<&
     // unboxed.
     let message_ident = ident(type_name);
     let domain_message_path = quote! { super::super::#message_ident };
-    match field.ty.arity {
+    match ty.arity {
         TypeArity::Required => FieldPlan {
             prost_field: quote! {
                 #[prost(message, optional, boxed, tag = #number_lit)]
