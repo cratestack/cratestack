@@ -7,13 +7,7 @@ import { TaskRow } from "./TaskRow.tsx";
 
 const MINUTES_PER_TASK = 25; // one pomodoro — the estimate procedure's own unit.
 
-export function BoardDetailScreen({
-  boardId,
-  onBack,
-}: {
-  boardId: number;
-  onBack: () => void;
-}) {
+export function BoardDetailScreen({ boardId, onBack }: { boardId: number; onBack: () => void }) {
   const { data: board } = useBoard(runtime, boardId);
   // The generated model functions have no server-side filter for "tasks
   // on this board" wired up yet (see the README's scope note on
