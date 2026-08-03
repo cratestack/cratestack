@@ -1,0 +1,5 @@
+error: schema declares `extension pgvector { }`, but `cratestack-macros` was compiled without its `pgvector` Cargo feature enabled. Declaring an extension only unlocks schema syntax (docs/design/extensions.md §2, layer 1); the matching Cargo feature is what makes the supporting code exist in this build at all (layer 2) — enable `pgvector` on the facade crate you depend on (e.g. `cratestack = { package = "cratestack-pg", features = ["pgvector"] }`) once that facade forwards it (tracking: https://github.com/cratestack/cratestack/issues/155), or drop the `extension pgvector { }` block if this schema doesn't actually need it.
+ --> tests/ui/generated/pgvector_feature_missing.rs
+  |
+  | ...a!("$DIR/tests/fixtures/pgvector_extension.cstack", d...
+  |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

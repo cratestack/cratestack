@@ -34,6 +34,11 @@ pub(super) fn compose_server_schema(schema_path: &LitStr, db: ServerDb) -> Token
     if let Err(error) = super::reject_grpc::guard_server_grpc_transport(schema_path, &schema) {
         return error;
     }
+    if let Err(error) =
+        super::extension_gate::guard_server_declared_extensions(schema_path, &schema)
+    {
+        return error;
+    }
     let resolved_literal = resolved.display().to_string();
 
     let collected = match collect_server_schema(&schema, schema_path) {

@@ -1,0 +1,6 @@
+datasource db {
+  provider = "none"
+}
+
+extension pgvector {
+}

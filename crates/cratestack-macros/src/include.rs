@@ -22,6 +22,7 @@
 mod client;
 mod datasource_guard;
 mod embedded;
+mod extension_gate;
 mod grpc_pb;
 mod parse;
 mod reject_grpc;

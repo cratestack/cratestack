@@ -32,6 +32,11 @@ pub(super) fn compose_client_schema(schema_path: &LitStr) -> TokenStream {
     if let Err(error) = super::reject_grpc::guard_client_grpc_transport(schema_path, &schema) {
         return error;
     }
+    if let Err(error) =
+        super::extension_gate::guard_client_declared_extensions(schema_path, &schema)
+    {
+        return error;
+    }
     let grpc_module = match grpc::build_client_grpc_module(&schema, &resolved, schema_path) {
         Ok(tokens) => tokens,
         Err(error) => return error,

@@ -26,6 +26,11 @@ pub(super) fn compose_embedded_schema(schema_path: &LitStr) -> TokenStream {
     if let Err(error) = super::reject_grpc::guard_embedded_grpc_transport(schema_path, &schema) {
         return error;
     }
+    if let Err(error) =
+        super::extension_gate::guard_embedded_declared_extensions(schema_path, &schema)
+    {
+        return error;
+    }
 
     // `@@paged` gates a generated `list` **route**'s response envelope on
     // REST/RPC/gRPC (`Page<Model>` vs. a bare `Vec<Model>` — see

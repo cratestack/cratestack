@@ -36,6 +36,27 @@ grpc = []
 # facade fails this guard with a clear `compile_error!` instead of a wall of
 # unrelated "cannot find `sqlx`/`SqlxRuntime` in `cratestack`" errors.
 postgres = []
+# Gates codegen for the `rate_limit` extension, declared in `.cstack` via
+# `extension rate_limit { }` (cratestack#153/#161). Same `cfg!(feature =
+# "rate_limit")`-against-this-crate's-own-feature-set mechanism as `grpc`/
+# `postgres` above — see `crates/cratestack-macros/src/include/extension_gate.rs`
+# and `docs/design/extensions.md` §2. Intended to be forwarded from the
+# `cratestack-pg`/`cratestack-sqlite` facades' own `rate_limit` feature once
+# cratestack#154 wires that up and moves `cratestack-axum`'s
+# `RateLimitLayer`/`RateLimitConfig` behind it; until then, any schema that
+# declares `extension rate_limit { }` fails this guard under every facade.
+# Off by default.
+rate_limit = []
+# Gates codegen for the `pgvector` extension, declared in `.cstack` via
+# `extension pgvector { }` (cratestack#153/#161). Same mechanism as
+# `rate_limit` above — see `extension_gate.rs`. Intended to be forwarded
+# from `cratestack-migrate`/`cratestack-sqlx`/`cratestack-pg`'s own
+# `pgvector` feature once cratestack#155 wires that up. Note:
+# `include_embedded_schema!` rejects `extension pgvector { }`
+# unconditionally regardless of this feature — rusqlite has no vector
+# extension, so no Cargo feature can make it valid there (see
+# `extension_gate.rs`, `docs/design/extensions.md` §6). Off by default.
+pgvector = []
 
 [dependencies]
 cratestack-core.workspace = true
@@ -52,3 +73,13 @@ proc-macro2.workspace = true
 quote.workspace = true
 sha2.workspace = true
 syn.workspace = true
+
+[dev-dependencies]
+# UI/compile-fail testing for `extension_gate.rs`'s `compile_error!`
+# diagnostics (cratestack#161) — trybuild spawns an isolated `rustc`
+# invocation per fixture and asserts it fails to compile, which a plain
+# `tests/*.rs` integration test can't do without hard-failing the whole
+# `cargo test` run. Not used anywhere else in the workspace yet; scoped to
+# this crate rather than added to `[workspace.dependencies]` since it's the
+# first consumer.
+trybuild = "1"
