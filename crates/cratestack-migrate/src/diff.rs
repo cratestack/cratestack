@@ -25,7 +25,10 @@ mod columns;
 mod foreign_keys;
 mod indexes;
 mod tables;
-mod views;
+// `pub(crate)` (not private) so `crate::projection` — the public
+// `Schema → Projections` seam — can reach `views::{ViewProjection,
+// project_views}` without living inside this module.
+pub(crate) mod views;
 
 #[cfg(test)]
 mod tests;
@@ -34,20 +37,39 @@ use std::collections::BTreeMap;
 
 use cratestack_core::Schema;
 
-use crate::convert::{TableProjection, project_model};
+use crate::convert::TableProjection;
 use crate::ir::Op;
+use crate::projection::{Projections, project};
 
 /// Compute the migration that turns `prev` into `next`.
+///
+/// Thin wrapper around [`diff_projections`]: projects both schemas
+/// into their [`Projections`] IR shape (see `crate::projection`) and
+/// hands them to the comparison engine. Kept for existing callers
+/// that only ever have two full `Schema`s on hand (e.g.
+/// `cratestack-cli`'s `migrate diff`, which reads one from a snapshot
+/// file and parses the other from a `.cstack` file).
 pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
-    let prev_tables = project_tables(prev);
-    let next_tables = project_tables(next);
+    diff_projections(&project(prev), &project(next))
+}
 
-    let rename_map = tables::resolve_renames(&prev_tables, &next_tables);
+/// Compute the migration that turns `prev` into `next`, given their
+/// already-projected [`Projections`] IR — no `Schema` involved.
+///
+/// This is the seam a future live-database introspector (Phase B,
+/// issue #204) plugs into: anything that can produce a `Projections`
+/// value — not just [`project`] reading a parsed `.cstack` `Schema` —
+/// can be diffed against another `Projections` value here.
+pub fn diff_projections(prev: &Projections, next: &Projections) -> Vec<Op> {
+    let prev_tables = &prev.tables;
+    let next_tables = &next.tables;
+
+    let rename_map = tables::resolve_renames(prev_tables, next_tables);
     let mut rename_tables = rename_map.renames;
     let mut drop_tables_ops =
-        tables::collect_drops(&prev_tables, &next_tables, &rename_map.renamed_from);
+        tables::collect_drops(prev_tables, next_tables, &rename_map.renamed_from);
     let (mut create_tables, mut add_indexes, mut add_checks, mut add_foreign_keys) =
-        tables::collect_creates(&prev_tables, &next_tables, &rename_map.renamed_from);
+        tables::collect_creates(prev_tables, next_tables, &rename_map.renamed_from);
 
     let mut rename_columns = Vec::new();
     let mut drop_columns = Vec::new();
@@ -57,8 +79,8 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
     let mut drop_checks_ops = Vec::new();
     let mut drop_foreign_keys_ops = Vec::new();
 
-    for (name, prev_projection) in &prev_tables {
-        let Some(next_projection) = find_next(name, &next_tables, &rename_map.renamed_from) else {
+    for (name, prev_projection) in prev_tables {
+        let Some(next_projection) = find_next(name, next_tables, &rename_map.renamed_from) else {
             continue;
         };
 
@@ -81,7 +103,7 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
         drop_foreign_keys_ops.append(&mut fk_ops.drops);
     }
 
-    let mut view_diff = views::diff_views(prev, next);
+    let mut view_diff = views::diff_views(&prev.views, &next.views);
 
     let mut ops = Vec::new();
     // Renames before table-level changes so subsequent ops can
@@ -119,17 +141,6 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
     // references exist before the view definition is parsed.
     ops.append(&mut view_diff.creates);
     ops
-}
-
-fn project_tables(schema: &Schema) -> BTreeMap<String, TableProjection> {
-    schema
-        .models
-        .iter()
-        .map(|model| {
-            let projection = project_model(model, schema);
-            (projection.name.clone(), projection)
-        })
-        .collect()
 }
 
 /// Find the projection on the next side for a prev-side table name,

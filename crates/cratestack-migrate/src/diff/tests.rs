@@ -4,6 +4,7 @@
 mod basic;
 mod composite_unique;
 mod indexes;
+mod projection;
 mod relation_actions;
 mod relations;
 mod views;

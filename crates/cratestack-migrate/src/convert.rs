@@ -28,26 +28,32 @@ use uniques::composite_unique_indexes;
 
 /// IR-side projection of a model: the table plus any indexes implied
 /// by field-level attributes.
+///
+/// This is one half of the [`crate::Projections`] seam (see
+/// `crate::projection`): anything that can produce a `TableProjection`
+/// for every table it knows about — not just [`project_model`] reading
+/// a parsed `.cstack` `Schema` — can be diffed with
+/// [`crate::diff_projections`].
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct TableProjection {
-    pub(crate) name: String,
+pub struct TableProjection {
+    pub name: String,
     /// Old SQL table name declared via `@@rename(from = "...")`, if
     /// any. Used by the diff engine to match this projection against
     /// the previous schema's projection of the same logical table.
-    pub(crate) rename_from: Option<String>,
-    pub(crate) columns: Vec<Column>,
+    pub rename_from: Option<String>,
+    pub columns: Vec<Column>,
     /// Map from current SQL column name → previous SQL column name,
     /// for fields that carry `@rename(from = "...")`. Empty when
     /// there are no column renames.
-    pub(crate) column_renames: Vec<(String, String)>,
-    pub(crate) indexes: Vec<AddIndex>,
+    pub column_renames: Vec<(String, String)>,
+    pub indexes: Vec<AddIndex>,
     /// CHECK constraints implied by `@db_enforce` on validator
     /// attributes (`@range`, `@length`, `@iso4217`).
-    pub(crate) checks: Vec<AddCheck>,
+    pub checks: Vec<AddCheck>,
     /// Foreign keys promoted from the owning side of a
     /// `@relation(fields:[...], references:[...])` field. Empty for
     /// the "many" side of a relation, which has no physical column.
-    pub(crate) foreign_keys: Vec<AddForeignKey>,
+    pub foreign_keys: Vec<AddForeignKey>,
 }
 
 pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
