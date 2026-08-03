@@ -165,7 +165,10 @@ jobs:
             packages/cratestack-validator-zod/package.json \
             packages/cratestack-validator-yup/package.json \
             packages/cratestack-adapter-tanstack-query/package.json \
-            packages/cratestack-adapter-rtk/package.json
+            packages/cratestack-adapter-rtk/package.json \
+            packages/cratestack-cbor/package.json \
+            packages/cratestack-cbor-node/package.json \
+            packages/cratestack-cbor-web/package.json
           git commit -m "chore: bump workspace to v${version}"
           git push origin "$branch"
 
@@ -197,7 +200,7 @@ jobs:
 
           This PR changes:
 
-          - Bumps the workspace version to \`${version}\` across every crate's \`Cargo.toml\`, \`Cargo.lock\`, and every npm package (\`packages/cratestack-cli-npm\` and the split \`@cratestack/api\` family: \`cratestack-api\`, \`cratestack-ts-types\`, \`cratestack-link-batch\`, \`cratestack-link-logger\`, \`cratestack-runtime-fetch\`, \`cratestack-runtime-axios\`, \`cratestack-validator-zod\`, \`cratestack-validator-yup\`, \`cratestack-adapter-tanstack-query\`, \`cratestack-adapter-rtk\`), refreshing \`pnpm-lock.yaml\` to match.
+          - Bumps the workspace version to \`${version}\` across every crate's \`Cargo.toml\`, \`Cargo.lock\`, and every npm package (\`packages/cratestack-cli-npm\`, the split \`@cratestack/api\` family: \`cratestack-api\`, \`cratestack-ts-types\`, \`cratestack-link-batch\`, \`cratestack-link-logger\`, \`cratestack-runtime-fetch\`, \`cratestack-runtime-axios\`, \`cratestack-validator-zod\`, \`cratestack-validator-yup\`, \`cratestack-adapter-tanstack-query\`, \`cratestack-adapter-rtk\`, and the \`@cratestack/cbor\` family: \`cratestack-cbor\`, \`cratestack-cbor-node\`, \`cratestack-cbor-web\`), refreshing \`pnpm-lock.yaml\` to match.
 
           It solves:
 
