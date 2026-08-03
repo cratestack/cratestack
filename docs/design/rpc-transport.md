@@ -14,7 +14,8 @@ Scope: schemas declaring `transport rpc` in `.cstack`.
 | Streaming wire format for `Sequence`-kind ops via `Accept: application/cbor-seq` | shipped (content negotiation + framing) | #24, corrected #281 |
 | `@stream` schema directive + stream-shaped `ProcedureRegistry` trait method | shipped | #282 |
 | Genuinely incremental delivery for `@stream` ops (`Body::from_stream`, mid-stream error sentinel, client-disconnect cancellation) | shipped | #283 |
-| WebSocket binding + subscriptions (`@@subscribe` schema directive) | **pending** | — |
+| SSE subscription binding (§3.4a, `@@subscribe` schema directive) — recommended first path | **pending**, not gated on driving-case | #183 |
+| WebSocket binding + subscriptions (§3.4) | **pending**, gated on a real bidirectional/multiplexing case | — |
 | Batch parallelization | deferred (no observed contention) | — |
 
 Streaming now delivers incrementally, but only for ops explicitly marked
@@ -252,9 +253,11 @@ future, `model.User.list @stream`).
     fix only concerns the `application/cbor-seq` encoding, where a second
     content-type or a trailer were the (unrealizable) options originally
     described.
-- **No subscriptions over HTTP streaming.** SSE cancellation is "close the
-  connection," which races with backpressure on the server side. Subscriptions
-  live on WS only.
+- **~~No subscriptions over HTTP streaming~~ — revised, see §3.4a.** This
+  objection was written for arbitrary/general streaming; issue #183's spike
+  found it doesn't transfer to `@@subscribe`'s actual fire-and-forget,
+  one-subscription-per-connection model. SSE is now a first-class
+  subscription binding alongside WS — see §3.4a.
 
 ### 3.4 WebSocket — `GET /rpc/ws` upgrade
 
@@ -281,6 +284,57 @@ future, `model.User.list @stream`).
   server emits `Error { code: "unavailable", message: "subscription
   lagged" }` and ends the stream. The client decides whether to
   resubscribe.
+
+### 3.4a SSE — `GET /rpc/subscribe/{op_id}` (decision record, issue #183)
+
+**Spike decision (2026-08-04): amend, don't replace.** SSE is a first-class
+subscription binding alongside WS for the fire-and-forget, no-replay model
+§3.4 already commits to — reusing the `application/cbor-seq`/SSE machinery
+§3.3 already ships, rather than requiring the full WS frame loop up front.
+WS stays in this design for a different, not-yet-stated future need (true
+bidirectional communication, or many subscriptions multiplexed over one
+connection at scale) — build that only when a concrete case for it shows
+up, the same way this spike itself was triggered by a concrete question
+rather than speced in advance.
+
+Why the §3.3 objection ("SSE cancellation races with backpressure") doesn't
+transfer to `@@subscribe` specifically:
+
+- **Cancellation.** §3.4 already treats "the connection drops" as an
+  equally valid cancellation path alongside the explicit `Cancel{id}`
+  frame. `@@subscribe` is per-op — one subscription per connection, not N
+  multiplexed ops sharing a socket — so there is no `id` to disambiguate in
+  the first place. WS's `Cancel{id}` solves a multiplexing problem this
+  model doesn't have.
+- **Backpressure.** §3.4's own overflow handling is already
+  server-unilateral (bounded buffer → emit `Error` → end stream), not
+  `Cancel`-dependent — identical behavior over SSE (`event: error`, already
+  a physically realizable signal per §3.3's own cbor-seq tag-48900
+  correction) or WS. The "race" in §3.3 is generic TCP-teardown detection,
+  not something SSE handles worse than WS for this model.
+- **Reconnect/resume.** §3.4 already commits to no cursors, no replay — a
+  disconnected client just resubscribes fresh. SSE needs zero new semantics
+  under that rule, and the browser `EventSource` API auto-reconnects with
+  backoff natively, which a WS client has to hand-roll.
+- **The one real cost:** no multiplexing — a client subscribing to several
+  models needs one SSE connection per subscription. Under HTTP/2 (this
+  design's assumed deployment target throughout) this is a non-issue;
+  connections are multiplexed at the transport layer. This only becomes a
+  real constraint for HTTP/1.1-only deployments, which nothing else in this
+  document assumes.
+
+Wire shape: `GET /rpc/subscribe/{op_id}` (e.g.
+`/rpc/subscribe/model.User.subscribe`), `Accept: text/event-stream`, same
+auth as the existing HTTP bindings (header, not upgrade-time HMAC — SSE has
+no upgrade handshake to sign). Each `StreamItem`/`Error` from §2.3 becomes
+one SSE event, reusing the encoder path already proven by streaming
+(§3.3). No new frame types, no new envelope.
+
+Implementation is tracked as a scoped follow-up (see the linked issue in
+#183's closing comment) — not part of this decision record. §3.4's WS
+design stays written down as-is for whenever a real bidirectional or
+high-multiplexing need materializes; it isn't wrong, it's just not what
+the case in front of us needs today.
 
 ## 4. Cross-binding concerns
 
@@ -348,41 +402,58 @@ appears.
   only model.
 - **HTTP/2 server push** as a streaming transport. SSE and cbor-seq cover
   the use cases; H/2 push is being deprecated in the broader ecosystem.
-- **Subscriptions over SSE/cbor-seq.** WS only.
+- **~~Subscriptions over SSE/cbor-seq. WS only.~~ Revised — see §3.4a.**
+  SSE is now a first-class subscription binding for the fire-and-forget
+  case; WS remains for bidirectional/high-multiplexing needs.
 - **Cross-schema dispatch.** Each schema has its own op registry; mounting
   two schemas in one binary produces two independent registries under
   different prefixes.
 
-## 6.5. WebSocket binding + subscriptions — status
+## 6.5. WebSocket + SSE subscription bindings — status
 
-§3.4 specifies the wire shape for WebSocket and subscriptions in detail.
-None of it is implemented yet. Unlike streaming — where list-return
+§3.4 specifies the wire shape for WebSocket subscriptions; §3.4a (added by
+issue #183's spike decision) specifies SSE as the recommended first path.
+Neither is implemented yet. Unlike streaming — where list-return
 procedures had a concrete shape (paginated reads, audit feeds, anything
 naturally producing a finite sequence) and the binding fell out of the
 existing axum sequence encoder — subscription use cases haven't
-crystallized in the CrateStack consumer base yet. The design captured in
-§3.4 stays as the target; the runtime work is gated on a real driving
-case.
+crystallized in the CrateStack consumer base yet.
+
+Unlike the pre-#183 state of this section, the *SSE* path is **not** gated
+on a driving case materializing first — it reuses the already-shipped
+`application/cbor-seq`/SSE encoder path from §3.3 with no new frame types,
+so the implementation cost is genuinely small (see the "what's missing"
+list below, which is now mostly schema-directive + bus-integration work,
+not new transport plumbing). The full WS frame loop (§3.4) stays gated on
+a real driving case for bidirectional/high-multiplexing needs, per §3.4a.
 
 Concretely, what's missing:
 
 - **Schema directive.** `@@subscribe` on models doesn't parse today;
   `OpKind::Subscription` exists in `cratestack-core` but no `.cstack`
-  syntax emits it.
+  syntax emits it. Needed by both the SSE and WS paths.
+- **SSE dispatch.** `GET /rpc/subscribe/{op_id}` (§3.4a) isn't wired up —
+  this is the recommended first implementation target now.
 - **WS frame loop.** The `Request`/`Response`/`StreamItem`/`StreamEnd`/
   `Cancel`/`Error` variants in §2.3 are not wired through to the
-  axum WS extractor.
+  axum WS extractor. Deferred until a concrete bidirectional/multiplexing
+  case appears, per §3.4a.
 - **Bus integration.** `CoolEventBus` already exists in
   `cratestack-core` and is what a subscription would ride on, but the
   per-client fan-out + bounded-buffer behavior described in §3.4 needs
-  to be written.
+  to be written. Needed by both paths.
 
-The honest question to ask before that work starts is *what subscription
-should I implement, for whom*. Server-to-server consumers in
-CrateStack's audit/event landscape today don't need subscriptions — they
-poll or consume from the audit sink. External clients (mobile apps,
-browser SPAs) are the natural fit, but no concrete CrateStack consumer
-is asking for them yet. When one does, this section becomes a v1 task.
+This "no concrete consumer yet" gate still fully applies to the **WS**
+path (§3.4) — server-to-server consumers in CrateStack's audit/event
+landscape today don't need subscriptions, they poll or consume from the
+audit sink, and building the bidirectional/multiplexing machinery WS
+offers without a concrete case for it would be speculative. It does
+**not** apply the same way to the **SSE** path (§3.4a): the
+implementation cost is low enough (reusing shipped machinery, no new
+frame types) that issue #183 recommends scoping and building it as a
+follow-up regardless, rather than waiting on the same trigger WS is gated
+on. External clients (mobile apps, browser SPAs) remain the natural fit
+for either path, whenever one materializes.
 
 ## 7. Compatibility
 
