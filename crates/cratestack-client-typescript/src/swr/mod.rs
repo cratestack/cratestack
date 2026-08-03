@@ -37,11 +37,14 @@ mod ownership_graph;
 mod templates;
 mod views;
 
+use std::collections::HashMap;
+
 use cratestack_core::{Schema, TransportStyle};
 
 use crate::config::{GeneratedTypeScriptFile, TypeScriptGeneratorConfig};
 use crate::error::TypeScriptGeneratorError;
 use crate::templates::{OutputPath, build_environment};
+use views::SwrModelFileContext;
 
 pub(crate) fn generate(
     schema: &Schema,
@@ -56,6 +59,7 @@ pub(crate) fn generate(
     let ownership = ownership::compute_type_ownership(schema);
     let shared_context = context::build_shared_context(schema, config, &ownership);
     let model_contexts = context::build_model_file_contexts(schema, config, &ownership);
+    reject_model_file_name_collisions(&model_contexts)?;
 
     let mut files = Vec::new();
     for spec in &specs {
@@ -87,4 +91,33 @@ pub(crate) fn generate(
     }
 
     Ok(files)
+}
+
+/// Issue #344: `PerModel` output paths (`src/models/{{ file_stem }}.ts`
+/// and its `.hooks.ts` sibling) are keyed solely by
+/// `SwrModelFileContext::file_stem`, which `crate::naming::to_kebab_case`
+/// derives from the model's schema name through the same lossy tokenizer
+/// every other derived-name helper in this crate shares. Two distinct
+/// models that tokenize identically (`UserGroup`/`User_Group`, see
+/// `tests/fixtures/swr_key_collision.cstack`) would otherwise silently
+/// clobber each other's generated file with no error — this check runs
+/// once, before any file is rendered, so a collision is refused up front
+/// rather than discovered by diffing generator output.
+fn reject_model_file_name_collisions(
+    model_contexts: &[SwrModelFileContext],
+) -> Result<(), TypeScriptGeneratorError> {
+    let mut seen_by_file_stem: HashMap<&str, &str> = HashMap::new();
+    for model_context in model_contexts {
+        let file_stem = model_context.file_stem.as_str();
+        let model_name = model_context.model.name.as_str();
+        if let Some(&first) = seen_by_file_stem.get(file_stem) {
+            return Err(TypeScriptGeneratorError::SwrModelFileNameCollision {
+                first: first.to_owned(),
+                second: model_name.to_owned(),
+                file_stem: file_stem.to_owned(),
+            });
+        }
+        seen_by_file_stem.insert(file_stem, model_name);
+    }
+    Ok(())
 }

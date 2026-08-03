@@ -16,10 +16,7 @@
 // literal schema name instead (`swrKeys.model.UserGroup` vs
 // `swrKeys.model.User_Group`) — two distinct object properties, because
 // `cratestack-parser` already guarantees model names are unique
-// verbatim strings, sidestepping the casing-collapse risk entirely. See
-// `tests/swr_generator.rs`'s
-// `swr_key_factory_keeps_similarly_named_models_distinct` for the
-// assertion.
+// verbatim strings, sidestepping the casing-collapse risk entirely.
 //
 // `transport rpc` deliberately, not REST: RPC op ids are built directly
 // from `model.name` (parser-unique, no transform), so this fixture
@@ -30,6 +27,18 @@
 // one REST route is already broken at the HTTP level, independent of
 // SWR or this preset) flagged separately, not proven or fixed by this
 // fixture.
+//
+// Issue #344: the SAME `split_words` collapse that made `UserGroup`/
+// `User_Group` a good fixture for AC #4 above also collapses
+// `crate::naming::to_kebab_case(name)` — the `swr` preset's per-model
+// *file* name (`src/models/{{ file_stem }}.ts`) — to the identical
+// `user-group` stem for both models. That was an undetected second bug:
+// `swr` generation for this exact fixture used to succeed while silently
+// clobbering `src/models/user-group.ts` with whichever model was
+// processed last. `swr::reject_model_file_name_collisions` now catches
+// it and fails generation outright, so this fixture can no longer
+// generate under the `swr` preset at all — see
+// `tests/swr_generator.rs`'s `swr_preset_rejects_colliding_model_file_names`.
 
 transport rpc
 

@@ -531,62 +531,66 @@ fn relation_cycle_uses_type_only_cross_imports_with_no_value_level_cycle() {
     );
 }
 
-/// Acceptance test for issue #305 AC #4 ("A shared, exported key factory
-/// produces cache keys ... stable and collision-free across models ...
-/// prove with a fixture designed to collide"). `swr_key_collision.cstack`
-/// has two models (`UserGroup`, `User_Group`) whose react-query-oriented
-/// `ModelApiView::list_query_key` field — `to_camel_case(name) + "List"`
-/// — collapses to the identical string `"userGroupList"` for both (see
-/// the fixture's own header comment for the exact mechanism), which
-/// would silently overwrite one property in that preset's flat
-/// `cratestackQueryKeys` object. `src/swr-keys.ts` nests keys under each
-/// model's own literal, parser-unique schema name instead, so it must
-/// keep both models as distinct entries with distinct emitted key
-/// strings — this test proves that, not just that both models render at
-/// all.
+/// This test used to be the acceptance test for issue #305 AC #4 ("A
+/// shared, exported key factory produces cache keys ... stable and
+/// collision-free across models ... prove with a fixture designed to
+/// collide"): it generated the `swr` preset for `swr_key_collision.cstack`
+/// (`UserGroup`/`User_Group`) and asserted `src/swr-keys.ts` nested both
+/// models under their own literal, parser-unique name rather than the
+/// colliding `to_camel_case`-derived key. That assertion was true, but
+/// blind to a second, worse collision the very same fixture triggers:
+/// `crate::naming::split_words` is the shared tokenizer behind
+/// `to_camel_case` *and* `to_kebab_case` (`to_pascal_case`/`to_snake_case`
+/// too), so a pair that collapses to the same word sequence for one
+/// collides for all of them. Pre-#344, that meant `swr` generation for
+/// this exact fixture *looked* clean (this test passed) while silently
+/// clobbering `src/models/user-group.ts`: both models' `SwrModelFileContext`
+/// shared the file stem `user-group`, so the second model processed
+/// overwrote the first's file on disk with no error — the old version of
+/// this test never rendered or inspected `src/models/*.ts` at all, only
+/// `src/swr-keys.ts`, so it could not have caught it.
+///
+/// `reject_model_file_name_collisions` (`src/swr/mod.rs`) now catches
+/// this before any file is rendered and fails generation outright, naming
+/// both colliding models — which means this exact fixture can no longer
+/// reach `src/swr-keys.ts` under the `swr` preset at all. This test now
+/// proves that stronger, correct behavior instead. (The DEFAULT preset's
+/// unrelated flat-object collision on the same fixture is unaffected —
+/// see `default_preset_disambiguates_colliding_query_keys` below.)
 #[test]
-fn swr_key_factory_keeps_similarly_named_models_distinct() {
-    let package = generate_for("swr_key_collision", TypeScriptPreset::Swr);
-    let keys = file(&package, "src/swr-keys.ts");
+fn swr_preset_rejects_colliding_model_file_names() {
+    let fixture_path = "tests/fixtures/swr_key_collision.cstack";
+    let schema = cratestack_parser::parse_schema_file(fixture_path)
+        .unwrap_or_else(|error| panic!("fixture {fixture_path:?} should parse: {error}"));
+    let error = generate_package(
+        &schema,
+        &TypeScriptGeneratorConfig {
+            package_name: "swr-fixture-client".to_owned(),
+            preset: TypeScriptPreset::Swr,
+            ..TypeScriptGeneratorConfig::default()
+        },
+    )
+    .expect_err("swr preset must reject two models whose kebab-case file names collide");
 
-    // Both models get their own nested entry, keyed by their literal
-    // schema name — not the (colliding) camelCase-derived name.
-    assert!(
-        keys.contains("UserGroup: {"),
-        "missing UserGroup entry:\n{keys}"
-    );
-    assert!(
-        keys.contains("User_Group: {"),
-        "missing User_Group entry:\n{keys}"
-    );
-
-    // The actual emitted key strings stay distinct (dispatch-unique op
-    // ids), proving there is no overwrite: each model's dotted op id
-    // appears exactly twice — once in its own `list` key builder, once
-    // in its own `listMatches` filter — and, critically, `UserGroup`'s
-    // two occurrences are never counted against `User_Group`'s (a
-    // substring match would be a false pass here, since "UserGroup" is
-    // not a substring of "User_Group" or vice versa).
-    assert_eq!(
-        keys.matches("\"model.UserGroup.list\"").count(),
-        2,
-        "model.UserGroup.list key string should appear exactly twice (list + listMatches):\n{keys}"
-    );
-    assert_eq!(
-        keys.matches("\"model.User_Group.list\"").count(),
-        2,
-        "model.User_Group.list key string should appear exactly twice (list + listMatches):\n{keys}"
-    );
-
-    // The DEFAULT preset's `react-query.ts` used to collide on this exact
-    // fixture (`to_camel_case`-derived keys collapsed UserGroup/User_Group
-    // to the same `userGroupList` property, a literal duplicate
-    // object-key and TypeScript compile error) — `swr-keys.ts` sidesteps
-    // that by nesting under each model's raw, parser-unique name instead
-    // of reusing the lossy transform. See
-    // `default_preset_disambiguates_colliding_query_keys` below for the
-    // DEFAULT preset's own fix (found and patched independently of this
-    // preset, out of scope for #305).
+    match error {
+        cratestack_client_typescript::TypeScriptGeneratorError::SwrModelFileNameCollision {
+            first,
+            second,
+            file_stem,
+        } => {
+            assert_eq!(file_stem, "user-group");
+            let names = [first.as_str(), second.as_str()];
+            assert!(
+                names.contains(&"UserGroup"),
+                "error should name UserGroup: {names:?}"
+            );
+            assert!(
+                names.contains(&"User_Group"),
+                "error should name User_Group: {names:?}"
+            );
+        }
+        other => panic!("expected SwrModelFileNameCollision, got {other:?}"),
+    }
 }
 
 /// Found while implementing #305's `swr-keys.ts` (see this file's

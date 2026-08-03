@@ -57,4 +57,28 @@ pub enum TypeScriptGeneratorError {
          scope for issue #304; use `--preset default` for this schema"
     )]
     SwrPresetUnsupportedForGrpc,
+    /// Issue #344: the `swr` preset's per-model file name
+    /// (`src/models/{{ file_stem }}.ts`) is derived from
+    /// `crate::naming::to_kebab_case`, which — like `to_camel_case`/
+    /// `to_pascal_case`/`to_snake_case` — tokenizes through the same
+    /// lossy `split_words` (splits on `_`/`-`/` ` *and* case boundaries).
+    /// Two distinct, parser-valid model names (e.g. `UserGroup` and
+    /// `User_Group`) can collapse to the same word sequence and therefore
+    /// the same file path. Decision spike #317 ruled out a single
+    /// parser-level check (each collision-prone call site normalizes
+    /// differently, so no shared check can cover all of them); this call
+    /// site fails loudly rather than disambiguating (contrast
+    /// `crate::views::disambiguate_model_api_keys`, which suffixes a
+    /// colliding *display* key) because a clobbered generated file is
+    /// silent data loss a schema author has no way to notice short of
+    /// diffing generator output on disk.
+    #[error(
+        "swr preset: models `{first}` and `{second}` both normalize to the file name \
+         `src/models/{file_stem}.ts` — rename one of them so their kebab-case forms differ"
+    )]
+    SwrModelFileNameCollision {
+        first: String,
+        second: String,
+        file_stem: String,
+    },
 }
