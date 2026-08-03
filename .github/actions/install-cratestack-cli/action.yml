@@ -48,9 +48,18 @@ runs:
         # --- 1. Resolve version --------------------------------------------
         version="$INPUT_VERSION"
         if [ "$version" = "latest" ] || [ -z "$version" ]; then
-          tag=$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" \
-            https://api.github.com/repos/cratestack/cratestack/releases/latest \
-            | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name": *"v?([^"]+)".*/\1/')
+          # Capture the full response into a variable FIRST, then parse it
+          # with jq — piping curl straight into `grep -m1` raced curl's own
+          # write against grep's early exit under `pipefail` (grep found
+          # its match and closed the pipe before curl finished writing the
+          # rest of the network-paced response, so curl got SIGPIPE'd —
+          # `curl: (23) Failure writing output to destination`). Worked
+          # locally every time (small/fast loopback-ish response) but
+          # failed reliably on real CI runners. Buffering the whole
+          # response first removes the live-pipe race entirely.
+          response=$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" \
+            https://api.github.com/repos/cratestack/cratestack/releases/latest)
+          tag=$(echo "$response" | jq -r '.tag_name // empty')
           if [ -z "$tag" ]; then
             echo "::error::could not resolve the latest cratestack release via the GitHub API" >&2
             exit 1
