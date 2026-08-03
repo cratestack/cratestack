@@ -37,7 +37,7 @@ pub(crate) use descriptor::generate_model_descriptor;
 pub(crate) use field_module::{
     FieldModuleKind, generate_client_field_module, generate_field_module,
 };
-pub(crate) use find_many_input::generate_find_many_input;
+pub(crate) use find_many_input::{generate_find_many_input, generate_find_many_types};
 pub(crate) use inputs::{
     generate_client_create_input_struct, generate_client_update_input_struct,
     generate_create_input_struct, generate_update_input_struct, generate_upsert_input_struct,
