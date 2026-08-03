@@ -88,6 +88,16 @@ fn decode_required_scalar(expr: &str, ty: &TypeRef, enum_names: &BTreeSet<&str>)
         );
     }
 
+    if ty.is_find_many() {
+        let item = ty
+            .find_many_item()
+            .expect("validated FindMany<T> should include an item type");
+        return format!(
+            "{}FindMany.fromWire(cratestackAsValueMap({expr}))",
+            item.name
+        );
+    }
+
     if enum_names.contains(ty.name.as_str()) {
         return format!("{}.fromWire({expr})", ty.name);
     }

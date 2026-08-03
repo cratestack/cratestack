@@ -76,6 +76,7 @@ pub(super) fn compose_server_schema(schema_path: &LitStr, db: ServerDb) -> Token
         create_input_structs,
         update_input_structs,
         upsert_input_impls,
+        find_many_input_structs,
         view_structs,
         view_descriptors,
         view_pg_from_row_impls,
@@ -181,6 +182,7 @@ pub(super) fn compose_server_schema(schema_path: &LitStr, db: ServerDb) -> Token
                 #(#create_input_structs)*
                 #(#update_input_structs)*
                 #(#upsert_input_impls)*
+                #(#find_many_input_structs)*
             }
 
             pub use inputs::*;

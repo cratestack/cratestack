@@ -3,6 +3,7 @@ mod builders_model;
 mod config;
 mod context;
 mod dart_types;
+mod find_many_views;
 mod generator;
 mod grpc;
 mod idents;

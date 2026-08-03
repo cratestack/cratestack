@@ -1,91 +1,50 @@
-//! Built-in procedure-argument type for search-with-filters: the
-//! `FindMany<Model>` schema syntax (`.cstack`), the procedure-argument-only
-//! counterpart to `Page<T>`/`PageInput`. Composes with `PageInput` rather
-//! than absorbing it — a procedure wanting both filtering and pagination
-//! declares two arguments, e.g. `procedure search(query: FindMany<Post>,
-//! page: PageInput): Page<Post>`.
+//! Built-in support for the `FindMany<Model>` procedure-argument type
+//! (`.cstack` syntax) — search-with-filters for procedures. Composes
+//! with `PageInput` rather than absorbing it — a procedure wanting both
+//! filtering and pagination declares two arguments, e.g. `procedure
+//! search(query: FindMany<Post>, page: PageInput): Page<Post>`.
 //!
-//! Reuses the exact same `where=`/`sort=` string grammar the generated
-//! `list` route's query string already accepts
-//! (`cratestack-axum::query::parse_filter_expression`), rather than a new
-//! structured filter representation, so a caller who already knows how to
-//! filter a REST `list` route already knows how to fill this in.
-
-use std::marker::PhantomData;
+//! This module holds only the one piece that's genuinely shared across
+//! every model: the per-field operator envelope. Everything else — which
+//! fields a model has, which operators apply to which field — is
+//! per-model and lives in `cratestack-macros`-generated code
+//! (`<Model>Where`, `<Model>SortField`, `<Model>OrderByClause`,
+//! `<Model>FindManyInput`), mirroring how `Create<Model>Input`/
+//! `Update<Model>Input` are per-model generated structs rather than one
+//! shared generic wrapper.
 
 use serde::{Deserialize, Serialize};
 
-/// `M` carries no data — it exists so `cratestack-macros`-generated code
-/// can select the right model's filter/sort validation at compile time
-/// (mirrors `Page<M>`'s own phantom-free-of-data generic parameter).
+/// Every operator a filterable field might support, as one flat
+/// optional-per-operator envelope — generated per-model code reads only
+/// the operators that make sense for a given field's type (e.g. a
+/// `Boolean` field's generated `to_filters()` never looks at `contains`).
+/// `V` is the field's own scalar Rust type (`String`, `i64`, `bool`,
+/// `chrono::DateTime<Utc>`, ...) — never `Option<V>` even for an optional
+/// field, since these operators describe a *value to compare against*,
+/// not the field's own nullability (which `is_null` covers instead).
 ///
-/// `Debug`/`Clone`/`PartialEq`/`Eq`/`Default` are hand-written below
-/// rather than derived: `#[derive(...)]` adds a `M: Trait` bound for
-/// *every* generic parameter regardless of how it's actually used, which
-/// would wrongly force every model type used with `FindMany<Model>` in a
-/// `.cstack` schema to itself implement `Debug`/`Clone`/`Default`/etc. —
-/// `M` here is a compile-time-only marker (`PhantomData<fn() -> M>`),
-/// never constructed or stored.
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", bound = "")]
-pub struct FindManyInput<M> {
-    /// Same grammar as a REST `list` route's `?where=` query parameter:
-    /// `field=value` predicates joined with `,` (AND) / `|` (OR), and
-    /// `not(...)` negation.
-    pub r#where: Option<String>,
-    /// Same grammar as a REST `list` route's `?sort=` query parameter:
-    /// comma-separated field names, `-` prefix for descending.
-    pub order_by: Option<String>,
-    #[serde(skip)]
-    pub(crate) _marker: PhantomData<fn() -> M>,
-}
-
-impl<M> std::fmt::Debug for FindManyInput<M> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("FindManyInput")
-            .field("where", &self.r#where)
-            .field("order_by", &self.order_by)
-            .finish()
-    }
-}
-
-impl<M> Clone for FindManyInput<M> {
-    fn clone(&self) -> Self {
-        Self {
-            r#where: self.r#where.clone(),
-            order_by: self.order_by.clone(),
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<M> PartialEq for FindManyInput<M> {
-    fn eq(&self, other: &Self) -> bool {
-        self.r#where == other.r#where && self.order_by == other.order_by
-    }
-}
-
-impl<M> Eq for FindManyInput<M> {}
-
-impl<M> Default for FindManyInput<M> {
-    fn default() -> Self {
-        Self {
-            r#where: None,
-            order_by: None,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<M> FindManyInput<M> {
-    /// `_marker` is private (there is nothing meaningful a caller could
-    /// set it to), so this — not struct-literal syntax — is the public
-    /// constructor.
-    pub fn new(r#where: Option<String>, order_by: Option<String>) -> Self {
-        Self {
-            r#where,
-            order_by,
-            _marker: PhantomData,
-        }
-    }
+/// Deliberately not full parity with every `FieldRef` method:
+/// `isTrue`/`isFalse` are omitted (redundant with `eq: true`/`eq: false`
+/// once callers have a real JSON boolean) and `eqOrNull` is omitted (a
+/// Rust-ergonomics convenience over `eq` + `isNull`, not new capability).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct FieldFilterInput<V> {
+    pub eq: Option<V>,
+    pub ne: Option<V>,
+    #[serde(rename = "in")]
+    pub in_: Option<Vec<V>>,
+    pub lt: Option<V>,
+    pub lte: Option<V>,
+    pub gt: Option<V>,
+    pub gte: Option<V>,
+    /// String/`Cuid`/`Uuid` fields only.
+    pub contains: Option<String>,
+    /// String/`Cuid`/`Uuid` fields only.
+    pub starts_with: Option<String>,
+    /// Optional-arity fields only. `Some(true)` filters to rows where
+    /// the column is `NULL`; `Some(false)` filters to rows where it is
+    /// not.
+    pub is_null: Option<bool>,
 }

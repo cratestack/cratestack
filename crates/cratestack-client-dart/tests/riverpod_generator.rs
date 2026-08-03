@@ -291,14 +291,34 @@ fn find_many_procedure_argument_generates_correctly_under_default_preset() {
     );
     let models = package_file(&package, "lib/src/models.dart");
 
-    assert!(models.contains("class FindMany {"));
+    // Shared filter-operator primitives (once per package, not per model).
+    assert!(models.contains("class StringFilter {"));
+    assert!(models.contains("class NumberFilter {"));
+    assert!(models.contains("enum SortDirection {"));
+
+    // Per-model `PostWhere`/`PostSortField`/`PostOrderByClause`/`PostFindMany`.
+    assert!(models.contains("enum PostSortField {"));
+    assert!(models.contains("class PostWhere {"));
+    assert!(models.contains("final NumberFilter? id;"));
+    assert!(models.contains("final StringFilter? title;"));
+    assert!(models.contains("class PostOrderByClause {"));
+    assert!(models.contains("final PostSortField field;"));
+    assert!(models.contains("final SortDirection direction;"));
+    assert!(models.contains("class PostFindMany {"));
+    assert!(models.contains("final PostWhere? where;"));
+    assert!(models.contains("final List<PostOrderByClause>? orderBy;"));
+
     assert!(models.contains("class SearchPostsArgs {"));
     assert!(models.contains("required this.query,"));
-    assert!(models.contains("final FindMany query;"));
+    assert!(models.contains("final PostFindMany query;"));
+    assert!(
+        models.contains("query: PostFindMany.fromWire("),
+        "SearchPostsArgs.fromWire should decode `query` via PostFindMany, not the old bare `FindMany`:\n{models}"
+    );
 }
 
 #[test]
-fn find_many_procedure_argument_imports_find_many_under_riverpod_preset() {
+fn find_many_procedure_argument_imports_post_find_many_under_riverpod_preset() {
     let package = generate(
         "find_many_procedure",
         "find_many_client",
@@ -306,12 +326,31 @@ fn find_many_procedure_argument_imports_find_many_under_riverpod_preset() {
     );
 
     let shared = package_file(&package, "lib/src/models/shared_types.dart");
-    assert!(shared.contains("class FindMany {"));
+    assert!(shared.contains("class StringFilter with StringFilterMappable {"));
+    assert!(shared.contains("class NumberFilter with NumberFilterMappable {"));
+    assert!(shared.contains("enum SortDirection {"));
+
+    let post = package_file(&package, "lib/src/models/post.dart");
+    assert!(post.contains("class PostWhere with PostWhereMappable {"));
+    assert!(post.contains("class PostOrderByClause with PostOrderByClauseMappable {"));
+    assert!(post.contains("class PostFindMany with PostFindManyMappable {"));
 
     let procedures = package_file(&package, "lib/src/procedures.dart");
+    // `procedures.dart` never spells `SortDirection`/the filter class
+    // names directly — only the concrete `PostFindMany` (via
+    // `models/post.dart`, which itself imports `shared_types.dart` for
+    // its own `PostWhere`/`PostOrderByClause` fields) — so importing
+    // `models/shared_types.dart` here too would be a real `unused_import`
+    // `flutter analyze` failure (confirmed empirically).
     assert!(
-        procedures.contains("import 'models/shared_types.dart';"),
-        "procedures.dart should import shared_types.dart for FindMany:\n{procedures}"
+        !procedures.contains("import 'models/shared_types.dart';"),
+        "procedures.dart should not import shared_types.dart directly — it never references \
+         SortDirection/the filter classes, only PostFindMany:\n{procedures}"
     );
-    assert!(procedures.contains("query: FindMany"));
+    assert!(
+        procedures.contains("import 'models/post.dart';"),
+        "procedures.dart should import models/post.dart for PostFindMany:\n{procedures}"
+    );
+    assert!(procedures.contains("final PostFindMany query;"));
+    assert!(procedures.contains("query: PostFindMany.fromWire("));
 }

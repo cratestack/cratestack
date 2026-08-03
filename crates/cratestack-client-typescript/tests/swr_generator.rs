@@ -251,16 +251,20 @@ fn paged_model_imports_page_in_every_file_that_uses_it() {
     for fixture in ["swr_paged_model", "swr_paged_model_rpc"] {
         let package = generate_for(fixture, TypeScriptPreset::Swr);
 
+        // `Widget` also has filterable fields, so its own `<Model>Where`
+        // pulls in the shared filter/sort primitives too — `Page` rides
+        // along in that same merged `import type { ... } from "./shared.js"`
+        // line rather than getting a standalone one.
         let model = file(&package, "src/models/widget.ts");
         assert!(
-            model.contains("import type { Page } from \"./shared.js\";"),
+            model.contains("Page") && model.contains("from \"./shared.js\";"),
             "{fixture}: src/models/widget.ts should import Page from ./shared:\n{model}"
         );
         assert!(model.contains("Page<Widget>"));
 
         let model_hooks = file(&package, "src/models/widget.hooks.ts");
         assert!(
-            model_hooks.contains("import type { Page } from \"./shared.js\";"),
+            model_hooks.contains("Page") && model_hooks.contains("from \"./shared.js\";"),
             "{fixture}: src/models/widget.hooks.ts should import Page from ./shared:\n{model_hooks}"
         );
         assert!(model_hooks.contains("Page<Widget>"));
@@ -311,21 +315,22 @@ fn page_input_procedure_argument_imports_page_input_in_every_file_that_uses_it()
 }
 
 #[test]
-fn find_many_procedure_argument_imports_find_many_in_every_file_that_uses_it() {
-    // Same gap again, for `FindMany<Model>` argument fields: the client-
-    // side `FindMany` type is deliberately non-generic (the wire shape
-    // never depends on the model), literal-inlined by `ts_type`'s generic
-    // fallback with no consumer edge to the model it wraps either — so
-    // `src/swr/context.rs` has to add the import by hand.
+fn find_many_procedure_argument_imports_post_find_many_in_every_file_that_uses_it() {
+    // Same gap again, for `FindMany<Model>` argument fields: `ts_type`
+    // resolves `FindMany<Post>` to the *per-model* derived name
+    // `PostFindMany` (defined in that model's own file, not shared —
+    // see `find_many_views.rs`), a consumer edge the ownership graph
+    // never sees since `PostFindMany` isn't a declared `type`/`enum` —
+    // so `src/swr/context.rs` has to add the import by hand.
     for fixture in ["swr_find_many_procedure", "swr_find_many_procedure_rpc"] {
         let package = generate_for(fixture, TypeScriptPreset::Swr);
 
         let procedures = file(&package, "src/procedures.ts");
         assert!(
-            procedures.contains("import type { FindMany } from \"./models/shared.js\";"),
-            "{fixture}: src/procedures.ts should import FindMany from ./models/shared:\n{procedures}"
+            procedures.contains("import type { PostFindMany } from \"./models/post.js\";"),
+            "{fixture}: src/procedures.ts should import PostFindMany from ./models/post:\n{procedures}"
         );
-        assert!(procedures.contains("query: FindMany"));
+        assert!(procedures.contains("query: PostFindMany"));
 
         let procedures_hooks = file(&package, "src/procedures.hooks.ts");
         assert!(
@@ -455,9 +460,13 @@ fn cross_model_type_reuse_places_each_type_in_exactly_one_file() {
     let procedures = file(&package, "src/procedures.ts");
 
     // Status: shared, imported by both models, defined nowhere else.
+    // Both models also pull in the shared filter/sort primitives for
+    // their own `<Model>Where`, so `Status` rides along in the same
+    // merged `import type { ... } from "./shared.js"` line rather than
+    // getting a standalone one.
     assert!(shared.contains("export type Status ="));
-    assert!(project.contains("import type { Status } from \"./shared.js\";"));
-    assert!(task.contains("import type { Status } from \"./shared.js\";"));
+    assert!(project.contains("Status") && project.contains("from \"./shared.js\";"));
+    assert!(task.contains("Status") && task.contains("from \"./shared.js\";"));
     assert!(!project.contains("export type Status ="));
     assert!(!task.contains("export type Status ="));
 

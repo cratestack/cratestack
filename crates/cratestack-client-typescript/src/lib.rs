@@ -1,6 +1,7 @@
 mod config;
 mod context;
 mod error;
+mod find_many_views;
 mod generator;
 mod grpc;
 mod naming;

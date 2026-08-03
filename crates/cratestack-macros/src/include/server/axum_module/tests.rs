@@ -29,6 +29,7 @@ fn empty_collected() -> ServerCollected {
         create_input_structs: Vec::new(),
         update_input_structs: Vec::new(),
         upsert_input_impls: Vec::new(),
+        find_many_input_structs: Vec::new(),
         model_accessors: Vec::new(),
         bound_model_accessors: Vec::new(),
         view_structs: Vec::new(),

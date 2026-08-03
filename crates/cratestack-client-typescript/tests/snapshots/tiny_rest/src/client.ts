@@ -3,7 +3,11 @@ import type {
   Widget,
   CreateWidgetInput,
   UpdateWidgetInput,
+  WidgetWhere,
+  WidgetOrderByClause,
+  WidgetFindMany,
   EchoNameArgs,
+  WidgetSortField,
   Page,
 } from "./models.js";
 import { toSearchQuery, type CratestackQueryRequestConfig, type CratestackRequestConfig } from "./queries.js";

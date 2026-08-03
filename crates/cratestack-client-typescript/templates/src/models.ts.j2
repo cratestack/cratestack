@@ -28,16 +28,38 @@ export interface PageInput {
   offset: number | null;
 }
 
-// Mirrors cratestack-core::find_many::FindManyInput exactly — search-with-
-// filters for procedures, usable only as a procedure argument type. Not
-// generic on the client (unlike the `FindMany<Model>` `.cstack` syntax):
-// the wire shape never depends on the model, only server-side validation
-// does. `where`/`orderBy` use the same grammar as a REST `list` route's
-// `?where=`/`?sort=` query parameters.
-export interface FindMany {
-  where: string | null;
-  orderBy: string | null;
+// Shared building blocks for every `<Model>Where`/`<Model>FindMany`
+// pair below (search-with-filters for procedures — mirrors
+// cratestack-core::find_many::FieldFilterInput and
+// cratestack-macros's per-model `<Model>Where`/`<Model>SortField`/
+// `<Model>OrderByClause`/`<Model>FindManyInput` exactly). Usable only
+// as a procedure argument type.
+export interface EqualityFilter<V> {
+  eq?: V;
+  ne?: V;
+  in?: V[];
+  isNull?: boolean;
 }
+
+export interface ComparableFilter<V> extends EqualityFilter<V> {
+  lt?: V;
+  lte?: V;
+  gt?: V;
+  gte?: V;
+}
+
+export interface StringFilter extends ComparableFilter<string> {
+  contains?: string;
+  startsWith?: string;
+}
+
+export type NumberFilter = ComparableFilter<number>;
+export type BooleanFilter = EqualityFilter<boolean>;
+export type UuidFilter = ComparableFilter<string>;
+export type DateTimeFilter = ComparableFilter<string>;
+export type DecimalFilter = ComparableFilter<string>;
+
+export type SortDirection = "asc" | "desc";
 
 {% for enum in enums %}
 export type {{ enum.name }} = {{ enum.union }};

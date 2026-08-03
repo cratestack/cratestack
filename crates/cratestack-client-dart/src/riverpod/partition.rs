@@ -155,14 +155,26 @@ fn owner_of(name: &str, reachable: &BTreeMap<Owner, BTreeSet<String>>) -> Owner 
     }
 }
 
-/// Unwraps `Page<T>` to `T`'s name; every other arity/shape just carries
-/// its own `TypeRef.name` (built-in scalar, model, nested `type`, or
-/// `enum` — the caller sorts out which).
+/// Unwraps `Page<T>`/`FindMany<T>` to `T`'s name; every other arity/shape
+/// just carries its own `TypeRef.name` (built-in scalar, model, nested
+/// `type`, or `enum` — the caller sorts out which). The `FindMany<T>`
+/// branch matters for `build_procedures.rs`'s `referenced_models`: a
+/// `FindMany<Post>` argument resolves to a `PostFindMany` Dart class
+/// defined in `models/post.dart` (see `build_model.rs`), so
+/// `procedures.dart` needs to detect "Post" as the referenced model the
+/// same way it already does for a plain `Post`/`Page<Post>` arg —
+/// otherwise the import is missing and `PostFindMany` fails to resolve.
 pub(crate) fn referenced_name(ty: &TypeRef) -> String {
     if ty.is_page() {
         let item = ty
             .page_item()
             .expect("validated Page<T> should include an item type");
+        return referenced_name(item);
+    }
+    if ty.is_find_many() {
+        let item = ty
+            .find_many_item()
+            .expect("validated FindMany<T> should include an item type");
         return referenced_name(item);
     }
     ty.name.clone()

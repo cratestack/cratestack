@@ -14,6 +14,10 @@ use cratestack_core::{EnumDecl, Model, Schema, TypeDecl};
 
 use crate::builders::{build_data_class, build_enum_view};
 use crate::builders_model::{build_model_accessor, build_model_api, build_selection_model};
+use crate::find_many_views::{
+    build_find_many_data_class, build_order_by_clause_data_class, build_sort_field_enum,
+    build_where_data_class,
+};
 use crate::idents::to_camel_case;
 use crate::naming::{is_generated_on_create, is_primary_key, model_name_set, scalar_model_fields};
 use crate::riverpod::imports::{
@@ -111,12 +115,26 @@ pub(crate) fn build_model_file(
         }
     }
 
-    let enum_types = partition
+    let mut enum_types: Vec<_> = partition
         .owned_names(&locus)
         .into_iter()
         .filter_map(|name| enum_by_name.get(name))
         .map(|enum_decl| build_enum_view(enum_decl))
         .collect();
+
+    // `<Model>Where`/`<Model>SortField`/`<Model>OrderByClause`/
+    // `<Model>FindMany` are always single-model-owned by construction
+    // (never cross-model, unlike the partition-computed types above), so
+    // they're generated directly here rather than routed through
+    // `TypePartition` — same reasoning as the TypeScript `swr` preset's
+    // `find_many_views.rs` usage in `swr/context.rs`.
+    let where_class = build_where_data_class(model, &model_names);
+    if let Some(where_class) = where_class.clone() {
+        data_classes.push(where_class);
+    }
+    enum_types.push(build_sort_field_enum(model, &model_names));
+    data_classes.push(build_order_by_clause_data_class(model));
+    data_classes.push(build_find_many_data_class(model, where_class.is_some()));
 
     let selection = build_selection_model(model, &schema.models, &model_names, &enum_names);
     let model_api = build_riverpod_model_api(model);
@@ -164,12 +182,18 @@ pub(crate) fn build_model_file(
     if is_rest {
         imports.insert("import '../queries.dart';".to_owned());
     }
-    // `shared_types.dart` also carries `Page`/`PageInfo` (see
-    // `build_shared_types`'s doc) — a paged model's own `list()` return
-    // type needs it even when the partition found nothing else to share.
-    if model_api.is_paged || !partition.shared_refs(&locus).is_empty() {
-        imports.insert("import 'shared_types.dart';".to_owned());
-    }
+    // `shared_types.dart` also carries `Page`/`PageInfo`/`SortDirection`/
+    // the shared filter classes (see `build_shared_types`'s doc). Every
+    // model unconditionally gets its own `<Model>OrderByClause`, whose
+    // `direction` field is always `SortDirection` (see
+    // `find_many_views.rs::build_order_by_clause_data_class`), so this
+    // import is now unconditional too — unlike before issue #371's
+    // `FindMany<Model>` redesign, when only a paged model or one with a
+    // partition-shared reference needed it (confirmed empirically: an
+    // unpaged, share-free model without this import fails `flutter
+    // analyze` with `undefined_class` on `SortDirection`/`NumberFilter`/
+    // etc. in its own `<Model>Where`/`<Model>OrderByClause`).
+    imports.insert("import 'shared_types.dart';".to_owned());
     // An unpaged model's own `list()`/`listView()` return `IList<...>`
     // (see `build_riverpod_model_api`'s doc), and a list-arity relation
     // getter does too regardless of whether this model itself is paged.

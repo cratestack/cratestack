@@ -148,13 +148,34 @@ procedure searchPosts(query: FindMany<Post>): Post[]
     let models = package_file(&package, "src/models.ts");
     let client = package_file(&package, "src/client.ts");
 
+    // Shared filter-operator primitives (once per package, not per model).
+    assert!(models.contains("export interface EqualityFilter<V> {"));
+    assert!(models.contains("export interface ComparableFilter<V> extends EqualityFilter<V> {"));
+    assert!(models.contains("export interface StringFilter extends ComparableFilter<string> {"));
+    assert!(models.contains("export type NumberFilter = ComparableFilter<number>;"));
+    assert!(models.contains(r#"export type SortDirection = "asc" | "desc";"#));
+
+    // Per-model `PostWhere`/`PostSortField`/`PostOrderByClause`/`PostFindMany`.
+    assert!(models.contains("export type PostSortField = 'id' | 'title';"));
     assert!(models.contains(
-        "export interface FindMany {\n  \
-         where: string | null;\n  \
-         orderBy: string | null;\n\
+        "export interface PostWhere {\n  \
+         id?: NumberFilter;\n  \
+         title?: StringFilter;\n\
          }"
     ));
-    assert!(models.contains("export interface SearchPostsArgs {\n  query: FindMany;\n}"));
+    assert!(models.contains(
+        "export interface PostOrderByClause {\n  \
+         field: PostSortField;\n  \
+         direction: SortDirection;\n\
+         }"
+    ));
+    assert!(models.contains(
+        "export interface PostFindMany {\n  \
+         where?: PostWhere;\n  \
+         orderBy?: PostOrderByClause[];\n\
+         }"
+    ));
+    assert!(models.contains("export interface SearchPostsArgs {\n  query: PostFindMany;\n}"));
     assert!(client.contains("searchPosts(args: SearchPostsArgs"));
 }
 

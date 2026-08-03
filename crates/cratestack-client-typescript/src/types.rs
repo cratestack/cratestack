@@ -10,6 +10,18 @@ pub(crate) fn ts_type(type_ref: &TypeRef, enum_names: &BTreeSet<&str>) -> String
         return format!("Page<{}>", ts_type(item, enum_names));
     }
 
+    if type_ref.is_find_many() {
+        let item = type_ref
+            .find_many_item()
+            .expect("validated FindMany<T> should include an item type");
+        // Unlike `Page<T>`, always a declared model (parser-enforced) —
+        // maps straight to that model's own generated `<Model>FindMany`
+        // (`crate::views::build_find_many_interface`), not a shared
+        // generic wrapper: the `Where`/`OrderByClause` shape is
+        // inherently per-model.
+        return format!("{}FindMany", item.name);
+    }
+
     let base = match type_ref.name.as_str() {
         "String" | "Cuid" | "Uuid" | "DateTime" => "string".to_owned(),
         "Int" | "Float" => "number".to_owned(),

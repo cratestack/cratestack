@@ -1,6 +1,6 @@
 //! Real-compiler proof for the `FindMany<Model>` procedure-argument
 //! import gap that `tests/swr_generator.rs`'s
-//! `find_many_procedure_argument_imports_find_many_in_every_file_that_uses_it`
+//! `find_many_procedure_argument_imports_post_find_many_in_every_file_that_uses_it`
 //! checks by string — see `swr_paged_model_tsc.rs`'s module doc for why a
 //! string assertion alone can't tell "imports the type it uses" from
 //! "happens to contain the substring", and follows that file's structure
@@ -73,9 +73,9 @@ fn find_many_procedure_output_type_checks() {
         let stdout = String::from_utf8_lossy(&tsc.stdout);
         let stderr = String::from_utf8_lossy(&tsc.stderr);
         assert!(
-            !stdout.contains("Cannot find name 'FindMany'")
-                && !stderr.contains("Cannot find name 'FindMany'"),
-            "{fixture}: tsc reported a missing `FindMany` type — the exact regression this \
+            !stdout.contains("Cannot find name 'PostFindMany'")
+                && !stderr.contains("Cannot find name 'PostFindMany'"),
+            "{fixture}: tsc reported a missing `PostFindMany` type — the exact regression this \
              test guards against:\nstdout: {stdout}\nstderr: {stderr}"
         );
         assert!(

@@ -1,7 +1,11 @@
 //! Real proof that `FindMany<Model>` procedure arguments produce a real,
-//! validated, filtered/sorted query — reusing the exact machinery a
-//! `@@paged` model's own generated `list` route already uses, not a
-//! separately reimplemented filter grammar.
+//! validated, filtered/sorted query — the generated `PostWhere`/
+//! `PostOrderByClause` types call straight into the model's own
+//! `FieldRef` accessors (the same ones the untyped REST `?where=` route
+//! uses), so there's zero duplicated filter logic and zero possibility
+//! of an "unknown field" or "malformed syntax" error at all: unlike the
+//! old raw-string design, both are ruled out at compile time by the
+//! generated struct's own fields.
 //!
 //! Uses `connect_lazy` (no live Postgres needed, same technique as
 //! `tests/schema_fingerprint.rs`): building a `FindMany` query and
@@ -9,13 +13,14 @@
 
 use cratestack::include_server_schema;
 use cratestack::sqlx::postgres::PgPoolOptions;
-use cratestack::{CoolError, FindManyInput};
+use cratestack::{FieldFilterInput, SortDirection};
 
 include_server_schema!("tests/fixtures/find_many_procedure.cstack", db = Postgres);
 
 use cratestack_schema::Cratestack;
-use cratestack_schema::axum::build_post_query_from_find_many;
-use cratestack_schema::models::Post;
+use cratestack_schema::{
+    PostFindManyInput, PostOrderByClause, PostSortField, PostWhere, build_post_query_from_find_many,
+};
 
 fn lazy_db() -> Cratestack {
     let pool = PgPoolOptions::new()
@@ -27,67 +32,107 @@ fn lazy_db() -> Cratestack {
 #[tokio::test]
 async fn find_many_input_with_no_filters_previews_a_plain_select() {
     let db = lazy_db();
-    let input = FindManyInput::<Post>::default();
+    let input = PostFindManyInput::default();
 
-    let sql = build_post_query_from_find_many(&db, &input)
-        .expect("empty FindMany input should build a query")
-        .preview_sql();
+    let sql = build_post_query_from_find_many(&db, &input).preview_sql();
 
     assert!(sql.starts_with("SELECT"), "unexpected SQL: {sql}");
     assert!(!sql.contains("WHERE"), "unexpected WHERE clause: {sql}");
 }
 
 #[tokio::test]
-async fn find_many_where_clause_reuses_the_real_list_route_filter_grammar() {
+async fn find_many_where_reuses_the_same_field_refs_the_list_route_uses() {
     let db = lazy_db();
-    let input = FindManyInput::<Post>::new(Some("published=true,authorId=42".to_owned()), None);
+    let input = PostFindManyInput {
+        r#where: Some(PostWhere {
+            published: Some(FieldFilterInput {
+                eq: Some(true),
+                ..Default::default()
+            }),
+            authorId: Some(FieldFilterInput {
+                gt: Some(10),
+                ..Default::default()
+            }),
+            title: Some(FieldFilterInput {
+                contains: Some("hello".to_owned()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }),
+        order_by: None,
+    };
 
-    let sql = build_post_query_from_find_many(&db, &input)
-        .expect("valid where clause should build a query")
-        .preview_sql();
+    let sql = build_post_query_from_find_many(&db, &input).preview_sql();
 
     assert!(sql.contains("WHERE"), "expected a WHERE clause: {sql}");
     assert!(
         sql.contains("published"),
         "expected published filter: {sql}"
     );
-    assert!(sql.contains("author_id"), "expected authorId filter: {sql}");
+    assert!(
+        sql.contains("author_id"),
+        "expected author_id filter: {sql}"
+    );
+    assert!(sql.contains("title"), "expected title filter: {sql}");
+    assert!(
+        sql.contains("LIKE"),
+        "expected contains to render LIKE: {sql}"
+    );
 }
 
 #[tokio::test]
-async fn find_many_order_by_reuses_the_real_list_route_sort_grammar() {
+async fn find_many_where_is_null_targets_the_optional_field() {
     let db = lazy_db();
-    let input = FindManyInput::<Post>::new(None, Some("-title".to_owned()));
+    let input = PostFindManyInput {
+        r#where: Some(PostWhere {
+            subtitle: Some(FieldFilterInput {
+                is_null: Some(true),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }),
+        order_by: None,
+    };
 
-    let sql = build_post_query_from_find_many(&db, &input)
-        .expect("valid sort field should build a query")
-        .preview_sql();
+    let sql = build_post_query_from_find_many(&db, &input).preview_sql();
+
+    assert!(sql.contains("subtitle"), "expected subtitle filter: {sql}");
+    assert!(sql.contains("IS NULL"), "expected IS NULL: {sql}");
+}
+
+#[tokio::test]
+async fn find_many_order_by_reuses_the_same_field_refs_multi_key() {
+    let db = lazy_db();
+    let input = PostFindManyInput {
+        r#where: None,
+        order_by: Some(vec![
+            PostOrderByClause {
+                field: PostSortField::Published,
+                direction: SortDirection::Desc,
+            },
+            PostOrderByClause {
+                field: PostSortField::Title,
+                direction: SortDirection::Asc,
+            },
+        ]),
+    };
+
+    let sql = build_post_query_from_find_many(&db, &input).preview_sql();
 
     assert!(
         sql.contains("ORDER BY"),
         "expected an ORDER BY clause: {sql}"
     );
-    assert!(sql.contains("title"), "expected title in ORDER BY: {sql}");
-}
-
-#[tokio::test]
-async fn find_many_rejects_an_unknown_filter_field_the_same_way_the_list_route_does() {
-    let db = lazy_db();
-    let input = FindManyInput::<Post>::new(Some("notAField=1".to_owned()), None);
-
-    match build_post_query_from_find_many(&db, &input) {
-        Ok(_) => panic!("unknown filter field should be rejected"),
-        Err(error) => assert!(
-            matches!(error, CoolError::BadRequest(_)),
-            "expected a BadRequest error, got: {error:?}"
-        ),
-    }
-}
-
-#[tokio::test]
-async fn find_many_rejects_malformed_where_syntax() {
-    let db = lazy_db();
-    let input = FindManyInput::<Post>::new(Some("this is not valid".to_owned()), None);
-
-    assert!(build_post_query_from_find_many(&db, &input).is_err());
+    // Multi-key order must be preserved: published DESC first, title ASC
+    // second — this is exactly the ordering guarantee a field-keyed JSON
+    // object (rather than this typed `Vec<PostOrderByClause>`) could
+    // silently lose. Search only within the ORDER BY clause itself (the
+    // SELECT column list earlier in the SQL also contains "published",
+    // which would otherwise false-positive this assertion).
+    let order_by_index = sql.find("ORDER BY").expect("has ORDER BY");
+    let order_by_clause = &sql[order_by_index..];
+    assert_eq!(
+        order_by_clause, "ORDER BY published DESC NULLS LAST, title ASC NULLS LAST",
+        "unexpected ORDER BY clause: {order_by_clause}"
+    );
 }

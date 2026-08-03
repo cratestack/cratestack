@@ -8,6 +8,10 @@
 use cratestack_core::Schema;
 
 use crate::config::TypeScriptGeneratorConfig;
+use crate::find_many_views::{
+    build_find_many_interface, build_order_by_clause_interface, build_sort_field_view,
+    build_where_interface,
+};
 use crate::naming::{model_fn_names, procedure_wrapper_name, to_kebab_case};
 use crate::types::{
     enum_name_set, is_generated_on_create, is_paged_model, is_primary_key, model_allows_create,
@@ -79,17 +83,20 @@ pub(crate) fn build_shared_context(
     {
         procedures_shared_names.push("PageInput".to_owned());
     }
-    // Same reasoning again, for `FindMany<Model>` argument fields: the
-    // client-side `FindMany` type is deliberately non-generic (the wire
-    // shape never depends on the model), so `ts_type` emits the bare name
-    // `FindMany` with no consumer edge to the model it wraps either.
-    if schema
+    // `FindMany<Model>` argument fields are different again: unlike
+    // `Page`/`PageInput`, `ts_type` resolves them to a *per-model*
+    // derived name (`PostFindMany`, defined in that model's own file —
+    // see `find_many_views.rs`), not a shared literal. `model_refs`
+    // below only ever imports a model's own declared interface name
+    // (`Post`), never a derived one, so these need their own import
+    // entries — built after `procedures_imports` further down.
+    let find_many_model_names = schema
         .procedures
         .iter()
-        .any(|procedure| procedure.args.iter().any(|arg| arg.ty.is_find_many()))
-    {
-        procedures_shared_names.push("FindMany".to_owned());
-    }
+        .flat_map(|procedure| procedure.args.iter())
+        .filter_map(|arg| arg.ty.find_many_item())
+        .map(|item| item.name.clone())
+        .collect::<std::collections::BTreeSet<_>>();
     let mut procedures_model_refs = procedure_model_refs(schema, &model_names);
     procedures_model_refs.extend(type_decls_model_refs(
         schema,
@@ -111,16 +118,23 @@ pub(crate) fn build_shared_context(
             )
         })
         .collect();
+    let mut procedures_imports = build_imports(
+        procedures_shared_names,
+        procedures_model_refs,
+        None,
+        "./models/shared",
+        "./models/",
+    );
+    for model_name in &find_many_model_names {
+        procedures_imports.push(super::views::SwrImport::new(
+            format!("./models/{}.js", to_kebab_case(model_name)),
+            vec![format!("{model_name}FindMany")],
+        ));
+    }
     let procedures_file = SwrProceduresView {
         owned_enums: procedures_owned_enums,
         owned_interfaces: procedures_owned_interfaces,
-        imports: build_imports(
-            procedures_shared_names,
-            procedures_model_refs,
-            None,
-            "./models/shared",
-            "./models/",
-        ),
+        imports: procedures_imports,
         args_interfaces,
         procedures: schema
             .procedures
@@ -186,12 +200,25 @@ pub(crate) fn build_model_file_contexts(
                 &enum_names,
             );
 
-            let (owned_enums, owned_interfaces) = owned_by(
+            let (mut owned_enums, mut owned_interfaces) = owned_by(
                 schema,
                 ownership,
                 &enum_names,
                 |owner| matches!(owner, TypeOwner::Model(name) if name == &model.name),
             );
+
+            // `<Model>Where`/`<Model>SortField`/`<Model>OrderByClause`/
+            // `<Model>FindMany` are always single-model-owned by
+            // construction (never cross-model), so they're inlined here
+            // the same way `owned_enums`/`owned_interfaces` already are
+            // — never imported.
+            let where_interface = build_where_interface(model, &model_names);
+            if let Some(where_interface) = where_interface.clone() {
+                owned_interfaces.push(where_interface);
+            }
+            owned_enums.push(build_sort_field_view(model, &model_names));
+            owned_interfaces.push(build_order_by_clause_interface(model));
+            owned_interfaces.push(build_find_many_interface(model, where_interface.is_some()));
 
             let is_paged = is_paged_model(model);
             let mut shared_names = ownership.shared_imports_for_model(&model.name);
@@ -201,6 +228,27 @@ pub(crate) fn build_model_file_contexts(
             // ownership graph never sees as a consumer edge.
             if is_paged {
                 shared_names.push("Page".to_owned());
+            }
+            // `<Model>OrderByClause` always references the shared
+            // `SortDirection`; `<Model>Where`'s fields reference whichever
+            // shared filter interfaces its own field types need — over-
+            // importing the full set when there's at least one filterable
+            // field is harmless (`import type`, never flagged as unused
+            // by a default `tsconfig.json`) and far simpler than tracking
+            // exactly which of the 6 filter interfaces this specific
+            // model's fields touch.
+            shared_names.push("SortDirection".to_owned());
+            if where_interface.is_some() {
+                shared_names.extend([
+                    "EqualityFilter".to_owned(),
+                    "ComparableFilter".to_owned(),
+                    "StringFilter".to_owned(),
+                    "NumberFilter".to_owned(),
+                    "BooleanFilter".to_owned(),
+                    "UuidFilter".to_owned(),
+                    "DateTimeFilter".to_owned(),
+                    "DecimalFilter".to_owned(),
+                ]);
             }
             let mut model_refs =
                 model_refs_in_fields(visible_model_fields(model).into_iter(), &model_names);

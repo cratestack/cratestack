@@ -9,7 +9,11 @@ import type {
   Widget,
   CreateWidgetInput,
   UpdateWidgetInput,
+  WidgetWhere,
+  WidgetOrderByClause,
+  WidgetFindMany,
   EchoNameArgs,
+  WidgetSortField,
   Page,
 } from "./models.js";
 import type { CratestackRpcCallOptions } from "./runtime.js";

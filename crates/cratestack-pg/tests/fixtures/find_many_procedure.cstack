@@ -1,8 +1,7 @@
 // Regression fixture for the built-in `FindMany<Model>` procedure-argument
-// type: search-with-filters for procedures, reusing the exact same
-// `where=`/`sort=` grammar and per-model validation a `@@paged` model's
-// own generated `list` route already uses (see
-// `cratestack-macros/src/axum/model/find_many_query.rs`).
+// type: search-with-filters for procedures. Structured, typed per-model
+// `PostWhere`/`PostOrderByClause` (not a raw filter string) — see
+// `cratestack-macros/src/model/find_many_input.rs`.
 
 datasource db {
   provider = "postgresql"
@@ -12,6 +11,7 @@ datasource db {
 model Post {
   id Int @id
   title String
+  subtitle String?
   published Boolean
   authorId Int
 

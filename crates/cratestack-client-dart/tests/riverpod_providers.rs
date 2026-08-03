@@ -178,17 +178,19 @@ fn model_and_procedure_files_carry_the_part_directive() {
     // No `@riverpod` surface lives in these two files, so no
     // `riverpod_generator` `.g.dart` part directive should appear in
     // them — `client.dart` has no `@MappableClass()` surface either (no
-    // data classes are declared there), so it stays part-free too.
-    // `shared_types.dart` in *this* fixture also has zero data classes
-    // (`ci_rpc.cstack`'s only shared name is the `PostStatus` enum —
-    // `type`/`enum` are different lists; `PostStatusFilter`, its one
-    // `type`, is Procedures-owned, not Shared — see
-    // `every_riverpod_data_class_gets_mappable_class_and_mixin` above),
-    // so it also has no `dart_mappable` mapper part directive here — see
-    // `shared_types_file_gets_the_mapper_part_directive_when_it_has_data_classes`
-    // below for the fixture that exercises the positive case.
+    // data classes are declared there), so it stays part-free.
     assert!(!package_file(&package, "lib/src/client.dart").contains("part '"));
-    assert!(!package_file(&package, "lib/src/models/shared_types.dart").contains("part '"));
+    // `shared_types.dart` is different: since issue #371's
+    // `FindMany<Model>` redesign, it always hand-declares the
+    // `@MappableClass()`-annotated `StringFilter`/`NumberFilter`/etc.
+    // filter classes (see `shared_types.dart.j2`), regardless of whether
+    // the partition assigned this fixture any actual shared `type`/
+    // `enum` — so it always needs the mapper part directive now, unlike
+    // before that redesign.
+    assert!(
+        package_file(&package, "lib/src/models/shared_types.dart")
+            .contains("part 'shared_types.mapper.dart';")
+    );
 }
 
 #[test]
@@ -423,12 +425,15 @@ fn dart_mappable_import_and_mapper_part_directive_present_everywhere_data_classe
         DartPreset::Riverpod,
     );
 
-    // `shared_types.dart` isn't included here — this fixture's
-    // shared_types.dart has zero data classes (see
+    // `shared_types.dart` isn't included here — since issue #371's
+    // `FindMany<Model>` redesign it always has both the import and the
+    // part directive regardless of fixture (see
     // `model_and_procedure_files_carry_the_part_directive`'s comment),
-    // so it correctly has neither the import nor the part directive;
+    // so it's covered separately rather than folded into this loop's
+    // "present everywhere" assertion;
     // `shared_types_file_gets_the_mapper_part_directive_when_it_has_data_classes`
-    // covers the positive case with a fixture that actually has one.
+    // covers it directly with a fixture that also has a real
+    // partition-shared `type`.
     for file_name in [
         "lib/src/models/author.dart",
         "lib/src/models/post.dart",

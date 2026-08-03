@@ -78,7 +78,7 @@ pub use events::{
     CoolEventBus, CoolEventEnvelope, CoolEventFuture, ModelEvent, ModelEventKind, event_topic,
     parse_emit_attribute,
 };
-pub use find_many::FindManyInput;
+pub use find_many::FieldFilterInput;
 pub use json::Json;
 pub use page::{MAX_LIST_LIMIT, Page, PageInfo, PageInput};
 pub use projection::ProjectionDecoder;

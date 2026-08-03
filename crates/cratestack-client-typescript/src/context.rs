@@ -3,6 +3,10 @@ use serde::Serialize;
 
 use crate::config::TypeScriptGeneratorConfig;
 use crate::error::TypeScriptGeneratorError;
+use crate::find_many_views::{
+    build_find_many_interface, build_order_by_clause_interface, build_sort_field_view,
+    build_where_interface,
+};
 use crate::grpc::GrpcContext;
 use crate::naming::{occupied_type_names, package_class_stem, to_pascal_case};
 use crate::types::{
@@ -47,7 +51,7 @@ pub(crate) fn build_template_context(
         to_pascal_case(&package_class_stem(&config.package_name))
     );
 
-    let enums = schema.enums.iter().map(build_enum_view).collect();
+    let mut enums = schema.enums.iter().map(build_enum_view).collect::<Vec<_>>();
     let mut interfaces = Vec::new();
     for ty in &schema.types {
         interfaces.push(build_interface(
@@ -98,6 +102,14 @@ pub(crate) fn build_template_context(
             InterfaceKind::Patch,
             &enum_names,
         ));
+
+        let where_interface = build_where_interface(model, &model_names);
+        if let Some(where_interface) = where_interface.clone() {
+            interfaces.push(where_interface);
+        }
+        enums.push(build_sort_field_view(model, &model_names));
+        interfaces.push(build_order_by_clause_interface(model));
+        interfaces.push(build_find_many_interface(model, where_interface.is_some()));
     }
     for procedure in &schema.procedures {
         let fields = procedure

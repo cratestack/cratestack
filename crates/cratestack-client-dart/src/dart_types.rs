@@ -21,6 +21,18 @@ pub(crate) fn dart_type(type_ref: &TypeRef, force_nullable: bool) -> String {
         };
     }
 
+    if type_ref.is_find_many() {
+        let item = type_ref
+            .find_many_item()
+            .expect("validated FindMany<T> should include an item type");
+        let base = format!("{}FindMany", item.name);
+        return if force_nullable {
+            format!("{base}?")
+        } else {
+            base
+        };
+    }
+
     let base = match type_ref.name.as_str() {
         "String" | "Cuid" | "Uuid" => "String".to_owned(),
         "Int" => "int".to_owned(),

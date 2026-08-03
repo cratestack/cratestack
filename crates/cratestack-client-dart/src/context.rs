@@ -6,6 +6,10 @@ use crate::builders_model::{
     build_selection_model,
 };
 use crate::config::{DartGeneratorConfig, DartGeneratorError, DartPreset};
+use crate::find_many_views::{
+    build_find_many_data_class, build_order_by_clause_data_class, build_sort_field_enum,
+    build_where_data_class,
+};
 use crate::idents::{
     dart_identifier, escape_dart_string, pluralize, to_camel_case, to_pascal_case,
 };
@@ -29,7 +33,7 @@ pub(crate) fn build_template_context(
     // `Option<&'static str>` rather than ever sending an empty header.
     let schema_sha256 =
         (!config.schema_sha256.is_empty()).then(|| escape_dart_string(&config.schema_sha256));
-    let enum_types = schema.enums.iter().map(build_enum_view).collect();
+    let mut enum_types: Vec<_> = schema.enums.iter().map(build_enum_view).collect();
 
     let mut data_classes = Vec::new();
     for ty in &schema.types {
@@ -77,6 +81,18 @@ pub(crate) fn build_template_context(
             DataClassKind::Patch,
             &enum_names,
         ));
+
+        // `<Model>Where`/`<Model>SortField`/`<Model>OrderByClause`/
+        // `<Model>FindMany` — generated for every model unconditionally,
+        // same as `Create`/`Update<Model>Input` above, regardless of
+        // whether a procedure actually declares `FindMany<Model>`.
+        let where_class = build_where_data_class(model, &model_names);
+        if let Some(where_class) = where_class.clone() {
+            data_classes.push(where_class);
+        }
+        enum_types.push(build_sort_field_enum(model, &model_names));
+        data_classes.push(build_order_by_clause_data_class(model));
+        data_classes.push(build_find_many_data_class(model, where_class.is_some()));
     }
 
     for procedure in &schema.procedures {
