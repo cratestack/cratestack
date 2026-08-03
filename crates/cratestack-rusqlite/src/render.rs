@@ -36,7 +36,7 @@ mod tests_upsert;
 pub use delete::render_delete;
 pub use delete_many::render_delete_many;
 pub use insert::render_insert;
-pub use select::{render_select, render_select_by_pk};
+pub use select::{render_count, render_select, render_select_by_pk};
 pub use update::render_update;
 pub use update_many::render_update_many;
 pub use upsert::{render_upsert, render_upsert_with_conflict};

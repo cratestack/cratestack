@@ -78,6 +78,48 @@ pub fn render_select<M, PK>(
     (sql, binds)
 }
 
+/// Render a `SELECT COUNT(*) FROM table WHERE ...` statement — the same
+/// filter/soft-delete shape as [`render_select`], minus projection,
+/// ordering, and paging. Used by `FindMany::paginate` to compute a real
+/// total row count alongside the paginated page of rows.
+pub fn render_count<M, PK>(
+    dialect: &dyn Dialect,
+    descriptor: &dyn ReadSource<M, PK>,
+    filters: &[FilterExpr],
+) -> (String, Vec<SqlValue>) {
+    let mut sql = format!("SELECT COUNT(*) FROM {}", descriptor.table_name());
+    let mut binds: Vec<SqlValue> = Vec::new();
+    let mut bind_index = 1usize;
+    let mut where_sql = String::new();
+    let mut soft_delete_active = false;
+
+    if let Some(deleted_at) = descriptor.soft_delete_column() {
+        let _ = write!(&mut where_sql, "{deleted_at} IS NULL");
+        soft_delete_active = true;
+    }
+
+    if !filters.is_empty() {
+        if soft_delete_active {
+            where_sql.push_str(" AND ");
+        }
+        let mut needs_join = false;
+        for filter in filters {
+            if needs_join {
+                where_sql.push_str(" AND ");
+            }
+            render_filter_expr(dialect, filter, &mut where_sql, &mut binds, &mut bind_index);
+            needs_join = true;
+        }
+    }
+
+    if !where_sql.is_empty() {
+        sql.push_str(" WHERE ");
+        sql.push_str(&where_sql);
+    }
+
+    (sql, binds)
+}
+
 /// Render `SELECT ... FROM table WHERE pk = ?1 [AND deleted_at IS NULL]`.
 pub fn render_select_by_pk<M, PK>(
     dialect: &dyn Dialect,

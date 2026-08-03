@@ -27,34 +27,19 @@ pub(super) fn compose_embedded_schema(schema_path: &LitStr) -> TokenStream {
         return error;
     }
 
-    // `@@paged` shapes a generated `list` **route**'s response envelope
-    // (`Page<Model>` vs. a bare `Vec<Model>` — see
+    // `@@paged` gates a generated `list` **route**'s response envelope on
+    // REST/RPC/gRPC (`Page<Model>` vs. a bare `Vec<Model>` — see
     // docs/design/idempotency-rate-limit-declarative-surface.md). The
-    // embedded composer never generates routes: consumers call rusqlite
-    // delegate methods (`find_many`/`find_many_with`) directly and pass
-    // `limit`/`offset` themselves. A `@@paged` model here is silently
-    // meaningless, so reject it loudly instead of letting it compile with
-    // no effect — same pattern as the `@@materialized` view guard below.
-    if let Some(model) = schema
-        .models
-        .iter()
-        .find(|model| crate::shared::is_paged_model(model))
-    {
-        return syn::Error::new(
-            schema_path.span(),
-            format!(
-                "model `{}` is `@@paged`, which has no effect on the embedded backend — \
-                 `include_embedded_schema!` generates no `list` route to shape (no REST, RPC, \
-                 or gRPC surface exists here at all; queries go through direct rusqlite \
-                 delegate calls). Remove `@@paged` from this model, or move it to a \
-                 `include_server_schema!`/`include_client_schema!` schema instead.",
-                model.name
-            ),
-        )
-        .to_compile_error()
-        .into();
-    }
-
+    // embedded composer generates no routes, so there is no per-model
+    // wire contract to fix in advance the way there is for those
+    // transports — but real pagination is still available: every model's
+    // (and view's) `find_many()` builder carries an unconditional
+    // `.paginate(PageInput) -> Page<M>` (`cratestack-rusqlite`'s
+    // `FindMany::paginate`, backed by a real `COUNT(*)` alongside the
+    // paginated `SELECT`), so `@@paged` needs nothing special wired here:
+    // it's neither rejected nor required — the same "silently ignored,
+    // no per-attribute wiring needed" treatment `@@audit`/`@@emit` below
+    // already get.
     let resolved_literal = resolved.display().to_string();
 
     let mixin_names = schema.mixins.iter().map(|mixin| schema_lit(&mixin.name));
