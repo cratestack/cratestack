@@ -312,6 +312,20 @@ mod tests {
     }
 
     #[test]
+    fn version_long_flag_is_accepted() {
+        let result = Cli::try_parse_from(["cratestack", "--version"]);
+        let error = result.expect_err("--version should short-circuit parsing");
+        assert_eq!(error.kind(), clap::error::ErrorKind::DisplayVersion);
+    }
+
+    #[test]
+    fn version_short_flag_is_accepted() {
+        let result = Cli::try_parse_from(["cratestack", "-V"]);
+        let error = result.expect_err("-V should short-circuit parsing");
+        assert_eq!(error.kind(), clap::error::ErrorKind::DisplayVersion);
+    }
+
+    #[test]
     fn studio_eject_requires_out() {
         let result = Cli::try_parse_from(["cratestack", "studio", "eject"]);
         assert!(
