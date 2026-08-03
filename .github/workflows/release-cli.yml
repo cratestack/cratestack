@@ -415,22 +415,33 @@ jobs:
             packages/cratestack-cbor-node/native.d.mts
           if-no-files-found: error
 
-  # Downloads every platform's `.node` binary built above straight into the
-  # package root (no `napi artifacts` step needed — that command exists to
-  # sort per-leg artifacts into `npm/<platform>/`, but a flat
-  # `merge-multiple` download already puts them exactly where
-  # `napi.targets` expects to find them). `npm publish`'s own
-  # `prepublishOnly` hook (see the package's package.json) then runs `napi
-  # prepublish -t npm`, which — for each target whose `.node` file is
-  # present — scaffolds a `npm/<platform>/package.json` on the fly and
-  # publishes that platform-specific subpackage (e.g.
+  # Downloads every platform's `.node` binary built above into per-leg
+  # subdirectories (deliberately NOT `merge-multiple` — `napi artifacts`
+  # below expects to find each leg's file nested under its own artifact
+  # name, the same layout `actions/download-artifact@v4` produces without
+  # that flag), then runs the real `@napi-rs/cli` scaffolding sequence:
+  # `napi create-npm-dirs` creates `npm/<platform>/package.json` for every
+  # target in `napi.targets`, `napi artifacts` copies each downloaded
+  # `.node` file into its matching `npm/<platform>/` dir (confirmed by
+  # hand: it validates ALL configured targets are present before copying
+  # any of them — an earlier version of this comment assumed `napi
+  # prepublish` alone would handle this via its `prepublishOnly` hook; it
+  # doesn't — `napi prepublish` hard-fails with "Release package directory
+  # does not exist" if `npm/<platform>/` isn't pre-scaffolded, confirmed by
+  # actually running it locally). Only then does `npm publish`'s
+  # `prepublishOnly` hook (`napi prepublish -t npm`, see the package's
+  # package.json) publish each now-populated platform subpackage (e.g.
   # `@cratestack/cbor-node-darwin-arm64`) BEFORE npm packs and publishes
-  # this main package with `optionalDependencies` pointing at them: the
-  # standard `@napi-rs/cli` release flow. Same tag-push-only gate and OIDC
-  # Trusted Publishing hard-cutover as the other publish-npm* jobs, except
-  # EACH of the 5 auto-generated platform subpackages ALSO needs its own
-  # separate Trusted Publisher entry on npmjs.com, on top of
-  # `@cratestack/cbor-node` itself — see docs/tooling/npm-publishing.md.
+  # this main package with `optionalDependencies` pointing at them. Same
+  # tag-push-only gate and OIDC Trusted Publishing hard-cutover as the
+  # other publish-npm* jobs, except EACH of the 5 auto-generated platform
+  # subpackages ALSO needs its own separate Trusted Publisher entry on
+  # npmjs.com, on top of `@cratestack/cbor-node` itself — see
+  # docs/tooling/npm-publishing.md, including the bootstrap note there:
+  # a brand-new package name can't have Trusted Publishing configured
+  # until it's been published manually at least once, so this job will
+  # keep failing for any platform subpackage that hasn't gone through that
+  # one-time manual bootstrap yet, even once all 5 binaries build cleanly.
   publish-npm-cbor-node:
     name: publish npm package (@cratestack/cbor-node)
     if: github.event_name == 'push'
@@ -456,10 +467,15 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           pattern: cbor-node-binary-*
-          path: packages/cratestack-cbor-node
-          merge-multiple: true
+          path: cbor-node-artifacts
       - name: List downloaded platform binaries
-        run: ls -la packages/cratestack-cbor-node/*.node
+        run: find cbor-node-artifacts -name '*.node'
+      - name: Scaffold per-platform npm packages
+        working-directory: packages/cratestack-cbor-node
+        run: pnpm exec napi create-npm-dirs
+      - name: Move each platform's binary into its npm/<platform>/ dir
+        working-directory: packages/cratestack-cbor-node
+        run: pnpm exec napi artifacts --output-dir ../../cbor-node-artifacts
       - name: Compile TypeScript wrapper (native artifacts already built above)
         working-directory: packages/cratestack-cbor-node
         run: pnpm exec tsc -p tsconfig.json
