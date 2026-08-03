@@ -71,7 +71,7 @@ await client.widgets.delete(updated.id, { headers });
 
 ## Procedures
 
-
+Not supported by `transport grpc` — `cratestack-grpc`'s generated tonic service doesn't expose procedures, so there is nothing for this client to call.
 
 ## TanStack Query
 

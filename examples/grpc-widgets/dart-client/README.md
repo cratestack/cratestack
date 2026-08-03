@@ -15,7 +15,7 @@ Procedures and server-streaming are out of scope: `cratestack-grpc`'s generated 
 ```yaml
 dependencies:
   grpc_widgets_client:
-    path: ../grpc_widgets_client
+    path: ../dart-client
 ```
 
 Main import:

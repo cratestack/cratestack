@@ -95,14 +95,14 @@ The mobile front-ends (Flutter / Expo) require platform SDKs (Flutter SDK, Xcode
 
 | Example | Macro(s) | Shape |
 |---|---|---|
-| [`grpc-widgets/`](grpc-widgets) | `include_server_schema!` (`transport grpc`) | Real gRPC server (tonic, HTTP/2 h2c) plus two independently-generated client integrations calling it live: TypeScript (gRPC-Web over `fetch`) and Dart (native `package:grpc`). Neither client needs `protoc` — both wire codecs are hand-rolled by their CrateStack generators. |
+| [`grpc-widgets/`](grpc-widgets) | `include_server_schema!` (`transport grpc`) | Real gRPC server (tonic, HTTP/2 h2c) plus three independently-generated client integrations calling it live: Rust (native `tonic`), TypeScript (gRPC-Web over `fetch`), and Dart (native `package:grpc`). None of the three needs `protoc` — every wire codec is hand-rolled by its CrateStack generator. |
 
 ```bash
 export DATABASE_URL=postgres://cratestack:cratestack@localhost:55432/cratestack_test
 cargo run -p grpc-widgets-example
 ```
 
-See [`grpc-widgets/README.md`](grpc-widgets/README.md) for the client-side run steps (`ts-client-e2e.mjs`, `dart-client/tool/e2e.dart`) and `grpcurl` verification.
+See [`grpc-widgets/README.md`](grpc-widgets/README.md) for the client-side run steps (`rust-client`'s `cargo test --test e2e`, `ts-client-e2e.mjs`, `dart-client/tool/e2e.dart`) and `grpcurl` verification.
 
 ## Phase E — Generated TypeScript client presets
 
@@ -133,6 +133,47 @@ flutter run -d macos
 
 See [`flutter-riverpod/README.md`](flutter-riverpod/README.md) for the full schema → generate →
 build_runner → run path.
+
+## Phase G — RPC transport (framework-native, not gRPC)
+
+`transport rpc` is CrateStack's own JSON/CBOR RPC binding — two endpoints (`POST /rpc/{op_id}`,
+`POST /rpc/batch`) dispatched by a generated string match — distinct from the `transport grpc`
+examples in Phase D. See [`docs/design/rpc-transport.md`](../docs/design/rpc-transport.md).
+
+| Example | Macro(s) | Shape |
+|---|---|---|
+| [`rpc-procedures/`](rpc-procedures) | `include_server_schema!` (`transport rpc`, `db = None`) | Smallest possible RPC server — one query procedure and one mutation procedure, no database, no models. Proves the RPC binding's unary route shape in isolation |
+| [`rpc-batch/`](rpc-batch) | `include_server_schema!` (`transport rpc`, `db = None`) | RPC server demonstrating `POST /rpc/batch` — multiple op calls in one round-trip, per-frame error isolation, request order preserved on the response |
+| [`rpc-batch-debounce/`](rpc-batch-debounce) | `include_server_schema!` (`transport rpc`, `db = None`) | Client-side `BatchDebouncer` that coalesces independent RPC calls into a single `POST /rpc/batch`, wrapping the in-process `rpc-batch` router |
+| [`rpc-streaming/`](rpc-streaming) | `include_server_schema!` (`transport rpc`, `db = None`) | RPC server streaming a list-return procedure via `Accept: application/cbor-seq` — the same route serves a single CBOR `Vec` or a stream of CBOR chunks depending on content negotiation |
+| [`rpc-streaming-client-rust/`](rpc-streaming-client-rust) | `include_client_schema!` | Rust client consuming the `rpc-streaming` server's cbor-seq stream through a typed, generated streaming method (`RpcStream<Tick>`) — companion to `rpc-streaming` |
+
+```bash
+cargo run -p rpc-procedures-example
+cargo run -p rpc-batch-example
+cargo run -p rpc-batch-debounce-example
+cargo run -p rpc-streaming-example
+
+# rpc-streaming-client-rust needs rpc-streaming running in another terminal:
+REMOTE_URL=http://localhost:3001 cargo run -p rpc-streaming-client-rust-example
+```
+
+## Standalone verification crates (not workspace members)
+
+These two prove a dependency-graph property that only holds outside Cargo's workspace-wide feature
+unification, so each is deliberately listed in the root `Cargo.toml`'s `[workspace] exclude` array
+instead of `members` (see the comments there and their own READMEs for why) — run their checks from
+inside their own directory rather than via `-p` like the rest of this directory.
+
+| Example | Macro(s) | Shape |
+|---|---|---|
+| [`no-database-verification/`](no-database-verification) | `include_server_schema!` (`db = None`) | Standalone crate with its own `Cargo.lock` proving via `cargo tree` that `sqlx`/`cratestack-sqlx` are absent from a `cratestack-pg`, `default-features = false` consumer by default, and present once the `postgres` feature is enabled |
+| [`no-database-verification-api/`](no-database-verification-api) | `include_server_schema!` (`db = None`) | Same `cargo tree` proof for a `cratestack-api` consumer, which never depends on `cratestack-sqlx` under any feature |
+
+```bash
+cd examples/no-database-verification && cargo tree | grep -i sqlx   # -> no output
+cd examples/no-database-verification-api && cargo tree | grep -i sqlx   # -> no output
+```
 
 ## Verification matrix
 
