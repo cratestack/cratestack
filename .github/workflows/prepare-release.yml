@@ -74,9 +74,22 @@ jobs:
         with:
           tool: just,trunk
       - uses: pnpm/action-setup@v4
+      # Not node-version 20: real failure hit on v0.6.8's actual release
+      # validation — `swr_hooks_invalidation`'s vitest run (installs real
+      # devDependencies, unpinned `^` ranges) died with `TypeError:
+      # webidl.util.markAsUncloneable is not a function` inside undici's
+      # CacheStorage, loaded transitively via jsdom. Confirmed by hand: the
+      # exact same test passes locally under Node 24, and passes in CI's
+      # own `tests (host — everything else)` job (ci.yml) — which runs
+      # this identical test and doesn't pin any Node version at all, so it
+      # gets the runner's own (newer) default. Only this job explicitly
+      # downgrades to 20, which is now too old for whatever `undici`
+      # version the floating `^` ranges currently resolve to. No reason
+      # this job specifically needs 20 — it's here for `just bump`'s own
+      # `pnpm install`, which doesn't care what Node major it runs under.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
 
       - name: Validate inputs
