@@ -93,9 +93,13 @@ by a new package just because a sibling already has one configured:
      -t npm` for you, which creates+publishes the platform subpackage(s) present, then npm packs and
      publishes the main package with `optionalDependencies` scoped to only those:
      ```bash
-     npm config set provenance true
      npm publish --access public
      ```
+     **No `--provenance` / `npm config set provenance true` here** — confirmed by hand: provenance
+     needs npm to detect a supported CI OIDC provider (GitHub/GitLab Actions), and errors with
+     `EUSAGE: Automatic provenance generation not supported for provider: null` on a plain local
+     `npm publish` — it doesn't silently skip, it aborts the whole publish before anything uploads.
+     Provenance is for `publish-npm-cbor-node`'s real CI run only, never this manual bootstrap.
   6. **Revert the local `napi.targets` edit** (`git checkout packages/cratestack-cbor-node/package.json`)
      so the committed config keeps declaring all 5 targets — that's what the next real tag push's
      `build-cbor-node` matrix + `publish-npm-cbor-node` job need to build and publish the remaining
