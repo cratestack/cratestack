@@ -253,10 +253,18 @@ jobs:
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
-      # Trusted Publishing needs npm CLI >= 11.5.1; don't rely on whatever
-      # version happens to ship bundled with the pinned Node release.
+      # Trusted Publishing needs npm CLI >= 11.5.1 — pinned to the latest
+      # 11.x rather than an unbounded `npm@latest`, since a fresh npm major
+      # is a real, demonstrated risk here, not a hypothetical one: npm
+      # 12.0.2 silently changed `npm pack --dry-run --json`'s output shape
+      # from an array to an object, breaking @napi-rs/cli@3.8.2's hardcoded
+      # array assumption inside `napi prepublish` — confirmed by hand
+      # (`npx -y npm@latest pack --dry-run --json` on a throwaway package)
+      # after publish-npm-cbor-node failed with a generic "Failed to
+      # validate the release package ... Ensure npm is available and the
+      # package can be packed" error that gave no hint of the real cause.
       - name: Ensure npm supports Trusted Publishing
-        run: npm install -g npm@latest
+        run: npm install -g npm@^11
       - name: Publish @cratestack/cli
         working-directory: packages/cratestack-cli-npm
         run: npm publish --access public --provenance
@@ -320,10 +328,18 @@ jobs:
             --filter='./packages/cratestack-adapter-tanstack-query' \
             --filter='./packages/cratestack-adapter-rtk' \
             --filter='./packages/cratestack-api'
-      # Trusted Publishing needs npm CLI >= 11.5.1; don't rely on whatever
-      # version happens to ship bundled with the pinned Node release.
+      # Trusted Publishing needs npm CLI >= 11.5.1 — pinned to the latest
+      # 11.x rather than an unbounded `npm@latest`, since a fresh npm major
+      # is a real, demonstrated risk here, not a hypothetical one: npm
+      # 12.0.2 silently changed `npm pack --dry-run --json`'s output shape
+      # from an array to an object, breaking @napi-rs/cli@3.8.2's hardcoded
+      # array assumption inside `napi prepublish` — confirmed by hand
+      # (`npx -y npm@latest pack --dry-run --json` on a throwaway package)
+      # after publish-npm-cbor-node failed with a generic "Failed to
+      # validate the release package ... Ensure npm is available and the
+      # package can be packed" error that gave no hint of the real cause.
       - name: Ensure npm supports Trusted Publishing
-        run: npm install -g npm@latest
+        run: npm install -g npm@^11
       - name: Publish @cratestack/api family
         run: |
           set -euo pipefail
@@ -505,10 +521,18 @@ jobs:
       - name: Compile TypeScript wrapper (native artifacts already built above)
         working-directory: packages/cratestack-cbor-node
         run: pnpm exec tsc -p tsconfig.json
-      # Trusted Publishing needs npm CLI >= 11.5.1; don't rely on whatever
-      # version happens to ship bundled with the pinned Node release.
+      # Trusted Publishing needs npm CLI >= 11.5.1 — pinned to the latest
+      # 11.x rather than an unbounded `npm@latest`, since a fresh npm major
+      # is a real, demonstrated risk here, not a hypothetical one: npm
+      # 12.0.2 silently changed `npm pack --dry-run --json`'s output shape
+      # from an array to an object, breaking @napi-rs/cli@3.8.2's hardcoded
+      # array assumption inside `napi prepublish` — confirmed by hand
+      # (`npx -y npm@latest pack --dry-run --json` on a throwaway package)
+      # after publish-npm-cbor-node failed with a generic "Failed to
+      # validate the release package ... Ensure npm is available and the
+      # package can be packed" error that gave no hint of the real cause.
       - name: Ensure npm supports Trusted Publishing
-        run: npm install -g npm@latest
+        run: npm install -g npm@^11
       # `--provenance` on the outer `npm publish` only covers THIS command
       # — it doesn't propagate into the per-platform `npm publish` calls
       # `napi prepublish` makes internally via the prepublishOnly hook, so
@@ -559,8 +583,13 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build @cratestack/cbor-web (wasm-pack + tsc)
         run: pnpm turbo run build --filter='./packages/cratestack-cbor-web'
+      # Pinned to the latest 11.x, not an unbounded `npm@latest` — see the
+      # `publish-npm-cbor-node` job's own comment on this same step for why
+      # (a real npm 12.x regression broke @napi-rs/cli's release-package
+      # validation there; this job doesn't use napi, but there's no reason
+      # to opt into the same moving-target risk everywhere else too).
       - name: Ensure npm supports Trusted Publishing
-        run: npm install -g npm@latest
+        run: npm install -g npm@^11
       - name: Publish @cratestack/cbor-web
         working-directory: packages/cratestack-cbor-web
         run: npm publish --access public --provenance
@@ -599,8 +628,13 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build @cratestack/cbor
         run: pnpm turbo run build --filter='./packages/cratestack-cbor'
+      # Pinned to the latest 11.x, not an unbounded `npm@latest` — see the
+      # `publish-npm-cbor-node` job's own comment on this same step for why
+      # (a real npm 12.x regression broke @napi-rs/cli's release-package
+      # validation there; this job doesn't use napi, but there's no reason
+      # to opt into the same moving-target risk everywhere else too).
       - name: Ensure npm supports Trusted Publishing
-        run: npm install -g npm@latest
+        run: npm install -g npm@^11
       - name: Publish @cratestack/cbor
         working-directory: packages/cratestack-cbor
         run: npm publish --access public --provenance
