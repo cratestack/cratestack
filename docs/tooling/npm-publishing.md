@@ -44,21 +44,73 @@ by a new package just because a sibling already has one configured:
   `@cratestack/runtime-fetch`, `@cratestack/runtime-axios`, `@cratestack/validator-zod`,
   `@cratestack/validator-yup`, `@cratestack/adapter-tanstack-query`, `@cratestack/adapter-rtk`
 - `@cratestack/cbor`, `@cratestack/cbor-web`
-- `@cratestack/cbor-node` **plus its 5 auto-generated platform subpackages** — `napi prepublish`
-  names these `<packageName>-<platform>` (scope preserved), one per `napi.targets` entry in
-  `packages/cratestack-cbor-node/package.json`:
-  `@cratestack/cbor-node-darwin-x64`, `@cratestack/cbor-node-darwin-arm64`,
-  `@cratestack/cbor-node-linux-x64-gnu`, `@cratestack/cbor-node-linux-arm64-gnu`,
-  `@cratestack/cbor-node-win32-x64-msvc`. Each is a genuinely separate npm package name needing its
-  own Trusted Publisher entry, same as every package above — but since none of these 6 names have
-  ever been published, step 1 below (name must already exist to open its Settings page) needs a
-  real bootstrap here, not just "reserve the name": build the native addon locally for at least
-  your own host platform (`pnpm --filter ./packages/cratestack-cbor-node run build:napi`) and run
-  `napi prepublish -t npm --dry-run` first to see what it *would* publish, then a real
-  `napi prepublish -t npm` from a maintainer's machine to actually create+publish the main package
-  and whichever subpackage(s) your local `.node` file covers. Repeat per-platform (e.g. in a VM or
-  by asking a teammate on that OS) for the remaining 4 subpackages — each is small and has no
-  further dependencies, so this is a one-time, per-package-name cost, not a repeated one.
+- `@cratestack/cbor-node` **plus 5 auto-generated platform subpackages, one per `napi.targets`
+  entry** in `packages/cratestack-cbor-node/package.json` — `napi prepublish` names them
+  `<packageName>-<platform>` (scope preserved): `@cratestack/cbor-node-darwin-x64`,
+  `@cratestack/cbor-node-darwin-arm64`, `@cratestack/cbor-node-linux-x64-gnu`,
+  `@cratestack/cbor-node-linux-arm64-gnu`, `@cratestack/cbor-node-win32-x64-msvc`. Each is a
+  genuinely separate npm package name needing its own Trusted Publisher entry, same as every
+  package above — but since none of these 6 names have ever been published, step 1 below (name
+  must already exist to open its Settings page) needs a real bootstrap, not just "reserve the
+  name". None of the CI machinery in `release-cli.yml` can do this first publish itself — Trusted
+  Publishing categorically cannot bootstrap a brand-new package name (npm requires the name to
+  already exist before you can attach a Trusted Publisher to it), so this is unavoidably manual,
+  from a maintainer's own machine, using real `npm login` credentials, once per name.
+
+  **Verified procedure** (confirmed by hand, not from `@napi-rs/cli` docs alone — an earlier
+  version of this doc assumed `napi prepublish` alone would scaffold everything it needs; it
+  doesn't):
+
+  1. Build the native addon for your own host platform:
+     `cd packages/cratestack-cbor-node && pnpm install && pnpm run build:napi && pnpm exec tsc -p tsconfig.json`.
+  2. **You don't have to build all 5 platforms to publish something real.** To bootstrap with only
+     your host platform (e.g. `aarch64-apple-darwin` on Apple Silicon) and let CI publish the rest
+     once their binaries are built there, temporarily narrow `napi.targets` in `package.json` down
+     to just your platform — **do not commit this**, it's a local-only edit for this one publish:
+     ```bash
+     node -e '
+       const fs = require("fs");
+       const p = JSON.parse(fs.readFileSync("package.json"));
+       p.napi.targets = ["aarch64-apple-darwin"]; // your platform only
+       fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");
+     '
+     ```
+     `napi artifacts`/`napi prepublish` both validate that a binary exists for **every** target
+     currently listed in `napi.targets` before touching any of them (confirmed: no partial runs) —
+     narrowing the list to what you actually built is what makes a single-platform bootstrap
+     possible instead of a hard failure.
+  3. Scaffold the per-platform npm package directories and drop your binary into the matching one
+     (`napi create-npm-dirs` does **not** run automatically inside `napi prepublish` — confirmed by
+     hand, it hard-fails with `Release package directory does not exist` without this step first):
+     ```bash
+     pnpm exec napi create-npm-dirs
+     cp cratestack-cbor-node.darwin-arm64.node npm/darwin-arm64/   # match your actual binary filename
+     ```
+  4. `npm login`, then sanity-check before publishing for real:
+     `pnpm exec napi prepublish -t npm --dry-run` — should complete with no error and no missing-
+     target complaint now that `napi.targets` only lists what you built.
+  5. Publish for real — this is `npm publish`'s own `prepublishOnly` hook running `napi prepublish
+     -t npm` for you, which creates+publishes the platform subpackage(s) present, then npm packs and
+     publishes the main package with `optionalDependencies` scoped to only those:
+     ```bash
+     npm config set provenance true
+     npm publish --access public
+     ```
+  6. **Revert the local `napi.targets` edit** (`git checkout packages/cratestack-cbor-node/package.json`)
+     so the committed config keeps declaring all 5 targets — that's what the next real tag push's
+     `build-cbor-node` matrix + `publish-npm-cbor-node` job need to build and publish the remaining
+     platforms.
+
+  The remaining 4 subpackages still each need this same one-time manual-publish bootstrap before
+  Trusted Publishing can cover them — CI can build their binaries (via `workflow_dispatch` against
+  an existing tag, no code changes needed), but **cannot** do their first publish, for the same
+  "name must already exist" reason. Until all 5 have been through this once, `publish-npm-cbor-node`
+  will keep failing on whichever platform subpackages haven't been bootstrapped yet — it's one
+  `npm publish` step publishing everything `napi.targets` declares, not a per-subpackage loop that
+  tolerates individual failures (unlike `publish-npm-api-family`'s bash loop). Downloading all 5
+  `workflow_dispatch`-built binaries to one machine and repeating steps 2-4 per platform (narrowing
+  `napi.targets` to each one in turn, or to several at once if you have binaries for them) is the
+  fastest way to close this out without needing physical access to each OS.
 
 1. On npmjs.com, sign in as a member of the `@cratestack` org with publish rights, and open the
    package's Settings page (`npmjs.com/package/@cratestack/<name>/access`) — the package must
