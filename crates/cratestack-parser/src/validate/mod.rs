@@ -64,13 +64,21 @@ pub(crate) fn validate_schema(
         .map(|model| model.name.clone())
         .chain(schema.types.iter().map(|ty| ty.name.clone()))
         .collect::<BTreeSet<_>>();
+    // `FindMany<T>` (unlike `Page<T>`) only ever wraps a model: filtering
+    // needs a real table's columns/`allowed_fields()` to validate field
+    // names against, which a `type` block has none of.
+    let model_names = schema
+        .models
+        .iter()
+        .map(|model| model.name.clone())
+        .collect::<BTreeSet<_>>();
 
-    validate_models(schema, &type_names, &page_item_type_names)?;
-    validate_mixins(schema, &type_names, &page_item_type_names)?;
-    validate_types(schema, &type_names, &page_item_type_names)?;
+    validate_models(schema, &type_names, &page_item_type_names, &model_names)?;
+    validate_mixins(schema, &type_names, &page_item_type_names, &model_names)?;
+    validate_types(schema, &type_names, &page_item_type_names, &model_names)?;
     validate_enums(schema)?;
-    validate_auth(schema, &type_names, &page_item_type_names)?;
-    validate_procedures(schema, &type_names, &page_item_type_names)?;
+    validate_auth(schema, &type_names, &page_item_type_names, &model_names)?;
+    validate_procedures(schema, &type_names, &page_item_type_names, &model_names)?;
     self::views::validate_views(schema)?;
 
     let _ = (path, source);
@@ -140,25 +148,33 @@ fn validate_procedures(
     schema: &Schema,
     type_names: &BTreeSet<String>,
     page_item_type_names: &BTreeSet<String>,
+    model_names: &BTreeSet<String>,
 ) -> Result<(), SchemaError> {
     for procedure in &schema.procedures {
         for arg in &procedure.args {
             validate_type_ref(
                 type_names,
                 page_item_type_names,
+                model_names,
                 &arg.ty,
                 procedure.span,
-                false,
-                true,
+                self::type_names::TypeRefAllow {
+                    page_input: true,
+                    find_many: true,
+                    ..Default::default()
+                },
             )?;
         }
         validate_type_ref(
             type_names,
             page_item_type_names,
+            model_names,
             &procedure.return_type,
             procedure.span,
-            true,
-            false,
+            self::type_names::TypeRefAllow {
+                page: true,
+                ..Default::default()
+            },
         )?;
         validate_procedure_isolation_attribute(procedure)?;
         validate_procedure_api_version_attribute(procedure)?;

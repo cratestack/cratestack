@@ -40,6 +40,13 @@ pub(super) fn parse_type_ref(
         })
 }
 
+/// Built-in generic type names — every one of these accepts exactly one
+/// `<T>` argument in this grammar today (`Page<T>` for procedure return
+/// types, `FindMany<T>` for procedure arguments). Add new entries here as
+/// new generic builtins are introduced; the parsing logic below is
+/// otherwise fully shared.
+const GENERIC_BUILTIN_NAMES: &[&str] = &["Page", "FindMany"];
+
 fn parse_builtin_generic_type_ref(
     raw: &str,
     line: &Line<'_>,
@@ -53,23 +60,28 @@ fn parse_builtin_generic_type_ref(
         (raw.trim(), TypeArity::Required)
     };
 
-    let Some(inner) = base
-        .strip_prefix("Page<")
-        .and_then(|value| value.strip_suffix('>'))
-    else {
-        return Err(());
-    };
+    let name = GENERIC_BUILTIN_NAMES
+        .iter()
+        .copied()
+        .find(|name| {
+            base.strip_prefix(name)
+                .is_some_and(|rest| rest.starts_with('<'))
+        })
+        .ok_or(())?;
+
+    let inner = base[name.len() + 1..].strip_suffix('>').ok_or(())?;
 
     let inner_offset = base.find('<').ok_or(())? + 1;
-    let inner = parse_type_ref(inner.trim(), line, raw_offset + inner_offset).map_err(|_| ())?;
+    let inner_ref =
+        parse_type_ref(inner.trim(), line, raw_offset + inner_offset).map_err(|_| ())?;
     Ok(TypeRef {
-        name: "Page".to_owned(),
+        name: name.to_owned(),
         name_span: SourceSpan {
             start: line.start + raw_offset,
-            end: line.start + raw_offset + "Page".len(),
+            end: line.start + raw_offset + name.len(),
             line: line.number,
         },
         arity,
-        generic_args: vec![inner],
+        generic_args: vec![inner_ref],
     })
 }

@@ -13,6 +13,7 @@ pub(super) fn validate_mixins(
     schema: &Schema,
     type_names: &BTreeSet<String>,
     page_item_type_names: &BTreeSet<String>,
+    model_names: &BTreeSet<String>,
 ) -> Result<(), SchemaError> {
     for mixin in &schema.mixins {
         let mut fields = BTreeMap::new();
@@ -58,10 +59,10 @@ pub(super) fn validate_mixins(
             validate_type_ref(
                 type_names,
                 page_item_type_names,
+                model_names,
                 &field.ty,
                 field.span,
-                false,
-                false,
+                crate::validate::type_names::TypeRefAllow::default(),
             )?;
             validate_default_dbgenerated_no_args(&mixin.name, field)?;
             validate_pb_field_attribute("mixin", &mixin.name, field)?;
@@ -74,6 +75,7 @@ pub(super) fn validate_types(
     schema: &Schema,
     type_names: &BTreeSet<String>,
     page_item_type_names: &BTreeSet<String>,
+    model_names: &BTreeSet<String>,
 ) -> Result<(), SchemaError> {
     for ty in &schema.types {
         let mut fields = BTreeSet::new();
@@ -88,10 +90,10 @@ pub(super) fn validate_types(
             validate_type_ref(
                 type_names,
                 page_item_type_names,
+                model_names,
                 &field.ty,
                 field.span,
-                false,
-                false,
+                crate::validate::type_names::TypeRefAllow::default(),
             )?;
             validate_pb_field_attribute("type", &ty.name, field)?;
         }
@@ -121,6 +123,7 @@ pub(super) fn validate_auth(
     schema: &Schema,
     type_names: &BTreeSet<String>,
     page_item_type_names: &BTreeSet<String>,
+    model_names: &BTreeSet<String>,
 ) -> Result<(), SchemaError> {
     if let Some(auth) = &schema.auth {
         let mut fields = BTreeSet::new();
@@ -143,10 +146,10 @@ pub(super) fn validate_auth(
             validate_type_ref(
                 type_names,
                 page_item_type_names,
+                model_names,
                 &field.ty,
                 field.span,
-                false,
-                false,
+                crate::validate::type_names::TypeRefAllow::default(),
             )?;
         }
     }

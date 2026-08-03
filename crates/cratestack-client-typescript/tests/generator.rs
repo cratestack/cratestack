@@ -130,6 +130,35 @@ procedure listFeed(page: PageInput): FeedReply
 }
 
 #[test]
+fn find_many_procedure_argument_generates_correctly() {
+    let schema = cratestack_parser::parse_schema(
+        r#"
+model Post {
+  id Int @id
+  title String
+}
+
+procedure searchPosts(query: FindMany<Post>): Post[]
+"#,
+    )
+    .expect("FindMany fixture schema should parse");
+
+    let package = generate_package(&schema, &TypeScriptGeneratorConfig::default())
+        .expect("default template should render");
+    let models = package_file(&package, "src/models.ts");
+    let client = package_file(&package, "src/client.ts");
+
+    assert!(models.contains(
+        "export interface FindMany {\n  \
+         where: string | null;\n  \
+         orderBy: string | null;\n\
+         }"
+    ));
+    assert!(models.contains("export interface SearchPostsArgs {\n  query: FindMany;\n}"));
+    assert!(client.contains("searchPosts(args: SearchPostsArgs"));
+}
+
+#[test]
 fn preserves_enums_and_scalar_mappings() {
     let schema =
         cratestack_parser::parse_schema_file("../cratestack-pg/tests/fixtures/enums.cstack")

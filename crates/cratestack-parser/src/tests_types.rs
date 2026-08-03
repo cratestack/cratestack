@@ -244,6 +244,109 @@ procedure listPosts(pages: PageInput[]): Int
 }
 
 #[test]
+fn parses_built_in_find_many_procedure_argument() {
+    let source = r#"
+model Post {
+  id Int @id
+}
+
+procedure searchPosts(query: FindMany<Post>): Post[]
+"#;
+    let schema = parse_schema(source).expect("schema with FindMany<T> arg should parse");
+    let arg_type = &schema.procedures[0].args[0].ty;
+
+    assert_eq!(arg_type.name, "FindMany");
+    assert_eq!(arg_type.generic_args.len(), 1);
+    assert_eq!(arg_type.generic_args[0].name, "Post");
+}
+
+#[test]
+fn rejects_find_many_outside_procedure_arguments() {
+    let error = parse_schema(
+        r#"
+model Post {
+  id Int @id
+}
+
+type Feed {
+  query FindMany<Post>
+}
+"#,
+    )
+    .expect_err("FindMany<T> fields should fail validation");
+
+    assert!(
+        error
+            .to_string()
+            .contains("only supported as a procedure argument type")
+    );
+}
+
+#[test]
+fn rejects_find_many_as_procedure_return_type() {
+    let error = parse_schema(
+        r#"
+model Post {
+  id Int @id
+}
+
+procedure searchPosts(): FindMany<Post>
+"#,
+    )
+    .expect_err("FindMany<T> return type should fail validation");
+
+    assert!(
+        error
+            .to_string()
+            .contains("only supported as a procedure argument type")
+    );
+}
+
+#[test]
+fn rejects_find_many_over_a_type_block() {
+    let error = parse_schema(
+        r#"
+type Feed {
+  posts String
+}
+
+procedure searchFeeds(query: FindMany<Feed>): Int
+"#,
+    )
+    .expect_err("FindMany<T> over a `type` block should fail validation");
+
+    assert!(error.to_string().contains("only supports declared models"));
+}
+
+#[test]
+fn rejects_find_many_over_a_scalar() {
+    let error = parse_schema(
+        r#"
+procedure searchCounts(query: FindMany<Int>): Int
+"#,
+    )
+    .expect_err("FindMany<T> over a scalar should fail validation");
+
+    assert!(error.to_string().contains("only supports declared models"));
+}
+
+#[test]
+fn rejects_list_valued_find_many() {
+    let error = parse_schema(
+        r#"
+model Post {
+  id Int @id
+}
+
+procedure searchPosts(queries: FindMany<Post>[]): Int
+"#,
+    )
+    .expect_err("list-valued FindMany<T> should fail validation");
+
+    assert!(error.to_string().contains("cannot be list-valued"));
+}
+
+#[test]
 fn accepts_decimal_scalar_in_models_and_procedures() {
     let schema = parse_schema(
         r#"

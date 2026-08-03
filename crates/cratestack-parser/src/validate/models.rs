@@ -20,6 +20,7 @@ pub(super) fn validate_models(
     schema: &Schema,
     type_names: &BTreeSet<String>,
     page_item_type_names: &BTreeSet<String>,
+    find_many_model_names: &BTreeSet<String>,
 ) -> Result<(), SchemaError> {
     let model_names = schema
         .models
@@ -58,10 +59,10 @@ pub(super) fn validate_models(
             validate_type_ref(
                 type_names,
                 page_item_type_names,
+                find_many_model_names,
                 &field.ty,
                 field.span,
-                false,
-                false,
+                crate::validate::type_names::TypeRefAllow::default(),
             )?;
             reject_type_decl_as_model_field_type(&type_decl_names, &model.name, field)?;
             validate_validator_attributes(&model.name, field)?;

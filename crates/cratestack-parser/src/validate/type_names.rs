@@ -17,6 +17,7 @@ pub(super) const BUILTIN_TYPES: &[&str] = &[
     "Uuid",
     "Page",
     "PageInput",
+    "FindMany",
 ];
 
 pub(super) fn collect_type_names(schema: &Schema) -> Result<BTreeSet<String>, SchemaError> {
@@ -74,16 +75,82 @@ pub(super) fn ensure_unique(
     Ok(())
 }
 
+/// Which procedure-position-only builtins `validate_type_ref` should
+/// accept at this particular call site — bundled into one `Copy` struct
+/// (rather than three positional `bool`s) to keep the function under
+/// clippy's `too_many_arguments` threshold as new builtins are added.
+/// `Default` is "none of them" (every model/mixin/type/auth field call
+/// site); procedure call sites opt in to exactly the ones that apply to
+/// that position (return type vs. argument).
+#[derive(Debug, Clone, Copy, Default)]
+pub(super) struct TypeRefAllow {
+    pub(super) page: bool,
+    pub(super) page_input: bool,
+    pub(super) find_many: bool,
+}
+
 pub(super) fn validate_type_ref(
     type_names: &BTreeSet<String>,
     page_item_type_names: &BTreeSet<String>,
+    model_names: &BTreeSet<String>,
     type_ref: &TypeRef,
     span: SourceSpan,
-    allow_page: bool,
-    allow_page_input: bool,
+    allow: TypeRefAllow,
 ) -> Result<(), SchemaError> {
+    if type_ref.is_find_many() {
+        if !allow.find_many {
+            return Err(span_error(
+                "built-in `FindMany<T>` is currently only supported as a procedure argument type"
+                    .to_owned(),
+                span,
+            ));
+        }
+        if type_ref.arity == cratestack_core::TypeArity::List {
+            return Err(span_error(
+                "built-in `FindMany<T>` cannot be list-valued".to_owned(),
+                span,
+            ));
+        }
+        let Some(item) = type_ref.find_many_item() else {
+            return Err(span_error(
+                "built-in `FindMany<T>` requires exactly one inner type".to_owned(),
+                span,
+            ));
+        };
+        if item.is_find_many() || item.is_page() {
+            return Err(span_error(
+                "nested `FindMany<Page<T>>`/`FindMany<FindMany<T>>` are unsupported".to_owned(),
+                span,
+            ));
+        }
+        if item.arity != cratestack_core::TypeArity::Required {
+            return Err(span_error(
+                "built-in `FindMany<T>` requires a required model item".to_owned(),
+                span,
+            ));
+        }
+        if !item.generic_args.is_empty() {
+            return Err(span_error(
+                "built-in `FindMany<T>` only supports a direct model item".to_owned(),
+                span,
+            ));
+        }
+        if !model_names.contains(&item.name) {
+            return Err(span_error(
+                format!(
+                    "built-in `FindMany<T>` only supports declared models; `{}` is unsupported \
+                     (filtering needs a real table to validate field names against — a `type` \
+                     block has none)",
+                    item.name
+                ),
+                span,
+            ));
+        }
+        return Ok(());
+    }
+
     if type_ref.is_page_input() {
-        if !allow_page_input {
+        if !allow.page_input {
             return Err(span_error(
                 "built-in `PageInput` is currently only supported as a procedure argument type"
                     .to_owned(),
@@ -106,7 +173,7 @@ pub(super) fn validate_type_ref(
     }
 
     if type_ref.is_page() {
-        if !allow_page {
+        if !allow.page {
             return Err(span_error(
                 "built-in `Page<T>` is currently only supported as a procedure return type"
                     .to_owned(),

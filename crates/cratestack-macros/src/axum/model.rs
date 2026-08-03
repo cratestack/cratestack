@@ -10,6 +10,7 @@
 //! - [`routes`]: `.route(...)` chain for the router.
 
 mod builders;
+mod find_many_query;
 mod handlers_crud;
 mod handlers_list;
 mod handlers_update;
@@ -83,6 +84,7 @@ pub(crate) fn generate_model_axum_handlers(
     let projection_helpers = serializers::build_projection_helpers(&p);
     let serialize_helper = serializers::build_serialize_helper(&p, &arms);
     let list_builder = serializers::build_list_builder(&p, &arms);
+    let find_many_query_helper = find_many_query::build_find_many_query_helper(&p);
     let list_handler = handlers_list::build_list_handler(&p);
     let create_handler = handlers_crud::build_create_handler(&p);
     let get_handler = handlers_crud::build_get_handler(&p);
@@ -98,6 +100,7 @@ pub(crate) fn generate_model_axum_handlers(
         #projection_helpers
         #serialize_helper
         #list_builder
+        #find_many_query_helper
         #list_handler
         #create_handler
         #get_handler

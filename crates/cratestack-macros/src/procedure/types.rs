@@ -142,6 +142,14 @@ fn procedure_type_tokens(
         return quote! { ::cratestack::Page<#item_type> };
     }
 
+    if type_ref.is_find_many() {
+        let item = type_ref
+            .find_many_item()
+            .expect("validated FindMany<T> should include an item type");
+        let item_type = procedure_item_type_tokens(item, types, enum_names);
+        return quote! { ::cratestack::FindManyInput<#item_type> };
+    }
+
     let inner = procedure_item_type_tokens(type_ref, types, enum_names);
 
     match type_ref.arity {

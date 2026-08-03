@@ -16,6 +16,7 @@ pub mod context;
 pub mod envelope;
 pub mod error;
 pub mod events;
+pub mod find_many;
 pub mod json;
 pub mod page;
 pub mod projection;
@@ -77,6 +78,7 @@ pub use events::{
     CoolEventBus, CoolEventEnvelope, CoolEventFuture, ModelEvent, ModelEventKind, event_topic,
     parse_emit_attribute,
 };
+pub use find_many::FindManyInput;
 pub use json::Json;
 pub use page::{MAX_LIST_LIMIT, Page, PageInfo, PageInput};
 pub use projection::ProjectionDecoder;

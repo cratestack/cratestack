@@ -79,6 +79,17 @@ pub(crate) fn build_shared_context(
     {
         procedures_shared_names.push("PageInput".to_owned());
     }
+    // Same reasoning again, for `FindMany<Model>` argument fields: the
+    // client-side `FindMany` type is deliberately non-generic (the wire
+    // shape never depends on the model), so `ts_type` emits the bare name
+    // `FindMany` with no consumer edge to the model it wraps either.
+    if schema
+        .procedures
+        .iter()
+        .any(|procedure| procedure.args.iter().any(|arg| arg.ty.is_find_many()))
+    {
+        procedures_shared_names.push("FindMany".to_owned());
+    }
     let mut procedures_model_refs = procedure_model_refs(schema, &model_names);
     procedures_model_refs.extend(type_decls_model_refs(
         schema,

@@ -281,3 +281,37 @@ fn page_input_procedure_argument_imports_page_input_under_riverpod_preset() {
     );
     assert!(procedures.contains("page: PageInput"));
 }
+
+#[test]
+fn find_many_procedure_argument_generates_correctly_under_default_preset() {
+    let package = generate(
+        "find_many_procedure",
+        "find_many_client",
+        DartPreset::Default,
+    );
+    let models = package_file(&package, "lib/src/models.dart");
+
+    assert!(models.contains("class FindMany {"));
+    assert!(models.contains("class SearchPostsArgs {"));
+    assert!(models.contains("required this.query,"));
+    assert!(models.contains("final FindMany query;"));
+}
+
+#[test]
+fn find_many_procedure_argument_imports_find_many_under_riverpod_preset() {
+    let package = generate(
+        "find_many_procedure",
+        "find_many_client",
+        DartPreset::Riverpod,
+    );
+
+    let shared = package_file(&package, "lib/src/models/shared_types.dart");
+    assert!(shared.contains("class FindMany {"));
+
+    let procedures = package_file(&package, "lib/src/procedures.dart");
+    assert!(
+        procedures.contains("import 'models/shared_types.dart';"),
+        "procedures.dart should import shared_types.dart for FindMany:\n{procedures}"
+    );
+    assert!(procedures.contains("query: FindMany"));
+}

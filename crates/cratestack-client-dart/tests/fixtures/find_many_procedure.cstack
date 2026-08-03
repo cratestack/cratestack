@@ -1,0 +1,15 @@
+// Regression fixture for the built-in `FindMany<Model>` procedure-argument
+// type: search-with-filters, the client-side representation is a flat,
+// non-generic `{ where?, orderBy? }` shape (the wire shape never depends
+// on the model). Exercises both the `default` preset (hardcoded directly
+// in `models.dart.j2`, same file as the args wrapper class that
+// references it — no import needed) and the `riverpod` preset (hardcoded
+// in `riverpod/shared_types.dart.j2`, imported by `procedures.dart` via
+// the same by-hand mechanism `Page`/`PageInfo`/`PageInput` already use).
+
+model Post {
+  id Int @id
+  title String
+}
+
+procedure searchPosts(query: FindMany<Post>): Post[]

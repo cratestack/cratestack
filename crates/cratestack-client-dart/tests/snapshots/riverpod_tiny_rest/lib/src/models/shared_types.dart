@@ -102,3 +102,24 @@ class PageInput {
   }
 }
 
+class FindMany {
+  const FindMany({this.where, this.orderBy});
+
+  final String? where;
+  final String? orderBy;
+
+  factory FindMany.fromWire(CratestackValueMap value) {
+    return FindMany(
+      where: value['where'] as String?,
+      orderBy: value['orderBy'] as String?,
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+      'where': where,
+      'orderBy': orderBy,
+    };
+  }
+}
+

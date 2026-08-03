@@ -118,12 +118,12 @@ fn covered_scalar_types_match_parser_builtin_type_names_minus_page() {
     let builtin: BTreeSet<&str> = cratestack_parser::builtin_type_names()
         .iter()
         .copied()
-        .filter(|name| *name != "Page" && *name != "PageInput")
+        .filter(|name| *name != "Page" && *name != "PageInput" && *name != "FindMany")
         .collect();
     let covered: BTreeSet<&str> = COVERED_SCALAR_TYPES.iter().copied().collect();
     assert_eq!(
         builtin, covered,
-        "cratestack_parser::builtin_type_names() (minus `Page`/`PageInput`) and this test's \
+        "cratestack_parser::builtin_type_names() (minus `Page`/`PageInput`/`FindMany`) and this test's \
          COVERED_SCALAR_TYPES have drifted — add a field plus write/assert coverage \
          above for the new/removed type. See cratestack#232.",
     );

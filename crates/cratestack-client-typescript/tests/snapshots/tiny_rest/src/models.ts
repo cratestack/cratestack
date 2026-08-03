@@ -28,6 +28,17 @@ export interface PageInput {
   offset: number | null;
 }
 
+// Mirrors cratestack-core::find_many::FindManyInput exactly — search-with-
+// filters for procedures, usable only as a procedure argument type. Not
+// generic on the client (unlike the `FindMany<Model>` `.cstack` syntax):
+// the wire shape never depends on the model, only server-side validation
+// does. `where`/`orderBy` use the same grammar as a REST `list` route's
+// `?where=`/`?sort=` query parameters.
+export interface FindMany {
+  where: string | null;
+  orderBy: string | null;
+}
+
 export interface Widget {
   id?: number;
   name?: string;

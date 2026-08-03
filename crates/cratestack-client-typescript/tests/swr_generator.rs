@@ -311,6 +311,31 @@ fn page_input_procedure_argument_imports_page_input_in_every_file_that_uses_it()
 }
 
 #[test]
+fn find_many_procedure_argument_imports_find_many_in_every_file_that_uses_it() {
+    // Same gap again, for `FindMany<Model>` argument fields: the client-
+    // side `FindMany` type is deliberately non-generic (the wire shape
+    // never depends on the model), literal-inlined by `ts_type`'s generic
+    // fallback with no consumer edge to the model it wraps either — so
+    // `src/swr/context.rs` has to add the import by hand.
+    for fixture in ["swr_find_many_procedure", "swr_find_many_procedure_rpc"] {
+        let package = generate_for(fixture, TypeScriptPreset::Swr);
+
+        let procedures = file(&package, "src/procedures.ts");
+        assert!(
+            procedures.contains("import type { FindMany } from \"./models/shared.js\";"),
+            "{fixture}: src/procedures.ts should import FindMany from ./models/shared:\n{procedures}"
+        );
+        assert!(procedures.contains("query: FindMany"));
+
+        let procedures_hooks = file(&package, "src/procedures.hooks.ts");
+        assert!(
+            procedures_hooks.contains("SearchPostsArgs"),
+            "{fixture}: src/procedures.hooks.ts should reference SearchPostsArgs:\n{procedures_hooks}"
+        );
+    }
+}
+
+#[test]
 fn swr_package_json_declares_swr_and_react_as_peer_dependencies() {
     // AC #8: `swr` (and the `react` it needs) are *peer* dependencies —
     // consumers who never import a `.hooks` module don't need them

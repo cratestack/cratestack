@@ -85,6 +85,18 @@ impl TypeRef {
     pub fn is_page_input(&self) -> bool {
         self.name == "PageInput"
     }
+
+    pub fn is_find_many(&self) -> bool {
+        self.name == "FindMany"
+    }
+
+    pub fn find_many_item(&self) -> Option<&TypeRef> {
+        if self.is_find_many() {
+            self.generic_args.first()
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
