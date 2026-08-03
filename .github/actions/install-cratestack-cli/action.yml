@@ -111,11 +111,22 @@ runs:
         echo "Checksum verified: ${actual}"
 
         # --- 5. Extract + install ---------------------------------------------
-        # `tar -xf` auto-detects the archive format on both bsdtar (macOS's
-        # and Windows 10+'s built-in tar — handles .zip too) and GNU tar
-        # (Linux, only ever sees .tar.gz here), so one command works
-        # everywhere without a separate unzip/Expand-Archive branch.
-        tar -xf "${asset}" -C "$workdir"
+        # NOT a single `tar -xf` for every OS: confirmed by hand on a real
+        # Windows runner that `shell: bash` there is Git Bash, whose `tar`
+        # on PATH is MSYS2's GNU tar — genuinely unable to read a .zip
+        # ("This does not look like a tar archive"), unlike the bsdtar this
+        # command was verified against locally on macOS. Windows needs
+        # PowerShell's Expand-Archive instead (same tool
+        # packages/cratestack-cli-npm/scripts/install.js already uses for
+        # this exact reason) — and its path arguments need to be real
+        # Windows paths, not Git Bash's POSIX-style ones, hence `cygpath -w`.
+        if [ "$os" = "Windows" ]; then
+          win_archive=$(cygpath -w "${workdir}/${asset}")
+          win_dest=$(cygpath -w "$workdir")
+          powershell -NoProfile -Command "Expand-Archive -Path '${win_archive}' -DestinationPath '${win_dest}' -Force"
+        else
+          tar -xzf "${asset}" -C "$workdir"
+        fi
 
         bin_name=cratestack
         [ "$os" = "Windows" ] && bin_name=cratestack.exe
