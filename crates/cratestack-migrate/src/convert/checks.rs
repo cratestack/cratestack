@@ -41,6 +41,13 @@ pub(super) fn check_kind_slug(kind: &CheckKind) -> &'static str {
         CheckKind::Length { .. } => "length",
         CheckKind::Iso4217 => "iso4217",
         CheckKind::Enum { .. } => "enum",
+        // Never produced on this side — `.cstack` schema projection
+        // has no source that yields an opaque predicate. Kept so the
+        // match stays exhaustive against `crate::introspect::postgres`
+        // adding the variant; a slug is still needed if a future
+        // caller ever round-trips an introspected check through
+        // `check_name`.
+        CheckKind::Raw(_) => "raw",
     }
 }
 

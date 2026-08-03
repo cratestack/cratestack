@@ -12,12 +12,21 @@ readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 
+[features]
+# Live Postgres schema introspection (issue #204). Off by default so the
+# pure-diffing core stays free of any DB dependency — only opt in when
+# you actually need `introspect::postgres`.
+postgres-introspect = ["dep:sqlx-core", "dep:sqlx-postgres"]
+
 [dependencies]
 cratestack-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+sqlx-core = { workspace = true, optional = true }
+sqlx-postgres = { workspace = true, optional = true }
 
 [dev-dependencies]
 cratestack-parser.workspace = true
 tempfile = "3"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

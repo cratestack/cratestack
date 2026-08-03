@@ -51,4 +51,25 @@ pub enum CheckKind {
         /// needs array containment rather than scalar membership.
         list: bool,
     },
+    /// An opaque CHECK predicate, captured verbatim as SQL text rather
+    /// than reverse-mapped to one of the kinds above.
+    ///
+    /// Only ever produced by live-database introspection (Phase B,
+    /// issue #204) — `.cstack` schema projection never emits this
+    /// variant, since every validator it knows how to compile
+    /// (`@range`, `@length`, `@iso4217`) already has a precise
+    /// `CheckKind`. A CHECK constraint an introspector finds in
+    /// `pg_constraint` that doesn't match the enum-membership shape
+    /// (see `crate::introspect::postgres`) could be *any* SQL
+    /// predicate — including one of the validator-derived kinds above,
+    /// since design doc §2.2 notes the compiled SQL for e.g.
+    /// `@range(0, 150)` is indistinguishable from hand-written
+    /// `CHECK (age >= 0 AND age <= 150)` once it reaches the catalog.
+    /// Rather than guess which validator (if any) produced it,
+    /// introspection always reports it as opaque text — surfaced by
+    /// the diff engine as drift against whatever `.cstack` declares
+    /// for the same column, which is the correct, conservative
+    /// behavior per the "unmapped → reported drift, never guessed"
+    /// rule.
+    Raw(String),
 }

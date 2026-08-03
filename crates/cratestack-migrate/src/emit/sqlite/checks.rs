@@ -83,5 +83,7 @@ fn render_check_predicate_sqlite(column: &str, kind: &CheckKind) -> String {
                 .collect();
             format!("{c} IN ({})", literals.join(", "))
         }
+        // Introspection-only — see `CheckKind::Raw`'s doc comment.
+        CheckKind::Raw(sql) => sql.clone(),
     }
 }

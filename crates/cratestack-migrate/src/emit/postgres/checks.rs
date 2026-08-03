@@ -64,5 +64,12 @@ fn render_check_predicate_postgres(column: &str, kind: &CheckKind) -> String {
             (None, None) => "TRUE".to_owned(),
         },
         CheckKind::Iso4217 => format!("{c} ~ '^[A-Z]{{3}}$'"),
+        // Introspection-only (see `CheckKind::Raw`'s doc comment): the
+        // predicate text was captured verbatim from
+        // `pg_get_constraintdef`, so rendering it back is a no-op.
+        // Only reachable if an introspected `Projections` is ever fed
+        // through `emit` directly rather than through `diff_projections`
+        // + a fresh `.cstack`-side check.
+        CheckKind::Raw(sql) => sql.clone(),
     }
 }

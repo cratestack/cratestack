@@ -94,13 +94,17 @@ pg-down:
 	@echo "postgres stopped"
 
 # Run the full workspace test suite against a real Postgres, with auto-teardown on exit.
+# `--features cratestack-migrate/postgres-introspect` opts just that one
+# workspace member into its feature-gated live-introspection tests
+# (issue #204) — the default `--workspace` feature set otherwise leaves
+# `cratestack-migrate` on its DB-dependency-free default build.
 test-pg *args='':
 	#!/usr/bin/env bash
 	set -euo pipefail
 	cleanup() { docker compose down >/dev/null 2>&1 || true; echo "postgres stopped"; }
 	trap cleanup EXIT
 	just pg-up
-	CRATESTACK_TEST_DATABASE_URL='{{PG_URL}}' cargo test --workspace --exclude embedded_flutter_native {{args}}
+	CRATESTACK_TEST_DATABASE_URL='{{PG_URL}}' cargo test --workspace --exclude embedded_flutter_native --features cratestack-migrate/postgres-introspect {{args}}
 
 # Run only the cratestack-pg integration tests against PG (faster inner loop).
 # Targets the server-facade package explicitly — the workspace also

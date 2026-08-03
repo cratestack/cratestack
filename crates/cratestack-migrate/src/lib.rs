@@ -12,6 +12,8 @@ mod convert;
 mod diff;
 pub mod emit;
 mod error;
+#[cfg(feature = "postgres-introspect")]
+pub mod introspect;
 pub mod ir;
 mod naming;
 mod projection;
