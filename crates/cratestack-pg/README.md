@@ -24,7 +24,7 @@ Schema macros emit `::cratestack::*` paths. Alias this crate as
 
 ```toml
 [dependencies]
-cratestack = { package = "cratestack-pg", version = "0.4" }
+cratestack = { package = "cratestack-pg", version = "0.6.7" }
 ```
 
 Then in code:
@@ -47,8 +47,24 @@ and [ADR-0003](https://cratestack.dev/internals/views-adr).
 
 ## Features
 
+- `postgres` *(default)* — gates `dep:cratestack-sqlx` (and forwards
+  `cratestack-macros/postgres`). On by default so every existing
+  `db = Postgres` consumer sees zero behavior change. A consumer that only
+  ever uses `db = None` schemas can disable it with
+  `default-features = false` (re-adding whichever of
+  `decimal-rust-decimal`/`codec-json` it still wants) to keep `sqlx` and
+  its transitive dependency tree out of the build entirely — or depend on
+  [`cratestack-api`](../cratestack-api) instead, which never pulls in
+  `cratestack-sqlx` at all.
 - `decimal-rust-decimal` *(default)* — `Decimal` columns use `rust_decimal`.
 - `decimal-bigdecimal` — alternative `bigdecimal` backend.
+- `codec-json` *(default)* — forwards the JSON codec to the generated
+  client runtime, so `include_client_schema!` offers both CBOR and JSON.
+- `grpc` — real `transport grpc` Rust codegen (server tonic service +
+  Rust gRPC client). Off by default: pulls in `tonic`/`prost` for every
+  consumer otherwise, whether or not they use gRPC. Without it, a `Grpc`
+  schema fails `include_server_schema!`/`include_client_schema!` with a
+  `compile_error!` pointing here.
 - `crypto-aws-lc-rs` — **not implemented yet**, enabling it is a hard
   `compile_error!`. Reserved for a future FIPS-validated `aws-lc-rs`
   rustls provider; see `install_fips_crypto_provider()`'s doc comment

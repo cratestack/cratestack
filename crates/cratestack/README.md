@@ -11,18 +11,18 @@
 # Backend service — Postgres (sqlx) + Axum HTTP bindings + generated
 # Rust client runtime. The shape you want for an HTTP service that
 # owns its own database.
-cratestack = { package = "cratestack-pg", version = "0.4" }
+cratestack = { package = "cratestack-pg", version = "0.6.7" }
 
 # Procedures-only, no-database backend service — Axum HTTP bindings +
 # generated Rust client runtime, with `sqlx` genuinely absent from the
 # dependency graph. The shape you want for a pure RPC/REST facade, a
 # stateless computation endpoint, or a gateway with no persisted models.
-cratestack = { package = "cratestack-api", version = "0.6" }
+cratestack = { package = "cratestack-api", version = "0.6.7" }
 
 # Embedded — rusqlite-backed SQLite on native (mobile, desktop) and
 # wasm32-unknown-unknown (browser, OPFS-backed). The shape you want
 # for an on-device storage layer that ships with a host app.
-cratestack = { package = "cratestack-sqlite", version = "0.4" }
+cratestack = { package = "cratestack-sqlite", version = "0.6.7" }
 ```
 
 The three facades are **strictly disjoint by design** — no shared "backend" trait between them. `cratestack-pg` does not pull in `libsqlite3-sys`, so backend services can keep depending on the official `sqlx` umbrella alongside it without `links = "sqlite3"` conflicts. `cratestack-api` never depends on `cratestack-sqlx` at all (see [`docs/design/no-database-mode.md`](https://github.com/cratestack/cratestack/blob/main/docs/design/no-database-mode.md) §7) — pick it for `db = None` schemas instead of `cratestack-pg` with `default-features = false` (which still works, and isn't going away). `cratestack-sqlite` does not pull in `sqlx` or `axum`, so the embedded slice compiles to wasm without forcing every consumer onto a tokio-net dep graph.
@@ -34,6 +34,7 @@ All three crates expose their library as `cratestack` (the schema macros emit `:
 * **Server** — sqlx + axum CRUD routes, procedures, policies, projections, audit log, idempotency, rate limiting, transaction isolation control, materialized views.
 * **Embedded** — same schema, rusqlite delegate, sync API, identical scalar round-tripping (`Decimal`, `Uuid`, `DateTime`, `Json` through canonical TEXT storage). One source, three targets (native mobile, desktop, wasm).
 * **Typed clients** — generated Rust client (CBOR by default, optional JSON), Dart package, TypeScript package, each consuming the same canonical HTTP contract.
+* **`transport grpc`** — an alternative to REST/RPC transport: `.proto` messages (with a field-number lockfile), a tonic service, and gRPC clients (Rust, Dart native, TypeScript gRPC-Web). CRUD-only today — `procedure`s and streaming aren't wired into the generated gRPC service yet. Both `include_server_schema!` and `include_client_schema!` need `cratestack-pg`'s `grpc` Cargo feature enabled to emit real gRPC codegen instead of a `compile_error!`. See [`docs/design/protobuf.md`](https://github.com/cratestack/cratestack/blob/main/docs/design/protobuf.md).
 * **SQL views** — `view <Name> from <Model>, ...` produces a typed Rust struct and `ViewDelegate`, with per-backend SQL bodies and optional `@@materialized` (Postgres only).
 * **Banking-readiness primitives** — `@version` optimistic locking, `@@audit`, `IdempotencyLayer`, `RateLimitLayer`, soft delete, transactional audit log. (FIPS-validated TLS via `crypto-aws-lc-rs` is reserved but not implemented yet — see [#334](https://github.com/cratestack/cratestack/issues/334).)
 

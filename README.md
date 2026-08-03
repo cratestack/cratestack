@@ -8,14 +8,18 @@ The implementation is still pre-1.0. As of `0.3.0` the framework is organized ar
 * **`include_embedded_schema!("schema.cstack")`** — `cratestack-rusqlite` only. Native mobile/desktop **and** `wasm32-unknown-unknown` (browser, OPFS-backed) from the same source. No sqlx, no axum.
 * **`include_client_schema!("schema.cstack")`** — HTTP client stubs only. Treats another service's `.cstack` as a contract; owns no database.
 
-As of `0.4.0` the previous single `cratestack` umbrella crate is split into two strictly disjoint sub-facades that consumers pick between via Cargo's `package =` rename:
+As of `0.4.0` the previous single `cratestack` umbrella crate is split into strictly disjoint sub-facades that consumers pick between via Cargo's `package =` rename:
 
 ```toml
 # Backend service (Postgres + Axum + generated Rust client runtime)
-cratestack = { package = "cratestack-pg", version = "0.4" }
+cratestack = { package = "cratestack-pg", version = "0.6.7" }
+
+# Procedures-only, no-database backend service (Axum + generated Rust
+# client runtime, with `sqlx` genuinely absent from the dependency graph)
+cratestack = { package = "cratestack-api", version = "0.6.7" }
 
 # Embedded / mobile / desktop / wasm (rusqlite + shared surface)
-cratestack = { package = "cratestack-sqlite", version = "0.4" }
+cratestack = { package = "cratestack-sqlite", version = "0.6.7" }
 ```
 
 `cratestack-pg` does not pull in `libsqlite3-sys`, so backend services can depend on the official `sqlx` umbrella crate alongside it without `links = "sqlite3"` collisions. See [`CHANGELOG.md`](./CHANGELOG.md) for the full 0.4.0 migration notes.
@@ -34,12 +38,16 @@ What the current slice covers, across those three shapes:
 * Studio scaffold generation for one or more schemas
 * mixin declarations and model `@use(...)` expansion
 * **SQL views** (`view <Name> from <Model>, ...`) — read-only, SQL-defined projections over one or more models on both backends; server-side `@@materialized` with `refresh()` via `REFRESH MATERIALIZED VIEW CONCURRENTLY`; same `@@allow("read", …)` policy machinery models use ([ADR-0003](https://cratestack.dev/internals/views-adr))
+* **`datasource { provider = "none" }`** (`db = None`) — a procedures-only server with no database at all: no `model` blocks allowed, and the generated `Cratestack`/router are genuinely `PgPool`-free rather than carrying an always-`None` pool (see [`docs/design/no-database-mode.md`](docs/design/no-database-mode.md))
+* **`transport grpc`** — a `.cstack` schema can declare `transport grpc` instead of REST/RPC, generating `.proto` messages (with a field-number lockfile), a tonic service, and Rust/Dart/TypeScript(gRPC-Web) clients; CRUD-only today, procedures and streaming are still follow-up work (see [`docs/design/protobuf.md`](docs/design/protobuf.md))
 
 ## Support Matrix
 
 | `.cstack` capability | Status | Notes |
 | --- | --- | --- |
-| `datasource` | Supported | `provider` accepts `postgresql` (server) or `sqlite` (embedded — native and `wasm32`) |
+| `datasource` | Supported | `provider` accepts `postgresql` (server), `sqlite` (embedded — native and `wasm32`), or `none` (procedures-only server, no database) |
+| `datasource { provider = "none" }` (`db = None`) | Supported | Server-only; the schema can never declare a `model`. Generates a genuinely `PgPool`-free `Cratestack`/router, with `ModelRouterState` and the event module omitted entirely rather than compiled in as dead code. See [`docs/design/no-database-mode.md`](docs/design/no-database-mode.md). |
+| `transport grpc` | Supported (CRUD only) | Mutually exclusive with REST/RPC transport. Generates `.proto` messages/enums (field-number lockfile), a tonic service, and gRPC clients (Rust, Dart native, TypeScript gRPC-Web). `procedure` declarations aren't wired into the generated gRPC service yet, and there's no streaming support. See [`docs/design/protobuf.md`](docs/design/protobuf.md). |
 | `auth` | Supported | Single auth block |
 | `mixin` | Supported | Reusable field sets for models |
 | `model` | Supported | Includes relation and policy attributes in current slice |
@@ -55,11 +63,14 @@ What the current slice covers, across those three shapes:
 The Rust workspace contains these main packages:
 
 * `cratestack-pg`: server-side facade — sqlx (Postgres) + axum + generated Rust client runtime + the shared schema surface. Picked via `cratestack = { package = "cratestack-pg" }`.
+* `cratestack-api`: procedures-only, no-database server facade — Axum + generated Rust client runtime, with `sqlx` genuinely absent from the dependency graph. Picked via `cratestack = { package = "cratestack-api" }` for `datasource { provider = "none" }` schemas.
 * `cratestack-sqlite`: embedded facade — rusqlite (SQLite on native + `wasm32`) + the shared schema surface. Picked via `cratestack = { package = "cratestack-sqlite" }`. Also re-exports `cratestack-client-rust` on native targets so hybrid consumers (NAPI / Tauri shells) can call `include_client_schema!` alongside `include_embedded_schema!`.
 * `cratestack-core`: shared metadata, auth context, codec, error, and envelope types
 * `cratestack-parser`: `.cstack` parser and semantic checker
 * `cratestack-policy`: canonical policy literals, predicates, and procedure-policy evaluation types
 * `cratestack-macros`: compile-time schema and client generation
+* `cratestack-proto`: `.proto` message/enum generator plus the field-number lockfile (`generate-proto`)
+* `cratestack-grpc`: server-side tonic service integration for `transport grpc` schemas
 * `cratestack-sql`: dialect-agnostic SQL primitives shared by both backends
 * `cratestack-sqlx`: SQLx-backed Postgres runtime and query/delegate primitives
 * `cratestack-rusqlite`: embedded SQLite backend (sync, no tokio, no policies; native and `wasm32-unknown-unknown` via `sqlite-wasm-rs`)
@@ -76,7 +87,7 @@ The Rust workspace contains these main packages:
 * `cratestack-cli`: `cratestack` command-line tool
 * `cratestack-lsp`: `.cstack` language server
 * `cratestack-studio`: admin and testing surface for `.cstack` schemas, served from a `studio.toml`
-* `cratestack-studio-generator`: transitional shim that will host `studio eject` in Phase 2 of the studio rewrite
+* `cratestack-studio-generator`: thin re-export of `cratestack-studio`'s `eject` (the real implementation lives there); kept so the CLI's import surface stays stable
 
 The VS Code extension wrapper lives under `packages/cratestack-vscode`.
 
@@ -85,7 +96,10 @@ The VS Code extension wrapper lives under `packages/cratestack-vscode`.
 From the repository root:
 
 ```sh
-cargo build --workspace
+# --exclude embedded_flutter_native: this example crate needs
+# flutter_rust_bridge-generated glue that isn't checked in, so a plain
+# `--workspace` build fails on a fresh checkout.
+cargo build --workspace --exclude embedded_flutter_native
 cargo run -p cratestack-cli -- --help
 ```
 
@@ -366,7 +380,12 @@ cargo run -p cratestack-cli -- studio run      # binds 127.0.0.1:7878
 A target in `studio.toml` declares one `.cstack`, a `[target.db]` block
 (sqlx pool), a `[target.api]` block (deployed cratestack service), or
 both. The 0.3.x Jinja-templated `generate-studio` scaffold is gone —
-`cratestack studio eject` will replace it in Phase 2 of the rewrite.
+`cratestack studio eject --out <dir>` replaces it with a self-contained
+starter binary crate (`Cargo.toml`, `studio.toml`, an example schema,
+`src/main.rs`). Pass `--with-ui` to also unpack the Leptos+Trunk UI
+sources into `<out>/ui/` for front-end customization, and `--name` to
+set the project name written into the generated `Cargo.toml`/`README.md`
+(defaults to `--out`'s directory basename).
 
 ## VS Code
 
@@ -403,7 +422,7 @@ Generated Axum routes currently enforce a single configured codec per router rat
 
 CrateStack is not yet the right fit for:
 
-* highly customized non-REST transport protocols
+* `transport grpc` schemas that declare `procedure`s, or that need server/client streaming — `transport grpc` today covers model CRUD only
 * production-stable exact typed non-Rust client generation across arbitrary projection shapes
 * full ZenStack-style policy and exposure parity
 * runtime custom-field resolution beyond the current generated trait metadata

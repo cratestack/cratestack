@@ -67,6 +67,17 @@ Flags:
 - `--base-path <PATH>` (default `/api`)
 - `--template-dir <PATH>` (optional)
 - `--check` (drift-detection mode — see below)
+- `--preset <default|riverpod>` (default `default`) — `default` is today's
+  monolithic `lib/src/models.dart`/`lib/src/apis.dart` layout. `riverpod`
+  emits one file per model under `lib/src/models/`, a shared file for
+  cross-model types, procedures in their own file, and package-wide DI
+  providers in `lib/src/client.dart`.
+- `--run-build-runner` — after generation, shell out to `dart run
+  build_runner build --delete-conflicting-outputs` in `--out` so a
+  `--preset riverpod` package's `@riverpod` annotations are actually
+  expanded (the generated Dart doesn't compile/analyze until
+  `build_runner` runs). Off by default. No effect together with `--check`.
+  Requires a Dart SDK on `PATH`.
 
 ### `generate-typescript` (alias `generate-ts`)
 
@@ -87,6 +98,11 @@ Flags:
 - `--template-dir <PATH>` (optional)
 - `--check` (drift-detection mode — see below)
 - `--full-selection` (emit fully-required model interfaces, driven by the schema's own nullability, instead of the projection-driven optional-everywhere default — for consumers that never do partial `fields`/`include` selection)
+- `--preset <default|swr>` (default `default`) — `default` is today's
+  monolithic layout (`src/models.ts`, `src/client.ts`, ...). `swr` emits
+  one `src/models/<model>.ts` per model (types + plain framework-free
+  async functions) plus `src/procedures.ts`, the structural foundation
+  for SWR hooks. `swr` does not support `transport grpc` schemas yet.
 
 ### `--check` — drift detection (CI guard)
 
@@ -108,6 +124,30 @@ cratestack generate-typescript \
 Use this in CI to catch a schema change that nobody regenerated the client for,
 or a hand-edit to committed generated code.
 
+### `generate-proto` — `.proto` file + field-number lockfile
+
+```bash
+cratestack generate-proto \
+  --schema schemas/catalog.cstack \
+  --out schemas/catalog.proto \
+  --package catalog.v1
+```
+
+Emits a `.proto` file describing the schema's messages/enums (no `service`
+block — that needs a `transport grpc` schema) plus its sibling field-number
+lockfile (`<schema>.pb.lock`) so wire numbers don't silently renumber across
+schema edits.
+
+Flags:
+
+- `--schema <PATH>` (required)
+- `--out <PATH>` (required)
+- `--package <NAME>` — protobuf package name. Required on first run (no
+  existing `.pb.lock`); on later runs, must match what's already locked or
+  be omitted.
+- `--check` (drift-detection mode: rebuild the lock and `.proto` text in
+  memory and compare against what's on disk instead of writing)
+
 ### `studio` — admin and testing surface
 
 Replaces the old `generate-studio` codegen scaffold. The studio reads a
@@ -115,17 +155,70 @@ workspace file (`studio.toml`) listing one or more `.cstack` schemas plus
 their DB and/or API targets, then serves a single binary.
 
 ```bash
-cratestack studio init               # writes ./studio.toml
-cratestack studio run                # binds 127.0.0.1:7878 by default
+cratestack studio init                        # writes ./studio.toml
+cratestack studio run                         # binds 127.0.0.1:7878 by default
 cratestack studio run --config infra/studio.toml --bind 0.0.0.0:9000
-cratestack studio eject --out ./out  # Phase 2 — currently returns NotImplemented
+cratestack studio eject --out ./out           # self-contained starter binary crate
+cratestack studio eject --out ./out --with-ui # + Leptos/Trunk UI sources under ./out/ui/
 ```
 
 Subcommand flags:
 
 - `init`: `--out <DIR>` (default `.`), `--force` to overwrite an existing `studio.toml`
 - `run`: `--config <PATH>` (default `studio.toml`), `--bind <ADDR>` (default `127.0.0.1:7878`)
-- `eject`: `--config <PATH>` (default `studio.toml`), `--out <DIR>` (required)
+- `eject`: `--out <DIR>` (required), `--name <NAME>` (project name written
+  into the generated `Cargo.toml`/`README.md`; defaults to `--out`'s
+  directory basename), `--force` (overwrite files in a non-empty `--out`),
+  `--with-ui` (also unpack the Leptos+Trunk UI sources into `<out>/ui/` for
+  front-end customization)
+
+`eject` produces a self-contained Cargo binary crate (`Cargo.toml`,
+`README.md`, `studio.toml`, `schemas/example.cstack`, `src/main.rs`) that
+embeds the studio against your own schemas.
+
+### `migrate diff` — generate a migration
+
+```bash
+cratestack migrate diff \
+  --schema schema.cstack \
+  --out-dir migrations \
+  --backend both \
+  --name add_customer_email \
+  [--allow-destructive]
+```
+
+Diffs the current `.cstack` against the committed snapshot of the
+previously-generated schema and writes SQL migrations under
+`<out-dir>/<backend>/<timestamp>_<name>/`.
+
+Flags:
+
+- `--schema <PATH>` (required)
+- `--out-dir <DIR>` (default `migrations`)
+- `--backend <postgres|sqlite|both>` (default `both`)
+- `--name <SLUG>` (default `migration`)
+- `--allow-destructive` — required to emit a migration containing lossy
+  ops (`DropColumn`, `DropTable`, narrowing type changes); without it the
+  command refuses to write a destructive migration
+
+See `cratestack-migrate`'s README for the full IR/emitter design.
+
+### `diff` — schema-change detector
+
+```bash
+cratestack diff old.cstack new.cstack
+cratestack diff old.cstack new.cstack --json
+```
+
+Diffs two `.cstack` schemas and classifies each change by its effect on
+the generated wire contract (breaking / additive / internal-only). Exits
+non-zero if any breaking change is found, so it can gate CI on schema PRs.
+
+Flags:
+
+- `old` — path to the baseline schema (positional, required)
+- `new` — path to the candidate schema (positional, required)
+- `--json` — emit machine-readable JSON instead of the human report
 
 ### `print-ir` — dump parsed schema IR
 
@@ -155,7 +248,9 @@ fn main() {
 - [Quickstart](https://cratestack.dev/getting-started/quickstart)
 - `cratestack-client-dart` — Dart package structure
 - `cratestack-client-typescript` — TypeScript package structure
-- `cratestack-studio-generator` — Studio scaffold internals
+- `cratestack-studio` — Studio server + `eject` scaffold implementation (`cratestack-studio-generator` is a thin re-export)
+- `cratestack-migrate` — schema diff / migration generator behind `migrate diff`
+- `cratestack-proto` — `.proto` generator behind `generate-proto`
 
 ## License
 

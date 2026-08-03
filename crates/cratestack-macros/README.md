@@ -8,22 +8,24 @@ Procedural macros for compile-time schema processing.
 
 | Macro                          | Deployment shape                                                | Emits                                                  |
 |--------------------------------|-----------------------------------------------------------------|--------------------------------------------------------|
-| `include_server_schema!`       | Server (Postgres via sqlx)                                      | full ORM + axum router + procedures + events + sqlx FromRow |
+| `include_server_schema!`       | Server (`db = Postgres` via sqlx, or `db = None` — procedures-only, no database) | full ORM + axum router + procedures + events + sqlx FromRow (`db = Postgres`); `PgPool`-free router + procedures only, no models/events (`db = None`) |
 | `include_embedded_schema!`     | Embedded ORM (mobile / desktop / browser via OPFS)              | model structs + descriptors + rusqlite FromRow + inputs |
 | `include_client_schema!`       | HTTP client (talks to a server, owns no DB)                     | model/input/procedure stubs, no DB                      |
 
 The split is **strict**: `include_server_schema!` never emits rusqlite items, `include_embedded_schema!` never emits sqlx items. Each deployment pays only for its own surface.
 
-All three are re-exported through the facade crates `cratestack-pg` and `cratestack-sqlite`; most consumers should depend on one of those (renamed to `cratestack` via Cargo's `package =` field) rather than this crate directly. The choice of facade picks which side of the strict split the macro emits against — backend services use `cratestack-pg`, embedded / mobile / wasm builds use `cratestack-sqlite`.
+`include_server_schema!` and `include_client_schema!` also accept a schema declaring `transport grpc` (instead of the default REST, or `transport rpc`) when the consuming facade's `grpc` Cargo feature is enabled; `include_embedded_schema!` rejects `Grpc` schemas unconditionally, since the embedded role has no transport at all. See [`transport grpc`](#transport-grpc) below.
+
+All three are re-exported through the facade crates `cratestack-pg`, `cratestack-api`, and `cratestack-sqlite`; most consumers should depend on one of those (renamed to `cratestack` via Cargo's `package =` field) rather than this crate directly. The choice of facade picks which side of the strict split the macro emits against — backend services use `cratestack-pg` (or `cratestack-api` for `db = None`), embedded / mobile / wasm builds use `cratestack-sqlite`.
 
 ## Installation
 
 ```toml
 [dependencies]
 # Server-side
-cratestack = { package = "cratestack-pg", version = "0.4" }
+cratestack = { package = "cratestack-pg", version = "0.6.7" }
 # OR embedded-side
-# cratestack = { package = "cratestack-sqlite", version = "0.4" }
+# cratestack = { package = "cratestack-sqlite", version = "0.6.7" }
 ```
 
 ## `include_server_schema!`
@@ -37,9 +39,9 @@ let pool = sqlx::PgPool::connect(&database_url).await?;
 let cool = cratestack_schema::Cratestack::builder(pool).build();
 ```
 
-Only `db = Postgres` is currently accepted. The parser is wired so adding `MySql` / `Sqlite`-via-sqlx in a future release is non-breaking at call sites that already pass `db = Postgres`.
+`db = Postgres` and `db = None` are currently accepted. The parser is wired so adding `MySql` / `Sqlite`-via-sqlx in a future release is non-breaking at call sites that already pass `db = Postgres`.
 
-The macro emits, inside a `cratestack_schema` module:
+For `db = Postgres`, the macro emits, inside a `cratestack_schema` module:
 
 - model structs + `sqlx::FromRow<PgRow>` impls for each `model`
 - `Create<Model>Input` and `Update<Model>Input` structs
@@ -49,6 +51,16 @@ The macro emits, inside a `cratestack_schema` module:
 - `axum::model_router(cool, codec, auth_provider)` and `axum::procedure_router(...)`
 - procedure dispatch glue and `events::Subscriptions` for `@@emit` model events
 - for each `view` block: a typed struct, `<UPPER>_VIEW: ViewDescriptor<...>` const, `sqlx::FromRow<PgRow>` impl, and an accessor on `cool.views().<view_snake>()` returning `ViewDelegate` (or `ViewDelegateNoUnique` for `@@no_unique` views). `@@materialized` views also get a `refresh()` method. See [ADR-0003](https://cratestack.dev/internals/views-adr).
+
+### `db = None` — procedures-only, no database
+
+```rust
+use cratestack::include_server_schema;
+
+include_server_schema!("schema.cstack", db = None);
+```
+
+For a schema whose `datasource` block declares `provider = "none"`. Such a schema can **never** declare a `model` — it's cross-checked against the macro's own `db` argument, so a mismatch (`db = Postgres` against a `none` datasource, or vice versa) is a `compile_error!` rather than a silent no-op. The macro emits a genuinely `PgPool`-free `Cratestack`/router — not an `Option<PgPool>` that happens to always be `None` — with `ModelRouterState` and the event module (`events::Subscriptions`) omitted entirely rather than compiled in as dead code. Still emits `axum::procedure_router(...)` and procedure dispatch glue, since procedures are the whole point of this mode. See [`docs/design/no-database-mode.md`](https://github.com/cratestack/cratestack/blob/main/docs/design/no-database-mode.md).
 
 ## `include_embedded_schema!`
 
@@ -88,6 +100,12 @@ use cratestack::include_client_schema;
 
 include_client_schema!("../schemas/api.cstack");
 ```
+
+## `transport grpc`
+
+A `.cstack` schema can declare `transport grpc` instead of the default REST (or `transport rpc`) transport — mutually exclusive with both. It's rejected with a `compile_error!` in `include_server_schema!` and `include_client_schema!` unless the facade's `grpc` Cargo feature is enabled (`cratestack-pg`'s `grpc` feature — see `crates/cratestack-macros/src/include/reject_grpc.rs`); `include_embedded_schema!` rejects `Grpc` schemas unconditionally, feature or no feature, since the embedded role has no transport at all.
+
+With the feature on, `include_server_schema!` emits `.proto`-mirroring `pb::` message structs (with `From`/`TryFrom` conversions to the domain types), a hand-rolled tonic service that delegates to the same dispatch functions REST/RPC already call (so policy/audit/idempotency behavior is unchanged), and `include_client_schema!` emits a native Rust gRPC client (`client_rust::grpc::CratestackGrpcClient`). Coverage is **CRUD-only today** — `procedure` declarations aren't wired into the generated gRPC service yet, and there's no streaming support. See [`docs/design/protobuf.md`](https://github.com/cratestack/cratestack/blob/main/docs/design/protobuf.md) and the `cratestack-cli generate-proto` subcommand for the standalone `.proto` generator.
 
 ## Migration from 0.2.x
 
