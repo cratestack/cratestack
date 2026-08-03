@@ -7,10 +7,13 @@ The replacement is [`cratestack-studio`](../cratestack-studio): a single
 binary served from a `studio.toml` workspace file. Browse with
 `cratestack studio run`.
 
-In Phase 2 of the rewrite this crate gains a thin `eject` path that copies
-`cratestack-studio`'s own sources into an output directory, so users can
-fork the UI without losing a clean upgrade story. Until then the public
-`eject()` function returns `NotImplemented`.
+This crate now only re-exports `cratestack-studio`'s `eject()` (plus
+`EjectOptions`/`EjectError`/`EjectReport`) so the CLI's existing import
+surface keeps working. `eject()` scaffolds a standalone, runnable Studio
+binary crate; pass `with_ui: true` in `EjectOptions` to also unpack the
+Leptos+Trunk UI sources for front-end customization. New code should
+depend on `cratestack-studio` directly — see its
+[README](../cratestack-studio/README.md#eject).
 
 If you depended on `generate_package`, `StudioGeneratorConfig`,
 `StudioGeneratorContext`, `StudioProfile`, `GeneratedStudioFile`, or
