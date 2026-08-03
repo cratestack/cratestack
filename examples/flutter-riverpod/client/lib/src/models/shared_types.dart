@@ -3,11 +3,26 @@
 // file that needs them rather than duplicated — see the ownership rule
 // documented at `crate::riverpod::partition::Owner`.
 import 'dart:typed_data';
+import 'package:dart_mappable/dart_mappable.dart';
 
 import 'package:fast_immutable_collections/fast_immutable_collections.dart';
 
 import '../runtime.dart';
 
+// issue #325: no `@riverpod`-generated surface lives in this file (see
+// `crate::riverpod::views::SharedTypesFileContext`'s doc for why), so
+// unlike `models/<model>.dart`/`procedures.dart` this file carries no
+// `riverpod_generator` part directive — but any `type`/`enum` the
+// partition assigned to `Owner::Shared`, and the hand-written
+// `StringFilter`/`NumberFilter`/etc. filter classes below, still get
+// `@MappableClass()` (see `enums_and_data_classes.dart.j2`), so
+// `build_runner`'s `dart_mappable_builder` pass still needs somewhere to
+// expand into. Unlike before issue #371's `FindMany<Model>` redesign,
+// this directive is now unconditional: the filter classes below are
+// always present regardless of what the partition assigned to
+// `Owner::Shared`, so `dart_mappable_builder` always has at least one
+// `@MappableClass()` in this file to generate a part for.
+part 'shared_types.mapper.dart';
 
 class PageInfo {
   const PageInfo({
@@ -98,6 +113,300 @@ class PageInput {
     return <String, Object?>{
       'limit': limit,
       'offset': offset,
+    };
+  }
+}
+
+enum SortDirection {
+  asc('asc'),
+  desc('desc');
+
+  const SortDirection(this.wireName);
+
+  final String wireName;
+
+  static SortDirection fromWire(Object? value) {
+    final wireName = value as String;
+    switch (wireName) {
+      case 'asc':
+        return SortDirection.asc;
+      case 'desc':
+        return SortDirection.desc;
+    }
+    throw ArgumentError.value(wireName, 'value', 'Unknown SortDirection value');
+  }
+
+  Object toWire() => wireName;
+}
+
+// Shared building blocks for every `<Model>Where`/`<Model>FindMany` pair
+// (search-with-filters for procedures — mirrors
+// cratestack-core::find_many::FieldFilterInput exactly). Defined once
+// here (like Page/PageInfo/PageInput above) rather than per-model; the
+// per-model `<Model>Where`/`<Model>SortField`/`<Model>OrderByClause`/
+// `<Model>FindMany` classes referencing these are generated through the
+// normal data_classes/enum_types pipeline (see `enums_and_data_classes.
+// dart.j2`), which is also why those get `@MappableClass()` "for free"
+// but these hand-written leaves need it spelled out explicitly: a
+// `<Model>Where`'s dart_mappable-generated `==` recurses field-by-field,
+// so `NumberFilter`/etc. need their own real `==`/`hashCode` too, or two
+// structurally-identical filters would compare unequal by identity and
+// silently break riverpod's family-provider cache dedup — same
+// `@MappableClass()` reasoning `enums_and_data_classes.dart.j2` documents
+// for relation fields. Usable only as a procedure argument type.
+@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+class StringFilter with StringFilterMappable {
+  const StringFilter({
+    this.eq,
+    this.ne,
+    this.in$,
+    this.lt,
+    this.lte,
+    this.gt,
+    this.gte,
+    this.contains,
+    this.startsWith,
+    this.isNull,
+  });
+
+  final String? eq;
+  final String? ne;
+  final List<String>? in$;
+  final String? lt;
+  final String? lte;
+  final String? gt;
+  final String? gte;
+  final String? contains;
+  final String? startsWith;
+  final bool? isNull;
+
+  factory StringFilter.fromWire(CratestackValueMap value) {
+    return StringFilter(
+      eq: value['eq'] as String?,
+      ne: value['ne'] as String?,
+      in$: value['in'] == null
+          ? null
+          : cratestackAsValueList(value['in']).map((item) => item as String).toList(growable: false),
+      lt: value['lt'] as String?,
+      lte: value['lte'] as String?,
+      gt: value['gt'] as String?,
+      gte: value['gte'] as String?,
+      contains: value['contains'] as String?,
+      startsWith: value['startsWith'] as String?,
+      isNull: value['isNull'] as bool?,
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+      'eq': eq,
+      'ne': ne,
+      'in': in$,
+      'lt': lt,
+      'lte': lte,
+      'gt': gt,
+      'gte': gte,
+      'contains': contains,
+      'startsWith': startsWith,
+      'isNull': isNull,
+    };
+  }
+}
+
+@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+class NumberFilter with NumberFilterMappable {
+  const NumberFilter({this.eq, this.ne, this.in$, this.lt, this.lte, this.gt, this.gte, this.isNull});
+
+  final num? eq;
+  final num? ne;
+  final List<num>? in$;
+  final num? lt;
+  final num? lte;
+  final num? gt;
+  final num? gte;
+  final bool? isNull;
+
+  factory NumberFilter.fromWire(CratestackValueMap value) {
+    return NumberFilter(
+      eq: value['eq'] as num?,
+      ne: value['ne'] as num?,
+      in$: value['in'] == null
+          ? null
+          : cratestackAsValueList(value['in']).map((item) => item as num).toList(growable: false),
+      lt: value['lt'] as num?,
+      lte: value['lte'] as num?,
+      gt: value['gt'] as num?,
+      gte: value['gte'] as num?,
+      isNull: value['isNull'] as bool?,
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+      'eq': eq,
+      'ne': ne,
+      'in': in$,
+      'lt': lt,
+      'lte': lte,
+      'gt': gt,
+      'gte': gte,
+      'isNull': isNull,
+    };
+  }
+}
+
+@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+class BooleanFilter with BooleanFilterMappable {
+  const BooleanFilter({this.eq, this.ne, this.in$, this.isNull});
+
+  final bool? eq;
+  final bool? ne;
+  final List<bool>? in$;
+  final bool? isNull;
+
+  factory BooleanFilter.fromWire(CratestackValueMap value) {
+    return BooleanFilter(
+      eq: value['eq'] as bool?,
+      ne: value['ne'] as bool?,
+      in$: value['in'] == null
+          ? null
+          : cratestackAsValueList(value['in']).map((item) => item as bool).toList(growable: false),
+      isNull: value['isNull'] as bool?,
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+      'eq': eq,
+      'ne': ne,
+      'in': in$,
+      'isNull': isNull,
+    };
+  }
+}
+
+@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+class UuidFilter with UuidFilterMappable {
+  const UuidFilter({this.eq, this.ne, this.in$, this.lt, this.lte, this.gt, this.gte, this.isNull});
+
+  final String? eq;
+  final String? ne;
+  final List<String>? in$;
+  final String? lt;
+  final String? lte;
+  final String? gt;
+  final String? gte;
+  final bool? isNull;
+
+  factory UuidFilter.fromWire(CratestackValueMap value) {
+    return UuidFilter(
+      eq: value['eq'] as String?,
+      ne: value['ne'] as String?,
+      in$: value['in'] == null
+          ? null
+          : cratestackAsValueList(value['in']).map((item) => item as String).toList(growable: false),
+      lt: value['lt'] as String?,
+      lte: value['lte'] as String?,
+      gt: value['gt'] as String?,
+      gte: value['gte'] as String?,
+      isNull: value['isNull'] as bool?,
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+      'eq': eq,
+      'ne': ne,
+      'in': in$,
+      'lt': lt,
+      'lte': lte,
+      'gt': gt,
+      'gte': gte,
+      'isNull': isNull,
+    };
+  }
+}
+
+@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+class DateTimeFilter with DateTimeFilterMappable {
+  const DateTimeFilter({this.eq, this.ne, this.in$, this.lt, this.lte, this.gt, this.gte, this.isNull});
+
+  final DateTime? eq;
+  final DateTime? ne;
+  final List<DateTime>? in$;
+  final DateTime? lt;
+  final DateTime? lte;
+  final DateTime? gt;
+  final DateTime? gte;
+  final bool? isNull;
+
+  factory DateTimeFilter.fromWire(CratestackValueMap value) {
+    return DateTimeFilter(
+      eq: value['eq'] == null ? null : DateTime.parse(value['eq'] as String),
+      ne: value['ne'] == null ? null : DateTime.parse(value['ne'] as String),
+      in$: value['in'] == null
+          ? null
+          : cratestackAsValueList(value['in']).map((item) => DateTime.parse(item as String)).toList(growable: false),
+      lt: value['lt'] == null ? null : DateTime.parse(value['lt'] as String),
+      lte: value['lte'] == null ? null : DateTime.parse(value['lte'] as String),
+      gt: value['gt'] == null ? null : DateTime.parse(value['gt'] as String),
+      gte: value['gte'] == null ? null : DateTime.parse(value['gte'] as String),
+      isNull: value['isNull'] as bool?,
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+      'eq': eq?.toUtc().toIso8601String(),
+      'ne': ne?.toUtc().toIso8601String(),
+      'in': in$?.map((item) => item.toUtc().toIso8601String()).toList(growable: false),
+      'lt': lt?.toUtc().toIso8601String(),
+      'lte': lte?.toUtc().toIso8601String(),
+      'gt': gt?.toUtc().toIso8601String(),
+      'gte': gte?.toUtc().toIso8601String(),
+      'isNull': isNull,
+    };
+  }
+}
+
+@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+class DecimalFilter with DecimalFilterMappable {
+  const DecimalFilter({this.eq, this.ne, this.in$, this.lt, this.lte, this.gt, this.gte, this.isNull});
+
+  final String? eq;
+  final String? ne;
+  final List<String>? in$;
+  final String? lt;
+  final String? lte;
+  final String? gt;
+  final String? gte;
+  final bool? isNull;
+
+  factory DecimalFilter.fromWire(CratestackValueMap value) {
+    return DecimalFilter(
+      eq: value['eq'] as String?,
+      ne: value['ne'] as String?,
+      in$: value['in'] == null
+          ? null
+          : cratestackAsValueList(value['in']).map((item) => item as String).toList(growable: false),
+      lt: value['lt'] as String?,
+      lte: value['lte'] as String?,
+      gt: value['gt'] as String?,
+      gte: value['gte'] as String?,
+      isNull: value['isNull'] as bool?,
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+      'eq': eq,
+      'ne': ne,
+      'in': in$,
+      'lt': lt,
+      'lte': lte,
+      'gt': gt,
+      'gte': gte,
+      'isNull': isNull,
     };
   }
 }

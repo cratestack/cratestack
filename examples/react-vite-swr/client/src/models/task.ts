@@ -17,7 +17,33 @@
 
 import type { CratestackRuntime } from "../runtime.js";
 import { toSearchQuery, type CratestackQueryRequestConfig, type CratestackRequestConfig } from "../queries.js";
+import type { BooleanFilter, ComparableFilter, DateTimeFilter, DecimalFilter, EqualityFilter, NumberFilter, SortDirection, StringFilter, UuidFilter } from "./shared.js";
 import type { Board } from "./board.js";
+
+export type TaskSortField = 'id' | 'title' | 'done' | 'boardId';
+export const TaskSortFieldValues = [
+  "id",
+  "title",
+  "done",
+  "boardId",
+] as const satisfies readonly TaskSortField[];
+
+export interface TaskWhere {
+  id?: NumberFilter;
+  title?: StringFilter;
+  done?: BooleanFilter;
+  boardId?: NumberFilter;
+}
+
+export interface TaskOrderByClause {
+  field: TaskSortField;
+  direction: SortDirection;
+}
+
+export interface TaskFindMany {
+  where?: TaskWhere;
+  orderBy?: TaskOrderByClause[];
+}
 
 export interface Task {
   id?: number;

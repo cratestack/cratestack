@@ -36,3 +36,37 @@ export interface PageInput {
   offset: number | null;
 }
 
+// Shared building blocks for every `<Model>Where`/`<Model>FindMany`
+// pair (search-with-filters for procedures — mirrors
+// cratestack-core::find_many::FieldFilterInput and cratestack-macros's
+// per-model `<Model>Where`/`<Model>SortField`/`<Model>OrderByClause`/
+// `<Model>FindManyInput` exactly), defined in each model's own file
+// per this file's own ownership rule — see there for `<Model>Where`
+// etc. themselves. Usable only as a procedure argument type.
+export interface EqualityFilter<V> {
+  eq?: V;
+  ne?: V;
+  in?: V[];
+  isNull?: boolean;
+}
+
+export interface ComparableFilter<V> extends EqualityFilter<V> {
+  lt?: V;
+  lte?: V;
+  gt?: V;
+  gte?: V;
+}
+
+export interface StringFilter extends ComparableFilter<string> {
+  contains?: string;
+  startsWith?: string;
+}
+
+export type NumberFilter = ComparableFilter<number>;
+export type BooleanFilter = EqualityFilter<boolean>;
+export type UuidFilter = ComparableFilter<string>;
+export type DateTimeFilter = ComparableFilter<string>;
+export type DecimalFilter = ComparableFilter<string>;
+
+export type SortDirection = "asc" | "desc";
+

@@ -6,9 +6,34 @@ import 'package:dart_mappable/dart_mappable.dart';
 import 'package:fast_immutable_collections/fast_immutable_collections.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'shared_types.dart';
 
 part 'task.g.dart';
 part 'task.mapper.dart';
+
+enum TaskSortField {
+  id('id'),  title('title'),  done('done'),  boardId('boardId');
+  const TaskSortField(this.wireName);
+
+  final String wireName;
+
+  static TaskSortField fromWire(Object? value) {
+    final wireName = value as String;
+    switch (wireName) {
+      case 'id':
+        return TaskSortField.id;
+      case 'title':
+        return TaskSortField.title;
+      case 'done':
+        return TaskSortField.done;
+      case 'boardId':
+        return TaskSortField.boardId;
+    }
+    throw ArgumentError.value(wireName, 'value', 'Unknown TaskSortField value');
+  }
+
+  Object toWire() => wireName;
+}
 
 // issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
 // alongside `riverpod_generator` in the same `build_runner` pass) gives
@@ -165,6 +190,149 @@ this.boardId,
       'title': title,
       'done': done,
       'boardId': boardId,
+    };
+  }
+}
+
+// issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
+// alongside `riverpod_generator` in the same `build_runner` pass) gives
+// this class real `operator ==`/`hashCode`/`copyWith` — every generated
+// data class needs this under the `riverpod` preset because any of them
+// can end up as a `@riverpod` family provider's argument type (see
+// `EstimateFocusMinutesArgs` in `procedures.dart`), and riverpod's family
+// cache dedupes provider instances by argument *value* equality, not
+// identity. `generateMethods: GenerateMethods.equals | GenerateMethods.copy`
+// deliberately does NOT ask for `encode`/`decode`/`stringify` — this
+// generator already hand-rolls `fromWire`/`toWire` below (different
+// method names, so there's no collision either way), and duplicating a
+// second, unused `toMap`/`fromMap`/`toJson`/`fromJson` surface per class
+// would be pure noise. Relation fields (e.g. `Task.board` -> `Board?`)
+// get deep equality "for free": the referenced type is itself a
+// `@MappableClass()`-annotated generated class in this same preset, so
+// the field-by-field comparison this class's own `==` performs recurses
+// into the related type's generated `==` rather than falling back to
+// object identity; list-valued relations get the same element-wise
+// (not `List.==`/identity) comparison automatically from
+// `dart_mappable`'s own list handling.
+@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+class TaskWhere with TaskWhereMappable {
+  const TaskWhere({
+this.id,
+this.title,
+this.done,
+this.boardId,
+  });
+
+  final NumberFilter? id;
+  final StringFilter? title;
+  final BooleanFilter? done;
+  final NumberFilter? boardId;
+
+  factory TaskWhere.fromWire(CratestackValueMap value) {
+    return TaskWhere(
+      id: value['id'] == null ? null : NumberFilter.fromWire(cratestackAsValueMap(value['id'])),
+      title: value['title'] == null ? null : StringFilter.fromWire(cratestackAsValueMap(value['title'])),
+      done: value['done'] == null ? null : BooleanFilter.fromWire(cratestackAsValueMap(value['done'])),
+      boardId: value['boardId'] == null ? null : NumberFilter.fromWire(cratestackAsValueMap(value['boardId'])),
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+      'id': id?.toWire(),
+      'title': title?.toWire(),
+      'done': done?.toWire(),
+      'boardId': boardId?.toWire(),
+    };
+  }
+}
+
+// issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
+// alongside `riverpod_generator` in the same `build_runner` pass) gives
+// this class real `operator ==`/`hashCode`/`copyWith` — every generated
+// data class needs this under the `riverpod` preset because any of them
+// can end up as a `@riverpod` family provider's argument type (see
+// `EstimateFocusMinutesArgs` in `procedures.dart`), and riverpod's family
+// cache dedupes provider instances by argument *value* equality, not
+// identity. `generateMethods: GenerateMethods.equals | GenerateMethods.copy`
+// deliberately does NOT ask for `encode`/`decode`/`stringify` — this
+// generator already hand-rolls `fromWire`/`toWire` below (different
+// method names, so there's no collision either way), and duplicating a
+// second, unused `toMap`/`fromMap`/`toJson`/`fromJson` surface per class
+// would be pure noise. Relation fields (e.g. `Task.board` -> `Board?`)
+// get deep equality "for free": the referenced type is itself a
+// `@MappableClass()`-annotated generated class in this same preset, so
+// the field-by-field comparison this class's own `==` performs recurses
+// into the related type's generated `==` rather than falling back to
+// object identity; list-valued relations get the same element-wise
+// (not `List.==`/identity) comparison automatically from
+// `dart_mappable`'s own list handling.
+@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+class TaskOrderByClause with TaskOrderByClauseMappable {
+  const TaskOrderByClause({
+required this.field,
+required this.direction,
+  });
+
+  final TaskSortField field;
+  final SortDirection direction;
+
+  factory TaskOrderByClause.fromWire(CratestackValueMap value) {
+    return TaskOrderByClause(
+      field: TaskSortField.fromWire(cratestackRequireWireValue('TaskOrderByClause', 'field', value['field'])),
+      direction: SortDirection.fromWire(cratestackRequireWireValue('TaskOrderByClause', 'direction', value['direction'])),
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+      'field': field.toWire(),
+      'direction': direction.toWire(),
+    };
+  }
+}
+
+// issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
+// alongside `riverpod_generator` in the same `build_runner` pass) gives
+// this class real `operator ==`/`hashCode`/`copyWith` — every generated
+// data class needs this under the `riverpod` preset because any of them
+// can end up as a `@riverpod` family provider's argument type (see
+// `EstimateFocusMinutesArgs` in `procedures.dart`), and riverpod's family
+// cache dedupes provider instances by argument *value* equality, not
+// identity. `generateMethods: GenerateMethods.equals | GenerateMethods.copy`
+// deliberately does NOT ask for `encode`/`decode`/`stringify` — this
+// generator already hand-rolls `fromWire`/`toWire` below (different
+// method names, so there's no collision either way), and duplicating a
+// second, unused `toMap`/`fromMap`/`toJson`/`fromJson` surface per class
+// would be pure noise. Relation fields (e.g. `Task.board` -> `Board?`)
+// get deep equality "for free": the referenced type is itself a
+// `@MappableClass()`-annotated generated class in this same preset, so
+// the field-by-field comparison this class's own `==` performs recurses
+// into the related type's generated `==` rather than falling back to
+// object identity; list-valued relations get the same element-wise
+// (not `List.==`/identity) comparison automatically from
+// `dart_mappable`'s own list handling.
+@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+class TaskFindMany with TaskFindManyMappable {
+  const TaskFindMany({
+this.where,
+this.orderBy,
+  });
+
+  final TaskWhere? where;
+  final List<TaskOrderByClause>? orderBy;
+
+  factory TaskFindMany.fromWire(CratestackValueMap value) {
+    return TaskFindMany(
+      where: value['where'] == null ? null : TaskWhere.fromWire(cratestackAsValueMap(value['where'])),
+      orderBy: value['orderBy'] == null ? null : cratestackAsValueList(value['orderBy']).map((item) => TaskOrderByClause.fromWire(cratestackAsValueMap(item))).toList(growable: false),
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+      'where': where?.toWire(),
+      'orderBy': orderBy?.map((item) => item.toWire()).toList(growable: false),
     };
   }
 }

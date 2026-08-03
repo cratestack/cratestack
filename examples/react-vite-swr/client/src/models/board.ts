@@ -17,6 +17,28 @@
 
 import type { CratestackRuntime } from "../runtime.js";
 import { toSearchQuery, type CratestackQueryRequestConfig, type CratestackRequestConfig } from "../queries.js";
+import type { BooleanFilter, ComparableFilter, DateTimeFilter, DecimalFilter, EqualityFilter, NumberFilter, SortDirection, StringFilter, UuidFilter } from "./shared.js";
+
+export type BoardSortField = 'id' | 'name';
+export const BoardSortFieldValues = [
+  "id",
+  "name",
+] as const satisfies readonly BoardSortField[];
+
+export interface BoardWhere {
+  id?: NumberFilter;
+  name?: StringFilter;
+}
+
+export interface BoardOrderByClause {
+  field: BoardSortField;
+  direction: SortDirection;
+}
+
+export interface BoardFindMany {
+  where?: BoardWhere;
+  orderBy?: BoardOrderByClause[];
+}
 
 export interface Board {
   id?: number;
