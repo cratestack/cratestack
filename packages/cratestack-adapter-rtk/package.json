@@ -1,6 +1,6 @@
 {
   "name": "@cratestack/adapter-rtk",
-  "version": "0.6.5",
+  "version": "0.6.7",
   "description": "An RTK Query BaseQueryFn adapter over CrateStack's generated TypeScript RPC client.",
   "license": "MIT",
   "repository": {
@@ -28,7 +28,7 @@
     "lint": "biome check ."
   },
   "dependencies": {
-    "@cratestack/ts-types": "0.6.5"
+    "@cratestack/ts-types": "0.6.7"
   },
   "peerDependencies": {
     "@reduxjs/toolkit": "^2.0.0"
