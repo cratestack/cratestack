@@ -400,6 +400,11 @@ jobs:
       # job below doesn't need to special-case which leg "owns" them.
       - name: Build native addon (napi build)
         working-directory: packages/cratestack-cbor-node
+        # Explicit bash — the default shell on the windows-msvc leg is
+        # PowerShell, which doesn't understand `\` line continuations and
+        # fails to parse this command ("Missing expression after unary
+        # operator '--'"). Same reason `Package archive` above pins it.
+        shell: bash
         run: |
           pnpm exec napi build \
             --manifest-path ../../crates/cratestack-cbor-napi/Cargo.toml \
