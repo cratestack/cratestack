@@ -84,10 +84,11 @@ pub use json::Json;
 pub use page::{MAX_LIST_LIMIT, Page, PageInfo, PageInput};
 pub use projection::ProjectionDecoder;
 pub use schema::{
-    Attribute, AuthBlock, ConfigBlock, ConfigEntry, Datasource, EnumDecl, EnumVariant, Field,
-    MixinDecl, Model, OwnedSchemaSummary, Procedure, ProcedureArg, ProcedureKind, Schema,
-    SchemaSummary, SelectionQuery, SourceSpan, TransportStyle, TypeArity, TypeDecl, TypeRef, View,
-    ViewSource, parse_composite_id_attribute, parse_composite_unique_attribute,
+    Attribute, AuthBlock, ConfigBlock, ConfigEntry, Datasource, EnumDecl, EnumVariant,
+    ExtensionKind, Field, MixinDecl, Model, OwnedSchemaSummary, Procedure, ProcedureArg,
+    ProcedureKind, Schema, SchemaSummary, SelectionQuery, SourceSpan, TransportStyle, TypeArity,
+    TypeDecl, TypeRef, View, ViewSource, parse_composite_id_attribute,
+    parse_composite_unique_attribute,
 };
 pub use transport::{
     OpDescriptor, OpKind, RouteTransportCapabilities, RouteTransportDescriptor,

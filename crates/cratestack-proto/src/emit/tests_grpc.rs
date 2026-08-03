@@ -91,6 +91,7 @@ fn grpc_schema() -> Schema {
         procedures: vec![],
         views: vec![],
         transport: TransportStyle::Grpc,
+        declared_extensions: Default::default(),
     }
 }
 

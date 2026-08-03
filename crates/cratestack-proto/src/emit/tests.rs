@@ -128,6 +128,7 @@ fn empty_schema() -> Schema {
         procedures: vec![],
         views: vec![],
         transport: TransportStyle::default(),
+        declared_extensions: Default::default(),
     }
 }
 

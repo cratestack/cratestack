@@ -12,6 +12,8 @@ mod tests_docs;
 #[cfg(test)]
 mod tests_enums;
 #[cfg(test)]
+mod tests_extensions;
+#[cfg(test)]
 mod tests_field_attrs;
 #[cfg(test)]
 mod tests_list_arity;

@@ -54,6 +54,7 @@ impl Snapshot {
             procedures: Vec::new(),
             views: Vec::new(),
             transport: Default::default(),
+            declared_extensions: Default::default(),
         })
     }
 }

@@ -10,6 +10,8 @@ pub mod procedure;
 pub mod selection;
 pub mod view;
 
+use std::collections::BTreeSet;
+
 use serde::{Deserialize, Serialize};
 
 pub use composite_key::parse_composite_id_attribute;
@@ -50,6 +52,44 @@ impl TransportStyle {
     }
 }
 
+/// An opt-in framework/database capability a schema announces via a
+/// top-level `extension <name> { }` block (cratestack#153). Declaring an
+/// extension only unlocks schema-visible *syntax* for that capability
+/// (e.g. `@no_rate_limit`, the `Vector(n)` scalar type) — it never gates
+/// codegen or runtime behavior by itself; that's a separate, same-named
+/// Cargo feature per consuming crate (cratestack#161, out of scope here).
+///
+/// This is a closed list by design, not an arbitrary-extension mechanism
+/// — see `docs/design/extensions.md` §7.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExtensionKind {
+    RateLimit,
+    Pgvector,
+}
+
+impl ExtensionKind {
+    /// Every recognized extension name, in a stable order — used to build
+    /// clear "expected one of: ..." error messages.
+    pub const ALL: [ExtensionKind; 2] = [ExtensionKind::RateLimit, ExtensionKind::Pgvector];
+
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            ExtensionKind::RateLimit => "rate_limit",
+            ExtensionKind::Pgvector => "pgvector",
+        }
+    }
+
+    /// Parses the bare name written after `extension` in `.cstack` source
+    /// (e.g. `rate_limit` in `extension rate_limit { }`). `None` for any
+    /// name outside the closed, framework-maintained list.
+    pub fn parse_name(name: &str) -> Option<Self> {
+        ExtensionKind::ALL
+            .into_iter()
+            .find(|kind| kind.as_str() == name)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Schema {
     pub datasource: Option<Datasource>,
@@ -64,6 +104,11 @@ pub struct Schema {
     pub views: Vec<View>,
     #[serde(default)]
     pub transport: TransportStyle,
+    /// Opt-in framework/database capabilities this schema declared via
+    /// top-level `extension <name> { }` blocks (cratestack#153). Empty for
+    /// every schema that declares none — no behavior change.
+    #[serde(default)]
+    pub declared_extensions: BTreeSet<ExtensionKind>,
 }
 
 impl Schema {

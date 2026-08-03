@@ -6,12 +6,14 @@ mod procedures;
 mod types;
 mod views;
 
+use std::collections::BTreeSet;
+
 use cratestack_core::{
-    AuthBlock, ConfigEntry, Datasource, EnumDecl, MixinDecl, Model, Schema, TransportStyle,
-    TypeDecl, View,
+    AuthBlock, ConfigEntry, Datasource, EnumDecl, ExtensionKind, MixinDecl, Model, Schema,
+    TransportStyle, TypeDecl, View,
 };
 
-use crate::diagnostics::SchemaError;
+use crate::diagnostics::{SchemaError, span_error};
 use crate::line_helpers::{
     collect_lines, name_span_in_line, parse_doc_comment, split_config_entry,
 };
@@ -41,6 +43,7 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
     let mut views: Vec<View> = Vec::new();
     let mut transport: Option<TransportStyle> = None;
     let mut transport_line: Option<usize> = None;
+    let mut declared_extensions: BTreeSet<ExtensionKind> = BTreeSet::new();
 
     while cursor < lines.len() {
         let line = &lines[cursor];
@@ -145,6 +148,28 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
             continue;
         }
 
+        if line.trimmed.starts_with("extension ") {
+            let (block, next) = parse_named_config_block(&lines, cursor, "extension")?;
+            let kind = ExtensionKind::parse_name(&block.name).ok_or_else(|| {
+                let expected = ExtensionKind::ALL
+                    .iter()
+                    .map(|kind| kind.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                span_error(
+                    format!(
+                        "unknown extension `{}` (expected one of: {expected})",
+                        block.name
+                    ),
+                    block.span,
+                )
+            })?;
+            declared_extensions.insert(kind);
+            pending_docs.clear();
+            cursor = next;
+            continue;
+        }
+
         if line.trimmed == "mcp {" {
             let (mut block, next) = parse_simple_config_block(&lines, cursor, "mcp")?;
             block.docs = std::mem::take(&mut pending_docs);
@@ -205,5 +230,6 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
         procedures,
         views,
         transport: transport.unwrap_or_default(),
+        declared_extensions,
     })
 }
