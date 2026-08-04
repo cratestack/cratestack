@@ -15,6 +15,14 @@
 //! parser now rejects those outright at schema-parse time (no raw
 //! identifier form exists for them at all); see
 //! `cratestack_parser::tests_reserved_keywords`.
+//!
+//! The fixture's model is named `KeywordField` (singular), not
+//! `KeywordFields` — table/route naming is
+//! `pluralize(to_snake_case(model.name))`, and `pluralize` is a naive
+//! "append s, or es if it already ends in s" (see
+//! `cratestack_core::route_naming::pluralize`), so a model already ending
+//! in `s` would double-pluralize (`keyword_fieldses`). Nothing to do with
+//! this issue — just avoided for a cleaner fixture.
 
 use cratestack::RusqliteRuntime;
 use cratestack::include_embedded_schema;
@@ -22,14 +30,14 @@ use cratestack_rusqlite::{ModelDelegate, ddl::create_table_sql};
 
 include_embedded_schema!("tests/fixtures/keyword_fields.cstack");
 
-use cratestack_schema::KEYWORD_FIELDS_MODEL;
-use cratestack_schema::models::KeywordFields;
+use cratestack_schema::KEYWORD_FIELD_MODEL;
+use cratestack_schema::models::KeywordField;
 
 fn setup() -> RusqliteRuntime {
     let runtime = RusqliteRuntime::open_in_memory().expect("open in-memory sqlite");
     runtime
         .with_connection(|conn| {
-            conn.execute_batch(&create_table_sql(&KEYWORD_FIELDS_MODEL))
+            conn.execute_batch(&create_table_sql(&KEYWORD_FIELD_MODEL))
                 .expect("apply DDL");
             Ok(())
         })
@@ -40,9 +48,9 @@ fn setup() -> RusqliteRuntime {
 #[test]
 fn every_keyword_named_field_compiles_and_round_trips() {
     let runtime = setup();
-    let delegate = ModelDelegate::<KeywordFields, i64>::new(&runtime, &KEYWORD_FIELDS_MODEL);
+    let delegate = ModelDelegate::<KeywordField, i64>::new(&runtime, &KEYWORD_FIELD_MODEL);
 
-    let input = cratestack_schema::CreateKeywordFieldsInput {
+    let input = cratestack_schema::CreateKeywordFieldInput {
         id: 1,
         r#match: "match-value".to_owned(),
         r#type: "type-value".to_owned(),
@@ -81,10 +89,10 @@ fn every_keyword_named_field_compiles_and_round_trips() {
 #[test]
 fn keyword_field_ref_accessors_compile_and_filter() {
     let runtime = setup();
-    let delegate = ModelDelegate::<KeywordFields, i64>::new(&runtime, &KEYWORD_FIELDS_MODEL);
+    let delegate = ModelDelegate::<KeywordField, i64>::new(&runtime, &KEYWORD_FIELD_MODEL);
 
     delegate
-        .create(cratestack_schema::CreateKeywordFieldsInput {
+        .create(cratestack_schema::CreateKeywordFieldInput {
             id: 1,
             r#match: "needle".to_owned(),
             r#type: "type-value".to_owned(),
@@ -104,7 +112,7 @@ fn keyword_field_ref_accessors_compile_and_filter() {
     // site (not just the struct field) is escaped too.
     let found = delegate
         .find_many()
-        .where_(cratestack_schema::keyword_fields::r#match().eq("needle".to_owned()))
+        .where_(cratestack_schema::keyword_field::r#match().eq("needle".to_owned()))
         .run()
         .expect("filtering on a keyword-named field must succeed");
     assert_eq!(found.len(), 1);

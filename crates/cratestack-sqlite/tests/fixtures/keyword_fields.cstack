@@ -11,7 +11,7 @@ datasource db {
   url = env("DATABASE_URL")
 }
 
-model KeywordFields {
+model KeywordField {
   id Int @id
   match String
   type String

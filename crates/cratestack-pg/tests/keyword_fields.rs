@@ -17,6 +17,15 @@
 //! `self`/`Self`/`super`/`crate` are deliberately not in this fixture —
 //! the parser now rejects those at schema-parse time; see
 //! `cratestack_parser::tests_reserved_keywords`.
+//!
+//! The fixture's model is named `KeywordField` (singular), not
+//! `KeywordFields` — table naming is `pluralize(to_snake_case(model.name))`,
+//! and `pluralize` is a naive "append s, or es if it already ends in s"
+//! (see `cratestack_core::route_naming::pluralize`), so a model already
+//! ending in `s` would double-pluralize its table name to
+//! `keyword_fieldses`. Nothing to do with this issue — just avoided for a
+//! cleaner fixture (table name below is the singular model's plain `s`
+//! pluralization: `keyword_fields`).
 
 use cratestack::sqlx::query;
 use cratestack::{CoolContext, Value, include_client_schema, include_server_schema};
@@ -26,8 +35,8 @@ include_server_schema!("tests/fixtures/keyword_fields.cstack", db = Postgres);
 mod support;
 use support::pg;
 
-fn build_input(id: i64) -> cratestack_schema::CreateKeywordFieldsInput {
-    cratestack_schema::CreateKeywordFieldsInput {
+fn build_input(id: i64) -> cratestack_schema::CreateKeywordFieldInput {
+    cratestack_schema::CreateKeywordFieldInput {
         id,
         r#match: "match-value".to_owned(),
         r#type: "type-value".to_owned(),
@@ -53,8 +62,8 @@ fn keyword_fields_struct_compiles_and_constructs() {
     assert_eq!(input.r#box, "box-value");
 
     // The FieldRef accessor emission site — a function literally named
-    // `r#match()` in the generated `keyword_fields` module.
-    let field = cratestack_schema::keyword_fields::r#match();
+    // `r#match()` in the generated `keyword_field` module.
+    let field = cratestack_schema::keyword_field::r#match();
     let _filter = field.eq("needle".to_owned());
 }
 
@@ -99,14 +108,14 @@ async fn keyword_fields_round_trip_through_generated_orm() {
     let ctx = operator();
     let input = build_input(1);
 
-    cool.keyword_fields()
+    cool.keyword_field()
         .create(input.clone())
         .run(&ctx)
         .await
         .expect("create with every keyword-named field must succeed");
 
     let fetched = cool
-        .keyword_fields()
+        .keyword_field()
         .find_unique(1)
         .run(&ctx)
         .await
@@ -136,7 +145,7 @@ mod client_only_schema {
 
     #[test]
     fn keyword_fields_client_struct_compiles_and_constructs() {
-        let input = cratestack_schema::CreateKeywordFieldsInput {
+        let input = cratestack_schema::CreateKeywordFieldInput {
             id: 1,
             r#match: "match-value".to_owned(),
             r#type: "type-value".to_owned(),

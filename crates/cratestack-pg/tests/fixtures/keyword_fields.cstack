@@ -10,7 +10,11 @@ datasource db {
   url = env("DATABASE_URL")
 }
 
-model KeywordFields {
+auth Operator {
+  id Int
+}
+
+model KeywordField {
   id Int @id
   match String
   type String
@@ -21,4 +25,7 @@ model KeywordFields {
   let String
   loop String
   box String
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
 }
