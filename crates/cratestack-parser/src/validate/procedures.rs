@@ -1,3 +1,5 @@
+use cratestack_core::ExtensionKind;
+
 use crate::diagnostics::{SchemaError, span_error};
 
 /// Parse and validate the `@isolation("...")` procedure attribute. At most
@@ -181,6 +183,63 @@ pub(super) fn validate_procedure_deprecated_attribute(
         return Err(span_error(
             format!(
                 "procedure `{}` @deprecated argument must be a quoted string",
+                procedure.name,
+            ),
+            attr.span,
+        ));
+    }
+    Ok(())
+}
+
+/// Validate the bare `@no_rate_limit` procedure attribute
+/// (`docs/design/extensions.md` §5). It takes no arguments (mirrors
+/// `@deprecated`'s bare form above) and is only valid syntax when the
+/// enclosing schema has declared `extension rate_limit { }` — declaring the
+/// extension is what unlocks the attribute at all (layer 1 of the extension
+/// model, `docs/design/extensions.md` §2); using it without that declaration
+/// is a validation error here, distinct from and earlier than the Cargo
+/// feature check `cratestack-macros`' `extension_gate` module performs at
+/// macro-expansion time (layer 2).
+pub(super) fn validate_procedure_no_rate_limit_attribute(
+    procedure: &cratestack_core::Procedure,
+    schema: &cratestack_core::Schema,
+) -> Result<(), SchemaError> {
+    let matches: Vec<&cratestack_core::Attribute> = procedure
+        .attributes
+        .iter()
+        .filter(|a| a.raw == "@no_rate_limit" || a.raw.starts_with("@no_rate_limit("))
+        .collect();
+    if matches.is_empty() {
+        return Ok(());
+    }
+    if matches.len() > 1 {
+        return Err(span_error(
+            format!(
+                "procedure `{}` declares more than one @no_rate_limit attribute",
+                procedure.name,
+            ),
+            matches[1].span,
+        ));
+    }
+    let attr = matches[0];
+    if attr.raw != "@no_rate_limit" {
+        return Err(span_error(
+            format!(
+                "procedure `{}` @no_rate_limit does not take any arguments",
+                procedure.name,
+            ),
+            attr.span,
+        ));
+    }
+    if !schema
+        .declared_extensions
+        .contains(&ExtensionKind::RateLimit)
+    {
+        return Err(span_error(
+            format!(
+                "procedure `{}` uses @no_rate_limit, but this schema does not declare \
+                 `extension rate_limit {{ }}` — add the extension block before opting a \
+                 procedure out of rate limiting",
                 procedure.name,
             ),
             attr.span,

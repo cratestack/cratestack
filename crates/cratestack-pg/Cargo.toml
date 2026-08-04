@@ -118,6 +118,18 @@ grpc = [
 # feature must never silently compile and return success — see
 # `install_fips_crypto_provider`'s compile_error! below.
 crypto-aws-lc-rs = []
+# Forwards `cratestack-macros`'s own `rate_limit` feature (cratestack#161's
+# Cargo-feature enforcement mechanism, `crates/cratestack-macros/src/include/
+# extension_gate.rs`) — this is what turns off the `compile_error!` a schema
+# declaring `extension rate_limit { }` otherwise hits. Off by default, same
+# non-default posture as `grpc` above: enabling it only unlocks the
+# `@no_rate_limit` procedure attribute and the `rate_limited_by_default`
+# field it threads onto the generated `OpDescriptor` (docs/design/
+# extensions.md §5) — participation-only, never a numeric limit. Does *not*
+# gate `cratestack-axum`'s existing `RateLimitLayer`/`RateLimitConfig`/store
+# code, which stays unconditionally compiled and is unaffected by this
+# feature — see cratestack#154's scope note.
+rate_limit = ["cratestack-macros/rate_limit"]
 
 [dependencies]
 async-stream.workspace = true

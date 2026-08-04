@@ -21,7 +21,7 @@ use self::mixins_types::{validate_auth, validate_enums, validate_mixins, validat
 use self::models::validate_models;
 use self::procedures::{
     validate_procedure_api_version_attribute, validate_procedure_deprecated_attribute,
-    validate_procedure_isolation_attribute,
+    validate_procedure_isolation_attribute, validate_procedure_no_rate_limit_attribute,
 };
 use self::stream_attribute::validate_procedure_stream_attribute;
 use self::type_names::{collect_type_names, validate_type_ref};
@@ -180,6 +180,7 @@ fn validate_procedures(
         validate_procedure_api_version_attribute(procedure)?;
         validate_procedure_deprecated_attribute(procedure)?;
         validate_procedure_stream_attribute(procedure)?;
+        validate_procedure_no_rate_limit_attribute(procedure, schema)?;
     }
     Ok(())
 }

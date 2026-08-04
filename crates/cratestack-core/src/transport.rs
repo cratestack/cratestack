@@ -45,6 +45,16 @@ pub struct OpDescriptor {
     /// Whether the op can be safely retried without an idempotency
     /// key. True for reads and pure procedures; false for mutations.
     pub idempotent_by_default: bool,
+    /// Whether the dispatcher should treat this op as participating in
+    /// rate limiting. `true` for every op by default; `false` only for a
+    /// procedure marked `@no_rate_limit` in a schema that declares
+    /// `extension rate_limit { }` (`docs/design/extensions.md` §5) — model
+    /// CRUD ops have no opt-out today and are always `true`. This is
+    /// participation only: it carries no burst/refill/window numbers, and
+    /// changes nothing about whether `RateLimitLayer` is actually wired up
+    /// at runtime, mirroring how `idempotent_by_default` above describes a
+    /// fact about the op rather than configuring anything.
+    pub rate_limited_by_default: bool,
     pub auth_required: bool,
 }
 

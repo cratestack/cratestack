@@ -1,0 +1,44 @@
+// Smoke fixture for the `rate_limit` extension (cratestack#154). `transport
+// rpc` so the generated `OPS` slice is populated (`OpDescriptor`s only ever
+// exist for RPC schemas — REST emits `ROUTE_TRANSPORTS` instead, see
+// docs/design/rpc-transport.md) and `rate_limited_by_default` is directly
+// observable on it. Deliberately minimal — one model (CRUD ops always
+// rate_limited_by_default: true, no opt-out exists for them today) and two
+// procedures: one bare (defaults to rate_limited_by_default: true) and one
+// marked `@no_rate_limit` (rate_limited_by_default: false), which is only
+// valid syntax here because `extension rate_limit { }` is declared below.
+
+transport rpc
+
+extension rate_limit {
+}
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Widget {
+  id Int @id
+  name String
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
+
+type PingArgs {
+  nonce String
+}
+
+procedure ping(args: PingArgs): PingArgs
+  @allow(auth() != null)
+
+mutation procedure createPayment(args: PingArgs): PingArgs
+  @allow(auth() != null)
+  @no_rate_limit
