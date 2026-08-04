@@ -1,5 +1,5 @@
 error: schema declares `extension rate_limit { }`, but `cratestack-macros` was compiled without its `rate_limit` Cargo feature enabled. Declaring an extension only unlocks schema syntax (docs/design/extensions.md §2, layer 1); the matching Cargo feature is what makes the supporting code exist in this build at all (layer 2) — enable `rate_limit` on the facade crate you depend on (e.g. `cratestack = { package = "cratestack-pg", features = ["rate_limit"] }`) once that facade forwards it (tracking: https://github.com/cratestack/cratestack/issues/154), or drop the `extension rate_limit { }` block if this schema doesn't actually need it.
  --> tests/ui/generated/rate_limit_feature_missing.rs
   |
-  | ...a!("$DIR/tests/fixtures/rate_limit_extension.cstack", d...
-  |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  | cratestack_macros::include_server_schema!("/tmp/cratestack-macros-ui-161/rate_limit_extension.cstack", db = None);
+  |                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
