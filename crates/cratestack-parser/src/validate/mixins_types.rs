@@ -5,6 +5,7 @@ use cratestack_core::Schema;
 use crate::diagnostics::{SchemaError, span_error};
 use crate::validate::fields::{
     CustomFieldSupport, validate_custom_field_attribute, validate_default_dbgenerated_no_args,
+    validate_field_reserved_identifier,
 };
 use crate::validate::pb::validate_pb_field_attribute;
 use crate::validate::type_names::validate_type_ref;
@@ -56,6 +57,7 @@ pub(super) fn validate_mixins(
                 &mixin.name,
                 CustomFieldSupport::Rejected,
             )?;
+            validate_field_reserved_identifier(field, "mixin", &mixin.name)?;
             validate_type_ref(
                 type_names,
                 page_item_type_names,
@@ -91,6 +93,7 @@ pub(super) fn validate_types(
                 ));
             }
             validate_custom_field_attribute(field, "type", &ty.name, CustomFieldSupport::TypeOnly)?;
+            validate_field_reserved_identifier(field, "type", &ty.name)?;
             validate_type_ref(
                 type_names,
                 page_item_type_names,
@@ -151,6 +154,7 @@ pub(super) fn validate_auth(
                 &auth.name,
                 CustomFieldSupport::Rejected,
             )?;
+            validate_field_reserved_identifier(field, "auth block", &auth.name)?;
             validate_type_ref(
                 type_names,
                 page_item_type_names,

@@ -19,6 +19,7 @@ use std::collections::BTreeSet;
 use cratestack_core::{Schema, View};
 
 use crate::diagnostics::{SchemaError, span_error};
+use crate::validate::fields::validate_field_reserved_identifier;
 
 pub(super) fn validate_views(schema: &Schema) -> Result<(), SchemaError> {
     let model_names: BTreeSet<&str> = schema
@@ -41,6 +42,10 @@ pub(super) fn validate_views(schema: &Schema) -> Result<(), SchemaError> {
 }
 
 fn validate_view(view: &View, model_names: &BTreeSet<&str>) -> Result<(), SchemaError> {
+    for field in &view.fields {
+        validate_field_reserved_identifier(field, "view", &view.name)?;
+    }
+
     // Rule 2: every source resolves to a model.
     for source in &view.sources {
         if !model_names.contains(source.name.as_str()) {

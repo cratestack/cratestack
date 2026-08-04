@@ -142,6 +142,33 @@ pub(super) fn validate_default_dbgenerated_no_args(
     Ok(())
 }
 
+/// Reject a field named after a Rust keyword with no valid identifier
+/// spelling at all — `self`, `Self`, `super`, `crate`. Every other Rust
+/// keyword (`match`, `type`, `ref`, `move`, `impl`, `fn`, `let`, `loop`,
+/// `box`, ...) is escaped as a raw identifier (`r#type`) at codegen time by
+/// `cratestack_macros::shared::ident` and needs no rejection here — see
+/// cratestack#398. These four are different: `r#self`/`r#Self`/`r#super`/
+/// `r#crate` are not valid Rust at all (rustc rejects them outright), so
+/// there is no escape hatch, and the field must be renamed.
+pub(super) fn validate_field_reserved_identifier(
+    field: &cratestack_core::Field,
+    owner_kind: &str,
+    owner_name: &str,
+) -> Result<(), SchemaError> {
+    if cratestack_core::rust_keywords::is_unrepresentable_keyword(&field.name) {
+        return Err(span_error(
+            format!(
+                "field `{}` on {owner_kind} `{owner_name}` cannot be represented as a Rust \
+                 identifier: `{}` is a reserved keyword with no raw-identifier form (`r#{}` is \
+                 not valid Rust). Rename the field.",
+                field.name, field.name, field.name,
+            ),
+            field.span,
+        ));
+    }
+    Ok(())
+}
+
 /// Reject list-arity scalar/enum model fields on any schema that declares a
 /// `datasource`. `TypeArity::List` is otherwise accepted by the parser and
 /// turned into real `{base}[]` Postgres DDL by `cratestack-migrate`, but

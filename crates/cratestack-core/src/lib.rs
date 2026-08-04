@@ -22,6 +22,7 @@ pub mod page;
 pub mod projection;
 pub mod route_naming;
 pub mod rpc;
+pub mod rust_keywords;
 pub mod schema;
 pub mod transport;
 pub mod validators;

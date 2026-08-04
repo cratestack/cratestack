@@ -8,6 +8,7 @@ use crate::relation_helpers::{parse_relation_attribute, validate_relation_scalar
 use crate::validate::fields::{
     CustomFieldSupport, validate_custom_field_attribute, validate_default_dbgenerated_no_args,
     validate_field_list_arity_support, validate_field_policy_attributes,
+    validate_field_reserved_identifier,
 };
 use crate::validate::model_attributes::{validate_model_attributes, validate_model_version_field};
 use crate::validate::pb::validate_pb_field_attribute;
@@ -56,6 +57,7 @@ pub(super) fn validate_models(
                 &model.name,
                 CustomFieldSupport::Rejected,
             )?;
+            validate_field_reserved_identifier(field, "model", &model.name)?;
             validate_type_ref(
                 type_names,
                 page_item_type_names,

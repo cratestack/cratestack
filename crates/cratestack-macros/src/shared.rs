@@ -30,8 +30,23 @@ pub(crate) fn schema_lit(value: &str) -> LitStr {
     LitStr::new(value, proc_macro2::Span::call_site())
 }
 
+/// Turns a schema-authored name (field, relation, etc.) into a Rust
+/// identifier, escaping it as a raw identifier (`r#type`) when it collides
+/// with a Rust keyword — see cratestack#398. `self`/`Self`/`super`/`crate`
+/// have no valid identifier spelling at all (not even raw); those are
+/// rejected earlier, at schema-parse time
+/// (`cratestack_parser::validate::fields`), so by the time codegen calls
+/// this function they should never appear here. If one slips through
+/// anyway, fall back to a plain (non-raw) identifier rather than panicking
+/// — `syn::Ident::new_raw` panics on exactly those four strings — so the
+/// failure surfaces as an ordinary `rustc` parse error instead of a macro
+/// panic.
 pub(crate) fn ident(value: &str) -> syn::Ident {
-    syn::Ident::new(value, proc_macro2::Span::call_site())
+    if cratestack_core::rust_keywords::is_raw_escapable_keyword(value) {
+        syn::Ident::new_raw(value, proc_macro2::Span::call_site())
+    } else {
+        syn::Ident::new(value, proc_macro2::Span::call_site())
+    }
 }
 
 pub(crate) fn doc_attrs(docs: &[String]) -> proc_macro2::TokenStream {
