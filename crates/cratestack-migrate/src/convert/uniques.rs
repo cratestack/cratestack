@@ -51,6 +51,8 @@ pub(super) fn composite_unique_indexes(
             table: table.to_owned(),
             columns: index_columns,
             unique: true,
+            using: None,
+            opclass: None,
         });
     }
     indexes

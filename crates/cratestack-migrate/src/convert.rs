@@ -9,6 +9,7 @@
 
 mod checks;
 mod fields;
+mod indexes;
 mod relations;
 mod renames;
 mod uniques;
@@ -23,6 +24,7 @@ use crate::naming::{check_name, column_name, index_name_unique, table_name};
 
 use checks::{check_kind_slug, collect_check_kinds, field_has_db_enforce};
 use fields::{field_has_unique, field_to_column, is_relation_field};
+use indexes::model_index_indexes;
 use relations::relation_foreign_key;
 use renames::{field_rename_from, model_rename_from};
 use uniques::composite_unique_indexes;
@@ -132,6 +134,8 @@ pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
                 table: table.clone(),
                 columns: vec![column.name.clone()],
                 unique: true,
+                using: None,
+                opclass: None,
             });
         }
         if field_has_db_enforce(field) {
@@ -159,6 +163,10 @@ pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
     // Model-level `@@unique([...])` composite constraints, projected
     // once the columns they reference are known (issue #262).
     indexes.extend(composite_unique_indexes(model, &table, &columns));
+    // Model-level `@@index([...], using: ..., opclass: "...")` general
+    // (non-unique) indexes, same timing requirement as above (issue
+    // #156).
+    indexes.extend(model_index_indexes(model, &table, &columns));
 
     TableProjection {
         name: table,

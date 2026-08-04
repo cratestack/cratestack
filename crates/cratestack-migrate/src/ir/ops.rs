@@ -35,6 +35,21 @@ pub struct AddIndex {
     pub table: String,
     pub columns: Vec<String>,
     pub unique: bool,
+    /// Index access method (Postgres's `USING <method>` clause), e.g.
+    /// `ivfflat`/`hnsw` for a pgvector approximate-nearest-neighbor
+    /// index — see `docs/design/extensions.md` §6 and issue #156.
+    /// `None` renders the exact same plain `CREATE [UNIQUE] INDEX ...
+    /// (columns)` DDL this crate always emitted, so every pre-existing
+    /// `@unique`/`@@unique([...])`-derived index is unaffected by this
+    /// field's addition — Postgres's own default access method
+    /// (`btree`) is left implicit rather than spelled out.
+    #[serde(default)]
+    pub using: Option<String>,
+    /// Operator class applied to every column in `columns` (e.g.
+    /// `vector_l2_ops`). Only meaningful alongside `using`; `None`
+    /// leaves each column's default operator class in place.
+    #[serde(default)]
+    pub opclass: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -24,6 +24,21 @@ pub fn index_name_unique(table: &str, columns: &[&str]) -> String {
     format!("{table}_{}_key", columns.join("_"))
 }
 
+/// `<table>_<column>_idx` — name for a general (non-unique)
+/// `@@index([...])` index (issue #156). When `using` names a non-default
+/// access method (e.g. `ivfflat`), it's folded into the name
+/// (`<table>_<column>_<using>_idx`) so a bare `@@index([field])` and a
+/// specialized `@@index([field], using: ivfflat, ...)` over the exact
+/// same column don't collide on the generated name — both are legitimate
+/// to declare side by side (e.g. a default btree index plus an ANN
+/// index).
+pub fn index_name(table: &str, columns: &[&str], using: Option<&str>) -> String {
+    match using {
+        Some(using) => format!("{table}_{}_{using}_idx", columns.join("_")),
+        None => format!("{table}_{}_idx", columns.join("_")),
+    }
+}
+
 /// `<table>_<column>_<validator>_check` — stable, predictable name
 /// for CHECK constraints emitted via `@db_enforce`. Predictability
 /// matters because hand-written `up.pre.sql` halves may reference
@@ -108,6 +123,26 @@ mod tests {
         assert_eq!(
             index_name_unique("applications", &["name", "tenant_id"]),
             "applications_name_tenant_id_key"
+        );
+    }
+
+    #[test]
+    fn index_name_is_stable_without_using() {
+        assert_eq!(
+            index_name("orders", &["customer_email"], None),
+            "orders_customer_email_idx"
+        );
+    }
+
+    #[test]
+    fn index_name_folds_in_using_to_avoid_collision() {
+        assert_eq!(
+            index_name("documents", &["embedding"], Some("ivfflat")),
+            "documents_embedding_ivfflat_idx"
+        );
+        assert_ne!(
+            index_name("documents", &["embedding"], None),
+            index_name("documents", &["embedding"], Some("ivfflat")),
         );
     }
 

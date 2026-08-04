@@ -7,6 +7,7 @@ use crate::diagnostics::{SchemaError, span_error};
 use super::composite_attributes::{
     validate_composite_id_attribute, validate_composite_unique_attribute,
 };
+use super::index_attribute::{SeenIndexAttributes, validate_index_attribute};
 
 pub(super) fn validate_model_attributes(
     model: &Model,
@@ -19,6 +20,9 @@ pub(super) fn validate_model_attributes(
     // repeated constraint (which would collide on the generated index
     // name) is caught rather than emitted twice.
     let mut unique_field_lists: Vec<Vec<String>> = Vec::new();
+    // Every `@@index([...])` (fields, using) pair seen so far — see
+    // `SeenIndexAttributes`'s doc for why `using` is part of the key.
+    let mut index_attributes: SeenIndexAttributes = Vec::new();
     for attribute in &model.attributes {
         if attribute.raw.starts_with("@@emit(") {
             if saw_emit_attribute {
@@ -94,6 +98,8 @@ pub(super) fn validate_model_attributes(
                 model_names,
                 &mut unique_field_lists,
             )?;
+        } else if attribute.raw == "@@index" || attribute.raw.starts_with("@@index(") {
+            validate_index_attribute(model, attribute, model_names, &mut index_attributes)?;
         }
     }
     Ok(())

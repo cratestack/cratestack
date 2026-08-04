@@ -6,6 +6,7 @@ mod columns;
 mod create;
 mod enums;
 mod extensions;
+mod indexes;
 mod relation_actions;
 mod relations;
 mod renames;

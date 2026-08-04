@@ -115,7 +115,10 @@ pub(super) fn validate_composite_unique_attribute(
 
 /// Resolves one listed field name to a scalar field on `model`, or
 /// fails with an error naming the attribute that referenced it.
-fn resolve_scalar_field<'model>(
+///
+/// `pub(super)` — also used by [`super::index_attribute`] to validate
+/// `@@index([...])`'s field list with the exact same rule.
+pub(super) fn resolve_scalar_field<'model>(
     model: &'model Model,
     attribute: &Attribute,
     model_names: &BTreeSet<&str>,

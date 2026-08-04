@@ -1,5 +1,6 @@
 mod composite_attributes;
 mod fields;
+mod index_attribute;
 mod mixins_types;
 mod model_attributes;
 mod models;

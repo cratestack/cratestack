@@ -60,7 +60,10 @@ pub(crate) fn parse_field_list(raw: &str, spec: &FieldListSpec) -> Result<Vec<St
     Ok(fields)
 }
 
-fn is_valid_field_name(value: &str) -> bool {
+/// Visible to sibling schema submodules (`pub(super)` = `crate::schema`)
+/// so [`super::index_attribute`] can validate its own field list with the
+/// exact same identifier rule, without duplicating it.
+pub(super) fn is_valid_field_name(value: &str) -> bool {
     let mut chars = value.chars();
     matches!(chars.next(), Some(first) if first.is_ascii_alphabetic() || first == '_')
         && chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')

@@ -60,6 +60,17 @@ pub(super) async fn introspect_indexes(
             table: table.to_owned(),
             columns,
             unique,
+            // Live introspection doesn't (yet) read `pg_am`/`pg_opclass`
+            // back out, so a re-introspected `ivfflat`/`hnsw` index
+            // always round-trips as `using: None, opclass: None` here.
+            // Harmless for the diff engine — indexes are matched by
+            // name only (`crate::diff::indexes`), never by these
+            // fields — but it does mean introspection can't yet tell an
+            // ANN index apart from a plain one. Tracked as a follow-up,
+            // not a regression: no code path produced these fields
+            // before issue #156 either.
+            using: None,
+            opclass: None,
         });
     }
     Ok(out)
