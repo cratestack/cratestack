@@ -16,8 +16,14 @@ pub fn decode_datetime(raw: &str) -> FromSqlResult<chrono::DateTime<chrono::Utc>
         .map_err(|error| FromSqlError::Other(Box::new(error)))
 }
 
+/// Inverse of [`format_json`](super::bind): parses the on-disk **plain**
+/// JSON shape back into a `Value` via [`Value::from_plain_json`]
+/// (cratestack#162, cratestack#395) — never `Value`'s own derived,
+/// externally-tagged `Deserialize` impl.
 pub fn decode_json(raw: &str) -> FromSqlResult<Value> {
-    serde_json::from_str(raw).map_err(|error| FromSqlError::Other(Box::new(error)))
+    let plain: serde_json::Value =
+        serde_json::from_str(raw).map_err(|error| FromSqlError::Other(Box::new(error)))?;
+    Ok(Value::from_plain_json(plain))
 }
 
 pub fn decode_decimal(raw: &str) -> FromSqlResult<cratestack_core::Decimal> {

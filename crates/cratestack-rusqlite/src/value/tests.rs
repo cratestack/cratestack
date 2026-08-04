@@ -99,6 +99,30 @@ fn round_trips_datetime_as_rfc3339_utc() {
     assert_eq!(round_trip(SqlValue::DateTime(dt)), SqlValue::DateTime(dt));
 }
 
+/// Regression test for cratestack#395 (follow-up to cratestack#162): the
+/// on-disk TEXT must hold the **plain, untagged** JSON shape, not
+/// `Value`'s own derived, externally-tagged `Serialize` representation
+/// (`{"Map": {"k": {"Int": 1}}}`). `round_trips_json` below only proves
+/// internal consistency — a buggy writer paired with a buggy reader still
+/// round-trips — so this test inspects the raw stored bytes directly.
+#[test]
+fn json_stored_as_plain_untagged_shape() {
+    let conn = Connection::open_in_memory().expect("open in-memory sqlite");
+    conn.execute_batch("CREATE TABLE t (x TEXT)").unwrap();
+    let mut map = std::collections::BTreeMap::new();
+    map.insert("k".to_string(), cratestack_core::Value::Int(1));
+    let v = SqlValue::Json(cratestack_core::Value::Map(map));
+    conn.execute("INSERT INTO t (x) VALUES (?1)", [SqlValueParam(&v)])
+        .unwrap();
+    let stored: String = conn
+        .query_row("SELECT x FROM t", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(
+        stored, r#"{"k":1}"#,
+        "expected plain untagged JSON shape, got tagged Value repr"
+    );
+}
+
 #[test]
 fn round_trips_json() {
     let mut map = std::collections::BTreeMap::new();

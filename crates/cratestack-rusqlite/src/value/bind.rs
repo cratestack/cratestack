@@ -56,8 +56,11 @@ fn format_datetime(value: &chrono::DateTime<chrono::Utc>) -> String {
     value.to_rfc3339_opts(chrono::SecondsFormat::Micros, true)
 }
 
+/// Serializes the **plain, untagged** JSON shape (cratestack#162,
+/// cratestack#395) — never `Value`'s own derived, externally-tagged
+/// `Serialize` impl, which would store `{"Map": {}}` instead of `{}`.
 fn format_json(value: &Value) -> String {
-    serde_json::to_string(value).unwrap_or_else(|_| "null".to_string())
+    serde_json::to_string(&value.to_plain_json()).unwrap_or_else(|_| "null".to_string())
 }
 
 fn format_decimal(value: &cratestack_core::Decimal) -> String {

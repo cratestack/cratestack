@@ -74,6 +74,48 @@ fn json_field_round_trips_through_generated_decoder() {
 }
 
 #[test]
+fn json_field_is_stored_as_plain_untagged_json_on_disk() {
+    // Regression test for cratestack#395 (follow-up to cratestack#162 /
+    // PR #391): the *stored bytes* must be plain JSON (`{"currency":
+    // "XAF","amount":1500}`), not `Value`'s own derived, externally-tagged
+    // representation (`{"Map": {"currency": {"String": "XAF"}, ...}}`).
+    // The round-trip tests above pass even under the bug, since a buggy
+    // writer paired with a buggy reader is internally consistent — this
+    // test inspects the raw on-disk TEXT directly, the same way #162's
+    // Postgres-side regression test did.
+    let runtime = setup();
+    let delegate = ModelDelegate::<Probe, i64>::new(&runtime, &PROBE_MODEL);
+
+    delegate
+        .create(cratestack_schema::CreateProbeInput {
+            id: 4,
+            payload: cratestack::Json(payload()),
+            note: None,
+        })
+        .run()
+        .expect("create succeeds");
+
+    let raw: String = runtime
+        .with_connection(|conn| {
+            conn.query_row("SELECT payload FROM probes WHERE id = 4", [], |row| {
+                row.get(0)
+            })
+            .map_err(Into::into)
+        })
+        .expect("raw select succeeds");
+
+    assert!(
+        !raw.contains("\"Map\"") && !raw.contains("\"String\"") && !raw.contains("\"Int\""),
+        "Json column stored the externally-tagged Value shape instead of plain JSON: {raw}"
+    );
+    let parsed: serde_json::Value = serde_json::from_str(&raw).expect("valid JSON");
+    assert_eq!(
+        parsed,
+        serde_json::json!({"currency": "XAF", "amount": 1500})
+    );
+}
+
+#[test]
 fn optional_json_field_round_trips_null() {
     let runtime = setup();
     let delegate = ModelDelegate::<Probe, i64>::new(&runtime, &PROBE_MODEL);
