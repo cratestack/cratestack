@@ -76,8 +76,8 @@ pub use envelope::{
 };
 pub use error::{CoolError, CoolErrorResponse, DbErrorInfo, parse_cuid};
 pub use events::{
-    CoolEventBus, CoolEventEnvelope, CoolEventFuture, ModelEvent, ModelEventKind, event_topic,
-    parse_emit_attribute,
+    CoolEventBus, CoolEventEnvelope, CoolEventFuture, ModelEvent, ModelEventKind,
+    SubscriptionGuard, SubscriptionHandle, event_topic, parse_emit_attribute,
 };
 pub use find_many::FieldFilterInput;
 pub use json::Json;

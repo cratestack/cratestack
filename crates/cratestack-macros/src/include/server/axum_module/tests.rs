@@ -47,6 +47,7 @@ fn empty_collected() -> ServerCollected {
         op_descriptor_entries: Vec::new(),
         route_transport_entries: Vec::new(),
         rpc_dispatch_arms: Vec::new(),
+        rpc_subscribe_dispatch_arms: Vec::new(),
         generated_client_module: proc_macro2::TokenStream::new(),
         generated_event_module: proc_macro2::TokenStream::new(),
     }

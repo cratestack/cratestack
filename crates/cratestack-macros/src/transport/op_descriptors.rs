@@ -80,6 +80,41 @@ pub(crate) fn generate_model_op_descriptors(
     ]
 }
 
+/// `model.<X>.subscribe` op descriptor — only for models declaring
+/// `@@subscribe` (the parser guarantees such a model also declares
+/// `@@emit(...)`, and only under `transport rpc`, see
+/// `cratestack-parser::validate::model_attributes`). Mirrors the shape
+/// of the CRUD descriptors above but with `OpKind::Subscription`, no
+/// input, and an output type naming the streamed envelope rather than
+/// the bare model — see `docs/design/rpc-transport.md` §3.4a.
+pub(crate) fn generate_model_subscribe_op_descriptor(
+    model: &Model,
+    auth_required: bool,
+) -> Option<proc_macro2::TokenStream> {
+    if !model
+        .attributes
+        .iter()
+        .any(|attribute| attribute.raw == "@@subscribe")
+    {
+        return None;
+    }
+    let model_name = model.name.as_str();
+    let op_id = format!("model.{model_name}.subscribe");
+    let output_ty = format!("ModelEvent<{model_name}>");
+    Some(op_descriptor(
+        &op_id,
+        quote! { ::cratestack::OpKind::Subscription },
+        "",
+        &output_ty,
+        // No idempotency key concept applies to a GET stream; reads are
+        // inherently safe to reconnect, mirroring the CRUD `get`/`list`
+        // descriptors above.
+        true,
+        true,
+        auth_required,
+    ))
+}
+
 pub(crate) fn generate_procedure_op_descriptor(
     procedure: &Procedure,
     auth_required: bool,

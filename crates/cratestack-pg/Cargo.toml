@@ -167,6 +167,13 @@ cratestack-codec-cbor.workspace = true
 cratestack-codec-json.workspace = true
 cratestack-migrate.workspace = true
 minicbor-serde.workspace = true
+# Real HTTP/1.1 client for the `@@subscribe` SSE end-to-end test
+# (`tests/rpc_subscribe_sse.rs`, cratestack#390) — handles
+# `Transfer-Encoding: chunked` framing (axum streams SSE bodies without a
+# known `Content-Length`) so the test doesn't have to hand-roll chunked
+# decoding on top of a raw `TcpStream`. Already a workspace dependency
+# (`examples/rpc-streaming` uses it the same way for `@stream` procedures).
+reqwest.workspace = true
 testcontainers.workspace = true
 testcontainers-modules.workspace = true
 tokio.workspace = true

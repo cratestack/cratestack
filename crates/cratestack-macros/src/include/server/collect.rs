@@ -18,6 +18,7 @@ use crate::event::generate_event_module;
 use crate::shared::schema_lit;
 use crate::transport::{
     generate_model_op_descriptors, generate_model_rpc_dispatch_arms,
+    generate_model_subscribe_dispatch_arm, generate_model_subscribe_op_descriptor,
     generate_procedure_op_descriptor, generate_procedure_rpc_dispatch_arm,
 };
 use crate::types::{
@@ -66,6 +67,7 @@ pub(super) struct ServerCollected {
     pub(super) op_descriptor_entries: Vec<Ts>,
     pub(super) route_transport_entries: Vec<Ts>,
     pub(super) rpc_dispatch_arms: Vec<Ts>,
+    pub(super) rpc_subscribe_dispatch_arms: Vec<Ts>,
     pub(super) generated_client_module: Ts,
     pub(super) generated_event_module: Ts,
 }
@@ -140,6 +142,11 @@ pub(super) fn collect_server_schema(
         }
         for model in &schema.models {
             ops.extend(generate_model_op_descriptors(model, auth_required_default));
+            if let Some(subscribe_op) =
+                generate_model_subscribe_op_descriptor(model, auth_required_default)
+            {
+                ops.push(subscribe_op);
+            }
         }
         (ops, Vec::new())
     } else {
@@ -156,6 +163,24 @@ pub(super) fn collect_server_schema(
         }
         for model in &schema.models {
             arms.extend(generate_model_rpc_dispatch_arms(model));
+        }
+        arms
+    } else {
+        Vec::new()
+    };
+
+    // `GET /rpc/subscribe/{op_id}` (§3.4a) dispatch arms — one per
+    // `@@subscribe`d model, empty for schemas with none (or that aren't
+    // `transport rpc` at all; the parser already rejects `@@subscribe`
+    // outside `transport rpc`, so this is just defense in depth).
+    let rpc_subscribe_dispatch_arms: Vec<Ts> = if is_rpc {
+        let mut arms = Vec::new();
+        for model in &schema.models {
+            if let Some(arm) = generate_model_subscribe_dispatch_arm(model)
+                .map_err(|error| compile_error(schema_path, error))?
+            {
+                arms.push(arm);
+            }
         }
         arms
     } else {
@@ -231,6 +256,7 @@ pub(super) fn collect_server_schema(
         op_descriptor_entries,
         route_transport_entries,
         rpc_dispatch_arms,
+        rpc_subscribe_dispatch_arms,
         generated_client_module,
         generated_event_module,
     })

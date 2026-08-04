@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use cratestack_core::{Model, parse_emit_attribute};
+use cratestack_core::{Model, TransportStyle, parse_emit_attribute};
 
 use crate::diagnostics::{SchemaError, span_error};
 
@@ -12,10 +12,12 @@ use super::index_attribute::{SeenIndexAttributes, validate_index_attribute};
 pub(super) fn validate_model_attributes(
     model: &Model,
     model_names: &BTreeSet<&str>,
+    transport: TransportStyle,
 ) -> Result<(), SchemaError> {
     let mut saw_emit_attribute = false;
     let mut saw_paged_attribute = false;
     let mut saw_id_attribute = false;
+    let mut subscribe_attribute: Option<&cratestack_core::Attribute> = None;
     // Every `@@unique([...])` list seen so far on this model, so a
     // repeated constraint (which would collide on the generated index
     // name) is caught rather than emitted twice.
@@ -77,6 +79,27 @@ pub(super) fn validate_model_attributes(
                 ),
                 attribute.span,
             ));
+        } else if attribute.raw == "@@subscribe" {
+            if !matches!(transport, TransportStyle::Rpc) {
+                return Err(span_error(
+                    format!(
+                        "model `{}` declares `@@subscribe`, which requires the schema to \
+                         declare `transport rpc` — subscriptions are only dispatched via \
+                         `GET /rpc/subscribe/{{op_id}}` (docs/design/rpc-transport.md §3.4a)",
+                        model.name,
+                    ),
+                    attribute.span,
+                ));
+            }
+            subscribe_attribute = Some(attribute);
+        } else if attribute.raw.starts_with("@@subscribe(") {
+            return Err(span_error(
+                format!(
+                    "model `{}` `@@subscribe` does not take arguments; use bare `@@subscribe`",
+                    model.name,
+                ),
+                attribute.span,
+            ));
         } else if attribute.raw.starts_with("@@retain(") {
             validate_retain_attribute(model, attribute)?;
         } else if attribute.raw.starts_with("@@id(") {
@@ -102,6 +125,25 @@ pub(super) fn validate_model_attributes(
             validate_index_attribute(model, attribute, model_names, &mut index_attributes)?;
         }
     }
+
+    // A subscription with nothing to subscribe to is a footgun, not a
+    // valid empty state: without `@@emit(...)` no model event is ever
+    // enqueued, so `GET /rpc/subscribe/model.<X>.subscribe` would
+    // silently connect and never deliver anything, forever. Fail at
+    // parse time instead — see docs/design/rpc-transport.md §3.4a.
+    if let Some(subscribe_attribute) = subscribe_attribute
+        && !saw_emit_attribute
+    {
+        return Err(span_error(
+            format!(
+                "model `{}` declares `@@subscribe` but no `@@emit(...)`; a subscription needs \
+                 at least one emitted operation to stream (`@@emit(created, updated, deleted)`)",
+                model.name,
+            ),
+            subscribe_attribute.span,
+        ));
+    }
+
     Ok(())
 }
 

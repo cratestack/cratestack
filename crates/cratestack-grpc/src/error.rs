@@ -10,9 +10,11 @@ use tonic::{Code, Status};
 
 /// Maps a gRPC-style rpc code string (`cratestack_core::rpc`'s vocabulary —
 /// `not_found`, `invalid_argument`, `permission_denied`, `unauthenticated`,
-/// `conflict`, `failed_precondition`, `internal`, plus the two the RPC
-/// binding never emits today but this table still covers defensively:
-/// `unavailable`, `deadline_exceeded`, `canceled`) to `tonic::Code`.
+/// `conflict`, `failed_precondition`, `internal`, `unavailable` (emitted by
+/// `@@subscribe` SSE backpressure overflow — `CoolError::Unavailable`,
+/// cratestack#390), plus `deadline_exceeded`/`canceled`, which the RPC
+/// binding still doesn't emit today but this table covers defensively) to
+/// `tonic::Code`.
 ///
 /// `"conflict"` has no exact gRPC canonical equivalent. gRPC offers two
 /// close candidates: `AlreadyExists` (the resource being created already
@@ -91,6 +93,7 @@ mod tests {
             ),
             (CoolError::Database("x".into()), Code::Internal),
             (CoolError::Internal("x".into()), Code::Internal),
+            (CoolError::Unavailable("x".into()), Code::Unavailable),
         ];
 
         for (error, expected) in cases {

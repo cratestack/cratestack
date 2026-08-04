@@ -23,6 +23,15 @@ pub const RPC_UNARY_PATH: &str = "/rpc/{op_id}";
 /// of [`RpcRequest`] frames.
 pub const RPC_BATCH_PATH: &str = "/rpc/batch";
 
+/// Mount path for `@@subscribe` SSE subscriptions
+/// (`docs/design/rpc-transport.md` §3.4a, cratestack#390). The trailing
+/// segment is the percent-decoded op id, e.g.
+/// `GET /rpc/subscribe/model.User.subscribe`. Unlike [`RPC_UNARY_PATH`]
+/// this is `GET`-only and carries no request body — auth is header-based
+/// (same as every other HTTP RPC binding), not an upgrade-time HMAC like
+/// the WS path (§3.4).
+pub const RPC_SUBSCRIBE_PATH: &str = "/rpc/subscribe/{op_id}";
+
 /// CBOR tag number reserved for the mid-stream error sentinel described
 /// in `docs/design/rpc-transport.md` §3.3: when a genuinely incremental
 /// `application/cbor-seq` sequence response (a `@stream` procedure, see
@@ -141,6 +150,7 @@ pub const fn rpc_code(error: &CoolError) -> &'static str {
         CoolError::Conflict(_) => "conflict",
         CoolError::PreconditionFailed(_) => "failed_precondition",
         CoolError::Database(_) | CoolError::DatabaseTyped(_) | CoolError::Internal(_) => "internal",
+        CoolError::Unavailable(_) => "unavailable",
     }
 }
 
@@ -160,6 +170,7 @@ pub fn cool_error_code_to_rpc_code(code: &str) -> &'static str {
         "CONFLICT" => "conflict",
         "PRECONDITION_FAILED" => "failed_precondition",
         "DATABASE_ERROR" | "INTERNAL_ERROR" => "internal",
+        "UNAVAILABLE" => "unavailable",
         _ => "internal",
     }
 }

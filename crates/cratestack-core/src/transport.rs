@@ -66,10 +66,15 @@ pub enum OpKind {
     /// One input, a finite sequence of outputs. Used for `@stream`
     /// procedures and (future) streamed `list`. Terminates server-side.
     Sequence,
-    /// One input, an open-ended sequence of outputs ended only by
-    /// client cancellation or disconnect. WebSocket-only — see §3.4
-    /// of the design doc. Fire-and-forget: no cursors, no replay
-    /// buffer.
+    /// No input, an open-ended sequence of outputs ended only by
+    /// backpressure overflow or client disconnect. Emitted for
+    /// `model.<X>.subscribe` when a model declares `@@subscribe`.
+    /// Dispatched today via SSE (`GET /rpc/subscribe/{op_id}`, design
+    /// doc §3.4a) — the recommended first binding per issue #183's
+    /// spike decision; WebSocket (§3.4) remains speced but unbuilt,
+    /// gated on a real bidirectional/high-multiplexing need. Both
+    /// bindings share the same fire-and-forget semantics: no cursors,
+    /// no replay buffer.
     Subscription,
 }
 

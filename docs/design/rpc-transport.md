@@ -14,7 +14,7 @@ Scope: schemas declaring `transport rpc` in `.cstack`.
 | Streaming wire format for `Sequence`-kind ops via `Accept: application/cbor-seq` | shipped (content negotiation + framing) | #24, corrected #281 |
 | `@stream` schema directive + stream-shaped `ProcedureRegistry` trait method | shipped | #282 |
 | Genuinely incremental delivery for `@stream` ops (`Body::from_stream`, mid-stream error sentinel, client-disconnect cancellation) | shipped | #283 |
-| SSE subscription binding (§3.4a, `@@subscribe` schema directive) — recommended first path | **pending**, not gated on driving-case | #183 |
+| SSE subscription binding (§3.4a, `@@subscribe` schema directive) — recommended first path | shipped | #183, #390 |
 | WebSocket binding + subscriptions (§3.4) | **pending**, gated on a real bidirectional/multiplexing case | — |
 | Batch parallelization | deferred (no observed contention) | — |
 
@@ -52,9 +52,25 @@ reusing the buffered encoder — arrays can't be flushed incrementally the
 same way, and this section's incremental-delivery guarantee is scoped to
 `application/cbor-seq`, matching §3.3.
 
-Subscriptions are the only HTTP-surface gap left, and unlike streaming
-the use cases are not yet concrete enough to motivate the schema-syntax
-and runtime work — see §6.
+Subscriptions now ship over SSE (`@@subscribe`, §3.4a, cratestack#390):
+`GET /rpc/subscribe/{op_id}` streams `ModelEvent<T>` items over the
+existing `CoolEventBus`, reusing the `@stream` encoder's `Stream ->
+axum::body::Body::from_stream` shape with SSE framing instead of
+cbor-seq. Delivery rides the same outbox-drain mechanism `@@emit` has
+always used (`crates/cratestack-sqlx/src/descriptor.rs::
+drain_event_outbox`, invoked automatically once a mutating op's
+transaction commits) — no new delivery pipeline. Backpressure is a
+bounded per-subscription channel (`crates/cratestack-axum/src/rpc/
+subscription_bridge.rs`); on overflow the channel closes, which the
+encoder (`crates/cratestack-axum/src/rpc/sse.rs`) turns into a terminal
+`Error{code:"unavailable"}` SSE event, ending the stream — the client
+decides whether to resubscribe (fire-and-forget, no cursors, matching
+§3.4). Cleanup on disconnect or overflow uses a new
+`cratestack_core::SubscriptionGuard`/`CoolEventBus::unsubscribe`, so a
+long-running server doesn't accumulate one permanently-registered
+handler per historical connection. The WS binding (§3.4) remains the
+only HTTP-surface gap, still gated on a concrete bidirectional/
+multiplexing case — see §6.
 
 The REST binding is and remains the default. RPC is an alternative *generation
 style* — a schema picks one or the other via the `transport` directive, and
@@ -330,11 +346,24 @@ no upgrade handshake to sign). Each `StreamItem`/`Error` from §2.3 becomes
 one SSE event, reusing the encoder path already proven by streaming
 (§3.3). No new frame types, no new envelope.
 
-Implementation is tracked as a scoped follow-up (see the linked issue in
-#183's closing comment) — not part of this decision record. §3.4's WS
-design stays written down as-is for whenever a real bidirectional or
-high-multiplexing need materializes; it isn't wrong, it's just not what
-the case in front of us needs today.
+Implemented in cratestack#390: `@@subscribe` (a bare model-level
+attribute, mirroring `@@audit`/`@@soft_delete`; requires `@@emit(...)`
+on the same model and `transport rpc` on the schema — enforced at parse
+time) emits the `OpKind::Subscription` `model.<X>.subscribe` op
+descriptor, and `GET /rpc/subscribe/{op_id}` dispatches it — header-
+based auth via the existing `AuthProvider`, then one `CoolEventBus`
+registration per `@@emit`ted operation, bridged through a bounded
+channel into the SSE encoder. §3.4's WS design stays written down as-is
+for whenever a real bidirectional or high-multiplexing need
+materializes; it isn't wrong, it's just not what the case in front of
+us needs today.
+
+Row-level `@@allow` policy is **not** replayed against streamed
+events — that machinery lives in the SQL query builders and has no
+analogue for an in-memory outbox-sourced event. A subscription client
+only needs to authenticate; it does not get per-row filtering the way
+`list`/`get` do. This is a deliberate, documented scope limit for the
+first cut, not an oversight — revisit if a concrete case needs it.
 
 ## 4. Cross-binding concerns
 
@@ -413,47 +442,66 @@ appears.
 
 §3.4 specifies the wire shape for WebSocket subscriptions; §3.4a (added by
 issue #183's spike decision) specifies SSE as the recommended first path.
-Neither is implemented yet. Unlike streaming — where list-return
-procedures had a concrete shape (paginated reads, audit feeds, anything
-naturally producing a finite sequence) and the binding fell out of the
-existing axum sequence encoder — subscription use cases haven't
-crystallized in the CrateStack consumer base yet.
+**SSE shipped in cratestack#390.** WS remains unimplemented. Unlike
+streaming — where list-return procedures had a concrete shape (paginated
+reads, audit feeds, anything naturally producing a finite sequence) and
+the binding fell out of the existing axum sequence encoder —
+subscription use cases haven't crystallized in the CrateStack consumer
+base yet; SSE was built anyway per #183's "implementation cost is low
+enough" reasoning below, not because a driving case appeared.
 
-Unlike the pre-#183 state of this section, the *SSE* path is **not** gated
-on a driving case materializing first — it reuses the already-shipped
-`application/cbor-seq`/SSE encoder path from §3.3 with no new frame types,
-so the implementation cost is genuinely small (see the "what's missing"
-list below, which is now mostly schema-directive + bus-integration work,
-not new transport plumbing). The full WS frame loop (§3.4) stays gated on
-a real driving case for bidirectional/high-multiplexing needs, per §3.4a.
+What shipped, concretely:
 
-Concretely, what's missing:
+- **Schema directive.** `@@subscribe` (bare, model-level; mirrors
+  `@@audit`/`@@soft_delete`) parses in `cratestack-parser::validate::
+  model_attributes`, requiring `@@emit(...)` on the same model and
+  `transport rpc` on the schema. Emits the `OpKind::Subscription`
+  `model.<X>.subscribe` op descriptor
+  (`crates/cratestack-macros/src/transport/op_descriptors.rs`).
+- **SSE dispatch.** `GET /rpc/subscribe/{op_id}` is wired up
+  (`crates/cratestack-macros/src/include/server/rpc_module/subscribe.rs`
+  generates the per-model dispatch arm;
+  `crates/cratestack-axum/src/rpc/sse.rs` is the encoder). Auth is
+  header-based via the existing `AuthProvider`, matching every other
+  HTTP RPC binding — no upgrade-time HMAC.
+- **Bus integration.** `CoolEventBus::subscribe` now returns a
+  `SubscriptionHandle`, removable via the new `CoolEventBus::
+  unsubscribe`; `cratestack_core::SubscriptionGuard` unsubscribes every
+  tracked handle on drop, whichever way the SSE stream ends (overflow or
+  client disconnect). Per-client fan-out and the bounded send buffer
+  live in `crates/cratestack-axum/src/rpc/subscription_bridge.rs` —
+  overflow closes the channel, which the encoder turns into a terminal
+  `Error{code:"unavailable"}` SSE event. Delivery itself reuses the
+  outbox-drain path `@@emit` already had (no new pipeline): a mutating
+  op's transaction commit already calls `drain_event_outbox()`, which
+  now also feeds any live SSE subscribers registered on that topic.
 
-- **Schema directive.** `@@subscribe` on models doesn't parse today;
-  `OpKind::Subscription` exists in `cratestack-core` but no `.cstack`
-  syntax emits it. Needed by both the SSE and WS paths.
-- **SSE dispatch.** `GET /rpc/subscribe/{op_id}` (§3.4a) isn't wired up —
-  this is the recommended first implementation target now.
+Still missing:
+
 - **WS frame loop.** The `Request`/`Response`/`StreamItem`/`StreamEnd`/
-  `Cancel`/`Error` variants in §2.3 are not wired through to the
-  axum WS extractor. Deferred until a concrete bidirectional/multiplexing
-  case appears, per §3.4a.
-- **Bus integration.** `CoolEventBus` already exists in
-  `cratestack-core` and is what a subscription would ride on, but the
-  per-client fan-out + bounded-buffer behavior described in §3.4 needs
-  to be written. Needed by both paths.
+  `Cancel`/`Error` variants in §2.3 are not wired through to the axum WS
+  extractor. Deferred until a concrete bidirectional/multiplexing case
+  appears, per §3.4a.
+- **Row-level policy on streamed events.** `@@allow` is not replayed
+  against `ModelEvent<T>` items — a subscriber only needs to
+  authenticate, it does not get per-row filtering. Documented scope
+  limit, not a gap in the SSE path itself; revisit if a concrete case
+  needs it.
+- **Client-generated subscription helpers** (Rust/TypeScript/Dart). Out
+  of scope for #390 by design — server-side dispatch ships first, per
+  this repo's established pattern (e.g. #171 before #209/#210 for gRPC).
 
 This "no concrete consumer yet" gate still fully applies to the **WS**
 path (§3.4) — server-to-server consumers in CrateStack's audit/event
 landscape today don't need subscriptions, they poll or consume from the
 audit sink, and building the bidirectional/multiplexing machinery WS
-offers without a concrete case for it would be speculative. It does
+offers without a concrete case for it would be speculative. It did
 **not** apply the same way to the **SSE** path (§3.4a): the
-implementation cost is low enough (reusing shipped machinery, no new
-frame types) that issue #183 recommends scoping and building it as a
-follow-up regardless, rather than waiting on the same trigger WS is gated
-on. External clients (mobile apps, browser SPAs) remain the natural fit
-for either path, whenever one materializes.
+implementation cost was low enough (reusing shipped machinery, no new
+frame types) that issue #183 recommended scoping and building it as a
+follow-up regardless, rather than waiting on the same trigger WS is
+gated on. External clients (mobile apps, browser SPAs) remain the
+natural fit for either path, whenever one materializes.
 
 ## 7. Compatibility
 

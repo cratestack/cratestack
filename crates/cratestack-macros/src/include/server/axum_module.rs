@@ -24,7 +24,11 @@ pub(super) fn build_axum_module(c: &ServerCollected, db: ServerDb) -> proc_macro
     let model_axum_handler_defs = &c.model_axum_handler_defs;
     let procedure_axum_routes = &c.procedure_axum_routes;
     let axum_shared_support = generate_axum_shared_support();
-    let rpc_module = super::rpc_module::build_rpc_module(c.is_rpc, &c.rpc_dispatch_arms);
+    let rpc_module = super::rpc_module::build_rpc_module(
+        c.is_rpc,
+        &c.rpc_dispatch_arms,
+        &c.rpc_subscribe_dispatch_arms,
+    );
     let dtos = super::axum_dtos::build_axum_dtos();
 
     // `ModelRouterState`/`model_router` (cratestack#328): emitted only

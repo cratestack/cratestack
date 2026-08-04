@@ -48,6 +48,16 @@ pub(crate) fn generate_event_module(models: &[Model]) -> Result<proc_macro2::Tok
                     self.runtime.drain_event_outbox().await
                 }
 
+                /// Internal-only: an owned handle onto the underlying
+                /// `CoolEventBus`, for generated code (`@@subscribe` SSE
+                /// dispatch, cratestack#390) that needs to build a
+                /// `SubscriptionGuard` outliving this borrowed
+                /// `Subscriptions<'a>`. Not part of the public API.
+                #[doc(hidden)]
+                pub fn __event_bus(&self) -> ::cratestack::CoolEventBus {
+                    self.runtime.events_bus()
+                }
+
                 #(#methods)*
             }
         }
@@ -107,7 +117,7 @@ fn generate_model_event_methods(model: &Model) -> Result<proc_macro2::TokenStrea
 
             quote! {
                 #docs
-                pub fn #method_ident<F, Fut>(&self, handler: F)
+                pub fn #method_ident<F, Fut>(&self, handler: F) -> ::cratestack::SubscriptionHandle
                 where
                     F: Fn(#alias_ident) -> Fut + Send + Sync + 'static,
                     Fut: ::core::future::Future<Output = Result<(), ::cratestack::CoolError>>
@@ -121,7 +131,7 @@ fn generate_model_event_methods(model: &Model) -> Result<proc_macro2::TokenStrea
                             let typed = <::cratestack::ModelEvent<super::models::#model_ident> as ::core::convert::TryFrom<::cratestack::CoolEventEnvelope>>::try_from(event)?;
                             (handler)(typed).await
                         })
-                    });
+                    })
                 }
             }
         })

@@ -21,6 +21,12 @@ model Widget {
   @@allow("create", auth() != null)
   @@allow("update", auth() != null)
   @@allow("delete", auth() != null)
+  // `@@subscribe` (cratestack#390): emits `model.Widget.subscribe`
+  // (`OpKind::Subscription`), dispatched over SSE at
+  // `GET /rpc/subscribe/model.Widget.subscribe`. Requires `@@emit(...)`
+  // — a subscription with nothing emitted would never deliver anything.
+  @@emit(created, updated, deleted)
+  @@subscribe
 }
 
 // `@@paged` model, RPC transport — model.PagedItem.list must go

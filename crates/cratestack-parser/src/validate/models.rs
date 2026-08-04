@@ -82,7 +82,7 @@ pub(super) fn validate_models(
             validate_field_relation(schema, model, field, &model_names)?;
         }
 
-        validate_model_attributes(model, &model_names)?;
+        validate_model_attributes(model, &model_names, schema.transport)?;
 
         if !has_primary_key {
             has_primary_key = model.attributes.iter().any(|a| a.raw.starts_with("@@id("));

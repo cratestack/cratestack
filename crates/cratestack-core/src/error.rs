@@ -81,6 +81,20 @@ pub enum CoolError {
     DatabaseTyped(DbErrorInfo),
     #[error("internal: {0}")]
     Internal(String),
+    /// 503 — the operation cannot proceed right now, but a retry (from
+    /// scratch, not a resume) may succeed later. `String` is the
+    /// public, safe-to-expose message, mirroring the other 4xx-style
+    /// variants above.
+    ///
+    /// Introduced for `@@subscribe` SSE backpressure overflow
+    /// (`docs/design/rpc-transport.md` §3.4/§3.4a: "bounded
+    /// per-subscription send buffer; on overflow, emit
+    /// `Error{code:"unavailable"}`") — the first caller of the RPC
+    /// binding's already-reserved `"unavailable"` code
+    /// (`cratestack-grpc`'s own doc comment already anticipated this:
+    /// "the two the RPC binding never emits today").
+    #[error("unavailable: {0}")]
+    Unavailable(String),
 }
 
 impl CoolError {
@@ -98,6 +112,7 @@ impl CoolError {
             Self::Codec(_) => "CODEC_ERROR",
             Self::Database(_) | Self::DatabaseTyped(_) => "DATABASE_ERROR",
             Self::Internal(_) => "INTERNAL_ERROR",
+            Self::Unavailable(_) => "UNAVAILABLE",
         }
     }
 
@@ -115,6 +130,7 @@ impl CoolError {
             Self::Codec(_) => StatusCode::BAD_REQUEST,
             Self::Database(_) | Self::DatabaseTyped(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
         }
     }
 
@@ -133,7 +149,8 @@ impl CoolError {
             | Self::NotFound(s)
             | Self::Conflict(s)
             | Self::Validation(s)
-            | Self::PreconditionFailed(s) => Cow::Borrowed(s.as_str()),
+            | Self::PreconditionFailed(s)
+            | Self::Unavailable(s) => Cow::Borrowed(s.as_str()),
             Self::Codec(_) => Cow::Borrowed("invalid request payload"),
             Self::Database(_) | Self::DatabaseTyped(_) => Cow::Borrowed("internal error"),
             Self::Internal(_) => Cow::Borrowed("internal error"),
@@ -157,7 +174,8 @@ impl CoolError {
             | Self::PreconditionFailed(s)
             | Self::Codec(s)
             | Self::Database(s)
-            | Self::Internal(s) => {
+            | Self::Internal(s)
+            | Self::Unavailable(s) => {
                 if s.is_empty() {
                     None
                 } else {

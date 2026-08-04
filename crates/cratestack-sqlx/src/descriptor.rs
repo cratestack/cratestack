@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicBool;
 use crate::sqlx;
 
 use cratestack_core::{
-    CoolError, CoolEventBus, CoolEventEnvelope, CoolEventFuture, ModelEventKind,
+    CoolError, CoolEventBus, CoolEventEnvelope, CoolEventFuture, ModelEventKind, SubscriptionHandle,
 };
 
 use crate::error::cool_error_from_sqlx;
@@ -40,11 +40,25 @@ impl SqlxRuntime {
     }
 
     #[doc(hidden)]
-    pub fn subscribe<F>(&self, model: &'static str, operation: ModelEventKind, handler: F)
+    pub fn subscribe<F>(
+        &self,
+        model: &'static str,
+        operation: ModelEventKind,
+        handler: F,
+    ) -> SubscriptionHandle
     where
         F: Fn(CoolEventEnvelope) -> CoolEventFuture + Send + Sync + 'static,
     {
-        self.events.subscribe(model, operation, handler);
+        self.events.subscribe(model, operation, handler)
+    }
+
+    /// An owned, cheaply-cloneable handle onto the underlying
+    /// `CoolEventBus` — needed by callers (e.g. `@@subscribe` SSE
+    /// dispatch, cratestack#390) that outlive the `&SqlxRuntime` borrow
+    /// `subscribe`/`unsubscribe` would otherwise require.
+    #[doc(hidden)]
+    pub fn events_bus(&self) -> CoolEventBus {
+        self.events.clone()
     }
 
     #[doc(hidden)]

@@ -232,4 +232,15 @@ pub mod __private {
     pub use cratestack_axum::rpc::{
         bridge_grpc_response, decode_rpc_body, encode_rpc_value, response_to_frame,
     };
+
+    /// `@@subscribe` SSE dispatch (`GET /rpc/subscribe/{op_id}`, design
+    /// doc §3.4a, cratestack#390): the bounded-channel bridge from a
+    /// `CoolEventBus` push callback to a `Stream`, and the encoder that
+    /// turns that `Stream` into a `text/event-stream` response. Not
+    /// part of the public API surface for the same reason as the rest
+    /// of this module.
+    pub use cratestack_axum::rpc::{
+        encode_model_event_sse_response, guarded_receiver_stream, subscription_channel,
+        validate_subscribe_accept_header,
+    };
 }
