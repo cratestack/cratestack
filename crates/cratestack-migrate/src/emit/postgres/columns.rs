@@ -146,11 +146,36 @@ fn render_type(ty: &ColumnType, arity: ColumnArity) -> String {
         // don't silently resolve to different identifiers under
         // Postgres's unquoted-lowercase rule.
         ColumnType::UserDefined(name) => quote_ident(&naming::column_name(name)),
+        ColumnType::Vector(dimension) => render_vector_type(*dimension),
     };
     match arity {
         ColumnArity::List => format!("{base}[]"),
         _ => base,
     }
+}
+
+/// Renders `Vector(n)` as Postgres's parametric `vector(n)` column
+/// type (the `pgvector` extension — see `docs/design/extensions.md`
+/// §6). Gated behind the `pgvector` Cargo feature: reaching this with
+/// the feature disabled means an `Op::EnsureExtension`/`ColumnType::
+/// Vector` was constructed without going through the parser's own
+/// gate (`extension pgvector { }` must be declared for `Vector(n)` to
+/// parse at all), so a hard panic is the right failure mode rather
+/// than silently emitting a `vector(n)` column type this build never
+/// opted into supporting.
+#[cfg(feature = "pgvector")]
+fn render_vector_type(dimension: u32) -> String {
+    format!("vector({dimension})")
+}
+
+#[cfg(not(feature = "pgvector"))]
+fn render_vector_type(dimension: u32) -> String {
+    unreachable!(
+        "ColumnType::Vector({dimension}) reached the Postgres emitter without the \
+         `pgvector` Cargo feature enabled on cratestack-migrate — this should be \
+         unreachable because only a schema declaring `extension pgvector {{ }}` produces a \
+         `Vector(n)` column, and cratestack-parser requires that declaration up front"
+    );
 }
 
 /// Maps a `.cstack` builtin scalar name to its Postgres column type.

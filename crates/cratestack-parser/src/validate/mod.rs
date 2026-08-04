@@ -156,6 +156,7 @@ fn validate_procedures(
                 type_names,
                 page_item_type_names,
                 model_names,
+                &schema.declared_extensions,
                 &arg.ty,
                 procedure.span,
                 self::type_names::TypeRefAllow {
@@ -169,6 +170,7 @@ fn validate_procedures(
             type_names,
             page_item_type_names,
             model_names,
+            &schema.declared_extensions,
             &procedure.return_type,
             procedure.span,
             self::type_names::TypeRefAllow {

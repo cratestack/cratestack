@@ -20,6 +20,7 @@
 mod checks;
 mod columns;
 mod down;
+mod extensions;
 mod foreign_keys;
 mod idents;
 mod indexes;
@@ -40,6 +41,7 @@ use columns::{
     emit_alter_column_type, emit_drop_column, emit_rename_column,
 };
 use down::{describe_lossy, emit_down_op};
+use extensions::emit_ensure_extension;
 use foreign_keys::{emit_add_foreign_key, emit_drop_foreign_key};
 use idents::quote_ident;
 use indexes::{emit_add_index, emit_drop_index};
@@ -148,5 +150,6 @@ fn emit_up_op(sql: &mut String, op: &Op) {
         Op::ReplaceView(view) => emit_replace_view(sql, view),
         Op::CreateMaterializedView(view) => emit_create_materialized_view(sql, view),
         Op::DropMaterializedView(view) => emit_drop_materialized_view(sql, view),
+        Op::EnsureExtension(op) => emit_ensure_extension(sql, op),
     }
 }

@@ -100,6 +100,12 @@ mod tests_update_many;
 pub use partial_row::FromPartialPgRow;
 
 pub use json::Json;
+/// Re-exported so generated code (and the facade crates) can reach
+/// `::cratestack::pgvector::Vector` without depending on the
+/// `pgvector` crate directly — mirrors how `sqlx` above is re-exposed
+/// as a shim rather than depended on separately by every consumer.
+#[cfg(feature = "pgvector")]
+pub use pgvector;
 
 pub use audit::{AUDIT_TABLE_DDL, primary_key_from_snapshot, snapshot_model};
 pub use error::cool_error_from_sqlx;

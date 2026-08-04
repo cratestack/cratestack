@@ -30,6 +30,7 @@ pub(crate) fn decode_value_expr(
                         name_span: synthetic_span(),
                         arity: TypeArity::Required,
                         generic_args: ty.generic_args.clone(),
+                        int_args: ty.int_args.clone(),
                     },
                     enum_names,
                 );
@@ -44,6 +45,7 @@ pub(crate) fn decode_value_expr(
                         name_span: synthetic_span(),
                         arity: TypeArity::Required,
                         generic_args: ty.generic_args.clone(),
+                        int_args: ty.int_args.clone(),
                     },
                     enum_names,
                 );
@@ -64,6 +66,7 @@ pub(crate) fn decode_value_expr(
                         name_span: synthetic_span(),
                         arity: TypeArity::Optional,
                         generic_args: ty.generic_args.clone(),
+                        int_args: ty.int_args.clone(),
                     },
                     enum_names,
                 )
@@ -126,6 +129,7 @@ fn decode_optional_scalar(expr: &str, ty: &TypeRef, enum_names: &BTreeSet<&str>)
             name_span: synthetic_span(),
             arity: TypeArity::Required,
             generic_args: ty.generic_args.clone(),
+            int_args: ty.int_args.clone(),
         },
         enum_names,
     );

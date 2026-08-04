@@ -114,6 +114,16 @@ pub use cratestack_core::json::Json;
 #[cfg(feature = "postgres")]
 pub use cratestack_sqlx::Json;
 
+// `Vector(n)` model fields decode/encode through `pgvector::Vector` at
+// the sqlx boundary (see `cratestack-macros`' generated `FromRow` impl
+// and `SqlValue::Vector` bind path) — re-exported so macro-emitted
+// `::cratestack::pgvector::Vector` paths resolve. Requires this
+// facade's own `pgvector` feature, which forwards to both
+// `cratestack-macros/pgvector` (the compile-time declaration gate)
+// and `cratestack-sqlx/pgvector` (the real column codec) in lockstep.
+#[cfg(feature = "pgvector")]
+pub use cratestack_sqlx::pgvector;
+
 // -----------------------------------------------------------------------------
 // Server surface — axum, audit/idempotency/migrations/isolation.
 // -----------------------------------------------------------------------------

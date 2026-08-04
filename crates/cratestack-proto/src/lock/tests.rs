@@ -25,6 +25,7 @@ fn field(name: &str, attrs: &[&str]) -> Field {
             name_span: span(),
             arity: TypeArity::Required,
             generic_args: vec![],
+            int_args: Vec::new(),
         },
         attributes: attrs
             .iter()

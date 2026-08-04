@@ -154,6 +154,7 @@ mod tests {
                 },
                 arity,
                 generic_args: vec![],
+                int_args: Vec::new(),
             },
             attributes: Vec::new(),
             span: cratestack_core::SourceSpan {

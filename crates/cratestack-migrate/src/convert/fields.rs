@@ -21,7 +21,9 @@ pub(super) fn field_to_column(
     };
 
     let ty_name = field.ty.name.as_str();
-    let ty = if known_enums.contains(ty_name) {
+    let ty = if let Some(dimension) = field.ty.vector_dim() {
+        ColumnType::Vector(dimension)
+    } else if known_enums.contains(ty_name) {
         ColumnType::Enum(ty_name.to_owned())
     } else if known_types.contains(ty_name) {
         ColumnType::UserDefined(ty_name.to_owned())

@@ -25,6 +25,7 @@ pub(crate) fn encode_value_expr(
                     name_span: synthetic_span(),
                     arity: TypeArity::Required,
                     generic_args: ty.generic_args.clone(),
+                    int_args: ty.int_args.clone(),
                 },
                 enum_names,
             );
@@ -44,6 +45,7 @@ pub(crate) fn encode_value_expr(
                         name_span: synthetic_span(),
                         arity: TypeArity::Optional,
                         generic_args: ty.generic_args.clone(),
+                        int_args: ty.int_args.clone(),
                     },
                     enum_names,
                 )

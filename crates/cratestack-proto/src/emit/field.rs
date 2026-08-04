@@ -48,6 +48,7 @@ mod tests {
             name_span: span(),
             arity,
             generic_args: vec![],
+            int_args: Vec::new(),
         }
     }
 

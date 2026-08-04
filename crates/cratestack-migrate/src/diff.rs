@@ -22,6 +22,7 @@
 
 mod checks;
 mod columns;
+mod extensions;
 mod foreign_keys;
 mod indexes;
 mod tables;
@@ -64,6 +65,7 @@ pub fn diff_projections(prev: &Projections, next: &Projections) -> Vec<Op> {
     let prev_tables = &prev.tables;
     let next_tables = &next.tables;
 
+    let mut ensure_extensions = extensions::diff_extensions(prev, next);
     let rename_map = tables::resolve_renames(prev_tables, next_tables);
     let mut rename_tables = rename_map.renames;
     let mut drop_tables_ops =
@@ -106,6 +108,10 @@ pub fn diff_projections(prev: &Projections, next: &Projections) -> Vec<Op> {
     let mut view_diff = views::diff_views(&prev.views, &next.views);
 
     let mut ops = Vec::new();
+    // Schema-level `CREATE EXTENSION` first — before anything that
+    // might reference a type/index kind it unlocks (e.g. a `vector(n)`
+    // column).
+    ops.append(&mut ensure_extensions);
     // Renames before table-level changes so subsequent ops can
     // reference the new names.
     ops.append(&mut rename_tables);

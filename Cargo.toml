@@ -156,6 +156,13 @@ proc-macro2 = "1"
 rust-embed = { version = "8", default-features = false }
 quote = "1"
 serde = { version = "1.0.228", features = ["derive"] }
+# `default-features = false` + only the `sqlx` feature: pgvector's own
+# `sqlx` feature depends on the umbrella `sqlx` crate scoped to
+# `features = ["postgres"]`, so it never pulls in `sqlx-sqlite` (see
+# `cratestack-sqlx`'s `pgvector` feature doc comment for the full
+# rationale — this is what keeps it compatible with the sqlx-core/
+# sqlx-postgres-direct shim `cratestack-sqlx` already uses).
+pgvector = { version = "0.4", default-features = false, features = ["sqlx"] }
 sqlx-core = { version = "=0.8.6", default-features = false, features = ["migrate", "any", "_rt-tokio", "_tls-rustls-ring-webpki"] }
 sqlx-postgres = { version = "=0.8.6", default-features = false, features = ["chrono", "uuid", "json", "migrate", "any", "offline"] }
 syn = { version = "2.0.108", features = ["full"] }

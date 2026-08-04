@@ -19,9 +19,9 @@
 //! `pg_enum`/`pg_type` rather than needing a separate enum bucket
 //! here.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use cratestack_core::Schema;
+use cratestack_core::{ExtensionKind, Schema};
 use serde::{Deserialize, Serialize};
 
 use crate::convert::{TableProjection, project_model};
@@ -37,10 +37,17 @@ use crate::diff::views::{ViewProjection, project_views};
 /// `cratestack migrate diff`) and for `cratestack migrate baseline`,
 /// which has no `Schema` on the "previous state" side at all, only
 /// whatever [`crate::introspect::postgres::introspect`] produced.
+///
+/// `declared_extensions` rides along at the top level rather than per
+/// table — an extension (`CREATE EXTENSION vector`) is a schema-wide
+/// capability, not something owned by any single table. A future live
+/// introspector (issue #204) can populate it from `pg_extension`.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Projections {
     pub tables: BTreeMap<String, TableProjection>,
     pub views: BTreeMap<String, ViewProjection>,
+    #[serde(default)]
+    pub declared_extensions: BTreeSet<ExtensionKind>,
 }
 
 /// Project a parsed `.cstack` [`Schema`] into its [`Projections`] IR
@@ -49,6 +56,7 @@ pub fn project(schema: &Schema) -> Projections {
     Projections {
         tables: project_tables(schema),
         views: project_views(schema),
+        declared_extensions: schema.declared_extensions.clone(),
     }
 }
 

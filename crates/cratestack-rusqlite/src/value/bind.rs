@@ -34,6 +34,19 @@ impl<'a> ToSql for SqlValueParam<'a> {
             | SqlValue::NullDateTime
             | SqlValue::NullJson
             | SqlValue::NullDecimal => ToSqlOutput::Owned(RV::Null),
+            // `Vector(n)` is a Postgres-only (`pgvector`) capability —
+            // `include_embedded_schema!` rejects it unconditionally at
+            // macro-expansion time (see
+            // `cratestack-macros/src/include/extensions.rs`), so no
+            // generated rusqlite code can ever actually produce one of
+            // these. A structured conversion failure rather than a
+            // panic, since `ToSql::to_sql` already has a `Result` to
+            // report through.
+            SqlValue::Vector(_) | SqlValue::NullVector => {
+                return Err(rusqlite::Error::ToSqlConversionFailure(
+                    "Vector(n) fields are not supported by the embedded (rusqlite) backend".into(),
+                ));
+            }
         };
         Ok(value)
     }

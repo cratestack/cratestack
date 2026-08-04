@@ -6,6 +6,9 @@ use quote::quote;
 
 use super::{doc_attrs, ident};
 
+#[cfg(test)]
+mod tests;
+
 pub(crate) fn rust_type_tokens(type_ref: &TypeRef) -> proc_macro2::TokenStream {
     rust_type_tokens_with_scope(type_ref, true)
 }
@@ -33,6 +36,16 @@ pub(crate) fn rust_type_tokens_with_scope(
         "Json" => quote! { ::cratestack::Json<::cratestack::Value> },
         "Bytes" => quote! { Vec<u8> },
         "Uuid" => quote! { ::cratestack::uuid::Uuid },
+        // `Vector(n)` (see `docs/design/extensions.md` §6) — a plain
+        // `Vec<f32>` on the Rust side, kept ergonomic and dependency-
+        // free (no `pgvector` crate reference in the public struct
+        // field) regardless of which macro composer generates this:
+        // server model, Create/Update input, or the Rust client's own
+        // copy of the same struct shape. The `pgvector` crate only
+        // enters the picture at the sqlx row-decode/bind boundary
+        // (`model::row_pg`, `cratestack-sqlx`'s `push_bind_value`),
+        // which is server-only.
+        "Vector" => quote! { Vec<f32> },
         other => {
             let ident = ident(other);
             if custom_in_super {

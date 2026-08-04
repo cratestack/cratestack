@@ -67,6 +67,7 @@ mod tests {
                 name_span: span(),
                 arity: cratestack_core::TypeArity::Required,
                 generic_args: Vec::new(),
+                int_args: Vec::new(),
             },
             attributes: vec![Attribute {
                 raw: raw.to_owned(),

@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use cratestack_core::{Field, Schema, SourceSpan, TypeRef};
+use cratestack_core::{ExtensionKind, Field, Schema, SourceSpan, TypeRef};
 
 use crate::diagnostics::{SchemaError, span_error};
 
@@ -18,6 +18,7 @@ pub(super) const BUILTIN_TYPES: &[&str] = &[
     "Page",
     "PageInput",
     "FindMany",
+    "Vector",
 ];
 
 pub(super) fn collect_type_names(schema: &Schema) -> Result<BTreeSet<String>, SchemaError> {
@@ -87,12 +88,14 @@ pub(super) struct TypeRefAllow {
     pub(super) page: bool,
     pub(super) page_input: bool,
     pub(super) find_many: bool,
+    pub(super) vector: bool,
 }
 
 pub(super) fn validate_type_ref(
     type_names: &BTreeSet<String>,
     page_item_type_names: &BTreeSet<String>,
     model_names: &BTreeSet<String>,
+    declared_extensions: &BTreeSet<ExtensionKind>,
     type_ref: &TypeRef,
     span: SourceSpan,
     allow: TypeRefAllow,
@@ -228,6 +231,29 @@ pub(super) fn validate_type_ref(
             span,
         ));
     }
+
+    if type_ref.is_vector() {
+        if !allow.vector {
+            return Err(span_error(
+                "`Vector(n)` is only supported on model/mixin/type/auth fields in this \
+                 release, not here (e.g. procedure signatures) — see \
+                 docs/design/extensions.md §8 item 4"
+                    .to_owned(),
+                span,
+            ));
+        }
+        return validate_vector_type_ref(declared_extensions, type_ref, span);
+    }
+
+    if !type_ref.int_args.is_empty() {
+        return Err(span_error(
+            format!(
+                "type `{}` does not accept a parametric argument",
+                type_ref.name
+            ),
+            span,
+        ));
+    }
     if !type_names.contains(&type_ref.name) {
         return Err(span_error(
             format!("unknown type `{}`", type_ref.name),
@@ -278,4 +304,39 @@ pub(super) fn reject_type_decl_as_model_field_type(
         ));
     }
     Ok(())
+}
+
+fn validate_vector_type_ref(
+    declared_extensions: &BTreeSet<ExtensionKind>,
+    type_ref: &TypeRef,
+    span: SourceSpan,
+) -> Result<(), SchemaError> {
+    if !declared_extensions.contains(&ExtensionKind::Pgvector) {
+        return Err(span_error(
+            "field type `Vector(n)` requires `extension pgvector { }` to be declared in this \
+             schema — see docs/design/extensions.md §6"
+                .to_owned(),
+            span,
+        ));
+    }
+    if type_ref.arity == cratestack_core::TypeArity::List {
+        return Err(span_error(
+            "`Vector(n)` fields cannot be list-valued (`Vector(n)[]`) — a single fixed-\
+             dimension vector per row is all that's supported in this release"
+                .to_owned(),
+            span,
+        ));
+    }
+    match type_ref.int_args.as_slice() {
+        [dimension] if *dimension > 0 => Ok(()),
+        [_] => Err(span_error(
+            "`Vector(n)` dimension must be greater than zero".to_owned(),
+            span,
+        )),
+        _ => Err(span_error(
+            "`Vector(n)` requires exactly one integer dimension argument, e.g. `Vector(1536)`"
+                .to_owned(),
+            span,
+        )),
+    }
 }

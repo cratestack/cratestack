@@ -59,3 +59,9 @@ impl IntoSqlValue for cratestack_core::Decimal {
         SqlValue::Decimal(self)
     }
 }
+
+impl IntoSqlValue for Vec<f32> {
+    fn into_sql_value(self) -> SqlValue {
+        SqlValue::Vector(self)
+    }
+}

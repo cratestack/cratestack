@@ -86,6 +86,9 @@ pub(super) fn emit_down_op(sql: &mut String, op: &Op) {
                 "materialized view ops have no SQLite equivalent and should never reach the SQLite emitter"
             );
         }
+        Op::EnsureExtension(_) => {
+            // No SQLite equivalent — nothing to reverse.
+        }
     }
 }
 

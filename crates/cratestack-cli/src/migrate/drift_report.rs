@@ -102,6 +102,12 @@ fn target(op: &Op) -> &str {
         Op::ReplaceView(x) => &x.name,
         Op::CreateMaterializedView(x) => &x.name,
         Op::DropMaterializedView(x) => &x.name,
+        // Schema-wide, not table/view-scoped (see `docs/design/
+        // extensions.md` §6) — grouped under the Postgres extension's
+        // own name (e.g. `vector`) rather than a table, same idea as
+        // every other target() arm returning the thing the op is
+        // "about".
+        Op::EnsureExtension(x) => &x.name,
     }
 }
 
@@ -190,6 +196,20 @@ fn describe(op: &Op) -> String {
         Op::DropMaterializedView(x) => format!(
             "materialized view `{}` exists in the live database but is not declared in the \
              schema",
+            x.name
+        ),
+        // Live-database introspection (#204) doesn't check `pg_extension`
+        // today (see `Projections::declared_extensions`'s doc comment),
+        // so a baselined database's introspected `Projections` never
+        // populates this set — meaning this arm fires whenever the
+        // target schema declares `extension pgvector { }` at all, since
+        // the comparison can't actually tell whether the extension is
+        // already installed live. Worded as a caveat rather than a flat
+        // claim for that reason.
+        Op::EnsureExtension(x) => format!(
+            "extension `{}` is declared in the schema (`extension pgvector {{ }}`) — \
+             baselining cannot yet confirm whether it is already installed in the live \
+             database (see cratestack#204)",
             x.name
         ),
     }

@@ -29,6 +29,22 @@ pub(crate) fn push_bind_value(
         SqlValue::NullDateTime => query.push_bind(Option::<chrono::DateTime<chrono::Utc>>::None),
         SqlValue::NullJson => query.push_bind(Option::<Json<Value>>::None),
         SqlValue::NullDecimal => query.push_bind(Option::<cratestack_core::Decimal>::None),
+        #[cfg(feature = "pgvector")]
+        SqlValue::Vector(value) => query.push_bind(pgvector::Vector::from(value.clone())),
+        #[cfg(feature = "pgvector")]
+        SqlValue::NullVector => query.push_bind(Option::<pgvector::Vector>::None),
+        // `Vector(n)`/`pgvector::Vector` requires the `pgvector` Cargo
+        // feature on this crate. Reaching here without it means an
+        // `SqlValue::Vector`/`NullVector` was constructed without
+        // going through cratestack-macros' generated code, which
+        // itself can't exist unless the matching feature is enabled
+        // end-to-end (#161's compile-time gate) — an upstream
+        // invariant violation, not a case to handle gracefully.
+        #[cfg(not(feature = "pgvector"))]
+        SqlValue::Vector(_) | SqlValue::NullVector => unreachable!(
+            "SqlValue::Vector/NullVector requires the `pgvector` Cargo feature on \
+             cratestack-sqlx"
+        ),
     };
 }
 

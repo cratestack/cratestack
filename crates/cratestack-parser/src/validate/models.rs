@@ -60,9 +60,13 @@ pub(super) fn validate_models(
                 type_names,
                 page_item_type_names,
                 find_many_model_names,
+                &schema.declared_extensions,
                 &field.ty,
                 field.span,
-                crate::validate::type_names::TypeRefAllow::default(),
+                crate::validate::type_names::TypeRefAllow {
+                    vector: true,
+                    ..Default::default()
+                },
             )?;
             reject_type_decl_as_model_field_type(&type_decl_names, &model.name, field)?;
             validate_validator_attributes(&model.name, field)?;

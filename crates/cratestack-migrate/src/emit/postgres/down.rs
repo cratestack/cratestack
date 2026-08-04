@@ -139,6 +139,12 @@ pub(super) fn emit_down_op(sql: &mut String, op: &Op) {
             // requires snapshot lookup. Punt: drop is treated as
             // one-way at the migration boundary.
         }
+        Op::EnsureExtension(_) => {
+            // Not reversed: `DROP EXTENSION` risks breaking other
+            // objects that came to depend on it after this migration
+            // ran (other columns, indexes) — a no-op is the safe
+            // default, mirroring `DropIndex`'s one-way stance above.
+        }
     }
 }
 

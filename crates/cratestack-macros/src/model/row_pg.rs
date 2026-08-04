@@ -77,6 +77,9 @@ fn partial_row_field_tokens(
 /// branch of [`partial_row_field_tokens`].
 fn row_field_decode_expr(field: &Field, enum_names: &BTreeSet<&str>) -> proc_macro2::TokenStream {
     let field_name = &field.name;
+    if field.ty.is_vector() {
+        return vector_decode_expr(field_name, field.ty.arity);
+    }
     if !enum_names.contains(field.ty.name.as_str()) {
         return quote! { row.try_get(#field_name)? };
     }
@@ -137,6 +140,12 @@ fn row_field_decode_expr(field: &Field, enum_names: &BTreeSet<&str>) -> proc_mac
 fn row_field_tokens(field: &Field, enum_names: &BTreeSet<&str>) -> proc_macro2::TokenStream {
     let field_ident = ident(&field.name);
     let field_name = &field.name;
+    if field.ty.is_vector() {
+        let decode_expr = vector_decode_expr(field_name, field.ty.arity);
+        return quote! {
+            #field_ident: #decode_expr,
+        };
+    }
     if !enum_names.contains(field.ty.name.as_str()) {
         return quote! {
             #field_ident: row.try_get(#field_name)?,
@@ -185,5 +194,33 @@ fn row_field_tokens(field: &Field, enum_names: &BTreeSet<&str>) -> proc_macro2::
                 },
             }
         }
+    }
+}
+
+/// Decode a `Vector(n)` field. `pgvector::Vector` (re-exported at
+/// `::cratestack::pgvector`, requires the `pgvector` Cargo feature —
+/// see the crate-level gate in `include/extensions.rs`) carries the
+/// real `sqlx::Type`/`Encode`/`Decode` impls against Postgres's
+/// `vector` wire format; the public field stays a plain `Vec<f32>`
+/// (see `shared::types::rust_type_tokens_with_scope`), converted at
+/// this decode boundary — the same "decode DB-native shape, convert
+/// to the public Rust type" pattern the enum arms above use for
+/// `String` → the generated enum type. List arity is rejected by
+/// `cratestack-parser` validation, so only `Required`/`Optional`
+/// apply here.
+fn vector_decode_expr(field_name: &str, arity: TypeArity) -> proc_macro2::TokenStream {
+    match arity {
+        TypeArity::Optional => quote! {
+            {
+                let raw: Option<::cratestack::pgvector::Vector> = row.try_get(#field_name)?;
+                raw.map(|value| value.to_vec())
+            }
+        },
+        TypeArity::Required | TypeArity::List => quote! {
+            {
+                let raw: ::cratestack::pgvector::Vector = row.try_get(#field_name)?;
+                raw.to_vec()
+            }
+        },
     }
 }

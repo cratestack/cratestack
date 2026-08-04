@@ -60,9 +60,13 @@ pub(super) fn validate_mixins(
                 type_names,
                 page_item_type_names,
                 model_names,
+                &schema.declared_extensions,
                 &field.ty,
                 field.span,
-                crate::validate::type_names::TypeRefAllow::default(),
+                crate::validate::type_names::TypeRefAllow {
+                    vector: true,
+                    ..Default::default()
+                },
             )?;
             validate_default_dbgenerated_no_args(&mixin.name, field)?;
             validate_pb_field_attribute("mixin", &mixin.name, field)?;
@@ -91,9 +95,13 @@ pub(super) fn validate_types(
                 type_names,
                 page_item_type_names,
                 model_names,
+                &schema.declared_extensions,
                 &field.ty,
                 field.span,
-                crate::validate::type_names::TypeRefAllow::default(),
+                crate::validate::type_names::TypeRefAllow {
+                    vector: true,
+                    ..Default::default()
+                },
             )?;
             validate_pb_field_attribute("type", &ty.name, field)?;
         }
@@ -147,9 +155,13 @@ pub(super) fn validate_auth(
                 type_names,
                 page_item_type_names,
                 model_names,
+                &schema.declared_extensions,
                 &field.ty,
                 field.span,
-                crate::validate::type_names::TypeRefAllow::default(),
+                crate::validate::type_names::TypeRefAllow {
+                    vector: true,
+                    ..Default::default()
+                },
             )?;
         }
     }

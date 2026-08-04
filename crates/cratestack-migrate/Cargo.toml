@@ -17,6 +17,18 @@ categories.workspace = true
 # pure-diffing core stays free of any DB dependency — only opt in when
 # you actually need `introspect::postgres`.
 postgres-introspect = ["dep:sqlx-core", "dep:sqlx-postgres"]
+# Gate for `pgvector` DDL emission (`CREATE EXTENSION IF NOT EXISTS
+# vector;` + `vector(n)` column rendering — see
+# `docs/design/extensions.md` §6 and `crates/cratestack-macros`'s own
+# gate-only `pgvector` feature, which this mirrors). This crate has no
+# extra dependency to hide behind the feature — DDL emission is plain
+# string formatting — so the gate is enforced as a runtime `cfg!`
+# check in the Postgres emitter (`emit::postgres::extensions`) rather
+# than a dependency-weight concern: building without this feature and
+# then feeding it a schema-derived `Op::EnsureExtension` (which the
+# parser only ever produces for a schema that declares `extension
+# pgvector { }`) is a hard panic, not silently-wrong SQL.
+pgvector = []
 
 [dependencies]
 cratestack-core.workspace = true

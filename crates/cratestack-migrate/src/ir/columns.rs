@@ -61,6 +61,13 @@ pub enum ColumnType {
     /// support (a real `CreateType`/`DropType` op, `SqlValue` encode/decode)
     /// is tracked as a separate, larger effort — see #230's option (b).
     UserDefined(String),
+    /// `Vector(n)` — a fixed-dimension float vector (see
+    /// `docs/design/extensions.md` §6). A dedicated variant rather
+    /// than folding `n` into `Scalar`'s string, since the Postgres
+    /// emitter needs the dimension to render `vector(n)` and the
+    /// SQLite emitter needs no dialect-specific info at all (every
+    /// column there is `BLOB` regardless of scalar).
+    Vector(u32),
 }
 
 /// Column default value, captured as the developer wrote it. The

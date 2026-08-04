@@ -11,6 +11,13 @@ pub enum SqlValue {
     DateTime(chrono::DateTime<chrono::Utc>),
     Json(Value),
     Decimal(cratestack_core::Decimal),
+    /// A `Vector(n)` field's value (see `docs/design/extensions.md`
+    /// §6). Defined unconditionally — no `pgvector` dependency is
+    /// needed to hold a `Vec<f32>` — but only ever constructed by
+    /// generated code gated on the `pgvector` Cargo feature (#161's
+    /// compile-time check), and only ever bound to a real column by
+    /// `cratestack-sqlx`'s own `pgvector`-gated encode path.
+    Vector(Vec<f32>),
     NullBool,
     NullInt,
     NullFloat,
@@ -20,6 +27,7 @@ pub enum SqlValue {
     NullDateTime,
     NullJson,
     NullDecimal,
+    NullVector,
 }
 
 #[derive(Debug, Clone, PartialEq)]

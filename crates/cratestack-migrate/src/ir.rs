@@ -12,6 +12,7 @@
 
 mod checks;
 mod columns;
+mod extensions;
 mod foreign_keys;
 mod ops;
 mod views;
@@ -20,6 +21,7 @@ use serde::{Deserialize, Serialize};
 
 pub use checks::{AddCheck, CheckKind, DropCheck};
 pub use columns::{Column, ColumnArity, ColumnDefault, ColumnType};
+pub use extensions::EnsureExtension;
 pub use foreign_keys::{AddForeignKey, DropForeignKey, ForeignKeyAction};
 pub use ops::{
     AddColumn, AddIndex, AlterColumnDefault, AlterColumnNullability, AlterColumnType, CreateTable,
@@ -63,6 +65,7 @@ pub enum Op {
     ReplaceView(ReplaceView),
     CreateMaterializedView(CreateMaterializedView),
     DropMaterializedView(DropMaterializedView),
+    EnsureExtension(EnsureExtension),
 }
 
 impl Op {
@@ -128,6 +131,9 @@ impl Op {
             // generator requires explicit opt-in, mirroring DropTable
             // semantics.
             Op::DropView(_) | Op::DropMaterializedView(_) => Destructiveness::Lossy,
+            // `CREATE EXTENSION IF NOT EXISTS` is idempotent and never
+            // touches existing rows.
+            Op::EnsureExtension(_) => Destructiveness::Safe,
         }
     }
 }

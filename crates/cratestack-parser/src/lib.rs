@@ -40,6 +40,8 @@ mod tests_types;
 #[cfg(test)]
 mod tests_validators;
 #[cfg(test)]
+mod tests_vector;
+#[cfg(test)]
 mod tests_version;
 #[cfg(test)]
 mod tests_views;

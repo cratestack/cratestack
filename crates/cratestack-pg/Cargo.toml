@@ -130,6 +130,16 @@ crypto-aws-lc-rs = []
 # code, which stays unconditionally compiled and is unaffected by this
 # feature — see cratestack#154's scope note.
 rate_limit = ["cratestack-macros/rate_limit"]
+# End-to-end `pgvector` extension support (see
+# `docs/design/extensions.md` §6): unlocks `Vector(n)` model fields
+# for `include_server_schema!`/`include_client_schema!` schemas that
+# declare `extension pgvector { }`. Forwards to `cratestack-macros`'
+# own gate-only `pgvector` feature (#161's compile-time check — a
+# schema declaring the extension without this feature enabled is a
+# `compile_error!`, not a silent no-op) and to `cratestack-sqlx`'s
+# `pgvector` feature (real Postgres `vector` column encode/decode via
+# the `pgvector` crate).
+pgvector = ["cratestack-macros/pgvector", "cratestack-sqlx/pgvector"]
 
 [dependencies]
 async-stream.workspace = true
@@ -163,3 +173,11 @@ tokio.workspace = true
 tower.workspace = true
 tracing-subscriber.workspace = true
 url.workspace = true
+
+# Only compiled/run under `--features pgvector` — the fixture schema
+# declares `extension pgvector { }`, which is a `compile_error!`
+# without the feature (see the `pgvector` feature doc comment above).
+[[test]]
+name = "pgvector_feature_forwarding"
+path = "tests/pgvector_feature_forwarding.rs"
+required-features = ["pgvector"]

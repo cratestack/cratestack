@@ -9,7 +9,20 @@ pub(super) fn parse_type_ref(
     line: &Line<'_>,
     raw_offset: usize,
 ) -> Result<TypeRef, SchemaError> {
+    // `Vector(1536)` is the only parametric scalar today (see
+    // `docs/design/extensions.md` §6): an identifier optionally
+    // followed by one compile-time integer literal in parens, then
+    // the usual arity suffix. The parenthesized argument is generic
+    // in the grammar (any ident may carry one) — `validate_type_ref`
+    // in `cratestack-parser::validate` is what actually restricts
+    // parametric arguments to `Vector`.
     let parser = text::ident::<_, extra::Err<Simple<char>>>()
+        .then(
+            just('(')
+                .ignore_then(text::int::<_, extra::Err<Simple<char>>>(10))
+                .then_ignore(just(')'))
+                .or_not(),
+        )
         .then(choice((
             just("[]").to(TypeArity::List),
             just("?").to(TypeArity::Optional),
@@ -20,18 +33,27 @@ pub(super) fn parse_type_ref(
     parser
         .parse(raw)
         .into_result()
-        .map(|(name, arity)| TypeRef {
-            name: name.to_owned(),
-            name_span: SourceSpan {
-                start: line.start + raw_offset,
-                end: line.start + raw_offset + name.len(),
-                line: line.number,
-            },
-            arity,
-            generic_args: Vec::new(),
+        .ok()
+        .and_then(|((name, dimension), arity)| {
+            let int_args = match dimension {
+                Some(digits) => vec![digits.parse::<u32>().ok()?],
+                None => Vec::new(),
+            };
+            Some(TypeRef {
+                name: name.to_owned(),
+                name_span: SourceSpan {
+                    start: line.start + raw_offset,
+                    end: line.start + raw_offset + name.len(),
+                    line: line.number,
+                },
+                arity,
+                generic_args: Vec::new(),
+                int_args,
+            })
         })
-        .or_else(|_| parse_builtin_generic_type_ref(raw, line, raw_offset))
-        .map_err(|_| {
+        .ok_or(())
+        .or_else(|()| parse_builtin_generic_type_ref(raw, line, raw_offset))
+        .map_err(|()| {
             SchemaError::new(
                 format!("invalid type reference: {raw}"),
                 line.start..line.start + line.raw.len(),
@@ -83,5 +105,6 @@ fn parse_builtin_generic_type_ref(
         },
         arity,
         generic_args: vec![inner_ref],
+        int_args: Vec::new(),
     })
 }

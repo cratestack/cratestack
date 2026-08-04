@@ -157,5 +157,13 @@ fn emit_up_op(sql: &mut String, op: &Op) {
                 "materialized view ops have no SQLite equivalent and should never reach the SQLite emitter"
             );
         }
+        Op::EnsureExtension(_) => {
+            // SQLite has no extension mechanism, and `pgvector` is
+            // rejected outright for `include_embedded_schema!` (#161)
+            // — this op should never actually reach the SQLite
+            // emitter for a real schema, but a no-op is harmless if
+            // it ever does (e.g. a schema targeting both backends
+            // that only uses pgvector on the Postgres side).
+        }
     }
 }

@@ -53,16 +53,25 @@ fn covered_scalar_types_match_parser_builtin_type_names_minus_page() {
     // restricted to procedure return types and `PageInput` to procedure
     // argument types, neither round-trippable through a model's own ORM
     // columns — so both are excluded here, same as `Page` already was.
+    // `Vector(n)` (see `docs/design/extensions.md` §6, cratestack#155) is
+    // excluded for a stronger reason than "not covered yet": pgvector is a
+    // Postgres-only extension, and `include_embedded_schema!` rejects
+    // `extension pgvector { }` unconditionally, regardless of any Cargo
+    // feature (cratestack#161's `guard_embedded_declared_extensions`) — a
+    // `Vector(n)` field can never exist on this rusqlite backend at all,
+    // so there is no DDL/round-trip coverage to add here, ever.
     let builtin: BTreeSet<&str> = cratestack_parser::builtin_type_names()
         .iter()
         .copied()
-        .filter(|name| *name != "Page" && *name != "PageInput" && *name != "FindMany")
+        .filter(|name| {
+            *name != "Page" && *name != "PageInput" && *name != "FindMany" && *name != "Vector"
+        })
         .collect();
     let covered: BTreeSet<&str> = COVERED_SCALAR_TYPES.iter().copied().collect();
     assert_eq!(
         builtin, covered,
-        "cratestack_parser::builtin_type_names() (minus `Page`/`PageInput`/`FindMany`) and this test's \
-         COVERED_SCALAR_TYPES have drifted — add a field plus write/assert coverage \
+        "cratestack_parser::builtin_type_names() (minus `Page`/`PageInput`/`FindMany`/`Vector`) and \
+         this test's COVERED_SCALAR_TYPES have drifted — add a field plus write/assert coverage \
          above for the new/removed type. See cratestack#232.",
     );
 }
