@@ -99,8 +99,8 @@ pub use cratestack_sql::{
     OrderCatalog, OrderClause, OrderRelationEdge, Orderable, Projection, ReadSource,
     RelationFilter, RelationHop, RelationInclude, ResolvedOrderTarget, SortDirection,
     SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue, Unorderable, UpdateModelInput,
-    UpsertModelInput, ViewDescriptor, WriteSource, coalesce, is_orderable, order_value_sql, point,
-    resolve_order_target, wrap_filter,
+    UpsertModelInput, VectorDistanceExpr, VectorDistanceFilter, VectorMetric, ViewDescriptor,
+    WriteSource, coalesce, is_orderable, order_value_sql, point, resolve_order_target, wrap_filter,
 };
 
 pub use regex;

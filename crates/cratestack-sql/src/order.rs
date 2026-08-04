@@ -1,4 +1,9 @@
-#[derive(Debug, Clone, PartialEq, Eq)]
+use crate::filter::VectorMetric;
+
+// Not `Eq`: `OrderTarget::VectorDistance` carries a `Vec<f32>` query
+// vector, and `f32` has no sound total-equality impl (NaN != NaN) —
+// same reason `FilterExpr`/`SpatialFilter` stop at `PartialEq`.
+#[derive(Debug, Clone, PartialEq)]
 pub struct OrderClause {
     pub target: OrderTarget,
     pub direction: SortDirection,
@@ -20,7 +25,7 @@ pub enum NullOrder {
     Last,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum OrderTarget {
     Column(&'static str),
     RelationScalar {
@@ -34,6 +39,18 @@ pub enum OrderTarget {
         /// macro-expansion time, which is exactly what made codegen
         /// exponential in relation-graph connectivity (cratestack#252).
         value_sql: String,
+    },
+    /// Order by distance to a query vector on a `Vector(n)` column (see
+    /// `docs/design/extensions.md` §6/§7, cratestack#163). Built via
+    /// `FieldRef::distance_to(...).asc()`/`.desc()` or the
+    /// `order_by_distance` shorthand. PG-only (pgvector) — the
+    /// embedded rusqlite backend doesn't ship pgvector, so its
+    /// renderer fails loud, mirroring how `FilterExpr::Spatial` is
+    /// handled there.
+    VectorDistance {
+        column: &'static str,
+        metric: VectorMetric,
+        query_vector: Vec<f32>,
     },
 }
 

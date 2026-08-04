@@ -91,6 +91,8 @@ mod tests_nested_relation_policy;
 #[cfg(test)]
 mod tests_optional;
 #[cfg(test)]
+mod tests_pgvector;
+#[cfg(test)]
 mod tests_relation;
 #[cfg(test)]
 mod tests_update;
@@ -123,8 +125,8 @@ pub use cratestack_sql::{
     JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder,
     OrderClause, Orderable, Projection, RelationFilter, RelationHop, RelationInclude,
     RelationQuantifier, SortDirection, SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue,
-    Unorderable, UpdateModelInput, UpsertModelInput, coalesce, is_orderable, order_value_sql,
-    point, wrap_filter,
+    Unorderable, UpdateModelInput, UpsertModelInput, VectorDistanceExpr, VectorDistanceFilter,
+    VectorMetric, coalesce, is_orderable, order_value_sql, point, wrap_filter,
 };
 pub use delegate::{
     ModelDelegate, ScopedAggregate, ScopedAggregateColumn, ScopedAggregateCount, ScopedBatchCreate,

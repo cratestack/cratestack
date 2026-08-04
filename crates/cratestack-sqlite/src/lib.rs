@@ -51,8 +51,8 @@ pub use cratestack_sql::{
     JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder,
     OrderClause, Orderable, Projection, ReadSource, RelationFilter, RelationHop, RelationInclude,
     SortDirection, SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue, Unorderable,
-    UpdateModelInput, UpsertModelInput, ViewDescriptor, WriteSource, coalesce, is_orderable,
-    order_value_sql, point, wrap_filter,
+    UpdateModelInput, UpsertModelInput, VectorDistanceExpr, VectorDistanceFilter, VectorMetric,
+    ViewDescriptor, WriteSource, coalesce, is_orderable, order_value_sql, point, wrap_filter,
 };
 
 pub use regex;

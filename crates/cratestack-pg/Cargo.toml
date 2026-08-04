@@ -181,3 +181,13 @@ url.workspace = true
 name = "pgvector_feature_forwarding"
 path = "tests/pgvector_feature_forwarding.rs"
 required-features = ["pgvector"]
+
+# Live nearest-neighbor verification of the cratestack#163 query-builder
+# distance operators — needs a real `pgvector/pgvector` Postgres (not
+# the default `compose.yml` one), so it's not part of `just test-pg`'s
+# normal green path either; see the test file's own module docs for how
+# to run it.
+[[test]]
+name = "pgvector_distance_query"
+path = "tests/pgvector_distance_query.rs"
+required-features = ["pgvector"]

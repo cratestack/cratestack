@@ -35,6 +35,48 @@ pub(super) fn render_spatial_filter_sql(
     }
 }
 
+/// `(<column> <metric op> $<vector>) <cmp> $<threshold>` — the query
+/// vector and the threshold each consume one bind slot, in that order.
+pub(super) fn render_vector_distance_filter_sql(
+    filter: &cratestack_sql::VectorDistanceFilter,
+    sql: &mut String,
+    bind_index: &mut usize,
+) {
+    let _ = write!(
+        sql,
+        "({} {} ${})",
+        filter.column,
+        filter.metric.sql_operator(),
+        *bind_index,
+    );
+    *bind_index += 1;
+    match filter.op {
+        FilterOp::Eq => render_vector_distance_binary_sql("=", sql, bind_index),
+        FilterOp::Ne => render_vector_distance_binary_sql("!=", sql, bind_index),
+        FilterOp::Lt => render_vector_distance_binary_sql("<", sql, bind_index),
+        FilterOp::Lte => render_vector_distance_binary_sql("<=", sql, bind_index),
+        FilterOp::Gt => render_vector_distance_binary_sql(">", sql, bind_index),
+        FilterOp::Gte => render_vector_distance_binary_sql(">=", sql, bind_index),
+        FilterOp::IsNull | FilterOp::IsNotNull => {
+            unreachable!(
+                "VectorDistanceFilter built with unsupported op {:?}; distance is never null",
+                filter.op
+            );
+        }
+        FilterOp::In | FilterOp::Contains | FilterOp::StartsWith | FilterOp::EqOrNull => {
+            unreachable!(
+                "VectorDistanceFilter built with unsupported op {:?}",
+                filter.op
+            );
+        }
+    }
+}
+
+fn render_vector_distance_binary_sql(operator: &str, sql: &mut String, bind_index: &mut usize) {
+    let _ = write!(sql, " {operator} ${bind_index}");
+    *bind_index += 1;
+}
+
 pub(super) fn render_json_filter_sql(
     filter: &cratestack_sql::JsonFilter,
     sql: &mut String,

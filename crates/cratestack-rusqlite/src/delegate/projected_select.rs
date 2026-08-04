@@ -82,6 +82,19 @@ pub(super) fn build_partial_select<M, PK>(
                     // table while we're trying to keep the projection
                     // narrow.
                 }
+                OrderTarget::VectorDistance { .. } => {
+                    // pgvector is server-only (#161's compile-time gate
+                    // keeps `extension pgvector { }` out of every
+                    // embedded schema), so this is provably
+                    // unreachable — fail loud rather than silently
+                    // drop a similarity-search ordering the caller
+                    // explicitly asked for, mirroring `render/order.rs`.
+                    panic!(
+                        "pgvector distance ordering is not supported on the embedded \
+                         rusqlite backend; schemas that use FieldRef::order_by_distance \
+                         are server-only",
+                    );
+                }
             }
         }
     }

@@ -29,6 +29,17 @@ pub(super) fn render_order_clause(clause: &OrderClause, sql: &mut String) {
                 null_order(clause.null_order),
             );
         }
+        OrderTarget::VectorDistance { .. } => {
+            // pgvector distance ordering requires the Postgres `vector`
+            // extension — see the matching panic in `render/filter.rs`
+            // for why this is provably unreachable in practice (#161's
+            // compile-time gate keeps `extension pgvector { }` out of
+            // every embedded schema).
+            panic!(
+                "pgvector distance ordering is not supported on the embedded rusqlite backend; \
+                 schemas that use FieldRef::order_by_distance are server-only",
+            );
+        }
     }
 }
 

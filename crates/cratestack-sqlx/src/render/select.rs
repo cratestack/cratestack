@@ -53,7 +53,7 @@ pub(crate) fn render_scoped_select_sql<M, PK>(
             if index > 0 {
                 sql.push_str(", ");
             }
-            render_order_clause_sql(clause, &mut sql);
+            render_order_clause_sql(clause, &mut sql, &mut bind_index);
         }
     }
 

@@ -1,9 +1,11 @@
 //! `ORDER BY` + `LIMIT/OFFSET` pushers and the trivial direction/null-
 //! ordering keyword helpers.
 
-use cratestack_sql::OrderTarget;
+use cratestack_sql::{OrderTarget, SqlValue};
 
 use crate::{OrderClause, SortDirection, sqlx};
+
+use super::values::push_bind_value;
 
 pub(crate) fn push_order_and_paging(
     query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
@@ -74,6 +76,21 @@ fn push_order_clause_query(
                 .push(".")
                 .push(*parent_column)
                 .push(" LIMIT 1) ")
+                .push(sort_direction_sql(clause.direction))
+                .push(" ")
+                .push(null_order_sql(clause.null_order));
+        }
+        OrderTarget::VectorDistance {
+            column,
+            metric,
+            query_vector,
+        } => {
+            query.push("(").push(*column).push(" ");
+            query.push(metric.sql_operator());
+            query.push(" ");
+            push_bind_value(query, &SqlValue::Vector(query_vector.clone()));
+            query
+                .push(") ")
                 .push(sort_direction_sql(clause.direction))
                 .push(" ")
                 .push(null_order_sql(clause.null_order));

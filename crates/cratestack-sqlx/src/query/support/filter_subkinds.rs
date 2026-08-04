@@ -42,6 +42,57 @@ pub(super) fn push_spatial_filter_query(
     }
 }
 
+/// `(<column> <metric op> <query_vector>) <cmp> <threshold>` — the
+/// query vector binds as a real `pgvector::Vector` via
+/// [`push_bind_value`] (encoded through `SqlValue::Vector`, same as
+/// any other `Vector(n)` value), and the threshold binds through the
+/// usual `FilterValue::Single` path.
+pub(super) fn push_vector_distance_filter_query(
+    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    filter: &cratestack_sql::VectorDistanceFilter,
+) {
+    query.push("(").push(filter.column).push(" ");
+    query.push(filter.metric.sql_operator());
+    query.push(" ");
+    push_bind_value(
+        query,
+        &cratestack_sql::SqlValue::Vector(filter.query_vector.clone()),
+    );
+    query.push(")");
+    match filter.op {
+        FilterOp::Eq => push_vector_distance_binary(query, "=", &filter.value),
+        FilterOp::Ne => push_vector_distance_binary(query, "!=", &filter.value),
+        FilterOp::Lt => push_vector_distance_binary(query, "<", &filter.value),
+        FilterOp::Lte => push_vector_distance_binary(query, "<=", &filter.value),
+        FilterOp::Gt => push_vector_distance_binary(query, ">", &filter.value),
+        FilterOp::Gte => push_vector_distance_binary(query, ">=", &filter.value),
+        FilterOp::IsNull | FilterOp::IsNotNull => {
+            unreachable!(
+                "VectorDistanceFilter built with unsupported op {:?}; distance is never null",
+                filter.op
+            );
+        }
+        FilterOp::In | FilterOp::Contains | FilterOp::StartsWith | FilterOp::EqOrNull => {
+            unreachable!(
+                "VectorDistanceFilter built with unsupported op {:?}",
+                filter.op
+            );
+        }
+    }
+}
+
+fn push_vector_distance_binary(
+    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    operator: &str,
+    value: &FilterValue,
+) {
+    query.push(" ").push(operator).push(" ");
+    let FilterValue::Single(value) = value else {
+        unreachable!("vector distance comparison requires FilterValue::Single");
+    };
+    push_bind_value(query, value);
+}
+
 pub(super) fn push_json_filter_query(
     query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
     filter: &cratestack_sql::JsonFilter,

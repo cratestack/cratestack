@@ -7,6 +7,7 @@ use crate::{FilterExpr, RelationFilter, RelationQuantifier, sqlx};
 
 use super::filter_subkinds::{
     push_coalesce_filter_query, push_json_filter_query, push_spatial_filter_query,
+    push_vector_distance_filter_query,
 };
 use super::values::push_bind_value;
 
@@ -77,6 +78,7 @@ pub(crate) fn push_filter_expr_query(
         FilterExpr::Coalesce(coalesce) => push_coalesce_filter_query(query, coalesce),
         FilterExpr::Json(filter) => push_json_filter_query(query, filter),
         FilterExpr::Spatial(filter) => push_spatial_filter_query(query, filter),
+        FilterExpr::VectorDistance(filter) => push_vector_distance_filter_query(query, filter),
     }
 }
 

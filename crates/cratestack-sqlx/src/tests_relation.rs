@@ -68,7 +68,8 @@ fn relation_scalar_order_preview_uses_correlated_subquery() {
         SortDirection::Asc,
     );
     let mut sql = String::new();
-    render_order_clause_sql(&clause, &mut sql);
+    let mut bind_index = 1usize;
+    render_order_clause_sql(&clause, &mut sql, &mut bind_index);
 
     assert_eq!(
         sql,

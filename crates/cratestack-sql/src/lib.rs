@@ -30,7 +30,7 @@ pub use dialect::{Dialect, PostgresDialect, SqliteDialect};
 pub use filter::{
     CoalesceExpr, CoalesceFilter, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName,
     JsonFilter, JsonTextPath, RelationFilter, RelationQuantifier, SpatialFilter, SpatialPoint,
-    coalesce, point,
+    VectorDistanceExpr, VectorDistanceFilter, VectorMetric, coalesce, point,
 };
 pub use order::{NullOrder, OrderClause, OrderTarget, SortDirection};
 pub use order_catalog::{
