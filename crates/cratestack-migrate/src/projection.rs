@@ -22,6 +22,7 @@
 use std::collections::BTreeMap;
 
 use cratestack_core::Schema;
+use serde::{Deserialize, Serialize};
 
 use crate::convert::{TableProjection, project_model};
 use crate::diff::views::{ViewProjection, project_views};
@@ -29,7 +30,14 @@ use crate::diff::views::{ViewProjection, project_views};
 /// Backend-agnostic snapshot of a schema's SQL shape: every table
 /// (columns, indexes, checks, foreign keys) and every view, keyed by
 /// their SQL name. The unit [`crate::diff_projections`] compares.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+///
+/// `Serialize`/`Deserialize` (issue #205): this is the value
+/// [`crate::Snapshot`] persists to `schema.snapshot.json` — both for
+/// the ordinary `.cstack`-authored path (`project()`, going through
+/// `cratestack migrate diff`) and for `cratestack migrate baseline`,
+/// which has no `Schema` on the "previous state" side at all, only
+/// whatever [`crate::introspect::postgres::introspect`] produced.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Projections {
     pub tables: BTreeMap<String, TableProjection>,
     pub views: BTreeMap<String, ViewProjection>,

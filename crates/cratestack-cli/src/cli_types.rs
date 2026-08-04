@@ -205,6 +205,44 @@ pub(crate) enum MigrateAction {
         #[arg(long)]
         allow_destructive: bool,
     },
+    /// Adopt an already-existing database as the starting point for
+    /// `migrate diff` (issue #205, design doc
+    /// `docs/design/migrate-baseline.md`). Introspects `--database-url`,
+    /// prints a drift report against `--schema` grouped by table, and
+    /// writes the snapshot from the introspected shape — plus a
+    /// synthetic row in `cratestack_migrations` recording the
+    /// adoption, so `apply_pending()` doesn't try to recreate what
+    /// baseline already accounted for. Refuses to run if a snapshot
+    /// already exists at the target path.
+    Baseline {
+        #[arg(long)]
+        schema: PathBuf,
+        /// Postgres connection string to introspect. Required (unlike
+        /// `migrate diff`, baseline has nothing to do without a live
+        /// database) — also the database the synthetic baseline row
+        /// is recorded into.
+        #[arg(long)]
+        database_url: String,
+        /// Root directory for per-backend migration trees, matching
+        /// `migrate diff`'s default and flag.
+        #[arg(long, default_value = "migrations")]
+        out_dir: PathBuf,
+        /// Baseline is Postgres-only for v1 (design doc §6, open
+        /// question 2 — no long-lived "existing production database"
+        /// story exists for embedded/SQLite targets today). The flag
+        /// exists so the surface matches `migrate diff`'s and a future
+        /// backend doesn't need a breaking CLI change; `postgres` is
+        /// the only accepted value right now.
+        #[arg(long, value_enum, default_value_t = BaselineBackendArg::Postgres)]
+        backend: BaselineBackendArg,
+        /// Fail (non-zero exit, no writes) if any drift is found
+        /// between the live database and `--schema`, instead of the
+        /// default report-and-succeed behavior. For teams that want
+        /// baselining to double as a "prove the schema already
+        /// matches" CI gate.
+        #[arg(long)]
+        strict: bool,
+    },
 }
 
 /// CLI-facing mirror of `cratestack_client_dart::DartPreset` — kept as a
@@ -230,6 +268,15 @@ pub(crate) enum MigrateBackendArg {
     Postgres,
     Sqlite,
     Both,
+}
+
+/// `migrate baseline`'s `--backend` value set — deliberately just
+/// `Postgres` (not [`MigrateBackendArg`]'s three variants) so
+/// "baseline is Postgres-only for v1" is enforced at the type level
+/// rather than by rejecting `Sqlite`/`Both` at runtime.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub(crate) enum BaselineBackendArg {
+    Postgres,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]

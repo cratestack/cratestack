@@ -8,6 +8,7 @@
 //! See ADR 0004 for the full design:
 //! <https://cratestack.dev/internals/schema-diff-adr>.
 
+mod checksum;
 mod convert;
 mod diff;
 pub mod emit;
@@ -19,6 +20,7 @@ mod naming;
 mod projection;
 mod snapshot;
 
+pub use checksum::projections_checksum;
 pub use convert::TableProjection;
 pub use diff::views::ViewProjection;
 pub use diff::{diff, diff_projections};

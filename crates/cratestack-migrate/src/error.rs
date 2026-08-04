@@ -38,4 +38,13 @@ pub enum MigrateError {
 
     #[error("failed to serialize snapshot: {0}")]
     SnapshotSerialize(#[source] serde_json::Error),
+
+    /// Surfaces a failure computing [`crate::projections_checksum`]
+    /// (issue #205). In practice unreachable for any `Projections`
+    /// value this crate itself produces — no non-string map keys, no
+    /// floats — but the input can also come from a hand-edited
+    /// snapshot deserialized off disk, so this stays a real error
+    /// rather than a panic.
+    #[error("failed to serialize projections for checksum: {0}")]
+    ChecksumSerialize(#[source] serde_json::Error),
 }

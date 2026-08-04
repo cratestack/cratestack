@@ -20,6 +20,7 @@
 use std::collections::BTreeMap;
 
 use cratestack_core::{Schema, View};
+use serde::{Deserialize, Serialize};
 
 use crate::ir::{CreateMaterializedView, CreateView, DropMaterializedView, DropView, Op};
 
@@ -28,7 +29,11 @@ use crate::ir::{CreateMaterializedView, CreateView, DropMaterializedView, DropVi
 ///
 /// This is the view half of the [`crate::Projections`] seam (see
 /// `crate::projection`) — the table half is [`crate::TableProjection`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `Serialize`/`Deserialize` (issue #205): needed for the same reason
+/// as [`crate::TableProjection`]'s — [`crate::Snapshot`] persists a
+/// whole [`crate::Projections`] value, views included.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ViewProjection {
     pub name: String,
     pub sql: String,

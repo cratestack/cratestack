@@ -72,6 +72,13 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 name,
                 allow_destructive,
             } => crate::migrate::handle_diff(schema, out_dir, backend, name, allow_destructive)?,
+            MigrateAction::Baseline {
+                schema,
+                database_url,
+                out_dir,
+                backend,
+                strict,
+            } => crate::migrate::handle_baseline(schema, database_url, out_dir, backend, strict)?,
         },
         Command::Diff { old, new, json } => handle_diff_schemas(old, new, json)?,
     }

@@ -16,6 +16,7 @@ mod uniques;
 use std::collections::{BTreeMap, HashSet};
 
 use cratestack_core::{Model, Schema, parse_composite_id_attribute};
+use serde::{Deserialize, Serialize};
 
 use crate::ir::{AddCheck, AddForeignKey, AddIndex, CheckKind, Column, ColumnArity, ColumnType};
 use crate::naming::{check_name, column_name, index_name_unique, table_name};
@@ -34,7 +35,13 @@ use uniques::composite_unique_indexes;
 /// for every table it knows about — not just [`project_model`] reading
 /// a parsed `.cstack` `Schema` — can be diffed with
 /// [`crate::diff_projections`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `Serialize`/`Deserialize` (issue #205): `Projections` is the
+/// on-disk shape [`crate::Snapshot`] persists, so every table it
+/// carries needs to round-trip through JSON — including a snapshot
+/// [`crate::introspect::postgres::introspect`] produced, which is a
+/// `Projections` value with no `Schema` behind it at all.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TableProjection {
     pub name: String,
     /// Old SQL table name declared via `@@rename(from = "...")`, if

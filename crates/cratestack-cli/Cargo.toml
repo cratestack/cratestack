@@ -35,13 +35,26 @@ clap.workspace = true
 cratestack-client-dart.workspace = true
 cratestack-client-typescript.workspace = true
 cratestack-core.workspace = true
-cratestack-migrate.workspace = true
+# `postgres-introspect` unconditional (not opt-in): `migrate baseline`
+# (issue #205) is a normal subcommand of the shipped binary, not a
+# cargo-feature-gated build variant — every `cratestack` binary needs
+# `introspect::postgres` available at runtime.
+cratestack-migrate = { workspace = true, features = ["postgres-introspect"] }
 cratestack-parser.workspace = true
 cratestack-proto.workspace = true
+# `cratestack-cli`'s first dependency on the runtime migrations-table
+# shape (issue #205): `migrate baseline` seeds a synthetic row via
+# `cratestack_sqlx::{Migration, apply_pending}` so the authoring side
+# (`cratestack-migrate`'s snapshot) and the runtime applier agree on
+# what's already there. See the PR description for the snapshot-only
+# vs. snapshot+synthetic-row design call.
+cratestack-sqlx.workspace = true
 cratestack-studio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+sqlx-core.workspace = true
+sqlx-postgres.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 url.workspace = true

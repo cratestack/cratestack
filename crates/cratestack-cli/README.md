@@ -203,6 +203,55 @@ Flags:
 
 See `cratestack-migrate`'s README for the full IR/emitter design.
 
+### `migrate baseline` — adopt an existing database
+
+```bash
+cratestack migrate baseline \
+  --schema schema.cstack \
+  --database-url postgres://user:pass@host:5432/db \
+  --out-dir migrations \
+  [--backend postgres] \
+  [--strict]
+```
+
+Points `migrate diff` at a database that already has tables — hand-created,
+from a prior tool, or from a previous internal migration system — instead
+of the empty schema `migrate diff` otherwise assumes when no snapshot
+exists yet. Introspects `--database-url`, diffs the live shape against
+`--schema` for a drift report (grouped by table, each change tagged
+`safe`/`lossy`/`blocking`), writes the snapshot **from the introspected
+shape** (not from `--schema` — see below), and records a synthetic row in
+`cratestack_migrations` so the runtime applier (`cratestack-sqlx`) and the
+authoring side agree about what's already there.
+
+Drift is reported, not resolved, and does **not** fail the command by
+default — matching the adoption use case, where the live database rarely
+matches the schema byte-for-byte on day one. Pass `--strict` to flip that:
+exit non-zero on any drift, with no snapshot written and no row recorded,
+for teams that want baselining to double as a "prove the schema already
+matches" CI gate instead of an adoption tool.
+
+Because the snapshot is written from what was actually introspected, a
+database with drift bakes that drift into the snapshot as "already true" —
+a later `migrate diff` will then propose the DDL to reconcile it, rather
+than silently treating undeclared drift as permanent. Refuses to run
+(non-zero exit, no writes, no DB round-trip) if a snapshot already exists
+at `<out-dir>/postgres/schema.snapshot.json` — baselining an
+already-managed backend is almost certainly a mistake.
+
+Flags:
+
+- `--schema <PATH>` (required)
+- `--database-url <URL>` (required) — the live Postgres database to
+  introspect and to record the baseline row into
+- `--out-dir <DIR>` (default `migrations`)
+- `--backend <postgres>` (default, and currently the only accepted value —
+  baseline is Postgres-only for now)
+- `--strict` — fail instead of reporting drift
+
+Postgres-only for v1; no `--backend sqlite`/`both`. See
+`docs/design/migrate-baseline.md` for the full design.
+
 ### `diff` — schema-change detector
 
 ```bash
