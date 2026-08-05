@@ -372,21 +372,58 @@ bump NEW:
 	# so a single recipe can't satisfy both. perl's in-place edit is
 	# identical across platforms. `\Q...\E` quotemetas the current
 	# version so its dots match literally rather than as `.` wildcards.
+	#
+	# Anchored to two shapes only — NOT a bare literal-string replace
+	# across the whole line, which is what this recipe used to do.
+	# (1) `version = "X"` lines: the workspace's own
+	# `[workspace.package]` version, and cratestack-studio-ui's
+	# un-inherited `[package]` version (see the separate-workspace note
+	# below). (2) lines whose dependency key starts with `cratestack-`:
+	# the `[workspace.dependencies]` self-references
+	# (`cratestack-foo = { path = ..., version = "X" }`) that genuinely
+	# do need to move in lockstep. A bare `s/"X"/"Y"/g` also rewrote any
+	# *third-party* dependency whose pinned version happened to collide
+	# with the workspace version string — e.g. root `Cargo.toml`'s
+	# `serde_urlencoded = "0.7.1"` got mangled into the nonexistent
+	# `serde_urlencoded = "0.7.2"` during the 0.7.2 bump, breaking
+	# `cargo check`/`cargo metadata` for everyone. `CRATESTACK_BUMP_FROM`/
+	# `_TO` are exported so the regex doesn't need `{{NEW}}`/`$current`
+	# interpolated through bash's double-quote escaping, which gets
+	# fragile once the pattern also needs perl's own `$1` backreference.
+	export CRATESTACK_BUMP_FROM="$current"
+	export CRATESTACK_BUMP_TO="{{NEW}}"
 	find . -name Cargo.toml \
 	  -not -path './target/*' \
 	  -not -path '*/node_modules/*' \
-	  -print0 | xargs -0 perl -i -pe "s/\Q\"$current\"\E/\"{{NEW}}\"/g"
+	  -print0 | xargs -0 perl -i -pe '
+	    s/^(\s*version\s*=\s*)"\Q$ENV{CRATESTACK_BUMP_FROM}\E"/$1"$ENV{CRATESTACK_BUMP_TO}"/;
+	    s/^(\s*cratestack-[A-Za-z0-9_-]+\s*=.*)"\Q$ENV{CRATESTACK_BUMP_FROM}\E"/$1"$ENV{CRATESTACK_BUMP_TO}"/;
+	  '
 	# Keep the @cratestack/cli npm wrapper's version (and the release
 	# asset tag it downloads), every package in the split @cratestack/api
 	# family (ts-types, link-*, runtime-*, validator-*, adapter-*, and the
 	# api compat shim itself), and the @cratestack/cbor family (cbor,
 	# cbor-node, cbor-web) in lockstep with the workspace version —
 	# scoped to these package.json files, not cratestack-vscode (versioned
-	# independently) or the unrelated example apps'. A single
-	# literal-string replace (not just the `"version": "..."` key) also
-	# catches each package's own pinned `"@cratestack/xyz": "$current"`
-	# cross-references to its siblings, which need to move in lockstep too.
-	perl -i -pe "s/\Q\"$current\"\E/\"{{NEW}}\"/g" \
+	# independently) or the unrelated example apps'.
+	#
+	# Same anchoring discipline as the Cargo.toml step above, and for the
+	# same reason: a bare literal-string replace here would also rewrite
+	# any third-party dependency in these files pinned (no `^`/`~` range)
+	# to a version equal to the current workspace version. None of these
+	# 14 package.json files do that today — every non-`@cratestack/*`
+	# dependency here uses a `^`/`~` range, which can never literal-match
+	# a bare `"X"` — so this hasn't actually bitten yet. But it's the
+	# identical failure class as the Cargo.toml bug above, just not (yet)
+	# triggered by coincidence, so it gets the same fix rather than
+	# waiting for its own incident. Only two shapes are touched: the
+	# package's own `"version": "X"` field, and `"@cratestack/xyz": "X"`
+	# cross-references to its siblings — both need to move in lockstep
+	# with the workspace version.
+	perl -i -pe '
+	  s/^(\s*"version"\s*:\s*)"\Q$ENV{CRATESTACK_BUMP_FROM}\E"/$1"$ENV{CRATESTACK_BUMP_TO}"/;
+	  s/^(\s*"\@cratestack\/[A-Za-z0-9_-]+"\s*:\s*)"\Q$ENV{CRATESTACK_BUMP_FROM}\E"/$1"$ENV{CRATESTACK_BUMP_TO}"/;
+	' \
 	  packages/cratestack-cli-npm/package.json \
 	  packages/cratestack-api/package.json \
 	  packages/cratestack-ts-types/package.json \

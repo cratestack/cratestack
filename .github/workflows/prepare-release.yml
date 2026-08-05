@@ -108,6 +108,81 @@ jobs:
       - name: Bump workspace version
         run: just bump ${{ inputs.version }}
 
+      # Regression guard for the bug fixed alongside this step: `just bump`
+      # used to do a bare literal-string replace of the old version across
+      # every Cargo.toml/package.json, which also rewrote any *third-party*
+      # dependency whose pinned version happened to collide with the
+      # workspace version string — e.g. root `Cargo.toml`'s
+      # `serde_urlencoded = "0.7.1"` got mangled into the nonexistent
+      # `serde_urlencoded = "0.7.2"` during the 0.7.2 bump, which broke
+      # `cargo`'s dependency resolution for everyone (real failure:
+      # https://github.com/cratestack/cratestack/actions/runs/30965428570).
+      #
+      # Two independent checks, because either alone can miss a real bug:
+      # (1) a structural check that every line `just bump` *added* to a
+      # Cargo.toml/package.json is one of the two allowed shapes (the
+      # workspace/package's own `version = "X"` field, or a
+      # `cratestack-*`/`@cratestack/*` cross-reference) — this is what
+      # would have caught the `serde_urlencoded` corruption directly,
+      # instead of relying on `cargo` happening to reject the collided
+      # version outright; (2) `cargo metadata --locked`, which would catch
+      # a corrupted third-party pin that *does* coincidentally resolve to a
+      # real version of that crate (the structural check above only knows
+      # the line looks wrong, not whether cargo would actually reject it —
+      # `--locked` additionally asserts `just bump`'s own `cargo check`
+      # left `Cargo.lock` fully in sync, not just resolvable).
+      - name: Assert bump touched only workspace/cratestack version fields
+        run: |
+          set -euo pipefail
+          fail=0
+
+          check_added_lines() {
+            local f="$1" allow_re="$2"
+            local content
+            while IFS= read -r content; do
+              [ -z "$content" ] && continue
+              content="${content#+}"
+              if [[ ! "$content" =~ $allow_re ]]; then
+                echo "::error file=$f::just bump changed an unexpected line: $content"
+                fail=1
+              fi
+            done < <(git diff --no-color -U0 -- "$f" | grep -E '^\+[^+]' || true)
+          }
+
+          cargo_allow_re='^version = "[0-9]|^cratestack-[A-Za-z0-9_-]+ = .*version = "'
+          while IFS= read -r -d '' f; do
+            check_added_lines "$f" "$cargo_allow_re"
+          done < <(find . -name Cargo.toml -not -path './target/*' -not -path '*/node_modules/*' -print0)
+
+          npm_allow_re='^[[:space:]]*"version": "[0-9]|^[[:space:]]*"@cratestack/[A-Za-z0-9_-]+": "'
+          for f in \
+            packages/cratestack-cli-npm/package.json \
+            packages/cratestack-api/package.json \
+            packages/cratestack-ts-types/package.json \
+            packages/cratestack-link-batch/package.json \
+            packages/cratestack-link-logger/package.json \
+            packages/cratestack-runtime-fetch/package.json \
+            packages/cratestack-runtime-axios/package.json \
+            packages/cratestack-validator-zod/package.json \
+            packages/cratestack-validator-yup/package.json \
+            packages/cratestack-adapter-tanstack-query/package.json \
+            packages/cratestack-adapter-rtk/package.json \
+            packages/cratestack-cbor/package.json \
+            packages/cratestack-cbor-node/package.json \
+            packages/cratestack-cbor-web/package.json; do
+            check_added_lines "$f" "$npm_allow_re"
+          done
+
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::just bump changed version-looking lines outside the workspace-version/cratestack-cross-reference allowlist — see errors above. This is the failure class that broke the 0.7.2 release (serde_urlencoded got silently rewritten)." >&2
+            exit 1
+          fi
+          echo "diff-shape check passed: every changed version line was either the workspace's own version or a cratestack-*/@cratestack/* cross-reference."
+
+          echo "cargo metadata --locked (confirms the bumped dependency graph actually resolves and Cargo.lock is in sync):"
+          cargo metadata --locked --format-version 1 >/dev/null
+          echo "OK: dependency graph resolves with no third-party version corrupted."
+
       - name: Validate (cargo check + tests)
         run: just release-check
 
