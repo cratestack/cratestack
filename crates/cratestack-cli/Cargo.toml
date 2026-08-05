@@ -40,6 +40,7 @@ cratestack-core.workspace = true
 # cargo-feature-gated build variant — every `cratestack` binary needs
 # `introspect::postgres` available at runtime.
 cratestack-migrate = { workspace = true, features = ["postgres-introspect"] }
+cratestack-mock-wiremock.workspace = true
 cratestack-parser.workspace = true
 cratestack-proto.workspace = true
 # `cratestack-cli`'s first dependency on the runtime migrations-table

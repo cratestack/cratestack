@@ -20,6 +20,7 @@ members = [
     "crates/cratestack-lsp",
     "crates/cratestack-macros",
     "crates/cratestack-migrate",
+    "crates/cratestack-mock-wiremock",
     "crates/cratestack-parser",
     "crates/cratestack-pg",
     "crates/cratestack-policy",
@@ -121,6 +122,7 @@ cratestack-core = { path = "crates/cratestack-core", version = "0.7.3" }
 cratestack-grpc = { path = "crates/cratestack-grpc", version = "0.7.3" }
 cratestack-macros = { path = "crates/cratestack-macros", version = "0.7.3" }
 cratestack-migrate = { path = "crates/cratestack-migrate", version = "0.7.3" }
+cratestack-mock-wiremock = { path = "crates/cratestack-mock-wiremock", version = "0.7.3" }
 cratestack-parser = { path = "crates/cratestack-parser", version = "0.7.3" }
 cratestack-pg = { path = "crates/cratestack-pg", version = "0.7.3" }
 cratestack-policy = { path = "crates/cratestack-policy", version = "0.7.3" }

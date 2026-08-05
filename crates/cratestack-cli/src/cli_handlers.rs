@@ -62,6 +62,12 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             package,
             check,
         } => crate::generate_proto::handle_generate_proto(schema, out, package, check)?,
+        Command::GenerateWiremock {
+            schema,
+            out,
+            base_path,
+            check,
+        } => handle_generate_wiremock(schema, out, base_path, check)?,
         Command::Studio { cmd } => handle_studio(cmd)?,
         Command::PrintIr { schema } => handle_print_ir(schema)?,
         Command::Migrate { action } => match action {
@@ -198,6 +204,28 @@ fn handle_generate_typescript(
 
     write_generated_files(&out, files)?;
     println!("generated TypeScript client package: {}", out.display());
+    Ok(())
+}
+
+fn handle_generate_wiremock(
+    schema: PathBuf,
+    out: PathBuf,
+    base_path: String,
+    check: bool,
+) -> Result<()> {
+    let parsed = parse_schema_or_render(&schema)?;
+    let package = cratestack_mock_wiremock::generate_package(
+        &parsed,
+        &cratestack_mock_wiremock::WireMockGeneratorConfig { base_path },
+    )?;
+    let files = into_generated_files(package.files);
+
+    if check {
+        return check_drift(&out, &files, "WireMock");
+    }
+
+    write_generated_files(&out, files)?;
+    println!("generated WireMock stub mappings: {}", out.display());
     Ok(())
 }
 

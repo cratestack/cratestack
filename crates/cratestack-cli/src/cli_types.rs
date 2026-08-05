@@ -111,6 +111,32 @@ pub(crate) enum Command {
         #[arg(long)]
         check: bool,
     },
+    /// Emit WireMock stub mappings (one per procedure) derived from the
+    /// schema's own `procedure`/`mutation procedure` declarations, so
+    /// integration/e2e tests can run against a mock backend whose wire
+    /// contract can't drift from the real one without regenerating.
+    /// v1 scope: happy-path stubs for procedures only — see
+    /// `cratestack_mock_wiremock`'s crate docs and
+    /// `docs/design/wiremock-stubs.md` for what's covered.
+    #[command(name = "generate-wiremock")]
+    GenerateWiremock {
+        #[arg(long)]
+        schema: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
+        /// Prefix prepended to every stub's `urlPath`, matching the
+        /// same-named flag on `generate-dart`/`generate-typescript` —
+        /// must agree with whatever prefix the deployed server (and any
+        /// generated client being tested against this mock) are
+        /// configured with.
+        #[arg(long, default_value = "/api")]
+        base_path: String,
+        /// Drift-detection mode: generate in memory and diff against
+        /// `--out` instead of writing. Exits non-zero and lists the
+        /// files that differ if the two don't match.
+        #[arg(long)]
+        check: bool,
+    },
     /// Studio: admin and testing surface for `.cstack` schemas.
     Studio {
         #[command(subcommand)]

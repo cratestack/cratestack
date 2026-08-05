@@ -1105,6 +1105,7 @@ dependencies = [
  "cratestack-client-typescript",
  "cratestack-core",
  "cratestack-migrate",
+ "cratestack-mock-wiremock",
  "cratestack-parser",
  "cratestack-proto",
  "cratestack-sqlx",
@@ -1313,6 +1314,17 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
+]
+
+[[package]]
+name = "cratestack-mock-wiremock"
+version = "0.7.3"
+dependencies = [
+ "cratestack-core",
+ "cratestack-parser",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

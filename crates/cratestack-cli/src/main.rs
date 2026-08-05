@@ -271,6 +271,33 @@ mod tests {
     }
 
     #[test]
+    fn generate_wiremock_clap_defaults() {
+        let cli = Cli::parse_from([
+            "cratestack",
+            "generate-wiremock",
+            "--schema",
+            "schema.cstack",
+            "--out",
+            "out",
+        ]);
+
+        match cli.command {
+            Command::GenerateWiremock {
+                schema,
+                out,
+                base_path,
+                check,
+            } => {
+                assert_eq!(schema, PathBuf::from("schema.cstack"));
+                assert_eq!(out, PathBuf::from("out"));
+                assert_eq!(base_path, "/api");
+                assert!(!check);
+            }
+            _ => panic!("expected generate-wiremock command"),
+        }
+    }
+
+    #[test]
     fn studio_run_clap_defaults() {
         let cli = Cli::parse_from(["cratestack", "studio", "run"]);
         match cli.command {

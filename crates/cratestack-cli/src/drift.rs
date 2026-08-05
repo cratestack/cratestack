@@ -77,21 +77,22 @@ fn walk_files(dir: &Path) -> Vec<PathBuf> {
     files
 }
 
-/// Runs the `--check` (drift-detection) mode for a generated client
-/// package: diffs in-memory `files` against `out` and, if they differ,
-/// fails with a report instead of writing anything to disk.
+/// Runs the `--check` (drift-detection) mode for a generated file set
+/// (a client package, or — for `generate-wiremock` — a set of stub
+/// mappings): diffs in-memory `files` against `out` and, if they
+/// differ, fails with a report instead of writing anything to disk.
 pub(crate) fn check_drift(out: &Path, files: &[GeneratedFile], label: &str) -> Result<()> {
     let drift = diff_generated_files(out, files);
     if drift.is_empty() {
         println!(
-            "no drift detected: generated {label} client package matches '{}'",
+            "no drift detected: generated {label} output matches '{}'",
             out.display()
         );
         return Ok(());
     }
 
     let mut report = format!(
-        "drift detected in '{}': {} file(s) differ from the generated {label} client package\n",
+        "drift detected in '{}': {} file(s) differ from the generated {label} output\n",
         out.display(),
         drift.len()
     );

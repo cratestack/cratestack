@@ -113,6 +113,15 @@ impl GeneratedFileLike for cratestack_client_typescript::GeneratedTypeScriptFile
     }
 }
 
+impl GeneratedFileLike for cratestack_mock_wiremock::GeneratedWireMockFile {
+    fn into_generated_file(self) -> GeneratedFile {
+        GeneratedFile {
+            file_name: self.file_name,
+            contents: self.contents,
+        }
+    }
+}
+
 pub(crate) fn into_generated_files<T: GeneratedFileLike>(files: Vec<T>) -> Vec<GeneratedFile> {
     files
         .into_iter()
