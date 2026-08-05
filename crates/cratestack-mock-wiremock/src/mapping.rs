@@ -31,9 +31,20 @@ pub(crate) fn build_procedure_mapping(
     )?;
 
     let route_path = match schema.transport {
-        // `RPC_UNARY_PATH` (`cratestack_core::rpc`) is `/rpc/{op_id}`;
-        // `{op_id}` is the procedure name.
-        TransportStyle::Rpc => format!("/rpc/{}", procedure.name),
+        // `RPC_UNARY_PATH` (`cratestack_core::rpc`) is `/rpc/{op_id}`, but
+        // `{op_id}` is NOT the bare procedure name — it's `procedure.<name>`
+        // (`generate_procedure_rpc_dispatch_arm` in
+        // `crates/cratestack-macros/src/transport/rpc.rs`:
+        // `let op_id = format!("procedure.{}", procedure.name);`, matched
+        // against the identical `'procedure.{{ procedure.name }}'` the
+        // generated Dart RPC client sends in
+        // `templates/rpc-apis.dart.j2`, and exercised end-to-end by
+        // `crates/cratestack-pg/tests/rpc_canonical_request.rs` and
+        // `crates/cratestack-pg/tests/include_schema.rs`, both of which
+        // hit `/rpc/procedure.ping`, never `/rpc/ping`). Omitting the
+        // `procedure.` prefix here would make every RPC-transport stub
+        // silently never match a real client's request.
+        TransportStyle::Rpc => format!("/rpc/procedure.{}", procedure.name),
         // REST is the schema default and the only other transport this
         // generator supports (`generate_package` rejects `Grpc` before
         // this is reached) — every procedure's REST route is

@@ -46,9 +46,22 @@ Read before designing, not assumed:
   whether the schema says `transport rest` explicitly or takes it as the
   default — there is no per-procedure REST verb/path customization the way
   a hand-designed REST API would have. `transport rpc` schemas use
-  `POST /rpc/<name>` (`cratestack_core::rpc::RPC_UNARY_PATH`) instead.
-  Either way, one route per procedure, always `POST`, body in and body out
-  with no envelope.
+  `POST /rpc/{op_id}` (`cratestack_core::rpc::RPC_UNARY_PATH`) instead,
+  where `{op_id}` for a procedure is **`procedure.<name>`**, not the bare
+  name — `generate_procedure_rpc_dispatch_arm` in
+  `crates/cratestack-macros/src/transport/rpc.rs` builds it as
+  `format!("procedure.{}", procedure.name)`, matched byte-for-byte by the
+  generated Dart RPC client (`'procedure.{{ procedure.name }}'` in
+  `templates/rpc-apis.dart.j2`) and exercised end-to-end by
+  `crates/cratestack-pg/tests/rpc_canonical_request.rs` and
+  `.../tests/include_schema.rs`, both of which hit
+  `/rpc/procedure.ping`, never `/rpc/ping`. A first version of this
+  generator got this wrong (bare `/rpc/<name>`, caught in review before
+  merge, see the PR history) — worth calling out explicitly here because
+  it's exactly the failure mode this crate exists to prevent: a stub that
+  never matches fails a test for a reason that looks like the code under
+  test rather than the fixture. Either way (REST or RPC), one route per
+  procedure, always `POST`, body in and body out with no envelope.
 - **Status codes.** Every procedure's success response is a literal
   `axum::http::StatusCode::OK` — `crates/cratestack-macros/src/axum/
   procedure.rs`'s `generate_procedure_axum_handler` hardcodes it; there is

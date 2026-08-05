@@ -106,7 +106,59 @@ procedure hello(): Greeting
     let package = generate_package(&schema, &WireMockGeneratorConfig::default()).unwrap();
     let mapping: serde_json::Value = serde_json::from_str(&package.files[0].contents).unwrap();
 
-    assert_eq!(mapping["request"]["urlPath"], "/api/rpc/hello");
+    // NOT "/api/rpc/hello": the real RPC unary route's `{op_id}` is
+    // `procedure.<name>`, not the bare procedure name — see
+    // `generate_procedure_rpc_dispatch_arm` in
+    // `crates/cratestack-macros/src/transport/rpc.rs` (`let op_id =
+    // format!("procedure.{}", procedure.name);`), matched byte-for-byte
+    // by the generated Dart RPC client's `'procedure.{{ procedure.name
+    // }}'` in `templates/rpc-apis.dart.j2`, and exercised end-to-end by
+    // `crates/cratestack-pg/tests/rpc_canonical_request.rs` (asserts
+    // `ping_canonical.path == "/rpc/procedure.ping"`) and
+    // `crates/cratestack-pg/tests/include_schema.rs`. Omitting the
+    // `procedure.` prefix here would make every RPC-transport stub
+    // silently never match a real client's request.
+    assert_eq!(mapping["request"]["urlPath"], "/api/rpc/procedure.hello");
+}
+
+/// Pins the exact literal `urlPath` emitted for each transport side by
+/// side, against the same procedure name, so a future regression in
+/// either one (e.g. reintroducing the bare-name RPC path this test
+/// module used to assert before it was caught in review) fails loudly
+/// on an exact string rather than a substring/prefix check that could
+/// pass by accident.
+#[test]
+fn pins_the_exact_url_path_for_both_transports() {
+    let rest_schema = schema(&format!(
+        "{NO_DATASOURCE}
+type Greeting {{
+  message String
+}}
+
+procedure ping(): Greeting
+"
+    ));
+    let rpc_schema = schema(&format!(
+        "transport rpc
+
+{NO_DATASOURCE}
+type Greeting {{
+  message String
+}}
+
+procedure ping(): Greeting
+"
+    ));
+
+    let rest_package = generate_package(&rest_schema, &WireMockGeneratorConfig::default()).unwrap();
+    let rpc_package = generate_package(&rpc_schema, &WireMockGeneratorConfig::default()).unwrap();
+    let rest_mapping: serde_json::Value =
+        serde_json::from_str(&rest_package.files[0].contents).unwrap();
+    let rpc_mapping: serde_json::Value =
+        serde_json::from_str(&rpc_package.files[0].contents).unwrap();
+
+    assert_eq!(rest_mapping["request"]["urlPath"], "/api/$procs/ping");
+    assert_eq!(rpc_mapping["request"]["urlPath"], "/api/rpc/procedure.ping");
 }
 
 #[test]
