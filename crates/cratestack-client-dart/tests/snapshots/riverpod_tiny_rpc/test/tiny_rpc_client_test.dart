@@ -1,7 +1,5 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tiny_rpc_client/tiny_rpc_client.dart';
-
 // Issue #331: the generated list provider's `input` parameter is
 // `IMap<String, Object?>` (see `model_providers.dart.j2`'s own comment
 // for why not a bare `Map`) — only imported here, not unconditionally
@@ -9,6 +7,12 @@ import 'package:tiny_rpc_client/tiny_rpc_client.dart';
 // exercises it and an unused import is a real `flutter analyze
 // --fatal-warnings` failure.
 import 'package:fast_immutable_collections/fast_immutable_collections.dart';
+// `flutter_riverpod` itself is likewise only imported here — a schema
+// with no models at all, or whose first model in schema order is paged
+// (see `build_package_test.rs`'s own comment on why a paged first model
+// gets no override-propagation proof), never emits the
+// `ProviderContainer` tests below that are this import's only use.
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// A fake [CratestackRpcAdapter] the test below overrides
 /// `tinyRpcClientAdapterProvider` with — the *existing*,
@@ -43,29 +47,38 @@ class _FakeRpcAdapter implements CratestackRpcAdapter {
 }
 
 void main() {
-  // `CratestackRpcCallOptions` (headers/idempotency key) is the RPC
-  // transport's per-call options type — the REST transport's URL-query
-  // builder types have no equivalent here. RPC calls carry a typed body
-  // instead of a URL query, so there is no query-builder surface to
-  // exercise in this package.
-  const options = CratestackRpcCallOptions(
-    headers: {'x-client': 'example'},
-    idempotencyKey: 'example-key',
-  );
-  assert(options.idempotencyKey == 'example-key');
-  assert(options.headers['x-client'] == 'example');
+  // A real `test()` case, not bare top-level `assert`s — the latter are
+  // no-ops in a release-mode `flutter test` run, and a `test/` file with
+  // no `test()` case at all when `override_proof` is unset (schemas with
+  // no models, or whose first model in schema order is paged) is itself
+  // a smell for a generated test scaffold. Wrapping this in `test(...)`
+  // also gives `flutter_test` a real, unconditional use, independent of
+  // whether the `ProviderContainer` tests below are emitted.
+  test('rpc call options and generated surface', () {
+    // `CratestackRpcCallOptions` (headers/idempotency key) is the RPC
+    // transport's per-call options type — the REST transport's URL-query
+    // builder types have no equivalent here. RPC calls carry a typed body
+    // instead of a URL query, so there is no query-builder surface to
+    // exercise in this package.
+    const options = CratestackRpcCallOptions(
+      headers: {'x-client': 'example'},
+      idempotencyKey: 'example-key',
+    );
+    expect(options.idempotencyKey, 'example-key');
+    expect(options.headers['x-client'], 'example');
 
-  // Generated model API entry points:
-  // - widgets
+    // Generated model API entry points:
+    // - widgets
 
-  // Generated procedures:
-  // - echoName(...)
+    // Generated procedures:
+    // - echoName(...)
 
-  // Round-trips the generated model class through the same
-  // fromWire/toWire pair every RPC response and request body uses.
-  final sample = Widget.fromWire(const <String, Object?>{});
-  final wire = sample.toWire();
-  assert(wire.containsKey('id'));
+    // Round-trips the generated model class through the same
+    // fromWire/toWire pair every RPC response and request body uses.
+    final sample = Widget.fromWire(const <String, Object?>{});
+    final wire = sample.toWire();
+    expect(wire.containsKey('id'), isTrue);
+  });
 
   test(
     'overriding tinyRpcClientAdapterProvider alone reaches widgetListProvider '

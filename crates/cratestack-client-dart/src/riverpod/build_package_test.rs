@@ -5,10 +5,25 @@
 //! this story — changes what a generated `@riverpod` operation provider
 //! actually returns. Reuses `crate::context::build_template_context`
 //! (the `default` preset's own context builder) for the pre-existing
-//! smoke content (options/query-builder asserts, the model/procedure
+//! smoke content (options/query-builder checks, the model/procedure
 //! roll call, the `sample_model` wire round-trip) so this file doesn't
 //! silently drop coverage the `default` preset's own test already has —
 //! only the override-proof `test(...)` block at the end is new.
+//!
+//! That pre-existing smoke content is always wrapped in its own real
+//! `test(...)` case in the emitted file (not bare top-level `assert`s,
+//! and not conditional on `override_proof`) — a schema with no models at
+//! all, or whose first model in schema order is paged, gets no
+//! `override_proof` (see `first_model_list_provider`'s doc comment
+//! below) and therefore no override-propagation `test(...)` block; with
+//! bare asserts and an unconditionally-imported `flutter_riverpod`, that
+//! shape of schema used to leave both `flutter_riverpod` and
+//! `flutter_test` unused, failing the generated package's own
+//! `flutter analyze` (`flutter_lints/flutter.yaml` enables
+//! `unused_import`). `flutter_riverpod`'s import is now conditional on
+//! `override_proof` in both `rest_package_test.dart.j2` and
+//! `rpc_package_test.dart.j2`, same as `fast_immutable_collections`
+//! already was in the RPC template.
 use serde::Serialize;
 
 use crate::config::{DartGeneratorConfig, DartGeneratorError};

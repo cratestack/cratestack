@@ -1,6 +1,14 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tiny_rest_client/tiny_rest_client.dart';
+// Only imported when `override_proof` is set — a schema with no models
+// at all, or whose first model in schema order is paged (see
+// `build_package_test.rs`'s own comment on why a paged first model gets
+// no override-propagation proof), never emits the `ProviderContainer`
+// tests below that are this import's only use. An unconditional import
+// here used to make `flutter analyze --fatal-warnings` (which the
+// generated `analysis_options.yaml` enables via `flutter_lints/flutter.yaml`)
+// fail on `unused_import` for exactly that shape of schema.
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// A fake [CratestackClientAdapter] the test below overrides
 /// `tinyRestClientAdapterProvider` with — the *existing*,
@@ -21,29 +29,40 @@ class _FakeClientAdapter implements CratestackClientAdapter {
 }
 
 void main() {
-  const fetchQuery = CratestackFetchQuery();
-  final selection = WidgetSelection();
-  selection.id();
-  final listQuery = selection.toListQuery(
-    sort: '-id',
-    limit: 20,
-    offset: 0,
-    where: 'published=true',
-    orFilters: ['published=true', 'published=false'],
-    filters: {'status': 'active'},
-  );
-  final projection = selection.asProjection();
+  // A real `test()` case, not bare top-level `assert`s — the latter are
+  // no-ops in a release-mode `flutter test` run (asserts only fire under
+  // `--enable-asserts`, on by default for `flutter test` but not
+  // guaranteed by every runner), and a `test/` file that contains no
+  // `test()` case at all when `override_proof` is unset (schemas with no
+  // models, or whose first model in schema order is paged) is itself a
+  // smell for a generated test scaffold. Wrapping this in `test(...)`
+  // also gives `flutter_test` a real, unconditional use, independent of
+  // whether the `ProviderContainer` tests below are emitted.
+  test('query parameters', () {
+    const fetchQuery = CratestackFetchQuery();
+    final selection = WidgetSelection();
+    selection.id();
+    final listQuery = selection.toListQuery(
+      sort: '-id',
+      limit: 20,
+      offset: 0,
+      where: 'published=true',
+      orFilters: ['published=true', 'published=false'],
+      filters: {'status': 'active'},
+    );
+    final projection = selection.asProjection();
 
-  assert(listQuery.toQueryParameters()['sort'] == '-id');
-  assert(listQuery.toQueryParameters()['limit'] == 20);
-  assert(listQuery.toQueryParameters()['offset'] == 0);
-  assert(listQuery.toQueryParameters()['where'] == 'published=true');
-  assert(listQuery.toQueryParameters()['or'] == 'published=true|published=false');
-  assert(listQuery.toQueryParameters()['status'] == 'active');
-  assert(fetchQuery.toQueryParameters().isEmpty);
-  assert(listQuery.toQueryParameters()['fields'] != null);
-  assert(selection.toFetchQuery().toQueryParameters().isNotEmpty);
-  assert(projection.toFetchQuery().toQueryParameters().isNotEmpty);
+    expect(listQuery.toQueryParameters()['sort'], '-id');
+    expect(listQuery.toQueryParameters()['limit'], 20);
+    expect(listQuery.toQueryParameters()['offset'], 0);
+    expect(listQuery.toQueryParameters()['where'], 'published=true');
+    expect(listQuery.toQueryParameters()['or'], 'published=true|published=false');
+    expect(listQuery.toQueryParameters()['status'], 'active');
+    expect(fetchQuery.toQueryParameters(), isEmpty);
+    expect(listQuery.toQueryParameters()['fields'], isNotNull);
+    expect(selection.toFetchQuery().toQueryParameters(), isNotEmpty);
+    expect(projection.toFetchQuery().toQueryParameters(), isNotEmpty);
+  });
 
   test(
     'overriding tinyRestClientAdapterProvider alone reaches widgetListProvider '
