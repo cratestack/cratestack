@@ -2,6 +2,7 @@
 name = "embedded-expo-native"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 publish = false
 description = "Rust cdylib for the embedded-expo example. Exposes a single `cratestack_dispatch` C-ABI entry point that decodes a JSON OperationRequest, executes against the Note model via ModelDelegate, and returns a serialized OperationResponse. The Expo native module on iOS/Android calls this entry point and ferries bytes to/from JS."
 

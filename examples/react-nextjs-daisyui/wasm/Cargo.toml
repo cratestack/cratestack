@@ -2,6 +2,7 @@
 name = "react-nextjs-daisyui-wasm"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 publish = false
 description = "Browser-side wasm crate for the React + Next.js + DaisyUI example. Hosts include_embedded_schema! compiled to wasm32-unknown-unknown; the Next.js client persists notes via OPFS and reconciles with the server-side napi addon over fetch."
 

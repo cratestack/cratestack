@@ -25,6 +25,12 @@ warn() { echo "[quality] WARN: $*" >&2; }
 # Track errors but don't fail immediately — collect all reports first
 SCAN_ERRORS=0
 
+# cargo-deny is CrateStack's actual dependency-risk gate (see scan_cargo_deny
+# below for why it's handled differently from the other, informational
+# scanners in this file): a real finding here sets this flag, which is
+# checked at the very end of the script, after every scanner has run.
+CARGO_DENY_FAILED=0
+
 # ============================================================================
 # Utility: Create a minimal SARIF report from non-SARIF output
 # ============================================================================
@@ -77,8 +83,27 @@ scan_cargo_deny() {
   # "all" is a positional check-selector value, not a flag (`--all` doesn't
   # exist — confirmed via `cargo deny check --help` against a real binary;
   # it errors "unexpected argument '--all' found").
+  #
+  # Unlike the SAST/secrets/IaC scanners in this file (semgrep, gitleaks,
+  # trivy), whose findings are informational and gated downstream by
+  # reviewdog's diff-aware filtering over the merged SARIF, cargo-deny never
+  # emits real SARIF (see the stub below — "SARIF conversion not yet
+  # implemented"), so its findings never reach that pipeline at all. A
+  # license/advisory/ban/source violation here is CrateStack's actual
+  # dependency-risk gate (CLAUDE.md's `just all-checks` ends in `cargo deny
+  # check`), so it must fail this script for real rather than being logged
+  # and swallowed. That failure is deferred to CARGO_DENY_FAILED (checked
+  # at the very end of the script, after every other scanner has still had
+  # its chance to run and produce a report) instead of exiting here
+  # immediately, to preserve this script's "collect every report before
+  # failing" design — an immediate exit here would starve the later
+  # scanners of a run and break gate.sh's "every scanner produced a SARIF"
+  # check for unrelated reasons.
   if ! cargo deny check all 2>&1 | tee "$REPORTS_DIR/cargo-deny.txt"; then
-    log "cargo deny found issues (expected in scans)"
+    warn "cargo deny found license/advisory/ban/source issues (see $REPORTS_DIR/cargo-deny.txt)"
+    CARGO_DENY_FAILED=1
+  else
+    log "cargo deny check passed"
   fi
 
   # For now, create a stub SARIF — a proper converter would parse the text
@@ -295,6 +320,14 @@ log "Merged report: $REPORTS_DIR/quality.sarif"
 if [[ $SCAN_ERRORS -gt 0 ]]; then
   warn "One or more scanners had configuration errors (see above)"
   # Don't fail the script itself; the gate script will decide
+fi
+
+# cargo-deny is the one scanner in this file whose findings are a real gate
+# rather than informational (see scan_cargo_deny) — checked last, after
+# every scanner above has had its chance to run and produce a report, so a
+# dependency-risk failure never starves the rest of the pipeline of output.
+if [[ $CARGO_DENY_FAILED -ne 0 ]]; then
+  error "cargo deny found dependency-risk issues (license/advisory/ban/source) — see $REPORTS_DIR/cargo-deny.txt. This is CrateStack's documented pre-PR gate (CLAUDE.md's \`just all-checks\`, which ends in \`cargo deny check\`)."
 fi
 
 exit 0

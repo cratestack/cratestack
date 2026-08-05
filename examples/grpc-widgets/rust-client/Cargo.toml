@@ -2,6 +2,7 @@
 name = "grpc-widgets-rust-client-example"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 publish = false
 description = "Native tonic-based Rust gRPC client for the grpc-widgets example schema, built via include_client_schema! (ticket #209)."
 

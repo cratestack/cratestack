@@ -2,6 +2,7 @@
 name = "client-multi-service-example"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 publish = false
 description = "BFF / orchestrator that fans out to two CrateStack services. Demonstrates multiple include_client_schema! invocations in one binary, each isolated in its own module."
 

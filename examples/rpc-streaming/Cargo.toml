@@ -2,6 +2,7 @@
 name = "rpc-streaming-example"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 publish = false
 description = "RPC server with a list-return procedure streamed over Accept: application/cbor-seq. Demonstrates content-negotiated streaming on the same POST /rpc/{op_id} route as unary — no separate streaming endpoint."
 

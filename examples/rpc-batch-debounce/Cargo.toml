@@ -2,6 +2,7 @@
 name = "rpc-batch-debounce-example"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 publish = false
 description = "Client-side debouncer that coalesces independent RPC calls into a single POST /rpc/batch. The pattern most offline-first UIs and rate-sensitive callers want — many awaitable .call() invocations, one wire round-trip."
 

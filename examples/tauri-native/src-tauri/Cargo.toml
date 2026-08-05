@@ -2,6 +2,7 @@
 name = "tauri-native-shell-example"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 publish = false
 description = "Tauri 2 desktop shell hosting include_embedded_schema! AND include_client_schema! natively. Unlike tauri-web, there is no wasm in the webview — the renderer is a pure view layer that calls Tauri commands for every data operation, both local (SQLite via rusqlite) and remote (typed HTTP client). This is the canonical Phase C shape for a thick-client desktop app."
 

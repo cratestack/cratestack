@@ -2,6 +2,7 @@
 name = "tauri-web-shell-example"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 publish = false
 description = "Tauri 2 desktop shell for the tauri-web example. Hosts a webview that loads the wasm cdylib (sibling crate); separately drives the include_client_schema!-generated typed HTTP client to call remote CrateStack services from the trusted native side."
 

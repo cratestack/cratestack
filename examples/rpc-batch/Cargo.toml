@@ -2,6 +2,7 @@
 name = "rpc-batch-example"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 publish = false
 description = "RPC server demonstrating POST /rpc/batch: multiple ops in one round-trip, per-frame error isolation, request order preserved on the response."
 

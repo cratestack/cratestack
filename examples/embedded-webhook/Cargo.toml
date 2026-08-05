@@ -2,6 +2,7 @@
 name = "embedded-webhook-example"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 publish = false
 description = "Single-binary HTTP webhook receiver on top of include_embedded_schema! + cratestack-rusqlite. Owns its own SQLite — the inverted twin of the Postgres-backed include_server_schema! example."
 

@@ -2,6 +2,7 @@
 name = "grpc-widgets-example"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 publish = false
 description = "Smallest possible `transport grpc` CrateStack server: one Widget model, CRUD over real gRPC, verifiable with grpcurl. Ticket #171."
 

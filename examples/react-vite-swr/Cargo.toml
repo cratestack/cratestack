@@ -2,6 +2,7 @@
 name = "react-vite-swr-example"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 publish = false
 description = "Postgres + axum REST server for the swr-preset end-to-end example (issue #306): a two-model task board plus one procedure, consumed by web/ through a generated --preset swr TypeScript client."
 

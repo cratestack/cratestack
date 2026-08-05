@@ -2,6 +2,7 @@
 name = "microservice-pair-example"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 publish = false
 description = "Service that is both a server (include_server_schema!) and a typed HTTP client of another service (include_client_schema!). Demonstrates the 'orders service that calls the catalog service' shape."
 

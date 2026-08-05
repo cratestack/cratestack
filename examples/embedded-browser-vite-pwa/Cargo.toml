@@ -2,6 +2,7 @@
 name = "embedded-browser-vite-pwa-example"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 publish = false
 description = "Installable PWA built on the embedded-browser-vite Rust crate: same cratestack-rusqlite + include_embedded_schema! data layer, with vite-plugin-pwa generating a service worker that precaches assets so the app remains usable offline."
 

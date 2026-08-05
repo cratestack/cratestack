@@ -2,6 +2,7 @@
 name = "react-nextjs-daisyui-napi"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 publish = false
 description = "Server-side N-API addon for the Next.js example. Hosts include_embedded_schema! against a Node-owned SQLite file AND include_client_schema! against an upstream CrateStack service. Loaded by Next.js Route Handlers; never reaches the renderer."
 
