@@ -173,7 +173,13 @@ minicbor-serde.workspace = true
 # known `Content-Length`) so the test doesn't have to hand-roll chunked
 # decoding on top of a raw `TcpStream`. Already a workspace dependency
 # (`examples/rpc-streaming` uses it the same way for `@stream` procedures).
+# #440: `rustls-no-provider` needs a crypto provider installed before the
+# bare `reqwest::Client::new()` above (`generated_client_rust*.rs`'s
+# `CratestackClient`-based tests get it for free via that constructor's own
+# fallback; only `rpc_subscribe_sse.rs`'s direct `reqwest::Client` needs this
+# explicitly).
 reqwest.workspace = true
+rustls.workspace = true
 testcontainers.workspace = true
 testcontainers-modules.workspace = true
 tokio.workspace = true

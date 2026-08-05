@@ -418,6 +418,16 @@ JSON and CBOR are first-class codecs. COSE is treated as a planned optional enve
 
 Generated Axum routes currently enforce a single configured codec per router rather than negotiated multi-codec transport. `application/cbor-seq` is documented as a target transport mode, but it is not implemented yet.
 
+### TLS crypto provider (`rustls-no-provider`)
+
+Generated Rust clients (`cratestack-client-rust`'s `CratestackClient`) and Studio's REST `ApiSource` build on `reqwest`'s `rustls-no-provider` feature, not `rustls` — as of #440, this crate no longer forces `aws-lc-rs` as the TLS crypto provider onto every consumer of `cratestack`/`cratestack-pg` (it used to, unconditionally, which broke `*-unknown-linux-musl`/`scratch` container builds and any `cargo-deny` policy banning `aws-lc-rs`, since `aws-lc-rs` needs a C toolchain and `ring` doesn't).
+
+Practically, this means:
+
+* **You don't need to do anything to keep working.** `CratestackClient::new` and `ApiSource::new` install a `ring`-backed `rustls::crypto::CryptoProvider` themselves if the process doesn't already have one — the same zero-config experience as before, just on `ring` instead of `aws-lc-rs`.
+* **If your own application installs a provider first** (any backend — `ring`, `aws-lc-rs`, or a custom one — via `rustls::crypto::CryptoProvider::install_default()` before constructing your first `CratestackClient`/`ApiSource`), that choice wins; the fallback above only installs if nothing is set yet.
+* **`CratestackClient::with_http_client`** takes a `reqwest::Client` you already built, so this doesn't apply — you're responsible for whatever provider that client needed.
+
 ## Current Limits
 
 CrateStack is not yet the right fit for:

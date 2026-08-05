@@ -142,6 +142,14 @@ async fn subscribe_sse_receives_model_events_as_they_happen() {
         cratestack::axum::serve(listener, app).await.unwrap();
     });
 
+    // #440: `reqwest`'s `rustls-no-provider` feature needs a crypto provider
+    // installed before `Client::new()` — everywhere else in this workspace
+    // that builds a client this way gets it via `CratestackClient::new`'s
+    // own fallback (`cratestack-client-rust`'s `ensure_crypto_provider`);
+    // this test talks to the SSE endpoint with a bare `reqwest::Client`
+    // instead (see the comment on `reqwest.workspace = true` in this
+    // crate's `Cargo.toml` dev-dependencies), so it needs its own call.
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let client = reqwest::Client::new();
     let mut response = timeout(
         READ_TIMEOUT,

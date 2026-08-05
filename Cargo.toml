@@ -142,15 +142,63 @@ tonic-web = "0.13"
 # only satisfy `cratestack-client-rust`'s edge with the newest 0.12.x release
 # still carrying it, forking any 0.13-based consumer's dependency graph in
 # two even though the bare "0" requirement was nominally 0.13-permissive.
-# `rustls` (0.13's rename, auto-installs the `aws-lc-rs` default crypto
-# provider — same zero-config behavior `rustls-tls` gave on 0.12, different
-# backend) restores single-version resolution for any consumer already on
-# reqwest 0.13, which is exactly what `CratestackClient::with_http_client`
-# needs to be useful for a caller supplying its own TLS-identity-bearing
-# client (e.g. mTLS). `query` is REQUIRED, not incidental — reqwest 0.13
-# splits `RequestBuilder::query()` behind this feature (unconditional on
-# 0.12); `cratestack-studio`'s `data/api/ops.rs` calls it directly.
-reqwest = { version = "0.13", default-features = false, features = ["rustls", "stream", "query"] }
+# `rustls` (0.13's rename) restores single-version resolution for any
+# consumer already on reqwest 0.13, which is exactly what
+# `CratestackClient::with_http_client` needs to be useful for a caller
+# supplying its own TLS-identity-bearing client (e.g. mTLS). `query` is
+# REQUIRED, not incidental — reqwest 0.13 splits `RequestBuilder::query()`
+# behind this feature (unconditional on 0.12); `cratestack-studio`'s
+# `data/api/ops.rs` calls it directly.
+#
+# #440: `rustls` is not a bare "use rustls" switch on reqwest 0.13 — its own
+# `Cargo.toml` defines it as `["__rustls-aws-lc-rs", "dep:rustls-platform-
+# verifier", "__rustls"]`, so it unconditionally selects **`aws-lc-rs`** as
+# the TLS crypto provider. Because `cratestack-pg`'s published `Cargo.toml`
+# depends on `cratestack-client-rust` UNCONDITIONALLY (no optional feature
+# gate), that choice reached every workspace that depends on `cratestack` at
+# all the moment this crate is anywhere in the graph — not only consumers
+# that construct an HTTP client themselves. Downstream (ADORSYS-GIS/webank-
+# services), that broke a from-scratch `*-unknown-linux-musl`/`scratch`
+# container build (`aws-lc-rs` needs a cross C toolchain; `ring` doesn't) and
+# tripped a `cargo-deny` ban with no carve-out, once cratestack-pg landed 0.7.3.
+#
+# Fixed by requesting `rustls-no-provider` instead: same `rustls`-backed TLS
+# stack (`__rustls` — `rustls`, `hyper-rustls`, `tokio-rustls` are all still
+# pulled in), minus the forced provider selection. A consumer that wants
+# `aws-lc-rs` can still opt into it on their own `reqwest` entry (Cargo
+# features are additive); one that doesn't is no longer overridden.
+#
+# Same fix shape as marcjazz/authkestra#179 (a reqwest feature there forcing
+# aws-lc-rs onto every consumer of an unrelated crate, for the identical
+# reason), with one difference worth being explicit about: `rustls-no-
+# provider` PANICS at `Client::build()`/`Client::new()` time (reqwest
+# 0.13.4's `default_rustls_crypto_provider()`), not merely on first HTTPS
+# request, if no `rustls::crypto::CryptoProvider` is installed. Authkestra's
+# fix kept the aws-lc-rs-selecting feature as its OWN crates' default for
+# exactly this reason — turning it on for every existing user by default
+# would trade a silent dependency change for a runtime crash. That tradeoff
+# doesn't apply the same way here: this `reqwest` entry is an internal
+# implementation detail of `cratestack-client-rust`, not a feature this repo
+# forwards to ITS OWN consumers' Cargo.toml the way authkestra's crates did —
+# there is no "default" to preserve at this layer, only this workspace's own
+# test suite and examples, which this change audits and fixes directly (see
+# the `rustls::crypto::ring::default_provider().install_default()` calls
+# this same PR adds). A consumer embedding `cratestack-client-rust` still
+# needs to install a provider of their own before constructing a client —
+# see the README for the one-line snippet.
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "stream", "query"] }
+# #440: `rustls-no-provider` (see the `reqwest` entry above) needs a
+# `rustls::crypto::CryptoProvider` installed before any `reqwest::Client` /
+# `CratestackClient` is built, or it panics at construction time. `ring` is
+# the pure-Rust, no-C-toolchain-needed backend (`aws-lc-rs` is exactly what
+# #440 exists to stop forcing), used only to make this workspace's OWN test
+# suite and examples build a working `Client` again — never enabled as a
+# default for downstream consumers, who choose (and install) their own
+# provider. `default-features = false` because `rustls`'s own `default`
+# feature pulls in `aws_lc_rs`; `std`/`tls12`/`logging` are the non-provider
+# pieces of that default set, kept so behavior otherwise matches upstream
+# `rustls` defaults.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 rusqlite = { version = "0.39", features = ["bundled", "fallible_uint"] }
 redis = "1.2.0"

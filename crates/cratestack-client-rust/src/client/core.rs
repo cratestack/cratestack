@@ -8,6 +8,31 @@ use crate::config::ClientConfig;
 use crate::error::ClientError;
 use crate::state::{ClientStateStore, InMemoryStateStore, PersistedClientState};
 
+/// Installs a `ring`-backed `rustls::crypto::CryptoProvider` if the process
+/// doesn't already have one (#440).
+///
+/// `reqwest`'s `rustls-no-provider` feature — deliberately chosen over
+/// `rustls` so this crate stops forcing `aws-lc-rs` on every consumer of
+/// `cratestack-pg` (see the workspace `Cargo.toml`'s `reqwest` entry) — ships
+/// no crypto provider at all: `reqwest::Client::new()`/`ClientBuilder::build()`
+/// PANIC at construction time if `rustls::crypto::CryptoProvider::get_default()`
+/// finds nothing installed. Unlike the old `rustls` feature's silent
+/// `aws-lc-rs` install, that's a worse zero-config default than what this
+/// crate had before, not merely a neutral one.
+///
+/// `install_default()` only ever takes effect the FIRST time it succeeds
+/// process-wide — it's a courtesy fallback, not an override. A consumer that
+/// installs its own provider (any backend, including `aws-lc-rs`) before
+/// constructing its first `CratestackClient` keeps that choice; this only
+/// fires when nobody has chosen anything yet, which is exactly the gap
+/// `rustls-no-provider` otherwise turns into a panic. The `Err` it returns
+/// on a race with another caller installing first (or a no-op call to this
+/// same function from a second `CratestackClient::new`) is expected and
+/// intentionally ignored.
+fn ensure_crypto_provider() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 #[derive(Clone)]
 pub struct CratestackClient<C = CborCodec> {
     pub(crate) http: reqwest::Client,
@@ -36,6 +61,7 @@ where
     C: HttpClientCodec,
 {
     pub fn new(config: ClientConfig, codec: C) -> Self {
+        ensure_crypto_provider();
         Self {
             http: reqwest::Client::new(),
             config,

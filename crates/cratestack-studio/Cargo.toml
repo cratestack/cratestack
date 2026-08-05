@@ -53,6 +53,10 @@ flate2 = "1"
 tar = "0.4"
 regex.workspace = true
 reqwest.workspace = true
+# #440: `reqwest`'s `rustls-no-provider` feature needs a `rustls::crypto::
+# CryptoProvider` installed before any `Client` is built — `data/api.rs`'s
+# `ApiSource::new` installs a `ring` fallback if nothing is installed yet.
+rustls.workspace = true
 rusqlite.workspace = true
 rust-embed = { workspace = true, optional = true, features = ["mime-guess", "interpolate-folder-path"] }
 serde = { workspace = true, features = ["derive"] }

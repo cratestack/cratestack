@@ -63,6 +63,12 @@ minicbor.workspace = true
 minicbor-serde.workspace = true
 prost = { workspace = true, optional = true }
 reqwest.workspace = true
+# #440: `reqwest`'s `rustls-no-provider` feature (see the workspace
+# `Cargo.toml`'s `reqwest` entry) ships no crypto provider — `CratestackClient::new`
+# installs a `ring` fallback (`client/core.rs`'s `ensure_crypto_provider`) so
+# this crate keeps working out of the box, so this is a real (non-dev)
+# dependency now, not just a test-support one.
+rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_urlencoded.workspace = true

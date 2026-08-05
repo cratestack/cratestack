@@ -50,6 +50,12 @@ async fn item_n_arrives_over_the_wire_before_server_produces_item_n_plus_1() {
         })
         .unwrap();
 
+    // #440: `reqwest`'s `rustls-no-provider` feature needs a crypto provider
+    // installed before `Client::new()`. This test builds a bare
+    // `reqwest::Client` directly rather than going through
+    // `CratestackClient::new` (which installs one itself), so it needs its
+    // own call.
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let client = reqwest::Client::new();
     let response = client
         .post(format!("http://{addr}/rpc/procedure.ticks"))

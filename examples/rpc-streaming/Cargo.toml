@@ -26,6 +26,11 @@ tokio = { workspace = true, features = ["time"] }
 [dev-dependencies]
 cratestack-client-rust = { path = "../../crates/cratestack-client-rust", default-features = false }
 reqwest.workspace = true
+# #440: `tests/stream_wire_timing.rs` builds a bare `reqwest::Client`
+# directly (not through `CratestackClient::new`, which installs its own
+# fallback), so it needs to install a `rustls-no-provider` crypto provider
+# itself.
+rustls.workspace = true
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }
 tower = { workspace = true }
