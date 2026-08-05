@@ -3,9 +3,13 @@ mod fields;
 mod index_attribute;
 mod mixins_types;
 mod model_attributes;
+mod model_relation;
 mod models;
 mod pb;
+mod procedure_idents;
 mod procedures;
+mod reserved_idents;
+mod snake_case_collisions;
 mod stream_attribute;
 mod type_names;
 mod validator_args;
@@ -20,6 +24,7 @@ use crate::diagnostics::{SchemaError, span_error};
 
 use self::mixins_types::{validate_auth, validate_enums, validate_mixins, validate_types};
 use self::models::validate_models;
+use self::procedure_idents::validate_procedure_idents;
 use self::procedures::{
     validate_procedure_api_version_attribute, validate_procedure_deprecated_attribute,
     validate_procedure_isolation_attribute, validate_procedure_no_rate_limit_attribute,
@@ -152,6 +157,7 @@ fn validate_procedures(
     model_names: &BTreeSet<String>,
 ) -> Result<(), SchemaError> {
     for procedure in &schema.procedures {
+        validate_procedure_idents(procedure)?;
         for arg in &procedure.args {
             validate_type_ref(
                 type_names,

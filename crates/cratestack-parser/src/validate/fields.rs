@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use cratestack_core::{Field, TypeArity};
 
 use crate::diagnostics::{SchemaError, span_error};
+use crate::validate::reserved_idents::validate_reserved_identifier;
 
 #[derive(Clone, Copy)]
 pub(super) enum CustomFieldSupport {
@@ -150,23 +151,22 @@ pub(super) fn validate_default_dbgenerated_no_args(
 /// cratestack#398. These four are different: `r#self`/`r#Self`/`r#super`/
 /// `r#crate` are not valid Rust at all (rustc rejects them outright), so
 /// there is no escape hatch, and the field must be renamed.
+///
+/// Thin, field-shaped wrapper over the general
+/// [`crate::validate::reserved_idents::validate_reserved_identifier`],
+/// which also covers every other ident site the codegen `ident()` helper
+/// touches (model/mixin/type/view/procedure names, enum names/variants,
+/// procedure argument names).
 pub(super) fn validate_field_reserved_identifier(
     field: &cratestack_core::Field,
     owner_kind: &str,
     owner_name: &str,
 ) -> Result<(), SchemaError> {
-    if cratestack_core::rust_keywords::is_unrepresentable_keyword(&field.name) {
-        return Err(span_error(
-            format!(
-                "field `{}` on {owner_kind} `{owner_name}` cannot be represented as a Rust \
-                 identifier: `{}` is a reserved keyword with no raw-identifier form (`r#{}` is \
-                 not valid Rust). Rename the field.",
-                field.name, field.name, field.name,
-            ),
-            field.span,
-        ));
-    }
-    Ok(())
+    validate_reserved_identifier(
+        &field.name,
+        field.span,
+        &format!("field `{}` on {owner_kind} `{owner_name}`", field.name),
+    )
 }
 
 /// Reject list-arity scalar/enum model fields on any schema that declares a

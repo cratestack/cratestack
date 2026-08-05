@@ -8,6 +8,8 @@ use crate::validate::fields::{
     validate_field_reserved_identifier,
 };
 use crate::validate::pb::validate_pb_field_attribute;
+use crate::validate::reserved_idents::validate_reserved_identifier;
+use crate::validate::snake_case_collisions::validate_field_column_collisions;
 use crate::validate::type_names::validate_type_ref;
 
 pub(super) fn validate_mixins(
@@ -17,6 +19,13 @@ pub(super) fn validate_mixins(
     model_names: &BTreeSet<String>,
 ) -> Result<(), SchemaError> {
     for mixin in &schema.mixins {
+        validate_reserved_identifier(
+            &mixin.name,
+            mixin.name_span,
+            &format!("mixin `{}`", mixin.name),
+        )?;
+        validate_field_column_collisions(&mixin.fields, "mixin", &mixin.name)?;
+
         let mut fields = BTreeMap::new();
         for field in &mixin.fields {
             if fields.insert(field.name.clone(), field.span).is_some() {
@@ -84,6 +93,9 @@ pub(super) fn validate_types(
     model_names: &BTreeSet<String>,
 ) -> Result<(), SchemaError> {
     for ty in &schema.types {
+        validate_reserved_identifier(&ty.name, ty.name_span, &format!("type `{}`", ty.name))?;
+        validate_field_column_collisions(&ty.fields, "type", &ty.name)?;
+
         let mut fields = BTreeSet::new();
         for field in &ty.fields {
             if !fields.insert(field.name.clone()) {
@@ -114,6 +126,12 @@ pub(super) fn validate_types(
 
 pub(super) fn validate_enums(schema: &Schema) -> Result<(), SchemaError> {
     for enum_decl in &schema.enums {
+        validate_reserved_identifier(
+            &enum_decl.name,
+            enum_decl.name_span,
+            &format!("enum `{}`", enum_decl.name),
+        )?;
+
         let mut variants = BTreeSet::new();
         for variant in &enum_decl.variants {
             if !variants.insert(variant.name.clone()) {
@@ -125,6 +143,11 @@ pub(super) fn validate_enums(schema: &Schema) -> Result<(), SchemaError> {
                     variant.span,
                 ));
             }
+            validate_reserved_identifier(
+                &variant.name,
+                variant.span,
+                &format!("variant `{}` on enum `{}`", variant.name, enum_decl.name),
+            )?;
         }
     }
     Ok(())
@@ -137,6 +160,8 @@ pub(super) fn validate_auth(
     model_names: &BTreeSet<String>,
 ) -> Result<(), SchemaError> {
     if let Some(auth) = &schema.auth {
+        validate_field_column_collisions(&auth.fields, "auth block", &auth.name)?;
+
         let mut fields = BTreeSet::new();
         for field in &auth.fields {
             if !fields.insert(field.name.clone()) {

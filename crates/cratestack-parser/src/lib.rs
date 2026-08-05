@@ -36,6 +36,8 @@ mod tests_relations_policy;
 #[cfg(test)]
 mod tests_reserved_keywords;
 #[cfg(test)]
+mod tests_snake_case_collisions;
+#[cfg(test)]
 mod tests_stream_attribute;
 #[cfg(test)]
 mod tests_transport;
