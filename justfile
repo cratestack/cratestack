@@ -419,12 +419,30 @@ bump NEW:
 	# `perl -i` instead of `sed -i` for portability: BSD sed (macOS)
 	# requires `-i ''` while GNU sed (Linux/CI) rejects the empty arg,
 	# so a single recipe can't satisfy both. perl's in-place edit is
-	# identical across platforms. `\Q...\E` quotemetas the current
-	# version so its dots match literally rather than as `.` wildcards.
+	# identical across platforms. `quotemeta` on the current version makes
+	# its dots match literally rather than as `.` wildcards.
+	#
+	# Scoped to the VALUE OF A `version =` KEY, on either a package-version
+	# line (`^version = "X"`, i.e. the root workspace package and the
+	# excluded studio-ui sibling) or a workspace inter-crate dependency line
+	# (which always carries `path = "crates/"`). Replacing the bare literal
+	# `"X"` everywhere instead — as this recipe used to — also rewrites
+	# unrelated third-party dependencies that happen to sit at the same
+	# version: bumping 0.7.1 -> 0.7.2 turned `serde_urlencoded = "0.7.1"`
+	# (root Cargo.toml) into `"0.7.2"`, which does not exist on crates.io,
+	# and the release failed at `cargo update` with "failed to select a
+	# version for the requirement `serde_urlencoded = ^0.7.2`". The bug is
+	# dormant for most bumps — it only fires when the new workspace version
+	# collides with some dependency's — so scope this narrowly rather than
+	# relying on the collision not recurring.
 	find . -name Cargo.toml \
 	  -not -path './target/*' \
 	  -not -path '*/node_modules/*' \
-	  -print0 | xargs -0 perl -i -pe "s/\Q\"$current\"\E/\"{{NEW}}\"/g"
+	  -print0 | CS_CUR="$current" CS_NEW="{{NEW}}" xargs -0 perl -i -pe '
+	    BEGIN { $cur = quotemeta $ENV{CS_CUR}; $new = $ENV{CS_NEW}; }
+	    if (/^version = "$cur"/ || m{path = "crates/}) {
+	      s/version = "$cur"/version = "$new"/g;
+	    }'
 	# Keep the @cratestack/cli npm wrapper's version (and the release
 	# asset tag it downloads), every package in the split @cratestack/api
 	# family (ts-types, link-*, runtime-*, validator-*, adapter-*, and the
