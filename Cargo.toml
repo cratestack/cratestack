@@ -137,7 +137,20 @@ prost = "0.13"
 prost-types = "0.13"
 tonic = "0.13"
 tonic-web = "0.13"
-reqwest = { version = "0", default-features = false, features = ["rustls-tls", "stream"] }
+# Was pinned to the `0` line via the `rustls-tls` feature (reqwest 0.12-only
+# name) until #435: that name doesn't exist on reqwest 0.13, so Cargo could
+# only satisfy `cratestack-client-rust`'s edge with the newest 0.12.x release
+# still carrying it, forking any 0.13-based consumer's dependency graph in
+# two even though the bare "0" requirement was nominally 0.13-permissive.
+# `rustls` (0.13's rename, auto-installs the `aws-lc-rs` default crypto
+# provider — same zero-config behavior `rustls-tls` gave on 0.12, different
+# backend) restores single-version resolution for any consumer already on
+# reqwest 0.13, which is exactly what `CratestackClient::with_http_client`
+# needs to be useful for a caller supplying its own TLS-identity-bearing
+# client (e.g. mTLS). `query` is REQUIRED, not incidental — reqwest 0.13
+# splits `RequestBuilder::query()` behind this feature (unconditional on
+# 0.12); `cratestack-studio`'s `data/api/ops.rs` calls it directly.
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "stream", "query"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 rusqlite = { version = "0.39", features = ["bundled", "fallible_uint"] }
 redis = "1.2.0"
