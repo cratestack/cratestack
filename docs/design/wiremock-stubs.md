@@ -177,6 +177,34 @@ correctly reflects today's reality (`200`, not a synthesized `202`):
 `--check` (drift detection, mirroring `generate-dart --check`) also works
 end-to-end against this schema: a second run reports no drift.
 
+### 3.3 What the real-schema smoke test does and doesn't cover
+
+§3.2's run against webank-mobile's actual `crates/bff` schema is real,
+useful evidence — but it is evidence about *that* schema's shapes only,
+not a substitute for exercising every shape this generator claims to
+handle. Two review findings on the PR that introduced this crate landed
+on exactly that gap, both in code paths the webank schema structurally
+cannot reach:
+
+- The RPC-transport route (`/rpc/procedure.<name>`, §2) — webank's
+  schema is `transport rest`, so the RPC branch was never executed by
+  the smoke test at all.
+- The mutual-cycle-broken-by-a-`List`-step case in `values.rs`'s cycle
+  guard (`type A { b: B[] } type B { a: A }`) — webank's schema has no
+  mutually-recursive `type`s, so this shape never came up either.
+
+Both are now covered by targeted unit tests in
+`crates/cratestack-mock-wiremock/tests/procedures.rs` instead
+(`pins_the_exact_url_path_for_both_transports`,
+`mutual_cycle_broken_by_a_list_step_on_only_one_side_still_terminates`).
+The lesson generalizes: a smoke test against one real, organically-grown
+schema is a strong signal for the shapes that schema happens to use, and
+no signal at all for the ones it doesn't — this generator's actual test
+coverage for "does every schema construct synthesize correctly" has to
+come from the unit test suite's deliberately-constructed shapes
+(self-reference, mutual reference, `Page<T>`, enums, both transports,
+…), not from any single real-world schema, however large.
+
 ## 4. Design questions, answered for v1
 
 - **What does a stub return? Deterministic defaults? Schema-declared

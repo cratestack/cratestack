@@ -314,6 +314,46 @@ procedure getA(): A
     ));
 }
 
+/// A mutual cycle broken by a `List` step on ONE side (`A.b: B[]`) but
+/// not the other (`B.a: A`, required) is still a perfectly finite value
+/// (`{ "b": [] }`) — this must succeed, not error. Regression test for a
+/// P2 review finding on the PR that introduced this crate: the cycle
+/// guard's direct-repeat check (`in_progress.contains(&type_ref.name)`)
+/// only fires when the SAME name is encountered again, so it never saw
+/// `B` at all when `A`'s `b` field was reached (only `A` was
+/// `in_progress` at that point) — the `List`/`Optional` arity that
+/// should terminate the cycle sits on `A.b`, one level away from where
+/// the actual re-entry onto `A` happens inside `B`. Fixed by catching an
+/// `UnbreakableCycle` bubbling up from a `List`/`Optional` field's own
+/// base-value synthesis and substituting the natural empty/absent value,
+/// not just short-circuiting on a direct repeat.
+#[test]
+fn mutual_cycle_broken_by_a_list_step_on_only_one_side_still_terminates() {
+    let schema = schema(&format!(
+        "{NO_DATASOURCE}
+type A {{
+  b B[]
+}}
+
+type B {{
+  a A
+}}
+
+procedure getA(): A
+"
+    ));
+
+    let package = generate_package(&schema, &WireMockGeneratorConfig::default()).expect(
+        "a List step anywhere in the cycle must terminate it, per WireMockGeneratorError::         UnbreakableCycle's own documented contract — this is a finite value, not an error",
+    );
+    let mapping: serde_json::Value = serde_json::from_str(&package.files[0].contents).unwrap();
+
+    assert_eq!(
+        mapping["response"]["jsonBody"],
+        serde_json::json!({ "b": [] })
+    );
+}
+
 #[test]
 fn grpc_transport_is_rejected_up_front() {
     let schema = schema(&format!(

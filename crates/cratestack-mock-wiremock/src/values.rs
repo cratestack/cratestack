@@ -76,11 +76,38 @@ pub(crate) fn synthesize(
         };
     }
 
-    let base = synthesize_base(schema, procedure_name, type_ref, in_progress)?;
-    Ok(match type_ref.arity {
-        TypeArity::Required | TypeArity::Optional => base,
-        TypeArity::List => Value::Array(vec![base]),
-    })
+    // `Optional`/`List` don't just wrap a successfully-synthesized `base`
+    // value — they're also the escape hatch for a cycle that closes
+    // *underneath* this field rather than back on this exact type name.
+    // E.g. `type A { b: B[] } type B { a: A }` (both fields required):
+    // when synthesizing `A`, the cycle guard above never fires for `b`
+    // (its own name, `B`, isn't in `in_progress` yet — only `A` is), so
+    // synthesizing `B`'s contents is attempted, which is where `a: A`
+    // hits the real cycle and fails with `UnbreakableCycle`. That error
+    // is about `A`, not about `b: B[]`'s own arity — but `b` being a
+    // `List` is exactly the kind of step the module doc and
+    // `WireMockGeneratorError::UnbreakableCycle`'s own message promise
+    // can terminate a cycle, so a `List`/`Optional` field catches an
+    // `UnbreakableCycle` bubbling up from computing its own base value
+    // and substitutes the natural "zero or none" instance instead of
+    // propagating it — matching what the direct-repeat branch above
+    // already does, just for a cycle that closes one or more levels
+    // deeper instead of on this exact `TypeRef`.
+    match type_ref.arity {
+        TypeArity::Required => synthesize_base(schema, procedure_name, type_ref, in_progress),
+        TypeArity::Optional => {
+            match synthesize_base(schema, procedure_name, type_ref, in_progress) {
+                Ok(base) => Ok(base),
+                Err(WireMockGeneratorError::UnbreakableCycle { .. }) => Ok(Value::Null),
+                Err(other) => Err(other),
+            }
+        }
+        TypeArity::List => match synthesize_base(schema, procedure_name, type_ref, in_progress) {
+            Ok(base) => Ok(Value::Array(vec![base])),
+            Err(WireMockGeneratorError::UnbreakableCycle { .. }) => Ok(Value::Array(Vec::new())),
+            Err(other) => Err(other),
+        },
+    }
 }
 
 /// Like [`synthesize`], but for a nested `TypeRef` that isn't itself
