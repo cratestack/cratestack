@@ -25,6 +25,21 @@ pub(super) fn parse_procedure_policy_term(
         return Ok(quote! { ::cratestack::ProcedurePredicate::AuthIsNull });
     }
 
+    // A bare boolean literal as the WHOLE clause, e.g. `@allow(true)`.
+    // Checked before field resolution below, which would otherwise treat
+    // `true`/`false` as an unresolved input-field name and fail with
+    // "unknown procedure input field `true`" — a comparison RHS like
+    // `auth() == true` already supports bool literals via
+    // `parse_procedure_literal`, but that path only runs once `==`/`!=`
+    // has been split out, which a bare `true`/`false` term never contains.
+    if term == "true" {
+        return Ok(quote! { ::cratestack::ProcedurePredicate::Literal(true) });
+    }
+
+    if term == "false" {
+        return Ok(quote! { ::cratestack::ProcedurePredicate::Literal(false) });
+    }
+
     if let Some(function) = parse_builtin_policy_call(term) {
         return parse_builtin_procedure_policy_term(function?);
     }
