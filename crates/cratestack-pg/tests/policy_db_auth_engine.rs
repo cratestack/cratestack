@@ -125,15 +125,74 @@ impl cratestack_schema::procedures::ProcedureRegistry for AuthEngineProcedures {
     }
 }
 
-// The "non-owner should fail db-backed procedure auth" assertion at
-// line ~310 fails on `origin/main` (verified independently against
-// pristine main); the procedure-policy DB delegation path has drifted
-// from the test's expectation. Marked `#[ignore]` to match the other
-// pre-existing failures uncovered while adding the banking integration
-// suite. A follow-up will rebuild this against the current `@authorize`
-// semantics.
+// The "non-owner should fail db-backed procedure auth" assertion below
+// is not stale test data — it caught a REAL, confirmed authorization
+// bypass. This is NOT "procedure-policy delegation drift"; the
+// procedure-delegation wiring itself
+// (`cratestack_schema::procedures::inspect_post::authorize_with_db` ->
+// `db.engine_post().authorize_detail(id, ctx)`) is correct. The bug is
+// one level down, in the SQL these `authorize_*`/scoped-read/scoped-
+// write calls build.
+//
+// Root cause: `push_action_policy_query` in
+// `crates/cratestack-sqlx/src/query/support/policy.rs` renders a
+// model's allow policies as `A OR B OR ...` (one array element per
+// separate `@@allow("<action>", ...)` attribute) with NO enclosing
+// parentheses around the whole disjunction when the action has no
+// matching `@@deny` clause (the `if !deny_policies.is_empty()` branch
+// *does* wrap correctly via `NOT (...) AND (...)`; only the `else`
+// branch — the common case, no `@@deny` — is missing the wrap). Every
+// caller then splices that unwrapped string directly after `<row
+// filter> AND `, e.g. in `authorize_record_action`
+// (`crates/cratestack-sqlx/src/query/support/conditions.rs`):
+// `... WHERE id = $1 AND {policy}`. Because SQL `AND` binds tighter
+// than `OR`, `id = $1 AND A OR B` parses as `(id = $1 AND A) OR B` —
+// the primary-key (or filter) scoping only binds to the FIRST allow
+// clause; every other clause becomes a table-wide, row-blind OR.
+//
+// Confirmed live against Postgres (`EnginePost` in `auth_engine.cstack`
+// declares two separate action clauses —
+// `@@allow('all', auth() != null && auth().id == authorId)` and
+// `@@allow('read', auth() != null && published)` — and no matching
+// `@@deny`, which is exactly the trigger shape): calling
+// `cool.engine_post().authorize_detail(id, ctx)` directly for
+// `other_org_admin` (usr_4, wrong org/tenant, not the author) against
+// `"this_id_does_not_exist"` — a primary key that is not in the table
+// at all — still returns `Ok(())`, because `post_2` (seeded as
+// `published = TRUE`, owned by a different user) satisfies the second
+// OR-branch unconditionally and the broken WHERE clause never actually
+// constrains by `id`. This is a full row-scoping bypass, not limited to
+// this one procedure: the same `push_action_policy_query` combinator is
+// used, unwrapped the same way, by every generated `find_unique`/
+// `find_many` read (`push_scoped_conditions`) and every generated
+// `update`/`delete`/`upsert`/batch write path
+// (`query/write/*_exec.rs`, `query/batch/*.rs`) — any model+action with
+// 2+ separate `@@allow` clauses and no `@@deny` for that action is
+// exposed, on both the read-authorization and (for writes) the
+// row-targeting side. This needs a real fix in
+// `push_action_policy_query` (wrap the `else` branch's allow
+// disjunction in the same way the deny-present branch already does),
+// not a test change — this is a confirmed defect, not stale test data.
 #[tokio::test]
-#[ignore = "pre-existing procedure-policy delegation drift; tracked separately"]
+// STATUS 2026-08-05: the SQL operator-precedence authorization bypass that
+// originally blocked this test is FIXED (`push_action_policy_query` in
+// `crates/cratestack-sqlx/src/query/support/policy.rs` now parenthesizes its
+// whole predicate; pinned by `cratestack-sqlx`'s `tests_policy_precedence_bug`).
+// Verified against real Postgres: every cross-tenant isolation assertion above
+// line 425 now passes.
+//
+// This test remains `#[ignore]`d for a SECOND, unrelated defect it exposes at
+// line 462: `Todo.organizationId String? @default(auth().organization.id)`
+// silently resolves to NULL when the caller's auth context omits the nested
+// `organization` claim, instead of failing validation. The `auth SessionUser`
+// block declares `organization OrganizationScope` as required (non-optional),
+// so a context missing it should be rejected — and NULL here is not benign:
+// `organizationId` is the tenant-scoping column used by
+// `@@deny('all', auth().organization.id != organizationId)`, so a NULL row
+// sits outside that comparison entirely. Whether a missing nested auth claim
+// should be a `Validation` error or a silent NULL is a framework design call,
+// so this is left for a maintainer rather than patched inside a test fix.
+#[ignore = "REAL BUG (distinct from the now-fixed precedence bypass): @default(auth().organization.id) silently yields NULL when the nested `organization` auth claim is absent, instead of CoolError::Validation — see the block comment above this test"]
 async fn db_backed_auth_engine_supports_all_deny_and_auth_defaults() {
     let Some(test_pg) = pg::connect_or_skip().await else {
         return;

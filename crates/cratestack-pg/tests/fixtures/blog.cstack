@@ -23,6 +23,8 @@ model User {
 model Profile {
   id Int @id
   nickname String
+
+  @@allow("read", auth() != null)
 }
 
 model Post {

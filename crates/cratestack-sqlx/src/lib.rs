@@ -93,6 +93,12 @@ mod tests_optional;
 #[cfg(test)]
 mod tests_pgvector;
 #[cfg(test)]
+mod tests_policy_precedence_bug;
+#[cfg(test)]
+mod tests_read_policy_field_predicates;
+#[cfg(test)]
+mod tests_read_policy_predicates;
+#[cfg(test)]
 mod tests_relation;
 #[cfg(test)]
 mod tests_update;

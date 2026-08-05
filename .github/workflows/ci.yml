@@ -115,6 +115,43 @@ jobs:
         # asserts the committed Cargo.lock.
         run: just test-ci-host --locked
 
+  # ---- Ignored-test report (non-blocking) -------------------------------
+  # Report-only, never blocks the PR gate: closes the structural hole a
+  # 2026-08 audit of the policy layer found — an `#[ignore]`d test could
+  # (and did) sit un-run forever, since nothing anywhere ran `-- --ignored`
+  # (confirmed at the time: no workflow, no justfile recipe, anywhere in
+  # this repo passed `--include-ignored`/`-- --ignored`). Two of the four
+  # `#[ignore]`s that audit found were REAL, confirmed authorization bugs
+  # silently sitting unreported for an unknown length of time — this job
+  # exists so that can't happen invisibly again. `continue-on-error: true`
+  # is the actual non-blocking mechanism (a red run here shows as a
+  # yellow/neutral check, never fails the required-checks gate); the
+  # recipe itself also always `exit 0`s, as a second, redundant belt, so
+  # a local `just test-ci-ignored-report` run behaves the same way.
+  # `CRATESTACK_REQUIRE_DB` is set for the same reason `tests-db` sets it —
+  # without it, a broken testcontainers/Docker runner would silently skip
+  # every DB-backed `#[ignore]` and this job would report a false "all
+  # clean" instead of surfacing the real, tracked bugs.
+  #
+  # This does NOT replace reading `#[ignore]` reason strings during
+  # review — it's a safety net for the case where nobody does that for a
+  # while, not a substitute for it.
+  tests-ignored-report:
+    name: tests (ignored — report only, non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      CRATESTACK_REQUIRE_DB: "1"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: cargo test -- --ignored (report only)
+        run: just test-ci-ignored-report --locked
+
   # ---- Embedded-isolation gate -----------------------------------------
   # Blocking. Builds the embedded (rusqlite) surface and its examples WITHOUT
   # any Postgres crate in the build graph. The `check` job above builds

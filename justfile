@@ -166,6 +166,55 @@ test-ci-host *args='':
 		--exclude react-nextjs-daisyui-napi \
 		--exclude embedded-expo-native {{args}}
 
+# Report-only: surfaces the current pass/fail state of every `#[ignore]`d
+# test without blocking CI (2026-08 policy-layer coverage audit, Phase 3 —
+# nothing else in this repo ever runs or surfaces an ignored test, which is
+# exactly how four policy-enforcement tests, two of them catching REAL
+# authorization bugs, went unrun for months: `git grep -rn "\-\-include-ignored\|-- --ignored"`
+# matched nothing anywhere in `.github/workflows/` or this justfile before
+# this recipe). Reuses `test-ci-db`'s testcontainers Postgres (where every
+# DB-backed `#[ignore]` lives) and `test-ci-host`'s exclude list (for
+# no-DB ignores, e.g. cratestack-sqlx's characterization test for the
+# auth-bypass bug found alongside this mechanism) — deliberately skips
+# `cratestack-studio` and the wasm/tauri example crates as this recipe
+# has no Trunk/GTK toolchain step of its own. Always exits 0: a red
+# ignored test here is not a regression to fix in this job, it's a
+# defect (real or stale) to triage in the test's own `#[ignore]` reason —
+# see the top-level report this recipe prints for exactly which ones
+# failed.
+test-ci-ignored-report *args='':
+	#!/usr/bin/env bash
+	set -uo pipefail
+	echo "=== Ignored tests: cratestack-pg (testcontainers Postgres) ==="
+	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg {{args}} -- --ignored --nocapture
+	pg_status=$?
+	echo ""
+	echo "=== Ignored tests: workspace host shard (no DB, no wasm/desktop toolchain) ==="
+	cargo test --workspace \
+		--exclude embedded_flutter_native \
+		--exclude cratestack-pg \
+		--exclude cratestack-studio \
+		--exclude tauri-web-shell-example \
+		--exclude tauri-native-shell-example \
+		--exclude tauri-web-wasm-example \
+		--exclude embedded-browser-vite-example \
+		--exclude embedded-browser-vite-pwa-example \
+		--exclude embedded-browser-webpack-example \
+		--exclude react-vite-daisyui-example \
+		--exclude react-nextjs-daisyui-wasm \
+		--exclude react-nextjs-daisyui-napi \
+		--exclude embedded-expo-native {{args}} -- --ignored --nocapture
+	host_status=$?
+	echo ""
+	echo "=== Ignored-test report summary ==="
+	if [ "$pg_status" -ne 0 ] || [ "$host_status" -ne 0 ]; then
+		echo "One or more #[ignore]d tests failed to run cleanly (pg shard exit=$pg_status, host shard exit=$host_status)."
+		echo "This is expected for any test whose #[ignore] reason says REAL BUG — read that reason string before treating a red result here as new."
+	else
+		echo "All #[ignore]d tests ran clean (0 failures) — every one of them is a candidate to have its #[ignore] removed in a follow-up PR."
+	fi
+	exit 0
+
 # Verify the Dart client generator's OUTPUT actually compiles, not just
 # that its generated text matches a Rust-side snapshot (issue #300).
 # Generates a REST and an RPC package during the run from committed
