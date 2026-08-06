@@ -181,18 +181,17 @@ impl cratestack_schema::procedures::ProcedureRegistry for AuthEngineProcedures {
 // Verified against real Postgres: every cross-tenant isolation assertion above
 // line 425 now passes.
 //
-// This test remains `#[ignore]`d for a SECOND, unrelated defect it exposes at
-// line 462: `Todo.organizationId String? @default(auth().organization.id)`
-// silently resolves to NULL when the caller's auth context omits the nested
+// A SECOND defect that was exposed at line 462+ has also been fixed:
+// `Todo.organizationId String? @default(auth().organization.id)` was silently
+// resolving to NULL when the caller's auth context omitted the nested
 // `organization` claim, instead of failing validation. The `auth SessionUser`
 // block declares `organization OrganizationScope` as required (non-optional),
-// so a context missing it should be rejected — and NULL here is not benign:
-// `organizationId` is the tenant-scoping column used by
-// `@@deny('all', auth().organization.id != organizationId)`, so a NULL row
-// sits outside that comparison entirely. Whether a missing nested auth claim
-// should be a `Validation` error or a silent NULL is a framework design call,
-// so this is left for a maintainer rather than patched inside a test fix.
-#[ignore = "REAL BUG (distinct from the now-fixed precedence bypass): @default(auth().organization.id) silently yields NULL when the nested `organization` auth claim is absent, instead of CoolError::Validation — see the block comment above this test"]
+// so a context missing it should be rejected. This enforces the invariant
+// that required auth fields cannot be silently absent, preventing NULL values
+// in tenant-scoping columns that bypass policy predicates (since `NULL != X`
+// returns NULL in SQL, not true). This is now fixed in cratestack-sqlx's
+// `resolve_default_value()` — it checks `CreateDefault::auth_field_required`
+// and fails with `CoolError::Validation` when a required auth field is missing.
 async fn db_backed_auth_engine_supports_all_deny_and_auth_defaults() {
     let Some(test_pg) = pg::connect_or_skip().await else {
         return;
