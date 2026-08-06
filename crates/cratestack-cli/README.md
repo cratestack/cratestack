@@ -297,7 +297,7 @@ fn main() {
 - [Quickstart](https://cratestack.dev/getting-started/quickstart)
 - `cratestack-client-dart` — Dart package structure
 - `cratestack-client-typescript` — TypeScript package structure
-- `cratestack-studio` — Studio server + `eject` scaffold implementation (`cratestack-studio-generator` is a thin re-export)
+- `cratestack-studio` — Studio server + `eject` scaffold implementation
 - `cratestack-migrate` — schema diff / migration generator behind `migrate diff`
 - `cratestack-proto` — `.proto` generator behind `generate-proto`
 

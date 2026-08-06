@@ -65,8 +65,7 @@ jobs:
             -p cratestack-redis \
             -p cratestack-rusqlite \
             -p cratestack-sql \
-            -p cratestack-sqlx \
-            -p cratestack-studio-generator
+            -p cratestack-sqlx
 
       - name: Prepare Pages content
         run: |

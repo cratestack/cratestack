@@ -66,17 +66,24 @@ what that crate *is*:
 - `include_client_schema!("schema.cstack")` — HTTP client stubs only; treats another service's schema as
   a contract, owns no DB.
 
-### Two disjoint facades
+### Three disjoint facades
 
-As of 0.4.0 the umbrella crate is split into two facades consumers select via Cargo's `package =` rename:
+As of 0.4.0 the umbrella crate is split into three facades consumers select via Cargo's `package =` rename:
 
-- `cratestack = { package = "cratestack-pg" }` — Postgres + Axum + Rust client runtime. Does **not** pull
-  `libsqlite3-sys`, so it coexists with the official `sqlx` umbrella without `links = "sqlite3"` clashes.
-- `cratestack = { package = "cratestack-sqlite" }` — rusqlite (native + wasm) + shared surface.
+- `cratestack = { package = "cratestack-pg" }` — Postgres + Axum + Rust client runtime; for
+  `include_server_schema!("...", db = Postgres)` schemas. Does **not** pull `libsqlite3-sys`, so it
+  coexists with the official `sqlx` umbrella without `links = "sqlite3"` clashes.
+- `cratestack = { package = "cratestack-api" }` — Axum HTTP bindings + Rust client runtime, with no
+  database backend at all; for `include_server_schema!("...", db = None)` procedures-only services. No
+  `cratestack-sqlx` dependency under any feature gate. Switch to `cratestack-pg` the moment the schema
+  needs even one `model` (forbidden in `db = None` schemas at parse time).
+- `cratestack = { package = "cratestack-sqlite" }` — rusqlite (native + wasm) + shared surface; for
+  `include_embedded_schema!` on both native and `wasm32-unknown-unknown` targets.
 
 **Hard rule (enforced by convention, watch for regressions):** the macro split must stay strictly
-disjoint. `include_server_schema!` emits sqlx-only code; `include_embedded_schema!` emits rusqlite-only
-code. No cross-backend impls leak between the two paths.
+disjoint. `include_server_schema!(db = Postgres)` emits sqlx-only code; `include_server_schema!(db = None)`
+emits axum-only code with no DB machinery at all; `include_embedded_schema!` emits rusqlite-only code.
+No cross-backend impls leak between the three paths.
 
 ### Crate layering
 
@@ -95,10 +102,14 @@ The dependency flow is roughly: **parser → core/policy/sql → macros → back
   (`-store-sqlite`, `-store-redis`).
 - Codecs: `cratestack-codec-cbor` (default wire format), `cratestack-codec-json`.
 - Native bindings: `cratestack-cbor-napi` — napi-rs Node addon wrapping `cratestack-codec-cbor` for
-  `@cratestack/cbor-node` (`packages/cratestack-cbor-node`, issue #286). `publish = false`; ships
-  only as a compiled `.node` addon inside that npm package, never as a Cargo dependency.
+  `@cratestack/cbor-node` (`packages/cratestack-cbor-node`, issue #286). `publish = false` (ships
+  only as a compiled `.node` addon inside the npm package, never as a Cargo dependency).
+  `cratestack-cbor-wasm` — wasm-bindgen bindings for browser JavaScript, compiled to `@cratestack/cbor-web`
+  (`packages/cratestack-cbor-web`). `publish = false` (cdylib-only with no rlib; nothing could `cargo add`
+  it usefully). `cratestack-studio-ui` — Leptos+Trunk web UI, excluded from the workspace to avoid forcing
+  developers onto the wasm32 toolchain. `publish = false` (not a dependency, just a bundled web asset).
 - Tooling: `cratestack-cli`, `cratestack-lsp` (tower-lsp-server LSP for `.cstack`), `cratestack-migrate`,
-  `cratestack-studio` (+ `-studio-generator` shim, `-studio-ui` wasm app — see below).
+  `cratestack-studio` (+ `-studio-ui` wasm app — see below).
 
 ### Transport: REST vs RPC
 

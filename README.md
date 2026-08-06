@@ -87,7 +87,6 @@ The Rust workspace contains these main packages:
 * `cratestack-cli`: `cratestack` command-line tool
 * `cratestack-lsp`: `.cstack` language server
 * `cratestack-studio`: admin and testing surface for `.cstack` schemas, served from a `studio.toml`
-* `cratestack-studio-generator`: thin re-export of `cratestack-studio`'s `eject` (the real implementation lives there); kept so the CLI's import surface stays stable
 
 The VS Code extension wrapper lives under `packages/cratestack-vscode`.
 

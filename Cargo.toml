@@ -31,7 +31,6 @@ members = [
     "crates/cratestack-sqlite",
     "crates/cratestack-sqlx",
     "crates/cratestack-studio",
-    "crates/cratestack-studio-generator",
     "examples/embedded-cli",
     "examples/embedded-daemon",
     "examples/embedded-webhook",
@@ -133,7 +132,6 @@ cratestack-sql = { path = "crates/cratestack-sql", version = "0.7.5" }
 cratestack-sqlite = { path = "crates/cratestack-sqlite", version = "0.7.5" }
 cratestack-sqlx = { path = "crates/cratestack-sqlx", version = "0.7.5" }
 cratestack-studio = { path = "crates/cratestack-studio", version = "0.7.5" }
-cratestack-studio-generator = { path = "crates/cratestack-studio-generator", version = "0.7.5" }
 minijinja = "2"
 prost = "0.13"
 prost-types = "0.13"
