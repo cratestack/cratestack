@@ -18,7 +18,7 @@
 use std::collections::BTreeMap;
 
 use cratestack_core::route_naming::to_snake_case;
-use cratestack_core::{Field, Model, SourceSpan};
+use cratestack_core::{Field, Model, Schema, SourceSpan};
 
 use crate::diagnostics::{SchemaError, span_error};
 
@@ -100,5 +100,103 @@ pub(super) fn validate_model_name_collisions(models: &[Model]) -> Result<(), Sch
             span,
         ));
     }
+    Ok(())
+}
+
+/// Reject cross-kind type declaration collisions after `to_snake_case`
+/// normalization. This catches cases where a `type`, `enum`, `model`,
+/// `mixin`, and `auth` declarations have names that collide under
+/// normalization.
+///
+/// Generation mapping (which kinds share generated symbols):
+/// - `type` blocks → Rust struct in `types` module
+/// - `enum` blocks → Rust enum in `types` module
+/// - `model` blocks → Rust struct in `models` module
+/// - `mixin` blocks → NO code generated, just metadata
+/// - `auth` blocks → NO code generated, just configuration
+///
+/// Both `types` and `models` modules are re-exported at parent level via
+/// `pub use types::*; pub use models::*;`, so a `type Foo` and
+/// `model Foo` would collide despite being in different modules.
+/// Similarly, `type Foo` and `enum Foo` collide in the same module.
+///
+/// Pairs that actually share generated symbols:
+/// - type-vs-enum (both in `types` module, re-exported)
+/// - type-vs-model (both re-exported to parent)
+/// - enum-vs-model (both re-exported to parent)
+///
+/// Pairs that do NOT generate code to collide but are still rejected
+/// for clarity/consistency:
+/// - type-vs-mixin, enum-vs-mixin, model-vs-mixin (mixin is metadata-only)
+/// - type-vs-auth, enum-vs-auth, model-vs-auth (auth is metadata-only)
+/// - mixin-vs-auth (both metadata-only)
+pub(super) fn validate_type_declaration_collisions(schema: &Schema) -> Result<(), SchemaError> {
+    // Collect all type declarations with their kind and span.
+    #[derive(Clone, Copy)]
+    enum DeclKind {
+        Type,
+        Enum,
+        Model,
+        Mixin,
+        Auth,
+    }
+
+    let mut entries: Vec<(&str, SourceSpan, DeclKind)> = Vec::new();
+
+    for ty in &schema.types {
+        entries.push((ty.name.as_str(), ty.span, DeclKind::Type));
+    }
+    for enum_decl in &schema.enums {
+        entries.push((enum_decl.name.as_str(), enum_decl.span, DeclKind::Enum));
+    }
+    for model in &schema.models {
+        entries.push((model.name.as_str(), model.span, DeclKind::Model));
+    }
+    for mixin in &schema.mixins {
+        entries.push((mixin.name.as_str(), mixin.span, DeclKind::Mixin));
+    }
+    if let Some(auth) = &schema.auth {
+        entries.push((auth.name.as_str(), auth.span, DeclKind::Auth));
+    }
+
+    // Scan for normalized-name collisions across declaration kinds.
+    let mut seen: BTreeMap<String, (&str, DeclKind)> = BTreeMap::new();
+    for (name, span, kind) in entries {
+        let normalized = to_snake_case(name);
+        if let Some((existing_name, existing_kind)) = seen.get(normalized.as_str()) {
+            if existing_name != &name {
+                // Names are distinct as raw identifiers but collide under normalization.
+                let kind_name = match kind {
+                    DeclKind::Type => "type",
+                    DeclKind::Enum => "enum",
+                    DeclKind::Model => "model",
+                    DeclKind::Mixin => "mixin",
+                    DeclKind::Auth => "auth",
+                };
+                let existing_kind_name = match existing_kind {
+                    DeclKind::Type => "type",
+                    DeclKind::Enum => "enum",
+                    DeclKind::Model => "model",
+                    DeclKind::Mixin => "mixin",
+                    DeclKind::Auth => "auth",
+                };
+                return Err(span_error(
+                    format!(
+                        "{} `{name}` collides with {} `{existing_name}` — both normalize to \
+                         `{normalized}` for the generated Rust type name (see \
+                         `cratestack_core::route_naming::to_snake_case`); rename one of them",
+                        kind_name,
+                        existing_kind_name,
+                        name = name,
+                        existing_name = existing_name
+                    ),
+                    span,
+                ));
+            }
+        } else {
+            seen.insert(normalized, (name, kind));
+        }
+    }
+
     Ok(())
 }

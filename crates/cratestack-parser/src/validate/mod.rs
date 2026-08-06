@@ -29,6 +29,7 @@ use self::procedures::{
     validate_procedure_api_version_attribute, validate_procedure_deprecated_attribute,
     validate_procedure_isolation_attribute, validate_procedure_no_rate_limit_attribute,
 };
+use self::snake_case_collisions::validate_type_declaration_collisions;
 use self::stream_attribute::validate_procedure_stream_attribute;
 use self::type_names::{collect_type_names, validate_type_ref};
 
@@ -50,6 +51,11 @@ pub(crate) fn validate_schema(
     schema: &Schema,
 ) -> Result<(), SchemaError> {
     let type_names = collect_type_names(schema)?;
+
+    // Check for cross-kind type declaration collisions under to_snake_case
+    // normalization. This must come after collect_type_names (which catches
+    // raw-name duplicates) but before kind-specific validation.
+    validate_type_declaration_collisions(schema)?;
 
     let mut procedure_names = BTreeSet::new();
     for procedure in &schema.procedures {
