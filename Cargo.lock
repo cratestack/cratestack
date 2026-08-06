@@ -1050,6 +1050,7 @@ dependencies = [
  "cratestack-codec-cbor",
  "cratestack-codec-json",
  "cratestack-core",
+ "erased-serde",
  "futures-util",
  "http",
  "minicbor",

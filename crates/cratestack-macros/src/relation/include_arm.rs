@@ -67,7 +67,7 @@ pub(crate) fn generate_relation_include_arm(
                 for related_record in &related_records {
                     related_value.push(#target_serialize_ident(db, ctx, related_record, &child_selection).await?);
                 }
-                let related_value = ::cratestack::serde_json::Value::Array(related_value);
+                let related_value = ::cratestack::ProjectedValue::Array(related_value);
                 object.insert(#include_name.to_owned(), related_value);
             }
         });
@@ -106,10 +106,10 @@ pub(crate) fn generate_relation_include_arm(
                             .next();
                         match related_record {
                             Some(related_record) => #target_serialize_ident(db, ctx, &related_record, &child_selection).await?,
-                            None => ::cratestack::serde_json::Value::Null,
+                            None => ::cratestack::ProjectedValue::Null,
                         }
                     }
-                    None => ::cratestack::serde_json::Value::Null,
+                    None => ::cratestack::ProjectedValue::Null,
                 };
                 object.insert(#include_name.to_owned(), related_value);
             }
@@ -134,7 +134,7 @@ pub(crate) fn generate_relation_include_arm(
                     .next();
                 let related_value = match related_record {
                     Some(related_record) => #target_serialize_ident(db, ctx, &related_record, &child_selection).await?,
-                    None => ::cratestack::serde_json::Value::Null,
+                    None => ::cratestack::ProjectedValue::Null,
                 };
                 object.insert(#include_name.to_owned(), related_value);
             }

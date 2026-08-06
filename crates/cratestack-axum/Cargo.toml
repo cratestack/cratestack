@@ -17,6 +17,7 @@ async-trait.workspace = true
 axum.workspace = true
 bytes.workspace = true
 cratestack-core.workspace = true
+erased-serde.workspace = true
 futures-util.workspace = true
 http.workspace = true
 minicbor = { workspace = true, features = ["alloc"] }

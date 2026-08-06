@@ -1,96 +1,19 @@
-//! Projection/serialization helpers + the list-builder body.
+//! Serialization helpers + the list-builder body.
+//!
+//! [`projection_fields`] carries `project_<model>_model_value` itself
+//! (split out to keep this file under the repo's 200-LoC convention) —
+//! see that module's doc for why it builds each field individually
+//! rather than routing the record through `serde_json::to_value`
+//! (cratestack#430).
+
+mod projection_fields;
 
 use quote::quote;
 
+pub(super) use projection_fields::build_projection_helpers;
+
 use super::builders::RelationArmCollections;
 use super::prep::ModelHandlerPrep;
-
-pub(super) fn build_projection_helpers(p: &ModelHandlerPrep) -> proc_macro2::TokenStream {
-    let project_object_fields_ident = &p.project_object_fields_ident;
-    let project_serialized_value_ident = &p.project_serialized_value_ident;
-    let project_model_value_ident = &p.project_model_value_ident;
-    let model_ident = &p.model_ident;
-    let model_name = &p.model_name;
-
-    quote! {
-        fn #project_object_fields_ident(
-            object: ::cratestack::serde_json::Map<String, ::cratestack::serde_json::Value>,
-            fields: &[String],
-            context: &str,
-        ) -> Result<::cratestack::serde_json::Map<String, ::cratestack::serde_json::Value>, CoolError> {
-            let mut projected = ::cratestack::serde_json::Map::new();
-            for field in fields {
-                let value = object.get(field).cloned().ok_or_else(|| {
-                    CoolError::Internal(format!(
-                        "serialized relation '{}' is missing field '{}'",
-                        context,
-                        field,
-                    ))
-                })?;
-                projected.insert(field.clone(), value);
-            }
-            Ok(projected)
-        }
-
-        fn #project_serialized_value_ident(
-            value: ::cratestack::serde_json::Value,
-            fields: Option<&[String]>,
-            context: &str,
-        ) -> Result<::cratestack::serde_json::Value, CoolError> {
-            let Some(fields) = fields else {
-                return Ok(value);
-            };
-
-            match value {
-                ::cratestack::serde_json::Value::Null => Ok(::cratestack::serde_json::Value::Null),
-                ::cratestack::serde_json::Value::Object(object) => Ok(::cratestack::serde_json::Value::Object(
-                    #project_object_fields_ident(object, fields, context)?,
-                )),
-                ::cratestack::serde_json::Value::Array(values) => {
-                    let mut projected = Vec::with_capacity(values.len());
-                    for value in values {
-                        projected.push(#project_serialized_value_ident(value, Some(fields), context)?);
-                    }
-                    Ok(::cratestack::serde_json::Value::Array(projected))
-                }
-                _ => Err(CoolError::Internal(format!(
-                    "included relation '{}' must serialize to an object, array, or null",
-                    context,
-                ))),
-            }
-        }
-
-        fn #project_model_value_ident(
-            record: &super::models::#model_ident,
-            fields: Option<&[String]>,
-        ) -> Result<::cratestack::serde_json::Map<String, ::cratestack::serde_json::Value>, CoolError> {
-            let value = ::cratestack::serde_json::to_value(record)
-                .map_err(|error| CoolError::Internal(format!("failed to serialize {}: {error}", #model_name)))?;
-            let mut object = value.as_object().cloned().ok_or_else(|| {
-                CoolError::Internal(format!("generated {} serialization must be a JSON object", #model_name))
-            })?;
-            // Strip `null` entries — minicbor-serde encodes null as
-            // CBOR empty array, corrupting nullable columns. Client
-            // `#[serde(default)]` recovers `None` from absent keys.
-            object.retain(|_, v| !v.is_null());
-
-            let Some(fields) = fields else {
-                return Ok(object);
-            };
-
-            let mut projected = ::cratestack::serde_json::Map::new();
-            for field in fields {
-                if let Some(value) = object.get(field).cloned() {
-                    projected.insert(field.clone(), value);
-                }
-                // Field absent from `object` means the row's column was
-                // NULL and we stripped it above. Skip silently — the
-                // client struct's `#[serde(default)]` restores `None`.
-            }
-            Ok(projected)
-        }
-    }
-}
 
 pub(super) fn build_serialize_helper(
     p: &ModelHandlerPrep,
@@ -108,7 +31,7 @@ pub(super) fn build_serialize_helper(
             record: &'a super::models::#model_ident,
             selection: &'a ModelSelectionQuery,
         ) -> ::core::pin::Pin<
-            Box<dyn ::core::future::Future<Output = Result<::cratestack::serde_json::Value, CoolError>> + Send + 'a>,
+            Box<dyn ::core::future::Future<Output = Result<::cratestack::ProjectedValue, CoolError>> + Send + 'a>,
         > {
             Box::pin(async move {
                 let mut object = #project_model_value_ident(record, selection.fields.as_deref())?;
@@ -120,7 +43,7 @@ pub(super) fn build_serialize_helper(
                     }
                 }
 
-                Ok(::cratestack::serde_json::Value::Object(object))
+                Ok(::cratestack::ProjectedValue::Object(object))
             })
         }
     }

@@ -50,38 +50,26 @@ impl AuthProvider for PolicyDbAuthProvider {
 // `@@allow("read", ...)` clause, so default-deny silently zeroed out
 // every `author.profile` include; and `Session` carries `@@paged`, so
 // its list routes return `Page<Session>`, not a bare `Vec<Session>`.
-// All three have been fixed here (query strings, the fixture, and the
-// decode targets) and are NOT the reason this test is still ignored.
+// All three were fixed here (query strings, the fixture, and the decode
+// targets).
 //
-// The test is still ignored because of a REAL, confirmed framework bug:
-// every model list/detail response is serialized by first converting
-// the row to `serde_json::Value` (see `project_<model>_model_value` in
-// `crates/cratestack-macros/src/axum/model/serializers.rs`, which calls
-// `serde_json::to_value(record)` unconditionally, `fields=` or not)
-// before the whole tree is CBOR-encoded via `minicbor-serde`. Routing a
-// `uuid::Uuid` field through that JSON intermediate collapses it to a
-// human-readable string (JSON's `Serializer::is_human_readable() ==
-// true` makes `Uuid::serialize` choose the string branch), so it is
-// CBOR-encoded as a text string on the wire. But a generated client
-// struct decodes the SAME field directly from CBOR into a real
-// `uuid::Uuid` — `minicbor-serde`'s deserializer reports
-// `is_human_readable() == false`, so `Uuid::deserialize` expects the
-// BYTES branch instead. The two sides disagree on wire representation
-// for any model with a `Uuid` column, and decoding fails. Reproduced
-// live via `cargo test -p cratestack-pg --test policy_db -- --ignored`
-// against a real Postgres container: fails decoding the `/sessions`
-// list response with
-// `Codec("failed to decode CBOR body: unexpected type string at
-// position 51: expected bytes (definite length)")` — `Session` is the
-// only model in this fixture with a `Uuid` column (`externalId`). This
-// needs an actual fix in the CBOR codec/serialization pipeline (e.g. a
-// `Uuid`-aware CBOR encode path that bypasses the JSON detour, or
-// forcing `is_human_readable()` to agree on both sides), not a test
-// change — tracked as a real defect, not stale test data. The companion
-// test below (`db_backed_model_events_use_outbox_and_isolate_subscriber_failures`)
-// does not touch any `Uuid` column and passes.
+// The test was then ignored for a real, confirmed framework bug
+// (cratestack#430): every model list/detail response was serialized by
+// first converting the row to `serde_json::Value`, which always reports
+// itself human-readable, permanently collapsing `uuid::Uuid` fields to
+// their string form before the row was CBOR-encoded — but a generated
+// client decodes the same field directly from CBOR into a real
+// `uuid::Uuid`, whose `Deserialize` expects the bytes branch under a
+// non-human-readable format. `Session.externalId` (the only `Uuid`
+// column in this fixture) is exercised heavily below (list, filtered,
+// nested-relation, and detail `/sessions` requests all decode into
+// `Session`), so this test doubles as the CBOR/Uuid round-trip
+// regression coverage. Fixed by `ProjectedValue`
+// (`cratestack-axum::projection`), which keeps each projected field's
+// original value instead of pre-serializing through `serde_json::Value`,
+// so `Uuid`'s `Serialize` impl sees the real target codec's
+// `is_human_readable()` at encode time.
 #[tokio::test]
-#[ignore = "REAL BUG (not stale): CBOR<->Uuid round-trip is broken for every model with a Uuid column — server routes rows through serde_json::Value (Uuid -> string) before CBOR-encoding, but generated clients decode Uuid fields directly from CBOR expecting bytes; see the block comment above this test for the confirmed repro and root cause"]
 async fn db_backed_policy_enforcement() {
     let Some(test_pg) = pg::connect_or_skip().await else {
         return;
@@ -561,15 +549,11 @@ async fn db_backed_policy_enforcement() {
         vec![1, 4]
     );
 
-    // The nested-where HTTP test against `/sessions` is intentionally
-    // omitted: the macro's projection routes typed rows through
-    // `serde_json::Value`, which represents UUIDs as hyphenated strings,
-    // but the CBOR codec deserializes the typed Uuid field as bytes —
-    // an asymmetry that mismatches at decode. The same WHERE-clause
-    // parser is exercised by the `/posts?where=...` cases below, which
-    // don't include UUID columns. CBOR-native UUID projection is tracked
-    // as a follow-up; banks using UUID columns should use the JSON
-    // projection until then.
+    // A `/sessions?where=...` case analogous to the `/posts?where=...`
+    // ones below isn't included here — the WHERE-clause parser itself is
+    // already covered there; nested-relation and column filters against
+    // `/sessions` (which round-trip its `Uuid` column, cratestack#430)
+    // are covered further down instead.
 
     let negated_where_response = router
         .clone()

@@ -19,6 +19,7 @@ pub use axum;
 pub mod codec;
 pub mod headers;
 pub mod idempotency;
+pub mod projection;
 pub mod query;
 pub mod ratelimit;
 pub mod rpc;
@@ -52,5 +53,7 @@ pub use headers::{
     enrich_context_from_headers, parse_client_ip, parse_if_match_version, parse_traceparent,
     set_version_etag,
 };
+
+pub use projection::ProjectedValue;
 
 pub use query::{QueryExpr, parse_filter_expression, parse_query_pairs};

@@ -89,14 +89,14 @@ pub(super) fn build_prep(model: &Model) -> Result<ModelHandlerPrep, String> {
         .ok_or_else(|| format!("model {} is missing a primary key", model.name))?;
     let primary_key_type = rust_type_tokens(&primary_key.ty);
     let list_response_type = if paged {
-        quote! { ::cratestack::Page<::cratestack::serde_json::Value> }
+        quote! { ::cratestack::Page<::cratestack::ProjectedValue> }
     } else {
-        quote! { Vec<::cratestack::serde_json::Value> }
+        quote! { Vec<::cratestack::ProjectedValue> }
     };
     let list_header_error_encoder = if paged {
-        quote! { ::cratestack::encode_transport_result_with_status_for::<_, ::cratestack::Page<::cratestack::serde_json::Value>>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error)) }
+        quote! { ::cratestack::encode_transport_result_with_status_for::<_, ::cratestack::Page<::cratestack::ProjectedValue>>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error)) }
     } else {
-        quote! { ::cratestack::encode_transport_result_with_status_for::<_, Vec<::cratestack::serde_json::Value>>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error)) }
+        quote! { ::cratestack::encode_transport_result_with_status_for::<_, Vec<::cratestack::ProjectedValue>>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error)) }
     };
     let create_auth_preflight = if create_requires_authenticated_context(model) {
         quote! {
