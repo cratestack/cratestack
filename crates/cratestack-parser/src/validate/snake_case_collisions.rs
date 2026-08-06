@@ -104,98 +104,89 @@ pub(super) fn validate_model_name_collisions(models: &[Model]) -> Result<(), Sch
 }
 
 /// Reject cross-kind type declaration collisions after `to_snake_case`
-/// normalization. This catches cases where a `type`, `enum`, `model`,
-/// `mixin`, and `auth` declarations have names that collide under
-/// normalization.
+/// normalization, for the declaration kinds that actually land in a shared
+/// generated Rust namespace.
 ///
-/// Generation mapping (which kinds share generated symbols):
-/// - `type` blocks → Rust struct in `types` module
-/// - `enum` blocks → Rust enum in `types` module
-/// - `model` blocks → Rust struct in `models` module
-/// - `mixin` blocks → NO code generated, just metadata
-/// - `auth` blocks → NO code generated, just configuration
+/// Generation mapping (which kinds share generated symbols) — see
+/// `cratestack-macros/src/include/server.rs` and `.../embedded.rs`:
+/// - `type` blocks → Rust struct emitted into a `types` module
+/// - `enum` blocks → Rust enum emitted into the same `types` module
+/// - `model` blocks → Rust struct emitted into a `models` module
+/// - `mixin` blocks → **no per-declaration symbol at all.** A mixin's own
+///   name only ever appears as one string literal inside the single shared
+///   `pub const MIXINS: &[&str]` introspection array; its *fields* are
+///   spliced into the fields of whatever model uses it (already guarded by
+///   [`validate_field_column_collisions`] at the merged-model level), but
+///   the mixin declaration's own name never becomes a generated identifier.
+/// - `auth` blocks → **no generated symbol keyed by the block's own name
+///   either.** `schema.auth` is a single, unnamed-in-codegen block: its
+///   name is used only to resolve policy field paths
+///   (`cratestack-macros/src/policy/auth.rs`), never to name a struct,
+///   const, or module.
 ///
-/// Both `types` and `models` modules are re-exported at parent level via
-/// `pub use types::*; pub use models::*;`, so a `type Foo` and
-/// `model Foo` would collide despite being in different modules.
-/// Similarly, `type Foo` and `enum Foo` collide in the same module.
+/// Both `types` and `models` modules are re-exported at the parent level via
+/// `pub use types::*; pub use models::*;`, so a `type Foo` and `model Foo`
+/// collide despite being in different modules. Similarly, `type Foo` and
+/// `enum Foo` collide directly in the same `types` module.
 ///
-/// Pairs that actually share generated symbols:
-/// - type-vs-enum (both in `types` module, re-exported)
-/// - type-vs-model (both re-exported to parent)
-/// - enum-vs-model (both re-exported to parent)
+/// Pairs that actually share a generated symbol, and are rejected here:
+/// - type-vs-enum (both land in the `types` module)
+/// - type-vs-model (both re-exported to the parent module)
+/// - enum-vs-model (both re-exported to the parent module)
 ///
-/// Pairs that do NOT generate code to collide but are still rejected
-/// for clarity/consistency:
-/// - type-vs-mixin, enum-vs-mixin, model-vs-mixin (mixin is metadata-only)
-/// - type-vs-auth, enum-vs-auth, model-vs-auth (auth is metadata-only)
-/// - mixin-vs-auth (both metadata-only)
+/// `mixin` and `auth` are deliberately **excluded** from this check — per
+/// cratestack#429's explicit acceptance criterion ("do not reject pairs
+/// that share no generated symbol"), since neither one's own declaration
+/// name is ever used to generate a Rust identifier, only their `MIXINS`
+/// array entry (a string, not an identifier) or field-level metadata that's
+/// already covered by [`validate_field_column_collisions`].
 pub(super) fn validate_type_declaration_collisions(schema: &Schema) -> Result<(), SchemaError> {
-    // Collect all type declarations with their kind and span.
     #[derive(Clone, Copy)]
     enum DeclKind {
         Type,
         Enum,
         Model,
-        Mixin,
-        Auth,
     }
 
-    let mut entries: Vec<(&str, SourceSpan, DeclKind)> = Vec::new();
+    impl DeclKind {
+        fn label(self) -> &'static str {
+            match self {
+                DeclKind::Type => "type",
+                DeclKind::Enum => "enum",
+                DeclKind::Model => "model",
+            }
+        }
+    }
+
+    // Only `type`/`enum`/`model` share a generated namespace (see the
+    // doc comment above) — `mixin` and `auth` are intentionally omitted.
+    let mut kind_by_name: BTreeMap<&str, DeclKind> = BTreeMap::new();
+    let mut entries: Vec<(&str, SourceSpan)> = Vec::new();
 
     for ty in &schema.types {
-        entries.push((ty.name.as_str(), ty.span, DeclKind::Type));
+        kind_by_name.insert(ty.name.as_str(), DeclKind::Type);
+        entries.push((ty.name.as_str(), ty.span));
     }
     for enum_decl in &schema.enums {
-        entries.push((enum_decl.name.as_str(), enum_decl.span, DeclKind::Enum));
+        kind_by_name.insert(enum_decl.name.as_str(), DeclKind::Enum);
+        entries.push((enum_decl.name.as_str(), enum_decl.span));
     }
     for model in &schema.models {
-        entries.push((model.name.as_str(), model.span, DeclKind::Model));
-    }
-    for mixin in &schema.mixins {
-        entries.push((mixin.name.as_str(), mixin.span, DeclKind::Mixin));
-    }
-    if let Some(auth) = &schema.auth {
-        entries.push((auth.name.as_str(), auth.span, DeclKind::Auth));
+        kind_by_name.insert(model.name.as_str(), DeclKind::Model);
+        entries.push((model.name.as_str(), model.span));
     }
 
-    // Scan for normalized-name collisions across declaration kinds.
-    let mut seen: BTreeMap<String, (&str, DeclKind)> = BTreeMap::new();
-    for (name, span, kind) in entries {
-        let normalized = to_snake_case(name);
-        if let Some((existing_name, existing_kind)) = seen.get(normalized.as_str()) {
-            if existing_name != &name {
-                // Names are distinct as raw identifiers but collide under normalization.
-                let kind_name = match kind {
-                    DeclKind::Type => "type",
-                    DeclKind::Enum => "enum",
-                    DeclKind::Model => "model",
-                    DeclKind::Mixin => "mixin",
-                    DeclKind::Auth => "auth",
-                };
-                let existing_kind_name = match existing_kind {
-                    DeclKind::Type => "type",
-                    DeclKind::Enum => "enum",
-                    DeclKind::Model => "model",
-                    DeclKind::Mixin => "mixin",
-                    DeclKind::Auth => "auth",
-                };
-                return Err(span_error(
-                    format!(
-                        "{} `{name}` collides with {} `{existing_name}` — both normalize to \
-                         `{normalized}` for the generated Rust type name (see \
-                         `cratestack_core::route_naming::to_snake_case`); rename one of them",
-                        kind_name,
-                        existing_kind_name,
-                        name = name,
-                        existing_name = existing_name
-                    ),
-                    span,
-                ));
-            }
-        } else {
-            seen.insert(normalized, (name, kind));
-        }
+    if let Some((existing, colliding, span, normalized)) = find_snake_case_collision(entries) {
+        let existing_kind = kind_by_name[existing].label();
+        let colliding_kind = kind_by_name[colliding].label();
+        return Err(span_error(
+            format!(
+                "{colliding_kind} `{colliding}` collides with {existing_kind} `{existing}` — \
+                 both normalize to `{normalized}` for the generated Rust type name (see \
+                 `cratestack_core::route_naming::to_snake_case`); rename one of them",
+            ),
+            span,
+        ));
     }
 
     Ok(())

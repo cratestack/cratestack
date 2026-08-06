@@ -1,9 +1,15 @@
 #![cfg(test)]
 //! Tests for cross-kind type declaration collisions under `to_snake_case`
-//! normalization. Verifies that declarations of different kinds whose
-//! names normalize to the same string are rejected with appropriate
-//! diagnostics, while safe cross-kind name reuse (no collision after
-//! normalization) continues to work.
+//! normalization (cratestack#429). Only `type`/`enum`/`model` share a
+//! generated Rust namespace (see the doc comment on
+//! `validate_type_declaration_collisions` in `snake_case_collisions.rs`),
+//! so those three kind-pairs get negative (rejected) tests here. `mixin`
+//! and `auth` declarations are metadata-only — their own declaration name
+//! is never turned into a generated Rust identifier — so every pair
+//! involving either of them is a *positive* control: per cratestack#429's
+//! explicit acceptance criterion ("do not reject pairs that share no
+//! generated symbol"), a normalized-name collision against a `mixin` or
+//! `auth` block must continue to validate successfully.
 
 use super::parse_schema;
 
@@ -86,9 +92,15 @@ model status {
     assert!(message.contains("status"), "error: {message}");
 }
 
+// `mixin` and `auth` declarations are metadata-only (see the module doc
+// comment): neither one's own name is ever turned into a generated Rust
+// identifier, so a normalized-name collision against either must *not* be
+// rejected — rejecting it would be exactly the over-rejection
+// cratestack#429's acceptance criteria rule out.
+
 #[test]
-fn type_mixin_collision_camel_vs_snake() {
-    let err = parse_schema(
+fn safe_type_mixin_collision_camel_vs_snake() {
+    parse_schema(
         r#"
 datasource db {
   provider = "postgresql"
@@ -108,16 +120,12 @@ model User {
 }
 "#,
     )
-    .expect_err("type-mixin collision should be rejected");
-
-    let message = err.to_string();
-    assert!(message.contains("collides with"), "error: {message}");
-    assert!(message.contains("timestamp"), "error: {message}");
+    .expect("mixin shares no generated symbol with type — must not be rejected");
 }
 
 #[test]
-fn enum_mixin_collision_camel_vs_snake() {
-    let err = parse_schema(
+fn safe_enum_mixin_collision_camel_vs_snake() {
+    parse_schema(
         r#"
 datasource db {
   provider = "postgresql"
@@ -137,16 +145,12 @@ model Task {
 }
 "#,
     )
-    .expect_err("enum-mixin collision should be rejected");
-
-    let message = err.to_string();
-    assert!(message.contains("collides with"), "error: {message}");
-    assert!(message.contains("priority"), "error: {message}");
+    .expect("mixin shares no generated symbol with enum — must not be rejected");
 }
 
 #[test]
-fn model_mixin_collision_camel_vs_snake() {
-    let err = parse_schema(
+fn safe_model_mixin_collision_camel_vs_snake() {
+    parse_schema(
         r#"
 datasource db {
   provider = "postgresql"
@@ -162,16 +166,12 @@ mixin document {
 }
 "#,
     )
-    .expect_err("model-mixin collision should be rejected");
-
-    let message = err.to_string();
-    assert!(message.contains("collides with"), "error: {message}");
-    assert!(message.contains("document"), "error: {message}");
+    .expect("mixin shares no generated symbol with model — must not be rejected");
 }
 
 #[test]
-fn type_auth_collision_camel_vs_snake() {
-    let err = parse_schema(
+fn safe_type_auth_collision_camel_vs_snake() {
+    parse_schema(
         r#"
 datasource db {
   provider = "postgresql"
@@ -191,16 +191,12 @@ model User {
 }
 "#,
     )
-    .expect_err("type-auth collision should be rejected");
-
-    let message = err.to_string();
-    assert!(message.contains("collides with"), "error: {message}");
-    assert!(message.contains("context"), "error: {message}");
+    .expect("auth shares no generated symbol with type — must not be rejected");
 }
 
 #[test]
-fn enum_auth_collision_camel_vs_snake() {
-    let err = parse_schema(
+fn safe_enum_auth_collision_camel_vs_snake() {
+    parse_schema(
         r#"
 datasource db {
   provider = "postgresql"
@@ -220,16 +216,12 @@ model User {
 }
 "#,
     )
-    .expect_err("enum-auth collision should be rejected");
-
-    let message = err.to_string();
-    assert!(message.contains("collides with"), "error: {message}");
-    assert!(message.contains("role"), "error: {message}");
+    .expect("auth shares no generated symbol with enum — must not be rejected");
 }
 
 #[test]
-fn model_auth_collision_camel_vs_snake() {
-    let err = parse_schema(
+fn safe_model_auth_collision_camel_vs_snake() {
+    parse_schema(
         r#"
 datasource db {
   provider = "postgresql"
@@ -245,16 +237,12 @@ auth session {
 }
 "#,
     )
-    .expect_err("model-auth collision should be rejected");
-
-    let message = err.to_string();
-    assert!(message.contains("collides with"), "error: {message}");
-    assert!(message.contains("session"), "error: {message}");
+    .expect("auth shares no generated symbol with model — must not be rejected");
 }
 
 #[test]
-fn mixin_auth_collision_camel_vs_snake() {
-    let err = parse_schema(
+fn safe_mixin_auth_collision_camel_vs_snake() {
+    parse_schema(
         r#"
 datasource db {
   provider = "postgresql"
@@ -274,11 +262,7 @@ model User {
 }
 "#,
     )
-    .expect_err("mixin-auth collision should be rejected");
-
-    let message = err.to_string();
-    assert!(message.contains("collides with"), "error: {message}");
-    assert!(message.contains("metadata"), "error: {message}");
+    .expect("mixin and auth are both metadata-only — must not be rejected");
 }
 
 #[test]
