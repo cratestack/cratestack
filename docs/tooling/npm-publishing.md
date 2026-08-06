@@ -131,9 +131,10 @@ by a new package just because a sibling already has one configured:
 
 Once a package has a Trusted Publisher configured, the next tag push publishes it — no GitHub
 secret to add at all. Configuration changes take effect immediately for the *next* publish. A
-package with no Trusted Publisher configured yet just makes its own `npm publish` step in
-`publish-npm-api-family` fail — it does not block the other packages in the same job, since each
-runs as a separate loop iteration, but the job as a whole still exits non-zero. `publish-npm-cbor-node`
+package with no Trusted Publisher configured yet makes its own `npm publish` step in
+`publish-npm-api-family` fail, and that **does** block the packages after it: the loop runs
+`exit 1` on a failed publish, which aborts the whole script, so later packages in the same job are
+never attempted. `publish-npm-cbor-node`
 has no such per-package isolation — its single `npm publish` invocation drives `napi prepublish`'s
 internal per-subpackage publishes as one step, so the first missing Trusted Publisher (main package
 or any of the 5 subpackages) fails that whole step immediately, before later subpackages are
@@ -149,6 +150,33 @@ authenticator.` — npm has no way to satisfy an OTP challenge from unattended C
 way on `v0.4.15` (both npm publishes failed with `EOTP`); rotating to an Automation token fixed it
 for `v0.4.16`. Trusted Publishing sidesteps this whole class of failure — there's no stored
 credential to be the wrong type.
+
+## Re-running a partially-published release
+
+Every `npm publish` in `release-cli.yml` goes through `.github/scripts/npm-publish.sh` rather than
+being called directly. That wrapper handles the two ways a publish fails for reasons that aren't
+"the publish is broken":
+
+- **Already published → skipped as success.** Re-running a release re-executes every publish job
+  against the same tag, including ones that already succeeded. Without this, a single
+  already-published package fails its job — and in `publish-npm-api-family` it aborts the loop, so
+  the packages that genuinely still need publishing never get attempted. This is not hypothetical:
+  it is exactly what stranded `v0.7.5`.
+- **Sigstore transparency-log 409 → retried with backoff.** npm's internal retry to Rekor can race
+  its own already-landed tlog write and get back `409 an equivalent entry already exists in the
+  transparency log`; sigstore-js defaults to `fetchOnConflict: false`, so that benign duplicate
+  surfaces as a fatal `TLOG_CREATE_ENTRY_ERROR`. A fresh `npm publish` re-signs with a new ephemeral
+  cert and clears it. Tracked upstream as
+  [sigstore/sigstore-js#1708](https://github.com/sigstore/sigstore-js/issues/1708); once its fix
+  ([#1709](https://github.com/sigstore/sigstore-js/pull/1709)) ships in an npm release, the retry
+  can be reconsidered.
+
+Any other failure is surfaced immediately and never retried — the wrapper must not mask a real
+problem such as bad auth, a missing Trusted Publisher entry, or a broken tarball.
+
+Because publishing is idempotent this way, the recovery for a half-landed release is simply to fix
+the underlying cause and re-run the failed jobs against the same tag. There is no need to bump to a
+fresh version just to get a clean run.
 
 ## crates.io one-time setup
 

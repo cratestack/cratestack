@@ -464,6 +464,20 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: wasm-pack
+      # Same reason as the publish-npm-cbor-web job in release-cli.yml,
+      # which carries the full explanation: wasm-pack downloads its own
+      # binaryen (hardcoded version_117) mid-build unless a `wasm-opt`
+      # is already on PATH, and that unpinned fetch failed a real
+      # release run. This job runs the same `wasm-pack build` on every
+      # push, so it is exposed to the identical flake.
+      - name: Install binaryen (wasm-opt), pinned
+        run: |
+          set -euo pipefail
+          curl -fsSL -o binaryen.tar.gz \
+            "https://github.com/WebAssembly/binaryen/releases/download/version_130/binaryen-version_130-x86_64-linux.tar.gz"
+          tar -xzf binaryen.tar.gz
+          echo "$PWD/binaryen-version_130/bin" >> "$GITHUB_PATH"
+          rm binaryen.tar.gz
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:

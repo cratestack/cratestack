@@ -266,8 +266,7 @@ jobs:
       - name: Ensure npm supports Trusted Publishing
         run: npm install -g npm@^11
       - name: Publish @cratestack/cli
-        working-directory: packages/cratestack-cli-npm
-        run: npm publish --access public --provenance
+        run: .github/scripts/npm-publish.sh packages/cratestack-cli-npm --access public --provenance
 
   # @cratestack/api and its split family (ts-types, link-*, runtime-*,
   # validator-*, adapter-*) all ship their own compiled dist/ in the
@@ -350,12 +349,19 @@ jobs:
             cratestack-adapter-tanstack-query cratestack-adapter-rtk \
             cratestack-api; do
             echo "::group::npm publish $pkg"
-            # Not just `(cd ... && npm publish ...)` directly under
-            # `set -e` — that would exit the script the instant a publish
-            # fails, skipping the `::endgroup::` below and leaving that
-            # log group open (and misleadingly labeled) in the Actions
-            # UI for the rest of the (now-aborted) run.
-            if ! (cd "packages/$pkg" && npm publish --access public --provenance); then
+            # Not called directly under `set -e` — that would exit the
+            # script the instant a publish fails, skipping the
+            # `::endgroup::` below and leaving that log group open (and
+            # misleadingly labeled) in the Actions UI for the rest of
+            # the (now-aborted) run.
+            #
+            # An already-published package is a success as far as the
+            # wrapper is concerned, so a re-run of a partially-completed
+            # release no longer dies on the first package that already
+            # landed and skips every package after it. A genuine failure
+            # (bad auth, missing Trusted Publisher entry) still aborts
+            # the loop here, as it should.
+            if ! .github/scripts/npm-publish.sh "packages/$pkg" --access public --provenance; then
               echo "::endgroup::"
               exit 1
             fi
@@ -537,11 +543,13 @@ jobs:
       # — it doesn't propagate into the per-platform `npm publish` calls
       # `napi prepublish` makes internally via the prepublishOnly hook, so
       # provenance is requested via npm config instead, covering both.
+      # `npm config set` writes to the *user* config (~/.npmrc) by
+      # default, so it applies regardless of which directory it runs
+      # from — the wrapper below cd's into the package itself.
       - name: Publish @cratestack/cbor-node (+ per-platform subpackages)
-        working-directory: packages/cratestack-cbor-node
         run: |
           npm config set provenance true
-          npm publish --access public
+          .github/scripts/npm-publish.sh packages/cratestack-cbor-node --access public
 
   # Same rationale as js-cbor-wasm in ci.yml: needs a real Rust wasm32
   # toolchain (the package's `prebuild` hook runs `wasm-pack build` against
@@ -571,6 +579,34 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: wasm-pack
+      # wasm-pack only downloads its own `wasm-opt` when one isn't
+      # already on PATH (src/wasm_opt.rs short-circuits on
+      # `which::which("wasm-opt")` with no version check), and the
+      # version it reaches for is hardcoded — 0.15.0, the current
+      # release, still pins binaryen version_117. That download is an
+      # unpinned network fetch in the middle of a release build, and it
+      # is what failed run 31094655414: `failed to download from
+      # .../binaryen-version_117-x86_64-linux.tar.gz`. The asset itself
+      # is fine (it still resolves), so that was a transient
+      # GitHub-releases hiccup — installing wasm-opt ourselves takes the
+      # fetch off the critical path so the same blip can't fail a
+      # release again.
+      #
+      # Pinned to version_130 rather than tracking latest (version_131
+      # at time of writing): 130 is the release upstream wasm-pack
+      # itself vetted in rustwasm/wasm-pack#1599, merged 2026-08-05 but
+      # not yet in a published wasm-pack release. x86_64-linux is
+      # correct here — this job is `runs-on: ubuntu-latest`, no matrix.
+      # taiki-e/install-action has no binaryen manifest, hence the
+      # explicit curl.
+      - name: Install binaryen (wasm-opt), pinned
+        run: |
+          set -euo pipefail
+          curl -fsSL -o binaryen.tar.gz \
+            "https://github.com/WebAssembly/binaryen/releases/download/version_130/binaryen-version_130-x86_64-linux.tar.gz"
+          tar -xzf binaryen.tar.gz
+          echo "$PWD/binaryen-version_130/bin" >> "$GITHUB_PATH"
+          rm binaryen.tar.gz
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -591,8 +627,7 @@ jobs:
       - name: Ensure npm supports Trusted Publishing
         run: npm install -g npm@^11
       - name: Publish @cratestack/cbor-web
-        working-directory: packages/cratestack-cbor-web
-        run: npm publish --access public --provenance
+        run: .github/scripts/npm-publish.sh packages/cratestack-cbor-web --access public --provenance
 
   # The umbrella package (issue #288) — pure TS, conditional node/browser
   # exports. Gated on both platform packages above (not just `prepare`)
@@ -636,5 +671,4 @@ jobs:
       - name: Ensure npm supports Trusted Publishing
         run: npm install -g npm@^11
       - name: Publish @cratestack/cbor
-        working-directory: packages/cratestack-cbor
-        run: npm publish --access public --provenance
+        run: .github/scripts/npm-publish.sh packages/cratestack-cbor --access public --provenance
