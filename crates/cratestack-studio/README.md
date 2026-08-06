@@ -6,8 +6,9 @@ file, opens the configured database and/or service connections, and
 serves a JSON API plus a bundled web UI for browsing and editing data.
 
 This crate replaces the old per-project `cratestack-studio-generator`
-scaffold. That crate is now a thin re-export of this one's `eject`
-function — see [Eject](#eject) below.
+scaffold, which was a thin re-export of this crate's `eject` function and
+has since been removed (#427) now that nothing in the workspace depended
+on it directly — see [Eject](#eject) below.
 
 ## Quickstart
 
