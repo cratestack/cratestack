@@ -864,8 +864,19 @@ async fn db_backed_policy_enforcement() {
     assert_eq!(ordered_sessions.items.len(), 2);
     assert_eq!(ordered_sessions.items[0].label, "Revoked Session");
 
+    // Reuses id 2, freed by the `delete(2)` above — NOT a fresh id.
+    // `ordered_posts`/`nested_ordered_posts` below assert this exact id
+    // (`[0].id == 2`), which only holds if this row lands there; using
+    // any id still occupied (e.g. 4, already taken by the "Created" post
+    // above) deterministically fails on the primary key constraint
+    // instead (`orphan post should seed: ... duplicate key value
+    // violates unique constraint "posts_pkey" ... Key (id)=(4) already
+    // exists`) — reproduced against a real Postgres testcontainer, same
+    // failure CI hit on `db_backed_policy_enforcement` once this test's
+    // `#[ignore]` was lifted (cratestack#430) and this latent bug (dormant
+    // since the test was never run) got exercised for the first time.
     cratestack::sqlx::query(
-        "INSERT INTO posts (id, title, subtitle, published, author_id) VALUES (4, 'Orphan Published', NULL, TRUE, 999)",
+        "INSERT INTO posts (id, title, subtitle, published, author_id) VALUES (2, 'Orphan Published', NULL, TRUE, 999)",
     )
     .execute(pool)
     .await
@@ -874,7 +885,14 @@ async fn db_backed_policy_enforcement() {
     let relation_order_response = router
         .clone()
         .oneshot(
-            Request::get("/posts?sort=-author.email")
+            // `-id` is a secondary sort key purely to make ties
+            // deterministic for this assertion: posts 1 and 4 share the
+            // same author (`owner@example.com`), so `-author.email`
+            // alone leaves their relative order SQL-unspecified (no
+            // `ORDER BY` tiebreaker). Without it this assertion is a
+            // real flake risk — it depends on Postgres's incidental scan
+            // order, which isn't guaranteed stable across query plans.
+            Request::get("/posts?sort=-author.email,-id")
                 .header("x-auth-id", "1")
                 .body(Body::empty())
                 .expect("request should build"),
@@ -889,14 +907,23 @@ async fn db_backed_policy_enforcement() {
         .decode(&relation_order_body)
         .expect("relation ordered response should decode");
     assert_eq!(ordered_posts.len(), 3);
-    assert_eq!(ordered_posts[0].id, 2);
+    // Post 2 (the orphan, `author_id = 999`) has no matching `User` row,
+    // so its `author.email` is NULL — this relation-scalar sort puts
+    // NULL last regardless of `DESC`, unlike a plain-column `DESC` sort
+    // (which defaults to NULLS FIRST). Posts 1 and 4 tie on
+    // `author.email` (both authored by user 1); `-id` breaks the tie.
+    assert_eq!(ordered_posts[0].id, 4);
     assert_eq!(ordered_posts[1].id, 1);
-    assert_eq!(ordered_posts[2].id, 4);
+    assert_eq!(ordered_posts[2].id, 2);
 
     let nested_relation_order_response = router
         .clone()
         .oneshot(
-            Request::get("/posts?sort=-author.profile.nickname")
+            // Same `-id` tiebreak rationale as the single-hop sort above:
+            // posts 1 and 4 share the same author, hence the same
+            // `author.profile.nickname` ("Zulu"), so the two-hop sort key
+            // alone doesn't disambiguate them either.
+            Request::get("/posts?sort=-author.profile.nickname,-id")
                 .header("x-auth-id", "1")
                 .body(Body::empty())
                 .expect("request should build"),
@@ -912,9 +939,12 @@ async fn db_backed_policy_enforcement() {
         .decode(&nested_relation_order_body)
         .expect("nested relation ordered response should decode");
     assert_eq!(nested_ordered_posts.len(), 3);
-    assert_eq!(nested_ordered_posts[0].id, 2);
+    // Post 2 (orphan) has no matching `User`/`Profile` row at all, so
+    // its `author.profile.nickname` is NULL — same NULLS-last-under-DESC
+    // behavior as the single-hop case above.
+    assert_eq!(nested_ordered_posts[0].id, 4);
     assert_eq!(nested_ordered_posts[1].id, 1);
-    assert_eq!(nested_ordered_posts[2].id, 4);
+    assert_eq!(nested_ordered_posts[2].id, 2);
 
     let session_detail_response = router
         .clone()
@@ -960,9 +990,12 @@ async fn db_backed_policy_enforcement() {
         owner_post.get("id"),
         Some(&cratestack::serde_json::Value::from(1))
     );
+    // Same drift as the already-fixed `first_projected` assertion above:
+    // the seed's post 1 title is "Published" (see the INSERT INTO posts
+    // statement near the top of the test), not "Published Post".
     assert_eq!(
         owner_post.get("title"),
-        Some(&cratestack::serde_json::Value::from("Published Post"))
+        Some(&cratestack::serde_json::Value::from("Published"))
     );
     let owner_author = owner_post
         .get("author")
@@ -1043,9 +1076,14 @@ async fn db_backed_policy_enforcement() {
         )
         .await
         .expect("missing include validation request should succeed");
+    // `includeFields[author]` without a corresponding `include=author` is
+    // a `CoolError::Validation` (see `includeFields[{}] requires
+    // include={}` in `crates/cratestack-macros/src/axum/model/
+    // builders.rs`), which maps to 422, not 400 — `CoolError::BadRequest`
+    // is a different variant (`crates/cratestack-core/src/error.rs`).
     assert_eq!(
         missing_include_for_include_fields_response.status(),
-        StatusCode::BAD_REQUEST
+        StatusCode::UNPROCESSABLE_ENTITY
     );
 
     let hidden_response = router
@@ -1059,9 +1097,14 @@ async fn db_backed_policy_enforcement() {
         .expect("hidden detail request should succeed");
     assert_eq!(hidden_response.status(), StatusCode::NOT_FOUND);
 
+    // id 6, not 4 — id 4 was already taken by the `.create()` call
+    // earlier in this test (`title: "Created"`) and is never deleted, so
+    // reusing it here deterministically 500s on the `posts_pkey`
+    // constraint (surfaced as an unhandled DB error, not a clean 4xx,
+    // since a duplicate primary key isn't caught at the app layer).
     let create_body = codec
         .encode(&cratestack_schema::CreatePostInput {
-            id: 4,
+            id: 6,
             title: "Route Created".to_owned(),
             subtitle: Some("from route".to_owned()),
             published: false,
