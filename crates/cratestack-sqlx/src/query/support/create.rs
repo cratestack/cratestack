@@ -70,13 +70,23 @@ pub(crate) fn apply_create_defaults(
 ///
 /// 1. **Auth field present, correct type**: Apply the value.
 /// 2. **Auth field present, wrong type**: Error (type mismatch).
-/// 3. **Auth field absent, auth field required**: Error unconditionally
-///    (regardless of model field nullability) — the auth block declared
-///    this field as required, so a context missing it is invalid.
-/// 4. **Auth field absent, auth field optional, model field nullable**:
+/// 3. **Auth field absent, context anonymous**: `Forbidden` unconditionally,
+///    checked *before* `auth_field_required` — an unauthenticated caller
+///    gets the pre-existing blanket policy-shaped rejection rather than a
+///    `Validation` error that would leak which auth claim the schema
+///    expects. (This ordering matters: an anonymous context trivially
+///    fails `auth_field_required` too, since it has no fields at all, so
+///    checking required-ness first here would silently turn every
+///    anonymous-caller `Forbidden` into a `Validation` — this exact
+///    regression was caught by `db_backed_auth_engine_supports_all_deny_and_auth_defaults`'s
+///    pre-existing `anonymous_note_create` assertion on `ScopedNote`, whose
+///    `ownerId @default(auth().userId)` references a *required* auth field.)
+/// 4. **Auth field absent, auth field required, caller authenticated**:
+///    Error unconditionally (regardless of model field nullability) — the
+///    auth block declared this field as required, so an authenticated
+///    context missing it is invalid.
+/// 5. **Auth field absent, auth field optional, model field nullable**:
 ///    Return NULL (both are nullable, so missing is OK).
-/// 5. **Auth field absent, context anonymous, model field nullable**:
-///    Error (cannot fill a field default from an unauthenticated context).
 /// 6. **Auth field absent, model field non-nullable**: Error.
 fn resolve_default_value(
     default: &CreateDefault,
@@ -111,26 +121,29 @@ fn resolve_default_value(
         ))),
 
         // Auth field is absent
+        None if !ctx.is_authenticated() => {
+            // Cannot apply defaults to unauthenticated contexts — checked
+            // ahead of `auth_field_required` deliberately, see the
+            // doc comment above.
+            Err(CoolError::Forbidden(
+                "create policy denied this operation".to_owned(),
+            ))
+        }
         None if default.auth_field_required => {
-            // Required auth field is missing — always an error
+            // Authenticated, but the required auth field is missing —
+            // always an error, regardless of model field nullability.
             Err(CoolError::Validation(format!(
                 "missing required auth field `{}` for create default on `{}`",
                 default.auth_field, default.column
             )))
         }
-        None if default.nullable && !default.auth_field_required => {
+        None if default.nullable => {
             // Both model field and auth field are optional — NULL is OK
             match default.ty {
                 CreateDefaultType::Bool => Ok(SqlValue::NullBool),
                 CreateDefaultType::Int => Ok(SqlValue::NullInt),
                 CreateDefaultType::String => Ok(SqlValue::NullString),
             }
-        }
-        None if !ctx.is_authenticated() => {
-            // Cannot apply defaults to unauthenticated contexts
-            Err(CoolError::Forbidden(
-                "create policy denied this operation".to_owned(),
-            ))
         }
         None => {
             // Auth field is absent, model field is non-nullable

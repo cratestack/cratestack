@@ -566,7 +566,18 @@ async fn db_backed_auth_engine_supports_all_deny_and_auth_defaults() {
         )
         .await
         .expect("missing user claim request should complete");
-    assert_eq!(missing_user_claim.status(), StatusCode::BAD_REQUEST);
+    // `userId` is required in the `auth SessionUser` block, and
+    // `ScopedNote.ownerId @default(auth().userId)` is a non-nullable
+    // column — a caller missing it fails `resolve_default_value` with
+    // `CoolError::Validation`, which `cratestack-core`'s `IntoResponse`
+    // maps to 422 (see `error.rs`), not 400. This assertion could not
+    // be checked against real behavior before this PR un-ignored the
+    // test (see `banking_validation.rs` for the same Validation -> 422
+    // mapping pinned elsewhere).
+    assert_eq!(
+        missing_user_claim.status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
 
     let other_org_get = router
         .clone()

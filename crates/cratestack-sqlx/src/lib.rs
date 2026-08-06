@@ -77,6 +77,8 @@ mod render;
 #[cfg(test)]
 mod tests_coalesce;
 #[cfg(test)]
+mod tests_create_defaults;
+#[cfg(test)]
 mod tests_descriptor;
 #[cfg(test)]
 mod tests_field_filter;
