@@ -174,9 +174,25 @@ being called directly. That wrapper handles the two ways a publish fails for rea
 Any other failure is surfaced immediately and never retried — the wrapper must not mask a real
 problem such as bad auth, a missing Trusted Publisher entry, or a broken tarball.
 
-Because publishing is idempotent this way, the recovery for a half-landed release is simply to fix
-the underlying cause and re-run the failed jobs against the same tag. There is no need to bump to a
-fresh version just to get a clean run.
+Because publishing is idempotent this way, a half-landed release can be recovered **when the failure
+was transient** — a sigstore 409 that exhausted its retries, a network blip — by re-running the
+failed jobs against the same tag. Already-published packages are skipped and the missing ones land.
+
+**When the fix is a code or workflow change, re-running does not work, and this is the trap.** Every
+publish job checks out `ref: ${{ needs.prepare.outputs.tag }}`, so it gets the repository as it was
+*at the tag*, not as it is on `main` — a fix merged to `main` after the tag simply isn't there.
+GitHub also replays the workflow YAML from the commit that triggered the run, so even workflow edits
+don't apply. And `workflow_dispatch` is not a way around it: that path only rebuilds and re-attaches
+binaries, never touching crates.io or npm.
+
+So a release that failed for a reason needing a fix must **bump forward to a new version**. Moving
+the existing tag onto the fix is only defensible if the tag's tree would differ purely in CI/docs;
+once `main` carries real source changes past the tag — as it did after `v0.7.5` — re-pointing the
+tag would make it claim source that crates.io never published under that version.
+
+This is not hypothetical: `v0.7.5` failed on the sigstore 409 and a `wasm-opt` download, and was
+abandoned half-published (`@cratestack/cli` and `@cratestack/ts-types` reached 0.7.5; nothing else
+did). It was recovered by releasing `v0.7.6`, not by re-running.
 
 ## crates.io one-time setup
 
