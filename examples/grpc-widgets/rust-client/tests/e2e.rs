@@ -37,8 +37,9 @@ include_client_schema!("../schemas/widgets.cstack");
 
 struct StaticAuthIdHeader;
 
+#[async_trait::async_trait]
 impl RequestAuthorizer for StaticAuthIdHeader {
-    fn authorize(
+    async fn authorize(
         &self,
         _request: &AuthorizationRequest,
     ) -> Result<Vec<(String, String)>, ClientError> {

@@ -134,6 +134,7 @@ impl<T> CratestackGrpcClient<T> {
             };
             let headers = authorizer
                 .authorize(&authorization_request)
+                .await
                 .map_err(|error| GrpcClientError::BadInput(error.to_string()))?;
             let metadata = request.metadata_mut();
             for (name, value) in headers {

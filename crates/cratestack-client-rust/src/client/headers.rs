@@ -22,8 +22,11 @@ where
     /// Build a reqwest `HeaderMap` for a request, applying ACCEPT,
     /// CONTENT_TYPE, authorizer-emitted headers, and per-call extras.
     /// Returns the resolved content type (so the journal entry can
-    /// record it consistently).
-    pub(crate) fn build_header_map(
+    /// record it consistently). Async (issue #453) because
+    /// `RequestAuthorizer::authorize` is — every caller is already inside
+    /// an async fn (`request_raw_with_query_and_accept` and friends), so
+    /// awaiting here is a localized change, not a structural one.
+    pub(crate) async fn build_header_map(
         &self,
         method: &Method,
         path: &str,
@@ -63,7 +66,7 @@ where
                 body: body.map(<[u8]>::to_vec).unwrap_or_default(),
                 canonical_request,
             };
-            for (name, value) in authorizer.authorize(&authorization_request)? {
+            for (name, value) in authorizer.authorize(&authorization_request).await? {
                 header_map.insert(
                     HeaderName::from_bytes(name.as_bytes()).map_err(|error| {
                         ClientError::BadInput(format!("invalid header name '{name}': {error}"))

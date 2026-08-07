@@ -87,7 +87,7 @@ let json_client = CratestackClient::new(config, JsonCodec);
 
 ## Request Authorization
 
-`with_request_authorizer` attaches an implementation of `RequestAuthorizer` that returns extra headers per call. The trait gets a canonical-request string the implementer can sign:
+`with_request_authorizer` attaches an implementation of `RequestAuthorizer` that returns extra headers per call. The trait gets a canonical-request string the implementer can sign. `authorize` is `async` (issue #453), so credential providers that need to make a network call — refreshing a cached OAuth2 token, for instance — can do so directly instead of pre-fetching or blocking on the runtime:
 
 ```rust
 use std::sync::Arc;
@@ -95,8 +95,9 @@ use cratestack_client_rust::{AuthorizationRequest, ClientError, RequestAuthorize
 
 struct HmacAuthorizer { key: Vec<u8> }
 
+#[async_trait::async_trait]
 impl RequestAuthorizer for HmacAuthorizer {
-    fn authorize(
+    async fn authorize(
         &self,
         request: &AuthorizationRequest,
     ) -> Result<Vec<(String, String)>, ClientError> {

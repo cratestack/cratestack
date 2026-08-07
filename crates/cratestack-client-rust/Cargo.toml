@@ -53,6 +53,7 @@ codec-json = ["dep:cratestack-codec-json"]
 grpc = ["dep:tonic", "dep:prost"]
 
 [dependencies]
+async-trait.workspace = true
 bytes.workspace = true
 chrono.workspace = true
 cratestack-codec-cbor.workspace = true

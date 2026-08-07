@@ -44,8 +44,9 @@ include_client_schema!("../schemas/widgets.cstack");
 /// call's unframed prost-encoded bytes) instead of trusting a bare header.
 struct StaticAuthIdHeader;
 
+#[async_trait::async_trait]
 impl RequestAuthorizer for StaticAuthIdHeader {
-    fn authorize(
+    async fn authorize(
         &self,
         _request: &AuthorizationRequest,
     ) -> Result<Vec<(String, String)>, ClientError> {

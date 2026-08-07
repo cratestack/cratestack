@@ -25,8 +25,9 @@ include_client_schema!("schema.cstack");
 /// signing authorizer (`HmacEnvelope`, JWT, etc.).
 pub struct StaticAuthId(pub i64);
 
+#[async_trait::async_trait]
 impl RequestAuthorizer for StaticAuthId {
-    fn authorize(
+    async fn authorize(
         &self,
         _request: &AuthorizationRequest,
     ) -> Result<Vec<(String, String)>, ClientError> {

@@ -11,6 +11,7 @@ name = "grpc-widgets-rust-client"
 path = "src/main.rs"
 
 [dependencies]
+async-trait.workspace = true
 cratestack = { package = "cratestack-pg", path = "../../../crates/cratestack-pg", features = [
     "grpc",
 ] }
