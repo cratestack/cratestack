@@ -1,6 +1,6 @@
 {
   "name": "@cratestack/adapter-tanstack-query",
-  "version": "0.7.5",
+  "version": "0.7.6",
   "description": "Generic TanStack Query option builders (query/mutation) over CrateStack's generated TypeScript RPC client.",
   "license": "MIT",
   "repository": {
@@ -38,7 +38,7 @@
     "lint": "biome check ."
   },
   "dependencies": {
-    "@cratestack/ts-types": "0.7.5"
+    "@cratestack/ts-types": "0.7.6"
   },
   "peerDependencies": {
     "@tanstack/query-core": "^5.0.0"
