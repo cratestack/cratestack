@@ -36,6 +36,12 @@ jobs:
       - name: cargo check (workspace, all targets)
         # `--locked` also fails if the build itself would change the lock.
         run: just check --locked
+      - name: cargo check (embedded facade for wasm32-unknown-unknown)
+        # Prove the embedded backend compiles to the documented wasm32 target
+        # (issue #419). The workspace check above is host-target only; this
+        # step verifies the wasm32 surface in isolation (without Postgres
+        # features that would drag in sqlx/rust_decimal).
+        run: cargo check --locked -p cratestack-sqlite --target wasm32-unknown-unknown
 
   # ---- Test shards -----------------------------------------------------
   # The suite is split into three parallel jobs so no single runner has to
@@ -178,6 +184,12 @@ jobs:
         # crates out of the graph, so rust_decimal resolves without `std` —
         # the exact config the examples must compile under.
         run: cargo build --locked -p cratestack-sqlite --examples
+      - name: Build embedded facade for wasm32-unknown-unknown
+        # Prove one of the documented wasm32 browser examples actually
+        # compiles to that target (issue #419). This is a cargo build,
+        # not a full wasm-pack/Trunk build (which would need extra tools),
+        # but it proves the example's Rust surface is wasm32-compatible.
+        run: cargo build --locked -p embedded-browser-vite-example --target wasm32-unknown-unknown
       - name: Build standalone embedded example crates in isolation
         run: |
           cargo build --locked \
@@ -269,6 +281,35 @@ jobs:
           cache: true
       - name: Generate + flutter analyze (default + riverpod presets, REST + RPC)
         run: just verify-dart
+
+  # ---- TypeScript client verification (issue #419) --------------------------
+  # Blocking. Proves the `default` preset TypeScript client output typechecks
+  # for both REST and RPC transports. While the `react-vite-swr-example` job
+  # already exercises the `swr` preset over REST, it was the *only* TypeScript
+  # job doing real typechecking — RPC fixtures existed as Rust-side generator
+  # test snapshots but were never run through `tsc` (unlike Dart, which has
+  # both `ci_rest` and `ci_rpc` fixtures exercised through `flutter analyze`).
+  #
+  # `just verify-typescript` generates both fixtures from committed `.cstack`
+  # files, then runs `npm install` and `npm run build` (which invokes `tsc`)
+  # on each, the same discipline `dart-verify` uses. The REST fixture proves
+  # the default template set produces valid TypeScript; the RPC fixture
+  # proves the RPC-specific template overrides do as well.
+  typescript-verify:
+    name: typescript (generated packages — REST + RPC)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Generate + tsc typecheck (default preset, REST + RPC)
+        run: just verify-typescript
 
   # ---- Flutter + Riverpod example app (issue #303, epic #297's last story) ----
   # Blocking. Proves the `riverpod` preset end to end in a real Flutter app,

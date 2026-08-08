@@ -1,0 +1,50 @@
+// Richer RPC fixture for the TypeScript CI-verification harness (issue #419).
+// Same shape as the Dart ci_rpc.cstack (multiple models, a relation, an enum used
+// as a field/array field/procedure-return type, a query and a mutation
+// procedure) so the RPC-specific templates get exercised by tsc, not just REST.
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth SessionUser {
+  id Int
+}
+
+enum PostStatus {
+  draft
+  published
+  archived
+}
+
+type PostStatusFilter {
+  statuses PostStatus[]
+}
+
+model Author {
+  id Int @id
+  name String
+  posts Post[] @relation(fields:[id],references:[authorId])
+}
+
+model Post {
+  id Int @id
+  title String
+  status PostStatus
+  published Boolean
+  authorId Int
+  author Author @relation(fields:[authorId],references:[id])
+
+  @@allow("read", published || authorId == auth().id)
+  @@allow("create", auth() != null)
+  @@paged
+}
+
+procedure listPosts(filter: PostStatusFilter?): Post[]
+  @allow(auth() != null)
+
+mutation procedure currentStatus(postId: Int): PostStatus
+  @allow(auth() != null)

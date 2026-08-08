@@ -350,6 +350,50 @@ verify-dart:
 	  verify_riverpod_pkg "$pkg" "$schema" "$library_name"
 	done
 
+# Verify the TypeScript client generator's OUTPUT actually typechecks,
+# not just that its generated text matches a Rust-side snapshot (issue #419).
+# Generates a REST and an RPC package during the run from committed
+# fixtures (crates/cratestack-client-typescript/tests/fixtures/ci_{rest,rpc}.cstack
+# and examples/react-vite-swr/schema.cstack — which uses swr preset over REST)
+# via the real `cratestack generate-typescript` CLI, then runs `pnpm build`
+# (which invokes `tsc`) on each.
+#
+# Unlike `dart-verify` which generates on-the-fly from fixtures, the
+# REST/swr example already has committed generated output under
+# examples/react-vite-swr/client/. That fixture exercises the swr preset
+# over REST; this recipe adds an RPC fixture to prove RPC templates
+# typecheck too.
+verify-typescript:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	out=target/typescript-verify
+	rm -rf "$out"
+
+	# Generate and typecheck REST fixture
+	pkg="$out/default/rest"
+	echo "=== generate-typescript --preset default (REST): ci_rest.cstack -> $pkg ==="
+	cargo run --quiet -p cratestack-cli -- generate-typescript \
+	  --schema "crates/cratestack-client-typescript/tests/fixtures/ci_rest.cstack" \
+	  --out "$pkg" \
+	  --preset default \
+	  --package-name typescript-verify-rest
+	echo "=== npm install and build (typechecks with tsc): $pkg ==="
+	(cd "$pkg" && npm install && npm run build)
+
+	# Generate and typecheck RPC fixture
+	pkg="$out/default/rpc"
+	echo "=== generate-typescript --preset default (RPC): ci_rpc.cstack -> $pkg ==="
+	cargo run --quiet -p cratestack-cli -- generate-typescript \
+	  --schema "crates/cratestack-client-typescript/tests/fixtures/ci_rpc.cstack" \
+	  --out "$pkg" \
+	  --preset default \
+	  --package-name typescript-verify-rpc
+	echo "=== npm install and build (typechecks with tsc): $pkg ==="
+	(cd "$pkg" && npm install && npm run build)
+
+	echo ""
+	echo "✓ TypeScript REST and RPC fixtures generated and typechecked successfully"
+
 # Bundle the Studio UI for publishing: source tarball (for `studio
 # eject --with-ui`) and the Trunk-built wasm/JS dist (embedded into
 # the served binary so `cratestack studio run` ships a real admin app
