@@ -14,7 +14,7 @@ categories.workspace = true
 
 [dependencies]
 chrono.workspace = true
-cratestack-client-rust.workspace = true
+cratestack-core = { workspace = true, features = ["decimal-rust-decimal"] }
 redis.workspace = true
 serde_json.workspace = true
 

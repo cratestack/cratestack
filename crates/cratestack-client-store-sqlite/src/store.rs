@@ -5,9 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use chrono::Utc;
-use cratestack_client_rust::{
-    ClientError, ClientStateStore, PersistedClientState, RequestJournalEntry,
-};
+use cratestack_core::{ClientStateStore, CoolError, PersistedClientState, RequestJournalEntry};
 use rusqlite::{Connection, params};
 
 use crate::bootstrap::{SQLITE_SCHEMA_VERSION, bootstrap, sqlite_error};
@@ -19,18 +17,18 @@ pub struct SqliteStateStore {
 }
 
 impl SqliteStateStore {
-    pub fn open(path: impl Into<PathBuf>) -> Result<Self, ClientError> {
+    pub fn open(path: impl Into<PathBuf>) -> Result<Self, CoolError> {
         let path = path.into();
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|error| {
-                ClientError::State(format!(
+                CoolError::Internal(format!(
                     "failed to create SQLite state directory {}: {error}",
                     parent.display()
                 ))
             })?;
         }
         let connection = Connection::open(&path).map_err(|error| {
-            ClientError::State(format!(
+            CoolError::Internal(format!(
                 "failed to open SQLite state store {}: {error}",
                 path.display()
             ))
@@ -49,23 +47,23 @@ impl SqliteStateStore {
 }
 
 impl ClientStateStore for SqliteStateStore {
-    fn load(&self) -> Result<PersistedClientState, ClientError> {
+    fn load(&self) -> Result<PersistedClientState, CoolError> {
         let connection = self.connection.lock().map_err(|error| {
-            ClientError::State(format!("failed to lock SQLite state store: {error}"))
+            CoolError::Internal(format!("failed to lock SQLite state store: {error}"))
         })?;
         load_state(&connection)
     }
 
-    fn save(&self, state: &PersistedClientState) -> Result<(), ClientError> {
+    fn save(&self, state: &PersistedClientState) -> Result<(), CoolError> {
         let mut connection = self.connection.lock().map_err(|error| {
-            ClientError::State(format!("failed to lock SQLite state store: {error}"))
+            CoolError::Internal(format!("failed to lock SQLite state store: {error}"))
         })?;
         save_state(&mut connection, state)
     }
 
-    fn append_request_journal(&self, entry: &RequestJournalEntry) -> Result<(), ClientError> {
+    fn append_request_journal(&self, entry: &RequestJournalEntry) -> Result<(), CoolError> {
         let mut connection = self.connection.lock().map_err(|error| {
-            ClientError::State(format!("failed to lock SQLite state store: {error}"))
+            CoolError::Internal(format!("failed to lock SQLite state store: {error}"))
         })?;
         let transaction = connection.transaction().map_err(sqlite_error)?;
         transaction

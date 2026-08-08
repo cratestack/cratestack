@@ -1,8 +1,13 @@
-//! Pluggable storage traits for idempotency and rate limiting, shared
-//! between transport and backend-runtime crates.
+//! Pluggable storage traits for idempotency, rate limiting, and client state,
+//! shared between transport and backend-runtime crates.
 
+pub mod client_state;
 pub mod idempotency;
 pub mod ratelimit;
 
+pub use client_state::{
+    ClientStateStore, InMemoryStateStore, JsonFileStateStore, PersistedClientState,
+    RequestJournalEntry,
+};
 pub use idempotency::IdempotencyStore;
 pub use ratelimit::{RateLimitConfig, RateLimitDecision, RateLimitStore};

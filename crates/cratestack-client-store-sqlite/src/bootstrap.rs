@@ -1,12 +1,12 @@
 //! Schema bootstrap + shared error mapping for the SQLite state store.
 
 use chrono::Utc;
-use cratestack_client_rust::ClientError;
+use cratestack_core::CoolError;
 use rusqlite::{Connection, OptionalExtension, params};
 
 pub(crate) const SQLITE_SCHEMA_VERSION: u32 = 1;
 
-pub(crate) fn bootstrap(connection: &Connection, schema_version: u32) -> Result<(), ClientError> {
+pub(crate) fn bootstrap(connection: &Connection, schema_version: u32) -> Result<(), CoolError> {
     connection
         .execute_batch(
             "
@@ -49,6 +49,6 @@ pub(crate) fn bootstrap(connection: &Connection, schema_version: u32) -> Result<
     Ok(())
 }
 
-pub(crate) fn sqlite_error(error: rusqlite::Error) -> ClientError {
-    ClientError::State(format!("SQLite state store error: {error}"))
+pub(crate) fn sqlite_error(error: rusqlite::Error) -> CoolError {
+    CoolError::Internal(format!("SQLite state store error: {error}"))
 }

@@ -114,6 +114,6 @@ where
     }
 
     pub fn state(&self) -> Result<PersistedClientState, ClientError> {
-        self.state_store.load()
+        self.state_store.load().map_err(ClientError::from)
     }
 }

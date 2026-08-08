@@ -20,30 +20,3 @@
 #   issue  = "#NNN" — the tracking issue for the violation (required)
 #   added  = "YYYY-MM-DD" — the date the entry was added (required)
 #   reason = one line of context (required)
-
-[[allow]]
-from = "cratestack-client-store-sqlite"
-to = "cratestack-client-rust"
-issue = "#475"
-added = "2026-08-08"
-reason = """
-L2 -> L4. cratestack-client-store-sqlite depends on cratestack-client-rust
-solely to implement `ClientStateStore` (defined at
-crates/cratestack-client-rust/src/state.rs:43) — the client-side twin of the
-pre-#465 IdempotencyStore-in-cratestack-axum defect. Tracked, not fixed, by
-design of this PR (docs/adr/0014-layer-direction-enforcement.md); repairing
-it means moving ClientStateStore down out of cratestack-client-rust, a
-breaking public-path change scoped to its own ticket per ADR 0011's
-Deferred section.
-"""
-
-[[allow]]
-from = "cratestack-client-store-redis"
-to = "cratestack-client-rust"
-issue = "#475"
-added = "2026-08-08"
-reason = """
-L2 -> L4, same cause and same fix as the cratestack-client-store-sqlite
-entry above: cratestack-client-store-redis depends on cratestack-client-rust
-solely to implement `ClientStateStore`.
-"""

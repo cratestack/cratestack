@@ -1217,7 +1217,7 @@ name = "cratestack-client-store-redis"
 version = "0.7.8"
 dependencies = [
  "chrono",
- "cratestack-client-rust",
+ "cratestack-core",
  "redis",
  "serde_json",
 ]

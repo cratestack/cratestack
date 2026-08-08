@@ -82,7 +82,10 @@ pub use schema::{
     TypeArity, TypeDecl, TypeRef, View, ViewSource, parse_composite_id_attribute,
     parse_composite_unique_attribute, parse_index_attribute,
 };
-pub use store::{IdempotencyStore, RateLimitConfig, RateLimitDecision, RateLimitStore};
+pub use store::{
+    ClientStateStore, IdempotencyStore, InMemoryStateStore, JsonFileStateStore,
+    PersistedClientState, RateLimitConfig, RateLimitDecision, RateLimitStore, RequestJournalEntry,
+};
 pub use transport::{
     OpDescriptor, OpKind, RouteTransportCapabilities, RouteTransportDescriptor,
     canonical_request_string,

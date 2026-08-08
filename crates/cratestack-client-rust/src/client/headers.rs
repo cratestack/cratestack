@@ -108,5 +108,6 @@ where
                     .map(ToOwned::to_owned),
                 recorded_at: Utc::now(),
             })
+            .map_err(ClientError::from)
     }
 }
