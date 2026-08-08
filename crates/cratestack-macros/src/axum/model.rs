@@ -89,6 +89,28 @@ pub(crate) fn generate_model_axum_handlers(
     let update_handler = handlers_update::build_update_handler(&p);
     let delete_handler = handlers_crud::build_delete_handler(&p);
 
+    // SPIKE (`spike/b1-internal-actions`): an action marked
+    // `@@internal(...)` keeps its handler fn but loses its
+    // `.route(...)` mount, which would otherwise trip `dead_code`
+    // under the workspace's `-D warnings`. The `pub(super)` *dispatch*
+    // fn in the same block is still referenced by the RPC/gRPC
+    // transports, so only the REST handler needs the opt-out; the
+    // attribute lands on the first item of each block, which is that
+    // handler.
+    let suppressed = routes::suppressed_rest_actions(model);
+    let dead_code_opt_out = |action: &str| {
+        if suppressed.contains(action) {
+            quote! { #[allow(dead_code)] }
+        } else {
+            proc_macro2::TokenStream::new()
+        }
+    };
+    let list_opt_out = dead_code_opt_out("list");
+    let create_opt_out = dead_code_opt_out("create");
+    let detail_opt_out = dead_code_opt_out("detail");
+    let update_opt_out = dead_code_opt_out("update");
+    let delete_opt_out = dead_code_opt_out("delete");
+
     let _ = TypeArity::List; // ensure import used (referenced via prep)
 
     Ok(quote! {
@@ -98,10 +120,15 @@ pub(crate) fn generate_model_axum_handlers(
         #projection_helpers
         #serialize_helper
         #list_builder
+        #list_opt_out
         #list_handler
+        #create_opt_out
         #create_handler
+        #detail_opt_out
         #get_handler
+        #update_opt_out
         #update_handler
+        #delete_opt_out
         #delete_handler
     })
 }

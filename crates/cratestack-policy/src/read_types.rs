@@ -19,6 +19,15 @@ pub enum PolicyLiteral {
 pub enum ReadPredicate {
     AuthNotNull,
     AuthIsNull,
+    /// SPIKE (`spike/b1-internal-actions`): lowered from
+    /// `auth().isSystem()`. Satisfied only by a context minted through
+    /// `cratestack_core::SystemContext`.
+    ///
+    /// This is a predicate, not a bypass: it can only make a policy
+    /// true where a schema author wrote it down. A model whose
+    /// `@@allow` rules never mention it is unaffected by system
+    /// callers, which is the fail-closed property.
+    AuthIsSystem,
     HasRole {
         role: &'static str,
     },

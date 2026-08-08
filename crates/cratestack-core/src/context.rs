@@ -4,6 +4,7 @@
 
 mod identity;
 mod principal;
+mod system;
 
 #[cfg(test)]
 mod tests;
@@ -17,6 +18,7 @@ use crate::value::Value;
 
 pub use identity::CoolAuthIdentity;
 pub use principal::{PrincipalContext, PrincipalFacet};
+pub use system::SystemContext;
 
 use principal::lookup_value_path_in_map;
 
@@ -25,6 +27,22 @@ pub struct CoolContext {
     pub auth: Option<CoolAuthIdentity>,
     pub principal: Option<PrincipalContext>,
     pub extensions: BTreeMap<String, Value>,
+    /// SPIKE (`spike/b1-internal-actions`): trusted-principal marker
+    /// backing `auth().isSystem()` in model policies.
+    ///
+    /// Deliberately **private** and `#[serde(skip)]`:
+    ///
+    /// - private, so no downstream crate can flip it on a context it
+    ///   already holds; the only way to obtain a context with this set
+    ///   is [`SystemContext`], which has no constructor taking an
+    ///   existing `CoolContext`. A request-derived context can never
+    ///   be upgraded.
+    /// - `#[serde(skip)]`, so the flag cannot cross a wire. Every
+    ///   deserialized `CoolContext` — RPC envelopes, cached principals,
+    ///   anything a client can influence — comes back `false`. That is
+    ///   the fail-closed direction.
+    #[serde(skip)]
+    system: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -74,11 +92,20 @@ impl CoolContext {
             }),
             principal: Some(PrincipalContext::from_claims(fields)),
             extensions: BTreeMap::new(),
+            system: false,
         }
     }
 
     pub fn is_authenticated(&self) -> bool {
         self.auth.is_some() || self.principal.is_some()
+    }
+
+    /// SPIKE: backs the `auth().isSystem()` policy builtin. True only
+    /// for a context minted through [`SystemContext`]; never true for
+    /// anything an [`AuthProvider`] produced from a request, and never
+    /// true after a deserialization round-trip.
+    pub fn is_system(&self) -> bool {
+        self.system
     }
 
     pub fn auth_field(&self, name: &str) -> Option<&Value> {
@@ -107,6 +134,7 @@ impl CoolContext {
             auth: Some(auth),
             principal: Some(principal),
             extensions: BTreeMap::new(),
+            system: false,
         })
     }
 
@@ -115,6 +143,7 @@ impl CoolContext {
             auth: Some(principal.as_auth_identity()),
             principal: Some(principal),
             extensions: BTreeMap::new(),
+            system: false,
         }
     }
 

@@ -103,6 +103,8 @@ mod tests_read_policy_predicates;
 #[cfg(test)]
 mod tests_relation;
 #[cfg(test)]
+mod tests_system_principal_policy;
+#[cfg(test)]
 mod tests_update;
 #[cfg(test)]
 mod tests_update_many;
