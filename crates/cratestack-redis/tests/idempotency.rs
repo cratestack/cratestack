@@ -3,9 +3,10 @@
 //! Mirrors the scenarios in `crates/cratestack/tests/banking_idempotency.rs`
 //! that exercise the store trait directly (no axum middleware) so we get
 //! the same behavioural coverage against a live Redis. Tests are skipped
-//! unless `CRATESTACK_REDIS_TEST_URL` is set — matching the sqlx test
-//! crate's `CRATESTACK_TEST_DATABASE_URL` pattern rather than pulling in
-//! testcontainers.
+//! unless `CRATESTACK_REDIS_TEST_URL` is set or `CRATESTACK_USE_TESTCONTAINERS`
+//! is enabled (with `CRATESTACK_REQUIRE_REDIS=1` in CI to ensure failures are loud).
+
+mod support;
 
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -14,26 +15,26 @@ use cratestack_core::{IdempotencyStore, ReservationOutcome};
 use cratestack_redis::RedisIdempotencyStore;
 use uuid::Uuid;
 
-fn store_or_skip(suffix: &str) -> Option<RedisIdempotencyStore> {
-    let url = std::env::var("CRATESTACK_REDIS_TEST_URL").ok()?;
+async fn store_or_skip(suffix: &str) -> Option<RedisIdempotencyStore> {
+    let redis = support::redis::connect_or_skip().await?;
     // Per-test prefix so parallel test binaries don't trample each other.
     // The suffix is appended below the `idem:` namespace baked into the
     // store, so two tests with different suffixes can never collide on
     // the same Redis key.
     let prefix = format!("cratestack:test:{suffix}:{}", Uuid::new_v4().simple());
-    RedisIdempotencyStore::open(url, prefix).ok()
+    RedisIdempotencyStore::from_client(redis.client, prefix).into()
 }
 
-/// Raw `redis::Client` against the same URL — for tests that need to
-/// poke Redis directly (PTTL checks, EXISTS probes, seeding).
-fn raw_client_or_skip() -> Option<redis::Client> {
-    let url = std::env::var("CRATESTACK_REDIS_TEST_URL").ok()?;
-    redis::Client::open(url).ok()
+/// Raw `redis::Client` for tests that need to poke Redis directly
+/// (PTTL checks, EXISTS probes, seeding).
+async fn raw_client_or_skip() -> Option<redis::Client> {
+    let redis = support::redis::connect_or_skip().await?;
+    redis.client.into()
 }
 
 #[tokio::test]
 async fn reserve_then_complete_then_replay_returns_captured_response() {
-    let Some(store) = store_or_skip("happy") else {
+    let Some(store) = store_or_skip("happy").await else {
         return;
     };
     let principal = "fp-happy";
@@ -76,7 +77,7 @@ async fn reserve_then_complete_then_replay_returns_captured_response() {
 
 #[tokio::test]
 async fn second_reserve_with_same_hash_returns_in_flight() {
-    let Some(store) = store_or_skip("inflight") else {
+    let Some(store) = store_or_skip("inflight").await else {
         return;
     };
     let principal = "fp-inflight";
@@ -104,7 +105,7 @@ async fn second_reserve_with_same_hash_returns_in_flight() {
 
 #[tokio::test]
 async fn second_reserve_with_different_hash_returns_conflict() {
-    let Some(store) = store_or_skip("conflict") else {
+    let Some(store) = store_or_skip("conflict").await else {
         return;
     };
     let principal = "fp-conflict";
@@ -129,7 +130,7 @@ async fn second_reserve_with_different_hash_returns_conflict() {
 
 #[tokio::test]
 async fn expired_reservation_is_replaced_with_fresh_token() {
-    let Some(store) = store_or_skip("expiry") else {
+    let Some(store) = store_or_skip("expiry").await else {
         return;
     };
     let principal = "fp-expiry";
@@ -213,7 +214,7 @@ async fn expired_reservation_is_replaced_with_fresh_token() {
 
 #[tokio::test]
 async fn release_with_stale_token_does_not_delete_newer_reservation() {
-    let Some(store) = store_or_skip("release") else {
+    let Some(store) = store_or_skip("release").await else {
         return;
     };
     let principal = "fp-release";
@@ -264,7 +265,7 @@ async fn release_with_stale_token_does_not_delete_newer_reservation() {
 
 #[tokio::test]
 async fn release_with_matching_token_clears_reservation() {
-    let Some(store) = store_or_skip("release-self") else {
+    let Some(store) = store_or_skip("release-self").await else {
         return;
     };
     let principal = "fp-release-self";
@@ -301,7 +302,7 @@ async fn release_with_matching_token_clears_reservation() {
 
 #[tokio::test]
 async fn different_keys_under_same_principal_are_isolated() {
-    let Some(store) = store_or_skip("iso-keys") else {
+    let Some(store) = store_or_skip("iso-keys").await else {
         return;
     };
     let principal = "fp-iso";
@@ -345,7 +346,7 @@ async fn different_keys_under_same_principal_are_isolated() {
 
 #[tokio::test]
 async fn same_key_under_different_principals_are_isolated() {
-    let Some(store) = store_or_skip("iso-principals") else {
+    let Some(store) = store_or_skip("iso-principals").await else {
         return;
     };
     let key = "txn-shared";
@@ -386,7 +387,7 @@ async fn ptll_for(client: &redis::Client, key: &str) -> i64 {
 
 #[tokio::test]
 async fn reservation_sets_pexpireat_in_the_future() {
-    let Some(client) = raw_client_or_skip() else {
+    let Some(client) = raw_client_or_skip().await else {
         return;
     };
     let prefix = format!("cratestack:test:pttl:{}", Uuid::new_v4().simple());
@@ -414,7 +415,7 @@ async fn reservation_sets_pexpireat_in_the_future() {
 
 #[tokio::test]
 async fn complete_preserves_the_reservation_pexpireat() {
-    let Some(client) = raw_client_or_skip() else {
+    let Some(client) = raw_client_or_skip().await else {
         return;
     };
     let prefix = format!("cratestack:test:pttl-complete:{}", Uuid::new_v4().simple());
@@ -456,7 +457,7 @@ async fn complete_preserves_the_reservation_pexpireat() {
 
 #[tokio::test]
 async fn replay_returns_binary_headers_and_body_byte_for_byte() {
-    let Some(store) = store_or_skip("binary") else {
+    let Some(store) = store_or_skip("binary").await else {
         return;
     };
     let principal = "fp-bin";
@@ -495,7 +496,7 @@ async fn replay_returns_binary_headers_and_body_byte_for_byte() {
 
 #[tokio::test]
 async fn replay_with_empty_headers_and_body_works() {
-    let Some(store) = store_or_skip("empty") else {
+    let Some(store) = store_or_skip("empty").await else {
         return;
     };
     let principal = "fp-empty";
@@ -529,7 +530,7 @@ async fn replay_with_empty_headers_and_body_works() {
 
 #[tokio::test]
 async fn replay_with_large_body_roundtrips_unchanged() {
-    let Some(store) = store_or_skip("large") else {
+    let Some(store) = store_or_skip("large").await else {
         return;
     };
     let principal = "fp-large";
@@ -576,7 +577,7 @@ async fn replay_with_large_body_roundtrips_unchanged() {
 
 #[tokio::test]
 async fn status_code_boundaries_roundtrip() {
-    let Some(store) = store_or_skip("status") else {
+    let Some(store) = store_or_skip("status").await else {
         return;
     };
     let expires = SystemTime::now() + Duration::from_secs(60);
@@ -622,7 +623,7 @@ async fn release_after_complete_does_not_wipe_the_cached_response() {
     // The SQL version guards this with `AND response_body IS NULL`;
     // the Redis version guards it via `status == 'in_flight'` inside
     // release.lua.
-    let Some(store) = store_or_skip("release-after-complete") else {
+    let Some(store) = store_or_skip("release-after-complete").await else {
         return;
     };
     let principal = "fp-rac";
@@ -660,7 +661,7 @@ async fn complete_for_unreserved_key_is_silent_noop() {
     // A handler that lost its token via reclaim, or a buggy caller
     // that completes without reserving, must not surface an error —
     // the trait says token mismatches are silent.
-    let Some(store) = store_or_skip("complete-no-reserve") else {
+    let Some(store) = store_or_skip("complete-no-reserve").await else {
         return;
     };
     let result = store
@@ -683,7 +684,7 @@ async fn complete_for_unreserved_key_is_silent_noop() {
 
 #[tokio::test]
 async fn release_for_unreserved_key_is_silent_noop() {
-    let Some(store) = store_or_skip("release-no-reserve") else {
+    let Some(store) = store_or_skip("release-no-reserve").await else {
         return;
     };
     let result = store.release("fp-nr", "txn-nr", Uuid::new_v4()).await;
@@ -696,7 +697,7 @@ async fn release_for_unreserved_key_is_silent_noop() {
 
 #[tokio::test]
 async fn concurrent_reserves_elect_exactly_one_winner() {
-    let Some(store) = store_or_skip("concurrent") else {
+    let Some(store) = store_or_skip("concurrent").await else {
         return;
     };
     let store = Arc::new(store);
@@ -742,7 +743,7 @@ async fn concurrent_reserves_elect_exactly_one_winner() {
 
 #[tokio::test]
 async fn custom_prefix_is_used_for_the_redis_key() {
-    let Some(client) = raw_client_or_skip() else {
+    let Some(client) = raw_client_or_skip().await else {
         return;
     };
     let suffix = Uuid::new_v4().simple().to_string();

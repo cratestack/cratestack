@@ -24,6 +24,8 @@ uuid.workspace = true
 axum.workspace = true
 cratestack-axum.workspace = true
 http.workspace = true
+testcontainers = { workspace = true, features = ["http_wait"] }
+testcontainers-modules = { workspace = true, features = ["redis"] }
 tokio.workspace = true
 tower.workspace = true
 
