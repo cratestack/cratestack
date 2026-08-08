@@ -39,7 +39,9 @@ if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   exit 1
 fi
 
-CHANGELOG_FILE="CHANGELOG.md"
+# Overridable (absolute path) so tests can target a sandbox copy instead of
+# the real CHANGELOG.md, while git below still walks this repo's real history.
+CHANGELOG_FILE="${CHANGELOG_FILE:-CHANGELOG.md}"
 
 if [ ! -f "$CHANGELOG_FILE" ]; then
   echo "error: $CHANGELOG_FILE not found" >&2
@@ -116,10 +118,18 @@ declare -a canonical_order=(feat fix docs chore refactor test ci perf build othe
 today=$(date -u +"%Y-%m-%d")
 section_marker="<!-- TODO: edit this section from the seed below -->"
 
+# The commit the range was computed from, embedded in the persisted section
+# (not just echoed to stdout) so a CHANGELOG.md diff — not just a workflow
+# log, which can expire — shows what an omission would need to be checked
+# against.
+head_sha=$(git rev-parse HEAD)
+range_marker="<!-- seeded from ${range} at ${head_sha} -->"
+
 # Build the new section
 new_section="## $VERSION ($today)
 
 $section_marker
+$range_marker
 
 This is an auto-generated seed. Please rewrite into narrative prose describing
 the changes in this release, grouped by concern. Refer to existing entries in
@@ -176,18 +186,37 @@ if ! [ "$added_any" = "true" ]; then
 "
 fi
 
-# Prepend the new section to CHANGELOG.md (above the current content)
+# Insert above the current newest entry, but below leading front matter (the
+# "# Changelog" H1 + blurb) — prepending at byte 0 would push that title out
+# of the top and bury it mid-file on every run. Insert right before the first
+# existing "## " heading instead, preserving everything above it untouched.
+insert_line=$(grep -n '^## ' "$CHANGELOG_FILE" | head -1 | cut -d: -f1 || true)
+
 tmp_file=$(mktemp)
 trap "rm -f '$tmp_file'" EXIT
 
-{
-  printf '%s' "$new_section"
-  cat "$CHANGELOG_FILE"
-} > "$tmp_file"
+if [ -n "$insert_line" ]; then
+  before_line=$((insert_line - 1))
+  {
+    if [ "$before_line" -gt 0 ]; then
+      head -n "$before_line" "$CHANGELOG_FILE"
+    fi
+    printf '%s' "$new_section"
+    tail -n "+${insert_line}" "$CHANGELOG_FILE"
+  } > "$tmp_file"
+else
+  # No existing "## " section heading found (e.g. a brand-new changelog) —
+  # append the new section after whatever front matter/content is there.
+  {
+    cat "$CHANGELOG_FILE"
+    printf '%s' "$new_section"
+  } > "$tmp_file"
+fi
 
 mv "$tmp_file" "$CHANGELOG_FILE"
 
 echo "seeded CHANGELOG.md with section for $VERSION (marker: $section_marker)"
 echo "  Last tag: ${last_tag:-none}"
 echo "  Commit range: $range"
+echo "  Computed from commit: $head_sha"
 echo "  Today's date: $today"

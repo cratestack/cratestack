@@ -433,6 +433,12 @@ verify-layering:
 verify-changelog:
 	./.ci/changelog-check.sh
 
+# Test changelog-seed.sh and changelog-check.sh against an isolated sandbox
+# copy of CHANGELOG.md (never the real, tracked file). Wired into CI so the
+# test suite actually runs instead of silently rotting.
+changelog-seed-test:
+	./.ci/changelog-seed-tests.sh
+
 # Bundle the Studio UI for publishing: source tarball (for `studio
 # eject --with-ui`) and the Trunk-built wasm/JS dist (embedded into
 # the served binary so `cratestack studio run` ships a real admin app

@@ -17,7 +17,9 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
-CHANGELOG_FILE="CHANGELOG.md"
+# May be overridden (absolute path) so the test suite can point this script
+# at an isolated sandbox copy instead of the real, tracked CHANGELOG.md.
+CHANGELOG_FILE="${CHANGELOG_FILE:-CHANGELOG.md}"
 
 if [ ! -f "$CHANGELOG_FILE" ]; then
   echo "error: $CHANGELOG_FILE not found" >&2

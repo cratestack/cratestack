@@ -259,6 +259,20 @@ jobs:
       - name: Changelog verification
         run: just verify-changelog
 
+  # Tests for changelog-seed.sh/changelog-check.sh themselves (issue #479).
+  # Runs against an isolated sandbox copy of CHANGELOG.md, never the real,
+  # tracked file — see .ci/changelog-seed-tests.sh.
+  changelog-seed-test:
+    name: changelog (seed/check script tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: Changelog seed/check tests
+        run: just changelog-seed-test
+
   # ---- Lint gates ------------------------------------------------------
   # Blocking. Determinism comes from rust-toolchain.toml pinning the
   # version (and clippy/rustfmt components), so new stable lints/format
