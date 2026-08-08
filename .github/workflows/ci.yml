@@ -42,6 +42,31 @@ jobs:
         # step verifies the wasm32 surface in isolation (without Postgres
         # features that would drag in sqlx/rust_decimal).
         run: cargo check --locked -p cratestack-sqlite --target wasm32-unknown-unknown
+      - name: Assert rustc, rust-toolchain.toml, and Cargo.toml rust-version agree
+        # Verify the MSRV declaration (#422) stays synchronized with the
+        # pinned toolchain and what rustc actually resolved to. Three-way
+        # equality guards against the rust-version/rust-toolchain.toml
+        # drift path the two-way check alone would leave uncovered.
+        run: |
+          resolved=$(rustc --version | awk '{print $2}')
+          pinned=$(awk -F'"' '/^channel/{print $2}' rust-toolchain.toml)
+          declared=$(awk -F'"' '/^rust-version/{print $2; exit}' Cargo.toml)
+          echo "resolved rustc: $resolved | rust-toolchain.toml: $pinned | Cargo.toml rust-version: $declared"
+          [ "$resolved" = "$pinned" ] || { echo "::error::CI resolved rustc $resolved, expected rust-toolchain.toml's $pinned"; exit 1; }
+          [ "$pinned" = "$declared" ] || { echo "::error::rust-toolchain.toml ($pinned) and Cargo.toml rust-version ($declared) have drifted apart"; exit 1; }
+
+  msrv:
+    name: msrv (1.95.0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/tauri-linux-deps
+      - uses: dtolnay/rust-toolchain@1.95.0
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - run: just check --locked
 
   # ---- Test shards -----------------------------------------------------
   # The suite is split into four parallel jobs so no single runner has to

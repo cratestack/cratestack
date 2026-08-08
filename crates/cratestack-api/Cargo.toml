@@ -2,6 +2,7 @@
 name = "cratestack-api"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 description = "CrateStack server facade for procedures-only, no-database services — Axum HTTP bindings, generated Rust client runtime, and the shared schema/parser/policy/SQL surface, with `cratestack-sqlx` genuinely absent from the dependency graph. Pick this crate via `cratestack = { package = \"cratestack-api\" }` for `db = None` servers; pick `cratestack-pg` instead the moment a schema needs even one `model`."

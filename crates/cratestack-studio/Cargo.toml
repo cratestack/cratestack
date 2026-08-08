@@ -2,6 +2,7 @@
 name = "cratestack-studio"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 description = "CrateStack Studio — admin and testing surface for .cstack schemas, served as a local web app."

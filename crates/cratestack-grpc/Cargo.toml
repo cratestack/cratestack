@@ -2,6 +2,7 @@
 name = "cratestack-grpc"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 description = "CrateStack gRPC server runtime — tonic/prost integration for `transport grpc` schemas: error-code mapping, tonic metadata <-> header conversion, and unframed-body envelope canonicalization."

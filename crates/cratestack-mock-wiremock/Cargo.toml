@@ -2,6 +2,7 @@
 name = "cratestack-mock-wiremock"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 description = "Generates WireMock stub mappings from a .cstack schema's procedures"

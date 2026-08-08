@@ -2,6 +2,7 @@
 name = "cratestack-sqlite"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 description = "CrateStack embedded facade — rusqlite-backed SQLite runtime (native + wasm32) plus the shared schema/parser/policy/SQL surface. Pick this crate via `cratestack = { package = \"cratestack-sqlite\" }` for mobile, desktop, browser, or any on-device storage layer."

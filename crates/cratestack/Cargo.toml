@@ -2,6 +2,7 @@
 name = "cratestack"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 description = "CrateStack — Rust-native, schema-first framework for typed HTTP APIs, generated clients, and backend services. This crate is a documentation-only landing page; depend on `cratestack-pg` for backend services, `cratestack-api` for procedures-only no-database services, or `cratestack-sqlite` for embedded targets."

@@ -2,6 +2,7 @@
 name = "cratestack-pg"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 description = "CrateStack server facade — Postgres (sqlx) backend with Axum HTTP bindings, generated Rust client runtime, and the shared schema/parser/policy/SQL surface. Pick this crate via `cratestack = { package = \"cratestack-pg\" }` for backend services."
