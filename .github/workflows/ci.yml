@@ -60,20 +60,7 @@ jobs:
         with:
           tool: just
       - name: cargo test (testcontainers Postgres)
-        # Retry up to 3x to absorb the known-flaky
-        # `generated_routes_emit_tracing_events` (cratestack-pg; intermittently
-        # misses tracing events under concurrency — same rationale as the
-        # `release-check` recipe). A genuine regression fails all three and
-        # still blocks. `--locked` also asserts the committed Cargo.lock.
-        run: |
-          for attempt in 1 2 3; do
-            echo "::group::test attempt $attempt/3"
-            if just test-ci-db --locked; then echo "::endgroup::"; exit 0; fi
-            echo "::endgroup::"
-            echo "attempt $attempt failed"
-          done
-          echo "tests failed after 3 attempts" >&2
-          exit 1
+        run: just test-ci-db --locked
 
   tests-studio:
     name: tests (studio + Trunk UI)

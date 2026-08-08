@@ -129,9 +129,8 @@ test-pg-tc *args='':
 # example crates otherwise push the runner past its disk limit. Each shard
 # is also usable locally.
 
-# Shard: the Postgres-backed crate via testcontainers. The flaky
-# `generated_routes_emit_tracing_events` lives here, so CI wraps this shard
-# in a 3x retry. (cratestack-redis's e2e tests gate on CRATESTACK_REDIS_TEST_URL
+# Shard: the Postgres-backed crate via testcontainers.
+# (cratestack-redis's e2e tests gate on CRATESTACK_REDIS_TEST_URL
 # and skip without it, so they ride along in `test-ci-host`, unchanged.)
 test-ci-db *args='':
 	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg {{args}}
@@ -511,15 +510,8 @@ bump NEW:
 # regularly this is usually masked by leftover build artifacts — it only
 # reliably surfaces on a clean environment (e.g. CI).
 #
-# Test stage is retried up to 3x to absorb known-flaky tests (notably
-# `generated_routes_emit_tracing_events`, which intermittently misses
-# tracing events under workspace concurrency — see its source comment).
-# A genuine regression will fail all 3 attempts and still block the
-# release; only flakes get masked.
-#
 # Emergency override: `SKIP_TESTS=1 just release-check` bypasses the
-# test stage entirely. Use only when you know the failing test is the
-# known flake and you've already verified it passes in isolation.
+# test stage entirely.
 release-check:
 	#!/usr/bin/env bash
 	set -euo pipefail
@@ -529,24 +521,7 @@ release-check:
 	  echo "release-check: SKIP_TESTS=1 — bypassing workspace tests." >&2
 	  exit 0
 	fi
-	attempt=1
-	max=3
-	while [ "$attempt" -le "$max" ]; do
-	  echo ""
-	  echo "=== test attempt $attempt/$max ==="
-	  if cargo test --workspace --exclude embedded_flutter_native; then
-	    exit 0
-	  fi
-	  if [ "$attempt" -eq "$max" ]; then
-	    echo "" >&2
-	    echo "release-check: tests failed after $max attempts." >&2
-	    echo "If you've verified this is a known flake (e.g. tracing event capture)," >&2
-	    echo "rerun with: SKIP_TESTS=1 just release-check" >&2
-	    exit 1
-	  fi
-	  echo "tests failed; retrying ($((attempt + 1))/$max)..."
-	  attempt=$((attempt + 1))
-	done
+	cargo test --workspace --exclude embedded_flutter_native
 
 # Publish every workspace crate to crates.io in dependency order.
 #
