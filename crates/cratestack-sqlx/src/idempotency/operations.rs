@@ -5,8 +5,7 @@
 
 use std::time::SystemTime;
 
-use cratestack_axum::idempotency::{IdempotencyRecord, ReservationOutcome};
-use cratestack_core::CoolError;
+use cratestack_core::{CoolError, IdempotencyRecord, ReservationOutcome};
 
 use crate::sqlx;
 

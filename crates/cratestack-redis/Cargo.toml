@@ -14,7 +14,6 @@ categories.workspace = true
 
 [dependencies]
 async-trait.workspace = true
-cratestack-axum.workspace = true
 cratestack-core.workspace = true
 redis = { workspace = true, features = ["aio", "tokio-comp", "script", "connection-manager"] }
 sha2.workspace = true
@@ -23,6 +22,7 @@ uuid.workspace = true
 
 [dev-dependencies]
 axum.workspace = true
+cratestack-axum.workspace = true
 http.workspace = true
 tokio.workspace = true
 tower.workspace = true

@@ -2,8 +2,7 @@
 
 // Randomized property tests for outcome parsing and decimal helpers.
 
-use cratestack_axum::ratelimit::RateLimitDecision;
-use cratestack_core::CoolError;
+use cratestack_core::{CoolError, RateLimitDecision};
 use redis::Value as RedisValue;
 
 use super::parse::{next_u32_decimal, parse_consume_outcome};

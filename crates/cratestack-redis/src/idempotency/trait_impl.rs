@@ -1,8 +1,7 @@
 use std::time::SystemTime;
 
 use async_trait::async_trait;
-use cratestack_axum::idempotency::{IdempotencyStore, ReservationOutcome};
-use cratestack_core::CoolError;
+use cratestack_core::{CoolError, IdempotencyStore, ReservationOutcome};
 use redis::Value as RedisValue;
 use uuid::Uuid;
 

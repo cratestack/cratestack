@@ -1,7 +1,6 @@
 #![cfg(test)]
 
-use cratestack_axum::idempotency::ReservationOutcome;
-use cratestack_core::CoolError;
+use cratestack_core::{CoolError, ReservationOutcome};
 use redis::Value as RedisValue;
 
 use super::parse::parse_reserve_outcome;

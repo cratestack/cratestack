@@ -17,6 +17,7 @@
 mod descriptor;
 mod dialect;
 mod filter;
+mod idempotency;
 mod order;
 mod order_catalog;
 mod relation_path;
@@ -32,6 +33,7 @@ pub use filter::{
     JsonFilter, JsonTextPath, RelationFilter, RelationQuantifier, SpatialFilter, SpatialPoint,
     VectorDistanceExpr, VectorDistanceFilter, VectorMetric, coalesce, point,
 };
+pub use idempotency::IDEMPOTENCY_TABLE_DDL;
 pub use order::{NullOrder, OrderClause, OrderTarget, SortDirection};
 pub use order_catalog::{
     OrderCatalog, OrderRelationEdge, ResolvedOrderTarget, resolve_order_target,

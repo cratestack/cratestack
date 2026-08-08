@@ -44,7 +44,6 @@ pgvector = ["dep:pgvector", "dep:sqlx"]
 [dependencies]
 async-trait.workspace = true
 chrono.workspace = true
-cratestack-axum.workspace = true
 cratestack-core.workspace = true
 cratestack-policy.workspace = true
 cratestack-sql.workspace = true

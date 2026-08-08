@@ -17,6 +17,7 @@ pub mod envelope;
 pub mod error;
 pub mod events;
 pub mod find_many;
+pub mod idempotency_record;
 pub mod json;
 pub mod page;
 pub mod projection;
@@ -24,6 +25,7 @@ pub mod route_naming;
 pub mod rpc;
 pub mod rust_keywords;
 pub mod schema;
+pub mod store;
 pub mod transport;
 pub mod validators;
 pub mod value;
@@ -81,6 +83,7 @@ pub use events::{
     SubscriptionGuard, SubscriptionHandle, event_topic, parse_emit_attribute,
 };
 pub use find_many::FieldFilterInput;
+pub use idempotency_record::{IdempotencyRecord, ReservationOutcome};
 pub use json::Json;
 pub use page::{MAX_LIST_LIMIT, Page, PageInfo, PageInput};
 pub use projection::ProjectionDecoder;
@@ -91,6 +94,7 @@ pub use schema::{
     TypeArity, TypeDecl, TypeRef, View, ViewSource, parse_composite_id_attribute,
     parse_composite_unique_attribute, parse_index_attribute,
 };
+pub use store::{IdempotencyStore, RateLimitConfig, RateLimitDecision, RateLimitStore};
 pub use transport::{
     OpDescriptor, OpKind, RouteTransportCapabilities, RouteTransportDescriptor,
     canonical_request_string,

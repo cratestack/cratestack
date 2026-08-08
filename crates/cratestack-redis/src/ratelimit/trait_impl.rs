@@ -1,8 +1,7 @@
 use std::time::SystemTime;
 
 use async_trait::async_trait;
-use cratestack_axum::ratelimit::{RateLimitConfig, RateLimitDecision, RateLimitStore};
-use cratestack_core::CoolError;
+use cratestack_core::{CoolError, RateLimitConfig, RateLimitDecision, RateLimitStore};
 use redis::Value as RedisValue;
 
 use super::parse::parse_consume_outcome;

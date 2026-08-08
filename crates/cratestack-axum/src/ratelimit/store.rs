@@ -8,19 +8,8 @@ use cratestack_core::CoolError;
 
 use super::config::{RateLimitConfig, RateLimitDecision};
 
-/// Pluggable storage for token-bucket state. Implementations must be safe
-/// to share across tasks (use a Mutex internally, or rely on the backing
-/// store's atomicity).
-#[async_trait]
-pub trait RateLimitStore: Send + Sync + 'static {
-    /// Atomically consume one token for `key`. Returns the decision based
-    /// on the bucket state after the consumption attempt.
-    async fn consume(
-        &self,
-        key: &str,
-        config: RateLimitConfig,
-    ) -> Result<RateLimitDecision, CoolError>;
-}
+// Re-export from cratestack-core for internal use
+pub use cratestack_core::RateLimitStore;
 
 #[derive(Debug)]
 struct Bucket {

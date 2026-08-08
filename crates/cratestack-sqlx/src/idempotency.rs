@@ -14,8 +14,8 @@ mod operations;
 use std::time::SystemTime;
 
 use async_trait::async_trait;
-use cratestack_axum::idempotency::{IDEMPOTENCY_TABLE_DDL, IdempotencyStore, ReservationOutcome};
-use cratestack_core::CoolError;
+use cratestack_core::{CoolError, IdempotencyStore, ReservationOutcome};
+use cratestack_sql::IDEMPOTENCY_TABLE_DDL;
 
 use crate::sqlx;
 

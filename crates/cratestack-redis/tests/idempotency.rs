@@ -10,7 +10,7 @@
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use cratestack_axum::idempotency::{IdempotencyStore, ReservationOutcome};
+use cratestack_core::{IdempotencyStore, ReservationOutcome};
 use cratestack_redis::RedisIdempotencyStore;
 use uuid::Uuid;
 

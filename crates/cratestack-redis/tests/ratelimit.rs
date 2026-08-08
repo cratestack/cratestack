@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use cratestack_axum::ratelimit::{RateLimitConfig, RateLimitDecision, RateLimitStore};
+use cratestack_core::{RateLimitConfig, RateLimitDecision, RateLimitStore};
 use cratestack_redis::RedisRateLimitStore;
 use uuid::Uuid;
 
