@@ -16,6 +16,18 @@ pub struct RouteTransportDescriptor {
     pub method: &'static str,
     pub path: &'static str,
     pub capabilities: RouteTransportCapabilities,
+    /// Whether the dispatcher should treat this route as participating in
+    /// rate limiting. `true` for every route by default; `false` only for
+    /// a procedure marked `@no_rate_limit` in a schema that declares
+    /// `extension rate_limit { }` (`docs/design/extensions.md` §5) — model
+    /// CRUD routes have no opt-out today and are always `true`. Mirrors
+    /// `OpDescriptor::rate_limited_by_default` (cratestack#474) so REST
+    /// and RPC transports carry the same fact about the same op, even
+    /// though only one of `ROUTE_TRANSPORTS`/`OPS` is ever populated for
+    /// a given schema. This is participation only: it carries no
+    /// burst/refill/window numbers, and changes nothing about whether
+    /// `RateLimitLayer` is actually wired up at runtime.
+    pub rate_limited_by_default: bool,
 }
 
 /// Wire-shape of a single op in a `transport rpc` schema. See

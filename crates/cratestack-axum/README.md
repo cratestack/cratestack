@@ -86,6 +86,37 @@ let app = axum::Router::new()
 
 `RateLimitConfig` carries `burst` (max in-flight) and `refill_per_second`. `RateLimitDecision` is either `Allowed { remaining }` or `Throttled { retry_after_secs }`.
 
+### Honoring `@no_rate_limit` (schemas declaring `extension rate_limit { }`)
+
+The wiring above rate-limits every request equally — a procedure marked `@no_rate_limit` in your schema is **not** exempt unless you also install a `should_rate_limit_fn` that reads the generated descriptors. `RateLimitLayer` is never auto-wired by codegen (see `rate_limit_extension.rs`'s header comment: that machinery is assembled entirely imperatively by the consuming app), so this is opt-in:
+
+```rust
+use cratestack_axum::ratelimit::{
+    InMemoryRateLimitStore, RateLimitConfig, RateLimitLayer,
+    build_rpc_ops_filter, build_rest_ops_filter,
+};
+
+// `transport rpc` schemas: filter keys off the `/rpc/{op_id}` path against
+// the generated `OPS` slice.
+let app = router.layer(
+    RateLimitLayer::new(store.clone(), RateLimitConfig::new(100, 10.0))
+        .with_should_rate_limit_fn(build_rpc_ops_filter(cratestack_schema::axum::OPS)),
+);
+
+// REST-transport schemas: filter keys off `axum::extract::MatchedPath`
+// against the generated `ROUTE_TRANSPORTS` slice. Either `.layer(..)` or
+// `.route_layer(..)` populates `MatchedPath` correctly; the only
+// difference is that `.layer(..)` also wraps 404s (so they count against
+// the budget) while `.route_layer(..)` skips them — see the filter's
+// rustdoc for the full tradeoff.
+let app = router.route_layer(
+    RateLimitLayer::new(store, RateLimitConfig::new(100, 10.0))
+        .with_should_rate_limit_fn(build_rest_ops_filter(cratestack_schema::axum::ROUTE_TRANSPORTS)),
+);
+```
+
+Both filters fail closed: a lookup miss (unknown op, unmatched route, non-RPC path) always rate-limits rather than exempts. `POST /rpc/batch` is a known exception — it is always rate-limited wholesale, because the filter runs before the batch body is decoded and can't see the individual ops inside it; see `build_rpc_ops_filter`'s rustdoc.
+
 ## Query Parsing
 
 `parse_filter_expression` parses a single filter expression into a `QueryExpr`; `parse_query_pairs` returns the raw query-string pairs already URL-decoded.

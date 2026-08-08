@@ -5,6 +5,13 @@
 //! This test drives REAL HTTP requests against a live RPC server and asserts
 //! that status codes match expectations — proving the exemption is selective
 //! rather than a blanket disable.
+//!
+//! No live Postgres is required: `ping`/`createPayment` never touch `db`,
+//! and `PgPoolOptions::connect_lazy` never opens a connection, so the
+//! `Cratestack` handle below is valid without a reachable database. This
+//! is unlike most `cratestack-pg` integration tests (which use
+//! `support::pg::connect_or_skip`) precisely because this test exercises
+//! HTTP-layer rate limiting, not anything DB-backed.
 
 #![cfg(all(feature = "rate_limit", feature = "codec-json"))]
 
@@ -26,7 +33,6 @@ mod support;
 
 use cratestack::{AuthProvider, CoolContext, CoolError, RequestContext, Value};
 
-#[allow(dead_code)]
 fn test_db() -> cratestack_schema::Cratestack {
     let pool = PgPoolOptions::new()
         .connect_lazy("postgres://cratestack:cratestack@localhost/cratestack")
@@ -78,6 +84,15 @@ impl cratestack_schema::procedures::ProcedureRegistry for RpcProcedures {
     }
 }
 
+/// Encodes a `{"args": {"nonce": ...}}` JSON body matching the generated
+/// `Args { pub args: PingArgs }` shape (`procedure ping(args: PingArgs)`
+/// — the arg is literally named `args`, so the wire body nests the
+/// payload one level under an `"args"` key; it is NOT the bare
+/// `PingArgs` object).
+fn ping_body(nonce: &str) -> String {
+    format!(r#"{{"args":{{"nonce":"{nonce}"}}}}"#)
+}
+
 /// AC 1: Given `@no_rate_limit` on a procedure, when the rate limit is
 /// exceeded, then the request is not throttled (succeeds with status 200).
 ///
@@ -85,7 +100,6 @@ impl cratestack_schema::procedures::ProcedureRegistry for RpcProcedures {
 /// request is throttled (fails with status 429), proving the exemption is
 /// selective.
 #[tokio::test]
-#[ignore = "requires database: set CRATESTACK_REQUIRE_DB=1 and DOCKER_HOST"]
 async fn rate_limit_exemption_is_selective() {
     let db = test_db();
     let codec = cratestack_codec_json::JsonCodec;
@@ -122,7 +136,10 @@ async fn rate_limit_exemption_is_selective() {
             .expect("server should run")
     });
 
-    // Make requests and verify rate limiting behavior.
+    // #440: `reqwest`'s `rustls-no-provider` feature needs a crypto
+    // provider installed before `Client::new()` — see the identical
+    // comment + call in `rpc_subscribe_sse.rs`.
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let client = reqwest::Client::new();
     let base_url = format!("http://{}", addr);
 
@@ -134,7 +151,8 @@ async fn rate_limit_exemption_is_selective() {
         let resp1 = client
             .post(&ping_url)
             .header("content-type", "application/json")
-            .body(r#"{"nonce":"test1"}"#)
+            .header("accept", "application/json")
+            .body(ping_body("test1"))
             .send()
             .await
             .expect("first ping should send");
@@ -148,7 +166,8 @@ async fn rate_limit_exemption_is_selective() {
         let resp2 = client
             .post(&ping_url)
             .header("content-type", "application/json")
-            .body(r#"{"nonce":"test2"}"#)
+            .header("accept", "application/json")
+            .body(ping_body("test2"))
             .send()
             .await
             .expect("second ping should send");
@@ -167,7 +186,8 @@ async fn rate_limit_exemption_is_selective() {
         let resp1 = client
             .post(&payment_url)
             .header("content-type", "application/json")
-            .body(r#"{"nonce":"payment1"}"#)
+            .header("accept", "application/json")
+            .body(ping_body("payment1"))
             .send()
             .await
             .expect("first payment should send");
@@ -181,7 +201,8 @@ async fn rate_limit_exemption_is_selective() {
         let resp2 = client
             .post(&payment_url)
             .header("content-type", "application/json")
-            .body(r#"{"nonce":"payment2"}"#)
+            .header("accept", "application/json")
+            .body(ping_body("payment2"))
             .send()
             .await
             .expect("second payment should send");
@@ -196,7 +217,8 @@ async fn rate_limit_exemption_is_selective() {
         let resp3 = client
             .post(&payment_url)
             .header("content-type", "application/json")
-            .body(r#"{"nonce":"payment3"}"#)
+            .header("accept", "application/json")
+            .body(ping_body("payment3"))
             .send()
             .await
             .expect("third payment should send");
@@ -215,7 +237,8 @@ async fn rate_limit_exemption_is_selective() {
         let resp = client
             .post(&ping_url)
             .header("content-type", "application/json")
-            .body(r#"{"nonce":"test3"}"#)
+            .header("accept", "application/json")
+            .body(ping_body("test3"))
             .send()
             .await
             .expect("ping should send");

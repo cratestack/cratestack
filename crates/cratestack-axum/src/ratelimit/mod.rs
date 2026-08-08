@@ -40,11 +40,13 @@
 
 mod config;
 mod layer;
+mod rest_ops_filter;
 mod rpc_ops_filter;
 mod store;
 
 pub use config::{_bucket_capacity_for, RateLimitConfig, RateLimitDecision};
 pub use layer::{RateLimitLayer, RateLimitService};
+pub use rest_ops_filter::build_rest_ops_filter;
 pub use rpc_ops_filter::build_rpc_ops_filter;
 pub use store::{InMemoryRateLimitStore, RateLimitStore};
 

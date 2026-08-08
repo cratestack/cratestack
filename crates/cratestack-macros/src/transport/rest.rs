@@ -1,6 +1,9 @@
 //! REST binding: per-procedure / per-model `RouteTransportDescriptor`
 //! consts and entries used by the generated router.
 
+#[cfg(test)]
+mod tests;
+
 use cratestack_core::{Model, Procedure, TypeArity};
 use quote::quote;
 
@@ -13,6 +16,7 @@ pub(crate) fn generate_procedure_transport_constants(
     let path = format!("/$procs/{}", procedure.name);
     let capabilities = procedure_transport_capabilities_tokens(procedure);
     let name = procedure.name.as_str();
+    let rate_limited = super::rate_limit::procedure_rate_limited_by_default(procedure);
 
     Ok(quote! {
         pub const #const_ident: ::cratestack::RouteTransportDescriptor = ::cratestack::RouteTransportDescriptor {
@@ -20,6 +24,7 @@ pub(crate) fn generate_procedure_transport_constants(
             method: "POST",
             path: #path,
             capabilities: #capabilities,
+            rate_limited_by_default: #rate_limited,
         };
     })
 }
@@ -44,6 +49,11 @@ pub(crate) fn generate_model_transport_constants(model: &Model) -> proc_macro2::
 
     let read_caps = model_read_transport_capabilities_tokens();
     let write_caps = model_write_transport_capabilities_tokens();
+    // Model CRUD routes have no `@no_rate_limit`-equivalent opt-out today
+    // (that attribute is procedure-only, per docs/design/extensions.md
+    // §5), so every one of them always participates in rate limiting.
+    // Mirrors `generate_model_op_descriptors`'s identical `rate_limited`.
+    let rate_limited = true;
 
     quote! {
         pub const #list_ident: ::cratestack::RouteTransportDescriptor = ::cratestack::RouteTransportDescriptor {
@@ -51,30 +61,35 @@ pub(crate) fn generate_model_transport_constants(model: &Model) -> proc_macro2::
             method: "GET",
             path: #list_path,
             capabilities: #read_caps,
+            rate_limited_by_default: #rate_limited,
         };
         pub const #create_ident: ::cratestack::RouteTransportDescriptor = ::cratestack::RouteTransportDescriptor {
             name: #model_name,
             method: "POST",
             path: #list_path,
             capabilities: #write_caps,
+            rate_limited_by_default: #rate_limited,
         };
         pub const #get_ident: ::cratestack::RouteTransportDescriptor = ::cratestack::RouteTransportDescriptor {
             name: #model_name,
             method: "GET",
             path: #detail_path,
             capabilities: #read_caps,
+            rate_limited_by_default: #rate_limited,
         };
         pub const #update_ident: ::cratestack::RouteTransportDescriptor = ::cratestack::RouteTransportDescriptor {
             name: #model_name,
             method: "PATCH",
             path: #detail_path,
             capabilities: #write_caps,
+            rate_limited_by_default: #rate_limited,
         };
         pub const #delete_ident: ::cratestack::RouteTransportDescriptor = ::cratestack::RouteTransportDescriptor {
             name: #model_name,
             method: "DELETE",
             path: #detail_path,
             capabilities: #read_caps,
+            rate_limited_by_default: #rate_limited,
         };
     }
 }

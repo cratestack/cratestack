@@ -7,6 +7,7 @@
 //! which slice is populated at emission time based on `Schema.transport`.
 
 mod op_descriptors;
+mod rate_limit;
 mod rest;
 mod rpc;
 mod subscribe_dispatch;

@@ -61,6 +61,64 @@ fn capacity_helper_passes_burst() {
     assert_eq!(_bucket_capacity_for(RateLimitConfig::new(7, 1.0)), 7);
 }
 
+/// cratestack#474: `with_should_rate_limit_fn` returning `false` must skip
+/// the store-consume check entirely — the exemption applies at the
+/// `RateLimitLayer`/`RateLimitService` level, independent of any
+/// descriptor plumbing built on top of it (`build_rpc_ops_filter`,
+/// `build_rest_ops_filter`). This is the one test that exercises the
+/// actual behavioral change (the bypass branch in `RateLimitService::call`)
+/// without a DB, an RPC router, or reqwest — unlike the DB-gated
+/// integration test in `cratestack-pg`.
+#[tokio::test]
+async fn should_rate_limit_fn_returning_false_bypasses_the_store_entirely() {
+    let store = Arc::new(InMemoryRateLimitStore::new());
+    // Burst of 1: a control request through the default filter would be
+    // throttled on the very next call.
+    let config = RateLimitConfig::new(1, 0.001);
+    let layer = RateLimitLayer::new(store, config).with_should_rate_limit_fn(|_req| false);
+    let inner = tower::service_fn(|_req: Request| async {
+        Ok::<_, std::convert::Infallible>(Response::new(Body::from("ok")))
+    });
+    let mut svc = layer.layer(inner);
+
+    for i in 0..5 {
+        let req = Request::builder().body(Body::empty()).unwrap();
+        let status = svc.call(req).await.unwrap().status();
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "request {i} should succeed: an exempt filter must bypass the \
+             burst limit entirely, not just raise it"
+        );
+    }
+}
+
+/// Control case for the test above: the *default* filter (no
+/// `with_should_rate_limit_fn` call) still throttles once the burst is
+/// exhausted, proving the bypass is opt-in behavior, not a change to the
+/// default fail-closed posture.
+#[tokio::test]
+async fn default_filter_still_throttles_without_should_rate_limit_fn() {
+    let store = Arc::new(InMemoryRateLimitStore::new());
+    let config = RateLimitConfig::new(1, 0.001);
+    let layer = RateLimitLayer::new(store, config);
+    let inner = tower::service_fn(|_req: Request| async {
+        Ok::<_, std::convert::Infallible>(Response::new(Body::from("ok")))
+    });
+    let mut svc = layer.layer(inner);
+
+    let first = Request::builder().body(Body::empty()).unwrap();
+    assert_eq!(svc.call(first).await.unwrap().status(), StatusCode::OK);
+
+    let second = Request::builder().body(Body::empty()).unwrap();
+    assert_eq!(
+        svc.call(second).await.unwrap().status(),
+        StatusCode::TOO_MANY_REQUESTS,
+        "without an explicit should_rate_limit_fn, the default fails closed \
+         (always rate-limits) once the burst is exhausted"
+    );
+}
+
 /// A store that always fails, standing in for e.g. an unreachable Redis
 /// backend behind `RedisRateLimitStore`.
 struct FailingStore;
