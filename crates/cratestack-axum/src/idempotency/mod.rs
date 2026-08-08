@@ -10,9 +10,30 @@
 //! Usage:
 //! ```ignore
 //! use cratestack_axum::idempotency::{IdempotencyLayer, SqlxIdempotencyStore};
+//! use std::net::SocketAddr;
 //! let store = std::sync::Arc::new(SqlxIdempotencyStore::new(pool.clone()));
 //! let router = generated_router.layer(IdempotencyLayer::new(store, std::time::Duration::from_secs(24 * 3600)));
+//!
+//! // The default principal fingerprint hashes `Authorization` when present
+//! // and otherwise falls back to the verified TCP peer address, which
+//! // axum only populates via `ConnectInfo<SocketAddr>` when the server is
+//! // served through `into_make_service_with_connect_info`:
+//! let listener = tokio::net::TcpListener::bind(addr).await?;
+//! axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).await?;
 //! ```
+//!
+//! **This wiring matters.** Nothing in this crate — and, as of this
+//! writing, no example shipped in this repository — serves through
+//! `into_make_service_with_connect_info` by default; every example uses
+//! plain `into_make_service()`. Without it, `ConnectInfo<SocketAddr>` is
+//! never present in request extensions, so *every* caller without an
+//! `Authorization` header collapses onto a single shared `"anonymous"`
+//! namespace, regardless of how many distinct clients are actually
+//! calling in. Consumers who authenticate via cookies/mTLS rather than an
+//! `Authorization` header — and who cannot serve through
+//! `into_make_service_with_connect_info` — must supply
+//! [`IdempotencyLayer::with_principal_fingerprint`] explicitly; relying on
+//! the default alone does not, by itself, separate such callers.
 //!
 //! In Phase 1 the layer is opt-in at the consumer's router. A follow-up will
 //! wire it into macro-generated routers by default, gated by a
