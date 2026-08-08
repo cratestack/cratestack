@@ -1,16 +1,16 @@
 //! Tower layer + companion `Service` constructor.
 
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::extract::Request;
+use axum::extract::{ConnectInfo, Request};
 use http::header;
 use sha2::{Digest, Sha256};
 use tower::Layer;
 
 use super::service::IdempotencyService;
 use super::store::IdempotencyStore;
-use crate::headers::parse_client_ip;
 
 /// Tower layer that wires an `IdempotencyStore` into the request pipeline.
 #[derive(Clone)]
@@ -22,8 +22,11 @@ pub struct IdempotencyLayer {
 
 impl IdempotencyLayer {
     /// Construct with a default principal fingerprint derived from the
-    /// `Authorization` header. Callers running mTLS or session-cookie auth
-    /// should swap this via [`with_principal_fingerprint`].
+    /// `Authorization` header, falling back to the verified TCP peer address
+    /// (via axum's `ConnectInfo<SocketAddr>`, requires serving through
+    /// `into_make_service_with_connect_info::<SocketAddr>()`) when it's
+    /// absent. Callers running mTLS or session-cookie auth should swap this
+    /// via [`with_principal_fingerprint`].
     pub fn new(store: Arc<dyn IdempotencyStore>, ttl: Duration) -> Self {
         Self {
             store,
@@ -54,15 +57,25 @@ pub(super) fn default_principal_fingerprint(req: &Request) -> String {
         return format!("{:x}", h.finalize());
     }
 
-    // Fall back to client IP for unauthenticated requests to avoid collisions
-    // between distinct callers.
-    if let Some(client_ip) = parse_client_ip(req.headers()) {
-        return client_ip;
+    // Fall back to the real TCP peer address for unauthenticated requests, to
+    // avoid collisions between distinct callers. This is deliberately *not*
+    // `Forwarded`/`X-Forwarded-For`: those headers are client-supplied and
+    // this crate has no trusted-proxy configuration to verify or strip them,
+    // so trusting them here would let an attacker land in another caller's
+    // idempotency namespace just by guessing/spoofing that caller's apparent
+    // IP. `ConnectInfo` is populated by axum from the actual accepted socket
+    // (when the server is served via `into_make_service_with_connect_info::<SocketAddr>()`)
+    // and cannot be spoofed by the client.
+    if let Some(ConnectInfo(addr)) = req.extensions().get::<ConnectInfo<SocketAddr>>() {
+        return addr.ip().to_string();
     }
 
-    // Only if both Authorization and client IP are absent, use "anonymous".
-    // This should rarely occur in practice; most requests have at least a
-    // client IP (via X-Forwarded-For or Forwarded header in proxied scenarios).
+    // Only if both Authorization and a verified peer address are absent
+    // (e.g. the server isn't wired through `into_make_service_with_connect_info`),
+    // fall back to a single shared namespace. This matches the pre-existing,
+    // safe-by-default behavior: unauthenticated traffic that can't be
+    // distinguished falls back to the coarse default rather than trusting an
+    // unverifiable, attacker-controlled key.
     "anonymous".to_owned()
 }
 

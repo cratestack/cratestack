@@ -1,7 +1,8 @@
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::body::Body;
-use axum::extract::Request;
+use axum::extract::{ConnectInfo, Request};
 use axum::response::Response;
 use http::{HeaderValue, StatusCode, header};
 use sha2::{Digest, Sha256};
@@ -9,7 +10,6 @@ use tower::{Layer, Service};
 
 use super::config::{RateLimitConfig, RateLimitDecision};
 use super::store::RateLimitStore;
-use crate::headers::parse_client_ip;
 
 #[derive(Clone)]
 pub struct RateLimitLayer {
@@ -43,15 +43,24 @@ pub(super) fn default_key_fn(req: &Request) -> String {
         return format!("auth:{:x}", h.finalize());
     }
 
-    // Fall back to client IP for unauthenticated requests to avoid collisions
-    // between distinct callers.
-    if let Some(client_ip) = parse_client_ip(req.headers()) {
-        return format!("ip:{}", client_ip);
+    // Fall back to the real TCP peer address for unauthenticated requests, to
+    // avoid collisions between distinct callers. This is deliberately *not*
+    // `Forwarded`/`X-Forwarded-For`: those headers are client-supplied and
+    // this crate has no trusted-proxy configuration to verify or strip them,
+    // so trusting them here would let an attacker mint a fresh rate-limit
+    // bucket on every request just by rotating the header value. `ConnectInfo`
+    // is populated by axum from the actual accepted socket (when the server
+    // is served via `into_make_service_with_connect_info::<SocketAddr>()`)
+    // and cannot be spoofed by the client.
+    if let Some(ConnectInfo(addr)) = req.extensions().get::<ConnectInfo<SocketAddr>>() {
+        return format!("ip:{}", addr.ip());
     }
 
-    // Only if both Authorization and client IP are absent, use "anonymous".
-    // This should rarely occur in practice; most requests have at least a
-    // client IP (via X-Forwarded-For or Forwarded header in proxied scenarios).
+    // Only if both Authorization and a verified peer address are absent
+    // (e.g. the server isn't wired through `into_make_service_with_connect_info`),
+    // fall back to a single shared bucket. This matches the pre-existing,
+    // safe-by-default behavior: unauthenticated traffic is capped in
+    // aggregate rather than trusting an unverifiable, attacker-controlled key.
     "anonymous".to_owned()
 }
 
