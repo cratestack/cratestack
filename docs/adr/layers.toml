@@ -1,0 +1,114 @@
+# Layer assignment for every `cratestack-*` workspace crate under `crates/`.
+#
+# This is the checked-in input to the layer-direction check (ADR 0014,
+# `.ci/layer-direction-check.sh`, `just verify-layering`). It encodes ADR
+# 0011 §2's assignment table, with one correction applied on top (see the
+# `cratestack-macros` / `cratestack-proto` comment below) and is the thing
+# that must be updated — in the same PR — whenever a crate is added under
+# `crates/`. An unassigned crate fails the check; see ADR 0014's "unassigned
+# crate" rule.
+#
+# Scope: only packages whose manifest lives under `crates/` (30 as of this
+# writing). `examples/*` and app-shaped workspace members are consumers of
+# the layered architecture, not part of it, and are not covered — neither
+# `docs/design/layering.md` nor ADR 0011 assigns them a layer.
+#
+# Rule (layering.md §3 / ADR 0011 decision 1): a crate at layer N may depend
+# on crates at layers <= N, and on nothing at layer > N (checked for NORMAL
+# dependencies only, including target-gated ones; dev- and build-dependencies
+# are exempt — see the checker script's header for why build- joins dev-).
+#
+# Roles other than a numeric layer:
+#   - tool:    may depend on anything; nothing outside the tool set may
+#              depend on a tool (ADR 0011 decision 2 / ADR 0014 decision 3).
+#   - vitrine: the single documentation-only `cratestack` crate. Same
+#              enforcement shape as a tool (may depend on anything, nothing
+#              may depend on it) but recorded under its own name because it
+#              is not a tool in ADR 0011's vocabulary — it is the empty
+#              vitrine explicitly called out in ADR 0011 §2's table footnote
+#              ("has no layer"). It has zero dependencies and zero
+#              dependents at the time of writing, so the distinction is
+#              currently unobservable in practice; it exists so a reader
+#              matching this file against the ADR isn't left wondering where
+#              `cratestack` went.
+#
+# L3 (Execution) has no members — see layering.md §5.1 / ADR 0011 decision
+# 4. Do not add a crate here merely to fill the slot.
+
+[layers]
+# --- L0: Schema IR -----------------------------------------------------
+cratestack-parser = 0
+# `cratestack-core` is a *stated exception* (ADR 0011 §3 / layering.md §7):
+# `schema` is L0, `store`/`audit`/`codec` are L1, and the rest of its twenty
+# modules are runtime vocabulary consumed at L2-L5. It has zero workspace
+# dependencies, so it cannot itself violate the rule regardless of which
+# number it is given; L0 is the safe conservative choice because it is
+# depended on by crates at every other layer (dep.layer <= self.layer holds
+# trivially for all of them at L0). Not proposed for splitting.
+cratestack-core = 0
+
+# --- L1: Contracts -------------------------------------------------------
+cratestack-policy = 1
+cratestack-sql = 1
+# ADR 0014's Context section (as drafted) claimed no single integer works
+# for cratestack-macros, on the theory that L5 depends on it while it must
+# not depend on L2, and "anything low enough to forbid macros -> sqlx is too
+# low for pg -> macros". That claim does not survive verification against
+# the real graph. cratestack-macros's actual normal workspace dependencies
+# (`crates/cratestack-macros/Cargo.toml`) are exactly: cratestack-core,
+# cratestack-parser, cratestack-policy, cratestack-proto — all L0/L1. L1
+# satisfies `dep.layer <= self.layer` with no exception: every L2-L5 crate
+# that depends on macros (cratestack-pg, cratestack-api, cratestack-sqlite,
+# all L5) sees 1 <= 5, and macros's own dependencies are all <= 1. No L2
+# crate depends on macros in the real graph (verified via `cargo metadata`),
+# so the "must not depend on L2" half of the constraint is satisfied simply
+# by macros never appearing on the wrong side of an L2 edge — not by a
+# bespoke predicate. See this PR's description for the verification command.
+cratestack-macros = 1
+# cratestack-proto depends only on cratestack-core (L0), so it is L1 too —
+# same reasoning as cratestack-macros above, and the same real-graph check
+# applies: nothing at L2 depends on cratestack-proto.
+cratestack-proto = 1
+
+# --- L2: Adapters ----------------------------------------------------------
+cratestack-sqlx = 2
+cratestack-rusqlite = 2
+cratestack-redis = 2
+cratestack-codec-cbor = 2
+cratestack-codec-json = 2
+# These two are the live #475 violation (client-store-* -> client-rust, an
+# L2 -> L4 edge). They stay at L2 per ADR 0011 §2 / layering.md §2's stated
+# assignment — the point of this check is to make the existing violation
+# visible and trackable via the allowlist
+# (.ci/layer-direction-allowlist.toml), not to launder it by reclassifying
+# the crates. Do not "fix" this file to make the edge legal.
+cratestack-client-store-sqlite = 2
+cratestack-client-store-redis = 2
+
+# --- L3: Execution -----------------------------------------------------
+# (empty by design — see module comment above)
+
+# --- L4: Bindings --------------------------------------------------------
+cratestack-axum = 4
+cratestack-grpc = 4
+cratestack-client-rust = 4
+cratestack-client-dart = 4
+cratestack-client-typescript = 4
+cratestack-client-flutter = 4
+cratestack-cbor-napi = 4
+cratestack-cbor-wasm = 4
+
+# --- L5: Facades -----------------------------------------------------------
+cratestack-pg = 5
+cratestack-api = 5
+cratestack-sqlite = 5
+
+[tools]
+cratestack-cli = true
+cratestack-lsp = true
+cratestack-migrate = true
+cratestack-studio = true
+cratestack-mock-wiremock = true
+
+[vitrine]
+cratestack = true

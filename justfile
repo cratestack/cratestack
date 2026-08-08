@@ -410,6 +410,18 @@ verify-typescript:
 	echo ""
 	echo "✓ TypeScript REST and RPC fixtures generated and typechecked successfully"
 
+# Layer-direction check (ADR 0014, docs/adr/0014-layer-direction-enforcement.md)
+# — blocking CI gate. Asserts every NORMAL cratestack-* -> cratestack-* edge
+# among the crates under `crates/` satisfies `dep.layer <= self.layer`
+# against `docs/adr/layers.toml`, with target-gated normal dependencies
+# included and dev-/build-dependencies exempt. Known violations tracked in
+# `.ci/layer-direction-allowlist.toml` (currently: #475, the
+# client-store-{sqlite,redis} -> client-rust back-edge) don't fail the
+# build; an allowlist entry that no longer matches a real violation does.
+# See `.ci/layer-direction-check.sh` for the full rationale.
+verify-layering:
+	./.ci/layer-direction-check.sh
+
 # Bundle the Studio UI for publishing: source tarball (for `studio
 # eject --with-ui`) and the Trunk-built wasm/JS dist (embedded into
 # the served binary so `cratestack studio run` ships a real admin app

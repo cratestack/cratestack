@@ -171,6 +171,17 @@ should reach (ADR 0016). Each is a genuine trade-off and belongs to its own ADR.
 **Revisit this ADR if:** a same-layer cycle appears; a second layer turns out empty; or
 `cratestack-core`'s span stops being a diagram wart and becomes a blocking edge.
 
+**Cross-reference note (added by ADR 0014's implementation, 2026-08-08).** This ADR's
+decision 1 states "⊥ is governed by a rule, not a number" and its table lists `cratestack-
+macros`/`cratestack-proto` under a separate `⊥` row. That remains the correct *prose*
+description — ⊥ is a compiler that emits into L2 through L5, not a layer those crates pass
+through. It turned out not to require a distinct *numeric* rule for the mechanical checker:
+ADR 0014 verifies that both crates' real workspace dependencies are entirely L0/L1, so
+`docs/adr/layers.toml` (the checker's input) assigns them `L1` directly, with no special
+predicate, rather than the `compiler` role ADR 0014 originally proposed. See ADR 0014's
+Amendment section for the full argument. This ADR's own table and prose are unchanged; only
+the checker's encoding of the same fact is simpler than either document originally assumed.
+
 ## Alternatives considered
 
 **Keep CLAUDE.md's one-line flow and fix violations as found.** Strongest case: it costs

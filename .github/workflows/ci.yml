@@ -231,6 +231,19 @@ jobs:
       - name: Feature-graph regression matrix
         run: just feature-matrix
 
+  # Layer-direction check (ADR 0014). Manifest-only (`cargo metadata
+  # --no-deps`) — no toolchain component beyond stable Rust + Python 3
+  # (already on the runner image) is needed, so no `rust-cache`/`just`
+  # install step is required either; kept minimal on purpose.
+  layer-direction:
+    name: layer direction (ADR 0014)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Layer-direction check
+        run: ./.ci/layer-direction-check.sh
+
   # ---- Lint gates ------------------------------------------------------
   # Blocking. Determinism comes from rust-toolchain.toml pinning the
   # version (and clippy/rustfmt components), so new stable lints/format
