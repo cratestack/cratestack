@@ -1292,9 +1292,16 @@ async fn read_policies_scope_find_many_for_authenticated_context() {
 
     // Authenticated context binds `auth().id` into the second disjunct
     // of the widened `@@allow("list", ...)` policy.
+    //
+    // The doubled outer parens are expected: `render_read_policy_sql`
+    // (cratestack#428) unconditionally wraps its return value in a
+    // self-contained group, and here that wraps a policy expr whose own
+    // `Or` group already self-parenthesizes. The nesting is semantically
+    // inert but load-bearing for the renderer's contract — see
+    // `render/policy.rs`'s doc comment.
     assert_eq!(
         sql,
-        "SELECT id AS \"id\", title AS \"title\", subtitle AS \"subtitle\", published AS \"published\", author_id AS \"authorId\" FROM posts WHERE (published = TRUE OR author_id = $1)"
+        "SELECT id AS \"id\", title AS \"title\", subtitle AS \"subtitle\", published AS \"published\", author_id AS \"authorId\" FROM posts WHERE ((published = TRUE OR author_id = $1))"
     );
 }
 
@@ -1308,9 +1315,12 @@ async fn read_policies_default_deny_without_matching_context() {
 
     let sql = cool.user().find_many().preview_scoped_sql(&ctx);
 
+    // `render_read_policy_sql` (cratestack#428) always returns a
+    // self-contained parenthesized group, including the empty-allow-list
+    // default-deny case, so `FALSE` now renders as `(FALSE)`.
     assert_eq!(
         sql,
-        "SELECT id AS \"id\", email AS \"email\", role AS \"role\", profile_id AS \"profileId\" FROM users WHERE FALSE"
+        "SELECT id AS \"id\", email AS \"email\", role AS \"role\", profile_id AS \"profileId\" FROM users WHERE (FALSE)"
     );
 }
 
