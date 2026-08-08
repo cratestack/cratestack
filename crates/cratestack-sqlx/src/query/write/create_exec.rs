@@ -9,7 +9,7 @@ use crate::query::support::{
     apply_create_defaults, classify_unique_violation, evaluate_create_policies, find_column_value,
     push_bind_value,
 };
-use crate::{CreateModelInput, ModelDescriptor, cool_error_from_sqlx, sqlx};
+use crate::{CreateModelInput, ModelDescriptor, sqlx};
 
 pub async fn create_record_with_executor<'e, E, M, PK, I>(
     executor: E,

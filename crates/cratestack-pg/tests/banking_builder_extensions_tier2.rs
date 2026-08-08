@@ -488,7 +488,8 @@ async fn single_row_upsert_returns_conflict_on_non_conflict_target_unique_violat
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
     let ctx = operator();
 
-    // Insert the first pair with id=1
+    // Insert the first pair with id=1 — this is the (scope, key) the
+    // insert-branch upsert below will collide with.
     cool.pair()
         .create(cratestack_schema::CreatePairInput {
             id: 1,
@@ -499,27 +500,8 @@ async fn single_row_upsert_returns_conflict_on_non_conflict_target_unique_violat
         .run(&ctx)
         .await
         .expect("first pair created");
-
-    // Upsert on PK conflict (id=1) would update, but try to set (scope, key) to
-    // an already-taken value (different id). This should fail with a unique
-    // violation on the non-conflict-target constraint.
-    let err = cool
-        .pair()
-        .upsert(cratestack_schema::CreatePairInput {
-            id: 1,
-            scope: "session".into(),
-            key: "xyz".into(),
-            payload: "v2".into(),
-        })
-        .run(&ctx)
-        .await;
-
-    // Note: This scenario is actually tricky because the upsert probes the
-    // row first (finds it), then tries the UPDATE. However, since we only
-    // have one row at this point, the upsert can succeed. Let's instead test
-    // the case where the upsert tries to insert and hits a unique violation.
-
-    // Clear and set up a different scenario:
+    // An unrelated second row so the schema has more than one (scope,
+    // key) pair in play before the conflicting upsert below.
     cool.pair()
         .create(cratestack_schema::CreatePairInput {
             id: 2,
@@ -531,8 +513,9 @@ async fn single_row_upsert_returns_conflict_on_non_conflict_target_unique_violat
         .await
         .expect("second pair created");
 
-    // Now upsert id=3 (new, will insert) with (scope, key) = ("session", "abc")
-    // which already exists in id=1. This should fail on the unique constraint.
+    // Upsert id=3 (new, will insert) with (scope, key) = ("session", "abc")
+    // which already exists on id=1. This should fail on the unique
+    // constraint (the insert branch, not the PK-conflict/update branch).
     let err = cool
         .pair()
         .upsert(cratestack_schema::CreatePairInput {
@@ -543,9 +526,7 @@ async fn single_row_upsert_returns_conflict_on_non_conflict_target_unique_violat
         })
         .run(&ctx)
         .await
-        .expect_err(
-            "upsert insert branch on unique violation must be rejected as a conflict",
-        );
+        .expect_err("upsert insert branch on unique violation must be rejected as a conflict");
 
     assert_eq!(
         err.code(),

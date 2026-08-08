@@ -60,6 +60,15 @@ pub enum CoolError {
     NotFound(String),
     #[error("conflict: {0}")]
     Conflict(String),
+    /// Conflict (409) with structured database information preserved from
+    /// the driver — e.g. a unique-constraint violation. Prefer this over
+    /// `Conflict(String)` when the conflict originates from a database
+    /// error so [`CoolError::db_sqlstate`] / [`CoolError::db_constraint`]
+    /// keep working for callers that inspect the typed fields regardless of
+    /// whether the error surfaced as a 500 (`DatabaseTyped`) or a 409
+    /// (`ConflictTyped`).
+    #[error("conflict: {}", .0.detail)]
+    ConflictTyped(DbErrorInfo),
     #[error("validation: {0}")]
     Validation(String),
     #[error("precondition failed: {0}")]
@@ -106,7 +115,7 @@ impl CoolError {
             Self::UnsupportedMediaType(_) => "UNSUPPORTED_MEDIA_TYPE",
             Self::Forbidden(_) => "FORBIDDEN",
             Self::NotFound(_) => "NOT_FOUND",
-            Self::Conflict(_) => "CONFLICT",
+            Self::Conflict(_) | Self::ConflictTyped(_) => "CONFLICT",
             Self::Validation(_) => "VALIDATION_ERROR",
             Self::PreconditionFailed(_) => "PRECONDITION_FAILED",
             Self::Codec(_) => "CODEC_ERROR",
@@ -124,7 +133,7 @@ impl CoolError {
             Self::UnsupportedMediaType(_) => StatusCode::UNSUPPORTED_MEDIA_TYPE,
             Self::Forbidden(_) => StatusCode::FORBIDDEN,
             Self::NotFound(_) => StatusCode::NOT_FOUND,
-            Self::Conflict(_) => StatusCode::CONFLICT,
+            Self::Conflict(_) | Self::ConflictTyped(_) => StatusCode::CONFLICT,
             Self::Validation(_) => StatusCode::UNPROCESSABLE_ENTITY,
             Self::PreconditionFailed(_) => StatusCode::PRECONDITION_FAILED,
             Self::Codec(_) => StatusCode::BAD_REQUEST,
@@ -154,6 +163,11 @@ impl CoolError {
             Self::Codec(_) => Cow::Borrowed("invalid request payload"),
             Self::Database(_) | Self::DatabaseTyped(_) => Cow::Borrowed("internal error"),
             Self::Internal(_) => Cow::Borrowed("internal error"),
+            // 4xx, like `Conflict(String)` — the driver's message is
+            // caller-visible (matches the pre-existing behaviour of
+            // `classify_unique_violation`, which built `Conflict` from
+            // `db_err.message()`).
+            Self::ConflictTyped(info) => Cow::Borrowed(info.detail.as_str()),
         }
     }
 
@@ -182,7 +196,7 @@ impl CoolError {
                     Some(s.as_str())
                 }
             }
-            Self::DatabaseTyped(info) => {
+            Self::DatabaseTyped(info) | Self::ConflictTyped(info) => {
                 if info.detail.is_empty() {
                     None
                 } else {
@@ -200,7 +214,7 @@ impl CoolError {
     /// conversion site.
     pub fn db_sqlstate(&self) -> Option<&str> {
         match self {
-            Self::DatabaseTyped(info) => info.sqlstate.as_deref(),
+            Self::DatabaseTyped(info) | Self::ConflictTyped(info) => info.sqlstate.as_deref(),
             _ => None,
         }
     }
@@ -213,7 +227,7 @@ impl CoolError {
     /// conversion site.
     pub fn db_constraint(&self) -> Option<&str> {
         match self {
-            Self::DatabaseTyped(info) => info.constraint.as_deref(),
+            Self::DatabaseTyped(info) | Self::ConflictTyped(info) => info.constraint.as_deref(),
             _ => None,
         }
     }

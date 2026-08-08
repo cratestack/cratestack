@@ -147,7 +147,7 @@ pub const fn rpc_code(error: &CoolError) -> &'static str {
         CoolError::Unauthorized(_) => "unauthenticated",
         CoolError::Forbidden(_) => "permission_denied",
         CoolError::NotFound(_) => "not_found",
-        CoolError::Conflict(_) => "conflict",
+        CoolError::Conflict(_) | CoolError::ConflictTyped(_) => "conflict",
         CoolError::PreconditionFailed(_) => "failed_precondition",
         CoolError::Database(_) | CoolError::DatabaseTyped(_) | CoolError::Internal(_) => "internal",
         CoolError::Unavailable(_) => "unavailable",
