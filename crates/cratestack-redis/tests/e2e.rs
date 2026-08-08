@@ -29,10 +29,17 @@ use uuid::Uuid;
 /// the same header on every request, or by overriding the extractor.
 const TEST_AUTH: &str = "Bearer test-token";
 
-async fn store_or_skip(suffix: &str) -> Option<RedisIdempotencyStore> {
+/// Returns the store together with the `TestRedis` guard. On the
+/// testcontainers backend the guard owns the ephemeral container — dropping
+/// it (e.g. by discarding it instead of binding it in the caller) stops and
+/// removes the container immediately, breaking every request the test
+/// makes afterward. Callers must keep the guard alive for the whole test
+/// body (see `support::redis::TestRedis`).
+async fn store_or_skip(suffix: &str) -> Option<(RedisIdempotencyStore, support::redis::TestRedis)> {
     let redis = support::redis::connect_or_skip().await?;
     let prefix = format!("cratestack:test:e2e:{suffix}:{}", Uuid::new_v4().simple());
-    RedisIdempotencyStore::from_client(redis.client, prefix).into()
+    let store = RedisIdempotencyStore::from_client(redis.client.clone(), prefix);
+    Some((store, redis))
 }
 
 fn build_router<H, Fut>(store: RedisIdempotencyStore, handler: H) -> Router
@@ -72,7 +79,7 @@ fn post_request(body: &'static str, idempotency_key: &str) -> Request<Body> {
 
 #[tokio::test]
 async fn same_key_same_body_replays_response_with_marker_header() {
-    let Some(store) = store_or_skip("replay").await else {
+    let Some((store, _redis_guard)) = store_or_skip("replay").await else {
         return;
     };
     let counter = Arc::new(AtomicUsize::new(0));
@@ -119,7 +126,7 @@ async fn same_key_same_body_replays_response_with_marker_header() {
 
 #[tokio::test]
 async fn same_key_different_body_returns_422_conflict() {
-    let Some(store) = store_or_skip("conflict").await else {
+    let Some((store, _redis_guard)) = store_or_skip("conflict").await else {
         return;
     };
     let router = build_router(store, || async {
@@ -156,7 +163,7 @@ async fn same_key_different_body_returns_422_conflict() {
 
 #[tokio::test]
 async fn different_keys_each_run_the_handler() {
-    let Some(store) = store_or_skip("distinct-keys").await else {
+    let Some((store, _redis_guard)) = store_or_skip("distinct-keys").await else {
         return;
     };
     let counter = Arc::new(AtomicUsize::new(0));
@@ -193,7 +200,7 @@ async fn different_keys_each_run_the_handler() {
 
 #[tokio::test]
 async fn replay_preserves_response_headers_emitted_by_the_handler() {
-    let Some(store) = store_or_skip("headers").await else {
+    let Some((store, _redis_guard)) = store_or_skip("headers").await else {
         return;
     };
     let router = build_router(store, || async {
@@ -250,7 +257,7 @@ async fn replay_preserves_response_headers_emitted_by_the_handler() {
 
 #[tokio::test]
 async fn get_requests_bypass_the_layer_entirely() {
-    let Some(store) = store_or_skip("get-bypass").await else {
+    let Some((store, _redis_guard)) = store_or_skip("get-bypass").await else {
         return;
     };
     let router = build_router(store, || async {
@@ -282,7 +289,7 @@ async fn get_requests_bypass_the_layer_entirely() {
 
 #[tokio::test]
 async fn concurrent_posts_run_handler_exactly_once() {
-    let Some(store) = store_or_skip("concurrent-http").await else {
+    let Some((store, _redis_guard)) = store_or_skip("concurrent-http").await else {
         return;
     };
     let counter = Arc::new(AtomicUsize::new(0));
@@ -335,7 +342,7 @@ async fn concurrent_posts_run_handler_exactly_once() {
 
 #[tokio::test]
 async fn distinct_principals_under_same_key_get_isolated_responses() {
-    let Some(store) = store_or_skip("principal-iso").await else {
+    let Some((store, _redis_guard)) = store_or_skip("principal-iso").await else {
         return;
     };
     let counter = Arc::new(AtomicUsize::new(0));

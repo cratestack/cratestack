@@ -49,10 +49,11 @@ async fn failed_connection_attempt_is_not_cached_so_next_call_can_retry() {
 /// rather than a fresh, unnamed one.
 #[tokio::test]
 async fn connection_is_reused_not_reopened_per_call() {
-    let Some(url) = crate::test_support::redis_test_url_or_skip() else {
+    let Some(redis) = crate::test_support::redis_test_url_or_skip().await else {
         return;
     };
-    let store = RedisRateLimitStore::open(url, "cratestack:test:rl-reuse-identity").expect("open");
+    let store = RedisRateLimitStore::open(redis.url.clone(), "cratestack:test:rl-reuse-identity")
+        .expect("open");
 
     let marker = format!("cratestack-test-{}", uuid::Uuid::new_v4().simple());
     let mut first = store.connection().await.expect("first connection");

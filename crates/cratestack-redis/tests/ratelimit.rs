@@ -16,22 +16,33 @@ use cratestack_core::{RateLimitConfig, RateLimitDecision, RateLimitStore};
 use cratestack_redis::RedisRateLimitStore;
 use uuid::Uuid;
 
-async fn store_or_skip(suffix: &str) -> Option<RedisRateLimitStore> {
+/// Returns the store together with the `TestRedis` guard. On the
+/// testcontainers backend the guard owns the ephemeral container — dropping
+/// it (e.g. by discarding it instead of binding it in the caller) stops and
+/// removes the container immediately, breaking every request the test
+/// makes afterward. Callers must keep the guard alive for the whole test
+/// body (see `support::redis::TestRedis`).
+async fn store_or_skip(suffix: &str) -> Option<(RedisRateLimitStore, support::redis::TestRedis)> {
     let redis = support::redis::connect_or_skip().await?;
     // Per-test prefix so parallel test binaries (and the idempotency
     // tests in this same crate) can't trample each other.
     let prefix = format!("cratestack:test:rl:{suffix}:{}", Uuid::new_v4().simple());
-    RedisRateLimitStore::from_client(redis.client, prefix).into()
+    let store = RedisRateLimitStore::from_client(redis.client.clone(), prefix);
+    Some((store, redis))
 }
 
-async fn raw_client_or_skip() -> Option<redis::Client> {
+/// Raw `redis::Client` for tests that need to poke Redis directly,
+/// together with the `TestRedis` guard — see `store_or_skip` for why the
+/// guard must be kept alive.
+async fn raw_client_or_skip() -> Option<(redis::Client, support::redis::TestRedis)> {
     let redis = support::redis::connect_or_skip().await?;
-    redis.client.into()
+    let client = redis.client.clone();
+    Some((client, redis))
 }
 
 #[tokio::test]
 async fn allows_up_to_burst_then_throttles() {
-    let Some(store) = store_or_skip("burst").await else {
+    let Some((store, _redis_guard)) = store_or_skip("burst").await else {
         return;
     };
     // Very slow refill so the burst is effectively the only thing
@@ -54,7 +65,7 @@ async fn allows_up_to_burst_then_throttles() {
 
 #[tokio::test]
 async fn allowed_remaining_decreases_with_each_call() {
-    let Some(store) = store_or_skip("remaining").await else {
+    let Some((store, _redis_guard)) = store_or_skip("remaining").await else {
         return;
     };
     let config = RateLimitConfig::new(3, 0.001);
@@ -80,7 +91,7 @@ async fn allowed_remaining_decreases_with_each_call() {
 
 #[tokio::test]
 async fn refill_grants_more_tokens_after_wait() {
-    let Some(store) = store_or_skip("refill").await else {
+    let Some((store, _redis_guard)) = store_or_skip("refill").await else {
         return;
     };
     let config = RateLimitConfig::new(2, 1000.0); // refills very fast
@@ -98,7 +109,7 @@ async fn refill_grants_more_tokens_after_wait() {
 
 #[tokio::test]
 async fn per_key_isolation_does_not_leak_between_principals() {
-    let Some(store) = store_or_skip("isolation").await else {
+    let Some((store, _redis_guard)) = store_or_skip("isolation").await else {
         return;
     };
     let config = RateLimitConfig::new(1, 0.001);
@@ -120,7 +131,7 @@ async fn per_key_isolation_does_not_leak_between_principals() {
 
 #[tokio::test]
 async fn throttled_retry_after_is_bounded_for_typical_configs() {
-    let Some(store) = store_or_skip("retry-after").await else {
+    let Some((store, _redis_guard)) = store_or_skip("retry-after").await else {
         return;
     };
     // Refill 1 token per second; after burst is consumed, the retry-
@@ -146,7 +157,7 @@ async fn zero_refill_keeps_throttling_indefinitely() {
     // "consume-once-then-stop" mode. The script must not divide by
     // zero, and consecutive throttled calls must keep reporting a
     // positive retry_after.
-    let Some(store) = store_or_skip("zero-refill").await else {
+    let Some((store, _redis_guard)) = store_or_skip("zero-refill").await else {
         return;
     };
     let config = RateLimitConfig::new(1, 0.0);
@@ -175,7 +186,7 @@ async fn zero_refill_keeps_throttling_indefinitely() {
 
 #[tokio::test]
 async fn concurrent_consumes_respect_burst_limit() {
-    let Some(store) = store_or_skip("concurrent").await else {
+    let Some((store, _redis_guard)) = store_or_skip("concurrent").await else {
         return;
     };
     let store = Arc::new(store);
@@ -239,7 +250,7 @@ async fn pttl_for(client: &redis::Client, key: &str) -> i64 {
 
 #[tokio::test]
 async fn consume_sets_expire_on_the_bucket_key() {
-    let Some(client) = raw_client_or_skip().await else {
+    let Some((client, _redis_guard)) = raw_client_or_skip().await else {
         return;
     };
     let prefix = format!("cratestack:test:rl-ttl:{}", Uuid::new_v4().simple());
@@ -262,7 +273,7 @@ async fn zero_refill_still_sets_an_expire() {
     // The `refill_per_second = 0` branch can't compute a refill window,
     // so the script falls back to a 24h TTL. Without that fallback the
     // bucket would never expire and we'd leak memory.
-    let Some(client) = raw_client_or_skip().await else {
+    let Some((client, _redis_guard)) = raw_client_or_skip().await else {
         return;
     };
     let prefix = format!("cratestack:test:rl-zero-ttl:{}", Uuid::new_v4().simple());
@@ -337,7 +348,7 @@ async fn randomized_consume_grants_at_most_burst_tokens_in_a_short_window() {
     // consume calls back-to-back with a near-zero refill rate. The
     // store must allow exactly `burst` tokens (the refill margin is
     // negligible over the test window) and throttle the rest.
-    let Some(store) = store_or_skip("rand-burst").await else {
+    let Some((store, _redis_guard)) = store_or_skip("rand-burst").await else {
         return;
     };
     let store = Arc::new(store);
@@ -376,7 +387,7 @@ async fn randomized_keys_have_independent_buckets() {
     // Pick a handful of random keys, exhaust each one, and verify that
     // exhausting one never throttles another. This is the multi-tenant
     // isolation property under a random workload.
-    let Some(store) = store_or_skip("rand-iso").await else {
+    let Some((store, _redis_guard)) = store_or_skip("rand-iso").await else {
         return;
     };
     let seed = test_seed();
@@ -413,7 +424,7 @@ async fn randomized_concurrent_consume_never_exceeds_burst() {
     // Fan out N concurrent tasks against the same key with a random
     // burst. The atomic Lua script must ensure `allowed ≤ burst + small
     // refill margin` no matter how the tasks interleave.
-    let Some(store) = store_or_skip("rand-concurrent").await else {
+    let Some((store, _redis_guard)) = store_or_skip("rand-concurrent").await else {
         return;
     };
     let store = Arc::new(store);
@@ -466,7 +477,7 @@ async fn randomized_concurrent_consume_never_exceeds_burst() {
 
 #[tokio::test]
 async fn custom_prefix_is_used_for_the_redis_key() {
-    let Some(client) = raw_client_or_skip().await else {
+    let Some((client, _redis_guard)) = raw_client_or_skip().await else {
         return;
     };
     let suffix = Uuid::new_v4().simple().to_string();
