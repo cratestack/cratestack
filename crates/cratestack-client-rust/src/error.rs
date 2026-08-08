@@ -13,7 +13,12 @@ pub struct TransportError {
 
 impl TransportError {
     /// Access the underlying `reqwest::Error`.
-    pub fn source(&self) -> &reqwest::Error {
+    ///
+    /// Named `reqwest_error` rather than `source` so it doesn't collide
+    /// with (and get silently shadowed by) `std::error::Error::source`,
+    /// which returns a different type (`Option<&(dyn Error + 'static)>`)
+    /// — see the trait impl below for the chain-walking accessor.
+    pub fn reqwest_error(&self) -> &reqwest::Error {
         &self.inner
     }
 
@@ -29,6 +34,12 @@ impl std::fmt::Display for TransportError {
     }
 }
 
+impl std::error::Error for TransportError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.inner.as_ref())
+    }
+}
+
 impl From<reqwest::Error> for TransportError {
     fn from(e: reqwest::Error) -> Self {
         TransportError { inner: Box::new(e) }
@@ -39,7 +50,7 @@ impl From<reqwest::Error> for TransportError {
 #[non_exhaustive]
 pub enum ClientError {
     #[error("transport error: {0}")]
-    Transport(TransportError),
+    Transport(#[source] TransportError),
     #[error("codec error: {0}")]
     Codec(#[from] CoolError),
     #[error("state error: {0}")]
@@ -66,14 +77,65 @@ impl From<reqwest::Error> for ClientError {
 mod tests {
     use super::*;
 
-    #[test]
-    fn transport_error_has_source_accessor() {
-        // This test verifies that TransportError provides accessor methods
-        // to avoid direct exposure of reqwest::Error in public match arms.
-        // The actual reqwest::Error is wrapped and only accessible through methods.
-        let _err: ClientError = ClientError::State("test".to_string());
-        // Verify that ClientError::Transport is not directly matchable as reqwest::Error
-        // by ensuring it's a non-exhaustive enum.
+    /// Connecting to a port nothing listens on is a reliable, offline way
+    /// to synthesize a genuine `reqwest::Error` (connection-refused on
+    /// loopback is near-instant and doesn't require real network access),
+    /// so tests can exercise the actual `TransportError`/`ClientError::
+    /// Transport` code path rather than only the untouched variants.
+    async fn synthesize_reqwest_error() -> reqwest::Error {
+        // `reqwest`'s `rustls-no-provider` feature requires a crypto
+        // provider installed before the first `Client` is built (#440) —
+        // mirrors `client/core.rs`'s `ensure_crypto_provider`.
+        let _ = rustls::crypto::ring::default_provider().install_default();
+
+        reqwest::Client::new()
+            .get("http://127.0.0.1:1")
+            .send()
+            .await
+            .expect_err("connecting to a closed loopback port should fail")
+    }
+
+    #[tokio::test]
+    async fn transport_error_display_and_accessor_forward_to_reqwest() {
+        let reqwest_err = synthesize_reqwest_error().await;
+        let expected_message = reqwest_err.to_string();
+
+        let transport = TransportError::from(reqwest_err);
+
+        assert_eq!(transport.to_string(), expected_message);
+        assert_eq!(transport.reqwest_error().to_string(), expected_message);
+    }
+
+    #[tokio::test]
+    async fn transport_error_into_source_round_trips_the_reqwest_error() {
+        let reqwest_err = synthesize_reqwest_error().await;
+        let expected_message = reqwest_err.to_string();
+
+        let recovered = TransportError::from(reqwest_err).into_source();
+
+        assert_eq!(recovered.to_string(), expected_message);
+    }
+
+    #[tokio::test]
+    async fn client_error_transport_chains_via_std_error_source() {
+        let reqwest_err = synthesize_reqwest_error().await;
+        let expected_message = reqwest_err.to_string();
+
+        let client_err = ClientError::from(reqwest_err);
+
+        // `From<reqwest::Error>` must land in the `Transport` variant.
+        assert!(matches!(client_err, ClientError::Transport(_)));
+        // The outer `Display` must include the inner reqwest message.
+        assert!(client_err.to_string().contains(&expected_message));
+
+        // Any caller walking the error chain via the std trait (anyhow,
+        // tracing-error, generic e.source() logging) must still reach the
+        // underlying reqwest::Error — this is the behavior that regressed
+        // when `#[from] reqwest::Error` was replaced by the opaque
+        // `TransportError` wrapper without wiring `#[source]`/`impl Error`.
+        let source = std::error::Error::source(&client_err)
+            .expect("ClientError::Transport should chain to the reqwest::Error via source()");
+        assert_eq!(source.to_string(), expected_message);
     }
 
     #[test]

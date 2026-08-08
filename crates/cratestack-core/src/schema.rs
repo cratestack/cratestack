@@ -64,7 +64,6 @@ impl TransportStyle {
 /// This is a closed list by design, not an arbitrary-extension mechanism
 /// — see `docs/design/extensions.md` §7.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[non_exhaustive]
 #[serde(rename_all = "snake_case")]
 pub enum ExtensionKind {
     RateLimit,
@@ -80,8 +79,6 @@ impl ExtensionKind {
         match self {
             ExtensionKind::RateLimit => "rate_limit",
             ExtensionKind::Pgvector => "pgvector",
-            #[allow(unreachable_patterns)]
-            _ => "unknown",
         }
     }
 

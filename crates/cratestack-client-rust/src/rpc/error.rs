@@ -38,7 +38,7 @@ impl std::error::Error for RpcRemoteError {}
 #[non_exhaustive]
 pub enum RpcClientError {
     #[error("transport error: {0}")]
-    Transport(TransportError),
+    Transport(#[source] TransportError),
     #[error("codec error: {0}")]
     Codec(#[from] CoolError),
     #[error("invalid response: {0}")]
