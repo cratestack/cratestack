@@ -1,0 +1,11 @@
+datasource db {
+  provider = "none"
+}
+
+model User {
+  id Int @id
+}
+
+model User {
+  id Int @id
+}
