@@ -286,3 +286,34 @@ fn package_file<'a>(
         .contents
         .as_str()
 }
+
+#[test]
+fn decimal_scalar_maps_to_string_rather_than_an_undeclared_type_name() {
+    // Regression: `ts_type()` had no `Decimal` arm, so `Decimal` fell through
+    // to the catch-all and was emitted verbatim as a TS type name that nothing
+    // declares. Generation still succeeded — the breakage only surfaced at
+    // `tsc` with `TS2304: Cannot find name 'Decimal'` — which is exactly why a
+    // generation-only assertion did not catch it. Assert the emitted type, not
+    // merely that rendering worked.
+    let schema = cratestack_parser::parse_schema_file("tests/fixtures/decimal_scalar.cstack")
+        .expect("fixture schema should parse");
+
+    let package = generate_package(&schema, &TypeScriptGeneratorConfig::default())
+        .expect("default template should render");
+    let models = package_file(&package, "src/models.ts");
+
+    assert!(
+        models.contains("amountXaf?: string;"),
+        "a required Decimal must be emitted as string, got:\n{models}"
+    );
+    assert!(
+        models.contains("discountXaf?: string | null;"),
+        "an optional Decimal must be emitted as string | null, got:\n{models}"
+    );
+    // The bare scalar name must never appear as a type annotation. `DecimalFilter`
+    // is legitimate and declared, so match on the annotation form specifically.
+    assert!(
+        !models.contains(": Decimal;") && !models.contains(": Decimal |"),
+        "the undeclared `Decimal` type name leaked into models.ts:\n{models}"
+    );
+}

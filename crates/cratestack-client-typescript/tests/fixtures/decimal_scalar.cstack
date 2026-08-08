@@ -1,0 +1,8 @@
+model Invoice {
+  id Cuid @id @default(cs_cuid())
+  reference String
+  amountXaf Decimal
+  discountXaf Decimal?
+
+  @@allow("list", true)
+}

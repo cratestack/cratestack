@@ -23,7 +23,14 @@ pub(crate) fn ts_type(type_ref: &TypeRef, enum_names: &BTreeSet<&str>) -> String
     }
 
     let base = match type_ref.name.as_str() {
-        "String" | "Cuid" | "Uuid" | "DateTime" => "string".to_owned(),
+        // `Decimal` is string-shaped on the wire, not a JS number: that is what
+        // preserves arbitrary precision, and it matches what the two sibling
+        // call sites in this crate already do — `find_many_views.rs` maps it to
+        // `DecimalFilter` (= `ComparableFilter<string>`) and `grpc/wire.rs` maps
+        // it to `GrpcWireKind::String`. Without this arm it fell through to the
+        // catch-all below and was emitted as a bare `Decimal` type name that
+        // nothing declares, so generation succeeded and `tsc` failed.
+        "String" | "Cuid" | "Uuid" | "DateTime" | "Decimal" => "string".to_owned(),
         "Int" | "Float" => "number".to_owned(),
         "Boolean" => "boolean".to_owned(),
         "Json" => "JsonValue".to_owned(),
