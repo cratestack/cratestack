@@ -54,7 +54,7 @@ fn owner_or_system() -> PolicyExpr {
 #[test]
 fn is_system_grants_a_system_context_caller() {
     let sql = render(&allow(owner_or_system()), &system_ctx());
-    assert_eq!(sql, "(TRUE OR FALSE)");
+    assert_eq!(sql, "((TRUE OR FALSE))");
 }
 
 /// (b), denying half: the *same policy* for a request-derived caller
@@ -64,7 +64,7 @@ fn is_system_grants_a_system_context_caller() {
 #[test]
 fn is_system_denies_a_request_derived_caller() {
     let sql = render(&allow(owner_or_system()), &user_ctx("subject-1"));
-    assert_eq!(sql, "(FALSE OR subject_id = $1)");
+    assert_eq!(sql, "((FALSE OR subject_id = $1))");
 
     // Anonymous callers get neither arm.
     let sql = render(&allow(owner_or_system()), &CoolContext::anonymous());
@@ -88,7 +88,7 @@ fn model_that_never_names_is_system_denies_system_callers() {
 
     let sql = render(&owner_only, &system_ctx());
     assert_eq!(
-        sql, "FALSE",
+        sql, "(FALSE)",
         "a system caller must gain nothing on a model that never names isSystem()"
     );
 
@@ -107,7 +107,7 @@ fn empty_allow_list_still_denies_system_callers() {
     let mut bind_index = 1usize;
     let sql = render_read_policy_sql(&[], &[], &system_ctx(), &mut bind_index)
         .expect("empty allow should still render a clause");
-    assert_eq!(sql, "FALSE");
+    assert_eq!(sql, "(FALSE)");
 }
 
 /// A `@@deny` rule outranks the system principal, same as it outranks
@@ -122,7 +122,7 @@ fn deny_rules_still_beat_a_system_caller() {
         &mut bind_index,
     )
     .expect("policy should render");
-    assert_eq!(sql, "NOT (TRUE) AND (TRUE)");
+    assert_eq!(sql, "(NOT (TRUE) AND (TRUE))");
 }
 
 /// The create path has its own in-process evaluator rather than SQL
