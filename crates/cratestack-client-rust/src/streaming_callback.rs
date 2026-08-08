@@ -47,7 +47,7 @@ where
         let chunk = match chunk_result {
             Some(Ok(c)) => c,
             Some(Err(error)) => {
-                let err = RuntimeErrorWire::from(ClientError::Transport(error));
+                let err = RuntimeErrorWire::from(ClientError::Transport(error.into()));
                 on_chunk(RuntimeChunkWire::Error(err.clone()));
                 return Err(err);
             }

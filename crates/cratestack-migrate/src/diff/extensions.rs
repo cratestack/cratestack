@@ -28,5 +28,7 @@ fn postgres_extension_name(kind: ExtensionKind) -> Option<&'static str> {
     match kind {
         ExtensionKind::Pgvector => Some("vector"),
         ExtensionKind::RateLimit => None,
+        #[allow(unreachable_patterns)]
+        _ => None,
     }
 }

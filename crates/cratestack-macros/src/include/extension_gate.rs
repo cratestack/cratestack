@@ -65,6 +65,8 @@ fn required_feature(kind: ExtensionKind) -> (&'static str, u32) {
     match kind {
         ExtensionKind::RateLimit => ("rate_limit", 154),
         ExtensionKind::Pgvector => ("pgvector", 155),
+        #[allow(unreachable_patterns)]
+        _ => ("unknown", 0),
     }
 }
 
@@ -77,6 +79,8 @@ fn feature_enabled(kind: ExtensionKind) -> bool {
     match kind {
         ExtensionKind::RateLimit => cfg!(feature = "rate_limit"),
         ExtensionKind::Pgvector => cfg!(feature = "pgvector"),
+        #[allow(unreachable_patterns)]
+        _ => false,
     }
 }
 

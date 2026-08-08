@@ -59,6 +59,7 @@ pub struct OpDescriptor {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum OpKind {
     /// One input, one output. The common case — every CRUD verb and
     /// every non-streaming procedure.
@@ -84,6 +85,8 @@ impl OpKind {
             OpKind::Unary => "unary",
             OpKind::Sequence => "sequence",
             OpKind::Subscription => "subscription",
+            #[allow(unreachable_patterns)]
+            _ => "unknown",
         }
     }
 }
@@ -105,4 +108,44 @@ pub fn canonical_request_string(
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
     format!("{method}\n{path}\n{query}\n{content_type}\n{body_hex}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn op_kind_as_str() {
+        assert_eq!(OpKind::Unary.as_str(), "unary");
+        assert_eq!(OpKind::Sequence.as_str(), "sequence");
+        assert_eq!(OpKind::Subscription.as_str(), "subscription");
+    }
+
+    #[test]
+    fn op_kind_equality() {
+        assert_eq!(OpKind::Unary, OpKind::Unary);
+        assert_ne!(OpKind::Unary, OpKind::Sequence);
+        assert_ne!(OpKind::Sequence, OpKind::Subscription);
+    }
+
+    #[test]
+    fn canonical_request_string_empty() {
+        let result = canonical_request_string("GET", "/api/users", None, None, b"");
+        assert_eq!(result, "GET\n/api/users\n\n\n");
+    }
+
+    #[test]
+    fn canonical_request_string_with_query_and_content_type() {
+        let result = canonical_request_string(
+            "POST",
+            "/api/users",
+            Some("id=123"),
+            Some("application/json"),
+            b"test",
+        );
+        assert_eq!(
+            result,
+            "POST\n/api/users\nid=123\napplication/json\n74657374"
+        );
+    }
 }

@@ -64,6 +64,7 @@ impl TransportStyle {
 /// This is a closed list by design, not an arbitrary-extension mechanism
 /// — see `docs/design/extensions.md` §7.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
 #[serde(rename_all = "snake_case")]
 pub enum ExtensionKind {
     RateLimit,
@@ -79,6 +80,8 @@ impl ExtensionKind {
         match self {
             ExtensionKind::RateLimit => "rate_limit",
             ExtensionKind::Pgvector => "pgvector",
+            #[allow(unreachable_patterns)]
+            _ => "unknown",
         }
     }
 
@@ -183,4 +186,44 @@ pub struct ConfigBlock {
 pub struct ConfigEntry {
     pub key: String,
     pub value: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extension_kind_as_str() {
+        assert_eq!(ExtensionKind::RateLimit.as_str(), "rate_limit");
+        assert_eq!(ExtensionKind::Pgvector.as_str(), "pgvector");
+    }
+
+    #[test]
+    fn extension_kind_parse_name() {
+        assert_eq!(
+            ExtensionKind::parse_name("rate_limit"),
+            Some(ExtensionKind::RateLimit)
+        );
+        assert_eq!(
+            ExtensionKind::parse_name("pgvector"),
+            Some(ExtensionKind::Pgvector)
+        );
+        assert_eq!(ExtensionKind::parse_name("unknown"), None);
+    }
+
+    #[test]
+    fn extension_kind_all_constant() {
+        assert_eq!(ExtensionKind::ALL.len(), 2);
+        assert!(ExtensionKind::ALL.contains(&ExtensionKind::RateLimit));
+        assert!(ExtensionKind::ALL.contains(&ExtensionKind::Pgvector));
+    }
+
+    #[test]
+    fn extension_kind_serde_roundtrip() {
+        for kind in ExtensionKind::ALL.iter() {
+            let json = serde_json::to_string(kind).unwrap();
+            let deserialized: ExtensionKind = serde_json::from_str(&json).unwrap();
+            assert_eq!(*kind, deserialized);
+        }
+    }
 }

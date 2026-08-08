@@ -120,7 +120,7 @@ pub(crate) async fn pump_streamed_response_typed<T, E, F>(
             Ok(c) => c,
             Err(error) => {
                 let _ = tx
-                    .send(Err(convert_error(ClientError::Transport(error))))
+                    .send(Err(convert_error(ClientError::Transport(error.into()))))
                     .await;
                 return;
             }
