@@ -5,7 +5,7 @@
 
 use cratestack_core::{CoolContext, CoolError};
 
-use crate::query::support::{push_action_policy_query, push_bind_value};
+use crate::query::support::{classify_unique_violation, push_action_policy_query, push_bind_value};
 use crate::{ModelDescriptor, UpdateModelInput, cool_error_from_sqlx, sqlx};
 
 pub async fn update_record_with_executor<'e, E, M, PK, I>(
@@ -101,7 +101,7 @@ where
         .build_query_as::<M>()
         .fetch_optional(executor)
         .await
-        .map_err(cool_error_from_sqlx)?;
+        .map_err(classify_unique_violation)?;
     match outcome {
         Some(record) => Ok(record),
         None => {

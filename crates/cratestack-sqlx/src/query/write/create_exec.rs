@@ -6,7 +6,8 @@
 use cratestack_core::{CoolContext, CoolError};
 
 use crate::query::support::{
-    apply_create_defaults, evaluate_create_policies, find_column_value, push_bind_value,
+    apply_create_defaults, classify_unique_violation, evaluate_create_policies, find_column_value,
+    push_bind_value,
 };
 use crate::{CreateModelInput, ModelDescriptor, cool_error_from_sqlx, sqlx};
 
@@ -91,5 +92,5 @@ where
         .build_query_as::<M>()
         .fetch_one(executor)
         .await
-        .map_err(cool_error_from_sqlx)
+        .map_err(classify_unique_violation)
 }

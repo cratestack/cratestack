@@ -4,7 +4,7 @@
 
 use cratestack_core::{CoolContext, CoolError};
 
-use crate::query::support::{push_action_policy_query, push_bind_value};
+use crate::query::support::{classify_unique_violation, push_action_policy_query, push_bind_value};
 use crate::{
     ConflictTarget, ModelDescriptor, SqlColumnValue, SqlValue, cool_error_from_sqlx, sqlx,
 };
@@ -164,5 +164,5 @@ where
         .build_query_as::<M>()
         .fetch_one(executor)
         .await
-        .map_err(cool_error_from_sqlx)
+        .map_err(classify_unique_violation)
 }
