@@ -16,6 +16,7 @@ pub struct RateLimitLayer {
     store: Arc<dyn RateLimitStore>,
     config: RateLimitConfig,
     key_fn: Arc<dyn Fn(&Request) -> String + Send + Sync>,
+    should_rate_limit_fn: Arc<dyn Fn(&Request) -> bool + Send + Sync>,
 }
 
 impl RateLimitLayer {
@@ -24,11 +25,20 @@ impl RateLimitLayer {
             store,
             config,
             key_fn: Arc::new(default_key_fn),
+            should_rate_limit_fn: Arc::new(default_should_rate_limit_fn),
         }
     }
 
     pub fn with_key_fn(mut self, f: impl Fn(&Request) -> String + Send + Sync + 'static) -> Self {
         self.key_fn = Arc::new(f);
+        self
+    }
+
+    pub fn with_should_rate_limit_fn(
+        mut self,
+        f: impl Fn(&Request) -> bool + Send + Sync + 'static,
+    ) -> Self {
+        self.should_rate_limit_fn = Arc::new(f);
         self
     }
 }
@@ -64,6 +74,13 @@ pub(super) fn default_key_fn(req: &Request) -> String {
     "anonymous".to_owned()
 }
 
+/// Default rate limit filter: always rate-limit. Fail closed.
+/// Custom filters can check operation descriptors and return false for
+/// operations marked `@no_rate_limit` or similar exemptions.
+pub(super) fn default_should_rate_limit_fn(_req: &Request) -> bool {
+    true
+}
+
 impl<S> Layer<S> for RateLimitLayer {
     type Service = RateLimitService<S>;
 
@@ -73,6 +90,7 @@ impl<S> Layer<S> for RateLimitLayer {
             store: self.store.clone(),
             config: self.config,
             key_fn: self.key_fn.clone(),
+            should_rate_limit_fn: self.should_rate_limit_fn.clone(),
         }
     }
 }
@@ -83,6 +101,7 @@ pub struct RateLimitService<S> {
     store: Arc<dyn RateLimitStore>,
     config: RateLimitConfig,
     key_fn: Arc<dyn Fn(&Request) -> String + Send + Sync>,
+    should_rate_limit_fn: Arc<dyn Fn(&Request) -> bool + Send + Sync>,
 }
 
 impl<S> Service<Request> for RateLimitService<S>
@@ -110,7 +129,13 @@ where
         let store = self.store.clone();
         let config = self.config;
         let key = (self.key_fn)(&req);
+        let should_rate_limit = (self.should_rate_limit_fn)(&req);
         Box::pin(async move {
+            // If the operation is exempt from rate limiting, skip the check.
+            if !should_rate_limit {
+                return inner.call(req).await;
+            }
+
             match store.consume(&key, config).await {
                 Ok(RateLimitDecision::Allowed { remaining }) => {
                     let mut response = inner.call(req).await?;
