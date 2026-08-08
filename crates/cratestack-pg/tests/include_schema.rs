@@ -25,12 +25,20 @@ static TRACING_INIT: std::sync::Once = std::sync::Once::new();
 fn init_tracing() {
     TRACING_INIT.call_once(|| {
         let subscriber = tracing_subscriber::registry().with(GlobalCaptureLayer);
-        // Use set_default so the subscriber is active for all tests,
-        // preventing Interest::never() from being cached when a test without
-        // a subscriber attached hits a tracing callsite first.
-        // We store the guard in a box to keep it alive for the entire test process.
-        let guard = Box::leak(Box::new(tracing::subscriber::set_default(subscriber)));
-        let _ = guard; // Suppress unused variable warning
+        // Use set_global_default (not set_default) so the subscriber is the
+        // process-wide fallback dispatcher on every OS thread, not just the
+        // one thread that happened to run this Once closure. set_default only
+        // installs a thread-local default: cargo test's multi-threaded harness
+        // (and #[tokio::test]'s multi_thread runtime) spawn many worker
+        // threads, so a thread-local default leaves every other thread
+        // without a subscriber, letting tracing's process-wide, one-time
+        // callsite Interest cache latch onto Interest::never() the first time
+        // an unsubscribed thread reaches a callsite. set_global_default is
+        // itself idempotent (CAS-guarded) and its dispatcher lives for the
+        // remainder of the process, so no leaked guard is needed here.
+        // See issue #417.
+        tracing::subscriber::set_global_default(subscriber)
+            .expect("global tracing subscriber should only be installed once");
     });
 }
 
