@@ -20,6 +20,8 @@
 
 pub mod idempotency;
 pub mod ratelimit;
+#[cfg(test)]
+mod test_support;
 
 pub use idempotency::{RedisIdempotencyStore, RedisIdempotencyStoreConfig};
 pub use ratelimit::{RedisRateLimitStore, RedisRateLimitStoreConfig};

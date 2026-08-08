@@ -124,16 +124,24 @@ test-pg-tc *args='':
 	CRATESTACK_USE_TESTCONTAINERS=1 cargo test --workspace --exclude embedded_flutter_native {{args}}
 
 # --- CI test shards -------------------------------------------------------
-# CI runs the suite as three parallel shards (see .github/workflows/ci.yml)
+# CI runs the suite as four parallel shards (see .github/workflows/ci.yml)
 # so no single runner compiles the whole workspace — the tauri/wasm/napi
 # example crates otherwise push the runner past its disk limit. Each shard
 # is also usable locally.
 
 # Shard: the Postgres-backed crate via testcontainers.
-# (cratestack-redis's e2e tests gate on CRATESTACK_REDIS_TEST_URL
-# and skip without it, so they ride along in `test-ci-host`, unchanged.)
+# (cratestack-redis no longer rides along here: it has its own blocking
+# `tests-redis` job backed by the `test-ci-redis` recipe below.)
 test-ci-db *args='':
 	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg {{args}}
+
+# Shard: the Redis-backed crate via testcontainers (issue #418). Idempotency
+# and rate-limit stores are the primitives the `banking_*` fixtures lean on
+# for correctness under retries/concurrency, so this mirrors `test-ci-db`'s
+# testcontainers pattern one-for-one rather than riding along in the host
+# shard, where the tests used to skip silently for lack of a Redis.
+test-ci-redis *args='':
+	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-redis {{args}}
 
 # Shard: the Studio crate, whose api_smoke tests assert the Trunk-built UI
 # is embedded. CI runs `trunk build` first; no database needed.
@@ -144,7 +152,7 @@ test-ci-studio *args='':
 # smoke tests, with no container, no wasm/desktop toolchain, and no GTK.
 # Uses --exclude (a denylist) rather than -p so inline `#[cfg(test)]` unit
 # tests in crates without a tests/ dir (core, parser, sqlx, macros, …) keep
-# running. Excludes the two shards above, the flutter glue crate, and the
+# running. Excludes the three shards above, the flutter glue crate, and the
 # heavy example crates that have zero tests (already compiled by `check` and
 # the `embedded-examples` gate).
 test-ci-host *args='':
@@ -153,6 +161,7 @@ test-ci-host *args='':
 	cargo test --workspace \
 		--exclude embedded_flutter_native \
 		--exclude cratestack-pg \
+		--exclude cratestack-redis \
 		--exclude cratestack-studio \
 		--exclude tauri-web-shell-example \
 		--exclude tauri-native-shell-example \

@@ -47,6 +47,39 @@ pub struct TestRedis {
     _container: Option<ContainerAsync<Redis>>,
 }
 
+/// Which Redis backend `connect_or_skip` should use, decided purely from
+/// which environment variables are present — no I/O. Split out so the
+/// require/skip/panic decision is unit-testable deterministically, without
+/// mutating real process env vars (racy across parallel test threads) or
+/// touching a real connection. See `require_guard.rs` for the tests.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Backend {
+    Url,
+    TestContainers,
+    Skip,
+}
+
+/// Pure decision logic for [`connect_or_skip`]. Panics in the one case the
+/// loud-failure guard exists to catch: `require` is set (CI opted into
+/// `CRATESTACK_REQUIRE_REDIS`) but neither backend env var is — a
+/// misconfigured job that would otherwise skip the whole Redis suite
+/// silently and still report green.
+pub(crate) fn pick_backend(has_url: bool, use_testcontainers: bool, require: bool) -> Backend {
+    if has_url {
+        Backend::Url
+    } else if use_testcontainers {
+        Backend::TestContainers
+    } else if require {
+        panic!(
+            "CRATESTACK_REQUIRE_REDIS is set but neither CRATESTACK_REDIS_TEST_URL nor \
+             CRATESTACK_USE_TESTCONTAINERS is set — misconfigured CI job would otherwise \
+             skip the whole Redis suite silently"
+        );
+    } else {
+        Backend::Skip
+    }
+}
+
 /// Connect to Redis, picking the backend by environment, or return `None`
 /// to signal that the caller should skip.
 ///
@@ -55,12 +88,15 @@ pub struct TestRedis {
 /// just skips quietly instead of failing the whole test run.
 ///
 /// **CI override:** set `CRATESTACK_REQUIRE_REDIS` to turn those failures
-/// into hard panics. Without it, a CI runner whose Docker can't start the
+/// (and a missing backend selection entirely — see [`pick_backend`]) into
+/// hard panics. Without it, a CI runner whose Docker can't start the
 /// testcontainer would skip every Redis-backed test and the suite would
 /// pass green while exercising none of that coverage — so the CI gate sets
 /// it.
 pub async fn connect_or_skip() -> Option<TestRedis> {
     let require = std::env::var("CRATESTACK_REQUIRE_REDIS").is_ok();
+    let has_url = std::env::var("CRATESTACK_REDIS_TEST_URL").is_ok();
+    let use_testcontainers = std::env::var("CRATESTACK_USE_TESTCONTAINERS").is_ok();
 
     // Collapse a Result into Option, but panic instead of skipping when a
     // Redis is required (CI). `ctx` names the failed step for the message.
@@ -72,57 +108,62 @@ pub async fn connect_or_skip() -> Option<TestRedis> {
         }
     }
 
-    if let Ok(url) = std::env::var("CRATESTACK_REDIS_TEST_URL") {
-        let client = need(
-            Client::open(url),
-            require,
-            "parsing CRATESTACK_REDIS_TEST_URL",
-        )?;
-        // Verify the connection succeeds before returning.
-        let _ = need(
-            client.get_connection(),
-            require,
-            "connecting to CRATESTACK_REDIS_TEST_URL",
-        )?;
-        return Some(TestRedis {
-            client,
-            _container: None,
-        });
+    // `pick_backend` panics itself when `require` is set and neither
+    // backend env var is — see its doc comment. Every other outcome is
+    // handled below by re-deriving the concrete value each branch needs.
+    match pick_backend(has_url, use_testcontainers, require) {
+        Backend::Skip => None,
+        Backend::Url => {
+            let url =
+                std::env::var("CRATESTACK_REDIS_TEST_URL").expect("has_url implies var is set");
+            let client = need(
+                Client::open(url),
+                require,
+                "parsing CRATESTACK_REDIS_TEST_URL",
+            )?;
+            // Verify the connection succeeds before returning.
+            let _ = need(
+                client.get_connection(),
+                require,
+                "connecting to CRATESTACK_REDIS_TEST_URL",
+            )?;
+            Some(TestRedis {
+                client,
+                _container: None,
+            })
+        }
+        Backend::TestContainers => {
+            let container = need(
+                Redis::default().start().await,
+                require,
+                "starting the Redis testcontainer (is Docker available?)",
+            )?;
+            let host = need(
+                container.get_host().await,
+                require,
+                "resolving testcontainer host",
+            )?;
+            let port = need(
+                container.get_host_port_ipv4(6379).await,
+                require,
+                "resolving testcontainer port",
+            )?;
+            let url = format!("redis://{host}:{port}");
+            let client = need(
+                Client::open(url),
+                require,
+                "parsing Redis testcontainer URL",
+            )?;
+            // Verify the connection succeeds before returning.
+            let _ = need(
+                client.get_connection(),
+                require,
+                "connecting to the Redis testcontainer",
+            )?;
+            Some(TestRedis {
+                client,
+                _container: Some(container),
+            })
+        }
     }
-
-    if std::env::var("CRATESTACK_USE_TESTCONTAINERS").is_ok() {
-        let container = need(
-            Redis::default().start().await,
-            require,
-            "starting the Redis testcontainer (is Docker available?)",
-        )?;
-        let host = need(
-            container.get_host().await,
-            require,
-            "resolving testcontainer host",
-        )?;
-        let port = need(
-            container.get_host_port_ipv4(6379).await,
-            require,
-            "resolving testcontainer port",
-        )?;
-        let url = format!("redis://{host}:{port}");
-        let client = need(
-            Client::open(url),
-            require,
-            "parsing Redis testcontainer URL",
-        )?;
-        // Verify the connection succeeds before returning.
-        let _ = need(
-            client.get_connection(),
-            require,
-            "connecting to the Redis testcontainer",
-        )?;
-        return Some(TestRedis {
-            client,
-            _container: Some(container),
-        });
-    }
-
-    None
 }

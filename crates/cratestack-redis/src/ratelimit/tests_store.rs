@@ -49,7 +49,7 @@ async fn failed_connection_attempt_is_not_cached_so_next_call_can_retry() {
 /// rather than a fresh, unnamed one.
 #[tokio::test]
 async fn connection_is_reused_not_reopened_per_call() {
-    let Some(url) = std::env::var("CRATESTACK_REDIS_TEST_URL").ok() else {
+    let Some(url) = crate::test_support::redis_test_url_or_skip() else {
         return;
     };
     let store = RedisRateLimitStore::open(url, "cratestack:test:rl-reuse-identity").expect("open");

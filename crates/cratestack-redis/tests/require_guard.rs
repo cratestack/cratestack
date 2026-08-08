@@ -30,3 +30,43 @@ async fn without_require_guard_connection_failures_skip_silently() {
         assert!(redis.is_some(), "connection should have succeeded");
     }
 }
+
+/// Unit tests for `pick_backend`, the pure decision logic behind
+/// `connect_or_skip`. Exercised directly (rather than through
+/// `connect_or_skip` + real env vars) so the guard's behavior is
+/// deterministic and doesn't require mutating process-global env vars,
+/// which would race against other tests in this binary running in
+/// parallel threads.
+mod pick_backend_tests {
+    use crate::support::redis::Backend;
+    use crate::support::redis::pick_backend;
+
+    #[test]
+    fn url_present_wins_regardless_of_testcontainers_or_require() {
+        assert_eq!(pick_backend(true, true, true), Backend::Url);
+        assert_eq!(pick_backend(true, false, false), Backend::Url);
+    }
+
+    #[test]
+    fn testcontainers_used_when_url_absent() {
+        assert_eq!(pick_backend(false, true, false), Backend::TestContainers);
+        assert_eq!(pick_backend(false, true, true), Backend::TestContainers);
+    }
+
+    #[test]
+    fn neither_set_and_not_required_skips_quietly() {
+        assert_eq!(pick_backend(false, false, false), Backend::Skip);
+    }
+
+    /// Regression test for the bug this guard exists to catch: a CI job
+    /// sets `CRATESTACK_REQUIRE_REDIS` but is wired up incorrectly (forgets
+    /// `CRATESTACK_REDIS_TEST_URL` and `CRATESTACK_USE_TESTCONTAINERS`).
+    /// Before the fix, that fell through to a bare `Skip`/`None` regardless
+    /// of `require`, so the whole 115-test Redis suite would silently skip
+    /// and CI would still report green. This must panic instead.
+    #[test]
+    #[should_panic(expected = "CRATESTACK_REQUIRE_REDIS is set but neither")]
+    fn neither_set_but_required_panics_instead_of_skipping() {
+        let _ = pick_backend(false, false, true);
+    }
+}

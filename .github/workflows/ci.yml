@@ -44,12 +44,12 @@ jobs:
         run: cargo check --locked -p cratestack-sqlite --target wasm32-unknown-unknown
 
   # ---- Test shards -----------------------------------------------------
-  # The suite is split into three parallel jobs so no single runner has to
+  # The suite is split into four parallel jobs so no single runner has to
   # compile the whole workspace — pulling the tauri/wasm/napi example crates
   # into one `cargo test --workspace` exhausts the runner's disk. Each shard
   # needs only its own slice of the toolchain (Docker / Trunk / neither), and
   # none needs the GTK/WebKit deps since the tauri examples are excluded.
-  # Recipes: `test-ci-{db,studio,host}` in the justfile.
+  # Recipes: `test-ci-{db,redis,studio,host}` in the justfile.
   tests-db:
     name: tests (db — Postgres)
     runs-on: ubuntu-latest
@@ -67,6 +67,26 @@ jobs:
           tool: just
       - name: cargo test (testcontainers Postgres)
         run: just test-ci-db --locked
+
+  tests-redis:
+    name: tests (redis)
+    runs-on: ubuntu-latest
+    env:
+      # Same rationale as `tests-db`'s CRATESTACK_REQUIRE_DB: turn a failed
+      # testcontainer/connection into a hard error instead of a silent
+      # per-test skip, so a broken Docker runner can't pass this gate green
+      # while skipping all 115 idempotency/rate-limit tests (issue #418).
+      CRATESTACK_REQUIRE_REDIS: "1"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: cargo test (testcontainers Redis)
+        # `--locked` also asserts the committed Cargo.lock.
+        run: just test-ci-redis --locked
 
   tests-studio:
     name: tests (studio + Trunk UI)
@@ -103,9 +123,11 @@ jobs:
         with:
           tool: just
       - name: cargo test (host — no DB, no wasm/desktop toolchain)
-        # All remaining crates + light example smoke tests. DB- and
-        # Redis-gated tests skip cleanly here (no REQUIRE_DB). `--locked`
-        # asserts the committed Cargo.lock.
+        # All remaining crates + light example smoke tests. DB-gated tests
+        # skip cleanly here (no REQUIRE_DB). cratestack-redis is excluded
+        # from this shard entirely — it has its own blocking `tests-redis`
+        # job above (issue #418). `--locked` asserts the committed
+        # Cargo.lock.
         run: just test-ci-host --locked
 
   # ---- Ignored-test report (non-blocking) -------------------------------
