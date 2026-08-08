@@ -30,6 +30,8 @@ mod store;
 mod stream_bypass;
 
 #[cfg(test)]
+mod tests_fingerprint;
+#[cfg(test)]
 mod tests_hash;
 #[cfg(test)]
 mod tests_headers;

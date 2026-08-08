@@ -9,6 +9,7 @@ use tower::{Layer, Service};
 
 use super::config::{RateLimitConfig, RateLimitDecision};
 use super::store::RateLimitStore;
+use crate::headers::parse_client_ip;
 
 #[derive(Clone)]
 pub struct RateLimitLayer {
@@ -32,16 +33,26 @@ impl RateLimitLayer {
     }
 }
 
-fn default_key_fn(req: &Request) -> String {
-    req.headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .map(|s| {
-            let mut h = Sha256::new();
-            h.update(s.as_bytes());
-            format!("auth:{:x}", h.finalize())
-        })
-        .unwrap_or_else(|| "anonymous".to_owned())
+pub(super) fn default_key_fn(req: &Request) -> String {
+    // Prefer Authorization header for authenticated requests.
+    if let Some(auth_header) = req.headers().get(header::AUTHORIZATION)
+        && let Ok(auth_str) = auth_header.to_str()
+    {
+        let mut h = Sha256::new();
+        h.update(auth_str.as_bytes());
+        return format!("auth:{:x}", h.finalize());
+    }
+
+    // Fall back to client IP for unauthenticated requests to avoid collisions
+    // between distinct callers.
+    if let Some(client_ip) = parse_client_ip(req.headers()) {
+        return format!("ip:{}", client_ip);
+    }
+
+    // Only if both Authorization and client IP are absent, use "anonymous".
+    // This should rarely occur in practice; most requests have at least a
+    // client IP (via X-Forwarded-For or Forwarded header in proxied scenarios).
+    "anonymous".to_owned()
 }
 
 impl<S> Layer<S> for RateLimitLayer {

@@ -10,6 +10,7 @@ use tower::Layer;
 
 use super::service::IdempotencyService;
 use super::store::IdempotencyStore;
+use crate::headers::parse_client_ip;
 
 /// Tower layer that wires an `IdempotencyStore` into the request pipeline.
 #[derive(Clone)]
@@ -44,15 +45,25 @@ impl IdempotencyLayer {
 }
 
 pub(super) fn default_principal_fingerprint(req: &Request) -> String {
-    req.headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .map(|s| {
-            let mut h = Sha256::new();
-            h.update(s.as_bytes());
-            format!("{:x}", h.finalize())
-        })
-        .unwrap_or_else(|| "anonymous".to_owned())
+    // Prefer Authorization header for authenticated requests.
+    if let Some(auth_header) = req.headers().get(header::AUTHORIZATION)
+        && let Ok(auth_str) = auth_header.to_str()
+    {
+        let mut h = Sha256::new();
+        h.update(auth_str.as_bytes());
+        return format!("{:x}", h.finalize());
+    }
+
+    // Fall back to client IP for unauthenticated requests to avoid collisions
+    // between distinct callers.
+    if let Some(client_ip) = parse_client_ip(req.headers()) {
+        return client_ip;
+    }
+
+    // Only if both Authorization and client IP are absent, use "anonymous".
+    // This should rarely occur in practice; most requests have at least a
+    // client IP (via X-Forwarded-For or Forwarded header in proxied scenarios).
+    "anonymous".to_owned()
 }
 
 impl<S> Layer<S> for IdempotencyLayer {
