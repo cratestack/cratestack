@@ -108,6 +108,43 @@ where
                     .map(ToOwned::to_owned),
                 recorded_at: Utc::now(),
             })
-            .map_err(ClientError::from)
+            // Not `.map_err(ClientError::from)` — see the comment on
+            // `CratestackClient::state` in `client/core.rs`: the blanket
+            // `From<CoolError>` targets `ClientError::Codec`, which would
+            // misreport a local state-store failure as a remote/codec error.
+            .map_err(|error| ClientError::State(error.to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use crate::client::core::CratestackClient;
+    use crate::config::ClientConfig;
+
+    use super::*;
+
+    /// Regression test for #475's review findings, mirroring
+    /// `client::core::tests::state_store_error_maps_to_client_error_state`:
+    /// `record_request`'s state-store failure must surface as
+    /// `ClientError::State`, not `ClientError::Codec`.
+    #[test]
+    fn record_request_state_store_error_maps_to_client_error_state() {
+        let client = CratestackClient::cbor(ClientConfig::new(
+            "http://example.invalid".parse().expect("valid url"),
+        ))
+        .with_state_store(Arc::new(crate::client::core::tests::FailingStateStore));
+
+        let error = client
+            .record_request("GET", "/widgets", StatusCode::OK, &HeaderMap::new())
+            .expect_err("state store is rigged to fail");
+
+        match error {
+            ClientError::State(message) => {
+                assert!(message.contains("simulated state store failure"));
+            }
+            other => panic!("expected ClientError::State for a state-store failure, got {other:?}"),
+        }
     }
 }

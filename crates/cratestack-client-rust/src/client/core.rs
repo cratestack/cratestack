@@ -114,6 +114,63 @@ where
     }
 
     pub fn state(&self) -> Result<PersistedClientState, ClientError> {
-        self.state_store.load().map_err(ClientError::from)
+        // Not `.map_err(ClientError::from)`: `ClientError`'s only
+        // `From<CoolError>` impl targets `ClientError::Codec` (for genuine
+        // wire-codec failures), which would misclassify a purely local
+        // state-store failure as a remote/codec error — see #475's review
+        // findings and `error.rs`'s `state_store_error_maps_to_client_error_state`.
+        self.state_store
+            .load()
+            .map_err(|error| ClientError::State(error.to_string()))
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use cratestack_core::CoolError;
+
+    use super::*;
+
+    /// A `ClientStateStore` whose every operation fails, so tests can
+    /// observe how a local state-store failure gets classified without
+    /// touching the filesystem or any other real backend.
+    #[derive(Debug, Default)]
+    pub(crate) struct FailingStateStore;
+
+    impl ClientStateStore for FailingStateStore {
+        fn load(&self) -> Result<PersistedClientState, CoolError> {
+            Err(CoolError::Internal(
+                "simulated state store failure".to_owned(),
+            ))
+        }
+
+        fn save(&self, _state: &PersistedClientState) -> Result<(), CoolError> {
+            Err(CoolError::Internal(
+                "simulated state store failure".to_owned(),
+            ))
+        }
+    }
+
+    /// Regression test for #475's review findings: a `CoolError` raised by
+    /// the state store must surface as `ClientError::State`, not get
+    /// silently reclassified as `ClientError::Codec` via the blanket
+    /// `From<CoolError>` impl (which is meant for genuine wire-codec
+    /// failures, not local storage failures). Fails against the code that
+    /// used `.map_err(ClientError::from)` here.
+    #[test]
+    fn state_store_error_maps_to_client_error_state() {
+        let client = CratestackClient::cbor(ClientConfig::new(
+            "http://example.invalid".parse().expect("valid url"),
+        ))
+        .with_state_store(Arc::new(FailingStateStore));
+
+        let error = client.state().expect_err("state store is rigged to fail");
+
+        match error {
+            ClientError::State(message) => {
+                assert!(message.contains("simulated state store failure"));
+            }
+            other => panic!("expected ClientError::State for a state-store failure, got {other:?}"),
+        }
     }
 }

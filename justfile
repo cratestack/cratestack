@@ -414,11 +414,12 @@ verify-typescript:
 # — blocking CI gate. Asserts every NORMAL cratestack-* -> cratestack-* edge
 # among the crates under `crates/` satisfies `dep.layer <= self.layer`
 # against `docs/adr/layers.toml`, with target-gated normal dependencies
-# included and dev-/build-dependencies exempt. Known violations tracked in
-# `.ci/layer-direction-allowlist.toml` (currently: #475, the
-# client-store-{sqlite,redis} -> client-rust back-edge) don't fail the
-# build; an allowlist entry that no longer matches a real violation does.
-# See `.ci/layer-direction-check.sh` for the full rationale.
+# included and dev-/build-dependencies exempt. Known violations are tracked
+# in `.ci/layer-direction-allowlist.toml` (currently empty — #475, the
+# client-store-{sqlite,redis} -> client-rust back-edge, was the only entry
+# and is fixed) and don't fail the build; an allowlist entry that no longer
+# matches a real violation does. See `.ci/layer-direction-check.sh` for the
+# full rationale.
 verify-layering:
 	./.ci/layer-direction-check.sh
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### `ClientStateStore` moves out of `cratestack-client-rust` into `cratestack-core` (#475) — breaking
+
+`cratestack-client-store-sqlite` and `cratestack-client-store-redis` are storage adapters, but both depended on `cratestack-client-rust` — an HTTP transport binding — for the sole reason that `ClientStateStore` (plus `PersistedClientState`, `RequestJournalEntry`, `InMemoryStateStore`, `JsonFileStateStore`) happened to be defined there: an L2 → L4 back-edge, the client-side twin of the `cratestack-sqlx`/`cratestack-redis` → `cratestack-axum` edge #465 fixed server-side and the violation `docs/design/layering.md` named as still open. The trait and its companion types move to `cratestack-core::store::client_state`, with `cratestack-client-rust::state` kept as a back-compat re-export so existing `use cratestack_client_rust::state::...` paths keep compiling. `cratestack-client-store-redis` no longer depends on `cratestack-client-rust` at all; `cratestack-client-store-sqlite` keeps it only as a `[dev-dependencies]` entry for its test fixtures — `cargo tree -p cratestack-client-store-sqlite -i cratestack-client-rust` now reports a dev-dependency path only, and the same command for `-store-redis` reports no path at all. **Breaking:** anyone implementing `ClientStateStore` directly against `cratestack_client_rust::ClientStateStore` (rather than the re-export) needs to retarget `cratestack_core::ClientStateStore`; the trait's shape is unchanged.
+
+`CratestackClient::state()` and the internal `record_request` journal-write path convert the moved trait's `CoolError` back to `ClientError::State(..)` explicitly at both call sites, rather than through `ClientError`'s blanket `From<CoolError>` (which targets `ClientError::Codec`, for genuine wire-codec failures) — an initial version of this move routed state-store failures through that blanket conversion, which would have silently reclassified local state-store I/O failures (a locked/corrupt JSON file, a poisoned mutex) as fabricated HTTP-500 `RuntimeErrorCode::Codec` errors instead of `RuntimeErrorCode::State`, reaching as far as the Dart/Flutter FFI boundary. Regression tests (`client::core::tests::state_store_error_maps_to_client_error_state`, `client::headers::tests::record_request_state_store_error_maps_to_client_error_state`) exercise a rigged-to-fail state store and assert the resulting `ClientError` variant.
+
 ## 0.7.8 (2026-08-08)
 
 ### Rate-limit and idempotency layers stop trusting spoofable proxy headers (#416)

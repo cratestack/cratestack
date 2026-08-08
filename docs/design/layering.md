@@ -26,6 +26,25 @@ Tracking: this document is the source of truth for the ADRs listed in §8.
 > `[dependencies]` — i.e. §1's back-edge is still live. Rebase onto
 > `origin/main` before reading the verification claims as current.
 
+> **Post-#475 update.** §3's "two upward edges remain" and §9's item 4 are
+> now stale: #475 moved `ClientStateStore` (and its companion types) from
+> `cratestack-client-rust/src/state.rs` down into
+> `cratestack-core::store::client_state`, the same fix #465 applied
+> server-side, applied to the client-side twin this document itself named
+> as the open instance. `cratestack-client-store-redis` no longer depends
+> on `cratestack-client-rust` at all; `cratestack-client-store-sqlite` keeps
+> it only as a `[dev-dependencies]` entry (test fixtures), which is the same
+> shape §3 already accepts for `cratestack-redis -> cratestack-axum`.
+> Verified: `cargo tree -p cratestack-client-store-sqlite -i
+> cratestack-client-rust` reports a dev-dependency path only;
+> `cargo tree -p cratestack-client-store-redis -i cratestack-client-rust`
+> reports no path. The two `L2 -> L4 !` rows in §3's table, the paragraph
+> beneath it, §7's "two open client-side back-edges" bullet, and §9 items
+> 4/2 (Reviewer notes) describe the pre-#475 state and are left as the
+> historical record the "as of #465 there are no back-edges" miss already
+> established this document keeps rather than silently editing away — read
+> them as **fixed by #475**, not as current.
+
 ## 1. Why this document exists
 
 The architecture works. It does not explain itself.
