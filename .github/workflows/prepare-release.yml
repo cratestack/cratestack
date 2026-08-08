@@ -108,6 +108,9 @@ jobs:
       - name: Bump workspace version
         run: just bump ${{ inputs.version }}
 
+      - name: Seed CHANGELOG.md section
+        run: just changelog-seed ${{ inputs.version }}
+
       - name: Validate (cargo check + tests)
         run: just release-check
 
@@ -167,7 +170,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "$branch"
-          git add ':(glob)**/Cargo.toml' Cargo.lock pnpm-lock.yaml \
+          git add CHANGELOG.md ':(glob)**/Cargo.toml' Cargo.lock pnpm-lock.yaml \
             packages/cratestack-cli-npm/package.json \
             packages/cratestack-api/package.json \
             packages/cratestack-ts-types/package.json \
@@ -182,7 +185,7 @@ jobs:
             packages/cratestack-cbor/package.json \
             packages/cratestack-cbor-node/package.json \
             packages/cratestack-cbor-web/package.json
-          git commit -m "chore: bump workspace to v${version}"
+          git commit -m "chore: bump workspace to v${version} and seed CHANGELOG section"
           git push origin "$branch"
 
           # Source-of-truth for governance-check: the actual merged PRs

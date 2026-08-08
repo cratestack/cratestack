@@ -244,6 +244,21 @@ jobs:
       - name: Layer-direction check
         run: ./.ci/layer-direction-check.sh
 
+  # Changelog verification (issue #479). Detects unedited changelog seeds
+  # that would silently degrade the changelog from prose to a commit list
+  # (worse than an honest gap, because it looks maintained but isn't).
+  # Blocking gate for any PR that touches CHANGELOG.md.
+  changelog-verify:
+    name: changelog (no unedited seeds)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: Changelog verification
+        run: just verify-changelog
+
   # ---- Lint gates ------------------------------------------------------
   # Blocking. Determinism comes from rust-toolchain.toml pinning the
   # version (and clippy/rustfmt components), so new stable lints/format

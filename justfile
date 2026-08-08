@@ -422,6 +422,17 @@ verify-typescript:
 verify-layering:
 	./.ci/layer-direction-check.sh
 
+# Changelog verification: detect unedited seeds.
+#
+# Ensures that CHANGELOG.md contains no auto-generated seeds with the
+# TODO marker still present. This is load-bearing: an unedited seed reaching
+# main silently degrades the changelog from prose to a commit list, which is
+# worse than today's honest gap (it looks maintained, but isn't).
+#
+# Blocking CI gate for any PR that touches CHANGELOG.md.
+verify-changelog:
+	./.ci/changelog-check.sh
+
 # Bundle the Studio UI for publishing: source tarball (for `studio
 # eject --with-ui`) and the Trunk-built wasm/JS dist (embedded into
 # the served binary so `cratestack studio run` ships a real admin app
@@ -566,6 +577,26 @@ bump NEW:
 	# doesn't need the wasm32 target or a wasm-capable clang for that.
 	cd crates/cratestack-studio-ui && cargo check --quiet
 	echo "bumped to {{NEW}}. Review with: git diff -- '**/Cargo.toml' Cargo.lock"
+
+# Seed a CHANGELOG.md section for the given VERSION.
+#
+# Writes a new `## X.Y.Z (YYYY-MM-DD)` section to CHANGELOG.md, positioned
+# above the current newest entry, seeded from the commit range since the last
+# release and grouped by conventional-commit type. The section is marked as
+# unedited (with a placeholder TODO comment) so CI/tooling can detect it and
+# block the merge until a human rewrites it into narrative prose.
+#
+# Usage: `just changelog-seed 0.7.9`
+#
+# Non-negotiables (enforced by the script):
+#   1. Refuse to write if a section for that version already exists
+#   2. The generated section must be detected and rejected by CI if unedited
+#
+# This script mirrors `.github/workflows/prepare-release.yml:202`'s existing
+# commit-range machinery, but outputs to a persistent file instead of
+# discarding it.
+changelog-seed VERSION:
+	./.ci/changelog-seed.sh {{VERSION}}
 
 # Workspace-wide validation gate. Mirrors what `just release` runs
 # before publishing. Skips fmt + clippy because `all-checks` is the
