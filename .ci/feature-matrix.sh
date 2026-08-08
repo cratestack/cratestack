@@ -11,9 +11,16 @@
 #      `default = ["decimal-rust-decimal"]` was force-enabled even when a
 #      consumer explicitly asked for a narrower feature set.
 #
-# This script runs the exact reproduction commands from the issue and
-# fails loudly if either regresses. Run locally via `just feature-matrix`;
-# CI runs it as the `feature-matrix` job in `.github/workflows/ci.yml`.
+# This script runs a representative matrix across every crate this PR
+# touched (not just the issue's own two repro commands): every facade with
+# its own decimal toggle is checked under both its default feature set and
+# a narrowed `--no-default-features` selection (asserting no leak), and
+# every "plain" crate whose `cratestack-core` edge became explicit
+# (`features = ["decimal-rust-decimal"]`) gets a real compile check so a
+# typo'd/missing forward on any one of them fails loudly instead of only
+# surfacing when someone happens to build that specific crate. Run locally
+# via `just feature-matrix`; CI runs it as the `feature-matrix` job in
+# `.github/workflows/ci.yml`.
 #
 # Deliberately NOT a `#[test]` inside a crate: Cargo feature-graph shape
 # (what got enabled, and why) isn't observable from inside the compiled
@@ -32,21 +39,10 @@ fail() {
   FAILED=1
 }
 
-echo "== [1/4] decimal-bigdecimal must not be a selectable feature (AC1) =="
-if OUTPUT=$(cargo check -p cratestack-core --no-default-features --features decimal-bigdecimal 2>&1); then
-  fail "expected 'cargo check -p cratestack-core --features decimal-bigdecimal' to be rejected (the feature must not exist), but it succeeded"
-  echo "$OUTPUT"
-elif ! grep -q "does not contain this feature" <<<"$OUTPUT"; then
-  fail "expected an 'unknown feature' error for decimal-bigdecimal, got a different failure instead"
-  echo "$OUTPUT"
-else
-  echo "ok: decimal-bigdecimal is not exposed as a selectable feature"
-fi
-
-echo "== [2/4] cratestack-core compiles clean on its own default feature set =="
-if ! cargo check -p cratestack-core; then
-  fail "cargo check -p cratestack-core (default features) failed"
-fi
+step() {
+  echo
+  echo "== $1 =="
+}
 
 # Asserts that `cratestack-core`'s own `default` feature set is never part
 # of the resolved graph for a given (package, no-default-features, features)
@@ -56,10 +52,7 @@ fi
 # `"default"` feature-set node must be absent.
 assert_no_default_leak() {
   local pkg="$1"
-  shift
-  local features="$1"
-  shift
-  echo "== cargo tree -p $pkg --no-default-features --features $features -e features =="
+  local features="$2"
   local tree
   if ! tree=$(cargo tree -p "$pkg" --no-default-features --features "$features" -e features 2>&1); then
     fail "cargo tree failed for -p $pkg --features $features"
@@ -74,23 +67,125 @@ assert_no_default_leak() {
   fi
 }
 
-echo "== [3/4] cratestack-pg, postgres only: must compile AND must not leak cratestack-core's default features (AC2) =="
-if ! cargo check -p cratestack-pg --no-default-features --features postgres; then
-  fail "cargo check -p cratestack-pg --no-default-features --features postgres failed to compile"
+# Checks a (package, feature-args...) combination compiles, then (when
+# --no-default-features is among the args) asserts no default-feature leak.
+check_combo() {
+  local pkg="$1"
+  shift
+  echo "-- cargo check -p $pkg $* --"
+  if ! cargo check -p "$pkg" "$@"; then
+    fail "cargo check -p $pkg $* failed to compile"
+    return
+  fi
+  for arg in "$@"; do
+    if [[ "$arg" == --no-default-features ]]; then
+      # Find the --features value, if any, among the remaining args.
+      local features=""
+      local prev=""
+      for a in "$@"; do
+        if [[ "$prev" == "--features" ]]; then
+          features="$a"
+        fi
+        prev="$a"
+      done
+      if [[ -n "$features" ]]; then
+        assert_no_default_leak "$pkg" "$features"
+      fi
+    fi
+  done
+}
+
+step "[1/5] decimal-bigdecimal must not be a selectable feature (AC1)"
+if OUTPUT=$(cargo check -p cratestack-core --no-default-features --features decimal-bigdecimal 2>&1); then
+  fail "expected 'cargo check -p cratestack-core --features decimal-bigdecimal' to be rejected (the feature must not exist), but it succeeded"
+  echo "$OUTPUT"
+elif ! grep -q "does not contain this feature" <<<"$OUTPUT"; then
+  fail "expected an 'unknown feature' error for decimal-bigdecimal, got a different failure instead"
+  echo "$OUTPUT"
 else
-  assert_no_default_leak cratestack-pg postgres
+  echo "ok: decimal-bigdecimal is not exposed as a selectable feature"
 fi
 
-echo "== [4/4] cratestack-sqlite, explicit decimal-rust-decimal only: must compile AND must not leak cratestack-core's default features =="
-if ! cargo check -p cratestack-sqlite --no-default-features --features decimal-rust-decimal; then
-  fail "cargo check -p cratestack-sqlite --no-default-features --features decimal-rust-decimal failed to compile"
-else
-  assert_no_default_leak cratestack-sqlite decimal-rust-decimal
+step "[2/5] cratestack-core compiles clean on its own default feature set"
+if ! cargo check -p cratestack-core; then
+  fail "cargo check -p cratestack-core (default features) failed"
+fi
+
+step "[3/5] facade crates: default features AND a narrowed selection each (AC2/AC4 matrix)"
+# (package, extra args...) — every facade that exposes its own
+# decimal-rust-decimal toggle, checked both at its default feature set and
+# at a deliberately narrowed one, so leaks can't hide behind whichever
+# feature set happens to be the default.
+check_combo cratestack-pg
+check_combo cratestack-pg --no-default-features --features postgres
+check_combo cratestack-pg --no-default-features --features decimal-rust-decimal
+check_combo cratestack-sqlite
+check_combo cratestack-sqlite --no-default-features --features decimal-rust-decimal
+check_combo cratestack-sql
+check_combo cratestack-sql --no-default-features --features decimal-rust-decimal
+check_combo cratestack-sqlx
+check_combo cratestack-sqlx --no-default-features --features decimal-rust-decimal
+check_combo cratestack-rusqlite
+check_combo cratestack-rusqlite --no-default-features --features decimal-rust-decimal
+check_combo cratestack-api
+check_combo cratestack-api --no-default-features --features decimal-rust-decimal
+check_combo cratestack-cli
+
+step "[4/5] plain crates: every cratestack-core edge this PR made explicit actually compiles"
+# These ~21 crates had no decimal toggle of their own before this PR — they
+# simply need cratestack-core's default = false + an explicit
+# features = ["decimal-rust-decimal"] forward to keep compiling at all now
+# that the leak is closed. A default `cargo check` on each one is enough to
+# catch a missing/typo'd forward; there's no narrower feature set to select
+# here (that's the "plain" in plain crate).
+for pkg in \
+  cratestack-axum \
+  cratestack-cbor-napi \
+  cratestack-client-dart \
+  cratestack-client-flutter \
+  cratestack-client-rust \
+  cratestack-client-store-sqlite \
+  cratestack-client-typescript \
+  cratestack-codec-cbor \
+  cratestack-codec-json \
+  cratestack-grpc \
+  cratestack-lsp \
+  cratestack-macros \
+  cratestack-migrate \
+  cratestack-mock-wiremock \
+  cratestack-parser \
+  cratestack-policy \
+  cratestack-proto \
+  cratestack-redis \
+  cratestack-studio \
+  ; do
+  echo "-- cargo check -p $pkg --"
+  if ! cargo check -p "$pkg"; then
+    fail "cargo check -p $pkg (default features) failed"
+  fi
+done
+
+step "[5/5] wasm32 targets: the wasm-only backend paths this feature graph flows through"
+# `cratestack-rusqlite` swaps its FFI to `sqlite-wasm-rs` under
+# target.'cfg(target_arch = "wasm32")', and `cratestack-cbor-wasm`'s
+# wasm-bindgen glue (including the `cratestack-core` re-exports it uses)
+# only compiles under `#[cfg(target_arch = "wasm32")]` in its own source —
+# a native-only run of steps [3]/[4] never exercises either path, so the
+# explicit `cratestack-core`/`cratestack-rusqlite` feature forwards have to
+# be checked against the actual wasm32 target to mean anything for the
+# crates that ship it.
+if ! cargo check -p cratestack-sqlite --target wasm32-unknown-unknown --no-default-features --features decimal-rust-decimal; then
+  fail "cargo check -p cratestack-sqlite --target wasm32-unknown-unknown --no-default-features --features decimal-rust-decimal failed"
+fi
+if ! cargo check -p cratestack-cbor-wasm --target wasm32-unknown-unknown; then
+  fail "cargo check -p cratestack-cbor-wasm --target wasm32-unknown-unknown failed"
 fi
 
 if [[ "$FAILED" -ne 0 ]]; then
+  echo
   echo "feature-matrix: FAILED — see ::error:: lines above" >&2
   exit 1
 fi
 
+echo
 echo "feature-matrix: all checks passed"
