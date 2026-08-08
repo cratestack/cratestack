@@ -5,6 +5,24 @@
 //! unknown relation targets, duplicate model/field names, and malformed policy
 //! expressions (cratestack#420).
 //!
+//! Malformed policy expressions are only ever interpreted by
+//! `cratestack-policy`'s predicate parser (`crates/cratestack-macros/src/
+//! policy/`), which is wired into model/view descriptor generation for the
+//! server and embedded composers only — `include_client_schema!` never reads
+//! `@@allow`/`@@deny` content at all (it's a pure HTTP-stub client with no
+//! policy enforcement of its own, see `include/client/grpc/client_struct.rs`'s
+//! doc comment). `include_server_schema!(db = Postgres)` is *also* not
+//! usable for this in this crate's own trybuild sandbox: that composer
+//! checks `guard_server_postgres_backend`'s "compiled without the
+//! `postgres` feature" gate (see `ui.rs`'s extension-gating tests, which
+//! rely on that exact feature being off here) before it ever reaches model
+//! descriptor / policy codegen, so a malformed predicate would be masked by
+//! the feature-gate diagnostic instead of the policy-parser one. So the
+//! malformed-policy case below is routed through `include_embedded_schema!`
+//! (test 4, alongside test 2's duplicate-model case — embedded has no such
+//! feature gate in front of policy codegen); the client slot (test 3)
+//! instead covers a duplicate-field-name schema, honestly named.
+//!
 //! Uses the same fixture staging and path-fixing logic as `ui.rs` — see that
 //! file's module doc for details on why `FIXTURE_STAGING_DIR` is necessary.
 
@@ -44,8 +62,22 @@ fn semantic_error_compile_fail() {
     );
     t.compile_fail(generated_dir.join("semantic_error_duplicate_model.rs"));
 
-    // Test 3: include_client_schema! with malformed policy (views have policies too)
+    // Test 3: include_client_schema! with duplicate field name
     write_client_fixture(
+        &manifest_dir,
+        staging_dir,
+        &generated_dir,
+        "semantic_error_duplicate_field.rs",
+        "tests/fixtures/semantic_error_duplicate_field.cstack",
+    );
+    t.compile_fail(generated_dir.join("semantic_error_duplicate_field.rs"));
+
+    // Test 4: include_embedded_schema! with a malformed @@allow policy
+    // expression (unbalanced parens in the predicate) — neither the client
+    // macro (no policy codegen at all) nor the server macro (masked by the
+    // postgres-feature gate in this sandbox) can exercise this, see the
+    // module doc above.
+    write_embedded_fixture(
         &manifest_dir,
         staging_dir,
         &generated_dir,
