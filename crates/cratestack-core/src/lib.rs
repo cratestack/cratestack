@@ -38,23 +38,13 @@ pub mod value;
 // backends is a workspace-feature flip rather than a code change.
 // -----------------------------------------------------------------------------
 
-#[cfg(all(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
+#[cfg(not(feature = "decimal-rust-decimal"))]
 compile_error!(
-    "cratestack: features `decimal-rust-decimal` and `decimal-bigdecimal` are mutually exclusive"
-);
-
-#[cfg(not(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal")))]
-compile_error!(
-    "cratestack: enable exactly one Decimal backend feature (`decimal-rust-decimal` or `decimal-bigdecimal`)"
+    "cratestack: enable the `decimal-rust-decimal` backend feature"
 );
 
 #[cfg(feature = "decimal-rust-decimal")]
 pub type Decimal = rust_decimal::Decimal;
-
-#[cfg(feature = "decimal-bigdecimal")]
-compile_error!(
-    "cratestack: the `decimal-bigdecimal` backend is reserved but not yet implemented; use `decimal-rust-decimal` for now"
-);
 
 /// Body bytes carried through the transport layer.
 pub type CoolBody = bytes::Bytes;
@@ -104,3 +94,24 @@ pub use validators::{
     validate_uri,
 };
 pub use value::Value;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decimal_rust_decimal_is_available() {
+        // Verify that decimal-rust-decimal backend is available and the Decimal type works
+        let d = Decimal::from(42);
+        assert_eq!(d.to_string(), "42");
+    }
+
+    #[test]
+    fn decimal_type_serialization() {
+        // Verify basic decimal operations work
+        let d1 = Decimal::from(10);
+        let d2 = Decimal::from(20);
+        // Just verify the types compile and basic operations work
+        let _ = d1 + d2;
+    }
+}

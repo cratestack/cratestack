@@ -29,7 +29,6 @@ default = ["decimal-rust-decimal", "codec-json"]
 # features only ever need to forward to `cratestack-core` — there is no
 # sqlx-backed half to conditionally re-add.
 decimal-rust-decimal = ["cratestack-core/decimal-rust-decimal"]
-decimal-bigdecimal = ["cratestack-core/decimal-bigdecimal"]
 # Forwards the JSON codec to the generated client runtime. See
 # `cratestack-pg` for rationale. On by default so `include_client_schema!`
 # keeps offering both CBOR and JSON.

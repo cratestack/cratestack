@@ -19,11 +19,6 @@ decimal-rust-decimal = [
     "cratestack-sql/decimal-rust-decimal",
     "dep:rust_decimal",
 ]
-decimal-bigdecimal = [
-    "cratestack-core/decimal-bigdecimal",
-    "cratestack-sql/decimal-bigdecimal",
-    "dep:bigdecimal",
-]
 
 [dependencies]
 chrono.workspace = true

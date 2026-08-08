@@ -52,10 +52,6 @@ decimal-rust-decimal = [
     "cratestack-core/decimal-rust-decimal",
     "cratestack-sqlx?/decimal-rust-decimal",
 ]
-decimal-bigdecimal = [
-    "cratestack-core/decimal-bigdecimal",
-    "cratestack-sqlx?/decimal-bigdecimal",
-]
 # Forwards the JSON codec to the generated client runtime. On by default
 # so `include_client_schema!` keeps offering both CBOR and JSON; disable
 # (`default-features = false`) on backend services that speak only CBOR

@@ -16,9 +16,6 @@ categories.workspace = true
 default = ["decimal-rust-decimal"]
 # Use rust_decimal (128-bit fixed-precision) as the workspace Decimal backend.
 decimal-rust-decimal = ["dep:rust_decimal"]
-# Reserved for the alternative arbitrary-precision backend; not yet wired
-# end-to-end. Selecting this feature today will fail compilation.
-decimal-bigdecimal = ["dep:bigdecimal"]
 
 [dependencies]
 async-trait.workspace = true

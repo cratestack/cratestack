@@ -21,13 +21,6 @@ decimal-rust-decimal = [
     "sqlx-core/rust_decimal",
     "sqlx-postgres/rust_decimal",
 ]
-decimal-bigdecimal = [
-    "cratestack-core/decimal-bigdecimal",
-    "cratestack-sql/decimal-bigdecimal",
-    "dep:bigdecimal",
-    "sqlx-core/bigdecimal",
-    "sqlx-postgres/bigdecimal",
-]
 # Column-type support for `Vector(n)` fields (the `pgvector` extension
 # — see `docs/design/extensions.md` §6). Pulls in the `pgvector` crate
 # purely for its `sqlx::Type`/`Encode`/`Decode` impls against
