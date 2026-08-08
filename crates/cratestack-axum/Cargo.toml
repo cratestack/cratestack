@@ -16,7 +16,7 @@ categories.workspace = true
 async-trait.workspace = true
 axum.workspace = true
 bytes.workspace = true
-cratestack-core.workspace = true
+cratestack-core = { workspace = true, features = ["decimal-rust-decimal"] }
 cratestack-sql.workspace = true
 erased-serde.workspace = true
 futures-util.workspace = true

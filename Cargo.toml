@@ -118,7 +118,7 @@ cratestack-client-rust = { path = "crates/cratestack-client-rust", version = "0.
 cratestack-client-store-sqlite = { path = "crates/cratestack-client-store-sqlite", version = "0.7.7" }
 cratestack-codec-cbor = { path = "crates/cratestack-codec-cbor", version = "0.7.7" }
 cratestack-codec-json = { path = "crates/cratestack-codec-json", version = "0.7.7" }
-cratestack-core = { path = "crates/cratestack-core", version = "0.7.7" }
+cratestack-core = { path = "crates/cratestack-core", version = "0.7.7", default-features = false }
 cratestack-grpc = { path = "crates/cratestack-grpc", version = "0.7.7" }
 cratestack-macros = { path = "crates/cratestack-macros", version = "0.7.7" }
 cratestack-migrate = { path = "crates/cratestack-migrate", version = "0.7.7" }
@@ -128,10 +128,10 @@ cratestack-pg = { path = "crates/cratestack-pg", version = "0.7.7" }
 cratestack-policy = { path = "crates/cratestack-policy", version = "0.7.7" }
 cratestack-proto = { path = "crates/cratestack-proto", version = "0.7.7" }
 cratestack-redis = { path = "crates/cratestack-redis", version = "0.7.7" }
-cratestack-rusqlite = { path = "crates/cratestack-rusqlite", version = "0.7.7" }
+cratestack-rusqlite = { path = "crates/cratestack-rusqlite", version = "0.7.7", default-features = false }
 cratestack-sql = { path = "crates/cratestack-sql", version = "0.7.7" }
 cratestack-sqlite = { path = "crates/cratestack-sqlite", version = "0.7.7" }
-cratestack-sqlx = { path = "crates/cratestack-sqlx", version = "0.7.7" }
+cratestack-sqlx = { path = "crates/cratestack-sqlx", version = "0.7.7", default-features = false }
 cratestack-studio = { path = "crates/cratestack-studio", version = "0.7.7" }
 minijinja = "2"
 prost = "0.13"

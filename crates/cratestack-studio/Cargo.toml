@@ -45,7 +45,7 @@ embed-ui = ["dep:rust-embed"]
 anyhow.workspace = true
 async-trait.workspace = true
 axum.workspace = true
-cratestack-core.workspace = true
+cratestack-core = { workspace = true, features = ["decimal-rust-decimal"] }
 cratestack-migrate.workspace = true
 cratestack-parser.workspace = true
 cratestack-sql.workspace = true

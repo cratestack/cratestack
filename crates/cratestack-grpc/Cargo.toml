@@ -15,7 +15,7 @@ categories.workspace = true
 [dependencies]
 axum.workspace = true
 base64.workspace = true
-cratestack-core.workspace = true
+cratestack-core = { workspace = true, features = ["decimal-rust-decimal"] }
 http.workspace = true
 prost.workspace = true
 prost-types.workspace = true

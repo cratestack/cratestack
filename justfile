@@ -82,6 +82,14 @@ lint:
 fmt-check:
 	just _fmt --check
 
+# Feature-graph regression matrix (cratestack#421) — blocking CI gate.
+# Asserts `decimal-bigdecimal` isn't selectable and that `cratestack-core`'s
+# default feature set never leaks through a `--no-default-features`
+# consumer. See `.ci/feature-matrix.sh` for the full rationale and the
+# exact commands run.
+feature-matrix:
+	./.ci/feature-matrix.sh
+
 # Bring the Postgres test container up (idempotent; waits for ready).
 pg-up:
 	@docker compose up -d postgres >/dev/null

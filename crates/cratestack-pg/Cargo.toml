@@ -40,7 +40,23 @@ default = ["postgres", "decimal-rust-decimal", "codec-json"]
 # any sqlx-flavored codegen — this crate has it on by default (via this very
 # line), so nothing changes here; the guard exists to give a clear
 # `compile_error!` under facades that don't, like `cratestack-api`.
-postgres = ["dep:cratestack-sqlx", "cratestack-macros/postgres"]
+#
+# `cratestack-sqlx/decimal-rust-decimal` (cratestack#421): the `postgres`
+# backend structurally requires sqlx's `rust_decimal` integration to
+# compile at all — `cratestack-sqlx`'s query-builder support code
+# (`query/support/values.rs`) binds `cratestack_core::Decimal` values
+# unconditionally, not behind any feature gate, the same way it binds
+# `Uuid`/`DateTime`/etc. So unlike `codec-json`/`grpc` below,
+# `decimal-rust-decimal` on `cratestack-sqlx` was never a genuinely
+# optional add-on for a Postgres consumer — it's forwarded here
+# unconditionally so `--no-default-features --features postgres` alone
+# (no separate `decimal-rust-decimal` request) still compiles, instead of
+# failing with `rust_decimal::Decimal: Type<Postgres>` not satisfied.
+postgres = [
+    "dep:cratestack-sqlx",
+    "cratestack-macros/postgres",
+    "cratestack-sqlx/decimal-rust-decimal",
+]
 # `cratestack-sqlx?/...` (weak-dependency syntax, not plain `cratestack-sqlx/...`)
 # is required here: a plain `pkg/feature` edge unconditionally activates the
 # optional `cratestack-sqlx` dependency as a side effect, which would defeat

@@ -61,7 +61,7 @@ rate_limit = []
 pgvector = []
 
 [dependencies]
-cratestack-core.workspace = true
+cratestack-core = { workspace = true, features = ["decimal-rust-decimal"] }
 cratestack-parser.workspace = true
 cratestack-policy.workspace = true
 # Not gated behind the `grpc` feature: unlike `tonic`/`prost` (pulled in by

@@ -14,7 +14,7 @@ categories.workspace = true
 
 [dependencies]
 async-trait.workspace = true
-cratestack-core.workspace = true
+cratestack-core = { workspace = true, features = ["decimal-rust-decimal"] }
 redis = { workspace = true, features = ["aio", "tokio-comp", "script", "connection-manager"] }
 sha2.workspace = true
 tokio = { workspace = true, features = ["sync"] }

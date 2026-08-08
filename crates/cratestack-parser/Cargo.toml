@@ -15,7 +15,7 @@ categories.workspace = true
 [dependencies]
 ariadne.workspace = true
 chumsky.workspace = true
-cratestack-core.workspace = true
+cratestack-core = { workspace = true, features = ["decimal-rust-decimal"] }
 regex.workspace = true
 thiserror.workspace = true
 

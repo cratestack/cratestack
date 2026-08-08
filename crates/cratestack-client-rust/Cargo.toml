@@ -58,7 +58,7 @@ bytes.workspace = true
 chrono.workspace = true
 cratestack-codec-cbor.workspace = true
 cratestack-codec-json = { workspace = true, optional = true }
-cratestack-core.workspace = true
+cratestack-core = { workspace = true, features = ["decimal-rust-decimal"] }
 futures-util.workspace = true
 minicbor.workspace = true
 minicbor-serde.workspace = true
@@ -81,6 +81,6 @@ url.workspace = true
 [dev-dependencies]
 async-stream = "0.3"
 axum.workspace = true
-cratestack-core.workspace = true
+cratestack-core = { workspace = true, features = ["decimal-rust-decimal"] }
 serde.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time", "sync"] }

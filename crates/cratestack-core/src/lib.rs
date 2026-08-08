@@ -39,9 +39,7 @@ pub mod value;
 // -----------------------------------------------------------------------------
 
 #[cfg(not(feature = "decimal-rust-decimal"))]
-compile_error!(
-    "cratestack: enable the `decimal-rust-decimal` backend feature"
-);
+compile_error!("cratestack: enable the `decimal-rust-decimal` backend feature");
 
 #[cfg(feature = "decimal-rust-decimal")]
 pub type Decimal = rust_decimal::Decimal;

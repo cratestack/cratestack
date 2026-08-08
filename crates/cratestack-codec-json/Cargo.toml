@@ -13,6 +13,6 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-cratestack-core.workspace = true
+cratestack-core = { workspace = true, features = ["decimal-rust-decimal"] }
 serde.workspace = true
 serde_json.workspace = true

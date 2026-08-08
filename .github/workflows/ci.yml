@@ -206,6 +206,28 @@ jobs:
             -p embedded-daemon-example \
             -p embedded-webhook-example
 
+  # ---- Feature-graph regression matrix (cratestack#421) -----------------
+  # Blocking. Runs the exact reproduction commands from issue #421: (1)
+  # `decimal-bigdecimal` must not be a selectable Cargo feature (it was a
+  # dead `compile_error!`), and (2) `cratestack-core`'s
+  # `default = ["decimal-rust-decimal"]` must never leak through a
+  # `--no-default-features` consumer that only asked for a narrower
+  # feature set — verified via `cargo tree -e features`, since that's a
+  # property of the *resolved dependency graph*, not something a plain
+  # `#[test]` inside a crate can observe. See `.ci/feature-matrix.sh`.
+  feature-matrix:
+    name: feature matrix (cratestack#421)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: Feature-graph regression matrix
+        run: just feature-matrix
+
   # ---- Lint gates ------------------------------------------------------
   # Blocking. Determinism comes from rust-toolchain.toml pinning the
   # version (and clippy/rustfmt components), so new stable lints/format

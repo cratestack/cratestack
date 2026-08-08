@@ -20,7 +20,7 @@ rusqlite.workspace = true
 [dev-dependencies]
 axum.workspace = true
 cratestack-codec-cbor.workspace = true
-cratestack-core.workspace = true
+cratestack-core = { workspace = true, features = ["decimal-rust-decimal"] }
 serde.workspace = true
 tokio.workspace = true
 url.workspace = true

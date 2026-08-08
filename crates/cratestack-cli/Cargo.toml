@@ -34,7 +34,7 @@ chrono.workspace = true
 clap.workspace = true
 cratestack-client-dart.workspace = true
 cratestack-client-typescript.workspace = true
-cratestack-core.workspace = true
+cratestack-core = { workspace = true, features = ["decimal-rust-decimal"] }
 # `postgres-introspect` unconditional (not opt-in): `migrate baseline`
 # (issue #205) is a normal subcommand of the shipped binary, not a
 # cargo-feature-gated build variant — every `cratestack` binary needs
@@ -49,7 +49,7 @@ cratestack-proto.workspace = true
 # (`cratestack-migrate`'s snapshot) and the runtime applier agree on
 # what's already there. See the PR description for the snapshot-only
 # vs. snapshot+synthetic-row design call.
-cratestack-sqlx.workspace = true
+cratestack-sqlx = { workspace = true, features = ["decimal-rust-decimal"] }
 cratestack-studio.workspace = true
 serde.workspace = true
 serde_json.workspace = true

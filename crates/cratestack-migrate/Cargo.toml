@@ -31,7 +31,7 @@ postgres-introspect = ["dep:sqlx-core", "dep:sqlx-postgres"]
 pgvector = []
 
 [dependencies]
-cratestack-core.workspace = true
+cratestack-core = { workspace = true, features = ["decimal-rust-decimal"] }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

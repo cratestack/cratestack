@@ -17,7 +17,7 @@ name = "cratestack-lsp"
 path = "src/main.rs"
 
 [dependencies]
-cratestack-core.workspace = true
+cratestack-core = { workspace = true, features = ["decimal-rust-decimal"] }
 cratestack-parser.workspace = true
 tokio = { workspace = true, features = ["io-std", "sync"] }
 tower-lsp-server.workspace = true
