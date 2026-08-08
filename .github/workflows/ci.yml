@@ -68,6 +68,64 @@ jobs:
           tool: just
       - run: just check --locked
 
+  facade-disjointness:
+    name: facade disjointness (examples/no-database-verification*)
+    runs-on: ubuntu-latest
+    # `examples/no-database-verification` and `-api` are each their own
+    # `[workspace]` root (see their READMEs) specifically so a real `cargo
+    # tree` proves what an external consumer's dependency graph would
+    # actually contain — a workspace member can't prove this, because Cargo
+    # unifies features across every member building a shared dependency in
+    # one session (cratestack#329, cratestack#347). This job re-runs those
+    # proofs on every PR so a stale/broken lockfile or a regressed
+    # disjointness guarantee fails CI instead of silently drifting
+    # (cratestack#422).
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            examples/no-database-verification
+            examples/no-database-verification-api
+      - name: Assert Cargo.lock is up to date (no-database-verification)
+        working-directory: examples/no-database-verification
+        run: cargo metadata --locked --format-version=1 > /dev/null
+      - name: Assert Cargo.lock is up to date (no-database-verification-api)
+        working-directory: examples/no-database-verification-api
+        run: cargo metadata --locked --format-version=1 > /dev/null
+      - name: sqlx absent by default (no-database-verification, postgres feature off)
+        working-directory: examples/no-database-verification
+        run: |
+          if cargo tree --locked | grep -qi sqlx; then
+            echo "::error::expected no sqlx/cratestack-sqlx in the default (postgres feature off) dependency graph"
+            cargo tree --locked | grep -i sqlx
+            exit 1
+          fi
+      - name: sqlx present behind the postgres feature (no-database-verification)
+        working-directory: examples/no-database-verification
+        run: |
+          if ! cargo tree --locked --features postgres | grep -qi sqlx; then
+            echo "::error::expected cratestack-sqlx in the dependency graph with --features postgres"
+            exit 1
+          fi
+      - name: sqlx absent unconditionally (no-database-verification-api)
+        working-directory: examples/no-database-verification-api
+        run: |
+          if cargo tree --locked | grep -qi sqlx; then
+            echo "::error::expected no sqlx/cratestack-sqlx in the cratestack-api dependency graph"
+            cargo tree --locked | grep -i sqlx
+            exit 1
+          fi
+      - name: cargo test (no-database-verification, both feature states)
+        working-directory: examples/no-database-verification
+        run: |
+          cargo test --locked
+          cargo test --locked --features postgres
+      - name: cargo test (no-database-verification-api)
+        working-directory: examples/no-database-verification-api
+        run: cargo test --locked
+
   # ---- Test shards -----------------------------------------------------
   # The suite is split into four parallel jobs so no single runner has to
   # compile the whole workspace — pulling the tauri/wasm/napi example crates
