@@ -1,0 +1,47 @@
+// SPIKE (`spike/b1-internal-actions`) fixture.
+//
+// `Device` is the shape downstream services (webank-services) actually
+// want and currently cannot express: readable over REST by its owner,
+// writable only by server code — with the write rule still stated in
+// the schema rather than hand-written as raw SQL.
+//
+// `PublicNote` is the control: same policy vocabulary, no
+// `@@internal`, so every route stays mounted. Without it the
+// suppression assertions could pass for the wrong reason.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Principal {
+  subjectId String
+}
+
+model Device {
+  id Int @id
+  subjectId String
+  label String
+
+  @@allow("list", subjectId == auth().subjectId)
+  @@allow("detail", subjectId == auth().subjectId)
+
+  // Writable by server code, and only where the schema says so. The
+  // policy is evaluated exactly as any other; `@@internal` suppresses
+  // only the REST route.
+  @@allow("create", auth().isSystem())
+  @@allow("update", auth().isSystem() || subjectId == auth().subjectId)
+  @@allow("delete", auth().isSystem())
+  @@internal("create", "update", "delete")
+}
+
+model PublicNote {
+  id Int @id
+  subjectId String
+  body String
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}

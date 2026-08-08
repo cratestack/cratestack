@@ -100,6 +100,15 @@ pub(super) fn validate_model_attributes(
                 ),
                 attribute.span,
             ));
+        } else if attribute.raw.starts_with("@@internal") {
+            // SPIKE (`spike/b1-internal-actions`): declares that an
+            // action has a policy but generates no REST route. Purely
+            // a codegen marker — it does not touch policy evaluation,
+            // so there is nothing to cross-check against the model's
+            // `@@allow` rules here.
+            cratestack_core::parse_internal_attribute(&attribute.raw).map_err(|message| {
+                span_error(format!("model `{}`: {message}", model.name), attribute.span)
+            })?;
         } else if attribute.raw.starts_with("@@retain(") {
             validate_retain_attribute(model, attribute)?;
         } else if attribute.raw.starts_with("@@id(") {

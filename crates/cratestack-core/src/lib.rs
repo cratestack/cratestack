@@ -61,6 +61,7 @@ pub use batch::{
 pub use codec::{CoolCodec, CoolEnvelope, NoEnvelope};
 pub use context::{
     AuthProvider, CoolAuthIdentity, CoolContext, PrincipalContext, PrincipalFacet, RequestContext,
+    SystemContext,
 };
 pub use envelope::{
     HmacEnvelope, InMemoryNonceStore, KeyProvider, NonceStore, SealedEnvelope, StaticKeyProvider,
@@ -77,10 +78,11 @@ pub use page::{MAX_LIST_LIMIT, Page, PageInfo, PageInput};
 pub use projection::ProjectionDecoder;
 pub use schema::{
     Attribute, AuthBlock, ConfigBlock, ConfigEntry, Datasource, EnumDecl, EnumVariant,
-    ExtensionKind, Field, MixinDecl, Model, OwnedSchemaSummary, ParsedIndexAttribute, Procedure,
-    ProcedureArg, ProcedureKind, Schema, SchemaSummary, SelectionQuery, SourceSpan, TransportStyle,
-    TypeArity, TypeDecl, TypeRef, View, ViewSource, parse_composite_id_attribute,
-    parse_composite_unique_attribute, parse_index_attribute,
+    ExtensionKind, Field, INTERNAL_ACTIONS, MixinDecl, Model, OwnedSchemaSummary,
+    ParsedIndexAttribute, Procedure, ProcedureArg, ProcedureKind, Schema, SchemaSummary,
+    SelectionQuery, SourceSpan, TransportStyle, TypeArity, TypeDecl, TypeRef, View, ViewSource,
+    model_internal_actions, parse_composite_id_attribute, parse_composite_unique_attribute,
+    parse_index_attribute, parse_internal_attribute,
 };
 pub use store::{
     ClientStateStore, IdempotencyStore, InMemoryStateStore, JsonFileStateStore,

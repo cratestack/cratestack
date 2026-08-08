@@ -19,6 +19,9 @@ mod predicates;
 mod relation_path;
 mod term;
 
+#[cfg(test)]
+mod tests_system_principal;
+
 use cratestack_core::{Model, TypeDecl};
 use quote::quote;
 

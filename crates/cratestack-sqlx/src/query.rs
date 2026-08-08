@@ -8,6 +8,8 @@ pub use read::{
     Aggregate, AggregateColumn, AggregateCount, FindMany, FindManyWith, FindUnique,
     ProjectedFindMany, ProjectedFindUnique,
 };
+#[cfg(test)]
+pub(crate) use support::evaluate_input_predicate_for_tests;
 #[allow(unused_imports)]
 pub(crate) use support::{
     ReadPolicyKind, apply_create_defaults, auth_value_to_sql, authorize_record_action,
