@@ -36,7 +36,7 @@ pub(crate) fn render_scoped_select_sql<M, PK>(
 
     match (user_clause, policy_clause) {
         (Some(user_clause), Some(policy_clause)) => {
-            let _ = write!(sql, " WHERE {user_clause} AND ({policy_clause})");
+            let _ = write!(sql, " WHERE {user_clause} AND {policy_clause}");
         }
         (Some(user_clause), None) => {
             let _ = write!(sql, " WHERE {user_clause}");

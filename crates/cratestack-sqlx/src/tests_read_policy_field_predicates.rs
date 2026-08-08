@@ -30,7 +30,7 @@ fn field_is_true_and_field_ne_literal_render_column_comparisons() {
     }];
     assert_eq!(
         render(&allow_is_true, &[], &ctx).unwrap(),
-        "published = TRUE"
+        "(published = TRUE)"
     );
 
     let allow_ne = [ReadPolicy {
@@ -39,7 +39,7 @@ fn field_is_true_and_field_ne_literal_render_column_comparisons() {
             value: PolicyLiteral::String("archived"),
         }),
     }];
-    assert_eq!(render(&allow_ne, &[], &ctx).unwrap(), "status != $1");
+    assert_eq!(render(&allow_ne, &[], &ctx).unwrap(), "(status != $1)");
 }
 
 /// `FieldEqAuth`/`FieldNeAuth` compare a row's column against a claim
@@ -56,7 +56,7 @@ fn field_ne_auth_renders_bound_column_comparison() {
             auth_field: "email",
         }),
     }];
-    assert_eq!(render(&allow, &[], &ctx).unwrap(), "email != $1");
+    assert_eq!(render(&allow, &[], &ctx).unwrap(), "(email != $1)");
 }
 
 /// Every `RelationQuantifier` variant, rendered for a `ReadPolicy`
@@ -92,18 +92,18 @@ fn every_relation_quantifier_variant_renders_its_own_sql_shape() {
 
     assert_eq!(
         render(&policy_for(crate::RelationQuantifier::ToOne), &[], &ctx).unwrap(),
-        "EXISTS (SELECT 1 FROM sessions WHERE sessions.user_id = users.id AND active = TRUE)"
+        "(EXISTS (SELECT 1 FROM sessions WHERE sessions.user_id = users.id AND active = TRUE))"
     );
     assert_eq!(
         render(&policy_for(crate::RelationQuantifier::Some), &[], &ctx).unwrap(),
-        "EXISTS (SELECT 1 FROM sessions WHERE sessions.user_id = users.id AND active = TRUE)"
+        "(EXISTS (SELECT 1 FROM sessions WHERE sessions.user_id = users.id AND active = TRUE))"
     );
     assert_eq!(
         render(&policy_for(crate::RelationQuantifier::None), &[], &ctx).unwrap(),
-        "NOT EXISTS (SELECT 1 FROM sessions WHERE sessions.user_id = users.id AND active = TRUE)"
+        "(NOT EXISTS (SELECT 1 FROM sessions WHERE sessions.user_id = users.id AND active = TRUE))"
     );
     assert_eq!(
         render(&policy_for(crate::RelationQuantifier::Every), &[], &ctx).unwrap(),
-        "NOT EXISTS (SELECT 1 FROM sessions WHERE sessions.user_id = users.id AND NOT (active = TRUE))"
+        "(NOT EXISTS (SELECT 1 FROM sessions WHERE sessions.user_id = users.id AND NOT (active = TRUE)))"
     );
 }

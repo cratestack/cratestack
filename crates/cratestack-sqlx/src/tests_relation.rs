@@ -103,6 +103,6 @@ fn relation_policy_preview_uses_exists_subquery() {
 
     assert_eq!(
         sql,
-        "EXISTS (SELECT 1 FROM users WHERE users.id = posts.author_id AND email = $1)"
+        "(EXISTS (SELECT 1 FROM users WHERE users.id = posts.author_id AND email = $1))"
     );
 }

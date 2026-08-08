@@ -33,13 +33,13 @@ fn render(allow: &[ReadPolicy], deny: &[ReadPolicy], ctx: &CoolContext) -> Optio
 fn empty_allow_list_default_denies_with_sql_false() {
     let ctx = CoolContext::anonymous();
     let sql = render(&[], &[], &ctx).expect("empty allow should still render a clause");
-    assert_eq!(sql, "FALSE");
+    assert_eq!(sql, "(FALSE)");
 
     // Also true for an authenticated caller — default-deny is
     // unconditional, not merely "unauthenticated is denied".
     let authenticated = CoolContext::authenticated([]);
     let sql = render(&[], &[], &authenticated).expect("empty allow should still render a clause");
-    assert_eq!(sql, "FALSE");
+    assert_eq!(sql, "(FALSE)");
 }
 
 /// A matching `@@deny` must veto an otherwise-matching `@@allow`:
@@ -55,7 +55,7 @@ fn deny_beats_allow_precedence() {
     }];
 
     let sql = render(&allow, &deny, &ctx).expect("policy should render");
-    assert_eq!(sql, "NOT (TRUE) AND (TRUE)");
+    assert_eq!(sql, "(NOT (TRUE) AND (TRUE))");
 }
 
 #[test]
@@ -71,14 +71,14 @@ fn auth_not_null_and_auth_is_null_collapse_to_sql_booleans() {
 
     assert_eq!(
         render(&allow_not_null, &[], &authenticated).unwrap(),
-        "TRUE"
+        "(TRUE)"
     );
-    assert_eq!(render(&allow_not_null, &[], &anonymous).unwrap(), "FALSE");
+    assert_eq!(render(&allow_not_null, &[], &anonymous).unwrap(), "(FALSE)");
     assert_eq!(
         render(&allow_is_null, &[], &authenticated).unwrap(),
-        "FALSE"
+        "(FALSE)"
     );
-    assert_eq!(render(&allow_is_null, &[], &anonymous).unwrap(), "TRUE");
+    assert_eq!(render(&allow_is_null, &[], &anonymous).unwrap(), "(TRUE)");
 }
 
 #[test]
@@ -90,8 +90,8 @@ fn has_role_and_in_tenant_collapse_to_sql_booleans() {
     let allow_role = [ReadPolicy {
         expr: PolicyExpr::Predicate(ReadPredicate::HasRole { role: "admin" }),
     }];
-    assert_eq!(render(&allow_role, &[], &admin).unwrap(), "TRUE");
-    assert_eq!(render(&allow_role, &[], &member).unwrap(), "FALSE");
+    assert_eq!(render(&allow_role, &[], &admin).unwrap(), "(TRUE)");
+    assert_eq!(render(&allow_role, &[], &member).unwrap(), "(FALSE)");
 
     let tenant_a = CoolContext::authenticated([(
         "tenant".to_owned(),
@@ -105,8 +105,8 @@ fn has_role_and_in_tenant_collapse_to_sql_booleans() {
             tenant_id: "tenant_a",
         }),
     }];
-    assert_eq!(render(&allow_tenant, &[], &tenant_a).unwrap(), "TRUE");
-    assert_eq!(render(&allow_tenant, &[], &member).unwrap(), "FALSE");
+    assert_eq!(render(&allow_tenant, &[], &tenant_a).unwrap(), "(TRUE)");
+    assert_eq!(render(&allow_tenant, &[], &member).unwrap(), "(FALSE)");
 }
 
 #[test]
@@ -128,8 +128,8 @@ fn auth_field_eq_and_ne_literal_collapse_to_sql_booleans() {
         }),
     }];
 
-    assert_eq!(render(&allow_eq, &[], &banned).unwrap(), "TRUE");
-    assert_eq!(render(&allow_eq, &[], &active).unwrap(), "FALSE");
-    assert_eq!(render(&allow_ne, &[], &banned).unwrap(), "FALSE");
-    assert_eq!(render(&allow_ne, &[], &active).unwrap(), "TRUE");
+    assert_eq!(render(&allow_eq, &[], &banned).unwrap(), "(TRUE)");
+    assert_eq!(render(&allow_eq, &[], &active).unwrap(), "(FALSE)");
+    assert_eq!(render(&allow_ne, &[], &banned).unwrap(), "(FALSE)");
+    assert_eq!(render(&allow_ne, &[], &active).unwrap(), "(TRUE)");
 }
