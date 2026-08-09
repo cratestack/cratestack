@@ -2,40 +2,6 @@
 
 ## 0.7.10 (2026-08-09)
 
-<!-- TODO: edit this section from the seed below -->
-<!-- seeded from v0.7.8..HEAD at da6d8772c704cab63859a1a847fc881c6bc35a52 -->
-
-This is an auto-generated seed. Please rewrite into narrative prose describing
-the changes in this release, grouped by concern. Refer to existing entries in
-this file for the house prose style. Do not commit with this placeholder text.
-
-### Changes
-
-#### Features
-
-- implement ADR 0014 layer-direction check (cratestack#475) (#477)
-- add fourth facade for pure HTTP-client SDKs (#490) (#492)
-- give generated clients a real Decimal type (#498) (#499)
-- system principal via auth().isSystem() (#486) (#500)
-- per-call-site ON CONFLICT DO NOTHING for idempotent upserts (#487) (#501)
-- implement a real decimal-bigdecimal backend (#495) (#496)
-
-#### Fixes
-
-- fix changelog-seed section placement, persist range, isolate and wire tests (cratestack#479) (#483)
-- stop selecting response Content-Types the router can't encode (#489) (#491)
-- make @no_rate_limit hold for REST too, and fix the runtime test that was never actually run (#474) (#481)
-- stop misclassifying state-store errors as codec errors (#475) (#482)
-- stop the studio-ui `cd` from leaking into the rest of `bump` (#494)
-- declare MSRV 1.95.0 and keep facade-disjointness verification workspaces current in CI (#422) (#480)
-
-#### Documentation
-
-- record that direct sqlx use here is deliberate, not drift (#484)
-- backfill CHANGELOG for v0.6.5-v0.7.8 (#478)
-
-## Unreleased
-
 ### Per-call-site `ON CONFLICT DO NOTHING` for idempotent inserts (#487, ADR 0038 blocker B3)
 
 `.upsert(..).run(..)` only ever emitted `INSERT ... ON CONFLICT DO UPDATE`. A model with any `upsert_update_columns` had no way to express "insert, or read back without mutating" — the fallback to a no-op `pk = EXCLUDED.pk` self-assignment only kicked in when `descriptor.upsert_update_columns` was empty, a property of the *model*, not the call site. Concretely: a cash-in claim inserting a `PENDING` row and treating a unique violation as "already in flight" would have a retry's blank values silently overwrite an existing `COMPLETED` row's `transfer_ref`/`new_balance_xaf`/`completed_at` — ledger corruption on retry, not a cosmetic gap. Consumers were hand-rolling `DO NOTHING RETURNING id` + a fallback `SELECT` to avoid exactly this.
@@ -49,6 +15,7 @@ The existing empty-`upsert_update_columns` no-op-self-assignment fallback in the
 Scoped to `cratestack-sqlx` (Postgres) only. `cratestack-rusqlite` has an equivalent `INSERT ... ON CONFLICT DO UPDATE` upsert path (`render_upsert_with_conflict`) and SQLite supports `DO NOTHING RETURNING` too, but that backend's upsert is a single statement with no pre-probe (no policy/audit/event machinery to preserve, but also no existing "inserted vs. existing" discriminator to build on) — giving it the same capability is a materially different, smaller design left as follow-up rather than folded in here.
 
 New PG-backed regression coverage in `crates/cratestack-pg/tests/upsert_do_nothing.rs`: a ledger-corruption reproduction (insert with real values, retry via `.do_nothing()` with blank values, assert the row is byte-for-byte unmodified — confirmed failing on `main`/028cdc5 via `.upsert().run()`, the only pre-#487 API, before this change existed to fix it), an `Inserted`-vs-`Existing` distinguishability test with audit/event-outbox assertions (no `Updated` event or audit row on the `Existing` branch), a same-fixture regression test that the plain DO UPDATE path is unaffected, and an empty-`upsert_update_columns` model case.
+
 ### Generated Dart and TypeScript clients get a real `Decimal` type (#498) — breaking
 
 `cratestack-client-dart` and `cratestack-client-typescript` used to carry every `Decimal`-typed field as an opaque wire-format string — harmless for the default `decimal-rust-decimal` backend (which never emits scientific notation), but silently wrong once #495/#496 made `decimal-bigdecimal` (arbitrary precision, beyond `rust_decimal`'s ~28-29 significant-digit cap) a real, selectable server backend: `bigdecimal`'s `Display` switches to scientific notation past a magnitude threshold (`"0.0000001"` on `rust_decimal`, `"1E-7"` on `bigdecimal`, for the identical value), so the *string form* a Dart/TS client saw depended on which backend built the server, and neither SDK could parse, compare, or do arithmetic on the value at all — the exact case #495/#496's own PR flagged as unfinished business.
@@ -113,11 +80,25 @@ A router built with a single codec (e.g. `router(db, procedures, JsonCodec, auth
 
 `HttpTransport` gains a `can_encode(&self, content_type: &str) -> bool` method (defaulted to `true` — preserves the pre-#489 behavior for any downstream impl that hasn't opted in, since a required method would be a breaking change to this public trait), implemented honestly by both in-repo impls: the blanket `impl<C: CoolCodec> HttpTransport for C` and `CodecSet<Primary, Secondary>` (including the `application/cbor-seq` special case, encodable whenever *either* slot is a CBOR codec, regardless of position). Response negotiation (`select_transport_response_content_type`, used by both `encode_transport_result_with_status_for` and the sequence/`@stream` encoders) and the `Accept` preflight (`validate_transport_request_headers_for`/`validate_transport_response_headers_for`) now both filter the advertised `response_types` through `can_encode` before matching against `Accept` — the preflight fix additionally means a mutation like a model `create` now fails fast on an unsatisfiable `Accept` *before* its DB write runs, not only afterward when the response encoder finally catches it. A `NotAcceptable` the negotiator does return now names what the router actually serves, not the static list. One behavior change reaches slightly beyond the literal repro: a request carrying **no `Accept` header at all** previously got `default_response_type` unchecked, which for a JSON-only router is the codegen-baked `application/cbor` — the same 406 by another route. It now falls back to the first encodable type instead. Routers whose default is genuinely encodable (every dual-codec router, and any single-codec router whose codec matches the default) negotiate exactly as before. RPC unary/batch dispatch and gRPC bridging funnel through the same `encode_transport_result_with_status_for`/`RPC_BINDING_CAPABILITIES` path, so they're fixed by the same change; `validate_subscribe_accept_header` (SSE `@@subscribe`) was audited and left alone since it always produces `text/event-stream` unconditionally — there's no static-list-vs-codec gap there to begin with.
 
-### `ClientStateStore` moves out of `cratestack-client-rust` into `cratestack-core` (#475) — breaking
+### `ClientStateStore` moves out of `cratestack-client-rust` into `cratestack-core` (#475) (#482) — breaking
 
 `cratestack-client-store-sqlite` and `cratestack-client-store-redis` are storage adapters, but both depended on `cratestack-client-rust` — an HTTP transport binding — for the sole reason that `ClientStateStore` (plus `PersistedClientState`, `RequestJournalEntry`, `InMemoryStateStore`, `JsonFileStateStore`) happened to be defined there: an L2 → L4 back-edge, the client-side twin of the `cratestack-sqlx`/`cratestack-redis` → `cratestack-axum` edge #465 fixed server-side and the violation `docs/design/layering.md` named as still open. The trait and its companion types move to `cratestack-core::store::client_state`, with `cratestack-client-rust::state` kept as a back-compat re-export so existing `use cratestack_client_rust::state::...` paths keep compiling. `cratestack-client-store-redis` no longer depends on `cratestack-client-rust` at all; `cratestack-client-store-sqlite` keeps it only as a `[dev-dependencies]` entry for its test fixtures — `cargo tree -p cratestack-client-store-sqlite -i cratestack-client-rust` now reports a dev-dependency path only, and the same command for `-store-redis` reports no path at all. **Breaking:** anyone implementing `ClientStateStore` directly against `cratestack_client_rust::ClientStateStore` (rather than the re-export) needs to retarget `cratestack_core::ClientStateStore`; the trait's shape is unchanged.
 
 `CratestackClient::state()` and the internal `record_request` journal-write path convert the moved trait's `CoolError` back to `ClientError::State(..)` explicitly at both call sites, rather than through `ClientError`'s blanket `From<CoolError>` (which targets `ClientError::Codec`, for genuine wire-codec failures) — an initial version of this move routed state-store failures through that blanket conversion, which would have silently reclassified local state-store I/O failures (a locked/corrupt JSON file, a poisoned mutex) as fabricated HTTP-500 `RuntimeErrorCode::Codec` errors instead of `RuntimeErrorCode::State`, reaching as far as the Dart/Flutter FFI boundary. Regression tests (`client::core::tests::state_store_error_maps_to_client_error_state`, `client::headers::tests::record_request_state_store_error_maps_to_client_error_state`) exercise a rigged-to-fail state store and assert the resulting `ClientError` variant.
+
+### CI, release tooling, and process fixes
+
+Layer direction (ADR 0014) is now CI-enforced: `docs/adr/layers.toml` assigns every `cratestack-*` crate a layer, and `.ci/layer-direction-check.sh` reads the real `cargo metadata` dependency graph and fails on any `cratestack-*` → `cratestack-*` edge pointing at a higher layer, or on a crate under `crates/` missing from the manifest (#477).
+
+The release pipeline now actually writes a changelog. Nothing did before — `prepare-release.yml` already walked the commit range to build its release-PR body, but discarded that output rather than persisting it, which is why this file had been caught up by hand-written backfill PRs instead. `.ci/changelog-seed.sh` seeds a `## X.Y.Z` section per release (grouped by conventional-commit type, marked with a TODO placeholder), `.ci/changelog-check.sh` fails CI on an unedited marker so a seed can't silently reach `main` as a raw commit list instead of prose, and `just changelog-seed VERSION` runs it locally (#479/#483). Everything from `v0.5.0` through `v0.7.8` — thirteen releases — was itself backfilled by hand in a dedicated pass, since it had gone undocumented (#478).
+
+`@no_rate_limit` reached the generated `OpDescriptor` (`rate_limited_by_default: false`) and was covered by tests at every layer except the one that mattered: `cratestack-axum`'s `RateLimitLayer` never read the flag, so an annotated procedure was still throttled at runtime regardless. Fixed with an ops-filter wired into both REST and RPC dispatch (#474/#481).
+
+`rust-version = "1.95.0"` is now declared in `[workspace.package]`, matching the existing `rust-toolchain.toml` pin, with a dedicated `msrv` CI job building the workspace on that exact toolchain and a three-way drift check (resolved `rustc --version`, the toolchain file, and `Cargo.toml`'s declared `rust-version`) added to the existing `check` job (#422/#480).
+
+`AGENTS.md` now records that this repo's own `cratestack-sqlx`/`cratestack-pg`/`cratestack-cli` dependencies on `sqlx` are a deliberate exemption from the no-raw-SQL policy downstream consumers (webank-context ADR 0038) are adopting — this is the layer that wraps sqlx, not an instance of the drift that policy targets (#484).
+
+`just bump`'s `cratestack-studio-ui` step changed directory with a bare `cd`, which leaked into every repo-root-relative path after it — including the standalone example-workspace lock-refresh steps `#422`/`#480` and later PRs added, which silently never ran as a result. Wrapped in a subshell like the steps around it (#494).
 
 ## 0.7.8 (2026-08-08)
 
