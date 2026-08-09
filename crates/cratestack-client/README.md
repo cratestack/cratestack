@@ -123,9 +123,12 @@ CI's `facade-disjointness` job (`.github/workflows/ci.yml`) re-runs the
   the wire, but values past `rust_decimal`'s ~28-29 significant-digit
   capacity serialize as scientific notation (e.g. `"1E-29"`), which a
   `rust_decimal` peer fails to decode. The shipped Dart/TypeScript client
-  SDKs only ever target `rust_decimal` — see `cratestack-core`'s README
-  for the full deployment constraint before using this backend's extra
-  precision against a server that emits values in that range.
+  SDKs generate a real arbitrary-precision `Decimal` type as of
+  cratestack#498 (**breaking** — see each package's migration note) that
+  parses both notations, so pairing this backend with a generated client
+  is safe regardless of magnitude — see `cratestack-core`'s README for
+  the full picture and the two scope notes (gRPC-preset clients, the
+  TypeScript `swr` preset) that still apply.
 - `codec-json` *(default)* — forwards the JSON codec to the generated
   client runtime, alongside CBOR.
 - `pgvector` — enable when the schema declares `extension pgvector { }`.

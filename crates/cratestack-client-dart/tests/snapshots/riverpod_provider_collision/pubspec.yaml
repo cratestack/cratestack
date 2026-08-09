@@ -32,6 +32,10 @@ dependencies:
   # part of resolving this merge conflict, see this PR's own comment
   # for the real `flutter analyze`/`flutter test` run proving it.
   fast_immutable_collections: ^11.2.0
+  # cratestack#498: see `pubspec.yaml.j2`'s identical dependency comment —
+  # same reason, same package, this preset's `shared_types.dart.j2`
+  # `DecimalFilter`/per-model data classes need it too.
+  decimal: ^3.2.6
 
 dev_dependencies:
   flutter_lints: ^6.0.0

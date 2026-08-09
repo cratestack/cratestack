@@ -11,6 +11,51 @@
 {% for import in shared.imports %}
 import type { {{ import.type_names_joined }} } from "{{ import.path }}";
 {% endfor %}
+import DecimalJs from "decimal.js";
+
+// cratestack#498: real arbitrary-precision `Decimal` values, not a
+// wire-format-dependent opaque `string` — see the default preset's
+// `models.ts.j2` (this file's non-`swr` counterpart) for the full
+// rationale, mirrored verbatim here. Deliberately narrower scope for this
+// preset than the default one: the type flows through correctly (every
+// `Decimal`-typed field here and in each per-model file is real,
+// `DecimalFilter` encodes correctly via `toJSON` with no extra glue), but
+// unlike `rest-client.ts.j2`/`rpc-client.ts.j2`, this preset's per-model
+// `models-rest.ts.j2`/`models-rpc.ts.j2` functions don't yet call
+// `reviveDecimalFields` on decode — tracked as a follow-up, not done
+// silently: see this crate's `cratestack#498` PR description.
+export const Decimal = DecimalJs.clone({ toExpNeg: -1e9, toExpPos: 1e9 });
+export type Decimal = DecimalJs;
+
+/** See the default preset's `models.ts.j2` for the full doc comment —
+ *  identical implementation, exported here too so this preset's
+ *  per-model files (or application code) can use it even though the
+ *  generated functions don't call it automatically yet (see the
+ *  `Decimal` export's own doc comment above). */
+export function reviveDecimalFields(value: unknown, decimalKeys: readonly string[]): unknown {
+  if (decimalKeys.length === 0) {
+    return value;
+  }
+  return reviveDecimalFieldsInner(value, new Set(decimalKeys));
+}
+
+function reviveDecimalFieldsInner(value: unknown, decimalKeys: ReadonlySet<string>): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => reviveDecimalFieldsInner(item, decimalKeys));
+  }
+  if (value !== null && typeof value === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      result[key] =
+        decimalKeys.has(key) && typeof entry === "string"
+          ? new Decimal(entry)
+          : reviveDecimalFieldsInner(entry, decimalKeys);
+    }
+    return result;
+  }
+  return value;
+}
+
 // Mirrors cratestack-core::page::{Page, PageInfo} exactly — this is
 // the literal wire shape every `@@paged` list route serializes with
 // `#[serde(rename_all = "camelCase")]`, not an independently designed
@@ -69,7 +114,9 @@ export type NumberFilter = ComparableFilter<number>;
 export type BooleanFilter = EqualityFilter<boolean>;
 export type UuidFilter = ComparableFilter<string>;
 export type DateTimeFilter = ComparableFilter<string>;
-export type DecimalFilter = ComparableFilter<string>;
+// cratestack#498: `Decimal`, not `string` — see this file's own
+// `Decimal` doc comment above.
+export type DecimalFilter = ComparableFilter<Decimal>;
 
 export type SortDirection = "asc" | "desc";
 

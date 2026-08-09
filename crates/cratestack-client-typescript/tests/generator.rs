@@ -288,13 +288,21 @@ fn package_file<'a>(
 }
 
 #[test]
-fn decimal_scalar_maps_to_string_rather_than_an_undeclared_type_name() {
-    // Regression: `ts_type()` had no `Decimal` arm, so `Decimal` fell through
-    // to the catch-all and was emitted verbatim as a TS type name that nothing
-    // declares. Generation still succeeded — the breakage only surfaced at
-    // `tsc` with `TS2304: Cannot find name 'Decimal'` — which is exactly why a
-    // generation-only assertion did not catch it. Assert the emitted type, not
-    // merely that rendering worked.
+fn decimal_scalar_maps_to_a_real_declared_decimal_type() {
+    // Historical regression (pre-cratestack#498): `ts_type()` had no
+    // `Decimal` arm at all, so `Decimal` fell through to the catch-all and
+    // was emitted verbatim as a TS type name that nothing declares —
+    // generation still succeeded, and the breakage only surfaced at `tsc`
+    // with `TS2304: Cannot find name 'Decimal'`, which a generation-only
+    // assertion wouldn't catch.
+    //
+    // cratestack#498 replaced the interim `string` mapping (which merely
+    // fixed the `tsc` failure without giving the SDK a decimal type) with
+    // a real one: `Decimal` is now `models.ts`'s own exported
+    // `decimal.js`-backed class (`DecimalJs.clone({...})`, see
+    // `models.ts.j2`'s doc comment), not the bare wire-format string. This
+    // is the "give the SDKs a real decimal type" approach, not "canonicalize
+    // the wire" — the maintainer's recorded decision on cratestack#498.
     let schema = cratestack_parser::parse_schema_file("tests/fixtures/decimal_scalar.cstack")
         .expect("fixture schema should parse");
 
@@ -303,17 +311,66 @@ fn decimal_scalar_maps_to_string_rather_than_an_undeclared_type_name() {
     let models = package_file(&package, "src/models.ts");
 
     assert!(
-        models.contains("amountXaf?: string;"),
-        "a required Decimal must be emitted as string, got:\n{models}"
+        models.contains("amountXaf?: Decimal;"),
+        "a required Decimal field must be typed `Decimal`, got:\n{models}"
     );
     assert!(
-        models.contains("discountXaf?: string | null;"),
-        "an optional Decimal must be emitted as string | null, got:\n{models}"
+        models.contains("discountXaf?: Decimal | null;"),
+        "an optional Decimal field must be typed `Decimal | null`, got:\n{models}"
     );
-    // The bare scalar name must never appear as a type annotation. `DecimalFilter`
-    // is legitimate and declared, so match on the annotation form specifically.
     assert!(
-        !models.contains(": Decimal;") && !models.contains(": Decimal |"),
-        "the undeclared `Decimal` type name leaked into models.ts:\n{models}"
+        models.contains("export const Decimal = DecimalJs.clone("),
+        "models.ts must export a real, plain-notation-configured `Decimal` value, got:\n{models}"
+    );
+    assert!(
+        models.contains("export type Decimal = DecimalJs;"),
+        "models.ts must export the `Decimal` instance type, got:\n{models}"
+    );
+    assert!(
+        models.contains("export function reviveDecimalFields("),
+        "models.ts must export the decode-side revival helper, got:\n{models}"
+    );
+    assert!(
+        models.contains("export type DecimalFilter = ComparableFilter<Decimal>;"),
+        "DecimalFilter's comparison operands must be typed `Decimal`, got:\n{models}"
+    );
+
+    let client = package_file(&package, "src/client.ts");
+    assert!(
+        client.contains("reviveDecimalFields(value, ['amountXaf', 'discountXaf'])"),
+        "the REST client's Invoice CRUD methods must revive both Decimal fields \
+         on decode, got:\n{client}"
+    );
+
+    let package_json = package_file(&package, "package.json");
+    assert!(
+        package_json.contains("\"decimal.js\""),
+        "package.json must declare the decimal.js runtime dependency, got:\n{package_json}"
+    );
+}
+
+#[test]
+fn decimal_scalar_revives_on_decode_over_rpc_transport_too() {
+    // Requirement #6 (cratestack#498): both REST and RPC transports.
+    // `decimal_scalar_maps_to_a_real_declared_decimal_type` proves the
+    // REST-transport `rest-client.ts.j2`; this proves the RPC-transport
+    // `rpc-client.ts.j2` gets the identical `reviveDecimalFields` wiring.
+    let schema = cratestack_parser::parse_schema_file("tests/fixtures/decimal_scalar_rpc.cstack")
+        .expect("fixture schema should parse");
+
+    let package = generate_package(&schema, &TypeScriptGeneratorConfig::default())
+        .expect("default template should render");
+    let client = package_file(&package, "src/client.ts");
+
+    for op in ["model.Invoice.list", "model.Invoice.get"] {
+        assert!(
+            client.contains(op),
+            "expected RPC op `{op}` to still be generated, got:\n{client}"
+        );
+    }
+    assert!(
+        client.contains("reviveDecimalFields(value, ['amountXaf', 'discountXaf'])"),
+        "the RPC client's Invoice CRUD methods must revive both Decimal fields \
+         on decode, got:\n{client}"
     );
 }

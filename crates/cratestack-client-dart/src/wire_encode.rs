@@ -69,6 +69,13 @@ fn encode_required_scalar(expr: &str, ty: &TypeRef, enum_names: &BTreeSet<&str>)
         "DateTime" => format!("{expr}.toUtc().toIso8601String()"),
         "Bytes" => format!("{expr}.toList(growable: false)"),
         "Json" | "String" | "Cuid" | "Uuid" | "Int" | "Float" | "Boolean" => expr.to_owned(),
+        // cratestack#498: `Decimal.toString()` (unlike `bigdecimal`'s
+        // `Display`) never switches to scientific notation, so a value
+        // this client decoded off a `decimal-bigdecimal` server's
+        // scientific-notation wire form re-encodes in the same plain
+        // positional notation `rust_decimal` itself would emit — a
+        // server on either backend accepts it back unchanged in value.
+        "Decimal" => format!("{expr}.toString()"),
         _ => format!("{expr}.toWire()"),
     }
 }
@@ -86,6 +93,7 @@ fn encode_optional_scalar(expr: &str, ty: &TypeRef, enum_names: &BTreeSet<&str>)
         "DateTime" => format!("{expr}?.toUtc().toIso8601String()"),
         "Bytes" => format!("{expr}?.toList(growable: false)"),
         "Json" | "String" | "Cuid" | "Uuid" | "Int" | "Float" | "Boolean" => expr.to_owned(),
+        "Decimal" => format!("{expr}?.toString()"),
         _ => format!("{expr}?.toWire()"),
     }
 }

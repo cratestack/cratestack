@@ -4,6 +4,7 @@
 // documented at `crate::riverpod::partition::Owner`.
 import 'dart:typed_data';
 import 'package:dart_mappable/dart_mappable.dart';
+import 'package:decimal/decimal.dart';
 
 import 'package:fast_immutable_collections/fast_immutable_collections.dart';
 
@@ -369,43 +370,46 @@ class DateTimeFilter with DateTimeFilterMappable {
   }
 }
 
+// cratestack#498: `Decimal` (`package:decimal`), not `String` — see
+// `models.dart.j2`'s identical `DecimalFilter` (the non-riverpod
+// counterpart this mirrors) for why.
 @MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
 class DecimalFilter with DecimalFilterMappable {
   const DecimalFilter({this.eq, this.ne, this.in$, this.lt, this.lte, this.gt, this.gte, this.isNull});
 
-  final String? eq;
-  final String? ne;
-  final List<String>? in$;
-  final String? lt;
-  final String? lte;
-  final String? gt;
-  final String? gte;
+  final Decimal? eq;
+  final Decimal? ne;
+  final List<Decimal>? in$;
+  final Decimal? lt;
+  final Decimal? lte;
+  final Decimal? gt;
+  final Decimal? gte;
   final bool? isNull;
 
   factory DecimalFilter.fromWire(CratestackValueMap value) {
     return DecimalFilter(
-      eq: value['eq'] as String?,
-      ne: value['ne'] as String?,
+      eq: value['eq'] == null ? null : Decimal.parse(value['eq'] as String),
+      ne: value['ne'] == null ? null : Decimal.parse(value['ne'] as String),
       in$: value['in'] == null
           ? null
-          : cratestackAsValueList(value['in']).map((item) => item as String).toList(growable: false),
-      lt: value['lt'] as String?,
-      lte: value['lte'] as String?,
-      gt: value['gt'] as String?,
-      gte: value['gte'] as String?,
+          : cratestackAsValueList(value['in']).map((item) => Decimal.parse(item as String)).toList(growable: false),
+      lt: value['lt'] == null ? null : Decimal.parse(value['lt'] as String),
+      lte: value['lte'] == null ? null : Decimal.parse(value['lte'] as String),
+      gt: value['gt'] == null ? null : Decimal.parse(value['gt'] as String),
+      gte: value['gte'] == null ? null : Decimal.parse(value['gte'] as String),
       isNull: value['isNull'] as bool?,
     );
   }
 
   CratestackValueMap toWire() {
     return <String, Object?>{
-      'eq': eq,
-      'ne': ne,
-      'in': in$,
-      'lt': lt,
-      'lte': lte,
-      'gt': gt,
-      'gte': gte,
+      'eq': eq?.toString(),
+      'ne': ne?.toString(),
+      'in': in$?.map((item) => item.toString()).toList(growable: false),
+      'lt': lt?.toString(),
+      'lte': lte?.toString(),
+      'gt': gt?.toString(),
+      'gte': gte?.toString(),
       'isNull': isNull,
     };
   }

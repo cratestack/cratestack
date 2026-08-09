@@ -4,6 +4,7 @@ import {
   type CratestackRpcClientOptions,
 } from "./runtime.js";
 import { toRpcListInput, type CratestackRpcListQuery } from "./queries.js";
+import { reviveDecimalFields } from "./models.js";
 import type {
 {% for interface in interfaces %}
   {{ interface.name }},
@@ -37,28 +38,28 @@ export class {{ model.api_name }} {
   constructor(private readonly runtime: CratestackRpcRuntime) {}
 
   list(query: CratestackRpcListQuery = {}, options: CratestackRpcCallOptions = {}): Promise<{{ model.list_return_type }}> {
-    return this.runtime.call<Record<string, unknown>, {{ model.list_return_type }}>(
+    return this.runtime.call<Record<string, unknown>, unknown>(
       "model.{{ model.name }}.list",
       toRpcListInput(query),
       options,
-    );
+    ).then((value) => reviveDecimalFields(value, {{ model.decimal_fields_js }}) as {{ model.list_return_type }});
   }
 
   get(id: {{ model.primary_key_type }}, options: CratestackRpcCallOptions = {}): Promise<{{ model.name }}> {
-    return this.runtime.call<{ id: {{ model.primary_key_type }} }, {{ model.name }}>(
+    return this.runtime.call<{ id: {{ model.primary_key_type }} }, unknown>(
       "model.{{ model.name }}.get",
       { id },
       options,
-    );
+    ).then((value) => reviveDecimalFields(value, {{ model.decimal_fields_js }}) as {{ model.name }});
   }
 
 {% if model.allows_create %}
   create(input: {{ model.create_input_name }}, options: CratestackRpcCallOptions = {}): Promise<{{ model.name }}> {
-    return this.runtime.call<{{ model.create_input_name }}, {{ model.name }}>(
+    return this.runtime.call<{{ model.create_input_name }}, unknown>(
       "model.{{ model.name }}.create",
       input,
       options,
-    );
+    ).then((value) => reviveDecimalFields(value, {{ model.decimal_fields_js }}) as {{ model.name }});
   }
 
 {% endif %}
@@ -67,11 +68,11 @@ export class {{ model.api_name }} {
     patch: {{ model.update_input_name }},
     options: CratestackRpcCallOptions = {},
   ): Promise<{{ model.name }}> {
-    return this.runtime.call<{ id: {{ model.primary_key_type }}; patch: {{ model.update_input_name }} }, {{ model.name }}>(
+    return this.runtime.call<{ id: {{ model.primary_key_type }}; patch: {{ model.update_input_name }} }, unknown>(
       "model.{{ model.name }}.update",
       { id, patch },
       options,
-    );
+    ).then((value) => reviveDecimalFields(value, {{ model.decimal_fields_js }}) as {{ model.name }});
   }
 
   delete(id: {{ model.primary_key_type }}, options: CratestackRpcCallOptions = {}): Promise<void> {

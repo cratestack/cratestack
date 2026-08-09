@@ -12,6 +12,12 @@ dependencies:
   flutter_riverpod: ^3.3.1
   cbor: ^6.5.1
   dio: ^5.8.0+1
+  # cratestack#498: backs every `Decimal`-typed field with a real
+  # arbitrary-precision value (`models.dart.j2`'s `DecimalFilter`/
+  # per-model data classes) instead of an opaque `String` whose format
+  # depends on the server's `decimal-rust-decimal` vs `decimal-bigdecimal`
+  # backend choice (#495/#496).
+  decimal: ^3.2.6
 
 dev_dependencies:
   flutter_lints: ^6.0.0

@@ -17,6 +17,9 @@
 
 import type { CratestackRpcRuntime, CratestackRpcCallOptions } from "../runtime.js";
 import { toRpcListInput, type CratestackRpcListQuery } from "../queries.js";
+// cratestack#498: see `models-rest.ts.j2`'s identical import for why
+// this is unconditional.
+import type { Decimal } from "./shared.js";
 {% for import in imports %}
 import type { {{ import.type_names_joined }} } from "{{ import.path }}";
 {% endfor %}

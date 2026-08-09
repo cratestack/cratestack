@@ -113,6 +113,13 @@ fn decode_required_scalar(expr: &str, ty: &TypeRef, enum_names: &BTreeSet<&str>)
         "DateTime" => format!("DateTime.parse({expr} as String)"),
         "Json" => expr.to_owned(),
         "Bytes" => format!("Uint8List.fromList(List<int>.from(cratestackAsValueList({expr})))"),
+        // cratestack#498: `Decimal.parse` (unlike `double.parse`) accepts
+        // both the plain positional notation `rust_decimal` always emits
+        // and the scientific notation `bigdecimal` switches to past a
+        // magnitude threshold, producing the identical value either way —
+        // that equivalence is the entire point (see this crate's
+        // `dart_types.rs` doc comment on the "Decimal" arm).
+        "Decimal" => format!("Decimal.parse({expr} as String)"),
         other => format!("{other}.fromWire(cratestackAsValueMap({expr}))"),
     }
 }

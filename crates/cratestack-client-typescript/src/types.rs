@@ -23,14 +23,25 @@ pub(crate) fn ts_type(type_ref: &TypeRef, enum_names: &BTreeSet<&str>) -> String
     }
 
     let base = match type_ref.name.as_str() {
-        // `Decimal` is string-shaped on the wire, not a JS number: that is what
-        // preserves arbitrary precision, and it matches what the two sibling
-        // call sites in this crate already do — `find_many_views.rs` maps it to
-        // `DecimalFilter` (= `ComparableFilter<string>`) and `grpc/wire.rs` maps
-        // it to `GrpcWireKind::String`. Without this arm it fell through to the
-        // catch-all below and was emitted as a bare `Decimal` type name that
-        // nothing declares, so generation succeeded and `tsc` failed.
-        "String" | "Cuid" | "Uuid" | "DateTime" | "Decimal" => "string".to_owned(),
+        "String" | "Cuid" | "Uuid" | "DateTime" => "string".to_owned(),
+        // cratestack#498: a real arbitrary-precision `decimal.js` value
+        // (`Decimal`, exported by `models.ts.j2` — see that template's
+        // own doc comment), not a bare `string`. A `Decimal`-typed field
+        // is *carried* as a wire-format string (both `decimal-rust-decimal`
+        // and `decimal-bigdecimal` — #495/#496 — serialize it that way;
+        // `find_many_views.rs` still maps it to `DecimalFilter` =
+        // `ComparableFilter<Decimal>`), but the string's own *format*
+        // depends on which backend built the server (`rust_decimal` never
+        // emits scientific notation, `bigdecimal` does past a magnitude
+        // threshold) — a bare `string` field type forced every consumer
+        // to know that and hand-roll parsing. `grpc/wire.rs` is
+        // deliberately unchanged (`GrpcWireKind::String`, proto3 `string`
+        // — out of #498's scope), so the generated gRPC-preset client
+        // still produces `Decimal`-typed interface fields (they're the
+        // same `models.ts` interfaces) but decodes/encodes them as raw
+        // strings at the wire boundary — a real, tracked gap (see this
+        // ticket's PR description), not an oversight.
+        "Decimal" => "Decimal".to_owned(),
         "Int" | "Float" => "number".to_owned(),
         "Boolean" => "boolean".to_owned(),
         "Json" => "JsonValue".to_owned(),
@@ -156,4 +167,29 @@ pub(crate) fn is_paged_model(model: &Model) -> bool {
         .attributes
         .iter()
         .any(|attribute| attribute.raw == "@@paged")
+}
+
+/// Wire name (`field.name`, not the possibly-escaped TS `property` —
+/// see `naming::ts_identifier`) of every *direct* `Decimal`-typed field
+/// among `fields`. Feeds `views.rs::build_model_api`'s
+/// `decimal_fields_js`, which `reviveDecimalFields` (`models.ts.j2`)
+/// matches response object keys against to turn a wire-format string
+/// back into a real `Decimal` (cratestack#498).
+///
+/// Deliberately *not* recursive into a relation-typed field's own nested
+/// `Decimal` fields (a `Post.author.balance`-shaped case) — v1 scope, see
+/// `views.rs::build_model_api`'s doc comment for the follow-up this
+/// leaves open. Restricting to direct fields only also means this can
+/// never collide with an unrelated field of a different type that
+/// happens to share the same name in a *different* model: a single
+/// model can't declare two fields with the same name, so the key set
+/// built from one model's direct fields is unambiguous by construction.
+pub(crate) fn decimal_field_wire_names<'a>(
+    fields: impl IntoIterator<Item = &'a Field>,
+) -> Vec<String> {
+    fields
+        .into_iter()
+        .filter(|field| field.ty.name == "Decimal")
+        .map(|field| field.name.clone())
+        .collect()
 }

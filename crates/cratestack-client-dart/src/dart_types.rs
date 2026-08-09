@@ -41,6 +41,19 @@ pub(crate) fn dart_type(type_ref: &TypeRef, force_nullable: bool) -> String {
         "DateTime" => "DateTime".to_owned(),
         "Json" => "Object?".to_owned(),
         "Bytes" => "Uint8List".to_owned(),
+        // cratestack#498: a real arbitrary-precision `package:decimal`
+        // value, not a wire-format-dependent opaque `String` — closes the
+        // gap #495/#496 opened (a `decimal-bigdecimal`-backed server emits
+        // scientific notation past a magnitude threshold `rust_decimal`
+        // never does, and a bare `String` field forces every consumer to
+        // hand-roll parsing that has to know which backend built the
+        // server). Falls through to the `other` arm below unchanged in
+        // *value* (this arm exists for the doc comment, not new
+        // behavior) — `Decimal` is exactly the wire-decode/encode
+        // pipeline's own class name too (`wire_decode.rs`/
+        // `wire_encode.rs`), which is why this looks identical to the
+        // catch-all.
+        "Decimal" => "Decimal".to_owned(),
         other => other.to_owned(),
     };
 

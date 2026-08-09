@@ -1,0 +1,13 @@
+// Dedicated Decimal-scalar fixture (cratestack#498) — the Dart
+// counterpart to `cratestack-client-typescript`'s
+// `tests/fixtures/decimal_scalar.cstack`, same `Invoice` shape so both
+// SDKs' generator tests exercise the identical schema.
+
+model Invoice {
+  id Cuid @id @default(cs_cuid())
+  reference String
+  amountXaf Decimal
+  discountXaf Decimal?
+
+  @@allow("list", true)
+}

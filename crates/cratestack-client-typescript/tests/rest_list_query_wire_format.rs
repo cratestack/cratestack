@@ -79,6 +79,28 @@ fn rest_list_query_round_trips_through_the_real_server_filter_grammar() {
         std::fs::write(&path, &file.contents).expect("write generated file");
     }
 
+    // cratestack#498: `./src/client` (imported below) now imports
+    // `./src/models`, which imports `decimal.js` unconditionally (every
+    // generated package declares it as a real `dependencies` entry, not
+    // just for schemas with a `Decimal` field — see `models.ts.j2`'s doc
+    // comment) — so, unlike before #498, this smoke script needs a real
+    // `node_modules` to resolve against. Without this, `npx tsx` hangs
+    // rather than failing fast (confirmed empirically: `output()` never
+    // returns, leaving `capture_one_request_line`'s `listener.accept()`
+    // blocked forever with no request ever sent — not investigated
+    // further since installing first is the correct fix either way).
+    let install = std::process::Command::new("npm")
+        .args(["install", "--no-audit", "--no-fund"])
+        .current_dir(dir.path())
+        .output()
+        .expect("run npm install");
+    assert!(
+        install.status.success(),
+        "npm install failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&install.stdout),
+        String::from_utf8_lossy(&install.stderr)
+    );
+
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind stub server");
     let port = listener.local_addr().expect("local addr").port();
     let server = std::thread::spawn(move || capture_one_request_line(listener));

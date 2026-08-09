@@ -17,6 +17,14 @@
 
 import type { CratestackRuntime } from "../runtime.js";
 import { toSearchQuery, type CratestackQueryRequestConfig, type CratestackRequestConfig } from "../queries.js";
+// cratestack#498: every generated model file gets this import
+// unconditionally (like `../runtime.js`/`../queries.js` above), whether
+// or not this particular model has a `Decimal` field — the alternative
+// is threading a per-model "does it need Decimal" flag through the
+// ownership computation for a type-only import that costs nothing when
+// unused (this package's `tsconfig.json.j2` doesn't set
+// `noUnusedLocals`).
+import type { Decimal } from "./shared.js";
 {% for import in imports %}
 import type { {{ import.type_names_joined }} } from "{{ import.path }}";
 {% endfor %}

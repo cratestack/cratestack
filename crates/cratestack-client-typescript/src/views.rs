@@ -8,7 +8,9 @@ use crate::naming::{
     escape_ts_string, pluralize, procedure_wrapper_name, to_camel_case, to_pascal_case,
     ts_identifier,
 };
-use crate::types::{is_paged_model, model_allows_create, primary_key_field, ts_type};
+use crate::types::{
+    decimal_field_wire_names, is_paged_model, model_allows_create, primary_key_field, ts_type,
+};
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct EnumView {
@@ -43,6 +45,17 @@ pub(crate) struct ModelApiView {
     pub(crate) create_input_name: String,
     pub(crate) update_input_name: String,
     pub(crate) list_return_type: String,
+    /// A TS array-literal source fragment (e.g. `['amountXaf', 'discountXaf']`,
+    /// or `[]` when the model has none) of this model's direct `Decimal`
+    /// field wire names — spliced verbatim into `rest-client.ts.j2`/
+    /// `rpc-client.ts.j2`'s `reviveDecimalFields(value, ...)` call at
+    /// every CRUD method that decodes a server response (cratestack#498).
+    /// An empty array is `reviveDecimalFields`'s documented fast-path
+    /// no-op, so every model gets the same unconditional `.then(...)`
+    /// wrapper regardless of whether it actually has a `Decimal` field —
+    /// simpler generated templates than branching per model, at the cost
+    /// of one extra (free, for the empty case) microtask hop.
+    pub(crate) decimal_fields_js: String,
     pub(crate) list_query_key: String,
     pub(crate) get_query_key: String,
     pub(crate) create_mutation_key: String,
@@ -139,6 +152,7 @@ pub(crate) fn build_model_api(model: &Model) -> ModelApiView {
         } else {
             format!("{}[]", model.name)
         },
+        decimal_fields_js: js_string_array(&decimal_field_wire_names(&model.fields)),
         list_query_key: format!("{}List", to_camel_case(&model.name)),
         get_query_key: format!("{}Detail", to_camel_case(&model.name)),
         create_mutation_key: format!("{}Create", to_camel_case(&model.name)),
@@ -217,6 +231,21 @@ fn disambiguate_field(
             set(view, disambiguated);
         }
     }
+}
+
+/// Renders `items` as a TS array-literal source fragment of single-quoted
+/// string literals (`['a', 'b']`, or `[]` for an empty slice) — the same
+/// quoting `build_enum_view`'s union-type rendering uses, via the same
+/// `escape_ts_string` helper. Free function rather than a method since
+/// both `build_model_api` (`decimal_fields_js`) and, potentially, a
+/// future procedure-return-type equivalent need it.
+pub(crate) fn js_string_array(items: &[String]) -> String {
+    let quoted = items
+        .iter()
+        .map(|item| format!("'{}'", escape_ts_string(item)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("[{quoted}]")
 }
 
 pub(crate) fn build_procedure(
