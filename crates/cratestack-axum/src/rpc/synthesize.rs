@@ -1,7 +1,7 @@
 //! Reverse mapping: `RpcListInput` → URL query string for the existing
 //! list handler's parser.
 
-use super::inputs::RpcListInput;
+use cratestack_core::rpc::RpcListInput;
 
 /// Synthesize a URL query string from an [`RpcListInput`] in exactly the
 /// shape the macro-generated `parse_model_list_query` parses. Returns

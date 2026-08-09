@@ -37,13 +37,14 @@ jobs:
         # the docs site, so we just skip them.
         #
         # The published `cratestack/` rustdoc namespace comes from
-        # `cratestack-pg` (the server facade), since pg and sqlite
-        # both set `[lib] name = "cratestack"` and would collide if
-        # built together — the docs site lands users on the server
-        # surface, which is the broader of the two. The sqlite facade
-        # is intentionally skipped here; consumers depending on it
-        # read the same crate-level docs via `cratestack-sqlite` on
-        # docs.rs.
+        # `cratestack-pg` (the server facade), since all four facades
+        # (`cratestack-pg`, `cratestack-api`, `cratestack-sqlite`,
+        # `cratestack-client`) set `[lib] name = "cratestack"` and would
+        # collide if built together — the docs site lands users on the
+        # server surface, the broadest of the four. The other three
+        # facades are intentionally skipped here; consumers depending on
+        # one of them read the same crate-level docs via that facade's
+        # own name (e.g. `cratestack-client`) on docs.rs.
         run: |
           cargo doc --no-deps \
             -p cratestack-pg \

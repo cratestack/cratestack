@@ -4,9 +4,12 @@
 
 Rust workspace for a schema-first framework (`.cstack` files). Three deployment roles via schema macros: `include_server_schema!` (Postgres + Axum), `include_embedded_schema!` (SQLite native + wasm32), `include_client_schema!` (HTTP client).
 
-Two main facade crates, both publish as lib named `cratestack`:
+Four facade crates, all publish as lib named `cratestack` (pre-existing drift note: this
+list previously said "two" and omitted `cratestack-api`; corrected alongside cratestack#490):
 - `cratestack = { package = "cratestack-pg" }` — backend services
+- `cratestack = { package = "cratestack-api" }` — procedures-only, no-database backend services
 - `cratestack = { package = "cratestack-sqlite" }` — embedded/mobile
+- `cratestack = { package = "cratestack-client" }` — pure HTTP-client SDKs, no `cratestack-axum`
 
 ## Core Commands
 
@@ -108,7 +111,7 @@ Use `just bump NEW_VERSION` — it rewrites every `Cargo.toml` in the repo and r
 
 ## Key Patterns
 
-- `[lib] name = "cratestack"` in `cratestack-pg` and `cratestack-sqlite` allows integration tests to resolve `::cratestack::*` paths directly
+- `[lib] name = "cratestack"` in all four facades (`cratestack-pg`, `cratestack-api`, `cratestack-sqlite`, `cratestack-client`) allows integration tests to resolve `::cratestack::*` paths directly
 - `@@materialized` views only on server backend — macro hard-errors on embedded
 - Policies (`@@allow`/`@@deny`) are enforced server-side only; embedded backend doesn't gate access
 <!-- BEGIN: AI Governance stanza (managed by ADORSYS-GIS/ai-governance) -->

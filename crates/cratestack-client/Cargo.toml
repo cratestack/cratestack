@@ -1,0 +1,52 @@
+[package]
+name = "cratestack-client"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "CrateStack facade for pure HTTP-client SDK crates — the `include_client_schema!` macro plus the generated Rust client runtime and the handful of type re-exports (`Page`, `Decimal`, `chrono`, `uuid`, `serde`) generated client code references, with `cratestack-axum` (and therefore `axum`/`tower`/`hyper`/`tower-http`) structurally absent from the dependency graph. Pick this crate via `cratestack = { package = \"cratestack-client\" }` for a crate that only ever calls a cratestack server, never runs one."
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+# Same `[lib]` rename trick as `cratestack-pg`/`cratestack-api`/`cratestack-sqlite`:
+# package is `cratestack-client` on crates.io, but the library is named
+# `cratestack` so `include_client_schema!`'s generated `::cratestack::*`
+# paths resolve without per-file aliasing. External consumers depend on the
+# package as `cratestack = { package = "cratestack-client" }`.
+[lib]
+name = "cratestack"
+path = "src/lib.rs"
+
+[features]
+default = ["decimal-rust-decimal", "codec-json"]
+# Same rationale as `cratestack-api`'s same-named feature: this crate never
+# depends on `cratestack-sqlx`, under any feature, so `decimal-rust-decimal`
+# only ever needs to forward to `cratestack-core` and `cratestack-sql` —
+# there is no sqlx-backed half to conditionally re-add.
+decimal-rust-decimal = [
+    "cratestack-core/decimal-rust-decimal",
+    "cratestack-sql/decimal-rust-decimal",
+]
+# Forwards the JSON codec to the generated client runtime. See
+# `cratestack-pg`/`cratestack-api` for rationale — on by default so
+# `include_client_schema!` keeps offering both CBOR and JSON.
+codec-json = ["cratestack-client-rust/codec-json"]
+
+[dependencies]
+chrono.workspace = true
+cratestack-client-rust.workspace = true
+cratestack-core.workspace = true
+cratestack-macros.workspace = true
+cratestack-sql.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "io-util", "net"] }
+url.workspace = true

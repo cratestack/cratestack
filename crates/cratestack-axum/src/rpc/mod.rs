@@ -29,7 +29,6 @@ mod batch;
 mod codec_helpers;
 mod error_encode;
 mod grpc_bridge;
-mod inputs;
 mod sse;
 mod subscription_bridge;
 mod synthesize;
@@ -45,16 +44,23 @@ mod tests_list;
 // Re-export the wire shapes from `cratestack-core::rpc`. Both the server
 // binding and every generated client agree on those shapes, and lifting
 // them into core means the client crates don't need to depend on axum.
+// `RpcListInput`/`RpcListPredicate`/`RpcPkInput`/`RpcUpdateInput` joined
+// this list via cratestack#490 — previously defined locally in this
+// crate's own (now-removed) `inputs` module, which meant
+// `include_client_schema!`'s RPC model-CRUD codegen (`::cratestack::rpc::
+// RpcListInput`, …) could never resolve for a facade without
+// `cratestack-axum` in its graph. See `cratestack-core::rpc`'s doc comment
+// on those types for the full story.
 pub use cratestack_core::rpc::{
     RPC_BATCH_PATH, RPC_STREAM_ERROR_TAG, RPC_SUBSCRIBE_PATH, RPC_UNARY_PATH, RpcErrorBody,
-    RpcRequest, RpcResponseFrame, cool_error_code_to_rpc_code, rpc_code,
+    RpcListInput, RpcListPredicate, RpcPkInput, RpcRequest, RpcResponseFrame, RpcUpdateInput,
+    cool_error_code_to_rpc_code, rpc_code,
 };
 
 pub use batch::response_to_frame;
 pub use codec_helpers::{decode_rpc_body, encode_rpc_value};
 pub use error_encode::{convert_handler_error_response, encode_rpc_error};
 pub use grpc_bridge::bridge_grpc_response;
-pub use inputs::{RpcListInput, RpcListPredicate, RpcPkInput, RpcUpdateInput};
 pub use sse::{encode_model_event_sse_response, validate_subscribe_accept_header};
 pub use subscription_bridge::{SubscriptionPush, guarded_receiver_stream, subscription_channel};
 pub use synthesize::synthesize_list_query;

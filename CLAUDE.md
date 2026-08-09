@@ -66,9 +66,10 @@ what that crate *is*:
 - `include_client_schema!("schema.cstack")` — HTTP client stubs only; treats another service's schema as
   a contract, owns no DB.
 
-### Three disjoint facades
+### Four disjoint facades
 
-As of 0.4.0 the umbrella crate is split into three facades consumers select via Cargo's `package =` rename:
+As of 0.4.0 the umbrella crate is split into facades consumers select via Cargo's `package =` rename —
+a fourth (`cratestack-client`) was added by cratestack#490:
 
 - `cratestack = { package = "cratestack-pg" }` — Postgres + Axum + Rust client runtime; for
   `include_server_schema!("...", db = Postgres)` schemas. Does **not** pull `libsqlite3-sys`, so it
@@ -79,11 +80,19 @@ As of 0.4.0 the umbrella crate is split into three facades consumers select via 
   needs even one `model` (forbidden in `db = None` schemas at parse time).
 - `cratestack = { package = "cratestack-sqlite" }` — rusqlite (native + wasm) + shared surface; for
   `include_embedded_schema!` on both native and `wasm32-unknown-unknown` targets.
+- `cratestack = { package = "cratestack-client" }` — pure HTTP-client SDK facade; re-exports **only**
+  `include_client_schema!` (not the other two entry macros) plus the generated Rust client runtime and
+  the handful of type re-exports client codegen references. `cratestack-axum` — and therefore
+  `axum`/`tower`/`hyper`/`tower-http` — is structurally absent from its dependency graph under its
+  default features (proved by `examples/client-only-verification`'s `cargo tree`, re-run by CI's
+  `facade-disjointness` job). Has no `grpc` Cargo feature: `cratestack-client-rust`'s own `grpc`
+  feature pulls `tonic`, which pulls `axum` transitively, so a gRPC-client consumer should depend on
+  `cratestack-client-rust` directly with `features = ["grpc"]` instead.
 
 **Hard rule (enforced by convention, watch for regressions):** the macro split must stay strictly
 disjoint. `include_server_schema!(db = Postgres)` emits sqlx-only code; `include_server_schema!(db = None)`
-emits axum-only code with no DB machinery at all; `include_embedded_schema!` emits rusqlite-only code.
-No cross-backend impls leak between the three paths.
+emits axum-only code with no DB machinery at all; `include_embedded_schema!` emits rusqlite-only code;
+`include_client_schema!` emits axum-free client code. No cross-backend impls leak between the four paths.
 
 ### Crate layering
 

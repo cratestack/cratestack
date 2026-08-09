@@ -8,10 +8,11 @@
 # `crates/`. An unassigned crate fails the check; see ADR 0014's "unassigned
 # crate" rule.
 #
-# Scope: only packages whose manifest lives under `crates/` (30 as of this
-# writing). `examples/*` and app-shaped workspace members are consumers of
-# the layered architecture, not part of it, and are not covered — neither
-# `docs/design/layering.md` nor ADR 0011 assigns them a layer.
+# Scope: only packages whose manifest lives under `crates/` (31 as of this
+# writing, cratestack#490's `cratestack-client` included). `examples/*` and
+# app-shaped workspace members are consumers of the layered architecture,
+# not part of it, and are not covered — neither `docs/design/layering.md`
+# nor ADR 0011 assigns them a layer.
 #
 # Rule (layering.md §3 / ADR 0011 decision 1): a crate at layer N may depend
 # on crates at layers <= N, and on nothing at layer > N (checked for NORMAL
@@ -102,6 +103,14 @@ cratestack-cbor-wasm = 4
 cratestack-pg = 5
 cratestack-api = 5
 cratestack-sqlite = 5
+# cratestack#490: fourth facade, for pure HTTP-client SDK crates —
+# `include_client_schema!` plus the generated Rust client runtime, with
+# `cratestack-axum` structurally absent. Its own normal workspace
+# dependencies (`crates/cratestack-client/Cargo.toml`) are exactly
+# cratestack-core (L0), cratestack-macros (L1), cratestack-sql (L1), and
+# cratestack-client-rust (L4) — all `dep.layer <= 5`, same shape as the
+# other three L5 facades above.
+cratestack-client = 5
 
 [tools]
 cratestack-cli = true

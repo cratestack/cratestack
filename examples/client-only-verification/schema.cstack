@@ -1,0 +1,30 @@
+// cratestack#490 verification fixture: an ordinary schema (the same shape
+// a real server would declare) consumed here purely through
+// `include_client_schema!` — this crate never runs a server, it only ever
+// calls one. The `datasource` block is irrelevant to the client macro (a
+// pure HTTP client has no database), so this mirrors what
+// `crates/cratestack-pg/tests/generated_client_rust.rs` does: reuse a
+// server-shaped schema, generate only the client surface from it.
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Widget {
+  id Int @id
+  name String
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}
+
+type PingArgs {
+  message String
+}
+
+type PingReply {
+  echo String
+}
+
+procedure ping(args: PingArgs): PingReply
+  @allow(auth() != null)

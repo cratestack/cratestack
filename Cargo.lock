@@ -1158,6 +1158,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "cratestack-client"
+version = "0.7.8"
+dependencies = [
+ "chrono",
+ "cratestack-client-rust",
+ "cratestack-core",
+ "cratestack-macros",
+ "cratestack-sql",
+ "serde",
+ "serde_json",
+ "tokio",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "cratestack-client-dart"
 version = "0.7.8"
 dependencies = [

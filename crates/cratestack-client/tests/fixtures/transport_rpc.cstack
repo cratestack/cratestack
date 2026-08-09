@@ -1,0 +1,58 @@
+// Smoke fixture for the `transport rpc` generation style, and the real
+// end-to-end fixture for `rpc_canonical_request.rs` (drives the actual
+// generated `rpc_router`, not a mock).
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Widget {
+  id Int @id
+  name String
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+  // `@@subscribe` (cratestack#390): emits `model.Widget.subscribe`
+  // (`OpKind::Subscription`), dispatched over SSE at
+  // `GET /rpc/subscribe/model.Widget.subscribe`. Requires `@@emit(...)`
+  // — a subscription with nothing emitted would never deliver anything.
+  @@emit(created, updated, deleted)
+  @@subscribe
+}
+
+// `@@paged` model, RPC transport — model.PagedItem.list must go
+// through the exact same paging/limit-cap logic REST does (they share
+// one generated dispatch function; RPC just synthesizes the
+// equivalent query string). See rpc_pagination.rs.
+model PagedItem {
+  id Int @id
+  label String
+
+  @@paged
+  @@allow("read", auth() != null)
+}
+
+type PingArgs {
+  nonce String
+}
+
+procedure ping(args: PingArgs): PingArgs
+  @allow(auth() != null)
+
+mutation procedure bump(args: PingArgs): PingArgs
+  @allow(auth() != null)
+
+// List-return procedure — by virtue of `[]` arity the macro emits this
+// as a `Sequence` op. Clients on the RPC binding can ask for
+// `application/cbor-seq` and stream chunks.
+procedure many_pings(args: PingArgs): PingArgs[]
+  @allow(auth() != null)

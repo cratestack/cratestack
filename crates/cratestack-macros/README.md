@@ -16,7 +16,7 @@ The split is **strict**: `include_server_schema!` never emits rusqlite items, `i
 
 `include_server_schema!` and `include_client_schema!` also accept a schema declaring `transport grpc` (instead of the default REST, or `transport rpc`) when the consuming facade's `grpc` Cargo feature is enabled; `include_embedded_schema!` rejects `Grpc` schemas unconditionally, since the embedded role has no transport at all. See [`transport grpc`](#transport-grpc) below.
 
-All three are re-exported through the facade crates `cratestack-pg`, `cratestack-api`, and `cratestack-sqlite`; most consumers should depend on one of those (renamed to `cratestack` via Cargo's `package =` field) rather than this crate directly. The choice of facade picks which side of the strict split the macro emits against — backend services use `cratestack-pg` (or `cratestack-api` for `db = None`), embedded / mobile / wasm builds use `cratestack-sqlite`.
+All three are re-exported through the facade crates `cratestack-pg`, `cratestack-api`, and `cratestack-sqlite`; most consumers should depend on one of those (renamed to `cratestack` via Cargo's `package =` field) rather than this crate directly. The choice of facade picks which side of the strict split the macro emits against — backend services use `cratestack-pg` (or `cratestack-api` for `db = None`), embedded / mobile / wasm builds use `cratestack-sqlite`. A fourth facade, `cratestack-client` (cratestack#490), re-exports **only** `include_client_schema!` — not the other two — for consumers that are pure HTTP-client SDKs and want `cratestack-axum` structurally absent from their dependency graph.
 
 ## Installation
 

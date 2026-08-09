@@ -8,21 +8,25 @@ The implementation is still pre-1.0. As of `0.3.0` the framework is organized ar
 * **`include_embedded_schema!("schema.cstack")`** — `cratestack-rusqlite` only. Native mobile/desktop **and** `wasm32-unknown-unknown` (browser, OPFS-backed) from the same source. No sqlx, no axum.
 * **`include_client_schema!("schema.cstack")`** — HTTP client stubs only. Treats another service's `.cstack` as a contract; owns no database.
 
-As of `0.4.0` the previous single `cratestack` umbrella crate is split into strictly disjoint sub-facades that consumers pick between via Cargo's `package =` rename:
+As of `0.4.0` the previous single `cratestack` umbrella crate is split into strictly disjoint sub-facades that consumers pick between via Cargo's `package =` rename — a fourth, `cratestack-client`, was added by [cratestack#490](https://github.com/cratestack/cratestack/issues/490):
 
 ```toml
 # Backend service (Postgres + Axum + generated Rust client runtime)
-cratestack = { package = "cratestack-pg", version = "0.6.7" }
+cratestack = { package = "cratestack-pg", version = "0.7.8" }
 
 # Procedures-only, no-database backend service (Axum + generated Rust
 # client runtime, with `sqlx` genuinely absent from the dependency graph)
-cratestack = { package = "cratestack-api", version = "0.6.7" }
+cratestack = { package = "cratestack-api", version = "0.7.8" }
 
 # Embedded / mobile / desktop / wasm (rusqlite + shared surface)
-cratestack = { package = "cratestack-sqlite", version = "0.6.7" }
+cratestack = { package = "cratestack-sqlite", version = "0.7.8" }
+
+# Pure HTTP-client SDK (include_client_schema! only, generated Rust client
+# runtime, with `cratestack-axum` genuinely absent from the dependency graph)
+cratestack = { package = "cratestack-client", version = "0.7.8" }
 ```
 
-`cratestack-pg` does not pull in `libsqlite3-sys`, so backend services can depend on the official `sqlx` umbrella crate alongside it without `links = "sqlite3"` collisions. See [`CHANGELOG.md`](./CHANGELOG.md) for the full 0.4.0 migration notes.
+`cratestack-pg` does not pull in `libsqlite3-sys`, so backend services can depend on the official `sqlx` umbrella crate alongside it without `links = "sqlite3"` collisions. `cratestack-client` does not pull in `cratestack-axum` (and therefore `axum`/`tower`/`hyper`/`tower-http`), so a crate that only ever calls a cratestack server doesn't pay for a full server framework it never runs. See [`CHANGELOG.md`](./CHANGELOG.md) for the full 0.4.0 migration notes.
 
 What the current slice covers, across those three shapes:
 
@@ -65,6 +69,7 @@ The Rust workspace contains these main packages:
 * `cratestack-pg`: server-side facade — sqlx (Postgres) + axum + generated Rust client runtime + the shared schema surface. Picked via `cratestack = { package = "cratestack-pg" }`.
 * `cratestack-api`: procedures-only, no-database server facade — Axum + generated Rust client runtime, with `sqlx` genuinely absent from the dependency graph. Picked via `cratestack = { package = "cratestack-api" }` for `datasource { provider = "none" }` schemas.
 * `cratestack-sqlite`: embedded facade — rusqlite (SQLite on native + `wasm32`) + the shared schema surface. Picked via `cratestack = { package = "cratestack-sqlite" }`. Also re-exports `cratestack-client-rust` on native targets so hybrid consumers (NAPI / Tauri shells) can call `include_client_schema!` alongside `include_embedded_schema!`.
+* `cratestack-client`: pure HTTP-client SDK facade — re-exports only `include_client_schema!` plus the generated Rust client runtime and shared schema surface, with `cratestack-axum` genuinely absent from the dependency graph. Picked via `cratestack = { package = "cratestack-client" }` for a crate that only ever calls a cratestack server.
 * `cratestack-core`: shared metadata, auth context, codec, error, and envelope types
 * `cratestack-parser`: `.cstack` parser and semantic checker
 * `cratestack-policy`: canonical policy literals, predicates, and procedure-policy evaluation types

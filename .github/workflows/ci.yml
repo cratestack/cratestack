@@ -69,17 +69,17 @@ jobs:
       - run: just check --locked
 
   facade-disjointness:
-    name: facade disjointness (examples/no-database-verification*)
+    name: facade disjointness (examples/no-database-verification*, examples/client-only-verification)
     runs-on: ubuntu-latest
-    # `examples/no-database-verification` and `-api` are each their own
-    # `[workspace]` root (see their READMEs) specifically so a real `cargo
-    # tree` proves what an external consumer's dependency graph would
-    # actually contain — a workspace member can't prove this, because Cargo
-    # unifies features across every member building a shared dependency in
-    # one session (cratestack#329, cratestack#347). This job re-runs those
-    # proofs on every PR so a stale/broken lockfile or a regressed
-    # disjointness guarantee fails CI instead of silently drifting
-    # (cratestack#422).
+    # `examples/no-database-verification`, `-api`, and `client-only-
+    # verification` are each their own `[workspace]` root (see their
+    # READMEs) specifically so a real `cargo tree` proves what an external
+    # consumer's dependency graph would actually contain — a workspace
+    # member can't prove this, because Cargo unifies features across every
+    # member building a shared dependency in one session (cratestack#329,
+    # cratestack#347, cratestack#490). This job re-runs those proofs on
+    # every PR so a stale/broken lockfile or a regressed disjointness
+    # guarantee fails CI instead of silently drifting (cratestack#422).
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -88,11 +88,15 @@ jobs:
           workspaces: |
             examples/no-database-verification
             examples/no-database-verification-api
+            examples/client-only-verification
       - name: Assert Cargo.lock is up to date (no-database-verification)
         working-directory: examples/no-database-verification
         run: cargo metadata --locked --format-version=1 > /dev/null
       - name: Assert Cargo.lock is up to date (no-database-verification-api)
         working-directory: examples/no-database-verification-api
+        run: cargo metadata --locked --format-version=1 > /dev/null
+      - name: Assert Cargo.lock is up to date (client-only-verification)
+        working-directory: examples/client-only-verification
         run: cargo metadata --locked --format-version=1 > /dev/null
       - name: sqlx absent by default (no-database-verification, postgres feature off)
         working-directory: examples/no-database-verification
@@ -117,6 +121,25 @@ jobs:
             cargo tree --locked | grep -i sqlx
             exit 1
           fi
+      - name: axum absent unconditionally (client-only-verification)
+        # `cratestack-client` has no `grpc` Cargo feature (the one thing
+        # that could ever pull `tonic` -> `axum` in transitively — see
+        # `crates/cratestack-client/src/lib.rs`'s module doc), so its
+        # default feature set is its only state to prove absence for, same
+        # as `no-database-verification-api` above. `tower`/`hyper`/
+        # `tower-http` are deliberately NOT asserted absent here — they
+        # arrive via `reqwest` (the HTTP client transport
+        # `cratestack-client-rust` builds on), not via `cratestack-axum`,
+        # and asserting them absent would assert something false and
+        # unrelated to what this crate exists to prove. See this example's
+        # README "Why tower/hyper/tower-http aren't asserted absent".
+        working-directory: examples/client-only-verification
+        run: |
+          if cargo tree --locked | grep -qi axum; then
+            echo "::error::expected no axum/cratestack-axum in the cratestack-client dependency graph"
+            cargo tree --locked | grep -i axum
+            exit 1
+          fi
       - name: cargo test (no-database-verification, both feature states)
         working-directory: examples/no-database-verification
         run: |
@@ -124,6 +147,9 @@ jobs:
           cargo test --locked --features postgres
       - name: cargo test (no-database-verification-api)
         working-directory: examples/no-database-verification-api
+        run: cargo test --locked
+      - name: cargo test (client-only-verification)
+        working-directory: examples/client-only-verification
         run: cargo test --locked
 
   # ---- Test shards -----------------------------------------------------

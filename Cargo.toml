@@ -7,6 +7,7 @@ members = [
     "crates/cratestack-cbor-napi",
     "crates/cratestack-cbor-wasm",
     "crates/cratestack-cli",
+    "crates/cratestack-client",
     "crates/cratestack-client-dart",
     "crates/cratestack-client-flutter",
     "crates/cratestack-client-typescript",
@@ -79,6 +80,10 @@ exclude = [
     # consumer instead of a `cratestack-pg` with `default-features = false`
     # one.
     "examples/no-database-verification-api",
+    # cratestack#490: same reasoning as the two entries above, but proving
+    # `cratestack-axum` (and therefore `axum`/`tower`/`hyper`/`tower-http`)
+    # absence for a `cratestack-client` consumer.
+    "examples/client-only-verification",
 ]
 
 [workspace.package]
@@ -111,6 +116,7 @@ chrono = { version = "0", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 cratestack-api = { path = "crates/cratestack-api", version = "0.7.8" }
 cratestack-axum = { path = "crates/cratestack-axum", version = "0.7.8" }
+cratestack-client = { path = "crates/cratestack-client", version = "0.7.8" }
 cratestack-client-dart = { path = "crates/cratestack-client-dart", version = "0.7.8" }
 cratestack-client-flutter = { path = "crates/cratestack-client-flutter", version = "0.7.8" }
 cratestack-client-typescript = { path = "crates/cratestack-client-typescript", version = "0.7.8" }
