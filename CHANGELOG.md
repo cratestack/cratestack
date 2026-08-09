@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.7.10 (2026-08-09)
+
+<!-- TODO: edit this section from the seed below -->
+<!-- seeded from v0.7.8..HEAD at da6d8772c704cab63859a1a847fc881c6bc35a52 -->
+
+This is an auto-generated seed. Please rewrite into narrative prose describing
+the changes in this release, grouped by concern. Refer to existing entries in
+this file for the house prose style. Do not commit with this placeholder text.
+
+### Changes
+
+#### Features
+
+- implement ADR 0014 layer-direction check (cratestack#475) (#477)
+- add fourth facade for pure HTTP-client SDKs (#490) (#492)
+- give generated clients a real Decimal type (#498) (#499)
+- system principal via auth().isSystem() (#486) (#500)
+- per-call-site ON CONFLICT DO NOTHING for idempotent upserts (#487) (#501)
+- implement a real decimal-bigdecimal backend (#495) (#496)
+
+#### Fixes
+
+- fix changelog-seed section placement, persist range, isolate and wire tests (cratestack#479) (#483)
+- stop selecting response Content-Types the router can't encode (#489) (#491)
+- make @no_rate_limit hold for REST too, and fix the runtime test that was never actually run (#474) (#481)
+- stop misclassifying state-store errors as codec errors (#475) (#482)
+- stop the studio-ui `cd` from leaking into the rest of `bump` (#494)
+- declare MSRV 1.95.0 and keep facade-disjointness verification workspaces current in CI (#422) (#480)
+
+#### Documentation
+
+- record that direct sqlx use here is deliberate, not drift (#484)
+- backfill CHANGELOG for v0.6.5-v0.7.8 (#478)
+
 ## Unreleased
 
 ### Per-call-site `ON CONFLICT DO NOTHING` for idempotent inserts (#487, ADR 0038 blocker B3)
