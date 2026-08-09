@@ -582,7 +582,14 @@ bump NEW:
 	# that crate until someone notices and hand-fixes it (see #242). A plain
 	# `cargo check` on the host target is enough to update the lock; it
 	# doesn't need the wasm32 target or a wasm-capable clang for that.
-	cd crates/cratestack-studio-ui && cargo check --quiet
+	#
+	# Subshell, not a bare `cd`: this recipe continues below with more
+	# repo-root-relative paths, and a bare `cd` here leaks its directory
+	# change into every one of them. That is exactly what broke `just bump
+	# 0.7.9` in `prepare-release.yml` — the next line failed with `cd:
+	# examples/no-database-verification: No such file or directory`, because
+	# the shell was still sitting in `crates/cratestack-studio-ui`.
+	(cd crates/cratestack-studio-ui && cargo check --quiet)
 	# `examples/no-database-verification`, `-api`, and
 	# `client-only-verification` are each their own `[workspace]` root
 	# (excluded from the root one so a real `cargo tree` proves facade
@@ -598,8 +605,10 @@ bump NEW:
 	# workspace under examples/ must be listed here; adding one without a
 	# line below is a latent CI break that only fires on the next bump.
 	# Subshells (not a bare `cd`) so each step's directory change doesn't
-	# leak into the next — unlike the cratestack-studio-ui step above, this
-	# script isn't done after these. A plain `cargo check` in each is enough
+	# leak into the next, same as the cratestack-studio-ui step above —
+	# every directory-changing step in this recipe must be a subshell, since
+	# each is followed by more repo-root-relative paths. A plain
+	# `cargo check` in each is enough
 	# to refresh the lock; Cargo.lock records the full optional-dependency
 	# graph regardless of which features are active, so this also picks up
 	# the `postgres`-gated cratestack-sqlx entry in no-database-verification
