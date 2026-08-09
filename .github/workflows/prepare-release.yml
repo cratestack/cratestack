@@ -170,7 +170,27 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "$branch"
-          git add CHANGELOG.md ':(glob)**/Cargo.toml' Cargo.lock pnpm-lock.yaml \
+          # `':(glob)**/Cargo.lock'` (not the bare `Cargo.lock` this used to
+          # read) — `just bump` refreshes not just the root workspace's own
+          # lockfile but four standalone-workspace ones too:
+          # `crates/cratestack-studio-ui/Cargo.lock` and the three
+          # `examples/*-verification*/Cargo.lock` files, each its own
+          # `[workspace]` root excluded from this one specifically so a real
+          # `cargo tree`/`cargo metadata --locked` proves an external
+          # consumer's dependency graph, not something a workspace member
+          # can fake (cratestack#329/#347/#490). A bare `Cargo.lock` here
+          # only ever staged the root one — `just bump` genuinely refreshed
+          # the other four in the runner's working tree, but this line
+          # silently dropped that refresh from every bump commit, so they
+          # shipped a release still recording the *previous* version for
+          # their path dependencies. `facade-disjointness`'s own `cargo
+          # metadata --locked`/`cargo tree` steps exist precisely to catch
+          # this class of drift on every PR — they just can't catch it on
+          # THIS workflow's own commit before it's pushed, so v0.7.10
+          # shipped it and it had to be caught and fixed by hand on the
+          # release branch (see that PR for the concrete symptom: `error:
+          # cannot update the lock file ... because --locked was passed`).
+          git add CHANGELOG.md ':(glob)**/Cargo.toml' ':(glob)**/Cargo.lock' pnpm-lock.yaml \
             packages/cratestack-cli-npm/package.json \
             packages/cratestack-api/package.json \
             packages/cratestack-ts-types/package.json \
