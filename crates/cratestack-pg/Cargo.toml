@@ -42,21 +42,29 @@ default = ["postgres", "decimal-rust-decimal", "codec-json"]
 # line), so nothing changes here; the guard exists to give a clear
 # `compile_error!` under facades that don't, like `cratestack-api`.
 #
-# `cratestack-sqlx/decimal-rust-decimal` (cratestack#421): the `postgres`
-# backend structurally requires sqlx's `rust_decimal` integration to
-# compile at all — `cratestack-sqlx`'s query-builder support code
-# (`query/support/values.rs`) binds `cratestack_core::Decimal` values
+# `cratestack-sqlx` binding a specific decimal backend (cratestack#421,
+# revised for cratestack#495): `cratestack-sqlx`'s query-builder support
+# code (`query/support/values.rs`) binds `cratestack_core::Decimal` values
 # unconditionally, not behind any feature gate, the same way it binds
-# `Uuid`/`DateTime`/etc. So unlike `codec-json`/`grpc` below,
-# `decimal-rust-decimal` on `cratestack-sqlx` was never a genuinely
-# optional add-on for a Postgres consumer — it's forwarded here
-# unconditionally so `--no-default-features --features postgres` alone
-# (no separate `decimal-rust-decimal` request) still compiles, instead of
-# failing with `rust_decimal::Decimal: Type<Postgres>` not satisfied.
+# `Uuid`/`DateTime`/etc — so `postgres` structurally requires *some*
+# decimal backend to be selected on `cratestack-sqlx`, or the crate won't
+# compile at all. Before cratestack-bigdecimal existed, that meant this
+# feature could safely hardcode `cratestack-sqlx/decimal-rust-decimal`
+# unconditionally, since there was only one backend to want. That is no
+# longer true: hardcoding a specific backend here would make
+# `--features postgres,decimal-bigdecimal` request BOTH backends on
+# `cratestack-sqlx` simultaneously — a hard `compile_error!` (the two are
+# mutually exclusive) — making `decimal-bigdecimal` unreachable through
+# this facade entirely, exactly the outcome cratestack#495 exists to fix.
+# So `postgres` now selects *neither* backend by itself; pick one via
+# `decimal-rust-decimal` (on by default, see below) or `decimal-bigdecimal`
+# explicitly. The practical effect: `--no-default-features --features
+# postgres` alone (no decimal feature) is no longer sufficient on its own
+# — see `.ci/feature-matrix.sh`'s matrix, which asserts this fails loudly
+# rather than silently compiling with an unintended backend.
 postgres = [
     "dep:cratestack-sqlx",
     "cratestack-macros/postgres",
-    "cratestack-sqlx/decimal-rust-decimal",
 ]
 # `cratestack-sqlx?/...` (weak-dependency syntax, not plain `cratestack-sqlx/...`)
 # is required here: a plain `pkg/feature` edge unconditionally activates the
@@ -65,9 +73,47 @@ postgres = [
 # wants `decimal-rust-decimal` for a `Decimal`-typed procedure arg/return
 # under `db = None`. The `?` makes the sub-feature apply only if
 # `cratestack-sqlx` is already enabled some other way (i.e. via `postgres`).
+# Also forwards to `cratestack-sql`, `cratestack-client-rust`, and
+# `cratestack-macros` — this crate's other direct `cratestack-core`-
+# consuming dependencies (each with their own `default-features = false`
+# treatment — see root `Cargo.toml`) — so all of them stay in lockstep
+# with whichever backend is chosen here. Also forwards to
+# `cratestack-codec-cbor`, `cratestack-codec-json`, and `cratestack-migrate`
+# — dev-dependencies only (see `[dev-dependencies]` below), but Cargo's
+# feature resolver still unifies dev-dependency feature requests with the
+# rest of the graph for the same workspace member, so a hardcoded backend
+# on any of those three dev edges would conflict with an explicit
+# `--features decimal-bigdecimal` here under `cargo check --all-targets` /
+# `cargo test` (verified: it does, with the mutual-exclusion
+# `compile_error!`, even though a plain `cargo check` without `--tests`
+# doesn't compile dev-dependencies at all and so doesn't surface it).
 decimal-rust-decimal = [
     "cratestack-core/decimal-rust-decimal",
+    "cratestack-sql/decimal-rust-decimal",
+    "cratestack-client-rust/decimal-rust-decimal",
+    "cratestack-macros/decimal-rust-decimal",
+    "cratestack-policy/decimal-rust-decimal",
+    "cratestack-parser/decimal-rust-decimal",
+    "cratestack-axum/decimal-rust-decimal",
+    "cratestack-codec-cbor/decimal-rust-decimal",
+    "cratestack-codec-json/decimal-rust-decimal",
+    "cratestack-migrate/decimal-rust-decimal",
     "cratestack-sqlx?/decimal-rust-decimal",
+]
+# Mirrors `decimal-rust-decimal` above for the `bigdecimal` backend
+# (cratestack#495).
+decimal-bigdecimal = [
+    "cratestack-core/decimal-bigdecimal",
+    "cratestack-sql/decimal-bigdecimal",
+    "cratestack-client-rust/decimal-bigdecimal",
+    "cratestack-macros/decimal-bigdecimal",
+    "cratestack-policy/decimal-bigdecimal",
+    "cratestack-parser/decimal-bigdecimal",
+    "cratestack-axum/decimal-bigdecimal",
+    "cratestack-codec-cbor/decimal-bigdecimal",
+    "cratestack-codec-json/decimal-bigdecimal",
+    "cratestack-migrate/decimal-bigdecimal",
+    "cratestack-sqlx?/decimal-bigdecimal",
 ]
 # Forwards the JSON codec to the generated client runtime. On by default
 # so `include_client_schema!` keeps offering both CBOR and JSON; disable
@@ -176,6 +222,15 @@ uuid.workspace = true
 
 [dev-dependencies]
 axum.workspace = true
+# Plain edges, not hardcoded `features = [...]`: `cratestack-codec-cbor`,
+# `cratestack-codec-json`, and `cratestack-migrate` all get their backend
+# from THIS crate's own `decimal-rust-decimal`/`decimal-bigdecimal`
+# feature (see the forwards there) — Cargo's feature resolver unifies
+# dev-dependency feature requests with the rest of the graph for the same
+# workspace member, so hardcoding a backend here independently would
+# conflict with `--features decimal-bigdecimal` under `cargo test`/`cargo
+# check --all-targets` (verified: it does, tripping the mutual-exclusion
+# `compile_error!`).
 cratestack-codec-cbor.workspace = true
 cratestack-codec-json.workspace = true
 cratestack-migrate.workspace = true
@@ -217,3 +272,15 @@ required-features = ["pgvector"]
 name = "pgvector_distance_query"
 path = "tests/pgvector_distance_query.rs"
 required-features = ["pgvector"]
+
+# Only compiled/run under `--no-default-features --features
+# postgres,decimal-bigdecimal` (cratestack#495) — the `--no-default-features`
+# is required, not just `--features decimal-bigdecimal` layered on top of
+# the default `decimal-rust-decimal`, since the two backends are mutually
+# exclusive (see the test file's own module docs). Also needs a live
+# Postgres via `CRATESTACK_TEST_DATABASE_URL`/`CRATESTACK_USE_TESTCONTAINERS`,
+# same as `banking_decimal.rs`; skips silently without one.
+[[test]]
+name = "decimal_bigdecimal_backend"
+path = "tests/decimal_bigdecimal_backend.rs"
+required-features = ["postgres", "decimal-bigdecimal"]

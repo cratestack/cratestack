@@ -19,8 +19,30 @@ categories.workspace = true
 # `RuntimeHandle::new` rejects the Json variant at runtime. Keep it
 # on by default; a host shell that locks the bridge to CBOR can
 # `default-features = false` to drop it.
-default = ["codec-json"]
+default = ["codec-json", "decimal-rust-decimal"]
 codec-json = ["cratestack-client-rust/codec-json"]
+# `cratestack-client-rust`'s dependency edge has `default-features = false`
+# at the workspace root, so — same as `codec-json` above — this crate must
+# explicitly forward its own decimal-backend choice through, or the plain
+# `cratestack-client-rust.workspace = true` edge below picks up neither of
+# `cratestack-client-rust`'s own `decimal-rust-decimal`/`decimal-bigdecimal`
+# features at all (cratestack#495).
+# Also forwards to `cratestack-codec-cbor`/`cratestack-core`, this crate's
+# dev-dependency-only test fixtures — Cargo's feature resolver unifies
+# dev-dependency feature requests with the rest of the graph for the same
+# workspace member, so leaving those on a hardcoded backend would conflict
+# with `--features decimal-bigdecimal` under `cargo test`/`cargo check
+# --all-targets`.
+decimal-rust-decimal = [
+    "cratestack-client-rust/decimal-rust-decimal",
+    "cratestack-codec-cbor/decimal-rust-decimal",
+    "cratestack-core/decimal-rust-decimal",
+]
+decimal-bigdecimal = [
+    "cratestack-client-rust/decimal-bigdecimal",
+    "cratestack-codec-cbor/decimal-bigdecimal",
+    "cratestack-core/decimal-bigdecimal",
+]
 
 [dependencies]
 cratestack-client-rust.workspace = true
@@ -31,8 +53,10 @@ serde_json.workspace = true
 async-stream = "0.3"
 axum.workspace = true
 bytes.workspace = true
+# Plain edges: see the `decimal-rust-decimal`/`decimal-bigdecimal` feature
+# forwards above.
 cratestack-codec-cbor.workspace = true
-cratestack-core = { workspace = true, features = ["decimal-rust-decimal"] }
+cratestack-core.workspace = true
 serde.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time", "sync"] }
 url.workspace = true

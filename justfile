@@ -31,9 +31,11 @@ default:
 #     fresh checkout. The test recipes exclude it for the same reason.
 #   * NO `--all-features` — `--all-features` turns on both
 #     `decimal-rust-decimal` and `decimal-bigdecimal`, which are
-#     mutually exclusive (and bigdecimal is unimplemented), tripping a
-#     `compile_error!` in cratestack-core. Default features select the
-#     one working decimal backend, which is the only compilable config.
+#     mutually exclusive backends (cratestack#495), tripping a
+#     `compile_error!` in cratestack-core. Default features select
+#     `decimal-rust-decimal`; pass `--features decimal-bigdecimal
+#     --no-default-features` on individual `-p` invocations to build
+#     against the other one instead.
 all-checks:
 	@echo "Running Rust formatting, lint, and checks"
 	just _fmt
@@ -82,10 +84,13 @@ lint:
 fmt-check:
 	just _fmt --check
 
-# Feature-graph regression matrix (cratestack#421) — blocking CI gate.
-# Asserts `decimal-bigdecimal` isn't selectable and that `cratestack-core`'s
-# default feature set never leaks through a `--no-default-features`
-# consumer. See `.ci/feature-matrix.sh` for the full rationale and the
+# Feature-graph regression matrix (cratestack#421, cratestack#495) —
+# blocking CI gate. Asserts `decimal-rust-decimal`/`decimal-bigdecimal` are
+# mutually exclusive (not "neither selectable" — #495 made the second
+# backend real), that `cratestack-core`'s default feature set never leaks
+# through a `--no-default-features` consumer, and that `rust_decimal` is
+# never reachable anywhere in the graph once `decimal-bigdecimal` is
+# selected. See `.ci/feature-matrix.sh` for the full rationale and the
 # exact commands run.
 feature-matrix:
 	./.ci/feature-matrix.sh

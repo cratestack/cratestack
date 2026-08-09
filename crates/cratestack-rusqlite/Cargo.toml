@@ -20,6 +20,17 @@ decimal-rust-decimal = [
     "cratestack-sql/decimal-rust-decimal",
     "dep:rust_decimal",
 ]
+# Mirrors `decimal-rust-decimal` above for the `bigdecimal` backend
+# (cratestack#495). SQLite has no native decimal column type either way —
+# `value/bind.rs`/`value/decode.rs` store `Decimal` as TEXT via
+# `Display`/`FromStr` round-trip regardless of backend, so this crate's
+# own decode/bind code needs no per-backend branch, same as
+# `decimal-rust-decimal` needed none.
+decimal-bigdecimal = [
+    "cratestack-core/decimal-bigdecimal",
+    "cratestack-sql/decimal-bigdecimal",
+    "dep:bigdecimal",
+]
 
 [dependencies]
 chrono.workspace = true

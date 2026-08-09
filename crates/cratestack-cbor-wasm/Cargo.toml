@@ -22,9 +22,28 @@ publish = false
 [lib]
 crate-type = ["cdylib"]
 
+[features]
+# Forwards to `cratestack-core`'s mutually-exclusive decimal backend choice
+# (see that crate's Cargo.toml for the full rationale). Required because
+# `cratestack-core`'s dependency edge has `default-features = false` at the
+# workspace root — every direct consumer must explicitly re-select a
+# backend, or `cratestack-core` fails to compile at all (cratestack#495).
+# Also forwards to `cratestack-codec-cbor`, this crate's other direct
+# `cratestack-core` consumer, so the two stay in lockstep rather than one
+# silently defaulting to a different backend than the other picks.
+default = ["decimal-rust-decimal"]
+decimal-rust-decimal = [
+    "cratestack-core/decimal-rust-decimal",
+    "cratestack-codec-cbor/decimal-rust-decimal",
+]
+decimal-bigdecimal = [
+    "cratestack-core/decimal-bigdecimal",
+    "cratestack-codec-cbor/decimal-bigdecimal",
+]
+
 [dependencies]
-cratestack-codec-cbor.workspace = true
-cratestack-core = { workspace = true, features = ["decimal-rust-decimal"] }
+cratestack-codec-cbor = { workspace = true, default-features = false }
+cratestack-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 

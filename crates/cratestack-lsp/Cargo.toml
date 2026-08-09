@@ -17,8 +17,24 @@ categories.workspace = true
 name = "cratestack-lsp"
 path = "src/main.rs"
 
+[features]
+# Forwards to `cratestack-core`'s mutually-exclusive decimal backend choice
+# (see that crate's Cargo.toml for the full rationale). Required because
+# `cratestack-core`'s dependency edge has `default-features = false` at the
+# workspace root — every direct consumer must explicitly re-select a
+# backend, or `cratestack-core` fails to compile at all (cratestack#495).
+default = ["decimal-rust-decimal"]
+decimal-rust-decimal = [
+    "cratestack-core/decimal-rust-decimal",
+    "cratestack-parser/decimal-rust-decimal",
+]
+decimal-bigdecimal = [
+    "cratestack-core/decimal-bigdecimal",
+    "cratestack-parser/decimal-bigdecimal",
+]
+
 [dependencies]
-cratestack-core = { workspace = true, features = ["decimal-rust-decimal"] }
+cratestack-core.workspace = true
 cratestack-parser.workspace = true
 tokio = { workspace = true, features = ["io-std", "sync"] }
 tower-lsp-server.workspace = true

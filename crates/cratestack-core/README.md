@@ -24,7 +24,7 @@ Core types, traits, and error handling shared across the CrateStack workspace.
 cratestack-core = "0.6.7"
 ```
 
-A `Decimal` backend feature must be selected. `decimal-rust-decimal` is the default; `decimal-bigdecimal` is reserved and not yet implemented (selecting it today is a compile error).
+Exactly one `Decimal` backend feature must be selected — `decimal-rust-decimal` (the default, `Copy`, fixed 96-bit precision) or `decimal-bigdecimal` (arbitrary precision, heap-allocated, not `Copy`). Selecting neither or both is a compile error.
 
 ## Error Handling
 
@@ -124,7 +124,8 @@ let event = AuditEvent {
 
 ```toml
 [dependencies]
-cratestack-core = { version = "0.6.7", features = ["decimal-rust-decimal"] }
+cratestack-core = { version = "0.6.7", default-features = false, features = ["decimal-rust-decimal"] }
+# or: features = ["decimal-bigdecimal"]
 ```
 
 ```rust
@@ -132,6 +133,8 @@ use cratestack_core::Decimal;
 
 let amount: Decimal = "123.45".parse()?;
 ```
+
+Both backends implement `Clone`, `Debug`, `Display`, `FromStr`, `PartialEq`, `PartialOrd`, `Ord`, `Eq`, `Hash`, and `Default`, so generated code and downstream crates never branch on which one is active. The one difference that *does* leak through: `rust_decimal::Decimal` is `Copy`, `bigdecimal::BigDecimal` is not (it heap-allocates) — code holding a `Decimal` by value needs `.clone()` where it used to rely on an implicit copy.
 
 ## Transaction Isolation
 

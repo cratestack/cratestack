@@ -19,7 +19,17 @@ pub(crate) fn push_bind_value(
         SqlValue::Uuid(value) => query.push_bind(*value),
         SqlValue::DateTime(value) => query.push_bind(*value),
         SqlValue::Json(value) => query.push_bind(Json(value.clone())),
-        SqlValue::Decimal(value) => query.push_bind(*value),
+        // `cratestack_core::Decimal` is `Copy` under the `decimal-rust-decimal`
+        // backend but NOT under `decimal-bigdecimal` (`bigdecimal::BigDecimal`
+        // heap-allocates its digit buffer) — `.clone()` is required here to stay
+        // backend-agnostic; it degrades to a cheap bitwise copy under the
+        // `rust_decimal` backend and a real allocation under `bigdecimal`.
+        // `clippy::clone_on_copy` only fires under the `decimal-rust-decimal`
+        // build (where `Decimal` happens to be `Copy`) — silenced because the
+        // "just dereference it" suggestion doesn't compile at all under
+        // `decimal-bigdecimal`, and this call site has to work under both.
+        #[allow(clippy::clone_on_copy)]
+        SqlValue::Decimal(value) => query.push_bind(value.clone()),
         SqlValue::NullBool => query.push_bind(Option::<bool>::None),
         SqlValue::NullInt => query.push_bind(Option::<i64>::None),
         SqlValue::NullFloat => query.push_bind(Option::<f64>::None),

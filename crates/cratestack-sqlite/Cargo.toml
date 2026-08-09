@@ -23,9 +23,32 @@ path = "src/lib.rs"
 
 [features]
 default = ["decimal-rust-decimal", "codec-json"]
+# `cratestack-client-rust/...` (plain, not weak `?`): that dependency is
+# mandatory-but-target-gated (see `[target.'cfg(not(target_arch =
+# "wasm32"))'.dependencies]` below), not `optional = true`, so weak-dep
+# syntax doesn't apply to it — same as `codec-json`'s existing
+# `cratestack-client-rust/codec-json` forward below. On `wasm32`, where
+# that dependency table doesn't apply at all, Cargo simply treats the
+# reference as inapplicable for that target rather than erroring.
 decimal-rust-decimal = [
     "cratestack-core/decimal-rust-decimal",
+    "cratestack-sql/decimal-rust-decimal",
     "cratestack-rusqlite/decimal-rust-decimal",
+    "cratestack-client-rust/decimal-rust-decimal",
+    "cratestack-macros/decimal-rust-decimal",
+    "cratestack-policy/decimal-rust-decimal",
+    "cratestack-parser/decimal-rust-decimal",
+]
+# Mirrors `decimal-rust-decimal` above for the `bigdecimal` backend
+# (cratestack#495).
+decimal-bigdecimal = [
+    "cratestack-core/decimal-bigdecimal",
+    "cratestack-sql/decimal-bigdecimal",
+    "cratestack-rusqlite/decimal-bigdecimal",
+    "cratestack-client-rust/decimal-bigdecimal",
+    "cratestack-macros/decimal-bigdecimal",
+    "cratestack-policy/decimal-bigdecimal",
+    "cratestack-parser/decimal-bigdecimal",
 ]
 # Forwards the JSON codec to the generated client runtime. See
 # `cratestack-pg` for rationale. On `wasm32` the client runtime isn't

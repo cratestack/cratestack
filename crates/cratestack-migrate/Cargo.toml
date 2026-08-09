@@ -14,6 +14,17 @@ keywords.workspace = true
 categories.workspace = true
 
 [features]
+default = ["decimal-rust-decimal"]
+# Forwards to `cratestack-core`'s mutually-exclusive decimal backend choice
+# (see that crate's Cargo.toml for the full rationale). Required because
+# `cratestack-core`'s dependency edge has `default-features = false` at the
+# workspace root — every direct consumer must explicitly re-select a
+# backend, or `cratestack-core` fails to compile at all (cratestack#495).
+# There was previously no `default` feature at all on this crate — nothing
+# else here needed one, since `postgres-introspect`/`pgvector` are
+# genuinely opt-in — so this is the first thing that makes one necessary.
+decimal-rust-decimal = ["cratestack-core/decimal-rust-decimal"]
+decimal-bigdecimal = ["cratestack-core/decimal-bigdecimal"]
 # Live Postgres schema introspection (issue #204). Off by default so the
 # pure-diffing core stays free of any DB dependency — only opt in when
 # you actually need `introspect::postgres`.
@@ -32,7 +43,7 @@ postgres-introspect = ["dep:sqlx-core", "dep:sqlx-postgres"]
 pgvector = []
 
 [dependencies]
-cratestack-core = { workspace = true, features = ["decimal-rust-decimal"] }
+cratestack-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

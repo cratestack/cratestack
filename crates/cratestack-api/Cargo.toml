@@ -27,9 +27,33 @@ default = ["decimal-rust-decimal", "codec-json"]
 # Unlike `cratestack-pg`, there is no `postgres` feature here to gate: this
 # crate structurally never depends on `cratestack-sqlx` (see `Cargo.toml`'s
 # `[dependencies]` below and `src/lib.rs`'s doc comment), so these two
-# features only ever need to forward to `cratestack-core` — there is no
-# sqlx-backed half to conditionally re-add.
-decimal-rust-decimal = ["cratestack-core/decimal-rust-decimal"]
+# features only ever need to forward to `cratestack-core`/`cratestack-sql`/
+# `cratestack-client-rust` — there is no sqlx-backed half to conditionally
+# re-add.
+decimal-rust-decimal = [
+    "cratestack-core/decimal-rust-decimal",
+    "cratestack-sql/decimal-rust-decimal",
+    "cratestack-client-rust/decimal-rust-decimal",
+    "cratestack-macros/decimal-rust-decimal",
+    "cratestack-policy/decimal-rust-decimal",
+    "cratestack-parser/decimal-rust-decimal",
+    "cratestack-axum/decimal-rust-decimal",
+    "cratestack-codec-cbor/decimal-rust-decimal",
+    "cratestack-codec-json/decimal-rust-decimal",
+]
+# Mirrors `decimal-rust-decimal` above for the `bigdecimal` backend
+# (cratestack#495).
+decimal-bigdecimal = [
+    "cratestack-core/decimal-bigdecimal",
+    "cratestack-sql/decimal-bigdecimal",
+    "cratestack-client-rust/decimal-bigdecimal",
+    "cratestack-policy/decimal-bigdecimal",
+    "cratestack-parser/decimal-bigdecimal",
+    "cratestack-axum/decimal-bigdecimal",
+    "cratestack-macros/decimal-bigdecimal",
+    "cratestack-codec-cbor/decimal-bigdecimal",
+    "cratestack-codec-json/decimal-bigdecimal",
+]
 # Forwards the JSON codec to the generated client runtime. See
 # `cratestack-pg` for rationale. On by default so `include_client_schema!`
 # keeps offering both CBOR and JSON.
@@ -53,6 +77,13 @@ tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+# Plain edges, not hardcoded `features = [...]`: both codecs get their
+# backend from THIS crate's own `decimal-rust-decimal`/`decimal-bigdecimal`
+# feature (see the forwards there) — Cargo's feature resolver unifies
+# dev-dependency feature requests with the rest of the graph for the same
+# workspace member, so hardcoding a backend here independently would
+# conflict with `--features decimal-bigdecimal` under `cargo test`/`cargo
+# check --all-targets`.
 cratestack-codec-cbor.workspace = true
 cratestack-codec-json.workspace = true
 serde_json.workspace = true

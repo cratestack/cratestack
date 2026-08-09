@@ -26,11 +26,23 @@ path = "src/lib.rs"
 default = ["decimal-rust-decimal", "codec-json"]
 # Same rationale as `cratestack-api`'s same-named feature: this crate never
 # depends on `cratestack-sqlx`, under any feature, so `decimal-rust-decimal`
-# only ever needs to forward to `cratestack-core` and `cratestack-sql` —
-# there is no sqlx-backed half to conditionally re-add.
+# only ever needs to forward to `cratestack-core`, `cratestack-sql`, and
+# `cratestack-client-rust` — there is no sqlx-backed half to conditionally
+# re-add.
 decimal-rust-decimal = [
     "cratestack-core/decimal-rust-decimal",
     "cratestack-sql/decimal-rust-decimal",
+    "cratestack-client-rust/decimal-rust-decimal",
+    "cratestack-macros/decimal-rust-decimal",
+]
+# Mirrors `decimal-rust-decimal` above for the `bigdecimal` backend
+# (cratestack#495) — this is the feature the acceptance test for that issue
+# exercises directly against this facade.
+decimal-bigdecimal = [
+    "cratestack-core/decimal-bigdecimal",
+    "cratestack-sql/decimal-bigdecimal",
+    "cratestack-client-rust/decimal-bigdecimal",
+    "cratestack-macros/decimal-bigdecimal",
 ]
 # Forwards the JSON codec to the generated client runtime. See
 # `cratestack-pg`/`cratestack-api` for rationale — on by default so

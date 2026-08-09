@@ -21,8 +21,40 @@ categories.workspace = true
 # and content-negotiation fallback but production deployments that
 # treat JSON as a misconfiguration may want to disable it so a
 # stray `application/json` response surfaces as a hard codec error.
-default = ["codec-json"]
+default = ["codec-json", "decimal-rust-decimal"]
 codec-json = ["dep:cratestack-codec-json"]
+# `cratestack-core`'s dependency edge has `default-features = false` at the
+# workspace root (cratestack#495), so this crate — a real, non-macro
+# consumer of `cratestack_core::Decimal` in its own generated-code support
+# surface — must explicitly re-select a backend, same as every other direct
+# `cratestack-core` edge in the workspace.
+#
+# `cratestack-codec-json?/...` (weak-dependency syntax): `codec-json` is
+# itself optional (`dep:cratestack-codec-json`), and `cratestack-codec-json`
+# is its own `cratestack-core` consumer with the identical two-backend
+# choice. A plain (non-weak) `cratestack-codec-json/decimal-rust-decimal`
+# edge here would force-activate the optional `cratestack-codec-json`
+# dependency as a side effect even when `codec-json` itself is off — see
+# `cratestack-pg`'s `decimal-rust-decimal` feature for the same pattern
+# applied to `cratestack-sqlx?/...`. The `?` makes the forward apply only
+# when `cratestack-codec-json` is already enabled some other way (i.e. via
+# the `codec-json` feature), so this crate's own backend choice and
+# `cratestack-codec-json`'s stay in lockstep without ever mismatching.
+#
+# `cratestack-codec-cbor/...` (plain, not weak): unlike `codec-json`,
+# `cratestack-codec-cbor` is a mandatory (non-optional) dependency — see
+# the `[dependencies]` entry below — so it always needs an explicit
+# forward here, with no "only if already enabled" condition to gate on.
+decimal-rust-decimal = [
+    "cratestack-core/decimal-rust-decimal",
+    "cratestack-codec-cbor/decimal-rust-decimal",
+    "cratestack-codec-json?/decimal-rust-decimal",
+]
+decimal-bigdecimal = [
+    "cratestack-core/decimal-bigdecimal",
+    "cratestack-codec-cbor/decimal-bigdecimal",
+    "cratestack-codec-json?/decimal-bigdecimal",
+]
 # Native Rust gRPC client runtime (ticket #209) — `crate::grpc::
 # CratestackGrpcClient`, the tonic-based counterpart to `CratestackClient`
 # (REST) and `RpcClient` (RPC). Off by default: pulls in `tonic` (and
@@ -57,9 +89,16 @@ grpc = ["dep:tonic", "dep:prost"]
 async-trait.workspace = true
 bytes.workspace = true
 chrono.workspace = true
-cratestack-codec-cbor.workspace = true
-cratestack-codec-json = { workspace = true, optional = true }
-cratestack-core = { workspace = true, features = ["decimal-rust-decimal"] }
+# `default-features = false`: pairs with the plain (mandatory) forward in
+# `decimal-rust-decimal`/`decimal-bigdecimal` above.
+cratestack-codec-cbor = { workspace = true, default-features = false }
+# `default-features = false`: pairs with the `?` weak-dependency forwards in
+# `decimal-rust-decimal`/`decimal-bigdecimal` above — without it,
+# `cratestack-codec-json`'s own `default = ["decimal-rust-decimal"]` would
+# activate the moment `codec-json` turns the dependency on at all,
+# independent of which backend this crate itself selected.
+cratestack-codec-json = { workspace = true, optional = true, default-features = false }
+cratestack-core.workspace = true
 futures-util.workspace = true
 minicbor.workspace = true
 minicbor-serde.workspace = true
@@ -82,6 +121,14 @@ url.workspace = true
 [dev-dependencies]
 async-stream = "0.3"
 axum.workspace = true
-cratestack-core = { workspace = true, features = ["decimal-rust-decimal"] }
+# Plain edge, not a hardcoded `features = [...]`: this is the same
+# `cratestack-core` instance as the `[dependencies]` entry above, and Cargo
+# unifies features for a single dependency across normal/dev edges of the
+# same crate — the real edge's `decimal-rust-decimal`/`decimal-bigdecimal`
+# forward already covers what `cargo test` needs here. Hardcoding a backend
+# here independently would fight that forward under
+# `--features decimal-bigdecimal` (both backends active at once trips the
+# mutual-exclusion `compile_error!` in `cratestack-core`).
+cratestack-core.workspace = true
 serde.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time", "sync"] }

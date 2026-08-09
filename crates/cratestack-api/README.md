@@ -112,8 +112,12 @@ demonstrated manually instead.
 ## Features
 
 - `decimal-rust-decimal` *(default)* — `Decimal`-typed procedure args/returns
-  use `rust_decimal`. Forwards only to `cratestack-core` — there's no
-  sqlx-backed half to gate, unlike `cratestack-pg`'s same-named feature.
-- `decimal-bigdecimal` — alternative `bigdecimal` backend.
+  use `rust_decimal`. Forwards to `cratestack-core`/`cratestack-sql`/
+  `cratestack-client-rust`/`cratestack-macros` — no sqlx-backed half to
+  gate, unlike `cratestack-pg`'s same-named feature.
+- `decimal-bigdecimal` — arbitrary-precision `bigdecimal` backend instead
+  (heap-allocated, not `Copy` — see `cratestack-core`'s README for the
+  trait differences). Mutually exclusive with `decimal-rust-decimal`;
+  selecting neither or both is a compile error.
 - `codec-json` *(default)* — forwards the JSON codec to the generated
   client runtime, alongside CBOR.

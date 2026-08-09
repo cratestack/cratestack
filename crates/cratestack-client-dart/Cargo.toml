@@ -13,12 +13,37 @@ readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 
+[features]
+# Forwards to `cratestack-core`'s mutually-exclusive decimal backend choice
+# (see that crate's Cargo.toml for the full rationale). Required because
+# `cratestack-core`'s dependency edge has `default-features = false` at the
+# workspace root — every direct consumer must explicitly re-select a
+# backend, or `cratestack-core` fails to compile at all (cratestack#495).
+default = ["decimal-rust-decimal"]
+# Also forwards to `cratestack-parser`, this crate's dev-dependency-only
+# test fixture — Cargo's feature resolver unifies dev-dependency feature
+# requests with the rest of the graph for the same workspace member, so
+# leaving it on a hardcoded backend would conflict with `--features
+# decimal-bigdecimal` under `cargo test`/`cargo check --all-targets`.
+decimal-rust-decimal = [
+    "cratestack-core/decimal-rust-decimal",
+    "cratestack-proto/decimal-rust-decimal",
+    "cratestack-parser/decimal-rust-decimal",
+]
+decimal-bigdecimal = [
+    "cratestack-core/decimal-bigdecimal",
+    "cratestack-proto/decimal-bigdecimal",
+    "cratestack-parser/decimal-bigdecimal",
+]
+
 [dependencies]
-cratestack-core = { workspace = true, features = ["decimal-rust-decimal"] }
+cratestack-core.workspace = true
 cratestack-proto.workspace = true
 minijinja.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+# Plain edge: see the `decimal-rust-decimal`/`decimal-bigdecimal` feature
+# forwards above.
 cratestack-parser.workspace = true

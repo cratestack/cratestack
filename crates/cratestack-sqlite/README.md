@@ -53,7 +53,10 @@ and [ADR-0003](https://cratestack.dev/internals/views-adr).
 ## Features
 
 - `decimal-rust-decimal` *(default)* — `Decimal` columns use `rust_decimal`.
-- `decimal-bigdecimal` — alternative `bigdecimal` backend.
+- `decimal-bigdecimal` — arbitrary-precision `bigdecimal` backend instead
+  (heap-allocated, not `Copy` — see `cratestack-core`'s README for the
+  trait differences). Mutually exclusive with `decimal-rust-decimal`;
+  selecting neither or both is a compile error.
 - `codec-json` *(default)* — forwards the JSON codec to the generated
   client runtime, alongside CBOR. On `wasm32` the client runtime isn't
   linked (no `reqwest`), so this feature has no effect there.

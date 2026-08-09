@@ -12,11 +12,59 @@ documentation.workspace = true
 readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
+# Silently ignored for *this* crate as a real workspace member — the root
+# `[workspace] resolver = "3"` governs feature resolution here regardless.
+# Exists purely for `tests/ui.rs`'s `trybuild`-based suite: `trybuild`
+# copies this exact field into the standalone synthetic mini-workspace it
+# generates per fixture run (`trybuild-1.0.120/src/run.rs`'s
+# `build_manifest`), and *that* synthetic project — not being a member of
+# our real workspace — actually obeys it. Resolver "1" (the pre-2021
+# default, still fully supported) unifies host/target features into one
+# pool; "3" (this crate's real, inherited default) splits them. That split
+# is exactly what broke the suite: `trybuild` also copies this crate's own
+# `[dependencies]` (`cratestack-core` included) onto the synthetic
+# project's own target-context dependency list — separate from the
+# proc-macro's host-context copy of the same package — and only the
+# host-context one ever received this crate's `decimal-rust-decimal`
+# forward, leaving the target-context copy selecting neither backend and
+# hitting `cratestack-core`'s "enable exactly one" `compile_error!`.
+# Forcing resolver "1" for the synthetic project only (see above) makes
+# both copies unify into a single feature set again, the same way they
+# did before cratestack#495 introduced a second, genuinely selectable
+# backend. See `tests/ui.rs`'s own module doc for the parts of this that
+# live on that side.
+resolver = "1"
 
 [lib]
 proc-macro = true
 
 [features]
+default = ["decimal-rust-decimal"]
+# Forwards to `cratestack-core`'s mutually-exclusive decimal backend choice
+# (see that crate's Cargo.toml for the full rationale). Required because
+# `cratestack-core`'s dependency edge has `default-features = false` at the
+# workspace root — every direct consumer must explicitly re-select a
+# backend, or `cratestack-core` fails to compile at all (cratestack#495).
+# Note this crate is a proc-macro — this feature controls what THIS crate
+# (the macro implementation) compiles against, not what the schema it
+# expands generates; `cratestack::Decimal` in generated code always
+# resolves through whichever facade the consumer picked, independent of
+# this flag. Also forwards to `cratestack-policy`, `cratestack-parser`,
+# and `cratestack-proto` — this crate's other direct `cratestack-core`-
+# consuming dependencies (each with the same `default-features = false`
+# treatment — see root `Cargo.toml`).
+decimal-rust-decimal = [
+    "cratestack-core/decimal-rust-decimal",
+    "cratestack-policy/decimal-rust-decimal",
+    "cratestack-parser/decimal-rust-decimal",
+    "cratestack-proto/decimal-rust-decimal",
+]
+decimal-bigdecimal = [
+    "cratestack-core/decimal-bigdecimal",
+    "cratestack-policy/decimal-bigdecimal",
+    "cratestack-parser/decimal-bigdecimal",
+    "cratestack-proto/decimal-bigdecimal",
+]
 # Gates `transport grpc` Rust codegen under `include_server_schema!` — see
 # `crates/cratestack-macros/src/include/reject_grpc.rs`. Checked at macro-
 # expansion time via `cfg!(feature = "grpc")` against this crate's *own*
@@ -62,7 +110,7 @@ rate_limit = []
 pgvector = []
 
 [dependencies]
-cratestack-core = { workspace = true, features = ["decimal-rust-decimal"] }
+cratestack-core.workspace = true
 cratestack-parser.workspace = true
 cratestack-policy.workspace = true
 # Not gated behind the `grpc` feature: unlike `tonic`/`prost` (pulled in by

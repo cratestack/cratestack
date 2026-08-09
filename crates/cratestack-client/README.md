@@ -109,9 +109,16 @@ CI's `facade-disjointness` job (`.github/workflows/ci.yml`) re-runs the
 ## Features
 
 - `decimal-rust-decimal` *(default)* — `Decimal`-typed procedure args/model
-  fields use `rust_decimal`. Forwards to `cratestack-core` and
-  `cratestack-sql` — there is no sqlx-backed half to gate, unlike
-  `cratestack-pg`'s same-named feature.
+  fields use `rust_decimal`. Forwards to `cratestack-core`/`cratestack-sql`/
+  `cratestack-client-rust`/`cratestack-macros` — there is no sqlx-backed
+  half to gate, unlike `cratestack-pg`'s same-named feature.
+- `decimal-bigdecimal` — arbitrary-precision `bigdecimal` backend instead
+  (heap-allocated, not `Copy` — see `cratestack-core`'s README for the
+  trait differences). Mutually exclusive with `decimal-rust-decimal`;
+  selecting neither or both is a compile error. `cargo tree -p
+  cratestack-client --no-default-features --features decimal-bigdecimal -e
+  features | grep rust_decimal` prints nothing, confirming the swap is
+  complete through this facade (cratestack#495).
 - `codec-json` *(default)* — forwards the JSON codec to the generated
   client runtime, alongside CBOR.
 - `pgvector` — enable when the schema declares `extension pgvector { }`.

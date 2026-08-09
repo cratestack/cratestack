@@ -33,7 +33,7 @@ include = [
 ]
 
 [features]
-default = ["embed-ui"]
+default = ["embed-ui", "decimal-rust-decimal"]
 # Bundle the Leptos UI's Trunk output into the binary via `rust-embed`.
 # `build.rs` materializes the dist into `$OUT_DIR/ui-dist` from either
 # the local sibling (dev) or the published `embedded-ui-dist.tar.gz`,
@@ -41,12 +41,32 @@ default = ["embed-ui"]
 # the bundle is empty, the server transparently falls back to a
 # placeholder page.
 embed-ui = ["dep:rust-embed"]
+# Forwards to `cratestack-core`'s mutually-exclusive decimal backend choice
+# (see that crate's Cargo.toml for the full rationale). Required because
+# `cratestack-core`'s dependency edge has `default-features = false` at the
+# workspace root — every direct consumer must explicitly re-select a
+# backend, or `cratestack-core` fails to compile at all (cratestack#495).
+# Also forwards to `cratestack-sql`/`cratestack-migrate`/`cratestack-parser`,
+# this crate's other direct `cratestack-core` consumers, so all four stay
+# in lockstep.
+decimal-rust-decimal = [
+    "cratestack-core/decimal-rust-decimal",
+    "cratestack-sql/decimal-rust-decimal",
+    "cratestack-migrate/decimal-rust-decimal",
+    "cratestack-parser/decimal-rust-decimal",
+]
+decimal-bigdecimal = [
+    "cratestack-core/decimal-bigdecimal",
+    "cratestack-sql/decimal-bigdecimal",
+    "cratestack-migrate/decimal-bigdecimal",
+    "cratestack-parser/decimal-bigdecimal",
+]
 
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
 axum.workspace = true
-cratestack-core = { workspace = true, features = ["decimal-rust-decimal"] }
+cratestack-core.workspace = true
 cratestack-migrate.workspace = true
 cratestack-parser.workspace = true
 cratestack-sql.workspace = true

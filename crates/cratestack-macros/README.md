@@ -121,7 +121,7 @@ See the workspace `CHANGELOG.md` for full release notes.
 
 ## Decimal Backend
 
-Generated code references `cratestack::Decimal`, which resolves at compile time to either `rust_decimal::Decimal` (`decimal-rust-decimal`, default) or the reserved `decimal-bigdecimal` backend.
+Generated code references `cratestack::Decimal`, which resolves at compile time to either `rust_decimal::Decimal` (`decimal-rust-decimal`, default) or `bigdecimal::BigDecimal` (`decimal-bigdecimal`) — whichever backend the facade the schema is compiled into selected. The two are mutually exclusive; selecting neither or both is a compile error in `cratestack-core`.
 
 ## See Also
 

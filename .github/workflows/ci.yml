@@ -315,20 +315,23 @@ jobs:
             -p embedded-daemon-example \
             -p embedded-webhook-example
 
-  # ---- Feature-graph regression matrix (cratestack#421) -----------------
-  # Blocking. Runs a representative matrix across every crate this PR
-  # touched: (1) `decimal-bigdecimal` must not be a selectable Cargo
-  # feature (it was a dead `compile_error!`), (2) every facade with its
-  # own decimal toggle compiles clean under both its default feature set
-  # and a narrowed `--no-default-features` selection, with
+  # ---- Feature-graph regression matrix (cratestack#421, cratestack#495) -
+  # Blocking. Runs a representative matrix across every crate either issue
+  # touched: (1) `decimal-rust-decimal`/`decimal-bigdecimal` are asserted
+  # mutually exclusive (#495 made the second backend real — it used to be
+  # a dead `compile_error!`, #421's fix was "must not be selectable at
+  # all"), (2) every facade with its own decimal toggle compiles clean
+  # under its default feature set and BOTH backends individually, with
   # `cratestack-core`'s `default = ["decimal-rust-decimal"]` asserted to
-  # never leak through — verified via `cargo tree -e features`, since
-  # that's a property of the *resolved dependency graph*, not something a
-  # plain `#[test]` inside a crate can observe — and (3) every "plain"
-  # crate whose `cratestack-core` edge became explicit still compiles,
-  # including the wasm32-only edges. See `.ci/feature-matrix.sh`.
+  # never leak through and `rust_decimal` asserted unreachable once
+  # `decimal-bigdecimal` is selected — verified via `cargo tree
+  # -e features`, since that's a property of the *resolved dependency
+  # graph*, not something a plain `#[test]` inside a crate can observe —
+  # and (3) every "plain" crate whose `cratestack-core` edge became
+  # explicit still compiles, including the wasm32-only edges. See
+  # `.ci/feature-matrix.sh`.
   feature-matrix:
-    name: feature matrix (cratestack#421)
+    name: feature matrix (cratestack#421, cratestack#495)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6

@@ -18,9 +18,32 @@ default = ["decimal-rust-decimal"]
 decimal-rust-decimal = [
     "cratestack-core/decimal-rust-decimal",
     "cratestack-sql/decimal-rust-decimal",
+    "cratestack-policy/decimal-rust-decimal",
     "dep:rust_decimal",
     "sqlx-core/rust_decimal",
     "sqlx-postgres/rust_decimal",
+]
+# Mirrors `decimal-rust-decimal` above for the `bigdecimal` backend
+# (cratestack#495). `sqlx-core`/`sqlx-postgres` 0.8.6 both declare
+# `bigdecimal` as a plain optional dependency (no explicit `[features]`
+# entry for it, same as `rust_decimal` above) — Cargo auto-generates the
+# matching implicit feature for any optional dependency declared without
+# `dep:` syntax, which is what `sqlx-core/bigdecimal` /
+# `sqlx-postgres/bigdecimal` below select. This is what gives
+# `cratestack_core::Decimal` (== `bigdecimal::BigDecimal` under this
+# feature) real `sqlx::Type`/`Encode`/`Decode` impls against Postgres's
+# `NUMERIC` wire format — the same integration point
+# `query/support/values.rs`'s `push_bind_value` and `cratestack-macros`'
+# generated `row.try_get(...)` calls go through regardless of which
+# backend is active, since neither references a concrete backend type by
+# name.
+decimal-bigdecimal = [
+    "cratestack-core/decimal-bigdecimal",
+    "cratestack-sql/decimal-bigdecimal",
+    "cratestack-policy/decimal-bigdecimal",
+    "dep:bigdecimal",
+    "sqlx-core/bigdecimal",
+    "sqlx-postgres/bigdecimal",
 ]
 # Column-type support for `Vector(n)` fields (the `pgvector` extension
 # — see `docs/design/extensions.md` §6). Pulls in the `pgvector` crate

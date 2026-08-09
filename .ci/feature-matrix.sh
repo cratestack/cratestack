@@ -1,26 +1,39 @@
 #!/usr/bin/env bash
-# Feature-graph regression matrix (cratestack#421).
+# Feature-graph regression matrix (cratestack#421, cratestack#495).
 #
-# Two defects that issue reported:
-#   1. `decimal-bigdecimal` was a dead `compile_error!` — fixed by removing
-#      it as a selectable feature entirely (#421 commit b7f9007).
-#   2. Every dependency edge onto `cratestack-core` (and the facade-to-
-#      runtime edges cratestack-pg -> cratestack-sqlx,
-#      cratestack-sqlite -> cratestack-rusqlite) omitted
+# History:
+#   1. `decimal-bigdecimal` was originally a dead `compile_error!` — removed
+#      as a selectable feature entirely by #421 (commit b7f9007).
+#   2. #421 (commit cfde4e0) then found every dependency edge onto
+#      `cratestack-core` (and the facade-to-runtime edges cratestack-pg ->
+#      cratestack-sqlx, cratestack-sqlite -> cratestack-rusqlite) omitted
 #      `default-features = false`, so `cratestack-core`'s
 #      `default = ["decimal-rust-decimal"]` was force-enabled even when a
 #      consumer explicitly asked for a narrower feature set.
+#   3. #495 implements `decimal-bigdecimal` for real: `cratestack-core` now
+#      cfg-gates `Decimal` per backend and hard-errors if neither or both
+#      are selected. Making that swap actually reachable meant widening
+#      #421's "one shared `default-features = false` dependency edge" fix
+#      to every crate in the transitive closure between a facade and
+#      `cratestack-core` — `cratestack-sql`, `cratestack-policy`,
+#      `cratestack-parser`, `cratestack-proto`, `cratestack-macros`,
+#      `cratestack-axum`, `cratestack-codec-cbor`, `cratestack-codec-json`
+#      all gained the same `default-features = false` + explicit-forward
+#      treatment `cratestack-core`/`cratestack-sqlx`/`cratestack-rusqlite`/
+#      `cratestack-client-rust` already had — a single crate left pinning
+#      `decimal-rust-decimal` anywhere in that closure re-forces it for the
+#      whole graph, since Cargo features are additive and unify globally.
 #
 # This script runs a representative matrix across every crate this PR
 # touched (not just the issue's own two repro commands): every facade with
-# its own decimal toggle is checked under both its default feature set and
-# a narrowed `--no-default-features` selection (asserting no leak), and
-# every "plain" crate whose `cratestack-core` edge became explicit
-# (`features = ["decimal-rust-decimal"]`) gets a real compile check so a
-# typo'd/missing forward on any one of them fails loudly instead of only
-# surfacing when someone happens to build that specific crate. Run locally
-# via `just feature-matrix`; CI runs it as the `feature-matrix` job in
-# `.github/workflows/ci.yml`.
+# its own decimal toggle is checked under its default feature set AND both
+# narrowed `--no-default-features` selections — `decimal-rust-decimal` and
+# the new `decimal-bigdecimal` — asserting no leak either way. Every "plain"
+# crate whose `cratestack-core` edge became explicit gets a real compile
+# check so a typo'd/missing forward on any one of them fails loudly instead
+# of only surfacing when someone happens to build that specific crate. Run
+# locally via `just feature-matrix`; CI runs it as the `feature-matrix` job
+# in `.github/workflows/ci.yml`.
 #
 # Deliberately NOT a `#[test]` inside a crate: Cargo feature-graph shape
 # (what got enabled, and why) isn't observable from inside the compiled
@@ -47,9 +60,9 @@ step() {
 # Asserts that `cratestack-core`'s own `default` feature set is never part
 # of the resolved graph for a given (package, no-default-features, features)
 # combination — i.e. nothing downstream leaked it in behind the consumer's
-# back. The *specific* features the consumer asked for (decimal-rust-decimal
-# included) are expected to still show up individually; only the literal
-# `"default"` feature-set node must be absent.
+# back. The *specific* features the consumer asked for are expected to
+# still show up individually; only the literal `"default"` feature-set node
+# must be absent.
 assert_no_default_leak() {
   local pkg="$1"
   local features="$2"
@@ -64,6 +77,28 @@ assert_no_default_leak() {
     grep -n "cratestack-core" <<<"$tree" >&2
   else
     echo "ok: no cratestack-core default-feature leak for $pkg --features $features"
+  fi
+}
+
+# Asserts that, for a `decimal-bigdecimal`-selecting combination, `rust_decimal`
+# never appears anywhere in the resolved graph — this is the acceptance bar
+# cratestack#495 cares about: compiling under `decimal-bigdecimal` while
+# `rust_decimal` is still reachable somewhere means the swap didn't actually
+# happen, even if the build itself is green.
+assert_no_rust_decimal() {
+  local pkg="$1"
+  local features="$2"
+  local tree
+  if ! tree=$(cargo tree -p "$pkg" --no-default-features --features "$features" -e features 2>&1); then
+    fail "cargo tree failed for -p $pkg --features $features"
+    echo "$tree"
+    return
+  fi
+  if grep -qi 'rust_decimal' <<<"$tree"; then
+    fail "'rust_decimal' is still reachable in '$pkg --no-default-features --features $features' — decimal-bigdecimal did not fully displace it"
+    grep -ni "rust_decimal" <<<"$tree" >&2
+  else
+    echo "ok: no rust_decimal anywhere in the graph for $pkg --features $features"
   fi
 }
 
@@ -90,50 +125,92 @@ check_combo() {
       done
       if [[ -n "$features" ]]; then
         assert_no_default_leak "$pkg" "$features"
+        if [[ "$features" == *decimal-bigdecimal* ]]; then
+          assert_no_rust_decimal "$pkg" "$features"
+        fi
       fi
     fi
   done
 }
 
-step "[1/5] decimal-bigdecimal must not be a selectable feature (AC1)"
-if OUTPUT=$(cargo check -p cratestack-core --no-default-features --features decimal-bigdecimal 2>&1); then
-  fail "expected 'cargo check -p cratestack-core --features decimal-bigdecimal' to be rejected (the feature must not exist), but it succeeded"
+step "[1/6] decimal-rust-decimal and decimal-bigdecimal are mutually exclusive (cratestack#495)"
+if OUTPUT=$(cargo check -p cratestack-core --no-default-features --features decimal-rust-decimal,decimal-bigdecimal 2>&1); then
+  fail "expected 'cargo check -p cratestack-core --features decimal-rust-decimal,decimal-bigdecimal' (both backends at once) to be rejected, but it succeeded"
   echo "$OUTPUT"
-elif ! grep -q "does not contain this feature" <<<"$OUTPUT"; then
-  fail "expected an 'unknown feature' error for decimal-bigdecimal, got a different failure instead"
+elif ! grep -q "mutually exclusive" <<<"$OUTPUT"; then
+  fail "expected the mutual-exclusion compile_error! for both decimal backends, got a different failure instead"
   echo "$OUTPUT"
 else
-  echo "ok: decimal-bigdecimal is not exposed as a selectable feature"
+  echo "ok: selecting both decimal backends at once is rejected"
+fi
+if OUTPUT=$(cargo check -p cratestack-core --no-default-features 2>&1); then
+  fail "expected 'cargo check -p cratestack-core --no-default-features' (no backend) to be rejected, but it succeeded"
+  echo "$OUTPUT"
+elif ! grep -q "enable exactly one decimal backend" <<<"$OUTPUT"; then
+  fail "expected the neither-selected compile_error! for the decimal backend, got a different failure instead"
+  echo "$OUTPUT"
+else
+  echo "ok: selecting neither decimal backend is rejected"
 fi
 
-step "[2/5] cratestack-core compiles clean on its own default feature set"
+step "[2/6] cratestack-core compiles clean on each backend individually"
 if ! cargo check -p cratestack-core; then
   fail "cargo check -p cratestack-core (default features) failed"
 fi
+if ! cargo check -p cratestack-core --no-default-features --features decimal-bigdecimal; then
+  fail "cargo check -p cratestack-core --no-default-features --features decimal-bigdecimal failed"
+fi
 
-step "[3/5] facade crates: default features AND a narrowed selection each (AC2/AC4 matrix)"
-# (package, extra args...) — every facade that exposes its own
-# decimal-rust-decimal toggle, checked both at its default feature set and
-# at a deliberately narrowed one, so leaks can't hide behind whichever
-# feature set happens to be the default.
+step "[3/6] facade crates: default features AND both narrowed backend selections (AC2/AC4 matrix)"
+# (package, extra args...) — every facade that exposes its own decimal
+# toggle, checked at its default feature set and at both backends
+# individually, so leaks can't hide behind whichever feature set happens to
+# be the default, and `decimal-bigdecimal` gets exactly the same coverage
+# `decimal-rust-decimal` always has.
 check_combo cratestack-pg
-check_combo cratestack-pg --no-default-features --features postgres
-check_combo cratestack-pg --no-default-features --features decimal-rust-decimal
+# `--features postgres` alone (no explicit decimal choice) is a DELIBERATE
+# compile failure as of cratestack#495 — see `cratestack-pg`'s `postgres`
+# feature doc comment. Before #495 there was only one decimal backend, so
+# `postgres` could safely force it unconditionally; doing that today would
+# make `decimal-bigdecimal` unreachable through this facade (both backends
+# would end up selected on `cratestack-sqlx` simultaneously). Assert the
+# failure explicitly so a future change that "fixes" this by silently
+# re-adding the unconditional force gets caught here.
+echo "-- cargo check -p cratestack-pg --no-default-features --features postgres (expected to fail) --"
+if OUTPUT=$(cargo check -p cratestack-pg --no-default-features --features postgres 2>&1); then
+  fail "expected 'cargo check -p cratestack-pg --no-default-features --features postgres' (no decimal backend) to fail, but it succeeded — postgres may be silently forcing a backend again"
+  echo "$OUTPUT"
+elif ! grep -q "enable exactly one decimal backend" <<<"$OUTPUT"; then
+  fail "cargo check -p cratestack-pg --no-default-features --features postgres failed, but not with the expected 'enable exactly one decimal backend' error"
+  echo "$OUTPUT"
+else
+  echo "ok: postgres alone (no decimal choice) fails as expected"
+fi
+check_combo cratestack-pg --no-default-features --features postgres,decimal-rust-decimal
+check_combo cratestack-pg --no-default-features --features postgres,decimal-bigdecimal
 check_combo cratestack-sqlite
 check_combo cratestack-sqlite --no-default-features --features decimal-rust-decimal
+check_combo cratestack-sqlite --no-default-features --features decimal-bigdecimal
 check_combo cratestack-sql
 check_combo cratestack-sql --no-default-features --features decimal-rust-decimal
+check_combo cratestack-sql --no-default-features --features decimal-bigdecimal
 check_combo cratestack-sqlx
 check_combo cratestack-sqlx --no-default-features --features decimal-rust-decimal
+check_combo cratestack-sqlx --no-default-features --features decimal-bigdecimal
 check_combo cratestack-rusqlite
 check_combo cratestack-rusqlite --no-default-features --features decimal-rust-decimal
+check_combo cratestack-rusqlite --no-default-features --features decimal-bigdecimal
 check_combo cratestack-api
 check_combo cratestack-api --no-default-features --features decimal-rust-decimal
+check_combo cratestack-api --no-default-features --features decimal-bigdecimal
+check_combo cratestack-client
+check_combo cratestack-client --no-default-features --features decimal-rust-decimal
+check_combo cratestack-client --no-default-features --features decimal-bigdecimal
 check_combo cratestack-cli
 
-step "[4/5] plain crates: every cratestack-core edge this PR made explicit actually compiles"
-# These ~21 crates had no decimal toggle of their own before this PR — they
-# simply need cratestack-core's default = false + an explicit
+step "[4/6] plain crates: every cratestack-core edge this PR made explicit actually compiles"
+# These ~22 crates had no decimal toggle of their own before cratestack#421 —
+# they simply need cratestack-core's default = false + an explicit
 # features = ["decimal-rust-decimal"] forward to keep compiling at all now
 # that the leak is closed. A default `cargo check` on each one is enough to
 # catch a missing/typo'd forward; there's no narrower feature set to select
@@ -165,7 +242,17 @@ for pkg in \
   fi
 done
 
-step "[5/5] wasm32 targets: the wasm-only backend paths this feature graph flows through"
+step "[5/6] decimal-bigdecimal reaches the whole graph cleanly through both server facades"
+# The cratestack#495 acceptance bar in one command: `rust_decimal` must not
+# be reachable anywhere in either facade's resolved dependency graph once
+# `decimal-bigdecimal` is selected. `assert_no_rust_decimal` (called from
+# `check_combo` above for every `*decimal-bigdecimal*` combo) already
+# covers this per-package; these two are the exact commands the issue's
+# acceptance bar names.
+assert_no_rust_decimal cratestack-client decimal-bigdecimal
+assert_no_rust_decimal cratestack-pg postgres,decimal-bigdecimal
+
+step "[6/6] wasm32 targets: the wasm-only backend paths this feature graph flows through"
 # `cratestack-rusqlite` swaps its FFI to `sqlite-wasm-rs` under
 # target.'cfg(target_arch = "wasm32")', and `cratestack-cbor-wasm`'s
 # wasm-bindgen glue (including the `cratestack-core` re-exports it uses)
@@ -173,9 +260,12 @@ step "[5/5] wasm32 targets: the wasm-only backend paths this feature graph flows
 # a native-only run of steps [3]/[4] never exercises either path, so the
 # explicit `cratestack-core`/`cratestack-rusqlite` feature forwards have to
 # be checked against the actual wasm32 target to mean anything for the
-# crates that ship it.
+# crates that ship it. Both backends get the same wasm32 coverage.
 if ! cargo check -p cratestack-sqlite --target wasm32-unknown-unknown --no-default-features --features decimal-rust-decimal; then
   fail "cargo check -p cratestack-sqlite --target wasm32-unknown-unknown --no-default-features --features decimal-rust-decimal failed"
+fi
+if ! cargo check -p cratestack-sqlite --target wasm32-unknown-unknown --no-default-features --features decimal-bigdecimal; then
+  fail "cargo check -p cratestack-sqlite --target wasm32-unknown-unknown --no-default-features --features decimal-bigdecimal failed"
 fi
 if ! cargo check -p cratestack-cbor-wasm --target wasm32-unknown-unknown; then
   fail "cargo check -p cratestack-cbor-wasm --target wasm32-unknown-unknown failed"

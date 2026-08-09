@@ -57,7 +57,16 @@ and [ADR-0003](https://cratestack.dev/internals/views-adr).
   [`cratestack-api`](../cratestack-api) instead, which never pulls in
   `cratestack-sqlx` at all.
 - `decimal-rust-decimal` *(default)* — `Decimal` columns use `rust_decimal`.
-- `decimal-bigdecimal` — alternative `bigdecimal` backend.
+  Requires *some* decimal backend feature to be selected alongside
+  `postgres` — `cratestack-sqlx`'s query-builder support code binds
+  `cratestack_core::Decimal` unconditionally — but `postgres` itself no
+  longer forces a specific one (it used to, before `decimal-bigdecimal`
+  existed for real; forcing one unconditionally would make the other
+  unreachable through this facade).
+- `decimal-bigdecimal` — arbitrary-precision `bigdecimal` backend instead
+  (heap-allocated, not `Copy` — see `cratestack-core`'s README for the
+  trait differences). Mutually exclusive with `decimal-rust-decimal`;
+  selecting neither or both is a compile error.
 - `codec-json` *(default)* — forwards the JSON codec to the generated
   client runtime, so `include_client_schema!` offers both CBOR and JSON.
 - `grpc` — real `transport grpc` Rust codegen (server tonic service +
