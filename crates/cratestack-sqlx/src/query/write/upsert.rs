@@ -18,6 +18,7 @@ use crate::{
     ConflictTarget, ModelDescriptor, SqlxRuntime, UpsertModelInput, cool_error_from_sqlx, sqlx,
 };
 
+use super::upsert_do_nothing::UpsertRecordDoNothing;
 use super::upsert_exec::run_upsert_in_tx;
 
 #[derive(Debug, Clone)]
@@ -39,6 +40,33 @@ where
     pub fn on_conflict(mut self, target: ConflictTarget) -> Self {
         self.conflict_target = target;
         self
+    }
+
+    /// Switch this call to `ON CONFLICT ... DO NOTHING` semantics
+    /// (cratestack#487), independent of `descriptor.upsert_update_columns`:
+    /// on conflict, leave the existing row completely untouched instead
+    /// of merging `upsert_update_columns` into it. This is the
+    /// idempotent-insert shape ledger-style writes need — e.g. a
+    /// cash-in claim that inserts a `PENDING` row and treats a
+    /// conflict as "already in flight" must never let a retry's blank
+    /// values overwrite an existing `COMPLETED` row's `transfer_ref`.
+    ///
+    /// Returns a distinct builder type rather than a flag on
+    /// `UpsertRecord` because the return shape genuinely changes: a
+    /// real `DO NOTHING` returns nothing on conflict, so the caller
+    /// needs `Inserted` vs `Existing` distinguishable in the type
+    /// ([`crate::UpsertOutcome`]) rather than collapsed into a plain
+    /// `M` the way `.run()` returns it today. Encoding that as a
+    /// separate type also means existing `.upsert(..).run(..)` callers
+    /// keep their `Result<M, CoolError>` signature unchanged — this is
+    /// purely additive, not a behavior change for the DO UPDATE path.
+    pub fn do_nothing(self) -> UpsertRecordDoNothing<'a, M, PK, I> {
+        UpsertRecordDoNothing {
+            runtime: self.runtime,
+            descriptor: self.descriptor,
+            input: self.input,
+            conflict_target: self.conflict_target,
+        }
     }
 
     /// Render an approximate SQL preview. The actual upsert wraps a

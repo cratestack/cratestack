@@ -1,0 +1,44 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+// Models cratestack#487's own ledger-corruption scenario: a cash-in
+// claim keyed by an idempotency key (`id`), where a retry must never
+// silently overwrite an already-completed claim's transfer/settlement
+// fields. `@@emit`/`@@audit` let the tests assert that `.do_nothing()`
+// on the "already existed" branch produces no Updated event and no
+// audit entry -- the row genuinely didn't change.
+model CashInClaim {
+  id String @id
+  status String
+  transferRef String
+  newBalanceXaf Int
+  completedAt String?
+
+  @@audit
+  @@emit(created, updated)
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+}
+
+// PK + `@version` only -- every scalar field is excluded from
+// `upsert_update_columns` (PK itself, and `@version` is server-bumped,
+// never caller-supplied), so this is the "empty upsert_update_columns"
+// case cratestack#487 asks to be covered. `.do_nothing()` doesn't read
+// `upsert_update_columns` at all, so it must behave identically to any
+// other model here; the *default* `.upsert().run()` DO UPDATE path is
+// the one that falls back to the no-op self-assignment trick.
+model IdempotentMarker {
+  id String @id
+  version Int @version
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+}

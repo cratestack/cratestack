@@ -29,47 +29,8 @@ where
     PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
 {
     input.validate()?;
-
-    // Compose the full insert value set, including auth-derived
-    // defaults and the seeded `@version` column. Mirrors
-    // `create_record_with_executor` so insert-branch semantics stay
-    // identical to `.create()`.
-    let mut insert_values =
-        apply_create_defaults(input.sql_values(), descriptor.create_defaults, ctx)?;
-    if let Some(version_col) = descriptor.version_column
-        && find_column_value(&insert_values, version_col).is_none()
-    {
-        insert_values.push(crate::SqlColumnValue {
-            column: version_col,
-            value: crate::SqlValue::Int(0),
-        });
-    }
-    if insert_values.is_empty() {
-        return Err(CoolError::Validation(
-            "upsert input must contain at least one column".to_owned(),
-        ));
-    }
-
-    // Build the conflict-key tuple by looking up each named column's
-    // value in the (defaulted) insert set. The PrimaryKey branch
-    // keeps the old single-column path so we don't pay an extra
-    // lookup on the common case.
-    let pk_value = input.primary_key_value();
-    let conflict_columns: Vec<(&'static str, SqlValue)> = match conflict_target {
-        ConflictTarget::PrimaryKey => vec![(descriptor.primary_key, pk_value)],
-        ConflictTarget::Columns(cols) => {
-            let mut out = Vec::with_capacity(cols.len());
-            for col in cols {
-                let value = find_column_value(&insert_values, col).cloned().ok_or_else(|| {
-                    CoolError::Validation(format!(
-                        "upsert on_conflict references column `{col}` which is not present in the input",
-                    ))
-                })?;
-                out.push((*col, value));
-            }
-            out
-        }
-    };
+    let (insert_values, conflict_columns) =
+        prepare_upsert_insert(descriptor, &input, ctx, conflict_target)?;
 
     // Both create and update policies must allow the call. Stricter
     // than "evaluate the path that runs," but pre-flighting a read
@@ -155,4 +116,62 @@ where
     }
 
     Ok((record, emits_event))
+}
+
+/// Compose the full insert value set (auth-derived defaults + the
+/// seeded `@version` column) and the conflict-key tuple used to probe
+/// and target the row. Shared by the DO UPDATE path above and the DO
+/// NOTHING path in [`super::upsert_do_nothing_exec`] — both need to
+/// resolve "what row does this conflict against" identically; only
+/// what happens once a conflict is found is allowed to differ between
+/// them.
+pub(super) fn prepare_upsert_insert<M, PK, I>(
+    descriptor: &'static ModelDescriptor<M, PK>,
+    input: &I,
+    ctx: &CoolContext,
+    conflict_target: ConflictTarget,
+) -> Result<(Vec<crate::SqlColumnValue>, Vec<(&'static str, SqlValue)>), CoolError>
+where
+    I: UpsertModelInput<M>,
+{
+    // Mirrors `create_record_with_executor` so insert-branch semantics
+    // stay identical to `.create()`.
+    let mut insert_values =
+        apply_create_defaults(input.sql_values(), descriptor.create_defaults, ctx)?;
+    if let Some(version_col) = descriptor.version_column
+        && find_column_value(&insert_values, version_col).is_none()
+    {
+        insert_values.push(crate::SqlColumnValue {
+            column: version_col,
+            value: crate::SqlValue::Int(0),
+        });
+    }
+    if insert_values.is_empty() {
+        return Err(CoolError::Validation(
+            "upsert input must contain at least one column".to_owned(),
+        ));
+    }
+
+    // Build the conflict-key tuple by looking up each named column's
+    // value in the (defaulted) insert set. The PrimaryKey branch keeps
+    // the old single-column path so we don't pay an extra lookup on
+    // the common case.
+    let pk_value = input.primary_key_value();
+    let conflict_columns: Vec<(&'static str, SqlValue)> = match conflict_target {
+        ConflictTarget::PrimaryKey => vec![(descriptor.primary_key, pk_value)],
+        ConflictTarget::Columns(cols) => {
+            let mut out = Vec::with_capacity(cols.len());
+            for col in cols {
+                let value = find_column_value(&insert_values, col).cloned().ok_or_else(|| {
+                    CoolError::Validation(format!(
+                        "upsert on_conflict references column `{col}` which is not present in the input",
+                    ))
+                })?;
+                out.push((*col, value));
+            }
+            out
+        }
+    };
+
+    Ok((insert_values, conflict_columns))
 }

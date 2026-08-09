@@ -173,8 +173,10 @@ pub use cratestack_sqlx::{
     ScopedCreateRecord, ScopedDeleteMany, ScopedDeleteRecord, ScopedFindMany, ScopedFindManyWith,
     ScopedFindUnique, ScopedModelDelegate, ScopedProjectedFindMany, ScopedProjectedFindUnique,
     ScopedUpdateMany, ScopedUpdateManySet, ScopedUpdateRecord, ScopedUpdateRecordSet,
-    SqlxIdempotencyStore, UpdateMany, UpdateManySet, UpdateRecord, UpdateRecordSet, ViewDelegate,
-    ViewDelegateNoUnique, create_record_with_executor, update_record_with_executor,
+    ScopedUpsertRecord, ScopedUpsertRecordDoNothing, SqlxIdempotencyStore, UpdateMany,
+    UpdateManySet, UpdateRecord, UpdateRecordSet, UpsertOutcome, UpsertRecord,
+    UpsertRecordDoNothing, ViewDelegate, ViewDelegateNoUnique, create_record_with_executor,
+    update_record_with_executor,
 };
 #[cfg(feature = "postgres")]
 pub use cratestack_sqlx::{

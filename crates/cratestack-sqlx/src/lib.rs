@@ -142,12 +142,13 @@ pub use delegate::{
     ScopedDeleteMany, ScopedDeleteRecord, ScopedFindMany, ScopedFindManyWith, ScopedFindUnique,
     ScopedModelDelegate, ScopedProjectedFindMany, ScopedProjectedFindUnique, ScopedUpdateMany,
     ScopedUpdateManySet, ScopedUpdateRecord, ScopedUpdateRecordSet, ScopedUpsertRecord,
-    ViewDelegate, ViewDelegateNoUnique,
+    ScopedUpsertRecordDoNothing, ViewDelegate, ViewDelegateNoUnique,
 };
 pub use descriptor::SqlxRuntime;
 pub use query::{
     Aggregate, AggregateColumn, AggregateCount, BatchCreate, BatchDelete, BatchGet, BatchUpdate,
     BatchUpdateItem, BatchUpsert, CreateRecord, DeleteMany, DeleteRecord, FindMany, FindManyWith,
     FindUnique, ProjectedFindMany, ProjectedFindUnique, UpdateMany, UpdateManySet, UpdateRecord,
-    UpdateRecordSet, UpsertRecord, create_record_with_executor, update_record_with_executor,
+    UpdateRecordSet, UpsertOutcome, UpsertRecord, UpsertRecordDoNothing,
+    create_record_with_executor, update_record_with_executor,
 };

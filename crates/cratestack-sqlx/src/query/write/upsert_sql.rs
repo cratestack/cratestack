@@ -130,10 +130,35 @@ where
     }
     query.push(") DO UPDATE SET ");
 
-    // If there are no eligible columns to overwrite, fall back to
-    // "DO NOTHING"-equivalent semantics via a no-op assignment:
-    // touching the PK to itself. This keeps the RETURNING clause
-    // working (PG only RETURNs from rows the statement touched).
+    // If there are no eligible columns to overwrite, fall back to a
+    // no-op assignment: touching the PK to itself. This keeps the
+    // RETURNING clause working (PG only RETURNs from rows the
+    // statement touched).
+    //
+    // This is deliberately NOT the same mechanism as the per-call-site
+    // `.do_nothing()` builder (`upsert_do_nothing_sql::
+    // upsert_returning_record_do_nothing`, cratestack#487). They solve
+    // different problems and stay separate on purpose:
+    //   * This fallback is keyed off `descriptor.upsert_update_columns`
+    //     being empty — a property of the *model*, not the call site —
+    //     and it is still a `DO UPDATE`. Postgres treats the
+    //     self-assignment as a real write: `xmax` bumps, `updated_at`-
+    //     style `BEFORE UPDATE` triggers fire, and it generates WAL/
+    //     logical-replication traffic, even though no column value
+    //     actually changes.
+    //   * `.do_nothing()` is an explicit opt-in *per call*, independent
+    //     of the model's `upsert_update_columns`, and compiles to a
+    //     genuine `ON CONFLICT ... DO NOTHING` — the row is untouched
+    //     at the storage layer, no triggers fire, no WAL is generated
+    //     for the conflicting row. That distinction is the entire point
+    //     of #487: a model with updatable columns had no way to ask for
+    //     real non-mutation on a specific call.
+    // Merging them would force every empty-`upsert_update_columns`
+    // model onto DO-NOTHING semantics (a silent behavior change for
+    // existing consumers) or force `.do_nothing()` callers to pay for
+    // trigger fan-out they explicitly asked to avoid. Keeping both is a
+    // few lines of duplication in exchange for neither call site
+    // silently inheriting the other's semantics.
     if descriptor.upsert_update_columns.is_empty() {
         query.push(descriptor.primary_key);
         query.push(" = EXCLUDED.").push(descriptor.primary_key);

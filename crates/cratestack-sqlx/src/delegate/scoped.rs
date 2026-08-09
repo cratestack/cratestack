@@ -15,7 +15,8 @@ use super::scoped_delete::{ScopedDeleteMany, ScopedDeleteRecord};
 use super::scoped_find_many::ScopedFindMany;
 use super::scoped_find_unique::ScopedFindUnique;
 use super::scoped_update_many::ScopedUpdateMany;
-use super::scoped_writes::{ScopedCreateRecord, ScopedUpdateRecord, ScopedUpsertRecord};
+use super::scoped_upsert::ScopedUpsertRecord;
+use super::scoped_writes::{ScopedCreateRecord, ScopedUpdateRecord};
 
 #[derive(Debug, Clone)]
 pub struct ScopedModelDelegate<'a, M: 'static, PK: 'static> {
