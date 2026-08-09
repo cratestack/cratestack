@@ -28,6 +28,15 @@ where
     Primary: CoolCodec,
     Secondary: CoolCodec,
 {
+    fn can_encode(&self, content_type: &str) -> bool {
+        if content_type == CBOR_SEQUENCE_CONTENT_TYPE {
+            Primary::CONTENT_TYPE == CborCodecMarker::CONTENT_TYPE
+                || Secondary::CONTENT_TYPE == CborCodecMarker::CONTENT_TYPE
+        } else {
+            content_type == Primary::CONTENT_TYPE || content_type == Secondary::CONTENT_TYPE
+        }
+    }
+
     fn decode_request<T>(&self, content_type: &str, body: &[u8]) -> Result<T, CoolError>
     where
         T: for<'de> Deserialize<'de>,
@@ -143,3 +152,6 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
