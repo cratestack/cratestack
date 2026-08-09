@@ -168,28 +168,3 @@ pub(crate) fn is_paged_model(model: &Model) -> bool {
         .iter()
         .any(|attribute| attribute.raw == "@@paged")
 }
-
-/// Wire name (`field.name`, not the possibly-escaped TS `property` —
-/// see `naming::ts_identifier`) of every *direct* `Decimal`-typed field
-/// among `fields`. Feeds `views.rs::build_model_api`'s
-/// `decimal_fields_js`, which `reviveDecimalFields` (`models.ts.j2`)
-/// matches response object keys against to turn a wire-format string
-/// back into a real `Decimal` (cratestack#498).
-///
-/// Deliberately *not* recursive into a relation-typed field's own nested
-/// `Decimal` fields (a `Post.author.balance`-shaped case) — v1 scope, see
-/// `views.rs::build_model_api`'s doc comment for the follow-up this
-/// leaves open. Restricting to direct fields only also means this can
-/// never collide with an unrelated field of a different type that
-/// happens to share the same name in a *different* model: a single
-/// model can't declare two fields with the same name, so the key set
-/// built from one model's direct fields is unambiguous by construction.
-pub(crate) fn decimal_field_wire_names<'a>(
-    fields: impl IntoIterator<Item = &'a Field>,
-) -> Vec<String> {
-    fields
-        .into_iter()
-        .filter(|field| field.ty.name == "Decimal")
-        .map(|field| field.name.clone())
-        .collect()
-}

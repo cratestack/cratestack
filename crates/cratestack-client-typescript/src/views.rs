@@ -1,16 +1,11 @@
 use std::collections::{BTreeSet, HashMap};
 
 use cratestack_core::route_naming;
-use cratestack_core::{EnumDecl, Field, Model, Procedure, ProcedureKind, TypeArity};
+use cratestack_core::{EnumDecl, Field, Model, TypeArity};
 use serde::Serialize;
 
-use crate::naming::{
-    escape_ts_string, pluralize, procedure_wrapper_name, to_camel_case, to_pascal_case,
-    ts_identifier,
-};
-use crate::types::{
-    decimal_field_wire_names, is_paged_model, model_allows_create, primary_key_field, ts_type,
-};
+use crate::naming::{escape_ts_string, pluralize, to_camel_case, ts_identifier};
+use crate::types::{is_paged_model, model_allows_create, primary_key_field, ts_type};
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct EnumView {
@@ -45,35 +40,28 @@ pub(crate) struct ModelApiView {
     pub(crate) create_input_name: String,
     pub(crate) update_input_name: String,
     pub(crate) list_return_type: String,
-    /// A TS array-literal source fragment (e.g. `['amountXaf', 'discountXaf']`,
-    /// or `[]` when the model has none) of this model's direct `Decimal`
-    /// field wire names — spliced verbatim into `rest-client.ts.j2`/
-    /// `rpc-client.ts.j2`'s `reviveDecimalFields(value, ...)` call at
-    /// every CRUD method that decodes a server response (cratestack#498).
-    /// An empty array is `reviveDecimalFields`'s documented fast-path
-    /// no-op, so every model gets the same unconditional `.then(...)`
-    /// wrapper regardless of whether it actually has a `Decimal` field —
-    /// simpler generated templates than branching per model, at the cost
-    /// of one extra (free, for the empty case) microtask hop.
-    pub(crate) decimal_fields_js: String,
+    /// `true` when `list_return_type` is `Page<{Model}>` rather than
+    /// `{Model}[]` — the generated `list()` method needs to know this to
+    /// pick `revivePagedDecimalFields` (applies this model's decimal shape
+    /// to the envelope's `.items`) over plain `reviveDecimalFields`
+    /// (cratestack#499: a `Page<T>` envelope's own keys — `items`/
+    /// `totalCount`/`pageInfo` — are never themselves `T`'s fields, so
+    /// `T`'s shape can't be applied to the envelope directly).
+    pub(crate) is_paged: bool,
+    /// This model's own registry key into the generated `decimalShapes`
+    /// object (`models.ts.j2`) — always just `name` (a model's shape is
+    /// always registered under its own schema name), spliced verbatim into
+    /// `rest-client.ts.j2`/`rpc-client.ts.j2`'s `reviveDecimalFields(value,
+    /// '{{ decimal_shape_name }}')` call at every CRUD method that decodes
+    /// a server response. See `crate::decimal`'s module doc for why this
+    /// replaced a flat, name-keyed `decimalKeys: string[]` (cratestack#499
+    /// review: that scheme had a reachable field-name-collision hazard).
+    pub(crate) decimal_shape_name: String,
     pub(crate) list_query_key: String,
     pub(crate) get_query_key: String,
     pub(crate) create_mutation_key: String,
     pub(crate) update_mutation_key: String,
     pub(crate) delete_mutation_key: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub(crate) struct ProcedureView {
-    pub(crate) name: String,
-    pub(crate) method_name: String,
-    pub(crate) hook_name: String,
-    pub(crate) args_name: String,
-    pub(crate) return_type: String,
-    pub(crate) route: String,
-    pub(crate) kind: &'static str,
-    pub(crate) query_key: String,
-    pub(crate) mutation_key: String,
 }
 
 #[derive(Clone, Copy)]
@@ -138,6 +126,7 @@ pub(crate) fn build_model_api(model: &Model) -> ModelApiView {
     // and are not wire-format contracts).
     let route = format!("/{}", route_naming::model_route_segment(&model.name));
     let accessor = pluralize(&to_camel_case(&model.name));
+    let is_paged = is_paged_model(model);
     ModelApiView {
         name: model.name.clone(),
         api_name: format!("{}Api", model.name),
@@ -147,12 +136,13 @@ pub(crate) fn build_model_api(model: &Model) -> ModelApiView {
         allows_create: model_allows_create(model),
         create_input_name: format!("Create{}Input", model.name),
         update_input_name: format!("Update{}Input", model.name),
-        list_return_type: if is_paged_model(model) {
+        list_return_type: if is_paged {
             format!("Page<{}>", model.name)
         } else {
             format!("{}[]", model.name)
         },
-        decimal_fields_js: js_string_array(&decimal_field_wire_names(&model.fields)),
+        is_paged,
+        decimal_shape_name: model.name.clone(),
         list_query_key: format!("{}List", to_camel_case(&model.name)),
         get_query_key: format!("{}Detail", to_camel_case(&model.name)),
         create_mutation_key: format!("{}Create", to_camel_case(&model.name)),
@@ -236,9 +226,9 @@ fn disambiguate_field(
 /// Renders `items` as a TS array-literal source fragment of single-quoted
 /// string literals (`['a', 'b']`, or `[]` for an empty slice) — the same
 /// quoting `build_enum_view`'s union-type rendering uses, via the same
-/// `escape_ts_string` helper. Free function rather than a method since
-/// both `build_model_api` (`decimal_fields_js`) and, potentially, a
-/// future procedure-return-type equivalent need it.
+/// `escape_ts_string` helper. `pub(crate)` (not just used within this
+/// module) since `crate::decimal::build_shape` reuses it for each
+/// `DecimalShapeView`'s `keys_js`.
 pub(crate) fn js_string_array(items: &[String]) -> String {
     let quoted = items
         .iter()
@@ -246,25 +236,4 @@ pub(crate) fn js_string_array(items: &[String]) -> String {
         .collect::<Vec<_>>()
         .join(", ");
     format!("[{quoted}]")
-}
-
-pub(crate) fn build_procedure(
-    procedure: &Procedure,
-    occupied_type_names: &BTreeSet<String>,
-    enum_names: &BTreeSet<&str>,
-) -> ProcedureView {
-    ProcedureView {
-        name: procedure.name.clone(),
-        method_name: to_camel_case(&procedure.name),
-        hook_name: to_pascal_case(&procedure.name),
-        args_name: procedure_wrapper_name(procedure, occupied_type_names),
-        return_type: ts_type(&procedure.return_type, enum_names),
-        route: format!("/$procs/{}", procedure.name),
-        kind: match procedure.kind {
-            ProcedureKind::Query => "query",
-            ProcedureKind::Mutation => "mutation",
-        },
-        query_key: format!("{}Procedure", to_camel_case(&procedure.name)),
-        mutation_key: format!("{}Procedure", to_camel_case(&procedure.name)),
-    }
 }

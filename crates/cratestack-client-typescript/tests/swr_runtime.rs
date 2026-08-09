@@ -8,10 +8,26 @@
 //! This generates the `swr` preset's `tiny_rest` package to a temp
 //! directory, starts a real local HTTP stub server, and runs a small
 //! script (via `npx tsx` — a plain TS runner, not a UI framework) that
-//! imports `getWidget` and calls it against that server with no
-//! `node_modules` present at all — if the generated code accidentally
-//! pulled in React or any other dependency, module resolution would
-//! fail outright, not just silently succeed.
+//! imports `getWidget` and calls it against that server — if the
+//! generated code accidentally pulled in React or any other framework
+//! dependency, module resolution would fail outright, not just silently
+//! succeed.
+//!
+//! cratestack#499 (the `swr` preset's F3 decode-side revival fix): unlike
+//! before, `getWidget` (and every generated model function) now really
+//! does `import { reviveDecimalFields } from "./shared.js"` — a genuine
+//! (not type-only) import — which in turn genuinely imports `decimal.js`,
+//! regardless of whether `Widget` itself has a `Decimal` field. `npm
+//! install` is required before running the smoke script now, mirroring
+//! `tests/rest_list_query_wire_format.rs`'s own identical fix for the
+//! `default` preset's `client.ts` (see that test's own comment on the
+//! exact same failure mode: `npx tsx` hangs rather than failing fast when
+//! it can't resolve `decimal.js` from a `node_modules` that was never
+//! installed — confirmed empirically here too). This test still proves
+//! AC #5's actual claim (no React/hook import anywhere in the invoked
+//! module graph) — `decimal.js` is a deliberate, disclosed runtime
+//! dependency every generated package has needed since cratestack#498,
+//! not a framework.
 //!
 //! No Rust CI job in this repo currently provisions Node (`js` is the
 //! only one, and it doesn't run `cargo test`) — see `.github/workflows/ci.yml`.
@@ -57,6 +73,21 @@ fn generated_plain_function_runs_outside_any_react_context() {
         }
         std::fs::write(&path, &file.contents).expect("write generated file");
     }
+
+    // cratestack#499: see this file's own module doc — `getWidget`'s
+    // module graph now genuinely imports `decimal.js`, so `npx tsx` needs
+    // a real `node_modules` to resolve it against.
+    let install = Command::new("npm")
+        .args(["install", "--no-audit", "--no-fund"])
+        .current_dir(dir.path())
+        .output()
+        .expect("run npm install");
+    assert!(
+        install.status.success(),
+        "npm install failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&install.stdout),
+        String::from_utf8_lossy(&install.stderr)
+    );
 
     // A real stub server, not a mock — the function under test does a
     // genuine `fetch()`.

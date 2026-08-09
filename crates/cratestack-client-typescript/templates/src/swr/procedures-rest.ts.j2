@@ -14,6 +14,12 @@
 
 import type { CratestackRuntime } from "./runtime.js";
 import type { CratestackRequestConfig } from "./queries.js";
+// cratestack#498: real (not type-only) import — every function below
+// that decodes a server response calls one of these to turn a
+// `Decimal`-typed return value's wire-format string(s) back into a real
+// `Decimal` (`./models/shared.js`'s doc comments have the full
+// rationale).
+import { reviveDecimalFields, revivePagedDecimalFields, reviveDecimalScalar } from "./models/shared.js";
 {% for import in procedures_file.imports %}
 import type { {{ import.type_names_joined }} } from "{{ import.path }}";
 {% endfor %}
@@ -48,12 +54,24 @@ export interface {{ interface.name }} {
 
 {% endfor %}
 {% for procedure in procedures_file.procedures %}
+{% if procedure.decimal_revival_kind == "scalar" %}
 export async function {{ procedure.method_name }}(
   runtime: CratestackRuntime,
   args: {{ procedure.args_name }},
   options: CratestackRequestConfig = {},
 ): Promise<{{ procedure.return_type }}> {
-  return runtime.post<{{ procedure.return_type }}>("{{ procedure.route }}", args, options);
+  return runtime.post<unknown>("{{ procedure.route }}", args, options)
+    .then((value) => reviveDecimalScalar(value) as {{ procedure.return_type }});
 }
+{% else %}
+export async function {{ procedure.method_name }}(
+  runtime: CratestackRuntime,
+  args: {{ procedure.args_name }},
+  options: CratestackRequestConfig = {},
+): Promise<{{ procedure.return_type }}> {
+  return runtime.post<unknown>("{{ procedure.route }}", args, options)
+    .then((value) => {% if procedure.decimal_paged %}revivePagedDecimalFields{% else %}reviveDecimalFields{% endif %}(value, '{{ procedure.decimal_shape_name }}') as {{ procedure.return_type }});
+}
+{% endif %}
 
 {% endfor %}

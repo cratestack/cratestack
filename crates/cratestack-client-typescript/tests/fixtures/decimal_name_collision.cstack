@@ -1,0 +1,22 @@
+// Reproduction fixture for the name-collision hazard flagged in cratestack#499's
+// review of F5: `Order.total` is `Decimal`; the *related* `Account.total` is a
+// plain `String` (e.g. a zero-padded account reference) — same field name,
+// different type, reachable together whenever an `Order` response `include`s
+// its `account`. A bare-name-keyed decimal revival scheme (rather than a
+// path-/type-aware one) cannot tell these apart.
+
+model Account {
+  id Cuid @id @default(cs_cuid())
+  total String
+
+  @@allow("list", true)
+}
+
+model Order {
+  id Cuid @id @default(cs_cuid())
+  total Decimal
+  accountId Cuid
+  account Account @relation(fields:[accountId],references:[id])
+
+  @@allow("list", true)
+}

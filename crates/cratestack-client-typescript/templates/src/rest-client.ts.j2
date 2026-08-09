@@ -1,5 +1,5 @@
 import { CratestackRuntime, type CratestackClientOptions } from "./runtime.js";
-import { reviveDecimalFields } from "./models.js";
+import { reviveDecimalFields, revivePagedDecimalFields, reviveDecimalScalar } from "./models.js";
 import type {
 {% for interface in interfaces %}
   {{ interface.name }},
@@ -38,7 +38,7 @@ export class {{ model.api_name }} {
       headers: options.headers,
       query: toSearchQuery(options.query),
       signal: options.signal,
-    }).then((value) => reviveDecimalFields(value, {{ model.decimal_fields_js }}) as {{ model.list_return_type }});
+    }).then((value) => {% if model.is_paged %}revivePagedDecimalFields{% else %}reviveDecimalFields{% endif %}(value, '{{ model.decimal_shape_name }}') as {{ model.list_return_type }});
   }
 
   get(id: {{ model.primary_key_type }}, options: CratestackQueryRequestConfig = {}): Promise<{{ model.name }}> {
@@ -46,13 +46,13 @@ export class {{ model.api_name }} {
       headers: options.headers,
       query: toSearchQuery(options.query),
       signal: options.signal,
-    }).then((value) => reviveDecimalFields(value, {{ model.decimal_fields_js }}) as {{ model.name }});
+    }).then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model.name }});
   }
 
 {% if model.allows_create %}
   create(input: {{ model.create_input_name }}, options: CratestackRequestConfig = {}): Promise<{{ model.name }}> {
     return this.runtime.post<unknown>("{{ model.route }}", input, options)
-      .then((value) => reviveDecimalFields(value, {{ model.decimal_fields_js }}) as {{ model.name }});
+      .then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model.name }});
   }
 
 {% endif %}
@@ -62,7 +62,7 @@ export class {{ model.api_name }} {
     options: CratestackRequestConfig = {},
   ): Promise<{{ model.name }}> {
     return this.runtime.patch<unknown>(`{{ model.route }}/${encodeURIComponent(String(id))}`, input, options)
-      .then((value) => reviveDecimalFields(value, {{ model.decimal_fields_js }}) as {{ model.name }});
+      .then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model.name }});
   }
 
   delete(id: {{ model.primary_key_type }}, options: CratestackRequestConfig = {}): Promise<void> {
@@ -75,9 +75,17 @@ export class ProceduresApi {
   constructor(private readonly runtime: CratestackRuntime) {}
 
 {% for procedure in procedures %}
+{% if procedure.decimal_revival_kind == "scalar" %}
   {{ procedure.method_name }}(args: {{ procedure.args_name }}, options: CratestackRequestConfig = {}): Promise<{{ procedure.return_type }}> {
-    return this.runtime.post<{{ procedure.return_type }}>("{{ procedure.route }}", args, options);
+    return this.runtime.post<unknown>("{{ procedure.route }}", args, options)
+      .then((value) => reviveDecimalScalar(value) as {{ procedure.return_type }});
   }
+{% else %}
+  {{ procedure.method_name }}(args: {{ procedure.args_name }}, options: CratestackRequestConfig = {}): Promise<{{ procedure.return_type }}> {
+    return this.runtime.post<unknown>("{{ procedure.route }}", args, options)
+      .then((value) => {% if procedure.decimal_paged %}revivePagedDecimalFields{% else %}reviveDecimalFields{% endif %}(value, '{{ procedure.decimal_shape_name }}') as {{ procedure.return_type }});
+  }
+{% endif %}
 
 {% endfor %}
 }

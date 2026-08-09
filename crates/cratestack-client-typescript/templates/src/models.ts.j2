@@ -26,47 +26,114 @@ import DecimalJs from "decimal.js";
 export const Decimal = DecimalJs.clone({ toExpNeg: -1e9, toExpPos: 1e9 });
 export type Decimal = DecimalJs;
 
-/** Recursively walks a decoded response value (REST JSON or this
- *  package's RPC codec output — both produce the same plain
- *  array/object/primitive tree; see `rpc-runtime.ts.j2`'s `jsonRpcCodec`)
- *  and replaces every string value at a key named in `decimalKeys` with a
- *  real {@link Decimal}. Keyed by field *name*, not structural path —
- *  correct for the scope this is actually generated for (cratestack#498
- *  v1): a target type's own *direct* fields, which by definition can't
- *  have two fields with the same name and different types, so there's no
- *  collision to worry about within one model. Does **not** descend into
- *  a relation-embedded field's *own* model's `Decimal` fields (a
- *  `Post.author.balance`-shaped case) — that model's field names would
- *  need to be folded into `decimalKeys` too, which the generator doesn't
- *  do yet (see `views.rs::build_model_api`'s doc comment).
- *
- *  An empty `decimalKeys` is a fast-path identity no-op, so every
- *  generated model API method calls this unconditionally — a model with
- *  no `Decimal` field just passes an empty array literal (see
- *  `views.rs::build_model_api`'s `decimal_fields_js`) — rather than the
- *  generator branching per model in the template. */
-export function reviveDecimalFields(value: unknown, decimalKeys: readonly string[]): unknown {
-  if (decimalKeys.length === 0) {
-    return value;
-  }
-  return reviveDecimalFieldsInner(value, new Set(decimalKeys));
+/** One model/`type`'s own decode-time shape: `keys` are its *direct*
+ *  `Decimal` field wire names; `nested` maps a field name to the shape
+ *  name (a {@link decimalShapes} key) that field's own value should be
+ *  revived against, for any field whose type is itself another declared
+ *  model/`type`. See {@link decimalShapes}'s doc comment for why this is
+ *  keyed by structural path (via `nested`) rather than a single flat,
+ *  schema-wide field-name set. */
+export interface DecimalShape {
+  readonly keys: readonly string[];
+  readonly nested: Readonly<Record<string, string>>;
 }
 
-function reviveDecimalFieldsInner(value: unknown, decimalKeys: ReadonlySet<string>): unknown {
+/** One entry per model/`type` this schema declares (`crate::decimal::
+ *  build_decimal_shapes`) — `reviveDecimalFields`'s registry.
+ *
+ *  cratestack#499 review: an earlier version of this revival scheme kept a
+ *  single flat `Set<string>` of every `Decimal` field name reachable from
+ *  a response's root type (its own fields *and* every relation's/`type`'s
+ *  fields, unioned together) and matched it against a decoded response's
+ *  keys at *any* nesting depth. That's provably unsound the moment two
+ *  *different* reachable types can each contribute a field name to the
+ *  same flat set: a non-`Decimal` field in one type that happens to share
+ *  a name with a `Decimal` field in another reachable type gets wrongly
+ *  converted. Confirmed empirically (not just theorized) with an
+ *  `Order.total: Decimal` + related `Account.total: String` schema,
+ *  `include`-ing the relation: a real (non-numeric) account reference
+ *  threw `[DecimalError] Invalid argument]` decoding a perfectly valid
+ *  response, and a numeric-looking one (`"00123"`) was silently corrupted
+ *  into `Decimal("123")`, losing its leading zeros.
+ *
+ *  This registry fixes that by keeping every type's `Decimal` field names
+ *  in *that type's own* `DecimalShape` only, never merged with another
+ *  type's. `reviveShaped` (below) looks up a nested field's *own* shape
+ *  via `nested` rather than testing the parent's key set against it, so
+ *  `Account.total` is only ever checked against *Account's* shape (which,
+ *  correctly, has no `total` key) — not `Order`'s. */
+export const decimalShapes: Readonly<Record<string, DecimalShape>> = {
+{% for shape in decimal_shapes %}
+  {{ shape.name }}: { keys: {{ shape.keys_js }}, nested: {{ shape.nested_js }} },
+{% endfor %}
+};
+
+/** Decodes `value` against the named entry in {@link decimalShapes},
+ *  replacing every string at a key that shape's own `keys` names with a
+ *  real {@link Decimal}, and recursing into any key `nested` names using
+ *  *that* field's own shape. `shapeName` not found in the registry (a
+ *  plain scalar or enum return, e.g. `echoName(): string`) is a
+ *  documented no-op fast path, so every model/procedure call site calls
+ *  this unconditionally rather than the generator branching per call
+ *  site. */
+export function reviveDecimalFields(value: unknown, shapeName: string): unknown {
+  const shape = decimalShapes[shapeName];
+  if (!shape) {
+    return value;
+  }
+  return reviveShaped(value, shape);
+}
+
+/** {@link reviveDecimalFields} for a `Page<T>` envelope: applies `T`'s own
+ *  shape to `.items` (a `Page` envelope's own keys — `items`/`totalCount`/
+ *  `pageInfo` — are never themselves `T`'s fields, so `T`'s shape can't be
+ *  applied to the envelope directly the way a plain `T`/`T[]` response
+ *  can), leaving `totalCount`/`pageInfo` untouched. */
+export function revivePagedDecimalFields(value: unknown, shapeName: string): unknown {
+  const shape = decimalShapes[shapeName];
+  if (!shape || value === null || typeof value !== "object" || !("items" in value)) {
+    return value;
+  }
+  const page = value as { items: unknown };
+  return { ...page, items: reviveShaped(page.items, shape) };
+}
+
+function reviveShaped(value: unknown, shape: DecimalShape): unknown {
   if (Array.isArray(value)) {
-    return value.map((item) => reviveDecimalFieldsInner(item, decimalKeys));
+    return value.map((item) => reviveShaped(item, shape));
   }
   if (value !== null && typeof value === "object") {
     const result: Record<string, unknown> = {};
     for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-      result[key] =
-        decimalKeys.has(key) && typeof entry === "string"
-          ? new Decimal(entry)
-          : reviveDecimalFieldsInner(entry, decimalKeys);
+      const nestedShapeName = shape.nested[key];
+      if (nestedShapeName !== undefined) {
+        const nestedShape = decimalShapes[nestedShapeName];
+        result[key] = nestedShape ? reviveShaped(entry, nestedShape) : entry;
+      } else if (shape.keys.includes(key) && typeof entry === "string") {
+        result[key] = new Decimal(entry);
+      } else {
+        result[key] = entry;
+      }
     }
     return result;
   }
   return value;
+}
+
+/** Counterpart to {@link reviveDecimalFields} for a procedure whose return
+ *  type is `Decimal` itself (optionally `?`/`[]`) rather than an object
+ *  with `Decimal`-typed fields — `reviveDecimalFields` only walks
+ *  object/array *containers* looking for shaped properties, so a raw
+ *  top-level decoded string (or `null`, or an array of strings) needs this
+ *  simpler counterpart instead (cratestack#498 F2: a procedure like
+ *  `quote(): Decimal` was previously declared `Decimal` but decoded as an
+ *  untouched `string`). See `views.rs::ProcedureView::decimal_revival_kind`
+ *  for which generated call sites use this vs. `reviveDecimalFields`. */
+export function reviveDecimalScalar(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => reviveDecimalScalar(item));
+  }
+  return typeof value === "string" ? new Decimal(value) : value;
 }
 
 // Mirrors cratestack-core::page::{Page, PageInfo} exactly — this is

@@ -17,6 +17,16 @@
 
 import type { CratestackRuntime } from "../runtime.js";
 import { toSearchQuery, type CratestackQueryRequestConfig, type CratestackRequestConfig } from "../queries.js";
+// cratestack#498: every generated model file gets this import
+// unconditionally (like `../runtime.js`/`../queries.js` above), whether
+// or not this particular model has a `Decimal` field — the alternative
+// is threading a per-model "does it need Decimal" flag through the
+// ownership computation for a type-only import that costs nothing when
+// unused (this package's `tsconfig.json.j2` doesn't set
+// `noUnusedLocals`). `reviveDecimalFields` is a real (non-type) import:
+// every function below that decodes a server response calls it, same as
+// the `default` preset's `rest-client.ts.j2`.
+import { reviveDecimalFields, revivePagedDecimalFields, type Decimal } from "./shared.js";
 import type { BooleanFilter, ComparableFilter, DateTimeFilter, DecimalFilter, EqualityFilter, NumberFilter, SortDirection, StringFilter, UuidFilter } from "./shared.js";
 import type { Board } from "./board.js";
 
@@ -70,11 +80,11 @@ export async function listTasks(
   runtime: CratestackRuntime,
   options: CratestackQueryRequestConfig = {},
 ): Promise<Task[]> {
-  return runtime.get<Task[]>("/tasks", {
+  return runtime.get<unknown>("/tasks", {
     headers: options.headers,
     query: toSearchQuery(options.query),
     signal: options.signal,
-  });
+  }).then((value) => reviveDecimalFields(value, 'Task') as Task[]);
 }
 
 export async function getTask(
@@ -82,11 +92,11 @@ export async function getTask(
   id: number,
   options: CratestackQueryRequestConfig = {},
 ): Promise<Task> {
-  return runtime.get<Task>(`/tasks/${encodeURIComponent(String(id))}`, {
+  return runtime.get<unknown>(`/tasks/${encodeURIComponent(String(id))}`, {
     headers: options.headers,
     query: toSearchQuery(options.query),
     signal: options.signal,
-  });
+  }).then((value) => reviveDecimalFields(value, 'Task') as Task);
 }
 
 export async function createTask(
@@ -94,7 +104,8 @@ export async function createTask(
   input: CreateTaskInput,
   options: CratestackRequestConfig = {},
 ): Promise<Task> {
-  return runtime.post<Task>("/tasks", input, options);
+  return runtime.post<unknown>("/tasks", input, options)
+    .then((value) => reviveDecimalFields(value, 'Task') as Task);
 }
 
 export async function updateTask(
@@ -103,7 +114,8 @@ export async function updateTask(
   input: UpdateTaskInput,
   options: CratestackRequestConfig = {},
 ): Promise<Task> {
-  return runtime.patch<Task>(`/tasks/${encodeURIComponent(String(id))}`, input, options);
+  return runtime.patch<unknown>(`/tasks/${encodeURIComponent(String(id))}`, input, options)
+    .then((value) => reviveDecimalFields(value, 'Task') as Task);
 }
 
 export async function deleteTask(

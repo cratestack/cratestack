@@ -18,8 +18,9 @@
 import type { CratestackRpcRuntime, CratestackRpcCallOptions } from "../runtime.js";
 import { toRpcListInput, type CratestackRpcListQuery } from "../queries.js";
 // cratestack#498: see `models-rest.ts.j2`'s identical import for why
-// this is unconditional.
-import type { Decimal } from "./shared.js";
+// `Decimal` is unconditional and `reviveDecimalFields` is a real (not
+// type-only) import.
+import { reviveDecimalFields, revivePagedDecimalFields, type Decimal } from "./shared.js";
 {% for import in imports %}
 import type { {{ import.type_names_joined }} } from "{{ import.path }}";
 {% endfor %}
@@ -74,11 +75,11 @@ export async function {{ list_fn }}(
   query: CratestackRpcListQuery = {},
   options: CratestackRpcCallOptions = {},
 ): Promise<{{ model.list_return_type }}> {
-  return runtime.call<Record<string, unknown>, {{ model.list_return_type }}>(
+  return runtime.call<Record<string, unknown>, unknown>(
     "model.{{ model.name }}.list",
     toRpcListInput(query),
     options,
-  );
+  ).then((value) => {% if model.is_paged %}revivePagedDecimalFields{% else %}reviveDecimalFields{% endif %}(value, '{{ model.decimal_shape_name }}') as {{ model.list_return_type }});
 }
 
 export async function {{ get_fn }}(
@@ -86,11 +87,11 @@ export async function {{ get_fn }}(
   id: {{ model.primary_key_type }},
   options: CratestackRpcCallOptions = {},
 ): Promise<{{ model_interface.name }}> {
-  return runtime.call<{ id: {{ model.primary_key_type }} }, {{ model_interface.name }}>(
+  return runtime.call<{ id: {{ model.primary_key_type }} }, unknown>(
     "model.{{ model.name }}.get",
     { id },
     options,
-  );
+  ).then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model_interface.name }});
 }
 
 {% if create_input %}
@@ -99,11 +100,11 @@ export async function {{ create_fn }}(
   input: {{ create_input.name }},
   options: CratestackRpcCallOptions = {},
 ): Promise<{{ model_interface.name }}> {
-  return runtime.call<{{ create_input.name }}, {{ model_interface.name }}>(
+  return runtime.call<{{ create_input.name }}, unknown>(
     "model.{{ model.name }}.create",
     input,
     options,
-  );
+  ).then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model_interface.name }});
 }
 
 {% endif %}
@@ -113,11 +114,11 @@ export async function {{ update_fn }}(
   patch: {{ update_input.name }},
   options: CratestackRpcCallOptions = {},
 ): Promise<{{ model_interface.name }}> {
-  return runtime.call<{ id: {{ model.primary_key_type }}; patch: {{ update_input.name }} }, {{ model_interface.name }}>(
+  return runtime.call<{ id: {{ model.primary_key_type }}; patch: {{ update_input.name }} }, unknown>(
     "model.{{ model.name }}.update",
     { id, patch },
     options,
-  );
+  ).then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model_interface.name }});
 }
 
 export async function {{ delete_fn }}(

@@ -55,9 +55,15 @@ fn generates_fetch_client_and_tanstack_hooks_for_blog_schema() {
     assert!(
         client.contains("list(options: CratestackQueryRequestConfig = {}): Promise<Page<Session>>")
     );
-    assert!(
-        client.contains("return this.runtime.post<Post>(\"/$procs/publishPost\", args, options);")
-    );
+    // cratestack#498/#499 F2: every procedure call site now decodes
+    // through `reviveDecimalFields`, keyed by the return type's own
+    // `decimalShapes` registry entry name (`Post` here — `blog.cstack`'s
+    // `Post` has no `Decimal` field, so the registry entry is a no-op,
+    // but the wrapper is unconditional, mirroring the model CRUD methods
+    // right above it).
+    assert!(client.contains(
+        "return this.runtime.post<unknown>(\"/$procs/publishPost\", args, options)\n      .then((value) => reviveDecimalFields(value, 'Post') as Post);"
+    ));
     assert!(react_query.contains("useQuery"));
     assert!(react_query.contains("useMutation"));
     assert!(react_query.contains("usePostListQuery"));
@@ -337,9 +343,9 @@ fn decimal_scalar_maps_to_a_real_declared_decimal_type() {
 
     let client = package_file(&package, "src/client.ts");
     assert!(
-        client.contains("reviveDecimalFields(value, ['amountXaf', 'discountXaf'])"),
-        "the REST client's Invoice CRUD methods must revive both Decimal fields \
-         on decode, got:\n{client}"
+        client.contains("reviveDecimalFields(value, 'Invoice')"),
+        "the REST client's Invoice CRUD methods must revive via Invoice's own \
+         decimalShapes entry on decode, got:\n{client}"
     );
 
     let package_json = package_file(&package, "package.json");
@@ -369,8 +375,8 @@ fn decimal_scalar_revives_on_decode_over_rpc_transport_too() {
         );
     }
     assert!(
-        client.contains("reviveDecimalFields(value, ['amountXaf', 'discountXaf'])"),
-        "the RPC client's Invoice CRUD methods must revive both Decimal fields \
-         on decode, got:\n{client}"
+        client.contains("reviveDecimalFields(value, 'Invoice')"),
+        "the RPC client's Invoice CRUD methods must revive via Invoice's own \
+         decimalShapes entry on decode, got:\n{client}"
     );
 }

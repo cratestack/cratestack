@@ -4,7 +4,7 @@ import {
   type CratestackRpcClientOptions,
 } from "./runtime.js";
 import { toRpcListInput, type CratestackRpcListQuery } from "./queries.js";
-import { reviveDecimalFields } from "./models.js";
+import { reviveDecimalFields, revivePagedDecimalFields, reviveDecimalScalar } from "./models.js";
 import type {
   Widget,
   CreateWidgetInput,
@@ -39,7 +39,7 @@ export class WidgetApi {
       "model.Widget.list",
       toRpcListInput(query),
       options,
-    ).then((value) => reviveDecimalFields(value, []) as Widget[]);
+    ).then((value) => reviveDecimalFields(value, 'Widget') as Widget[]);
   }
 
   get(id: number, options: CratestackRpcCallOptions = {}): Promise<Widget> {
@@ -47,7 +47,7 @@ export class WidgetApi {
       "model.Widget.get",
       { id },
       options,
-    ).then((value) => reviveDecimalFields(value, []) as Widget);
+    ).then((value) => reviveDecimalFields(value, 'Widget') as Widget);
   }
 
   create(input: CreateWidgetInput, options: CratestackRpcCallOptions = {}): Promise<Widget> {
@@ -55,7 +55,7 @@ export class WidgetApi {
       "model.Widget.create",
       input,
       options,
-    ).then((value) => reviveDecimalFields(value, []) as Widget);
+    ).then((value) => reviveDecimalFields(value, 'Widget') as Widget);
   }
 
   update(
@@ -67,7 +67,7 @@ export class WidgetApi {
       "model.Widget.update",
       { id, patch },
       options,
-    ).then((value) => reviveDecimalFields(value, []) as Widget);
+    ).then((value) => reviveDecimalFields(value, 'Widget') as Widget);
   }
 
   delete(id: number, options: CratestackRpcCallOptions = {}): Promise<void> {
@@ -83,11 +83,11 @@ export class ProceduresApi {
   constructor(private readonly runtime: CratestackRpcRuntime) {}
 
   echoName(args: EchoNameArgs, options: CratestackRpcCallOptions = {}): Promise<string> {
-    return this.runtime.call<EchoNameArgs, string>(
+    return this.runtime.call<EchoNameArgs, unknown>(
       "procedure.echoName",
       args,
       options,
-    );
+    ).then((value) => reviveDecimalFields(value, 'String') as string);
   }
 
 }

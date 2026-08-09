@@ -99,9 +99,41 @@ void main() {
       'reference': 'INV-2',
       'amountXaf': '42.5',
       'discountXaf': null,
+      'customerId': 'cust_1',
     });
     expect(input.discountXaf, isNull);
     expect(input.amountXaf, Decimal.parse('42.5'));
+  });
+
+  // cratestack#499 remediation of #498 (F6): a relation-embedded `Decimal`
+  // field must decode through the exact same `Model.fromWire` chokepoint
+  // as a direct field — unlike TypeScript's original (pre-remediation)
+  // `reviveDecimalFields`, which only matched a flat per-model key set and
+  // missed exactly this case. Real generated `Invoice`/`Customer` classes,
+  // not a hand-rolled stand-in.
+  test('relation-embedded Decimal field decodes via fromWire (cratestack#499 F5/F6)', () {
+    final invoice = Invoice.fromWire(<String, Object?>{
+      'id': 'inv_2',
+      'reference': 'INV-3',
+      'amountXaf': '10.00',
+      'discountXaf': null,
+      'customerId': 'cust_1',
+      'customer': <String, Object?>{'id': 'cust_1', 'balance': '1E-7'},
+    });
+    expect(invoice.customer, isNotNull);
+    expect(invoice.customer!.balance, Decimal.parse('0.0000001'));
+  });
+
+  // cratestack#499 remediation of #498 (F2/F6): a procedure's own return
+  // type (here a `type QuoteResult { price Decimal }`) must decode its
+  // `Decimal` field too — real generated `QuoteResult.fromWire`, the same
+  // class `ProceduresApi.quote()` decodes its HTTP response body through
+  // (`builders_model.rs::build_procedure`'s `return_decode_expr`).
+  test('procedure return type Decimal field decodes via fromWire (cratestack#499 F2/F6)', () {
+    final result = QuoteResult.fromWire(<String, Object?>{'price': '1.234567890123456789012345E+5'});
+    expect(result.price, Decimal.parse('123456.7890123456789012345'));
+    final reWired = result.toWire();
+    expect(reWired['price'], '123456.7890123456789012345');
   });
 }
 "#;

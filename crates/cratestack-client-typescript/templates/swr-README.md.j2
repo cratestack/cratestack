@@ -104,11 +104,9 @@ by exactly one model is defined inline in that model's own file instead. See
 A `Decimal`-typed schema field is generated as a real `decimal.js`-backed `Decimal`
 (cratestack#498, re-exported from `src/models/shared.ts`), not a `string` — construct one with
 `new Decimal(input)`, format with `.toString()`, compare/do arithmetic with
-`.plus()`/`.minus()`/`.cmp()`/`.equals()` instead of raw string/number operations.
-
-**Known gap, tracked rather than silent:** unlike this package's `default` preset (whose REST/RPC
-clients call a `reviveDecimalFields` decode hook on every response), this `swr` preset's
-per-model plain functions (`src/models/*.ts`) don't call it yet — the type is correct and
-`DecimalFilter` encodes correctly via `JSON.stringify` with no extra glue, but a decoded response's
-`Decimal` field is not yet actually revived into a `Decimal` instance at runtime. See cratestack#498's
-own PR for the follow-up.
+`.plus()`/`.minus()`/`.cmp()`/`.equals()` instead of raw string/number operations. Like this
+package's `default` preset, every generated function that decodes a server response (the per-model
+`src/models/*.ts` functions and `src/procedures.ts`) calls a `reviveDecimalFields`/
+`reviveDecimalScalar` decode hook, so a `Decimal`-typed field — including one reached through an
+`include`d relation, or a procedure's own return type — is a real `Decimal` instance at runtime, not
+just at the type level.
