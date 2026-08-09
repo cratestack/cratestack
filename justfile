@@ -583,25 +583,30 @@ bump NEW:
 	# `cargo check` on the host target is enough to update the lock; it
 	# doesn't need the wasm32 target or a wasm-capable clang for that.
 	cd crates/cratestack-studio-ui && cargo check --quiet
-	# `examples/no-database-verification` and `-api` are each their own
-	# `[workspace]` root (excluded from the root one so a real `cargo tree`
-	# proves facade disjointness for an external consumer — see their
-	# READMEs), so like cratestack-studio-ui above they have their own
-	# Cargo.lock that the root `cargo check` never touches. Left unrefreshed
-	# here, their locked `cratestack-pg`/`cratestack-api` path-dependency
+	# `examples/no-database-verification`, `-api`, and
+	# `client-only-verification` are each their own `[workspace]` root
+	# (excluded from the root one so a real `cargo tree` proves facade
+	# disjointness for an external consumer — see their READMEs), so like
+	# cratestack-studio-ui above they have their own Cargo.lock that the
+	# root `cargo check` never touches. Left unrefreshed here, their locked
+	# `cratestack-pg`/`cratestack-api`/`cratestack-client` path-dependency
 	# versions silently drift behind the workspace version, which then
 	# breaks any `--locked` build/`cargo tree` in either directory — this is
 	# exactly the staleness that left them at 0.6.3/0.6.4 against 0.7.8
-	# (cratestack#422). Subshells (not a bare `cd`) so each step's directory
-	# change doesn't leak into the next — unlike the cratestack-studio-ui
-	# step above, this script isn't done after these two. A plain
-	# `cargo check` in each is enough to refresh the lock; Cargo.lock
-	# records the full optional-dependency graph regardless of which
-	# features are active, so this also picks up the `postgres`-gated
-	# cratestack-sqlx entry in no-database-verification without needing
-	# `--features postgres` here.
+	# (cratestack#422), and what CI's `facade-disjointness` job now asserts
+	# against with `cargo metadata --locked` for all three. Every standalone
+	# workspace under examples/ must be listed here; adding one without a
+	# line below is a latent CI break that only fires on the next bump.
+	# Subshells (not a bare `cd`) so each step's directory change doesn't
+	# leak into the next — unlike the cratestack-studio-ui step above, this
+	# script isn't done after these. A plain `cargo check` in each is enough
+	# to refresh the lock; Cargo.lock records the full optional-dependency
+	# graph regardless of which features are active, so this also picks up
+	# the `postgres`-gated cratestack-sqlx entry in no-database-verification
+	# without needing `--features postgres` here.
 	(cd examples/no-database-verification && cargo check --quiet)
 	(cd examples/no-database-verification-api && cargo check --quiet)
+	(cd examples/client-only-verification && cargo check --quiet)
 	echo "bumped to {{NEW}}. Review with: git diff -- '**/Cargo.toml' Cargo.lock"
 
 # Seed a CHANGELOG.md section for the given VERSION.

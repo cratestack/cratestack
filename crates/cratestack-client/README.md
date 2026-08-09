@@ -22,8 +22,10 @@ confusing wall of missing-symbol errors once the schema macro expands.
 `include_client_schema!` too (a server or embedded crate can embed a client
 for calling peers), and continue to work for that. This crate exists for
 the case none of those three actually target: a crate that is *only* a
-client, where every byte of `axum`/`tower`/`hyper` those three facades drag
-in regardless is pure, permanent dead weight in the dependency graph. See
+client, where the `axum` server stack those three facades drag in
+regardless is pure, permanent dead weight in the dependency graph. (The
+`tower`/`hyper` layer underneath it stays either way — `reqwest` needs it;
+what goes is `axum` and `cratestack-axum` on top.) See
 [cratestack#490](https://github.com/cratestack/cratestack/issues/490) for
 the measured impact this fixes.
 
@@ -86,17 +88,23 @@ its own committed `Cargo.lock`. Reproduce the proof yourself:
 ```bash
 cd examples/client-only-verification
 
-# axum/tower/hyper absent under default features — no feature required
+# axum absent under default features — no feature required
 cargo tree --locked | grep -i axum   # -> no output
-cargo tree --locked | grep -i tower  # -> no output
-cargo tree --locked | grep -i hyper  # -> no output
 
 # the generated client actually works
 cargo test --locked
 ```
 
-CI's `facade-disjointness` job (`.github/workflows/ci.yml`) re-runs this
-exact proof on every PR.
+`tower`, `hyper`, and `tower-http` **do** still appear in that tree, and
+that is expected: they arrive through `reqwest`, the HTTP client
+`cratestack-client-rust` is built on, not through `cratestack-axum`. No
+HTTP client crate can avoid them. What this facade removes is the *server*
+framework — `axum` itself, and the routing/extraction/handler machinery
+`cratestack-axum` layers on top. See `examples/client-only-verification`'s
+README, "Why `tower`/`hyper`/`tower-http` aren't asserted absent".
+
+CI's `facade-disjointness` job (`.github/workflows/ci.yml`) re-runs the
+`axum`-absence grep and `cargo test --locked` on every PR.
 
 ## Features
 

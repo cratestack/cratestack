@@ -179,86 +179,14 @@ fn cool_value_to_json(value: crate::Value) -> serde_json::Value {
     serde_json::to_value(&value).unwrap_or(serde_json::Value::Null)
 }
 
-// ---------------------------------------------------------------------------
-// RPC model-CRUD input envelopes (cratestack#490).
-//
-// Moved here from `cratestack-axum::rpc::inputs`, which is where they lived
-// until this fix — an oversight relative to this module's own opening
-// paragraph ("They live in `cratestack-core` so clients can depend on a
-// single source of truth without pulling in axum") and relative to the
-// sibling wire shapes above (`RpcErrorBody`/`RpcRequest`/`RpcResponseFrame`),
-// which already made that move. It went unnoticed until `cratestack-client`
-// (a facade with genuinely no `cratestack-axum` dependency) tried to compile
-// a `transport rpc` schema with model CRUD and hit "cannot find
-// `RpcListInput` in `rpc`" — every previous consumer of
-// `::cratestack::rpc::RpcListInput` (`cratestack-pg`, `cratestack-api`,
-// `cratestack-sqlite`) carries `cratestack-axum` regardless, so the wrong
-// source crate was invisible until a facade without it existed to surface
-// it. `cratestack-axum::rpc` re-exports these same three types verbatim
-// (`pub use cratestack_core::rpc::{RpcListInput, RpcListPredicate,
-// RpcPkInput, RpcUpdateInput};`), so `cratestack-pg`/`cratestack-api`/
-// `cratestack-sqlite` see no behavior change — same names, same shapes, same
-// wire format, only the defining crate moved.
-// ---------------------------------------------------------------------------
+// RPC model-CRUD input envelopes. Split into their own module rather than
+// appended here: this file is the wire-shape module and was already at 180
+// lines, and the ~85 lines of input envelopes push it past the ~200-LoC
+// ceiling this workspace keeps. They arrived from `cratestack-axum::rpc::
+// inputs`, which was itself a dedicated file, so the fine-grained layout is
+// preserved rather than flattened. Glob-re-exported so every existing
+// `cratestack_core::rpc::RpcListInput` path — and `cratestack-axum::rpc`'s
+// verbatim re-export of it — resolves unchanged.
+mod inputs;
 
-/// RPC input for `model.<X>.get` and `model.<X>.delete`. The PK type is
-/// instantiated per-model at the macro emission site.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RpcPkInput<Pk> {
-    pub id: Pk,
-}
-
-/// RPC input for `model.<X>.update`. Parameterized on both the PK type
-/// and the model's concrete `Update<X>Input` so the patch decodes
-/// straight to its real type — round-tripping through
-/// `serde_json::Value` would corrupt CBOR `Option::None` values (which
-/// `minicbor-serde` encodes as `0xf6` simple-null but `serde_json::Value`
-/// encodes as the CBOR empty-array marker; see comments in
-/// `cratestack-codec-cbor`). The dispatcher re-encodes `patch` through
-/// the same codec before handing it to the existing update handler.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RpcUpdateInput<Pk, Patch> {
-    pub id: Pk,
-    pub patch: Patch,
-}
-
-/// Single arbitrary key/value predicate inside [`RpcListInput::filters`].
-/// Models the REST URL form's "anything that isn't a reserved keyword is a
-/// predicate" rule (e.g. `?published=true&authorId=42`).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RpcListPredicate {
-    pub key: String,
-    pub value: String,
-}
-
-/// RPC input for `model.<X>.list`. Mirrors the REST URL query 1:1 — every
-/// optional field maps to a query param of the same name, predicates carry
-/// arbitrary `(key, value)` pairs that aren't reserved keywords.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct RpcListInput {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub limit: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub offset: Option<i64>,
-    /// Selection fields (`?fields=a,b,c`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fields: Option<Vec<String>>,
-    /// Included relations (`?include=author,comments`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub include: Option<Vec<String>>,
-    /// Fields per included relation (`?includeFields[author]=id,name`).
-    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
-    pub include_fields: std::collections::BTreeMap<String, Vec<String>>,
-    /// Order expression (`?sort=name asc`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sort: Option<String>,
-    /// Top-level filter expression (`?where=...`).
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "where")]
-    pub where_expr: Option<String>,
-    /// Disjunction filter (`?or=...`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub or: Option<String>,
-    /// Arbitrary `key=value` predicates (anything not in the reserved set).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub filters: Vec<RpcListPredicate>,
-}
+pub use inputs::*;
