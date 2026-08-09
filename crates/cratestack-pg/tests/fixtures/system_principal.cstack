@@ -1,0 +1,46 @@
+// Fixture for issue #486 / ADR 0038 blocker B1: `auth().isSystem()`.
+//
+// `SystemDevice` is the shape downstream services actually want and
+// currently cannot express without hand-written SQL: owner-readable
+// over the generated surface, but writable (and, for reconciliation,
+// readable) by server code acting as the system principal — with the
+// write rule still stated in the schema instead of scattered across
+// call sites. `@@audit` is present so a system-attributed write shows
+// up in the audit trail (design constraint #3).
+//
+// `OwnerOnlyNote` is the fail-closed control: identical policy
+// vocabulary, but deliberately never names `isSystem()` anywhere. A
+// system caller must gain nothing on it — see
+// `system_principal.rs::system_caller_is_denied_on_a_model_that_never_names_is_system`.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Principal {
+  subjectId String
+}
+
+model SystemDevice {
+  id Int @id
+  subjectId String
+  label String
+
+  @@audit
+  @@allow("list", auth().isSystem() || subjectId == auth().subjectId)
+  @@allow("detail", auth().isSystem() || subjectId == auth().subjectId)
+  @@allow("create", auth().isSystem())
+  @@allow("update", auth().isSystem() || subjectId == auth().subjectId)
+  @@allow("delete", auth().isSystem())
+}
+
+model OwnerOnlyNote {
+  id Int @id
+  subjectId String
+  body String
+
+  @@allow("list", subjectId == auth().subjectId)
+  @@allow("detail", subjectId == auth().subjectId)
+  @@allow("update", subjectId == auth().subjectId)
+}

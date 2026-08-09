@@ -4,6 +4,7 @@
 
 mod identity;
 mod principal;
+mod system;
 
 #[cfg(test)]
 mod tests;
@@ -17,6 +18,7 @@ use crate::value::Value;
 
 pub use identity::CoolAuthIdentity;
 pub use principal::{PrincipalContext, PrincipalFacet};
+pub use system::SystemContext;
 
 use principal::lookup_value_path_in_map;
 
@@ -25,6 +27,30 @@ pub struct CoolContext {
     pub auth: Option<CoolAuthIdentity>,
     pub principal: Option<PrincipalContext>,
     pub extensions: BTreeMap<String, Value>,
+    /// Backing flag for the `auth().isSystem()` policy builtin (issue
+    /// #486 / ADR 0038 blocker B1).
+    ///
+    /// Deliberately **private** and `#[serde(skip)]` — this is the
+    /// entire forgery boundary the feature depends on, so both
+    /// properties matter independently:
+    ///
+    /// - Private, so no crate outside this module can flip it on a
+    ///   context it already holds. The only public way to obtain a
+    ///   `CoolContext` with this set is [`SystemContext`], which has no
+    ///   `From`/`TryFrom<CoolContext>` and no constructor that accepts
+    ///   an existing (e.g. request-derived) `CoolContext` — see that
+    ///   type's docs for why that upgrade path cannot exist even by
+    ///   accident. Every `AuthProvider` impl in every consuming crate
+    ///   can only ever produce a `CoolContext` through the public
+    ///   constructors below, all of which set this to `false`.
+    /// - `#[serde(skip)]`, so the flag cannot cross a wire. On
+    ///   deserialization serde leaves it at `bool::default()` (`false`)
+    ///   regardless of what a payload contains — including a payload
+    ///   that explicitly sets `"system": true`, which is the exact
+    ///   forgery this guards against. See
+    ///   `context::system::tests::forged_system_field_in_payload_is_ignored`.
+    #[serde(skip)]
+    system: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -74,11 +100,22 @@ impl CoolContext {
             }),
             principal: Some(PrincipalContext::from_claims(fields)),
             extensions: BTreeMap::new(),
+            system: false,
         }
     }
 
     pub fn is_authenticated(&self) -> bool {
         self.auth.is_some() || self.principal.is_some()
+    }
+
+    /// Backs the `auth().isSystem()` policy builtin. `true` only for a
+    /// context minted through [`SystemContext`]; never `true` for
+    /// anything an [`AuthProvider`] produced from a request, and never
+    /// `true` after a deserialization round-trip. See the field doc on
+    /// `CoolContext::system` for the structural argument, not just the
+    /// convention, behind that guarantee.
+    pub fn is_system(&self) -> bool {
+        self.system
     }
 
     pub fn auth_field(&self, name: &str) -> Option<&Value> {
@@ -107,6 +144,7 @@ impl CoolContext {
             auth: Some(auth),
             principal: Some(principal),
             extensions: BTreeMap::new(),
+            system: false,
         })
     }
 
@@ -115,6 +153,7 @@ impl CoolContext {
             auth: Some(principal.as_auth_identity()),
             principal: Some(principal),
             extensions: BTreeMap::new(),
+            system: false,
         }
     }
 

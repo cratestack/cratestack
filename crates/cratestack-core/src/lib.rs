@@ -82,6 +82,7 @@ pub use batch::{
 pub use codec::{CoolCodec, CoolEnvelope, NoEnvelope};
 pub use context::{
     AuthProvider, CoolAuthIdentity, CoolContext, PrincipalContext, PrincipalFacet, RequestContext,
+    SystemContext,
 };
 pub use envelope::{
     HmacEnvelope, InMemoryNonceStore, KeyProvider, NonceStore, SealedEnvelope, StaticKeyProvider,

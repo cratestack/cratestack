@@ -155,7 +155,7 @@ fn resolve_default_value(
     }
 }
 
-pub(super) fn evaluate_input_predicate(
+pub(crate) fn evaluate_input_predicate(
     predicate: ReadPredicate,
     values: &[SqlColumnValue],
     ctx: &CoolContext,
@@ -163,6 +163,7 @@ pub(super) fn evaluate_input_predicate(
     match predicate {
         ReadPredicate::AuthNotNull => ctx.is_authenticated(),
         ReadPredicate::AuthIsNull => !ctx.is_authenticated(),
+        ReadPredicate::AuthIsSystem => ctx.is_system(),
         ReadPredicate::HasRole { role } => context_has_role(ctx, role),
         ReadPredicate::InTenant { tenant_id } => context_in_tenant(ctx, tenant_id),
         ReadPredicate::AuthFieldEqLiteral { auth_field, value } => ctx
