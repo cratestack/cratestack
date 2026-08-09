@@ -17,6 +17,16 @@
 
 import type { CratestackRuntime } from "../runtime.js";
 import { toSearchQuery, type CratestackQueryRequestConfig, type CratestackRequestConfig } from "../queries.js";
+// cratestack#498: every generated model file gets this import
+// unconditionally (like `../runtime.js`/`../queries.js` above), whether
+// or not this particular model has a `Decimal` field — the alternative
+// is threading a per-model "does it need Decimal" flag through the
+// ownership computation for a type-only import that costs nothing when
+// unused (this package's `tsconfig.json.j2` doesn't set
+// `noUnusedLocals`). `reviveDecimalFields` is a real (non-type) import:
+// every function below that decodes a server response calls it, same as
+// the `default` preset's `rest-client.ts.j2`.
+import { reviveDecimalFields, revivePagedDecimalFields, type Decimal } from "./shared.js";
 {% for import in imports %}
 import type { {{ import.type_names_joined }} } from "{{ import.path }}";
 {% endfor %}
@@ -70,11 +80,11 @@ export async function {{ list_fn }}(
   runtime: CratestackRuntime,
   options: CratestackQueryRequestConfig = {},
 ): Promise<{{ model.list_return_type }}> {
-  return runtime.get<{{ model.list_return_type }}>("{{ model.route }}", {
+  return runtime.get<unknown>("{{ model.route }}", {
     headers: options.headers,
     query: toSearchQuery(options.query),
     signal: options.signal,
-  });
+  }).then((value) => {% if model.is_paged %}revivePagedDecimalFields{% else %}reviveDecimalFields{% endif %}(value, '{{ model.decimal_shape_name }}') as {{ model.list_return_type }});
 }
 
 export async function {{ get_fn }}(
@@ -82,11 +92,11 @@ export async function {{ get_fn }}(
   id: {{ model.primary_key_type }},
   options: CratestackQueryRequestConfig = {},
 ): Promise<{{ model_interface.name }}> {
-  return runtime.get<{{ model_interface.name }}>(`{{ model.route }}/${encodeURIComponent(String(id))}`, {
+  return runtime.get<unknown>(`{{ model.route }}/${encodeURIComponent(String(id))}`, {
     headers: options.headers,
     query: toSearchQuery(options.query),
     signal: options.signal,
-  });
+  }).then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model_interface.name }});
 }
 
 {% if create_input %}
@@ -95,7 +105,8 @@ export async function {{ create_fn }}(
   input: {{ create_input.name }},
   options: CratestackRequestConfig = {},
 ): Promise<{{ model_interface.name }}> {
-  return runtime.post<{{ model_interface.name }}>("{{ model.route }}", input, options);
+  return runtime.post<unknown>("{{ model.route }}", input, options)
+    .then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model_interface.name }});
 }
 
 {% endif %}
@@ -105,7 +116,8 @@ export async function {{ update_fn }}(
   input: {{ update_input.name }},
   options: CratestackRequestConfig = {},
 ): Promise<{{ model_interface.name }}> {
-  return runtime.patch<{{ model_interface.name }}>(`{{ model.route }}/${encodeURIComponent(String(id))}`, input, options);
+  return runtime.patch<unknown>(`{{ model.route }}/${encodeURIComponent(String(id))}`, input, options)
+    .then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model_interface.name }});
 }
 
 export async function {{ delete_fn }}(

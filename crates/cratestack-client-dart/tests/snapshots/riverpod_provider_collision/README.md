@@ -485,6 +485,30 @@ This cuts down on repeated query-shape plumbing, keeps nested relation shape nex
 
 The generated field/include constants are still useful. Keep them for low-level dynamic query composition, persisted query settings, user-driven field pickers, or any code path that cannot rely on one static generated selection builder.
 
+## Decimal Fields
+
+A `Decimal`-typed schema field is generated as `package:decimal`'s `Decimal`
+class (cratestack#498), not a `String`:
+
+```dart
+final invoice = await client.invoices.get(id);
+print(invoice.amountXaf.toString()); // e.g. "0.0000001", never scientific notation
+final total = invoice.amountXaf + invoice.taxXaf; // real arbitrary-precision arithmetic
+```
+
+**Migration from pre-#498 generated clients:** code that treated a `Decimal` field as a
+`String` (string comparison, `double.parse`, concatenation) needs to switch to `Decimal`'s
+own API — `Decimal.parse(input)` to construct one, `.toString()` to format, and its
+comparison operators / `compareTo` for ordering. `DecimalFilter`'s `eq`/`ne`/`lt`/`lte`/
+`gt`/`gte`/`in` fields need the same treatment when building a `Where`/`FindMany` argument
+by hand.
+
+This parses correctly regardless of which `Decimal` backend built the server
+(`decimal-rust-decimal` or `decimal-bigdecimal` — see `cratestack-core`'s README): both
+plain positional notation (`"0.0000001"`) and the scientific notation `bigdecimal` emits
+past `rust_decimal`'s ~28-29 significant-digit capacity (`"1E-7"`) decode to the identical
+value, and this package always re-encodes in plain notation.
+
 ## Generated APIs
 
 Model entry points:

@@ -1,4 +1,5 @@
 import { CratestackRuntime, type CratestackClientOptions } from "./runtime.js";
+import { reviveDecimalFields, revivePagedDecimalFields, reviveDecimalScalar } from "./models.js";
 import type {
   Widget,
   CreateWidgetInput,
@@ -30,23 +31,24 @@ export class WidgetApi {
   constructor(private readonly runtime: CratestackRuntime) {}
 
   list(options: CratestackQueryRequestConfig = {}): Promise<Widget[]> {
-    return this.runtime.get<Widget[]>("/widgets", {
+    return this.runtime.get<unknown>("/widgets", {
       headers: options.headers,
       query: toSearchQuery(options.query),
       signal: options.signal,
-    });
+    }).then((value) => reviveDecimalFields(value, 'Widget') as Widget[]);
   }
 
   get(id: number, options: CratestackQueryRequestConfig = {}): Promise<Widget> {
-    return this.runtime.get<Widget>(`/widgets/${encodeURIComponent(String(id))}`, {
+    return this.runtime.get<unknown>(`/widgets/${encodeURIComponent(String(id))}`, {
       headers: options.headers,
       query: toSearchQuery(options.query),
       signal: options.signal,
-    });
+    }).then((value) => reviveDecimalFields(value, 'Widget') as Widget);
   }
 
   create(input: CreateWidgetInput, options: CratestackRequestConfig = {}): Promise<Widget> {
-    return this.runtime.post<Widget>("/widgets", input, options);
+    return this.runtime.post<unknown>("/widgets", input, options)
+      .then((value) => reviveDecimalFields(value, 'Widget') as Widget);
   }
 
   update(
@@ -54,7 +56,8 @@ export class WidgetApi {
     input: UpdateWidgetInput,
     options: CratestackRequestConfig = {},
   ): Promise<Widget> {
-    return this.runtime.patch<Widget>(`/widgets/${encodeURIComponent(String(id))}`, input, options);
+    return this.runtime.patch<unknown>(`/widgets/${encodeURIComponent(String(id))}`, input, options)
+      .then((value) => reviveDecimalFields(value, 'Widget') as Widget);
   }
 
   delete(id: number, options: CratestackRequestConfig = {}): Promise<void> {
@@ -66,7 +69,8 @@ export class ProceduresApi {
   constructor(private readonly runtime: CratestackRuntime) {}
 
   echoName(args: EchoNameArgs, options: CratestackRequestConfig = {}): Promise<string> {
-    return this.runtime.post<string>("/$procs/echoName", args, options);
+    return this.runtime.post<unknown>("/$procs/echoName", args, options)
+      .then((value) => reviveDecimalFields(value, 'String') as string);
   }
 
 }

@@ -85,3 +85,15 @@ Enums and `type` blocks referenced by more than one model (or by no model at all
 unused type) live in `src/models/shared.ts` and are imported by their consumers. A type referenced
 by exactly one model is defined inline in that model's own file instead. See
 `cratestack-client-typescript`'s `src/swr/ownership.rs` for the computation that decides this.
+
+## Decimal Fields
+
+A `Decimal`-typed schema field is generated as a real `decimal.js`-backed `Decimal`
+(cratestack#498, re-exported from `src/models/shared.ts`), not a `string` — construct one with
+`new Decimal(input)`, format with `.toString()`, compare/do arithmetic with
+`.plus()`/`.minus()`/`.cmp()`/`.equals()` instead of raw string/number operations. Like this
+package's `default` preset, every generated function that decodes a server response (the per-model
+`src/models/*.ts` functions and `src/procedures.ts`) calls a `reviveDecimalFields`/
+`reviveDecimalScalar` decode hook, so a `Decimal`-typed field — including one reached through an
+`include`d relation, or a procedure's own return type — is a real `Decimal` instance at runtime, not
+just at the type level.

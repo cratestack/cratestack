@@ -9,6 +9,17 @@
 // Binary mode only (`application/grpc-web+proto`) — see this ticket's
 // final report for why binary was chosen over the base64 text mode.
 
+// cratestack#498 F4: `Decimal`-typed fields are proto3 `string` on the
+// wire (unchanged — `cratestack-proto::emit::scalar::map_scalar` still
+// maps `Decimal` to plain `string`) but decode into a real `Decimal`
+// instance, matching `models.ts`'s own `Decimal`-typed interface fields
+// (used transport-agnostically) instead of leaving a static-type/runtime
+// mismatch. `./models.js`, not `decimal.js` directly: `Decimal` here must
+// be the exact same clone (`toExpNeg`/`toExpPos`) `models.ts` exports, or
+// a value built by this runtime and one built by `models.ts` could
+// disagree on `.toString()`'s exponential-notation threshold.
+import { Decimal } from "./models.js";
+
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 
@@ -153,6 +164,7 @@ export type GrpcWireKind =
   | "double"
   | "bool"
   | "string"
+  | "decimal"
   | "bytes"
   | "timestamp"
   | "enum"
@@ -181,6 +193,8 @@ function zeroValue(kind: GrpcWireKind): unknown {
       return false;
     case "string":
       return "";
+    case "decimal":
+      return new Decimal(0);
     case "bytes":
       return new Uint8Array(0);
     case "timestamp":
@@ -204,6 +218,8 @@ function encodeScalar(kind: GrpcWireKind, value: unknown, refName: string | unde
       return { wireType: WIRE_FIXED64, bytes: encodeFixed64Double(value as number) };
     case "string":
       return { wireType: WIRE_LENGTH_DELIMITED, bytes: new TextEncoder().encode(value as string) };
+    case "decimal":
+      return { wireType: WIRE_LENGTH_DELIMITED, bytes: new TextEncoder().encode((value as Decimal).toString()) };
     case "bytes":
       return { wireType: WIRE_LENGTH_DELIMITED, bytes: value as Uint8Array };
     case "timestamp":
@@ -306,6 +322,8 @@ function decodeScalar(kind: GrpcWireKind, bytes: Uint8Array, refName: string | u
       return decodeFixed64Double(bytes, 0);
     case "string":
       return new TextDecoder().decode(bytes);
+    case "decimal":
+      return new Decimal(new TextDecoder().decode(bytes));
     case "bytes":
       return bytes;
     case "timestamp":

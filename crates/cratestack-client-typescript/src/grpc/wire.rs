@@ -34,9 +34,20 @@ pub(crate) enum GrpcWireKind {
     Double,
     /// `Boolean` -> proto3 `bool` — varint 0/1.
     Bool,
-    /// `String`/`Cuid`/`Uuid`/`Decimal` -> proto3 `string` — UTF-8,
+    /// `String`/`Cuid`/`Uuid` -> proto3 `string` — UTF-8,
     /// length-delimited.
     String,
+    /// `Decimal` -> proto3 `string` (same wire bytes as `String` — the
+    /// server side is untouched, `cratestack-proto::emit::scalar::map_scalar`
+    /// still maps `Decimal` to plain `string`), but decoded into a real
+    /// `Decimal` instance (`decodeScalar`'s `"decimal"` case,
+    /// `grpc-web-runtime.ts.j2`) and encoded via `.toString()`, not passed
+    /// through as a raw JS string (cratestack#498 F4: the generated TS
+    /// interface for a `Decimal` field is `Decimal` — `models.ts.j2`, used
+    /// transport-agnostically — so gRPC-Web decoding a bare `string` into it
+    /// was a real static-type/runtime mismatch; this closes it rather than
+    /// leaving the capability unimplemented).
+    Decimal,
     /// `Bytes`/`Json` -> proto3 `bytes` — raw, length-delimited.
     Bytes,
     /// `DateTime` -> `google.protobuf.Timestamp` — a fixed 2-field nested
@@ -69,7 +80,8 @@ pub(crate) struct MappedWireField {
 /// plain(other)` branch.
 pub(crate) fn map_wire_field(ty_name: &str, enum_names: &BTreeSet<&str>) -> MappedWireField {
     let kind = match ty_name {
-        "String" | "Cuid" | "Uuid" | "Decimal" => GrpcWireKind::String,
+        "String" | "Cuid" | "Uuid" => GrpcWireKind::String,
+        "Decimal" => GrpcWireKind::Decimal,
         "Int" => GrpcWireKind::Int64,
         "Float" => GrpcWireKind::Double,
         "Boolean" => GrpcWireKind::Bool,

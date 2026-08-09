@@ -19,6 +19,17 @@ pub enum PolicyLiteral {
 pub enum ReadPredicate {
     AuthNotNull,
     AuthIsNull,
+    /// Lowered from `auth().isSystem()` (issue #486 / ADR 0038 blocker
+    /// B1). Satisfied only by a `CoolContext` minted through
+    /// `cratestack_core::SystemContext`.
+    ///
+    /// This is a predicate a schema author writes down, not a bypass:
+    /// it can only make a policy `TRUE` where an `@@allow`/`@@deny`
+    /// clause names it. A model whose policies never mention it is
+    /// entirely unaffected by system callers — the pre-existing
+    /// default-deny / owner-scoped rules for that action still apply,
+    /// which is the fail-closed property design constraint #2 asks for.
+    AuthIsSystem,
     HasRole {
         role: &'static str,
     },

@@ -61,9 +61,12 @@ and [ADR-0003](https://cratestack.dev/internals/views-adr).
   the wire, but values past `rust_decimal`'s ~28-29 significant-digit
   capacity serialize as scientific notation (e.g. `"1E-29"`), which a
   `rust_decimal` peer fails to decode. The shipped Dart/TypeScript client
-  SDKs only ever target `rust_decimal` — see `cratestack-core`'s README
-  for the full deployment constraint before using this backend's extra
-  precision against those clients.
+  SDKs generate a real arbitrary-precision `Decimal` type as of
+  cratestack#498 (**breaking** — see each package's migration note) that
+  parses both notations, so pairing this backend with a generated client
+  is safe regardless of magnitude — see `cratestack-core`'s README for
+  the full picture and the two scope notes (gRPC-preset clients, the
+  TypeScript `swr` preset) that still apply.
 - `codec-json` *(default)* — forwards the JSON codec to the generated
   client runtime, alongside CBOR. On `wasm32` the client runtime isn't
   linked (no `reqwest`), so this feature has no effect there.

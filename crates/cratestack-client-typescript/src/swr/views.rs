@@ -5,7 +5,8 @@
 
 use serde::Serialize;
 
-use crate::views::{EnumView, InterfaceView, ModelApiView, ProcedureView};
+use crate::procedure_views::ProcedureView;
+use crate::views::{EnumView, InterfaceView, ModelApiView};
 
 /// A single `import type { .. } from "<path>";` line. `path` is always
 /// computed in Rust (never string-built in a template) so every template
@@ -101,6 +102,10 @@ pub(crate) struct SwrSchemaContext {
     pub(crate) shared: SwrSharedView,
     pub(crate) models: Vec<SwrModelSummary>,
     pub(crate) procedures_file: SwrProceduresView,
+    /// One row per model/`type` in the schema — see `crate::context::
+    /// TemplateContext::decimal_shapes`'s identical field for the full
+    /// rationale (`crate::decimal`'s module doc has the complete story).
+    pub(crate) decimal_shapes: Vec<crate::decimal::DecimalShapeView>,
 }
 
 /// The per-model context `swr-models-{rest,rpc}.ts.j2` renders once per

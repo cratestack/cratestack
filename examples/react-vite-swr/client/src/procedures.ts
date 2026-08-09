@@ -14,6 +14,12 @@
 
 import type { CratestackRuntime } from "./runtime.js";
 import type { CratestackRequestConfig } from "./queries.js";
+// cratestack#498: real (not type-only) import — every function below
+// that decodes a server response calls one of these to turn a
+// `Decimal`-typed return value's wire-format string(s) back into a real
+// `Decimal` (`./models/shared.js`'s doc comments have the full
+// rationale).
+import { reviveDecimalFields, revivePagedDecimalFields, reviveDecimalScalar } from "./models/shared.js";
 
 export interface FocusEstimateArgs {
   taskCount: number;
@@ -33,6 +39,7 @@ export async function estimateFocusMinutes(
   args: EstimateFocusMinutesArgs,
   options: CratestackRequestConfig = {},
 ): Promise<FocusEstimateResult> {
-  return runtime.post<FocusEstimateResult>("/$procs/estimateFocusMinutes", args, options);
+  return runtime.post<unknown>("/$procs/estimateFocusMinutes", args, options)
+    .then((value) => reviveDecimalFields(value, 'FocusEstimateResult') as FocusEstimateResult);
 }
 

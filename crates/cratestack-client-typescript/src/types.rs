@@ -23,14 +23,25 @@ pub(crate) fn ts_type(type_ref: &TypeRef, enum_names: &BTreeSet<&str>) -> String
     }
 
     let base = match type_ref.name.as_str() {
-        // `Decimal` is string-shaped on the wire, not a JS number: that is what
-        // preserves arbitrary precision, and it matches what the two sibling
-        // call sites in this crate already do — `find_many_views.rs` maps it to
-        // `DecimalFilter` (= `ComparableFilter<string>`) and `grpc/wire.rs` maps
-        // it to `GrpcWireKind::String`. Without this arm it fell through to the
-        // catch-all below and was emitted as a bare `Decimal` type name that
-        // nothing declares, so generation succeeded and `tsc` failed.
-        "String" | "Cuid" | "Uuid" | "DateTime" | "Decimal" => "string".to_owned(),
+        "String" | "Cuid" | "Uuid" | "DateTime" => "string".to_owned(),
+        // cratestack#498: a real arbitrary-precision `decimal.js` value
+        // (`Decimal`, exported by `models.ts.j2` — see that template's
+        // own doc comment), not a bare `string`. A `Decimal`-typed field
+        // is *carried* as a wire-format string (both `decimal-rust-decimal`
+        // and `decimal-bigdecimal` — #495/#496 — serialize it that way;
+        // `find_many_views.rs` still maps it to `DecimalFilter` =
+        // `ComparableFilter<Decimal>`), but the string's own *format*
+        // depends on which backend built the server (`rust_decimal` never
+        // emits scientific notation, `bigdecimal` does past a magnitude
+        // threshold) — a bare `string` field type forced every consumer
+        // to know that and hand-roll parsing. `grpc/wire.rs` is
+        // deliberately unchanged (`GrpcWireKind::String`, proto3 `string`
+        // — out of #498's scope), so the generated gRPC-preset client
+        // still produces `Decimal`-typed interface fields (they're the
+        // same `models.ts` interfaces) but decodes/encodes them as raw
+        // strings at the wire boundary — a real, tracked gap (see this
+        // ticket's PR description), not an oversight.
+        "Decimal" => "Decimal".to_owned(),
         "Int" | "Float" => "number".to_owned(),
         "Boolean" => "boolean".to_owned(),
         "Json" => "JsonValue".to_owned(),

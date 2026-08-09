@@ -8,16 +8,18 @@
 use cratestack_core::Schema;
 
 use crate::config::TypeScriptGeneratorConfig;
+use crate::decimal::build_decimal_shapes;
 use crate::find_many_views::{
     build_find_many_interface, build_order_by_clause_interface, build_sort_field_view,
     build_where_interface,
 };
 use crate::naming::{model_fn_names, procedure_wrapper_name, to_kebab_case};
+use crate::procedure_views::build_procedure;
 use crate::types::{
     enum_name_set, is_generated_on_create, is_paged_model, is_primary_key, model_allows_create,
     model_name_set, scalar_model_fields, visible_model_fields,
 };
-use crate::views::{InterfaceKind, build_interface, build_model_api, build_procedure};
+use crate::views::{InterfaceKind, build_interface, build_model_api};
 
 use super::context_imports::{
     build_imports, model_refs_in_fields, owned_by, procedure_arg_fields, procedure_model_refs,
@@ -150,6 +152,7 @@ pub(crate) fn build_shared_context(
         shared,
         models,
         procedures_file,
+        decimal_shapes: build_decimal_shapes(schema),
     }
 }
 

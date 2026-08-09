@@ -13,6 +13,9 @@
 // `src/swr/ownership.rs::compute_type_ownership`.
 
 import type { CratestackRpcRuntime, CratestackRpcCallOptions } from "./runtime.js";
+// cratestack#498: see `procedures-rest.ts.j2`'s identical import for why
+// this is a real (not type-only) import.
+import { reviveDecimalFields, revivePagedDecimalFields, reviveDecimalScalar } from "./models/shared.js";
 {% for import in procedures_file.imports %}
 import type { {{ import.type_names_joined }} } from "{{ import.path }}";
 {% endfor %}
@@ -47,16 +50,30 @@ export interface {{ interface.name }} {
 
 {% endfor %}
 {% for procedure in procedures_file.procedures %}
+{% if procedure.decimal_revival_kind == "scalar" %}
 export async function {{ procedure.method_name }}(
   runtime: CratestackRpcRuntime,
   args: {{ procedure.args_name }},
   options: CratestackRpcCallOptions = {},
 ): Promise<{{ procedure.return_type }}> {
-  return runtime.call<{{ procedure.args_name }}, {{ procedure.return_type }}>(
+  return runtime.call<{{ procedure.args_name }}, unknown>(
     "procedure.{{ procedure.name }}",
     args,
     options,
-  );
+  ).then((value) => reviveDecimalScalar(value) as {{ procedure.return_type }});
 }
+{% else %}
+export async function {{ procedure.method_name }}(
+  runtime: CratestackRpcRuntime,
+  args: {{ procedure.args_name }},
+  options: CratestackRpcCallOptions = {},
+): Promise<{{ procedure.return_type }}> {
+  return runtime.call<{{ procedure.args_name }}, unknown>(
+    "procedure.{{ procedure.name }}",
+    args,
+    options,
+  ).then((value) => {% if procedure.decimal_paged %}revivePagedDecimalFields{% else %}reviveDecimalFields{% endif %}(value, '{{ procedure.decimal_shape_name }}') as {{ procedure.return_type }});
+}
+{% endif %}
 
 {% endfor %}
