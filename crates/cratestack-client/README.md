@@ -114,5 +114,22 @@ CI's `facade-disjointness` job (`.github/workflows/ci.yml`) re-runs the
   `cratestack-pg`'s same-named feature.
 - `codec-json` *(default)* — forwards the JSON codec to the generated
   client runtime, alongside CBOR.
+- `pgvector` — enable when the schema declares `extension pgvector { }`.
+- `rate_limit` — enable when the schema declares `extension rate_limit { }`.
+
+The last two are **schema-compatibility switches, not feature
+implementations**. A client is generated from the same `.cstack` the server
+is built from, so a schema declaring either extension must still compile
+here — but neither extension has a client-side half. A `Vector(n)` field
+arrives as a plain `Vec<f32>` (the `pgvector` crate is only involved at the
+server's sqlx row-decode boundary), and `@no_rate_limit` only affects
+enforcement that lives in `cratestack-axum`, which this facade has no
+dependency on. So unlike `cratestack-pg`, these forward to
+`cratestack-macros` alone — they exist purely to satisfy the declaration
+gate that would otherwise reject the schema:
+
+```toml
+cratestack = { package = "cratestack-client", version = "0.7", features = ["pgvector"] }
+```
 
 There is no `grpc` feature — see "What this crate does not support" above.

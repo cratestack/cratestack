@@ -1,0 +1,46 @@
+// Fixture for `extension_feature_forwarding.rs` (cratestack#490 review
+// remediation): a schema declaring BOTH gated extensions, with a
+// `Vector(n)` field — which `cratestack-parser` only accepts when
+// `extension pgvector { }` is present — and a `@no_rate_limit` procedure,
+// which likewise requires `extension rate_limit { }`.
+//
+// The point is schema *compatibility*, not extension behavior: a client
+// SDK is generated from the same `.cstack` a server is built from, so if
+// the server's schema declares these extensions, this facade has to be
+// able to compile a client for it. Both declarations are a
+// `compile_error!` unless this crate's matching Cargo features are on.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+extension pgvector {
+}
+
+extension rate_limit {
+}
+
+auth Operator {
+  id Int
+}
+
+model Document {
+  id Int @id
+  title String
+  embedding Vector(3)
+
+  @@allow("read", auth() != null)
+}
+
+type ReindexArgs {
+  documentId Int
+}
+
+type ReindexResult {
+  queued Boolean
+}
+
+mutation procedure reindex(args: ReindexArgs): ReindexResult
+  @allow(auth() != null)
+  @no_rate_limit
