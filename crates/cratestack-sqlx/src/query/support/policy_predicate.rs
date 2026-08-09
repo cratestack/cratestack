@@ -31,6 +31,9 @@ pub(super) fn push_policy_predicate(
                 "TRUE"
             });
         }
+        ReadPredicate::AuthIsSystem => {
+            query.push(if ctx.is_system() { "TRUE" } else { "FALSE" });
+        }
         ReadPredicate::HasRole { role } => {
             query.push(if context_has_role(ctx, role) {
                 "TRUE"

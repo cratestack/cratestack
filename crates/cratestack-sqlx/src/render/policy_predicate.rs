@@ -33,6 +33,9 @@ pub(super) fn render_policy_predicate(
                 "TRUE"
             });
         }
+        ReadPredicate::AuthIsSystem => {
+            sql.push_str(if ctx.is_system() { "TRUE" } else { "FALSE" });
+        }
         ReadPredicate::HasRole { role } => {
             sql.push_str(if context_has_role(ctx, role) {
                 "TRUE"
