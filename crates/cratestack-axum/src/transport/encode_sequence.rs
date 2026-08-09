@@ -7,7 +7,7 @@ use serde::Serialize;
 use super::CBOR_SEQUENCE_CONTENT_TYPE;
 use super::http_transport::HttpTransport;
 use super::internal::fallback_error_response;
-use super::media_type::select_response_content_type;
+use super::media_type::select_transport_response_content_type;
 
 pub fn encode_transport_sequence_result<TTransport, TValue>(
     transport: &TTransport,
@@ -73,14 +73,11 @@ where
                 .to_owned(),
         ));
     }
-    let content_type = match select_response_content_type(
-        headers,
-        capabilities.response_types,
-        capabilities.default_response_type,
-    ) {
-        Ok(content_type) => content_type,
-        Err(error) => return fallback_error_response(error),
-    };
+    let content_type =
+        match select_transport_response_content_type(transport, headers, capabilities) {
+            Ok(content_type) => content_type,
+            Err(error) => return fallback_error_response(error),
+        };
     match result {
         Ok(values) => transport
             .encode_sequence_response(content_type, success_status, &values)
@@ -132,14 +129,11 @@ where
                 .to_owned(),
         ));
     }
-    let content_type = match select_response_content_type(
-        headers,
-        capabilities.response_types,
-        capabilities.default_response_type,
-    ) {
-        Ok(content_type) => content_type,
-        Err(error) => return fallback_error_response(error),
-    };
+    let content_type =
+        match select_transport_response_content_type(transport, headers, capabilities) {
+            Ok(content_type) => content_type,
+            Err(error) => return fallback_error_response(error),
+        };
     match result {
         Ok(stream) => {
             if content_type == CBOR_SEQUENCE_CONTENT_TYPE {
@@ -166,3 +160,6 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
