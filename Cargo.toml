@@ -122,9 +122,18 @@ cratestack-api = { path = "crates/cratestack-api", version = "0.7.8" }
 # defeating `decimal-bigdecimal` for either facade.
 cratestack-axum = { path = "crates/cratestack-axum", version = "0.7.8", default-features = false }
 cratestack-client = { path = "crates/cratestack-client", version = "0.7.8" }
-cratestack-client-dart = { path = "crates/cratestack-client-dart", version = "0.7.8" }
+# `default-features = false` (cratestack#495, closed for cratestack-cli's own
+# edge by #496): real (non-optional) dependency of `cratestack-cli` — see
+# that crate's own decimal feature for the forward. Without this,
+# `cratestack-client-dart`'s own `default = ["decimal-rust-decimal"]` would
+# activate unconditionally regardless of which backend `cratestack-cli`
+# itself selected, the same leak this issue closed for every other crate in
+# the closure.
+cratestack-client-dart = { path = "crates/cratestack-client-dart", version = "0.7.8", default-features = false }
 cratestack-client-flutter = { path = "crates/cratestack-client-flutter", version = "0.7.8" }
-cratestack-client-typescript = { path = "crates/cratestack-client-typescript", version = "0.7.8" }
+# `default-features = false` (cratestack#496): mirrors `cratestack-client-dart`
+# above — real dependency of `cratestack-cli`.
+cratestack-client-typescript = { path = "crates/cratestack-client-typescript", version = "0.7.8", default-features = false }
 cratestack-client-store-redis = { path = "crates/cratestack-client-store-redis", version = "0.7.8" }
 cratestack-client-rust = { path = "crates/cratestack-client-rust", version = "0.7.8", default-features = false }
 cratestack-client-store-sqlite = { path = "crates/cratestack-client-store-sqlite", version = "0.7.8" }
@@ -155,7 +164,9 @@ cratestack-macros = { path = "crates/cratestack-macros", version = "0.7.8", defa
 # `cratestack-pg` — see each consumer's own decimal feature for the
 # forward.
 cratestack-migrate = { path = "crates/cratestack-migrate", version = "0.7.8", default-features = false }
-cratestack-mock-wiremock = { path = "crates/cratestack-mock-wiremock", version = "0.7.8" }
+# `default-features = false` (cratestack#496): mirrors `cratestack-client-dart`
+# above — real dependency of `cratestack-cli`.
+cratestack-mock-wiremock = { path = "crates/cratestack-mock-wiremock", version = "0.7.8", default-features = false }
 # `default-features = false` (cratestack#495): `cratestack-parser` is a
 # real (non-optional) dependency of `cratestack-macros` and every
 # server-side facade — see each consumer's own `decimal-rust-decimal`/
@@ -183,7 +194,13 @@ cratestack-rusqlite = { path = "crates/cratestack-rusqlite", version = "0.7.8", 
 cratestack-sql = { path = "crates/cratestack-sql", version = "0.7.8", default-features = false }
 cratestack-sqlite = { path = "crates/cratestack-sqlite", version = "0.7.8" }
 cratestack-sqlx = { path = "crates/cratestack-sqlx", version = "0.7.8", default-features = false }
-cratestack-studio = { path = "crates/cratestack-studio", version = "0.7.8" }
+# `default-features = false` (cratestack#496): mirrors `cratestack-client-dart`
+# above — real dependency of `cratestack-cli`. Note this only affects
+# `cratestack-studio`'s decimal-backend toggle, not its separately-gated
+# `embed-ui` feature — `cratestack-cli`'s own edge re-adds `embed-ui`
+# explicitly (see that crate's Cargo.toml) since turning off ALL default
+# features here also turns off `embed-ui`, which was previously implicit.
+cratestack-studio = { path = "crates/cratestack-studio", version = "0.7.8", default-features = false }
 minijinja = "2"
 prost = "0.13"
 prost-types = "0.13"

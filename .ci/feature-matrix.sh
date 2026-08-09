@@ -207,6 +207,18 @@ check_combo cratestack-client
 check_combo cratestack-client --no-default-features --features decimal-rust-decimal
 check_combo cratestack-client --no-default-features --features decimal-bigdecimal
 check_combo cratestack-cli
+# cratestack#496: `cratestack-cli`'s decimal toggle previously only forwarded
+# to 5 of its 9 real `cratestack-core`-consuming dependencies —
+# `cratestack-studio`, `cratestack-mock-wiremock`, `cratestack-client-dart`,
+# and `cratestack-client-typescript` were plain `.workspace = true` edges
+# with no `default-features = false`, so their own default backend stayed
+# force-enabled regardless of what this crate requested. That made
+# `--no-default-features --features decimal-bigdecimal` a hard
+# `compile_error!` that pointed nowhere near the real cause. Same coverage
+# every other facade in this step already gets, now that the forward is
+# complete.
+check_combo cratestack-cli --no-default-features --features decimal-rust-decimal
+check_combo cratestack-cli --no-default-features --features decimal-bigdecimal
 
 step "[4/6] plain crates: every cratestack-core edge this PR made explicit actually compiles"
 # These ~22 crates had no decimal toggle of their own before cratestack#421 —

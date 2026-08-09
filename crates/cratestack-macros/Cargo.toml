@@ -12,8 +12,19 @@ documentation.workspace = true
 readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
-# Silently ignored for *this* crate as a real workspace member — the root
-# `[workspace] resolver = "3"` governs feature resolution here regardless.
+# NOT silent: this field emits `warning: resolver for the non root package
+# will be ignored, specify resolver at the workspace root` on EVERY `cargo
+# check`/`build`/`test` invocation anywhere in the workspace (verified:
+# even `cargo check -p cratestack-core`, a crate with no relation to this
+# one, prints it), because Cargo evaluates the full workspace manifest tree
+# up front regardless of which package is targeted. It is genuinely ignored
+# for *this* crate as a real workspace member — the root `[workspace]
+# resolver = "3"` governs feature resolution here regardless — but "ignored
+# for build purposes" and "silent" are different claims, and only the first
+# one is true. An earlier version of this comment claimed both; that was
+# wrong and is corrected here (cratestack#496 remediation). Kept anyway
+# because the alternative is a broken test, not a clean one — see below.
+#
 # Exists purely for `tests/ui.rs`'s `trybuild`-based suite: `trybuild`
 # copies this exact field into the standalone synthetic mini-workspace it
 # generates per fixture run (`trybuild-1.0.120/src/run.rs`'s
@@ -33,6 +44,28 @@ categories.workspace = true
 # did before cratestack#495 introduced a second, genuinely selectable
 # backend. See `tests/ui.rs`'s own module doc for the parts of this that
 # live on that side.
+#
+# Investigated and rejected as of cratestack#496:
+#   - Hardcoding `features = ["decimal-rust-decimal"]` on this crate's own
+#     `cratestack-core` edge would fix the synthetic crate too, but is
+#     exactly the leak cratestack#495 exists to close — it would re-force
+#     `rust_decimal` globally for every real consumer of this crate, not
+#     just the trybuild fixture.
+#   - `trybuild` (verified against its own source, `src/run.rs`'s
+#     `build_manifest`) has no configuration hook for this: it
+#     unconditionally copies the tested crate's `[dependencies]` as a
+#     parallel, independent edge set, and its feature-forwarding step
+#     explicitly drops every non-`dep:`-prefixed entry (i.e. exactly the
+#     `cratestack-core/decimal-rust-decimal`-shaped entries this crate's
+#     own `decimal-rust-decimal` feature needs), replacing them with a pure
+#     `cratestack-macros/<feature>` forward that never reaches the copied
+#     `cratestack-core` edge on its own. There is no `TestCases` method or
+#     env var that changes this.
+#   - Bypassing `trybuild`'s manifest generation entirely (hand-rolled
+#     `rustc`/`--extern` invocations) would remove the need for this field,
+#     but is a materially larger rewrite of `tests/ui.rs` than this
+#     remediation's scope — left as a follow-up if the persistent warning
+#     is judged unacceptable.
 resolver = "1"
 
 [lib]

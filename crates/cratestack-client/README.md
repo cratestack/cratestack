@@ -118,7 +118,14 @@ CI's `facade-disjointness` job (`.github/workflows/ci.yml`) re-runs the
   selecting neither or both is a compile error. `cargo tree -p
   cratestack-client --no-default-features --features decimal-bigdecimal -e
   features | grep rust_decimal` prints nothing, confirming the swap is
-  complete through this facade (cratestack#495).
+  complete through this facade (cratestack#495). **Wire compatibility
+  constraint:** ordinary values encode identically to `rust_decimal` on
+  the wire, but values past `rust_decimal`'s ~28-29 significant-digit
+  capacity serialize as scientific notation (e.g. `"1E-29"`), which a
+  `rust_decimal` peer fails to decode. The shipped Dart/TypeScript client
+  SDKs only ever target `rust_decimal` — see `cratestack-core`'s README
+  for the full deployment constraint before using this backend's extra
+  precision against a server that emits values in that range.
 - `codec-json` *(default)* — forwards the JSON codec to the generated
   client runtime, alongside CBOR.
 - `pgvector` — enable when the schema declares `extension pgvector { }`.

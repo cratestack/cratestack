@@ -66,7 +66,14 @@ and [ADR-0003](https://cratestack.dev/internals/views-adr).
 - `decimal-bigdecimal` — arbitrary-precision `bigdecimal` backend instead
   (heap-allocated, not `Copy` — see `cratestack-core`'s README for the
   trait differences). Mutually exclusive with `decimal-rust-decimal`;
-  selecting neither or both is a compile error.
+  selecting neither or both is a compile error. **Wire compatibility
+  constraint:** ordinary values encode identically to `rust_decimal` on
+  the wire, but values past `rust_decimal`'s ~28-29 significant-digit
+  capacity serialize as scientific notation (e.g. `"1E-29"`), which a
+  `rust_decimal` peer fails to decode. The shipped Dart/TypeScript client
+  SDKs only ever target `rust_decimal` — see `cratestack-core`'s README
+  for the full deployment constraint before using this backend's extra
+  precision against those clients.
 - `codec-json` *(default)* — forwards the JSON codec to the generated
   client runtime, so `include_client_schema!` offers both CBOR and JSON.
 - `grpc` — real `transport grpc` Rust codegen (server tonic service +

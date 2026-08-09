@@ -15,7 +15,19 @@ description = "Standalone crate (cratestack#329) that is NOT a workspace member 
 postgres = ["cratestack/postgres"]
 
 [dependencies]
-cratestack = { package = "cratestack-pg", path = "../../crates/cratestack-pg", default-features = false }
+# `decimal-rust-decimal` must be re-added explicitly here (cratestack#496
+# remediation): `default-features = false` drops it from every edge in
+# `cratestack-pg`'s own dependency graph, including its `cratestack-macros`
+# proc-macro edge — and unlike the target-side `cratestack-core` (which
+# still picks up a backend transitively from `cratestack-codec-json`'s own
+# default below), the *host*-side `cratestack-core` compiled in for the
+# `cratestack-macros` proc-macro has no other path to a backend. Without
+# this, `cargo build` here fails with `cratestack-core`'s "enable exactly
+# one decimal backend feature" `compile_error!` — this crate's decimal
+# choice is otherwise irrelevant to what it's proving (sqlx presence vs.
+# absence), so `decimal-rust-decimal` (the default backend) is picked
+# arbitrarily, not `decimal-bigdecimal`.
+cratestack = { package = "cratestack-pg", path = "../../crates/cratestack-pg", default-features = false, features = ["decimal-rust-decimal"] }
 cratestack-codec-json = { path = "../../crates/cratestack-codec-json" }
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

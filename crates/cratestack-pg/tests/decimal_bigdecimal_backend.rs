@@ -46,11 +46,17 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
         .execute(pool)
         .await
         .expect("drop");
+    // NUMERIC(60, 20) (not NUMERIC(38, 8)): wide enough to hold
+    // `decimal_round_trips_beyond_rust_decimal_capacity_under_bigdecimal_backend`'s
+    // 40-significant-digit value below, which is deliberately beyond what
+    // `rust_decimal::Decimal`'s 96-bit mantissa can represent at all (~28-29
+    // significant digits) — see that test's own doc comment. Still holds the
+    // narrower in-range values the other two tests use.
     query(
         "CREATE TABLE big_decimal_wallets (
             id BIGINT PRIMARY KEY,
-            balance NUMERIC(38, 8) NOT NULL,
-            ceiling NUMERIC(38, 8)
+            balance NUMERIC(60, 20) NOT NULL,
+            ceiling NUMERIC(60, 20)
         )",
     )
     .execute(pool)
@@ -109,13 +115,83 @@ async fn decimal_round_trips_through_pg_numeric_under_bigdecimal_backend() {
     // And the raw PG `numeric` column matches the canonical string — proves
     // the value actually reached Postgres via `sqlx-postgres`'s `bigdecimal`
     // `Encode`/`Type` impls (`cratestack-sqlx`'s `decimal-bigdecimal`
-    // feature), not just round-tripped through in-process state.
+    // feature), not just round-tripped through in-process state. The column
+    // is `NUMERIC(60, 20)` (see `reset_schema`), so Postgres right-pads the
+    // fractional part to 20 digits — the comparison accounts for that
+    // instead of asserting the bare input string back.
     let row = query("SELECT balance::text AS balance_text FROM big_decimal_wallets WHERE id = 1")
         .fetch_one(pool)
         .await
         .expect("read raw");
     let raw: String = row.get("balance_text");
-    assert_eq!(raw, "12345678901234567.89012345");
+    assert_eq!(raw, "12345678901234567.89012345000000000000");
+}
+
+/// The other round-trip test above uses a 25-significant-digit value
+/// (`12345678901234567.89012345`), which sits comfortably *within*
+/// `rust_decimal`'s ~28-29 significant-digit capacity — it never actually
+/// exercises what `decimal-bigdecimal` exists for (cratestack#496 review
+/// finding). This test uses a 40-significant-digit value instead
+/// (30 integer digits + 10 fractional digits).
+///
+/// Verified out-of-band (not asserted in-process: this file is compiled
+/// with `--no-default-features --features postgres,decimal-bigdecimal`,
+/// under which `rust_decimal` is not in the dependency graph at all —
+/// pulling it in here just for a sanity check would defeat the "no
+/// `rust_decimal` anywhere in the graph" acceptance bar `.ci/feature-
+/// matrix.sh` asserts for this exact combination) —
+/// `"123456789012345678901234567890.1234567890".parse::<rust_decimal::
+/// Decimal>()` returns `Err(... "overflow from too many digits")` on the
+/// default backend. This value is not just imprecise under
+/// `decimal-rust-decimal`, it is **unrepresentable**. Round-tripping it
+/// exactly through Postgres `NUMERIC` under `decimal-bigdecimal` is the
+/// actual acceptance bar for this feature existing at all.
+#[tokio::test]
+async fn decimal_round_trips_beyond_rust_decimal_capacity_under_bigdecimal_backend() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+
+    let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
+
+    let beyond_capacity =
+        Decimal::from_str("123456789012345678901234567890.1234567890").expect("parse");
+
+    let created = cool
+        .big_decimal_wallet()
+        .create(cratestack_schema::CreateBigDecimalWalletInput {
+            id: 1,
+            balance: beyond_capacity.clone(),
+            ceiling: Some(beyond_capacity.clone()),
+        })
+        .run(&ctx())
+        .await
+        .expect("create");
+
+    assert_eq!(created.balance, beyond_capacity);
+    assert_eq!(created.ceiling, Some(beyond_capacity.clone()));
+
+    let fetched = cool
+        .big_decimal_wallet()
+        .find_unique(1)
+        .run(&ctx())
+        .await
+        .expect("fetch")
+        .expect("row exists");
+    assert_eq!(fetched.balance, beyond_capacity);
+    assert_eq!(fetched.ceiling, Some(beyond_capacity));
+
+    // Raw PG text confirms the full 40-digit value actually reached
+    // Postgres unrounded, not just round-tripped through in-process state.
+    let row = query("SELECT balance::text AS balance_text FROM big_decimal_wallets WHERE id = 1")
+        .fetch_one(pool)
+        .await
+        .expect("read raw");
+    let raw: String = row.get("balance_text");
+    assert_eq!(raw, "123456789012345678901234567890.12345678900000000000");
 }
 
 #[tokio::test]
