@@ -26,20 +26,39 @@
 
 /// Default request body limit (bytes) for the generated `router()` /
 /// `rpc_router()` entry points, applied via
-/// `axum::extract::DefaultBodyLimit::max(body_limit_bytes)`. Deliberately
-/// **tighter** than both axum's own built-in `Bytes` default (2 MiB,
-/// `axum-core`'s `extract/default_body_limit.rs`) and
-/// [`crate::store::idempotency::MAX_BODY_BYTES`] (2 MiB, the idempotency
-/// middleware's own buffering cap) — 1 MiB is a real, considered ceiling
-/// for this framework's typical payload shapes (CRUD bodies, procedure
-/// args, RPC frames), not a rounding-up to match an existing number.
+/// `axum::extract::DefaultBodyLimit::max(body_limit_bytes)`.
+///
+/// Set to **2 MiB specifically because that's axum's own implicit
+/// default already** — `axum::body::Bytes`'s `FromRequest` impl (and
+/// everything built on it: `String`, `Json`, `Form`) refuses bodies over
+/// 2 MiB out of the box, with no layer required at all, verified against
+/// the vendored `axum-core 0.5.6` this workspace's `Cargo.lock` actually
+/// pins (its own doc comment: "For security reasons, `Bytes` will, by
+/// default, not accept bodies larger than 2MB"). Every generated handler
+/// extracts `Bytes`, so request bodies were *already* implicitly capped
+/// at 2 MiB before this constant existed — the gap #413 closes is that
+/// this limit was invisible, undocumented, and not expressed anywhere in
+/// cratestack's own code, not that a limit was absent.
+///
+/// Matching that number rather than picking a smaller, "more considered"
+/// one makes this constant — and the `DefaultBodyLimit` layer built from
+/// it — **provably a no-op on upgrade**: naming, documenting, and making
+/// overridable a limit that was already there, instead of silently
+/// tightening what an existing deployment can send. An earlier revision
+/// of this constant used 1 MiB; that was reverted once
+/// `docs/design/request-response-size-bounds.md`'s Decision 2 (written
+/// independently, without knowledge of that choice) made the "match
+/// axum's own default" argument explicit — see that section for the
+/// full reasoning and the empirical check that `BATCH_MAX_ITEMS` (1000
+/// frames) still fits comfortably inside a 2 MiB request at any
+/// realistic average frame size.
 ///
 /// A deployment that legitimately needs to accept larger bodies passes a
 /// bigger value to `router(..., body_limit_bytes)` / `rpc_router(...,
 /// body_limit_bytes)` — every generated entry point takes this as an
 /// explicit, real parameter (see this module's doc comment for why that,
 /// and not re-layering, is the supported override mechanism).
-pub const DEFAULT_BODY_LIMIT_BYTES: usize = 1024 * 1024;
+pub const DEFAULT_BODY_LIMIT_BYTES: usize = 2 * 1024 * 1024;
 
 /// Bound used at every `axum::body::to_bytes(body, N)` call site that
 /// re-buffers a `Response` produced in-process (RPC batch per-frame
@@ -73,25 +92,29 @@ pub const DEFAULT_BODY_LIMIT_BYTES: usize = 1024 * 1024;
 /// unbounded.
 pub const MAX_RESPONSE_REBUFFER_BYTES: usize = 4 * DEFAULT_BODY_LIMIT_BYTES;
 
-// Compile-time invariant, not a runtime test: the coherence note in
-// `docs/design/request-response-size-bounds.md` depends on
-// `DEFAULT_BODY_LIMIT_BYTES` staying tighter than the idempotency
-// middleware's own buffering cap. Enforced here so a future edit to
-// either constant that breaks the relationship fails the build instead
-// of silently invalidating that doc's reasoning.
-const _: () = assert!(DEFAULT_BODY_LIMIT_BYTES < crate::store::idempotency::MAX_BODY_BYTES);
+// Compile-time invariant, not a runtime test: `DEFAULT_BODY_LIMIT_BYTES`
+// must never exceed the idempotency middleware's own request-buffering
+// cap (`MAX_BODY_BYTES`) without that being a deliberate, separately
+// reviewed decision — see the "Coherence note" in
+// `docs/design/request-response-size-bounds.md` for why the two are now
+// numerically *equal* (both 2 MiB) rather than the router being strictly
+// tighter, and why that's still safe today. `<=`, not `<`: at 2 MiB the
+// two legitimately coincide, so a strict inequality would fail to build
+// the moment this constant reused the same number as `MAX_BODY_BYTES`
+// on purpose, which is exactly what happened here.
+const _: () = assert!(DEFAULT_BODY_LIMIT_BYTES <= crate::store::idempotency::MAX_BODY_BYTES);
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn default_body_limit_is_1_mebibyte() {
-        assert_eq!(DEFAULT_BODY_LIMIT_BYTES, 1024 * 1024);
+    fn default_body_limit_matches_axums_own_implicit_bytes_default() {
+        assert_eq!(DEFAULT_BODY_LIMIT_BYTES, 2 * 1024 * 1024);
     }
 
     #[test]
     fn response_rebuffer_bound_is_four_times_the_request_default() {
-        assert_eq!(MAX_RESPONSE_REBUFFER_BYTES, 4 * 1024 * 1024);
+        assert_eq!(MAX_RESPONSE_REBUFFER_BYTES, 8 * 1024 * 1024);
     }
 }

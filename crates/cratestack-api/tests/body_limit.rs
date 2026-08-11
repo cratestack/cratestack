@@ -4,6 +4,13 @@
 //! `cargo test -p cratestack-api` with no database involved — rejection
 //! happens at the `Bytes` extractor, before any handler/DB code runs.
 //!
+//! `DEFAULT_BODY_LIMIT_BYTES` is 2 MiB — chosen to match axum's own
+//! implicit `Bytes` default (see `crates/cratestack-core/src/limits.rs`'s
+//! doc comment), so this file's default-limit tests use bodies clearly
+//! above/below 2 MiB rather than right at the boundary, to stay robust
+//! against small JSON-wrapper overhead shifting a body a few bytes either
+//! side of the limit.
+//!
 //! The decisive test here is `raising body_limit_bytes actually raises the
 //! ceiling` — this is the exact case that would have caught the
 //! empirically-broken "re-layer `DefaultBodyLimit` after the fact" design
@@ -87,22 +94,28 @@ async fn post_ping(router: cratestack::axum::Router, body: Vec<u8>) -> StatusCod
 #[tokio::test]
 async fn default_limit_does_not_break_an_ordinary_under_limit_request() {
     let router = build_router(cratestack::DEFAULT_BODY_LIMIT_BYTES);
-    let status = post_ping(router, ping_body(4 * 1024)).await; // 4 KiB, comfortably under 1 MiB
+    let status = post_ping(router, ping_body(4 * 1024)).await; // 4 KiB, comfortably under 2 MiB
     assert_eq!(status, StatusCode::OK);
 }
 
 #[tokio::test]
-async fn default_limit_rejects_a_body_over_1_mebibyte() {
+async fn default_limit_rejects_a_body_clearly_over_2_mebibytes() {
     let router = build_router(cratestack::DEFAULT_BODY_LIMIT_BYTES);
-    // 2 MiB message, well over the 1 MiB default.
-    let status = post_ping(router, ping_body(2 * 1024 * 1024)).await;
+    // 3 MiB message — clearly over the 2 MiB default with margin to spare,
+    // not right at the boundary (a body a few bytes past 2 MiB would also
+    // fail, but wouldn't distinguish "the limit is enforced" from "the
+    // limit happens to be smaller than expected").
+    let status = post_ping(router, ping_body(3 * 1024 * 1024)).await;
     assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
 }
 
 #[tokio::test]
 async fn raising_body_limit_bytes_actually_raises_the_ceiling() {
-    // A body between the 1 MiB default and a 3 MiB override.
-    let body = ping_body(2 * 1024 * 1024);
+    // A body between the 2 MiB default and a 4 MiB override — 3 MiB,
+    // comfortably on either side of both ceilings so JSON-wrapper
+    // overhead can't accidentally cross a boundary and produce a
+    // vacuous pass.
+    let body = ping_body(3 * 1024 * 1024);
 
     let default_router = build_router(cratestack::DEFAULT_BODY_LIMIT_BYTES);
     let default_status = post_ping(default_router, body.clone()).await;
@@ -112,7 +125,7 @@ async fn raising_body_limit_bytes_actually_raises_the_ceiling() {
         "control case: the same body must still be rejected at the default limit",
     );
 
-    let overridden_router = build_router(3 * 1024 * 1024);
+    let overridden_router = build_router(4 * 1024 * 1024);
     let overridden_status = post_ping(overridden_router, body).await;
     assert_eq!(
         overridden_status,
