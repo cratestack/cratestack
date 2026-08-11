@@ -8,6 +8,7 @@
 
 use cratestack_core::{BatchSummary, CoolContext, CoolError};
 
+use crate::audit::dispatch_audit_sink;
 use crate::{FilterExpr, ModelDescriptor, SqlxRuntime, cool_error_from_sqlx, sqlx};
 
 use super::delete_many_exec::run_delete_many_in_tx;
@@ -73,15 +74,19 @@ impl<'a, M: 'static, PK: 'static> DeleteMany<'a, M, PK> {
         let runtime = self.runtime;
         let descriptor = self.descriptor;
         let mut tx = runtime.pool().begin().await.map_err(cool_error_from_sqlx)?;
-        let (summary, emits_event) =
+        let (summary, emits_event, audit_events) =
             run_delete_many_in_tx(&mut tx, runtime, descriptor, &self.filters, ctx).await?;
         tx.commit().await.map_err(cool_error_from_sqlx)?;
         if emits_event {
             let _ = runtime.drain_event_outbox().await;
         }
+        dispatch_audit_sink(runtime, &audit_events).await;
         Ok(summary)
     }
 
+    /// No `AuditSink` fan-out happens here for the same reason the
+    /// event outbox isn't drained here — see `create.rs`'s
+    /// `run_in_tx` doc comment.
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
@@ -90,7 +95,7 @@ impl<'a, M: 'static, PK: 'static> DeleteMany<'a, M, PK> {
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
     {
-        let (summary, _) =
+        let (summary, ..) =
             run_delete_many_in_tx(tx, self.runtime, self.descriptor, &self.filters, ctx).await?;
         Ok(summary)
     }

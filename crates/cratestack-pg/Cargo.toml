@@ -221,6 +221,7 @@ tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+async-trait.workspace = true
 axum.workspace = true
 # Plain edges, not hardcoded `features = [...]`: `cratestack-codec-cbor`,
 # `cratestack-codec-json`, and `cratestack-migrate` all get their backend

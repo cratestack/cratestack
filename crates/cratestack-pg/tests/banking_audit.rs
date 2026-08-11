@@ -5,15 +5,33 @@
 //! `cratestack_audit` carry the right operation tag, request id, and
 //! redact `@pii` / `@sensitive` columns.
 
+use std::sync::{Arc, Mutex};
+
 use cratestack::include_server_schema;
 use cratestack::sqlx::{Row, query};
-use cratestack::{CoolContext, Value};
+use cratestack::{AuditEvent, AuditSink, CoolContext, CoolError, Value};
 
 include_server_schema!("tests/fixtures/banking_audit.cstack", db = Postgres);
 
 mod support;
 
 use support::pg;
+
+/// Test double for cratestack#473: records every event handed to it so
+/// tests can assert the `AuditSink` installation path is actually
+/// reachable from a mutation, not just constructible.
+#[derive(Clone, Default)]
+struct RecordingAuditSink {
+    events: Arc<Mutex<Vec<AuditEvent>>>,
+}
+
+#[async_trait::async_trait]
+impl AuditSink for RecordingAuditSink {
+    async fn record(&self, event: &AuditEvent) -> Result<(), CoolError> {
+        self.events.lock().unwrap().push(event.clone());
+        Ok(())
+    }
+}
 
 async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     query("DROP TABLE IF EXISTS cratestack_audit, cratestack_event_outbox, accounts")
@@ -271,5 +289,109 @@ async fn audit_row_lives_inside_the_same_transaction_as_the_mutation() {
     assert_eq!(
         row_count, 0,
         "no audit row should be persisted when the mutation rolls back",
+    );
+}
+
+/// cratestack#473: `AuditSink` used to be a dead extension point — no
+/// installation path, `record()` never invoked. This asserts a
+/// consumer-supplied sink installed via `CratestackBuilder::with_audit_sink`
+/// actually receives the event a `@@audit` mutation produces, alongside
+/// (not instead of) the `cratestack_audit` table row.
+#[tokio::test]
+async fn custom_audit_sink_receives_the_create_event() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+
+    let sink = RecordingAuditSink::default();
+    let cool = cratestack_schema::Cratestack::builder(pool.clone())
+        .with_audit_sink(std::sync::Arc::new(sink.clone()))
+        .build();
+    let ctx = operator();
+
+    let created = cool
+        .account()
+        .create(cratestack_schema::CreateAccountInput {
+            id: 5,
+            customerEmail: "erin@example.com".to_owned(),
+            riskScore: 42,
+            balance: 7_500,
+        })
+        .run(&ctx)
+        .await
+        .expect("create succeeds");
+    assert_eq!(created.id, 5);
+
+    // The sink must have observed exactly one event, matching the
+    // mutation that just ran.
+    let recorded = sink.events.lock().unwrap().clone();
+    assert_eq!(
+        recorded.len(),
+        1,
+        "custom AuditSink should receive exactly one event for one create"
+    );
+    assert_eq!(recorded[0].model, "Account");
+    assert_eq!(recorded[0].operation.as_str(), "create");
+    assert_eq!(
+        recorded[0].actor.id.as_deref(),
+        Some("operator-7"),
+        "the sink's event should carry the same actor as the DB audit row"
+    );
+
+    // The DB row is still the source of truth and must exist too — the
+    // sink is an addition, not a replacement.
+    let db_row_count: i64 = query("SELECT COUNT(*)::BIGINT FROM cratestack_audit")
+        .fetch_one(pool)
+        .await
+        .expect("count audit")
+        .get(0);
+    assert_eq!(
+        db_row_count, 1,
+        "the in-database audit row must still be written even with a sink installed"
+    );
+}
+
+/// A rolled-back mutation must not reach the sink either — mirrors
+/// `audit_row_lives_inside_the_same_transaction_as_the_mutation` for
+/// the DB row, but for the `AuditSink` fan-out path: since dispatch
+/// only runs after `tx.commit()` succeeds, a failed create must leave
+/// the sink untouched.
+#[tokio::test]
+async fn custom_audit_sink_does_not_receive_events_for_a_rolled_back_mutation() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    query("INSERT INTO accounts VALUES (6, 'frank@example.com', 1, 1)")
+        .execute(pool)
+        .await
+        .expect("seed");
+
+    let sink = RecordingAuditSink::default();
+    let cool = cratestack_schema::Cratestack::builder(pool.clone())
+        .with_audit_sink(std::sync::Arc::new(sink.clone()))
+        .build();
+    let ctx = operator();
+
+    let result = cool
+        .account()
+        .create(cratestack_schema::CreateAccountInput {
+            id: 6, // duplicate primary key -> rolls back
+            customerEmail: "frank@example.com".to_owned(),
+            riskScore: 1,
+            balance: 1,
+        })
+        .run(&ctx)
+        .await;
+    assert!(result.is_err(), "duplicate-key create must fail");
+
+    assert!(
+        sink.events.lock().unwrap().is_empty(),
+        "a rolled-back mutation must never reach the installed AuditSink"
     );
 }
