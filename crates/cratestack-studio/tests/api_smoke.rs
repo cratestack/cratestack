@@ -49,6 +49,7 @@ fn build_workspace() -> Arc<LoadedWorkspace> {
         source: Arc::new(api_source),
         has_db: false,
         has_api: true,
+        allow_unsafe_db_writes: false,
     };
 
     let conn = rusqlite::Connection::open_in_memory().expect("sqlite open");
@@ -79,6 +80,7 @@ fn build_workspace() -> Arc<LoadedWorkspace> {
         source: Arc::new(SqliteSource::new(conn, schema.clone())),
         has_db: true,
         has_api: false,
+        allow_unsafe_db_writes: false,
     };
 
     let conn_rw = rusqlite::Connection::open_in_memory().expect("sqlite open");
@@ -105,6 +107,7 @@ fn build_workspace() -> Arc<LoadedWorkspace> {
         source: Arc::new(SqliteSource::new(conn_rw, schema)),
         has_db: true,
         has_api: false,
+        allow_unsafe_db_writes: false,
     };
 
     Arc::new(LoadedWorkspace {
@@ -655,6 +658,7 @@ async fn models_endpoint_reports_enum_variants() {
         source: Arc::new(SqliteSource::new(conn, schema.clone())),
         has_db: true,
         has_api: false,
+        allow_unsafe_db_writes: false,
     };
     let ws = Arc::new(LoadedWorkspace {
         config: WorkspaceConfig {

@@ -81,3 +81,52 @@ async fn api_only_target_loads_without_a_db() {
     assert_eq!(workspace.targets.len(), 1);
     assert_eq!(workspace.targets[0].key, "inv");
 }
+
+/// `[target.db].allow_unsafe_writes` propagates onto
+/// `LoadedTarget::allow_unsafe_db_writes`, and defaults to `false`
+/// when omitted — the flag that gates cratestack#507's write refusal.
+#[tokio::test]
+async fn allow_unsafe_writes_propagates_onto_loaded_target() {
+    let temp = tempfile::tempdir().expect("temp dir");
+    let schema_path = temp.path().join("item.cstack");
+    std::fs::write(
+        &schema_path,
+        "model Item {\n  id String @id\n  name String\n}",
+    )
+    .expect("write schema");
+    let schema_name = schema_path.file_name().unwrap().to_str().unwrap();
+
+    let config_path = temp.path().join("studio.toml");
+    std::fs::write(
+        &config_path,
+        format!(
+            r#"
+            [[target]]
+            key = "default_db"
+            schema = "{schema_name}"
+
+            [target.db]
+            url = "sqlite::memory:"
+            driver = "sqlite"
+
+            [[target]]
+            key = "opted_in_db"
+            schema = "{schema_name}"
+
+            [target.db]
+            url = "sqlite::memory:"
+            driver = "sqlite"
+            allow_unsafe_writes = true
+            "#,
+        ),
+    )
+    .expect("studio.toml writes");
+
+    let workspace = LoadedWorkspace::load(&config_path)
+        .await
+        .expect("sqlite load succeeds");
+    let default_db = workspace.target("default_db").expect("target present");
+    assert!(!default_db.allow_unsafe_db_writes);
+    let opted_in_db = workspace.target("opted_in_db").expect("target present");
+    assert!(opted_in_db.allow_unsafe_db_writes);
+}

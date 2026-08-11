@@ -1,0 +1,34 @@
+# Gitleaks allowlist — see .ci/baselines/README.md for the suppression
+# process. gitleaks scans git history by commit; a since-fixed false
+# positive stays flagged on the commit that introduced it forever, even
+# after a later commit in the same branch corrects it, so a rename in a
+# follow-up commit alone does not clear a finding here.
+#
+# [extend] pulls in gitleaks' full default ruleset so every commit not
+# listed below still gets normal detection.
+
+title = "cratestack quality-pipeline gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Known false positives — see .ci/baselines/README.md"
+
+# cratestack#516 / cratestack#507: `generic-api-key` flagged two SQLite
+# test-target identifiers (`let target_key = "warn_probe_bypass_507";`,
+# `let target_key = "warn_probe_unaffected_507";` in
+# crates/cratestack-studio/tests/unsafe_write_signals.rs) — its heuristic
+# matches "identifier containing 'key', assigned a quoted string of
+# plausible length," which a local variable literally named `target_key`
+# holding an opaque-looking test fixture id satisfies even though it is
+# not a credential. Fixed going forward in a later commit on the same PR
+# (renamed to `probe_target`), but that rename cannot retroactively clear
+# the finding gitleaks already recorded against this specific commit's
+# historical diff.
+# Reason: false positive, not a real secret (verified: crates/cratestack-studio/tests/unsafe_write_signals.rs
+#   builds an in-memory SQLite `LoadedTarget` fixture; `target_key` is a
+#   test-target lookup key, never a credential of any kind).
+# Expires: 2026-11-11 (90 days out; remove once cratestack#516 merges,
+#   since squash-merging collapses this commit out of main's history).
+commits = ["2358563feaa9d21f096dee38a9d041b55f368be6"]

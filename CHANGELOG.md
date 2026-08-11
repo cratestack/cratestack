@@ -32,6 +32,42 @@ nothing for that transaction, silently. Worth its own follow-up issue; see
 `crates/cratestack-sqlx/src/audit/sink.rs`'s doc comment for the full reasoning. Dispatch is
 also sequential, not concurrent, so the added latency of a slow sink is per-row on
 `update_many`/`delete_many`/batch paths, not per-request.
+### `cratestack-studio`: refuse silent `@version`/`@@emit` bypass on `[target.db]` writes — breaking (cratestack#507)
+
+A write through `cratestack studio` against a `[target.db]` target went straight to SQL: it never
+bumped a model's `@version` column and never wrote a `cratestack_event_outbox` row for an
+`@@emit`-annotated model, and neither omission was reported anywhere — the request returned `200`
+with the updated row. Both consequences are silent and outlive the request: a stale `@version`
+still satisfies a later `if_match`, so optimistic concurrency does not fail-safe, it silently does
+not apply; and `@@emit` side effects (for example customer-facing delivery webhooks) never fire,
+with no trace that one was skipped.
+
+Studio now refuses `POST`/`PATCH`/`DELETE` on a `rw` `[target.db]` target against any model that
+declares `@version` or `@@emit(...)`, returning `403 UNSAFE_DB_WRITE` and naming the specific
+attribute(s) that triggered the refusal, unless the target sets `allow_unsafe_writes = true` in
+`studio.toml`. The refusal runs in the HTTP handler (`require_safe_write`,
+`crates/cratestack-studio/src/api/records/guards.rs`) before any `DataSource` call, so it applies
+identically to Postgres- and SQLite-backed targets, and models with neither annotation are
+unaffected either way. A write allowed only because a target opted in is also loud after the fact,
+not just at the moment the config flag is set: it logs a `tracing::warn!` naming the target, model,
+and skipped annotation(s), and `AuditEntry` gains an `unsafe_write: bool` field (default `false`,
+`#[serde(default)]` so a pre-upgrade JSONL audit sidecar still replays cleanly) so `GET /api/audit`
+and the sidecar can distinguish a bypass write from an ordinary one.
+
+The `@@allow` half of the original report — an unauthenticated `[target.db]` read returning a
+`@sensitive` field in cleartext — is deliberately left alone here; it is arguably intended for a
+direct-DB admin tool and is tracked separately for a maintainer decision, not fixed unilaterally in
+this change. Likewise, routing `[target.db]` writes through the same descriptor path the generated
+server uses (so `@version`/`@@emit` would actually apply, rather than being refused) remains
+unimplemented and is left for a future, larger change.
+
+**Migration.** Any existing `rw` `[target.db]` deployment whose schema declares a model with
+`@version` or `@@emit(...)` will start getting `403 UNSAFE_DB_WRITE` on `POST`/`PATCH`/`DELETE`
+against that model through Studio. Add `allow_unsafe_writes = true` under that target's
+`[target.db]` block in `studio.toml` to keep the previous (silent-bypass) behavior, or leave it
+unset and route those writes through `[target.api]` instead, where `@version`, `@@emit`, and
+`@@allow` all apply exactly as declared in the schema. Reads and `[target.api]`-only targets are
+unaffected either way.
 ### Per-procedure `@status(<code>)` for REST success responses (#407)
 
 `generate_procedure_axum_handler` hardcoded `axum::http::StatusCode::OK` for every procedure's

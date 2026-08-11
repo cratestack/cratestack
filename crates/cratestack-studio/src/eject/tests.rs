@@ -86,6 +86,41 @@ fn force_overwrites_existing_files() {
     assert_file(&target, "name = \"forced\"");
 }
 
+/// `starter/studio.toml` (`studio init`, [`crate::STARTER_CONFIG`]) and
+/// `templates/starter/studio.toml` (`studio eject`, this module's
+/// `STARTER_STUDIO_TOML`) are two independent `include_str!` literals —
+/// nothing ties them together at compile time, so a future edit to one
+/// warning without the other would only be caught by a human reading
+/// both files side by side. This pins the `[target.db]` unsafe-write
+/// warning (cratestack#507) present in both, so drift fails a test
+/// instead of shipping silently. It is deliberately *not* a byte-equal
+/// comparison of the two files: they differ in framing (a commented-out
+/// example vs. a working `sqlite:` target) by design, only the warning
+/// itself needs to stay in lockstep.
+#[test]
+fn both_starter_templates_carry_the_unsafe_write_warning() {
+    for (label, body) in [
+        ("starter/studio.toml (studio init)", crate::STARTER_CONFIG),
+        (
+            "templates/starter/studio.toml (studio eject)",
+            STARTER_STUDIO_TOML,
+        ),
+    ] {
+        assert!(
+            body.contains("allow_unsafe_writes"),
+            "{label} lost the allow_unsafe_writes mention (cratestack#507)"
+        );
+        assert!(
+            body.contains("cratestack#507"),
+            "{label} lost the cratestack#507 reference"
+        );
+        assert!(
+            body.contains("@version") && body.contains("@@emit"),
+            "{label} lost the @version/@@emit bypass explanation"
+        );
+    }
+}
+
 #[test]
 fn with_ui_unpacks_leptos_sources() {
     let temp = tempfile::tempdir().expect("temp");
