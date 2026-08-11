@@ -3,6 +3,8 @@
 //! **not** a workspace member.
 
 use cratestack::axum::Router;
+use cratestack::futures::Stream;
+use cratestack::futures::stream;
 use cratestack::{AuthProvider, CoolContext, CoolError, RequestContext};
 use cratestack_codec_json::JsonCodec;
 
@@ -26,6 +28,39 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
                 echo: args.args.message,
             })
         }
+    }
+
+    fn submit(
+        &self,
+        _db: &cratestack_schema::Cratestack,
+        _ctx: &CoolContext,
+        args: cratestack_schema::procedures::submit::Args,
+    ) -> impl core::future::Future<
+        Output = Result<cratestack_schema::procedures::submit::Output, CoolError>,
+    > + Send {
+        async move {
+            Ok(cratestack_schema::PingReply {
+                echo: args.args.message,
+            })
+        }
+    }
+
+    /// cratestack#407 follow-up: a genuinely `@stream`-shaped procedure
+    /// (real `impl Stream`, not a buffered `Vec`) with a declared
+    /// `@status(202)` — `tests/smoke.rs`'s
+    /// `streamed_procedure_returns_the_declared_202_status` proves the
+    /// declared status actually reaches this branch's HTTP response,
+    /// which `procedure_dispatch_tail_tokens` previously discarded in
+    /// favor of a hardcoded `StatusCode::OK`.
+    fn streamed(
+        &self,
+        _db: &cratestack_schema::Cratestack,
+        _ctx: &CoolContext,
+        args: cratestack_schema::procedures::streamed::Args,
+    ) -> impl Stream<Item = Result<cratestack_schema::PingReply, CoolError>> + Send {
+        stream::iter([Ok(cratestack_schema::PingReply {
+            echo: args.args.message,
+        })])
     }
 }
 

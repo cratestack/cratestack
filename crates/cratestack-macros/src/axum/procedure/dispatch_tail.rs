@@ -32,6 +32,7 @@ use crate::shared::is_stream_procedure;
 pub(super) fn procedure_dispatch_tail_tokens(
     procedure: &Procedure,
     procedure_name: &str,
+    success_status: &proc_macro2::TokenStream,
     result_encoder: &proc_macro2::TokenStream,
     deprecation_header: &proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
@@ -44,7 +45,7 @@ pub(super) fn procedure_dispatch_tail_tokens(
                 &state.codec,
                 &headers,
                 &CAPABILITIES,
-                axum::http::StatusCode::OK,
+                #success_status,
                 result,
             ).await;
             #deprecation_header

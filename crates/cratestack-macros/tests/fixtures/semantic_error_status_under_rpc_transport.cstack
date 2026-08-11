@@ -1,0 +1,8 @@
+transport rpc
+
+type Ping {
+  nonce String
+}
+
+mutation procedure submit(args: Ping): Ping
+  @status(202)

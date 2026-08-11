@@ -32,6 +32,38 @@ nothing for that transaction, silently. Worth its own follow-up issue; see
 `crates/cratestack-sqlx/src/audit/sink.rs`'s doc comment for the full reasoning. Dispatch is
 also sequential, not concurrent, so the added latency of a slow sink is per-row on
 `update_many`/`delete_many`/batch paths, not per-request.
+### Per-procedure `@status(<code>)` for REST success responses (#407)
+
+`generate_procedure_axum_handler` hardcoded `axum::http::StatusCode::OK` for every procedure's
+`Ok(...)` response, with no schema-level way to declare a different 2xx status (e.g. `202
+Accepted` for a submit-and-acknowledge procedure whose real verdict arrives later via webhook).
+A schema author can now write:
+
+```
+procedure submitKycDocument(args: SubmitKycDocumentInput): KycPresignReply
+  @status(202)
+```
+
+`cratestack-parser` validates the argument is a real `200..=299` status at schema-compile time
+(anything outside that range, or on a `transport rpc` schema — see below — is rejected with a
+clear diagnostic, not a runtime surprise); `cratestack-macros` threads the declared status into
+`result_encoder` for the unary, `TypeArity::List`, and `@stream` branches alike, replacing the
+previously-hardcoded literal in all three. Absent the attribute, codegen is byte-identical to
+before (the pre-existing cratestack#283 pinned-token regression test is unchanged). Error
+responses are untouched either way — `CoolError`'s own status mapping governs `Err(...)`
+unconditionally, independent of `@status`.
+
+`@status` is REST-only and is rejected at schema-compile time on `transport rpc` schemas: RPC
+unary dispatch shares the exact same generated handler REST uses, so an unrejected `@status`
+there would silently become wire-visible on the RPC response too. `transport grpc` is
+unaffected either way — tonic's gRPC status model never reads the inner HTTP status this
+attribute controls, so the combination is inert, not wrong, and stays allowed.
+
+Known limitation, left for a follow-up rather than silently narrowed here: `@status(204)` is
+accepted by the `200..=299` range check, but the REST encoder always serializes and attaches a
+response body regardless of declared status, so a declared `204` currently produces a
+`204 No Content` response that carries a body — a protocol violation per RFC 9110 §15.3.5.
+
 ### Typed Rust client can read response headers — `*_with_response` methods (#493)
 
 `decode_typed_response` (`cratestack-client-rust/src/client/decode.rs`) read `response.headers`
