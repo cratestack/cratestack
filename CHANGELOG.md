@@ -1,5 +1,55 @@
 # Changelog
 
+## Unreleased
+
+### `Value` serializes untagged on the wire, matching what it already persists — breaking
+
+`cratestack_core::Value` derived `Serialize`/`Deserialize`, which emits serde's
+externally-tagged enum representation. `Value::String("foo")` went on the wire as
+`{"String":"foo"}` rather than `"foo"`, and an empty map as `{"Map":{}}` rather than `{}`.
+cratestack#162 / #395 fixed that for a schema `Json` **column** by routing persistence through
+`Value::to_plain_json`, but only for the column — every other path still carried the tag:
+procedure arguments and results typed `Json`, auth claims, audit payloads, RPC error details.
+
+The practical cost landed on consumers. A `Json?` procedure argument rejected `"foo"` and
+required `{"String":"foo"}`, so every caller hand-wrote the tag at every call site, and every
+generated Dart and TypeScript client inherited a shape no other JSON or CBOR producer emits.
+The persisted shape and the wire shape disagreed for the same value.
+
+`Serialize`/`Deserialize` are now hand-written and untagged (`cratestack-core/src/value/codec.rs`).
+`serde_json::to_value(&value)` now produces exactly `value.to_plain_json()`, and
+`deserialize_any` accepts whatever a self-describing format hands over. `to_plain_json` /
+`from_plain_json` are kept: they are infallible and total (substituting `null` for a NaN float,
+which the persistence layer relies on) and they make the on-disk contract explicit at the call
+site rather than implicit in a serde impl.
+
+Two format-specific details, both measured against the first-party backends rather than assumed:
+
+- **`Null` serializes via `serialize_none`, never `serialize_unit`.** `minicbor-serde` encodes
+  `()` as `0x80` — an empty *array*, not RFC 8949 null — while `None` correctly encodes as
+  `0xf6`. `serialize_unit` would have put that non-conformant shape on the wire for any
+  `Value::Null` nested in a list or sent as a bare argument. This matches the choice
+  `ProjectedValue::Null` already makes for the same reason (#430).
+- **`Bytes` branches on `is_human_readable()`.** Binary formats get a native byte string
+  (CBOR `0x44 de ad be ef`) and round-trip losslessly. Human-readable formats get the same
+  base64 string `to_plain_json` already writes, and inherit the same documented asymmetry —
+  a JSON string always decodes back as `Value::String`, because nothing distinguishes base64
+  from ordinary text.
+
+**Migration.** Anything that persisted a `Value` through its serde impl rather than through
+`to_plain_json` — a custom `AuditSink`, a Redis-backed store — will read old tagged rows as
+`Value::Map` with a single variant-named key. Redis-backed state self-heals on TTL expiry.
+Callers that hand-wrote the tag to satisfy the old wire format must stop: send `"foo"`, not
+`{"String":"foo"}`. Regenerate Dart/TypeScript clients.
+
+### `cratestack-codec-cbor`: corrected a false claim in the encoder comment
+
+The comment asserted that `minicbor-serde` reports `is_human_readable() == true`. It reports
+**false** — verified by encoding a probe type whose `Serialize` echoes the hint, which emits
+`0xf4`. `cratestack-axum`'s `projection.rs` (#430) already documented the correct behavior, so
+the two disagreed. The comment also still described the `Value::Null`-stripping workaround that
+#430 removed. No behavior change; the code was right and the comment was wrong.
+
 ## 0.7.10 (2026-08-09)
 
 ### Per-call-site `ON CONFLICT DO NOTHING` for idempotent inserts (#487, ADR 0038 blocker B3)

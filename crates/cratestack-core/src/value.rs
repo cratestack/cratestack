@@ -1,14 +1,22 @@
 //! Backend-agnostic JSON-shaped value used throughout the framework
 //! (auth claims, audit payloads, RPC error details, schema config).
 
+mod codec;
+#[cfg(test)]
+mod codec_tests;
 #[cfg(test)]
 mod tests;
 
 use std::collections::BTreeMap;
 
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// `Serialize`/`Deserialize` are hand-written in [`mod@codec`] and are
+/// **untagged**: `Value::String("foo")` goes on the wire as `"foo"`, not
+/// `{"String":"foo"}`. Do not replace them with a derive — that reintroduces
+/// serde's externally-tagged enum representation into every wire payload and
+/// every generated client. See the module docs on [`mod@codec`] for the two
+/// format-specific choices (`Null` via `serialize_none`, `Bytes` branching on
+/// `is_human_readable`) and why each is load-bearing.
+#[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Null,
     Bool(bool),
@@ -35,10 +43,15 @@ impl Value {
     /// Convert to the **plain, untagged** JSON shape used for a schema
     /// `Json` column's on-disk representation (cratestack#162): an empty
     /// map becomes `{}`, a list becomes `[...]`, `Value::Null` becomes
-    /// `null` — never `Value`'s own derived, externally-tagged wire
-    /// format (`{"Map": {}}`), which stays reserved for the typed/wire
-    /// contexts that need the exact variant back (auth claims, audit
-    /// payloads, RPC error details).
+    /// `null`.
+    ///
+    /// Since the externally-tagged derive was replaced by the hand-written
+    /// untagged impls in [`mod@codec`], this is no longer the *only* plain
+    /// path — `serde_json::to_value(&value)` now produces the same shape.
+    /// The method is kept because it is infallible and total (it cannot
+    /// fail on a NaN float, it substitutes `null`), which the persistence
+    /// layer relies on, and because it makes the on-disk contract explicit
+    /// at the call site rather than implicit in a serde impl.
     ///
     /// `Value::Bytes` has no native JSON representation, so it is
     /// base64-encoded into a JSON string. That direction is lossy on the

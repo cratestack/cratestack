@@ -8,13 +8,21 @@ impl CoolCodec for CborCodec {
     const CONTENT_TYPE: &'static str = "application/cbor";
 
     fn encode<T: Serialize + ?Sized>(&self, value: &T) -> Result<Vec<u8>, CoolError> {
-        // `minicbor-serde` reports `is_human_readable() = true`, which keeps
-        // wire compatibility for types whose serde impl branches on that
-        // hint (uuid, chrono::DateTime). The macro-emitted projection
-        // strips `Value::Null` map entries before reaching this codec, so
-        // the non-RFC-8949 "Null = empty array" quirk of this backend
-        // never lands on the wire — see `project_*_model_value` in
-        // cratestack-macros.
+        // `minicbor-serde` reports `is_human_readable() == false` — verified
+        // by encoding a probe type whose `Serialize` echoes the hint; it
+        // emits `0xf4` (CBOR false). Types whose serde impl branches on that
+        // hint (`uuid::Uuid`, `chrono::DateTime`, `cratestack_core::Value`'s
+        // `Bytes` arm) therefore take their binary branch here, which is the
+        // intended behavior: `ProjectedValue` (cratestack#430) exists
+        // precisely to defer that branch to this serializer rather than
+        // baking in `serde_json`'s always-human-readable answer upstream.
+        //
+        // This backend does encode `()` as `0x80` (an empty array) rather
+        // than RFC 8949 null. Nothing relies on the old workaround of
+        // stripping `Value::Null` map entries before encoding — that was
+        // removed in #430. Both `ProjectedValue::Null` and
+        // `cratestack_core::Value::Null` call `serialize_none()`, which this
+        // backend encodes correctly as `0xf6`.
         minicbor_serde::to_vec(value)
             .map_err(|error| CoolError::Codec(format!("failed to encode CBOR body: {error}")))
     }

@@ -55,3 +55,7 @@ bigdecimal = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+# Pins `Value`'s CBOR wire shape against the first-party backend. A
+# dev-dependency rather than a real one: depending on `cratestack-codec-cbor`
+# from core would be a cycle, and the wire shape is core's contract to keep.
+minicbor-serde.workspace = true
