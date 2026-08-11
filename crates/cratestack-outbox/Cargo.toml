@@ -1,0 +1,45 @@
+[package]
+name = "cratestack-outbox"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "CrateStack transactional outbox: OutboxClient::persist_in_tx writes an event inside the caller's own Postgres transaction, OutboxClient::drain pages a downstream snapshotter through them in UUIDv7 (insertion) order, and an axum handler pair exposes drain/gc over HTTP. No cratestack schema macro involved — see the crate docs for why."
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+axum.workspace = true
+chrono.workspace = true
+cratestack-core.workspace = true
+# Unconditional, not feature-gated behind a `postgres` flag the way
+# `cratestack-service` gates its own `cratestack-sqlx` dependency. That gate
+# exists there because `cratestack-service` has real functionality (telemetry,
+# generic config fields, Redis/object-storage readiness) that does not need a
+# database. This crate has none: `OutboxClient::persist_in_tx` takes a
+# `sqlx::Transaction<'_, sqlx::Postgres>` by construction (the whole point is
+# atomicity with the caller's own Postgres write), so a `postgres` feature
+# here would either be permanently on or produce an empty, non-functional
+# crate when off. Same posture as `cratestack-sqlx`/`cratestack-redis`
+# themselves: a backend-specific adapter's core dependency is not optional.
+cratestack-sqlx.workspace = true
+minicbor-serde.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# `now_v7()` — the outbox id is a UUIDv7 so lexical order == insertion order
+# (see `docs/design/layering.md`'s "further along than its own doc says"
+# section for `cratestack-sqlx`'s own precedent for storing sortable ids
+# outside a typed schema). The workspace default feature set only enables
+# `v4`; `v7` is added here since this is the only crate that needs it.
+uuid = { workspace = true, features = ["v7"] }
+
+[dev-dependencies]
+serde_json.workspace = true
+testcontainers.workspace = true
+testcontainers-modules.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

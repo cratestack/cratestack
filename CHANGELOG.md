@@ -22,6 +22,54 @@ this file for the house prose style. Do not commit with this placeholder text.
 
 ## Unreleased
 
+### New crate: `cratestack-outbox` — transactional outbox (absorption 2 of 3, phase 1b)
+
+The transactional outbox pattern, absorbed from a downstream project's `events-kit`:
+`OutboxClient::persist_in_tx` writes an event as an ordinary row inside the *caller's own*
+Postgres transaction, so the event exists if and only if the business write that produced it
+committed — closing the classic dual-write gap between "save the row" and "publish the event." A
+separate snapshotter drains them via `OutboxClient::drain`, paging through events in `id`
+(UUIDv7, insertion-order) ascending order via an opaque cursor; `axum_handler::{drain_handler,
+gc_handler}` expose that drain, plus a retention sweep (`OutboxClient::gc_older_than`), as two
+axum handlers with JSON/CBOR content negotiation.
+
+Unlike the `cratestack-service` pilot, the source crate could not be ported as-is: it declared a
+full `.cstack` schema and generated a typed `cratestack::Cratestack` handle via
+`include_server_schema!(db = Postgres)`, purely to reach `.pool()` on it — every actual read and
+write already ran raw `sqlx` against the table directly, because cratestack's typed
+`Json<cratestack::Value>` column serialises a value in its externally-tagged wire form, which
+does not match the plain-JSONB shape a downstream lake snapshotter expects. The generated
+model's typed accessors and its `@@allow` policy check were never called from anywhere in the
+source crate. Reaching for the macro would also have forced this crate to depend on the
+`cratestack-pg` L5 facade — `include_server_schema!` is only reachable through it — for logic
+that otherwise belongs at L2, and `docs/design/layering.md` §2's L5 rule ("a facade that grows a
+function has stopped being a facade") already rules out folding this logic into `cratestack-pg`
+directly. So the macro was dropped rather than ported: `cratestack-outbox` hand-writes its one
+table directly against `cratestack-sqlx`, the same posture `cratestack-sqlx` itself already takes
+for its own internal `cratestack_audit`/`cratestack_migrations` tables — a bare DDL constant
+(`OUTBOX_EVENTS_DDL`) a caller copies into their own migration, plus hand-written queries against
+it, going through `cratestack-sqlx`'s `run_in_isolated_tx_with_retries` and
+`cool_error_from_sqlx` rather than the source crate's manual error-string mapping. The table is
+renamed `cratestack_outbox_events` (from the source crate's bare `outbox_events`) to match that
+same `cratestack_*` internal-table convention.
+
+Layer assignment: `cratestack-outbox = 2` in `docs/adr/layers.toml` (ADR 0014) — its only normal
+`cratestack-*` dependencies are `cratestack-core` (L1, `CoolError`/`TransactionIsolation`) and
+`cratestack-sqlx` (L2), both `<= 2`, and nothing in the workspace depends on it. Unlike
+`cratestack-service`, the `cratestack-sqlx` dependency here is unconditional rather than behind a
+Cargo feature: this crate's only reason to exist is a Postgres transaction
+(`OutboxClient::persist_in_tx` takes a `sqlx::Transaction<'_, sqlx::Postgres>` by construction),
+so a feature gate would either always be on or produce an empty, non-functional crate when off —
+the same posture `cratestack-sqlx`/`cratestack-redis` themselves already take for their own
+backend dependency.
+
+Also dropped while absorbing: the sibling `error-kit` dependency (a response-envelope crate with
+a `meta`/COSE-body shape this crate's two handlers never used) in favor of a small in-crate
+JSON/CBOR content-negotiation module; and the downstream `test-kit`/`VAAM_E2E_DATABASE_ADMIN_URL`
+test harness, replaced with this workspace's own `CRATESTACK_TEST_DATABASE_URL` /
+`CRATESTACK_USE_TESTCONTAINERS` convention (`tests/support/pg.rs`, copied from
+`cratestack-pg`'s). No existing crate changed; this is purely additive.
+
 ### New crate: `cratestack-service` — service-bootstrap batteries (pilot absorption, phase 1b)
 
 Every CrateStack-backed service ends up hand-writing the same handful of things that have

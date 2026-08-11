@@ -1385,6 +1385,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "cratestack-outbox"
+version = "0.7.12"
+dependencies = [
+ "axum",
+ "chrono",
+ "cratestack-core",
+ "cratestack-sqlx",
+ "minicbor-serde",
+ "serde",
+ "serde_json",
+ "testcontainers",
+ "testcontainers-modules",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "cratestack-parser"
 version = "0.7.12"
 dependencies = [

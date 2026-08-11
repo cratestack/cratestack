@@ -102,6 +102,31 @@ cratestack-client-store-redis = 2
 # facade already has), so the "must not be depended on by anything above
 # its layer" half of the rule is satisfied vacuously.
 cratestack-service = 2
+# `cratestack-outbox` (new, "absorb the transactional outbox into the
+# framework"): the source crate (`events-kit`) embedded a cratestack schema
+# via `include_server_schema!(db = Postgres)`, which only reaches the
+# `cratestack-pg` L5 facade — that would have forced this crate to L5 for a
+# macro whose generated typed accessors were, per the source crate's own
+# module doc, never actually called (every real read/write already ran raw
+# `sqlx`, to keep the JSONB payload shape plain rather than cratestack's
+# typed `Json<Value>` external-tagging). The macro was therefore dropped
+# rather than ported: this crate hand-writes its one table directly against
+# `cratestack-sqlx`, the same posture `cratestack-sqlx` itself takes for its
+# own internal `cratestack_audit`/`cratestack_migrations` tables (bare DDL
+# constant + hand-written queries, no schema macro). Its only normal
+# workspace dependencies are `cratestack-core` (L1, `CoolError`/
+# `TransactionIsolation`) and `cratestack-sqlx` (L2, the `sqlx` re-export,
+# `run_in_isolated_tx_with_retries`, `cool_error_from_sqlx`) — both <= 2, so
+# L2 is a complete, exception-free assignment by the same "lowest number the
+# real graph supports" rule `cratestack-service`/`cratestack-macros` use
+# above. Unlike `cratestack-service`, `cratestack-sqlx` is an unconditional
+# (not feature-gated) dependency here — see this crate's `Cargo.toml` for
+# why a `postgres` feature would be meaningless for a crate whose only
+# reason to exist is a Postgres transaction. Nothing in the workspace
+# depends on it (a leaf, consumed directly by application binaries), so the
+# "must not be depended on by anything above its layer" half of the rule is
+# satisfied vacuously, same as every other crate in this section.
+cratestack-outbox = 2
 
 # --- L3: Execution -----------------------------------------------------
 # (empty by design — see module comment above)

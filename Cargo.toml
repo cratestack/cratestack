@@ -22,6 +22,7 @@ members = [
     "crates/cratestack-macros",
     "crates/cratestack-migrate",
     "crates/cratestack-mock-wiremock",
+    "crates/cratestack-outbox",
     "crates/cratestack-parser",
     "crates/cratestack-pg",
     "crates/cratestack-policy",
