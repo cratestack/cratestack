@@ -2,25 +2,6 @@
 
 ## 0.7.12 (2026-08-11)
 
-<!-- TODO: edit this section from the seed below -->
-<!-- seeded from v0.7.11..HEAD at e43d8a737604b79f91114222e0156e42bc73943e -->
-
-This is an auto-generated seed. Please rewrite into narrative prose describing
-the changes in this release, grouped by concern. Refer to existing entries in
-this file for the house prose style. Do not commit with this placeholder text.
-
-### Changes
-
-#### Features
-
-- enforce size bounds on the generated server surface (#413) (#522)
-
-#### Fixes
-
-- trust Forwarded/X-Forwarded-For only from a configured proxy (#526)
-- remove resolver = "1", now that #521 dropped the NEITHER-arm compile_error! (#525)
-
-## Unreleased
 
 ### `Forwarded`/`X-Forwarded-For` are now honored only from a configured trusted proxy — breaking (#415)
 
@@ -146,6 +127,22 @@ request that also carries an `Idempotency-Key`. The only observable difference f
 class is which layer rejects first and therefore which error shape a client sees (a custom 400 from
 `IdempotencyService` vs. axum's raw 413) — not a coverage gap. Full trace in
 `docs/design/request-response-size-bounds.md`'s coherence note. `MAX_BODY_BYTES` itself is unchanged.
+
+### `cratestack-macros`: `resolver = "1"` removed — no more workspace-wide cargo warning (#497, #525)
+
+`crates/cratestack-macros/Cargo.toml` carried a `resolver = "1"` that made **every** `cargo`
+invocation anywhere in the workspace emit `warning: resolver for the non root package will be
+ignored`, for every contributor and every CI job. Cargo genuinely ignores the field for the real
+workspace build; its only effect was on the synthetic mini-workspace `trybuild` generates per
+fixture, where resolver 1's unified feature pools papered over `cratestack-core` selecting no
+decimal backend and tripping the "enable exactly one" `compile_error!`.
+
+Removing the `NEITHER`-selected arm (#505, this release) removed the reason the field was
+load-bearing, so it is simply deleted — one manifest, 56 deletions, no replacement mechanism
+needed. `cargo test -p cratestack-macros --test ui` and `--test ui_semantic` still pass with
+their full fixture counts, and `.ci/feature-matrix.sh` still fails when a `cratestack-core` edge
+is deliberately re-pinned, so the guard that made this risky is verified intact rather than
+assumed.
 
 ## 0.7.11 (2026-08-11)
 
