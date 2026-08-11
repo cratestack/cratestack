@@ -33,6 +33,7 @@ fn round_trip(value: SqlValue) -> SqlValue {
         (SqlValue::Json(_), rusqlite::types::Value::Text(s)) => {
             SqlValue::Json(decode_json(&s).unwrap())
         }
+        #[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
         (SqlValue::Decimal(_), rusqlite::types::Value::Text(s)) => {
             SqlValue::Decimal(decode_decimal(&s).unwrap())
         }
@@ -138,10 +139,24 @@ fn round_trips_json() {
     assert_eq!(round_trip(v.clone()), v);
 }
 
+#[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
 #[test]
+// `.clone()` below (not `d` twice): pre-existing bug, unrelated to
+// cratestack#505 — `bigdecimal::BigDecimal` isn't `Copy` (unlike
+// `rust_decimal::Decimal`), so this test only compiled under the default
+// `decimal-rust-decimal` backend before. Never caught by
+// `.ci/feature-matrix.sh`, which only ran `cargo check` (no
+// `--all-targets`) for this crate, never `cargo test`. The `.clone()`
+// itself then trips `clippy::clone_on_copy` under `decimal-rust-decimal`
+// (where `Decimal` happens to be `Copy`) — same rationale as
+// `cratestack-sqlx`'s `push_bind_value`.
+#[allow(clippy::clone_on_copy)]
 fn round_trips_decimal_preserves_precision() {
     let d: cratestack_core::Decimal = "12345.67890".parse().unwrap();
-    assert_eq!(round_trip(SqlValue::Decimal(d)), SqlValue::Decimal(d));
+    assert_eq!(
+        round_trip(SqlValue::Decimal(d.clone())),
+        SqlValue::Decimal(d)
+    );
 }
 
 #[test]

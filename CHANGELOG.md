@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+### `cratestack-core`: selecting no decimal backend is no longer a hard compile error (#505)
+
+`cratestack-core` used to hard-fail with `compile_error!("enable exactly one decimal backend
+feature — decimal-rust-decimal or decimal-bigdecimal")` whenever a consumer built it (directly
+or transitively) with `default-features = false` and neither `decimal-rust-decimal` nor
+`decimal-bigdecimal` selected. That bit a consumer that legitimately narrows its dependency graph
+this way and never uses a `Decimal`-typed field at all — e.g. `cratestack-api` (`provider =
+"none"`, no `model` blocks) — forcing it to name a decimal backend it never touches. The break
+was invisible in a `cargo check --workspace` run (feature unification from other workspace
+members hid it) until the affected crate was built alone — exactly what happened in the field
+(ADORSYS-GIS/webank-services#279).
+
+Selecting *both* backends at once is still a hard `compile_error!` — that half of the invariant
+is unchanged and stays a graph-wide constraint (documented in `cratestack-core`'s crate-level
+rustdoc and in `CLAUDE.md`): two independent dependents in the same build, each individually
+well-formed and each deliberately choosing a different backend, can still force an unbuildable
+combined graph. Making the two backends genuinely additive (or moving the choice off Cargo
+features entirely) remains open, unaddressed by this change, and reserved for a future,
+maintainer-scoped design decision.
+
+**What actually changed:** `cratestack-core::Decimal` (and everything in this crate and its
+downstream SQL layer that references it unconditionally — `cratestack-core::validate_range_decimal`,
+`cratestack-sql::SqlValue::Decimal`, `cratestack-sql`'s `IntoSqlValue for Decimal`, and the
+matching bind/decode arms in `cratestack-rusqlite` and `cratestack-sqlx`) is now `#[cfg]`-gated on
+"a decimal backend is selected", the same pattern throughout. With neither backend selected,
+these symbols simply don't exist on the public surface instead of hard-erroring the whole build —
+a consumer that never references `Decimal`, directly or via a schema with no `Decimal`-typed
+field, now builds cleanly across every facade (`cratestack-pg`, `cratestack-api`,
+`cratestack-sqlite`, `cratestack-client`, plus `cratestack-axum`/`cratestack-studio`), even under
+`--no-default-features`. A consumer that *does* try to use `Decimal` without picking a backend
+now gets a plain rustc "cannot find type/variant `Decimal`" from wherever the reference lives,
+instead of the old, single, clearer `compile_error!` naming the missing choice — a diagnostic
+regression accepted in exchange for not hard-failing every backend-agnostic consumer.
+
+No consumer-visible signature or behavior change for anyone who already selects a decimal backend
+(the default, `decimal-rust-decimal`, or the opt-in `decimal-bigdecimal`) — this only affects
+builds that previously hit the removed `compile_error!`.
+
 ### `Value` serializes untagged on the wire, matching what it already persists — breaking
 
 `cratestack_core::Value` derived `Serialize`/`Deserialize`, which emits serde's
