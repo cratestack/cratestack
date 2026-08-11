@@ -50,6 +50,46 @@ The comment asserted that `minicbor-serde` reports `is_human_readable() == true`
 the two disagreed. The comment also still described the `Value::Null`-stripping workaround that
 #430 removed. No behavior change; the code was right and the comment was wrong.
 
+### Pluralizer gains the standard English `y -> ies` rule — breaking (#504)
+
+`cratestack_core::route_naming::pluralize` (and, via it, `cratestack-migrate::naming::table_name`)
+had no `y -> ies` case: any model name ending in a consonant + `y` derived the wrong plural —
+`category` -> `categorys`, `webhook_delivery` -> `webhook_deliverys` — instead of the
+grammatically correct `categories` / `webhook_deliveries`. This wasn't just cosmetic: the derived
+name is the actual SQL table the generated model client queries, so a consumer who hand-wrote a
+migration using the correct English plural got `relation "webhook_deliverys" does not exist` the
+moment the generated client touched that model — a real production defect downstream
+(webank-services' `adminGetWebhooks`; see cratestack#504's linked ADR).
+
+`pluralize` now applies the standard rule: consonant + `y` -> `ies` (`category` -> `categories`);
+vowel + `y` (`day`) or anything else -> plain `+s`. `cratestack-migrate::naming::pluralize`, a
+second hand-synced copy of the same function that had already drifted apart from this one, is
+deleted; `cratestack-migrate::naming::table_name` now calls `cratestack_core::route_naming::pluralize`
+directly, so there is exactly one implementation to keep correct going forward.
+
+This changes both generated REST route segments and generated table names for **every**
+model/view whose name ends in a consonant + `y`. It does *not* touch
+`cratestack-client-typescript::naming` or `cratestack-client-dart::idents`, the two SDK
+accessor/method-name generators (`db.categories()`, `useCategories()`) — they already implement
+the correct consonant/vowel rule and were deliberately out of scope here.
+
+**Migration.** This is a breaking change to generated table names and REST routes for any schema
+with a model/view name ending in a consonant + `y` (`Category`, `Delivery`, `Entry`, `Query`,
+...). `cratestack-migrate`'s diff engine matches tables **by name only** and never infers a
+rename (`crates/cratestack-migrate/src/diff.rs`) — running `cratestack migrate diff` against a
+schema with a deployed `categorys` table, without further action, emits `DropTable(categorys)` +
+`CreateTable(categories)`, and applying that migration **destroys the table's data**. Before
+running `migrate diff` after upgrading past this change, declare
+`@@rename(from = "<old_table_name>")` on every affected model (e.g.
+`@@rename(from = "categorys")` on `model Category`) so the diff engine emits
+`ALTER TABLE ... RENAME TO ...` instead — verified end-to-end by
+`crates/cratestack-migrate/src/emit/postgres/tests/renames.rs`'s
+`pluralization_change_with_rename_marker_is_a_rename_not_drop_and_create` test (and its sibling
+`..._without_rename_marker_drops_and_recreates`, which pins down the destructive default if this
+step is skipped). Any generated Dart/TypeScript/Rust client built against the old route segment
+for such a model will 404 against a server built with this fix, and vice versa, until both sides
+are rebuilt together.
+
 ## 0.7.10 (2026-08-09)
 
 ### Per-call-site `ON CONFLICT DO NOTHING` for idempotent inserts (#487, ADR 0038 blocker B3)

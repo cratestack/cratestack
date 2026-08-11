@@ -65,6 +65,30 @@ pub fn to_snake_case(value: &str) -> String {
 /// gap by cratestack#504, not yet implemented, out of scope here). This
 /// function only needs to match the server's route registration and the
 /// migration engine's table naming, not be linguistically ideal.
+///
+/// **Migrating past cratestack#504's `y -> ies` fix.** This function
+/// feeds `cratestack-migrate`'s table-name derivation
+/// (`cratestack_migrate::naming::table_name`), and `cratestack-migrate`'s
+/// diff engine matches tables **by name only** — it never infers a
+/// rename from two schemas that otherwise look related
+/// (`crates/cratestack-migrate/src/diff.rs`). Any deployed model whose
+/// name ends in a consonant + `y` (`Category`, `Delivery`, `Entry`,
+/// `Query`, ...) changes its derived table name on this upgrade
+/// (`categorys` -> `categories`). Running `cratestack migrate diff`
+/// against such a schema without first declaring the rename produces
+/// `DropTable(categorys)` + `CreateTable(categories)` — applying that
+/// migration **destroys the table's data**.
+///
+/// Before running `migrate diff` after upgrading past this change, add
+/// `@@rename(from = "<old_table_name>")` to every affected model (e.g.
+/// `@@rename(from = "categorys")` on `model Category`) so the diff
+/// engine emits `ALTER TABLE ... RENAME TO ...` instead. See
+/// `crates/cratestack-migrate/src/convert/renames.rs` for the attribute
+/// and `crates/cratestack-migrate/src/emit/postgres/tests/renames.rs`'s
+/// `pluralization_change_with_rename_marker_is_a_rename_not_drop_and_create`
+/// test for a worked example of exactly this scenario (and its sibling
+/// `..._without_rename_marker_drops_and_recreates`, which pins down what
+/// happens if you skip this step).
 pub fn pluralize(value: &str) -> String {
     if value.ends_with('s') {
         return format!("{value}es");
