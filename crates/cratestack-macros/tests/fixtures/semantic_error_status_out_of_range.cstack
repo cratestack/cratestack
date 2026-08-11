@@ -1,0 +1,6 @@
+type Ping {
+  nonce String
+}
+
+procedure broken(args: Ping): Ping
+  @status(404)

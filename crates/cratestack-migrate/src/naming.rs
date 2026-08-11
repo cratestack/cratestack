@@ -6,7 +6,7 @@
 /// uses for `ModelDescriptor::TABLE_NAME` so generated migrations
 /// produce the same table names the runtime queries against.
 pub fn table_name(model: &str) -> String {
-    pluralize(&to_snake_case(model))
+    cratestack_core::route_naming::pluralize(&to_snake_case(model))
 }
 
 /// `orderCount` → `order_count`. Matches the macro codegen's column
@@ -74,19 +74,6 @@ fn to_snake_case(value: &str) -> String {
     output
 }
 
-/// Naive English pluralization — matches the codegen's
-/// `pluralize` helper. Sufficient for table-naming since model names
-/// are developer-controlled; if a developer wants a different table
-/// name they will eventually be able to declare it via `@@map(...)`
-/// (out of scope for this slice).
-fn pluralize(value: &str) -> String {
-    if value.ends_with('s') {
-        format!("{value}es")
-    } else {
-        format!("{value}s")
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -96,6 +83,52 @@ mod tests {
         assert_eq!(table_name("Customer"), "customers");
         assert_eq!(table_name("OrderItem"), "order_items");
         assert_eq!(table_name("Address"), "addresses");
+    }
+
+    /// cratestack#504: consonant + `y` -> `ies`, not the old naive `+s`
+    /// (`webhook_deliverys`). This is the exact production defect the
+    /// issue reports — a hand-written migration for the grammatically
+    /// correct `webhook_deliveries` table wouldn't match the old
+    /// generated name.
+    #[test]
+    fn table_name_pluralizes_consonant_plus_y_as_ies() {
+        assert_eq!(table_name("Category"), "categories");
+        assert_eq!(table_name("WebhookDelivery"), "webhook_deliveries");
+    }
+
+    /// cratestack#504: vowel + `y` still gets a plain `s`, not `ies`.
+    #[test]
+    fn table_name_pluralizes_vowel_plus_y_as_plain_s() {
+        assert_eq!(table_name("Day"), "days");
+    }
+
+    /// Proves the consolidation from cratestack#504 is real — i.e. that
+    /// `table_name` here and `cratestack_core::route_naming` are calling
+    /// the *same* pluralizer, not two copies that happen to agree today
+    /// and can silently drift apart again tomorrow. `table_name` is
+    /// exactly `pluralize(to_snake_case(model))`, the same composition
+    /// `model_route_segment` performs, so for any model name the two
+    /// crates' public entry points must produce byte-identical output.
+    #[test]
+    fn table_name_agrees_with_core_route_naming_for_every_shape() {
+        for model in [
+            "Customer",
+            "OrderItem",
+            "Address",
+            "Category",
+            "WebhookDelivery",
+            "Day",
+            "Bus",
+            "Class",
+            "Entry",
+        ] {
+            assert_eq!(
+                table_name(model),
+                cratestack_core::route_naming::model_route_segment(model),
+                "table_name({model:?}) should agree with \
+                 cratestack_core::route_naming::model_route_segment({model:?})"
+            );
+        }
     }
 
     #[test]

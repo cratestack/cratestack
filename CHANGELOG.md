@@ -38,6 +38,89 @@ that actually served through `into_make_service_with_connect_info`, so it never 
 practice. Wiring `ConnectInfo` extraction for #415 closes that gap too — the same connect-info
 serving requirement above is what makes both work.
 
+### Per-procedure `@status(<code>)` for REST success responses (#407)
+
+`generate_procedure_axum_handler` hardcoded `axum::http::StatusCode::OK` for every procedure's
+`Ok(...)` response, with no schema-level way to declare a different 2xx status (e.g. `202
+Accepted` for a submit-and-acknowledge procedure whose real verdict arrives later via webhook).
+A schema author can now write:
+
+```
+procedure submitKycDocument(args: SubmitKycDocumentInput): KycPresignReply
+  @status(202)
+```
+
+`cratestack-parser` validates the argument is a real `200..=299` status at schema-compile time
+(anything outside that range, or on a `transport rpc` schema — see below — is rejected with a
+clear diagnostic, not a runtime surprise); `cratestack-macros` threads the declared status into
+`result_encoder` for the unary, `TypeArity::List`, and `@stream` branches alike, replacing the
+previously-hardcoded literal in all three. Absent the attribute, codegen is byte-identical to
+before (the pre-existing cratestack#283 pinned-token regression test is unchanged). Error
+responses are untouched either way — `CoolError`'s own status mapping governs `Err(...)`
+unconditionally, independent of `@status`.
+
+`@status` is REST-only and is rejected at schema-compile time on `transport rpc` schemas: RPC
+unary dispatch shares the exact same generated handler REST uses, so an unrejected `@status`
+there would silently become wire-visible on the RPC response too. `transport grpc` is
+unaffected either way — tonic's gRPC status model never reads the inner HTTP status this
+attribute controls, so the combination is inert, not wrong, and stays allowed.
+
+Known limitation, left for a follow-up rather than silently narrowed here: `@status(204)` is
+accepted by the `200..=299` range check, but the REST encoder always serializes and attaches a
+response body regardless of declared status, so a declared `204` currently produces a
+`204 No Content` response that carries a body — a protocol violation per RFC 9110 §15.3.5.
+
+### Typed Rust client can read response headers — `*_with_response` methods (#493)
+
+`decode_typed_response` (`cratestack-client-rust/src/client/decode.rs`) read `response.headers`
+only to find `Content-Type`, then returned the decoded body alone — every typed call built on it
+(`get`/`post`/`patch`/`delete`, and the generated `<Model>Client`'s `list`/`get`/`create`/`update`/
+`delete`) discarded every response header. For any `@version` model, that made the typed client
+structurally unable to do a concurrency-safe `PATCH`: CrateStack's optimistic-locking contract
+requires `If-Match` on that verb, with the current version handed back as `ETag` on `GET` — so
+the required round trip, `GET` → read `ETag` → `PATCH` with `If-Match`, had no typed path through
+its middle step. The same gap hid `Idempotency-Replayed` (on a replayed create) and `Retry-After`
+(on a `429`) from a typed caller. **Note:** `DELETE` is not part of that contract — the server
+does not currently enforce `If-Match` on `DELETE` for any model, versioned or not (see below).
+
+Added a `TypedResponse<Output> { value, status, headers }` (with a case-insensitive
+`.header(name)` accessor, plus `.header_values(name)` for the rare header that legitimately
+repeats, e.g. `Set-Cookie`) and a parallel `*_with_response` method next to every existing typed
+method: `CratestackClient::{get,post,patch,delete}_with_response`, and on the generated REST
+`<Model>Client`, `get_with_response`/`update_with_response`/`delete_with_response`. Purely
+additive — `decode_typed_response` is now implemented in terms of a new
+`decode_typed_response_with_metadata`, but keeps its exact original signature and behavior, so
+every existing call site (including every already-generated client) keeps compiling and behaving
+identically with no changes required.
+
+`delete_with_response` ships alongside `get_with_response`/`patch_with_response` for surface
+symmetry (status and headers on every write, not just versioned ones — useful for e.g. reading a
+`Retry-After` on a `429`), but unlike `patch_with_response`, sending `If-Match` on a `DELETE` has
+**no concurrency-safety effect today**: the server accepts and ignores it. Server-side `If-Match`
+enforcement on `DELETE` is a real gap in CrateStack's optimistic-locking story — deliberately
+*not* implemented here, since it is a separate feature decision outside this issue's scope, and
+reported for its own follow-up issue instead.
+
+Scoped to REST transport. RPC transport (`transport rpc`) has no `ETag`/`If-Match` handling
+anywhere server-side — a schema-versioned model's concurrency control there, if any, would need
+to travel through the request/response body, not an HTTP header — so there is nothing to wire on
+the RPC client's `BatchableCall` surface for this issue. Projection reads (`get_view`/`list_view`/
+`list_view_paged`) and `create_with_response` on the generated model client are also left
+out-of-scope: the acceptance-driving round trip is `GET` → `ETag` → `PATCH` with `If-Match`, which
+`get_with_response`/`update_with_response` cover in full; a create-side `Idempotency-Replayed`
+reader is still reachable today via the (now also additive) `CratestackClient::post_with_response`
+directly, just not yet wrapped by the generated `<Model>Client::create_with_response`.
+
+Verified: `cargo test -p cratestack-client-rust` (unit coverage of
+`decode_typed_response_with_metadata` against hand-built responses, including an `ETag`-shaped
+header and a case-insensitive lookup; a real-HTTP-server integration test in
+`tests/typed_response.rs` proving `get_with_response` → `ETag` → `patch_with_response` with
+`If-Match` round-trips end-to-end, a 412-on-stale-`If-Match` case, and that the plain
+`get`/`patch` methods are unchanged) and `cargo test -p cratestack-client` (a new
+`tests/generated_client_versioning.rs`, using a schema borrowed verbatim from
+`cratestack-pg/tests/fixtures/banking_versioning.cstack`, proving the *generated* `<Model>Client`
+reaches the same round trip, not just the underlying runtime).
+
 ### `Value` serializes untagged on the wire, matching what it already persists — breaking
 
 `cratestack_core::Value` derived `Serialize`/`Deserialize`, which emits serde's
@@ -85,6 +168,46 @@ The comment asserted that `minicbor-serde` reports `is_human_readable() == true`
 `0xf4`. `cratestack-axum`'s `projection.rs` (#430) already documented the correct behavior, so
 the two disagreed. The comment also still described the `Value::Null`-stripping workaround that
 #430 removed. No behavior change; the code was right and the comment was wrong.
+
+### Pluralizer gains the standard English `y -> ies` rule — breaking (#504)
+
+`cratestack_core::route_naming::pluralize` (and, via it, `cratestack-migrate::naming::table_name`)
+had no `y -> ies` case: any model name ending in a consonant + `y` derived the wrong plural —
+`category` -> `categorys`, `webhook_delivery` -> `webhook_deliverys` — instead of the
+grammatically correct `categories` / `webhook_deliveries`. This wasn't just cosmetic: the derived
+name is the actual SQL table the generated model client queries, so a consumer who hand-wrote a
+migration using the correct English plural got `relation "webhook_deliverys" does not exist` the
+moment the generated client touched that model — a real production defect downstream
+(webank-services' `adminGetWebhooks`; see cratestack#504's linked ADR).
+
+`pluralize` now applies the standard rule: consonant + `y` -> `ies` (`category` -> `categories`);
+vowel + `y` (`day`) or anything else -> plain `+s`. `cratestack-migrate::naming::pluralize`, a
+second hand-synced copy of the same function that had already drifted apart from this one, is
+deleted; `cratestack-migrate::naming::table_name` now calls `cratestack_core::route_naming::pluralize`
+directly, so there is exactly one implementation to keep correct going forward.
+
+This changes both generated REST route segments and generated table names for **every**
+model/view whose name ends in a consonant + `y`. It does *not* touch
+`cratestack-client-typescript::naming` or `cratestack-client-dart::idents`, the two SDK
+accessor/method-name generators (`db.categories()`, `useCategories()`) — they already implement
+the correct consonant/vowel rule and were deliberately out of scope here.
+
+**Migration.** This is a breaking change to generated table names and REST routes for any schema
+with a model/view name ending in a consonant + `y` (`Category`, `Delivery`, `Entry`, `Query`,
+...). `cratestack-migrate`'s diff engine matches tables **by name only** and never infers a
+rename (`crates/cratestack-migrate/src/diff.rs`) — running `cratestack migrate diff` against a
+schema with a deployed `categorys` table, without further action, emits `DropTable(categorys)` +
+`CreateTable(categories)`, and applying that migration **destroys the table's data**. Before
+running `migrate diff` after upgrading past this change, declare
+`@@rename(from = "<old_table_name>")` on every affected model (e.g.
+`@@rename(from = "categorys")` on `model Category`) so the diff engine emits
+`ALTER TABLE ... RENAME TO ...` instead — verified end-to-end by
+`crates/cratestack-migrate/src/emit/postgres/tests/renames.rs`'s
+`pluralization_change_with_rename_marker_is_a_rename_not_drop_and_create` test (and its sibling
+`..._without_rename_marker_drops_and_recreates`, which pins down the destructive default if this
+step is skipped). Any generated Dart/TypeScript/Rust client built against the old route segment
+for such a model will 404 against a server built with this fix, and vice versa, until both sides
+are rebuilt together.
 
 ## 0.7.10 (2026-08-09)
 

@@ -1,6 +1,7 @@
 //! Route path + header token helpers driven by procedure attributes:
-//! `@api_version("...")` (route prefix) and `@deprecated`/`@deprecated("...")`
-//! (`Deprecation`/`X-Deprecation` response headers). Split out of
+//! `@api_version("...")` (route prefix), `@deprecated`/`@deprecated("...")`
+//! (`Deprecation`/`X-Deprecation` response headers), and `@status(<code>)`
+//! (the REST `Ok(...)` success status, cratestack#407). Split out of
 //! `super` to keep that file under the workspace's ~200-LoC-per-file
 //! convention.
 
@@ -35,6 +36,31 @@ fn procedure_api_version(procedure: &Procedure) -> Option<String> {
             .and_then(|rest| rest.strip_suffix("\")"))
             .map(|s| s.to_owned())
     })
+}
+
+/// The `StatusCode` expression a procedure's `Ok(...)` REST response
+/// should encode as, driven by `@status(<code>)`. `cratestack-parser`
+/// already rejects anything outside `200..=299` at schema-compile time
+/// (`validate_procedure_status_attribute`), so `StatusCode::from_u16`
+/// here is infallible in practice; the `unwrap_or(StatusCode::OK)`
+/// fallback only guards against that invariant somehow not holding,
+/// rather than panicking mid macro-expansion. Absent the attribute this
+/// returns the same `StatusCode::OK` literal that was previously
+/// hardcoded at both call sites — fully backward compatible.
+pub(super) fn procedure_success_status_tokens(procedure: &Procedure) -> proc_macro2::TokenStream {
+    let code = procedure.attributes.iter().find_map(|attribute| {
+        attribute
+            .raw
+            .strip_prefix("@status(")
+            .and_then(|rest| rest.strip_suffix(')'))
+            .and_then(|inner| inner.trim().parse::<u16>().ok())
+    });
+    match code {
+        Some(code) => quote! {
+            axum::http::StatusCode::from_u16(#code).unwrap_or(axum::http::StatusCode::OK)
+        },
+        None => quote! { axum::http::StatusCode::OK },
+    }
 }
 
 /// Token stream that, given a `response` in scope, applies the

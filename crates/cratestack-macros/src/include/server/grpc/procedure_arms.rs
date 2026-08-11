@@ -2,15 +2,15 @@
 //! into `ApiServer::call` (ticket #208) — split out of `service.rs` to
 //! stay under this repo's 200-LoC file convention. See `service.rs`'s
 //! module doc for what "server-streaming" means for the streaming arm,
-//! and its `build_create_arm` for the CRUD sibling this unary shape
-//! mirrors almost exactly (decode -> encode -> dispatch -> bridge).
+//! and `crud_arms::build_create_arm` for the CRUD sibling this unary
+//! shape mirrors almost exactly (decode -> encode -> dispatch -> bridge).
 
 use cratestack_core::Procedure;
 use quote::quote;
 
 use crate::shared::{ident, to_snake_case};
 
-use super::service::{request_prelude, status_from_bridge_error};
+use super::arm_support::{request_prelude, status_from_bridge_error};
 
 fn procedure_method_path(package: &str, procedure: &Procedure) -> String {
     let op_id = format!("procedure.{}", procedure.name);
