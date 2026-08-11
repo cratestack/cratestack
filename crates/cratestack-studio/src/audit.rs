@@ -18,6 +18,8 @@ mod time;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_unsafe_write;
 
 use std::collections::VecDeque;
 use std::path::Path;
@@ -41,6 +43,27 @@ pub struct AuditEntry {
     pub model: String,
     pub op: AuditOp,
     pub pk: Option<String>,
+    /// `true` when this write reached the data source only because a
+    /// `rw` `[target.db]` target opted into `allow_unsafe_writes`,
+    /// skipping `@version` bumping and/or `@@emit` outbox rows
+    /// (cratestack#507). `false` for every ordinary write, including
+    /// writes on `[target.db]` targets to models that carry neither
+    /// annotation.
+    ///
+    /// `#[serde(default)]` so a JSONL sidecar written before this field
+    /// existed still replays cleanly on boot — an older line without
+    /// the key deserializes as `false`, which is the conservative
+    /// reading (an operator auditing pre-upgrade history can't
+    /// distinguish "known safe" from "not tracked yet," and `false`
+    /// does not falsely flag a write as a bypass it never was capable
+    /// of being, since `allow_unsafe_writes` didn't exist for those
+    /// rows either). The field has no `deny_unknown_fields` on the
+    /// other side (the Studio web UI's `AuditEntry` mirror in
+    /// `cratestack-studio-ui`) either, so old UI builds reading a new
+    /// sidecar or vice versa both round-trip without error — they
+    /// simply don't display the flag until updated.
+    #[serde(default)]
+    pub unsafe_write: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -111,7 +134,14 @@ impl AuditLog {
         })
     }
 
-    pub fn push(&self, target: &str, model: &str, op: AuditOp, pk: Option<String>) {
+    pub fn push(
+        &self,
+        target: &str,
+        model: &str,
+        op: AuditOp,
+        pk: Option<String>,
+        unsafe_write: bool,
+    ) {
         let mut state = self.state.lock().expect("audit mutex poisoned");
         let entry = AuditEntry {
             id: state.next_id,
@@ -120,6 +150,7 @@ impl AuditLog {
             model: model.to_owned(),
             op,
             pk,
+            unsafe_write,
         };
         state.next_id += 1;
         if let Some(store) = &self.store {

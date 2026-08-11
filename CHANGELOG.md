@@ -56,6 +56,109 @@ class is which layer rejects first and therefore which error shape a client sees
 `IdempotencyService` vs. axum's raw 413) — not a coverage gap. Full trace in
 `docs/design/request-response-size-bounds.md`'s coherence note. `MAX_BODY_BYTES` itself is unchanged.
 
+### `cratestack-core`: selecting no decimal backend is no longer a hard compile error (#505)
+
+`cratestack-core` used to hard-fail with `compile_error!("enable exactly one decimal backend
+feature — decimal-rust-decimal or decimal-bigdecimal")` whenever a consumer built it (directly
+or transitively) with `default-features = false` and neither `decimal-rust-decimal` nor
+`decimal-bigdecimal` selected. That bit a consumer that legitimately narrows its dependency graph
+this way and never uses a `Decimal`-typed field at all — e.g. `cratestack-api` (`provider =
+"none"`, no `model` blocks) — forcing it to name a decimal backend it never touches. The break
+was invisible in a `cargo check --workspace` run (feature unification from other workspace
+members hid it) until the affected crate was built alone — exactly what happened in the field
+(ADORSYS-GIS/webank-services#279).
+
+Selecting *both* backends at once is still a hard `compile_error!` — that half of the invariant
+is unchanged and stays a graph-wide constraint (documented in `cratestack-core`'s crate-level
+rustdoc and in `CLAUDE.md`): two independent dependents in the same build, each individually
+well-formed and each deliberately choosing a different backend, can still force an unbuildable
+combined graph. Making the two backends genuinely additive (or moving the choice off Cargo
+features entirely) remains open, unaddressed by this change, and reserved for a future,
+maintainer-scoped design decision.
+
+**What actually changed:** `cratestack-core::Decimal` (and everything in this crate and its
+downstream SQL layer that references it unconditionally — `cratestack-core::validate_range_decimal`,
+`cratestack-sql::SqlValue::Decimal`, `cratestack-sql`'s `IntoSqlValue for Decimal`, and the
+matching bind/decode arms in `cratestack-rusqlite` and `cratestack-sqlx`) is now `#[cfg]`-gated on
+"a decimal backend is selected", the same pattern throughout. With neither backend selected,
+these symbols simply don't exist on the public surface instead of hard-erroring the whole build —
+a consumer that never references `Decimal`, directly or via a schema with no `Decimal`-typed
+field, now builds cleanly across every facade (`cratestack-pg`, `cratestack-api`,
+`cratestack-sqlite`, `cratestack-client`, plus `cratestack-axum`/`cratestack-studio`), even under
+`--no-default-features`. A consumer that *does* try to use `Decimal` without picking a backend
+now gets a plain rustc "cannot find type/variant `Decimal`" from wherever the reference lives,
+instead of the old, single, clearer `compile_error!` naming the missing choice — a diagnostic
+regression accepted in exchange for not hard-failing every backend-agnostic consumer.
+
+No consumer-visible signature or behavior change for anyone who already selects a decimal backend
+(the default, `decimal-rust-decimal`, or the opt-in `decimal-bigdecimal`) — this only affects
+builds that previously hit the removed `compile_error!`.
+### `AuditSink` gets a real installation path (#473)
+
+`cratestack_core::AuditSink` (plus `NoopAuditSink`/`MulticastAuditSink`) has existed since
+before this release, but had nowhere to be installed: a consumer could construct a sink and had
+no way to hand it to the runtime, and `AuditSink::record` was never invoked anywhere in the
+workspace — `cratestack-sqlx/src/audit.rs`'s own module doc claimed fan-out "goes through
+`AuditSink`" while that was, in fact, dead code.
+
+`SqlxRuntime` now carries an installable `Arc<dyn AuditSink>` (default `NoopAuditSink`, so
+existing `SqlxRuntime::new(pool)` callers see no behavior change), installed via
+`SqlxRuntime::with_audit_sink` or, for schema consumers, the macro-generated
+`CratestackBuilder::with_audit_sink` — the same shape `IdempotencyStore`/`RateLimitStore` use.
+Every `@@audit` write path (`create`/`update`/`delete`/`upsert`, their `_many` and batch
+variants) now fans the event out to the installed sink *after* its owning transaction commits,
+never from inside it: the in-database `cratestack_audit` row remains the sole in-transaction
+write and source of truth (unchanged, no double-write), and a sink is never invoked for a
+mutation that ultimately rolled back. Sink errors are logged (`tracing::warn!`), not propagated
+— by the time the sink runs, the mutation already committed, so failing the caller's request
+over a downstream projection hiccup would be strictly worse than a best-effort delivery.
+`run_in_tx` variants (caller-managed transaction) do not fan out, mirroring the existing event
+outbox, which has never drained from `run_in_tx` either. **This is a real gap, not just a
+deferral**: there is currently no way for a `run_in_tx` caller to opt into sink fan-out
+themselves — the dispatch helper is crate-private and no `run_in_tx` variant returns the
+`AuditEvent` it would need — so a caller chaining `run_in_tx` calls across a caller-managed
+transaction (see `crates/cratestack-pg/tests/banking_chained_audit_tx.rs`) gets the
+in-transaction `cratestack_audit` row on commit but a real installed `AuditSink` observes
+nothing for that transaction, silently. Worth its own follow-up issue; see
+`crates/cratestack-sqlx/src/audit/sink.rs`'s doc comment for the full reasoning. Dispatch is
+also sequential, not concurrent, so the added latency of a slow sink is per-row on
+`update_many`/`delete_many`/batch paths, not per-request.
+### `cratestack-studio`: refuse silent `@version`/`@@emit` bypass on `[target.db]` writes — breaking (cratestack#507)
+
+A write through `cratestack studio` against a `[target.db]` target went straight to SQL: it never
+bumped a model's `@version` column and never wrote a `cratestack_event_outbox` row for an
+`@@emit`-annotated model, and neither omission was reported anywhere — the request returned `200`
+with the updated row. Both consequences are silent and outlive the request: a stale `@version`
+still satisfies a later `if_match`, so optimistic concurrency does not fail-safe, it silently does
+not apply; and `@@emit` side effects (for example customer-facing delivery webhooks) never fire,
+with no trace that one was skipped.
+
+Studio now refuses `POST`/`PATCH`/`DELETE` on a `rw` `[target.db]` target against any model that
+declares `@version` or `@@emit(...)`, returning `403 UNSAFE_DB_WRITE` and naming the specific
+attribute(s) that triggered the refusal, unless the target sets `allow_unsafe_writes = true` in
+`studio.toml`. The refusal runs in the HTTP handler (`require_safe_write`,
+`crates/cratestack-studio/src/api/records/guards.rs`) before any `DataSource` call, so it applies
+identically to Postgres- and SQLite-backed targets, and models with neither annotation are
+unaffected either way. A write allowed only because a target opted in is also loud after the fact,
+not just at the moment the config flag is set: it logs a `tracing::warn!` naming the target, model,
+and skipped annotation(s), and `AuditEntry` gains an `unsafe_write: bool` field (default `false`,
+`#[serde(default)]` so a pre-upgrade JSONL audit sidecar still replays cleanly) so `GET /api/audit`
+and the sidecar can distinguish a bypass write from an ordinary one.
+
+The `@@allow` half of the original report — an unauthenticated `[target.db]` read returning a
+`@sensitive` field in cleartext — is deliberately left alone here; it is arguably intended for a
+direct-DB admin tool and is tracked separately for a maintainer decision, not fixed unilaterally in
+this change. Likewise, routing `[target.db]` writes through the same descriptor path the generated
+server uses (so `@version`/`@@emit` would actually apply, rather than being refused) remains
+unimplemented and is left for a future, larger change.
+
+**Migration.** Any existing `rw` `[target.db]` deployment whose schema declares a model with
+`@version` or `@@emit(...)` will start getting `403 UNSAFE_DB_WRITE` on `POST`/`PATCH`/`DELETE`
+against that model through Studio. Add `allow_unsafe_writes = true` under that target's
+`[target.db]` block in `studio.toml` to keep the previous (silent-bypass) behavior, or leave it
+unset and route those writes through `[target.api]` instead, where `@version`, `@@emit`, and
+`@@allow` all apply exactly as declared in the schema. Reads and `[target.api]`-only targets are
+unaffected either way.
 ### Per-procedure `@status(<code>)` for REST success responses (#407)
 
 `generate_procedure_axum_handler` hardcoded `axum::http::StatusCode::OK` for every procedure's

@@ -28,6 +28,11 @@ pub(crate) fn push_bind_value(
         // build (where `Decimal` happens to be `Copy`) — silenced because the
         // "just dereference it" suggestion doesn't compile at all under
         // `decimal-bigdecimal`, and this call site has to work under both.
+        //
+        // `cratestack_core::Decimal` only exists when a decimal backend is
+        // selected (cratestack#505) — see `cratestack-core/src/decimal.rs`'s
+        // module doc.
+        #[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
         #[allow(clippy::clone_on_copy)]
         SqlValue::Decimal(value) => query.push_bind(value.clone()),
         SqlValue::NullBool => query.push_bind(Option::<bool>::None),
@@ -38,7 +43,24 @@ pub(crate) fn push_bind_value(
         SqlValue::NullUuid => query.push_bind(Option::<uuid::Uuid>::None),
         SqlValue::NullDateTime => query.push_bind(Option::<chrono::DateTime<chrono::Utc>>::None),
         SqlValue::NullJson => query.push_bind(Option::<Json<Value>>::None),
+        #[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
         SqlValue::NullDecimal => query.push_bind(Option::<cratestack_core::Decimal>::None),
+        // `NullDecimal` itself stays an unconditional `SqlValue` variant
+        // (it carries no `Decimal` payload, unlike `Decimal` above), but
+        // binding it needs the `Decimal` *type* to name a concrete
+        // `Option<T>`. Reaching this arm with no decimal backend selected
+        // on this crate means an `SqlValue::NullDecimal` was constructed
+        // without going through cratestack-macros' generated code, which
+        // can't exist for a schema with a `Decimal` field unless a
+        // backend is selected end-to-end (the same invariant the
+        // `pgvector`-off arm below already relies on for `Vector`/
+        // `NullVector`) — an upstream invariant violation, not a case to
+        // handle gracefully.
+        #[cfg(not(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal")))]
+        SqlValue::NullDecimal => unreachable!(
+            "SqlValue::NullDecimal requires a decimal backend Cargo feature \
+             (decimal-rust-decimal or decimal-bigdecimal) on cratestack-sqlx"
+        ),
         #[cfg(feature = "pgvector")]
         SqlValue::Vector(value) => query.push_bind(pgvector::Vector::from(value.clone())),
         #[cfg(feature = "pgvector")]

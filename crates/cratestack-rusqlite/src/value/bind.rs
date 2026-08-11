@@ -24,6 +24,7 @@ impl<'a> ToSql for SqlValueParam<'a> {
             SqlValue::Uuid(v) => ToSqlOutput::Owned(RV::Text(v.hyphenated().to_string())),
             SqlValue::DateTime(v) => ToSqlOutput::Owned(RV::Text(format_datetime(v))),
             SqlValue::Json(v) => ToSqlOutput::Owned(RV::Text(format_json(v))),
+            #[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
             SqlValue::Decimal(v) => ToSqlOutput::Owned(RV::Text(format_decimal(v))),
             SqlValue::NullBool
             | SqlValue::NullInt
@@ -63,6 +64,7 @@ fn format_json(value: &Value) -> String {
     serde_json::to_string(&value.to_plain_json()).unwrap_or_else(|_| "null".to_string())
 }
 
+#[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
 fn format_decimal(value: &cratestack_core::Decimal) -> String {
     value.to_string()
 }

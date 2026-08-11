@@ -3,7 +3,7 @@
 //! savepoint on Ok and rolls it back on Err so per-item failures
 //! leave no row, no audit row, no outbox entry.
 
-use cratestack_core::{AuditOperation, CoolContext, CoolError, ModelEventKind};
+use cratestack_core::{AuditEvent, AuditOperation, CoolContext, CoolError, ModelEventKind};
 use sqlx_core::acquire::Acquire as _;
 
 use crate::audit::{build_audit_event, enqueue_audit_event};
@@ -14,6 +14,16 @@ use crate::query::support::{
 };
 use crate::{CreateModelInput, ModelDescriptor, cool_error_from_sqlx, sqlx};
 
+/// Returns `(per_item_result, audit_event)`. `audit_event` is `Some`
+/// only when the item succeeded *and* audit is enabled — a savepoint
+/// rollback (failed item) never has anything worth fanning out.
+/// `audit_event` is not dispatched here: the savepoint this function
+/// commits is nested inside `outer`, and `outer` itself isn't
+/// committed until every item in the batch has run — a caller batching
+/// N items must not fan an item's `AuditSink` event out while N-1 of
+/// its siblings could still cause the whole batch to roll back. See
+/// `super::create::BatchCreate::run`, which collects these across the
+/// loop and dispatches only after `outer` commits.
 pub(super) async fn run_create_item<'tx, M, PK, I>(
     outer: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
     policy_pool: &sqlx::PgPool,
@@ -22,12 +32,13 @@ pub(super) async fn run_create_item<'tx, M, PK, I>(
     ctx: &CoolContext,
     emits_event: bool,
     audit_enabled: bool,
-) -> Result<Result<M, CoolError>, CoolError>
+) -> Result<(Result<M, CoolError>, Option<AuditEvent>), CoolError>
 where
     I: CreateModelInput<M>,
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
 {
     let mut item_tx = outer.begin().await.map_err(cool_error_from_sqlx)?;
+    let mut audit_event: Option<AuditEvent> = None;
 
     // All per-item failures funnel through this inner closure so the
     // savepoint commit/rollback decision is centralized below.
@@ -77,6 +88,7 @@ where
             let after = serde_json::to_value(&record).ok();
             let event = build_audit_event(descriptor, AuditOperation::Create, None, after, ctx);
             enqueue_audit_event(&mut *item_tx, &event).await?;
+            audit_event = Some(event);
         }
         Ok(record)
     }
@@ -85,14 +97,14 @@ where
     match inner {
         Ok(record) => {
             item_tx.commit().await.map_err(cool_error_from_sqlx)?;
-            Ok(Ok(record))
+            Ok((Ok(record), audit_event))
         }
         Err(item_err) => {
             // ROLLBACK TO SAVEPOINT brings the outer tx back to its
             // pre-savepoint state. If that fails the outer tx is dead
             // and we propagate as the outer Err — no point continuing.
             item_tx.rollback().await.map_err(cool_error_from_sqlx)?;
-            Ok(Err(item_err))
+            Ok((Err(item_err), None))
         }
     }
 }

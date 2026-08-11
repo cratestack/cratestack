@@ -13,8 +13,24 @@ use super::StudioConfigError;
 /// failures point at the bad `studio.toml` entry instead of the
 /// resolved value.
 pub fn resolve_secret(value: &str, field: &str) -> Result<String, StudioConfigError> {
+    resolve_secret_with(value, field, |name| std::env::var(name))
+}
+
+/// Same as [`resolve_secret`], but the `env:` branch goes through
+/// `lookup_env` instead of the real process environment.
+///
+/// This exists so `env:`'s success path can be unit-tested without
+/// process-wide env mutation: `std::env::set_var` is `unsafe` as of the
+/// 2024 edition (it is not sound against concurrent reads on other
+/// threads), and this workspace `forbid`s `unsafe_code` — a test seam
+/// is a better trade than being the one place that needs an exemption.
+pub(in crate::config) fn resolve_secret_with(
+    value: &str,
+    field: &str,
+    lookup_env: impl Fn(&str) -> Result<String, std::env::VarError>,
+) -> Result<String, StudioConfigError> {
     if let Some(name) = value.strip_prefix("env:") {
-        std::env::var(name).map_err(|_| StudioConfigError::MissingEnv {
+        lookup_env(name).map_err(|_| StudioConfigError::MissingEnv {
             name: name.to_owned(),
             field: field.to_owned(),
         })

@@ -4,6 +4,7 @@
 //! Each handler resolves the target via [`resolve_target`], then
 //! delegates to the [`crate::data::DataSource`] hanging off it.
 
+mod guards;
 mod writes;
 
 use std::sync::Arc;
@@ -14,13 +15,14 @@ use cratestack_core::Model;
 use serde::{Deserialize, Serialize};
 
 use crate::api::ApiError;
-use crate::config::TargetMode;
 use crate::data::model_info::resolve_model;
 use crate::data::relations::{extract_filter_value, resolve_relation};
 use crate::data::{Page, PageRequest, Row};
 use crate::workspace::{LoadedTarget, LoadedWorkspace};
 
 pub use writes::{create_record, delete_record, update_record};
+
+use guards::{require_safe_write, require_writable};
 
 #[derive(Debug, Deserialize, Default)]
 pub struct ListQuery {
@@ -147,16 +149,6 @@ pub(super) fn target_model<'a>(
         .iter()
         .find(|m| m.name == model)
         .ok_or_else(|| ApiError::UnknownModel(model.to_owned()))
-}
-
-/// Reject mutation requests against read-only targets at the earliest
-/// point — before we touch the data source.
-pub(super) fn require_writable(target: &LoadedTarget) -> Result<(), ApiError> {
-    if matches!(target.mode, TargetMode::Rw) {
-        Ok(())
-    } else {
-        Err(ApiError::Forbidden)
-    }
 }
 
 pub(super) fn value_to_string(v: &serde_json::Value) -> String {

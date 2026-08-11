@@ -42,8 +42,10 @@ pub use render::{
 pub use row::{FromPartialRusqliteRow, FromRusqliteRow};
 pub use runtime::{RusqliteError, RusqliteRuntime};
 pub use value::{
-    DateTimeColumn, DecimalColumn, JsonColumn, SqlValueParam, UuidColumn, decode_datetime,
-    decode_decimal, decode_json, decode_uuid,
+    DateTimeColumn, JsonColumn, SqlValueParam, UuidColumn, decode_datetime, decode_json,
+    decode_uuid,
 };
+#[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
+pub use value::{DecimalColumn, decode_decimal};
 
 pub use rusqlite;

@@ -13,7 +13,10 @@ use crate::audit::AuditOp;
 use crate::validators::validate_payload;
 use crate::workspace::LoadedWorkspace;
 
-use super::{RecordResponse, require_writable, resolve_target, target_model, value_to_string};
+use super::{
+    RecordResponse, require_safe_write, require_writable, resolve_target, target_model,
+    value_to_string,
+};
 
 /// `POST /api/targets/:key/models/:model/records`
 pub async fn create_record(
@@ -25,6 +28,7 @@ pub async fn create_record(
     require_writable(target)?;
 
     let model_decl = target_model(target, &model)?;
+    let unsafe_write = require_safe_write(target, model_decl)?;
     let errors = validate_payload(model_decl, &payload, false);
     if !errors.is_empty() {
         return Err(ApiError::Validation(errors));
@@ -40,7 +44,7 @@ pub async fn create_record(
     let pk_value = row.get(pk_field).map(value_to_string);
     state
         .audit
-        .push(&target.key, &model, AuditOp::Create, pk_value);
+        .push(&target.key, &model, AuditOp::Create, pk_value, unsafe_write);
     Ok((StatusCode::CREATED, Json(RecordResponse { row })))
 }
 
@@ -54,6 +58,7 @@ pub async fn update_record(
     require_writable(target)?;
 
     let model_decl = target_model(target, &model)?;
+    let unsafe_write = require_safe_write(target, model_decl)?;
     let errors = validate_payload(model_decl, &payload, true);
     if !errors.is_empty() {
         return Err(ApiError::Validation(errors));
@@ -64,9 +69,10 @@ pub async fn update_record(
         .update(&model, &pk, &payload)
         .await?
         .ok_or_else(|| ApiError::InvalidPrimaryKey(pk.clone(), "no row with this id".to_owned()))?;
+    // `pk` isn't read again after this — move it rather than clone.
     state
         .audit
-        .push(&target.key, &model, AuditOp::Update, Some(pk.clone()));
+        .push(&target.key, &model, AuditOp::Update, Some(pk), unsafe_write);
     Ok(Json(RecordResponse { row }))
 }
 
@@ -78,12 +84,16 @@ pub async fn delete_record(
     let target = resolve_target(&state, &key)?;
     require_writable(target)?;
 
+    let model_decl = target_model(target, &model)?;
+    let unsafe_write = require_safe_write(target, model_decl)?;
+
     let row =
         target.source.delete(&model, &pk).await?.ok_or_else(|| {
             ApiError::InvalidPrimaryKey(pk.clone(), "no row with this id".to_owned())
         })?;
+    // `pk` isn't read again after this — move it rather than clone.
     state
         .audit
-        .push(&target.key, &model, AuditOp::Delete, Some(pk.clone()));
+        .push(&target.key, &model, AuditOp::Delete, Some(pk), unsafe_write);
     Ok(Json(RecordResponse { row }))
 }

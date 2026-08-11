@@ -10,7 +10,10 @@
 
 use cratestack_core::{AuditOperation, CoolContext, CoolError, ModelEventKind};
 
-use crate::audit::{build_audit_event, enqueue_audit_event, ensure_audit_table, fetch_for_audit};
+use crate::audit::{
+    build_audit_event, dispatch_audit_sink, enqueue_audit_event, ensure_audit_table,
+    fetch_for_audit,
+};
 use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
 use crate::{ModelDescriptor, SqlxRuntime, cool_error_from_sqlx, sqlx};
 
@@ -33,7 +36,10 @@ impl<'a, M: 'static, PK: 'static> DeleteRecord<'a, M, PK> {
         )
     }
 
-    /// Like [`Self::run`] but participates in a caller-supplied transaction.
+    /// Like [`Self::run`] but participates in a caller-supplied
+    /// transaction; no `AuditSink` fan-out happens here for the same
+    /// reason the event outbox isn't drained here — see `create.rs`'s
+    /// `run_in_tx` doc comment.
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
@@ -96,6 +102,7 @@ impl<'a, M: 'static, PK: 'static> DeleteRecord<'a, M, PK> {
         let audit_enabled = self.descriptor.audit_enabled;
         let soft_delete = self.descriptor.soft_delete_column.is_some();
         let needs_tx = emits_event || audit_enabled;
+        let mut audit_event = None;
         let record = if needs_tx {
             let mut tx = self
                 .runtime
@@ -137,6 +144,7 @@ impl<'a, M: 'static, PK: 'static> DeleteRecord<'a, M, PK> {
                 let event =
                     build_audit_event(self.descriptor, AuditOperation::Delete, before, after, ctx);
                 enqueue_audit_event(&mut *tx, &event).await?;
+                audit_event = Some(event);
             }
             tx.commit().await.map_err(cool_error_from_sqlx)?;
             record
@@ -146,6 +154,9 @@ impl<'a, M: 'static, PK: 'static> DeleteRecord<'a, M, PK> {
 
         if emits_event {
             let _ = self.runtime.drain_event_outbox().await;
+        }
+        if let Some(event) = &audit_event {
+            dispatch_audit_sink(self.runtime, std::slice::from_ref(event)).await;
         }
 
         Ok(record)

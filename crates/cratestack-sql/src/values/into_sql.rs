@@ -54,6 +54,7 @@ impl IntoSqlValue for Value {
     }
 }
 
+#[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
 impl IntoSqlValue for cratestack_core::Decimal {
     fn into_sql_value(self) -> SqlValue {
         SqlValue::Decimal(self)

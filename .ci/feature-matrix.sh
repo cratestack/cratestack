@@ -133,7 +133,38 @@ check_combo() {
   done
 }
 
-step "[1/6] decimal-rust-decimal and decimal-bigdecimal are mutually exclusive (cratestack#495)"
+step "[1/7] cratestack#505's decisive acceptance bar: the reporter's exact crate shape, and every deployable facade, compile with no decimal backend selected at all"
+# `cratestack-api` is the reporter's own repro (cratestack#505,
+# ADORSYS-GIS/webank-services#279): `default-features = false`,
+# `provider = "none"`, no `Decimal` field anywhere. An earlier version of
+# this fix only gated `cratestack-core`'s own `Decimal` — `cratestack-sql`'s
+# `SqlValue::Decimal(cratestack_core::Decimal)` variant (and the matching
+# arms it rippled into across `cratestack-rusqlite`/`cratestack-sqlx`) was
+# still unconditional, so this exact command still failed, just with a
+# worse error two crates away. All four facades that expose a decimal
+# toggle, plus the two non-facade crates every one of them pulls in
+# (`cratestack-axum`, `cratestack-studio`), are checked here with no
+# decimal feature selected at all.
+for check in \
+  "cratestack-api|--no-default-features" \
+  "cratestack-pg|--no-default-features --features postgres" \
+  "cratestack-sqlite|--no-default-features" \
+  "cratestack-client|--no-default-features" \
+  "cratestack-axum|--no-default-features" \
+  "cratestack-studio|--no-default-features" \
+  ; do
+  pkg="${check%%|*}"
+  args="${check#*|}"
+  echo "-- cargo check -p $pkg $args --"
+  # shellcheck disable=SC2086 # $args is a deliberate word-split flag list
+  if ! cargo check -p "$pkg" $args; then
+    fail "cargo check -p $pkg $args failed — cratestack#505's SqlValue::Decimal gating may have regressed, or a new unconditional Decimal reference was added somewhere in $pkg's dependency closure"
+  else
+    echo "ok: $pkg compiles with no decimal backend selected"
+  fi
+done
+
+step "[2/7] decimal-rust-decimal and decimal-bigdecimal are mutually exclusive (cratestack#495); neither is NOT an error (cratestack#505)"
 if OUTPUT=$(cargo check -p cratestack-core --no-default-features --features decimal-rust-decimal,decimal-bigdecimal 2>&1); then
   fail "expected 'cargo check -p cratestack-core --features decimal-rust-decimal,decimal-bigdecimal' (both backends at once) to be rejected, but it succeeded"
   echo "$OUTPUT"
@@ -143,17 +174,37 @@ elif ! grep -q "mutually exclusive" <<<"$OUTPUT"; then
 else
   echo "ok: selecting both decimal backends at once is rejected"
 fi
+# cratestack#505: this used to be a hard `compile_error!` too (the "neither"
+# arm) — the exact break a consumer legitimately narrowing its graph via
+# `default-features = false`, and never touching `Decimal`, hit in the
+# wild. `cratestack-core` now compiles cleanly with `Decimal` (and anything
+# that references it, e.g. `validate_range_decimal`) simply absent from its
+# public surface in this configuration — see `src/decimal.rs`'s module doc
+# for why a real `rust_decimal`-backed fallback isn't reachable here (it
+# would require `rust_decimal` to stop being a Cargo-optional dependency,
+# which breaks the [6/7] no-leak invariant below).
 if OUTPUT=$(cargo check -p cratestack-core --no-default-features 2>&1); then
-  fail "expected 'cargo check -p cratestack-core --no-default-features' (no backend) to be rejected, but it succeeded"
-  echo "$OUTPUT"
-elif ! grep -q "enable exactly one decimal backend" <<<"$OUTPUT"; then
-  fail "expected the neither-selected compile_error! for the decimal backend, got a different failure instead"
-  echo "$OUTPUT"
+  echo "ok: selecting neither decimal backend compiles cleanly (cratestack#505)"
 else
-  echo "ok: selecting neither decimal backend is rejected"
+  fail "expected 'cargo check -p cratestack-core --no-default-features' (no backend) to succeed as of cratestack#505, but it failed"
+  echo "$OUTPUT"
+fi
+# `cargo test`, not just `cargo check`: proves the test binary actually
+# links and runs in this configuration, not just that `rustc` accepts the
+# lib — see `no_decimal_backend_tests` in `src/decimal.rs`.
+if OUTPUT=$(cargo test -p cratestack-core --no-default-features 2>&1); then
+  if ! grep -q "no_decimal_backend_tests::crate_builds_and_runs_with_no_decimal_backend_selected ... ok" <<<"$OUTPUT"; then
+    fail "cargo test -p cratestack-core --no-default-features succeeded, but the cratestack#505 regression test didn't run — check src/decimal.rs's cfg gating"
+    echo "$OUTPUT"
+  else
+    echo "ok: cratestack-core's test suite (including the cratestack#505 regression test) runs with neither decimal backend selected"
+  fi
+else
+  fail "cargo test -p cratestack-core --no-default-features failed"
+  echo "$OUTPUT"
 fi
 
-step "[2/6] cratestack-core compiles clean on each backend individually"
+step "[3/7] cratestack-core compiles clean on each backend individually"
 if ! cargo check -p cratestack-core; then
   fail "cargo check -p cratestack-core (default features) failed"
 fi
@@ -161,30 +212,38 @@ if ! cargo check -p cratestack-core --no-default-features --features decimal-big
   fail "cargo check -p cratestack-core --no-default-features --features decimal-bigdecimal failed"
 fi
 
-step "[3/6] facade crates: default features AND both narrowed backend selections (AC2/AC4 matrix)"
+step "[4/7] facade crates: default features AND both narrowed backend selections (AC2/AC4 matrix)"
 # (package, extra args...) — every facade that exposes its own decimal
 # toggle, checked at its default feature set and at both backends
 # individually, so leaks can't hide behind whichever feature set happens to
 # be the default, and `decimal-bigdecimal` gets exactly the same coverage
 # `decimal-rust-decimal` always has.
 check_combo cratestack-pg
-# `--features postgres` alone (no explicit decimal choice) is a DELIBERATE
-# compile failure as of cratestack#495 — see `cratestack-pg`'s `postgres`
-# feature doc comment. Before #495 there was only one decimal backend, so
-# `postgres` could safely force it unconditionally; doing that today would
-# make `decimal-bigdecimal` unreachable through this facade (both backends
-# would end up selected on `cratestack-sqlx` simultaneously). Assert the
-# failure explicitly so a future change that "fixes" this by silently
-# re-adding the unconditional force gets caught here.
-echo "-- cargo check -p cratestack-pg --no-default-features --features postgres (expected to fail) --"
-if OUTPUT=$(cargo check -p cratestack-pg --no-default-features --features postgres 2>&1); then
-  fail "expected 'cargo check -p cratestack-pg --no-default-features --features postgres' (no decimal backend) to fail, but it succeeded — postgres may be silently forcing a backend again"
-  echo "$OUTPUT"
-elif ! grep -q "enable exactly one decimal backend" <<<"$OUTPUT"; then
-  fail "cargo check -p cratestack-pg --no-default-features --features postgres failed, but not with the expected 'enable exactly one decimal backend' error"
-  echo "$OUTPUT"
+# `--features postgres` alone (no explicit decimal choice) used to be a
+# DELIBERATE compile failure as of cratestack#495 — `cratestack-sqlx`'s
+# query-builder support code bound `cratestack_core::Decimal` values
+# unconditionally, so `postgres` structurally required *some* decimal
+# backend. cratestack#505's follow-up (the reporter's own crate shape,
+# `cratestack-api`/`provider = "none"` with `default-features = false`
+# and no `Decimal` field anywhere, still failed even after this PR's
+# first pass — the failure had just moved from `cratestack-core`'s own
+# `compile_error!` into `cratestack-sql`'s unconditional
+# `SqlValue::Decimal(cratestack_core::Decimal)` variant) closed that gap
+# too: `cratestack-sql`'s `SqlValue::Decimal`/`IntoSqlValue for Decimal`,
+# and the matching arms in `cratestack-rusqlite`/`cratestack-sqlx`, are
+# now `#[cfg]`-gated the same way `cratestack-core`'s own `Decimal` is
+# (see `cratestack-core/src/decimal.rs`'s module doc) — so a facade with
+# no `Decimal` field anywhere in its schema, `postgres` included, no
+# longer needs a decimal backend at all. This is the positive
+# counterpart to [2/7]'s cratestack-core-level check: the same "neither
+# is not an error" guarantee now holds all the way through the facade a
+# real consumer actually depends on, not just the innermost crate.
+echo "-- cargo check -p cratestack-pg --no-default-features --features postgres (expected to succeed, cratestack#505) --"
+if ! cargo check -p cratestack-pg --no-default-features --features postgres; then
+  fail "cargo check -p cratestack-pg --no-default-features --features postgres failed — cratestack#505's SqlValue::Decimal gating in cratestack-sql/-rusqlite/-sqlx may have regressed"
 else
-  echo "ok: postgres alone (no decimal choice) fails as expected"
+  echo "ok: postgres alone (no decimal choice) compiles cleanly (cratestack#505)"
+  assert_no_default_leak cratestack-pg postgres
 fi
 check_combo cratestack-pg --no-default-features --features postgres,decimal-rust-decimal
 check_combo cratestack-pg --no-default-features --features postgres,decimal-bigdecimal
@@ -220,7 +279,7 @@ check_combo cratestack-cli
 check_combo cratestack-cli --no-default-features --features decimal-rust-decimal
 check_combo cratestack-cli --no-default-features --features decimal-bigdecimal
 
-step "[4/6] plain crates: every cratestack-core edge this PR made explicit actually compiles"
+step "[5/7] plain crates: every cratestack-core edge this PR made explicit actually compiles"
 # These ~22 crates had no decimal toggle of their own before cratestack#421 —
 # they simply need cratestack-core's default = false + an explicit
 # features = ["decimal-rust-decimal"] forward to keep compiling at all now
@@ -254,7 +313,7 @@ for pkg in \
   fi
 done
 
-step "[5/6] decimal-bigdecimal reaches the whole graph cleanly through both server facades"
+step "[6/7] decimal-bigdecimal reaches the whole graph cleanly through both server facades"
 # The cratestack#495 acceptance bar in one command: `rust_decimal` must not
 # be reachable anywhere in either facade's resolved dependency graph once
 # `decimal-bigdecimal` is selected. `assert_no_rust_decimal` (called from
@@ -264,12 +323,12 @@ step "[5/6] decimal-bigdecimal reaches the whole graph cleanly through both serv
 assert_no_rust_decimal cratestack-client decimal-bigdecimal
 assert_no_rust_decimal cratestack-pg postgres,decimal-bigdecimal
 
-step "[6/6] wasm32 targets: the wasm-only backend paths this feature graph flows through"
+step "[7/7] wasm32 targets: the wasm-only backend paths this feature graph flows through"
 # `cratestack-rusqlite` swaps its FFI to `sqlite-wasm-rs` under
 # target.'cfg(target_arch = "wasm32")', and `cratestack-cbor-wasm`'s
 # wasm-bindgen glue (including the `cratestack-core` re-exports it uses)
 # only compiles under `#[cfg(target_arch = "wasm32")]` in its own source —
-# a native-only run of steps [3]/[4] never exercises either path, so the
+# a native-only run of steps [4/7]/[5/7] never exercises either path, so the
 # explicit `cratestack-core`/`cratestack-rusqlite` feature forwards have to
 # be checked against the actual wasm32 target to mean anything for the
 # crates that ship it. Both backends get the same wasm32 coverage.

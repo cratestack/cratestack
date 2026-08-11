@@ -2,7 +2,7 @@
 //! the insert-vs-update branch, run the appropriate policy + audit +
 //! outbox writes, then issue the conflict-bearing INSERT.
 
-use cratestack_core::{AuditOperation, CoolContext, CoolError, ModelEventKind};
+use cratestack_core::{AuditEvent, AuditOperation, CoolContext, CoolError, ModelEventKind};
 
 use crate::audit::{build_audit_event, enqueue_audit_event, ensure_audit_table};
 use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
@@ -13,8 +13,9 @@ use super::upsert_sql::{
     row_passes_update_policy, select_for_update_by_conflict_target, upsert_returning_record,
 };
 
-/// Returns `(record, emits_any_event)` — the bool lets the caller
-/// decide whether to drain the outbox post-commit.
+/// Returns `(record, emits_any_event, audit_event)` — the caller
+/// decides whether to drain the outbox / fan the audit event out to
+/// the installed `AuditSink`, both only after it commits `tx`.
 pub(super) async fn run_upsert_in_tx<'tx, M, PK, I>(
     tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
     runtime: &SqlxRuntime,
@@ -22,7 +23,7 @@ pub(super) async fn run_upsert_in_tx<'tx, M, PK, I>(
     input: I,
     conflict_target: ConflictTarget,
     ctx: &CoolContext,
-) -> Result<(M, bool), CoolError>
+) -> Result<(M, bool, Option<AuditEvent>), CoolError>
 where
     I: UpsertModelInput<M>,
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
@@ -109,13 +110,15 @@ where
     if emits_event {
         enqueue_event_outbox(&mut **tx, descriptor.schema_name, event_kind, &record).await?;
     }
+    let mut audit_event = None;
     if audit_enabled {
         let after = serde_json::to_value(&record).ok();
         let event = build_audit_event(descriptor, audit_op, before_snapshot, after, ctx);
         enqueue_audit_event(&mut **tx, &event).await?;
+        audit_event = Some(event);
     }
 
-    Ok((record, emits_event))
+    Ok((record, emits_event, audit_event))
 }
 
 /// Compose the full insert value set (auth-derived defaults + the

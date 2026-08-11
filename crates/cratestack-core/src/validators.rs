@@ -6,6 +6,7 @@
 //! the field but never echoes the rejected value (so PII does not
 //! leak via 422 bodies).
 
+#[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
 use crate::Decimal;
 use crate::error::CoolError;
 
@@ -67,6 +68,7 @@ pub fn validate_range_i64(
 /// forbid negative amounts at the framework layer — without this,
 /// the validator silently no-ops and out-of-range values reach the
 /// database.
+#[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
 pub fn validate_range_decimal(
     field: &'static str,
     value: &Decimal,

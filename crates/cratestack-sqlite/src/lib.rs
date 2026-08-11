@@ -69,7 +69,11 @@ pub use cratestack_core::Json;
 // Embedded SQLite backend — wasm32-compatible alongside native (mobile,
 // desktop), via rusqlite 0.39's transparent FFI switch to `sqlite-wasm-rs`.
 pub use cratestack_rusqlite as rusqlite_backend;
+// `DecimalColumn` only exists when a decimal backend is selected
+// (cratestack#505) — see `cratestack-core/src/decimal.rs`'s module doc.
+#[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
+pub use cratestack_rusqlite::DecimalColumn;
 pub use cratestack_rusqlite::{
-    DateTimeColumn, DecimalColumn, FromPartialRusqliteRow, FromRusqliteRow, JsonColumn,
-    RusqliteError, RusqliteRuntime, SqlValueParam, UuidColumn, rusqlite,
+    DateTimeColumn, FromPartialRusqliteRow, FromRusqliteRow, JsonColumn, RusqliteError,
+    RusqliteRuntime, SqlValueParam, UuidColumn, rusqlite,
 };
