@@ -314,33 +314,43 @@ async fn trusted_peer_without_a_header_falls_back_to_peer_address() {
 /// produces that `ConnectInfo` extension in the first place. This test
 /// binds a real `TcpListener`, serves through
 /// `into_make_service_with_connect_info::<SocketAddr>()`, and sends a real
-/// HTTP/1.1 request over an actual TCP socket, so the peer address
-/// `ConnectInfo` carries is whatever `TcpStream::connect` produced — not a
-/// value this test chose. REST/RPC is the transport exercised here (this
+/// HTTP/1.1 request over an actual TCP socket via `reqwest` (a real HTTP
+/// client, not a hand-rolled raw-socket request), so the peer address
+/// `ConnectInfo` carries is whatever the OS's TCP handshake produced — not
+/// a value this test chose. REST/RPC is the transport exercised here (this
 /// crate has no gRPC dependency); the same wiring is proven for gRPC
 /// separately by `cratestack-pg`'s `trusted_proxy_client_ip_grpc.rs` tests
 /// reaching `ClientIpContext::from_extensions` off a real
 /// `http::Request::extensions()`.
 ///
-/// `flavor = "multi_thread"`, not the default single-threaded test
-/// runtime: under `current_thread`, the spawned server task and this
-/// test's own connect/write/read sequence never actually interleave
-/// concurrently (both run on the one worker thread, and the client side
-/// happened to reach `shutdown()` — closing its write half — before the
-/// server task got scheduled at all), so the connection closed with zero
-/// bytes read before the server ever ran. Confirmed by reproducing that
-/// exact failure locally before switching flavors.
-#[tokio::test(flavor = "multi_thread")]
+/// An earlier version of this test hand-rolled the HTTP/1.1 request over a
+/// raw `tokio::net::TcpStream`, writing the request then calling
+/// `AsyncWriteExt::shutdown()` before reading the response. That raced the
+/// server's accept loop on CI runners with fewer cores available to a
+/// `multi_thread` runtime: the early half-close could reach the server
+/// before its H1 codec had fully processed the request, occasionally
+/// producing a clean zero-byte EOF instead of a response (reproduced twice
+/// — once locally under the default `current_thread` test runtime, once on
+/// a real CI runner even under `flavor = "multi_thread"`). `reqwest`
+/// doesn't shut down the write half at all for a request with an explicit
+/// `Content-Length`, sidestepping that race entirely — the correctness
+/// property under test (`ConnectInfo` reaching dispatch through a real
+/// accept loop) doesn't depend on which HTTP client sends the request.
+#[tokio::test]
 async fn connect_info_from_a_real_tcp_listener_reaches_the_dispatch_path() {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::{TcpListener, TcpStream};
+    // `reqwest`'s `rustls-no-provider` feature requires a crypto provider
+    // installed before building any `Client`, even for a plain `http://`
+    // request that never negotiates TLS — `let _ =` because installing
+    // twice (e.g. if another test in this binary already did) errors,
+    // which is fine to ignore here.
+    let _ = rustls::crypto::ring::default_provider().install_default();
 
     let app = router().layer(cratestack::axum::Extension(
         TrustedProxyConfig::trusting(["127.0.0.1".parse::<std::net::IpAddr>().unwrap().into()])
             .max_hops(1),
     ));
 
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let local_addr = listener.local_addr().unwrap();
     let make_service = app.into_make_service_with_connect_info::<SocketAddr>();
     let server = tokio::spawn(async move {
@@ -349,43 +359,22 @@ async fn connect_info_from_a_real_tcp_listener_reaches_the_dispatch_path() {
             .unwrap();
     });
 
-    let body = empty_args_body_bytes();
-    let request = format!(
-        "POST /$procs/whoAmI HTTP/1.1\r\n\
-         Host: 127.0.0.1\r\n\
-         Content-Type: {content_type}\r\n\
-         Accept: {content_type}\r\n\
-         X-Forwarded-For: 203.0.113.9\r\n\
-         Content-Length: {len}\r\n\
-         Connection: close\r\n\
-         \r\n",
-        content_type = JsonCodec::CONTENT_TYPE,
-        len = body.len(),
-    );
-
-    let mut stream = TcpStream::connect(local_addr).await.unwrap();
-    stream.write_all(request.as_bytes()).await.unwrap();
-    stream.write_all(&body).await.unwrap();
-    stream.shutdown().await.unwrap();
-
-    let mut raw_response = Vec::new();
-    tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        stream.read_to_end(&mut raw_response),
-    )
-    .await
-    .expect("server did not respond within 5s")
-    .unwrap();
+    let client = reqwest::Client::new();
+    let response = client
+        .post(format!("http://{local_addr}/$procs/whoAmI"))
+        .header("content-type", JsonCodec::CONTENT_TYPE)
+        .header("accept", JsonCodec::CONTENT_TYPE)
+        .header("x-forwarded-for", "203.0.113.9")
+        .body(empty_args_body_bytes())
+        .send()
+        .await
+        .expect("real HTTP request to the bound listener should succeed");
     server.abort();
 
-    let response = String::from_utf8_lossy(&raw_response);
-    assert!(
-        response.starts_with("HTTP/1.1 200"),
-        "unexpected response: {response}"
-    );
-    let (_headers, response_body) = response.split_once("\r\n\r\n").unwrap();
-    let reply: serde_json::Value = serde_json::from_str(response_body.trim()).unwrap();
-    // Trusted only because the real peer address `TcpStream::connect`
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let body = response.bytes().await.unwrap();
+    let reply: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    // Trusted only because the real peer address the TCP handshake
     // produced is loopback (`127.0.0.1`), matching the allowlist above —
     // proving `ConnectInfo` actually carried a real, non-fabricated peer
     // address through the real connect-info-serving path.

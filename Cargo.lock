@@ -1065,6 +1065,8 @@ dependencies = [
  "cratestack-sql",
  "futures-util",
  "regex",
+ "reqwest",
+ "rustls",
  "serde",
  "serde_json",
  "tokio",

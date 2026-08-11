@@ -86,13 +86,31 @@ uuid.workspace = true
 # check --all-targets`.
 cratestack-codec-cbor.workspace = true
 cratestack-codec-json.workspace = true
+# `trusted_proxy_client_ip.rs`'s real-`TcpListener` test (#415 Finding 4)
+# needs a genuine HTTP client to prove `ConnectInfo` reaches the dispatch
+# path through `into_make_service_with_connect_info` over a real accepted
+# TCP connection, not just a manually-inserted extension (which every other
+# test in that file, deliberately, still uses) — a hand-rolled raw-socket
+# HTTP/1.1 request (an earlier version of this test) raced the server's
+# accept loop under real network-stack scheduling on CI runners with fewer
+# cores, occasionally reading a clean EOF before the response arrived.
+# `reqwest` is already resolved in this workspace (a real, non-dev
+# dependency of `cratestack-client-rust`, itself already a dependency of
+# this crate above), so this adds no new dependency to the graph, only a
+# dev-only edge to an already-resolved one. No TLS/rustls-provider install
+# needed: every request in this test is plain `http://`, never `https://`.
+reqwest.workspace = true
+# `reqwest`'s `rustls-no-provider` feature (workspace `Cargo.toml`) ships no
+# crypto provider — needed here purely to satisfy `reqwest::Client::new()`'s
+# own startup assertion, even though every request in this test is plain
+# `http://` and never actually negotiates TLS. Same pattern as
+# `cratestack-pg`'s `rpc_subscribe_sse.rs` and
+# `cratestack-client-rust::error`'s own fallback.
+rustls.workspace = true
 serde_json.workspace = true
-# `net`/`io-util` on top of the workspace default (`macros`, `rt-multi-thread`):
-# `trusted_proxy_client_ip.rs`'s real-`TcpListener` test (#415 Finding 4) needs
-# `TcpListener`/`TcpStream` plus `AsyncRead`/`AsyncWriteExt` to prove
-# `ConnectInfo` genuinely reaches the dispatch path through
-# `into_make_service_with_connect_info`, not just a manually-inserted
-# extension (which every other test in that file, deliberately, still uses).
-tokio = { workspace = true, features = ["net", "io-util"] }
+# `net` on top of the workspace default (`macros`, `rt-multi-thread`): the
+# real-`TcpListener` test above still needs `tokio::net::TcpListener` to
+# bind and serve through — only the *client* side moved to `reqwest`.
+tokio = { workspace = true, features = ["net"] }
 tower.workspace = true
 tracing-subscriber.workspace = true
