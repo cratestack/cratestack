@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/cratestack",
     "crates/cratestack-api",
+    "crates/cratestack-auth",
     "crates/cratestack-axum",
     "crates/cratestack-cbor-napi",
     "crates/cratestack-cbor-wasm",
@@ -111,6 +112,16 @@ async-stream = "0.3"
 axum = "0"
 bytes = "1"
 chumsky = "0"
+# `cratestack-auth`'s COSE-signed enrolment challenges (`build_cose_enroll_response`/
+# `parse_cose_enroll_response`).
+coset = "0.4.2"
+# `cratestack-auth`'s challenge/enrollment/service-signing-key ids
+# (`cuid2::create_id()`), same generator every other `@paralleldrive/cuid2`-
+# style id in this workspace's downstream consumers already standardises on.
+cuid2 = "0.1.4"
+# `cratestack-auth`'s signed-request canonical signing/verification, SD-JWT
+# id-token issuance/verification, and per-service `ServiceSigningKey`.
+ed25519-dalek = "2.2.0"
 erased-serde = "0.4"
 # `Dir<'_>`-embedded migration trees for `cratestack-service`'s
 # `migrations::migrations_from_dir` (feature-gated behind that crate's
@@ -284,6 +295,9 @@ futures-util = { version = "0.3", default-features = false, features = ["std"] }
 rusqlite = { version = "0.39", features = ["bundled", "fallible_uint"] }
 redis = "1.2.0"
 regex = "1"
+# `cratestack-auth`'s `ServiceSigningKey::ephemeral` (test/local-dev signing
+# identity minting via `OsRng.fill_bytes`).
+rand = "0.8.5"
 rust_decimal = { version = "1", default-features = false, features = ["serde-str"] }
 bigdecimal = { version = "0.4", default-features = false, features = ["serde"] }
 sha2 = "0.10"

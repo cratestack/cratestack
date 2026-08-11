@@ -1,5 +1,112 @@
 # Changelog
 
+## Unreleased
+
+### New crate: `cratestack-auth` — signed-request + identity-token auth (absorption 3 of 3)
+
+SigV4-style canonical-request construction/signing/verification over Ed25519, SD-JWT id-token
+issuance and verification, multi-issuer JWKS resolution, per-service signing identities, and
+COSE-signed enrolment challenges — absorbed from a downstream project's `auth-kit`, by far the
+largest of the three absorptions (~4,100 lines against `cratestack-service`'s and
+`cratestack-outbox`'s few hundred each).
+
+**Security verification (the reason this absorption existed at all).** The source crate's
+`challenge_signing_key()` previously returned a hardcoded Ed25519 seed literal, permanently
+compromised by having been committed to that repository's git history. That was already fixed
+upstream before this absorption began: the function loads the seed from an env var
+(`CHALLENGE_SIGNING_KEY_ENV`, renamed here to `CRATESTACK_AUTH_CHALLENGE_SIGNING_KEY`) and fails
+closed — absent, empty, or whitespace-only is a hard `AuthError::MissingSigningKeyEnv`, never a
+default or a silently-generated ephemeral key. This absorption re-verified that fix by grepping
+the entire absorbed surface for byte-array literals that could be key material: every hit is
+either a small-integer synthetic test fixture (`[7u8; 32]`, `[9u8; 32]`, `[11u8; 32]`, ...,
+clearly distinct from the burned seed and never used as a production default) or
+`ServiceSigningKey::ephemeral`'s `OsRng.fill_bytes` (test/local-dev only, explicitly documented as
+such). No hardcoded key material was found anywhere in the absorbed code. The fail-closed
+contract is preserved and given two new dedicated unit tests
+(`challenge_signing_key_fails_closed_when_env_var_is_absent` /
+`..._is_whitespace_only`) that exercise it directly against an injected lookup function, rather
+than through a real env var.
+
+**Why an injected lookup function, not `std::env::set_var` in tests:** this workspace `forbid`s
+`unsafe_code`, and `std::env::set_var`/`remove_var` require an `unsafe` block as of the 2024
+edition — the source crate's two `challenge_signing_key` tests wrapped exactly that in `unsafe`
+blocks guarded by a process-wide `Mutex`. Ported here as `challenge_signing_key_from(lookup_env:
+impl Fn(&str) -> Result<String, VarError>)`, the same injectable env-lookup seam
+`cratestack-service`'s `ServiceConfig::from_env_with` established (#529) — no process environment
+is touched, and the COSE build/parse round-trip test now exercises the COSE logic directly against
+a freshly-generated test-only key (`build_cose_enroll_response_with_key`/
+`parse_cose_enroll_response_with_key`) rather than through env-var loading, which is a strictly
+better test of both concerns in isolation.
+
+**Placement:** `cratestack-auth = 1` in `docs/adr/layers.toml` (ADR 0014) — verified via `cargo
+tree -p cratestack-auth -e normal` (with and without `--no-default-features`): both report exactly
+one `cratestack-*` line, `cratestack-core`. The types the source crate reached through a
+`cratestack::{AuthProvider, CoolContext, RequestContext, CoolError}` facade re-export
+(`cratestack = { package = "cratestack-pg" }` downstream) all turn out to live in
+`cratestack-core` itself (`context.rs`), not in `cratestack-axum` — and the `cratestack::axum::
+http::{HeaderMap, Method, Uri}` types it also reached through that facade are themselves just the
+plain `http` crate, which `cratestack-axum` only re-exports (`pub use axum;` → `pub use http`
+transitively). So the real graph never needed `cratestack-axum` at all; this crate depends on the
+external `http` crate directly for those types, the same way `cratestack-core` itself already
+does. Same "lowest layer the real graph supports" rule `cratestack-macros`/`cratestack-proto` use
+in `layers.toml` for the identical reason (depends only on L0).
+
+**Feature gating:** a default-on `axum` Cargo feature gates the three items that genuinely need
+the `axum` crate (not just `http`): `require_signed_request` (the tower auth middleware),
+`jwks_router` (the mountable `axum::Router` serving `/jwks.json`), and the `FromRequestParts`
+extractor impls on `CurrentPrincipal`/`AuthenticatedPrincipal`. Everything else — signing and
+verifying a canonical request, `SignedRequestAuthProvider`'s `cratestack_core::AuthProvider` impl,
+SD-JWT issuance/verification, `ServiceSigningKey`, `MultiIssuerJwksVerifier` (a `reqwest` GET, not
+an axum route), and COSE challenge build/parse — needs no axum route or middleware machinery and
+stays available with the feature off, so a `cratestack-client`-only consumer that just wants to
+*sign* outgoing requests can skip axum (and its own tower/hyper/matchit tree) entirely. Verified
+both ways: `cargo check`/`cargo clippy`/`cargo test -p cratestack-auth` all pass with default
+features (37 tests) and with `--no-default-features` (34 tests — the three `jwks_router`-dependent
+tests are themselves feature-gated).
+
+**Not split into two crates.** The predecessor absorptions raised "does the whole thing belong,
+or does it split" as an open question per crate; here the axum-touching surface shrank to three
+items once the `http`-vs-`axum` distinction above was drawn, which is small enough that gating
+inside one crate (the `cratestack-service` `postgres`-feature shape) reads more like the rest of
+this workspace's facade-disjointness pattern than standing up a second crate would.
+
+**`ServiceConfig` overlap:** `cratestack-service` (#529) deliberately dropped `issuer_url`/
+`jwks_url` from its own config, flagging them as this crate's concern. This absorption keeps that
+split rather than extending `ServiceConfig`: `MultiIssuerJwksVerifier` is inherently
+multi-issuer (a `{issuer → jwks_url}` map), which a single `issuer_url`/`jwks_url` field pair on
+`ServiceConfig` could not represent, and `ServiceSigningKey::from_env`/`IdTokenVerifier::new`/
+`SignedRequestVerifier::from_env` already have their own env-var-driven construction — adding a
+third, `ServiceConfig`-shaped path would be a second, weaker way to build the same thing.
+
+**Parameterised away:** every `VAAM_*` env var (`VAAM_AUTH_CHALLENGE_SIGNING_KEY` →
+`CRATESTACK_AUTH_CHALLENGE_SIGNING_KEY`, and the four `VAAM_SIGNATURE_*`/`VAAM_ID_TOKEN_AUDIENCE`
+equivalents → `CRATESTACK_AUTH_*`), the `urn:vaam:...` id-token grant type → `urn:cratestack:...`,
+the `vaam:signature-nonce` Redis key prefix → `cratestack:signature-nonce`, the
+`vaam-business-services` default audience → `cratestack-issued-tokens`, and every
+`vaam-mobile`/`*.vaam.local`/`@vaam.store` literal in doc comments and test fixtures. Also dropped:
+the downstream `error-kit` dependency (a CBOR/JSON/COSE content-negotiation envelope this crate's
+`require_signed_request` middleware and principal extractors used only for a plain
+`{code, message}` error body) in favor of a small in-crate JSON helper
+(`response::error_response`) built on `cratestack_core::CoolErrorResponse`, the framework's own
+REST error shape.
+
+**Also fixed in passing:** `IdTokenVerifier::new`/`MultiIssuerJwksVerifier::new` both build a
+`reqwest::Client` internally; under this workspace's `rustls-no-provider` reqwest feature that
+panics at construction time unless a crypto provider is already installed process-wide. Both now
+call the same `ensure_crypto_provider()` courtesy-fallback `cratestack-client-rust` already
+established for the identical reason — a real gap the source crate didn't have to worry about
+because its own application entrypoint happened to install a provider first.
+
+**Test coverage added:** `middleware::require_signed_request` had no direct test in the source
+crate; it now has three (missing `Authorization` header → 401, a validly signed request installs
+the principal and reaches the handler, a tampered signature → 401), alongside the pre-existing
+coverage this absorption carried over — canonical-request signing/verification (valid and
+tampered/reused-nonce), SD-JWT selective-disclosure round-trips, JWKS-based JWT verification
+(valid and tampered payload), and the cnf-bound proof-of-possession fallback (including the
+revoked-device-resolver-is-authoritative regression).
+
+No existing crate changed; this is purely additive.
+
 ## 0.7.12 (2026-08-11)
 
 

@@ -70,6 +70,27 @@ cratestack-macros = 1
 # same reasoning as cratestack-macros above, and the same real-graph check
 # applies: nothing at L2 depends on cratestack-proto.
 cratestack-proto = 1
+# `cratestack-auth` (new, "absorb the auth kit into the framework"): SigV4-
+# style Ed25519 signed-request auth, SD-JWT id-token issuance/verification,
+# multi-issuer JWKS resolution, per-service signing identities, and
+# COSE-signed enrolment challenges. Its axum middleware/router/extractor
+# surface (`require_signed_request`, `jwks_router`, the `FromRequestParts`
+# impls) is gated behind this crate's own default-on `axum` Cargo feature —
+# not a `cratestack-axum` dependency — because the underlying types it needs
+# (`AuthProvider`, `CoolContext`, `RequestContext`, `CoolError`) live in
+# `cratestack-core`, and the header/method/URI types it needs unconditionally
+# come from the plain `http` crate (which `cratestack-axum` itself only
+# re-exports), not from `cratestack-axum`. Its only normal in-workspace
+# dependency, under EITHER feature state, is `cratestack-core` (L0) — same
+# "lowest layer the real graph supports" rule `cratestack-macros`/
+# `cratestack-proto` use above, verified via `cargo tree -p cratestack-auth
+# -e normal` (with and without `--no-default-features`): both report exactly
+# one cratestack-* line, `cratestack-core`. L1 satisfies `dep.layer <=
+# self.layer` with no exception, and nothing in the workspace depends on
+# `cratestack-auth` yet (a leaf, consumed directly by application binaries),
+# so the upper-bound half of the rule is vacuous, same as every crate in this
+# section.
+cratestack-auth = 1
 
 # --- L2: Adapters ----------------------------------------------------------
 cratestack-sqlx = 2
