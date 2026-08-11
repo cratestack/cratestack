@@ -1,5 +1,6 @@
 //! Per-procedure axum handler + route emission, plus the
-//! `@api_version` / `@deprecated` attribute helpers it consumes.
+//! `@api_version` / `@deprecated` / `@status` attribute helpers it
+//! consumes.
 
 mod dispatch_tail;
 mod invoke_call;
@@ -16,6 +17,7 @@ use dispatch_tail::procedure_dispatch_tail_tokens;
 use invoke_call::procedure_invoke_call_tokens;
 use route_attrs::{
     procedure_axum_route_tokens, procedure_deprecation_header_tokens, procedure_route_path,
+    procedure_success_status_tokens,
 };
 
 pub(crate) fn generate_procedure_axum_handler(
@@ -32,10 +34,11 @@ pub(crate) fn generate_procedure_axum_handler(
     let route_path = procedure_route_path(procedure);
     let deprecation_header = procedure_deprecation_header_tokens(procedure);
     let procedure_capabilities = procedure_transport_capabilities_tokens(procedure);
+    let success_status = procedure_success_status_tokens(procedure);
     let result_encoder = if matches!(procedure.return_type.arity, TypeArity::List) {
-        quote! { ::cratestack::encode_transport_sequence_result_with_status_for(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, result) }
+        quote! { ::cratestack::encode_transport_sequence_result_with_status_for(&state.codec, &headers, &CAPABILITIES, #success_status, result) }
     } else {
-        quote! { ::cratestack::encode_transport_result_with_status_for(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, result) }
+        quote! { ::cratestack::encode_transport_result_with_status_for(&state.codec, &headers, &CAPABILITIES, #success_status, result) }
     };
     let invoke_call = procedure_invoke_call_tokens(procedure, &method_ident);
     let dispatch_tail = procedure_dispatch_tail_tokens(

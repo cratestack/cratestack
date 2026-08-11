@@ -27,6 +27,21 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
             })
         }
     }
+
+    fn submit(
+        &self,
+        _db: &cratestack_schema::Cratestack,
+        _ctx: &CoolContext,
+        args: cratestack_schema::procedures::submit::Args,
+    ) -> impl core::future::Future<
+        Output = Result<cratestack_schema::procedures::submit::Output, CoolError>,
+    > + Send {
+        async move {
+            Ok(cratestack_schema::PingReply {
+                echo: args.args.message,
+            })
+        }
+    }
 }
 
 #[derive(Clone)]

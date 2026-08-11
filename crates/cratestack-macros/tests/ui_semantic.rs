@@ -2,8 +2,9 @@
 //! the three entry macros (include_server_schema!, include_embedded_schema!,
 //! include_client_schema!). These ensure that bad schemas produce clean
 //! `compile_error!` diagnostics, not proc-macro panics — covering issues like
-//! unknown relation targets, duplicate model/field names, and malformed policy
-//! expressions (cratestack#420).
+//! unknown relation targets, duplicate model/field names, malformed policy
+//! expressions (cratestack#420), and an out-of-range `@status(<code>)`
+//! procedure attribute (cratestack#407, test 5 below).
 //!
 //! Malformed policy expressions are only ever interpreted by
 //! `cratestack-policy`'s predicate parser (`crates/cratestack-macros/src/
@@ -85,6 +86,19 @@ fn semantic_error_compile_fail() {
         "tests/fixtures/semantic_error_malformed_policy.cstack",
     );
     t.compile_fail(generated_dir.join("semantic_error_malformed_policy.rs"));
+
+    // Test 5 (cratestack#407): `@status(<code>)` outside the allowed
+    // `200..=299` range is a schema-compile-time error, not a runtime
+    // surprise — see `cratestack-parser`'s
+    // `validate_procedure_status_attribute`.
+    write_embedded_fixture(
+        &manifest_dir,
+        staging_dir,
+        &generated_dir,
+        "semantic_error_status_out_of_range.rs",
+        "tests/fixtures/semantic_error_status_out_of_range.cstack",
+    );
+    t.compile_fail(generated_dir.join("semantic_error_status_out_of_range.rs"));
 }
 
 fn stage_fixture(manifest_dir: &Path, staging_dir: &Path, relative_schema_path: &str) -> PathBuf {

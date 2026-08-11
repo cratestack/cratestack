@@ -31,3 +31,28 @@ async fn ping_procedure_round_trips_over_http_with_no_database() {
     let reply: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(reply["echo"], "hello");
 }
+
+/// cratestack#407: `submit` declares `@status(202)` — the generated axum
+/// handler must emit `202 Accepted` on `Ok(...)`, not the hardcoded `200`
+/// every procedure got before this feature existed.
+#[tokio::test]
+async fn submit_procedure_returns_the_declared_202_status() {
+    let app = build_router();
+
+    let body = serde_json::json!({ "args": { "message": "hello" } });
+    let response = app
+        .oneshot(
+            Request::post("/$procs/submit")
+                .header("content-type", JsonCodec::CONTENT_TYPE)
+                .header("accept", JsonCodec::CONTENT_TYPE)
+                .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let reply: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(reply["echo"], "hello");
+}

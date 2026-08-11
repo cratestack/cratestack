@@ -191,6 +191,74 @@ pub(super) fn validate_procedure_deprecated_attribute(
     Ok(())
 }
 
+/// Validate `@status(202)` on procedures. Declares the REST transport's
+/// success-path (`Ok(...)`) HTTP status; `CoolError`'s own status mapping
+/// governs the `Err` branch unconditionally and is untouched by this
+/// attribute (`crates/cratestack-axum/src/transport/encode_unary.rs`).
+/// Restricted to `200..=299`: `CoolError` already owns the 3xx/4xx/5xx
+/// space, so anything outside 2xx here would create two competing sources
+/// of truth for a response's error status. The exact 2xx boundary (e.g.
+/// whether `200`/`204` should be rejected as redundant-or-nonsensical) is
+/// an open design question the source issue explicitly reserves for the
+/// maintainer — see cratestack#407 — so this only enforces "is a real
+/// 2xx", nothing stricter.
+pub(super) fn validate_procedure_status_attribute(
+    procedure: &cratestack_core::Procedure,
+) -> Result<(), SchemaError> {
+    let matches: Vec<&cratestack_core::Attribute> = procedure
+        .attributes
+        .iter()
+        .filter(|a| a.raw.starts_with("@status"))
+        .collect();
+    if matches.is_empty() {
+        return Ok(());
+    }
+    if matches.len() > 1 {
+        return Err(span_error(
+            format!(
+                "procedure `{}` declares more than one @status attribute",
+                procedure.name,
+            ),
+            matches[1].span,
+        ));
+    }
+    let attr = matches[0];
+    let inner = attr
+        .raw
+        .strip_prefix("@status(")
+        .and_then(|s| s.strip_suffix(')'))
+        .ok_or_else(|| {
+            span_error(
+                format!(
+                    "procedure `{}` @status requires a numeric status code argument like @status(202)",
+                    procedure.name,
+                ),
+                attr.span,
+            )
+        })?
+        .trim();
+    let code: u16 = inner.parse().map_err(|_| {
+        span_error(
+            format!(
+                "procedure `{}` @status argument must be an integer HTTP status code, got `{inner}`",
+                procedure.name,
+            ),
+            attr.span,
+        )
+    })?;
+    if !(200..=299).contains(&code) {
+        return Err(span_error(
+            format!(
+                "procedure `{}` @status({code}) is outside the allowed 2xx range 200..=299 \
+                 — non-2xx status is CoolError's error-mapping's job, not @status's",
+                procedure.name,
+            ),
+            attr.span,
+        ));
+    }
+    Ok(())
+}
+
 /// Validate the bare `@no_rate_limit` procedure attribute
 /// (`docs/design/extensions.md` §5). It takes no arguments (mirrors
 /// `@deprecated`'s bare form above) and is only valid syntax when the

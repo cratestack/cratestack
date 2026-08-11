@@ -256,6 +256,169 @@ mutation procedure createPayment(args: Ping): Ping
     );
 }
 
+/// cratestack#407: `@status(202)` is accepted and threaded into
+/// `procedure.attributes` verbatim, mirroring `@api_version`/`@deprecated`.
+#[test]
+fn accepts_status_attribute_on_procedure() {
+    let schema = parse_schema(
+        r#"
+type Ping {
+  nonce String
+}
+
+mutation procedure submit(args: Ping): Ping
+  @status(202)
+"#,
+    )
+    .expect("procedure with @status(202) should parse");
+
+    let attrs = &schema.procedures[0].attributes;
+    assert!(
+        attrs.iter().any(|a| a.raw == "@status(202)"),
+        "expected @status(202) in attributes: {attrs:?}",
+    );
+}
+
+/// cratestack#407: the boundary values of the allowed `200..=299` range are
+/// both accepted.
+#[test]
+fn accepts_status_boundary_values() {
+    parse_schema(
+        r#"
+type Ping {
+  nonce String
+}
+
+procedure lower(args: Ping): Ping
+  @status(200)
+"#,
+    )
+    .expect("@status(200) should parse");
+
+    parse_schema(
+        r#"
+type Ping {
+  nonce String
+}
+
+procedure upper(args: Ping): Ping
+  @status(299)
+"#,
+    )
+    .expect("@status(299) should parse");
+}
+
+/// cratestack#407: anything outside `200..=299` is a schema-compile-time
+/// error, not a runtime surprise — `CoolError` already owns the
+/// 3xx/4xx/5xx space.
+#[test]
+fn rejects_status_outside_2xx_range() {
+    let error = parse_schema(
+        r#"
+type Ping {
+  nonce String
+}
+
+procedure broken(args: Ping): Ping
+  @status(404)
+"#,
+    )
+    .expect_err("@status(404) should be rejected");
+
+    assert!(
+        error.to_string().contains("outside the allowed 2xx range"),
+        "error: {error}",
+    );
+}
+
+/// cratestack#407: `@status(300)` (just above the allowed range) is
+/// rejected too — this pins the exact boundary as a regression guard.
+#[test]
+fn rejects_status_just_above_range() {
+    let error = parse_schema(
+        r#"
+type Ping {
+  nonce String
+}
+
+procedure broken(args: Ping): Ping
+  @status(300)
+"#,
+    )
+    .expect_err("@status(300) should be rejected");
+
+    assert!(
+        error.to_string().contains("outside the allowed 2xx range"),
+        "error: {error}",
+    );
+}
+
+/// cratestack#407: `@status` requires a numeric argument.
+#[test]
+fn rejects_status_non_numeric_argument() {
+    let error = parse_schema(
+        r#"
+type Ping {
+  nonce String
+}
+
+procedure broken(args: Ping): Ping
+  @status("202")
+"#,
+    )
+    .expect_err("@status with a quoted argument should be rejected");
+
+    assert!(
+        error.to_string().contains("integer HTTP status code"),
+        "error: {error}",
+    );
+}
+
+/// cratestack#407: `@status` without an argument is rejected.
+#[test]
+fn rejects_status_missing_argument() {
+    let error = parse_schema(
+        r#"
+type Ping {
+  nonce String
+}
+
+procedure broken(args: Ping): Ping
+  @status
+"#,
+    )
+    .expect_err("@status without args should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("@status requires a numeric status code argument"),
+        "error: {error}",
+    );
+}
+
+/// cratestack#407: at most one `@status` per procedure.
+#[test]
+fn rejects_duplicate_status_attribute() {
+    let error = parse_schema(
+        r#"
+type Ping {
+  nonce String
+}
+
+procedure broken(args: Ping): Ping
+  @status(202)
+  @status(201)
+"#,
+    )
+    .expect_err("more than one @status on the same procedure should be rejected");
+
+    assert!(
+        error.to_string().contains("more than one @status"),
+        "error: {error}",
+    );
+}
+
 /// cratestack#154: at most one `@no_rate_limit` per procedure.
 #[test]
 fn rejects_duplicate_no_rate_limit_attribute() {

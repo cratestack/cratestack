@@ -34,14 +34,25 @@ pub struct MockResponse {
 
 /// `200 OK`, CBOR-encoded `value` — the shape every handler in this crate's
 /// tests returns for a successful call.
+#[allow(dead_code)]
 pub fn cbor_ok<T: serde::Serialize>(value: &T) -> MockResponse {
+    cbor_status(200, value)
+}
+
+/// CBOR-encoded `value` with an arbitrary status — cratestack#407's
+/// `status_attribute_client_round_trip.rs` uses this to answer with a bare
+/// `202` (no `200` anywhere in that exchange) and prove the generated
+/// client's success-path decoding isn't hardcoded to exactly `200`.
+#[allow(dead_code)]
+pub fn cbor_status<T: serde::Serialize>(status: u16, value: &T) -> MockResponse {
     MockResponse {
-        status: 200,
+        status,
         content_type: CborCodec::CONTENT_TYPE.to_owned(),
         body: CborCodec.encode(value).expect("value should encode"),
     }
 }
 
+#[allow(dead_code)]
 pub fn not_found() -> MockResponse {
     MockResponse {
         status: 404,
@@ -161,7 +172,9 @@ async fn write_response(
 ) -> std::io::Result<()> {
     let reason = match response.status {
         200 => "OK",
+        202 => "Accepted",
         404 => "Not Found",
+        500 => "Internal Server Error",
         _ => "Error",
     };
     let head = format!(

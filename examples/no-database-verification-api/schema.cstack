@@ -19,3 +19,10 @@ type PingReply {
 
 procedure ping(args: PingArgs): PingReply
   @allow(auth() != null)
+
+// cratestack#407 verification: `@status(202)` on a REST procedure's
+// success response, and (in tests/smoke.rs) proof that the generated
+// `cratestack-client-rust` client treats it as success like any other 2xx.
+procedure submit(args: PingArgs): PingReply
+  @status(202)
+  @allow(auth() != null)
