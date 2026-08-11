@@ -1,11 +1,19 @@
 //! Postgres-backed audit log. Audit rows write inside the mutation's
 //! transaction — you can never see a committed row whose audit entry
-//! didn't also commit. Fan-out (Kafka/Redis pubsub) goes through
-//! [`cratestack_core::AuditSink`]; this module is the canonical DB
-//! record.
+//! didn't also commit. Downstream fan-out (Kafka/Redis pubsub, a
+//! webhook — none shipped by this crate, cratestack#473) goes through
+//! an installed [`cratestack_core::AuditSink`] (see
+//! [`crate::SqlxRuntime::with_audit_sink`]), dispatched by
+//! [`dispatch_audit_sink`] from each write path's `run()` *after* its
+//! owning transaction commits — never from inside the transaction
+//! itself. This module (the `cratestack_audit` table insert) remains
+//! the canonical, always-on record; the sink is a best-effort
+//! projection of it, per [`cratestack_core::AuditSink`]'s own doc
+//! comment.
 
 mod redact;
 mod schema;
+mod sink;
 
 use cratestack_core::{AuditActor, AuditEvent, AuditOperation, CoolContext, CoolError};
 
@@ -15,6 +23,7 @@ use crate::sqlx;
 pub use redact::{primary_key_from_snapshot, redact_snapshot, snapshot_model};
 pub use schema::AUDIT_TABLE_DDL;
 pub(crate) use schema::ensure_audit_table;
+pub(crate) use sink::dispatch_audit_sink;
 
 /// Persist an audit event into the `cratestack_audit` table. Designed
 /// to run inside the same transaction as the mutation it describes.

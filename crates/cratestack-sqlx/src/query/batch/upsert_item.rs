@@ -4,7 +4,7 @@
 //! the right event/audit kind, and persist via
 //! `INSERT ... ON CONFLICT DO UPDATE ... RETURNING`.
 
-use cratestack_core::{AuditOperation, CoolContext, CoolError, ModelEventKind};
+use cratestack_core::{AuditEvent, AuditOperation, CoolContext, CoolError, ModelEventKind};
 use sqlx_core::acquire::Acquire as _;
 
 use crate::audit::{build_audit_event, enqueue_audit_event};
@@ -16,6 +16,10 @@ use super::upsert_sql::{
     row_passes_update_policy, select_for_update_by_pk_value, upsert_one_in_savepoint,
 };
 
+/// Returns `(per_item_result, audit_event)` — see
+/// `create_item::run_create_item`'s doc comment for why the event is
+/// collected here but dispatched only by the outer `BatchUpsert::run`
+/// after it commits its transaction.
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn run_upsert_item<'tx, M, PK, I>(
     outer: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
@@ -26,13 +30,14 @@ pub(super) async fn run_upsert_item<'tx, M, PK, I>(
     emits_created: bool,
     emits_updated: bool,
     audit_enabled: bool,
-) -> Result<Result<M, CoolError>, CoolError>
+) -> Result<(Result<M, CoolError>, Option<AuditEvent>), CoolError>
 where
     I: UpsertModelInput<M>,
     PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
 {
     let mut item_tx = outer.begin().await.map_err(cool_error_from_sqlx)?;
+    let mut audit_event: Option<AuditEvent> = None;
 
     let inner: Result<M, CoolError> = async {
         input.validate()?;
@@ -113,6 +118,7 @@ where
             let after = serde_json::to_value(&record).ok();
             let event = build_audit_event(descriptor, audit_op, before_snapshot, after, ctx);
             enqueue_audit_event(&mut *item_tx, &event).await?;
+            audit_event = Some(event);
         }
 
         Ok(record)
@@ -122,11 +128,11 @@ where
     match inner {
         Ok(record) => {
             item_tx.commit().await.map_err(cool_error_from_sqlx)?;
-            Ok(Ok(record))
+            Ok((Ok(record), audit_event))
         }
         Err(item_err) => {
             item_tx.rollback().await.map_err(cool_error_from_sqlx)?;
-            Ok(Err(item_err))
+            Ok((Err(item_err), None))
         }
     }
 }

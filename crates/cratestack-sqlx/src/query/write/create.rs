@@ -4,7 +4,9 @@
 
 use cratestack_core::{AuditOperation, CoolContext, CoolError, ModelEventKind};
 
-use crate::audit::{build_audit_event, enqueue_audit_event, ensure_audit_table};
+use crate::audit::{
+    build_audit_event, dispatch_audit_sink, enqueue_audit_event, ensure_audit_table,
+};
 use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
 use crate::{CreateModelInput, ModelDescriptor, SqlxRuntime, cool_error_from_sqlx, sqlx};
 
@@ -46,6 +48,9 @@ where
     /// transaction. The insert + outbox + audit writes all happen
     /// inside `tx`; caller commits. Event outbox is *not* drained —
     /// the outbox row isn't visible to the drain worker until commit.
+    /// Same reasoning applies to the `AuditSink` fan-out (cratestack#473):
+    /// it does not run here either, since this function has no
+    /// visibility into when — or whether — the caller commits `tx`.
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
@@ -95,6 +100,7 @@ where
         let emits_event = self.descriptor.emits(ModelEventKind::Created);
         let audit_enabled = self.descriptor.audit_enabled;
         let needs_tx = emits_event || audit_enabled;
+        let mut audit_event = None;
         let record = if needs_tx {
             let mut tx = self
                 .runtime
@@ -130,6 +136,7 @@ where
                 let event =
                     build_audit_event(self.descriptor, AuditOperation::Create, None, after, ctx);
                 enqueue_audit_event(&mut *tx, &event).await?;
+                audit_event = Some(event);
             }
             tx.commit().await.map_err(cool_error_from_sqlx)?;
             record
@@ -146,6 +153,9 @@ where
 
         if emits_event {
             let _ = self.runtime.drain_event_outbox().await;
+        }
+        if let Some(event) = &audit_event {
+            dispatch_audit_sink(self.runtime, std::slice::from_ref(event)).await;
         }
 
         Ok(record)

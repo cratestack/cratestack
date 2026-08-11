@@ -528,6 +528,7 @@ dependencies = [
  "sqlx-core",
  "sqlx-postgres",
  "tokio",
+ "tracing",
  "uuid",
 ]
 

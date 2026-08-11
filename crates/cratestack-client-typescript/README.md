@@ -100,6 +100,9 @@ cratestack generate-typescript \
 - `cratestack-cli` — `generate-typescript` command
 - `cratestack-client-rust` — Rust client runtime
 - [Transport Architecture](https://cratestack.dev/architecture/transport-architecture)
+- After changing a template in this crate, run `just regen-examples` from the repo root and commit the
+  diff — it regenerates the committed `examples/react-vite-swr/client` example so drift is caught
+  locally instead of by CI (cratestack#471).
 
 ## License
 

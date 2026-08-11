@@ -64,6 +64,7 @@ pub(super) async fn load_target(
         source,
         has_db: target.db.is_some(),
         has_api: target.api.is_some(),
+        allow_unsafe_db_writes: target.db.as_ref().is_some_and(|db| db.allow_unsafe_writes),
     })
 }
 

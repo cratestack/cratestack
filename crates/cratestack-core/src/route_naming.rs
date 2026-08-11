@@ -46,17 +46,61 @@ pub fn to_snake_case(value: &str) -> String {
     output
 }
 
-/// Naive English pluralization matching the server's route registration:
-/// values ending in `s` get `es` appended, everything else gets a bare
-/// `s`. Deliberately not grammatically complete (e.g. `category` becomes
-/// `categorys`, not `categories`) — it only needs to match the server,
-/// not be linguistically ideal.
+/// English pluralization used for both REST route segments and generated
+/// table/column names — the single implementation `cratestack-core` and
+/// `cratestack-migrate` both call (cratestack#504; previously two
+/// hand-synced copies, `cratestack-migrate::naming::pluralize` mirroring
+/// this one, that had already drifted apart on this exact rule).
+///
+/// Rules, in order: a value ending in `s` gets `es` appended (`bus` ->
+/// `buses`); a value ending in a *consonant* + `y` swaps the `y` for
+/// `ies` (`category` -> `categories`, `webhook_delivery` ->
+/// `webhook_deliveries`); a value ending in a *vowel* + `y` (`day`) or
+/// anything else just gets a bare `s` appended (`day` -> `days`).
+///
+/// Still not a grammatically complete English pluralizer — irregular
+/// plurals (`person` -> `people`) are not handled, and there is
+/// deliberately no way to override the result for a given model today.
+/// `@@map(...)` is the planned escape hatch for that (flagged as a known
+/// gap by cratestack#504, not yet implemented, out of scope here). This
+/// function only needs to match the server's route registration and the
+/// migration engine's table naming, not be linguistically ideal.
+///
+/// **Migrating past cratestack#504's `y -> ies` fix.** This function
+/// feeds `cratestack-migrate`'s table-name derivation
+/// (`cratestack_migrate::naming::table_name`), and `cratestack-migrate`'s
+/// diff engine matches tables **by name only** — it never infers a
+/// rename from two schemas that otherwise look related
+/// (`crates/cratestack-migrate/src/diff.rs`). Any deployed model whose
+/// name ends in a consonant + `y` (`Category`, `Delivery`, `Entry`,
+/// `Query`, ...) changes its derived table name on this upgrade
+/// (`categorys` -> `categories`). Running `cratestack migrate diff`
+/// against such a schema without first declaring the rename produces
+/// `DropTable(categorys)` + `CreateTable(categories)` — applying that
+/// migration **destroys the table's data**.
+///
+/// Before running `migrate diff` after upgrading past this change, add
+/// `@@rename(from = "<old_table_name>")` to every affected model (e.g.
+/// `@@rename(from = "categorys")` on `model Category`) so the diff
+/// engine emits `ALTER TABLE ... RENAME TO ...` instead. See
+/// `crates/cratestack-migrate/src/convert/renames.rs` for the attribute
+/// and `crates/cratestack-migrate/src/emit/postgres/tests/renames.rs`'s
+/// `pluralization_change_with_rename_marker_is_a_rename_not_drop_and_create`
+/// test for a worked example of exactly this scenario (and its sibling
+/// `..._without_rename_marker_drops_and_recreates`, which pins down what
+/// happens if you skip this step).
 pub fn pluralize(value: &str) -> String {
     if value.ends_with('s') {
-        format!("{value}es")
-    } else {
-        format!("{value}s")
+        return format!("{value}es");
     }
+    if let Some(stem) = value.strip_suffix('y') {
+        let preceded_by_vowel =
+            matches!(stem.chars().next_back(), Some('a' | 'e' | 'i' | 'o' | 'u'));
+        if !preceded_by_vowel {
+            return format!("{stem}ies");
+        }
+    }
+    format!("{value}s")
 }
 
 /// The canonical REST route segment (no leading `/`) for a model name —
@@ -90,7 +134,13 @@ mod tests {
         ("User Group", "user _group", "user _groups"),
         ("Bus", "bus", "buses"),
         ("Class", "class", "classes"),
-        ("Category", "category", "categorys"),
+        // cratestack#504: consonant + `y` -> `ies`.
+        ("Category", "category", "categories"),
+        ("WebhookDelivery", "webhook_delivery", "webhook_deliveries"),
+        ("Entry", "entry", "entries"),
+        // cratestack#504: vowel + `y` -> plain `s`, not `ies`.
+        ("Day", "day", "days"),
+        ("Holiday", "holiday", "holidays"),
         ("already_snake", "already_snake", "already_snakes"),
     ];
 
@@ -136,5 +186,43 @@ mod tests {
         // route collision between two distinct model names.
         assert_ne!(model_route_segment("User_Group"), "user_groups");
         assert_eq!(model_route_segment("User_Group"), "user__groups");
+    }
+
+    /// cratestack#504's exact repro: `model WebhookDelivery` used to
+    /// derive the table name `webhook_deliverys` — not just wrong-looking,
+    /// but a name a hand-written migration for the grammatically correct
+    /// `webhook_deliveries` would never match, breaking every query the
+    /// generated model client issues against that table.
+    #[test]
+    fn webhook_delivery_pluralizes_to_the_grammatically_correct_form() {
+        assert_eq!(model_route_segment("WebhookDelivery"), "webhook_deliveries");
+        assert_ne!(model_route_segment("WebhookDelivery"), "webhook_deliverys");
+    }
+
+    /// The four rule branches in isolation, independent of the shared
+    /// `CASES` table above, so each one has a test that fails for exactly
+    /// one reason if the corresponding branch regresses.
+    #[test]
+    fn pluralize_consonant_plus_y_becomes_ies() {
+        assert_eq!(pluralize("category"), "categories");
+        assert_eq!(pluralize("delivery"), "deliveries");
+    }
+
+    #[test]
+    fn pluralize_vowel_plus_y_becomes_plain_s() {
+        assert_eq!(pluralize("day"), "days");
+        assert_eq!(pluralize("key"), "keys");
+    }
+
+    #[test]
+    fn pluralize_trailing_s_becomes_es() {
+        assert_eq!(pluralize("bus"), "buses");
+        assert_eq!(pluralize("class"), "classes");
+    }
+
+    #[test]
+    fn pluralize_plain_word_gets_bare_s() {
+        assert_eq!(pluralize("customer"), "customers");
+        assert_eq!(pluralize("order"), "orders");
     }
 }
