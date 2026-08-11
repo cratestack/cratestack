@@ -99,6 +99,27 @@ fn semantic_error_compile_fail() {
         "tests/fixtures/semantic_error_status_out_of_range.cstack",
     );
     t.compile_fail(generated_dir.join("semantic_error_status_out_of_range.rs"));
+
+    // Test 6 (cratestack#407 follow-up): `@status` combined with
+    // `transport rpc` is also a schema-compile-time error — REST and RPC
+    // unary dispatch share the same generated handler
+    // (`generate_procedure_axum_handler`'s `#dispatch_ident`), so an
+    // unrejected `@status` there would silently become wire-visible on
+    // the RPC envelope too. Routed through `include_server_schema!`
+    // (`db = Postgres`) since `transport rpc` is a server-schema concept;
+    // this fires during `cratestack_parser::parse_schema`'s own semantic
+    // validation, before `guard_server_datasource_provider`/
+    // `guard_server_postgres_backend` ever run, so the fixture needs no
+    // `datasource` block (see test 1's `semantic_error_unknown_relation`
+    // fixture for the same pattern).
+    write_server_fixture(
+        &manifest_dir,
+        staging_dir,
+        &generated_dir,
+        "semantic_error_status_under_rpc_transport.rs",
+        "tests/fixtures/semantic_error_status_under_rpc_transport.cstack",
+    );
+    t.compile_fail(generated_dir.join("semantic_error_status_under_rpc_transport.rs"));
 }
 
 fn stage_fixture(manifest_dir: &Path, staging_dir: &Path, relative_schema_path: &str) -> PathBuf {

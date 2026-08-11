@@ -419,6 +419,56 @@ procedure broken(args: Ping): Ping
     );
 }
 
+/// cratestack#407 follow-up: `@status` is a REST-only attribute.
+/// `generate_procedure_axum_handler` emits a single `#dispatch_ident`
+/// shared by both the REST route and the `transport rpc` unary dispatch
+/// arm, so an unrejected `@status` here would silently become
+/// wire-visible on the RPC envelope too (`convert_handler_error_response`
+/// passes any `is_success()` status through unchanged). Reject the
+/// combination at schema-compile time instead.
+#[test]
+fn rejects_status_attribute_under_transport_rpc() {
+    let error = parse_schema(
+        r#"
+transport rpc
+
+type Ping {
+  nonce String
+}
+
+mutation procedure submit(args: Ping): Ping
+  @status(202)
+"#,
+    )
+    .expect_err("@status under `transport rpc` should be rejected");
+
+    assert!(
+        error.to_string().contains("REST-only attribute"),
+        "error: {error}",
+    );
+}
+
+/// cratestack#407 follow-up: `transport grpc` is unaffected by the
+/// `transport rpc` rejection above — gRPC's own status model never
+/// reads the HTTP status `@status` controls, so the combination is
+/// inert there, not silently wrong, and stays accepted.
+#[test]
+fn accepts_status_attribute_under_transport_grpc() {
+    parse_schema(
+        r#"
+transport grpc
+
+type Ping {
+  nonce String
+}
+
+mutation procedure submit(args: Ping): Ping
+  @status(202)
+"#,
+    )
+    .expect("@status under `transport grpc` should still parse");
+}
+
 /// cratestack#154: at most one `@no_rate_limit` per procedure.
 #[test]
 fn rejects_duplicate_no_rate_limit_attribute() {

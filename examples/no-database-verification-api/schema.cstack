@@ -26,3 +26,11 @@ procedure ping(args: PingArgs): PingReply
 procedure submit(args: PingArgs): PingReply
   @status(202)
   @allow(auth() != null)
+
+// cratestack#407 follow-up verification: `@status` must thread into the
+// `@stream` dispatch tail too, not just the unary/`TypeArity::List`
+// branches — see tests/smoke.rs's `streamed_procedure_returns_the_declared_202_status`.
+procedure streamed(args: PingArgs): PingReply[]
+  @stream
+  @status(202)
+  @allow(auth() != null)

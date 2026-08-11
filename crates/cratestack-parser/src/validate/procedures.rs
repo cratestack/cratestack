@@ -202,8 +202,33 @@ pub(super) fn validate_procedure_deprecated_attribute(
 /// an open design question the source issue explicitly reserves for the
 /// maintainer — see cratestack#407 — so this only enforces "is a real
 /// 2xx", nothing stricter.
+///
+/// Known limitation, deliberately left unenforced here (a maintainer
+/// decision, not something to silently narrow): `@status(204)` is
+/// accepted by this `200..=299` range check but `encode_response`
+/// (`crates/cratestack-axum/src/transport/encode_unary.rs`) always
+/// serializes and attaches a body regardless of status, so a declared
+/// `204` currently produces a `204 No Content` response that carries a
+/// body — a protocol violation per RFC 9110 §15.3.5. Tracked as a
+/// follow-up rather than fixed here.
+///
+/// Transport-scoped: this attribute only has REST semantics
+/// (`generate_procedure_axum_handler` threads it through the REST
+/// success-path encoder). `generate_procedure_axum_handler` also backs
+/// the RPC unary dispatch arm (`crate::transport::rpc`) — `#dispatch_ident`
+/// is shared across REST and RPC — so an unrejected `@status` on a
+/// `transport rpc` schema would silently become wire-visible there too
+/// (`convert_handler_error_response` passes any `is_success()` HTTP
+/// status through unchanged onto the RPC envelope). Rejected here at
+/// schema-compile time instead of extended to RPC: whether RPC should
+/// honour a declared status is a real design question left to the
+/// maintainer, not something to decide by extending scope silently.
+/// gRPC (`TransportStyle::Grpc`) is left unrestricted — tonic's gRPC
+/// status model never reads the inner HTTP status this attribute
+/// controls, so the combination is inert there, not silently wrong.
 pub(super) fn validate_procedure_status_attribute(
     procedure: &cratestack_core::Procedure,
+    schema: &cratestack_core::Schema,
 ) -> Result<(), SchemaError> {
     let matches: Vec<&cratestack_core::Attribute> = procedure
         .attributes
@@ -223,6 +248,18 @@ pub(super) fn validate_procedure_status_attribute(
         ));
     }
     let attr = matches[0];
+    if schema.transport == cratestack_core::TransportStyle::Rpc {
+        return Err(span_error(
+            format!(
+                "procedure `{}` declares @status, which is a REST-only attribute, but this \
+                 schema declares `transport rpc` — RPC unary dispatch shares the same handler \
+                 REST uses, so @status would silently change the RPC response's HTTP status; \
+                 remove @status from this procedure or switch the schema back to `transport rest`",
+                procedure.name,
+            ),
+            attr.span,
+        ));
+    }
     let inner = attr
         .raw
         .strip_prefix("@status(")

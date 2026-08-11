@@ -197,7 +197,7 @@ fn validate_procedures(
         validate_procedure_deprecated_attribute(procedure)?;
         validate_procedure_stream_attribute(procedure)?;
         validate_procedure_no_rate_limit_attribute(procedure, schema)?;
-        validate_procedure_status_attribute(procedure)?;
+        validate_procedure_status_attribute(procedure, schema)?;
     }
     Ok(())
 }

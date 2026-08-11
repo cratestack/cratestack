@@ -44,6 +44,7 @@ pub(crate) fn generate_procedure_axum_handler(
     let dispatch_tail = procedure_dispatch_tail_tokens(
         procedure,
         procedure_name,
+        &success_status,
         &result_encoder,
         &deprecation_header,
     );
