@@ -22,6 +22,45 @@ this file for the house prose style. Do not commit with this placeholder text.
 
 ## Unreleased
 
+### New crate: `cratestack-service` — service-bootstrap batteries (pilot absorption, phase 1b)
+
+Every CrateStack-backed service ends up hand-writing the same handful of things that have
+nothing to do with its schema: read the port from the environment, expose `/healthz` and
+`/healthz/ready` for `kubectl`, install a `tracing_subscriber` before the first log line, and
+serve the router. `cratestack-service` is a new, additive facade-adjacent crate that provides
+all four, absorbed and generalized from two small internal helper crates (`telemetry-kit`,
+`db-kit`) a downstream project had built for exactly this purpose because they are fused to
+CrateStack's own trait system and can never be published standalone — they exist to fill a gap
+the framework should arguably cover. This is the pilot for a larger absorption effort; two more
+downstream crates (`events-kit`, `auth-kit`) are expected to follow the same shape.
+
+`telemetry::init` wraps `tracing_subscriber` (env-driven filter, optional JSON output,
+idempotent). `ServiceConfig::from_env` plus the `health` module provide an env-driven config
+struct and a `/healthz`/`/healthz/ready` router whose readiness checks are opt-in — Redis and
+object storage are only probed when their URL is actually configured, and a degraded dependency
+now correctly returns HTTP 503 rather than 200 with a body field a kubelet probe never reads.
+`run` installs request tracing and serves. Every environment variable this crate reads is
+prefixed with a caller-supplied string (`ServiceConfig::from_env("AUTH", ...)` reads
+`AUTH_SERVICE_HOST`, `AUTH_DATABASE_URL`, ...) — unlike the downstream code it was absorbed
+from, this crate ships no fixed prefix, no default connection string, and no built-in
+service-name-to-database-name table; those are application specifics, not framework surface.
+
+The Postgres-specific pieces (`ServiceConfig::database_url`/`state`, the readiness Postgres
+check, and the new `migrations` module — `migrations_from_dir`, loading an
+`include_dir!`-embedded migration tree, plus a `run_migrations` convenience wrapper over
+`cratestack-sqlx`'s existing `Migration`/`apply_pending`) sit behind a `postgres` Cargo feature,
+on by default and named after `cratestack-pg`'s own feature of the same shape. Disabled
+(`default-features = false`), this crate has no `cratestack-sqlx` — and therefore no `sqlx` — in
+its dependency graph at all (verified via `cargo tree`), so a `cratestack-api` or
+`cratestack-sqlite` consumer can use the config/health/telemetry/run surface without inheriting a
+database binding their chosen facade deliberately excludes.
+
+Layer assignment: `cratestack-service = 2` in `docs/adr/layers.toml` (ADR 0014) — its only real
+`cratestack-*` dependencies are `cratestack-core` (L1) and, feature-gated, `cratestack-sqlx`
+(L2), and nothing in the workspace depends on it (it's a leaf, consumed directly by application
+binaries, the same posture every facade already has). No existing crate changed; this is purely
+additive.
+
 ### `Forwarded`/`X-Forwarded-For` are now honored only from a configured trusted proxy — breaking (#415)
 
 `enrich_context_from_headers` — public, re-exported as `cratestack::enrich_context_from_headers`

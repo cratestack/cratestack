@@ -28,6 +28,7 @@ members = [
     "crates/cratestack-proto",
     "crates/cratestack-redis",
     "crates/cratestack-rusqlite",
+    "crates/cratestack-service",
     "crates/cratestack-sql",
     "crates/cratestack-sqlite",
     "crates/cratestack-sqlx",
@@ -110,6 +111,11 @@ axum = "0"
 bytes = "1"
 chumsky = "0"
 erased-serde = "0.4"
+# `Dir<'_>`-embedded migration trees for `cratestack-service`'s
+# `migrations::migrations_from_dir` (feature-gated behind that crate's
+# `postgres` feature, so this dependency only actually compiles into a
+# graph that also pulls `cratestack-sqlx`).
+include_dir = "0.7"
 # Direct dependency as of #415 (trusted-proxy CIDR allowlists): already
 # present transitively via `hyper-util`, so this promotes an existing
 # dependency-tree member rather than introducing a new one.
@@ -189,6 +195,7 @@ cratestack-policy = { path = "crates/cratestack-policy", version = "0.7.12", def
 cratestack-proto = { path = "crates/cratestack-proto", version = "0.7.12", default-features = false }
 cratestack-redis = { path = "crates/cratestack-redis", version = "0.7.12" }
 cratestack-rusqlite = { path = "crates/cratestack-rusqlite", version = "0.7.12", default-features = false }
+cratestack-service = { path = "crates/cratestack-service", version = "0.7.12" }
 # `default-features = false` added alongside `cratestack-core`/`-sqlx`/
 # `-rusqlite` above for cratestack#495: `cratestack-sql`'s own
 # `default = ["decimal-rust-decimal"]` would otherwise force that backend

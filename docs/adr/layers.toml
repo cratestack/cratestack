@@ -85,6 +85,23 @@ cratestack-codec-json = 2
 # the crates. Do not "fix" this file to make the edge legal.
 cratestack-client-store-sqlite = 2
 cratestack-client-store-redis = 2
+# `cratestack-service` (new, "absorb service-bootstrap helpers into the
+# framework"): does not fit any of L0-L5's prose descriptions cleanly — it
+# is neither a schema-IR crate, a backend-specific adapter, a wire-protocol
+# binding, nor a rename-plus-re-exports facade (`layering.md` §2's L5 rule,
+# "a facade that grows a function has stopped being a facade", rules out
+# putting this logic in `cratestack-pg` directly). Same reasoning
+# `cratestack-macros`/`cratestack-proto` used above: assign the lowest
+# number its REAL graph supports, not a role invented to fit the prose.
+# Its only normal workspace dependencies are `cratestack-core` (L1,
+# `CoolError`) and, behind its optional `postgres` feature,
+# `cratestack-sqlx` (L2, `Migration`/`apply_pending`/`PgPool`) — both <= 2.
+# L2 is a complete, exception-free assignment: nothing in the workspace
+# depends on `cratestack-service` (it is a leaf, consumed directly by
+# application binaries outside the workspace, the same posture every
+# facade already has), so the "must not be depended on by anything above
+# its layer" half of the rule is satisfied vacuously.
+cratestack-service = 2
 
 # --- L3: Execution -----------------------------------------------------
 # (empty by design — see module comment above)

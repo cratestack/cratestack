@@ -1,0 +1,61 @@
+[package]
+name = "cratestack-service"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "CrateStack service-bootstrap batteries: env-driven ServiceConfig, /healthz + /healthz/ready with opt-in dependency checks, a tracing_subscriber initializer, and a run() helper. Postgres-specific pieces (ServiceConfig::state, the readiness Postgres check, migration loading) sit behind the `postgres` feature (on by default) so a cratestack-api/cratestack-sqlite consumer can disable it and keep sqlx out of their graph."
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+default = ["postgres", "decimal-rust-decimal"]
+# Gates everything that needs `cratestack-sqlx`: `ServiceConfig::database_url`
+# and `ServiceConfig::state`, the Postgres readiness check, and the
+# `migrations` module (`migrations_from_dir`/`run_migrations`). Off
+# (`default-features = false`), this crate has no `cratestack-sqlx` — and
+# therefore no `sqlx` — in its dependency graph at all, so a
+# `cratestack-api` or `cratestack-sqlite` consumer can still use
+# `telemetry::init`, the generic `ServiceConfig` fields, the Redis/object-
+# storage readiness checks, and `run()` without inheriting a database
+# binding their chosen facade deliberately excludes. Mirrors
+# `cratestack-pg`'s own `postgres` feature (same name, same "forwards
+# `dep:cratestack-sqlx`" shape) — see that crate's `Cargo.toml` for the
+# precedent this one copies.
+postgres = ["dep:cratestack-sqlx", "dep:include_dir"]
+# Forwards the decimal-backend choice to `cratestack-core` (required
+# unconditionally — see that crate's `Cargo.toml`: exactly one of
+# `decimal-rust-decimal`/`decimal-bigdecimal` must be selected, even by a
+# consumer like this one that never references `cratestack_core::Decimal`
+# directly) and, via the weak-dependency `?` syntax, to `cratestack-sqlx`
+# only when `postgres` has already pulled it in.
+decimal-rust-decimal = [
+    "cratestack-core/decimal-rust-decimal",
+    "cratestack-sqlx?/decimal-rust-decimal",
+]
+decimal-bigdecimal = [
+    "cratestack-core/decimal-bigdecimal",
+    "cratestack-sqlx?/decimal-bigdecimal",
+]
+
+[dependencies]
+axum.workspace = true
+cratestack-core.workspace = true
+cratestack-sqlx = { workspace = true, optional = true }
+include_dir = { workspace = true, optional = true }
+serde.workspace = true
+tokio = { workspace = true, features = ["net", "time"] }
+tower-http = { workspace = true, features = ["trace"] }
+tracing.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
+url.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tower.workspace = true
