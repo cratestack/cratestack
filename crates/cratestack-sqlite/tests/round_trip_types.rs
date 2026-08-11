@@ -77,6 +77,16 @@ fn covered_scalar_types_match_parser_builtin_type_names_minus_page() {
 }
 
 #[test]
+// `decimal.clone()` below (not `decimal` twice): pre-existing bug, unrelated
+// to cratestack#505 — `bigdecimal::BigDecimal` isn't `Copy` (unlike
+// `rust_decimal::Decimal`), so this test only compiled under the default
+// `decimal-rust-decimal` backend before. Never caught by
+// `.ci/feature-matrix.sh`, which only runs a plain `cargo check` (no
+// `--all-targets`) for `cratestack-sqlite`. The `.clone()` itself then
+// trips `clippy::clone_on_copy` under `decimal-rust-decimal` (where
+// `Decimal` happens to be `Copy`) — same rationale as `cratestack-sqlx`'s
+// `push_bind_value`.
+#[allow(clippy::clone_on_copy)]
 fn all_non_enum_builtin_scalars_round_trip_through_generated_orm() {
     let runtime = setup();
     let delegate = ModelDelegate::<RoundTripScalar, i64>::new(&runtime, &ROUND_TRIP_SCALAR_MODEL);
@@ -101,7 +111,7 @@ fn all_non_enum_builtin_scalars_round_trip_through_generated_orm() {
         booleanOpt: Some(false),
         dateTimeReq: date_time,
         dateTimeOpt: Some(date_time),
-        decimalReq: decimal,
+        decimalReq: decimal.clone(),
         decimalOpt: Some(decimal),
         jsonOpt: Some(Json(Value::String("optional-payload".to_owned()))),
         bytesReq: vec![0xDE, 0xAD, 0xBE, 0xEF],

@@ -13,6 +13,7 @@ pub mod audit;
 pub mod batch;
 pub mod codec;
 pub mod context;
+pub mod decimal;
 pub mod envelope;
 pub mod error;
 pub mod events;
@@ -29,41 +30,6 @@ pub mod store;
 pub mod transport;
 pub mod validators;
 pub mod value;
-
-// -----------------------------------------------------------------------------
-// Decimal scalar
-//
-// Selected at compile time via mutually-exclusive Cargo features. Generated
-// code references `cratestack::Decimal` regardless of backend, so swapping
-// backends is a workspace-feature flip rather than a code change.
-//
-// The two backends are NOT drop-in equivalents at the trait level:
-// `rust_decimal::Decimal` is `Copy`; `bigdecimal::BigDecimal` is not (it
-// heap-allocates its digit buffer via `num-bigint`). Every call site across
-// the workspace that used to rely on an implicit `Decimal` copy was audited
-// and changed to an explicit `.clone()` as part of cratestack#495 — see
-// `cratestack-sqlx/src/query/support/values.rs`'s `push_bind_value` for the
-// one spot that actually needed it. Both backends do implement `Clone`,
-// `Debug`, `Display`, `FromStr`, `PartialEq`, `PartialOrd`, `Ord`, `Eq`,
-// `Hash`, and `Default`, so no other trait bound in the workspace needed to
-// change.
-// -----------------------------------------------------------------------------
-
-#[cfg(not(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal")))]
-compile_error!(
-    "cratestack: enable exactly one decimal backend feature — `decimal-rust-decimal` or `decimal-bigdecimal`"
-);
-
-#[cfg(all(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
-compile_error!(
-    "cratestack: `decimal-rust-decimal` and `decimal-bigdecimal` are mutually exclusive — enable exactly one"
-);
-
-#[cfg(all(feature = "decimal-rust-decimal", not(feature = "decimal-bigdecimal")))]
-pub type Decimal = rust_decimal::Decimal;
-
-#[cfg(all(feature = "decimal-bigdecimal", not(feature = "decimal-rust-decimal")))]
-pub type Decimal = bigdecimal::BigDecimal;
 
 /// Body bytes carried through the transport layer.
 pub type CoolBody = bytes::Bytes;
@@ -84,6 +50,10 @@ pub use context::{
     AuthProvider, CoolAuthIdentity, CoolContext, PrincipalContext, PrincipalFacet, RequestContext,
     SystemContext,
 };
+// `Decimal` only exists on `decimal-rust-decimal` or `decimal-bigdecimal` —
+// see `decimal`'s module doc for why the "neither" case has no fallback.
+#[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
+pub use decimal::Decimal;
 pub use envelope::{
     HmacEnvelope, InMemoryNonceStore, KeyProvider, NonceStore, SealedEnvelope, StaticKeyProvider,
 };
@@ -113,34 +83,11 @@ pub use transport::{
     canonical_request_string,
 };
 pub use validators::{
-    validate_email, validate_iso4217, validate_length, validate_range_decimal, validate_range_i64,
-    validate_uri,
+    validate_email, validate_iso4217, validate_length, validate_range_i64, validate_uri,
 };
+// `validate_range_decimal` takes `&Decimal`, so it only exists when
+// `Decimal` does — see `decimal`'s "Selecting NEITHER feature is not an
+// error" module doc section.
+#[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
+pub use validators::validate_range_decimal;
 pub use value::Value;
-
-// These tests intentionally reference only `Decimal` (the alias), never a
-// backend-specific type, so the exact same suite runs unmodified under
-// either `cargo test -p cratestack-core --features decimal-rust-decimal`
-// (the default) or `--no-default-features --features decimal-bigdecimal` —
-// see `.ci/feature-matrix.sh` for both invocations.
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn decimal_backend_is_available() {
-        // Verify that whichever backend is active compiles and the Decimal
-        // type works.
-        let d = Decimal::from(42);
-        assert_eq!(d.to_string(), "42");
-    }
-
-    #[test]
-    fn decimal_type_arithmetic() {
-        // Verify basic decimal operations work
-        let d1 = Decimal::from(10);
-        let d2 = Decimal::from(20);
-        // Just verify the types compile and basic operations work
-        let _ = d1 + d2;
-    }
-}
