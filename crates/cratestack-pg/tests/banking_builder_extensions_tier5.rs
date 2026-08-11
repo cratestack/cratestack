@@ -12,10 +12,11 @@
 //! the bottom of the file *do* go through the decoder (and the write
 //! path): they're the cratestack#162 regression coverage — before that
 //! fix, the seeded plain-shaped JSON above (`{"loss": "0.001", ...}`,
-//! not cratestack's externally-tagged `{"Map": {"loss": {"String":
-//! ...}}}`) failed to decode through the generated model with a serde
-//! error, and a `Json` value written through the ORM was persisted
-//! tagged rather than as plain JSON.
+//! not the externally-tagged `{"Map": {"loss": {"String": ...}}}` that
+//! `Value` used to derive) failed to decode through the generated model
+//! with a serde error, and a `Json` value written through the ORM was
+//! persisted tagged rather than as plain JSON. `Value`'s derive has since
+//! been replaced by untagged impls, so the two paths now agree.
 
 mod support;
 

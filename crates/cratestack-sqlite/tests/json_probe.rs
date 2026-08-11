@@ -77,8 +77,10 @@ fn json_field_round_trips_through_generated_decoder() {
 fn json_field_is_stored_as_plain_untagged_json_on_disk() {
     // Regression test for cratestack#395 (follow-up to cratestack#162 /
     // PR #391): the *stored bytes* must be plain JSON (`{"currency":
-    // "XAF","amount":1500}`), not `Value`'s own derived, externally-tagged
-    // representation (`{"Map": {"currency": {"String": "XAF"}, ...}}`).
+    // "XAF","amount":1500}`), not the externally-tagged representation
+    // `Value` used to derive (`{"Map": {"currency": {"String": "XAF"}, …}}`).
+    // That derive has since been replaced by untagged impls, so both paths
+    // now agree — this test still pins the on-disk contract explicitly.
     // The round-trip tests above pass even under the bug, since a buggy
     // writer paired with a buggy reader is internally consistent — this
     // test inspects the raw on-disk TEXT directly, the same way #162's

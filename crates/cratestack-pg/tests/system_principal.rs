@@ -374,16 +374,16 @@ async fn system_write_is_captured_in_the_audit_trail() {
         serde_json::json!("system:device-reconciler"),
         "a system write's actor id should be attributed to the service, not left blank"
     );
-    // `AuditActor::claims` is `BTreeMap<String, cratestack_core::Value>`,
-    // which derives serde's default *externally tagged* representation
-    // deliberately (`Value::to_plain_json` exists specifically to avoid
-    // this shape for on-disk JSON columns, but audit payloads are one of
-    // the typed/wire contexts that keep it — see that method's doc
-    // comment) — so a claim value round-trips as `{"String": "..."}`,
-    // not a bare JSON string.
+    // `AuditActor::claims` is `BTreeMap<String, cratestack_core::Value>`.
+    // This used to assert `{"String": "device-reconciler"}`: `Value`
+    // derived serde's externally-tagged enum representation, so every
+    // audit claim was persisted wrapped in its own variant name. That
+    // derive is gone — `Value` now serializes untagged, matching the
+    // shape it already persisted through `to_plain_json` — so a claim
+    // lands as the bare JSON string it always should have been.
     assert_eq!(
         actor["claims"]["service"],
-        serde_json::json!({"String": "device-reconciler"}),
+        serde_json::json!("device-reconciler"),
         "the service claim should survive into the audit actor's claims snapshot"
     );
 }
