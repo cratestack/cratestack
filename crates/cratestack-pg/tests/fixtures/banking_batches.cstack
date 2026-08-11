@@ -13,9 +13,10 @@ auth Operator {
 // mismatch, plus all three branches of batch_upsert (insert / update /
 // dedup loud-fail).
 //
-// Named to play nicely with the framework's naive pluralizer
-// (`BatchRow` → `batch_rows`); avoids the `entry` → `entrys` rough
-// edge.
+// Named `BatchRow` (-> `batch_rows`) rather than `Entry`: originally
+// chosen to sidestep the pluralizer's `entry` -> `entrys` bug
+// (cratestack#504, fixed — `entry` now correctly pluralizes to
+// `entries`). Left as `BatchRow` since nothing depends on the rename.
 model BatchRow {
   id Int @id
   label String

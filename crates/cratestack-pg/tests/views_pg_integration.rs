@@ -16,7 +16,7 @@ use support::pg;
 async fn reset_schema(pool: &PgPool) {
     // Order matters: the view depends on the table, so drop the view
     // first. `IF EXISTS` keeps the reset idempotent.
-    query("DROP VIEW IF EXISTS active_customer_summarys")
+    query("DROP VIEW IF EXISTS active_customer_summaries")
         .execute(pool)
         .await
         .expect("drop view");
@@ -35,7 +35,7 @@ async fn reset_schema(pool: &PgPool) {
     .await
     .expect("create table");
     query(
-        "CREATE VIEW active_customer_summarys AS \
+        "CREATE VIEW active_customer_summaries AS \
          SELECT id, email FROM view_customers WHERE active = true",
     )
     .execute(pool)
