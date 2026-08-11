@@ -42,6 +42,12 @@ pub struct LoadedTarget {
     /// `true` when this target has a `[target.api]` block. May be true
     /// alongside `has_db`.
     pub has_api: bool,
+    /// Mirrors `[target.db].allow_unsafe_writes` (`false` when the
+    /// target has no `[target.db]` block at all). Gates whether writes to
+    /// `@version`/`@@emit` models are refused on this target — see
+    /// [`TargetDb::allow_unsafe_writes`](crate::config::TargetDb::allow_unsafe_writes)
+    /// and `cratestack#507`.
+    pub allow_unsafe_db_writes: bool,
 }
 
 #[derive(Debug, thiserror::Error)]

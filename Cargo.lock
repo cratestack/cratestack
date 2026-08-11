@@ -1399,6 +1399,7 @@ name = "cratestack-pg"
 version = "0.7.10"
 dependencies = [
  "async-stream",
+ "async-trait",
  "axum",
  "chrono",
  "cratestack-axum",
@@ -1541,6 +1542,7 @@ dependencies = [
  "sqlx-core",
  "sqlx-postgres",
  "tokio",
+ "tracing",
  "uuid",
 ]
 

@@ -73,6 +73,73 @@ does **not** close #416 itself. #416's acceptance criteria require the *default*
 still collapses unauthenticated callers onto `"anonymous"` unless an operator wires
 `into_make_service_with_connect_info`. #416 stays open.
 
+### `AuditSink` gets a real installation path (#473)
+
+`cratestack_core::AuditSink` (plus `NoopAuditSink`/`MulticastAuditSink`) has existed since
+before this release, but had nowhere to be installed: a consumer could construct a sink and had
+no way to hand it to the runtime, and `AuditSink::record` was never invoked anywhere in the
+workspace — `cratestack-sqlx/src/audit.rs`'s own module doc claimed fan-out "goes through
+`AuditSink`" while that was, in fact, dead code.
+
+`SqlxRuntime` now carries an installable `Arc<dyn AuditSink>` (default `NoopAuditSink`, so
+existing `SqlxRuntime::new(pool)` callers see no behavior change), installed via
+`SqlxRuntime::with_audit_sink` or, for schema consumers, the macro-generated
+`CratestackBuilder::with_audit_sink` — the same shape `IdempotencyStore`/`RateLimitStore` use.
+Every `@@audit` write path (`create`/`update`/`delete`/`upsert`, their `_many` and batch
+variants) now fans the event out to the installed sink *after* its owning transaction commits,
+never from inside it: the in-database `cratestack_audit` row remains the sole in-transaction
+write and source of truth (unchanged, no double-write), and a sink is never invoked for a
+mutation that ultimately rolled back. Sink errors are logged (`tracing::warn!`), not propagated
+— by the time the sink runs, the mutation already committed, so failing the caller's request
+over a downstream projection hiccup would be strictly worse than a best-effort delivery.
+`run_in_tx` variants (caller-managed transaction) do not fan out, mirroring the existing event
+outbox, which has never drained from `run_in_tx` either. **This is a real gap, not just a
+deferral**: there is currently no way for a `run_in_tx` caller to opt into sink fan-out
+themselves — the dispatch helper is crate-private and no `run_in_tx` variant returns the
+`AuditEvent` it would need — so a caller chaining `run_in_tx` calls across a caller-managed
+transaction (see `crates/cratestack-pg/tests/banking_chained_audit_tx.rs`) gets the
+in-transaction `cratestack_audit` row on commit but a real installed `AuditSink` observes
+nothing for that transaction, silently. Worth its own follow-up issue; see
+`crates/cratestack-sqlx/src/audit/sink.rs`'s doc comment for the full reasoning. Dispatch is
+also sequential, not concurrent, so the added latency of a slow sink is per-row on
+`update_many`/`delete_many`/batch paths, not per-request.
+### `cratestack-studio`: refuse silent `@version`/`@@emit` bypass on `[target.db]` writes — breaking (cratestack#507)
+
+A write through `cratestack studio` against a `[target.db]` target went straight to SQL: it never
+bumped a model's `@version` column and never wrote a `cratestack_event_outbox` row for an
+`@@emit`-annotated model, and neither omission was reported anywhere — the request returned `200`
+with the updated row. Both consequences are silent and outlive the request: a stale `@version`
+still satisfies a later `if_match`, so optimistic concurrency does not fail-safe, it silently does
+not apply; and `@@emit` side effects (for example customer-facing delivery webhooks) never fire,
+with no trace that one was skipped.
+
+Studio now refuses `POST`/`PATCH`/`DELETE` on a `rw` `[target.db]` target against any model that
+declares `@version` or `@@emit(...)`, returning `403 UNSAFE_DB_WRITE` and naming the specific
+attribute(s) that triggered the refusal, unless the target sets `allow_unsafe_writes = true` in
+`studio.toml`. The refusal runs in the HTTP handler (`require_safe_write`,
+`crates/cratestack-studio/src/api/records/guards.rs`) before any `DataSource` call, so it applies
+identically to Postgres- and SQLite-backed targets, and models with neither annotation are
+unaffected either way. A write allowed only because a target opted in is also loud after the fact,
+not just at the moment the config flag is set: it logs a `tracing::warn!` naming the target, model,
+and skipped annotation(s), and `AuditEntry` gains an `unsafe_write: bool` field (default `false`,
+`#[serde(default)]` so a pre-upgrade JSONL audit sidecar still replays cleanly) so `GET /api/audit`
+and the sidecar can distinguish a bypass write from an ordinary one.
+
+The `@@allow` half of the original report — an unauthenticated `[target.db]` read returning a
+`@sensitive` field in cleartext — is deliberately left alone here; it is arguably intended for a
+direct-DB admin tool and is tracked separately for a maintainer decision, not fixed unilaterally in
+this change. Likewise, routing `[target.db]` writes through the same descriptor path the generated
+server uses (so `@version`/`@@emit` would actually apply, rather than being refused) remains
+unimplemented and is left for a future, larger change.
+
+**Migration.** Any existing `rw` `[target.db]` deployment whose schema declares a model with
+`@version` or `@@emit(...)` will start getting `403 UNSAFE_DB_WRITE` on `POST`/`PATCH`/`DELETE`
+against that model through Studio. Add `allow_unsafe_writes = true` under that target's
+`[target.db]` block in `studio.toml` to keep the previous (silent-bypass) behavior, or leave it
+unset and route those writes through `[target.api]` instead, where `@version`, `@@emit`, and
+`@@allow` all apply exactly as declared in the schema. Reads and `[target.api]`-only targets are
+unaffected either way.
+
 ### Per-procedure `@status(<code>)` for REST success responses (#407)
 
 `generate_procedure_axum_handler` hardcoded `axum::http::StatusCode::OK` for every procedure's

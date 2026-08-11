@@ -7,7 +7,9 @@ use std::hash::Hash;
 
 use cratestack_core::{AuditOperation, BatchResponse, CoolContext, CoolError, ModelEventKind};
 
-use crate::audit::{build_audit_event, enqueue_audit_event, ensure_audit_table};
+use crate::audit::{
+    build_audit_event, dispatch_audit_sink, enqueue_audit_event, ensure_audit_table,
+};
 use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
 use crate::query::support::push_action_policy_query;
 use crate::{ModelDescriptor, ModelPrimaryKey, SqlxRuntime, cool_error_from_sqlx, sqlx};
@@ -104,6 +106,7 @@ impl<'a, M: 'static, PK: 'static> BatchDelete<'a, M, PK> {
 
         // The RETURNING row IS the "before" snapshot — DELETE/soft-
         // delete returns the pre-mutation state.
+        let mut audit_events = Vec::new();
         for record in &deleted {
             if emits_event {
                 enqueue_event_outbox(
@@ -119,6 +122,7 @@ impl<'a, M: 'static, PK: 'static> BatchDelete<'a, M, PK> {
                 let event =
                     build_audit_event(self.descriptor, AuditOperation::Delete, before, None, ctx);
                 enqueue_audit_event(&mut *tx, &event).await?;
+                audit_events.push(event);
             }
         }
 
@@ -127,6 +131,7 @@ impl<'a, M: 'static, PK: 'static> BatchDelete<'a, M, PK> {
         if emits_event {
             let _ = self.runtime.drain_event_outbox().await;
         }
+        dispatch_audit_sink(self.runtime, &audit_events).await;
 
         // Walk-and-match: any input id whose row isn't in `deleted`
         // failed the WHERE (tombstoned, policy denied, never existed).

@@ -134,6 +134,7 @@ async fn main() {
         source: Arc::new(SqliteSource::new(catalog_conn(), schema.clone())),
         has_db: true,
         has_api: false,
+        allow_unsafe_db_writes: false,
     };
 
     let analytics = LoadedTarget {
@@ -145,6 +146,7 @@ async fn main() {
         source: Arc::new(SqliteSource::new(catalog_conn(), schema.clone())),
         has_db: true,
         has_api: false,
+        allow_unsafe_db_writes: false,
     };
 
     let upstream = LoadedTarget {
@@ -159,6 +161,7 @@ async fn main() {
         ),
         has_db: false,
         has_api: true,
+        allow_unsafe_db_writes: false,
     };
 
     let workspace = Arc::new(LoadedWorkspace {

@@ -6,7 +6,7 @@ use std::hash::Hash;
 
 use cratestack_core::{BatchResponse, CoolContext, CoolError, ModelEventKind};
 
-use crate::audit::ensure_audit_table;
+use crate::audit::{dispatch_audit_sink, ensure_audit_table};
 use crate::descriptor::ensure_event_outbox_table;
 use crate::{ModelDescriptor, SqlxRuntime, UpdateModelInput, cool_error_from_sqlx, sqlx};
 
@@ -61,8 +61,9 @@ where
         }
 
         let mut per_item: Vec<Result<M, CoolError>> = Vec::with_capacity(self.items.len());
+        let mut audit_events = Vec::new();
         for item in self.items {
-            let outcome = run_update_item(
+            let (outcome, audit_event) = run_update_item(
                 &mut tx,
                 self.descriptor,
                 item,
@@ -72,6 +73,7 @@ where
             )
             .await?;
             per_item.push(outcome);
+            audit_events.extend(audit_event);
         }
 
         tx.commit().await.map_err(cool_error_from_sqlx)?;
@@ -79,6 +81,7 @@ where
         if emits_event {
             let _ = self.runtime.drain_event_outbox().await;
         }
+        dispatch_audit_sink(self.runtime, &audit_events).await;
 
         Ok(BatchResponse::from_results(per_item))
     }
