@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.7.12 (2026-08-11)
+
+<!-- TODO: edit this section from the seed below -->
+<!-- seeded from v0.7.11..HEAD at e43d8a737604b79f91114222e0156e42bc73943e -->
+
+This is an auto-generated seed. Please rewrite into narrative prose describing
+the changes in this release, grouped by concern. Refer to existing entries in
+this file for the house prose style. Do not commit with this placeholder text.
+
+### Changes
+
+#### Features
+
+- enforce size bounds on the generated server surface (#413) (#522)
+
+#### Fixes
+
+- trust Forwarded/X-Forwarded-For only from a configured proxy (#526)
+- remove resolver = "1", now that #521 dropped the NEITHER-arm compile_error! (#525)
+
 ## Unreleased
 
 ### `Forwarded`/`X-Forwarded-For` are now honored only from a configured trusted proxy — breaking (#415)
