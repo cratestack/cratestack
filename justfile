@@ -426,30 +426,30 @@ verify-typescript:
 # against them — the only way to find out a template edit had drifted the
 # committed examples was to push and read CI (see #444/#470/#471).
 #
-# The two invocations below are the CI drift-check steps' own invocations,
-# copied verbatim with `--check` removed so they write instead of merely
-# verifying. Keep them byte-for-byte identical to ci.yml's
-# `flutter-riverpod-example`/`react-vite-swr-example` jobs (modulo the
-# `--check` flag) so the recipe and CI cannot diverge — if you change one,
-# change the other.
+# `ci.yml`'s `flutter-riverpod-example`/`react-vite-swr-example` drift-check
+# steps call this same recipe as `just regen-examples --check` — one
+# mechanism, not a hand-copied third invocation — so the recipe and CI
+# cannot copy-paste diverge (same `*args=''` passthrough shape as `check`
+# above, which CI calls as `just check --locked`). Local, no-arg use
+# defaults to write mode.
 #
 # Unlike `verify-dart`/`verify-typescript` above (which generate throwaway
 # packages from fixtures into `target/`), this recipe overwrites the
-# committed example directories directly. Run it, review `git diff`, and
-# commit the result — a non-empty diff on an otherwise-unmodified checkout
-# of `main` means the committed examples have already drifted from their
-# templates.
-regen-examples:
+# committed example directories directly. Run it with no args, review
+# `git diff`, and commit the result — a non-empty diff on an otherwise-
+# unmodified checkout of `main` means the committed examples have already
+# drifted from their templates.
+regen-examples *args='':
 	cargo run -p cratestack-cli -- generate-dart \
 	  --schema examples/react-vite-swr/schema.cstack \
 	  --out examples/flutter-riverpod/client \
 	  --library-name flutter_riverpod_client \
-	  --preset riverpod
+	  --preset riverpod {{args}}
 	cargo run -p cratestack-cli -- generate-typescript \
 	  --schema examples/react-vite-swr/schema.cstack \
 	  --out examples/react-vite-swr/client \
 	  --preset swr \
-	  --package-name react-vite-swr-client
+	  --package-name react-vite-swr-client {{args}}
 
 # Layer-direction check (ADR 0014, docs/adr/0014-layer-direction-enforcement.md)
 # — blocking CI gate. Asserts every NORMAL cratestack-* -> cratestack-* edge

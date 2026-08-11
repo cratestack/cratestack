@@ -531,18 +531,15 @@ jobs:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
-      - name: Assert the committed client matches the real generator
-        run: |
-          cargo run -p cratestack-cli -- generate-dart \
-            --schema examples/react-vite-swr/schema.cstack \
-            --out examples/flutter-riverpod/client \
-            --library-name flutter_riverpod_client \
-            --preset riverpod \
-            --check
+      - name: Assert the committed example clients match the real generator
+        run: just regen-examples --check
       # --- issue #471: drift above must not mask the coverage below -----
       # The drift-check step has no `continue-on-error`, so a failure
       # there still fails the job overall (`!cancelled()` only overrides
@@ -772,14 +769,11 @@ jobs:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Assert the committed generated client matches the real generator
-        run: |
-          cargo run -p cratestack-cli -- generate-typescript \
-            --schema examples/react-vite-swr/schema.cstack \
-            --out examples/react-vite-swr/client \
-            --preset swr \
-            --package-name react-vite-swr-client \
-            --check
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: Assert the committed example clients match the real generator
+        run: just regen-examples --check
       # --- issue #471: drift above must not mask the coverage below -----
       # Same fix as `flutter-riverpod-example`, applied to every step in
       # this job (the drift check here sits ahead of *all* real coverage —
