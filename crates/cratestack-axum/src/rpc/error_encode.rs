@@ -52,7 +52,12 @@ where
     }
 
     let status = response.status();
-    let body_bytes = match axum::body::to_bytes(response.into_body(), usize::MAX).await {
+    let body_bytes = match axum::body::to_bytes(
+        response.into_body(),
+        cratestack_core::MAX_RESPONSE_REBUFFER_BYTES,
+    )
+    .await
+    {
         Ok(bytes) => bytes.to_vec(),
         Err(error) => {
             // Buffering failed — synthesize an internal error frame.

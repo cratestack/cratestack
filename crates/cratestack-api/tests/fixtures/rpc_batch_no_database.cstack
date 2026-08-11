@@ -1,0 +1,25 @@
+// cratestack#413: the smallest schema that combines `transport rpc` with
+// `datasource { provider = "none" }` — this exact combination didn't have
+// an existing fixture anywhere in the repo (see
+// `docs/design/request-response-size-bounds.md`'s "Test plan gap to flag"),
+// needed to prove the `/rpc/batch` frame cap without a database. Mirrors
+// `examples/rpc-procedures/schema.cstack`'s shape, trimmed to one
+// auth-gated procedure so a spy `AuthProvider` can count real dispatch
+// attempts.
+
+transport rpc
+
+datasource db {
+  provider = "none"
+}
+
+type PingArgs {
+  nonce String
+}
+
+type PingReply {
+  nonce String
+}
+
+procedure ping(args: PingArgs): PingReply
+  @allow(auth() != null)

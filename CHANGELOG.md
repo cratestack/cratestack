@@ -2,6 +2,49 @@
 
 ## Unreleased
 
+### Generated servers now enforce request/batch/response size bounds (#413) — breaking
+
+The generated Axum surface had three independent missing limits on the same request path: `/rpc/batch`
+decoded and dispatched an unbounded number of frames, no layer capped the size of an inbound request
+body, and four `axum::body::to_bytes(response.into_body(), usize::MAX)` call sites in the RPC binding
+buffered responses without limit. Individually survivable; together, a single oversized batch body could
+multiply the per-frame `authenticate()` + policy + dispatch cost (identical to a unary call) by however
+many minimal frames fit in an unbounded body, with each frame's response then buffered without limit too.
+
+- **`/rpc/batch` frame cap.** Rejected before the per-frame dispatch loop runs (zero frames dispatch on an
+  over-limit batch — not truncated to the first `BATCH_MAX_ITEMS`), matching the same `1000`-frame ceiling
+  and `CoolError::Validation` error shape `cratestack-sqlx`'s and `cratestack-rusqlite`'s own batch-size
+  guards already use.
+- **Request body limit.** `router()` and `rpc_router()` (both generated per schema) now take an explicit
+  `body_limit_bytes: usize` parameter, applied once via `axum::extract::DefaultBodyLimit::max(..)`. The
+  new `cratestack_core::DEFAULT_BODY_LIMIT_BYTES` constant (1 MiB) is the value every existing call site
+  in this repo was updated to pass, so this is a real, considered ceiling — not axum's own 2 MiB `Bytes`
+  default and not `cratestack_core::store::idempotency::MAX_BODY_BYTES` (also 2 MiB), rounded up to match.
+  **This is a genuine parameter, not a default a consumer re-layers on top of afterward** — re-layering
+  `DefaultBodyLimit` on a `Router` that already has one baked in does not work in either direction
+  (verified empirically; see `docs/design/request-response-size-bounds.md` Decision 2 and
+  `crates/cratestack-core/src/limits.rs`'s module doc) — a deployment needing a larger limit passes a
+  larger `body_limit_bytes` to `router(...)`/`rpc_router(...)` instead. `model_router()`/
+  `procedure_router()` (the lower-level constructors `router()` merges) are unchanged and remain unbounded
+  when called directly, matching their existing signatures.
+- **Response-rebuffer bound.** The four `to_bytes(.., usize::MAX)` sites in
+  `crates/cratestack-axum/src/rpc/{batch,error_encode,grpc_bridge,codec_helpers}.rs` now use
+  `cratestack_core::MAX_RESPONSE_REBUFFER_BYTES` (4 MiB — 4× the request default, with headroom for a
+  response that legitimately echoes a request payload plus server-added columns). Every site already
+  matched on `to_bytes`'s `Result`, so exceeding the bound degrades to the existing synthesized
+  `CoolError::Internal`/error-frame path, not a panic.
+
+**Migration:** every call site constructing a generated router via `router(db, registry, codec,
+auth_provider)` or `rpc_router(db, registry, codec, auth_provider)` needs a fifth argument —
+`cratestack::DEFAULT_BODY_LIMIT_BYTES` reproduces the old (now bounded-by-default) behavior for anyone not
+intentionally choosing a different limit. A deployment currently posting bodies over 1 MiB will see `413
+Payload Too Large` until it passes a larger `body_limit_bytes`.
+
+**Flagged, not changed:** with the router's own limit now tighter than `MAX_BODY_BYTES` (1 MiB vs. 2 MiB),
+`MAX_BODY_BYTES` is the looser of the two bounds by the numbers alone. Traced through the actual
+mechanism, this isn't a live bypass at the default — see the coherence note in
+`docs/design/request-response-size-bounds.md` for the full trace. `MAX_BODY_BYTES` itself is unchanged.
+
 ### `Value` serializes untagged on the wire, matching what it already persists — breaking
 
 `cratestack_core::Value` derived `Serialize`/`Deserialize`, which emits serde's

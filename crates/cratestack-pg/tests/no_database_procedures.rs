@@ -71,7 +71,13 @@ impl cratestack::AuthProvider for AllowAllAuth {
 /// no `sqlx` type in sight. This is the whole point of cratestack#328.
 fn build_router() -> cratestack::axum::Router {
     let db = cratestack_schema::Cratestack::builder().build();
-    cratestack_schema::axum::router(db, Procedures, JsonCodec, AllowAllAuth)
+    cratestack_schema::axum::router(
+        db,
+        Procedures,
+        JsonCodec,
+        AllowAllAuth,
+        cratestack::DEFAULT_BODY_LIMIT_BYTES,
+    )
 }
 
 #[test]

@@ -74,7 +74,13 @@ struct Procedures;
 impl cratestack_schema::procedures::ProcedureRegistry for Procedures {}
 
 fn build_router(db: cratestack_schema::Cratestack) -> Router {
-    cratestack_schema::axum::router(db, Procedures, JsonCodec, HeaderAuthProvider)
+    cratestack_schema::axum::router(
+        db,
+        Procedures,
+        JsonCodec,
+        HeaderAuthProvider,
+        cratestack::DEFAULT_BODY_LIMIT_BYTES,
+    )
 }
 
 fn print_route_table() {

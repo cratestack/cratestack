@@ -3,6 +3,15 @@
 //! and emits a sequence of `RpcResponseFrame`s in the same order.
 //! Per-frame errors don't poison the batch; a malformed batch
 //! envelope returns 400. See `docs/design/rpc-transport.md` §3.2.
+//!
+//! The frame count is capped at `BATCH_MAX_ITEMS` (cratestack#413) —
+//! matching every other batch surface
+//! (`crates/cratestack-sqlx/src/query/batch/validate.rs`,
+//! `crates/cratestack-rusqlite/src/batch/support.rs`) — and checked
+//! *before* the per-frame dispatch loop below, since each frame re-enters
+//! the exact same `authenticate()` + policy + dispatch path unary calls
+//! use (`rpc_dispatch_inner`); an unbounded frame count multiplies that
+//! full per-request cost by however many frames a single body can hold.
 
 use quote::quote;
 
@@ -37,6 +46,22 @@ pub(super) fn build_batch_block() -> proc_macro2::TokenStream {
                     Ok(frames) => frames,
                     Err(error) => return rpc_dispatch_error(&state, &headers, error),
                 };
+
+            // Reject an oversized batch before dispatching a single frame —
+            // see this file's module doc. Message mirrors
+            // `cratestack-sqlx`'s `validate_batch_size` wording so all
+            // batch surfaces speak the same shape.
+            if frames.len() > ::cratestack::BATCH_MAX_ITEMS {
+                let len = frames.len();
+                return rpc_dispatch_error(
+                    &state,
+                    &headers,
+                    ::cratestack::CoolError::Validation(format!(
+                        "batch size {len} exceeds maximum of {}",
+                        ::cratestack::BATCH_MAX_ITEMS,
+                    )),
+                );
+            }
 
             let mut responses: Vec<::cratestack::rpc::RpcResponseFrame> =
                 Vec::with_capacity(frames.len());

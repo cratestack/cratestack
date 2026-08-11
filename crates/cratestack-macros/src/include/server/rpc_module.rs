@@ -51,11 +51,18 @@ pub(super) fn build_rpc_module(
         /// Build the RPC router for `transport rpc` schemas. Mounts
         /// `POST /rpc/{op_id}` (unary), `POST /rpc/batch` (frames), and
         /// `GET /rpc/subscribe/{op_id}` (SSE subscriptions, §3.4a).
+        ///
+        /// `body_limit_bytes` (cratestack#413) is applied once as the
+        /// outermost `DefaultBodyLimit` layer — see
+        /// `axum_module/router_fn.rs`'s module doc for why this has to be
+        /// a real parameter rather than a default a consumer re-layers on
+        /// top of.
         pub fn rpc_router<R, C, Auth>(
             db: super::Cratestack,
             registry: R,
             codec: C,
             auth_provider: Auth,
+            body_limit_bytes: usize,
         ) -> axum::Router
         where
             R: super::procedures::ProcedureRegistry,
@@ -76,6 +83,7 @@ pub(super) fn build_rpc_module(
                     ::cratestack::rpc::RPC_UNARY_PATH,
                     axum::routing::post(rpc_dispatch),
                 )
+                .layer(::cratestack::axum::extract::DefaultBodyLimit::max(body_limit_bytes))
                 .with_state(state)
         }
     }

@@ -665,7 +665,13 @@ fn test_procedure_router(codec: CborCodec) -> cratestack::axum::Router {
 }
 
 fn test_combined_router(codec: CborCodec) -> cratestack::axum::Router {
-    cratestack_schema::axum::router(test_db(), TestProcedures, codec, TestAuthProvider)
+    cratestack_schema::axum::router(
+        test_db(),
+        TestProcedures,
+        codec,
+        TestAuthProvider,
+        cratestack::DEFAULT_BODY_LIMIT_BYTES,
+    )
 }
 
 fn test_negotiated_procedure_router() -> cratestack::axum::Router {
@@ -2591,6 +2597,7 @@ mod transport_rpc_schema {
             RpcTestProcedures,
             codec,
             RpcTestAuthProvider,
+            cratestack::DEFAULT_BODY_LIMIT_BYTES,
         )
     }
 

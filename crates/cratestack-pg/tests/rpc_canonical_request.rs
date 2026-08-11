@@ -146,6 +146,7 @@ async fn rpc_canonical_is_concrete_rpc_url_with_raw_frame_body() {
         RecordingAuthProvider {
             captured: captured.clone(),
         },
+        cratestack::DEFAULT_BODY_LIMIT_BYTES,
     );
 
     // --- procedure unary -----------------------------------------------
