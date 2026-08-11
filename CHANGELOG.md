@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+### `Forwarded`/`X-Forwarded-For` are now honored only from a configured trusted proxy — breaking (#415, #416)
+
+`enrich_context_from_headers` — public, re-exported as `cratestack::enrich_context_from_headers`
+— trusted `Forwarded`/`X-Forwarded-For` unconditionally when recording the audit `client_ip`,
+so a direct client could forge the value that lands in the audit trail. It now takes the
+trusted-proxy configuration and the verified socket peer explicitly, and only honors headers
+from a peer the consumer has allowlisted.
+
+**Breaking:** `enrich_context_from_headers(ctx, headers)` is now
+`enrich_context_from_headers(ctx, headers, trusted_proxy: Option<&TrustedProxyConfig>, peer:
+Option<SocketAddr>)`. `parse_client_ip(headers)` is now `parse_client_ip(headers, max_hops:
+usize)`. `router()`'s own signature is unchanged (Option A′ — see
+`docs/design/trusted-proxy-client-ip.md`).
+
+**Migration.** Deployments behind a reverse proxy that rely on `Forwarded`/`X-Forwarded-For`
+being recorded as audit `client_ip` must, after upgrading:
+
+1. Serve via `.into_make_service_with_connect_info::<SocketAddr>()`.
+2. Apply `.layer(axum::Extension(TrustedProxyConfig::trusting([<proxy IPs/CIDRs>]).max_hops(N)))`
+   on **every** router the app serves — including the gRPC router (`into_router()`) for
+   `transport grpc` schemas, which is a separate `axum::Router` instance not covered by
+   protecting `router()` alone.
+
+Without both, `client_ip` is `None` (or the proxy's own address) rather than the client's —
+the safe default, never a guess and never a trusted-by-default header.
+
+`max_hops` counts **right-to-left** — in from the end of the chain nearest the trusted proxy,
+not the `max_hops`-th entry from the left. A left-to-right reading re-opens the exact spoofing
+gap this change closes for any chain longer than one hop.
+
+As a side effect, this also closes the second half of #416: the idempotency/rate-limit default
+fingerprint's `ConnectInfo<SocketAddr>` fallback (already shipped) had nothing in the codebase
+that actually served through `into_make_service_with_connect_info`, so it never engaged in
+practice. Wiring `ConnectInfo` extraction for #415 closes that gap too — the same connect-info
+serving requirement above is what makes both work.
+
 ### `Value` serializes untagged on the wire, matching what it already persists — breaking
 
 `cratestack_core::Value` derived `Serialize`/`Deserialize`, which emits serde's

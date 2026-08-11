@@ -33,3 +33,12 @@ procedure echoWidgetName(name: String): String
 
 procedure widgetNameSamples(): String[]
   @allow(auth() != null)
+
+// #415: proves the trusted-proxy `client_ip` resolution reaches the
+// separately-built gRPC `into_router()`, not just `router()` — exercised
+// by `trusted_proxy_client_ip_grpc.rs`. Returns the literal string
+// `"none"` rather than an optional scalar so this stays on the same
+// "no nullable procedure return type" footing as every other fixture
+// procedure in this file.
+procedure whoAmI(): String
+  @allow(auth() != null)

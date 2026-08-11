@@ -138,6 +138,17 @@ pub(super) fn build_service(
 
             fn call(&mut self, req: ::cratestack::grpc::tonic::codegen::http::Request<B>) -> Self::Future {
                 let state = self.state.clone();
+                // Same trust boundary as REST/RPC (#415): the gRPC router
+                // built by `into_router()` is a *separate* `axum::Router`
+                // instance, not covered by protecting `router()` alone, so
+                // it must independently pick up whatever `Extension<TrustedProxyConfig>`/
+                // `ConnectInfo<SocketAddr>` were applied/wired on THIS
+                // router. `ClientIpContext::from_extensions` reads both
+                // straight off `req.extensions()` rather than through
+                // axum's own extractor machinery, which this raw
+                // `http::Request<B>` (tonic's `Service` boundary, not an
+                // axum handler) never runs.
+                let client_ip_ctx = ::cratestack::ClientIpContext::from_extensions(req.extensions());
                 match req.uri().path() {
                     #(#arms)*
                     _ => Box::pin(async move {
@@ -280,7 +291,7 @@ fn build_get_arm(package: &str, model: &Model, pk: &Field) -> proc_macro2::Token
     let _ = pk;
     quote! {
         #path => {
-            struct #svc_ident<C, Auth>(super::axum::ModelRouterState<C, Auth>);
+            struct #svc_ident<C, Auth>(super::axum::ModelRouterState<C, Auth>, ::cratestack::ClientIpContext);
             impl<C, Auth> ::cratestack::grpc::tonic::server::UnaryService<pb::#request_ty> for #svc_ident<C, Auth>
             where
                 C: ::cratestack::HttpTransport + Send + Sync + 'static,
@@ -293,6 +304,7 @@ fn build_get_arm(package: &str, model: &Model, pk: &Field) -> proc_macro2::Token
                 >;
                 fn call(&mut self, request: ::cratestack::grpc::tonic::Request<pb::#request_ty>) -> Self::Future {
                     let state = self.0.clone();
+                    let client_ip_ctx = self.1.clone();
                     Box::pin(async move {
                         #prelude
                         let id = message.into_pk().map_err(|error| {
@@ -301,7 +313,7 @@ fn build_get_arm(package: &str, model: &Model, pk: &Field) -> proc_macro2::Token
                                 error.public_message().into_owned(),
                             )
                         })?;
-                        let response = super::axum::#dispatch_ident(state.clone(), canonical, headers.clone(), id, None).await;
+                        let response = super::axum::#dispatch_ident(state.clone(), canonical, headers.clone(), client_ip_ctx, id, None).await;
                         let domain: super::#response_ty = match ::cratestack::__private::bridge_grpc_response(response, &state.codec, &headers).await {
                             Ok(value) => value,
                             Err((code, message)) => return Err(#status),
@@ -310,7 +322,7 @@ fn build_get_arm(package: &str, model: &Model, pk: &Field) -> proc_macro2::Token
                     })
                 }
             }
-            let svc = #svc_ident(#model_state);
+            let svc = #svc_ident(#model_state, client_ip_ctx);
             let codec = ::cratestack::grpc::tonic::codec::ProstCodec::default();
             let mut grpc = ::cratestack::grpc::tonic::server::Grpc::new(codec);
             Box::pin(async move { Ok(grpc.unary(svc, req).await) })
@@ -333,7 +345,7 @@ fn build_delete_arm(package: &str, model: &Model, pk: &Field) -> proc_macro2::To
     let _ = pk;
     quote! {
         #path => {
-            struct #svc_ident<C, Auth>(super::axum::ModelRouterState<C, Auth>);
+            struct #svc_ident<C, Auth>(super::axum::ModelRouterState<C, Auth>, ::cratestack::ClientIpContext);
             impl<C, Auth> ::cratestack::grpc::tonic::server::UnaryService<pb::#request_ty> for #svc_ident<C, Auth>
             where
                 C: ::cratestack::HttpTransport + Send + Sync + 'static,
@@ -346,6 +358,7 @@ fn build_delete_arm(package: &str, model: &Model, pk: &Field) -> proc_macro2::To
                 >;
                 fn call(&mut self, request: ::cratestack::grpc::tonic::Request<pb::#request_ty>) -> Self::Future {
                     let state = self.0.clone();
+                    let client_ip_ctx = self.1.clone();
                     Box::pin(async move {
                         #prelude
                         let id = message.into_pk().map_err(|error| {
@@ -354,7 +367,7 @@ fn build_delete_arm(package: &str, model: &Model, pk: &Field) -> proc_macro2::To
                                 error.public_message().into_owned(),
                             )
                         })?;
-                        let response = super::axum::#dispatch_ident(state.clone(), canonical, headers.clone(), id).await;
+                        let response = super::axum::#dispatch_ident(state.clone(), canonical, headers.clone(), client_ip_ctx, id).await;
                         let domain: super::#response_ty = match ::cratestack::__private::bridge_grpc_response(response, &state.codec, &headers).await {
                             Ok(value) => value,
                             Err((code, message)) => return Err(#status),
@@ -363,7 +376,7 @@ fn build_delete_arm(package: &str, model: &Model, pk: &Field) -> proc_macro2::To
                     })
                 }
             }
-            let svc = #svc_ident(#model_state);
+            let svc = #svc_ident(#model_state, client_ip_ctx);
             let codec = ::cratestack::grpc::tonic::codec::ProstCodec::default();
             let mut grpc = ::cratestack::grpc::tonic::server::Grpc::new(codec);
             Box::pin(async move { Ok(grpc.unary(svc, req).await) })
@@ -385,7 +398,7 @@ fn build_create_arm(package: &str, model: &Model) -> proc_macro2::TokenStream {
     let status = status_from_bridge_error(quote! { code }, quote! { message });
     quote! {
         #path => {
-            struct #svc_ident<C, Auth>(super::axum::ModelRouterState<C, Auth>);
+            struct #svc_ident<C, Auth>(super::axum::ModelRouterState<C, Auth>, ::cratestack::ClientIpContext);
             impl<C, Auth> ::cratestack::grpc::tonic::server::UnaryService<pb::#request_ty> for #svc_ident<C, Auth>
             where
                 C: ::cratestack::HttpTransport + Send + Sync + 'static,
@@ -398,6 +411,7 @@ fn build_create_arm(package: &str, model: &Model) -> proc_macro2::TokenStream {
                 >;
                 fn call(&mut self, request: ::cratestack::grpc::tonic::Request<pb::#request_ty>) -> Self::Future {
                     let state = self.0.clone();
+                    let client_ip_ctx = self.1.clone();
                     Box::pin(async move {
                         #prelude
                         let domain: ::core::result::Result<super::#request_ty, ::cratestack::CoolError> =
@@ -420,7 +434,7 @@ fn build_create_arm(package: &str, model: &Model) -> proc_macro2::TokenStream {
                                 ));
                             }
                         };
-                        let response = super::axum::#dispatch_ident(state.clone(), canonical, headers.clone(), body_bytes).await;
+                        let response = super::axum::#dispatch_ident(state.clone(), canonical, headers.clone(), client_ip_ctx, body_bytes).await;
                         let domain: super::#response_ty = match ::cratestack::__private::bridge_grpc_response(response, &state.codec, &headers).await {
                             Ok(value) => value,
                             Err((code, message)) => return Err(#status),
@@ -429,7 +443,7 @@ fn build_create_arm(package: &str, model: &Model) -> proc_macro2::TokenStream {
                     })
                 }
             }
-            let svc = #svc_ident(#model_state);
+            let svc = #svc_ident(#model_state, client_ip_ctx);
             let codec = ::cratestack::grpc::tonic::codec::ProstCodec::default();
             let mut grpc = ::cratestack::grpc::tonic::server::Grpc::new(codec);
             Box::pin(async move { Ok(grpc.unary(svc, req).await) })
@@ -452,7 +466,7 @@ fn build_update_arm(package: &str, model: &Model, pk: &Field) -> proc_macro2::To
     let _ = pk;
     quote! {
         #path => {
-            struct #svc_ident<C, Auth>(super::axum::ModelRouterState<C, Auth>);
+            struct #svc_ident<C, Auth>(super::axum::ModelRouterState<C, Auth>, ::cratestack::ClientIpContext);
             impl<C, Auth> ::cratestack::grpc::tonic::server::UnaryService<pb::#request_ty> for #svc_ident<C, Auth>
             where
                 C: ::cratestack::HttpTransport + Send + Sync + 'static,
@@ -465,6 +479,7 @@ fn build_update_arm(package: &str, model: &Model, pk: &Field) -> proc_macro2::To
                 >;
                 fn call(&mut self, request: ::cratestack::grpc::tonic::Request<pb::#request_ty>) -> Self::Future {
                     let state = self.0.clone();
+                    let client_ip_ctx = self.1.clone();
                     Box::pin(async move {
                         #prelude
                         let (id, patch) = match message.into_id_and_patch() {
@@ -485,7 +500,7 @@ fn build_update_arm(package: &str, model: &Model, pk: &Field) -> proc_macro2::To
                                 ));
                             }
                         };
-                        let response = super::axum::#dispatch_ident(state.clone(), canonical, headers.clone(), id, patch_bytes).await;
+                        let response = super::axum::#dispatch_ident(state.clone(), canonical, headers.clone(), client_ip_ctx, id, patch_bytes).await;
                         let domain: super::#response_ty = match ::cratestack::__private::bridge_grpc_response(response, &state.codec, &headers).await {
                             Ok(value) => value,
                             Err((code, message)) => return Err(#status),
@@ -494,7 +509,7 @@ fn build_update_arm(package: &str, model: &Model, pk: &Field) -> proc_macro2::To
                     })
                 }
             }
-            let svc = #svc_ident(#model_state);
+            let svc = #svc_ident(#model_state, client_ip_ctx);
             let codec = ::cratestack::grpc::tonic::codec::ProstCodec::default();
             let mut grpc = ::cratestack::grpc::tonic::server::Grpc::new(codec);
             Box::pin(async move { Ok(grpc.unary(svc, req).await) })
@@ -553,7 +568,7 @@ fn build_list_arm(package: &str, model: &Model) -> proc_macro2::TokenStream {
     };
     quote! {
         #path => {
-            struct #svc_ident<C, Auth>(super::axum::ModelRouterState<C, Auth>);
+            struct #svc_ident<C, Auth>(super::axum::ModelRouterState<C, Auth>, ::cratestack::ClientIpContext);
             impl<C, Auth> ::cratestack::grpc::tonic::server::UnaryService<pb::#request_ty> for #svc_ident<C, Auth>
             where
                 C: ::cratestack::HttpTransport + Send + Sync + 'static,
@@ -566,17 +581,18 @@ fn build_list_arm(package: &str, model: &Model) -> proc_macro2::TokenStream {
                 >;
                 fn call(&mut self, request: ::cratestack::grpc::tonic::Request<pb::#request_ty>) -> Self::Future {
                     let state = self.0.clone();
+                    let client_ip_ctx = self.1.clone();
                     Box::pin(async move {
                         #prelude
                         let domain_query = message.into_domain();
                         let raw_query = ::cratestack::rpc::synthesize_list_query(&domain_query);
-                        let response = super::axum::#dispatch_ident(state.clone(), canonical, headers.clone(), raw_query).await;
+                        let response = super::axum::#dispatch_ident(state.clone(), canonical, headers.clone(), client_ip_ctx, raw_query).await;
                         let wire_value = { #bridge_and_wrap };
                         Ok(::cratestack::grpc::tonic::Response::new(wire_value))
                     })
                 }
             }
-            let svc = #svc_ident(#model_state);
+            let svc = #svc_ident(#model_state, client_ip_ctx);
             let codec = ::cratestack::grpc::tonic::codec::ProstCodec::default();
             let mut grpc = ::cratestack::grpc::tonic::server::Grpc::new(codec);
             Box::pin(async move { Ok(grpc.unary(svc, req).await) })

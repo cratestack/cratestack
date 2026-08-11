@@ -48,6 +48,10 @@ The crate exposes header validation, codec encode/decode, and transport-level en
 - `parse_if_match_version`, `set_version_etag`
 - `parse_traceparent`, `parse_client_ip`, `enrich_context_from_headers`
 
+**Breaking (#415):** `enrich_context_from_headers` and `parse_client_ip` both changed
+signature to make the `Forwarded`/`X-Forwarded-For` trust boundary explicit — see
+[Trusted Proxy / Audit `client_ip`](#trusted-proxy--audit-client_ip) below.
+
 The `CBOR_SEQUENCE_CONTENT_TYPE` constant is exported as `application/cbor-seq`; sequence-mode transport is the documented target but is not enabled on generated routers today (a single configured codec per router is the current behaviour).
 
 ## Idempotency
@@ -116,6 +120,73 @@ let app = router.route_layer(
 ```
 
 Both filters fail closed: a lookup miss (unknown op, unmatched route, non-RPC path) always rate-limits rather than exempts. `POST /rpc/batch` is a known exception — it is always rate-limited wholesale, because the filter runs before the batch body is decoded and can't see the individual ops inside it; see `build_rpc_ops_filter`'s rustdoc.
+
+## Trusted Proxy / Audit `client_ip`
+
+`Forwarded`/`X-Forwarded-For` are client-suppliable headers. Without a trusted-proxy
+allowlist, a direct client can forge the value recorded as the audit `client_ip` (#415).
+`enrich_context_from_headers` — called from every generated dispatch function — now
+takes the trusted-proxy configuration and the verified socket peer explicitly:
+
+```rust
+pub fn enrich_context_from_headers(
+    ctx: cratestack_core::CoolContext,
+    headers: &axum::http::HeaderMap,
+    trusted_proxy: Option<&cratestack_axum::TrustedProxyConfig>,
+    peer: Option<std::net::SocketAddr>,
+) -> cratestack_core::CoolContext;
+```
+
+Generated routers resolve both arguments per-request from an `Option<axum::Extension<TrustedProxyConfig>>`
+and an `Option<axum::extract::ConnectInfo<SocketAddr>>` — nothing to call yourself. Two things
+the consumer supplies at bootstrap:
+
+```rust
+use std::net::SocketAddr;
+use cratestack_axum::TrustedProxyConfig;
+
+// Trust a single reverse proxy (or CIDR range) and honor one hop of
+// Forwarded/X-Forwarded-For from it. Omit the `.layer(...)` entirely (or
+// use `TrustedProxyConfig::none()`) to never trust these headers at all.
+let app = router
+    .layer(axum::Extension(
+        TrustedProxyConfig::trusting(["10.0.0.5".parse::<std::net::IpAddr>()?.into()])
+            .max_hops(1),
+    ));
+
+// Required for `ConnectInfo<SocketAddr>` — and therefore the trusted-proxy
+// peer check, plus the idempotency/rate-limit `ConnectInfo` fallback below
+// — to be populated at all:
+let listener = tokio::net::TcpListener::bind(addr).await?;
+axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await?;
+```
+
+**Safe default:** with no `Extension<TrustedProxyConfig>` applied, headers are never
+consulted; `client_ip` is the verified socket peer address if `ConnectInfo` is available,
+or omitted entirely if it isn't. This is a deliberate migration note, not just a technical
+default — **deployments that rely on `Forwarded`/`X-Forwarded-For` being recorded as audit
+`client_ip` must add both of the above after upgrading**, or `client_ip` silently becomes
+`None`/the proxy's own address instead of the client's.
+
+**Hop count is right-to-left.** `max_hops` walks in from the *right* end of the chain (the
+end nearest the trusted proxy), not the left — the left end is exactly the part an
+untrusted client controls. `max_hops(2)` trusts a two-hop chain (e.g. CDN + load balancer,
+both in the allowlist); `max_hops(0)` (or an absent `Extension`) never trusts headers at all.
+
+**`transport grpc` schemas need the same `.layer(...)` on their own router** — `into_router()`
+builds a second, separately served `axum::Router` that is not covered by protecting `router()`
+alone.
+
+See [`docs/design/trusted-proxy-client-ip.md`](../../docs/design/trusted-proxy-client-ip.md)
+for the full design and decision record.
+
+### Idempotency/rate-limit fingerprint fallback (#416)
+
+`IdempotencyLayer`/`RateLimitLayer`'s default principal fingerprint already falls back to
+`ConnectInfo<SocketAddr>` when `Authorization` is absent (rather than a shared `"anonymous"`
+bucket) — but that fallback only ever engages when the server is actually served through
+`into_make_service_with_connect_info::<SocketAddr>()`, per the snippet above. Without it,
+every caller without an `Authorization` header still collapses onto one shared bucket.
 
 ## Query Parsing
 

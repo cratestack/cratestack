@@ -44,7 +44,7 @@ pub(super) fn build_procedure_unary_arm(
 
     quote! {
         #path => {
-            struct #svc_ident<R, C, Auth>(super::axum::ProcedureRouterState<R, C, Auth>);
+            struct #svc_ident<R, C, Auth>(super::axum::ProcedureRouterState<R, C, Auth>, ::cratestack::ClientIpContext);
             impl<R, C, Auth> ::cratestack::grpc::tonic::server::UnaryService<pb::#request_ty> for #svc_ident<R, C, Auth>
             where
                 R: super::procedures::ProcedureRegistry,
@@ -58,6 +58,7 @@ pub(super) fn build_procedure_unary_arm(
                 >;
                 fn call(&mut self, request: ::cratestack::grpc::tonic::Request<pb::#request_ty>) -> Self::Future {
                     let state = self.0.clone();
+                    let client_ip_ctx = self.1.clone();
                     Box::pin(async move {
                         #prelude
                         let args: ::core::result::Result<super::procedures::#module_ident::Args, ::cratestack::CoolError> =
@@ -80,7 +81,7 @@ pub(super) fn build_procedure_unary_arm(
                                 ));
                             }
                         };
-                        let response = super::axum::#dispatch_ident(state.clone(), canonical, headers.clone(), body_bytes).await;
+                        let response = super::axum::#dispatch_ident(state.clone(), canonical, headers.clone(), client_ip_ctx, body_bytes).await;
                         let domain: super::procedures::#module_ident::Output = match ::cratestack::__private::bridge_grpc_response(response, &state.codec, &headers).await {
                             Ok(value) => value,
                             Err((code, message)) => return Err(#status),
@@ -89,7 +90,7 @@ pub(super) fn build_procedure_unary_arm(
                     })
                 }
             }
-            let svc = #svc_ident(state);
+            let svc = #svc_ident(state, client_ip_ctx);
             let codec = ::cratestack::grpc::tonic::codec::ProstCodec::default();
             let mut grpc = ::cratestack::grpc::tonic::server::Grpc::new(codec);
             Box::pin(async move { Ok(grpc.unary(svc, req).await) })
@@ -126,7 +127,7 @@ pub(super) fn build_procedure_stream_arm(
 
     quote! {
         #path => {
-            struct #svc_ident<R, C, Auth>(super::axum::ProcedureRouterState<R, C, Auth>);
+            struct #svc_ident<R, C, Auth>(super::axum::ProcedureRouterState<R, C, Auth>, ::cratestack::ClientIpContext);
             impl<R, C, Auth> ::cratestack::grpc::tonic::server::ServerStreamingService<pb::#request_ty> for #svc_ident<R, C, Auth>
             where
                 R: super::procedures::ProcedureRegistry,
@@ -141,6 +142,7 @@ pub(super) fn build_procedure_stream_arm(
                 >;
                 fn call(&mut self, request: ::cratestack::grpc::tonic::Request<pb::#request_ty>) -> Self::Future {
                     let state = self.0.clone();
+                    let client_ip_ctx = self.1.clone();
                     Box::pin(async move {
                         #prelude
                         let args: ::core::result::Result<super::procedures::#module_ident::Args, ::cratestack::CoolError> =
@@ -163,7 +165,7 @@ pub(super) fn build_procedure_stream_arm(
                                 ));
                             }
                         };
-                        let response = super::axum::#dispatch_ident(state.clone(), canonical, headers.clone(), body_bytes).await;
+                        let response = super::axum::#dispatch_ident(state.clone(), canonical, headers.clone(), client_ip_ctx, body_bytes).await;
                         let items: super::procedures::#module_ident::Output = match ::cratestack::__private::bridge_grpc_response(response, &state.codec, &headers).await {
                             Ok(value) => value,
                             Err((code, message)) => return Err(#status),
@@ -176,7 +178,7 @@ pub(super) fn build_procedure_stream_arm(
                     })
                 }
             }
-            let svc = #svc_ident(state);
+            let svc = #svc_ident(state, client_ip_ctx);
             let codec = ::cratestack::grpc::tonic::codec::ProstCodec::default();
             let mut grpc = ::cratestack::grpc::tonic::server::Grpc::new(codec);
             Box::pin(async move { Ok(grpc.server_streaming(svc, req).await) })

@@ -40,6 +40,13 @@ reserved = []
 name = 1
 reserved = []
 
+[messages.WhoAmIInput]
+reserved = []
+
+[messages.WhoAmIOutput]
+result = 1
+reserved = []
+
 [messages.Widget]
 id = 1
 name = 2

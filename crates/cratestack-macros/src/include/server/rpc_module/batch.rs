@@ -12,6 +12,7 @@ pub(super) fn build_batch_block() -> proc_macro2::TokenStream {
             ::cratestack::axum::extract::State(state):
                 ::cratestack::axum::extract::State<RpcRouterState<R, C, Auth>>,
             headers: ::cratestack::axum::http::HeaderMap,
+            client_ip_ctx: ClientIpContext,
             body: ::cratestack::axum::body::Bytes,
         ) -> ::cratestack::axum::response::Response
         where
@@ -58,11 +59,13 @@ pub(super) fn build_batch_block() -> proc_macro2::TokenStream {
                 // because the loop owns it.
                 let frame_state = state.clone();
                 let frame_headers = headers.clone();
+                let frame_client_ip_ctx = client_ip_ctx.clone();
                 let response = rpc_dispatch_inner(
                     frame_state,
                     frame_headers,
                     &frame.op,
                     ::cratestack::axum::body::Bytes::from(input_bytes),
+                    frame_client_ip_ctx,
                 ).await;
 
                 let frame_result = ::cratestack::rpc::response_to_frame(

@@ -58,17 +58,11 @@ fn rfc7239_forwarded_takes_priority_over_x_forwarded_for() {
         HeaderValue::from_static("for=192.0.2.43;proto=https"),
     );
     headers.insert("x-forwarded-for", HeaderValue::from_static("10.0.0.1"));
-    assert_eq!(parse_client_ip(&headers), Some("192.0.2.43".to_owned()));
-}
-
-#[test]
-fn x_forwarded_for_takes_leftmost_address() {
-    let h = headers_with("x-forwarded-for", "192.0.2.43, 10.0.0.1");
-    assert_eq!(parse_client_ip(&h), Some("192.0.2.43".to_owned()));
+    assert_eq!(parse_client_ip(&headers, 1), Some("192.0.2.43".to_owned()));
 }
 
 #[test]
 fn client_ip_strips_brackets_around_ipv6() {
     let h = headers_with("forwarded", "for=\"[2001:db8::1]\"");
-    assert_eq!(parse_client_ip(&h), Some("2001:db8::1".to_owned()));
+    assert_eq!(parse_client_ip(&h, 1), Some("2001:db8::1".to_owned()));
 }

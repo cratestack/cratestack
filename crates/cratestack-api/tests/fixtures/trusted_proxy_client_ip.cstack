@@ -1,0 +1,15 @@
+// #415: end-to-end fixture for trusted-proxy `client_ip` resolution
+// through a real generated `router()` — mirrors
+// `no_database_procedures.cstack`'s `db = None` shape (no Postgres
+// dependency) since this crate has no `cratestack-sqlx` in its
+// dependency graph under any feature.
+
+datasource db {
+  provider = "none"
+}
+
+// Returns the literal string "none" rather than an optional scalar to
+// stay on the same "no nullable procedure return type" footing as
+// every other fixture in this workspace.
+procedure whoAmI(): String
+  @allow(auth() != null)

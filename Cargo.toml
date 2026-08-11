@@ -110,6 +110,10 @@ axum = "0"
 bytes = "1"
 chumsky = "0"
 erased-serde = "0.4"
+# Direct dependency as of #415 (trusted-proxy CIDR allowlists): already
+# present transitively via `hyper-util`, so this promotes an existing
+# dependency-tree member rather than introducing a new one.
+ipnet = "2"
 minicbor = "2.2.1"
 minicbor-serde = { version = "0.6.2", features = ["std"] }
 chrono = { version = "0", features = ["serde"] }

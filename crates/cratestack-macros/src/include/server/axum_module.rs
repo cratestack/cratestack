@@ -46,6 +46,7 @@ pub(super) fn build_axum_module(c: &ServerCollected, db: ServerDb) -> proc_macro
     quote! {
         pub mod axum {
             use ::cratestack::AuthProvider;
+            use ::cratestack::ClientIpContext;
             use ::cratestack::CoolError;
             use ::cratestack::HttpTransport;
             use ::cratestack::axum;

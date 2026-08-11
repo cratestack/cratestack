@@ -83,6 +83,21 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     > + Send {
         async move { Ok(vec!["alpha".to_owned(), "beta".to_owned()]) }
     }
+
+    /// #415: exercised by `trusted_proxy_client_ip_grpc.rs`, not this
+    /// file — kept minimal here since this file's job is proving the
+    /// generated code compiles/mounts, not the trusted-proxy behavior.
+    fn who_am_i(
+        &self,
+        _db: &cratestack_schema::Cratestack,
+        ctx: &cratestack::CoolContext,
+        _args: cratestack_schema::procedures::who_am_i::Args,
+    ) -> impl std::future::Future<
+        Output = Result<cratestack_schema::procedures::who_am_i::Output, cratestack::CoolError>,
+    > + Send {
+        let client_ip = ctx.client_ip().unwrap_or("none").to_owned();
+        async move { Ok(client_ip) }
+    }
 }
 
 /// Proves `cratestack_schema::grpc::pb` exists with the expected mirror

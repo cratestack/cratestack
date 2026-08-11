@@ -51,6 +51,7 @@ pub(crate) fn generate_procedure_axum_handler(
         async fn #handler_ident<R, C, Auth>(
             State(state): State<ProcedureRouterState<R, C, Auth>>,
             headers: HeaderMap,
+            client_ip_ctx: ClientIpContext,
             body: Bytes,
         ) -> Response
         where
@@ -68,6 +69,7 @@ pub(crate) fn generate_procedure_axum_handler(
                     body: canonical_body.as_ref(),
                 },
                 headers,
+                client_ip_ctx,
                 body,
             ).await
         }
@@ -83,6 +85,7 @@ pub(crate) fn generate_procedure_axum_handler(
             state: ProcedureRouterState<R, C, Auth>,
             canonical: CanonicalRequest<'_>,
             headers: HeaderMap,
+            client_ip_ctx: ClientIpContext,
             body: Bytes,
         ) -> Response
         where
@@ -109,7 +112,7 @@ pub(crate) fn generate_procedure_axum_handler(
             }
             let request = request_context(canonical.method, canonical.path, canonical.query, &headers, canonical.body);
             let ctx = match state.auth_provider.authenticate(&request).await {
-                Ok(ctx) => ::cratestack::enrich_context_from_headers(ctx, &headers),
+                Ok(ctx) => ::cratestack::enrich_context_from_headers(ctx, &headers, client_ip_ctx.trusted_proxy.as_ref(), client_ip_ctx.peer),
                 Err(error) => {
                     let error: ::cratestack::CoolError = error.into();
                     ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = canonical_route, cratestack_procedure = #procedure_name, cratestack_operation = "procedure", cratestack_error = error.code(),

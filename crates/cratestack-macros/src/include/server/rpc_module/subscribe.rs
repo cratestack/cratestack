@@ -14,6 +14,7 @@ pub(super) fn build_subscribe_block(arms: &[proc_macro2::TokenStream]) -> proc_m
             ::cratestack::axum::extract::Path(op_id):
                 ::cratestack::axum::extract::Path<String>,
             headers: ::cratestack::axum::http::HeaderMap,
+            client_ip_ctx: ClientIpContext,
         ) -> ::cratestack::axum::response::Response
         where
             R: super::procedures::ProcedureRegistry,

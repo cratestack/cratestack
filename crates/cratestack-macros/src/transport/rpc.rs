@@ -44,6 +44,7 @@ pub(crate) fn generate_procedure_rpc_dispatch_arm(
                     body: canonical_body.as_ref(),
                 },
                 headers,
+                client_ip_ctx,
                 body,
             ).await
         }
@@ -130,6 +131,7 @@ pub(crate) fn generate_model_rpc_dispatch_arms(model: &Model) -> Vec<proc_macro2
                         body: body.as_ref(),
                     },
                     headers,
+                    client_ip_ctx,
                     raw_query,
                 ).await
             }
@@ -157,6 +159,7 @@ pub(crate) fn generate_model_rpc_dispatch_arms(model: &Model) -> Vec<proc_macro2
                         body: body.as_ref(),
                     },
                     headers,
+                    client_ip_ctx,
                     input.id,
                     None,
                 ).await
@@ -179,6 +182,7 @@ pub(crate) fn generate_model_rpc_dispatch_arms(model: &Model) -> Vec<proc_macro2
                         body: canonical_body.as_ref(),
                     },
                     headers,
+                    client_ip_ctx,
                     body,
                 ).await
             }
@@ -218,6 +222,7 @@ pub(crate) fn generate_model_rpc_dispatch_arms(model: &Model) -> Vec<proc_macro2
                         body: body.as_ref(),
                     },
                     headers,
+                    client_ip_ctx,
                     input.id,
                     ::cratestack::axum::body::Bytes::from(patch_bytes),
                 ).await
@@ -246,6 +251,7 @@ pub(crate) fn generate_model_rpc_dispatch_arms(model: &Model) -> Vec<proc_macro2
                         body: body.as_ref(),
                     },
                     headers,
+                    client_ip_ctx,
                     input.id,
                 ).await
             }

@@ -94,6 +94,7 @@ fn build_dispatch_block(arms: &[proc_macro2::TokenStream]) -> proc_macro2::Token
             headers: ::cratestack::axum::http::HeaderMap,
             op_id: &str,
             body: ::cratestack::axum::body::Bytes,
+            client_ip_ctx: ClientIpContext,
         ) -> ::cratestack::axum::response::Response
         where
             R: super::procedures::ProcedureRegistry,
@@ -134,6 +135,7 @@ fn build_dispatch_block(arms: &[proc_macro2::TokenStream]) -> proc_macro2::Token
             ::cratestack::axum::extract::Path(op_id):
                 ::cratestack::axum::extract::Path<String>,
             headers: ::cratestack::axum::http::HeaderMap,
+            client_ip_ctx: ClientIpContext,
             body: ::cratestack::axum::body::Bytes,
         ) -> ::cratestack::axum::response::Response
         where
@@ -141,7 +143,7 @@ fn build_dispatch_block(arms: &[proc_macro2::TokenStream]) -> proc_macro2::Token
             C: HttpTransport,
             Auth: ::cratestack::AuthProvider,
         {
-            rpc_dispatch_inner(state, headers, &op_id, body).await
+            rpc_dispatch_inner(state, headers, &op_id, body, client_ip_ctx).await
         }
     }
 }

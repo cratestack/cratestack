@@ -1,12 +1,43 @@
-## Design proposal: trusted-proxy configuration for audit `client_ip` (#415)
+## Design: trusted-proxy configuration for audit `client_ip` (#415)
 
-> **Status: proposal, not a decision.** This document exists so the maintainer can make the judgement calls listed under "Decisions needed"; it is not an approved design. Nothing here is implemented.
+> **Status: decided and implemented.** The maintainer made the calls below; the
+> implementation (this PR) matches them. This section records what was decided and
+> where it deviated from the original sketch — the "Decisions needed"/"Options"
+> sections below are kept as the historical record of how the decision was reached,
+> not as an open proposal.
 
-**Status:** proposal, awaiting maintainer decision — no code written. Revised after
-adversarial review against the actual code and doc history; see **Reviewer notes** at
-the end for a diff against the original draft.
+### Decisions recorded
 
-### Decisions needed
+1. **Config surface: Option A′.** A plain `Extension<TrustedProxyConfig>` the consumer
+   applies via `.layer(...)`, resolved inline inside `enrich_context_from_headers`.
+   `router()`'s signature is unchanged.
+2. **CIDR allowlist is in for v1.** `TrustedProxyConfig::trusting` takes `ipnet::IpNet`
+   entries (a direct workspace dependency now, promoted from the transitive `hyper-util`
+   edge it already had). A bare host address is expressed via `IpAddr`'s `Into<IpNet>`.
+3. **Safe default: `client_ip: None`** when nothing is configured and no verified socket
+   peer is available either. Headers are never trusted by default; nothing is guessed.
+4. **Hop-count algorithm is right-to-left**, per decision 5 below, implemented in
+   `cratestack-axum::headers::forwarded::parse_client_ip`'s `select_hop` and covered by
+   a regression test (`hop_count_walks_right_to_left_not_left_to_right`) that is
+   verified to fail under a left-to-right implementation.
+5. **gRPC (`transport grpc` / `into_router()`) is in scope**, not deferred. Covered by
+   `crates/cratestack-pg/tests/trusted_proxy_client_ip_grpc.rs`.
+
+**One implementation detail that deviated from the sketch below, and why:** the
+sketch's "add `Option<axum::Extension<TrustedProxyConfig>>`,
+`Option<axum::extract::ConnectInfo<SocketAddr>>` to each dispatch fn" does not compile
+against axum 0.8 — that version only extends its blanket `Option<T>: FromRequestParts`
+impl to types implementing the separate `OptionalFromRequestParts` trait, which neither
+`Extension<T>` nor `ConnectInfo<T>` implements. The actual implementation instead adds a
+single hand-written `cratestack_axum::ClientIpContext` type with its own infallible
+`FromRequestParts` impl (reads `Parts::extensions` directly, via the same seam axum's
+own `Extensions` extractor uses) — same non-breaking property, same "one combined
+extractor" shape the sketch intended, adjusted for what the pinned axum version actually
+supports. The gRPC path (`ApiServer::call`, a raw tonic `Service` rather than an axum
+handler) builds the same type via `ClientIpContext::from_extensions(&http::Extensions)`
+instead, since it never runs axum's extractor machinery at all.
+
+### Decisions needed (historical — see "Decisions recorded" above)
 
 1. **Config surface shape.** A consumer-applied mechanism (`tower::Layer` or a plain
    `Extension`) wired outside the generated `router()` — mirroring `RateLimitLayer`/

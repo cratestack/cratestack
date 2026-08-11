@@ -51,6 +51,7 @@ cratestack-sql.workspace = true
 erased-serde.workspace = true
 futures-util.workspace = true
 http.workspace = true
+ipnet.workspace = true
 minicbor = { workspace = true, features = ["alloc"] }
 serde.workspace = true
 serde_json.workspace = true

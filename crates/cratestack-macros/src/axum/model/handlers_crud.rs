@@ -20,6 +20,7 @@ pub(super) fn build_create_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenSt
         async fn #create_handler_ident<C, Auth>(
             State(state): State<ModelRouterState<C, Auth>>,
             headers: HeaderMap,
+            client_ip_ctx: ClientIpContext,
             body: Bytes,
         ) -> Response
         where
@@ -36,6 +37,7 @@ pub(super) fn build_create_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenSt
                     body: canonical_body.as_ref(),
                 },
                 headers,
+                client_ip_ctx,
                 body,
             ).await
         }
@@ -48,6 +50,7 @@ pub(super) fn build_create_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenSt
             state: ModelRouterState<C, Auth>,
             canonical: CanonicalRequest<'_>,
             headers: HeaderMap,
+            client_ip_ctx: ClientIpContext,
             body: Bytes,
         ) -> Response
         where
@@ -61,7 +64,7 @@ pub(super) fn build_create_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenSt
             }
             let request = request_context(canonical.method, canonical.path, canonical.query, &headers, canonical.body);
             let ctx = match state.auth_provider.authenticate(&request).await {
-                Ok(ctx) => ::cratestack::enrich_context_from_headers(ctx, &headers),
+                Ok(ctx) => ::cratestack::enrich_context_from_headers(ctx, &headers, client_ip_ctx.trusted_proxy.as_ref(), client_ip_ctx.peer),
                 Err(error) => {
                     return ::cratestack::encode_transport_result_with_status_for::<_, super::models::#model_ident>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error.into()));
                 }
@@ -103,6 +106,7 @@ pub(super) fn build_get_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStrea
             headers: HeaderMap,
             Path(id): Path<#primary_key_type>,
             RawQuery(raw_query): RawQuery,
+            client_ip_ctx: ClientIpContext,
         ) -> Response
         where
             C: HttpTransport,
@@ -119,6 +123,7 @@ pub(super) fn build_get_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStrea
                     body: &[],
                 },
                 headers,
+                client_ip_ctx,
                 id,
                 raw_query,
             ).await
@@ -133,6 +138,7 @@ pub(super) fn build_get_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStrea
             state: ModelRouterState<C, Auth>,
             canonical: CanonicalRequest<'_>,
             headers: HeaderMap,
+            client_ip_ctx: ClientIpContext,
             id: #primary_key_type,
             raw_query: Option<String>,
         ) -> Response
@@ -147,7 +153,7 @@ pub(super) fn build_get_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStrea
             }
             let request = request_context(canonical.method, canonical.path, canonical.query, &headers, canonical.body);
             let ctx = match state.auth_provider.authenticate(&request).await {
-                Ok(ctx) => ::cratestack::enrich_context_from_headers(ctx, &headers),
+                Ok(ctx) => ::cratestack::enrich_context_from_headers(ctx, &headers, client_ip_ctx.trusted_proxy.as_ref(), client_ip_ctx.peer),
                 Err(error) => {
                     return ::cratestack::encode_transport_result_with_status_for::<_, ::cratestack::serde_json::Value>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error.into()));
                 }
@@ -194,6 +200,7 @@ pub(super) fn build_delete_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenSt
             State(state): State<ModelRouterState<C, Auth>>,
             headers: HeaderMap,
             Path(id): Path<#primary_key_type>,
+            client_ip_ctx: ClientIpContext,
         ) -> Response
         where
             C: HttpTransport,
@@ -209,6 +216,7 @@ pub(super) fn build_delete_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenSt
                     body: &[],
                 },
                 headers,
+                client_ip_ctx,
                 id,
             ).await
         }
@@ -222,6 +230,7 @@ pub(super) fn build_delete_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenSt
             state: ModelRouterState<C, Auth>,
             canonical: CanonicalRequest<'_>,
             headers: HeaderMap,
+            client_ip_ctx: ClientIpContext,
             id: #primary_key_type,
         ) -> Response
         where
@@ -235,7 +244,7 @@ pub(super) fn build_delete_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenSt
             }
             let request = request_context(canonical.method, canonical.path, canonical.query, &headers, canonical.body);
             let ctx = match state.auth_provider.authenticate(&request).await {
-                Ok(ctx) => ::cratestack::enrich_context_from_headers(ctx, &headers),
+                Ok(ctx) => ::cratestack::enrich_context_from_headers(ctx, &headers, client_ip_ctx.trusted_proxy.as_ref(), client_ip_ctx.peer),
                 Err(error) => {
                     return ::cratestack::encode_transport_result_with_status_for::<_, super::models::#model_ident>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error.into()));
                 }

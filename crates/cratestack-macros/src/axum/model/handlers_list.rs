@@ -30,6 +30,7 @@ pub(super) fn build_list_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStre
             State(state): State<ModelRouterState<C, Auth>>,
             headers: HeaderMap,
             RawQuery(raw_query): RawQuery,
+            client_ip_ctx: ClientIpContext,
         ) -> Response
         where
             C: HttpTransport,
@@ -45,6 +46,7 @@ pub(super) fn build_list_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStre
                     body: &[],
                 },
                 headers,
+                client_ip_ctx,
                 raw_query,
             ).await
         }
@@ -58,6 +60,7 @@ pub(super) fn build_list_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStre
             state: ModelRouterState<C, Auth>,
             canonical: CanonicalRequest<'_>,
             headers: HeaderMap,
+            client_ip_ctx: ClientIpContext,
             raw_query: Option<String>,
         ) -> Response
         where
@@ -90,7 +93,7 @@ pub(super) fn build_list_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStre
             }
             let request = request_context(canonical.method, canonical.path, canonical.query, &headers, canonical.body);
             let ctx = match state.auth_provider.authenticate(&request).await {
-                Ok(ctx) => ::cratestack::enrich_context_from_headers(ctx, &headers),
+                Ok(ctx) => ::cratestack::enrich_context_from_headers(ctx, &headers, client_ip_ctx.trusted_proxy.as_ref(), client_ip_ctx.peer),
                 Err(error) => {
                     let error: CoolError = error.into();
                     ::cratestack::tracing::warn!(

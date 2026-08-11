@@ -13,6 +13,9 @@
 //! - [`ratelimit`]: token-bucket rate-limit middleware and storage trait.
 //! - [`schema_fingerprint`]: warn-only client/server schema drift
 //!   detection via the `x-cratestack-schema-sha` header.
+//! - [`trusted_proxy`]: the [`TrustedProxyConfig`] allowlist/hop-count type
+//!   consumers apply as an `Extension` to make `Forwarded`/
+//!   `X-Forwarded-For` trust explicit (#415).
 
 pub use axum;
 
@@ -25,6 +28,7 @@ pub mod ratelimit;
 pub mod rpc;
 pub mod schema_fingerprint;
 pub mod transport;
+pub mod trusted_proxy;
 
 // -----------------------------------------------------------------------------
 // Crate-root re-exports — every item the `cratestack-macros` crate references
@@ -50,10 +54,12 @@ pub use transport::{
 };
 
 pub use headers::{
-    enrich_context_from_headers, parse_client_ip, parse_if_match_version, parse_traceparent,
-    set_version_etag,
+    ClientIpContext, enrich_context_from_headers, parse_client_ip, parse_if_match_version,
+    parse_traceparent, set_version_etag,
 };
 
 pub use projection::ProjectedValue;
 
 pub use query::{QueryExpr, parse_filter_expression, parse_query_pairs};
+
+pub use trusted_proxy::TrustedProxyConfig;
