@@ -170,7 +170,7 @@ async fn patch(workspace: Arc<LoadedWorkspace>, probe_target: &str) -> (StatusCo
 #[tokio::test]
 async fn bypass_write_logs_a_warning_naming_target_model_and_annotations() {
     init_tracing();
-    let probe_target = "warn_probe_bypass_507";
+    let probe_target = "bypass-probe";
     let workspace = build_workspace(probe_target);
 
     let (status, _body) = patch(workspace, probe_target).await;
@@ -192,7 +192,7 @@ async fn bypass_write_logs_a_warning_naming_target_model_and_annotations() {
 #[tokio::test]
 async fn unaffected_model_write_on_an_opted_in_target_logs_nothing() {
     init_tracing();
-    let probe_target = "warn_probe_unaffected_507";
+    let probe_target = "unaffected-probe";
     let schema = Arc::new(cratestack_parser::parse_schema(SCHEMA).expect("schema parses"));
     let target = LoadedTarget {
         key: probe_target.to_owned(),

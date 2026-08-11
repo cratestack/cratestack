@@ -74,7 +74,9 @@ pub(in crate::api::records) fn require_safe_write(
         // from `target`/`model_decl`; cloning the two short identifiers
         // is the actual cost of returning an owned error.
         return Err(ApiError::UnsafeDbWrite {
+            // clone: error outlives this call, cannot borrow from `target`
             target: target.key.clone(),
+            // clone: error outlives this call, cannot borrow from `model_decl`
             model: model_decl.name.clone(),
             annotations: annotations.join(" and "),
         });
