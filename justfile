@@ -148,6 +148,23 @@ test-pg-tc *args='':
 test-ci-db *args='':
 	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg {{args}}
 
+# Shard addendum: the `decimal-bigdecimal` backend's own live-Postgres
+# round-trip test (cratestack#421 AC3, cratestack#495/#496). This file is
+# gated `required-features = ["postgres", "decimal-bigdecimal"]`
+# (`crates/cratestack-pg/tests/decimal_bigdecimal_backend.rs`), so it is
+# never even compiled by `test-ci-db` above, which runs under
+# `cratestack-pg`'s *default* feature set (`decimal-rust-decimal`).
+# `.ci/feature-matrix.sh` proves the backend *compiles* clean end to end;
+# this proves it actually *works* — a `Decimal` field round-trips through
+# real Postgres `NUMERIC` without precision loss, including a value beyond
+# `rust_decimal`'s ~28-29 significant-digit capacity that only
+# `decimal-bigdecimal` can represent at all. Without this recipe wired
+# into CI, a regression in the bigdecimal codec/bind path would still pass
+# every existing gate (compiles clean, no `rust_decimal` in the graph)
+# while being silently broken at runtime.
+test-ci-db-decimal-bigdecimal *args='':
+	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --no-default-features --features postgres,decimal-bigdecimal --test decimal_bigdecimal_backend {{args}}
+
 # Shard: the Redis-backed crate via testcontainers (issue #418). Idempotency
 # and rate-limit stores are the primitives the `banking_*` fixtures lean on
 # for correctness under retries/concurrency, so this mirrors `test-ci-db`'s

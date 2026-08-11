@@ -176,6 +176,14 @@ jobs:
           tool: just
       - name: cargo test (testcontainers Postgres)
         run: just test-ci-db --locked
+      - name: cargo test (decimal-bigdecimal backend, testcontainers Postgres)
+        # cratestack#421 AC3: proves a consumer can select the non-default
+        # decimal backend end to end and actually USE it, not just compile
+        # against it (`.ci/feature-matrix.sh`, in the feature-matrix job,
+        # already covers the compile-only bar). This test file is gated
+        # `required-features = ["postgres", "decimal-bigdecimal"]`, so the
+        # default-feature step above never builds or runs it.
+        run: just test-ci-db-decimal-bigdecimal --locked
 
   tests-redis:
     name: tests (redis)
