@@ -28,7 +28,7 @@ pub async fn create_record(
     require_writable(target)?;
 
     let model_decl = target_model(target, &model)?;
-    require_safe_write(target, model_decl)?;
+    let unsafe_write = require_safe_write(target, model_decl)?;
     let errors = validate_payload(model_decl, &payload, false);
     if !errors.is_empty() {
         return Err(ApiError::Validation(errors));
@@ -44,7 +44,7 @@ pub async fn create_record(
     let pk_value = row.get(pk_field).map(value_to_string);
     state
         .audit
-        .push(&target.key, &model, AuditOp::Create, pk_value);
+        .push(&target.key, &model, AuditOp::Create, pk_value, unsafe_write);
     Ok((StatusCode::CREATED, Json(RecordResponse { row })))
 }
 
@@ -58,7 +58,7 @@ pub async fn update_record(
     require_writable(target)?;
 
     let model_decl = target_model(target, &model)?;
-    require_safe_write(target, model_decl)?;
+    let unsafe_write = require_safe_write(target, model_decl)?;
     let errors = validate_payload(model_decl, &payload, true);
     if !errors.is_empty() {
         return Err(ApiError::Validation(errors));
@@ -69,9 +69,13 @@ pub async fn update_record(
         .update(&model, &pk, &payload)
         .await?
         .ok_or_else(|| ApiError::InvalidPrimaryKey(pk.clone(), "no row with this id".to_owned()))?;
-    state
-        .audit
-        .push(&target.key, &model, AuditOp::Update, Some(pk.clone()));
+    state.audit.push(
+        &target.key,
+        &model,
+        AuditOp::Update,
+        Some(pk.clone()),
+        unsafe_write,
+    );
     Ok(Json(RecordResponse { row }))
 }
 
@@ -84,14 +88,18 @@ pub async fn delete_record(
     require_writable(target)?;
 
     let model_decl = target_model(target, &model)?;
-    require_safe_write(target, model_decl)?;
+    let unsafe_write = require_safe_write(target, model_decl)?;
 
     let row =
         target.source.delete(&model, &pk).await?.ok_or_else(|| {
             ApiError::InvalidPrimaryKey(pk.clone(), "no row with this id".to_owned())
         })?;
-    state
-        .audit
-        .push(&target.key, &model, AuditOp::Delete, Some(pk.clone()));
+    state.audit.push(
+        &target.key,
+        &model,
+        AuditOp::Delete,
+        Some(pk.clone()),
+        unsafe_write,
+    );
     Ok(Json(RecordResponse { row }))
 }

@@ -11,6 +11,8 @@ mod secrets;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_secrets;
 
 use std::path::PathBuf;
 
