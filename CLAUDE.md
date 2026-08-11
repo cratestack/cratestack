@@ -43,6 +43,13 @@ Most workflows are encoded in the `justfile` (`just --list`). The important ones
 - **Release:** `just release 0.x.y` (bump → validate → publish in topo order → tag; `PUSH=1` to push).
   Do not hand-maintain publish order — it is topo-sorted from `cargo metadata` at recipe time.
 - **CLI:** `cargo run -p cratestack-cli -- <check|generate-dart|generate-typescript|studio|migrate|init|run|eject|diff|print-ir>`
+- **Regenerate committed example clients:** `just regen-examples` — rewrites the two committed generated
+  clients (`examples/flutter-riverpod/client` via `generate-dart --preset riverpod`, and
+  `examples/react-vite-swr/client` via `generate-typescript --preset swr`) in place, using the exact
+  generator invocations CI's drift-check steps run, minus `--check`. Run this after changing a Dart or
+  TypeScript codegen template, review `git diff`, and commit the result — CI only ever *checks* these
+  directories (`flutter (flutter-riverpod example)` / `js (react-vite-swr example)` jobs), it never
+  regenerates them for you.
 
 ### Critical test gotcha
 

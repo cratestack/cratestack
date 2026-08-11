@@ -415,6 +415,42 @@ verify-typescript:
 	echo ""
 	echo "✓ TypeScript REST and RPC fixtures generated and typechecked successfully"
 
+# Regenerate the two committed example clients in place (issue #471).
+#
+# `examples/flutter-riverpod/client` (via `generate-dart --preset riverpod`)
+# and `examples/react-vite-swr/client` (via `generate-typescript --preset
+# swr`) are committed generated output, guarded only by a CI `--check` step
+# (the `flutter (flutter-riverpod example)` and `js (react-vite-swr
+# example)` jobs in `.github/workflows/ci.yml`). Before this recipe existed
+# there was no local command that could reconcile a template change
+# against them — the only way to find out a template edit had drifted the
+# committed examples was to push and read CI (see #444/#470/#471).
+#
+# The two invocations below are the CI drift-check steps' own invocations,
+# copied verbatim with `--check` removed so they write instead of merely
+# verifying. Keep them byte-for-byte identical to ci.yml's
+# `flutter-riverpod-example`/`react-vite-swr-example` jobs (modulo the
+# `--check` flag) so the recipe and CI cannot diverge — if you change one,
+# change the other.
+#
+# Unlike `verify-dart`/`verify-typescript` above (which generate throwaway
+# packages from fixtures into `target/`), this recipe overwrites the
+# committed example directories directly. Run it, review `git diff`, and
+# commit the result — a non-empty diff on an otherwise-unmodified checkout
+# of `main` means the committed examples have already drifted from their
+# templates.
+regen-examples:
+	cargo run -p cratestack-cli -- generate-dart \
+	  --schema examples/react-vite-swr/schema.cstack \
+	  --out examples/flutter-riverpod/client \
+	  --library-name flutter_riverpod_client \
+	  --preset riverpod
+	cargo run -p cratestack-cli -- generate-typescript \
+	  --schema examples/react-vite-swr/schema.cstack \
+	  --out examples/react-vite-swr/client \
+	  --preset swr \
+	  --package-name react-vite-swr-client
+
 # Layer-direction check (ADR 0014, docs/adr/0014-layer-direction-enforcement.md)
 # — blocking CI gate. Asserts every NORMAL cratestack-* -> cratestack-* edge
 # among the crates under `crates/` satisfies `dep.layer <= self.layer`

@@ -543,7 +543,22 @@ jobs:
             --library-name flutter_riverpod_client \
             --preset riverpod \
             --check
+      # --- issue #471: drift above must not mask the coverage below -----
+      # The drift-check step has no `continue-on-error`, so a failure
+      # there still fails the job overall (`!cancelled()` only overrides
+      # the *default* `success()` guard on downstream steps — it does not
+      # swallow the failure). Every step below therefore gets
+      # `if: ${{ !cancelled() }}` so a red drift check no longer skips six
+      # steps of real Flutter coverage (the #444 regression: two days
+      # where this job was red *and* ran zero analyze/test). `!cancelled()`
+      # rather than `always()` so a cancelled run still skips cleanly
+      # instead of racing a teardown. None of these steps depend on the
+      # drift step's outcome: this one regenerates the client for real
+      # (no `--check`), so `flutter analyze`/`flutter test` below always
+      # run against freshly generated, buildable code even when the
+      # committed copy has drifted.
       - name: Regenerate + run build_runner via --run-build-runner (issue #303)
+        if: ${{ !cancelled() }}
         run: |
           cd examples/flutter-riverpod/client && flutter pub get
           cd "$GITHUB_WORKSPACE"
@@ -554,18 +569,23 @@ jobs:
             --preset riverpod \
             --run-build-runner
       - name: flutter analyze (client)
+        if: ${{ !cancelled() }}
         working-directory: examples/flutter-riverpod/client
         run: flutter analyze --fatal-warnings --no-fatal-infos
       - name: flutter test (client)
+        if: ${{ !cancelled() }}
         working-directory: examples/flutter-riverpod/client
         run: flutter test
       - name: flutter pub get (app)
+        if: ${{ !cancelled() }}
         working-directory: examples/flutter-riverpod/app
         run: flutter pub get
       - name: flutter analyze (app)
+        if: ${{ !cancelled() }}
         working-directory: examples/flutter-riverpod/app
         run: flutter analyze --fatal-warnings --no-fatal-infos
       - name: flutter test (app)
+        if: ${{ !cancelled() }}
         working-directory: examples/flutter-riverpod/app
         run: flutter test
 
@@ -760,21 +780,40 @@ jobs:
             --preset swr \
             --package-name react-vite-swr-client \
             --check
+      # --- issue #471: drift above must not mask the coverage below -----
+      # Same fix as `flutter-riverpod-example`, applied to every step in
+      # this job (the drift check here sits ahead of *all* real coverage —
+      # cargo test, pnpm install, the client build, and the web app
+      # typecheck/lint — unlike the Flutter job, where setup steps precede
+      # the drift check too). No `continue-on-error` on the drift step, so
+      # the job still ends red on drift; `if: ${{ !cancelled() }}` only
+      # overrides the default `success()` guard so these steps run anyway.
+      # Unlike the Flutter job, nothing here regenerates the client before
+      # building it, so "Build the generated client" typechecks whatever
+      # is actually committed (including drift) — that's the correct
+      # signal: it's real coverage of the committed code, not a re-derived
+      # copy of it.
       - name: cargo test (offline — the DB-gated test skips cleanly without CRATESTACK_TEST_DATABASE_URL)
+        if: ${{ !cancelled() }}
         run: cargo test -p react-vite-swr-example
       - uses: pnpm/action-setup@v4
+        if: ${{ !cancelled() }}
       - uses: actions/setup-node@v4
+        if: ${{ !cancelled() }}
         with:
           node-version: 20
           cache: pnpm
           cache-dependency-path: examples/react-vite-swr/pnpm-lock.yaml
       - name: pnpm install
+        if: ${{ !cancelled() }}
         working-directory: examples/react-vite-swr
         run: pnpm install --frozen-lockfile
       - name: Build the generated client (typechecks client/ for real)
+        if: ${{ !cancelled() }}
         working-directory: examples/react-vite-swr
         run: pnpm --filter react-vite-swr-client run build
       - name: Typecheck + lint the web app
+        if: ${{ !cancelled() }}
         working-directory: examples/react-vite-swr
         run: |
           pnpm --filter react-vite-swr-web run typecheck
