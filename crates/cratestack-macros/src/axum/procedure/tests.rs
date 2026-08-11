@@ -79,3 +79,173 @@ fn stream_list_procedure_dispatch_differs_from_buffered_baseline() {
     assert!(generated.contains("encode_transport_stream_result_with_status_for"));
     assert!(!generated.contains("try_collect"));
 }
+
+/// cratestack#407: a unary procedure's `@status(202)` attribute threads
+/// through into `encode_transport_result_with_status_for`'s `success_status`
+/// argument, replacing the hardcoded `StatusCode::OK` literal.
+#[test]
+fn status_attribute_threads_through_for_unary_procedure() {
+    let procedure = parse_first_procedure(
+        r#"
+type PingArgs {
+  nonce String
+}
+
+type Pong {
+  nonce String
+}
+
+mutation procedure submit(args: PingArgs): Pong
+  @status(202)
+"#,
+    );
+    let generated = generate_procedure_axum_handler(&procedure)
+        .expect("codegen should succeed")
+        .to_string();
+    assert!(
+        generated.contains("encode_transport_result_with_status_for"),
+        "expected the unary (non-list) encoder: {generated}"
+    );
+    assert!(
+        generated.contains("StatusCode :: from_u16 (202u16)"),
+        "expected the declared @status(202) to thread through: {generated}"
+    );
+}
+
+/// cratestack#407: the same threading applies to the `TypeArity::List`
+/// branch (`encode_transport_sequence_result_with_status_for`), not just
+/// the unary one.
+#[test]
+fn status_attribute_threads_through_for_list_procedure() {
+    let procedure = parse_first_procedure(
+        r#"
+type TickerArgs {
+  symbol String
+}
+
+type Tick {
+  price Float
+}
+
+procedure ticks(args: TickerArgs): Tick[]
+  @status(201)
+"#,
+    );
+    let generated = generate_procedure_axum_handler(&procedure)
+        .expect("codegen should succeed")
+        .to_string();
+    assert!(
+        generated.contains("encode_transport_sequence_result_with_status_for"),
+        "expected the list encoder: {generated}"
+    );
+    assert!(
+        generated.contains("StatusCode :: from_u16 (201u16)"),
+        "expected the declared @status(201) to thread through: {generated}"
+    );
+}
+
+/// cratestack#407: absent `@status`, the generated handler still emits the
+/// literal `StatusCode::OK` — fully backward compatible, opt-in only.
+#[test]
+fn absent_status_attribute_defaults_to_status_code_ok() {
+    let procedure = parse_first_procedure(
+        r#"
+type PingArgs {
+  nonce String
+}
+
+type Pong {
+  nonce String
+}
+
+procedure ping(args: PingArgs): Pong
+"#,
+    );
+    let generated = generate_procedure_axum_handler(&procedure)
+        .expect("codegen should succeed")
+        .to_string();
+    assert!(
+        generated.contains("StatusCode :: OK"),
+        "expected the default StatusCode::OK when @status is absent: {generated}"
+    );
+}
+
+/// cratestack#407 follow-up: `@status` was threaded into the unary and
+/// `TypeArity::List` branches, but `procedure_dispatch_tail_tokens`
+/// (the `@stream` branch) discarded it and re-derived its own call with
+/// a hardcoded `StatusCode::OK` — so `@stream` + `@status(202)` silently
+/// no-opped instead of erroring or working. This pins that the declared
+/// status now reaches `encode_transport_stream_result_with_status_for`'s
+/// `success_status` argument too, not just the two buffered encoders.
+#[test]
+fn status_attribute_threads_through_for_stream_procedure() {
+    let procedure = parse_first_procedure(
+        r#"
+type TickerArgs {
+  symbol String
+}
+
+type Tick {
+  price Float
+}
+
+procedure ticks(args: TickerArgs): Tick[]
+  @stream
+  @status(202)
+"#,
+    );
+    let generated = generate_procedure_axum_handler(&procedure)
+        .expect("codegen should succeed")
+        .to_string();
+    assert!(
+        generated.contains("encode_transport_stream_result_with_status_for"),
+        "expected the stream encoder: {generated}"
+    );
+    assert!(
+        generated.contains("StatusCode :: from_u16 (202u16)"),
+        "expected the declared @status(202) to thread through to the stream branch: \
+         {generated}"
+    );
+    assert!(
+        !generated.contains(
+            "encode_transport_stream_result_with_status_for (& state . codec , & headers , & \
+             CAPABILITIES , axum :: http :: StatusCode :: OK , result ,) . await"
+        ),
+        "the stream branch must not fall back to a hardcoded StatusCode::OK when @status is \
+         present: {generated}"
+    );
+}
+
+/// cratestack#407 follow-up: absent `@status`, a `@stream` procedure's
+/// dispatch tail still emits the same literal `StatusCode::OK` it did
+/// before — this is the backward-compatibility counterpart to the test
+/// above, proving the fix only changes behavior when `@status` is
+/// actually declared.
+#[test]
+fn absent_status_attribute_defaults_to_status_code_ok_for_stream_procedure() {
+    let procedure = parse_first_procedure(
+        r#"
+type TickerArgs {
+  symbol String
+}
+
+type Tick {
+  price Float
+}
+
+procedure ticks(args: TickerArgs): Tick[]
+  @stream
+"#,
+    );
+    let generated = generate_procedure_axum_handler(&procedure)
+        .expect("codegen should succeed")
+        .to_string();
+    assert!(
+        generated.contains(
+            "encode_transport_stream_result_with_status_for (& state . codec , & headers , & \
+             CAPABILITIES , axum :: http :: StatusCode :: OK , result ,) . await"
+        ),
+        "expected the default StatusCode::OK in the stream branch when @status is absent: \
+         {generated}"
+    );
+}
