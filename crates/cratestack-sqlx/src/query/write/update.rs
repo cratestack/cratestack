@@ -60,6 +60,9 @@ where
         )
     }
 
+    /// Participates in a caller-supplied transaction; no `AuditSink`
+    /// fan-out happens here for the same reason the event outbox isn't
+    /// drained here — see `create.rs`'s `run_in_tx` doc comment.
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,

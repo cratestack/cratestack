@@ -30,23 +30,58 @@ pub struct MockResponse {
     pub status: u16,
     pub content_type: String,
     pub body: Vec<u8>,
+    /// Headers beyond `content-type` (e.g. `etag`) — issue #493's
+    /// `get_with_response`/`update_with_response` round trip needs a
+    /// mock server that can send these. Defaults to empty via
+    /// `cbor_ok`/`not_found`, so existing call sites that build a
+    /// `MockResponse` through those helpers are unaffected.
+    pub extra_headers: Vec<(String, String)>,
 }
 
 /// `200 OK`, CBOR-encoded `value` — the shape every handler in this crate's
 /// tests returns for a successful call.
+#[allow(dead_code)]
 pub fn cbor_ok<T: serde::Serialize>(value: &T) -> MockResponse {
+    cbor_status(200, value)
+}
+
+/// CBOR-encoded `value` with an arbitrary status — cratestack#407's
+/// `status_attribute_client_round_trip.rs` uses this to answer with a bare
+/// `202` (no `200` anywhere in that exchange) and prove the generated
+/// client's success-path decoding isn't hardcoded to exactly `200`.
+#[allow(dead_code)]
+pub fn cbor_status<T: serde::Serialize>(status: u16, value: &T) -> MockResponse {
     MockResponse {
-        status: 200,
+        status,
         content_type: CborCodec::CONTENT_TYPE.to_owned(),
         body: CborCodec.encode(value).expect("value should encode"),
+        extra_headers: Vec::new(),
     }
 }
 
+/// Same as [`cbor_ok`], plus caller-supplied extra headers (e.g. `etag`).
+/// Only `generated_client_versioning.rs` uses this today — `#[allow(dead_code)]`
+/// because `mod support;` is compiled fresh per test binary (Cargo's `tests/`
+/// convention), so a helper unused by one binary still needs to compile
+/// warning-free for the workspace's `-D warnings` gate.
+#[allow(dead_code)]
+pub fn cbor_ok_with_headers<T: serde::Serialize>(
+    value: &T,
+    extra_headers: Vec<(String, String)>,
+) -> MockResponse {
+    MockResponse {
+        extra_headers,
+        ..cbor_ok(value)
+    }
+}
+
+#[allow(dead_code)]
 pub fn not_found() -> MockResponse {
     MockResponse {
         status: 404,
         content_type: "text/plain".to_owned(),
         body: Vec::new(),
+        extra_headers: Vec::new(),
     }
 }
 
@@ -161,16 +196,23 @@ async fn write_response(
 ) -> std::io::Result<()> {
     let reason = match response.status {
         200 => "OK",
+        202 => "Accepted",
         404 => "Not Found",
+        412 => "Precondition Failed",
+        500 => "Internal Server Error",
         _ => "Error",
     };
-    let head = format!(
-        "HTTP/1.1 {} {}\r\ncontent-type: {}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+    let mut head = format!(
+        "HTTP/1.1 {} {}\r\ncontent-type: {}\r\ncontent-length: {}\r\nconnection: close\r\n",
         response.status,
         reason,
         response.content_type,
         response.body.len(),
     );
+    for (name, value) in &response.extra_headers {
+        head.push_str(&format!("{name}: {value}\r\n"));
+    }
+    head.push_str("\r\n");
     socket.write_all(head.as_bytes()).await?;
     socket.write_all(&response.body).await?;
     socket.flush().await

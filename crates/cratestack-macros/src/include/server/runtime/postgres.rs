@@ -90,6 +90,21 @@ pub(super) fn build_runtime_block(
         }
 
         impl CratestackBuilder {
+            /// Install a custom [`::cratestack::AuditSink`] (cratestack#473) —
+            /// every `@@audit` mutation run through the built `Cratestack`
+            /// fans out to it, in addition to the always-on
+            /// `cratestack_audit` table row. See
+            /// `::cratestack::__private::SqlxRuntime::with_audit_sink`'s doc
+            /// comment for the in-transaction-vs-post-commit dispatch
+            /// contract.
+            pub fn with_audit_sink(
+                mut self,
+                sink: ::std::sync::Arc<dyn ::cratestack::AuditSink>,
+            ) -> Self {
+                self.runtime = self.runtime.with_audit_sink(sink);
+                self
+            }
+
             pub fn build(self) -> Cratestack {
                 Cratestack {
                     runtime: self.runtime,

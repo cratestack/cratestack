@@ -28,6 +28,7 @@ use self::procedure_idents::validate_procedure_idents;
 use self::procedures::{
     validate_procedure_api_version_attribute, validate_procedure_deprecated_attribute,
     validate_procedure_isolation_attribute, validate_procedure_no_rate_limit_attribute,
+    validate_procedure_status_attribute,
 };
 use self::snake_case_collisions::validate_type_declaration_collisions;
 use self::stream_attribute::validate_procedure_stream_attribute;
@@ -196,6 +197,7 @@ fn validate_procedures(
         validate_procedure_deprecated_attribute(procedure)?;
         validate_procedure_stream_attribute(procedure)?;
         validate_procedure_no_rate_limit_attribute(procedure, schema)?;
+        validate_procedure_status_attribute(procedure, schema)?;
     }
     Ok(())
 }

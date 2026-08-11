@@ -294,7 +294,13 @@ descending order of consequence:
    against `AuditSink`, which fails twice over — `MulticastAuditSink` is
    not independently motivated from `NoopAuditSink`, and neither has a
    caller. If the test would have blocked a trait we shipped and still
-   want, it needs rewording before it is adopted.
+   want, it needs rewording before it is adopted. **Update (post-#473):**
+   the "neither has a caller" half of that premise no longer holds —
+   `AuditSink::record` now has a real installation path
+   (`SqlxRuntime::with_audit_sink`) and 11 call sites across
+   `cratestack-sqlx`'s write paths — but `MulticastAuditSink` still is not
+   independently motivated from `NoopAuditSink`, so the admission-test
+   question stands and is the maintainer's to resolve, not re-decided here.
 3. **`WriteSource`: document as a type-level guard, or delete?** *What
    would settle it:* whether anyone intends a second implementation. If
    not, it is a naming problem, not a design one.

@@ -14,6 +14,7 @@
 
 use cratestack_core::{CoolContext, CoolError};
 
+use crate::audit::dispatch_audit_sink;
 use crate::{
     ConflictTarget, ModelDescriptor, SqlxRuntime, UpsertModelInput, cool_error_from_sqlx, sqlx,
 };
@@ -119,7 +120,7 @@ where
     {
         let runtime = self.runtime;
         let mut tx = runtime.pool().begin().await.map_err(cool_error_from_sqlx)?;
-        let (record, emits_event) = run_upsert_in_tx(
+        let (record, emits_event, audit_event) = run_upsert_in_tx(
             &mut tx,
             runtime,
             self.descriptor,
@@ -132,13 +133,17 @@ where
         if emits_event {
             let _ = runtime.drain_event_outbox().await;
         }
+        if let Some(event) = &audit_event {
+            dispatch_audit_sink(runtime, std::slice::from_ref(event)).await;
+        }
         Ok(record)
     }
 
     /// Like [`Self::run`] but participates in a caller-supplied
     /// transaction. The conflict probe runs against `tx`, so the row
     /// lock is held until the caller commits. The event outbox is not
-    /// drained here.
+    /// drained here, and no `AuditSink` fan-out happens here either —
+    /// see `create.rs`'s `run_in_tx` doc comment.
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
@@ -148,7 +153,7 @@ where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
-        let (record, _) = run_upsert_in_tx(
+        let (record, ..) = run_upsert_in_tx(
             tx,
             self.runtime,
             self.descriptor,

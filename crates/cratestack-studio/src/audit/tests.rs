@@ -4,15 +4,15 @@ use super::*;
 
 fn push_n(log: &AuditLog, n: usize) {
     for i in 0..n {
-        log.push("t", "Post", AuditOp::Create, Some(format!("p{i}")));
+        log.push("t", "Post", AuditOp::Create, Some(format!("p{i}")), false);
     }
 }
 
 #[test]
 fn push_and_snapshot_return_newest_first() {
     let log = AuditLog::new();
-    log.push("t", "Post", AuditOp::Create, Some("p1".to_owned()));
-    log.push("t", "Post", AuditOp::Update, Some("p1".to_owned()));
+    log.push("t", "Post", AuditOp::Create, Some("p1".to_owned()), false);
+    log.push("t", "Post", AuditOp::Update, Some("p1".to_owned()), false);
     let snap = log.snapshot(10);
     assert_eq!(snap.len(), 2);
     assert_eq!(snap[0].op, AuditOp::Update);
@@ -51,8 +51,20 @@ fn persistent_log_survives_reopen() {
     let path = dir.path().join("audit.jsonl");
 
     let log = AuditLog::persistent(&path).expect("open");
-    log.push("prod", "Post", AuditOp::Create, Some("p1".to_owned()));
-    log.push("prod", "Post", AuditOp::Delete, Some("p1".to_owned()));
+    log.push(
+        "prod",
+        "Post",
+        AuditOp::Create,
+        Some("p1".to_owned()),
+        false,
+    );
+    log.push(
+        "prod",
+        "Post",
+        AuditOp::Delete,
+        Some("p1".to_owned()),
+        false,
+    );
     drop(log);
 
     let reopened = AuditLog::persistent(&path).expect("reopen");
@@ -84,7 +96,7 @@ fn ids_resume_past_the_whole_file_not_just_the_replayed_tail() {
         AuditLog::CAPACITY
     );
     // …but the next id clears every id ever written.
-    reopened.push("t", "Post", AuditOp::Update, None);
+    reopened.push("t", "Post", AuditOp::Update, None, false);
     let newest = reopened.snapshot(1).remove(0);
     assert_eq!(newest.id, written as u64 + 1);
 }
@@ -97,7 +109,7 @@ fn malformed_lines_are_skipped_and_the_rest_replay() {
     let path = dir.path().join("audit.jsonl");
 
     let log = AuditLog::persistent(&path).expect("open");
-    log.push("t", "Post", AuditOp::Create, Some("good".to_owned()));
+    log.push("t", "Post", AuditOp::Create, Some("good".to_owned()), false);
     drop(log);
 
     let mut file = std::fs::OpenOptions::new()
@@ -120,7 +132,7 @@ fn opening_creates_missing_parent_directories() {
     let path = dir.path().join("nested").join("deeper").join("audit.jsonl");
 
     let log = AuditLog::persistent(&path).expect("open");
-    log.push("t", "Post", AuditOp::Create, None);
+    log.push("t", "Post", AuditOp::Create, None, false);
     drop(log);
 
     let body = std::fs::read_to_string(&path).expect("file written");

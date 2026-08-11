@@ -4,7 +4,9 @@
 use cratestack_core::Value;
 use rusqlite::types::{FromSql, FromSqlResult, ValueRef};
 
-use super::decode::{decode_datetime, decode_decimal, decode_json, decode_uuid};
+#[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
+use super::decode::decode_decimal;
+use super::decode::{decode_datetime, decode_json, decode_uuid};
 
 #[derive(Debug, Clone, Copy)]
 pub struct UuidColumn(pub uuid::Uuid);
@@ -36,9 +38,11 @@ impl FromSql for JsonColumn {
     }
 }
 
+#[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
 #[derive(Debug, Clone)]
 pub struct DecimalColumn(pub cratestack_core::Decimal);
 
+#[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
 impl FromSql for DecimalColumn {
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         let raw = value.as_str()?;

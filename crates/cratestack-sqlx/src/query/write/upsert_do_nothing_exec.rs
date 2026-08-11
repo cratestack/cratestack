@@ -7,7 +7,7 @@
 //! a concurrent transaction won the race. See `UpsertOutcome`'s doc
 //! comment for the full race-semantics writeup this implements.
 
-use cratestack_core::{AuditOperation, CoolContext, CoolError, ModelEventKind};
+use cratestack_core::{AuditEvent, AuditOperation, CoolContext, CoolError, ModelEventKind};
 
 use crate::audit::{build_audit_event, enqueue_audit_event, ensure_audit_table};
 use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
@@ -19,9 +19,10 @@ use super::upsert_exec::prepare_upsert_insert;
 use super::upsert_outcome::UpsertOutcome;
 use super::upsert_sql::{row_passes_update_policy, select_for_update_by_conflict_target};
 
-/// Returns `(outcome, emits_any_event)` — the bool lets the caller
-/// decide whether to drain the outbox post-commit, same contract as
-/// `upsert_exec::run_upsert_in_tx`.
+/// Returns `(outcome, emits_any_event, audit_event)` — same contract
+/// as `upsert_exec::run_upsert_in_tx`: the caller decides whether to
+/// drain the outbox / fan the audit event out, both only after it
+/// commits `tx`.
 pub(super) async fn run_upsert_do_nothing_in_tx<'tx, M, PK, I>(
     tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
     runtime: &SqlxRuntime,
@@ -29,7 +30,7 @@ pub(super) async fn run_upsert_do_nothing_in_tx<'tx, M, PK, I>(
     input: I,
     conflict_target: ConflictTarget,
     ctx: &CoolContext,
-) -> Result<(UpsertOutcome<M>, bool), CoolError>
+) -> Result<(UpsertOutcome<M>, bool, Option<AuditEvent>), CoolError>
 where
     I: UpsertModelInput<M>,
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
@@ -78,7 +79,7 @@ where
         // No SQL runs against the row: DO NOTHING never touches it, so
         // there is nothing to audit and no event to emit — the record
         // genuinely did not change.
-        return Ok((UpsertOutcome::Existing(existing), false));
+        return Ok((UpsertOutcome::Existing(existing), false, None));
     }
 
     // Insert branch. `ON CONFLICT DO NOTHING RETURNING` is still the
@@ -102,12 +103,14 @@ where
                 )
                 .await?;
             }
+            let mut audit_event = None;
             if audit_enabled {
                 let after = serde_json::to_value(&record).ok();
                 let event = build_audit_event(descriptor, AuditOperation::Create, None, after, ctx);
                 enqueue_audit_event(&mut **tx, &event).await?;
+                audit_event = Some(event);
             }
-            Ok((UpsertOutcome::Inserted(record), emits_created))
+            Ok((UpsertOutcome::Inserted(record), emits_created, audit_event))
         }
         None => {
             // Lost the race: another transaction committed a
@@ -136,7 +139,7 @@ where
                         ))
                     })?;
             authorize_existing_row(runtime, descriptor, &conflict_columns, ctx).await?;
-            Ok((UpsertOutcome::Existing(existing), false))
+            Ok((UpsertOutcome::Existing(existing), false, None))
         }
     }
 }

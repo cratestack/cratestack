@@ -9,6 +9,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 REPORTS_DIR="$PROJECT_ROOT/.ci/quality/reports"
 RULES_DIR="$PROJECT_ROOT/.ci/rules/semgrep"
 ACTIONLINT_SARIF_TEMPLATE="$PROJECT_ROOT/.ci/rules/actionlint/sarif.tmpl"
+GITLEAKS_BASELINE="$PROJECT_ROOT/.ci/baselines/gitleaks.toml"
 
 SCAN_TYPE="${1:-pr}"
 if [[ "$SCAN_TYPE" == --scan-type=* ]]; then
@@ -200,6 +201,17 @@ scan_gitleaks() {
   if [[ "$SCAN_TYPE" == "pr" ]]; then
     # Scan commits reachable from HEAD but not from origin/main
     scan_opts+=(--log-opts="origin/main..HEAD")
+  fi
+
+  # gitleaks scans git history by commit, not "the current diff" — a
+  # since-fixed false positive stays flagged forever on the commit that
+  # introduced it, even after a later commit in the same PR corrects it,
+  # because that history is still reachable from HEAD. Baselining specific
+  # commits (see .ci/baselines/README.md) is the sanctioned fix for that,
+  # rather than rewriting history. `[extend] useDefault = true` in the
+  # baseline keeps every other commit under full detection.
+  if [[ -f "$GITLEAKS_BASELINE" ]]; then
+    scan_opts+=(--config="$GITLEAKS_BASELINE")
   fi
 
   # gitleaks detect scans git history by default (unless --no-git is passed),

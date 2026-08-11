@@ -2,6 +2,192 @@
 
 ## Unreleased
 
+### `cratestack-core`: selecting no decimal backend is no longer a hard compile error (#505)
+
+`cratestack-core` used to hard-fail with `compile_error!("enable exactly one decimal backend
+feature — decimal-rust-decimal or decimal-bigdecimal")` whenever a consumer built it (directly
+or transitively) with `default-features = false` and neither `decimal-rust-decimal` nor
+`decimal-bigdecimal` selected. That bit a consumer that legitimately narrows its dependency graph
+this way and never uses a `Decimal`-typed field at all — e.g. `cratestack-api` (`provider =
+"none"`, no `model` blocks) — forcing it to name a decimal backend it never touches. The break
+was invisible in a `cargo check --workspace` run (feature unification from other workspace
+members hid it) until the affected crate was built alone — exactly what happened in the field
+(ADORSYS-GIS/webank-services#279).
+
+Selecting *both* backends at once is still a hard `compile_error!` — that half of the invariant
+is unchanged and stays a graph-wide constraint (documented in `cratestack-core`'s crate-level
+rustdoc and in `CLAUDE.md`): two independent dependents in the same build, each individually
+well-formed and each deliberately choosing a different backend, can still force an unbuildable
+combined graph. Making the two backends genuinely additive (or moving the choice off Cargo
+features entirely) remains open, unaddressed by this change, and reserved for a future,
+maintainer-scoped design decision.
+
+**What actually changed:** `cratestack-core::Decimal` (and everything in this crate and its
+downstream SQL layer that references it unconditionally — `cratestack-core::validate_range_decimal`,
+`cratestack-sql::SqlValue::Decimal`, `cratestack-sql`'s `IntoSqlValue for Decimal`, and the
+matching bind/decode arms in `cratestack-rusqlite` and `cratestack-sqlx`) is now `#[cfg]`-gated on
+"a decimal backend is selected", the same pattern throughout. With neither backend selected,
+these symbols simply don't exist on the public surface instead of hard-erroring the whole build —
+a consumer that never references `Decimal`, directly or via a schema with no `Decimal`-typed
+field, now builds cleanly across every facade (`cratestack-pg`, `cratestack-api`,
+`cratestack-sqlite`, `cratestack-client`, plus `cratestack-axum`/`cratestack-studio`), even under
+`--no-default-features`. A consumer that *does* try to use `Decimal` without picking a backend
+now gets a plain rustc "cannot find type/variant `Decimal`" from wherever the reference lives,
+instead of the old, single, clearer `compile_error!` naming the missing choice — a diagnostic
+regression accepted in exchange for not hard-failing every backend-agnostic consumer.
+
+No consumer-visible signature or behavior change for anyone who already selects a decimal backend
+(the default, `decimal-rust-decimal`, or the opt-in `decimal-bigdecimal`) — this only affects
+builds that previously hit the removed `compile_error!`.
+### `AuditSink` gets a real installation path (#473)
+
+`cratestack_core::AuditSink` (plus `NoopAuditSink`/`MulticastAuditSink`) has existed since
+before this release, but had nowhere to be installed: a consumer could construct a sink and had
+no way to hand it to the runtime, and `AuditSink::record` was never invoked anywhere in the
+workspace — `cratestack-sqlx/src/audit.rs`'s own module doc claimed fan-out "goes through
+`AuditSink`" while that was, in fact, dead code.
+
+`SqlxRuntime` now carries an installable `Arc<dyn AuditSink>` (default `NoopAuditSink`, so
+existing `SqlxRuntime::new(pool)` callers see no behavior change), installed via
+`SqlxRuntime::with_audit_sink` or, for schema consumers, the macro-generated
+`CratestackBuilder::with_audit_sink` — the same shape `IdempotencyStore`/`RateLimitStore` use.
+Every `@@audit` write path (`create`/`update`/`delete`/`upsert`, their `_many` and batch
+variants) now fans the event out to the installed sink *after* its owning transaction commits,
+never from inside it: the in-database `cratestack_audit` row remains the sole in-transaction
+write and source of truth (unchanged, no double-write), and a sink is never invoked for a
+mutation that ultimately rolled back. Sink errors are logged (`tracing::warn!`), not propagated
+— by the time the sink runs, the mutation already committed, so failing the caller's request
+over a downstream projection hiccup would be strictly worse than a best-effort delivery.
+`run_in_tx` variants (caller-managed transaction) do not fan out, mirroring the existing event
+outbox, which has never drained from `run_in_tx` either. **This is a real gap, not just a
+deferral**: there is currently no way for a `run_in_tx` caller to opt into sink fan-out
+themselves — the dispatch helper is crate-private and no `run_in_tx` variant returns the
+`AuditEvent` it would need — so a caller chaining `run_in_tx` calls across a caller-managed
+transaction (see `crates/cratestack-pg/tests/banking_chained_audit_tx.rs`) gets the
+in-transaction `cratestack_audit` row on commit but a real installed `AuditSink` observes
+nothing for that transaction, silently. Worth its own follow-up issue; see
+`crates/cratestack-sqlx/src/audit/sink.rs`'s doc comment for the full reasoning. Dispatch is
+also sequential, not concurrent, so the added latency of a slow sink is per-row on
+`update_many`/`delete_many`/batch paths, not per-request.
+### `cratestack-studio`: refuse silent `@version`/`@@emit` bypass on `[target.db]` writes — breaking (cratestack#507)
+
+A write through `cratestack studio` against a `[target.db]` target went straight to SQL: it never
+bumped a model's `@version` column and never wrote a `cratestack_event_outbox` row for an
+`@@emit`-annotated model, and neither omission was reported anywhere — the request returned `200`
+with the updated row. Both consequences are silent and outlive the request: a stale `@version`
+still satisfies a later `if_match`, so optimistic concurrency does not fail-safe, it silently does
+not apply; and `@@emit` side effects (for example customer-facing delivery webhooks) never fire,
+with no trace that one was skipped.
+
+Studio now refuses `POST`/`PATCH`/`DELETE` on a `rw` `[target.db]` target against any model that
+declares `@version` or `@@emit(...)`, returning `403 UNSAFE_DB_WRITE` and naming the specific
+attribute(s) that triggered the refusal, unless the target sets `allow_unsafe_writes = true` in
+`studio.toml`. The refusal runs in the HTTP handler (`require_safe_write`,
+`crates/cratestack-studio/src/api/records/guards.rs`) before any `DataSource` call, so it applies
+identically to Postgres- and SQLite-backed targets, and models with neither annotation are
+unaffected either way. A write allowed only because a target opted in is also loud after the fact,
+not just at the moment the config flag is set: it logs a `tracing::warn!` naming the target, model,
+and skipped annotation(s), and `AuditEntry` gains an `unsafe_write: bool` field (default `false`,
+`#[serde(default)]` so a pre-upgrade JSONL audit sidecar still replays cleanly) so `GET /api/audit`
+and the sidecar can distinguish a bypass write from an ordinary one.
+
+The `@@allow` half of the original report — an unauthenticated `[target.db]` read returning a
+`@sensitive` field in cleartext — is deliberately left alone here; it is arguably intended for a
+direct-DB admin tool and is tracked separately for a maintainer decision, not fixed unilaterally in
+this change. Likewise, routing `[target.db]` writes through the same descriptor path the generated
+server uses (so `@version`/`@@emit` would actually apply, rather than being refused) remains
+unimplemented and is left for a future, larger change.
+
+**Migration.** Any existing `rw` `[target.db]` deployment whose schema declares a model with
+`@version` or `@@emit(...)` will start getting `403 UNSAFE_DB_WRITE` on `POST`/`PATCH`/`DELETE`
+against that model through Studio. Add `allow_unsafe_writes = true` under that target's
+`[target.db]` block in `studio.toml` to keep the previous (silent-bypass) behavior, or leave it
+unset and route those writes through `[target.api]` instead, where `@version`, `@@emit`, and
+`@@allow` all apply exactly as declared in the schema. Reads and `[target.api]`-only targets are
+unaffected either way.
+### Per-procedure `@status(<code>)` for REST success responses (#407)
+
+`generate_procedure_axum_handler` hardcoded `axum::http::StatusCode::OK` for every procedure's
+`Ok(...)` response, with no schema-level way to declare a different 2xx status (e.g. `202
+Accepted` for a submit-and-acknowledge procedure whose real verdict arrives later via webhook).
+A schema author can now write:
+
+```
+procedure submitKycDocument(args: SubmitKycDocumentInput): KycPresignReply
+  @status(202)
+```
+
+`cratestack-parser` validates the argument is a real `200..=299` status at schema-compile time
+(anything outside that range, or on a `transport rpc` schema — see below — is rejected with a
+clear diagnostic, not a runtime surprise); `cratestack-macros` threads the declared status into
+`result_encoder` for the unary, `TypeArity::List`, and `@stream` branches alike, replacing the
+previously-hardcoded literal in all three. Absent the attribute, codegen is byte-identical to
+before (the pre-existing cratestack#283 pinned-token regression test is unchanged). Error
+responses are untouched either way — `CoolError`'s own status mapping governs `Err(...)`
+unconditionally, independent of `@status`.
+
+`@status` is REST-only and is rejected at schema-compile time on `transport rpc` schemas: RPC
+unary dispatch shares the exact same generated handler REST uses, so an unrejected `@status`
+there would silently become wire-visible on the RPC response too. `transport grpc` is
+unaffected either way — tonic's gRPC status model never reads the inner HTTP status this
+attribute controls, so the combination is inert, not wrong, and stays allowed.
+
+Known limitation, left for a follow-up rather than silently narrowed here: `@status(204)` is
+accepted by the `200..=299` range check, but the REST encoder always serializes and attaches a
+response body regardless of declared status, so a declared `204` currently produces a
+`204 No Content` response that carries a body — a protocol violation per RFC 9110 §15.3.5.
+
+### Typed Rust client can read response headers — `*_with_response` methods (#493)
+
+`decode_typed_response` (`cratestack-client-rust/src/client/decode.rs`) read `response.headers`
+only to find `Content-Type`, then returned the decoded body alone — every typed call built on it
+(`get`/`post`/`patch`/`delete`, and the generated `<Model>Client`'s `list`/`get`/`create`/`update`/
+`delete`) discarded every response header. For any `@version` model, that made the typed client
+structurally unable to do a concurrency-safe `PATCH`: CrateStack's optimistic-locking contract
+requires `If-Match` on that verb, with the current version handed back as `ETag` on `GET` — so
+the required round trip, `GET` → read `ETag` → `PATCH` with `If-Match`, had no typed path through
+its middle step. The same gap hid `Idempotency-Replayed` (on a replayed create) and `Retry-After`
+(on a `429`) from a typed caller. **Note:** `DELETE` is not part of that contract — the server
+does not currently enforce `If-Match` on `DELETE` for any model, versioned or not (see below).
+
+Added a `TypedResponse<Output> { value, status, headers }` (with a case-insensitive
+`.header(name)` accessor, plus `.header_values(name)` for the rare header that legitimately
+repeats, e.g. `Set-Cookie`) and a parallel `*_with_response` method next to every existing typed
+method: `CratestackClient::{get,post,patch,delete}_with_response`, and on the generated REST
+`<Model>Client`, `get_with_response`/`update_with_response`/`delete_with_response`. Purely
+additive — `decode_typed_response` is now implemented in terms of a new
+`decode_typed_response_with_metadata`, but keeps its exact original signature and behavior, so
+every existing call site (including every already-generated client) keeps compiling and behaving
+identically with no changes required.
+
+`delete_with_response` ships alongside `get_with_response`/`patch_with_response` for surface
+symmetry (status and headers on every write, not just versioned ones — useful for e.g. reading a
+`Retry-After` on a `429`), but unlike `patch_with_response`, sending `If-Match` on a `DELETE` has
+**no concurrency-safety effect today**: the server accepts and ignores it. Server-side `If-Match`
+enforcement on `DELETE` is a real gap in CrateStack's optimistic-locking story — deliberately
+*not* implemented here, since it is a separate feature decision outside this issue's scope, and
+reported for its own follow-up issue instead.
+
+Scoped to REST transport. RPC transport (`transport rpc`) has no `ETag`/`If-Match` handling
+anywhere server-side — a schema-versioned model's concurrency control there, if any, would need
+to travel through the request/response body, not an HTTP header — so there is nothing to wire on
+the RPC client's `BatchableCall` surface for this issue. Projection reads (`get_view`/`list_view`/
+`list_view_paged`) and `create_with_response` on the generated model client are also left
+out-of-scope: the acceptance-driving round trip is `GET` → `ETag` → `PATCH` with `If-Match`, which
+`get_with_response`/`update_with_response` cover in full; a create-side `Idempotency-Replayed`
+reader is still reachable today via the (now also additive) `CratestackClient::post_with_response`
+directly, just not yet wrapped by the generated `<Model>Client::create_with_response`.
+
+Verified: `cargo test -p cratestack-client-rust` (unit coverage of
+`decode_typed_response_with_metadata` against hand-built responses, including an `ETag`-shaped
+header and a case-insensitive lookup; a real-HTTP-server integration test in
+`tests/typed_response.rs` proving `get_with_response` → `ETag` → `patch_with_response` with
+`If-Match` round-trips end-to-end, a 412-on-stale-`If-Match` case, and that the plain
+`get`/`patch` methods are unchanged) and `cargo test -p cratestack-client` (a new
+`tests/generated_client_versioning.rs`, using a schema borrowed verbatim from
+`cratestack-pg/tests/fixtures/banking_versioning.cstack`, proving the *generated* `<Model>Client`
+reaches the same round trip, not just the underlying runtime).
+
 ### `Value` serializes untagged on the wire, matching what it already persists — breaking
 
 `cratestack_core::Value` derived `Serialize`/`Deserialize`, which emits serde's
@@ -49,6 +235,46 @@ The comment asserted that `minicbor-serde` reports `is_human_readable() == true`
 `0xf4`. `cratestack-axum`'s `projection.rs` (#430) already documented the correct behavior, so
 the two disagreed. The comment also still described the `Value::Null`-stripping workaround that
 #430 removed. No behavior change; the code was right and the comment was wrong.
+
+### Pluralizer gains the standard English `y -> ies` rule — breaking (#504)
+
+`cratestack_core::route_naming::pluralize` (and, via it, `cratestack-migrate::naming::table_name`)
+had no `y -> ies` case: any model name ending in a consonant + `y` derived the wrong plural —
+`category` -> `categorys`, `webhook_delivery` -> `webhook_deliverys` — instead of the
+grammatically correct `categories` / `webhook_deliveries`. This wasn't just cosmetic: the derived
+name is the actual SQL table the generated model client queries, so a consumer who hand-wrote a
+migration using the correct English plural got `relation "webhook_deliverys" does not exist` the
+moment the generated client touched that model — a real production defect downstream
+(webank-services' `adminGetWebhooks`; see cratestack#504's linked ADR).
+
+`pluralize` now applies the standard rule: consonant + `y` -> `ies` (`category` -> `categories`);
+vowel + `y` (`day`) or anything else -> plain `+s`. `cratestack-migrate::naming::pluralize`, a
+second hand-synced copy of the same function that had already drifted apart from this one, is
+deleted; `cratestack-migrate::naming::table_name` now calls `cratestack_core::route_naming::pluralize`
+directly, so there is exactly one implementation to keep correct going forward.
+
+This changes both generated REST route segments and generated table names for **every**
+model/view whose name ends in a consonant + `y`. It does *not* touch
+`cratestack-client-typescript::naming` or `cratestack-client-dart::idents`, the two SDK
+accessor/method-name generators (`db.categories()`, `useCategories()`) — they already implement
+the correct consonant/vowel rule and were deliberately out of scope here.
+
+**Migration.** This is a breaking change to generated table names and REST routes for any schema
+with a model/view name ending in a consonant + `y` (`Category`, `Delivery`, `Entry`, `Query`,
+...). `cratestack-migrate`'s diff engine matches tables **by name only** and never infers a
+rename (`crates/cratestack-migrate/src/diff.rs`) — running `cratestack migrate diff` against a
+schema with a deployed `categorys` table, without further action, emits `DropTable(categorys)` +
+`CreateTable(categories)`, and applying that migration **destroys the table's data**. Before
+running `migrate diff` after upgrading past this change, declare
+`@@rename(from = "<old_table_name>")` on every affected model (e.g.
+`@@rename(from = "categorys")` on `model Category`) so the diff engine emits
+`ALTER TABLE ... RENAME TO ...` instead — verified end-to-end by
+`crates/cratestack-migrate/src/emit/postgres/tests/renames.rs`'s
+`pluralization_change_with_rename_marker_is_a_rename_not_drop_and_create` test (and its sibling
+`..._without_rename_marker_drops_and_recreates`, which pins down the destructive default if this
+step is skipped). Any generated Dart/TypeScript/Rust client built against the old route segment
+for such a model will 404 against a server built with this fix, and vice versa, until both sides
+are rebuilt together.
 
 ## 0.7.10 (2026-08-09)
 

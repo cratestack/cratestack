@@ -26,6 +26,10 @@ pub fn decode_json(raw: &str) -> FromSqlResult<Value> {
     Ok(Value::from_plain_json(plain))
 }
 
+// `cratestack_core::Decimal` only exists when a decimal backend is
+// selected (cratestack#505) — see `cratestack-core/src/decimal.rs`'s
+// module doc.
+#[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
 pub fn decode_decimal(raw: &str) -> FromSqlResult<cratestack_core::Decimal> {
     raw.parse::<cratestack_core::Decimal>().map_err(|error| {
         FromSqlError::Other(Box::new(std::io::Error::new(

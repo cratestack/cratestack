@@ -94,6 +94,24 @@ pub(super) fn generate_generated_model_client(
                 self.runtime.get(&format!("{}/{}", #route_path, id), &[], headers).await
             }
 
+            /// Same call as [`Self::get`], but returns the status and
+            /// response headers alongside the record (issue #493) — read
+            /// `TypedResponse::header("etag")` off the result to get the
+            /// value [`Self::update_with_response`] needs as `If-Match`
+            /// on an `@version` model. `delete`/`delete_with_response`
+            /// do **not** need it: the server does not enforce `If-Match`
+            /// on `DELETE` (see [`Self::delete_with_response`]).
+            pub async fn get_with_response(
+                &self,
+                id: &#primary_key_type,
+                headers: &[::cratestack::client_rust::HeaderPair<'_>],
+            ) -> Result<
+                ::cratestack::client_rust::TypedResponse<super::models::#model_ident>,
+                ::cratestack::client_rust::ClientError,
+            > {
+                self.runtime.get_with_response(&format!("{}/{}", #route_path, id), &[], headers).await
+            }
+
             pub async fn get_view<P>(
                 &self,
                 id: &#primary_key_type,
@@ -125,12 +143,54 @@ pub(super) fn generate_generated_model_client(
                 self.runtime.patch(&format!("{}/{}", #route_path, id), input, headers).await
             }
 
+            /// Same call as [`Self::update`], but returns the status and
+            /// response headers alongside the record (issue #493) — on
+            /// an `@version` model, `headers` must carry `If-Match`
+            /// (from a prior [`Self::get_with_response`]), and the
+            /// response's `ETag` is the value a chained update needs
+            /// next.
+            pub async fn update_with_response(
+                &self,
+                id: &#primary_key_type,
+                input: &super::inputs::#update_input_ident,
+                headers: &[::cratestack::client_rust::HeaderPair<'_>],
+            ) -> Result<
+                ::cratestack::client_rust::TypedResponse<super::models::#model_ident>,
+                ::cratestack::client_rust::ClientError,
+            > {
+                self.runtime.patch_with_response(&format!("{}/{}", #route_path, id), input, headers).await
+            }
+
             pub async fn delete(
                 &self,
                 id: &#primary_key_type,
                 headers: &[::cratestack::client_rust::HeaderPair<'_>],
             ) -> Result<super::models::#model_ident, ::cratestack::client_rust::ClientError> {
                 self.runtime.delete(&format!("{}/{}", #route_path, id), headers).await
+            }
+
+            /// Same call as [`Self::delete`], but returns the status and
+            /// response headers alongside the record (issue #493) — for
+            /// reading e.g. a `Retry-After` on a `429`, or any other
+            /// out-of-band signal a server sends on a delete response.
+            ///
+            /// **Not** part of the `@version` optimistic-locking round
+            /// trip: unlike [`Self::update_with_response`], the server
+            /// does **not** currently enforce `If-Match` on `DELETE`
+            /// (only on `PATCH`). Sending `If-Match` in `headers` here
+            /// is accepted but has no concurrency-safety effect — the
+            /// delete proceeds regardless of its value. Server-side
+            /// `If-Match` enforcement on `DELETE` is a real gap, tracked
+            /// as a separate follow-up, not implemented by this method.
+            pub async fn delete_with_response(
+                &self,
+                id: &#primary_key_type,
+                headers: &[::cratestack::client_rust::HeaderPair<'_>],
+            ) -> Result<
+                ::cratestack::client_rust::TypedResponse<super::models::#model_ident>,
+                ::cratestack::client_rust::ClientError,
+            > {
+                self.runtime.delete_with_response(&format!("{}/{}", #route_path, id), headers).await
             }
         }
     })

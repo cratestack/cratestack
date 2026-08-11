@@ -1,7 +1,9 @@
 //! Core body of `update_many`: build the bulk UPDATE with RETURNING,
 //! fan-out event + audit, return a `BatchSummary { total, ok, err: 0 }`.
 
-use cratestack_core::{AuditOperation, BatchSummary, CoolContext, CoolError, ModelEventKind};
+use cratestack_core::{
+    AuditEvent, AuditOperation, BatchSummary, CoolContext, CoolError, ModelEventKind,
+};
 
 use crate::audit::{build_audit_event, enqueue_audit_event, ensure_audit_table};
 use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
@@ -10,6 +12,10 @@ use crate::{
     FilterExpr, ModelDescriptor, SqlxRuntime, UpdateModelInput, cool_error_from_sqlx, sqlx,
 };
 
+/// Returns `(summary, emits_any_event, audit_events)` — the caller
+/// (which owns the transaction commit) decides when it's safe to drain
+/// the outbox / fan the audit events out to the installed `AuditSink`,
+/// both only after `tx` actually commits.
 pub(super) async fn run_update_many_in_tx<'tx, M, PK, I>(
     tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
     runtime: &SqlxRuntime,
@@ -17,7 +23,7 @@ pub(super) async fn run_update_many_in_tx<'tx, M, PK, I>(
     filters: &[FilterExpr],
     input: I,
     ctx: &CoolContext,
-) -> Result<(BatchSummary, bool), CoolError>
+) -> Result<(BatchSummary, bool, Vec<AuditEvent>), CoolError>
 where
     I: UpdateModelInput<M>,
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
@@ -93,6 +99,7 @@ where
         .await
         .map_err(cool_error_from_sqlx)?;
 
+    let mut audit_events = Vec::new();
     for record in &updated {
         if emits_event {
             enqueue_event_outbox(
@@ -112,6 +119,7 @@ where
             let after = serde_json::to_value(record).ok();
             let event = build_audit_event(descriptor, AuditOperation::Update, None, after, ctx);
             enqueue_audit_event(&mut **tx, &event).await?;
+            audit_events.push(event);
         }
     }
 
@@ -123,5 +131,6 @@ where
             err: 0,
         },
         emits_event,
+        audit_events,
     ))
 }

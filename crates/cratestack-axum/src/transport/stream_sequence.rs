@@ -13,9 +13,10 @@
 //! translated to the CBOR-tagged error sentinel
 //! ([`cratestack_core::RPC_STREAM_ERROR_TAG`]) as the final item; the
 //! body then ends. The HTTP status is always the caller-supplied
-//! `status` (200 in practice) — by the time any body byte can be
-//! written, the status line is already committed, so a mid-stream
-//! failure can never change it.
+//! `status` — `StatusCode::OK` by default, or a procedure's declared
+//! `@status(<code>)` (cratestack#407) threaded through by the caller —
+//! and is set on the `Response` synchronously here, before the body
+//! stream is ever polled, so a mid-stream failure can never change it.
 
 use std::pin::Pin;
 

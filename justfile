@@ -148,6 +148,23 @@ test-pg-tc *args='':
 test-ci-db *args='':
 	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg {{args}}
 
+# Shard addendum: the `decimal-bigdecimal` backend's own live-Postgres
+# round-trip test (cratestack#421 AC3, cratestack#495/#496). This file is
+# gated `required-features = ["postgres", "decimal-bigdecimal"]`
+# (`crates/cratestack-pg/tests/decimal_bigdecimal_backend.rs`), so it is
+# never even compiled by `test-ci-db` above, which runs under
+# `cratestack-pg`'s *default* feature set (`decimal-rust-decimal`).
+# `.ci/feature-matrix.sh` proves the backend *compiles* clean end to end;
+# this proves it actually *works* — a `Decimal` field round-trips through
+# real Postgres `NUMERIC` without precision loss, including a value beyond
+# `rust_decimal`'s ~28-29 significant-digit capacity that only
+# `decimal-bigdecimal` can represent at all. Without this recipe wired
+# into CI, a regression in the bigdecimal codec/bind path would still pass
+# every existing gate (compiles clean, no `rust_decimal` in the graph)
+# while being silently broken at runtime.
+test-ci-db-decimal-bigdecimal *args='':
+	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --no-default-features --features postgres,decimal-bigdecimal --test decimal_bigdecimal_backend {{args}}
+
 # Shard: the Redis-backed crate via testcontainers (issue #418). Idempotency
 # and rate-limit stores are the primitives the `banking_*` fixtures lean on
 # for correctness under retries/concurrency, so this mirrors `test-ci-db`'s
@@ -414,6 +431,42 @@ verify-typescript:
 
 	echo ""
 	echo "✓ TypeScript REST and RPC fixtures generated and typechecked successfully"
+
+# Regenerate the two committed example clients in place (issue #471).
+#
+# `examples/flutter-riverpod/client` (via `generate-dart --preset riverpod`)
+# and `examples/react-vite-swr/client` (via `generate-typescript --preset
+# swr`) are committed generated output, guarded only by a CI `--check` step
+# (the `flutter (flutter-riverpod example)` and `js (react-vite-swr
+# example)` jobs in `.github/workflows/ci.yml`). Before this recipe existed
+# there was no local command that could reconcile a template change
+# against them — the only way to find out a template edit had drifted the
+# committed examples was to push and read CI (see #444/#470/#471).
+#
+# `ci.yml`'s `flutter-riverpod-example`/`react-vite-swr-example` drift-check
+# steps call this same recipe as `just regen-examples --check` — one
+# mechanism, not a hand-copied third invocation — so the recipe and CI
+# cannot copy-paste diverge (same `*args=''` passthrough shape as `check`
+# above, which CI calls as `just check --locked`). Local, no-arg use
+# defaults to write mode.
+#
+# Unlike `verify-dart`/`verify-typescript` above (which generate throwaway
+# packages from fixtures into `target/`), this recipe overwrites the
+# committed example directories directly. Run it with no args, review
+# `git diff`, and commit the result — a non-empty diff on an otherwise-
+# unmodified checkout of `main` means the committed examples have already
+# drifted from their templates.
+regen-examples *args='':
+	cargo run -p cratestack-cli -- generate-dart \
+	  --schema examples/react-vite-swr/schema.cstack \
+	  --out examples/flutter-riverpod/client \
+	  --library-name flutter_riverpod_client \
+	  --preset riverpod {{args}}
+	cargo run -p cratestack-cli -- generate-typescript \
+	  --schema examples/react-vite-swr/schema.cstack \
+	  --out examples/react-vite-swr/client \
+	  --preset swr \
+	  --package-name react-vite-swr-client {{args}}
 
 # Layer-direction check (ADR 0014, docs/adr/0014-layer-direction-enforcement.md)
 # — blocking CI gate. Asserts every NORMAL cratestack-* -> cratestack-* edge

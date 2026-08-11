@@ -19,7 +19,7 @@ include_server_schema!(
 );
 
 async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
-    query("DROP TABLE IF EXISTS deliverys, subscriptions")
+    query("DROP TABLE IF EXISTS deliveries, subscriptions")
         .execute(pool)
         .await
         .expect("drop tables");
@@ -28,7 +28,7 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
         .await
         .expect("create subscriptions");
     query(
-        "CREATE TABLE deliverys (
+        "CREATE TABLE deliveries (
             id BIGINT PRIMARY KEY,
             subscription_id BIGINT,
             label TEXT NOT NULL
@@ -36,7 +36,7 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     )
     .execute(pool)
     .await
-    .expect("create deliverys");
+    .expect("create deliveries");
 }
 
 fn operator() -> CoolContext {
@@ -60,7 +60,7 @@ async fn seed(pool: &cratestack::sqlx::PgPool) {
         (14, Some(99), "d5-dangling"), // FK references missing subscription
     ];
     for (id, sub, label) in rows {
-        query("INSERT INTO deliverys (id, subscription_id, label) VALUES ($1, $2, $3)")
+        query("INSERT INTO deliveries (id, subscription_id, label) VALUES ($1, $2, $3)")
             .bind(id)
             .bind(*sub)
             .bind(*label)
