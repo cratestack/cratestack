@@ -56,7 +56,7 @@ where
         .unwrap_or(DEFAULT_CONTENT_TYPE);
     let response = codec.encode_response(content_type, axum::http::StatusCode::OK, value)?;
     let (_parts, body) = response.into_parts();
-    let bytes = axum::body::to_bytes(body, usize::MAX)
+    let bytes = axum::body::to_bytes(body, cratestack_core::MAX_RESPONSE_REBUFFER_BYTES)
         .await
         .map_err(|error| {
             CoolError::Internal(format!("failed to buffer encoded RPC body: {error}"))

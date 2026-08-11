@@ -215,6 +215,15 @@ The frame is wrapped here because the wire carries N requests.
   shapes are (a) two roundtrips, or (b) a single `@procedure` that owns the
   composite operation. Encoding workflow into the wire protocol is rejected
   by design — it is how RPC frameworks rot.
+- **Frame count capped at `BATCH_MAX_ITEMS`** (cratestack#413), checked
+  before the per-frame dispatch loop runs — an oversized batch is rejected
+  in full (`CoolError::Validation`, same message shape as
+  `cratestack-sqlx`'s and `cratestack-rusqlite`'s own batch-size guards)
+  with zero frames dispatched, not truncated to the first 1000. Every
+  other batch surface in the framework already enforced this ceiling;
+  `/rpc/batch` re-entering the full `authenticate()` + policy + dispatch
+  path once per frame (identical cost to unary) made an uncapped frame
+  count a real resource-exhaustion vector, not just an inconsistency.
 
 ### 3.3 HTTP server-streamed — `POST /rpc/:op_id`, negotiated
 

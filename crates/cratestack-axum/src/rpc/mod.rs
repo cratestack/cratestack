@@ -40,6 +40,8 @@ mod tests_error;
 mod tests_frame;
 #[cfg(test)]
 mod tests_list;
+#[cfg(test)]
+mod tests_response_rebuffer;
 
 // Re-export the wire shapes from `cratestack-core::rpc`. Both the server
 // binding and every generated client agree on those shapes, and lifting

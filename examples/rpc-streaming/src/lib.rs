@@ -173,6 +173,7 @@ pub fn build_router_with(procedures: Procedures) -> Router {
         procedures,
         CodecSet::new(CborCodec, JsonCodec),
         HeaderAuthProvider,
+        cratestack::DEFAULT_BODY_LIMIT_BYTES,
     )
 }
 

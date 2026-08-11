@@ -112,8 +112,13 @@ async fn rate_limit_exemption_is_selective() {
     let ops = cratestack_schema::axum::OPS;
     let rpc_filter = build_rpc_ops_filter(ops);
 
-    let mut router: Router =
-        cratestack_schema::axum::rpc_router(db.clone(), RpcProcedures, codec, auth);
+    let mut router: Router = cratestack_schema::axum::rpc_router(
+        db.clone(),
+        RpcProcedures,
+        codec,
+        auth,
+        cratestack::DEFAULT_BODY_LIMIT_BYTES,
+    );
 
     // Apply rate limiting with the operation filter.
     router = router.layer(

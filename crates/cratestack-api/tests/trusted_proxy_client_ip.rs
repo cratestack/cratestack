@@ -64,7 +64,13 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
 
 fn router() -> cratestack::axum::Router {
     let db = cratestack_schema::Cratestack::builder().build();
-    cratestack_schema::axum::router(db, Procedures, JsonCodec, AllowAllAuth)
+    cratestack_schema::axum::router(
+        db,
+        Procedures,
+        JsonCodec,
+        AllowAllAuth,
+        cratestack::DEFAULT_BODY_LIMIT_BYTES,
+    )
 }
 
 async fn who_am_i(app: cratestack::axum::Router, request: Request<Body>) -> String {

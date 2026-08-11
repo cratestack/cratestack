@@ -43,7 +43,7 @@ fn headers_with_accept(value: &str) -> HeaderMap {
 }
 
 /// The exact repro from the issue: a router built with `JsonCodec` alone
-/// (`router(db, procedures, JsonCodec, auth)`), a client honestly
+/// (`router(db, procedures, JsonCodec, auth, body_limit_bytes)`), a client honestly
 /// advertising `Accept: application/json, application/cbor` (both
 /// `cratestack_client_rust::JsonCodec`'s real default and every browser's
 /// `fetch` default of appending `*/*`-like breadth). On `main` this

@@ -101,12 +101,17 @@ pub(super) fn build_api_server(
         /// on a real response), so this call site stays a one-liner.
         ///
         /// Signature mirrors `axum::router(db, registry, codec,
-        /// auth_provider)` (ticket #208 — previously this took an
-        /// already-built `ModelRouterState`, which had no room for a
-        /// procedure registry; every other entrypoint in this schema
-        /// already takes these four arguments separately, so this one
-        /// now does too rather than growing a second, gRPC-only calling
-        /// convention).
+        /// auth_provider)`'s first four arguments (ticket #208 —
+        /// previously this took an already-built `ModelRouterState`,
+        /// which had no room for a procedure registry; every other
+        /// entrypoint in this schema already takes these four arguments
+        /// separately, so this one now does too rather than growing a
+        /// second, gRPC-only calling convention). Deliberately does
+        /// *not* also take `router()`'s `body_limit_bytes` (cratestack#413)
+        /// — gRPC framing has its own message-size ceiling (tonic's
+        /// default 4 MiB `max_decoding_message_size`), a transport
+        /// concern orthogonal to `axum::extract::DefaultBodyLimit`, which
+        /// only ever governs the REST/RPC `Bytes` extractors.
         pub fn into_router<R, C, Auth>(
             db: super::Cratestack,
             registry: R,

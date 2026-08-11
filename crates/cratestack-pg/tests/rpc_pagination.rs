@@ -101,6 +101,7 @@ fn router(pool: cratestack::sqlx::PgPool) -> cratestack::axum::Router {
         NoProcedures,
         CborCodec,
         AlwaysAuthProvider,
+        cratestack::DEFAULT_BODY_LIMIT_BYTES,
     )
 }
 

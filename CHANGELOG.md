@@ -73,6 +73,60 @@ does **not** close #416 itself. #416's acceptance criteria require the *default*
 still collapses unauthenticated callers onto `"anonymous"` unless an operator wires
 `into_make_service_with_connect_info`. #416 stays open.
 
+### Generated servers now enforce request/batch/response size bounds (#413) — breaking
+
+The generated Axum surface had three independent missing limits on the same request path: `/rpc/batch`
+decoded and dispatched an unbounded number of frames, no layer capped the size of an inbound request
+body, and four `axum::body::to_bytes(response.into_body(), usize::MAX)` call sites in the RPC binding
+buffered responses without limit. Individually survivable; together, a single oversized batch body could
+multiply the per-frame `authenticate()` + policy + dispatch cost (identical to a unary call) by however
+many minimal frames fit in an unbounded body, with each frame's response then buffered without limit too.
+
+- **`/rpc/batch` frame cap.** Rejected before the per-frame dispatch loop runs (zero frames dispatch on an
+  over-limit batch — not truncated to the first `BATCH_MAX_ITEMS`), matching the same `1000`-frame ceiling
+  and `CoolError::Validation` error shape `cratestack-sqlx`'s and `cratestack-rusqlite`'s own batch-size
+  guards already use.
+- **Request body limit — makes an existing implicit limit explicit, not a new one.** `router()` and
+  `rpc_router()` (both generated per schema) now take an explicit `body_limit_bytes: usize` parameter,
+  applied once via `axum::extract::DefaultBodyLimit::max(..)`. The new
+  `cratestack_core::DEFAULT_BODY_LIMIT_BYTES` constant is **2 MiB — deliberately matching axum's own
+  built-in `Bytes` default**, which every generated handler already extracted against (`axum-core`'s
+  `Bytes: FromRequest` refuses bodies over 2 MiB with no layer required at all). This makes the change
+  **provably a no-op at runtime**: it names, documents, and makes overridable a limit that was already
+  there and already enforced, rather than silently tightening what an existing deployment can send. See
+  `docs/design/request-response-size-bounds.md` Decision 2 for the full reasoning (an earlier
+  implementation pass set this to 1 MiB before that doc was consulted; corrected to 2 MiB once it was).
+  **This is a genuine parameter, not a default a consumer re-layers on top of afterward** — re-layering
+  `DefaultBodyLimit` on a `Router` that already has one baked in does not work in either direction
+  (verified empirically; see the design doc and `crates/cratestack-core/src/limits.rs`'s module doc) — a
+  deployment needing a larger limit passes a larger `body_limit_bytes` to `router(...)`/`rpc_router(...)`
+  instead. `model_router()`/`procedure_router()` (the lower-level constructors `router()` merges) are
+  unchanged and remain unbounded when called directly, matching their existing signatures.
+- **Response-rebuffer bound.** The four `to_bytes(.., usize::MAX)` sites in
+  `crates/cratestack-axum/src/rpc/{batch,error_encode,grpc_bridge,codec_helpers}.rs` now use
+  `cratestack_core::MAX_RESPONSE_REBUFFER_BYTES` (8 MiB — 4× the request default, with headroom for a
+  response that legitimately echoes a request payload plus server-added columns). Every site already
+  matched on `to_bytes`'s `Result`, so exceeding the bound degrades to the existing synthesized
+  `CoolError::Internal`/error-frame path, not a panic.
+
+**Migration:** the *function signature* of `router(db, registry, codec, auth_provider)` and
+`rpc_router(db, registry, codec, auth_provider)` is breaking — every call site needs a fifth argument to
+compile against the new version, and `cratestack::DEFAULT_BODY_LIMIT_BYTES` is the value that reproduces
+today's runtime behavior exactly (no request that succeeds today starts failing at the default). A
+deployment that has already worked around axum's implicit 2 MiB `Bytes` cap for a specific large-payload
+endpoint should pass a larger `body_limit_bytes` explicitly, now that the limit is named and real rather
+than an axum implementation detail.
+
+**Flagged, not changed:** `DEFAULT_BODY_LIMIT_BYTES` and `MAX_BODY_BYTES` (the idempotency middleware's
+own request-buffering cap) are now numerically equal — both 2 MiB. Traced through the actual mechanism,
+`axum::body::to_bytes(body, limit)` is literally `Limited::new(body, limit).collect()`, the same
+`http_body_util::Limited` primitive `DefaultBodyLimit`'s `Bytes` extractor itself builds on — so there is
+no body size where the two disagree on accept/reject; they're the identical check running twice for a
+request that also carries an `Idempotency-Key`. The only observable difference for that narrow request
+class is which layer rejects first and therefore which error shape a client sees (a custom 400 from
+`IdempotencyService` vs. axum's raw 413) — not a coverage gap. Full trace in
+`docs/design/request-response-size-bounds.md`'s coherence note. `MAX_BODY_BYTES` itself is unchanged.
+
 ## 0.7.11 (2026-08-11)
 
 ### `cratestack-core`: selecting no decimal backend is no longer a hard compile error (#505, #521)

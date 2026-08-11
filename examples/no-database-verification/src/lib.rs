@@ -50,5 +50,11 @@ impl AuthProvider for AllowAllAuth {
 /// in sight. That's the whole point of this crate.
 pub fn build_router() -> Router {
     let db = cratestack_schema::Cratestack::builder().build();
-    cratestack_schema::axum::router(db, Procedures, JsonCodec, AllowAllAuth)
+    cratestack_schema::axum::router(
+        db,
+        Procedures,
+        JsonCodec,
+        AllowAllAuth,
+        cratestack::DEFAULT_BODY_LIMIT_BYTES,
+    )
 }

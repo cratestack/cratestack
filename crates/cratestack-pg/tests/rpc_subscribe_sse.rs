@@ -137,6 +137,7 @@ async fn subscribe_sse_receives_model_events_as_they_happen() {
         RpcProcedures,
         CborCodec,
         AlwaysAuthProvider,
+        cratestack::DEFAULT_BODY_LIMIT_BYTES,
     );
     tokio::spawn(async move {
         cratestack::axum::serve(listener, app).await.unwrap();
@@ -252,6 +253,7 @@ async fn subscribe_sse_emits_unavailable_error_and_ends_stream_on_overflow() {
         RpcProcedures,
         CborCodec,
         AlwaysAuthProvider,
+        cratestack::DEFAULT_BODY_LIMIT_BYTES,
     );
 
     let response = router

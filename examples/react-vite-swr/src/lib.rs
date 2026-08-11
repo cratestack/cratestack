@@ -104,7 +104,13 @@ pub async fn ensure_schema(pool: &PgPool) -> Result<(), cratestack::sqlx::Error>
 /// deployment would scope `allow_origin` to its actual front-end
 /// origin(s)) so the Vite dev server on a different port can call it.
 pub fn build_router(db: cratestack_schema::Cratestack) -> Router {
-    let inner = cratestack_schema::axum::router(db, Procedures, JsonCodec, HeaderAuthProvider);
+    let inner = cratestack_schema::axum::router(
+        db,
+        Procedures,
+        JsonCodec,
+        HeaderAuthProvider,
+        cratestack::DEFAULT_BODY_LIMIT_BYTES,
+    );
     Router::new().nest("/api", inner).layer(
         CorsLayer::new()
             .allow_origin(tower_http::cors::Any)
