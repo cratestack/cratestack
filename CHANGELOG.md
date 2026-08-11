@@ -56,7 +56,9 @@ class is which layer rejects first and therefore which error shape a client sees
 `IdempotencyService` vs. axum's raw 413) — not a coverage gap. Full trace in
 `docs/design/request-response-size-bounds.md`'s coherence note. `MAX_BODY_BYTES` itself is unchanged.
 
-### `cratestack-core`: selecting no decimal backend is no longer a hard compile error (#505)
+## 0.7.11 (2026-08-11)
+
+### `cratestack-core`: selecting no decimal backend is no longer a hard compile error (#505, #521)
 
 `cratestack-core` used to hard-fail with `compile_error!("enable exactly one decimal backend
 feature — decimal-rust-decimal or decimal-bigdecimal")` whenever a consumer built it (directly
@@ -93,7 +95,8 @@ regression accepted in exchange for not hard-failing every backend-agnostic cons
 No consumer-visible signature or behavior change for anyone who already selects a decimal backend
 (the default, `decimal-rust-decimal`, or the opt-in `decimal-bigdecimal`) — this only affects
 builds that previously hit the removed `compile_error!`.
-### `AuditSink` gets a real installation path (#473)
+
+### `AuditSink` gets a real installation path (#473, #517)
 
 `cratestack_core::AuditSink` (plus `NoopAuditSink`/`MulticastAuditSink`) has existed since
 before this release, but had nowhere to be installed: a consumer could construct a sink and had
@@ -123,7 +126,8 @@ nothing for that transaction, silently. Worth its own follow-up issue; see
 `crates/cratestack-sqlx/src/audit/sink.rs`'s doc comment for the full reasoning. Dispatch is
 also sequential, not concurrent, so the added latency of a slow sink is per-row on
 `update_many`/`delete_many`/batch paths, not per-request.
-### `cratestack-studio`: refuse silent `@version`/`@@emit` bypass on `[target.db]` writes — breaking (cratestack#507)
+
+### `cratestack-studio`: refuse silent `@version`/`@@emit` bypass on `[target.db]` writes — breaking (#516, cratestack#507)
 
 A write through `cratestack studio` against a `[target.db]` target went straight to SQL: it never
 bumped a model's `@version` column and never wrote a `cratestack_event_outbox` row for an
@@ -159,7 +163,8 @@ against that model through Studio. Add `allow_unsafe_writes = true` under that t
 unset and route those writes through `[target.api]` instead, where `@version`, `@@emit`, and
 `@@allow` all apply exactly as declared in the schema. Reads and `[target.api]`-only targets are
 unaffected either way.
-### Per-procedure `@status(<code>)` for REST success responses (#407)
+
+### Per-procedure `@status(<code>)` for REST success responses (#407, #511)
 
 `generate_procedure_axum_handler` hardcoded `axum::http::StatusCode::OK` for every procedure's
 `Ok(...)` response, with no schema-level way to declare a different 2xx status (e.g. `202
@@ -191,7 +196,7 @@ accepted by the `200..=299` range check, but the REST encoder always serializes 
 response body regardless of declared status, so a declared `204` currently produces a
 `204 No Content` response that carries a body — a protocol violation per RFC 9110 §15.3.5.
 
-### Typed Rust client can read response headers — `*_with_response` methods (#493)
+### Typed Rust client can read response headers — `*_with_response` methods (#493, #510)
 
 `decode_typed_response` (`cratestack-client-rust/src/client/decode.rs`) read `response.headers`
 only to find `Content-Type`, then returned the decoded body alone — every typed call built on it
@@ -242,7 +247,7 @@ header and a case-insensitive lookup; a real-HTTP-server integration test in
 `cratestack-pg/tests/fixtures/banking_versioning.cstack`, proving the *generated* `<Model>Client`
 reaches the same round trip, not just the underlying runtime).
 
-### `Value` serializes untagged on the wire, matching what it already persists — breaking
+### `Value` serializes untagged on the wire, matching what it already persists — breaking (#506)
 
 `cratestack_core::Value` derived `Serialize`/`Deserialize`, which emits serde's
 externally-tagged enum representation. `Value::String("foo")` went on the wire as
@@ -290,7 +295,7 @@ The comment asserted that `minicbor-serde` reports `is_human_readable() == true`
 the two disagreed. The comment also still described the `Value::Null`-stripping workaround that
 #430 removed. No behavior change; the code was right and the comment was wrong.
 
-### Pluralizer gains the standard English `y -> ies` rule — breaking (#504)
+### Pluralizer gains the standard English `y -> ies` rule — breaking (#504, #509)
 
 `cratestack_core::route_naming::pluralize` (and, via it, `cratestack-migrate::naming::table_name`)
 had no `y -> ies` case: any model name ending in a consonant + `y` derived the wrong plural —
@@ -329,6 +334,36 @@ running `migrate diff` after upgrading past this change, declare
 step is skipped). Any generated Dart/TypeScript/Rust client built against the old route segment
 for such a model will 404 against a server built with this fix, and vice versa, until both sides
 are rebuilt together.
+
+### CI, tooling, and internal fixes
+
+`grpc/service.rs`'s five CRUD arm builders (`build_get_arm`/`build_delete_arm`/`build_create_arm`/
+`build_update_arm`/`build_list_arm`) each independently reimplemented the same per-arm marker
+struct, `UnaryService` impl, and `CoolError`-to-`tonic::Status` mapping, differing only in which
+dispatch fn to call and how many arguments to thread through. Deduplicated into a shared
+`build_unary_arm(ArmSpec)` helper; generated output is unchanged — verified byte-identical via
+`cargo expand` before and after, including a paged-list and a create-disallowed fixture the
+existing test suite didn't otherwise exercise (#524).
+
+CI now actually runs `cratestack-pg/tests/decimal_bigdecimal_backend.rs`, the live-Postgres
+`decimal-bigdecimal` round-trip test #495/#496 added but never wired into a job: `tests-db` only
+built `cratestack-pg` under its default feature set, and `.ci/feature-matrix.sh` only ever ran
+`cargo check`, never `cargo test`, so a runtime regression in that codec/bind path would have
+passed every existing gate silently (#520).
+
+`just regen-examples` regenerates the two committed generated example clients
+(`examples/flutter-riverpod/client`, `examples/react-vite-swr/client`) locally, reusing the exact
+generator invocations `ci.yml`'s drift-check steps run so the recipe and CI can't copy-paste
+diverge. Both example CI jobs' downstream steps (`cargo test`, `flutter analyze`/`test`, `pnpm
+install`/`tsc`) now run and report their own pass/fail even when the drift check itself fails,
+instead of being silently skipped behind it (#508).
+
+The release-bump commit's `git add` staged the root `Cargo.lock` by name only, silently dropping
+the four other lockfiles `just bump` also refreshes on disk (`crates/cratestack-studio-ui/Cargo.lock`
+and the three standalone `examples/*-verification*/Cargo.lock` files, each its own `[workspace]`
+root) — the exact gap that broke v0.7.10's own release PR (`facade-disjointness` failed with
+`--locked` because one of those lockfiles was stale). Now staged via a glob pattern, closing the
+gap structurally rather than chasing individual filenames (#503).
 
 ## 0.7.10 (2026-08-09)
 
