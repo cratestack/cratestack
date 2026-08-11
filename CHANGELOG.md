@@ -8,14 +8,16 @@
 only to find `Content-Type`, then returned the decoded body alone — every typed call built on it
 (`get`/`post`/`patch`/`delete`, and the generated `<Model>Client`'s `list`/`get`/`create`/`update`/
 `delete`) discarded every response header. For any `@version` model, that made the typed client
-structurally unable to do a concurrency-safe `PATCH`/`DELETE`: CrateStack's optimistic-locking
-contract requires `If-Match` on those verbs, with the current version handed back as `ETag` on
-`GET` — so the required round trip, `GET` → read `ETag` → `PATCH` with `If-Match`, had no typed
-path through its middle step. The same gap hid `Idempotency-Replayed` (on a replayed create) and
-`Retry-After` (on a `429`) from a typed caller.
+structurally unable to do a concurrency-safe `PATCH`: CrateStack's optimistic-locking contract
+requires `If-Match` on that verb, with the current version handed back as `ETag` on `GET` — so
+the required round trip, `GET` → read `ETag` → `PATCH` with `If-Match`, had no typed path through
+its middle step. The same gap hid `Idempotency-Replayed` (on a replayed create) and `Retry-After`
+(on a `429`) from a typed caller. **Note:** `DELETE` is not part of that contract — the server
+does not currently enforce `If-Match` on `DELETE` for any model, versioned or not (see below).
 
 Added a `TypedResponse<Output> { value, status, headers }` (with a case-insensitive
-`.header(name)` accessor) and a parallel `*_with_response` method next to every existing typed
+`.header(name)` accessor, plus `.header_values(name)` for the rare header that legitimately
+repeats, e.g. `Set-Cookie`) and a parallel `*_with_response` method next to every existing typed
 method: `CratestackClient::{get,post,patch,delete}_with_response`, and on the generated REST
 `<Model>Client`, `get_with_response`/`update_with_response`/`delete_with_response`. Purely
 additive — `decode_typed_response` is now implemented in terms of a new
@@ -23,13 +25,21 @@ additive — `decode_typed_response` is now implemented in terms of a new
 every existing call site (including every already-generated client) keeps compiling and behaving
 identically with no changes required.
 
+`delete_with_response` ships alongside `get_with_response`/`patch_with_response` for surface
+symmetry (status and headers on every write, not just versioned ones — useful for e.g. reading a
+`Retry-After` on a `429`), but unlike `patch_with_response`, sending `If-Match` on a `DELETE` has
+**no concurrency-safety effect today**: the server accepts and ignores it. Server-side `If-Match`
+enforcement on `DELETE` is a real gap in CrateStack's optimistic-locking story — deliberately
+*not* implemented here, since it is a separate feature decision outside this issue's scope, and
+reported for its own follow-up issue instead.
+
 Scoped to REST transport. RPC transport (`transport rpc`) has no `ETag`/`If-Match` handling
 anywhere server-side — a schema-versioned model's concurrency control there, if any, would need
 to travel through the request/response body, not an HTTP header — so there is nothing to wire on
 the RPC client's `BatchableCall` surface for this issue. Projection reads (`get_view`/`list_view`/
 `list_view_paged`) and `create_with_response` on the generated model client are also left
-out-of-scope: the acceptance-driving round trip is `GET` → `ETag` → `PATCH`/`DELETE` with
-`If-Match`, which the four methods above cover in full; a create-side `Idempotency-Replayed`
+out-of-scope: the acceptance-driving round trip is `GET` → `ETag` → `PATCH` with `If-Match`, which
+`get_with_response`/`update_with_response` cover in full; a create-side `Idempotency-Replayed`
 reader is still reachable today via the (now also additive) `CratestackClient::post_with_response`
 directly, just not yet wrapped by the generated `<Model>Client::create_with_response`.
 

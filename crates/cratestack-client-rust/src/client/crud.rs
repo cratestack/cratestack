@@ -137,9 +137,17 @@ where
     }
 
     /// Same request as [`Self::delete`], but returns the status and
-    /// headers alongside the decoded body (issue #493) — `DELETE` on
-    /// an `@version` model also requires `If-Match`, so the same
-    /// `GET` → `ETag` round trip applies here as it does to `PATCH`.
+    /// headers alongside the decoded body (issue #493) — e.g. to read
+    /// a `Retry-After` on a `429`, or any other out-of-band signal a
+    /// server sends on a delete response.
+    ///
+    /// **Not** part of the `@version` optimistic-locking round trip:
+    /// unlike `patch_with_response`, the server does **not** currently
+    /// enforce `If-Match` on `DELETE` (only on `PATCH`). Sending an
+    /// `If-Match` header here is accepted but has no concurrency-safety
+    /// effect — the delete proceeds regardless of its value. Server-side
+    /// `If-Match` enforcement on `DELETE` is a real gap, tracked as a
+    /// separate follow-up, not implemented by this method.
     pub async fn delete_with_response<Output>(
         &self,
         path: &str,

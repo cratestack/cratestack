@@ -109,6 +109,33 @@ async fn handle_patch(State(state): State<AppState>, headers: HeaderMap, body: B
         .into_response()
 }
 
+// Deliberately does *not* inspect `If-Match` — the server never enforces it
+// on `DELETE` (only `PATCH` does; see `handle_patch` above), so this handler
+// mirrors real CrateStack behavior by ignoring the header entirely, whether
+// or not the caller sent one. Returns the pre-delete record plus a custom
+// header, standing in for the kind of out-of-band signal (a `Retry-After`,
+// an audit marker, etc.) `delete_with_response` exists to surface.
+async fn handle_delete(State(state): State<AppState>) -> Response {
+    let ledger = Ledger {
+        id: 4,
+        balance: state.balance.load(Ordering::SeqCst),
+        version: state.version.load(Ordering::SeqCst),
+    };
+    let body = state.codec.encode(&ledger).expect("value should encode");
+    (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, CborCodec::CONTENT_TYPE.to_owned()),
+            (
+                header::HeaderName::from_static("x-deleted-by"),
+                "test-suite".to_owned(),
+            ),
+        ],
+        body,
+    )
+        .into_response()
+}
+
 async fn spawn_server() -> (Url, AppState, tokio::task::JoinHandle<()>) {
     let state = AppState {
         codec: CborCodec,
@@ -116,7 +143,10 @@ async fn spawn_server() -> (Url, AppState, tokio::task::JoinHandle<()>) {
         version: Arc::new(AtomicI64::new(0)),
     };
     let app = Router::new()
-        .route("/ledgers/4", get(handle_get).patch(handle_patch))
+        .route(
+            "/ledgers/4",
+            get(handle_get).patch(handle_patch).delete(handle_delete),
+        )
         .with_state(state.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -191,6 +221,28 @@ async fn patch_with_response_surfaces_412_for_a_stale_if_match() {
         }
         other => panic!("expected a remote 412 error, got {other:?}"),
     }
+}
+
+/// Proves `delete_with_response` surfaces status and headers like its
+/// siblings. Unlike the `get_with_response` → `patch_with_response` round
+/// trip above, this deliberately sends **no** `If-Match` — the server does
+/// not require or check one on `DELETE` (see `handle_delete`), so this test
+/// does not assert any `If-Match`/concurrency-safety semantics that don't
+/// exist server-side; it only proves the response metadata plumbing works
+/// on this verb too.
+#[tokio::test]
+async fn delete_with_response_surfaces_status_and_headers() {
+    let (base_url, _state, _server) = spawn_server().await;
+    let client = CratestackClient::new(ClientConfig::new(base_url), CborCodec);
+
+    let response: TypedResponse<Ledger> = client
+        .delete_with_response("/ledgers/4", &[])
+        .await
+        .expect("delete_with_response should succeed");
+
+    assert_eq!(response.status, StatusCode::OK);
+    assert_eq!(response.value.id, 4);
+    assert_eq!(response.header("x-deleted-by"), Some("test-suite"));
 }
 
 /// Proves the original `get`/`patch` signatures are unaffected by #493:

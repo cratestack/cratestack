@@ -96,3 +96,40 @@ async fn generated_client_reaches_etag_then_if_match_round_trip() {
     assert_eq!(update_response.value.version, 1);
     assert_eq!(update_response.header("etag"), Some("\"1\""));
 }
+
+/// Proves the generated `<Model>Client::delete_with_response` surfaces
+/// status and headers, same as `get_with_response`/`update_with_response`
+/// above. Deliberately sends no `If-Match` and the mock server does not
+/// check for one — the server never requires or enforces `If-Match` on
+/// `DELETE` (only `PATCH`; see the module doc and
+/// `cratestack-client-rust`'s `tests/typed_response.rs`), so this test does
+/// not assert any concurrency-safety semantics that don't exist.
+#[tokio::test]
+async fn generated_client_delete_with_response_surfaces_status_and_headers() {
+    let (base_url, _server) = support::spawn_mock_server(|request| {
+        if request.path == "/ledgers/4" && request.method == "DELETE" {
+            return support::cbor_ok_with_headers(
+                &Ledger {
+                    id: 4,
+                    label: "gl-4".to_owned(),
+                    balance: 5,
+                    version: 1,
+                },
+                vec![("x-deleted-by".to_owned(), "test-suite".to_owned())],
+            );
+        }
+        support::not_found()
+    })
+    .await;
+
+    let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec);
+    let client = versioned_schema::cratestack_schema::client::Client::new(runtime);
+    let ledgers = client.ledgers();
+
+    let delete_response = ledgers
+        .delete_with_response(&4, &[])
+        .await
+        .expect("generated delete_with_response should succeed");
+    assert_eq!(delete_response.value.id, 4);
+    assert_eq!(delete_response.header("x-deleted-by"), Some("test-suite"));
+}
