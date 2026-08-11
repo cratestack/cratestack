@@ -23,6 +23,56 @@
 5. **gRPC (`transport grpc` / `into_router()`) is in scope**, not deferred. Covered by
    `crates/cratestack-pg/tests/trusted_proxy_client_ip_grpc.rs`.
 
+### Post-review remediation (confirmed security bypass, fixed before merge)
+
+An adversarial review of the first implementation of this design found, and reproduced
+end-to-end through the real generated router, a bypass that defeated the trust check
+entirely: `parse_client_ip` inspected the RFC 7239 `Forwarded` header first,
+unconditionally, whenever it was present at all — falling through to
+`X-Forwarded-For` only when `Forwarded` was absent. Real reverse proxies (nginx, an AWS
+ALB, HAProxy's defaults) set `X-Forwarded-For` and never touch `Forwarded`, so in
+practice a `Forwarded` header arriving at the origin is entirely attacker-authored and
+was never validated or hop-counted at all — an attacker didn't need to fight the
+hop-count math, they could just send `Forwarded` instead of `X-Forwarded-For` and have
+it trusted outright. Three fixes landed together, all covered by regression tests
+proven to fail without the fix (see the referenced test files):
+
+1. **Only one header is ever honored, defaulting to `X-Forwarded-For`.**
+   `TrustedProxyConfig` gained a `forwarded_header: ForwardedHeader` field
+   (`ForwardedHeader::XForwardedFor` by default; `.forwarded_header(Forwarded)` opts a
+   deployment into RFC 7239 `Forwarded` instead, for the deployments whose proxy
+   actually emits it). `parse_client_ip` gained a third `header: ForwardedHeader`
+   parameter and now consults exactly the one header selected — never falling through
+   to the other. See `crates/cratestack-axum/src/headers/tests_header_precedence.rs`.
+2. **The selected hop is validated as a real `IpAddr` before being recorded.** Neither
+   the original `parse_client_ip` nor `enrich_context_from_headers` checked the
+   resolved value against `IpAddr::from_str` — a malformed/spoofed string
+   (`666.666.666.666`, not even a valid address) or an unstripped port suffix
+   (`10.0.0.5:5678`) could land in the audit trail verbatim. `headers::forwarded::
+   parse_hop_ip` now parses the selected hop (handling a port-suffixed IPv4 address,
+   bracketed IPv6 with or without a port, and RFC 7239's quoted-string `for="..."`
+   syntax), falling back to the verified peer address (or `None`) on failure rather
+   than ever recording an unparseable string. See `tests_ip_validation.rs`.
+3. **Duplicate header occurrences are merged, not first-wins.** `HeaderMap::get` only
+   returns the first occurrence of a repeated header; RFC 7230 §3.2.2 makes repeated
+   list-type header lines semantically equivalent to one comma-joined value. A proxy
+   that appends its hop as a *second* header line (rather than extending the first)
+   had that value silently dropped in favor of whichever line an attacker sent first.
+   `parse_client_ip` now uses `HeaderMap::get_all` and concatenates every occurrence,
+   in wire order, before walking the chain. Covered in the same test file plus a
+   real-router reproduction in `crates/cratestack-api/tests/trusted_proxy_client_ip.rs`.
+
+Additionally, the same review found that nothing detected the single most likely
+operator mistake — applying `TrustedProxyConfig` without also wiring
+`into_make_service_with_connect_info`, which silently degrades `client_ip` to `None` on
+every request forever. `enrich_context_from_headers` now emits a `tracing::warn!`
+(logged once per process via `std::sync::Once`, not per request — a busy misconfigured
+deployment re-emitting this on every request would itself become an operational
+problem; this is a boot-time wiring defect, not a per-request condition) whenever a
+`TrustedProxyConfig` is present but no `ConnectInfo` peer arrived. See
+`is_missing_connect_info_misconfiguration` in `headers/enrich.rs` and its tests in
+`tests_trusted_proxy.rs`.
+
 **One implementation detail that deviated from the sketch below, and why:** the
 sketch's "add `Option<axum::Extension<TrustedProxyConfig>>`,
 `Option<axum::extract::ConnectInfo<SocketAddr>>` to each dispatch fn" does not compile

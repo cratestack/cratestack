@@ -2,8 +2,36 @@ use std::net::IpAddr;
 
 use ipnet::IpNet;
 
-/// Which peers are trusted to set `Forwarded`/`X-Forwarded-For`, and how
-/// many hops into the chain to trust when they are.
+/// Which single forwarding header a trusted proxy is expected to write.
+///
+/// RFC 7239 `Forwarded` and the legacy `X-Forwarded-For` are alternatives,
+/// not complements — a real reverse proxy (nginx, an AWS ALB, HAProxy's
+/// defaults) is configured to emit **one** of the two, never both
+/// meaningfully. Trusting whichever one happens to be present on the wire
+/// is exactly the bypass this type exists to close: an attacker who knows
+/// a deployment trusts `X-Forwarded-For` can simply add a `Forwarded`
+/// header instead — until this field existed, that header was honored
+/// unconditionally over `X-Forwarded-For` with no hop-count or
+/// trusted-peer check ever applied to it (#415 remediation). Naming the
+/// header explicitly, defaulting to the header real proxies actually send,
+/// closes that gap: the rarer header only takes effect when a deployment
+/// opts into it because its own proxy is actually configured to emit it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ForwardedHeader {
+    /// The legacy header, still what the overwhelming majority of real
+    /// deployments emit (nginx's `proxy_set_header X-Forwarded-For`, AWS
+    /// ALB, HAProxy's defaults). The safe default.
+    #[default]
+    XForwardedFor,
+    /// RFC 7239 `Forwarded`. Select this only when the deployment's own
+    /// trusted proxy is actually configured to emit `Forwarded` instead of
+    /// `X-Forwarded-For` — most are not.
+    Forwarded,
+}
+
+/// Which peers are trusted to set `Forwarded`/`X-Forwarded-For`, how many
+/// hops into the chain to trust when they are, and which of the two
+/// headers to honor.
 ///
 /// Applied by the consumer as a plain `Extension<TrustedProxyConfig>`
 /// (`.layer(Extension(config))`) on every router the app serves —
@@ -22,6 +50,7 @@ use ipnet::IpNet;
 pub struct TrustedProxyConfig {
     allowlist: Vec<IpNet>,
     max_hops: usize,
+    header: ForwardedHeader,
 }
 
 impl TrustedProxyConfig {
@@ -36,7 +65,10 @@ impl TrustedProxyConfig {
     /// reverse proxies. `max_hops` defaults to `1` (a single trusted
     /// proxy) — call [`Self::max_hops`] to widen it for a chain of
     /// several trusted proxies (e.g. CDN + load balancer, both
-    /// configured here).
+    /// configured here). The forwarding header defaults to
+    /// [`ForwardedHeader::XForwardedFor`] — call [`Self::forwarded_header`]
+    /// if the deployment's proxy actually emits RFC 7239 `Forwarded`
+    /// instead.
     ///
     /// A bare host address can be supplied via `IpAddr`'s `Into<IpNet>`
     /// impl (a full-length /32 or /128 prefix): `IpAddr::from(...).into()`.
@@ -44,6 +76,7 @@ impl TrustedProxyConfig {
         Self {
             allowlist: allowlist.into_iter().collect(),
             max_hops: 1,
+            header: ForwardedHeader::default(),
         }
     }
 
@@ -63,8 +96,19 @@ impl TrustedProxyConfig {
         self
     }
 
+    /// Select which single header this deployment's trusted proxy writes.
+    /// See [`ForwardedHeader`]'s doc for why only one is ever honored.
+    pub fn forwarded_header(mut self, header: ForwardedHeader) -> Self {
+        self.header = header;
+        self
+    }
+
     pub(crate) fn hop_count(&self) -> usize {
         self.max_hops
+    }
+
+    pub(crate) fn header(&self) -> ForwardedHeader {
+        self.header
     }
 
     /// Whether `peer` — the verified socket peer address, never a

@@ -19,6 +19,10 @@ pub use traceparent::parse_traceparent;
 #[cfg(test)]
 mod tests_correlation;
 #[cfg(test)]
+mod tests_header_precedence;
+#[cfg(test)]
 mod tests_if_match;
+#[cfg(test)]
+mod tests_ip_validation;
 #[cfg(test)]
 mod tests_trusted_proxy;

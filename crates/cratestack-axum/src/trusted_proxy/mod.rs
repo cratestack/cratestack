@@ -8,7 +8,7 @@
 
 mod config;
 
-pub use config::TrustedProxyConfig;
+pub use config::{ForwardedHeader, TrustedProxyConfig};
 
 #[cfg(test)]
 mod tests;

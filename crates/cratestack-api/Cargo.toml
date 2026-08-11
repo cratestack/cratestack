@@ -87,6 +87,12 @@ uuid.workspace = true
 cratestack-codec-cbor.workspace = true
 cratestack-codec-json.workspace = true
 serde_json.workspace = true
-tokio.workspace = true
+# `net`/`io-util` on top of the workspace default (`macros`, `rt-multi-thread`):
+# `trusted_proxy_client_ip.rs`'s real-`TcpListener` test (#415 Finding 4) needs
+# `TcpListener`/`TcpStream` plus `AsyncRead`/`AsyncWriteExt` to prove
+# `ConnectInfo` genuinely reaches the dispatch path through
+# `into_make_service_with_connect_info`, not just a manually-inserted
+# extension (which every other test in that file, deliberately, still uses).
+tokio = { workspace = true, features = ["net", "io-util"] }
 tower.workspace = true
 tracing-subscriber.workspace = true

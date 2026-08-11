@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-### `Forwarded`/`X-Forwarded-For` are now honored only from a configured trusted proxy — breaking (#415, #416)
+### `Forwarded`/`X-Forwarded-For` are now honored only from a configured trusted proxy — breaking (#415)
 
 `enrich_context_from_headers` — public, re-exported as `cratestack::enrich_context_from_headers`
 — trusted `Forwarded`/`X-Forwarded-For` unconditionally when recording the audit `client_ip`,
@@ -13,7 +13,7 @@ from a peer the consumer has allowlisted.
 **Breaking:** `enrich_context_from_headers(ctx, headers)` is now
 `enrich_context_from_headers(ctx, headers, trusted_proxy: Option<&TrustedProxyConfig>, peer:
 Option<SocketAddr>)`. `parse_client_ip(headers)` is now `parse_client_ip(headers, max_hops:
-usize)`. `router()`'s own signature is unchanged (Option A′ — see
+usize, header: ForwardedHeader)`. `router()`'s own signature is unchanged (Option A′ — see
 `docs/design/trusted-proxy-client-ip.md`).
 
 **Migration.** Deployments behind a reverse proxy that rely on `Forwarded`/`X-Forwarded-For`
@@ -24,19 +24,54 @@ being recorded as audit `client_ip` must, after upgrading:
    on **every** router the app serves — including the gRPC router (`into_router()`) for
    `transport grpc` schemas, which is a separate `axum::Router` instance not covered by
    protecting `router()` alone.
+3. If the deployment's proxy emits RFC 7239 `Forwarded` rather than the legacy
+   `X-Forwarded-For` (uncommon — most proxies emit XFF), additionally call
+   `.forwarded_header(ForwardedHeader::Forwarded)` on the config. **Only one of the two headers
+   is ever honored**, defaulting to `X-Forwarded-For`; see below.
 
-Without both, `client_ip` is `None` (or the proxy's own address) rather than the client's —
-the safe default, never a guess and never a trusted-by-default header.
+Without both (1) and (2), `client_ip` is `None` (or the proxy's own address) rather than the
+client's — the safe default, never a guess and never a trusted-by-default header. When that
+combination is detected — a `TrustedProxyConfig` applied with no `ConnectInfo` peer ever
+arriving — a `tracing::warn!` (logged once per process, not per request) now flags it, so the
+misconfiguration is discoverable in logs rather than silently degrading `client_ip` to `None`
+forever.
 
 `max_hops` counts **right-to-left** — in from the end of the chain nearest the trusted proxy,
 not the `max_hops`-th entry from the left. A left-to-right reading re-opens the exact spoofing
 gap this change closes for any chain longer than one hop.
 
-As a side effect, this also closes the second half of #416: the idempotency/rate-limit default
-fingerprint's `ConnectInfo<SocketAddr>` fallback (already shipped) had nothing in the codebase
-that actually served through `into_make_service_with_connect_info`, so it never engaged in
-practice. Wiring `ConnectInfo` extraction for #415 closes that gap too — the same connect-info
-serving requirement above is what makes both work.
+**Only `X-Forwarded-For` is honored by default; `Forwarded` requires an explicit opt-in.** RFC
+7239 `Forwarded` and the legacy `X-Forwarded-For` are alternatives, not complements — a real
+proxy (nginx, an AWS ALB, HAProxy's defaults) emits one or the other, never both meaningfully.
+An earlier draft of this change inspected `Forwarded` first, unconditionally, whenever it was
+present — since almost no real proxy ever sets that header, an attacker could add an entirely
+unvalidated `Forwarded` header and have it silently override a legitimate, hop-counted
+`X-Forwarded-For` chain, defeating the trust check outright. `TrustedProxyConfig` now takes a
+`forwarded_header: ForwardedHeader` (`XForwardedFor` by default; `.forwarded_header(Forwarded)`
+opts a deployment into the RFC 7239 header instead) and only that one header is ever inspected.
+
+**The selected hop is validated as a real IP address before being recorded.** Neither
+`parse_client_ip` nor `enrich_context_from_headers` previously checked the resolved value
+against `IpAddr::from_str` — a malformed or spoofed string (not even a valid address, e.g.
+`666.666.666.666`), or an unstripped port suffix (`10.0.0.5:5678`), could land in the audit
+trail verbatim. The selected hop is now parsed as an `IpAddr` (handling a port-suffixed IPv4
+address, bracketed IPv6 with or without a port, and RFC 7239's quoted-string `for="..."` syntax)
+before being recorded; on failure this falls back to the verified socket peer if trusted, or
+`None` otherwise — never an unparseable string.
+
+**Duplicate header occurrences are merged, not first-wins.** RFC 7230 §3.2.2 makes repeated
+list-type header lines semantically equivalent to one comma-joined value. `HeaderMap::get` only
+returns the first occurrence; a proxy that appends its hop as a *second* `X-Forwarded-For`
+header line (rather than extending the first) had that value silently dropped in favor of
+whichever line an attacker sent first. Every occurrence of the selected header is now
+concatenated, in wire order, before the chain is walked.
+
+This PR enables the idempotency/rate-limit `ConnectInfo<SocketAddr>` fallback (already shipped
+for #416) to actually engage in practice, for deployments that apply the migration above — it
+does **not** close #416 itself. #416's acceptance criteria require the *default* configuration
+(no operator action) to never place distinct callers in a shared namespace, and the default
+still collapses unauthenticated callers onto `"anonymous"` unless an operator wires
+`into_make_service_with_connect_info`. #416 stays open.
 
 ### Per-procedure `@status(<code>)` for REST success responses (#407)
 

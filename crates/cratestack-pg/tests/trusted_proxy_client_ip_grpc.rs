@@ -238,3 +238,38 @@ async fn grpc_who_am_i_round_trips_without_any_client_ip_signal() {
     let output = call_who_am_i(router()).await;
     assert_eq!(output.result.as_deref(), Some("none"));
 }
+
+/// Finding 1, reproduced through `into_router()`: an attacker-authored
+/// `Forwarded` header must not override the proxy-appended
+/// `X-Forwarded-For` chain under the default header selection.
+#[tokio::test]
+async fn grpc_router_forwarded_header_from_attacker_does_not_override_trusted_xff() {
+    let router = router().layer(cratestack::axum::Extension(
+        TrustedProxyConfig::trusting(["198.51.100.1".parse::<std::net::IpAddr>().unwrap().into()])
+            .max_hops(1),
+    ));
+
+    let input = cratestack_schema::grpc::pb::WhoAmIInput {};
+    let framed = frame_grpc_message(&input.encode_to_vec(), false);
+    let mut request = cratestack::axum::http::Request::builder()
+        .method("POST")
+        .uri("/widgets_api.Api/ProcedureWhoAmI")
+        .header("content-type", "application/grpc")
+        .header("x-forwarded-for", "6.6.6.6, 203.0.113.9")
+        .header("forwarded", "for=\"666.666.666.666\"")
+        .version(cratestack::axum::http::Version::HTTP_2)
+        .body(cratestack::axum::body::Body::from(framed))
+        .unwrap();
+    let trusted_peer: SocketAddr = "198.51.100.1:9000".parse().unwrap();
+    request.extensions_mut().insert(ConnectInfo(trusted_peer));
+
+    let response = router.oneshot(request).await.unwrap();
+    let body = cratestack::axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let unframed = strip_grpc_frame(&body).unwrap();
+    let output = cratestack_schema::grpc::pb::WhoAmIOutput::decode(unframed).unwrap();
+
+    assert_eq!(output.result.as_deref(), Some("203.0.113.9"));
+    assert_ne!(output.result.as_deref(), Some("666.666.666.666"));
+}

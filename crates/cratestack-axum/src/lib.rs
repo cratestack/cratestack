@@ -13,9 +13,9 @@
 //! - [`ratelimit`]: token-bucket rate-limit middleware and storage trait.
 //! - [`schema_fingerprint`]: warn-only client/server schema drift
 //!   detection via the `x-cratestack-schema-sha` header.
-//! - [`trusted_proxy`]: the [`TrustedProxyConfig`] allowlist/hop-count type
-//!   consumers apply as an `Extension` to make `Forwarded`/
-//!   `X-Forwarded-For` trust explicit (#415).
+//! - [`trusted_proxy`]: the [`TrustedProxyConfig`] allowlist/hop-count/
+//!   [`ForwardedHeader`] type consumers apply as an `Extension` to make
+//!   `Forwarded`/`X-Forwarded-For` trust explicit (#415).
 
 pub use axum;
 
@@ -62,4 +62,4 @@ pub use projection::ProjectedValue;
 
 pub use query::{QueryExpr, parse_filter_expression, parse_query_pairs};
 
-pub use trusted_proxy::TrustedProxyConfig;
+pub use trusted_proxy::{ForwardedHeader, TrustedProxyConfig};

@@ -173,6 +173,25 @@ end nearest the trusted proxy), not the left — the left end is exactly the par
 untrusted client controls. `max_hops(2)` trusts a two-hop chain (e.g. CDN + load balancer,
 both in the allowlist); `max_hops(0)` (or an absent `Extension`) never trusts headers at all.
 
+**Only one header is ever honored — `X-Forwarded-For` by default.** RFC 7239 `Forwarded` and
+the legacy `X-Forwarded-For` are alternatives, not complements: a real reverse proxy (nginx,
+an AWS ALB, HAProxy's defaults) emits one or the other, never both meaningfully. Trusting
+whichever one happens to be present would let an attacker who knows a deployment trusts XFF
+bypass the entire check just by sending `Forwarded` instead — so exactly one is ever
+inspected. Call `.forwarded_header(cratestack_axum::ForwardedHeader::Forwarded)` on the config
+only if the deployment's own proxy is actually configured to emit RFC 7239 `Forwarded`
+instead of `X-Forwarded-For`.
+
+**The selected hop is validated as a real IP address before being recorded** — a port suffix
+(`1.2.3.4:5678`) or bracketed-IPv6-with-port (`[::1]:8080`) is normalized; a malformed or
+spoofed string is never recorded, falling back to the verified peer address instead.
+
+**A `TrustedProxyConfig` with no peer is flagged.** If the config is applied but
+`ConnectInfo<SocketAddr>` never arrives (the `into_make_service_with_connect_info` wiring
+above is missing, or was applied to a different router than the one handling this request), a
+`tracing::warn!` fires once per process — that combination always means `client_ip` is
+silently `None` on every request.
+
 **`transport grpc` schemas need the same `.layer(...)` on their own router** — `into_router()`
 builds a second, separately served `axum::Router` that is not covered by protecting `router()`
 alone.

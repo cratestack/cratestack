@@ -3,7 +3,10 @@
 //! Split out of `tests_correlation.rs` (which keeps the pre-existing
 //! `traceparent`/basic `parse_client_ip` coverage) once this file's own
 //! growth would have pushed `tests_correlation.rs` past this crate's
-//! ~200-line-per-file convention.
+//! ~200-line-per-file convention. Header-selection precedence (Finding 1)
+//! and IP-shape validation (Finding 2) coverage lives in
+//! `tests_header_precedence.rs`/`tests_ip_validation.rs` respectively, for
+//! the same reason.
 
 #![cfg(test)]
 
@@ -11,22 +14,22 @@ use std::net::SocketAddr;
 
 use axum::http::{HeaderMap, HeaderValue};
 
-use crate::trusted_proxy::TrustedProxyConfig;
+use crate::trusted_proxy::{ForwardedHeader, TrustedProxyConfig};
 
-use super::enrich::enrich_context_from_headers;
+use super::enrich::{enrich_context_from_headers, is_missing_connect_info_misconfiguration};
 use super::forwarded::parse_client_ip;
 
-fn headers_with(name: &'static str, value: &str) -> HeaderMap {
+pub(super) fn headers_with(name: &'static str, value: &str) -> HeaderMap {
     let mut headers = HeaderMap::new();
     headers.insert(name, HeaderValue::from_str(value).unwrap());
     headers
 }
 
-fn addr(s: &str) -> SocketAddr {
+pub(super) fn addr(s: &str) -> SocketAddr {
     s.parse().unwrap()
 }
 
-fn ctx() -> cratestack_core::CoolContext {
+pub(super) fn ctx() -> cratestack_core::CoolContext {
     cratestack_core::CoolContext::anonymous()
 }
 
@@ -35,19 +38,22 @@ fn ctx() -> cratestack_core::CoolContext {
 #[test]
 fn max_hops_zero_trusts_nothing() {
     let h = headers_with("x-forwarded-for", "192.0.2.43, 10.0.0.1");
-    assert_eq!(parse_client_ip(&h, 0), None);
+    assert_eq!(parse_client_ip(&h, 0, ForwardedHeader::XForwardedFor), None);
 }
 
 #[test]
 fn single_hop_chain_with_max_hops_one_returns_the_only_entry() {
     let h = headers_with("x-forwarded-for", "203.0.113.5");
-    assert_eq!(parse_client_ip(&h, 1), Some("203.0.113.5".to_owned()));
+    assert_eq!(
+        parse_client_ip(&h, 1, ForwardedHeader::XForwardedFor),
+        Some("203.0.113.5".to_owned())
+    );
 }
 
 #[test]
 fn max_hops_deeper_than_the_actual_chain_returns_none() {
     let h = headers_with("x-forwarded-for", "203.0.113.5, 10.0.0.5");
-    assert_eq!(parse_client_ip(&h, 3), None);
+    assert_eq!(parse_client_ip(&h, 3, ForwardedHeader::XForwardedFor), None);
 }
 
 /// The whole point of this PR (#415): the hop-count walk must be
@@ -67,7 +73,7 @@ fn hop_count_walks_right_to_left_not_left_to_right() {
     // An attacker-controlled client prepends a spoofed entry; the trusted
     // proxy appends its own observed value on the right.
     let h = headers_with("x-forwarded-for", "203.0.113.9, 10.0.0.5");
-    let resolved = parse_client_ip(&h, 1);
+    let resolved = parse_client_ip(&h, 1, ForwardedHeader::XForwardedFor);
     assert_eq!(resolved, Some("10.0.0.5".to_owned()));
     assert_ne!(resolved, Some("203.0.113.9".to_owned()));
 }
@@ -77,13 +83,19 @@ fn hop_count_two_selects_second_from_right_entry() {
     let h = headers_with("x-forwarded-for", "203.0.113.9, 10.0.0.1, 10.0.0.2");
     // Rightmost (10.0.0.2) is the immediate trusted peer's own hop;
     // walking 2 in from the right lands on what it saw (10.0.0.1).
-    assert_eq!(parse_client_ip(&h, 2), Some("10.0.0.1".to_owned()));
+    assert_eq!(
+        parse_client_ip(&h, 2, ForwardedHeader::XForwardedFor),
+        Some("10.0.0.1".to_owned())
+    );
 }
 
 #[test]
 fn forwarded_header_hop_count_is_also_right_to_left() {
     let h = headers_with("forwarded", "for=203.0.113.9, for=10.0.0.5");
-    assert_eq!(parse_client_ip(&h, 1), Some("10.0.0.5".to_owned()));
+    assert_eq!(
+        parse_client_ip(&h, 1, ForwardedHeader::Forwarded),
+        Some("10.0.0.5".to_owned())
+    );
 }
 
 // --- enrich_context_from_headers: trust boundary ----------------------------
@@ -156,6 +168,41 @@ fn unconfigured_default_with_no_peer_yields_no_client_ip() {
     let headers = headers_with("x-forwarded-for", "10.0.0.1");
     let enriched = enrich_context_from_headers(ctx(), &headers, None, None);
     assert_eq!(enriched.client_ip(), None);
+}
+
+// --- Finding 6: missing-ConnectInfo misconfiguration detection -------------
+
+/// The exact combination the warn-once-per-process log line exists to
+/// catch: a `TrustedProxyConfig` is applied, but no peer ever arrived.
+#[test]
+fn trusted_proxy_without_a_peer_is_flagged_as_a_misconfiguration() {
+    let config =
+        TrustedProxyConfig::trusting(["198.51.100.1".parse::<std::net::IpAddr>().unwrap().into()]);
+    assert!(is_missing_connect_info_misconfiguration(
+        Some(&config),
+        None
+    ));
+}
+
+#[test]
+fn trusted_proxy_with_a_peer_is_not_flagged() {
+    let config =
+        TrustedProxyConfig::trusting(["198.51.100.1".parse::<std::net::IpAddr>().unwrap().into()]);
+    assert!(!is_missing_connect_info_misconfiguration(
+        Some(&config),
+        Some(addr("198.51.100.1:9000"))
+    ));
+}
+
+#[test]
+fn no_trusted_proxy_config_at_all_is_never_flagged_regardless_of_peer() {
+    // The unconfigured default (decision 3) is intentional, not a
+    // misconfiguration — nothing to warn about.
+    assert!(!is_missing_connect_info_misconfiguration(None, None));
+    assert!(!is_missing_connect_info_misconfiguration(
+        None,
+        Some(addr("198.51.100.1:9000"))
+    ));
 }
 
 #[test]
