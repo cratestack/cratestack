@@ -133,7 +133,7 @@ check_combo() {
   done
 }
 
-step "[1/6] decimal-rust-decimal and decimal-bigdecimal are mutually exclusive (cratestack#495)"
+step "[1/6] decimal-rust-decimal and decimal-bigdecimal are mutually exclusive (cratestack#495); neither is NOT an error (cratestack#505)"
 if OUTPUT=$(cargo check -p cratestack-core --no-default-features --features decimal-rust-decimal,decimal-bigdecimal 2>&1); then
   fail "expected 'cargo check -p cratestack-core --features decimal-rust-decimal,decimal-bigdecimal' (both backends at once) to be rejected, but it succeeded"
   echo "$OUTPUT"
@@ -143,14 +143,34 @@ elif ! grep -q "mutually exclusive" <<<"$OUTPUT"; then
 else
   echo "ok: selecting both decimal backends at once is rejected"
 fi
+# cratestack#505: this used to be a hard `compile_error!` too (the "neither"
+# arm) — the exact break a consumer legitimately narrowing its graph via
+# `default-features = false`, and never touching `Decimal`, hit in the
+# wild. `cratestack-core` now compiles cleanly with `Decimal` (and anything
+# that references it, e.g. `validate_range_decimal`) simply absent from its
+# public surface in this configuration — see `src/decimal.rs`'s module doc
+# for why a real `rust_decimal`-backed fallback isn't reachable here (it
+# would require `rust_decimal` to stop being a Cargo-optional dependency,
+# which breaks the [5/6] no-leak invariant below).
 if OUTPUT=$(cargo check -p cratestack-core --no-default-features 2>&1); then
-  fail "expected 'cargo check -p cratestack-core --no-default-features' (no backend) to be rejected, but it succeeded"
-  echo "$OUTPUT"
-elif ! grep -q "enable exactly one decimal backend" <<<"$OUTPUT"; then
-  fail "expected the neither-selected compile_error! for the decimal backend, got a different failure instead"
-  echo "$OUTPUT"
+  echo "ok: selecting neither decimal backend compiles cleanly (cratestack#505)"
 else
-  echo "ok: selecting neither decimal backend is rejected"
+  fail "expected 'cargo check -p cratestack-core --no-default-features' (no backend) to succeed as of cratestack#505, but it failed"
+  echo "$OUTPUT"
+fi
+# `cargo test`, not just `cargo check`: proves the test binary actually
+# links and runs in this configuration, not just that `rustc` accepts the
+# lib — see `no_decimal_backend_tests` in `src/decimal.rs`.
+if OUTPUT=$(cargo test -p cratestack-core --no-default-features 2>&1); then
+  if ! grep -q "no_decimal_backend_tests::crate_builds_and_runs_with_no_decimal_backend_selected ... ok" <<<"$OUTPUT"; then
+    fail "cargo test -p cratestack-core --no-default-features succeeded, but the cratestack#505 regression test didn't run — check src/decimal.rs's cfg gating"
+    echo "$OUTPUT"
+  else
+    echo "ok: cratestack-core's test suite (including the cratestack#505 regression test) runs with neither decimal backend selected"
+  fi
+else
+  fail "cargo test -p cratestack-core --no-default-features failed"
+  echo "$OUTPUT"
 fi
 
 step "[2/6] cratestack-core compiles clean on each backend individually"
@@ -176,12 +196,27 @@ check_combo cratestack-pg
 # would end up selected on `cratestack-sqlx` simultaneously). Assert the
 # failure explicitly so a future change that "fixes" this by silently
 # re-adding the unconditional force gets caught here.
+#
+# cratestack#505 changed WHICH error this hits, not WHETHER it fails:
+# `cratestack-sql`'s `SqlValue::Decimal(cratestack_core::Decimal)` variant
+# references `cratestack_core::Decimal` unconditionally (same shape as the
+# `validators.rs` code cratestack-core itself now gates — see that crate's
+# module doc), and `cratestack-sql` doesn't get the same treatment here
+# (out of this PR's scope — this facade's `postgres` path structurally
+# needs a real decimal backend regardless, same as before #505). So
+# `Decimal` not existing on `cratestack-core` in this configuration now
+# surfaces as a plain rustc "cannot find type `Decimal`" from deep inside
+# `cratestack-sql`, instead of `cratestack-core`'s old, clearer
+# "enable exactly one decimal backend" `compile_error!` pointing at the
+# actual missing choice. Still a hard, loud failure — never a silent
+# success — just a worse diagnostic; asserting on it here catches any
+# future change that turns this back into a silent backend force.
 echo "-- cargo check -p cratestack-pg --no-default-features --features postgres (expected to fail) --"
 if OUTPUT=$(cargo check -p cratestack-pg --no-default-features --features postgres 2>&1); then
   fail "expected 'cargo check -p cratestack-pg --no-default-features --features postgres' (no decimal backend) to fail, but it succeeded — postgres may be silently forcing a backend again"
   echo "$OUTPUT"
-elif ! grep -q "enable exactly one decimal backend" <<<"$OUTPUT"; then
-  fail "cargo check -p cratestack-pg --no-default-features --features postgres failed, but not with the expected 'enable exactly one decimal backend' error"
+elif ! grep -q "cannot find type \`Decimal\` in crate \`cratestack_core\`" <<<"$OUTPUT"; then
+  fail "cargo check -p cratestack-pg --no-default-features --features postgres failed, but not with the expected 'cannot find type Decimal' error (cratestack#505 changed this message — see the comment above)"
   echo "$OUTPUT"
 else
   echo "ok: postgres alone (no decimal choice) fails as expected"

@@ -120,6 +120,29 @@ The dependency flow is roughly: **parser → core/policy/sql → macros → back
 - Tooling: `cratestack-cli`, `cratestack-lsp` (tower-lsp-server LSP for `.cstack`), `cratestack-migrate`,
   `cratestack-studio` (+ `-studio-ui` wasm app — see below).
 
+### Decimal backend selection is a graph-wide invariant, not a per-crate one (cratestack#505)
+
+`cratestack-core` exposes a `Decimal` type alias backed by one of two mutually-exclusive Cargo features:
+`decimal-rust-decimal` (the default — fast, stack-allocated, capped at 28-29 significant digits) or
+`decimal-bigdecimal` (arbitrary precision, heap-allocated, opt-in). **Enabling both at once is a hard
+`compile_error!`, and because Cargo features are additive and unify globally across a dependency graph,
+this is not just a per-crate concern**: two independent dependents in the same build, each individually
+well-formed and each deliberately choosing a different backend, force this error into a combined build
+that neither one alone controls or can fix — see cratestack#505. There is currently no way around this
+other than the whole graph standardizing on one backend feature; making the backends genuinely additive
+(cratestack#505's option 1/2) is an unresolved, larger design change reserved for a maintainer decision,
+not something to pick unilaterally in a PR.
+
+Selecting **neither** feature is not an error (cratestack#421-era versions of this crate got this wrong,
+fixed by cratestack#505): a crate that legitimately narrows its graph with `default-features = false` and
+never touches `Decimal` builds cleanly — `Decimal` (and anything that references it unconditionally, e.g.
+`cratestack_core::validate_range_decimal`) simply doesn't exist on the public surface in that
+configuration, rather than hard-failing every backend-agnostic consumer. See `cratestack-core/src/decimal.rs`'s
+module doc for why a real `rust_decimal`-backed fallback isn't reachable here (Cargo's feature system has
+no "else" — an optional dependency can only be activated by a feature that names it, never by the absence
+of another feature — and making `rust_decimal` a mandatory dependency to work around that would leak it
+back into every `decimal-bigdecimal` consumer's graph, breaking cratestack#495's acceptance bar).
+
 ### Transport: REST vs RPC
 
 A schema declares either REST routes (default) or `transport rpc`. The two are mutually exclusive per
