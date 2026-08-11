@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use cratestack::include_server_schema;
 use cratestack::sqlx::{Row, query};
-use cratestack::{AuditEvent, AuditSink, CoolContext, CoolError, Value};
+use cratestack::{AuditEvent, AuditSink, BatchItemStatus, CoolContext, CoolError, Value};
 
 include_server_schema!("tests/fixtures/banking_audit.cstack", db = Postgres);
 
@@ -393,5 +393,107 @@ async fn custom_audit_sink_does_not_receive_events_for_a_rolled_back_mutation() 
     assert!(
         sink.events.lock().unwrap().is_empty(),
         "a rolled-back mutation must never reach the installed AuditSink"
+    );
+}
+
+/// cratestack#473 review finding: the two tests above only exercise the
+/// thin `run()` wrapper around a single-item write. `batch_create` is
+/// structurally different — it collects `AuditEvent`s across a
+/// per-item savepoint loop and dispatches them once, after the *outer*
+/// transaction commits (see `cratestack_sqlx::query::batch::create`) —
+/// so it needs its own coverage rather than relying on the single-item
+/// path to stand in for it. This also proves that a per-item failure
+/// (caught by its own savepoint, not the outer transaction) does not
+/// reach the sink, mirroring the single-item rollback test above.
+#[tokio::test]
+async fn custom_audit_sink_receives_one_event_per_successful_batch_create_item() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    // Seed id 20 so the third batch item collides on the primary key and
+    // fails at the per-item savepoint without rolling back the other two.
+    query("INSERT INTO accounts VALUES (20, 'zack@example.com', 1, 1)")
+        .execute(pool)
+        .await
+        .expect("seed");
+
+    let sink = RecordingAuditSink::default();
+    let cool = cratestack_schema::Cratestack::builder(pool.clone())
+        .with_audit_sink(std::sync::Arc::new(sink.clone()))
+        .build();
+    let ctx = operator();
+
+    let response = cool
+        .account()
+        .batch_create(vec![
+            cratestack_schema::CreateAccountInput {
+                id: 21,
+                customerEmail: "wendy@example.com".to_owned(),
+                riskScore: 5,
+                balance: 1_000,
+            },
+            cratestack_schema::CreateAccountInput {
+                id: 22,
+                customerEmail: "victor@example.com".to_owned(),
+                riskScore: 6,
+                balance: 2_000,
+            },
+            cratestack_schema::CreateAccountInput {
+                id: 20, // duplicate primary key -> per-item savepoint rollback
+                customerEmail: "zack@example.com".to_owned(),
+                riskScore: 7,
+                balance: 3_000,
+            },
+        ])
+        .run(&ctx)
+        .await
+        .expect("batch_create infra ok despite one failing item");
+
+    assert_eq!(response.summary.ok, 2, "two items should succeed");
+    assert_eq!(
+        response.summary.err, 1,
+        "one item should fail on PK conflict"
+    );
+    assert!(
+        matches!(response.results[2].status, BatchItemStatus::Error { .. }),
+        "the third item (duplicate id 20) must report an error status"
+    );
+
+    // The sink must observe exactly one event per *successful* item —
+    // not three, and not zero.
+    let recorded = sink.events.lock().unwrap().clone();
+    assert_eq!(
+        recorded.len(),
+        2,
+        "custom AuditSink should receive exactly one event per successful batch_create item, \
+         not the failed one"
+    );
+    let mut recorded_ids: Vec<serde_json::Value> = recorded
+        .iter()
+        .map(|event| event.primary_key.clone())
+        .collect();
+    recorded_ids.sort_by_key(|v| v.to_string());
+    assert_eq!(
+        recorded_ids,
+        vec![serde_json::json!(21), serde_json::json!(22)],
+        "the sink should have observed events for ids 21 and 22, not the failed id 20"
+    );
+
+    // The DB audit table must agree with the sink: two rows, matching
+    // the two successful items, alongside the pre-existing seed row.
+    let audit_count: i64 = query(
+        "SELECT COUNT(*)::BIGINT FROM cratestack_audit \
+         WHERE model = 'Account' AND operation = 'create'",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("count audit rows")
+    .get(0);
+    assert_eq!(
+        audit_count, 2,
+        "the in-database audit table must record the same two successful creates as the sink"
     );
 }

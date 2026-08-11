@@ -22,8 +22,16 @@ mutation that ultimately rolled back. Sink errors are logged (`tracing::warn!`),
 — by the time the sink runs, the mutation already committed, so failing the caller's request
 over a downstream projection hiccup would be strictly worse than a best-effort delivery.
 `run_in_tx` variants (caller-managed transaction) do not fan out, mirroring the existing event
-outbox, which has never drained from `run_in_tx` either — see `crates/cratestack-sqlx/src/audit/sink.rs`'s
-doc comment for the full reasoning.
+outbox, which has never drained from `run_in_tx` either. **This is a real gap, not just a
+deferral**: there is currently no way for a `run_in_tx` caller to opt into sink fan-out
+themselves — the dispatch helper is crate-private and no `run_in_tx` variant returns the
+`AuditEvent` it would need — so a caller chaining `run_in_tx` calls across a caller-managed
+transaction (see `crates/cratestack-pg/tests/banking_chained_audit_tx.rs`) gets the
+in-transaction `cratestack_audit` row on commit but a real installed `AuditSink` observes
+nothing for that transaction, silently. Worth its own follow-up issue; see
+`crates/cratestack-sqlx/src/audit/sink.rs`'s doc comment for the full reasoning. Dispatch is
+also sequential, not concurrent, so the added latency of a slow sink is per-row on
+`update_many`/`delete_many`/batch paths, not per-request.
 
 ### `Value` serializes untagged on the wire, matching what it already persists — breaking
 
