@@ -13,7 +13,10 @@ use crate::audit::AuditOp;
 use crate::validators::validate_payload;
 use crate::workspace::LoadedWorkspace;
 
-use super::{RecordResponse, require_writable, resolve_target, target_model, value_to_string};
+use super::{
+    RecordResponse, require_safe_write, require_writable, resolve_target, target_model,
+    value_to_string,
+};
 
 /// `POST /api/targets/:key/models/:model/records`
 pub async fn create_record(
@@ -25,6 +28,7 @@ pub async fn create_record(
     require_writable(target)?;
 
     let model_decl = target_model(target, &model)?;
+    require_safe_write(target, model_decl)?;
     let errors = validate_payload(model_decl, &payload, false);
     if !errors.is_empty() {
         return Err(ApiError::Validation(errors));
@@ -54,6 +58,7 @@ pub async fn update_record(
     require_writable(target)?;
 
     let model_decl = target_model(target, &model)?;
+    require_safe_write(target, model_decl)?;
     let errors = validate_payload(model_decl, &payload, true);
     if !errors.is_empty() {
         return Err(ApiError::Validation(errors));
@@ -77,6 +82,9 @@ pub async fn delete_record(
 ) -> Result<Json<RecordResponse>, ApiError> {
     let target = resolve_target(&state, &key)?;
     require_writable(target)?;
+
+    let model_decl = target_model(target, &model)?;
+    require_safe_write(target, model_decl)?;
 
     let row =
         target.source.delete(&model, &pk).await?.ok_or_else(|| {

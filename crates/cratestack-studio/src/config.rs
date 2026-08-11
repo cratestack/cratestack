@@ -93,12 +93,35 @@ pub enum TargetMode {
     Rw,
 }
 
+/// A direct SQL connection Studio opens itself — **not** a proxy to a
+/// deployed service. See the crate's top-level rustdoc ("`[target.db]`
+/// is not the generated API") for what that means for `@version`,
+/// `@@emit`, and `@@allow` (cratestack#507).
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct TargetDb {
     pub url: String,
     pub driver: DbDriver,
     #[serde(default)]
     pub max_connections: Option<u32>,
+    /// Opt-in escape hatch for writing `@version`/`@@emit` models
+    /// straight through this `[target.db]` connection.
+    ///
+    /// A `[target.db]` target talks raw SQL, not the descriptor path the
+    /// generated server runs — it does not bump `@version` columns, does
+    /// not write `cratestack_event_outbox` rows for `@@emit`-annotated
+    /// models, and does not evaluate `@@allow` policies (see the crate's
+    /// top-level rustdoc for the full list of what a `[target.db]` target
+    /// does *not* do). Left `false` (the default), Studio refuses `POST`
+    /// / `PATCH` / `DELETE` against any model carrying `@version` or
+    /// `@@emit(...)` on a `rw` `[target.db]` target with a
+    /// `403 UNSAFE_DB_WRITE` naming the attribute, so the bypass has to
+    /// be chosen per target rather than discovered after the fact
+    /// (cratestack#507). Models with neither annotation are unaffected
+    /// either way. Setting this to `true` is what chooses the bypass —
+    /// it does not change what actually happens on the wire, only
+    /// whether Studio will let you do it silently.
+    #[serde(default)]
+    pub allow_unsafe_writes: bool,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]

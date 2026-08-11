@@ -43,6 +43,29 @@ fn parses_db_target() {
     assert_eq!(db.driver, DbDriver::Postgres);
     assert_eq!(db.max_connections, Some(5));
     assert_eq!(cfg.target_mode(target), TargetMode::Ro);
+    assert!(
+        !db.allow_unsafe_writes,
+        "allow_unsafe_writes must default to false (cratestack#507)"
+    );
+}
+
+#[test]
+fn parses_db_target_with_allow_unsafe_writes_opt_in() {
+    let cfg = StudioConfig::parse(
+        r#"
+            [[target]]
+            key = "catalog"
+            schema = "schemas/catalog.cstack"
+
+            [target.db]
+            url = "env:CATALOG_DB_URL"
+            driver = "postgres"
+            allow_unsafe_writes = true
+        "#,
+    )
+    .expect("db target should parse");
+    let db = cfg.targets[0].db.as_ref().expect("db block present");
+    assert!(db.allow_unsafe_writes);
 }
 
 #[test]
