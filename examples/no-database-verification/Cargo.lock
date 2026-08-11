@@ -362,6 +362,7 @@ dependencies = [
  "erased-serde",
  "futures-util",
  "http",
+ "ipnet",
  "minicbor",
  "serde",
  "serde_json",
