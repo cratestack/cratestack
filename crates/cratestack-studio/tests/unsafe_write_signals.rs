@@ -116,11 +116,11 @@ fn seeded_conn() -> Connection {
     conn
 }
 
-fn build_workspace(target_key: &str) -> Arc<LoadedWorkspace> {
+fn build_workspace(probe_target: &str) -> Arc<LoadedWorkspace> {
     let schema = Arc::new(cratestack_parser::parse_schema(SCHEMA).expect("schema parses"));
     let target = LoadedTarget {
-        key: target_key.to_owned(),
-        display_name: target_key.to_owned(),
+        key: probe_target.to_owned(),
+        display_name: probe_target.to_owned(),
         mode: TargetMode::Rw,
         schema: schema.clone(),
         schema_path: PathBuf::from("schema.cstack"),
@@ -141,14 +141,14 @@ fn build_workspace(target_key: &str) -> Arc<LoadedWorkspace> {
     })
 }
 
-async fn patch(workspace: Arc<LoadedWorkspace>, target_key: &str) -> (StatusCode, Value) {
+async fn patch(workspace: Arc<LoadedWorkspace>, probe_target: &str) -> (StatusCode, Value) {
     let app = cratestack_studio::server::build_router(workspace);
     let response = app
         .oneshot(
             Request::builder()
                 .method("PATCH")
                 .uri(format!(
-                    "/api/targets/{target_key}/models/Message/records/msg1"
+                    "/api/targets/{probe_target}/models/Message/records/msg1"
                 ))
                 .header("content-type", "application/json")
                 .body(Body::from(
@@ -170,16 +170,16 @@ async fn patch(workspace: Arc<LoadedWorkspace>, target_key: &str) -> (StatusCode
 #[tokio::test]
 async fn bypass_write_logs_a_warning_naming_target_model_and_annotations() {
     init_tracing();
-    let target_key = "warn_probe_bypass_507";
-    let workspace = build_workspace(target_key);
+    let probe_target = "warn_probe_bypass_507";
+    let workspace = build_workspace(probe_target);
 
-    let (status, _body) = patch(workspace, target_key).await;
+    let (status, _body) = patch(workspace, probe_target).await;
     assert_eq!(status, StatusCode::OK, "opted-in write should succeed");
 
     let lines = captured_warnings().lock().expect("capture mutex poisoned");
-    let hit = lines.iter().find(|l| l.contains(target_key));
+    let hit = lines.iter().find(|l| l.contains(probe_target));
     let line = hit.unwrap_or_else(|| {
-        panic!("expected a WARN event naming target '{target_key}'; captured: {lines:?}")
+        panic!("expected a WARN event naming target '{probe_target}'; captured: {lines:?}")
     });
     assert!(line.contains("Message"), "expected model name in: {line}");
     assert!(line.contains("@version"), "expected @version in: {line}");
@@ -192,11 +192,11 @@ async fn bypass_write_logs_a_warning_naming_target_model_and_annotations() {
 #[tokio::test]
 async fn unaffected_model_write_on_an_opted_in_target_logs_nothing() {
     init_tracing();
-    let target_key = "warn_probe_unaffected_507";
+    let probe_target = "warn_probe_unaffected_507";
     let schema = Arc::new(cratestack_parser::parse_schema(SCHEMA).expect("schema parses"));
     let target = LoadedTarget {
-        key: target_key.to_owned(),
-        display_name: target_key.to_owned(),
+        key: probe_target.to_owned(),
+        display_name: probe_target.to_owned(),
         mode: TargetMode::Rw,
         schema: schema.clone(),
         schema_path: PathBuf::from("schema.cstack"),
@@ -221,7 +221,9 @@ async fn unaffected_model_write_on_an_opted_in_target_logs_nothing() {
         .oneshot(
             Request::builder()
                 .method("PATCH")
-                .uri(format!("/api/targets/{target_key}/models/Plain/records/p1"))
+                .uri(format!(
+                    "/api/targets/{probe_target}/models/Plain/records/p1"
+                ))
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&serde_json::json!({ "name": "updated" })).unwrap(),
@@ -234,7 +236,7 @@ async fn unaffected_model_write_on_an_opted_in_target_logs_nothing() {
 
     let lines = captured_warnings().lock().expect("capture mutex poisoned");
     assert!(
-        lines.iter().all(|l| !l.contains(target_key)),
+        lines.iter().all(|l| !l.contains(probe_target)),
         "an unaffected model must not log an unsafe-write warning: {lines:?}"
     );
 }
@@ -243,10 +245,10 @@ async fn unaffected_model_write_on_an_opted_in_target_logs_nothing() {
 /// to tell a bypass write apart from an ordinary one.
 #[tokio::test]
 async fn audit_endpoint_marks_a_bypass_write_as_unsafe() {
-    let target_key = "audit_probe_bypass_507";
-    let workspace = build_workspace(target_key);
+    let probe_target = "audit_probe_bypass_507";
+    let workspace = build_workspace(probe_target);
 
-    let (status, _) = patch(workspace.clone(), target_key).await;
+    let (status, _) = patch(workspace.clone(), probe_target).await;
     assert_eq!(status, StatusCode::OK);
 
     let app = cratestack_studio::server::build_router(workspace);
@@ -268,7 +270,7 @@ async fn audit_endpoint_marks_a_bypass_write_as_unsafe() {
     let entries = body["entries"].as_array().expect("entries array");
     let entry = entries
         .iter()
-        .find(|e| e["target"] == target_key)
+        .find(|e| e["target"] == probe_target)
         .expect("audit entry for this target present");
     assert_eq!(
         entry["unsafe_write"], true,

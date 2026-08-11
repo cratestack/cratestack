@@ -69,6 +69,10 @@ pub(in crate::api::records) fn require_safe_write(
     }
 
     if !target.allow_unsafe_db_writes {
+        // `ApiError` owns its fields (it outlives this call, flowing up
+        // through `?` into axum's `IntoResponse`), so it cannot borrow
+        // from `target`/`model_decl`; cloning the two short identifiers
+        // is the actual cost of returning an owned error.
         return Err(ApiError::UnsafeDbWrite {
             target: target.key.clone(),
             model: model_decl.name.clone(),

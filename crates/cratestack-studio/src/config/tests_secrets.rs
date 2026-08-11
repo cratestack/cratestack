@@ -11,16 +11,18 @@ fn resolve_secret_passes_through_literals() {
     );
 }
 
+/// Exercises the `env:` success path through an injected lookup
+/// (`resolve_secret_with`) instead of mutating the real process
+/// environment — see that function's doc comment for why.
 #[test]
 fn resolve_secret_reads_env_var() {
-    // SAFETY: process-wide env mutation is acceptable here because each
-    // test sets a unique var name and only reads it back synchronously
-    // within the same test.
-    unsafe { std::env::set_var("STUDIO_TEST_VAR_OK", "from-env") };
-    assert_eq!(
-        resolve_secret("env:STUDIO_TEST_VAR_OK", "target.db.url").unwrap(),
-        "from-env"
-    );
+    let value =
+        super::secrets::resolve_secret_with("env:STUDIO_TEST_VAR_OK", "target.db.url", |name| {
+            assert_eq!(name, "STUDIO_TEST_VAR_OK");
+            Ok("from-env".to_owned())
+        })
+        .unwrap();
+    assert_eq!(value, "from-env");
 }
 
 #[test]

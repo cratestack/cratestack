@@ -69,13 +69,10 @@ pub async fn update_record(
         .update(&model, &pk, &payload)
         .await?
         .ok_or_else(|| ApiError::InvalidPrimaryKey(pk.clone(), "no row with this id".to_owned()))?;
-    state.audit.push(
-        &target.key,
-        &model,
-        AuditOp::Update,
-        Some(pk.clone()),
-        unsafe_write,
-    );
+    // `pk` isn't read again after this — move it rather than clone.
+    state
+        .audit
+        .push(&target.key, &model, AuditOp::Update, Some(pk), unsafe_write);
     Ok(Json(RecordResponse { row }))
 }
 
@@ -94,12 +91,9 @@ pub async fn delete_record(
         target.source.delete(&model, &pk).await?.ok_or_else(|| {
             ApiError::InvalidPrimaryKey(pk.clone(), "no row with this id".to_owned())
         })?;
-    state.audit.push(
-        &target.key,
-        &model,
-        AuditOp::Delete,
-        Some(pk.clone()),
-        unsafe_write,
-    );
+    // `pk` isn't read again after this — move it rather than clone.
+    state
+        .audit
+        .push(&target.key, &model, AuditOp::Delete, Some(pk), unsafe_write);
     Ok(Json(RecordResponse { row }))
 }
