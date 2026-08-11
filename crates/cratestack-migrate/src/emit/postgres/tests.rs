@@ -7,6 +7,7 @@ mod create;
 mod enums;
 mod extensions;
 mod indexes;
+mod pluralization_rename;
 mod relation_actions;
 mod relations;
 mod renames;
