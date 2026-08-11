@@ -46,6 +46,11 @@
 //! synth_page::synthesize_pages` already deduplicates them in the
 //! `.pb.lock`/`.proto`.
 
+mod api_server;
+mod arm_support;
+mod crud_arm_list;
+mod crud_arm_spec;
+mod crud_arms;
 mod procedure_arms;
 mod procedures;
 mod rpc_inputs;

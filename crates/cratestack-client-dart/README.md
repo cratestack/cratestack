@@ -112,6 +112,9 @@ no effect together with `--check`.
 - `cratestack-cli` — `generate-dart` command
 - `cratestack-client-flutter` — Flutter bridge runtime
 - [Quickstart](https://cratestack.dev/getting-started/quickstart)
+- After changing a template in this crate, run `just regen-examples` from the repo root and commit the
+  diff — it regenerates the committed `examples/flutter-riverpod/client` example so drift is caught
+  locally instead of by CI (cratestack#471).
 
 ## License
 

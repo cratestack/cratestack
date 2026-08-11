@@ -134,6 +134,7 @@ async fn rpc_client_widget_crud_and_streaming_procedure_round_trip() {
                 status: 200,
                 content_type: "application/cbor-seq".to_owned(),
                 body,
+                extra_headers: Vec::new(),
             };
         }
         support::not_found()
