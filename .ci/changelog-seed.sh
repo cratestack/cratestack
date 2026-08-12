@@ -186,37 +186,126 @@ if ! [ "$added_any" = "true" ]; then
 "
 fi
 
-# Insert above the current newest entry, but below leading front matter (the
-# "# Changelog" H1 + blurb) — prepending at byte 0 would push that title out
-# of the top and bury it mid-file on every run. Insert right before the first
-# existing "## " heading instead, preserving everything above it untouched.
-insert_line=$(grep -n '^## ' "$CHANGELOG_FILE" | head -1 | cut -d: -f1 || true)
+# cratestack#531: if CHANGELOG.md already has a "## Unreleased" section (the
+# convention: individual PRs add narrative prose there as they land, between
+# releases), convert THAT section into the new dated release section instead
+# of inserting a fresh seed above it. Without this, prose written by every
+# PR merged since the last release got stranded under a stale "## Unreleased"
+# heading buried below the release section, while the release section itself
+# held only the placeholder seed — precisely how v0.7.12 shipped with the
+# seed unedited: the human step "rewrite the seed into prose" was asking for
+# work already done, it just needed folding up. The seed (marker +
+# placeholder + grouped commits) is used only when there is genuinely
+# nothing to carry forward: no "## Unreleased" heading at all, or one
+# present but empty (whitespace only) — the state right after a release,
+# before any PR has added anything.
+unreleased_line=$(grep -n '^## Unreleased$' "$CHANGELOG_FILE" | head -1 | cut -d: -f1 || true)
+
+unreleased_body=""
+unreleased_end_line=""
+if [ -n "$unreleased_line" ]; then
+  next_heading_line=$(awk -v start="$unreleased_line" 'NR > start && /^## / { print NR; exit }' "$CHANGELOG_FILE")
+  if [ -n "$next_heading_line" ]; then
+    unreleased_end_line=$((next_heading_line - 1))
+  else
+    unreleased_end_line=$(wc -l < "$CHANGELOG_FILE")
+  fi
+  content_start_line=$((unreleased_line + 1))
+  if [ "$unreleased_end_line" -ge "$content_start_line" ]; then
+    unreleased_body=$(sed -n "${content_start_line},${unreleased_end_line}p" "$CHANGELOG_FILE")
+  fi
+fi
+
+# Whitespace-only counts as "nothing to carry" — same bar as an absent section.
+has_prose_to_carry=false
+if [ -n "$(printf '%s' "$unreleased_body" | tr -d '[:space:]')" ]; then
+  has_prose_to_carry=true
+fi
 
 tmp_file=$(mktemp)
 trap "rm -f '$tmp_file'" EXIT
 
-if [ -n "$insert_line" ]; then
-  before_line=$((insert_line - 1))
+if [ -n "$unreleased_line" ] && [ "$has_prose_to_carry" = "true" ]; then
+  # Carry the existing prose forward under the new dated heading, in place.
+  # No seed marker/placeholder is written — there is real content already,
+  # and no "## Unreleased" heading remains anywhere in the file afterward.
+  # The body is streamed straight from the file via `sed`, not through a
+  # `$(...)`-captured variable — command substitution strips ALL trailing
+  # newlines, which would silently eat a genuine trailing blank line
+  # separating the carried prose from whatever section follows it.
+  before_line=$((unreleased_line - 1))
+  after_line=$((unreleased_end_line + 1))
+  {
+    if [ "$before_line" -gt 0 ]; then
+      head -n "$before_line" "$CHANGELOG_FILE"
+    fi
+    printf '## %s (%s)\n' "$VERSION" "$today"
+    sed -n "${content_start_line},${unreleased_end_line}p" "$CHANGELOG_FILE"
+    total_lines=$(wc -l < "$CHANGELOG_FILE")
+    if [ "$after_line" -le "$total_lines" ]; then
+      tail -n "+${after_line}" "$CHANGELOG_FILE"
+    fi
+  } > "$tmp_file"
+  mv "$tmp_file" "$CHANGELOG_FILE"
+
+  echo "converted existing '## Unreleased' section into '## $VERSION ($today)' — prose carried forward, no seed needed"
+  echo "  Last tag: ${last_tag:-none}"
+  echo "  Commit range: $range"
+  echo "  Computed from commit: $head_sha"
+elif [ -n "$unreleased_line" ]; then
+  # "## Unreleased" exists but is empty (nothing landed since the last
+  # release yet) — replace the heading + its empty body with the full
+  # seeded section, rather than leaving a permanently empty "## Unreleased"
+  # heading stranded below every future release.
+  before_line=$((unreleased_line - 1))
+  after_line=$((unreleased_end_line + 1))
   {
     if [ "$before_line" -gt 0 ]; then
       head -n "$before_line" "$CHANGELOG_FILE"
     fi
     printf '%s' "$new_section"
-    tail -n "+${insert_line}" "$CHANGELOG_FILE"
+    total_lines=$(wc -l < "$CHANGELOG_FILE")
+    if [ "$after_line" -le "$total_lines" ]; then
+      tail -n "+${after_line}" "$CHANGELOG_FILE"
+    fi
   } > "$tmp_file"
+  mv "$tmp_file" "$CHANGELOG_FILE"
+
+  echo "seeded CHANGELOG.md with section for $VERSION (marker: $section_marker) — '## Unreleased' was present but empty, replaced in place"
+  echo "  Last tag: ${last_tag:-none}"
+  echo "  Commit range: $range"
+  echo "  Computed from commit: $head_sha"
+  echo "  Today's date: $today"
 else
-  # No existing "## " section heading found (e.g. a brand-new changelog) —
-  # append the new section after whatever front matter/content is there.
-  {
-    cat "$CHANGELOG_FILE"
-    printf '%s' "$new_section"
-  } > "$tmp_file"
+  # No "## Unreleased" heading at all — original behavior: insert above the
+  # current newest entry, but below leading front matter (the "# Changelog"
+  # H1 + blurb) — prepending at byte 0 would push that title out of the top
+  # and bury it mid-file on every run. Insert right before the first
+  # existing "## " heading instead, preserving everything above it untouched.
+  insert_line=$(grep -n '^## ' "$CHANGELOG_FILE" | head -1 | cut -d: -f1 || true)
+
+  if [ -n "$insert_line" ]; then
+    before_line=$((insert_line - 1))
+    {
+      if [ "$before_line" -gt 0 ]; then
+        head -n "$before_line" "$CHANGELOG_FILE"
+      fi
+      printf '%s' "$new_section"
+      tail -n "+${insert_line}" "$CHANGELOG_FILE"
+    } > "$tmp_file"
+  else
+    # No existing "## " section heading found (e.g. a brand-new changelog) —
+    # append the new section after whatever front matter/content is there.
+    {
+      cat "$CHANGELOG_FILE"
+      printf '%s' "$new_section"
+    } > "$tmp_file"
+  fi
+  mv "$tmp_file" "$CHANGELOG_FILE"
+
+  echo "seeded CHANGELOG.md with section for $VERSION (marker: $section_marker)"
+  echo "  Last tag: ${last_tag:-none}"
+  echo "  Commit range: $range"
+  echo "  Computed from commit: $head_sha"
+  echo "  Today's date: $today"
 fi
-
-mv "$tmp_file" "$CHANGELOG_FILE"
-
-echo "seeded CHANGELOG.md with section for $VERSION (marker: $section_marker)"
-echo "  Last tag: ${last_tag:-none}"
-echo "  Commit range: $range"
-echo "  Computed from commit: $head_sha"
-echo "  Today's date: $today"

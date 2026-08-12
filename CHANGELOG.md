@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Release-bump PRs now run CI, and `prepare-release` no longer strands already-written changelog prose (#531)
+
+`v0.7.12` tagged and shipped with an unedited `CHANGELOG.md` seed — the placeholder text telling a
+human to rewrite it into prose, including the sentence "Do not commit with this placeholder text,"
+was itself committed, tagged, and published. Two independent defects combined to let that happen.
+First, the "Prepare Release" workflow opened its bump PR (#528) using the default `GITHUB_TOKEN`;
+GitHub's anti-recursion protection means an event raised by that token never triggers further
+workflow runs, so the PR's head commit had zero check-runs — no changelog gate, no governance
+check, no build or test, nothing. `prepare-release.yml` now opens that PR (and pushes its branch)
+using the same `RELEASE_PAT` secret `cut-release-tag.yml` already relies on for its tag push,
+falling back to `github.token` with a loud warning if the secret is unset, so the PR is raised as an
+ordinary external event and the normal required checks run against it like any other PR. Second,
+`changelog-seed.sh` inserted the new dated release heading *above* any existing `## Unreleased`
+section instead of converting it — so prose written by the three PRs that had landed since
+`v0.7.11` was stranded under a stale, buried `## Unreleased` heading while the release section
+itself held only the placeholder seed. The script now converts an existing `## Unreleased` section
+into the new dated heading in place, carrying its prose forward untouched, and falls back to the
+seed only when there is genuinely nothing to carry (the section absent, or present but empty).
+
 ### `IdempotencyLayer`/`RateLimitLayer` refuse requests they cannot fingerprint, instead of pooling them into a shared `"anonymous"` namespace — breaking (#416)
 
 The default `IdempotencyLayer`/`RateLimitLayer` fingerprint hashes the `Authorization` header when
