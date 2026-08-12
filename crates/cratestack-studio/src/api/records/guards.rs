@@ -2,10 +2,11 @@
 //! before the data source is touched, so a rejected write never issues
 //! any SQL.
 
-use cratestack_core::Model;
+use cratestack_core::{Model, ModelEventKind};
 
 use crate::api::ApiError;
 use crate::config::TargetMode;
+use crate::data::model_info::emitted_events;
 use crate::workspace::LoadedTarget;
 
 /// Reject mutation requests against read-only targets at the earliest
@@ -18,83 +19,97 @@ pub(in crate::api::records) fn require_writable(target: &LoadedTarget) -> Result
     }
 }
 
-/// Refuse to write a `@version`/`@@emit` model straight to SQL on a
-/// `[target.db]` target unless the target opted in via
-/// `allow_unsafe_writes` (cratestack#507).
+/// How a `[target.db]` write to one model should be carried out
+/// (cratestack#507's write-side fix, in two stages):
 ///
-/// A `[target.db]` connection talks raw SQL, not the descriptor path the
-/// generated server runs: it never bumps `@version` columns and never
-/// writes `cratestack_event_outbox` rows for `@@emit`-annotated models.
-/// Both omissions previously landed silently — a `200` with no signal
-/// that optimistic concurrency or the event outbox didn't apply. This
-/// makes the bypass something an operator chooses per target rather
-/// than discovers after the fact. Targets reached only through
-/// `[target.api]` are unaffected: those writes go through the deployed
-/// service's generated routes, which already apply `@version`/`@@emit`
-/// (and `@@allow`) themselves.
-///
-/// Returns `Ok(true)` when the write is allowed *because* it bypassed
-/// `@version`/`@@emit` via `allow_unsafe_writes` — the caller threads
-/// this into the audit entry (see [`crate::audit::AuditEntry::unsafe_write`])
-/// so `/api/audit` and the JSONL sidecar can tell a bypass write apart
-/// from an ordinary one after the fact, rather than only at the moment
-/// an operator flips the config flag. `Ok(false)` covers every other
-/// allowed case: no `[target.db]`, or a model with neither annotation.
-pub(in crate::api::records) fn require_safe_write(
+/// - PR #516 made the *bypass itself* a choice (`allow_unsafe_writes`)
+///   instead of a silent default.
+/// - This ("option 3") makes the bypass unnecessary wherever it's
+///   structurally possible: `@version` bumping is always routable (every
+///   `DataSource` backend can run `version = version + 1`), and
+///   `@@emit`'s `cratestack_event_outbox` row is routable on any backend
+///   whose [`crate::data::DataSource::supports_event_outbox`] returns
+///   `true` (currently just Postgres — see that method's doc comment for
+///   why SQLite has no equivalent to route to).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::api::records) enum WriteMode {
+    /// No `@version`/`@@emit` on this model, or no `[target.db]` at all
+    /// — nothing to route. Handlers call the plain
+    /// `create`/`update`/`delete`.
+    Plain,
+    /// Every annotation the model declares can be applied for real on
+    /// this backend. Handlers call `create_routed`/`update_routed`/
+    /// `delete_routed`. Never an audit bypass — this is the correct
+    /// behavior, not a workaround.
+    Routed,
+    /// The model declares `@@emit(...)` and this backend has no event
+    /// outbox to route it through, but the target opted into
+    /// `allow_unsafe_writes`. Handlers call the plain, unrouted
+    /// `create`/`update`/`delete` — the same raw-SQL bypass PR #516
+    /// introduced the opt-in for. Always an audit bypass.
+    Bypassed,
+}
+
+/// Decide how a write to `model_decl` on `target` should be carried out,
+/// refusing it outright when it can't be routed and the target hasn't
+/// opted into the bypass. See [`WriteMode`] for the three outcomes.
+pub(in crate::api::records) fn require_write_mode(
     target: &LoadedTarget,
     model_decl: &Model,
-) -> Result<bool, ApiError> {
+) -> Result<WriteMode, ApiError> {
     if !target.has_db {
-        return Ok(false);
+        return Ok(WriteMode::Plain);
     }
 
-    let mut annotations = Vec::new();
-    if model_decl
+    let versioned = model_decl
         .fields
         .iter()
-        .any(|f| f.attributes.iter().any(|a| a.raw == "@version"))
-    {
-        annotations.push("@version");
+        .any(|f| f.attributes.iter().any(|a| a.raw == "@version"));
+    let emitted = emitted_events(model_decl);
+
+    if !versioned && emitted.is_empty() {
+        return Ok(WriteMode::Plain);
     }
-    if model_decl
-        .attributes
+
+    // `@version` alone is always routable, on every backend, so it never
+    // blocks a write on its own. Only an `@@emit` this backend can't
+    // honor for real does.
+    if !emitted.is_empty() && !target.source.supports_event_outbox() {
+        if !target.allow_unsafe_db_writes {
+            return Err(ApiError::UnsafeDbWrite {
+                // clone: error outlives this call, cannot borrow from `target`
+                target: target.key.clone(),
+                // clone: error outlives this call, cannot borrow from `model_decl`
+                model: model_decl.name.clone(),
+                annotations: format!("@@emit({})", format_kinds(&emitted)),
+            });
+        }
+        // The opt-in fired: this write is about to skip `@@emit` for
+        // real (and, since `Bypassed` calls the unrouted path
+        // wholesale, `@version` too — see `WriteMode::Bypassed`'s doc
+        // comment). A bare early return here would reproduce the exact
+        // silence cratestack#507 reported, one config line upstream — so
+        // this is loud both in the logs (here) and durably in the audit
+        // trail (the caller records `unsafe_write: true` on the entry).
+        tracing::warn!(
+            target = %target.key,
+            model = %model_decl.name,
+            annotations = %format!("@@emit({})", format_kinds(&emitted)),
+            "allow_unsafe_writes is set on [target.db]; writing straight to SQL and skipping @@emit \
+             (and @version, since the bypass is all-or-nothing)",
+        );
+        return Ok(WriteMode::Bypassed);
+    }
+
+    Ok(WriteMode::Routed)
+}
+
+fn format_kinds(kinds: &[ModelEventKind]) -> String {
+    kinds
         .iter()
-        .any(|a| a.raw.starts_with("@@emit("))
-    {
-        annotations.push("@@emit(...)");
-    }
-
-    if annotations.is_empty() {
-        return Ok(false);
-    }
-
-    if !target.allow_unsafe_db_writes {
-        // `ApiError` owns its fields (it outlives this call, flowing up
-        // through `?` into axum's `IntoResponse`), so it cannot borrow
-        // from `target`/`model_decl`; cloning the two short identifiers
-        // is the actual cost of returning an owned error.
-        return Err(ApiError::UnsafeDbWrite {
-            // clone: error outlives this call, cannot borrow from `target`
-            target: target.key.clone(),
-            // clone: error outlives this call, cannot borrow from `model_decl`
-            model: model_decl.name.clone(),
-            annotations: annotations.join(" and "),
-        });
-    }
-
-    // The opt-in fired: this write is about to skip `@version`/`@@emit`
-    // for real. A bare early return here would reproduce the exact
-    // silence cratestack#507 reported, one config line upstream — so
-    // this is loud both in the logs (here) and durably in the audit
-    // trail (the `true` the caller records on the entry).
-    tracing::warn!(
-        target = %target.key,
-        model = %model_decl.name,
-        annotations = %annotations.join(" and "),
-        "allow_unsafe_writes is set on [target.db]; writing straight to SQL and skipping {}",
-        annotations.join(" and "),
-    );
-    Ok(true)
+        .map(|k| k.as_str())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 #[cfg(test)]

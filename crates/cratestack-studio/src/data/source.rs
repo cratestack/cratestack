@@ -89,4 +89,50 @@ pub trait DataSource: Send + Sync + std::fmt::Debug {
     /// Backends without a database (API source) return
     /// [`DataError::Unsupported`].
     async fn inspect_columns(&self, model: &str) -> Result<Option<Vec<ColumnSnapshot>>, DataError>;
+
+    /// `true` when [`Self::create_routed`]/[`Self::update_routed`]/
+    /// [`Self::delete_routed`] write a `cratestack_event_outbox` row for
+    /// an `@@emit`-declared operation, in addition to the `@version` bump
+    /// every override applies. Only
+    /// [`crate::data::postgres::PostgresSource`] does — a
+    /// `cratestack_event_outbox` table is a Postgres-server concept with
+    /// no SQLite-embedded equivalent (`cratestack-rusqlite`'s own doc
+    /// comment: "no policies, no audit, no event outbox"), so
+    /// [`crate::data::sqlite::SqliteSource`] leaves this at the default.
+    /// Read by
+    /// [`crate::api::records::guards::require_write_mode`](../../api/records/guards/fn.require_write_mode.html)
+    /// to decide whether an `@@emit` model on this target can be routed
+    /// for real or needs `allow_unsafe_writes` (cratestack#507).
+    fn supports_event_outbox(&self) -> bool {
+        false
+    }
+
+    /// Like [`Self::create`], but applies `@version`/`@@emit` semantics
+    /// for real wherever this backend can (cratestack#507 "option 3"):
+    /// bumps a `@version` column server-side, and — where
+    /// [`Self::supports_event_outbox`] is `true` — writes a
+    /// `cratestack_event_outbox` row for the operations the model
+    /// declares via `@@emit(...)`. The default delegates to
+    /// [`Self::create`] unchanged; only called on a backend that can't
+    /// route when the model has no relevant annotations at all (in
+    /// which case delegating is exactly correct — there's nothing to
+    /// route).
+    async fn create_routed(&self, model: &str, payload: &Row) -> Result<Row, DataError> {
+        self.create(model, payload).await
+    }
+
+    /// See [`Self::create_routed`].
+    async fn update_routed(
+        &self,
+        model: &str,
+        pk: &str,
+        payload: &Row,
+    ) -> Result<Option<Row>, DataError> {
+        self.update(model, pk, payload).await
+    }
+
+    /// See [`Self::create_routed`].
+    async fn delete_routed(&self, model: &str, pk: &str) -> Result<Option<Row>, DataError> {
+        self.delete(model, pk).await
+    }
 }

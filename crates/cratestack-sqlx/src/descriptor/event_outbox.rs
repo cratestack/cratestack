@@ -52,7 +52,13 @@ impl EventOutboxRow {
     }
 }
 
-pub(crate) async fn ensure_event_outbox_table<'e, E>(executor: E) -> Result<(), CoolError>
+/// Bootstraps `cratestack_event_outbox` if it doesn't already exist.
+/// `pub` (rather than `pub(crate)`) since cratestack#507 ("option 3"):
+/// `cratestack-studio`'s `[target.db]` write path calls this directly to
+/// route Studio writes through the same outbox the generated server
+/// uses, rather than duplicating the table DDL in a second crate where
+/// it could drift out of sync with this one.
+pub async fn ensure_event_outbox_table<'e, E>(executor: E) -> Result<(), CoolError>
 where
     E: sqlx::Executor<'e, Database = sqlx::Postgres>,
 {
@@ -75,9 +81,20 @@ where
     Ok(())
 }
 
-pub(crate) async fn enqueue_event_outbox<'e, E, T>(
+/// Inserts one `cratestack_event_outbox` row. `pub` for the same reason
+/// as [`ensure_event_outbox_table`] — see its doc comment.
+///
+/// `model` takes `&str` rather than the `&'static str` every in-crate
+/// caller happens to pass (generated code's model names are always
+/// `&'static str` literals): `cratestack-studio` parses `.cstack`
+/// schemas at runtime, so its model names are owned `String`s with no
+/// `'static` lifetime available. The function only ever borrows `model`
+/// long enough to bind it as a query parameter, so relaxing the bound
+/// costs nothing for the existing callers and is required for the new
+/// one.
+pub async fn enqueue_event_outbox<'e, E, T>(
     executor: E,
-    model: &'static str,
+    model: &str,
     operation: ModelEventKind,
     data: &T,
 ) -> Result<(), CoolError>

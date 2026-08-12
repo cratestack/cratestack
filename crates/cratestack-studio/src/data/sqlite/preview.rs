@@ -14,8 +14,13 @@ use super::sql::{
 };
 
 /// Render the preview for one operation.
+///
+/// See `crate::data::postgres::preview::render`'s doc comment for what
+/// `version_column` reflects and its one blind spot (the legacy
+/// `allow_unsafe_writes` bypass on an unroutable `@@emit`).
 pub(super) fn render(
     info: &ModelSqlInfo<'_>,
+    version_column: Option<&str>,
     op: SqlOp,
     pk: Option<&str>,
     payload: Option<&Row>,
@@ -31,18 +36,24 @@ pub(super) fn render(
         ),
         SqlOp::Get => (build_get_sql(info), vec![pk_param(1, pk, info.pk_cast)]),
         SqlOp::Create => {
-            let (cols, binds) = payload
-                .map(|p| build_payload_bindings(info, p))
+            let (mut cols, mut binds) = payload
+                .map(|p| build_payload_bindings(info, p, version_column))
                 .unwrap_or_else(|| sample_columns_and_binds(info));
+            // Mirrors `ops::create_routed` seeding `@version` to 0
+            // server-side.
+            if let Some(v) = version_column {
+                cols.push(v.to_owned());
+                binds.push(rusqlite::types::Value::Integer(0));
+            }
             (build_insert_sql(info, &cols), label_params(&cols, &binds))
         }
         SqlOp::Update => {
             let (cols, binds) = payload
-                .map(|p| build_payload_bindings(info, p))
+                .map(|p| build_payload_bindings(info, p, version_column))
                 .unwrap_or_else(|| sample_columns_and_binds(info));
             let mut params = label_params(&cols, &binds);
             params.push(pk_param((cols.len() + 1) as u32, pk, info.pk_cast));
-            (build_update_sql(info, &cols), params)
+            (build_update_sql(info, &cols, version_column), params)
         }
         SqlOp::Delete => (build_delete_sql(info), vec![pk_param(1, pk, info.pk_cast)]),
     };

@@ -178,6 +178,12 @@ pub enum DataError {
     Validation(Vec<crate::validators::FieldError>),
     #[error("database error: {0}")]
     Db(#[from] sqlx_core::Error),
+    /// A `create_routed`/`update_routed`/`delete_routed` call
+    /// (cratestack#507) failed while bootstrapping or writing
+    /// `cratestack_event_outbox` via `cratestack_sqlx`'s shared
+    /// primitives.
+    #[error("event outbox write failed: {0}")]
+    EventOutbox(#[from] cratestack_core::CoolError),
     #[error("sqlite error: {0}")]
     Sqlite(#[from] rusqlite::Error),
     #[error("upstream API error: {0}")]

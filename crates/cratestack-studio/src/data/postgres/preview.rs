@@ -11,10 +11,21 @@ use super::sql::{
 
 /// Render the preview for one operation. `model_name` is needed by the
 /// payload collector to look up declared scalar types on the schema.
+///
+/// `version_column` (SQL name), when the model declares `@version`, is
+/// shown in `UPDATE`'s `SET` list — the shape Studio's routed write path
+/// (`ops::update_routed`) actually runs. The one case this doesn't
+/// reflect: a `[target.db]` target that opted into `allow_unsafe_writes`
+/// for a model whose `@@emit` can't be routed on this driver runs the
+/// *unrouted* `UPDATE` instead (no version bump) — the preview endpoint
+/// has no per-write-mode context to render that variant too, so it shows
+/// the routed shape unconditionally, matching what every other target
+/// actually executes.
 pub(super) fn render(
     schema: &cratestack_core::Schema,
     info: &ModelSqlInfo<'_>,
     model_name: &str,
+    version_column: Option<&str>,
     op: SqlOp,
     pk: Option<&str>,
     payload: Option<&Row>,
@@ -30,18 +41,24 @@ pub(super) fn render(
         ),
         SqlOp::Get => (build_get_sql(info), vec![pk_param(1, pk, info.pk_cast)]),
         SqlOp::Create => {
-            let (cols, binds) = payload
-                .map(|p| collect_payload(schema, model_name, info, p))
+            let (mut cols, mut binds) = payload
+                .map(|p| collect_payload(schema, model_name, info, p, version_column))
                 .unwrap_or_else(|| sample_columns_and_binds(info));
+            // Mirrors `ops::create_routed` seeding `@version` to 0
+            // server-side — see that function's doc comment.
+            if let Some(v) = version_column {
+                cols.push(v.to_owned());
+                binds.push(TypedValue::Int(0));
+            }
             (build_insert_sql(info, &cols), label_params(&cols, &binds))
         }
         SqlOp::Update => {
             let (cols, binds) = payload
-                .map(|p| collect_payload(schema, model_name, info, p))
+                .map(|p| collect_payload(schema, model_name, info, p, version_column))
                 .unwrap_or_else(|| sample_columns_and_binds(info));
             let mut params = label_params(&cols, &binds);
             params.push(pk_param((cols.len() + 1) as u32, pk, info.pk_cast));
-            (build_update_sql(info, &cols), params)
+            (build_update_sql(info, &cols, version_column), params)
         }
         SqlOp::Delete => (build_delete_sql(info), vec![pk_param(1, pk, info.pk_cast)]),
     };

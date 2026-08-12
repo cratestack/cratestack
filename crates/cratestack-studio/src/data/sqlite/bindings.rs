@@ -10,13 +10,21 @@ use crate::data::model_info::ModelSqlInfo;
 
 /// Map the payload object to `(columns, bound_values)`. Both vectors
 /// share an index, so the i-th column gets the i-th bind.
+///
+/// `version_column` (SQL name) is always skipped — see
+/// `crate::data::postgres::bindings::collect_payload`'s doc comment for
+/// why (same rationale, both dialects).
 pub(super) fn build_payload_bindings(
     info: &ModelSqlInfo<'_>,
     payload: &Row,
+    version_column: Option<&str>,
 ) -> (Vec<String>, Vec<rusqlite::types::Value>) {
     let mut columns = Vec::new();
     let mut values = Vec::new();
     for col in &info.columns {
+        if Some(col.column_name.as_str()) == version_column {
+            continue;
+        }
         let Some(json_value) = payload.get(col.field_name) else {
             continue;
         };

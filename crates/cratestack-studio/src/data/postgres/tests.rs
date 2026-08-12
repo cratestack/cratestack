@@ -111,11 +111,59 @@ fn write_returning_projections_are_field_named() {
     let columns = vec!["subject_id".to_owned()];
     for sql in [
         build_insert_sql(&info, &columns),
-        build_update_sql(&info, &columns),
+        build_update_sql(&info, &columns, None),
         build_delete_sql(&info),
     ] {
         assert!(sql.contains(r#""subject_id" AS "subjectId""#), "{sql}");
     }
+}
+
+/// cratestack#507 "option 3": `build_update_sql`'s `version_column`
+/// appends a raw `col = col + 1` fragment, not a bound placeholder, so
+/// it must not shift the positional `$N` index the trailing PK bind
+/// relies on.
+#[test]
+fn update_sql_bumps_version_column_without_disturbing_pk_placeholder() {
+    let schema = parse(
+        r#"
+            model Message {
+              id String @id
+              version Int @version
+              stateReason String
+            }
+        "#,
+    );
+    let (_, info) = resolve_model(&schema, "Message").unwrap();
+    let columns = vec!["state_reason".to_owned()];
+    let sql = build_update_sql(&info, &columns, Some("version"));
+    assert!(
+        sql.contains(r#""state_reason" = $1, "version" = "version" + 1"#),
+        "{sql}"
+    );
+    assert!(sql.contains(r#""id" = $2"#), "{sql}");
+}
+
+/// A version-only bump (no other columns changed — e.g. the client's
+/// PATCH payload contained only a `version` key, which
+/// `collect_payload` strips) must still produce valid SQL: no leading
+/// comma before the bump fragment.
+#[test]
+fn update_sql_version_bump_with_no_other_columns_has_no_leading_comma() {
+    let schema = parse(
+        r#"
+            model Message {
+              id String @id
+              version Int @version
+            }
+        "#,
+    );
+    let (_, info) = resolve_model(&schema, "Message").unwrap();
+    let sql = build_update_sql(&info, &[], Some("version"));
+    assert!(
+        sql.contains(r#"SET "version" = "version" + 1 WHERE"#),
+        "{sql}"
+    );
+    assert!(sql.contains(r#""id" = $1"#), "{sql}");
 }
 
 #[test]

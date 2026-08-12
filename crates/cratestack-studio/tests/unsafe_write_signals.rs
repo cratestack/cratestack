@@ -182,7 +182,6 @@ async fn bypass_write_logs_a_warning_naming_target_model_and_annotations() {
         panic!("expected a WARN event naming target '{probe_target}'; captured: {lines:?}")
     });
     assert!(line.contains("Message"), "expected model name in: {line}");
-    assert!(line.contains("@version"), "expected @version in: {line}");
     assert!(line.contains("@@emit"), "expected @@emit(...) in: {line}");
 }
 

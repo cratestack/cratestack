@@ -74,7 +74,7 @@ pub(super) async fn create(
 ) -> Result<Row, DataError> {
     let (resolved, info) = resolve_model(schema, model)?;
     let resolved = resolved.clone();
-    let (cols, sql_args) = build_payload_bindings(&info, payload);
+    let (cols, sql_args) = build_payload_bindings(&info, payload, None);
     let sql = build_insert_sql(&info, &cols);
 
     let row = with_conn(conn.clone(), move |conn| {
@@ -104,9 +104,9 @@ pub(super) async fn update(
 ) -> Result<Option<Row>, DataError> {
     let (resolved, info) = resolve_model(schema, model)?;
     let resolved = resolved.clone();
-    let (cols, mut sql_args) = build_payload_bindings(&info, payload);
+    let (cols, mut sql_args) = build_payload_bindings(&info, payload, None);
     sql_args.push(rusqlite::types::Value::Text(pk.to_owned()));
-    let sql = build_update_sql(&info, &cols);
+    let sql = build_update_sql(&info, &cols, None);
 
     let rows = with_conn(conn.clone(), move |conn| {
         let params: Vec<&dyn rusqlite::ToSql> =

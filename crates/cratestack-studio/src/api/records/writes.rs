@@ -14,7 +14,7 @@ use crate::validators::validate_payload;
 use crate::workspace::LoadedWorkspace;
 
 use super::{
-    RecordResponse, require_safe_write, require_writable, resolve_target, target_model,
+    RecordResponse, WriteMode, require_writable, require_write_mode, resolve_target, target_model,
     value_to_string,
 };
 
@@ -28,13 +28,17 @@ pub async fn create_record(
     require_writable(target)?;
 
     let model_decl = target_model(target, &model)?;
-    let unsafe_write = require_safe_write(target, model_decl)?;
+    let mode = require_write_mode(target, model_decl)?;
+    let unsafe_write = mode == WriteMode::Bypassed;
     let errors = validate_payload(model_decl, &payload, false);
     if !errors.is_empty() {
         return Err(ApiError::Validation(errors));
     }
 
-    let row = target.source.create(&model, &payload).await?;
+    let row = match mode {
+        WriteMode::Routed => target.source.create_routed(&model, &payload).await?,
+        WriteMode::Plain | WriteMode::Bypassed => target.source.create(&model, &payload).await?,
+    };
     let pk_field = model_decl
         .fields
         .iter()
@@ -58,16 +62,20 @@ pub async fn update_record(
     require_writable(target)?;
 
     let model_decl = target_model(target, &model)?;
-    let unsafe_write = require_safe_write(target, model_decl)?;
+    let mode = require_write_mode(target, model_decl)?;
+    let unsafe_write = mode == WriteMode::Bypassed;
     let errors = validate_payload(model_decl, &payload, true);
     if !errors.is_empty() {
         return Err(ApiError::Validation(errors));
     }
 
-    let row = target
-        .source
-        .update(&model, &pk, &payload)
-        .await?
+    let update = match mode {
+        WriteMode::Routed => target.source.update_routed(&model, &pk, &payload).await?,
+        WriteMode::Plain | WriteMode::Bypassed => {
+            target.source.update(&model, &pk, &payload).await?
+        }
+    };
+    let row = update
         .ok_or_else(|| ApiError::InvalidPrimaryKey(pk.clone(), "no row with this id".to_owned()))?;
     // `pk` isn't read again after this — move it rather than clone.
     state
@@ -85,12 +93,15 @@ pub async fn delete_record(
     require_writable(target)?;
 
     let model_decl = target_model(target, &model)?;
-    let unsafe_write = require_safe_write(target, model_decl)?;
+    let mode = require_write_mode(target, model_decl)?;
+    let unsafe_write = mode == WriteMode::Bypassed;
 
-    let row =
-        target.source.delete(&model, &pk).await?.ok_or_else(|| {
-            ApiError::InvalidPrimaryKey(pk.clone(), "no row with this id".to_owned())
-        })?;
+    let deleted = match mode {
+        WriteMode::Routed => target.source.delete_routed(&model, &pk).await?,
+        WriteMode::Plain | WriteMode::Bypassed => target.source.delete(&model, &pk).await?,
+    };
+    let row = deleted
+        .ok_or_else(|| ApiError::InvalidPrimaryKey(pk.clone(), "no row with this id".to_owned()))?;
     // `pk` isn't read again after this — move it rather than clone.
     state
         .audit

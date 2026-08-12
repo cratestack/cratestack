@@ -1,12 +1,21 @@
-//! Live-Postgres confirmation that cratestack#507's write guard applies
-//! identically to a `PostgresSource`-backed target, not just the
-//! `SqliteSource` fixtures in `tests/unsafe_db_writes.rs`.
+//! Live-Postgres confirmation that cratestack#507's *refusal* path
+//! (`403 UNSAFE_DB_WRITE`, introduced by PR #516) no longer fires for a
+//! `PostgresSource`-backed target at all — "option 3" (routing writes
+//! through the same `cratestack_event_outbox` primitives the generated
+//! server uses; see `crate::api::records::guards::WriteMode` and
+//! `crate::data::postgres::ops_routed`) makes both `@version` bumping
+//! and `@@emit` routable on Postgres, so there is no longer a model
+//! shape on this backend the refusal needs to protect.
 //!
-//! The guard itself (`require_safe_write`) runs in the HTTP handler
-//! before any `DataSource` method is called, so it is backend-agnostic
-//! by construction — this file exists to prove that in practice rather
-//! than only by inspection, the same way `postgres_row_keys.rs` proves
-//! a Postgres-specific behavior a SQL-string test can't.
+//! `tests/postgres_routed_writes.rs` is the decisive coverage for what
+//! the routed write actually *does* (bumps `@version` for real, writes
+//! exactly one `cratestack_event_outbox` row, and the version bump is
+//! what makes a stale `if_match` correctly fail afterward). This file
+//! exists only to pin down the negative: unlike `SqliteSource`
+//! (`tests/unsafe_db_writes.rs`, where `@@emit` genuinely can't be
+//! routed and the refusal still applies), a Postgres target with
+//! `allow_unsafe_writes` left at its default (`false`) succeeds rather
+//! than being refused.
 //!
 //! Skips silently unless `CRATESTACK_TEST_DATABASE_URL` is set — the
 //! same convention every other PG-backed test in the workspace uses.
@@ -56,6 +65,7 @@ async fn connect_or_skip() -> Option<PgPool> {
 async fn build_workspace(pool: &PgPool, allow_unsafe_db_writes: bool) -> Arc<LoadedWorkspace> {
     for sql in [
         format!("DROP TABLE IF EXISTS \"{TABLE}\""),
+        "DROP TABLE IF EXISTS cratestack_event_outbox".to_owned(),
         format!(
             "CREATE TABLE \"{TABLE}\" (
                id TEXT PRIMARY KEY,
@@ -119,40 +129,47 @@ async fn patch(workspace: Arc<LoadedWorkspace>) -> (StatusCode, Value) {
 }
 
 #[tokio::test]
-async fn postgres_target_refuses_versioned_emitting_write_without_opt_in() {
+async fn postgres_target_no_longer_refuses_versioned_emitting_writes() {
     let Some(pool) = connect_or_skip().await else {
         eprintln!("skipping: CRATESTACK_TEST_DATABASE_URL unset");
         return;
     };
     let _guard = serial_guard().await;
+    // `allow_unsafe_writes` left at its default (`false`) on purpose:
+    // the whole point is that Postgres no longer needs the opt-in for
+    // this model shape.
     let workspace = build_workspace(&pool, false).await;
 
     let (status, body) = patch(workspace).await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(body["error"]["code"], "UNSAFE_DB_WRITE");
-
-    // The refusal happened before any SQL ran — the row is untouched.
-    let row: (String,) = sqlx_core::query_as::query_as(&format!(
-        "SELECT state_reason FROM \"{TABLE}\" WHERE id = 'msg1'"
-    ))
-    .fetch_one(&pool)
-    .await
-    .expect("row still present");
-    assert_eq!(row.0, "accepted");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "a Postgres target routes @version/@@emit for real; it must not \
+         be refused with UNSAFE_DB_WRITE: {body}"
+    );
+    assert_eq!(body["row"]["stateReason"], "written by studio");
+    assert_eq!(
+        body["row"]["version"], 1,
+        "the routed write bumps @version for real: {body}"
+    );
 }
 
 #[tokio::test]
-async fn postgres_target_allows_versioned_emitting_write_with_opt_in() {
+async fn postgres_target_with_opt_in_still_routes_for_real_not_a_bypass() {
     let Some(pool) = connect_or_skip().await else {
         eprintln!("skipping: CRATESTACK_TEST_DATABASE_URL unset");
         return;
     };
     let _guard = serial_guard().await;
+    // `allow_unsafe_writes = true` here shouldn't change anything on
+    // Postgres — there's nothing left to bypass on this backend.
     let workspace = build_workspace(&pool, true).await;
 
     let (status, body) = patch(workspace).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["row"]["stateReason"], "written by studio");
-    // Bypass confirmed real even when chosen: version is untouched.
-    assert_eq!(body["row"]["version"], 0);
+    assert_eq!(
+        body["row"]["version"], 1,
+        "opting into allow_unsafe_writes must not disable the routed \
+         (real) @version bump on a backend that can route it: {body}"
+    );
 }

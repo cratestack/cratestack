@@ -49,20 +49,23 @@ embed-ui = ["dep:rust-embed"]
 # `cratestack-core`'s dependency edge has `default-features = false` at the
 # workspace root — every direct consumer must explicitly re-select a
 # backend, or `cratestack-core` fails to compile at all (cratestack#495).
-# Also forwards to `cratestack-sql`/`cratestack-migrate`/`cratestack-parser`,
-# this crate's other direct `cratestack-core` consumers, so all four stay
-# in lockstep.
+# Also forwards to `cratestack-sql`/`cratestack-migrate`/`cratestack-parser`/
+# `cratestack-sqlx` (added for cratestack#507's routed-write outbox reuse —
+# see that dependency's own comment below), this crate's direct
+# `cratestack-core` consumers, so all five stay in lockstep.
 decimal-rust-decimal = [
     "cratestack-core/decimal-rust-decimal",
     "cratestack-sql/decimal-rust-decimal",
     "cratestack-migrate/decimal-rust-decimal",
     "cratestack-parser/decimal-rust-decimal",
+    "cratestack-sqlx/decimal-rust-decimal",
 ]
 decimal-bigdecimal = [
     "cratestack-core/decimal-bigdecimal",
     "cratestack-sql/decimal-bigdecimal",
     "cratestack-migrate/decimal-bigdecimal",
     "cratestack-parser/decimal-bigdecimal",
+    "cratestack-sqlx/decimal-bigdecimal",
 ]
 
 [dependencies]
@@ -73,6 +76,22 @@ cratestack-core.workspace = true
 cratestack-migrate.workspace = true
 cratestack-parser.workspace = true
 cratestack-sql.workspace = true
+# Postgres-only: cratestack#507 ("option 3") routes `[target.db]` writes
+# on models with `@version`/`@@emit` through the same
+# `cratestack_event_outbox` table primitives (`enqueue_event_outbox`,
+# `ensure_event_outbox_table`) the generated server's descriptor path
+# uses, instead of reimplementing that table's schema a second time in
+# this crate where it could drift. `cratestack-sqlx` pins the exact same
+# `sqlx-core`/`sqlx-postgres` versions this crate already depends on
+# directly (both `=0.8.6` at the workspace root) via its own
+# `sqlx-core`/`sqlx-postgres`-only shim (see that crate's `lib.rs` doc
+# comment on why it avoids the `sqlx` umbrella crate) — so this adds no
+# second copy of sqlx's split crates to the dependency graph, and
+# `&sqlx_postgres::PgPool`/`Transaction` values pass across the crate
+# boundary as the same concrete types. `cratestack-studio` is a `tool` in
+# `docs/adr/layers.toml` (may depend on anything), and `cratestack-sqlx`
+# is `L2`, so this doesn't create a layering violation.
+cratestack-sqlx.workspace = true
 flate2 = "1"
 tar = "0.4"
 regex.workspace = true
@@ -102,3 +121,5 @@ tar = "0.4"
 
 [dev-dependencies]
 tempfile = "3"
+testcontainers.workspace = true
+testcontainers-modules.workspace = true
