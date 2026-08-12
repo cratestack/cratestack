@@ -17,9 +17,11 @@
 //! `allow_unsafe_writes` left at its default (`false`) succeeds rather
 //! than being refused.
 //!
-//! Skips silently unless `CRATESTACK_TEST_DATABASE_URL` is set — the
-//! same convention every other PG-backed test in the workspace uses.
-//! `just test-pg` sets it.
+//! Skips silently unless `CRATESTACK_TEST_DATABASE_URL` (external PG,
+//! `just test-pg`) or `CRATESTACK_USE_TESTCONTAINERS=1` (ephemeral
+//! per-binary container) is set. `CRATESTACK_REQUIRE_DB=1` turns the
+//! skip into a panic so a run can't go green without having run this
+//! for real.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -31,9 +33,12 @@ use cratestack_studio::config::{TargetMode, WorkspaceConfig};
 use cratestack_studio::data::postgres::PostgresSource;
 use cratestack_studio::workspace::{LoadedTarget, LoadedWorkspace};
 use serde_json::Value;
-use sqlx_core::pool::PoolOptions;
-use sqlx_postgres::{PgPool, Postgres};
+use sqlx_postgres::PgPool;
 use tower::ServiceExt;
+
+mod support;
+
+use support::pg;
 
 const SCHEMA: &str = r#"
 model StudioUnsafeWriteProbe {
@@ -45,22 +50,6 @@ model StudioUnsafeWriteProbe {
 "#;
 
 const TABLE: &str = "studio_unsafe_write_probes";
-
-async fn serial_guard() -> tokio::sync::MutexGuard<'static, ()> {
-    static LOCK: std::sync::OnceLock<tokio::sync::Mutex<()>> = std::sync::OnceLock::new();
-    LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
-        .lock()
-        .await
-}
-
-async fn connect_or_skip() -> Option<PgPool> {
-    let url = std::env::var("CRATESTACK_TEST_DATABASE_URL").ok()?;
-    PoolOptions::<Postgres>::new()
-        .max_connections(2)
-        .connect(&url)
-        .await
-        .ok()
-}
 
 async fn build_workspace(pool: &PgPool, allow_unsafe_db_writes: bool) -> Arc<LoadedWorkspace> {
     for sql in [
@@ -130,15 +119,15 @@ async fn patch(workspace: Arc<LoadedWorkspace>) -> (StatusCode, Value) {
 
 #[tokio::test]
 async fn postgres_target_no_longer_refuses_versioned_emitting_writes() {
-    let Some(pool) = connect_or_skip().await else {
-        eprintln!("skipping: CRATESTACK_TEST_DATABASE_URL unset");
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    let _guard = serial_guard().await;
+    let pool = &test_pg.pool;
+    let _guard = pg::serial_guard().await;
     // `allow_unsafe_writes` left at its default (`false`) on purpose:
     // the whole point is that Postgres no longer needs the opt-in for
     // this model shape.
-    let workspace = build_workspace(&pool, false).await;
+    let workspace = build_workspace(pool, false).await;
 
     let (status, body) = patch(workspace).await;
     assert_eq!(
@@ -156,14 +145,14 @@ async fn postgres_target_no_longer_refuses_versioned_emitting_writes() {
 
 #[tokio::test]
 async fn postgres_target_with_opt_in_still_routes_for_real_not_a_bypass() {
-    let Some(pool) = connect_or_skip().await else {
-        eprintln!("skipping: CRATESTACK_TEST_DATABASE_URL unset");
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    let _guard = serial_guard().await;
+    let pool = &test_pg.pool;
+    let _guard = pg::serial_guard().await;
     // `allow_unsafe_writes = true` here shouldn't change anything on
     // Postgres — there's nothing left to bypass on this backend.
-    let workspace = build_workspace(&pool, true).await;
+    let workspace = build_workspace(pool, true).await;
 
     let (status, body) = patch(workspace).await;
     assert_eq!(status, StatusCode::OK);

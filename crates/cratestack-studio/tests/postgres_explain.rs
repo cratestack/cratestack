@@ -8,16 +8,22 @@
 //! `::bigint` casts the builders emit) is a property of the server, not
 //! of any string we can assert on.
 //!
-//! Skips silently unless `CRATESTACK_TEST_DATABASE_URL` is set; `just
-//! test-pg` sets it.
+//! Skips silently unless `CRATESTACK_TEST_DATABASE_URL` (external PG,
+//! `just test-pg`) or `CRATESTACK_USE_TESTCONTAINERS=1` (ephemeral
+//! per-binary container) is set. `CRATESTACK_REQUIRE_DB=1` turns the
+//! skip into a panic so a run can't go green without having run this
+//! for real.
 
 use std::sync::Arc;
 
 use cratestack_studio::data::DataSource;
 use cratestack_studio::data::SqlOp;
 use cratestack_studio::data::postgres::PostgresSource;
-use sqlx_core::pool::PoolOptions;
-use sqlx_postgres::{PgPool, Postgres};
+use sqlx_postgres::PgPool;
+
+mod support;
+
+use support::pg;
 
 /// `Int` primary key on purpose: `get` then renders `"probe_id" =
 /// $1::bigint`, which is the harder inference case for EXPLAIN than a
@@ -30,22 +36,6 @@ model StudioExplainProbe {
 "#;
 
 const TABLE: &str = "studio_explain_probes";
-
-async fn serial_guard() -> tokio::sync::MutexGuard<'static, ()> {
-    static LOCK: std::sync::OnceLock<tokio::sync::Mutex<()>> = std::sync::OnceLock::new();
-    LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
-        .lock()
-        .await
-}
-
-async fn connect_or_skip() -> Option<PgPool> {
-    let url = std::env::var("CRATESTACK_TEST_DATABASE_URL").ok()?;
-    PoolOptions::<Postgres>::new()
-        .max_connections(2)
-        .connect(&url)
-        .await
-        .ok()
-}
 
 async fn fixture(pool: &PgPool) -> PostgresSource {
     for sql in [
@@ -64,12 +54,12 @@ async fn fixture(pool: &PgPool) -> PostgresSource {
 
 #[tokio::test]
 async fn explain_plans_the_parameterised_list_query() {
-    let Some(pool) = connect_or_skip().await else {
-        eprintln!("skipping: CRATESTACK_TEST_DATABASE_URL unset");
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    let _guard = serial_guard().await;
-    let source = fixture(&pool).await;
+    let pool = &test_pg.pool;
+    let _guard = pg::serial_guard().await;
+    let source = fixture(pool).await;
 
     let plan = source
         .explain(SqlOp::List, "StudioExplainProbe", None)
@@ -82,12 +72,12 @@ async fn explain_plans_the_parameterised_list_query() {
 
 #[tokio::test]
 async fn explain_plans_a_bigint_cast_primary_key_lookup() {
-    let Some(pool) = connect_or_skip().await else {
-        eprintln!("skipping: CRATESTACK_TEST_DATABASE_URL unset");
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    let _guard = serial_guard().await;
-    let source = fixture(&pool).await;
+    let pool = &test_pg.pool;
+    let _guard = pg::serial_guard().await;
+    let source = fixture(pool).await;
 
     let plan = source
         .explain(SqlOp::Get, "StudioExplainProbe", Some("1"))
@@ -101,12 +91,12 @@ async fn explain_plans_a_bigint_cast_primary_key_lookup() {
 /// touched, so it holds on Postgres too — and the row survives.
 #[tokio::test]
 async fn explaining_a_delete_neither_plans_nor_deletes() {
-    let Some(pool) = connect_or_skip().await else {
-        eprintln!("skipping: CRATESTACK_TEST_DATABASE_URL unset");
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    let _guard = serial_guard().await;
-    let source = fixture(&pool).await;
+    let pool = &test_pg.pool;
+    let _guard = pg::serial_guard().await;
+    let source = fixture(pool).await;
 
     let plan = source
         .explain(SqlOp::Delete, "StudioExplainProbe", Some("1"))
@@ -128,12 +118,12 @@ async fn explaining_a_delete_neither_plans_nor_deletes() {
 
 #[tokio::test]
 async fn explain_for_get_without_a_key_declines_rather_than_erroring() {
-    let Some(pool) = connect_or_skip().await else {
-        eprintln!("skipping: CRATESTACK_TEST_DATABASE_URL unset");
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    let _guard = serial_guard().await;
-    let source = fixture(&pool).await;
+    let pool = &test_pg.pool;
+    let _guard = pg::serial_guard().await;
+    let source = fixture(pool).await;
 
     let plan = source
         .explain(SqlOp::Get, "StudioExplainProbe", None)

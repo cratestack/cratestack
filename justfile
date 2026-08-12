@@ -185,6 +185,24 @@ test-ci-redis *args='':
 test-ci-studio *args='':
 	cargo test -p cratestack-studio {{args}}
 
+# Shard addendum: cratestack-studio's four `tests/postgres_*.rs` files
+# (postgres_explain, postgres_routed_writes, postgres_row_keys,
+# postgres_unsafe_writes) — the live-Postgres coverage that, until CI
+# started setting CRATESTACK_REQUIRE_DB/CRATESTACK_USE_TESTCONTAINERS for
+# this recipe, skipped silently on every run (a coverage audit found this
+# is how the duplicate-column bug PR #553 fixed shipped in the first
+# place: its decisive test never actually ran in CI). Mirrors
+# `test-ci-db`'s testcontainers pattern one-for-one, scoped to just these
+# four test binaries so the plain `test-ci-studio` run above isn't
+# duplicated wholesale.
+test-ci-studio-db *args='':
+	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-studio \
+		--test postgres_explain \
+		--test postgres_routed_writes \
+		--test postgres_row_keys \
+		--test postgres_unsafe_writes \
+		{{args}}
+
 # Shard: everything else — the remaining framework crates + light example
 # smoke tests, with no container, no wasm/desktop toolchain, and no GTK.
 # Uses --exclude (a denylist) rather than -p so inline `#[cfg(test)]` unit

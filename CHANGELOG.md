@@ -394,6 +394,23 @@ builds from `@rename(from = "...")` before comparing, extracted into a shared
 reorder or a change to the key's column set is still refused exactly as before — resolving a rename
 only changes a renamed column's *name* in the comparison, never its position.
 
+### CI now actually runs `cratestack-studio`'s four live-Postgres test files instead of silently skipping them (#507)
+
+`crates/cratestack-studio/tests/{postgres_explain,postgres_routed_writes,postgres_row_keys,postgres_unsafe_writes}.rs`
+are the decisive Postgres-backed coverage for Studio's data layer, but a coverage audit found the
+`tests-studio` CI job set neither `CRATESTACK_TEST_DATABASE_URL` nor `CRATESTACK_USE_TESTCONTAINERS`,
+so all four files skipped silently and reported `ok` on every run without ever touching a real
+database — this is exactly how the duplicate-column bug PR #553 fixed shipped in the first place,
+since its own regression test never actually executed in CI. Worse, three of the four files
+(`postgres_explain`, `postgres_row_keys`, `postgres_unsafe_writes`) had never adopted the
+testcontainers/`CRATESTACK_REQUIRE_DB` machinery `postgres_routed_writes` introduced for #507
+itself, so turning those CI knobs on alone would have left them skipping forever; a new shared
+`tests/support/pg.rs` (mirroring `cratestack-pg`'s and `cratestack-outbox`'s own test-support
+modules) now backs all four files, and a dedicated `test-ci-studio-db` recipe runs them under
+`CRATESTACK_USE_TESTCONTAINERS=1` as a second step in the `tests-studio` job (not a separate job,
+so the Trunk UI build isn't paid for twice), with `CRATESTACK_REQUIRE_DB=1` turning a broken
+Docker or a misconfigured run into a hard failure instead of a quiet skip.
+
 ## 0.7.12 (2026-08-11)
 
 

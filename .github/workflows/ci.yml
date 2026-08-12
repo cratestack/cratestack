@@ -256,6 +256,23 @@ jobs:
         working-directory: crates/cratestack-studio-ui
       - name: cargo test (studio)
         run: just test-ci-studio --locked
+      - name: cargo test (studio — Postgres-backed, testcontainers)
+        # `crates/cratestack-studio/tests/postgres_*.rs` skip silently
+        # unless CRATESTACK_TEST_DATABASE_URL or CRATESTACK_USE_TESTCONTAINERS
+        # is set — neither of which this job used to set, so this decisive
+        # coverage reported `ok` on every CI run without ever touching a
+        # real database (a coverage audit found this is how the duplicate-
+        # column bug PR #553 fixed shipped: its own regression test never
+        # actually ran here). CRATESTACK_REQUIRE_DB turns a failed
+        # testcontainer/DB connection into a hard error instead of a
+        # silent skip, same rationale as the `tests-db` job's own
+        # CRATESTACK_REQUIRE_DB. A separate step in this job (not a
+        # separate job) so the Trunk UI build above — needed by
+        # `test-ci-studio`'s api_smoke tests, not by these — isn't paid
+        # for a second time.
+        env:
+          CRATESTACK_REQUIRE_DB: "1"
+        run: just test-ci-studio-db --locked
 
   tests-host:
     name: tests (host — everything else)

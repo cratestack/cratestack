@@ -28,12 +28,12 @@ use cratestack_studio::config::{TargetMode, WorkspaceConfig};
 use cratestack_studio::data::postgres::PostgresSource;
 use cratestack_studio::workspace::{LoadedTarget, LoadedWorkspace};
 use serde_json::Value;
-use sqlx_core::pool::PoolOptions;
-use sqlx_postgres::{PgPool, Postgres};
-use testcontainers::ContainerAsync;
-use testcontainers::runners::AsyncRunner;
-use testcontainers_modules::postgres::Postgres as PostgresImage;
+use sqlx_postgres::PgPool;
 use tower::ServiceExt;
+
+mod support;
+
+use support::pg;
 
 const SCHEMA: &str = r#"
 model Message {
@@ -45,101 +45,6 @@ model Message {
 "#;
 
 const TABLE: &str = "messages";
-
-async fn serial_guard() -> tokio::sync::MutexGuard<'static, ()> {
-    static LOCK: std::sync::OnceLock<tokio::sync::Mutex<()>> = std::sync::OnceLock::new();
-    LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
-        .lock()
-        .await
-}
-
-/// A live PG connection, plus (when the testcontainers backend is in
-/// use) the container guard — dropping it stops and removes the
-/// container, so a test that holds this for its whole body gets
-/// automatic cleanup. Mirrors `cratestack-pg/tests/support/pg.rs` /
-/// `cratestack-outbox/tests/support/pg.rs`'s `TestPg`; this crate has no
-/// shared test-support module of its own to import that from yet, so
-/// it's duplicated here rather than introducing one for a single file.
-struct TestPg {
-    pool: PgPool,
-    _container: Option<ContainerAsync<PostgresImage>>,
-}
-
-/// Backend priority: `CRATESTACK_TEST_DATABASE_URL` (external PG, e.g.
-/// `just pg-up`) first, then `CRATESTACK_USE_TESTCONTAINERS=1` (ephemeral
-/// per-binary container), then skip. `CRATESTACK_REQUIRE_DB` turns a
-/// connection failure — including neither variable being set — into a
-/// panic instead of a skip, so a broken Docker (or a run that forgot to
-/// set either variable) can't silently green this decisive test.
-async fn connect_or_skip() -> Option<TestPg> {
-    let require = std::env::var("CRATESTACK_REQUIRE_DB").is_ok();
-
-    fn need<T, E: std::fmt::Display>(r: Result<T, E>, require: bool, ctx: &str) -> Option<T> {
-        match r {
-            Ok(v) => Some(v),
-            Err(e) if require => panic!("CRATESTACK_REQUIRE_DB is set but {ctx} failed: {e}"),
-            Err(_) => None,
-        }
-    }
-
-    if let Ok(url) = std::env::var("CRATESTACK_TEST_DATABASE_URL") {
-        let pool = need(
-            PoolOptions::<Postgres>::new()
-                .max_connections(2)
-                .connect(&url)
-                .await,
-            require,
-            "connecting to CRATESTACK_TEST_DATABASE_URL",
-        )?;
-        return Some(TestPg {
-            pool,
-            _container: None,
-        });
-    }
-
-    if std::env::var("CRATESTACK_USE_TESTCONTAINERS").is_ok() {
-        let container = need(
-            PostgresImage::default().start().await,
-            require,
-            "starting the Postgres testcontainer (is Docker available?)",
-        )?;
-        let host = need(
-            container.get_host().await,
-            require,
-            "resolving testcontainer host",
-        )?;
-        let port = need(
-            container.get_host_port_ipv4(5432).await,
-            require,
-            "resolving testcontainer port",
-        )?;
-        let url = format!("postgres://postgres:postgres@{host}:{port}/postgres");
-        let pool = need(
-            PoolOptions::<Postgres>::new()
-                .max_connections(2)
-                .connect(&url)
-                .await,
-            require,
-            "connecting to the Postgres testcontainer",
-        )?;
-        return Some(TestPg {
-            pool,
-            _container: Some(container),
-        });
-    }
-
-    if require {
-        panic!(
-            "CRATESTACK_REQUIRE_DB is set but neither CRATESTACK_TEST_DATABASE_URL nor \
-             CRATESTACK_USE_TESTCONTAINERS is — this decisive test must run against a real \
-             Postgres, not skip silently"
-        );
-    }
-    eprintln!(
-        "skipping: neither CRATESTACK_TEST_DATABASE_URL nor CRATESTACK_USE_TESTCONTAINERS is set"
-    );
-    None
-}
 
 /// Baseline straight from SQL, mirroring the issue's own reproduction:
 /// `version=0`, zero outbox rows, no Studio involvement yet.
@@ -240,11 +145,11 @@ async fn outbox_row_count(pool: &PgPool, model: &str, operation: &str) -> i64 {
 /// `[target.db]` bumps `@version` and writes exactly one outbox row.
 #[tokio::test]
 async fn studio_patch_bumps_version_and_writes_one_outbox_row() {
-    let Some(test_pg) = connect_or_skip().await else {
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
     let pool = test_pg.pool.clone();
-    let _guard = serial_guard().await;
+    let _guard = pg::serial_guard().await;
     seed(&pool).await;
     assert_eq!(
         outbox_row_count(&pool, "Message", "updated").await,
@@ -274,11 +179,11 @@ async fn studio_patch_bumps_version_and_writes_one_outbox_row() {
 /// number changed.
 #[tokio::test]
 async fn stale_conditional_update_no_longer_succeeds_after_studio_write() {
-    let Some(test_pg) = connect_or_skip().await else {
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
     let pool = test_pg.pool.clone();
-    let _guard = serial_guard().await;
+    let _guard = pg::serial_guard().await;
     seed(&pool).await;
 
     let (status, _) = patch_without_if_match(build_workspace(&pool)).await;

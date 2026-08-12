@@ -16,17 +16,22 @@
 //! snake_case column name are identical, so a fixture built from those
 //! passes whether or not the bug is present.
 //!
-//! Skips silently unless `CRATESTACK_TEST_DATABASE_URL` is set — the
-//! same convention every other PG-backed test in the workspace uses.
-//! `just test-pg` sets it.
+//! Skips silently unless `CRATESTACK_TEST_DATABASE_URL` (external PG,
+//! `just test-pg`) or `CRATESTACK_USE_TESTCONTAINERS=1` (ephemeral
+//! per-binary container) is set. `CRATESTACK_REQUIRE_DB=1` turns the
+//! skip into a panic so a run can't go green without having run this
+//! for real.
 
 use std::sync::Arc;
 
 use cratestack_studio::data::DataSource;
 use cratestack_studio::data::postgres::PostgresSource;
 use cratestack_studio::data::{PageRequest, Row};
-use sqlx_core::pool::PoolOptions;
-use sqlx_postgres::{PgPool, Postgres};
+use sqlx_postgres::PgPool;
+
+mod support;
+
+use support::pg;
 
 /// `probeId` is the primary key on purpose: cursor extraction looks the
 /// PK up by *field* name, so a column-named row silently disables
@@ -44,26 +49,6 @@ model StudioRowKeyProbe {
 /// Distinctive enough not to collide with another test binary sharing
 /// the compose Postgres. Derived by `table_name("StudioRowKeyProbe")`.
 const TABLE: &str = "studio_row_key_probes";
-
-/// Every test in this binary rebuilds the same table, and cargo runs
-/// them concurrently — without this they race in `CREATE TABLE` and
-/// fail on `pg_type_typname_nsp_index` rather than on anything the test
-/// is actually about.
-async fn serial_guard() -> tokio::sync::MutexGuard<'static, ()> {
-    static LOCK: std::sync::OnceLock<tokio::sync::Mutex<()>> = std::sync::OnceLock::new();
-    LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
-        .lock()
-        .await
-}
-
-async fn connect_or_skip() -> Option<PgPool> {
-    let url = std::env::var("CRATESTACK_TEST_DATABASE_URL").ok()?;
-    PoolOptions::<Postgres>::new()
-        .max_connections(2)
-        .connect(&url)
-        .await
-        .ok()
-}
 
 async fn fixture(pool: &PgPool) -> PostgresSource {
     for sql in [
@@ -109,12 +94,12 @@ fn assert_field_keyed(row: &Row) {
 
 #[tokio::test]
 async fn list_returns_rows_keyed_by_cstack_field_names() {
-    let Some(pool) = connect_or_skip().await else {
-        eprintln!("skipping: CRATESTACK_TEST_DATABASE_URL unset");
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    let _guard = serial_guard().await;
-    let source = fixture(&pool).await;
+    let pool = &test_pg.pool;
+    let _guard = pg::serial_guard().await;
+    let source = fixture(pool).await;
 
     let page = source
         .list("StudioRowKeyProbe", PageRequest::default())
@@ -127,12 +112,12 @@ async fn list_returns_rows_keyed_by_cstack_field_names() {
 
 #[tokio::test]
 async fn get_returns_a_row_keyed_by_cstack_field_names() {
-    let Some(pool) = connect_or_skip().await else {
-        eprintln!("skipping: CRATESTACK_TEST_DATABASE_URL unset");
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    let _guard = serial_guard().await;
-    let source = fixture(&pool).await;
+    let pool = &test_pg.pool;
+    let _guard = pg::serial_guard().await;
+    let source = fixture(pool).await;
 
     let row = source
         .get("StudioRowKeyProbe", "p2")
@@ -149,12 +134,12 @@ async fn get_returns_a_row_keyed_by_cstack_field_names() {
 /// "Next" button — pagination silently dead on any multi-word PK.
 #[tokio::test]
 async fn pagination_cursor_survives_a_multi_word_primary_key() {
-    let Some(pool) = connect_or_skip().await else {
-        eprintln!("skipping: CRATESTACK_TEST_DATABASE_URL unset");
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    let _guard = serial_guard().await;
-    let source = fixture(&pool).await;
+    let pool = &test_pg.pool;
+    let _guard = pg::serial_guard().await;
+    let source = fixture(pool).await;
 
     let page = source
         .list(
@@ -193,12 +178,12 @@ async fn pagination_cursor_survives_a_multi_word_primary_key() {
 /// touched. Guarding the returned shape is what keeps that path honest.
 #[tokio::test]
 async fn update_returns_a_row_keyed_by_cstack_field_names() {
-    let Some(pool) = connect_or_skip().await else {
-        eprintln!("skipping: CRATESTACK_TEST_DATABASE_URL unset");
+    let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
-    let _guard = serial_guard().await;
-    let source = fixture(&pool).await;
+    let pool = &test_pg.pool;
+    let _guard = pg::serial_guard().await;
+    let source = fixture(pool).await;
 
     let mut payload = Row::new();
     payload.insert("status".to_owned(), serde_json::json!("suspended"));
