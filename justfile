@@ -858,14 +858,26 @@ release-publish mode='real':
 	# published anywhere before — see the `--allow-dirty`/dry-run
 	# handling below for why every other crate is structurally
 	# unpackageable in that situation, no matter what flags are passed.
-	topo_output=$(cargo metadata --format-version=1 --no-deps 2>/dev/null | \
+	topo_output=$(cargo metadata --format-version=1 --no-deps | \
 	  python3 -c "$(cat <<'PYEOF'
 	import json, sys, copy
 	m = json.load(sys.stdin)
 	pkgs = {p["name"]: p for p in m["packages"]
 	        if p["name"].startswith("cratestack") and p.get("publish") != []}
+	# `kind == "dev"` is excluded deliberately: a dev-dependency cycle is
+	# legal in Cargo and irrelevant to publish order, because `cargo
+	# publish` never needs a dev-dependency to already exist on the
+	# registry to package a crate. cratestack#540 added
+	# `cratestack-api` as a dev-dependency of `cratestack-macros` (for
+	# the `Authorized`-witness expansion tests) while `cratestack-api`
+	# depends on `cratestack-macros` normally — a legitimate pairing
+	# that this sort previously read as a hard cycle, aborting the
+	# v0.7.13 crates.io publish after npm and the GitHub release had
+	# already gone out. Build dependencies (`kind == "build"`) DO
+	# constrain publish order and are deliberately kept.
 	graph = {n: {d["name"] for d in p["dependencies"]
-	             if d["name"] in pkgs and d["name"] != n}
+	             if d["name"] in pkgs and d["name"] != n
+	             and d.get("kind") != "dev"}
 	         for n, p in pkgs.items()}
 	dry_safe = sorted(n for n, d in graph.items() if not d)
 	order, remaining = [], copy.deepcopy(graph)
