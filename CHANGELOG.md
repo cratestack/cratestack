@@ -23,6 +23,18 @@ directly (as opposed to only reading `&RequestContext<'_>` inside an `AuthProvid
 no changes) must add the new `extensions` field. The blanket `impl<F, E> AuthProvider for F where F:
 Fn(&HeaderMap) -> Result<CoolContext, E>` is unaffected and needs no migration.
 
+**Performance.** `ClientIpContext::from_extensions` now clones the request's full `http::Extensions`
+map on every request, unconditionally, on every transport — measured (`cratestack-axum`'s
+`tests_extensions_clone_cost.rs`) at roughly 30-150ns per request against a realistic served-router
+extensions map, the same order of magnitude as (and never meaningfully above) the `HeaderMap` clone
+every generated dispatch fn already pays unconditionally today; both are noise next to a real
+request's network/DB round trip. This can't be avoided by borrowing instead of cloning: axum-core's
+`FromRequestParts::from_request_parts` returns an owned value with no lifetime tied to its `&mut
+Parts` argument, and by the time a generated dispatch fn runs, the original `Parts` no longer exists
+as a distinct value to borrow from — see `ClientIpContext`'s doc comment for the full reasoning.
+Consumers who insert a large non-`Arc`-backed value into `http::Extensions` now pay that clone's real
+cost on every request, not just when it's read; wrap such values in `Arc` before inserting.
+
 ### `IdempotencyLayer`/`RateLimitLayer` refuse requests they cannot fingerprint, instead of pooling them into a shared `"anonymous"` namespace — breaking (#416)
 
 The default `IdempotencyLayer`/`RateLimitLayer` fingerprint hashes the `Authorization` header when
