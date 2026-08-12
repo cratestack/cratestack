@@ -380,6 +380,21 @@ to go. Every in-tree caller (`cratestack-cli`'s `migrate diff`/`migrate baseline
 across `cratestack-migrate`/`cratestack-pg`) is updated; any out-of-tree direct caller of these two
 functions needs the same `?`/`.expect(...)` treatment.
 
+### `cratestack-studio` no longer emits invalid SQL previewing a `Create`/`Update` on an `@version` model without a payload (#507)
+
+A post-merge review of #553 found that `preview_sql`'s no-payload fallback (`sample_column_names`)
+listed every scalar column, including `@version`, and then both the `Create` and `Update` branches
+applied the version column a second time on top of that — seeding it to `0` again for `Create`, and
+appending the `"version" = "version" + 1` bump again for `Update` — because that logic assumed
+`@version` was never already present in the sample set (the way `collect_payload` already excludes it
+from a real payload). The result was `INSERT INTO "t" ("id", "version", ..., "version") ...`, which
+Postgres rejects with "column ... specified more than once" and SQLite rejects as a duplicate column
+name, and two conflicting `SET` assignments to the same column on `Update`. Since Studio's preview
+endpoint always calls `preview_sql` with `payload = None`, this broke SQL preview for every request
+against every `@version` model on both the Postgres and SQLite backends. `sample_column_names` now
+excludes `version_column` from the synthesized sample set, mirroring what the payload collectors
+already did, so the version column is applied exactly once regardless of which branch produced it.
+
 ## 0.7.12 (2026-08-11)
 
 

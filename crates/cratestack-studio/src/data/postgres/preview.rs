@@ -43,9 +43,12 @@ pub(super) fn render(
         SqlOp::Create => {
             let (mut cols, mut binds) = payload
                 .map(|p| collect_payload(schema, model_name, info, p, version_column))
-                .unwrap_or_else(|| sample_columns_and_binds(info));
+                .unwrap_or_else(|| sample_columns_and_binds(info, version_column));
             // Mirrors `ops::create_routed` seeding `@version` to 0
-            // server-side — see that function's doc comment.
+            // server-side — see that function's doc comment. Both
+            // `collect_payload` and `sample_columns_and_binds` already
+            // excluded `version_column` above, so this is the only
+            // place it's added — never twice.
             if let Some(v) = version_column {
                 cols.push(v.to_owned());
                 binds.push(TypedValue::Int(0));
@@ -55,7 +58,7 @@ pub(super) fn render(
         SqlOp::Update => {
             let (cols, binds) = payload
                 .map(|p| collect_payload(schema, model_name, info, p, version_column))
-                .unwrap_or_else(|| sample_columns_and_binds(info));
+                .unwrap_or_else(|| sample_columns_and_binds(info, version_column));
             let mut params = label_params(&cols, &binds);
             params.push(pk_param((cols.len() + 1) as u32, pk, info.pk_cast));
             (build_update_sql(info, &cols, version_column), params)
@@ -86,10 +89,12 @@ pub(crate) fn pk_kind(cast: PkCast) -> &'static str {
     }
 }
 
-fn sample_columns_and_binds(info: &ModelSqlInfo<'_>) -> (Vec<String>, Vec<TypedValue>) {
-    let cols = sample_column_names(info);
-    let binds = info
-        .columns
+fn sample_columns_and_binds(
+    info: &ModelSqlInfo<'_>,
+    version_column: Option<&str>,
+) -> (Vec<String>, Vec<TypedValue>) {
+    let cols = sample_column_names(info, version_column);
+    let binds = cols
         .iter()
         .map(|_| TypedValue::Text("…".to_owned()))
         .collect();
