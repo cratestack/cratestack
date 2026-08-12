@@ -1,9 +1,19 @@
 //! HTTP-level tests for cratestack#507: a `[target.db]` target writes
 //! straight to SQL, bypassing `@version` bumping and `@@emit` outbox
-//! rows. Studio now refuses to write `@version`/`@@emit` models on a
-//! `rw` `[target.db]` target unless the target set
-//! `allow_unsafe_writes = true`, so the bypass is chosen per target
-//! rather than discovered after the fact.
+//! rows.
+//!
+//! As of "option 3" (routing writes through the same primitives the
+//! generated server uses — see `crate::api::records::guards::WriteMode`),
+//! `@version` bumping is always routable, on every backend, so a model
+//! that only declares `@version` is never refused here — see
+//! `version_only_model_is_routed_and_bumps_for_real_without_opt_in`
+//! below. `@@emit` is different: SQLite-embedded deployments have no
+//! `cratestack_event_outbox` equivalent at all, so a model that declares
+//! `@@emit(...)` is still refused on a SQLite `[target.db]` target
+//! unless it opts into `allow_unsafe_writes = true` — the tests below
+//! cover that half of the table. (`tests/postgres_routed_writes.rs`
+//! covers the Postgres half, where `@@emit` *is* routable, against a
+//! live database.)
 //!
 //! Two in-memory SQLite `rw` targets share the same schema and seed
 //! data: `unsafe_off` (the default — `allow_unsafe_writes` unset) and
@@ -35,6 +45,12 @@ model Plain {
   id String @id
   name String
 }
+
+model VersionOnly {
+  id String @id
+  version Int @version
+  label String
+}
 "#;
 
 fn seeded_conn() -> Connection {
@@ -52,6 +68,12 @@ fn seeded_conn() -> Connection {
           name TEXT NOT NULL
         );
         INSERT INTO plains VALUES ('p1', 'original');
+        CREATE TABLE version_onlies (
+          id TEXT PRIMARY KEY,
+          version INTEGER NOT NULL,
+          label TEXT NOT NULL
+        );
+        INSERT INTO version_onlies VALUES ('v1', 0, 'original');
         "#,
     )
     .expect("ddl");
@@ -132,7 +154,9 @@ async fn update_versioned_emitting_model_without_opt_in_is_refused() {
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(body["error"]["code"], "UNSAFE_DB_WRITE");
     let message = body["error"]["message"].as_str().expect("message string");
-    assert!(message.contains("@version"), "{message}");
+    // `@version` alone is always routable (cratestack#507 "option 3"), so
+    // it's no longer named in the refusal — only the annotation that
+    // actually can't be routed on this (SQLite) backend is.
     assert!(message.contains("@@emit"), "{message}");
     assert!(message.contains("allow_unsafe_writes"), "{message}");
 }
@@ -221,4 +245,26 @@ async fn model_without_version_or_emit_is_unaffected() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["row"]["name"], "updated");
+}
+
+/// cratestack#507 "option 3": a model that declares only `@version` (no
+/// `@@emit`) is never refused, on either `unsafe_off` or `unsafe_on` —
+/// there's nothing for `allow_unsafe_writes` to gate, since `@version`
+/// bumping is always routable — and the write actually bumps the
+/// column, unlike the pre-#507 bypass.
+#[tokio::test]
+async fn version_only_model_is_routed_and_bumps_for_real_without_opt_in() {
+    let (status, body) = json_request(
+        "PATCH",
+        "/api/targets/unsafe_off/models/VersionOnly/records/v1",
+        Some(serde_json::json!({ "label": "written by studio" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["row"]["label"], "written by studio");
+    assert_eq!(
+        body["row"]["version"], 1,
+        "a @version-only model must have its version bumped for real, \
+         with no allow_unsafe_writes opt-in required: {body}"
+    );
 }

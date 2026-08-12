@@ -1,7 +1,12 @@
 //! Split out of `guards.rs` to stay under the crate's ~200-LoC file
-//! convention once the bypass-return-value coverage (cratestack#507
-//! finding 3) was added — the same discipline this PR already applied
-//! when it carved `guards.rs` out of `records.rs`.
+//! convention. Covers `require_write_mode`'s decision table
+//! (cratestack#507's "option 3" — see that function's doc comment):
+//! `@version` alone is always `Routed`; `@@emit` is `Routed` only on a
+//! backend with an event outbox (Postgres — `SqliteSource` never
+//! reports one, so these unit tests, all `SqliteSource`-backed, cover
+//! the "can't route `@@emit`" half of the table). See
+//! `tests/postgres_routed_writes.rs` for the Postgres-routed half
+//! against a live database.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -21,6 +26,11 @@ fn target(has_db: bool, allow_unsafe_db_writes: bool, mode: TargetMode) -> Loade
             }
             model Emitting {
               id String @id
+              @@emit(created)
+            }
+            model VersionedAndEmitting {
+              id String @id
+              version Int @version
               @@emit(created)
             }
             model Plain {
@@ -55,59 +65,67 @@ fn model<'a>(target: &'a LoadedTarget, name: &str) -> &'a Model {
 }
 
 #[test]
-fn refuses_versioned_model_on_db_target_without_opt_in() {
+fn version_only_is_always_routed_no_opt_in_needed() {
     let t = target(true, false, TargetMode::Rw);
-    let error = require_safe_write(&t, model(&t, "Versioned")).expect_err("should refuse");
+    let mode = require_write_mode(&t, model(&t, "Versioned")).expect("should route");
+    assert_eq!(
+        mode,
+        WriteMode::Routed,
+        "@version alone is routable on every backend"
+    );
+}
+
+#[test]
+fn emitting_model_on_a_backend_without_an_outbox_is_refused_without_opt_in() {
+    let t = target(true, false, TargetMode::Rw);
+    let error = require_write_mode(&t, model(&t, "Emitting")).expect_err("should refuse");
     assert!(matches!(error, ApiError::UnsafeDbWrite { .. }));
 }
 
 #[test]
-fn refuses_emitting_model_on_db_target_without_opt_in() {
-    let t = target(true, false, TargetMode::Rw);
-    let error = require_safe_write(&t, model(&t, "Emitting")).expect_err("should refuse");
-    assert!(matches!(error, ApiError::UnsafeDbWrite { .. }));
-}
-
-#[test]
-fn allows_versioned_model_with_opt_in_and_reports_the_bypass() {
+fn emitting_model_on_a_backend_without_an_outbox_bypasses_with_opt_in() {
     let t = target(true, true, TargetMode::Rw);
-    let bypassed = require_safe_write(&t, model(&t, "Versioned")).expect("opted in, should allow");
-    assert!(
-        bypassed,
-        "opted-in write past @version must report itself as a bypass, \
-         so the caller can mark the audit entry (cratestack#507 finding 3)"
-    );
+    let mode = require_write_mode(&t, model(&t, "Emitting")).expect("opted in, should allow");
+    assert_eq!(mode, WriteMode::Bypassed);
 }
 
 #[test]
-fn allows_plain_model_without_opt_in_and_is_not_a_bypass() {
+fn versioned_and_emitting_is_refused_as_a_whole_when_emit_cannot_route() {
+    // `@version` alone would be routable, but the write isn't split —
+    // if any annotation can't be routed, the whole write is refused
+    // (or bypassed) rather than silently applying half of it. See
+    // `WriteMode::Bypassed`'s doc comment.
     let t = target(true, false, TargetMode::Rw);
-    let bypassed =
-        require_safe_write(&t, model(&t, "Plain")).expect("no annotations, should allow");
-    assert!(
-        !bypassed,
-        "a model with neither @version nor @@emit is never a bypass, opt-in or not"
-    );
+    let error =
+        require_write_mode(&t, model(&t, "VersionedAndEmitting")).expect_err("should refuse");
+    assert!(matches!(error, ApiError::UnsafeDbWrite { .. }));
 }
 
 #[test]
-fn allows_plain_model_with_opt_in_and_is_not_a_bypass() {
+fn allows_plain_model_without_opt_in() {
+    let t = target(true, false, TargetMode::Rw);
+    let mode = require_write_mode(&t, model(&t, "Plain")).expect("no annotations, should allow");
+    assert_eq!(mode, WriteMode::Plain);
+}
+
+#[test]
+fn allows_plain_model_with_opt_in() {
     // allow_unsafe_writes = true but the model carries no annotation
-    // the flag would ever matter for: it must not be flagged as a
-    // bypass just because the target opted in.
+    // the flag would ever matter for: it must still report `Plain`,
+    // not `Bypassed` — there's nothing being bypassed.
     let t = target(true, true, TargetMode::Rw);
-    let bypassed =
-        require_safe_write(&t, model(&t, "Plain")).expect("no annotations, should allow");
-    assert!(!bypassed);
+    let mode = require_write_mode(&t, model(&t, "Plain")).expect("no annotations, should allow");
+    assert_eq!(mode, WriteMode::Plain);
 }
 
 #[test]
-fn allows_versioned_model_on_api_only_target() {
+fn versioned_model_on_api_only_target_is_plain() {
     let t = target(false, false, TargetMode::Rw);
-    let bypassed =
-        require_safe_write(&t, model(&t, "Versioned")).expect("api-only target is unaffected");
-    assert!(
-        !bypassed,
-        "an [target.api]-only target never goes through the SQL bypass path"
+    let mode =
+        require_write_mode(&t, model(&t, "Versioned")).expect("api-only target is unaffected");
+    assert_eq!(
+        mode,
+        WriteMode::Plain,
+        "an [target.api]-only target never goes through the SQL routing/bypass path"
     );
 }

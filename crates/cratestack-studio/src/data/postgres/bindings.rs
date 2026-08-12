@@ -25,11 +25,22 @@ pub(crate) enum TypedValue {
 /// Walk `payload` in column order, looking up each field's scalar
 /// type on the source model and producing a [`TypedValue`] for each
 /// present key.
+///
+/// `version_column` (SQL name) is always skipped even if the payload
+/// includes it: `@version` is server-managed (see
+/// `is_writable_field`'s doc comment in `crate::validators`), and the
+/// caller appends its own `version = version + 1` SQL fragment rather
+/// than binding a client-supplied value — accepting a version key here
+/// too would either silently let a client override the server-managed
+/// column or (once the caller appends its own assignment to the same
+/// column) produce a SQL error from two `SET`/insert-column assignments
+/// to the same column.
 pub(super) fn collect_payload(
     schema: &cratestack_core::Schema,
     model_name: &str,
     info: &ModelSqlInfo<'_>,
     payload: &Row,
+    version_column: Option<&str>,
 ) -> (Vec<String>, Vec<TypedValue>) {
     let model = schema
         .models
@@ -39,6 +50,9 @@ pub(super) fn collect_payload(
     let mut cols = Vec::new();
     let mut binds = Vec::new();
     for col in &info.columns {
+        if Some(col.column_name.as_str()) == version_column {
+            continue;
+        }
         let Some(value) = payload.get(col.field_name) else {
             continue;
         };

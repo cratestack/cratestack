@@ -148,7 +148,7 @@ pub use delegate::{
     ScopedUpdateManySet, ScopedUpdateRecord, ScopedUpdateRecordSet, ScopedUpsertRecord,
     ScopedUpsertRecordDoNothing, ViewDelegate, ViewDelegateNoUnique,
 };
-pub use descriptor::SqlxRuntime;
+pub use descriptor::{SqlxRuntime, enqueue_event_outbox, ensure_event_outbox_table};
 pub use query::{
     Aggregate, AggregateColumn, AggregateCount, BatchCreate, BatchDelete, BatchGet, BatchUpdate,
     BatchUpdateItem, BatchUpsert, CreateRecord, DeleteMany, DeleteRecord, FindMany, FindManyWith,

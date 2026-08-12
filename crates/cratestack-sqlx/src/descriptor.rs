@@ -13,7 +13,7 @@ use cratestack_core::{
 use crate::error::cool_error_from_sqlx;
 use event_outbox::EventOutboxRow;
 
-pub(crate) use event_outbox::{enqueue_event_outbox, ensure_event_outbox_table};
+pub use event_outbox::{enqueue_event_outbox, ensure_event_outbox_table};
 
 #[derive(Clone)]
 pub struct SqlxRuntime {

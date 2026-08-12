@@ -97,6 +97,18 @@ fn has_attr(field: &Field, name: &str) -> bool {
 /// Phase 3 writes only the field set that's scalar and not a
 /// relation. Detect relation-shaped fields by an `@relation(...)`
 /// attribute — the canonical marker the CrateStack parser enforces.
+///
+/// `@version` is excluded too: it's server-managed the same way the
+/// framework's generated Create/Update input types exclude it (see
+/// `cratestack-sqlx::query::write::create_exec`'s "seed the
+/// optimistic-lock column server-side" comment) — a client picking its
+/// own initial value or overwrite value would defeat the whole point of
+/// an optimistic-lock column. Studio's write path
+/// (`crate::data::postgres::ops`/`crate::data::sqlite::ops`) bumps it
+/// itself once a write is routed through `create_routed`/
+/// `update_routed`; a `version` key in the payload is silently ignored
+/// rather than rejected, so the field is left out of validation instead
+/// of validated-then-discarded.
 fn is_writable_field(field: &Field) -> bool {
     if matches!(field.ty.arity, cratestack_core::TypeArity::List) {
         return false;
@@ -104,7 +116,7 @@ fn is_writable_field(field: &Field) -> bool {
     !field
         .attributes
         .iter()
-        .any(|a| a.raw.starts_with("@relation"))
+        .any(|a| a.raw.starts_with("@relation") || a.raw == "@version")
 }
 
 fn check_type(field: &Field, value: &serde_json::Value) -> Option<FieldError> {

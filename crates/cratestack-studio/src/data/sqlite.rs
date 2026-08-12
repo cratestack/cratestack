@@ -15,6 +15,7 @@
 mod bindings;
 mod explain;
 mod ops;
+mod ops_routed;
 mod preview;
 mod runtime;
 mod sql;
@@ -29,7 +30,7 @@ use cratestack_core::Schema;
 use rusqlite::Connection;
 use tokio::sync::Mutex;
 
-use super::model_info::{PkCast, resolve_model};
+use super::model_info::{PkCast, resolve_model, version_column};
 use super::{
     ColumnSnapshot, DataError, DataSource, Page, PageRequest, QueryPlan, Row, SqlOp, SqlPreview,
 };
@@ -98,6 +99,26 @@ impl DataSource for SqliteSource {
         ops::delete(&self.schema, &self.connection, model, pk).await
     }
 
+    async fn create_routed(&self, model: &str, payload: &Row) -> Result<Row, DataError> {
+        ops_routed::create_routed(&self.schema, &self.connection, model, payload).await
+    }
+
+    async fn update_routed(
+        &self,
+        model: &str,
+        pk: &str,
+        payload: &Row,
+    ) -> Result<Option<Row>, DataError> {
+        if payload.is_empty() {
+            return self.get(model, pk).await;
+        }
+        ops_routed::update_routed(&self.schema, &self.connection, model, pk, payload).await
+    }
+
+    // `delete_routed` uses the trait default (delegates to `delete`): a
+    // hard DELETE never touches `@version`, and SQLite has no event
+    // outbox to route `@@emit` through — see `ops_routed`'s module doc.
+
     async fn preview_sql(
         &self,
         op: SqlOp,
@@ -105,8 +126,15 @@ impl DataSource for SqliteSource {
         pk: Option<&str>,
         payload: Option<&Row>,
     ) -> Result<SqlPreview, DataError> {
-        let (_, info) = resolve_model(&self.schema, model)?;
-        Ok(preview::render(&info, op, pk, payload))
+        let (resolved, info) = resolve_model(&self.schema, model)?;
+        let version_col = version_column(resolved);
+        Ok(preview::render(
+            &info,
+            version_col.as_deref(),
+            op,
+            pk,
+            payload,
+        ))
     }
 
     async fn explain(

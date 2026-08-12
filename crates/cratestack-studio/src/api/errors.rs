@@ -112,6 +112,7 @@ impl From<DataError> for ApiError {
             DataError::Forbidden => ApiError::Forbidden,
             DataError::Validation(errors) => ApiError::Validation(errors),
             DataError::Db(e) => ApiError::Database(e.to_string()),
+            DataError::EventOutbox(e) => ApiError::Database(e.to_string()),
             DataError::Sqlite(e) => ApiError::Database(e.to_string()),
             DataError::Api(e) => ApiError::Upstream(e.to_string()),
             DataError::BlockingJoin(msg) => ApiError::Internal(msg),

@@ -5,17 +5,25 @@
 //! against an `&PgPool`. Constraint failures route through
 //! [`crate::data::db_errors::map_pg_error`] so the UI can display
 //! per-field errors.
+//!
+//! These are the **unrouted** writes: no `@version` bump, no
+//! `cratestack_event_outbox` row, exactly Studio's pre-cratestack#507
+//! behavior. Reached for a model with no relevant annotations (nothing
+//! to route) and for the legacy `allow_unsafe_writes` bypass on a model
+//! whose `@@emit` can't be routed on this driver. See
+//! [`super::ops_routed`] for the routed equivalents.
 
 use cratestack_core::Schema;
-use sqlx_core::row::Row as _;
 use sqlx_postgres::{PgPool, PgRow};
 
 use crate::data::common::{clamp_limit, next_cursor};
-use crate::data::db_errors::map_pg_error;
 use crate::data::model_info::{PkCast, find_pk_field, resolve_model};
 use crate::data::{DataError, Page, PageRequest, Row};
 
-use super::bindings::{bind_typed, collect_payload};
+use super::bindings::collect_payload;
+use super::exec::{
+    decode_optional, decode_rows, delete_returning, insert_returning, update_returning,
+};
 use super::sql::{
     build_delete_sql, build_get_sql, build_insert_sql, build_list_on_column_sql, build_list_sql,
     build_update_sql,
@@ -71,26 +79,9 @@ pub(super) async fn create(
     payload: &Row,
 ) -> Result<Row, DataError> {
     let (resolved, info) = resolve_model(schema, model)?;
-    let (cols, binds) = collect_payload(schema, model, &info, payload);
+    let (cols, binds) = collect_payload(schema, model, &info, payload, None);
     let sql = build_insert_sql(&info, &cols);
-
-    let mut q = sqlx_core::query::query(&sql);
-    for value in &binds {
-        q = bind_typed(q, value);
-    }
-    let row = match q.fetch_one(pool).await {
-        Ok(r) => r,
-        Err(e) => {
-            return Err(map_pg_error(Some(resolved), &e).unwrap_or(DataError::Db(e)));
-        }
-    };
-    let value: serde_json::Value = row.try_get(0)?;
-    match value {
-        serde_json::Value::Object(map) => Ok(map),
-        _ => Err(DataError::Unsupported {
-            what: "INSERT … RETURNING did not produce a JSON object",
-        }),
-    }
+    insert_returning(pool, &sql, &binds, resolved).await
 }
 
 pub(super) async fn update(
@@ -101,21 +92,9 @@ pub(super) async fn update(
     payload: &Row,
 ) -> Result<Option<Row>, DataError> {
     let (resolved, info) = resolve_model(schema, model)?;
-    let (cols, binds) = collect_payload(schema, model, &info, payload);
-    let sql = build_update_sql(&info, &cols);
-
-    let mut q = sqlx_core::query::query(&sql);
-    for value in &binds {
-        q = bind_typed(q, value);
-    }
-    q = q.bind(pk);
-    let row = match q.fetch_optional(pool).await {
-        Ok(r) => r,
-        Err(e) => {
-            return Err(map_pg_error(Some(resolved), &e).unwrap_or(DataError::Db(e)));
-        }
-    };
-    decode_optional(row)
+    let (cols, binds) = collect_payload(schema, model, &info, payload, None);
+    let sql = build_update_sql(&info, &cols, None);
+    update_returning(pool, &sql, &binds, pk, resolved).await
 }
 
 pub(super) async fn delete(
@@ -126,17 +105,7 @@ pub(super) async fn delete(
 ) -> Result<Option<Row>, DataError> {
     let (resolved, info) = resolve_model(schema, model)?;
     let sql = build_delete_sql(&info);
-    let row = match sqlx_core::query::query(&sql)
-        .bind(pk)
-        .fetch_optional(pool)
-        .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            return Err(map_pg_error(Some(resolved), &e).unwrap_or(DataError::Db(e)));
-        }
-    };
-    decode_optional(row)
+    delete_returning(pool, &sql, pk, resolved).await
 }
 
 pub(super) async fn follow(
@@ -167,28 +136,4 @@ pub(super) async fn follow(
         rows: decoded,
         next_cursor,
     })
-}
-
-fn decode_rows(rows: Vec<PgRow>) -> Result<Vec<Row>, DataError> {
-    let mut out = Vec::with_capacity(rows.len());
-    for row in rows {
-        let value: serde_json::Value = row.try_get(0)?;
-        if let serde_json::Value::Object(map) = value {
-            out.push(map);
-        }
-    }
-    Ok(out)
-}
-
-fn decode_optional(row: Option<PgRow>) -> Result<Option<Row>, DataError> {
-    match row {
-        None => Ok(None),
-        Some(r) => {
-            let value: serde_json::Value = r.try_get(0)?;
-            Ok(match value {
-                serde_json::Value::Object(map) => Some(map),
-                _ => None,
-            })
-        }
-    }
 }

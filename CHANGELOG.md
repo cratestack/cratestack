@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### `cratestack-studio` routes `[target.db]` writes through the generated server's own `@version`/`@@emit` primitives instead of refusing them (#507)
+
+PR #516 made Studio refuse (`403 UNSAFE_DB_WRITE`) a `[target.db]` write to a model declaring
+`@version` or `@@emit(...)` unless the target opted into `allow_unsafe_writes`, turning a silent
+correctness bug into a choice. This closes the other half: wherever it's structurally possible,
+Studio now applies those semantics for real instead of refusing. `@version` bumping is routed on
+every backend (Postgres and SQLite alike bump the column server-side, exactly like the generated
+server and `cratestack-rusqlite` already do), so a model that only declares `@version` is never
+refused anymore. `@@emit(...)` is routed on Postgres targets by writing a `cratestack_event_outbox`
+row through the same `cratestack_sqlx::enqueue_event_outbox`/`ensure_event_outbox_table` primitives
+the generated server's descriptor path uses (now `pub`, and relaxed to accept `&str` model names
+since Studio parses schemas at runtime rather than generating `'static` ones) — inside the same
+transaction as the row mutation, so a crash between the two can't commit one without the other.
+SQLite has no event-outbox equivalent at all, so a model declaring `@@emit(...)` on a SQLite
+`[target.db]` target is still refused unless `allow_unsafe_writes` is set; that refusal, and the
+audit-trail/log signal PR #516 added for it, are unchanged. `@@allow` enforcement on `[target.db]`
+reads and writes remains deliberately out of scope, per the same maintainer framing PR #516 used.
+
 ### `IdempotencyLayer`/`RateLimitLayer` refuse requests they cannot fingerprint, instead of pooling them into a shared `"anonymous"` namespace — breaking (#416)
 
 The default `IdempotencyLayer`/`RateLimitLayer` fingerprint hashes the `Authorization` header when

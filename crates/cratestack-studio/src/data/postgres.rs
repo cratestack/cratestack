@@ -10,8 +10,10 @@
 //! live in sibling submodules so they stay independently testable.
 
 mod bindings;
+mod exec;
 mod explain;
 mod ops;
+mod ops_routed;
 mod preview;
 mod sql;
 
@@ -25,7 +27,7 @@ use cratestack_core::Schema;
 use sqlx_core::row::Row as _;
 use sqlx_postgres::{PgPool, PgRow};
 
-use super::model_info::{PkCast, resolve_model};
+use super::model_info::{PkCast, resolve_model, version_column};
 use super::{
     ColumnSnapshot, DataError, DataSource, Page, PageRequest, QueryPlan, Row, SqlOp, SqlPreview,
 };
@@ -87,6 +89,30 @@ impl DataSource for PostgresSource {
         ops::delete(&self.schema, &self.pool, model, pk).await
     }
 
+    fn supports_event_outbox(&self) -> bool {
+        true
+    }
+
+    async fn create_routed(&self, model: &str, payload: &Row) -> Result<Row, DataError> {
+        ops_routed::create_routed(&self.schema, &self.pool, model, payload).await
+    }
+
+    async fn update_routed(
+        &self,
+        model: &str,
+        pk: &str,
+        payload: &Row,
+    ) -> Result<Option<Row>, DataError> {
+        if payload.is_empty() {
+            return self.get(model, pk).await;
+        }
+        ops_routed::update_routed(&self.schema, &self.pool, model, pk, payload).await
+    }
+
+    async fn delete_routed(&self, model: &str, pk: &str) -> Result<Option<Row>, DataError> {
+        ops_routed::delete_routed(&self.schema, &self.pool, model, pk).await
+    }
+
     async fn preview_sql(
         &self,
         op: SqlOp,
@@ -94,8 +120,17 @@ impl DataSource for PostgresSource {
         pk: Option<&str>,
         payload: Option<&Row>,
     ) -> Result<SqlPreview, DataError> {
-        let (_, info) = resolve_model(&self.schema, model)?;
-        Ok(preview::render(&self.schema, &info, model, op, pk, payload))
+        let (resolved, info) = resolve_model(&self.schema, model)?;
+        let version_col = version_column(resolved);
+        Ok(preview::render(
+            &self.schema,
+            &info,
+            model,
+            version_col.as_deref(),
+            op,
+            pk,
+            payload,
+        ))
     }
 
     async fn explain(

@@ -22,7 +22,7 @@ use crate::workspace::{LoadedTarget, LoadedWorkspace};
 
 pub use writes::{create_record, delete_record, update_record};
 
-use guards::{require_safe_write, require_writable};
+use guards::{WriteMode, require_writable, require_write_mode};
 
 #[derive(Debug, Deserialize, Default)]
 pub struct ListQuery {
