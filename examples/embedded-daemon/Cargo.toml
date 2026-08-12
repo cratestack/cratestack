@@ -6,6 +6,9 @@ license.workspace = true
 publish = false
 description = "Long-running Linux/macOS daemon: tokio + notify watches a directory, debounces filesystem events, and persists them through include_embedded_schema! + cratestack-rusqlite. Demonstrates the async-I/O-around-sync-ModelDelegate seam."
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "cratestack-daemon"
 path = "src/main.rs"

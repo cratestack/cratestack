@@ -24,16 +24,36 @@ pub struct DeleteRecord<'a, M: 'static, PK: 'static> {
     pub(crate) runtime: &'a SqlxRuntime,
     pub(crate) descriptor: &'static ModelDescriptor<M, PK>,
     pub(crate) id: PK,
+    pub(crate) if_match: Option<i64>,
 }
 
 impl<'a, M: 'static, PK: 'static> DeleteRecord<'a, M, PK> {
+    /// Expected version for optimistic locking. Required on models
+    /// that declare `@version`; ignored otherwise. Mirrors
+    /// [`crate::UpdateRecordSet::if_match`] — see that doc comment for
+    /// the rationale of an `Option<i64>` builder step rather than a
+    /// required constructor argument.
+    pub fn if_match(mut self, expected: i64) -> Self {
+        self.if_match = Some(expected);
+        self
+    }
+
     pub fn preview_sql(&self) -> String {
-        format!(
-            "DELETE FROM {} WHERE {} = $1 RETURNING {}",
-            self.descriptor.table_name,
-            self.descriptor.primary_key,
-            self.descriptor.select_projection(),
-        )
+        match self.descriptor.version_column {
+            Some(version_col) => format!(
+                "DELETE FROM {} WHERE {} = $1 AND {} = $2 RETURNING {}",
+                self.descriptor.table_name,
+                self.descriptor.primary_key,
+                version_col,
+                self.descriptor.select_projection(),
+            ),
+            None => format!(
+                "DELETE FROM {} WHERE {} = $1 RETURNING {}",
+                self.descriptor.table_name,
+                self.descriptor.primary_key,
+                self.descriptor.select_projection(),
+            ),
+        }
     }
 
     /// Like [`Self::run`] but participates in a caller-supplied
@@ -49,6 +69,11 @@ impl<'a, M: 'static, PK: 'static> DeleteRecord<'a, M, PK> {
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
         PK: Send + Clone + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
+        if self.descriptor.version_column.is_some() && self.if_match.is_none() {
+            return Err(CoolError::PreconditionFailed(
+                "If-Match header required for versioned model".to_owned(),
+            ));
+        }
         let emits_event = self.descriptor.emits(ModelEventKind::Deleted);
         let audit_enabled = self.descriptor.audit_enabled;
         let soft_delete = self.descriptor.soft_delete_column.is_some();
@@ -70,7 +95,15 @@ impl<'a, M: 'static, PK: 'static> DeleteRecord<'a, M, PK> {
         let before_snapshot = before_record
             .as_ref()
             .and_then(|m| serde_json::to_value(m).ok());
-        let record = delete_returning_record(&mut **tx, self.descriptor, self.id, ctx).await?;
+        let record = delete_returning_record(
+            &mut **tx,
+            self.runtime.pool(),
+            self.descriptor,
+            self.id,
+            ctx,
+            self.if_match,
+        )
+        .await?;
         if emits_event {
             enqueue_event_outbox(
                 &mut **tx,
@@ -98,6 +131,11 @@ impl<'a, M: 'static, PK: 'static> DeleteRecord<'a, M, PK> {
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
         PK: Send + Clone + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
+        if self.descriptor.version_column.is_some() && self.if_match.is_none() {
+            return Err(CoolError::PreconditionFailed(
+                "If-Match header required for versioned model".to_owned(),
+            ));
+        }
         let emits_event = self.descriptor.emits(ModelEventKind::Deleted);
         let audit_enabled = self.descriptor.audit_enabled;
         let soft_delete = self.descriptor.soft_delete_column.is_some();
@@ -125,7 +163,15 @@ impl<'a, M: 'static, PK: 'static> DeleteRecord<'a, M, PK> {
             let before_snapshot = before_record
                 .as_ref()
                 .and_then(|m| serde_json::to_value(m).ok());
-            let record = delete_returning_record(&mut *tx, self.descriptor, self.id, ctx).await?;
+            let record = delete_returning_record(
+                &mut *tx,
+                self.runtime.pool(),
+                self.descriptor,
+                self.id,
+                ctx,
+                self.if_match,
+            )
+            .await?;
             if emits_event {
                 enqueue_event_outbox(
                     &mut *tx,
@@ -149,7 +195,15 @@ impl<'a, M: 'static, PK: 'static> DeleteRecord<'a, M, PK> {
             tx.commit().await.map_err(cool_error_from_sqlx)?;
             record
         } else {
-            delete_returning_record(self.runtime.pool(), self.descriptor, self.id, ctx).await?
+            delete_returning_record(
+                self.runtime.pool(),
+                self.runtime.pool(),
+                self.descriptor,
+                self.id,
+                ctx,
+                self.if_match,
+            )
+            .await?
         };
 
         if emits_event {

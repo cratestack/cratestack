@@ -12,6 +12,10 @@ documentation.workspace = true
 readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
+
+[lints]
+workspace = true
+
 [lib]
 proc-macro = true
 

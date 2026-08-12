@@ -6,6 +6,9 @@ license.workspace = true
 publish = false
 description = "Wasm cdylib loaded inside a Tauri 2 webview. include_embedded_schema! drives the local SQLite store (OPFS-backed) for the embedded side of the tauri-web example; the matching native Tauri shell lives at ./src-tauri and uses include_client_schema! to call remote CrateStack services from the trusted side."
 
+[lints]
+workspace = true
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 

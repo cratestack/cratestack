@@ -108,6 +108,7 @@ mod tests_system_principal_policy;
 mod tests_update;
 #[cfg(test)]
 mod tests_update_many;
+mod transaction;
 
 pub use partial_row::FromPartialPgRow;
 
@@ -127,6 +128,7 @@ pub use migrations::{
     MIGRATIONS_TABLE_DDL, Migration, MigrationState, MigrationStatus, apply_pending,
     ensure_migrations_table, status,
 };
+pub use transaction::Tx;
 
 pub use cratestack_policy::{PolicyExpr, PolicyLiteral, ReadPolicy, ReadPredicate};
 pub use cratestack_sql::{

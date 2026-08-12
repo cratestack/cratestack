@@ -87,6 +87,15 @@ exclude = [
     # `cratestack-axum` (and therefore `axum`/`tower`/`hyper`/`tower-http`)
     # absence for a `cratestack-client` consumer.
     "examples/client-only-verification",
+    # cratestack#513: same underlying reasoning as the three entries above
+    # (own `Cargo.lock`/target dir so `cargo tree`/a plain `grep` on
+    # `Cargo.toml` reflects what an external consumer's build would
+    # actually contain), applied to a *direct*-dependency claim rather
+    # than a transitive-absence one: `sqlx` IS present transitively here
+    # (via `cratestack-sqlx`) — the proof is that this crate's own
+    # `Cargo.toml` never lists it, and `db.transaction(...)` still works
+    # without ever naming a `sqlx` type.
+    "examples/db-transaction-verification",
 ]
 
 [workspace.package]

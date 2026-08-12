@@ -5,8 +5,10 @@
 
 use cratestack_core::{CoolContext, CoolError};
 
-use crate::query::support::{classify_unique_violation, push_action_policy_query, push_bind_value};
-use crate::{ModelDescriptor, UpdateModelInput, cool_error_from_sqlx, sqlx};
+use crate::query::support::{
+    classify_unique_violation, probe_current_version, push_action_policy_query, push_bind_value,
+};
+use crate::{ModelDescriptor, UpdateModelInput, sqlx};
 
 pub async fn update_record_with_executor<'e, E, M, PK, I>(
     executor: E,
@@ -125,41 +127,4 @@ where
             ))
         }
     }
-}
-
-/// Read the current version of a row using the read policy. Returns
-/// `None` if the caller cannot see the row (so the outer code
-/// preserves the existing Forbidden-on-no-row semantics).
-async fn probe_current_version<M, PK>(
-    policy_pool: &sqlx::PgPool,
-    descriptor: &'static ModelDescriptor<M, PK>,
-    id: PK,
-    version_col: &'static str,
-    ctx: &CoolContext,
-) -> Result<Option<i64>, CoolError>
-where
-    PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
-{
-    let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT ");
-    query.push(version_col);
-    query.push(" FROM ").push(descriptor.table_name);
-    query
-        .push(" WHERE ")
-        .push(descriptor.primary_key)
-        .push(" = ");
-    query.push_bind(id);
-    query.push(" AND ");
-    push_action_policy_query(
-        &mut query,
-        descriptor.read_allow_policies,
-        descriptor.read_deny_policies,
-        ctx,
-    );
-
-    let row: Option<(i64,)> = query
-        .build_query_as::<(i64,)>()
-        .fetch_optional(policy_pool)
-        .await
-        .map_err(cool_error_from_sqlx)?;
-    Ok(row.map(|(v,)| v))
 }

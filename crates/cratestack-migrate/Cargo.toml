@@ -13,6 +13,9 @@ readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 
+[lints]
+workspace = true
+
 [features]
 default = ["decimal-rust-decimal"]
 # Forwards to `cratestack-core`'s mutually-exclusive decimal backend choice

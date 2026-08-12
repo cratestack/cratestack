@@ -99,11 +99,14 @@ async fn generated_client_reaches_etag_then_if_match_round_trip() {
 
 /// Proves the generated `<Model>Client::delete_with_response` surfaces
 /// status and headers, same as `get_with_response`/`update_with_response`
-/// above. Deliberately sends no `If-Match` and the mock server does not
-/// check for one — the server never requires or enforces `If-Match` on
-/// `DELETE` (only `PATCH`; see the module doc and
-/// `cratestack-client-rust`'s `tests/typed_response.rs`), so this test does
-/// not assert any concurrency-safety semantics that don't exist.
+/// above. Sends no `If-Match` against a mock server that (unlike a real
+/// CrateStack server as of cratestack#519, which enforces `If-Match` on
+/// `DELETE` for `@version` models exactly like `PATCH`) does not check
+/// for one — see the module doc and `cratestack-client-rust`'s
+/// `tests/typed_response.rs` for the same pattern — so this test proves
+/// only the response metadata plumbing, not server-side concurrency
+/// semantics (covered end-to-end against Postgres by `cratestack-pg`'s
+/// `tests/banking_versioning.rs`).
 #[tokio::test]
 async fn generated_client_delete_with_response_surfaces_status_and_headers() {
     let (base_url, _server) = support::spawn_mock_server(|request| {

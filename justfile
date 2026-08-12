@@ -13,8 +13,15 @@ PG_URL := "postgres://cratestack:cratestack@localhost:55432/cratestack_test"
 #     per-item helpers take one positional arg per field/concern.
 #   * type_complexity     — sqlx query-result tuples and generated bounds.
 #   * manual_async_fn     — examples/tests return `impl Future` by hand.
-#   * missing_safety_doc  — only ever fires in the FFI example crates;
-#     library `unsafe` is forbidden workspace-wide.
+#   * missing_safety_doc  — only ever fires in the FFI crates/examples that
+#     hold a documented `unsafe_code = "allow"` override (napi-derive
+#     trampolines, raw C-ABI exports — see EXEMPT_MANUAL_OVERRIDE in
+#     `.ci/lints_workspace_check.py`); every other member declares
+#     `[lints]\nworkspace = true` (cratestack#523, `just
+#     verify-lints-optin`), so `unsafe_code = "forbid"` is actually
+#     enforced there, not just documented. Note wasm-bindgen crates
+#     (`cratestack-cbor-wasm`, `cratestack-studio-ui`) need no override —
+#     verified they compile clean under the forbid.
 clippy_allow := "-A clippy::too_many_arguments -A clippy::type_complexity -A clippy::manual_async_fn -A clippy::missing_safety_doc"
 
 default:
@@ -480,6 +487,23 @@ regen-examples *args='':
 # full rationale.
 verify-layering:
 	./.ci/layer-direction-check.sh
+
+# Workspace-lints opt-in check (cratestack#523) — blocking CI gate. Asserts
+# every root workspace member declares `[lints]\nworkspace = true`, so the
+# root `[workspace.lints.rust] unsafe_code = "forbid"` table (which Cargo
+# otherwise silently ignores for any non-opted-in member) actually applies.
+# The three FFI-boundary crates that manually override `unsafe_code =
+# "allow"` instead (napi-derive/wasm-bindgen trampolines, raw C-ABI
+# exports — Cargo rejects combining `workspace = true` with a per-package
+# override in the same manifest) are checked for that override instead of
+# the opt-in. Standalone example/vitrine workspaces excluded from the root
+# `[workspace] members` list (`cratestack-studio-ui`, the `no-database-
+# verification*` crates, `client-only-verification`) are checked for their
+# own local `[workspace.lints.rust] unsafe_code = "forbid"` declaration,
+# since the root workspace's table can't reach a disjoint workspace. See
+# `.ci/lints-workspace-check.sh` for the full rationale.
+verify-lints-optin:
+	./.ci/lints-workspace-check.sh
 
 # Changelog verification: detect unedited seeds.
 #

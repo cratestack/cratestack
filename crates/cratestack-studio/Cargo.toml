@@ -32,6 +32,9 @@ include = [
     "README.md",
 ]
 
+[lints]
+workspace = true
+
 [features]
 default = ["embed-ui", "decimal-rust-decimal"]
 # Bundle the Leptos UI's Trunk output into the binary via `rust-embed`.

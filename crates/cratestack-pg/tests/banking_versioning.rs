@@ -256,6 +256,187 @@ async fn http_patch_round_trips_etag_and_rejects_stale_if_match() {
 }
 
 #[tokio::test]
+async fn delegate_delete_without_if_match_returns_precondition_failed_and_keeps_row_intact() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    query("INSERT INTO ledgers (id, label, balance, version) VALUES (5, 'gl-5', 10, 0)")
+        .execute(pool)
+        .await
+        .expect("seed");
+
+    let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
+    let result = cool.ledger().delete(5).run(&ctx()).await;
+
+    let err = result.expect_err("delete without if_match must fail");
+    assert_eq!(err.code(), "PRECONDITION_FAILED");
+
+    // The row must still exist: a delete that silently succeeds while
+    // reporting failure is the exact bug this closes.
+    let row = query("SELECT balance, version FROM ledgers WHERE id = 5")
+        .fetch_optional(pool)
+        .await
+        .expect("read ledger");
+    let row = row.expect("row must not have been deleted");
+    let balance: i64 = row.get("balance");
+    let version: i64 = row.get("version");
+    assert_eq!(balance, 10, "missing if_match must not delete the row");
+    assert_eq!(version, 0, "missing if_match must not change the row");
+}
+
+#[tokio::test]
+async fn delegate_delete_with_stale_if_match_returns_412_and_keeps_row_intact() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    query("INSERT INTO ledgers (id, label, balance, version) VALUES (6, 'gl-6', 20, 4)")
+        .execute(pool)
+        .await
+        .expect("seed");
+
+    let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
+    let result = cool
+        .ledger()
+        .delete(6)
+        .if_match(1) // stale: real version is 4
+        .run(&ctx())
+        .await;
+
+    let err = result.expect_err("stale if_match delete must fail");
+    assert_eq!(err.code(), "PRECONDITION_FAILED");
+
+    // Row state must be untouched — status code alone would not catch a
+    // delete that ran anyway while reporting 412.
+    let row = query("SELECT balance, version FROM ledgers WHERE id = 6")
+        .fetch_optional(pool)
+        .await
+        .expect("read ledger");
+    let row = row.expect("stale delete must not remove the row");
+    let balance: i64 = row.get("balance");
+    let version: i64 = row.get("version");
+    assert_eq!(balance, 20, "stale delete must not change the row");
+    assert_eq!(version, 4, "stale delete must not bump the version");
+}
+
+#[tokio::test]
+async fn delegate_delete_with_fresh_if_match_deletes_row() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    query("INSERT INTO ledgers (id, label, balance, version) VALUES (7, 'gl-7', 30, 0)")
+        .execute(pool)
+        .await
+        .expect("seed");
+
+    let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
+    let deleted = cool
+        .ledger()
+        .delete(7)
+        .if_match(0)
+        .run(&ctx())
+        .await
+        .expect("fresh if_match delete must succeed");
+    assert_eq!(deleted.balance, 30);
+
+    let row = query("SELECT id FROM ledgers WHERE id = 7")
+        .fetch_optional(pool)
+        .await
+        .expect("read ledger");
+    assert!(row.is_none(), "fresh if_match delete must remove the row");
+}
+
+#[tokio::test]
+async fn http_delete_rejects_missing_and_stale_if_match_then_succeeds_with_fresh() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    query("INSERT INTO ledgers (id, label, balance, version) VALUES (8, 'gl-8', 40, 0)")
+        .execute(pool)
+        .await
+        .expect("seed");
+
+    let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
+    let router = cratestack_schema::axum::model_router(cool, JsonCodec, PassThroughAuth);
+
+    // DELETE without If-Match must fail with 412 and leave the row intact.
+    let no_if_match = router
+        .clone()
+        .oneshot(
+            Request::delete("/ledgers/8")
+                .header("accept", JsonCodec::CONTENT_TYPE)
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("send");
+    assert_eq!(no_if_match.status(), StatusCode::PRECONDITION_FAILED);
+    let row = query("SELECT id FROM ledgers WHERE id = 8")
+        .fetch_optional(pool)
+        .await
+        .expect("read ledger");
+    assert!(
+        row.is_some(),
+        "missing If-Match must not delete the row over HTTP"
+    );
+
+    // DELETE with stale If-Match must fail with 412 and leave the row intact.
+    let stale = router
+        .clone()
+        .oneshot(
+            Request::delete("/ledgers/8")
+                .header("accept", JsonCodec::CONTENT_TYPE)
+                .header("if-match", "\"999\"")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("send");
+    assert_eq!(stale.status(), StatusCode::PRECONDITION_FAILED);
+    let row = query("SELECT id FROM ledgers WHERE id = 8")
+        .fetch_optional(pool)
+        .await
+        .expect("read ledger");
+    assert!(
+        row.is_some(),
+        "stale If-Match must not delete the row over HTTP"
+    );
+
+    // DELETE with fresh If-Match must succeed and actually remove the row.
+    let fresh = router
+        .clone()
+        .oneshot(
+            Request::delete("/ledgers/8")
+                .header("accept", JsonCodec::CONTENT_TYPE)
+                .header("if-match", "\"0\"")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("send");
+    assert_eq!(fresh.status(), StatusCode::OK);
+    let row = query("SELECT id FROM ledgers WHERE id = 8")
+        .fetch_optional(pool)
+        .await
+        .expect("read ledger");
+    assert!(
+        row.is_none(),
+        "fresh If-Match delete must actually remove the row"
+    );
+}
+
+#[tokio::test]
 async fn create_seeds_version_to_zero_even_when_input_omits_it() {
     let _guard = pg::serial_guard().await;
     let Some(test_pg) = pg::connect_or_skip().await else {

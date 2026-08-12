@@ -6,6 +6,9 @@ license.workspace = true
 publish = false
 description = "Desktop note-taking CLI built on cratestack-rusqlite via include_embedded_schema!. Demonstrates the file-backed-SQLite use case (Linux/macOS/Windows) — same code compiles to wasm32 / mobile."
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "notes"
 path = "src/main.rs"

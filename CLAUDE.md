@@ -168,7 +168,16 @@ tarballs that `cargo publish` includes explicitly. `just publish-studio` re-bund
 
 ## Conventions
 
-- `unsafe_code = "forbid"` workspace-wide.
+- `unsafe_code = "forbid"` workspace-wide — declared once in the root `Cargo.toml`'s `[workspace.lints.rust]`
+  and actually enforced: every workspace member opts in via `[lints]\nworkspace = true` (cratestack#523;
+  `just verify-lints-optin` is the regression guard, wired as a CI job). Three FFI-boundary crates
+  (`cratestack-cbor-napi`, `examples/react-nextjs-daisyui/napi`, `examples/embedded-expo/native` — napi-derive
+  trampolines and a raw C-ABI export) manually override `unsafe_code = "allow"` instead, each with a comment
+  explaining why (Cargo rejects combining `workspace = true` with a per-package override in the same
+  manifest). `cratestack-cbor-wasm` and `cratestack-studio-ui` (wasm-bindgen) need no override — verified
+  clean under the forbid. Standalone example/vitrine workspaces excluded from the root `[workspace] members`
+  list (`cratestack-studio-ui`, the `no-database-verification*` crates, `client-only-verification`) declare
+  the same `forbid` locally, since the root table can't reach a disjoint workspace.
 - Rust source uses `snake_case` filenames (rustfmt convention); all other files are `kebab-case`.
 - **200-LoC file ceiling:** there is an active, validated convention of keeping each source file under
   ~200 lines, splitting larger files by concern (this is why `macros/` and `axum/` are deeply nested).

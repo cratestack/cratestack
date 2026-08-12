@@ -109,12 +109,17 @@ async fn handle_patch(State(state): State<AppState>, headers: HeaderMap, body: B
         .into_response()
 }
 
-// Deliberately does *not* inspect `If-Match` — the server never enforces it
-// on `DELETE` (only `PATCH` does; see `handle_patch` above), so this handler
-// mirrors real CrateStack behavior by ignoring the header entirely, whether
-// or not the caller sent one. Returns the pre-delete record plus a custom
-// header, standing in for the kind of out-of-band signal (a `Retry-After`,
-// an audit marker, etc.) `delete_with_response` exists to surface.
+// A real CrateStack server now enforces `If-Match` on `DELETE` for an
+// `@version` model exactly like `PATCH` (cratestack#519); this
+// hand-rolled mock deliberately does *not* reproduce that check —
+// it exists only to prove `delete_with_response` plumbs status and
+// headers through the client, which `handle_patch` above already
+// covers for the `If-Match`-checking case. The real server-side
+// enforcement is proven end-to-end against Postgres by
+// `cratestack-pg`'s `tests/banking_versioning.rs`. Returns the
+// pre-delete record plus a custom header, standing in for the kind
+// of out-of-band signal (a `Retry-After`, an audit marker, etc.)
+// `delete_with_response` exists to surface.
 async fn handle_delete(State(state): State<AppState>) -> Response {
     let ledger = Ledger {
         id: 4,
@@ -225,11 +230,12 @@ async fn patch_with_response_surfaces_412_for_a_stale_if_match() {
 
 /// Proves `delete_with_response` surfaces status and headers like its
 /// siblings. Unlike the `get_with_response` → `patch_with_response` round
-/// trip above, this deliberately sends **no** `If-Match` — the server does
-/// not require or check one on `DELETE` (see `handle_delete`), so this test
-/// does not assert any `If-Match`/concurrency-safety semantics that don't
-/// exist server-side; it only proves the response metadata plumbing works
-/// on this verb too.
+/// trip above, this sends **no** `If-Match` against a mock `handle_delete`
+/// that (unlike a real CrateStack server as of cratestack#519) doesn't
+/// check for one — so it only proves the response metadata plumbing works
+/// on this verb too, not any concurrency-safety semantics. The real
+/// server-side `If-Match` enforcement on `DELETE` is proven end-to-end
+/// against Postgres by `cratestack-pg`'s `tests/banking_versioning.rs`.
 #[tokio::test]
 async fn delete_with_response_surfaces_status_and_headers() {
     let (base_url, _state, _server) = spawn_server().await;

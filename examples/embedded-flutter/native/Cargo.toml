@@ -10,6 +10,9 @@ license.workspace = true
 publish = false
 description = "Native cdylib for the embedded-flutter example. Hosts include_embedded_schema! and exposes a small API surface for flutter_rust_bridge to bridge into Dart. The Flutter side imports the generated Dart bindings under lib/src/rust/."
 
+[lints]
+workspace = true
+
 [lib]
 name = "embedded_flutter_native"
 # cdylib for Android/iOS/macOS/Linux/Windows targets; rlib so cargo test

@@ -18,6 +18,10 @@ categories.workspace = true
 # integration tests resolve `::cratestack::*` paths (which the schema macros
 # emit) without per-file aliasing. External consumers depend on the package
 # as `cratestack = { package = "cratestack-api" }`.
+
+[lints]
+workspace = true
+
 [lib]
 name = "cratestack"
 path = "src/lib.rs"

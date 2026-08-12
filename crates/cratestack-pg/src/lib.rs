@@ -185,7 +185,7 @@ pub use cratestack_sqlx::{
 };
 #[cfg(feature = "postgres")]
 pub use cratestack_sqlx::{
-    cool_error_from_sqlx, run_in_isolated_tx, run_in_isolated_tx_with_retries,
+    Tx, cool_error_from_sqlx, run_in_isolated_tx, run_in_isolated_tx_with_retries,
 };
 
 /// Crypto provider selection for FIPS-validated deployments.

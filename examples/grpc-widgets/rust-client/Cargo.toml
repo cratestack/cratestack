@@ -6,6 +6,9 @@ license.workspace = true
 publish = false
 description = "Native tonic-based Rust gRPC client for the grpc-widgets example schema, built via include_client_schema! (ticket #209)."
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "grpc-widgets-rust-client"
 path = "src/main.rs"

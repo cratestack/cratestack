@@ -98,9 +98,10 @@ pub(super) fn generate_generated_model_client(
             /// response headers alongside the record (issue #493) — read
             /// `TypedResponse::header("etag")` off the result to get the
             /// value [`Self::update_with_response`] needs as `If-Match`
-            /// on an `@version` model. `delete`/`delete_with_response`
-            /// do **not** need it: the server does not enforce `If-Match`
-            /// on `DELETE` (see [`Self::delete_with_response`]).
+            /// on an `@version` model. `delete_with_response` needs it
+            /// too, since cratestack#519: the server enforces `If-Match`
+            /// on `DELETE` exactly like `PATCH` (see
+            /// [`Self::delete_with_response`]).
             pub async fn get_with_response(
                 &self,
                 id: &#primary_key_type,
@@ -174,14 +175,11 @@ pub(super) fn generate_generated_model_client(
             /// reading e.g. a `Retry-After` on a `429`, or any other
             /// out-of-band signal a server sends on a delete response.
             ///
-            /// **Not** part of the `@version` optimistic-locking round
-            /// trip: unlike [`Self::update_with_response`], the server
-            /// does **not** currently enforce `If-Match` on `DELETE`
-            /// (only on `PATCH`). Sending `If-Match` in `headers` here
-            /// is accepted but has no concurrency-safety effect — the
-            /// delete proceeds regardless of its value. Server-side
-            /// `If-Match` enforcement on `DELETE` is a real gap, tracked
-            /// as a separate follow-up, not implemented by this method.
+            /// Part of the `@version` optimistic-locking round trip
+            /// since cratestack#519: like [`Self::update_with_response`],
+            /// the server requires `If-Match` in `headers` on an
+            /// `@version` model and returns `412` on a stale or missing
+            /// value.
             pub async fn delete_with_response(
                 &self,
                 id: &#primary_key_type,

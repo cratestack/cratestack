@@ -12,6 +12,8 @@
 //! - [`create`]: create-path auth-default + policy evaluation.
 //! - [`unique_violation`]: per-item batch write SQLSTATE 23505
 //!   classification.
+//! - [`version_probe`]: shared `@version` mismatch-vs-policy-denial
+//!   disambiguation for the versioned update/delete paths.
 
 mod conditions;
 mod create;
@@ -24,6 +26,7 @@ mod policy_predicate;
 mod policy_relation;
 mod unique_violation;
 mod values;
+mod version_probe;
 
 pub(crate) use conditions::{ReadPolicyKind, authorize_record_action, push_scoped_conditions};
 /// The create path evaluates predicates in-process rather than pushing
@@ -42,3 +45,4 @@ pub(crate) use values::{
     auth_value_to_sql, find_column_value, push_bind_value, sql_value_matches_literal,
     value_matches_auth_literal,
 };
+pub(crate) use version_probe::probe_current_version;

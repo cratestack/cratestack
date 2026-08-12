@@ -20,6 +20,13 @@ impl<'a, M: 'static, PK: 'static> ScopedDeleteRecord<'a, M, PK> {
         self.request.preview_sql()
     }
 
+    /// Attach an expected version for optimistic locking. See
+    /// [`DeleteRecord::if_match`].
+    pub fn if_match(mut self, expected: i64) -> Self {
+        self.request = self.request.if_match(expected);
+        self
+    }
+
     pub async fn run(self) -> Result<M, CoolError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
