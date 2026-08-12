@@ -26,7 +26,7 @@ model Application {
 #[test]
 fn new_relation_produces_an_add_foreign_key_op() {
     let (prev, next) = tenant_and_application();
-    let ops = diff(&schema(&prev), &schema(&next));
+    let ops = diff(&schema(&prev), &schema(&next)).expect("diff should succeed");
     let fk = ops
         .iter()
         .find_map(|op| match op {
@@ -58,7 +58,7 @@ model Application {
 }
 "#,
     ));
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
     let fk_ops: Vec<_> = ops
         .iter()
         .filter(|op| matches!(op, Op::AddForeignKey(_)))
@@ -104,7 +104,7 @@ model Application {
 }
 "#,
     ));
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
     let dropped = ops
         .iter()
         .find_map(|op| match op {
@@ -127,7 +127,7 @@ model Application {
 fn no_change_produces_no_foreign_key_ops() {
     let (_, next) = tenant_and_application();
     let s = schema(&next);
-    let ops = diff(&s, &s);
+    let ops = diff(&s, &s).expect("diff should succeed");
     assert!(ops.is_empty());
 }
 
@@ -168,7 +168,7 @@ model Application {
     relation_field.attributes[0].raw =
         "@relation(fields: [tenantId], references: [id], futureKey: Whatever)".to_owned();
 
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
     let fk = ops
         .iter()
         .find_map(|op| match op {

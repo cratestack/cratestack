@@ -26,7 +26,7 @@ model Document {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
 
     let extension_pos = migration
         .up
@@ -67,7 +67,7 @@ model Document {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         migration.up.contains("embedding vector(3) NOT NULL"),
         "embedding column should render as vector(3), not TEXT: {}",
@@ -106,7 +106,7 @@ model Document {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         !migration.up.contains("CREATE EXTENSION"),
         "an already-declared extension shouldn't be re-emitted on a later diff: {}",
@@ -137,5 +137,5 @@ model Document {
     // panic, not silently-wrong DDL — mirrors `cratestack-macros`'
     // `compile_error!` gate (#161), just enforced at runtime here
     // since this crate isn't a proc-macro.
-    let _ = emit(&diff(&prev, &next));
+    let _ = emit(&diff(&prev, &next).expect("diff should succeed"));
 }

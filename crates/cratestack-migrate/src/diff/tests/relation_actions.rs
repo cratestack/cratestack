@@ -20,7 +20,7 @@ model Application {
 }
 "#,
     ));
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
     let fk = ops
         .iter()
         .find_map(|op| match op {
@@ -48,7 +48,7 @@ model Application {
 }
 "#,
     ));
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
     let fk = ops
         .iter()
         .find_map(|op| match op {
@@ -88,7 +88,7 @@ model Application {
 }
 "#,
     ));
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
     let dropped = ops
         .iter()
         .find_map(|op| match op {

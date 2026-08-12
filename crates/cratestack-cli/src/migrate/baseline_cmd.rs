@@ -93,7 +93,8 @@ async fn run_baseline(
         .context("failed to introspect the live database")?;
 
     let authored = project(next_schema);
-    let ops = diff_projections(&report.projections, &authored);
+    let ops = diff_projections(&report.projections, &authored)
+        .context("diffing the introspected database against the authored schema")?;
 
     println!("{}", drift_report::render(&ops, &report.unmapped_columns));
 

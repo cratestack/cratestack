@@ -70,7 +70,7 @@ model Category {
 }
 "#,
     ));
-    let migration = emit(&diff_projections(&prev, &project(&next)));
+    let migration = emit(&diff_projections(&prev, &project(&next)).expect("diff should succeed"));
     assert!(!migration.has_lossy, "up was: {}", migration.up);
     assert!(
         migration
@@ -102,7 +102,7 @@ model Category {
 }
 "#,
     ));
-    let migration = emit(&diff_projections(&prev, &project(&next)));
+    let migration = emit(&diff_projections(&prev, &project(&next)).expect("diff should succeed"));
     assert!(migration.has_lossy, "up was: {}", migration.up);
     assert!(
         migration.up.contains("DROP TABLE categorys"),

@@ -73,6 +73,14 @@ fn is_quoted(value: &str) -> bool {
     value.len() >= 2 && value.starts_with('\'') && value.ends_with('\'')
 }
 
+/// True for any `@id`-tagged field, with no cap on how many fields on
+/// the model this returns true for — `cratestack-parser`'s
+/// `validate_models` is what enforces "at most one field-level `@id`"
+/// (issue #536), before a schema with more than one ever reaches this
+/// function. Two `@id`-tagged columns reaching `project_model` would
+/// otherwise silently produce a multi-column `PRIMARY KEY`, bypassing
+/// the same #136 restriction `@@id([...])` is rejected for at macro
+/// expansion.
 fn field_has_id(field: &Field) -> bool {
     field
         .attributes

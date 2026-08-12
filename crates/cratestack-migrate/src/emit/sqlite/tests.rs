@@ -33,7 +33,7 @@ model Account {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(migration.up.contains("CREATE TABLE accounts"));
     // Every scalar maps to BLOB per the rusqlite affinity contract.
     assert!(migration.up.contains("id BLOB NOT NULL"));
@@ -63,7 +63,7 @@ model AccountMembership {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(migration.up.contains("CREATE TABLE account_memberships"));
     assert!(
         migration.up.contains("PRIMARY KEY (account_id, subject)"),
@@ -92,7 +92,7 @@ model Account {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         migration
             .up
@@ -122,7 +122,7 @@ model Account {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(migration.has_lossy);
     assert!(migration.down.contains("RAISE(FAIL"));
     assert!(migration.down.contains("DropColumn accounts.legacy"));
@@ -139,7 +139,7 @@ model User {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         migration
             .up
@@ -160,7 +160,7 @@ model Order {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         migration
             .up
@@ -178,7 +178,7 @@ model Article {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         !migration.up.contains("DEFAULT dbgenerated()"),
         "emitted DDL must never contain the literal invalid `DEFAULT dbgenerated()` call: {}",
@@ -222,7 +222,7 @@ model Order {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     // Variant added on the .cstack side; SQLite emits nothing
     // and the migration is not flagged destructive.
     assert!(!migration.has_lossy);
@@ -245,7 +245,7 @@ model Order {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     // No CREATE TYPE — SQLite has none.
     assert!(!migration.up.contains("CREATE TYPE"));
     // Column still lands as BLOB.
@@ -261,7 +261,7 @@ model Account {
 }
 "#,
     ));
-    let migration = emit(&diff(&s, &s));
+    let migration = emit(&diff(&s, &s).expect("diff should succeed"));
     assert_eq!(migration.up.trim(), "");
     assert_eq!(migration.down.trim(), "");
 }
@@ -289,7 +289,7 @@ model Application {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(!migration.has_lossy);
     assert!(
         migration.up.contains(
@@ -335,7 +335,7 @@ model Application {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(!migration.has_lossy);
     assert!(
         migration
@@ -362,7 +362,7 @@ model Application {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         migration.up.contains(
             "-- SQLite: ADD CONSTRAINT applications_tenant_id_fkey FOREIGN KEY (tenant_id) \
@@ -394,7 +394,7 @@ model Item {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         migration
             .up

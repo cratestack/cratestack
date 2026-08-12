@@ -53,6 +53,43 @@ model User {
     assert!(error.to_string().contains("missing an @id field"));
 }
 
+/// cratestack#536: two field-level `@id` attributes on one model is a
+/// multi-column primary key by another spelling — `@@id([a, b])` is
+/// hard-rejected at macro expansion citing #136
+/// (`reject_composite_primary_keys`), but nothing stopped this
+/// equivalent form from reaching `cratestack-migrate`, which marks
+/// every `@id`-tagged column `primary_key = true` and happily emits a
+/// real multi-column `PRIMARY KEY`. The front door was locked, the
+/// back door was open — this closes it at parse time so both
+/// spellings are rejected identically.
+///
+/// (Decisive-test history: before this fix landed, this same
+/// assertion was `parse_schema(...).expect("schema currently parses
+/// and validates cleanly — this is the bug")`, and it passed —
+/// proving the gap existed before it was closed.)
+#[test]
+fn rejects_two_field_level_id_attributes() {
+    let error = parse_schema(
+        r#"
+model Thing {
+  a String @id
+  b String @id
+}
+"#,
+    )
+    .expect_err("schema should fail validation");
+
+    let message = error.to_string();
+    assert!(
+        message.contains("more than one field-level `@id`"),
+        "unexpected message: {message}"
+    );
+    assert!(
+        message.contains("cratestack/cratestack/issues/136"),
+        "expected the error to point at the same #136 reasoning as `@@id([...])`'s rejection: {message}"
+    );
+}
+
 /// cratestack#327: `datasource { provider = "none" }` is a third accepted
 /// provider value, for no-database procedures-only schemas.
 #[test]
