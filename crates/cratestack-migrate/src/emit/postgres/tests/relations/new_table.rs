@@ -25,7 +25,7 @@ model Application {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(!migration.has_lossy);
     assert!(!migration.has_blocking);
     assert!(
@@ -76,7 +76,7 @@ model Application {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert_eq!(
         migration.up.matches("FOREIGN KEY").count(),
         1,
@@ -102,7 +102,7 @@ model Application {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     let create_tenants = migration.up.find("CREATE TABLE tenants").unwrap();
     let create_applications = migration.up.find("CREATE TABLE applications").unwrap();
     let add_constraint = migration

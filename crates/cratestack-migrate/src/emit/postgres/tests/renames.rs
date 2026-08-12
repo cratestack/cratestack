@@ -22,7 +22,7 @@ model NewName {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(!migration.has_lossy, "up was: {}", migration.up);
     assert!(
         migration
@@ -61,7 +61,7 @@ model Customer {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(!migration.has_lossy);
     assert!(
         migration
@@ -95,7 +95,7 @@ model Customer {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         migration
             .up

@@ -24,7 +24,7 @@ model Application {
 fn composite_unique_emits_create_unique_index() {
     let prev = schema(&with_models(""));
     let next = schema(&with_models(APPLICATIONS));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         migration.up.contains(
             "CREATE UNIQUE INDEX applications_tenant_id_name_environment_key \
@@ -39,7 +39,7 @@ fn composite_unique_emits_create_unique_index() {
 fn composite_unique_index_is_reversed_in_down() {
     let prev = schema(&with_models(""));
     let next = schema(&with_models(APPLICATIONS));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(!migration.has_lossy, "up was: {}", migration.up);
     assert!(
         migration
@@ -72,7 +72,7 @@ model Application {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         !migration.up.contains("CREATE TABLE"),
         "up: {}",
@@ -100,7 +100,7 @@ model Application {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         migration
             .up
@@ -124,7 +124,7 @@ model Membership {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         migration.up.contains(
             "CREATE UNIQUE INDEX memberships_user_group_key \

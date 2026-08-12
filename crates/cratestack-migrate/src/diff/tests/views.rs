@@ -40,7 +40,7 @@ view ActiveCustomer from Customer {
 fn create_view_emits_create_view_op() {
     let prev = schema_without_views();
     let next = schema_with_view(ACTIVE_CUSTOMER_VIEW);
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
 
     let create_view = ops
         .iter()
@@ -58,7 +58,7 @@ fn create_view_emits_create_view_op() {
 fn drop_view_emits_drop_view_op() {
     let prev = schema_with_view(ACTIVE_CUSTOMER_VIEW);
     let next = schema_without_views();
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
 
     assert!(ops.iter().any(|op| matches!(op, Op::DropView(_))));
 }
@@ -71,7 +71,7 @@ fn create_view_lands_after_create_table() {
     // order Postgres rejects.
     let prev = schema(&with_models(""));
     let next = schema_with_view(ACTIVE_CUSTOMER_VIEW);
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
 
     let create_table_idx = ops
         .iter()
@@ -104,7 +104,7 @@ model Customer {
 }
 "#,
     ));
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
 
     let drop_view_idx = ops
         .iter()
@@ -131,7 +131,7 @@ fn body_change_emits_drop_then_create_in_order() {
     // bucket.
     let prev = schema_with_view(ACTIVE_CUSTOMER_VIEW);
     let next = schema_with_view(ACTIVE_CUSTOMER_VIEW_NEW_BODY);
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
 
     let drop_idx = ops
         .iter()
@@ -180,7 +180,7 @@ datasource db {
     .to_owned();
     let prev = schema(&prev_with_sqlite_datasource);
     let next = schema(&format!("{prev_with_sqlite_datasource}{sqlite_models}"));
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
 
     // No view ops at all — the materialized view was filtered out
     // because the datasource is SQLite.
@@ -203,7 +203,7 @@ fn drop_view_lands_before_drop_table() {
     // drop a table that has a dependent view.
     let prev = schema_with_view(ACTIVE_CUSTOMER_VIEW);
     let next = schema(&with_models(""));
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
 
     let drop_view_idx = ops
         .iter()

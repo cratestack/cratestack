@@ -57,7 +57,7 @@ async fn composite_unique_reaches_postgres_and_serves_on_conflict() {
 
     let empty = parse_schema("").expect("empty schema should parse");
     let next = parse_schema(SCHEMA).expect("probe schema should parse");
-    let migration = postgres::emit(&diff(&empty, &next));
+    let migration = postgres::emit(&diff(&empty, &next).expect("diff should succeed"));
 
     assert!(
         migration.up.contains(

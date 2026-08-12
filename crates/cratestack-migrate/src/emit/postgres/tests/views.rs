@@ -43,7 +43,7 @@ view CustomerSnapshot from Customer {
 fn emits_create_view() {
     let prev = schema(&with_models(SCHEMA_WITHOUT_VIEW));
     let next = schema(&with_models(SCHEMA_WITH_VIEW));
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
     let migration = emit(&ops);
     let up = &migration.up;
 
@@ -60,7 +60,7 @@ fn emits_create_view() {
 fn emits_create_materialized_view_with_unique_index() {
     let prev = schema(&with_models(SCHEMA_WITHOUT_VIEW));
     let next = schema(&with_models(SCHEMA_WITH_MATERIALIZED_VIEW));
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
     let up = emit(&ops).up;
 
     assert!(up.contains("CREATE MATERIALIZED VIEW customer_snapshots AS"));
@@ -77,7 +77,7 @@ fn emits_create_or_replace_view_on_body_change() {
         "SELECT id, email FROM customers WHERE email IS NOT NULL",
     );
     let next = schema(&with_models(&next_sql));
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
     let up = emit(&ops).up;
 
     // Body changes are modelled as Drop + Create rather than

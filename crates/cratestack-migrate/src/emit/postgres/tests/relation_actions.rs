@@ -32,7 +32,7 @@ fn on_delete_and_on_update_both_render() {
     let next = schema(&tenant_and_application(
         ", onDelete: Cascade, onUpdate: Restrict",
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         migration.up.contains(
             "ALTER TABLE applications ADD CONSTRAINT applications_tenant_id_fkey \
@@ -47,7 +47,7 @@ fn on_delete_and_on_update_both_render() {
 fn only_on_delete_set_omits_on_update_clause() {
     let prev = schema(&with_models(""));
     let next = schema(&tenant_and_application(", onDelete: Cascade"));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         migration
             .up
@@ -64,7 +64,7 @@ fn no_action_declared_emits_no_clause_at_all() {
     // must emit byte-identical DDL to before this feature existed.
     let prev = schema(&with_models(""));
     let next = schema(&tenant_and_application(""));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         migration.up.contains(
             "ALTER TABLE applications ADD CONSTRAINT applications_tenant_id_fkey \
@@ -83,7 +83,7 @@ fn explicit_no_action_also_emits_no_clause() {
     let next = schema(&tenant_and_application(
         ", onDelete: NoAction, onUpdate: NoAction",
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(!migration.up.contains("ON DELETE"));
     assert!(!migration.up.contains("ON UPDATE"));
 }
@@ -95,7 +95,7 @@ fn set_null_and_set_default_render_as_two_word_keywords() {
         ", onDelete: SetNull",
         true,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         migration.up.contains("ON DELETE SET NULL"),
         "up was: {}",
@@ -107,7 +107,7 @@ fn set_null_and_set_default_render_as_two_word_keywords() {
 fn down_migration_preserves_the_actions_on_reversal() {
     let prev = schema(&with_models(""));
     let next = schema(&tenant_and_application(", onDelete: Cascade"));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(!migration.has_lossy);
     assert!(
         migration
@@ -122,7 +122,7 @@ fn down_migration_preserves_the_actions_on_reversal() {
 fn removing_the_action_alone_drops_and_re_adds_the_constraint() {
     let prev = schema(&tenant_and_application(", onDelete: Cascade"));
     let next = schema(&tenant_and_application(""));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         migration
             .up

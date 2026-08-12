@@ -13,7 +13,7 @@ model Member {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         migration.has_blocking,
         "AddCheck is conservatively Blocking"
@@ -39,7 +39,7 @@ model Member {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         migration.up.contains("CHECK (currency ~ '^[A-Z]{3}$')"),
         "up was: {}",
@@ -58,7 +58,7 @@ model Member {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         migration
             .up
@@ -86,7 +86,7 @@ model Member {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(!migration.has_blocking);
     assert!(!migration.has_lossy);
     assert!(
