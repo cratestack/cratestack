@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### `AuthProvider::authenticate` can now read the request's `http::Extensions` — breaking (#550)
+
+`RequestContext` gained a new `pub extensions: &'a http::Extensions` field, populated on every
+transport (REST, RPC unary/`/rpc/batch`/`/rpc/subscribe`, and gRPC) from the real inbound request, so
+an `AuthProvider` implementation can observe whatever a preceding tower/axum layer inserted into
+extensions before authentication ran — `ConnectInfo<SocketAddr>`, an mTLS peer identity, a tenant
+already resolved upstream, a trace/session handle, and so on. Before this change the only way to pass
+such data into `authenticate()` was to smuggle it back through a header, which is exactly the spoofable
+channel the trusted-proxy work (#415/#416/#526) exists to constrain; extensions are populated
+in-process by layers the deployer chose to install, so they are a legitimate trust source distinct from
+headers/body, which remain wire-controlled and attacker-influenced. The plumbing reuses
+`ClientIpContext` (already threaded through every generated dispatch fn for `ConnectInfo`/
+`TrustedProxyConfig`) rather than adding a brand-new parameter, so all three transports pick up the new
+field through the same seam gRPC's `into_router()` already used to read `ConnectInfo`/
+`TrustedProxyConfig` off `http::Request::extensions()` directly.
+
+**Breaking:** `RequestContext` is a public struct with public fields; any code that constructs one
+directly (as opposed to only reading `&RequestContext<'_>` inside an `AuthProvider` impl, which needs
+no changes) must add the new `extensions` field. The blanket `impl<F, E> AuthProvider for F where F:
+Fn(&HeaderMap) -> Result<CoolContext, E>` is unaffected and needs no migration.
+
 ### `IdempotencyLayer`/`RateLimitLayer` refuse requests they cannot fingerprint, instead of pooling them into a shared `"anonymous"` namespace — breaking (#416)
 
 The default `IdempotencyLayer`/`RateLimitLayer` fingerprint hashes the `Authorization` header when

@@ -7,10 +7,20 @@ use axum::http::request::Parts;
 use crate::trusted_proxy::TrustedProxyConfig;
 
 /// The trusted-proxy configuration (if an `Extension<TrustedProxyConfig>`
-/// was applied to the router) and the verified socket peer (if the router
-/// is served via `into_make_service_with_connect_info`), bundled into a
-/// single axum extractor so every generated dispatch fn threads one new
-/// parameter instead of two (#415).
+/// was applied to the router), the verified socket peer (if the router
+/// is served via `into_make_service_with_connect_info`), and a clone of
+/// the request's full `http::Extensions` map, bundled into a single axum
+/// extractor so every generated dispatch fn threads one new parameter
+/// instead of several (#415).
+///
+/// The `extensions` field (added for the `AuthProvider::authenticate`
+/// extensions plumbing, request_context — see `cratestack_core::
+/// RequestContext::extensions`'s doc) is threaded through exactly this
+/// struct rather than as a brand-new parameter: `ClientIpContext` is
+/// already the one extractor every REST/RPC/gRPC dispatch fn in the
+/// generated code accepts, so reusing it means every transport picks the
+/// new field up for free instead of needing its own separate threading
+/// (and its own separate chance to be forgotten).
 ///
 /// A hand-written `FromRequestParts` impl rather than `Option<Extension<T>>`/
 /// `Option<ConnectInfo<T>>` extractor parameters: axum 0.8 only extends its
@@ -24,6 +34,7 @@ use crate::trusted_proxy::TrustedProxyConfig;
 pub struct ClientIpContext {
     pub trusted_proxy: Option<TrustedProxyConfig>,
     pub peer: Option<SocketAddr>,
+    pub extensions: http::Extensions,
 }
 
 impl ClientIpContext {
@@ -38,6 +49,7 @@ impl ClientIpContext {
             peer: extensions
                 .get::<ConnectInfo<SocketAddr>>()
                 .map(|ConnectInfo(addr)| *addr),
+            extensions: extensions.clone(),
         }
     }
 }

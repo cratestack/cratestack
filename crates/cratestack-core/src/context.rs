@@ -53,6 +53,23 @@ pub struct CoolContext {
     system: bool,
 }
 
+/// Everything an [`AuthProvider`] gets to see about an inbound request.
+///
+/// `extensions` is the request's `http::Extensions` typemap as populated
+/// by whatever tower/axum layers ran before authentication —
+/// `ConnectInfo`, an mTLS peer identity, a tenant resolved upstream, a
+/// trace/session handle, etc. Before this field existed, the only way to
+/// pass such data to an `AuthProvider` was to smuggle it back through a
+/// header — exactly the spoofable channel the trusted-proxy work
+/// (#415/#416/#526) constrains. `extensions` is a legitimate trust
+/// source distinct from `headers`/`body`: those are wire-controlled and
+/// attacker-influenced, while extensions are populated in-process by
+/// layers the deployer chose to install, so an `AuthProvider` can trust
+/// a value found here in a way it must NOT trust the equivalent claimed
+/// via a header.
+///
+/// A shared reference is `Copy`, so adding this field does not affect the
+/// `Copy` derive below.
 #[derive(Debug, Clone, Copy)]
 pub struct RequestContext<'a> {
     pub method: &'a str,
@@ -60,6 +77,7 @@ pub struct RequestContext<'a> {
     pub query: Option<&'a str>,
     pub headers: &'a http::HeaderMap,
     pub body: &'a [u8],
+    pub extensions: &'a http::Extensions,
 }
 
 pub trait AuthProvider: Clone + Send + Sync + 'static {
