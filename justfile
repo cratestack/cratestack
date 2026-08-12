@@ -752,9 +752,19 @@ bump NEW:
 	# breaks any `--locked` build/`cargo tree` in either directory — this is
 	# exactly the staleness that left them at 0.6.3/0.6.4 against 0.7.8
 	# (cratestack#422), and what CI's `facade-disjointness` job now asserts
-	# against with `cargo metadata --locked` for all three. Every standalone
-	# workspace under examples/ must be listed here; adding one without a
-	# line below is a latent CI break that only fires on the next bump.
+	# against with `cargo metadata --locked`.
+	#
+	# DISCOVERED, NOT LISTED. This used to be three hardcoded `cd` lines
+	# with a comment warning that "every standalone workspace under
+	# examples/ must be listed here; adding one without a line below is a
+	# latent CI break that only fires on the next bump". That is precisely
+	# what happened: `examples/db-transaction-verification` arrived with
+	# cratestack#539, was never added to the list, and v0.7.13 shipped with
+	# its Cargo.lock still pinned to 0.7.12 — turning `main` red on the
+	# `facade-disjointness` job ("cannot update the lock file ... because
+	# --locked was passed") and blocking the next release. A warning
+	# comment is not a mechanism; globbing for `[workspace]` is.
+	#
 	# Subshells (not a bare `cd`) so each step's directory change doesn't
 	# leak into the next, same as the cratestack-studio-ui step above —
 	# every directory-changing step in this recipe must be a subshell, since
@@ -764,9 +774,22 @@ bump NEW:
 	# graph regardless of which features are active, so this also picks up
 	# the `postgres`-gated cratestack-sqlx entry in no-database-verification
 	# without needing `--features postgres` here.
-	(cd examples/no-database-verification && cargo check --quiet)
-	(cd examples/no-database-verification-api && cargo check --quiet)
-	(cd examples/client-only-verification && cargo check --quiet)
+	found_standalone=0
+	for manifest in examples/*/Cargo.toml; do
+	  grep -q '^\[workspace\]' "$manifest" || continue
+	  dir=$(dirname "$manifest")
+	  found_standalone=$((found_standalone + 1))
+	  echo "refreshing standalone workspace lockfile: $dir"
+	  (cd "$dir" && cargo check --quiet)
+	done
+	# Positive assertion: if the glob ever matches nothing (layout change,
+	# a `for` loop that silently iterated over a literal `examples/*`),
+	# fail loudly rather than bumping with every standalone lockfile left
+	# stale — the silent-skip failure mode this block exists to prevent.
+	if [ "$found_standalone" -eq 0 ]; then
+	  echo "no standalone [workspace] found under examples/ — the discovery glob is broken" >&2
+	  exit 1
+	fi
 	echo "bumped to {{NEW}}. Review with: git diff -- '**/Cargo.toml' Cargo.lock"
 
 # Seed a CHANGELOG.md section for the given VERSION.
