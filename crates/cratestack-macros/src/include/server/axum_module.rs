@@ -95,6 +95,7 @@ pub(super) fn build_axum_module(c: &ServerCollected, db: ServerDb) -> proc_macro
                 query: Option<&'a str>,
                 headers: &'a HeaderMap,
                 body: &'a [u8],
+                extensions: &'a ::cratestack::axum::http::Extensions,
             ) -> ::cratestack::RequestContext<'a> {
                 ::cratestack::RequestContext {
                     method,
@@ -102,6 +103,7 @@ pub(super) fn build_axum_module(c: &ServerCollected, db: ServerDb) -> proc_macro
                     query,
                     headers,
                     body,
+                    extensions,
                 }
             }
 
