@@ -32,6 +32,38 @@ section instead of converting it — so prose written by the three PRs that had 
 itself held only the placeholder seed. The script now converts an existing `## Unreleased` section
 into the new dated heading in place, carrying its prose forward untouched, and falls back to the
 seed only when there is genuinely nothing to carry (the section absent, or present but empty).
+### `AuthProvider::authenticate` can now read the request's `http::Extensions` — breaking (#550)
+
+`RequestContext` gained a new `pub extensions: &'a http::Extensions` field, populated on every
+transport (REST, RPC unary/`/rpc/batch`/`/rpc/subscribe`, and gRPC) from the real inbound request, so
+an `AuthProvider` implementation can observe whatever a preceding tower/axum layer inserted into
+extensions before authentication ran — `ConnectInfo<SocketAddr>`, an mTLS peer identity, a tenant
+already resolved upstream, a trace/session handle, and so on. Before this change the only way to pass
+such data into `authenticate()` was to smuggle it back through a header, which is exactly the spoofable
+channel the trusted-proxy work (#415/#416/#526) exists to constrain; extensions are populated
+in-process by layers the deployer chose to install, so they are a legitimate trust source distinct from
+headers/body, which remain wire-controlled and attacker-influenced. The plumbing reuses
+`ClientIpContext` (already threaded through every generated dispatch fn for `ConnectInfo`/
+`TrustedProxyConfig`) rather than adding a brand-new parameter, so all three transports pick up the new
+field through the same seam gRPC's `into_router()` already used to read `ConnectInfo`/
+`TrustedProxyConfig` off `http::Request::extensions()` directly.
+
+**Breaking:** `RequestContext` is a public struct with public fields; any code that constructs one
+directly (as opposed to only reading `&RequestContext<'_>` inside an `AuthProvider` impl, which needs
+no changes) must add the new `extensions` field. The blanket `impl<F, E> AuthProvider for F where F:
+Fn(&HeaderMap) -> Result<CoolContext, E>` is unaffected and needs no migration.
+
+**Performance.** `ClientIpContext::from_extensions` now clones the request's full `http::Extensions`
+map on every request, unconditionally, on every transport — measured (`cratestack-axum`'s
+`tests_extensions_clone_cost.rs`) at roughly 30-150ns per request against a realistic served-router
+extensions map, the same order of magnitude as (and never meaningfully above) the `HeaderMap` clone
+every generated dispatch fn already pays unconditionally today; both are noise next to a real
+request's network/DB round trip. This can't be avoided by borrowing instead of cloning: axum-core's
+`FromRequestParts::from_request_parts` returns an owned value with no lifetime tied to its `&mut
+Parts` argument, and by the time a generated dispatch fn runs, the original `Parts` no longer exists
+as a distinct value to borrow from — see `ClientIpContext`'s doc comment for the full reasoning.
+Consumers who insert a large non-`Arc`-backed value into `http::Extensions` now pay that clone's real
+cost on every request, not just when it's read; wrap such values in `Arc` before inserting.
 ### `run_in_tx` callers can now opt into `AuditSink` fan-out — breaking (#534)
 
 #473/#517 made `AuditSink` a real installable seam for every `run()` write path, but explicitly
