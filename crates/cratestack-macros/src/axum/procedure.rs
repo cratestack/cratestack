@@ -139,7 +139,12 @@ pub(crate) fn generate_procedure_axum_handler(
             let auth_db = db.clone();
             let call_args = args.clone();
             let call_ctx = ctx.clone();
-            let result = super::procedures::#module_ident::invoke_with_db(&auth_db, &args, &ctx, || async move {
+            // cratestack#512: `invoke_with_db` hands the closure an
+            // `Authorized` witness only it could construct (via the
+            // `authorize_with_db` call inside it) — `#invoke_call` threads
+            // that witness into the `ProcedureRegistry` method call, which
+            // is the only place a value of that type is allowed to end up.
+            let result = super::procedures::#module_ident::invoke_with_db(&auth_db, &args, &ctx, |authorized| async move {
                 #invoke_call
             })
             .await;

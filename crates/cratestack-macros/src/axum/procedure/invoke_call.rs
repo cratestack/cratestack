@@ -52,10 +52,14 @@ use crate::shared::is_stream_procedure;
 
 /// Token stream for the call inside `invoke_with_db`'s closure that
 /// actually invokes the registry method: `registry.<method>(&db, &ctx,
-/// args)`, either `.await`ed directly (ordinary procedures) or wrapped
-/// in a self-owning generator stream (`@stream` procedures — see the
-/// module doc for why a direct `Ok(registry.#method_ident(..))` isn't
-/// sound here).
+/// args, authorized)`, either `.await`ed directly (ordinary procedures)
+/// or wrapped in a self-owning generator stream (`@stream` procedures —
+/// see the module doc for why a direct `Ok(registry.#method_ident(..))`
+/// isn't sound here). `authorized` is the closure parameter
+/// `invoke_with_db` (cratestack#512) hands in — the `Authorized` witness
+/// that only its own `authorize_with_db` call could have constructed, and
+/// the sole reason this call site (unlike any code outside the closure)
+/// is allowed to make it at all.
 pub(super) fn procedure_invoke_call_tokens(
     procedure: &Procedure,
     method_ident: &syn::Ident,
@@ -64,7 +68,7 @@ pub(super) fn procedure_invoke_call_tokens(
         quote! {
             Ok(::cratestack::async_stream::stream! {
                 let mut __cratestack_stream_source =
-                    ::std::boxed::Box::pin(registry.#method_ident(&db, &call_ctx, call_args));
+                    ::std::boxed::Box::pin(registry.#method_ident(&db, &call_ctx, call_args, authorized));
                 while let Some(__cratestack_stream_item) =
                     ::cratestack::futures::StreamExt::next(&mut __cratestack_stream_source).await
                 {
@@ -74,7 +78,7 @@ pub(super) fn procedure_invoke_call_tokens(
         }
     } else {
         quote! {
-            registry.#method_ident(&db, &call_ctx, call_args).await
+            registry.#method_ident(&db, &call_ctx, call_args, authorized).await
         }
     }
 }

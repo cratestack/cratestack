@@ -111,3 +111,25 @@ syn.workspace = true
 # this crate rather than added to `[workspace.dependencies]` since it's the
 # first consumer.
 trybuild = "1"
+# cratestack#512: the `ProcedureRegistry` witness compile-fail fixture
+# (`tests/ui_procedure_registry_witness.rs`) needs a *fully expanding*
+# `include_server_schema!` — the generated `ProcedureRegistry` trait and
+# its impl reference `::cratestack::*` runtime paths (`CoolContext`,
+# `CoolError`, `Cratestack`, ...) that this crate's own `[dependencies]`
+# deliberately never provide (`cratestack-macros` only emits code; it
+# doesn't need the runtime types to do that — see every other fixture in
+# `tests/ui.rs`/`tests/ui_semantic.rs`, none of which reach real codegen
+# for exactly this reason). `cratestack-api` is the right facade here: no
+# Postgres, no extra system packages, matches the `db = None` schema the
+# fixture declares. This is a dev-dependency cycle back through
+# `cratestack-macros` (`cratestack-api` depends on it normally) — Cargo
+# explicitly supports that, since dev-dependencies are excluded from a
+# crate's own library build and only apply to test/example/bench targets.
+cratestack = { package = "cratestack-api", path = "../cratestack-api" }
+# The generated `#[derive(serde::Serialize, serde::Deserialize)]` structs
+# land directly in the fixture crate (not in `cratestack-api`), so — same
+# as every real consumer crate (see `cratestack-api/Cargo.toml`'s own
+# direct `serde` dependency, and every example that also depends on the
+# facade) — `serde` needs to be a *direct* dependency here too, not just
+# reachable transitively through `cratestack`.
+serde.workspace = true

@@ -1,0 +1,23 @@
+// Fixture for cratestack#512's compile-fail proof
+// (tests/ui_procedure_registry_witness.rs): smallest possible `db = None`
+// schema with one `@allow`-guarded procedure, so the generated
+// `ProcedureRegistry` trait method carries the `Authorized` witness
+// parameter this fixture's `main()` deliberately omits. Mirrors
+// `crates/cratestack-api/tests/fixtures/no_database_procedures.cstack`
+// (cratestack#347) — same shape, reused here because it's already the
+// established minimal `db = None` + `@allow` fixture.
+
+datasource db {
+  provider = "none"
+}
+
+type PingArgs {
+  message String
+}
+
+type PingReply {
+  echo String
+}
+
+procedure ping(args: PingArgs): PingReply
+  @allow(auth() != null)

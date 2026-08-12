@@ -1,0 +1,16 @@
+error[E0061]: this method takes 4 arguments but 3 arguments were supplied
+  --> tests/ui/generated/procedure_registry_witness_missing_arg.rs
+   |
+   |     let _ = registry.ping(&db, &ctx, args);
+   |                      ^^^^----------------- argument #4 of type `Authorized` is missing
+   |
+note: method defined here
+  --> tests/ui/generated/procedure_registry_witness_missing_arg.rs
+   |
+   | cratestack::include_server_schema!("/tmp/cratestack-macros-ui-witness-512/procedure_registry_witness.cstack", db = None);
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: this error originates in the macro `cratestack::include_server_schema` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: provide the argument
+   |
+39 |     let _ = registry.ping(&db, &ctx, args, /* Authorized */);
+   |                                          ++++++++++++++++++
