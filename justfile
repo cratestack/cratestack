@@ -152,8 +152,17 @@ test-pg-tc *args='':
 # Shard: the Postgres-backed crate via testcontainers.
 # (cratestack-redis no longer rides along here: it has its own blocking
 # `tests-redis` job backed by the `test-ci-redis` recipe below.)
+# `--features grpc` (cratestack#524 gap-closing test): without it, every
+# `#![cfg(feature = "grpc")]`-gated integration test file (`transport_grpc.rs`,
+# `grpc_auth_provider_extensions.rs`, `trusted_proxy_client_ip_grpc.rs`,
+# `transport_grpc_crud_dispatch.rs`) still compiles — cargo builds every
+# file under `tests/` regardless of an inner `#![cfg(...)]` — but as an
+# EMPTY 0-test binary, so this whole gRPC test surface was silently never
+# exercised by `tests-db` before this line existed. Confirmed via
+# `cargo test -p cratestack-pg --test transport_grpc -- --list` printing
+# `0 tests` without this flag vs. 5 with it.
 test-ci-db *args='':
-	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg {{args}}
+	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --features grpc {{args}}
 
 # Shard addendum: the `decimal-bigdecimal` backend's own live-Postgres
 # round-trip test (cratestack#421 AC3, cratestack#495/#496). This file is

@@ -1,0 +1,61 @@
+version = 1
+package = "gadgets_api"
+
+[messages.CreateGadgetInput]
+id = 1
+name = 2
+reserved = []
+
+[messages.Gadget]
+id = 1
+name = 2
+reserved = []
+
+[messages.GadgetRpcListInput]
+fields = 3
+filters = 9
+include = 4
+include_fields = 5
+limit = 1
+offset = 2
+or = 8
+sort = 6
+where_expr = 7
+reserved = []
+
+[messages.GadgetRpcPkInput]
+id = 1
+reserved = []
+
+[messages.GadgetRpcUpdateInput]
+id = 1
+patch = 2
+reserved = []
+
+[messages.PageInfo]
+has_next_page = 3
+has_previous_page = 4
+limit = 1
+offset = 2
+reserved = []
+
+[messages.PageOfGadget]
+items = 1
+page_info = 3
+total_count = 2
+reserved = []
+
+[messages.RpcListPredicate]
+key = 1
+value = 2
+reserved = []
+
+[messages.StringList]
+values = 1
+reserved = []
+
+[messages.UpdateGadgetInput]
+name = 1
+reserved = []
+
+[enums]
