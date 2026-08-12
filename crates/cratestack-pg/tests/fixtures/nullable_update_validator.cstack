@@ -1,0 +1,27 @@
+// cratestack#537 regression fixture, server-schema counterpart of
+// `cratestack-sqlite/tests/fixtures/nullable_update_validator.cstack`.
+// See that file's comment for the full mechanism; this fixture exists to
+// prove the fix in `cratestack-macros/src/validators/emit.rs` also covers
+// `include_server_schema!` (`model/inputs.rs::generate_update_input_struct`
+// is the exact same function called by both entry macros — see
+// `include/server/collect/models.rs` and `include/embedded.rs`).
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Note {
+  id Int @id
+  body String? @length(min: 1, max: 64)
+  priority Int? @range(min: 1, max: 5)
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}

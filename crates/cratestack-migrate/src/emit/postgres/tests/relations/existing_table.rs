@@ -31,7 +31,7 @@ model Application {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         migration
             .up
@@ -82,7 +82,7 @@ model Application {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(!migration.has_lossy);
     assert!(
         migration
@@ -121,7 +121,7 @@ model Zeta {
 "#,
     ));
     let next = schema(&with_models(""));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(migration.has_lossy);
     let drop_zeta = migration.up.find("DROP TABLE zetas").unwrap();
     let drop_application = migration.up.find("DROP TABLE applications").unwrap();
@@ -160,7 +160,7 @@ model Application {
 }
 "#,
     ));
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
     let fk_op = ops
         .iter()
         .find(|op| matches!(op, crate::ir::Op::AddForeignKey(_)))

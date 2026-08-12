@@ -44,7 +44,8 @@ pub(crate) fn handle_diff(
         let prev_snapshot = read_or_empty(&snapshot_path)
             .with_context(|| format!("reading snapshot at {}", snapshot_path.display()))?;
 
-        let ops = diff_projections(&prev_snapshot.projections, &next_projections);
+        let ops = diff_projections(&prev_snapshot.projections, &next_projections)
+            .with_context(|| format!("diffing [{}]", backend.slug()))?;
         if ops.is_empty() {
             println!("migrate diff [{}]: no changes", backend.slug());
             continue;

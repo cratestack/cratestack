@@ -22,7 +22,7 @@ model Application {
 }
 "#,
     ));
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
     // CreateTable + AddIndex
     assert_eq!(ops.len(), 2, "ops: {ops:?}");
     match &ops[1] {
@@ -58,7 +58,7 @@ model Application {
 }
 "#,
     ));
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
     let names: Vec<&str> = ops
         .iter()
         .filter_map(|op| match op {
@@ -88,7 +88,7 @@ model Application {
 }
 "#,
     ));
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
     let names: Vec<&str> = ops
         .iter()
         .filter_map(|op| match op {
@@ -127,7 +127,7 @@ model Application {
 }
 "#,
     ));
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
     assert_eq!(ops.len(), 1, "ops: {ops:?}");
     assert!(matches!(&ops[0], Op::DropIndex(drop)
         if drop.name == "applications_tenant_id_name_key" && drop.table == "applications"));
@@ -160,7 +160,7 @@ model Application {
 }
 "#,
     ));
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
     assert_eq!(ops.len(), 2, "ops: {ops:?}");
     assert!(matches!(&ops[0], Op::DropIndex(drop)
         if drop.name == "applications_tenant_id_name_key"));
@@ -183,5 +183,5 @@ model Application {
 "#,
     );
     let s = schema(&source);
-    assert!(diff(&s, &s).is_empty());
+    assert!(diff(&s, &s).expect("diff should succeed").is_empty());
 }

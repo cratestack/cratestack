@@ -102,8 +102,8 @@ async fn enum_columns_round_trip_through_the_generated_decoder() {
     let v1 = parse_schema(SCHEMA_V1).expect("v1 schema should parse");
     let v2 = parse_schema_file(FIXTURE).expect("fixture schema should parse");
 
-    let initial = postgres::emit(&diff(&empty, &v1));
-    let add_variant = postgres::emit(&diff(&v1, &v2));
+    let initial = postgres::emit(&diff(&empty, &v1).expect("diff should succeed"));
+    let add_variant = postgres::emit(&diff(&v1, &v2).expect("diff should succeed"));
 
     // ---- #228: TEXT storage, not a native enum type ----------------
     assert!(
@@ -231,7 +231,7 @@ async fn membership_check_rejects_values_outside_the_variant_set() {
 
     let empty = parse_schema("").expect("empty schema should parse");
     let v2 = parse_schema_file(FIXTURE).expect("fixture schema should parse");
-    let migration = postgres::emit(&diff(&empty, &v2));
+    let migration = postgres::emit(&diff(&empty, &v2).expect("diff should succeed"));
 
     apply_pending(
         pool,

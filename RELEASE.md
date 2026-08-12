@@ -17,25 +17,36 @@ credentials. Run the **"Prepare Release"** GitHub Actions workflow
   entirely inside the CI job. No git writes at all (no commit, branch, PR,
   or tag) — safe to run repeatedly against any version to rehearse.
 * `mode: real` — bumps versions, commits, and pushes a `release/vX.Y.Z`
-  branch, then tries to open a normal PR
-  (`chore: bump workspace to vX.Y.Z`) against `main`, with the merged PRs
-  since the last release listed as the source-of-truth. **Review and merge
-  that PR like any other change** — this is the one human checkpoint in an
-  otherwise fully automated pipeline.
+  branch, then opens a normal PR (`chore: bump workspace to vX.Y.Z`)
+  against `main`, with the merged PRs since the last release listed as the
+  source-of-truth. **Review and merge that PR like any other change** — this
+  is the one human checkpoint in an otherwise fully automated pipeline.
 
-  **Standing limitation — the workflow's own PR-open step currently fails.**
-  This repo's GitHub org has "Allow GitHub Actions to create and approve
-  pull requests" turned off (Settings → Actions → General → Workflow
-  permissions), so the final `gh pr create` call in the "Open release PR"
-  step fails with `GitHub Actions is not permitted to create or approve
-  pull requests`. This is an org-wide policy, not something fixable from
-  this repo's own settings or from the workflow YAML — confirmed by a 409
-  when attempting to flip the setting via the API. **The bump commit and
-  branch push both still succeed** — only PR creation fails — so after a
-  `mode: real` dispatch, check the workflow run: if it stopped at "Open
-  release PR", a human opens the PR by hand for the already-pushed branch.
-  See [Troubleshooting → PR creation fails](#pr-creation-fails-github-actions-is-not-permitted-to-create-or-approve-pull-requests)
-  below for the exact commands and PR-body template to use.
+  **The "Open release PR" step's `gh pr create` call itself now succeeds**
+  (the org's "Allow GitHub Actions to create and approve pull requests"
+  setting — Settings → Actions → General → Workflow permissions — that
+  used to block it is no longer off; this section used to document that as
+  a standing limitation, now stale, see the note below and
+  [Troubleshooting → PR creation fails](#pr-creation-fails-github-actions-is-not-permitted-to-create-or-approve-pull-requests)
+  for the recovery procedure that's still worth keeping in case that
+  org setting regresses).
+
+  **A separate, previously-undiagnosed problem (cratestack#531): the
+  resulting PR ran zero CI.** GitHub does not trigger further workflow runs
+  for an event (including a PR being opened) raised by the default
+  `GITHUB_TOKEN` — the same anti-recursion rule `cut-release-tag.yml` hit
+  for its tag push (see that file's header comment). `v0.7.12` shipped an
+  unedited `CHANGELOG.md` seed as a direct result: nothing verified the
+  bump PR at all, not even the changelog gate that would have caught it.
+  Fixed by making "Open release PR" use the same `RELEASE_PAT` secret
+  `cut-release-tag.yml` already relies on (falling back to `github.token`,
+  with a loud `::warning::` if unset) — a PAT-authored PR-open is an
+  ordinary external event as far as GitHub's trigger engine is concerned,
+  so `ci.yml`/`governance.yml` fire on it normally, same as any other PR.
+  See `RELEASE_PAT`'s setup section in `docs/tooling/npm-publishing.md` —
+  it now needs `pull-requests: write` in addition to `contents: write` if
+  it's a fine-grained PAT, since it's used for PR creation too, not just
+  the tag push.
 
 Once the bump PR is merged (by whichever route it got opened), everything
 else happens on its own:
@@ -150,19 +161,32 @@ what to do about each. Pattern-match the symptom first.
 
 ### PR creation fails: "GitHub Actions is not permitted to create or approve pull requests"
 
+**Status as of cratestack#531's investigation: not currently reproducing.**
+`gh api repos/cratestack/cratestack/actions/permissions/workflow` reports
+`can_approve_pull_request_reviews: true`, and PR #528 (the `v0.7.12` bump
+PR) was opened successfully by this workflow's own `gh pr create` call,
+authored as `github-actions[bot]`. This section previously said this failure
+mode was "standing and unresolved" — that was accurate when written but is
+no longer the observed behavior; the org setting below was evidently
+switched on since. Left in place (not deleted) as a real recovery procedure
+in case it regresses — pattern-match the symptom below first.
+
 **Symptom:** "Prepare Release" (`mode: real`) fails at the "Open release PR"
 step with this exact message in the log. The bump commit and
 `release/vX.Y.Z` branch push both already succeeded before this step —
 only PR creation failed.
 
-**Cause:** an org-level GitHub setting — Settings → Actions → General →
-Workflow permissions → "Allow GitHub Actions to create and approve pull
-requests" — is off, and (confirmed) attempting to flip it via the API
-returns a 409: `"The organization does not allow GitHub Actions to create
-or approve pull requests"`. This is **standing and unresolved** — it is an
-org-wide policy, not a per-repo setting or something the workflow YAML can
-work around. Expect every future `mode: real` dispatch to fail at this
-exact step.
+**Cause (when this does occur):** an org-level GitHub setting — Settings →
+Actions → General → Workflow permissions → "Allow GitHub Actions to create
+and approve pull requests" — is off. Confirmed previously to also reject
+being flipped via the API (409: `"The organization does not allow GitHub
+Actions to create or approve pull requests"`) — an org-wide policy, not a
+per-repo setting or something the workflow YAML can work around.
+
+**Do not confuse this with cratestack#531** (a release-bump PR that opens
+fine but runs zero CI) — that's a different failure mode, caused by the
+GITHUB_TOKEN anti-recursion rule, not this org setting. See the Quickstart
+section above and `prepare-release.yml`'s header comment for that one.
 
 **Fix (manual, every time):** a human (or an agent with a real
 authenticated `gh`/browser session — the Actions-internal `GITHUB_TOKEN`
