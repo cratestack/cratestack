@@ -40,6 +40,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
         _db: &cratestack_schema::Cratestack,
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::estimate_focus_minutes::Args,
+        _authorized: cratestack_schema::procedures::estimate_focus_minutes::Authorized,
     ) -> impl core::future::Future<
         Output = Result<cratestack_schema::procedures::estimate_focus_minutes::Output, CoolError>,
     > + Send {

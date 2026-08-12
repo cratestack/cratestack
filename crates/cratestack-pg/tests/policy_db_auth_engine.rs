@@ -101,6 +101,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for AuthEngineProcedures {
         _db: &cratestack_schema::Cratestack,
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::inspect_post::Args,
+        _authorized: cratestack_schema::procedures::inspect_post::Authorized,
     ) -> Result<cratestack_schema::procedures::inspect_post::Output, cratestack::CoolError> {
         Ok(cratestack_schema::EnginePost {
             id: args.args.postId,
@@ -115,6 +116,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for AuthEngineProcedures {
         _db: &cratestack_schema::Cratestack,
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::admin_pulse::Args,
+        _authorized: cratestack_schema::procedures::admin_pulse::Authorized,
     ) -> Result<cratestack_schema::procedures::admin_pulse::Output, cratestack::CoolError> {
         Ok(cratestack_schema::EnginePost {
             id: args.args.postId,

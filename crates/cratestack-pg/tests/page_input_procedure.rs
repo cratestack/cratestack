@@ -25,6 +25,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
         _db: &cratestack_schema::Cratestack,
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::list_feed::Args,
+        _authorized: cratestack_schema::procedures::list_feed::Authorized,
     ) -> Result<cratestack_schema::procedures::list_feed::Output, CoolError> {
         let (limit, offset) = args.page.resolve(50);
         Ok(cratestack_schema::FeedReply { limit, offset })

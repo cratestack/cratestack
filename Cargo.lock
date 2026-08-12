@@ -1451,12 +1451,14 @@ dependencies = [
 name = "cratestack-macros"
 version = "0.7.12"
 dependencies = [
+ "cratestack-api",
  "cratestack-core",
  "cratestack-parser",
  "cratestack-policy",
  "cratestack-proto",
  "proc-macro2",
  "quote",
+ "serde",
  "sha2",
  "syn 2.0.117",
  "trybuild",

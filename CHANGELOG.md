@@ -39,6 +39,59 @@ becomes the fallback identity, exactly as #459 intended), or supply
 for deployments that authenticate via cookies/mTLS rather than `Authorization` and cannot serve
 through `into_make_service_with_connect_info`.
 
+### `@status(<code>)` generated-client verification: Dart confirmed (#407)
+
+Closes the last open acceptance criterion on cratestack#407. `@status(<code>)` itself shipped in
+#511 (see the "Per-procedure `@status(<code>)`" entry below, now under the 0.7.11 section); its
+AC5 required at least one generated client to be *proven*, not just inspected, to treat a
+declared non-200 2xx as success. The Rust client was already proven end-to-end against a mock
+returning a bare `202`. The Dart client had only been inspected — no explicit `validateStatus`
+override was found in the REST-runtime templates, from which it was *inferred* (never run) that
+Dio's own default `validateStatus` (`200 <= status < 300`) applies unmodified.
+
+That inference now has real evidence: a new `just verify-dart` step generates a client from a
+`@status(202)` fixture for both the `default` and `riverpod` presets (both talk HTTP directly via
+`dio`, no Rust FFI bridge) and runs it against a real `dart:io HttpServer` answering with a bare
+`202` — no `200` anywhere in the exchange — asserting the decoded reply. A `5xx` negative control
+in the same test proves the client still surfaces real errors, so the positive assertion isn't
+just "accepts everything." Both presets pass. RPC transport is out of scope, since `@status` is
+already rejected at schema-compile time under `transport rpc`.
+
+### `ProcedureRegistry` methods now require a witness only policy enforcement can produce — breaking (#512)
+
+The most natural-looking way to call a procedure from non-HTTP code — `registry.my_procedure(&db,
+&ctx, args).await` — silently skipped every `@allow`/`@deny` check. Policy enforcement lived only
+in the generated `invoke_with_db`/`invoke` wrappers the axum/RPC/gRPC dispatch handlers call;
+the `ProcedureRegistry` trait method a schema's implementor actually writes had no policy code at
+all, and no example anywhere showed the (undocumented, closure-wrapping) shape that did. This was
+the last remaining silent-bypass shape from epic #488 — severity isn't "policy can be bypassed"
+(anyone with the database can do that already); it's that the bypass was the *default* outcome of
+writing the most readable code, with nothing in the type system, no lint, and no example pointing
+the other way.
+
+Fixed at the type level, not by convention: every generated `ProcedureRegistry` method now takes a
+trailing `Authorized` witness — a zero-sized marker type, private tuple field, defined in the same
+generated module as `authorize_with_db`/`invoke_with_db`. Nothing outside that module — not this
+same generated crate's `axum`/`rpc`/`grpc` dispatch code, not a `ProcedureRegistry` implementor's
+own code, not any other procedure's module — can construct one; the only way to obtain one is to
+call `authorize_with_db` (which runs `@allow`/`@deny` and any `@authorize` model checks) and get
+back `Ok`. `registry.my_procedure(&db, &ctx, args)` is therefore now an ordinary Rust arity
+mismatch, not a policy check that happens to run and pass — confirmed with a `trybuild`
+compile-fail fixture (`crates/cratestack-macros/tests/ui_procedure_registry_witness.rs`) that
+fails if the witness parameter is ever removed from codegen.
+
+The HTTP/RPC/gRPC dispatch paths are unchanged: they already called `invoke_with_db`, which is now
+also the sanctioned way to invoke a procedure from non-HTTP code (a cron job, background worker, or
+admin tool) — see `examples/rpc-procedures/src/internal_worker.rs` for a worked example, including
+using `auth().isSystem()` (#486)'s `SystemContext` as the caller identity.
+
+**Migration.** Every existing `ProcedureRegistry` implementation gains a new, unused-by-default
+last parameter on every method: add `_authorized: <procedure>::Authorized` (any name; the value has
+no API surface — it exists only to be received, not read) to each method signature. Mechanical, no
+behavior to reason about. If you were calling a `ProcedureRegistry` method directly rather than
+through the generated router (the exact bypass this fixes), replace that call with
+`<procedure>::invoke_with_db(&db, &args, &ctx, |authorized| async move { registry.<method>(&db,
+&ctx, args, authorized).await }).await` — the same call the generated dispatch handlers make.
 ### `DELETE` on an `@version` model now enforces `If-Match`, matching `PATCH` — breaking (#519)
 
 `DELETE` on a model declaring `@version` silently ignored optimistic concurrency: `PATCH`

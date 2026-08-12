@@ -1,0 +1,21 @@
+// Fixture for cratestack#407's Dart-client verification: a single
+// procedure declaring `@status(202)`, mirroring
+// `crates/cratestack-client/tests/fixtures/status_override.cstack` (the
+// already-proven Rust-client fixture) so the two generated clients are
+// tested against the exact same schema shape. The point is settling the
+// issue's still-open half of the client-generator question: does the
+// generated Dart client (default preset AND riverpod preset, both of
+// which talk HTTP directly via `dio` — no Rust FFI bridge involved) treat
+// a bare `202` response as success, or does it silently require exactly
+// `200`?
+
+procedure submit(args: SubmitArgs): SubmitReply
+  @status(202)
+
+type SubmitArgs {
+  message String
+}
+
+type SubmitReply {
+  echo String
+}

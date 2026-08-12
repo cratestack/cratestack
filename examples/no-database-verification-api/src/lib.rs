@@ -21,6 +21,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
         _db: &cratestack_schema::Cratestack,
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::ping::Args,
+        _authorized: cratestack_schema::procedures::ping::Authorized,
     ) -> impl core::future::Future<Output = Result<cratestack_schema::procedures::ping::Output, CoolError>>
     + Send {
         async move {
@@ -35,6 +36,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
         _db: &cratestack_schema::Cratestack,
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::submit::Args,
+        _authorized: cratestack_schema::procedures::submit::Authorized,
     ) -> impl core::future::Future<
         Output = Result<cratestack_schema::procedures::submit::Output, CoolError>,
     > + Send {
@@ -57,6 +59,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
         _db: &cratestack_schema::Cratestack,
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::streamed::Args,
+        _authorized: cratestack_schema::procedures::streamed::Authorized,
     ) -> impl Stream<Item = Result<cratestack_schema::PingReply, CoolError>> + Send {
         stream::iter([Ok(cratestack_schema::PingReply {
             echo: args.args.message,
