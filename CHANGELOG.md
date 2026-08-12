@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.7.14 (2026-08-12)
+
+<!-- TODO: edit this section from the seed below -->
+<!-- seeded from v0.7.13..HEAD at 19a9297ac6037c75e987f9cf750277a3faba23d9 -->
+
+This is an auto-generated seed. Please rewrite into narrative prose describing
+the changes in this release, grouped by concern. Refer to existing entries in
+this file for the house prose style. Do not commit with this placeholder text.
+
+### Changes
+
+#### Fixes
+
+- discover standalone example workspaces instead of listing them, and unstick main (#565)
+- ignore dev-dependencies when topo-sorting the crates.io publish order (#564)
+
+#### Documentation
+
+- warn that decimal-backend mutual exclusivity is graph-wide (#505) (#559)
+
+#### Tests
+
+- assert AuditSink receipt for every write call site (#473) (#560)
+- cover gRPC CRUD arm dispatch in CI (#524) (#561)
+
 ## 0.7.13 (2026-08-12)
 
 ### Fixed a validator attribute on a nullable field breaking `Update{Model}Input::validate()` (#537)
