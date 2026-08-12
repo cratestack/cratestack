@@ -57,6 +57,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
         _db: &cratestack_schema::Cratestack,
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::echo_widget_name::Args,
+        _authorized: cratestack_schema::procedures::echo_widget_name::Authorized,
     ) -> impl core::future::Future<
         Output = Result<cratestack_schema::procedures::echo_widget_name::Output, CoolError>,
     > + Send {
@@ -68,6 +69,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
         _db: &cratestack_schema::Cratestack,
         _ctx: &CoolContext,
         _args: cratestack_schema::procedures::widget_name_samples::Args,
+        _authorized: cratestack_schema::procedures::widget_name_samples::Authorized,
     ) -> impl core::future::Future<
         Output = Result<cratestack_schema::procedures::widget_name_samples::Output, CoolError>,
     > + Send {

@@ -81,6 +81,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
         _db: &cratestack_schema::Cratestack,
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::ticks::Args,
+        _authorized: cratestack_schema::procedures::ticks::Authorized,
     ) -> impl Stream<Item = Result<cratestack_schema::Tick, CoolError>> + Send {
         let produced = self.produced.clone();
         let produced_at = self.produced_at.clone();
@@ -114,6 +115,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
         _db: &cratestack_schema::Cratestack,
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::flaky_ticks::Args,
+        _authorized: cratestack_schema::procedures::flaky_ticks::Authorized,
     ) -> impl Stream<Item = Result<cratestack_schema::Tick, CoolError>> + Send {
         async_stream::stream! {
             let count = args.args.count.max(0);
