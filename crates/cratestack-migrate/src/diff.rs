@@ -25,6 +25,7 @@ mod columns;
 mod extensions;
 mod foreign_keys;
 mod indexes;
+mod primary_key;
 mod tables;
 // `pub(crate)` (not private) so `crate::projection` — the public
 // `Schema → Projections` seam — can reach `views::{ViewProjection,
@@ -39,6 +40,7 @@ use std::collections::BTreeMap;
 use cratestack_core::Schema;
 
 use crate::convert::TableProjection;
+use crate::error::MigrateError;
 use crate::ir::Op;
 use crate::projection::{Projections, project};
 
@@ -50,7 +52,11 @@ use crate::projection::{Projections, project};
 /// that only ever have two full `Schema`s on hand (e.g.
 /// `cratestack-cli`'s `migrate diff`, which reads one from a snapshot
 /// file and parses the other from a `.cstack` file).
-pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
+///
+/// Returns `Err` rather than an empty/partial op list when an
+/// existing table's primary key changed shape (issue #536) — see
+/// `primary_key::check_primary_key_unchanged`.
+pub fn diff(prev: &Schema, next: &Schema) -> Result<Vec<Op>, MigrateError> {
     diff_projections(&project(prev), &project(next))
 }
 
@@ -61,7 +67,7 @@ pub fn diff(prev: &Schema, next: &Schema) -> Vec<Op> {
 /// issue #204) plugs into: anything that can produce a `Projections`
 /// value — not just [`project`] reading a parsed `.cstack` `Schema` —
 /// can be diffed against another `Projections` value here.
-pub fn diff_projections(prev: &Projections, next: &Projections) -> Vec<Op> {
+pub fn diff_projections(prev: &Projections, next: &Projections) -> Result<Vec<Op>, MigrateError> {
     let prev_tables = &prev.tables;
     let next_tables = &next.tables;
 
@@ -85,6 +91,11 @@ pub fn diff_projections(prev: &Projections, next: &Projections) -> Vec<Op> {
         let Some(next_projection) = find_next(name, next_tables, &rename_map.renamed_from) else {
             continue;
         };
+
+        // Checked first, before any op for this table is computed:
+        // an unsupported primary-key change refuses the whole diff
+        // rather than mixing a partial migration with a loud error.
+        primary_key::check_primary_key_unchanged(prev_projection, next_projection)?;
 
         let mut col_ops = columns::diff_columns(prev_projection, next_projection);
         rename_columns.append(&mut col_ops.renames);
@@ -146,7 +157,7 @@ pub fn diff_projections(prev: &Projections, next: &Projections) -> Vec<Op> {
     // both source tables and any new columns the view body
     // references exist before the view definition is parsed.
     ops.append(&mut view_diff.creates);
-    ops
+    Ok(ops)
 }
 
 /// Find the projection on the next side for a prev-side table name,

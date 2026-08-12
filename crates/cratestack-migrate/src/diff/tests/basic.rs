@@ -6,7 +6,7 @@ use crate::ir::{Destructiveness, Op};
 fn empty_to_empty_produces_no_ops() {
     let prev = schema(&with_models(""));
     let next = schema(&with_models(""));
-    assert!(diff(&prev, &next).is_empty());
+    assert!(diff(&prev, &next).expect("diff should succeed").is_empty());
 }
 
 #[test]
@@ -20,7 +20,7 @@ model Account {
 }
 "#,
     ));
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
     assert_eq!(ops.len(), 1);
     match &ops[0] {
         Op::CreateTable(create) => {
@@ -53,7 +53,7 @@ model AccountMembership {
 }
 "#,
     ));
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
     let membership = ops
         .iter()
         .find_map(|op| match op {
@@ -86,7 +86,7 @@ model Account {
 "#,
     ));
     let next = schema(&with_models(""));
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
     assert_eq!(ops.len(), 1);
     assert!(matches!(&ops[0], Op::DropTable(drop) if drop.name == "accounts"));
     assert!(matches!(ops[0].destructiveness(), Destructiveness::Lossy));
@@ -109,7 +109,7 @@ model Account {
 }
 "#,
     ));
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
     assert_eq!(ops.len(), 1);
     match &ops[0] {
         Op::AddColumn(add) => {
@@ -139,7 +139,7 @@ model Account {
 }
 "#,
     ));
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
     assert_eq!(ops.len(), 1);
     assert!(matches!(
         ops[0].destructiveness(),
@@ -164,7 +164,7 @@ model Account {
 }
 "#,
     ));
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
     assert_eq!(ops.len(), 1);
     assert!(matches!(ops[0].destructiveness(), Destructiveness::Safe));
 }
@@ -186,7 +186,7 @@ model Account {
 }
 "#,
     ));
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
     assert_eq!(ops.len(), 1);
     assert!(matches!(&ops[0], Op::DropColumn(drop)
         if drop.table == "accounts" && drop.column == "legacy"));

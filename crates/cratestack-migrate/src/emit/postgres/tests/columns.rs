@@ -19,7 +19,7 @@ model Account {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         migration
             .up
@@ -49,7 +49,7 @@ model Account {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(migration.has_lossy);
     assert!(
         migration
@@ -79,7 +79,7 @@ model Account {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(!migration.has_lossy);
     assert!(!migration.has_blocking);
     assert!(
@@ -116,7 +116,7 @@ model Account {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(migration.has_blocking);
     assert!(
         migration
@@ -144,7 +144,7 @@ model Account {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(migration.has_lossy);
     assert!(
         migration.up.contains(
@@ -174,7 +174,7 @@ model Order {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(!migration.has_lossy);
     assert!(
         migration
@@ -208,7 +208,7 @@ model Order {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         migration
             .up
@@ -236,7 +236,7 @@ model Order {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         !migration.up.contains("dbgenerated"),
         "up must never contain the literal `dbgenerated()` call: {}",
@@ -269,7 +269,7 @@ model Order {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         migration
             .up

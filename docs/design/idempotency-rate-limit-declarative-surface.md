@@ -15,6 +15,24 @@ each write path — see `crates/cratestack-sqlx/src/audit/sink.rs`), so the
 precedent these sections lean on is now genuinely true rather than aspirational.
 No wording below needed to change in substance, only to point at the concrete
 method names instead of the sink types alone.
+**Update (cratestack#542):** §3 describes the "overridable key/fingerprint
+closure" as `Arc<dyn Fn(&Request) -> String>`. That signature is still
+accurate for the *override* entry points
+(`IdempotencyLayer::with_principal_fingerprint`/`RateLimitLayer::with_key_fn`,
+which remain infallible by design — opting out of the default is the
+caller's explicit choice), but it no longer describes the *default*
+function's stored type or behavior. cratestack#542 changed
+`default_principal_fingerprint`/`default_key_fn`'s internal signature to
+`Arc<dyn Fn(&Request) -> Result<String, CoolError> + Send + Sync>` and its
+behavior when neither an `Authorization` header nor a
+`ConnectInfo<SocketAddr>` peer is present from silently falling back to a
+shared bucket to refusing the request with `412 Precondition Failed` (see
+`crates/cratestack-axum/src/{idempotency,ratelimit}/layer.rs`). This doesn't
+touch the decision in §4–§6 — the key-derivation function itself, fallible
+or not, was already out of scope for `.cstack` and stays there — but a
+reader relying on §3's type for the *default* path specifically should read
+`Result<String, CoolError>`, not `String`, and should know unverifiable
+callers are now refused rather than pooled.
 Scope: whether `@@idempotent`/`@@rate_limit(...)`-style `.cstack` attributes should
 join `@@audit`/`@@soft_delete`/`@@paged`, or whether `IdempotencyLayer`/`RateLimitLayer`
 stay imperative Rust middleware.

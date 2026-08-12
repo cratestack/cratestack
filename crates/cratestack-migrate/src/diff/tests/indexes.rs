@@ -13,7 +13,7 @@ model User {
 }
 "#,
     ));
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
     // CreateTable + AddIndex
     assert_eq!(ops.len(), 2);
     assert!(matches!(&ops[0], Op::CreateTable(_)));
@@ -46,7 +46,7 @@ model User {
 }
 "#,
     ));
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
     assert_eq!(ops.len(), 1);
     assert!(matches!(&ops[0], Op::DropIndex(drop)
         if drop.name == "users_email_key" && drop.table == "users"));
@@ -69,7 +69,7 @@ model New {
 }
 "#,
     ));
-    let ops = diff(&prev, &next);
+    let ops = diff(&prev, &next).expect("diff should succeed");
     // Order: DropTable(old), CreateTable(new), AddIndex(new.email)
     assert_eq!(ops.len(), 3);
     assert!(matches!(&ops[0], Op::DropTable(_)));

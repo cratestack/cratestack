@@ -24,7 +24,7 @@ Core types, traits, and error handling shared across the CrateStack workspace.
 cratestack-core = "0.6.7"
 ```
 
-Exactly one `Decimal` backend feature must be selected — `decimal-rust-decimal` (the default, `Copy`, fixed 96-bit precision) or `decimal-bigdecimal` (arbitrary precision, heap-allocated, not `Copy`). Selecting neither or both is a compile error.
+At most one `Decimal` backend feature may be selected — `decimal-rust-decimal` (the default, `Copy`, fixed 96-bit precision) or `decimal-bigdecimal` (arbitrary precision, heap-allocated, not `Copy`). Selecting both is a compile error. Selecting neither is allowed as of cratestack#521: `Decimal` is simply not exported, which lets a consumer narrow its dependency graph with `default-features = false` without naming a backend it never uses. A schema that does use a `Decimal` field then fails with rustc's own "cannot find type `Decimal`" rather than a clearer message from this crate.
 
 ## Error Handling
 

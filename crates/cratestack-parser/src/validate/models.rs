@@ -50,6 +50,19 @@ pub(super) fn validate_models(
 
         let mut fields = BTreeMap::new();
         let mut has_primary_key = false;
+        // cratestack#536: two field-level `@id` attributes on one model is
+        // a multi-column primary key by another spelling. `@@id([a, b])`
+        // is hard-rejected at macro expansion citing #136
+        // (`reject_composite_primary_keys` in
+        // `cratestack-macros/src/include/parse.rs`) because codegen (query
+        // builders, routing, generated clients) still assumes exactly one
+        // scalar `@id` — but nothing stopped this equivalent form from
+        // reaching `cratestack-migrate`, which marks every `@id`-tagged
+        // column `primary_key = true` and happily emits a real
+        // multi-column `PRIMARY KEY`. Track the first `@id` field so a
+        // second one is rejected with the same #136 reasoning, keeping
+        // both spellings consistent.
+        let mut first_id_field: Option<&str> = None;
         for field in &model.fields {
             if fields.insert(field.name.clone(), field.span).is_some() {
                 return Err(span_error(
@@ -62,6 +75,21 @@ pub(super) fn validate_models(
                 .iter()
                 .any(|attribute| attribute.raw.starts_with("@id"))
             {
+                if let Some(first) = first_id_field {
+                    return Err(span_error(
+                        format!(
+                            "model `{}` declares more than one field-level `@id` (`{}` and `{}`), \
+                             which is a multi-column primary key — the same restriction as \
+                             `@@id([...])`, not yet supported by codegen (query builders, routing, \
+                             and generated clients still assume a single scalar `@id`); see \
+                             https://github.com/cratestack/cratestack/issues/136 for status. Use \
+                             exactly one `@id` field.",
+                            model.name, first, field.name,
+                        ),
+                        field.span,
+                    ));
+                }
+                first_id_field = Some(field.name.as_str());
                 has_primary_key = true;
             }
             validate_custom_field_attribute(

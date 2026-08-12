@@ -15,7 +15,7 @@ model Account {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(!migration.has_lossy);
     assert!(!migration.has_blocking);
     assert!(
@@ -48,7 +48,7 @@ model Account {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(migration.has_blocking);
     assert!(migration.up.contains("WARNING"));
     assert!(
@@ -78,7 +78,7 @@ model Account {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(migration.has_blocking);
     assert!(migration.up.contains("WARNING"));
     assert!(
@@ -102,7 +102,7 @@ model User {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         migration
             .up
@@ -124,7 +124,7 @@ model Item {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(migration.up.contains("\"order\" BIGINT NOT NULL"));
 }
 
@@ -139,7 +139,7 @@ model Order {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         migration
             .up
@@ -160,7 +160,7 @@ model Article {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         !migration.up.contains("DEFAULT dbgenerated()"),
         "emitted DDL must never contain the literal invalid `DEFAULT dbgenerated()` call: {}",
@@ -190,7 +190,7 @@ model Article {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert_eq!(
         migration.unverified_dbgenerated,
         vec![
@@ -217,7 +217,7 @@ model Article {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(migration.unverified_dbgenerated.is_empty());
 }
 
@@ -271,7 +271,7 @@ model AccountMembership {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         migration.up.contains("CREATE TABLE account_memberships"),
         "up was: {}",
@@ -295,7 +295,7 @@ model Account {
 }
 "#,
     ));
-    let migration = emit(&diff(&s, &s));
+    let migration = emit(&diff(&s, &s).expect("diff should succeed"));
     assert_eq!(migration.up.trim(), "");
     assert_eq!(migration.down.trim(), "");
     assert!(!migration.has_lossy);

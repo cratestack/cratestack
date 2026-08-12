@@ -47,4 +47,26 @@ pub enum MigrateError {
     /// rather than a panic.
     #[error("failed to serialize projections for checksum: {0}")]
     ChecksumSerialize(#[source] serde_json::Error),
+
+    /// An existing table's primary key changed shape — a column was
+    /// added, removed, or reordered (issue #536). Deliberately a
+    /// refusal, not an `Op`: a correct migration needs constraint
+    /// drop/recreate ordering, dependent foreign keys, and a
+    /// data-safety story for a populated table, none of which the
+    /// diff engine has today. Silently emitting nothing (the previous
+    /// behavior) is worse than refusing loudly — see
+    /// `crate::diff::primary_key` for the detection and the full
+    /// rationale for refusing rather than emitting.
+    #[error(
+        "table `{table}`: primary key changed from {prev} to {next} — cratestack-migrate does \
+         not generate a migration for a primary-key change on an existing table (it needs \
+         constraint drop/recreate ordering, dependent foreign keys, and a data-safety plan for \
+         existing rows that this engine does not have). Revert the primary-key change, or write \
+         the ALTER TABLE migration for `{table}` by hand."
+    )]
+    PrimaryKeyChanged {
+        table: String,
+        prev: String,
+        next: String,
+    },
 }

@@ -87,7 +87,7 @@ async fn reset(pool: &cratestack::sqlx::PgPool) {
 fn emitted_migration_up() -> String {
     let empty = parse_schema("").expect("empty schema parses");
     let next = parse_schema(SCHEMA_SRC).expect("round-trip fixture parses");
-    postgres::emit(&diff(&empty, &next)).up
+    postgres::emit(&diff(&empty, &next).expect("diff should succeed")).up
 }
 
 async fn apply_emitted_migration(pool: &cratestack::sqlx::PgPool) {

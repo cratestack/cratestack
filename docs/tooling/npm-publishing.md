@@ -215,29 +215,47 @@ correctly but **`release-cli.yml` never runs and nothing actually gets published
 hard way on `v0.4.14`'s first real release through this pipeline. `cut-release-tag.yml` logs a
 loud `::warning::` when this secret is missing, precisely so that failure mode isn't silent again.
 
-1. On GitHub, create a **personal access token** with `contents: write` permission on
-   `cratestack/cratestack` (a fine-grained PAT scoped to just this repo is preferred over a classic
-   PAT with the broader `repo` scope, but either works).
+`.github/workflows/prepare-release.yml`'s "Open release PR" step uses the same secret and the same
+reasoning (cratestack#531): the anti-recursion rule applies to *any* GITHUB_TOKEN-raised event, not
+just pushes, and a release-bump PR opened via the default token ran zero CI as a direct result —
+`v0.7.12` shipped an unedited `CHANGELOG.md` seed because the gate that would have caught it never
+ran. That workflow's checkout and `gh pr create` also fall back to `github.token` with a loud
+`::warning::` if `RELEASE_PAT` is unset, same pattern as here.
+
+1. On GitHub, create a **personal access token** with `contents: write` **and `pull requests:
+   write`** permission on `cratestack/cratestack` (a fine-grained PAT scoped to just this repo is
+   preferred over a classic PAT with the broader `repo` scope, but either works). The
+   `pull requests: write` scope wasn't needed when this token was first introduced for
+   `cut-release-tag.yml`'s tag push alone — it's needed now that `prepare-release.yml` also uses
+   this token to open the bump PR itself (cratestack#531). If `RELEASE_PAT` already exists scoped to
+   `contents` only, broaden it; `gh pr create` will otherwise fail (or silently fall back to
+   `github.token`, right back to the zero-CI problem this exists to fix).
 2. Add it as a repo secret named `RELEASE_PAT` (same Settings → Secrets and variables → Actions
    page as `CARGO_REGISTRY_TOKEN`).
 
-Once the secret exists, the next "Prepare Release" bump PR that merges will have its auto-created
-tag genuinely trigger `release-cli.yml` — no manual `gh workflow run`/tag recreation needed.
-Confirmed working on `v0.4.15` and `v0.4.16`: both releases' `release-cli.yml` runs show
-`event: "push"` (not `workflow_dispatch`), i.e. the tag push genuinely cascaded.
+Once the secret exists (with both scopes), the next "Prepare Release" bump PR that merges will have
+its auto-created tag genuinely trigger `release-cli.yml` — no manual `gh workflow run`/tag
+recreation needed. Confirmed working on `v0.4.15` and `v0.4.16`: both releases' `release-cli.yml`
+runs show `event: "push"` (not `workflow_dispatch`), i.e. the tag push genuinely cascaded. The
+PR-creation half (cratestack#531) has not yet been confirmed on a real `mode: real` dispatch — watch
+the next release-bump PR: `gh api repos/cratestack/cratestack/commits/<head-sha>/check-runs --jq
+.total_count` should be greater than zero and include the changelog and governance checks, not `0`
+like PR #528.
 
-## Known limitation: this repo cannot fully self-serve PR creation
+## PR creation itself: no longer a known limitation
 
-Separately from the three secrets above, "Prepare Release" (`mode: real`) itself cannot currently
-open its own bump PR — the `gh pr create` call in its "Open release PR" step fails with `GitHub
-Actions is not permitted to create or approve pull requests`. This is an org-level GitHub setting
-(Settings → Actions → General → Workflow permissions → "Allow GitHub Actions to create and approve
-pull requests" is off), confirmed to also reject being flipped via the API (409: "The organization
-does not allow GitHub Actions to create or approve pull requests"). No repo secret fixes this — it
-is a standing, unresolved limitation with a manual workaround (the bump commit and branch push
-still succeed; a human opens the PR by hand for the pushed branch). See
-[`RELEASE.md`'s Troubleshooting section](../../RELEASE.md#pr-creation-fails-github-actions-is-not-permitted-to-create-or-approve-pull-requests)
-for the exact recovery commands.
+Earlier revisions of this doc noted that "Prepare Release" (`mode: real`) couldn't open its own bump
+PR at all — the `gh pr create` call failed with `GitHub Actions is not permitted to create or
+approve pull requests`, an org-level setting (Settings → Actions → General → Workflow permissions →
+"Allow GitHub Actions to create and approve pull requests") that was off and rejected being flipped
+via the API (409). As of cratestack#531's investigation, `gh api
+repos/cratestack/cratestack/actions/permissions/workflow` reports `can_approve_pull_request_reviews:
+true`, and PR #528 was in fact opened by this workflow's own `gh pr create` call — so that specific
+failure mode is not currently reproducing. [`RELEASE.md`'s Troubleshooting
+section](../../RELEASE.md#pr-creation-fails-github-actions-is-not-permitted-to-create-or-approve-pull-requests)
+keeps the recovery procedure in case the org setting regresses, but it is a different, unrelated
+problem from cratestack#531 (PR opens fine, runs zero CI) — don't conflate the two if debugging a
+future release.
 
 ## Provenance
 
