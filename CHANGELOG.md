@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### `@status(<code>)` generated-client verification: Dart confirmed (#407)
+
+Closes the last open acceptance criterion on cratestack#407. `@status(<code>)` itself shipped in
+#511 (see the "Per-procedure `@status(<code>)`" entry below, now under the 0.7.11 section); its
+AC5 required at least one generated client to be *proven*, not just inspected, to treat a
+declared non-200 2xx as success. The Rust client was already proven end-to-end against a mock
+returning a bare `202`. The Dart client had only been inspected — no explicit `validateStatus`
+override was found in the REST-runtime templates, from which it was *inferred* (never run) that
+Dio's own default `validateStatus` (`200 <= status < 300`) applies unmodified.
+
+That inference now has real evidence: a new `just verify-dart` step generates a client from a
+`@status(202)` fixture for both the `default` and `riverpod` presets (both talk HTTP directly via
+`dio`, no Rust FFI bridge) and runs it against a real `dart:io HttpServer` answering with a bare
+`202` — no `200` anywhere in the exchange — asserting the decoded reply. A `5xx` negative control
+in the same test proves the client still surfaces real errors, so the positive assertion isn't
+just "accepts everything." Both presets pass. RPC transport is out of scope, since `@status` is
+already rejected at schema-compile time under `transport rpc`.
+
 ### `DELETE` on an `@version` model now enforces `If-Match`, matching `PATCH` — breaking (#519)
 
 `DELETE` on a model declaring `@version` silently ignored optimistic concurrency: `PATCH`

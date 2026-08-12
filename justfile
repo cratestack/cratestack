@@ -395,6 +395,57 @@ verify-dart:
 	  verify_riverpod_pkg "$pkg" "$schema" "$library_name"
 	done
 
+	# cratestack#407 (AC5): the last open acceptance criterion — prove,
+	# don't merely inspect, that the generated Dart client treats a
+	# declared `@status(202)` REST success status as success. The Rust
+	# client was already proven this way
+	# (crates/cratestack-client/tests/status_attribute_client_round_trip.rs);
+	# the Dart half was inspected (no explicit `validateStatus` override
+	# found in the REST-runtime templates) but never run — that inference
+	# is exactly what this checks instead of repeating. Both `default` and
+	# `riverpod` presets are generated from the same fixture with the same
+	# `--library-name` on purpose: both derive identical class/import names
+	# from it, so the one hand-written test file
+	# (status_override_202_test.dart) runs unmodified against either
+	# package. RPC transport is out of scope here — `@status` is rejected
+	# at schema-compile time under `transport rpc`, so there is no RPC
+	# generated-client path to check.
+	status_schema="crates/cratestack-client-dart/tests/fixtures/status_override.cstack"
+	status_test="crates/cratestack-client-dart/tests/fixtures/status_override_202_test.dart"
+	status_library="dart_status_verify"
+
+	status_default_pkg="$out/status-202/default"
+	echo "=== generate-dart --preset default: status_override -> $status_default_pkg ==="
+	cargo run --quiet -p cratestack-cli -- generate-dart \
+	  --schema "$status_schema" \
+	  --out "$status_default_pkg" \
+	  --library-name "$status_library"
+	(cd "$status_default_pkg" && flutter pub get)
+	mkdir -p "$status_default_pkg/test"
+	cp "$status_test" "$status_default_pkg/test/status_202_test.dart"
+	echo "=== flutter test (real HTTP round trip, @status(202) proof): $status_default_pkg ==="
+	(cd "$status_default_pkg" && flutter test test/status_202_test.dart)
+
+	status_riverpod_pkg="$out/status-202/riverpod"
+	echo "=== generate-dart --preset riverpod: status_override -> $status_riverpod_pkg ==="
+	cargo run --quiet -p cratestack-cli -- generate-dart \
+	  --schema "$status_schema" \
+	  --out "$status_riverpod_pkg" \
+	  --library-name "$status_library" \
+	  --preset riverpod
+	(cd "$status_riverpod_pkg" && flutter pub get)
+	echo "=== generate-dart --preset riverpod --run-build-runner: $status_riverpod_pkg ==="
+	cargo run --quiet -p cratestack-cli -- generate-dart \
+	  --schema "$status_schema" \
+	  --out "$status_riverpod_pkg" \
+	  --library-name "$status_library" \
+	  --preset riverpod \
+	  --run-build-runner
+	mkdir -p "$status_riverpod_pkg/test"
+	cp "$status_test" "$status_riverpod_pkg/test/status_202_test.dart"
+	echo "=== flutter test (real HTTP round trip, @status(202) proof): $status_riverpod_pkg ==="
+	(cd "$status_riverpod_pkg" && flutter test test/status_202_test.dart)
+
 # Verify the TypeScript client generator's OUTPUT actually typechecks,
 # not just that its generated text matches a Rust-side snapshot (issue #419).
 # Generates a REST and an RPC package during the run from committed
