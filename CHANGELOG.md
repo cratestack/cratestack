@@ -380,6 +380,19 @@ to go. Every in-tree caller (`cratestack-cli`'s `migrate diff`/`migrate baseline
 across `cratestack-migrate`/`cratestack-pg`) is updated; any out-of-tree direct caller of these two
 functions needs the same `?`/`.expect(...)` treatment.
 
+### Fixed a regression: renaming a primary-key column now migrates again instead of being refused as a primary-key change (#536)
+
+A post-merge review of #536/#551 found that its new `PrimaryKeyChanged` refusal (above) compared
+raw column *names* without resolving column-level `@rename(from = "...")` first, so renaming an
+`@id`/`@@id([...])` column — a previously-working, fully-supported operation that lowers to a plain
+`RENAME COLUMN` — was misdiagnosed as a primary-key change and refused outright. `RENAME COLUMN`
+preserves whatever constraint already references the column on both backends, so the key's actual
+structure (arity, order, logical identity) was never changing; only its name was. `diff::primary_key`
+now resolves each previous-side key column through the same rename map `diff::columns` already
+builds from `@rename(from = "...")` before comparing, extracted into a shared
+`diff::columns::column_rename_map` helper so both call sites stay on one implementation. A genuine
+reorder or a change to the key's column set is still refused exactly as before — resolving a rename
+only changes a renamed column's *name* in the comparison, never its position.
 ### `cratestack-studio` no longer emits invalid SQL previewing a `Create`/`Update` on an `@version` model without a payload (#507)
 
 A post-merge review of #553 found that `preview_sql`'s no-payload fallback (`sample_column_names`)

@@ -18,6 +18,9 @@
 //! fails loudly instead, naming the table and the before/after key,
 //! and leaves writing the actual migration to a human.
 
+use std::collections::BTreeMap;
+
+use super::columns::column_rename_map;
 use crate::convert::TableProjection;
 use crate::error::MigrateError;
 
@@ -51,13 +54,35 @@ fn primary_key_columns(table: &TableProjection) -> Vec<&str> {
 /// table: `tables::collect_creates` never calls this, since a
 /// `CreateTable` sets `primary_key` directly and there is nothing to
 /// "change".
+///
+/// A column-level `@rename(from = "...")` on a key column is not a
+/// key change: `columns::diff_columns` already turns it into a plain
+/// `RenameColumn` op, and `RENAME COLUMN` preserves whatever
+/// constraint (including `PRIMARY KEY`) already references the
+/// column on both backends. So before comparing, every prev-side key
+/// column name is resolved through the same rename map
+/// `columns::diff_columns` uses — a key column that was renamed
+/// compares by its *next*-side name, in its original position. A
+/// renamed key column that also changed position, or a genuine
+/// change to the key's column set, still compares unequal and is
+/// still refused (see `diff/tests/primary_key.rs`'s
+/// `reordering_primary_key_field_declarations_is_rejected` and
+/// `changing_composite_primary_key_columns_is_rejected`).
 pub(super) fn check_primary_key_unchanged(
     prev: &TableProjection,
     next: &TableProjection,
 ) -> Result<(), MigrateError> {
     let prev_key = primary_key_columns(prev);
     let next_key = primary_key_columns(next);
-    if prev_key == next_key {
+
+    let renames = column_rename_map(prev, next);
+    let old_to_new: BTreeMap<&str, &str> = renames.iter().map(|(new, old)| (*old, *new)).collect();
+    let resolved_prev_key: Vec<&str> = prev_key
+        .iter()
+        .map(|name| old_to_new.get(name).copied().unwrap_or(*name))
+        .collect();
+
+    if resolved_prev_key == next_key {
         return Ok(());
     }
     Err(MigrateError::PrimaryKeyChanged {
