@@ -26,6 +26,8 @@ cratestack-core = "0.6.7"
 
 At most one `Decimal` backend feature may be selected — `decimal-rust-decimal` (the default, `Copy`, fixed 96-bit precision) or `decimal-bigdecimal` (arbitrary precision, heap-allocated, not `Copy`). Selecting both is a compile error. Selecting neither is allowed as of cratestack#521: `Decimal` is simply not exported, which lets a consumer narrow its dependency graph with `default-features = false` without naming a backend it never uses. A schema that does use a `Decimal` field then fails with rustc's own "cannot find type `Decimal`" rather than a clearer message from this crate.
 
+**⚠️ This is a graph-wide invariant, not a per-crate one (cratestack#505):** Cargo features are additive and unify across a whole dependency graph, so "selecting both is a compile error" isn't something *your* `Cargo.toml` alone controls. Two independent dependents that each pick a different backend — both individually well-formed — can still force this error into a combined build that neither one can fix on its own; the only current workaround is standardizing the whole graph on one backend feature. See `crates/cratestack-core/src/decimal.rs`'s module doc for the full detail and cratestack#505 for the open design discussion on making the backends genuinely additive.
+
 ## Error Handling
 
 `CoolError` returns a safe public message to clients while keeping operator-only detail for tracing.

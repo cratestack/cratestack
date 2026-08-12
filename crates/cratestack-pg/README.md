@@ -69,7 +69,14 @@ and [ADR-0003](https://cratestack.dev/internals/views-adr).
   selecting both is a compile error. Selecting *neither* is allowed as of
   cratestack#521 — the `Decimal` type is simply not exported, so only a schema
   that actually uses a `Decimal` field fails, with rustc's own "cannot find
-  type `Decimal`". **Wire compatibility
+  type `Decimal`". **This is a graph-wide invariant, not a per-crate one
+  (cratestack#505):** picking one backend in *your* `Cargo.toml` doesn't
+  protect you — Cargo features unify across the whole dependency graph, so
+  an unrelated dependency that deliberately picked the other backend can
+  still force the "both selected" compile error into your build, and
+  neither side can fix it alone. See `cratestack-core`'s README and
+  `crates/cratestack-core/src/decimal.rs`'s module doc for the full
+  picture. **Wire compatibility
   constraint:** ordinary values encode identically to `rust_decimal` on
   the wire, but values past `rust_decimal`'s ~28-29 significant-digit
   capacity serialize as scientific notation (e.g. `"1E-29"`), which a
