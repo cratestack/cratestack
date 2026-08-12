@@ -9,7 +9,9 @@ use std::sync::{Arc, Mutex};
 
 use cratestack::include_server_schema;
 use cratestack::sqlx::{Row, query};
-use cratestack::{AuditEvent, AuditSink, BatchItemStatus, CoolContext, CoolError, Value};
+use cratestack::{
+    AuditEvent, AuditSink, BatchItemStatus, CoolContext, CoolError, UpsertOutcome, Value,
+};
 
 include_server_schema!("tests/fixtures/banking_audit.cstack", db = Postgres);
 
@@ -496,4 +498,476 @@ async fn custom_audit_sink_receives_one_event_per_successful_batch_create_item()
         audit_count, 2,
         "the in-database audit table must record the same two successful creates as the sink"
     );
+}
+
+// ───── cratestack#473 coverage-gap closure ───────────────────────────────
+//
+// `dispatch_audit_sink` is wired into 11 structurally identical call
+// sites (7 under `cratestack_sqlx::query::write`, 4 under
+// `cratestack_sqlx::query::batch`), but before the tests below only
+// `create` and `batch_create` were ever asserted against an installed
+// `AuditSink` — the other nine were unverified copy/paste. Each test
+// below targets exactly one of the remaining sites; see the PR
+// description for the sabotage-run proof that each assertion is bound
+// to its own call site (commenting out that site's `dispatch_audit_sink`
+// call turns exactly that test red and no other).
+//
+//   write/create.rs            -> covered above (`custom_audit_sink_receives_the_create_event`)
+//   write/delete.rs             -> `custom_audit_sink_receives_the_delete_event`
+//   write/update_run.rs         -> `custom_audit_sink_receives_the_update_event`
+//   write/upsert.rs              -> `custom_audit_sink_receives_both_branches_of_plain_upsert`
+//   write/upsert_do_nothing.rs  -> `custom_audit_sink_receives_the_upsert_do_nothing_insert_event_only`
+//   write/update_many.rs        -> `custom_audit_sink_receives_the_update_many_event`
+//   write/delete_many.rs        -> `custom_audit_sink_receives_the_delete_many_event`
+//   batch/create.rs              -> covered above (`custom_audit_sink_receives_one_event_per_successful_batch_create_item`)
+//   batch/update.rs              -> `custom_audit_sink_receives_one_event_per_successful_batch_update_item`
+//   batch/delete.rs              -> `custom_audit_sink_receives_one_event_per_successful_batch_delete_item`
+//   batch/upsert.rs              -> `custom_audit_sink_receives_both_branches_of_batch_upsert`
+
+fn install_sink(
+    pool: &cratestack::sqlx::PgPool,
+) -> (RecordingAuditSink, cratestack_schema::Cratestack) {
+    let sink = RecordingAuditSink::default();
+    let cool = cratestack_schema::Cratestack::builder(pool.clone())
+        .with_audit_sink(std::sync::Arc::new(sink.clone()))
+        .build();
+    (sink, cool)
+}
+
+/// `write/update_run.rs`'s `dispatch_audit_sink` call, driven by the
+/// single-row `.update(id).set(..).run(ctx)` path.
+#[tokio::test]
+async fn custom_audit_sink_receives_the_update_event() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    query("INSERT INTO accounts VALUES (30, 'greta@example.com', 1, 1)")
+        .execute(pool)
+        .await
+        .expect("seed");
+
+    let (sink, cool) = install_sink(pool);
+    let ctx = operator();
+
+    cool.account()
+        .update(30)
+        .set(cratestack_schema::UpdateAccountInput {
+            customerEmail: None,
+            riskScore: None,
+            balance: Some(500),
+        })
+        .run(&ctx)
+        .await
+        .expect("update succeeds");
+
+    let recorded = sink.events.lock().unwrap().clone();
+    assert_eq!(
+        recorded.len(),
+        1,
+        "the AuditSink must receive exactly one event for the single-row update path"
+    );
+    assert_eq!(recorded[0].operation.as_str(), "update");
+    assert_eq!(recorded[0].primary_key, serde_json::json!(30));
+}
+
+/// `write/delete.rs`'s `dispatch_audit_sink` call, driven by the
+/// single-row `.delete(id).run(ctx)` path.
+#[tokio::test]
+async fn custom_audit_sink_receives_the_delete_event() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    query("INSERT INTO accounts VALUES (31, 'hank@example.com', 1, 1)")
+        .execute(pool)
+        .await
+        .expect("seed");
+
+    let (sink, cool) = install_sink(pool);
+    let ctx = operator();
+
+    cool.account()
+        .delete(31)
+        .run(&ctx)
+        .await
+        .expect("delete succeeds");
+
+    let recorded = sink.events.lock().unwrap().clone();
+    assert_eq!(
+        recorded.len(),
+        1,
+        "the AuditSink must receive exactly one event for the single-row delete path"
+    );
+    assert_eq!(recorded[0].operation.as_str(), "delete");
+    assert_eq!(recorded[0].primary_key, serde_json::json!(31));
+}
+
+/// `write/upsert.rs`'s single `dispatch_audit_sink` call site, exercised
+/// across both branches it can fire from (insert then DO UPDATE).
+#[tokio::test]
+async fn custom_audit_sink_receives_both_branches_of_plain_upsert() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+
+    let (sink, cool) = install_sink(pool);
+    let ctx = operator();
+
+    // Insert branch: no existing row for id 32.
+    cool.account()
+        .upsert(cratestack_schema::CreateAccountInput {
+            id: 32,
+            customerEmail: "ida@example.com".to_owned(),
+            riskScore: 1,
+            balance: 100,
+        })
+        .run(&ctx)
+        .await
+        .expect("upsert insert branch succeeds");
+
+    // DO UPDATE branch: same id, conflicts with the row just inserted.
+    cool.account()
+        .upsert(cratestack_schema::CreateAccountInput {
+            id: 32,
+            customerEmail: "ida@example.com".to_owned(),
+            riskScore: 1,
+            balance: 200,
+        })
+        .run(&ctx)
+        .await
+        .expect("upsert update branch succeeds");
+
+    let recorded = sink.events.lock().unwrap().clone();
+    assert_eq!(
+        recorded.len(),
+        2,
+        "the AuditSink must receive one event per plain-upsert call, across both branches"
+    );
+    assert_eq!(recorded[0].operation.as_str(), "create");
+    assert_eq!(recorded[1].operation.as_str(), "update");
+    assert_eq!(recorded[0].primary_key, serde_json::json!(32));
+    assert_eq!(recorded[1].primary_key, serde_json::json!(32));
+}
+
+/// `write/upsert_do_nothing.rs`'s `dispatch_audit_sink` call site — a
+/// distinct call site from plain `.upsert().run()` above. Only the
+/// insert branch ever builds an `AuditEvent`; the DO NOTHING conflict
+/// branch never mutates the row, so it must not reach the sink either.
+#[tokio::test]
+async fn custom_audit_sink_receives_the_upsert_do_nothing_insert_event_only() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+
+    let (sink, cool) = install_sink(pool);
+    let ctx = operator();
+
+    let first = cool
+        .account()
+        .upsert(cratestack_schema::CreateAccountInput {
+            id: 33,
+            customerEmail: "jack@example.com".to_owned(),
+            riskScore: 1,
+            balance: 100,
+        })
+        .do_nothing()
+        .run(&ctx)
+        .await
+        .expect("do_nothing insert branch succeeds");
+    assert!(matches!(first, UpsertOutcome::Inserted(_)));
+
+    let second = cool
+        .account()
+        .upsert(cratestack_schema::CreateAccountInput {
+            id: 33,
+            customerEmail: "jack@example.com".to_owned(),
+            riskScore: 1,
+            balance: 999, // ignored: DO NOTHING must not touch the row
+        })
+        .do_nothing()
+        .run(&ctx)
+        .await
+        .expect("do_nothing existing branch succeeds");
+    assert!(matches!(second, UpsertOutcome::Existing(_)));
+
+    let recorded = sink.events.lock().unwrap().clone();
+    assert_eq!(
+        recorded.len(),
+        1,
+        "the AuditSink must receive exactly one event — the insert branch — \
+         since DO NOTHING's existing branch never writes an audit row"
+    );
+    assert_eq!(recorded[0].operation.as_str(), "create");
+    assert_eq!(recorded[0].primary_key, serde_json::json!(33));
+}
+
+/// `write/update_many.rs`'s `dispatch_audit_sink` call, driven by the
+/// predicate-scoped `.update_many().where_(..).set(..).run(ctx)` path.
+#[tokio::test]
+async fn custom_audit_sink_receives_the_update_many_event() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    query("INSERT INTO accounts VALUES (34, 'ken@example.com', 1, 1)")
+        .execute(pool)
+        .await
+        .expect("seed");
+
+    let (sink, cool) = install_sink(pool);
+    let ctx = operator();
+
+    use cratestack_schema::account;
+    let summary = cool
+        .account()
+        .update_many()
+        .where_(account::id().eq(34))
+        .set(cratestack_schema::UpdateAccountInput {
+            customerEmail: None,
+            riskScore: None,
+            balance: Some(700),
+        })
+        .run(&ctx)
+        .await
+        .expect("update_many succeeds");
+    assert_eq!(summary.ok, 1);
+
+    let recorded = sink.events.lock().unwrap().clone();
+    assert_eq!(
+        recorded.len(),
+        1,
+        "the AuditSink must receive exactly one event for the one row update_many touched"
+    );
+    assert_eq!(recorded[0].operation.as_str(), "update");
+    assert_eq!(recorded[0].primary_key, serde_json::json!(34));
+}
+
+/// `write/delete_many.rs`'s `dispatch_audit_sink` call, driven by the
+/// predicate-scoped `.delete_many().where_(..).run(ctx)` path.
+#[tokio::test]
+async fn custom_audit_sink_receives_the_delete_many_event() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    query("INSERT INTO accounts VALUES (35, 'liz@example.com', 1, 1)")
+        .execute(pool)
+        .await
+        .expect("seed");
+
+    let (sink, cool) = install_sink(pool);
+    let ctx = operator();
+
+    use cratestack_schema::account;
+    let summary = cool
+        .account()
+        .delete_many()
+        .where_(account::id().eq(35))
+        .run(&ctx)
+        .await
+        .expect("delete_many succeeds");
+    assert_eq!(summary.ok, 1);
+
+    let recorded = sink.events.lock().unwrap().clone();
+    assert_eq!(
+        recorded.len(),
+        1,
+        "the AuditSink must receive exactly one event for the one row delete_many touched"
+    );
+    assert_eq!(recorded[0].operation.as_str(), "delete");
+    assert_eq!(recorded[0].primary_key, serde_json::json!(35));
+}
+
+/// `batch/update.rs`'s `dispatch_audit_sink` call — a distinct call site
+/// from the single-row `update_run.rs` one above, dispatched once for
+/// the whole batch after the outer transaction commits.
+#[tokio::test]
+async fn custom_audit_sink_receives_one_event_per_successful_batch_update_item() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    query(
+        "INSERT INTO accounts VALUES (36, 'mia@example.com', 1, 1), \
+         (37, 'noah@example.com', 1, 1)",
+    )
+    .execute(pool)
+    .await
+    .expect("seed");
+
+    let (sink, cool) = install_sink(pool);
+    let ctx = operator();
+
+    let response = cool
+        .account()
+        .batch_update(vec![
+            (
+                36,
+                cratestack_schema::UpdateAccountInput {
+                    customerEmail: None,
+                    riskScore: None,
+                    balance: Some(360),
+                },
+                None,
+            ),
+            (
+                37,
+                cratestack_schema::UpdateAccountInput {
+                    customerEmail: None,
+                    riskScore: None,
+                    balance: Some(370),
+                },
+                None,
+            ),
+        ])
+        .run(&ctx)
+        .await
+        .expect("batch_update infra ok");
+    assert_eq!(response.summary.ok, 2);
+
+    let recorded = sink.events.lock().unwrap().clone();
+    assert_eq!(
+        recorded.len(),
+        2,
+        "the AuditSink must receive one event per successful batch_update item"
+    );
+    let mut ids: Vec<serde_json::Value> = recorded
+        .iter()
+        .map(|event| event.primary_key.clone())
+        .collect();
+    ids.sort_by_key(|v| v.to_string());
+    assert_eq!(ids, vec![serde_json::json!(36), serde_json::json!(37)]);
+    assert!(
+        recorded
+            .iter()
+            .all(|event| event.operation.as_str() == "update")
+    );
+}
+
+/// `batch/delete.rs`'s `dispatch_audit_sink` call — a distinct call site
+/// from the single-row `delete.rs` one above.
+#[tokio::test]
+async fn custom_audit_sink_receives_one_event_per_successful_batch_delete_item() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    query(
+        "INSERT INTO accounts VALUES (38, 'omar@example.com', 1, 1), \
+         (39, 'paula@example.com', 1, 1)",
+    )
+    .execute(pool)
+    .await
+    .expect("seed");
+
+    let (sink, cool) = install_sink(pool);
+    let ctx = operator();
+
+    let response = cool
+        .account()
+        .batch_delete(vec![38, 39, 9999]) // 9999 doesn't exist -> per-item NotFound
+        .run(&ctx)
+        .await
+        .expect("batch_delete infra ok");
+    assert_eq!(response.summary.ok, 2);
+    assert_eq!(response.summary.err, 1);
+
+    let recorded = sink.events.lock().unwrap().clone();
+    assert_eq!(
+        recorded.len(),
+        2,
+        "the AuditSink must receive one event per successful batch_delete item, \
+         not the NotFound one"
+    );
+    let mut ids: Vec<serde_json::Value> = recorded
+        .iter()
+        .map(|event| event.primary_key.clone())
+        .collect();
+    ids.sort_by_key(|v| v.to_string());
+    assert_eq!(ids, vec![serde_json::json!(38), serde_json::json!(39)]);
+    assert!(
+        recorded
+            .iter()
+            .all(|event| event.operation.as_str() == "delete")
+    );
+}
+
+/// `batch/upsert.rs`'s single `dispatch_audit_sink` call site — a
+/// distinct call site from the single-row `upsert.rs` one above,
+/// exercised across both branches it can fire from within one batch.
+#[tokio::test]
+async fn custom_audit_sink_receives_both_branches_of_batch_upsert() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    // Pre-existing row for id 40 so batch_upsert's matching item hits
+    // the UPDATE branch, while id 41 is new (INSERT branch).
+    query("INSERT INTO accounts VALUES (40, 'quinn@example.com', 1, 1)")
+        .execute(pool)
+        .await
+        .expect("seed");
+
+    let (sink, cool) = install_sink(pool);
+    let ctx = operator();
+
+    let response = cool
+        .account()
+        .batch_upsert(vec![
+            cratestack_schema::CreateAccountInput {
+                id: 41,
+                customerEmail: "riley@example.com".to_owned(),
+                riskScore: 2,
+                balance: 41,
+            },
+            cratestack_schema::CreateAccountInput {
+                id: 40,
+                customerEmail: "quinn@example.com".to_owned(),
+                riskScore: 2,
+                balance: 40,
+            },
+        ])
+        .run(&ctx)
+        .await
+        .expect("batch_upsert infra ok");
+    assert_eq!(response.summary.ok, 2);
+
+    let recorded = sink.events.lock().unwrap().clone();
+    assert_eq!(
+        recorded.len(),
+        2,
+        "the AuditSink must receive one event per batch_upsert item, across both branches"
+    );
+    let ops_by_pk: std::collections::BTreeMap<String, String> = recorded
+        .iter()
+        .map(|event| {
+            (
+                event.primary_key.to_string(),
+                event.operation.as_str().to_owned(),
+            )
+        })
+        .collect();
+    assert_eq!(ops_by_pk.get("41").map(String::as_str), Some("create"));
+    assert_eq!(ops_by_pk.get("40").map(String::as_str), Some("update"));
 }
