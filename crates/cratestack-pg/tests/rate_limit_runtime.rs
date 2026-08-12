@@ -66,6 +66,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for RpcProcedures {
         _db: &cratestack_schema::Cratestack,
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::ping::Args,
+        _authorized: cratestack_schema::procedures::ping::Authorized,
     ) -> impl core::future::Future<
         Output = Result<cratestack_schema::procedures::ping::Output, CoolError>,
     > + Send {
@@ -77,6 +78,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for RpcProcedures {
         _db: &cratestack_schema::Cratestack,
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::create_payment::Args,
+        _authorized: cratestack_schema::procedures::create_payment::Authorized,
     ) -> impl core::future::Future<
         Output = Result<cratestack_schema::procedures::create_payment::Output, CoolError>,
     > + Send {

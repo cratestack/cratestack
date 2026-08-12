@@ -59,6 +59,18 @@ fn parse_first_procedure(source: &str) -> cratestack_core::Procedure {
 /// string when touching `@stream` codegen — if this test fails after that
 /// change, the change broke the non-breaking guarantee cratestack#282
 /// requires.
+///
+/// **Deliberately re-pinned once, for cratestack#512.** Both branches below
+/// gained a trailing `_authorized: ticks::Authorized` parameter — a real,
+/// intentional, documented-breaking change (every `ProcedureRegistry`
+/// implementor's method signature grows this parameter; see
+/// `generate_procedure_registry_method`'s own doc comment and the
+/// CHANGELOG's Migration paragraph), unrelated to cratestack#282's
+/// stream-vs-non-stream parity this test actually guards. Both branches
+/// were re-pinned together specifically so that parity — "adding
+/// `@stream` doesn't change anything else about the trait method" — still
+/// holds after the cratestack#512 change, which is why both quote! blocks
+/// below gained the identical new parameter rather than just one of them.
 #[test]
 fn non_stream_list_procedure_trait_method_is_unchanged() {
     let procedure = parse_first_procedure(LIST_RETURNING_SCHEMA);
@@ -73,13 +85,15 @@ fn non_stream_list_procedure_trait_method_is_unchanged() {
             db: &super::Cratestack,
             ctx: &::cratestack::CoolContext,
             args: ticks::Args,
+            _authorized: ticks::Authorized,
         ) -> impl ::core::future::Future<Output = Result<ticks::Output, ::cratestack::CoolError>> + Send;
     }
     .to_string();
 
     assert_eq!(
         actual, expected,
-        "non-@stream list-returning procedure's trait method must stay byte-identical"
+        "non-@stream list-returning procedure's trait method must stay byte-identical \
+         (modulo the cratestack#512 witness parameter, re-pinned above)"
     );
 }
 
@@ -97,6 +111,7 @@ fn stream_marked_list_procedure_generates_stream_shaped_trait_method() {
             db: &super::Cratestack,
             ctx: &::cratestack::CoolContext,
             args: ticks::Args,
+            _authorized: ticks::Authorized,
         ) -> impl ::cratestack::futures::Stream<Item = Result<ticks::Item, ::cratestack::CoolError>> + Send;
     }
     .to_string();

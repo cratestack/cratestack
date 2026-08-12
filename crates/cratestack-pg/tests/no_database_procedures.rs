@@ -20,7 +20,7 @@ use cratestack::CoolCodec;
 use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack::include_server_schema;
-use cratestack::{CoolContext, CoolError};
+use cratestack::{CoolContext, CoolError, SystemContext};
 use cratestack_codec_json::JsonCodec;
 use tower::ServiceExt;
 
@@ -35,6 +35,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
         _db: &cratestack_schema::Cratestack,
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::ping::Args,
+        _authorized: cratestack_schema::procedures::ping::Authorized,
     ) -> impl core::future::Future<
         Output = Result<cratestack_schema::procedures::ping::Output, CoolError>,
     > + Send {
@@ -87,24 +88,133 @@ fn no_database_schema_declares_zero_models_and_one_procedure() {
     assert_eq!(cratestack_schema::TRANSPORT_STYLE, "rest");
 }
 
+/// cratestack#512: this test used to call
+/// `ProcedureRegistry::ping(&procedures, &db, &CoolContext::anonymous(),
+/// args)` directly — the exact silent-bypass shape that ticket describes.
+/// It "passed" with an *anonymous* context despite `ping` declaring
+/// `@allow(auth() != null)`, because that direct call never ran policy at
+/// all; this file itself was live evidence of the bug, not just the ticket
+/// text. `ProcedureRegistry::ping` now takes an `Authorized` witness only
+/// `invoke_with_db`/`authorize_with_db` can construct, so the old call no
+/// longer compiles — this test now goes through `invoke_with_db`, the same
+/// entry point the generated axum handler uses, with an authenticated
+/// context (anonymous would now correctly be `Forbidden`).
 #[tokio::test]
 async fn no_database_schema_procedure_handler_still_dispatches() {
     let db = cratestack_schema::Cratestack::builder().build();
     let procedures = Procedures;
-    let output = cratestack_schema::procedures::ProcedureRegistry::ping(
-        &procedures,
+    let ctx = CoolContext::authenticated([("id".to_owned(), cratestack::Value::Int(1))]);
+    let args = cratestack_schema::procedures::ping::Args {
+        args: cratestack_schema::PingArgs {
+            message: "hello".to_owned(),
+        },
+    };
+
+    let call_args = args.clone();
+    let call_ctx = ctx.clone();
+    let output = cratestack_schema::procedures::ping::invoke_with_db(
         &db,
-        &CoolContext::anonymous(),
-        cratestack_schema::procedures::ping::Args {
-            args: cratestack_schema::PingArgs {
-                message: "hello".to_owned(),
-            },
+        &args,
+        &ctx,
+        |authorized| async move {
+            cratestack_schema::procedures::ProcedureRegistry::ping(
+                &procedures,
+                &db,
+                &call_ctx,
+                call_args,
+                authorized,
+            )
+            .await
         },
     )
     .await
     .expect("ping handler should succeed");
 
     assert_eq!(output.echo, "hello");
+}
+
+/// The other half of the cratestack#512 regression: the exact context the
+/// old direct call used (`CoolContext::anonymous()`) must now be denied —
+/// `ping` declares `@allow(auth() != null)`, so this was always a policy
+/// violation the old call shape silently let through.
+#[tokio::test]
+async fn no_database_schema_procedure_denies_anonymous_caller() {
+    let db = cratestack_schema::Cratestack::builder().build();
+    let args = cratestack_schema::procedures::ping::Args {
+        args: cratestack_schema::PingArgs {
+            message: "hello".to_owned(),
+        },
+    };
+
+    let call_args = args.clone();
+    let error = cratestack_schema::procedures::ping::invoke_with_db(
+        &db,
+        &args,
+        &CoolContext::anonymous(),
+        |authorized| async move {
+            let procedures = Procedures;
+            cratestack_schema::procedures::ProcedureRegistry::ping(
+                &procedures,
+                &db,
+                &CoolContext::anonymous(),
+                call_args,
+                authorized,
+            )
+            .await
+        },
+    )
+    .await
+    .expect_err("anonymous caller must be denied by @allow(auth() != null)");
+    assert!(matches!(error, CoolError::Forbidden(_)));
+}
+
+/// cratestack#512's other required coverage: a legitimate internal caller
+/// (a cron job, background worker, or admin tool) using `auth().isSystem()`
+/// (cratestack#486)'s sanctioned identity — [`SystemContext`] — must still
+/// be able to call a procedure through the enforced path. `ping` only
+/// declares `@allow(auth() != null)`, not a system-specific clause, but
+/// `SystemContext` is always authenticated (`is_authenticated() == true`,
+/// see `cratestack_core::context::system`'s own
+/// `system_context_is_system_and_authenticated` test), so it satisfies
+/// that predicate exactly the way any other authenticated caller would —
+/// proving the fix didn't turn "internal caller" into "caller who can
+/// never pass policy".
+#[tokio::test]
+async fn no_database_schema_procedure_admits_a_system_caller() {
+    let db = cratestack_schema::Cratestack::builder().build();
+    let procedures = Procedures;
+    let ctx = SystemContext::for_service("nightly-ping-reconciler").into_context();
+    assert!(
+        ctx.is_system(),
+        "fixture ctx should be a real system context"
+    );
+    let args = cratestack_schema::procedures::ping::Args {
+        args: cratestack_schema::PingArgs {
+            message: "reconcile".to_owned(),
+        },
+    };
+
+    let call_args = args.clone();
+    let call_ctx = ctx.clone();
+    let output = cratestack_schema::procedures::ping::invoke_with_db(
+        &db,
+        &args,
+        &ctx,
+        |authorized| async move {
+            cratestack_schema::procedures::ProcedureRegistry::ping(
+                &procedures,
+                &db,
+                &call_ctx,
+                call_args,
+                authorized,
+            )
+            .await
+        },
+    )
+    .await
+    .expect("a system-principal caller should pass @allow(auth() != null)");
+
+    assert_eq!(output.echo, "reconcile");
 }
 
 /// The story's headline evidence: the *generated router* — built from a

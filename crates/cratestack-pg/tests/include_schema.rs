@@ -134,6 +134,7 @@ mod advanced_policy_schema {
             _db: &cratestack_schema::Cratestack,
             _ctx: &CoolContext,
             args: cratestack_schema::procedures::approve_post::Args,
+            _authorized: cratestack_schema::procedures::approve_post::Authorized,
         ) -> impl core::future::Future<
             Output = Result<
                 cratestack_schema::procedures::approve_post::Output,
@@ -157,6 +158,7 @@ mod advanced_policy_schema {
             _db: &cratestack_schema::Cratestack,
             _ctx: &CoolContext,
             args: cratestack_schema::procedures::review_post::Args,
+            _authorized: cratestack_schema::procedures::review_post::Authorized,
         ) -> Result<cratestack_schema::procedures::review_post::Output, cratestack::CoolError>
         {
             Ok(cratestack_schema::AdvancedPost {
@@ -589,6 +591,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for TestProcedures {
         _db: &cratestack_schema::Cratestack,
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::get_feed::Args,
+        _authorized: cratestack_schema::procedures::get_feed::Authorized,
     ) -> Result<cratestack_schema::procedures::get_feed::Output, cratestack::CoolError> {
         Ok(vec![cratestack_schema::Post {
             id: args.limit.unwrap_or(1),
@@ -604,6 +607,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for TestProcedures {
         _db: &cratestack_schema::Cratestack,
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::get_feed_page::Args,
+        _authorized: cratestack_schema::procedures::get_feed_page::Authorized,
     ) -> Result<cratestack_schema::procedures::get_feed_page::Output, cratestack::CoolError> {
         let limit = args.limit.unwrap_or(1);
         let offset = args.offset.unwrap_or(0);
@@ -630,6 +634,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for TestProcedures {
         _db: &cratestack_schema::Cratestack,
         ctx: &CoolContext,
         args: cratestack_schema::procedures::publish_post::Args,
+        _authorized: cratestack_schema::procedures::publish_post::Authorized,
     ) -> impl core::future::Future<
         Output = Result<cratestack_schema::procedures::publish_post::Output, cratestack::CoolError>,
     > + Send {
@@ -2522,6 +2527,7 @@ mod transport_rpc_schema {
             _db: &cratestack_schema::Cratestack,
             _ctx: &CoolContext,
             args: cratestack_schema::procedures::ping::Args,
+            _authorized: cratestack_schema::procedures::ping::Authorized,
         ) -> Result<cratestack_schema::procedures::ping::Output, cratestack::CoolError> {
             Ok(args.args)
         }
@@ -2531,6 +2537,7 @@ mod transport_rpc_schema {
             _db: &cratestack_schema::Cratestack,
             _ctx: &CoolContext,
             args: cratestack_schema::procedures::bump::Args,
+            _authorized: cratestack_schema::procedures::bump::Authorized,
         ) -> Result<cratestack_schema::procedures::bump::Output, cratestack::CoolError> {
             Ok(cratestack_schema::PingArgs {
                 nonce: format!("{}!", args.args.nonce),
@@ -2542,6 +2549,7 @@ mod transport_rpc_schema {
             _db: &cratestack_schema::Cratestack,
             _ctx: &CoolContext,
             args: cratestack_schema::procedures::many_pings::Args,
+            _authorized: cratestack_schema::procedures::many_pings::Authorized,
         ) -> Result<cratestack_schema::procedures::many_pings::Output, cratestack::CoolError>
         {
             let base = args.args.nonce;

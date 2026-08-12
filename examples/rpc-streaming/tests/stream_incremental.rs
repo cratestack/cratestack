@@ -28,7 +28,11 @@ const COUNT: i64 = 5;
 #[tokio::test]
 async fn ticks_stream_yields_first_item_well_before_the_stream_completes() {
     let db = build_db();
-    let ctx = cratestack::CoolContext::anonymous();
+    // `ticks` declares `@allow(auth() != null)` — an anonymous context
+    // would (correctly, post-cratestack#512) be denied by `authorize_with_db`
+    // below, so this test authenticates rather than proving the wrong thing.
+    let ctx =
+        cratestack::CoolContext::authenticated([("id".to_owned(), cratestack::Value::Int(1))]);
     let args = schema::procedures::ticks::Args {
         args: schema::TickerArgs {
             start: 0,
@@ -36,12 +40,20 @@ async fn ticks_stream_yields_first_item_well_before_the_stream_completes() {
         },
     };
 
+    // cratestack#512: `Procedures::ticks` now takes an `Authorized` witness
+    // that only `authorize_with_db`/`invoke_with_db` can construct — obtain
+    // one the same way the generated dispatch code does, rather than
+    // calling the trait method directly with no policy check at all.
+    let authorized = schema::procedures::ticks::authorize_with_db(&db, &args, &ctx)
+        .await
+        .expect("authenticated caller should pass @allow(auth() != null)");
+
     // `Procedures::ticks` returns `impl Stream<..> + Send`, not
     // necessarily `Unpin` (the `async_stream::stream!`-generated state
     // machine isn't) — `Box::pin` gets us something `StreamExt::next` can
     // poll without pinning it to the stack by hand.
     let procedures = Procedures::default();
-    let mut stream = Box::pin(procedures.ticks(&db, &ctx, args));
+    let mut stream = Box::pin(procedures.ticks(&db, &ctx, args, authorized));
 
     let started = Instant::now();
     let first = stream

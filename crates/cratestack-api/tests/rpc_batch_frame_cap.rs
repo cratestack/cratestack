@@ -31,6 +31,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
         _db: &cratestack_schema::Cratestack,
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::ping::Args,
+        _authorized: cratestack_schema::procedures::ping::Authorized,
     ) -> impl core::future::Future<
         Output = Result<cratestack_schema::procedures::ping::Output, CoolError>,
     > + Send {

@@ -58,6 +58,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
         _db: &cratestack_schema::Cratestack,
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::add::Args,
+        _authorized: cratestack_schema::procedures::add::Authorized,
     ) -> impl core::future::Future<
         Output = Result<cratestack_schema::procedures::add::Output, CoolError>,
     > + Send {
@@ -73,6 +74,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
         _db: &cratestack_schema::Cratestack,
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::multiply::Args,
+        _authorized: cratestack_schema::procedures::multiply::Authorized,
     ) -> impl core::future::Future<
         Output = Result<cratestack_schema::procedures::multiply::Output, CoolError>,
     > + Send {
@@ -88,6 +90,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
         _db: &cratestack_schema::Cratestack,
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::divide::Args,
+        _authorized: cratestack_schema::procedures::divide::Authorized,
     ) -> impl core::future::Future<
         Output = Result<cratestack_schema::procedures::divide::Output, CoolError>,
     > + Send {

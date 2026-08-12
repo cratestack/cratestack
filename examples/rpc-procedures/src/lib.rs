@@ -30,6 +30,11 @@ cratestack::include_server_schema!("schema.cstack", db = None);
 // the `procedures::greet::Args`, `GreetReply`, etc. types.
 pub use cratestack_schema as schema;
 
+// cratestack#512: the documented, compiling example of calling a
+// procedure correctly from non-HTTP code (a cron job here) — see that
+// module's doc comment.
+pub mod internal_worker;
+
 /// In-memory counter shared across all `increment` invocations. Real
 /// services would persist this — the example is about the RPC dispatch
 /// shape, not the state.
@@ -44,6 +49,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
         _db: &cratestack_schema::Cratestack,
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::greet::Args,
+        _authorized: cratestack_schema::procedures::greet::Authorized,
     ) -> impl core::future::Future<
         Output = Result<cratestack_schema::procedures::greet::Output, CoolError>,
     > + Send {
@@ -59,6 +65,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
         _db: &cratestack_schema::Cratestack,
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::increment::Args,
+        _authorized: cratestack_schema::procedures::increment::Authorized,
     ) -> impl core::future::Future<
         Output = Result<cratestack_schema::procedures::increment::Output, CoolError>,
     > + Send {
