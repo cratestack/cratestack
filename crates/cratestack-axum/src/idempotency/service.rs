@@ -24,7 +24,8 @@ pub struct IdempotencyService<S> {
     pub(super) inner: S,
     pub(super) store: Arc<dyn IdempotencyStore>,
     pub(super) ttl: Duration,
-    pub(super) principal_fingerprint: Arc<dyn Fn(&Request) -> String + Send + Sync>,
+    pub(super) principal_fingerprint:
+        Arc<dyn Fn(&Request) -> Result<String, CoolError> + Send + Sync>,
 }
 
 impl<S> Service<Request> for IdempotencyService<S>
@@ -62,7 +63,10 @@ where
                 Ok(None) => return inner.call(req).await,
                 Err(error) => return Ok(error_response(error)),
             };
-            let principal = (principal_fp)(&req);
+            let principal = match (principal_fp)(&req) {
+                Ok(principal) => principal,
+                Err(error) => return Ok(error_response(error)),
+            };
             // Hash the full path + query string. Skipping the query
             // makes `POST /transfer?dry_run=true` collide with
             // `POST /transfer?dry_run=false` under the same key, so a

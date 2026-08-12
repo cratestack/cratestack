@@ -81,6 +81,13 @@ tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+# `default_fingerprint_collision.rs` (cratestack#416) implements
+# `IdempotencyStore` on an in-memory test double, mirroring the identical
+# pattern already used inside `cratestack-axum`'s own
+# `idempotency::tests_stream_bypass` — already a resolved, non-dev
+# dependency of `cratestack-axum` (this crate's dependency) at workspace
+# version "0.1", so this adds no new dependency to the graph.
+async-trait.workspace = true
 # Plain edges, not hardcoded `features = [...]`: both codecs get their
 # backend from THIS crate's own `decimal-rust-decimal`/`decimal-bigdecimal`
 # feature (see the forwards there) — Cargo's feature resolver unifies

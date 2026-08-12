@@ -120,6 +120,11 @@ fn streamed_request() -> Request {
         .method("POST")
         .uri("/rpc/procedure.ticks")
         .header("idempotency-key", "same-key-both-times")
+        // A verifiable caller identity so the request reaches the store
+        // rather than being refused by the default fingerprint fn itself
+        // (cratestack#416) — this test is about stream bypass, not the
+        // identity-refusal path.
+        .header("authorization", "Bearer test")
         .body(Body::empty())
         .unwrap()
 }

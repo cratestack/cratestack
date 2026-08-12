@@ -30,13 +30,15 @@
 //! writing, no example shipped in this repository — serves through
 //! `into_make_service_with_connect_info` by default; every example uses
 //! plain `into_make_service()`. Without it, `ConnectInfo<SocketAddr>` is
-//! never present in request extensions, so *every* caller without an
-//! `Authorization` header shares a single `"anonymous"` bucket —
-//! effectively no per-caller throttling for that traffic. Consumers who
-//! authenticate via cookies/mTLS rather than an `Authorization` header —
-//! and who cannot serve through `into_make_service_with_connect_info` —
-//! must supply [`RateLimitLayer::with_key_fn`] explicitly; relying on the
-//! default alone does not, by itself, separate such callers.
+//! never present in request extensions, so *every* request without an
+//! `Authorization` header is refused with `412 Precondition Failed`
+//! (cratestack#416 — the default used to silently collapse such requests
+//! onto a shared `"anonymous"` bucket instead, which meant no per-caller
+//! throttling at all for that traffic; it now refuses rather than risk
+//! that collision). Consumers who authenticate via cookies/mTLS rather
+//! than an `Authorization` header — and who cannot serve through
+//! `into_make_service_with_connect_info` — must supply
+//! [`RateLimitLayer::with_key_fn`] explicitly.
 
 mod config;
 mod layer;

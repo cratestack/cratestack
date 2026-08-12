@@ -1130,6 +1130,7 @@ name = "cratestack-api"
 version = "0.7.12"
 dependencies = [
  "async-stream",
+ "async-trait",
  "chrono",
  "cratestack-axum",
  "cratestack-client-rust",

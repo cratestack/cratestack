@@ -298,9 +298,12 @@ async fn client_recovers_after_waiting_retry_after() {
 }
 
 // -----------------------------------------------------------------------------
-// Anonymous (no Authorization header) requests share a single bucket — the
-// default key function maps them all to `"anonymous"`. Banks that want a
-// per-IP bucket override the key function; this test pins the default.
+// cratestack#416: anonymous (no Authorization header, no ConnectInfo peer)
+// requests used to share a single `"anonymous"` bucket under the default key
+// function — no per-caller throttling at all for that traffic, and any two
+// distinct unauthenticated callers could exhaust each other's budget. The
+// default now refuses such requests instead of manufacturing a shared
+// bucket; this test pins that fail-closed behavior.
 // -----------------------------------------------------------------------------
 
 // -----------------------------------------------------------------------------
@@ -419,7 +422,7 @@ async fn randomized_http_burst_then_429_holds_for_arbitrary_configs() {
 }
 
 #[tokio::test]
-async fn anonymous_requests_share_one_bucket_under_the_default_key_fn() {
+async fn anonymous_requests_are_refused_not_pooled_into_one_bucket() {
     let Some((store, _redis_guard)) = store_or_skip("anonymous").await else {
         return;
     };
@@ -435,14 +438,16 @@ async fn anonymous_requests_share_one_bucket_under_the_default_key_fn() {
             .expect("req")
     };
 
-    let r1 = router.clone().oneshot(unauth_req()).await.expect("r1");
-    let r2 = router.clone().oneshot(unauth_req()).await.expect("r2");
-    assert_eq!(r1.status(), StatusCode::CREATED);
-    assert_eq!(r2.status(), StatusCode::CREATED);
-    let r3 = router.clone().oneshot(unauth_req()).await.expect("r3");
-    assert_eq!(
-        r3.status(),
-        StatusCode::TOO_MANY_REQUESTS,
-        "the third anonymous request must hit the shared bucket's limit",
-    );
+    // Every anonymous request is refused (412) — never allowed through into
+    // a shared bucket, and never throttled either (throttling implies a
+    // bucket was consulted at all).
+    for i in 0..3 {
+        let response = router.clone().oneshot(unauth_req()).await.expect("send");
+        assert_eq!(
+            response.status(),
+            StatusCode::PRECONDITION_FAILED,
+            "attempt {i}: an unverifiable caller identity must be refused, not pooled into a \
+             shared \"anonymous\" bucket (cratestack#416)",
+        );
+    }
 }

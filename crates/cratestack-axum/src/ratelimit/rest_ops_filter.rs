@@ -64,6 +64,7 @@ pub fn build_rest_ops_filter(
 mod tests {
     use axum::Router;
     use axum::body::Body;
+    use axum::extract::ConnectInfo;
     use axum::http::{Request as HttpRequest, StatusCode};
     use axum::routing::{get, post};
     use cratestack_core::{RouteTransportCapabilities, RouteTransportDescriptor};
@@ -71,6 +72,18 @@ mod tests {
 
     use super::build_rest_ops_filter;
     use crate::ratelimit::{InMemoryRateLimitStore, RateLimitConfig, RateLimitLayer};
+
+    /// Every request in this module that actually reaches the rate-limit
+    /// store (i.e. isn't exempted by the filter under test) needs a
+    /// verifiable caller identity — cratestack#416 made the default key fn
+    /// refuse requests with neither an `Authorization` header nor a
+    /// `ConnectInfo<SocketAddr>` peer, and `oneshot` never populates
+    /// `ConnectInfo` on its own.
+    fn with_peer(mut req: HttpRequest<Body>) -> HttpRequest<Body> {
+        let peer: std::net::SocketAddr = "192.0.2.50:1".parse().unwrap();
+        req.extensions_mut().insert(ConnectInfo(peer));
+        req
+    }
 
     const CAPS: RouteTransportCapabilities = RouteTransportCapabilities {
         request_types: &[],
@@ -140,14 +153,18 @@ mod tests {
 
         let first = router
             .clone()
-            .oneshot(HttpRequest::get("/widgets/42").body(Body::empty()).unwrap())
+            .oneshot(with_peer(
+                HttpRequest::get("/widgets/42").body(Body::empty()).unwrap(),
+            ))
             .await
             .unwrap();
         assert_eq!(first.status(), StatusCode::OK, "first request within burst");
 
         let second = router
             .clone()
-            .oneshot(HttpRequest::get("/widgets/7").body(Body::empty()).unwrap())
+            .oneshot(with_peer(
+                HttpRequest::get("/widgets/7").body(Body::empty()).unwrap(),
+            ))
             .await
             .unwrap();
         assert_eq!(
@@ -177,11 +194,11 @@ mod tests {
 
         let first = router
             .clone()
-            .oneshot(
+            .oneshot(with_peer(
                 HttpRequest::get("/does/not/exist")
                     .body(Body::empty())
                     .unwrap(),
-            )
+            ))
             .await
             .unwrap();
         assert_eq!(
@@ -192,11 +209,11 @@ mod tests {
 
         let second = router
             .clone()
-            .oneshot(
+            .oneshot(with_peer(
                 HttpRequest::get("/does/not/exist")
                     .body(Body::empty())
                     .unwrap(),
-            )
+            ))
             .await
             .unwrap();
         assert_eq!(

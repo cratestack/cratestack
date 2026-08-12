@@ -135,10 +135,18 @@ async fn rate_limit_exemption_is_selective() {
         .await
         .expect("should bind to random port");
     let addr = listener.local_addr().expect("should get local address");
+    // cratestack#416: the default rate-limit key fn now refuses requests
+    // with neither an Authorization header nor a ConnectInfo<SocketAddr>
+    // peer, so this real-server test — which sends plain reqwest requests
+    // with no Authorization header — must be served through
+    // into_make_service_with_connect_info to reach the "ping" case at all.
     let server_handle = tokio::spawn(async move {
-        axum::serve(listener, router)
-            .await
-            .expect("server should run")
+        axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .await
+        .expect("server should run")
     });
 
     // #440: `reqwest`'s `rustls-no-provider` feature needs a crypto

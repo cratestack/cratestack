@@ -107,10 +107,21 @@ async fn default_filter_still_throttles_without_should_rate_limit_fn() {
     });
     let mut svc = layer.layer(inner);
 
-    let first = Request::builder().body(Body::empty()).unwrap();
+    // ConnectInfo stands in for a real socket peer (cratestack#416 made the
+    // default key fn refuse requests with neither Authorization nor
+    // ConnectInfo — this test is about should_rate_limit_fn's default, not
+    // that refusal, so it needs a verifiable identity to reach the store).
+    let peer: std::net::SocketAddr = "192.0.2.10:1".parse().unwrap();
+    let mut first = Request::builder().body(Body::empty()).unwrap();
+    first
+        .extensions_mut()
+        .insert(axum::extract::ConnectInfo(peer));
     assert_eq!(svc.call(first).await.unwrap().status(), StatusCode::OK);
 
-    let second = Request::builder().body(Body::empty()).unwrap();
+    let mut second = Request::builder().body(Body::empty()).unwrap();
+    second
+        .extensions_mut()
+        .insert(axum::extract::ConnectInfo(peer));
     assert_eq!(
         svc.call(second).await.unwrap().status(),
         StatusCode::TOO_MANY_REQUESTS,
@@ -197,7 +208,14 @@ fn store_error_is_logged_before_returning_500() {
                 Ok::<_, std::convert::Infallible>(Response::new(Body::from("ok")))
             });
             let mut svc = layer.layer(inner);
-            let req = Request::builder().body(Body::empty()).unwrap();
+            // A verifiable caller identity so the request reaches the
+            // (failing) store rather than being refused by the default key
+            // fn itself (cratestack#416) — this test is about surfacing a
+            // store error, not the identity-refusal path.
+            let req = Request::builder()
+                .header("authorization", "Bearer test")
+                .body(Body::empty())
+                .unwrap();
             svc.call(req).await.unwrap().status()
         })
     });

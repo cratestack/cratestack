@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+### `IdempotencyLayer`/`RateLimitLayer` refuse requests they cannot fingerprint, instead of pooling them into a shared `"anonymous"` namespace — breaking (#416)
+
+The default `IdempotencyLayer`/`RateLimitLayer` fingerprint hashes the `Authorization` header when
+present and otherwise falls back to the verified TCP peer address via axum's
+`ConnectInfo<SocketAddr>` (that fallback shipped in #459). But `ConnectInfo` is only populated when
+the server is served through `.into_make_service_with_connect_info::<SocketAddr>()` — and nothing
+in this repository does that by default; every shipped example uses plain `.into_make_service()`.
+So in the real, documented, un-overridden default, every request without an `Authorization` header
+silently collapsed onto a single shared `"anonymous"` idempotency namespace / rate-limit bucket:
+two distinct unauthenticated callers reusing an `Idempotency-Key` could replay each other's
+response, and any two such callers could exhaust each other's rate-limit budget. #526 fixed a
+related hole (#415, `Forwarded`/`X-Forwarded-For` spoofing the fallback) but explicitly left this
+one open per its own closing comment; #416 was nonetheless closed alongside it, which was a
+mistake — the acceptance criteria ("default configuration cannot place distinct callers in a
+shared namespace") were still unmet.
+
+`default_principal_fingerprint`/`default_key_fn` now refuse the request (`412 Precondition
+Failed`) instead of falling back to `"anonymous"` when neither an `Authorization` header nor a
+`ConnectInfo<SocketAddr>` peer is available — there is no unforgeable value left to key on at that
+point, so the fix does not manufacture one. `Forwarded`/`X-Forwarded-For` are still never
+consulted (unchanged from #459/#526) — an attacker still cannot pick their own bucket. A `Once`
+(process-lifetime, not per-request) `tracing::warn!` names the fix and the two ways to resolve it,
+mirroring the identical pattern #526 introduced for the missing-`ConnectInfo` misconfiguration
+warning.
+
+**Breaking:** any deployment that (a) uses the default fingerprint/key function, (b) serves
+without `into_make_service_with_connect_info`, and (c) receives requests without an `Authorization`
+header now gets `412` on those requests instead of silent (and unsafe) success. `with_key_fn`/
+`with_principal_fingerprint` overrides are unaffected — their closures remain infallible; opting
+out of the default is the caller's explicit choice, including any deliberate shared bucket.
+
+**Migration.** Either wire `.into_make_service_with_connect_info::<SocketAddr>()` (the socket peer
+becomes the fallback identity, exactly as #459 intended), or supply
+`IdempotencyLayer::with_principal_fingerprint(...)`/`RateLimitLayer::with_key_fn(...)` explicitly
+for deployments that authenticate via cookies/mTLS rather than `Authorization` and cannot serve
+through `into_make_service_with_connect_info`.
+
 ### `DELETE` on an `@version` model now enforces `If-Match`, matching `PATCH` — breaking (#519)
 
 `DELETE` on a model declaring `@version` silently ignored optimistic concurrency: `PATCH`

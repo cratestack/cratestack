@@ -26,14 +26,14 @@
 //! writing, no example shipped in this repository — serves through
 //! `into_make_service_with_connect_info` by default; every example uses
 //! plain `into_make_service()`. Without it, `ConnectInfo<SocketAddr>` is
-//! never present in request extensions, so *every* caller without an
-//! `Authorization` header collapses onto a single shared `"anonymous"`
-//! namespace, regardless of how many distinct clients are actually
-//! calling in. Consumers who authenticate via cookies/mTLS rather than an
-//! `Authorization` header — and who cannot serve through
+//! never present in request extensions, so *every* request without an
+//! `Authorization` header is refused with `412 Precondition Failed`
+//! (cratestack#416 — the default used to silently collapse such requests
+//! onto a shared `"anonymous"` namespace instead; it now refuses rather
+//! than risk that collision). Consumers who authenticate via cookies/mTLS
+//! rather than an `Authorization` header — and who cannot serve through
 //! `into_make_service_with_connect_info` — must supply
-//! [`IdempotencyLayer::with_principal_fingerprint`] explicitly; relying on
-//! the default alone does not, by itself, separate such callers.
+//! [`IdempotencyLayer::with_principal_fingerprint`] explicitly.
 //!
 //! In Phase 1 the layer is opt-in at the consumer's router. A follow-up will
 //! wire it into macro-generated routers by default, gated by a
