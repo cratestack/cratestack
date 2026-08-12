@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Fixed a validator attribute on a nullable field breaking `Update{Model}Input::validate()` (#537)
+
+`@length`, `@range`, and every other validator attribute on a nullable field (`String?`, `Int?`, …)
+made the generated `Update{Model}Input::validate()` fail to compile, because update inputs wrap
+every field in an extra `Option<T>` ("field omitted") that is independent of the column's own
+nullability ("set this column to NULL") — `cratestack-macros/src/validators/emit.rs` OR'd the two
+conditions into a single boolean and only unwrapped one `Option` level instead of counting them
+separately, leaving a `&Option<T>` where the validator helper expected `&T`. `Create{Model}Input`
+was unaffected (a nullable field there is only ever a single `Option<T>`). The fix counts the two
+levels independently and unwraps twice when both apply; an explicit "set to NULL" on update
+(`Some(None)`) is treated as a no-op for validation purposes, matching how a nullable field is
+already allowed to be null on create.
+
 ### `IdempotencyLayer`/`RateLimitLayer` refuse requests they cannot fingerprint, instead of pooling them into a shared `"anonymous"` namespace — breaking (#416)
 
 The default `IdempotencyLayer`/`RateLimitLayer` fingerprint hashes the `Authorization` header when

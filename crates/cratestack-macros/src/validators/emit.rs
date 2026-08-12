@@ -15,28 +15,47 @@ pub(super) fn emit_field_validators(
 ) -> TokenStream {
     let field_ident = ident(&field.name);
     let scalar = field.ty.name.as_str();
-    let is_optional = treat_as_optional || matches!(field.ty.arity, TypeArity::Optional);
+    // These two "this field is wrapped in an `Option`" conditions are
+    // independent, not a single boolean: `treat_as_optional` means "the
+    // field may be entirely omitted from this update" (every field on
+    // `Update{Model}Input` gets this wrapper), while `TypeArity::Optional`
+    // means "the column itself is nullable" (`Some(None)` is a real,
+    // distinct value: "set this column to NULL"). A nullable field on an
+    // update input is `Option<Option<T>>` and needs two unwraps, not one —
+    // see cratestack#537.
+    let nullable = matches!(field.ty.arity, TypeArity::Optional);
 
     let calls = validators
         .iter()
         .enumerate()
         .map(|(idx, v)| emit_one(field, scalar, idx, v));
 
-    if is_optional {
-        quote! {
+    match (treat_as_optional, nullable) {
+        (true, true) => quote! {
+            // `None` = field omitted (skip); `Some(None)` = explicit
+            // "set to NULL" (also skip — nothing to length/range-check
+            // about the absence of a value, matching how a nullable
+            // field on `Create{Model}Input` is allowed to be null in the
+            // first place); `Some(Some(value))` = a real new value, so
+            // this is where validators actually run.
+            if let Some(Some(value)) = self.#field_ident.as_ref() {
+                let _ = value;
+                #(#calls)*
+            }
+        },
+        (true, false) | (false, true) => quote! {
             if let Some(value) = self.#field_ident.as_ref() {
                 let _ = value;
                 #(#calls)*
             }
-        }
-    } else {
-        quote! {
+        },
+        (false, false) => quote! {
             {
                 let value = &self.#field_ident;
                 let _ = value;
                 #(#calls)*
             }
-        }
+        },
     }
 }
 
