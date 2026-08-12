@@ -43,7 +43,28 @@ pub(crate) fn generate_event_module(models: &[Model]) -> Result<proc_macro2::Tok
                     Self { runtime }
                 }
 
-                #[doc = "Drains pending model events from the transactional outbox."]
+                /// Drains pending model events from the transactional
+                /// outbox, delivering each to its subscribed handler(s)
+                /// and marking it delivered.
+                ///
+                /// **This is also the `@@emit` opt-in for a `run_in_tx`
+                /// caller (cratestack#534).** `run_in_tx` write builders
+                /// enqueue their outbox row inside the caller's
+                /// transaction (same in-transaction guarantee as the
+                /// `cratestack_audit` row), but never drain it — same
+                /// reason they never dispatch to an `AuditSink` either:
+                /// there's no reliable "after commit" point inside this
+                /// crate when the caller owns the commit. Unlike audit
+                /// dispatch, closing this needed no new method: drain
+                /// re-scans for anything not yet marked delivered rather
+                /// than requiring a specific event handed back, so this
+                /// pre-existing method (cratestack#390) already serves as
+                /// the caller-driven opt-in — call it once, after your own
+                /// `tx.commit()` succeeds. See
+                /// `Cratestack::dispatch_audit_sink`'s doc comment for the
+                /// audit-table equivalent, which did need a new method
+                /// because the events themselves have to come back from
+                /// `run_in_tx`.
                 pub async fn drain(&self) -> Result<usize, ::cratestack::CoolError> {
                     self.runtime.drain_event_outbox().await
                 }

@@ -11,12 +11,21 @@
 //! entirely. This test fails by hanging forever if that regresses, so
 //! the chained writes run under a bounded `tokio::time::timeout`
 //! instead of relying on the test harness's own timeout to surface it.
+//!
+//! Also covers cratestack#534: the exact shape above used to produce
+//! ZERO `AuditSink` events and ZERO delivered `@@emit` events for a real
+//! installed sink/subscriber, silently, even though the
+//! `cratestack_audit` rows (and the outbox rows) committed correctly.
+//! `chained_run_in_tx_writes_fan_out_to_installed_sink_after_caller_commits`
+//! and `chained_run_in_tx_outbox_events_are_delivered_only_after_explicit_drain`
+//! below are the decisive tests for that fix.
 
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use cratestack::include_server_schema;
 use cratestack::sqlx::{Row, query};
-use cratestack::{CoolContext, Value};
+use cratestack::{AuditEvent, AuditSink, CoolContext, CoolError, Value};
 
 include_server_schema!(
     "tests/fixtures/banking_chained_audit_tx.cstack",
@@ -112,5 +121,198 @@ async fn chained_run_in_tx_audited_writes_do_not_deadlock() {
     assert_eq!(
         audit_rows, 2,
         "both chained audited writes should have committed their audit rows",
+    );
+}
+
+/// Test double mirroring `banking_audit.rs`'s `RecordingAuditSink`
+/// (cratestack#473) — records every event handed to it so this file can
+/// assert the sink is actually reachable for `run_in_tx`-composed
+/// writes, not just `run()` ones.
+#[derive(Clone, Default)]
+struct RecordingAuditSink {
+    events: Arc<Mutex<Vec<AuditEvent>>>,
+}
+
+#[async_trait::async_trait]
+impl AuditSink for RecordingAuditSink {
+    async fn record(&self, event: &AuditEvent) -> Result<(), CoolError> {
+        self.events.lock().unwrap().push(event.clone());
+        Ok(())
+    }
+}
+
+/// **The decisive test for cratestack#534.** Before this fix, an
+/// installed `AuditSink` observed nothing at all for this exact shape —
+/// two `run_in_tx` writes chained in one caller-managed transaction —
+/// even though `cratestack_audit` got both rows (proven above). Now
+/// `run_in_tx` hands back the `AuditEvent`(s) it built via
+/// `RunInTxOutcome`, and `Cratestack::dispatch_audit_sink` is the public
+/// opt-in the caller invokes once, after their own commit succeeds.
+#[tokio::test]
+async fn chained_run_in_tx_writes_fan_out_to_installed_sink_after_caller_commits() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    query("INSERT INTO audit_rotation_keys (id, label, revoked) VALUES (1, 'old-key', false)")
+        .execute(pool)
+        .await
+        .expect("seed");
+
+    let sink = RecordingAuditSink::default();
+    let cool = cratestack_schema::Cratestack::builder(pool.clone())
+        .with_audit_sink(Arc::new(sink.clone()))
+        .build();
+    let ctx = operator();
+
+    let mut tx = pool.begin().await.expect("begin caller-managed tx");
+    let mut audit_events = Vec::new();
+
+    let revoke = cool
+        .audit_rotation_key()
+        .update(1)
+        .set(cratestack_schema::UpdateAuditRotationKeyInput {
+            label: None,
+            revoked: Some(true),
+        })
+        .run_in_tx(&mut tx, &ctx)
+        .await
+        .expect("first audited write in tx (revoke)");
+    audit_events.extend(revoke.audit_events);
+
+    let create = cool
+        .audit_rotation_key()
+        .create(cratestack_schema::CreateAuditRotationKeyInput {
+            id: 2,
+            label: "new-key".to_owned(),
+            revoked: false,
+        })
+        .run_in_tx(&mut tx, &ctx)
+        .await
+        .expect("second audited write in tx (create)");
+    audit_events.extend(create.audit_events);
+
+    assert_eq!(
+        audit_events.len(),
+        2,
+        "run_in_tx should hand back one AuditEvent per @@audit write, for the caller to \
+         dispatch — one from the update, one from the create",
+    );
+    assert!(
+        sink.events.lock().unwrap().is_empty(),
+        "the sink must not observe anything before tx.commit() — dispatch never runs from \
+         inside a transaction",
+    );
+
+    tx.commit().await.expect("commit");
+
+    // Dispatch is caller-driven, not automatic: committing alone must
+    // not have caused anything to reach the sink yet.
+    assert!(
+        sink.events.lock().unwrap().is_empty(),
+        "the sink must still observe nothing until dispatch_audit_sink is called explicitly — \
+         run_in_tx has no way to do this for the caller",
+    );
+
+    cool.dispatch_audit_sink(&audit_events).await;
+
+    // *** This assertion used to be unreachable: before cratestack#534,
+    // nothing in this crate could ever make a real installed AuditSink
+    // observe events for a run_in_tx-composed transaction. ***
+    let recorded = sink.events.lock().unwrap().clone();
+    assert_eq!(
+        recorded.len(),
+        2,
+        "the installed AuditSink should observe BOTH run_in_tx writes once the caller \
+         dispatches after their own commit succeeds",
+    );
+    let mut operations: Vec<&str> = recorded.iter().map(|e| e.operation.as_str()).collect();
+    operations.sort_unstable();
+    assert_eq!(operations, vec!["create", "update"]);
+}
+
+/// The `@@emit` half of cratestack#534. Unlike the `AuditSink` fix
+/// above, this needed no new API: `Cratestack::events().drain()` already
+/// existed (cratestack#390) and re-scans `cratestack_event_outbox` for
+/// anything not yet marked delivered, rather than needing a specific
+/// event handed back from `run_in_tx` — so it was already a working
+/// caller-driven opt-in for exactly this gap. Nothing exercised that
+/// combination before, though, so this proves it actually closes it.
+#[tokio::test]
+async fn chained_run_in_tx_outbox_events_are_delivered_only_after_explicit_drain() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    query("INSERT INTO audit_rotation_keys (id, label, revoked) VALUES (10, 'old-key', false)")
+        .execute(pool)
+        .await
+        .expect("seed");
+
+    let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
+    let ctx = operator();
+
+    let delivered: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let on_updated = Arc::clone(&delivered);
+    cool.events().on_audit_rotation_key_updated(move |event| {
+        let delivered = Arc::clone(&on_updated);
+        async move {
+            delivered.lock().unwrap().push(event.data.label);
+            Ok(())
+        }
+    });
+    let on_created = Arc::clone(&delivered);
+    cool.events().on_audit_rotation_key_created(move |event| {
+        let delivered = Arc::clone(&on_created);
+        async move {
+            delivered.lock().unwrap().push(event.data.label);
+            Ok(())
+        }
+    });
+
+    let mut tx = pool.begin().await.expect("begin caller-managed tx");
+    cool.audit_rotation_key()
+        .update(10)
+        .set(cratestack_schema::UpdateAuditRotationKeyInput {
+            label: None,
+            revoked: Some(true),
+        })
+        .run_in_tx(&mut tx, &ctx)
+        .await
+        .expect("first emitting write in tx (revoke)");
+    cool.audit_rotation_key()
+        .create(cratestack_schema::CreateAuditRotationKeyInput {
+            id: 11,
+            label: "rotated-key".to_owned(),
+            revoked: false,
+        })
+        .run_in_tx(&mut tx, &ctx)
+        .await
+        .expect("second emitting write in tx (create)");
+    tx.commit().await.expect("commit");
+
+    assert!(
+        delivered.lock().unwrap().is_empty(),
+        "run_in_tx writes must not auto-deliver to subscribers — delivery is caller-driven \
+         via events().drain(), same as AuditSink dispatch is caller-driven",
+    );
+
+    let drained = cool.events().drain().await.expect("drain outbox");
+    assert_eq!(
+        drained, 2,
+        "drain should report exactly the two events this transaction just enqueued",
+    );
+
+    let mut got = delivered.lock().unwrap().clone();
+    got.sort();
+    assert_eq!(
+        got,
+        vec!["old-key".to_owned(), "rotated-key".to_owned()],
+        "both run_in_tx-composed writes' events should reach their subscribed handlers once \
+         the caller drains the outbox after their own commit",
     );
 }

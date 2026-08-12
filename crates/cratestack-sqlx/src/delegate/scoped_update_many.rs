@@ -3,6 +3,7 @@
 
 use cratestack_core::{CoolContext, CoolError};
 
+use crate::audit::RunInTxOutcome;
 use crate::{Filter, FilterExpr, UpdateMany, UpdateManySet, UpdateModelInput, sqlx};
 
 #[derive(Debug, Clone)]
@@ -72,7 +73,7 @@ where
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-    ) -> Result<cratestack_core::BatchSummary, CoolError>
+    ) -> Result<RunInTxOutcome<cratestack_core::BatchSummary>, CoolError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
     {

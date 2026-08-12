@@ -11,7 +11,7 @@
 
 use cratestack_core::{BatchSummary, CoolContext, CoolError};
 
-use crate::audit::dispatch_audit_sink;
+use crate::audit::{RunInTxOutcome, dispatch_audit_sink};
 use crate::{
     FilterExpr, ModelDescriptor, SqlxRuntime, UpdateModelInput, cool_error_from_sqlx, sqlx,
 };
@@ -110,18 +110,19 @@ where
     }
 
     /// Run inside a caller-supplied transaction. Audit + outbox
-    /// writes land in `tx`; caller commits. No `AuditSink` fan-out
-    /// happens here for the same reason the event outbox isn't
-    /// drained here — see `create.rs`'s `run_in_tx` doc comment.
+    /// writes land in `tx`; caller commits. Neither the `AuditSink`
+    /// fan-out nor the event outbox drain happens here — see
+    /// `create.rs`'s `run_in_tx` doc comment for the full contract and
+    /// how a caller opts into both after their own commit.
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
         ctx: &CoolContext,
-    ) -> Result<BatchSummary, CoolError>
+    ) -> Result<RunInTxOutcome<BatchSummary>, CoolError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
     {
-        let (summary, ..) = run_update_many_in_tx(
+        let (summary, _emits_event, audit_events) = run_update_many_in_tx(
             tx,
             self.runtime,
             self.descriptor,
@@ -130,6 +131,6 @@ where
             ctx,
         )
         .await?;
-        Ok(summary)
+        Ok(RunInTxOutcome::new(summary, audit_events))
     }
 }

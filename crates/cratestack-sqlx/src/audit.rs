@@ -10,7 +10,19 @@
 //! the canonical, always-on record; the sink is a best-effort
 //! projection of it, per [`cratestack_core::AuditSink`]'s own doc
 //! comment.
+//!
+//! `run_in_tx` variants cannot dispatch on their own — they hand the
+//! transaction back to the caller uncommitted, so there is no reliable
+//! "after commit" point inside this crate to run at (cratestack#534).
+//! Instead they return a [`RunInTxOutcome`] carrying the `AuditEvent`s
+//! they already persisted, and [`dispatch_audit_sink`] is `pub` (not
+//! `pub(crate)`) so a caller who owns the transaction can fan them out
+//! itself once its own commit succeeds. See [`sink::dispatch_audit_sink`]'s
+//! doc comment for the full contract, including why this is a real,
+//! caller-driven opt-in rather than something the framework does for
+//! you automatically (option (a) of cratestack#534, not option (b)).
 
+mod outcome;
 mod redact;
 mod schema;
 mod sink;
@@ -20,10 +32,11 @@ use cratestack_core::{AuditActor, AuditEvent, AuditOperation, CoolContext, CoolE
 use crate::ModelDescriptor;
 use crate::sqlx;
 
+pub use outcome::RunInTxOutcome;
 pub use redact::{primary_key_from_snapshot, redact_snapshot, snapshot_model};
 pub use schema::AUDIT_TABLE_DDL;
 pub(crate) use schema::ensure_audit_table;
-pub(crate) use sink::dispatch_audit_sink;
+pub use sink::dispatch_audit_sink;
 
 /// Persist an audit event into the `cratestack_audit` table. Designed
 /// to run inside the same transaction as the mutation it describes.

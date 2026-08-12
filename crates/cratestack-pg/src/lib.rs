@@ -169,12 +169,12 @@ pub use cratestack_sqlx::sqlx;
 pub use cratestack_sqlx::{
     Aggregate, AggregateColumn, AggregateCount, CreateRecord, DeleteMany, DeleteRecord, FindMany,
     FindManyWith, FindUnique, FromPartialPgRow, ModelDelegate, ProjectedFindMany,
-    ProjectedFindUnique, ScopedAggregate, ScopedAggregateColumn, ScopedAggregateCount,
-    ScopedCreateRecord, ScopedDeleteMany, ScopedDeleteRecord, ScopedFindMany, ScopedFindManyWith,
-    ScopedFindUnique, ScopedModelDelegate, ScopedProjectedFindMany, ScopedProjectedFindUnique,
-    ScopedUpdateMany, ScopedUpdateManySet, ScopedUpdateRecord, ScopedUpdateRecordSet,
-    ScopedUpsertRecord, ScopedUpsertRecordDoNothing, SqlxIdempotencyStore, UpdateMany,
-    UpdateManySet, UpdateRecord, UpdateRecordSet, UpsertOutcome, UpsertRecord,
+    ProjectedFindUnique, RunInTxOutcome, ScopedAggregate, ScopedAggregateColumn,
+    ScopedAggregateCount, ScopedCreateRecord, ScopedDeleteMany, ScopedDeleteRecord, ScopedFindMany,
+    ScopedFindManyWith, ScopedFindUnique, ScopedModelDelegate, ScopedProjectedFindMany,
+    ScopedProjectedFindUnique, ScopedUpdateMany, ScopedUpdateManySet, ScopedUpdateRecord,
+    ScopedUpdateRecordSet, ScopedUpsertRecord, ScopedUpsertRecordDoNothing, SqlxIdempotencyStore,
+    UpdateMany, UpdateManySet, UpdateRecord, UpdateRecordSet, UpsertOutcome, UpsertRecord,
     UpsertRecordDoNothing, ViewDelegate, ViewDelegateNoUnique, create_record_with_executor,
     update_record_with_executor,
 };
@@ -227,6 +227,11 @@ pub fn install_fips_crypto_provider() -> Result<(), cratestack_core::CoolError> 
 pub mod __private {
     #[cfg(feature = "postgres")]
     pub use cratestack_sqlx::SqlxRuntime;
+    // Not part of the public API surface — the generated
+    // `Cratestack::dispatch_audit_sink` (cratestack#534) is the
+    // consumer-facing wrapper around this; see its doc comment.
+    #[cfg(feature = "postgres")]
+    pub use cratestack_sqlx::dispatch_audit_sink;
 
     /// Re-exports for the macro-emitted RPC dispatcher. Not part of the
     /// public API surface — schema authors should never reference these

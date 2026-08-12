@@ -8,6 +8,16 @@ use crate::descriptor::SqlxRuntime;
 /// Fan a batch of already-committed [`AuditEvent`]s out to the
 /// runtime's installed [`cratestack_core::AuditSink`].
 ///
+/// `pub`, not `pub(crate)` (cratestack#534): every `run()` call site in
+/// this crate calls it internally, right after its own `tx.commit()`
+/// succeeds — that usage is unaffected. What's new is that a caller
+/// composing `run_in_tx` writes across a transaction *they* own can
+/// now call this too, once *their* commit succeeds, passing the
+/// `AuditEvent`s each call's [`super::RunInTxOutcome`] handed back.
+/// Nothing about the dispatch itself changed: it is still a plain
+/// sequential fan-out with no DB I/O of its own (see below) — only who
+/// is allowed to invoke it changed.
+///
 /// **Deliberately called after `tx.commit()`, never before or from
 /// inside the transaction.** Two reasons:
 ///
@@ -35,25 +45,29 @@ use crate::descriptor::SqlxRuntime;
 /// self.runtime.drain_event_outbox().await;` treatment of its own
 /// post-commit, best-effort fan-out.
 ///
-/// **Not called from any `run_in_tx` variant, and this is a real,
-/// currently-unaddressed gap, not a deferred convenience.** `run_in_tx`
-/// hands the transaction back to the caller uncommitted, so this
-/// function has no reliable "after commit" point to run at — same
-/// reason `run_in_tx` never drains the event outbox either (see
-/// `crate::query::write::create`'s doc comment). Unlike the event
-/// outbox, though, there is currently **no way for a `run_in_tx` caller
-/// to opt into sink fan-out themselves**: this function is
-/// `pub(crate)`, and no `run_in_tx` variant returns the `AuditEvent` it
-/// would need even if it were public. A caller chaining `run_in_tx`
-/// calls across a caller-managed transaction (the shape
-/// `crates/cratestack-pg/tests/banking_chained_audit_tx.rs` exercises)
-/// gets the in-transaction `cratestack_audit` row on commit — the
-/// source of truth — but a real installed `AuditSink` observes nothing
-/// for that transaction, silently. Closing this needs either widening
-/// this function's visibility and every `run_in_tx` signature to return
-/// its built `AuditEvent`(s) (a public API change across seven call
-/// sites), or a narrower purpose-built opt-in that hasn't been designed
-/// yet; tracked as a follow-up rather than fixed inline here.
+/// **Still not called from any `run_in_tx` variant — that remains a
+/// deliberate omission, not an oversight (cratestack#534).** `run_in_tx`
+/// hands the transaction back to the caller uncommitted, so this crate
+/// has no reliable "after commit" point of its own to run at — same
+/// reason `run_in_tx` never drains the event outbox on its own either
+/// (see `crate::query::write::create`'s doc comment, and
+/// [`crate::SqlxRuntime::drain_event_outbox`] for that mechanism's own
+/// equivalent, now-public opt-in). What changed is that a `run_in_tx`
+/// caller now genuinely *can* opt in: every `run_in_tx` variant returns
+/// a [`super::RunInTxOutcome`] carrying the `AuditEvent`(s) it built and
+/// already persisted, and this function is `pub` so the caller can pass
+/// them straight through — after their own `tx.commit()` succeeds, never
+/// before. The generated `Cratestack::dispatch_audit_sink` method is the
+/// ergonomic surface for that; this free function is what it forwards
+/// to. Skipping the call (or forgetting it) means exactly what option
+/// (c) in cratestack#534 describes: `cratestack_audit` still gets the
+/// row, but the installed `AuditSink` observes nothing for that
+/// transaction — silently, same as before this fix, just opt-out now
+/// instead of impossible-to-opt-into.
+/// `crates/cratestack-pg/tests/banking_chained_audit_tx.rs` is the shape
+/// this closes: two `run_in_tx` writes chained in one caller-managed
+/// transaction, both audited, both now observable by a sink the caller
+/// dispatches to once after their single `tx.commit()`.
 ///
 /// **Dispatch is sequential, not concurrent**, and that amplifies with
 /// batch size: the `for` loop below `.await`s each `AuditSink::record`
@@ -63,7 +77,7 @@ use crate::descriptor::SqlxRuntime;
 /// per-request. Deliberately not parallelised here: concurrent
 /// dispatch's ordering guarantees and per-event error semantics are a
 /// design question of their own, not a cleanup.
-pub(crate) async fn dispatch_audit_sink(runtime: &SqlxRuntime, events: &[AuditEvent]) {
+pub async fn dispatch_audit_sink(runtime: &SqlxRuntime, events: &[AuditEvent]) {
     for event in events {
         if let Err(error) = runtime.audit_sink().record(event).await {
             tracing::warn!(

@@ -4,6 +4,7 @@
 
 use cratestack_core::{CoolContext, CoolError};
 
+use crate::audit::RunInTxOutcome;
 use crate::{UpsertModelInput, UpsertOutcome, UpsertRecord, UpsertRecordDoNothing, sqlx};
 
 #[derive(Debug, Clone)]
@@ -51,7 +52,7 @@ where
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-    ) -> Result<M, CoolError>
+    ) -> Result<RunInTxOutcome<M>, CoolError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
@@ -95,7 +96,7 @@ where
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-    ) -> Result<UpsertOutcome<M>, CoolError>
+    ) -> Result<RunInTxOutcome<UpsertOutcome<M>>, CoolError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,

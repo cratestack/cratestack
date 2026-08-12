@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+### `run_in_tx` callers can now opt into `AuditSink` fan-out — breaking (#534)
+
+#473/#517 made `AuditSink` a real installable seam for every `run()` write path, but explicitly
+left `run_in_tx` (the caller-managed-transaction escape hatch) unable to fan out at all: dispatch
+had no reliable "after commit" point inside the crate, `dispatch_audit_sink` was `pub(crate)`, and
+no `run_in_tx` variant returned the `AuditEvent` a caller would have needed even if it had been
+public. `crates/cratestack-pg/tests/banking_chained_audit_tx.rs` — two `run_in_tx` writes to
+`@@audit` models chained in one caller-managed transaction — used to leave a real installed
+`AuditSink` observing zero events for that transaction, silently, even though the in-database
+`cratestack_audit` rows committed correctly.
+
+Every `run_in_tx` variant (`create`, `update`, `delete`, `upsert` and `.do_nothing()`,
+`update_many`, `delete_many` — seven call sites, plus their `Scoped*`/`.bind(ctx)` wrappers) now
+returns a `RunInTxOutcome<T>` carrying the `AuditEvent`(s) it already built and persisted inside
+`tx`, and `cratestack_sqlx::dispatch_audit_sink` is `pub` instead of `pub(crate)`. The generated
+`Cratestack::dispatch_audit_sink(&self, events)` (and the `.bind(ctx)`-bound equivalent) is the
+ergonomic surface: a caller who owns the transaction collects `audit_events` from each
+`RunInTxOutcome` and calls it once, after their own `tx.commit()` succeeds — dispatch remains
+caller-driven, not automatic, and still never runs from inside a transaction or for a rolled-back
+one. The in-transaction `cratestack_audit` row write is unchanged (still the sole write, still the
+source of truth), and `run()`'s existing single dispatch-after-its-own-commit is unaffected — a
+sabotage-and-restore guard test (`banking_audit.rs::custom_audit_sink_receives_the_create_event`)
+confirms `run()` still dispatches exactly once, not twice.
+
+The identical `@@emit` event-outbox asymmetry needed no code change: `Cratestack::events().drain()`
+(added by #390) already re-scans `cratestack_event_outbox` for undelivered rows rather than needing
+a specific event handed back from `run_in_tx`, so it was already a working caller-driven opt-in —
+just undocumented and untested for this shape until now. Both halves are covered by new tests in
+`banking_chained_audit_tx.rs`, run against real Postgres.
+
+**Breaking:** the seven `run_in_tx` methods (and their `Scoped*` wrappers) now return
+`Result<RunInTxOutcome<T>, CoolError>` instead of `Result<T, CoolError>` — access the previous
+return value via `.value` (e.g. `outcome.value.id`). Acceptable pre-1.0 under lockstep versioning;
+see the PR body for the two documented alternatives (a runtime-owned commit hook, or leaving the
+gap as permanently-documented behavior) the maintainer may still prefer instead.
+
 ### `IdempotencyLayer`/`RateLimitLayer` refuse requests they cannot fingerprint, instead of pooling them into a shared `"anonymous"` namespace — breaking (#416)
 
 The default `IdempotencyLayer`/`RateLimitLayer` fingerprint hashes the `Authorization` header when

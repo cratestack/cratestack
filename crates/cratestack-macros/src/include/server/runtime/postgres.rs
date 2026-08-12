@@ -80,6 +80,39 @@ pub(super) fn build_runtime_block(
                 self.runtime.transaction(body).await
             }
 
+            /// Fan out `AuditEvent`s a caller-managed `run_in_tx`
+            /// transaction built and persisted, but could not dispatch
+            /// itself (cratestack#534): `run_in_tx` returns a
+            /// `RunInTxOutcome` carrying the events instead of dispatching
+            /// them, because it has no reliable "after commit" point of
+            /// its own — the caller owns `tx` and decides if/when it
+            /// commits. Call this once, after your own `tx.commit()`
+            /// succeeds, passing the concatenated `audit_events` from
+            /// every `RunInTxOutcome` produced inside that transaction.
+            /// Errors are logged, not returned — same best-effort contract
+            /// as the dispatch `.run(..)` already performs automatically;
+            /// see `::cratestack::__private::dispatch_audit_sink`'s doc
+            /// comment for the full reasoning.
+            ///
+            /// Calling this is the caller's responsibility, not something
+            /// `run_in_tx` or this combinator does for you — see
+            /// cratestack#534's PR body for why option (a) (this) was
+            /// chosen over a runtime-owned commit hook (option (b)) or
+            /// leaving the gap undocumented (option (c)).
+            ///
+            /// The `@@emit` event outbox has the identical after-commit
+            /// gap, but does **not** need an equivalent new method here:
+            /// `enqueue_event_outbox` already writes its row inside `tx`
+            /// (same in-transaction guarantee this crate gives the audit
+            /// table), and draining re-scans `cratestack_event_outbox` for
+            /// anything undelivered rather than needing a specific event
+            /// handed back — so the pre-existing `Cratestack::events().drain()`
+            /// (cratestack#390) already closes that half; call it the same
+            /// way, after your own commit succeeds.
+            pub async fn dispatch_audit_sink(&self, events: &[::cratestack::AuditEvent]) {
+                ::cratestack::__private::dispatch_audit_sink(&self.runtime, events).await
+            }
+
             pub fn bind_auth<P: ::cratestack::serde::Serialize>(
                 &self,
                 principal: Option<P>,
@@ -102,6 +135,14 @@ pub(super) fn build_runtime_block(
         impl<'a> BoundCratestack<'a> {
             pub fn context(&self) -> &::cratestack::CoolContext {
                 &self.ctx
+            }
+
+            /// See [`Cratestack::dispatch_audit_sink`] — identical
+            /// contract, just forwarded through the bound handle so
+            /// `.bind(ctx)` callers don't need to hold onto the unbound
+            /// `Cratestack` separately.
+            pub async fn dispatch_audit_sink(&self, events: &[::cratestack::AuditEvent]) {
+                self.inner.dispatch_audit_sink(events).await
             }
 
             #(#bound_model_accessors)*

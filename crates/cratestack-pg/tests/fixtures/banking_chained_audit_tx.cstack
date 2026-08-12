@@ -13,6 +13,7 @@ model AuditRotationKey {
   revoked Boolean
 
   @@audit
+  @@emit(created, updated)
   @@allow("read", auth() != null)
   @@allow("create", auth() != null)
   @@allow("update", auth() != null)

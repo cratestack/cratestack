@@ -5,7 +5,7 @@
 
 use cratestack_core::{CoolContext, CoolError};
 
-use crate::audit::dispatch_audit_sink;
+use crate::audit::{RunInTxOutcome, dispatch_audit_sink};
 use crate::{
     ConflictTarget, ModelDescriptor, SqlxRuntime, UpsertModelInput, cool_error_from_sqlx, sqlx,
 };
@@ -91,19 +91,20 @@ where
     /// Like [`Self::run`] but participates in a caller-supplied
     /// transaction. The conflict probe (and, on the insert branch, the
     /// `ON CONFLICT DO NOTHING`) run against `tx`, so any row lock is
-    /// held until the caller commits. The event outbox is not drained
-    /// here, and no `AuditSink` fan-out happens here either — see
-    /// `create.rs`'s `run_in_tx` doc comment.
+    /// held until the caller commits. Neither the event outbox drain
+    /// nor the `AuditSink` fan-out happens here — see `create.rs`'s
+    /// `run_in_tx` doc comment for the full contract and how a caller
+    /// opts into both after their own commit.
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
         ctx: &CoolContext,
-    ) -> Result<UpsertOutcome<M>, CoolError>
+    ) -> Result<RunInTxOutcome<UpsertOutcome<M>>, CoolError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
-        let (outcome, ..) = run_upsert_do_nothing_in_tx(
+        let (outcome, _emits_event, audit_event) = run_upsert_do_nothing_in_tx(
             tx,
             self.runtime,
             self.descriptor,
@@ -112,6 +113,9 @@ where
             ctx,
         )
         .await?;
-        Ok(outcome)
+        Ok(RunInTxOutcome::new(
+            outcome,
+            audit_event.into_iter().collect(),
+        ))
     }
 }
