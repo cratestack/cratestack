@@ -2,28 +2,74 @@
 
 ## 0.7.14 (2026-08-12)
 
-<!-- TODO: edit this section from the seed below -->
-<!-- seeded from v0.7.13..HEAD at 19a9297ac6037c75e987f9cf750277a3faba23d9 -->
+### The crates.io publish order no longer mistakes a dev-dependency for a cycle (#564)
 
-This is an auto-generated seed. Please rewrite into narrative prose describing
-the changes in this release, grouped by concern. Refer to existing entries in
-this file for the house prose style. Do not commit with this placeholder text.
+`just release-publish` decides the order it uploads crates by topo-sorting the `cratestack-*`
+workspace packages out of `cargo metadata`, and it counted every dependency edge regardless of
+kind. That is wrong for dev-dependencies: `cargo publish` never needs one to already exist on the
+registry in order to package a crate, so a dev-dependency edge places no constraint on publish
+order and may legally point "backwards". #540 added `cratestack-api` as a dev-dependency of
+`cratestack-macros` — for the `Authorized`-witness expansion tests — while `cratestack-api` already
+depended on `cratestack-macros` normally, and the sort read that legitimate pair as a hard cycle
+and aborted the whole publish. The sort now excludes `kind == "dev"` edges while still counting
+build dependencies, which genuinely do constrain ordering. Two supporting changes: cycle detection
+is unchanged and still aborts on a real cycle, and the recipe no longer discards `cargo metadata`'s
+stderr, which previously reduced any underlying metadata failure to a single generic "failed to
+compute publish order" line with the actual cause thrown away.
 
-### Changes
+### `just bump` discovers standalone example workspaces instead of relying on a hand-maintained list (#565)
 
-#### Fixes
+Several crates under `examples/` are their own `[workspace]` roots, deliberately excluded from the
+root workspace so that a real `cargo tree` in each one proves facade disjointness for an external
+consumer. Each therefore carries its own `Cargo.lock` that the root `cargo check` never touches, and
+`just bump` has to refresh them explicitly or their locked path-dependency versions silently drift
+behind the workspace version — breaking every `--locked` build and `cargo metadata` call in that
+directory. The refresh step listed three such directories by hand, and carried a comment warning
+that "every standalone workspace under examples/ must be listed here; adding one without a line
+below is a latent CI break that only fires on the next bump". `examples/db-transaction-verification`
+arrived with #539 and was never added, so the warning came true exactly as written. The step now
+globs `examples/*/Cargo.toml` for a `[workspace]` table and refreshes whatever it finds, and asserts
+it found at least one so that a future layout change breaks the bump loudly rather than silently
+refreshing nothing — the same silent-skip failure the block exists to prevent.
 
-- discover standalone example workspaces instead of listing them, and unstick main (#565)
-- ignore dev-dependencies when topo-sorting the crates.io publish order (#564)
+### Every `AuditSink` dispatch site is now covered by a test bound to it (#473)
 
-#### Documentation
+`@@audit` fan-out to an installed `AuditSink` is wired identically into eleven write paths — `create`,
+`update`, `delete`, `upsert`, `upsert_do_nothing`, `update_many` and `delete_many`, plus the four
+`batch_*` variants — but only two of them (`create` and `batch_create`) had a test asserting the sink
+actually received the event. The other nine were structurally identical and entirely unverified, so a
+copy/paste omission in any one of them would have passed CI silently. That matters more than an
+ordinary coverage gap, because the whole value of an audit sink is that it fires unconditionally: one
+that observes nine write kinds out of eleven is a weaker guarantee than one that observes none,
+since the hole is invisible. `banking_audit.rs` now asserts sink receipt for all eleven, each test
+checking an exact event count so that a double-dispatch regression fails too, and each was verified
+by removing its own dispatch call and confirming that precisely the matching test — and no other —
+turned red. No defect was found: all eleven already dispatched correctly. What changed is that this
+is now demonstrated rather than assumed.
 
-- warn that decimal-backend mutual exclusivity is graph-wide (#505) (#559)
+### The generated gRPC CRUD surface is now exercised by CI (#524)
 
-#### Tests
+`crates/cratestack-pg`'s gRPC integration tests are gated behind `#![cfg(feature = "grpc")]`, and
+`grpc` is not one of the crate's default features. The CI test recipe never passed `--features grpc`,
+so every one of those files — `transport_grpc.rs`, `grpc_auth_provider_extensions.rs` and
+`trusted_proxy_client_ip_grpc.rs` — compiled to an empty zero-test binary and reported `ok` on every
+run. Cargo builds every file under `tests/` regardless of an inner `#![cfg(...)]`, so nothing about
+the output distinguished "these tests passed" from "these tests do not exist"; `--list` printed
+`0 tests` where it now prints five. The recipe now enables the feature, which switches that entire
+pre-existing gRPC suite on. Alongside it, a new test drives create/get/list/update/delete through the
+real generated `into_router()` against a live Postgres, giving the five deduplicated CRUD arm
+builders a regression test that fails when an arm is mis-wired — verified by swapping two arms'
+dispatch functions and confirming the corresponding tests go red. That refactor previously rested on
+a one-time manual `cargo expand` comparison with nothing checked in to catch a later mistake.
 
-- assert AuditSink receipt for every write call site (#473) (#560)
-- cover gRPC CRUD arm dispatch in CI (#524) (#561)
+### The decimal-backend feature exclusivity is documented as a graph-wide invariant (#505)
+
+`decimal-rust-decimal` and `decimal-bigdecimal` are mutually exclusive, and because Cargo unifies
+features across a dependency graph, that exclusivity is a property of the whole build rather than of
+any one crate's manifest. Two independent libraries that each legitimately select a different backend
+therefore cannot coexist in one binary, and neither author can resolve it alone. The `cratestack-core`
+and `cratestack-pg` READMEs now state this explicitly rather than leaving it to be discovered by
+hitting the `compile_error!`.
 
 ## 0.7.13 (2026-08-12)
 
