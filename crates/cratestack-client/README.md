@@ -115,7 +115,10 @@ CI's `facade-disjointness` job (`.github/workflows/ci.yml`) re-runs the
 - `decimal-bigdecimal` — arbitrary-precision `bigdecimal` backend instead
   (heap-allocated, not `Copy` — see `cratestack-core`'s README for the
   trait differences). Mutually exclusive with `decimal-rust-decimal`;
-  selecting neither or both is a compile error. `cargo tree -p
+  selecting both is a compile error. Selecting *neither* is allowed as of
+  cratestack#521 — the `Decimal` type is simply not exported, so only a schema
+  that actually uses a `Decimal` field fails, with rustc's own "cannot find
+  type `Decimal`". `cargo tree -p
   cratestack-client --no-default-features --features decimal-bigdecimal -e
   features | grep rust_decimal` prints nothing, confirming the swap is
   complete through this facade (cratestack#495). **Wire compatibility
