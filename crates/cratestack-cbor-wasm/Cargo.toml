@@ -19,6 +19,9 @@ categories.workspace = true
 # that crate needs for its own unrelated (Trunk/Leptos) reasons.
 publish = false
 
+[lints]
+workspace = true
+
 [lib]
 crate-type = ["cdylib"]
 

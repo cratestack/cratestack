@@ -6,6 +6,9 @@ license.workspace = true
 publish = false
 description = "RPC server demonstrating POST /rpc/batch: multiple ops in one round-trip, per-frame error isolation, request order preserved on the response."
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "rpc-batch-server"
 path = "src/main.rs"

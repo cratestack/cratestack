@@ -13,6 +13,9 @@ readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 
+[lints]
+workspace = true
+
 [features]
 # The Flutter bridge surface exposes `FlutterRuntimeCodec::Json` as a
 # selectable transport, so the JSON codec has to be linked in or

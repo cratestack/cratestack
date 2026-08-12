@@ -6,6 +6,9 @@ license.workspace = true
 publish = false
 description = "Browser-targeted embedded SQLite example built on cratestack-rusqlite + include_embedded_schema!. Compiles to wasm32-unknown-unknown; the Vite/TypeScript frontend loads the wasm bundle inside a Dedicated Worker and persists data via OPFS."
 
+[lints]
+workspace = true
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 

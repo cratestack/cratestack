@@ -13,6 +13,9 @@ readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 
+[lints]
+workspace = true
+
 [features]
 # CBOR is the framework's default backend-to-backend transport and
 # is the type the schema macro emits as the default codec parameter

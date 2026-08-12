@@ -6,6 +6,9 @@ license.workspace = true
 publish = false
 description = "Client-side debouncer that coalesces independent RPC calls into a single POST /rpc/batch. The pattern most offline-first UIs and rate-sensitive callers want — many awaitable .call() invocations, one wire round-trip."
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "rpc-batch-debounce-demo"
 path = "src/main.rs"

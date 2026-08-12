@@ -6,6 +6,9 @@ license.workspace = true
 publish = false
 description = "Smallest possible `transport grpc` CrateStack server: one Widget model, CRUD over real gRPC, verifiable with grpcurl. Ticket #171."
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "grpc-widgets-server"
 path = "src/main.rs"

@@ -6,6 +6,9 @@ license.workspace = true
 publish = false
 description = "Smallest possible CrateStack RPC server: a query procedure and a mutation procedure exposed over POST /rpc/{op_id}. Genuinely no database — `datasource { provider = \"none\" }` + `db = None`, no PgPool, no sqlx compiled in."
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "rpc-procedures-server"
 path = "src/main.rs"

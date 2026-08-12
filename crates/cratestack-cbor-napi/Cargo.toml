@@ -23,6 +23,15 @@ crate-type = ["cdylib", "rlib"]
 # napi-derive expands to unsafe extern "C" trampolines for the JS interop.
 # That's exactly the boundary unsafe is *for*; lift the workspace forbid.
 # Mirrors examples/react-nextjs-daisyui/napi/Cargo.toml's justification.
+#
+# Deliberately NOT `[lints]\nworkspace = true` (cratestack#523): Cargo
+# rejects mixing workspace-inherited lints with a per-package override in
+# the same manifest ("cannot override `workspace.lints` in `lints`, either
+# remove the overrides or `lints.workspace = true` and manually specify the
+# lints") — there is no way to inherit-most-lints-but-override-this-one.
+# Since `[workspace.lints.rust]` currently holds exactly this one lint,
+# this table is the manual equivalent; revisit if the workspace table ever
+# grows beyond `unsafe_code`.
 unsafe_code = "allow"
 
 [features]

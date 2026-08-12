@@ -392,6 +392,18 @@ jobs:
       - name: Layer-direction check
         run: ./.ci/layer-direction-check.sh
 
+  # Workspace-lints opt-in check (cratestack#523). Manifest-only (`cargo
+  # metadata --no-deps`) — same reasoning as `layer-direction` above, no
+  # `rust-cache`/`just` install step needed.
+  lints-workspace-optin:
+    name: workspace lints opt-in (cratestack#523)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Workspace-lints opt-in check
+        run: ./.ci/lints-workspace-check.sh
+
   # Changelog verification (issue #479). Detects unedited changelog seeds
   # that would silently degrade the changelog from prose to a commit list
   # (worse than an honest gap, because it looks maintained but isn't).
