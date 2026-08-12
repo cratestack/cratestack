@@ -2,6 +2,51 @@
 
 ## Unreleased
 
+### `DELETE` on an `@version` model now enforces `If-Match`, matching `PATCH` — breaking (#519)
+
+`DELETE` on a model declaring `@version` silently ignored optimistic concurrency: `PATCH`
+required `If-Match` and returned `412` on a stale or missing value, but `DELETE` proceeded
+regardless of whether the caller sent one, sent a stale one, or sent none at all. #493 assumed the
+two verbs already behaved the same way, and PR #510 nearly shipped a client SDK documenting an
+`If-Match`-on-`DELETE` round trip the server didn't actually support — the gap was caught in
+review and filed as #519 for a maintainer decision instead. The decision: close the asymmetry
+rather than document it. `DELETE` on an `@version` model now requires `If-Match` and returns `412`
+on a stale or missing value, exactly like `PATCH`. The gate gates purely on the model declaring
+`@version`, independent of whether it also declares `@@soft_delete` — a soft-deleted row is still
+a real mutation (an `UPDATE ... SET deleted_at = NOW()` under the hood) and gets the same
+protection a hard delete does, with no separate soft-delete carve-out.
+
+Server-side: `cratestack-macros/src/axum/model/prep/etag.rs` emits a `delete_if_match_decl`/
+`delete_if_match_apply` pair mirroring the existing `update_if_match_*` tokens, wired into
+`build_delete_handler` in `handlers_crud.rs`. `cratestack-sqlx`'s `DeleteRecord`/
+`ScopedDeleteRecord` gain an `if_match(expected: i64)` builder step mirroring
+`UpdateRecordSet::if_match`; the version-mismatch-vs-policy-denial disambiguation this needs is
+now shared between the update and delete paths via `query::support::probe_current_version`
+(previously private to the update exec path only).
+
+Client-side: `CratestackClient::delete_with_response` (`cratestack-client-rust`) and the generated
+`<Model>Client::delete_with_response`/`delete` (`cratestack-macros`'s REST client codegen) had
+their rustdoc corrected — both previously stated the server does *not* enforce `If-Match` on
+`DELETE`; that claim is no longer true.
+
+**Breaking:** any deployed client issuing a bare `DELETE` against a versioned model's REST route,
+or calling the typed delegate's `.delete(id).run(...)` without `.if_match(expected)`, now gets
+`412 Precondition Failed` instead of a successful delete.
+
+**Migration.** Before upgrading, audit every caller that deletes an `@version` model:
+
+1. **Generated REST/RPC clients:** read the current `ETag` first (`get_with_response`, or the
+   `ETag` returned by a prior mutation) and pass it as `If-Match` on the delete call —
+   `delete_with_response(id, &[("if-match", etag)])` instead of `delete_with_response(id, &[])`.
+2. **Direct `cratestack-sqlx` delegate callers:** add `.if_match(expected_version)` to
+   `cool.<model>().delete(id)` calls, the same way versioned `.update(id).set(input)` calls already
+   need `.if_match(...)`.
+3. **Hand-rolled HTTP clients:** send an `If-Match: "<version>"` header on `DELETE` requests
+   against `@version` models, same as is already required on `PATCH`.
+
+A model with no `@version` field is unaffected — the gate is a no-op when `version_column` is
+`None`, exactly as it already is for `PATCH`.
+
 ### New crate: `cratestack-auth` — signed-request + identity-token auth (absorption 3 of 3)
 
 SigV4-style canonical-request construction/signing/verification over Ed25519, SD-JWT id-token

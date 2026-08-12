@@ -68,6 +68,7 @@ async fn soft_delete_audit_snapshot_has_correct_before_and_after() {
 
     cool.soft_audit_customer()
         .delete(1)
+        .if_match(1) // model declares @version; delete now enforces If-Match (cratestack#519)
         .run(&ctx)
         .await
         .expect("soft delete succeeds");

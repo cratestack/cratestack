@@ -1,6 +1,12 @@
-//! ETag header handling for the get + update handlers, derived from
-//! the `@version` field if the model has one. Empty tokens
-//! otherwise.
+//! ETag header handling for the get + update + delete handlers,
+//! derived from the `@version` field if the model has one. Empty
+//! tokens otherwise.
+//!
+//! `delete_if_match_decl` deliberately mirrors `update_if_match_decl`
+//! token-for-token (cratestack#519): `DELETE` on an `@version` model
+//! now enforces `If-Match` exactly like `PATCH` does, closing the
+//! asymmetry where a stale or absent `If-Match` was silently ignored
+//! on delete.
 
 use quote::quote;
 
@@ -11,6 +17,8 @@ pub(super) struct EtagTokens {
     pub(super) update_if_match_apply: proc_macro2::TokenStream,
     pub(super) update_etag_extract: proc_macro2::TokenStream,
     pub(super) update_etag_apply: proc_macro2::TokenStream,
+    pub(super) delete_if_match_decl: proc_macro2::TokenStream,
+    pub(super) delete_if_match_apply: proc_macro2::TokenStream,
     pub(super) get_etag_extract_decl: proc_macro2::TokenStream,
     pub(super) get_etag_capture: proc_macro2::TokenStream,
     pub(super) get_etag_apply: proc_macro2::TokenStream,
@@ -26,6 +34,8 @@ pub(super) fn etag_tokens(
             update_if_match_apply: quote! {},
             update_etag_extract: quote! {},
             update_etag_apply: quote! {},
+            delete_if_match_decl: quote! {},
+            delete_if_match_apply: quote! {},
             get_etag_extract_decl: quote! {},
             get_etag_capture: quote! {},
             get_etag_apply: quote! {},
@@ -68,6 +78,30 @@ pub(super) fn etag_tokens(
                 ::cratestack::set_version_etag(&mut response, v);
             }
         },
+        delete_if_match_decl: quote! {
+            let if_match_version = match ::cratestack::parse_if_match_version(&headers) {
+                Ok(Some(v)) => Some(v),
+                Ok(None) => {
+                    return ::cratestack::encode_transport_result_with_status_for::<_, super::models::#model_ident>(
+                        &state.codec,
+                        &headers,
+                        &CAPABILITIES,
+                        axum::http::StatusCode::OK,
+                        Err(CoolError::PreconditionFailed("If-Match header required".to_owned())),
+                    );
+                }
+                Err(error) => {
+                    return ::cratestack::encode_transport_result_with_status_for::<_, super::models::#model_ident>(
+                        &state.codec,
+                        &headers,
+                        &CAPABILITIES,
+                        axum::http::StatusCode::OK,
+                        Err(error),
+                    );
+                }
+            };
+        },
+        delete_if_match_apply: quote! { .if_match(if_match_version.unwrap()) },
         get_etag_extract_decl: quote! {
             let mut etag_version: Option<i64> = None;
         },

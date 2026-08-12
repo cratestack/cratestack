@@ -192,6 +192,8 @@ pub(super) fn build_delete_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenSt
     let model_ident = &p.model_ident;
     let list_route_path = &p.list_route_path;
     let accessor_ident = &p.accessor_ident;
+    let delete_if_match_decl = &p.delete_if_match_decl;
+    let delete_if_match_apply = &p.delete_if_match_apply;
 
     quote! {
         // REST mount (`DELETE /<plural>/{id}`): canonical request identity is the REST
@@ -250,7 +252,9 @@ pub(super) fn build_delete_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenSt
                 }
             };
 
-            let result = state.db.#accessor_ident().delete(id).run(&ctx).await;
+            #delete_if_match_decl
+
+            let result = state.db.#accessor_ident().delete(id)#delete_if_match_apply.run(&ctx).await;
 
             ::cratestack::encode_transport_result_with_status_for(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, result)
         }

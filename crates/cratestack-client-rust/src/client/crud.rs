@@ -141,13 +141,14 @@ where
     /// a `Retry-After` on a `429`, or any other out-of-band signal a
     /// server sends on a delete response.
     ///
-    /// **Not** part of the `@version` optimistic-locking round trip:
-    /// unlike `patch_with_response`, the server does **not** currently
-    /// enforce `If-Match` on `DELETE` (only on `PATCH`). Sending an
-    /// `If-Match` header here is accepted but has no concurrency-safety
-    /// effect — the delete proceeds regardless of its value. Server-side
-    /// `If-Match` enforcement on `DELETE` is a real gap, tracked as a
-    /// separate follow-up, not implemented by this method.
+    /// Part of the `@version` optimistic-locking round trip since
+    /// cratestack#519: on an `@version` model the server requires an
+    /// `If-Match` header here exactly as it does on
+    /// `patch_with_response`, and returns `412` on a stale or missing
+    /// value. Pass the `ETag` learned from a prior
+    /// [`Self::get_with_response`] (or from a previous
+    /// `*_with_response` call's `TypedResponse::header("etag")`) as
+    /// `If-Match` in `headers`.
     pub async fn delete_with_response<Output>(
         &self,
         path: &str,
