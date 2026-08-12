@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Fixed a validator attribute on a nullable field breaking `Update{Model}Input::validate()` (#537)
+
+`@length`, `@range`, and every other validator attribute on a nullable field (`String?`, `Int?`, …)
+made the generated `Update{Model}Input::validate()` fail to compile, because update inputs wrap
+every field in an extra `Option<T>` ("field omitted") that is independent of the column's own
+nullability ("set this column to NULL") — `cratestack-macros/src/validators/emit.rs` OR'd the two
+conditions into a single boolean and only unwrapped one `Option` level instead of counting them
+separately, leaving a `&Option<T>` where the validator helper expected `&T`. `Create{Model}Input`
+was unaffected (a nullable field there is only ever a single `Option<T>`). The fix counts the two
+levels independently and unwraps twice when both apply; an explicit "set to NULL" on update
+(`Some(None)`) is treated as a no-op for validation purposes, matching how a nullable field is
+already allowed to be null on create.
 ### Release-bump PRs now run CI, and `prepare-release` no longer strands already-written changelog prose (#531)
 
 `v0.7.12` tagged and shipped with an unedited `CHANGELOG.md` seed — the placeholder text telling a
@@ -260,6 +272,29 @@ tampered/reused-nonce), SD-JWT selective-disclosure round-trips, JWKS-based JWT 
 revoked-device-resolver-is-authoritative regression).
 
 No existing crate changed; this is purely additive.
+
+### `migrate diff` now refuses a primary-key change on an existing table instead of silently emitting nothing, and two field-level `@id` on one model is rejected at parse time (#536)
+
+Changing an existing table's `@@id([...])` — adding, removing, or reordering primary-key columns —
+previously produced a completely empty diff: no operations, no error, no warning, letting the
+schema and the database silently drift apart. `migrate diff`/`migrate baseline` now return a
+structured `MigrateError::PrimaryKeyChanged` naming the table and the before/after key instead,
+deliberately refusing rather than generating a half-designed migration: a correct primary-key
+change needs constraint drop/recreate ordering, dependent foreign keys, and a data-safety story
+for a populated table that the diff engine does not have. Separately, `@@id([a, b])` has always
+been hard-rejected at macro expansion citing #136 (codegen still assumes a single scalar `@id`),
+but the equivalent `a String @id` / `b String @id` spelling — two field-level `@id` attributes on
+one model — validated cleanly and let `cratestack-migrate` silently emit a real multi-column
+`PRIMARY KEY`, bypassing that same guard. `cratestack-parser` now rejects a second field-level
+`@id` with the same #136 reasoning, so both spellings are refused consistently. Both changes are
+purely additive refusals on constructs that either never reached codegen (`@@id([...])`, #136) or
+validated cleanly by accident (two field-level `@id`); no existing valid schema is affected.
+
+**Breaking (internal API):** `cratestack_migrate::diff`/`diff_projections` now return
+`Result<Vec<Op>, MigrateError>` instead of an infallible `Vec<Op>`, so the refusal has somewhere
+to go. Every in-tree caller (`cratestack-cli`'s `migrate diff`/`migrate baseline`, and every test
+across `cratestack-migrate`/`cratestack-pg`) is updated; any out-of-tree direct caller of these two
+functions needs the same `?`/`.expect(...)` treatment.
 
 ## 0.7.12 (2026-08-11)
 

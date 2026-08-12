@@ -137,7 +137,8 @@ model IntrospectionProbeCustomer {
 
     // The same claim, proven through the actual comparison engine a
     // baseline command (Phase C) would use.
-    let ops = diff_projections(&only_table(&report.projections, table), &expected);
+    let ops = diff_projections(&only_table(&report.projections, table), &expected)
+        .expect("diff should succeed");
     assert!(ops.is_empty(), "expected no drift, got: {ops:?}");
 }
 

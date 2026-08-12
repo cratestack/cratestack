@@ -42,7 +42,7 @@ fn enum_column_is_text_with_membership_check_and_no_create_type() {
         "  Pending\n  Submitted\n  Shipped",
         "status OrderStatus",
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
 
     // The native enum type is gone entirely — this is the storage
     // representation the generated row decoder actually reads.
@@ -100,7 +100,7 @@ fn bareword_enum_default_is_quoted() {
         "  Pending\n  Shipped",
         "status OrderStatus @default(Pending)",
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
 
     assert!(
         migration
@@ -120,7 +120,7 @@ fn bareword_enum_default_is_quoted() {
 fn optional_enum_column_is_nullable_text_and_still_checked() {
     let prev = schema(&with_models(""));
     let next = schema(&order_schema("  Pending\n  Shipped", "status OrderStatus?"));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
 
     assert!(
         migration.up.contains("status TEXT,") || migration.up.contains("status TEXT\n"),
@@ -151,7 +151,7 @@ fn enum_list_column_is_text_array_with_containment_check() {
         "  Pending\n  Shipped",
         "history OrderStatus[]",
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
 
     assert!(
         migration.up.contains("history TEXT[] NOT NULL"),
@@ -182,7 +182,7 @@ fn adding_a_variant_rebuilds_the_membership_check() {
         "  Pending\n  Submitted\n  Shipped",
         "status OrderStatus",
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
 
     assert!(
         !migration.up.contains("ALTER TYPE"),
@@ -229,7 +229,7 @@ fn removing_a_variant_rebuilds_the_check_narrower() {
         "  Pending\n  Submitted",
         "status OrderStatus",
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
 
     assert!(
         migration
@@ -258,7 +258,7 @@ enum LegacyStatus {
 "#,
     ));
     let next = schema(&with_models(""));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
 
     assert!(
         !migration.up.contains("DROP TYPE"),
@@ -274,7 +274,7 @@ enum LegacyStatus {
 fn enum_check_is_reversible() {
     let prev = schema(&with_models(""));
     let next = schema(&order_schema("  Pending\n  Shipped", "status OrderStatus"));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
 
     assert!(!migration.down.contains("destructive migration"));
     assert!(

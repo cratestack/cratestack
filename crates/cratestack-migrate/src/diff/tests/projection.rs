@@ -41,7 +41,7 @@ fn diff_projections_creates_table_from_hand_built_ir_with_no_schema_involved() {
     next.tables
         .insert("accounts".to_string(), table("accounts", vec![id_column()]));
 
-    let ops = diff_projections(&prev, &next);
+    let ops = diff_projections(&prev, &next).expect("diff should succeed");
     assert_eq!(ops.len(), 1);
     match &ops[0] {
         Op::CreateTable(create) => {
@@ -60,7 +60,7 @@ fn diff_projections_drops_table_missing_from_next() {
         .insert("accounts".to_string(), table("accounts", vec![id_column()]));
     let next = Projections::default();
 
-    let ops = diff_projections(&prev, &next);
+    let ops = diff_projections(&prev, &next).expect("diff should succeed");
     assert_eq!(ops.len(), 1);
     assert!(matches!(&ops[0], Op::DropTable(drop) if drop.name == "accounts"));
 }
@@ -72,7 +72,11 @@ fn diff_projections_of_identical_projections_is_empty() {
         .tables
         .insert("accounts".to_string(), table("accounts", vec![id_column()]));
 
-    assert!(diff_projections(&projections, &projections).is_empty());
+    assert!(
+        diff_projections(&projections, &projections)
+            .expect("diff should succeed")
+            .is_empty()
+    );
 }
 
 /// `diff()` is a thin wrapper around `project()` + `diff_projections()`
@@ -90,7 +94,8 @@ model Account {
 "#,
     ));
 
-    let via_diff = diff(&prev, &next);
-    let via_projections = diff_projections(&project(&prev), &project(&next));
+    let via_diff = diff(&prev, &next).expect("diff should succeed");
+    let via_projections =
+        diff_projections(&project(&prev), &project(&next)).expect("diff should succeed");
     assert_eq!(via_diff, via_projections);
 }

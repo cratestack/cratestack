@@ -118,7 +118,10 @@ demonstrated manually instead.
 - `decimal-bigdecimal` — arbitrary-precision `bigdecimal` backend instead
   (heap-allocated, not `Copy` — see `cratestack-core`'s README for the
   trait differences). Mutually exclusive with `decimal-rust-decimal`;
-  selecting neither or both is a compile error. **Wire compatibility
+  selecting both is a compile error. Selecting *neither* is allowed as of
+  cratestack#521 — the `Decimal` type is simply not exported, so only a schema
+  that actually uses a `Decimal` field fails, with rustc's own "cannot find
+  type `Decimal`". **Wire compatibility
   constraint:** ordinary values encode identically to `rust_decimal` on
   the wire, but values past `rust_decimal`'s ~28-29 significant-digit
   capacity serialize as scientific notation (e.g. `"1E-29"`), which a
