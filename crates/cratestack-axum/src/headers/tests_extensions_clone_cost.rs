@@ -2,8 +2,8 @@
 //! default — see `#[ignore]` below) for the unconditional
 //! `extensions.clone()` `ClientIpContext::from_extensions` now performs
 //! on every request, on every transport, per the review that asked this
-//! cost be measured rather than assumed rather than either left silent or
-//! hand-waved as "probably fine".
+//! cost be measured rather than left silent or hand-waved as "probably
+//! fine".
 //!
 //! Builds an `http::Extensions` matching what this framework's own
 //! middleware actually inserts on a served router — `ConnectInfo
