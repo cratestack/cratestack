@@ -12,6 +12,7 @@
 use super::super::diff;
 use super::{schema, with_models};
 use crate::error::MigrateError;
+use crate::ir::Op;
 
 fn account_membership_model(id_attribute: &str) -> String {
     format!(
@@ -125,4 +126,82 @@ fn creating_a_table_with_a_composite_primary_key_is_not_a_primary_key_change() {
     )));
     let ops = diff(&prev, &next).expect("creating a new table must not be refused");
     assert_eq!(ops.len(), 1, "ops: {ops:?}");
+}
+
+/// Regression coverage: renaming a single `@id` column via
+/// `@rename(from = "...")` must not be treated as a primary-key
+/// change. Before #551 this produced a normal `RenameColumn`
+/// migration; #551's `primary_key_columns` compares raw column
+/// *names* without resolving `@rename`, so `legacy_id` vs `id` looks
+/// like a key change even though it's the same logical column with
+/// the same arity and position — a false-positive refusal.
+#[test]
+fn renaming_the_id_column_is_not_a_primary_key_change() {
+    let prev = schema(&with_models(
+        r#"
+model AccountMembership {
+  legacyId Int @id
+  subject String
+}
+"#,
+    ));
+    let next = schema(&with_models(
+        r#"
+model AccountMembership {
+  id Int @id @rename(from = "legacy_id")
+  subject String
+}
+"#,
+    ));
+
+    let ops = diff(&prev, &next)
+        .expect("renaming the primary-key column must not be refused as a key change");
+    let renamed = ops.iter().any(|op| {
+        matches!(op, Op::RenameColumn(rename)
+            if rename.table == "account_memberships"
+                && rename.from == "legacy_id"
+                && rename.to == "id")
+    });
+    assert!(renamed, "expected a RenameColumn op, got: {ops:?}");
+}
+
+/// The multi-column analogue of the case above: renaming one column
+/// inside a composite key must not be treated as a key change either,
+/// as long as the *position* of the renamed column is unchanged — it
+/// must still compare as "position-0 renamed", not as a set/order
+/// change.
+#[test]
+fn renaming_a_column_inside_a_composite_primary_key_is_not_a_primary_key_change() {
+    let prev = schema(&with_models(
+        r#"
+model AccountMembership {
+  legacyAccountId Int
+  subject String
+  active Boolean
+
+  @@id([legacyAccountId, subject])
+}
+"#,
+    ));
+    let next = schema(&with_models(
+        r#"
+model AccountMembership {
+  accountId Int @rename(from = "legacy_account_id")
+  subject String
+  active Boolean
+
+  @@id([accountId, subject])
+}
+"#,
+    ));
+
+    let ops = diff(&prev, &next)
+        .expect("renaming a column inside a composite key must not be refused as a key change");
+    let renamed = ops.iter().any(|op| {
+        matches!(op, Op::RenameColumn(rename)
+            if rename.table == "account_memberships"
+                && rename.from == "legacy_account_id"
+                && rename.to == "account_id")
+    });
+    assert!(renamed, "expected a RenameColumn op, got: {ops:?}");
 }
