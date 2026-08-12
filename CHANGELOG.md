@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.13 (2026-08-12)
 
 ### Fixed a validator attribute on a nullable field breaking `Update{Model}Input::validate()` (#537)
 
