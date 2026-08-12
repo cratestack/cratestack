@@ -1,0 +1,27 @@
+[workspace]
+# Deliberately its own workspace root — see the description below and this
+# crate's entry in the parent repo's `[workspace] exclude` list.
+
+[package]
+name = "db-transaction-verification"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Standalone crate (cratestack#513) that proves, with a real Cargo.toml and cargo test run you can point at, that a caller can compose a multi-write Postgres transaction through `db.transaction(...)` using only CrateStack's own API — no `sqlx` entry in [dependencies]/[dev-dependencies] anywhere in this file, and no `sqlx::Transaction` (or any other `sqlx::` path) named anywhere in src/ or tests/. See README.md for why this needs to be a standalone crate rather than a workspace member, and examples/no-database-verification's Cargo.toml doc comment (cratestack#329) for the same underlying Cargo feature-unification reasoning applied to a different half of epic #488."
+
+[dependencies]
+# No `sqlx` line, on purpose — that's the whole point of this crate. The
+# facade's own `postgres` Cargo feature is on by default, so `db.transaction`
+# and the rest of the sqlx-backed surface are available without naming
+# `sqlx` here at all.
+cratestack = { package = "cratestack-pg", path = "../../crates/cratestack-pg" }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[dev-dependencies]
+# Real Postgres for the transaction proof (commit/rollback), the same
+# testcontainers backend `crates/cratestack-pg/tests/support/pg.rs` uses —
+# reimplemented minimally here since a standalone workspace root can't
+# `mod support;` into the parent workspace's test tree.
+testcontainers = "0.27"
+testcontainers-modules = { version = "0.15", features = ["postgres"] }

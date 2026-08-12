@@ -62,6 +62,24 @@ pub(super) fn build_runtime_block(
                 self.runtime.pool()
             }
 
+            /// Compose several writes in one Postgres transaction without
+            /// naming a `sqlx` type (cratestack#513): `body` receives an
+            /// opaque `::cratestack::Tx` it can pass straight to any write
+            /// builder's `run_in_tx` (e.g.
+            /// `self.some_model().create(..).run_in_tx(tx, &ctx)`); commits
+            /// on `Ok`, rolls back on `Err`. See
+            /// `::cratestack::__private::SqlxRuntime::transaction`'s doc
+            /// comment for the full rollback-timing and no-retry rationale.
+            pub async fn transaction<F, T>(
+                &self,
+                body: F,
+            ) -> Result<T, ::cratestack::CoolError>
+            where
+                F: AsyncFnOnce(&mut ::cratestack::Tx) -> Result<T, ::cratestack::CoolError>,
+            {
+                self.runtime.transaction(body).await
+            }
+
             pub fn bind_auth<P: ::cratestack::serde::Serialize>(
                 &self,
                 principal: Option<P>,

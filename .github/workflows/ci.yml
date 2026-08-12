@@ -69,7 +69,7 @@ jobs:
       - run: just check --locked
 
   facade-disjointness:
-    name: facade disjointness (examples/no-database-verification*, examples/client-only-verification)
+    name: facade disjointness (examples/no-database-verification*, examples/client-only-verification, examples/db-transaction-verification)
     runs-on: ubuntu-latest
     # `examples/no-database-verification`, `-api`, and `client-only-
     # verification` are each their own `[workspace]` root (see their
@@ -80,6 +80,15 @@ jobs:
     # cratestack#347, cratestack#490). This job re-runs those proofs on
     # every PR so a stale/broken lockfile or a regressed disjointness
     # guarantee fails CI instead of silently drifting (cratestack#422).
+    #
+    # `examples/db-transaction-verification` (cratestack#513) is the same
+    # pattern applied to a *direct*-dependency claim rather than a
+    # transitive-absence one: `sqlx` is expected (and present) transitively
+    # via `cratestack-sqlx`, so its proof is "no `sqlx = ...` line in this
+    # Cargo.toml", not "cargo tree has no sqlx at all" — plus a real
+    # Postgres run (testcontainers; GitHub-hosted runners ship Docker) to
+    # prove `db.transaction(...)` actually works from that Cargo.toml, not
+    # just that it compiles.
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -89,6 +98,7 @@ jobs:
             examples/no-database-verification
             examples/no-database-verification-api
             examples/client-only-verification
+            examples/db-transaction-verification
       - name: Assert Cargo.lock is up to date (no-database-verification)
         working-directory: examples/no-database-verification
         run: cargo metadata --locked --format-version=1 > /dev/null
@@ -97,6 +107,9 @@ jobs:
         run: cargo metadata --locked --format-version=1 > /dev/null
       - name: Assert Cargo.lock is up to date (client-only-verification)
         working-directory: examples/client-only-verification
+        run: cargo metadata --locked --format-version=1 > /dev/null
+      - name: Assert Cargo.lock is up to date (db-transaction-verification)
+        working-directory: examples/db-transaction-verification
         run: cargo metadata --locked --format-version=1 > /dev/null
       - name: sqlx absent by default (no-database-verification, postgres feature off)
         working-directory: examples/no-database-verification
@@ -140,6 +153,13 @@ jobs:
             cargo tree --locked | grep -i axum
             exit 1
           fi
+      - name: no direct sqlx dependency (db-transaction-verification)
+        working-directory: examples/db-transaction-verification
+        run: |
+          if grep -Eq '^\s*sqlx\s*=' Cargo.toml; then
+            echo "::error::expected no direct sqlx dependency in db-transaction-verification's Cargo.toml"
+            exit 1
+          fi
       - name: cargo test (no-database-verification, both feature states)
         working-directory: examples/no-database-verification
         run: |
@@ -150,6 +170,14 @@ jobs:
         run: cargo test --locked
       - name: cargo test (client-only-verification)
         working-directory: examples/client-only-verification
+        run: cargo test --locked
+      - name: cargo test against real Postgres (db-transaction-verification)
+        working-directory: examples/db-transaction-verification
+        env:
+          # Force the testcontainer/DB connection failure mode to a hard
+          # error rather than a silent per-test skip — same rationale as
+          # the `tests-db` job's own `CRATESTACK_REQUIRE_DB`.
+          CRATESTACK_REQUIRE_DB: "1"
         run: cargo test --locked
 
   # ---- Test shards -----------------------------------------------------
