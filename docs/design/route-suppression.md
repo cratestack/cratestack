@@ -163,8 +163,9 @@ internal_attribute.rs` (`parse_internal_attribute`/
 `model_internal_actions`/`INTERNAL_ACTIONS`) and a validation hook in
 `cratestack-parser/src/validate/model_attributes.rs`, all confirmed
 absent from `main` today (see the note under Tracking, above) — this
-design proposes reintroducing that same shape verbatim. Only its *blast radius* changes here — from
-REST-only to all four surfaces (§3).
+design proposes reintroducing that same shape verbatim. Only its
+*blast radius* changes here — from REST-only to all four surfaces
+(§3).
 
 ### 2.1 Why not inference
 
