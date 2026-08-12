@@ -6,6 +6,9 @@ license.workspace = true
 publish = false
 description = "React + Vite + Tailwind 4 + DaisyUI 5 SPA driving a cratestack-rusqlite ModelDelegate compiled to wasm32-unknown-unknown and persisted via OPFS."
 
+[lints]
+workspace = true
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 

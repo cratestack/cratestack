@@ -6,6 +6,9 @@ license.workspace = true
 publish = false
 description = "Standalone HTTP-client binary built on cratestack-client-rust via include_client_schema!. The 'backend service that talks to another backend service' shape."
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "client-stub"
 path = "src/main.rs"

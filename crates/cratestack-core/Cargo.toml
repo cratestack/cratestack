@@ -13,6 +13,9 @@ readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 
+[lints]
+workspace = true
+
 [features]
 # Exactly one of these two must be selected — see `src/lib.rs`'s
 # `compile_error!` pair for the enforcement (neither-selected AND

@@ -6,6 +6,9 @@ license.workspace = true
 publish = false
 description = "Postgres + axum REST server for the swr-preset end-to-end example (issue #306): a two-model task board plus one procedure, consumed by web/ through a generated --preset swr TypeScript client."
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "react-vite-swr-server"
 path = "src/main.rs"

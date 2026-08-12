@@ -20,6 +20,10 @@ categories.workspace = true
 # package-rename mechanism already exposes the lib under whatever name
 # they pick on their side, so this `[lib] name` change is invisible
 # downstream.
+
+[lints]
+workspace = true
+
 [lib]
 name = "cratestack"
 path = "src/lib.rs"

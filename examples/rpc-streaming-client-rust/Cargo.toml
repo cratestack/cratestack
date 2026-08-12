@@ -6,6 +6,9 @@ license.workspace = true
 publish = false
 description = "Rust binary that consumes an `application/cbor-seq` stream from a `transport rpc` server via RpcClient::call_streaming. Companion to the `rpc-streaming-example` server crate."
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "rpc-streaming-client"
 path = "src/main.rs"

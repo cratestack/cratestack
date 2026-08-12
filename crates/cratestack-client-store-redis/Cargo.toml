@@ -13,6 +13,9 @@ readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 
+[lints]
+workspace = true
+
 [features]
 # Forwards to `cratestack-core`'s mutually-exclusive decimal backend choice
 # (see that crate's Cargo.toml for the full rationale). Required because
@@ -28,4 +31,3 @@ chrono.workspace = true
 cratestack-core.workspace = true
 redis.workspace = true
 serde_json.workspace = true
-

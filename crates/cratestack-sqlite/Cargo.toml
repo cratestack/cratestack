@@ -17,6 +17,10 @@ categories.workspace = true
 # `cratestack-sqlite` on crates.io, but the library is named
 # `cratestack` so integration tests resolve `::cratestack::*` paths
 # directly. External consumers use `cratestack = { package = "cratestack-sqlite" }`.
+
+[lints]
+workspace = true
+
 [lib]
 name = "cratestack"
 path = "src/lib.rs"

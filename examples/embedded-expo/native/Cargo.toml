@@ -14,6 +14,11 @@ crate-type = ["cdylib", "rlib", "staticlib"]
 # The C ABI exports below intentionally hand raw pointers across the
 # language boundary; that's the unsafe code's whole reason for existing.
 # Lift the workspace-wide forbid.
+#
+# Deliberately NOT `[lints]\nworkspace = true` (cratestack#523): Cargo
+# rejects mixing workspace-inherited lints with a per-package override in
+# the same manifest — see crates/cratestack-cbor-napi/Cargo.toml's fuller
+# note, which this mirrors.
 unsafe_code = "allow"
 
 [dependencies]

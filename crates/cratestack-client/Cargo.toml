@@ -18,6 +18,10 @@ categories.workspace = true
 # `cratestack` so `include_client_schema!`'s generated `::cratestack::*`
 # paths resolve without per-file aliasing. External consumers depend on the
 # package as `cratestack = { package = "cratestack-client" }`.
+
+[lints]
+workspace = true
+
 [lib]
 name = "cratestack"
 path = "src/lib.rs"
