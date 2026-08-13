@@ -5704,14 +5704,12 @@ dependencies = [
 name = "rpc-streaming-client-rust-example"
 version = "0.1.0"
 dependencies = [
- "async-stream",
  "async-trait",
  "axum",
- "bytes",
  "cratestack-client-rust",
  "cratestack-codec-cbor",
- "cratestack-core",
  "cratestack-pg",
+ "rpc-streaming-example",
  "serde",
  "tokio",
  "url",

@@ -49,10 +49,15 @@ where
     /// (server closed cleanly after the last item) also surfaces as
     /// `None` from the next `.recv()`.
     ///
-    /// The server must return `application/cbor-seq`. If it returns a
-    /// buffered `application/cbor` or `application/json` instead, the
-    /// caller should use [`Self::post_list`] — this method does not
-    /// fall back.
+    /// Ideally the server returns `application/cbor-seq`, decoded
+    /// incrementally as bytes arrive. If content negotiation instead
+    /// picks a buffered `application/cbor` or `application/json`
+    /// response, this still works — the body is buffered in full and
+    /// forwarded item-by-item through the same `Receiver` — but loses
+    /// the time-to-first-byte win, so prefer [`Self::post_list`] when
+    /// you already know the server won't stream. A `Content-Type` the
+    /// codec can't decode at all becomes a terminal `Err` on the
+    /// receiver naming what was received.
     pub async fn post_list_streamed<Input, Output>(
         &self,
         path: &str,
@@ -78,7 +83,8 @@ where
         // Bounded channel keeps memory tight on the consumer side —
         // 16 items in flight is plenty for a single subscriber.
         let (tx, rx) = tokio::sync::mpsc::channel(16);
-        tokio::spawn(pump_streamed_response_typed::<Output, ClientError, _>(
+        tokio::spawn(pump_streamed_response_typed::<C, Output, ClientError, _>(
+            self.codec.clone(),
             response,
             tx,
             std::convert::identity,
