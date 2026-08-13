@@ -818,19 +818,20 @@ jobs:
   # packages/* package that needs a Rust toolchain the plain `js` job
   # deliberately doesn't set up — but for a different reason than those
   # two: this package's own build/lint need nothing beyond Node, only its
-  # *tests* do, because they drive a REAL generated TypeScript client
-  # (cratestack#571) rather than a hand-written stand-in for one. That
-  # fixture is intentionally not committed (cratestack#577 — "don't commit
-  # generated build output"), so it has to be produced here, fresh, by the
-  # real `cratestack generate-typescript` CLI before `pnpm turbo test` runs
-  # — `just refine-fixture` is the single recipe both this job and a local
-  # dev use, so they can't drift apart into two hand-copied invocations
-  # (same discipline as `regen-examples` for the two example clients
-  # below). If this step is ever skipped or misconfigured, the test suite
-  # itself fails loudly (not a silent skip) — see
+  # *tests* do, because they drive TWO REAL generated TypeScript clients
+  # (cratestack#571, plus its RPC-transport follow-up) rather than a
+  # hand-written stand-in for either. Neither fixture is committed
+  # (cratestack#577 — "don't commit generated build output"), so both have
+  # to be produced here, fresh, by the real `cratestack generate-typescript`
+  # CLI before `pnpm turbo test` runs — `just refine-fixture`/
+  # `just refine-rpc-fixture` are the two recipes this job and a local dev
+  # both use, so they can't drift apart into hand-copied invocations (same
+  # discipline as `regen-examples` for the two example clients below). If
+  # either step is ever skipped or misconfigured, the test suite itself
+  # fails loudly (not a silent skip) — see
   # packages/cratestack-refine/tests/support/assert-fixture-present.ts,
-  # a vitest `globalSetup` that throws with instructions when the fixture
-  # directory is missing.
+  # a vitest `globalSetup` that throws with instructions when either
+  # fixture directory is missing.
   js-refine:
     name: js (@cratestack/refine)
     runs-on: ubuntu-latest
@@ -841,8 +842,10 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: just
-      - name: Generate the real TypeScript client fixture (cratestack#571/#577)
+      - name: Generate the real REST TypeScript client fixture (cratestack#571/#577)
         run: just refine-fixture
+      - name: Generate the real RPC TypeScript client fixture (cratestack#571/#577)
+        run: just refine-rpc-fixture
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:

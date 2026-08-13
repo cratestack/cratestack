@@ -31,6 +31,11 @@ packages/cratestack-cbor-node/npm/
 # packages/cratestack-refine/tests/support/assert-fixture-present.ts.
 packages/cratestack-refine/tests/fixtures/generated-client/
 
+# Same story, RPC sibling: `just refine-rpc-fixture` against
+# tests/fixtures/refine_fixture_rpc.cstack (`transport rpc`), driving
+# `createCratestackRpcDataProvider`.
+packages/cratestack-refine/tests/fixtures/generated-client-rpc/
+
 *.tar.gz
 
 # Quality pipeline: generated at scan time, never committed (see

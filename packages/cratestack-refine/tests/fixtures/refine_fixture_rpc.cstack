@@ -1,0 +1,59 @@
+// RPC-transport fixture schema for @cratestack/refine's test suite
+// (cratestack#571 follow-up: RPC support). Mirrors
+// tests/fixtures/refine_fixture.cstack model-for-model — same three
+// models, same shapes — with the one difference that matters: `transport
+// rpc` up top, so `cratestack generate-typescript` emits the RPC client
+// (`rpc-client.ts.j2`/`rpc-queries.ts.j2`/`rpc-runtime.ts.j2`) instead of
+// the REST one. Kept as a byte-for-byte-comparable sibling to the REST
+// fixture on purpose: any difference in the generated shapes below is a
+// difference caused by transport, not by an accidentally-different schema.
+//
+//   - Widget:  plain CRUD, no @@paged, no @version, primary key named `id`.
+//   - Ledger:  @@paged + @version, primary key named `id` — pagination
+//              arithmetic and If-Match optimistic-locking tests over RPC.
+//   - Product: primary key named `sku`, NOT `id` — the id-mapping tests.
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Widget {
+  id Int @id
+  name String
+  weight Int?
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
+
+model Ledger {
+  id Int @id
+  label String
+  balance Int
+  version Int @version
+
+  @@paged
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
+
+model Product {
+  sku String @id
+  name String
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}

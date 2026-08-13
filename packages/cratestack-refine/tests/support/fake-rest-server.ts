@@ -12,6 +12,8 @@
  *  `offset` slicing with a real `totalCount`, and `If-Match` optimistic
  *  locking on PATCH/DELETE (missing or stale -> 412, matching cratestack#493/#519/#538). */
 
+import { applyFilterPairs, applySort } from "./list-match.js";
+
 export interface FakeResourceSchema {
   path: string;
   primaryKey: string;
@@ -81,7 +83,7 @@ export class FakeRestServer {
     params: URLSearchParams,
   ): Response {
     let items = applySort([...table.values()], params.get("sort"));
-    items = applyFilters(items, params);
+    items = applyFilterPairs(items, params.entries());
     const total = items.length;
     const limit = params.has("limit") ? Number(params.get("limit")) : undefined;
     const offset = params.has("offset") ? Number(params.get("offset")) : 0;
@@ -166,64 +168,6 @@ function checkIfMatch(
     });
   }
   return undefined;
-}
-
-const IGNORED_QUERY_KEYS = new Set(["limit", "offset", "sort", "fields", "include"]);
-
-function applyFilters(items: Row[], params: URLSearchParams): Row[] {
-  return items.filter((item) => {
-    for (const [key, value] of params.entries()) {
-      if (IGNORED_QUERY_KEYS.has(key)) continue;
-      const separator = key.indexOf("__");
-      const field = separator === -1 ? key : key.slice(0, separator);
-      const operator = separator === -1 ? "eq" : key.slice(separator + 2);
-      if (!matches(item[field], operator, value)) return false;
-    }
-    return true;
-  });
-}
-
-function matches(actual: unknown, operator: string, value: string): boolean {
-  switch (operator) {
-    case "eq":
-      return String(actual) === value;
-    case "ne":
-      return String(actual) !== value;
-    case "in":
-      return value.split(",").includes(String(actual));
-    case "lt":
-      return Number(actual) < Number(value);
-    case "lte":
-      return Number(actual) <= Number(value);
-    case "gt":
-      return Number(actual) > Number(value);
-    case "gte":
-      return Number(actual) >= Number(value);
-    case "contains":
-      return String(actual).includes(value);
-    case "startsWith":
-      return String(actual).startsWith(value);
-    case "isNull":
-      return String(actual === null || actual === undefined) === value;
-    default:
-      return true;
-  }
-}
-
-function applySort(items: Row[], sortParam: string | null): Row[] {
-  if (!sortParam) return items;
-  const fields = sortParam.split(",");
-  return [...items].sort((a, b) => {
-    for (const raw of fields) {
-      const desc = raw.startsWith("-");
-      const field = desc ? raw.slice(1) : raw;
-      const left = a[field] as number | string;
-      const right = b[field] as number | string;
-      if (left < right) return desc ? 1 : -1;
-      if (left > right) return desc ? -1 : 1;
-    }
-    return 0;
-  });
 }
 
 function jsonResponse(status: number, body: unknown): Response {
