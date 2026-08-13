@@ -376,8 +376,13 @@ procedure hello(): Greeting
     ));
 }
 
+/// A schema with no procedures still emits no *procedure* files — but
+/// (since model CRUD stub generation landed) it isn't `files.is_empty()`
+/// overall anymore if it declares a model. See `models.rs`'s
+/// `generates_five_mapping_files_per_model` for the model-CRUD coverage
+/// this schema's `Widget` model now exercises.
 #[test]
-fn schema_with_no_procedures_generates_no_files() {
+fn schema_with_no_procedures_generates_no_procedure_files() {
     let schema = schema(
         "datasource db {
   provider = \"sqlite\"
@@ -391,5 +396,12 @@ model Widget {
     );
 
     let package = generate_package(&schema, &WireMockGeneratorConfig::default()).unwrap();
-    assert!(package.files.is_empty());
+    assert!(
+        package
+            .files
+            .iter()
+            .all(|file| !file.file_name.starts_with("mappings/")
+                || file.file_name.contains("model."))
+    );
+    assert_eq!(package.files.len(), 5, "one file per model CRUD verb");
 }

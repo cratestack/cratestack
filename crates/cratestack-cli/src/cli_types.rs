@@ -134,11 +134,12 @@ pub(crate) enum Command {
         #[arg(long)]
         check: bool,
     },
-    /// Emit WireMock stub mappings (one per procedure) derived from the
-    /// schema's own `procedure`/`mutation procedure` declarations, so
-    /// integration/e2e tests can run against a mock backend whose wire
-    /// contract can't drift from the real one without regenerating.
-    /// v1 scope: happy-path stubs for procedures only — see
+    /// Emit WireMock stub mappings (one per procedure, five per model —
+    /// `list`/`get`/`create`/`update`/`delete`) derived from the
+    /// schema's own `procedure`/`mutation procedure`/`model`
+    /// declarations, so integration/e2e tests can run against a mock
+    /// backend whose wire contract can't drift from the real one
+    /// without regenerating. Happy-path only, and not stateful — see
     /// `cratestack_mock_wiremock`'s crate docs and
     /// `docs/design/wiremock-stubs.md` for what's covered.
     #[command(name = "generate-wiremock")]

@@ -1,13 +1,17 @@
 # WireMock stub generation from `.cstack` schemas
 
-Status: **v1 implemented** (`cratestack-mock-wiremock`, `cratestack
-generate-wiremock`) — happy-path stubs for procedures under `transport
-rest`/`transport rpc`. Scope and open questions below are current, not
-historical: several are deliberately deferred, not resolved.
+Status: **v2 implemented** (`cratestack-mock-wiremock`, `cratestack
+generate-wiremock`) — happy-path stubs for procedures **and** `model`
+CRUD routes (`list`/`get`/`create`/`update`/`delete`), under `transport
+rest`/`transport rpc`. Not stateful — see §8. Scope and open questions
+below are current, not historical: several are deliberately deferred,
+not resolved.
 Scope: a new generator crate (`crates/cratestack-mock-wiremock`), a new CLI
 subcommand (`generate-wiremock`), no changes to `cratestack-parser` or
 `cratestack-macros`.
-Tracking: issue #438.
+Tracking: issue #438. Model CRUD (§8) motivated by the `refine.dev`
+admin app, `packages/cratestack-refine`, and its planned no-database
+example, `examples/react-vite-refine`.
 
 ## 1. The problem
 
@@ -76,12 +80,15 @@ Read before designing, not assumed:
   `CoolError::status_code()` (400/401/403/404/409/422/503/500/…) — out of
   scope for v1 (see §7), but real for a future error-stub slice to target.
 - **Model CRUD routes are a different, richer shape.** `model` blocks get
-  five REST routes each (`generate_model_transport_constants` in the same
-  file): `GET`/`POST /<plural>`, `GET`/`PATCH`/`DELETE /<plural>/{id}`,
-  `POST` returning `201` instead of `200`. Out of scope for v1 (see §7) —
-  procedures were both the simpler case and webank's actual motivating
-  case (`crates/bff`'s schema is `provider = "none"`: procedures only, no
-  models, by construction — see `docs/design/no-database-mode.md`).
+  five REST routes each (`generate_model_axum_routes` in
+  `crates/cratestack-macros/src/axum/model/routes.rs`): `GET`/`POST
+  /<plural>`, `GET`/`PATCH`/`DELETE /<plural>/{id}`, `POST` returning
+  `201` instead of `200`. Out of scope for v1 — procedures were both the
+  simpler case and webank's actual motivating case (`crates/bff`'s
+  schema is `provider = "none"`: procedures only, no models, by
+  construction — see `docs/design/no-database-mode.md`). Covered as of
+  v2 (§8), motivated by `packages/cratestack-refine`, a model-CRUD-only
+  consumer with no procedures of its own.
 - **Nothing adjacent already does this.** `cratestack generate-proto`
   emits a `.proto` *description*, not a mock; no OpenAPI emitter or
   test-harness generator exists in this repo today (verified by reading
@@ -106,9 +113,16 @@ Unlike the Dart/TypeScript generators, this crate does **not** use
 simpler and safer (no risk of a template producing invalid JSON via
 unescaped interpolation).
 
-One file per procedure, `mappings/<procedureName>.json` — `mappings/` is
-the directory name a WireMock instance scans by convention, so `--out` can
-point directly at a project's existing WireMock root.
+One file per procedure, `mappings/<procedureName>.json`, and (as of v2,
+§8) five files per model, `mappings/model.<ModelName>.<verb>.json` for
+`verb` in `list`/`get`/`create`/`update`/`delete` — the
+`model.<Name>.<verb>` naming echoes the RPC op-id convention
+(`model.<Name>.<verb>`, `crates/cratestack-macros/src/transport/rpc.rs`)
+so it reads the same way whether the schema is REST or RPC, and can
+never collide with a procedure file (procedure names cannot contain a
+literal `.`). `mappings/` is the directory name a WireMock instance
+scans by convention, so `--out` can point directly at a project's
+existing WireMock root.
 
 ### 3.1 Example
 
@@ -295,22 +309,264 @@ for its Dart client, applied to WireMock stubs. This crate itself is
 agnostic to where `--out` points; the recommendation is a usage pattern
 for consumers, not something `generate_package` enforces.
 
-## 7. Explicitly out of scope for v1 (tracked, not forgotten)
+## 7. Explicitly out of scope (tracked, not forgotten)
 
-- **`model` blocks' REST CRUD routes.** Five routes per model, list
-  pagination (`Page<T>`, already handled for procedure return types, is
-  reusable), a `201` on create, and no request body to synthesize for
-  `GET`/`DELETE`. Procedures were the motivating case (webank's schema has
-  none); models are a real follow-up once there's a concrete consumer.
 - **`transport grpc` schemas.** Rejected up front
   (`WireMockGeneratorError::UnsupportedTransport`) — WireMock stubs a
   JSON/HTTP wire shape, not protobuf-over-HTTP/2; grpc needs a different
   mock target (a gRPC mock server, or `grpcurl`-style fixtures), not an
   extension of this crate.
 - **Error-case stubs, request-body matching, auth emulation.** See §4.
+  Also applies to model CRUD (§8): a `list` route's `field__operator=`
+  filters, `sort`/`orderBy`, `limit`/`offset`, and `fields`/`include`
+  selection (`crates/cratestack-axum/src/query.rs`) are not asserted or
+  varied on — every request that matches a stub's method + path gets the
+  same synthesized response regardless of query string.
 - **`FindMany<T>` return types.** Schema validation already forbids
   `FindMany<T>` anywhere outside a procedure *argument* position, so this
   is defense-in-depth in `values.rs`, not a real gap in practice — kept as
   a real error rather than an `unreachable!()` only because this crate's
   public API takes `&Schema` directly, so an unvalidated or hand-built
   schema could still reach it.
+- **Model CRUD statefulness beyond what §8 ships.** See §9 — a real
+  per-record store needs a third-party WireMock Java extension, a
+  dependency decision left to the maintainer rather than picked here.
+
+## 8. Model CRUD (v2)
+
+`model` blocks get the same treatment procedures got in v1: one stub per
+route, happy-path only, deterministic synthesized bodies. Five verbs per
+model — `list`, `get`, `create`, `update`, `delete` — derived the same
+way the real server derives them, not re-implemented by hand:
+
+- **Route paths.** The REST plural segment is
+  `cratestack_core::route_naming::model_route_segment(&model.name)` —
+  imported directly from `cratestack-core`, not re-derived (see this
+  repo's #345 history: two independent reimplementations of this exact
+  function drifted apart before it was centralized). `list`/`create`
+  share `{base}/{plural}` (`GET`/`POST`); `get`/`update`/`delete` share
+  `{base}/{plural}/{id}` (`GET`/`PATCH`/`DELETE`). The `{id}` segment has
+  no fixed value to match — this generator has no record store (§9) — so
+  those three routes are a WireMock `urlPathPattern` regex
+  (`^{base}/{plural}/[^/]+$`, with `base` regex-escaped) instead of an
+  exact `urlPath`, matching *any* id. Verified against a real WireMock
+  container (§8.3): `GET /api/posts/42` matches the `get` stub for a
+  schema that never mentions `42` anywhere.
+- **RPC routes fall out for free.** `transport rpc` schemas dispatch
+  model verbs to `POST /rpc/model.<ModelName>.<verb>`
+  (`generate_model_rpc_dispatch_arms` in
+  `crates/cratestack-macros/src/transport/rpc.rs`) — five distinct exact
+  paths, no `{id}` in the URL at all (it travels in the request body
+  instead), so RPC stubs need no pattern matching. Because REST and RPC
+  dispatch to the *same* handler body per verb (the doc comments on
+  every handler in `handlers_crud.rs`/`handlers_update.rs`/
+  `handlers_list.rs` say so explicitly), the response bodies and status
+  codes are identical between the two transports — only the route shape
+  differs. This is why RPC model support "fell out cheaply": the
+  transport-specific piece is ~25 lines
+  (`crates/cratestack-mock-wiremock/src/model_mapping/rpc.rs`).
+- **Status codes.** `create` is `201`, matching
+  `build_create_handler`'s literal `StatusCode::CREATED` — the one place
+  a model stub's status differs from every procedure stub's `200`.
+  `list`/`get`/`update`/`delete` are all `200`.
+- **Response bodies mirror the default projection, not a full model
+  dump.** A `get`/`list`/`create`/`update`/`delete` response body
+  excludes two field categories the real server's default projection
+  (`crates/cratestack-macros/src/axum/model/serializers/
+  projection_fields.rs`) also excludes: relation fields (fields whose
+  type names another declared model — populated only via
+  `include=<relation>`) and `@server_only` fields (never serialized to a
+  client). Every other field is synthesized with the same deterministic
+  per-scalar-type defaults procedures already use
+  (`crates/cratestack-mock-wiremock/src/values.rs`, reused as-is).
+- **`list` reuses the `Page<T>` envelope shape.** An `@@paged` model's
+  `list` response is `{items, totalCount, pageInfo}` — the identical
+  shape `values.rs` already synthesizes for a procedure returning
+  `Page<T>`; a non-`@@paged` model's `list` is a bare JSON array.
+
+### 8.1 Real output against a real fixture
+
+Run against `crates/cratestack-client-dart/tests/fixtures/ci_rest.cstack`
+(two models, `Author` and `@@paged Post`, related to each other) instead
+of a synthetic toy schema:
+
+`mappings/model.Post.get.json`'s body — `author` (the relation back to
+`Author`) is absent, every scalar field is present:
+
+```json
+{ "authorId": 0, "id": 0, "published": true, "status": "draft", "title": "string" }
+```
+
+`mappings/model.Author.list.json` — not `@@paged`, so a bare array, and
+`posts` (the relation to `Post`) is absent:
+
+```json
+[{ "id": 0, "name": "string" }]
+```
+
+`mappings/model.Post.list.json` — `@@paged`, so the envelope:
+
+```json
+{
+  "items": [{ "authorId": 0, "id": 0, "published": true, "status": "draft", "title": "string" }],
+  "pageInfo": { "hasNextPage": false, "hasPreviousPage": false, "limit": null, "offset": null },
+  "totalCount": 1
+}
+```
+
+`--check` round-trips cleanly against this fixture, and correctly flags
+drift: adding a field to `Author` and re-running `--check` without
+regenerating reports 6 stale files (all 5 `model.Author.*.json` plus,
+because `listPosts()`'s procedure return type `Post[]` transitively
+expands the `author: Author` relation the way procedure synthesis always
+has — see §2's "richer shape" note — `listPosts.json` too).
+
+### 8.2 What was deliberately *not* built
+
+- **No query-string assertion or variation.** See §7 — a `list` stub
+  answers the same body no matter what `field__operator=`/`sort`/
+  `limit`/`offset`/`fields`/`include` values a request sends.
+- **No request-body assertion on `create`/`update`.** Same v1 precedent
+  as procedures (§4) — any body is accepted.
+- **No per-record statefulness.** The single largest piece of scope this
+  design doc considered and did not build — see §9.
+
+### 8.3 Real-WireMock verification
+
+Unlike v1's JSON-shape-only verification, this slice was checked against
+an actual `wiremock/wiremock:3.9.1` container (`docker run`, mappings
+volume-mounted read-only), not just asserted in Rust unit tests. Against
+`ci_rest.cstack`'s generated mappings:
+
+| Request | Status | Body |
+|---|---|---|
+| `GET /api/posts` | 200 | `{"items":[{"authorId":0,"id":0,"published":true,"status":"draft","title":"string"}],"pageInfo":{...},"totalCount":1}` |
+| `GET /api/posts/42` | 200 | `{"authorId":0,"id":0,"published":true,"status":"draft","title":"string"}` |
+| `POST /api/posts` (body `{"title":"hello",...}`) | 201 | same synthesized body — **not** `"hello"` (§9) |
+| `PATCH /api/posts/42` (body `{"title":"updated"}`) | 200 | same synthesized body — **not** `"updated"` (§9) |
+| `DELETE /api/posts/42` | 200 | same synthesized body |
+| `GET /api/posts/42` again, after the `DELETE` above | 200 | identical to the first `GET` — nothing was actually deleted (§9) |
+| `GET /api/authors` | 200 | `[{"id":0,"name":"string"}]` (bare array — not `@@paged`) |
+| `GET /api/widgets` (no such model) | 404 | WireMock's own "Request was not matched" page |
+| `POST /rpc/model.Widget.list` (separate `transport rpc` schema) | 200 | `[{"id":0,"name":"string"}]` |
+| `POST /rpc/model.Widget.get` / `.create` / `.update` / `.delete` | 200/201/200/200 | analogous synthesized bodies |
+
+The `GET /api/posts/42` twice, before and after a `DELETE`, is the
+concrete evidence for §9's central finding: these stubs are not
+stateful.
+
+## 9. Model CRUD statefulness — investigated, not built
+
+The motivating consumer for model CRUD stubs is `packages/
+cratestack-refine`, a refine.dev admin app driven entirely by model
+CRUD, and a planned example
+(`examples/react-vite-refine`) that runs a Vite + refine app against
+these stubs with **no database**. For that example to be a convincing
+demo rather than "a static JSON blob wearing a mock server's clothes",
+a record created through the app should appear in the next `list`, and
+an update should be visible on the next `get`. This section is the
+investigation into whether that's achievable, done *before* building
+anything, per this feature's own instructions — concluding "not without
+a dependency decision the maintainer should make" is the actual
+deliverable here, not a consolation prize.
+
+### 9.1 What vanilla WireMock (no extension) can and cannot do
+
+- **Scenarios** (`scenarioName`/`requiredScenarioState`/
+  `newScenarioState`) are a finite state machine: each *scenario name*
+  holds exactly one current state string, starting at `Scenario.STARTED`.
+  A stub can match on "scenario X is in state Y" and transition it to
+  state Z. This can express a fixed *sequence* of canned responses for
+  one named scenario (first call returns A, second call returns B) — it
+  cannot express "one of N records, addressed by id, each independently
+  mutable," because there is nowhere to put N records' worth of data. A
+  scenario is a label, not a store.
+- **Response templating** (Handlebars, bundled in the standalone jar —
+  `"transformers": ["response-template"]` or `--global-response-
+  templating`, no extra dependency) can render a response body from
+  *that same request's* method/URL/headers/body
+  (`{{request.path.[1]}}`, `{{request.body}}`, …). It has no access to
+  data submitted by an *earlier, different* request. This means
+  templating alone could make a single `create`'s response echo back
+  what was just posted (cosmetically nicer, still not "appears in the
+  next list") — not attempted here, because doing it for `create` only
+  and not `list` risks reading as partial statefulness rather than the
+  honest "none" this crate actually ships (see this feature's explicit
+  instruction not to ship that under a stateful-sounding name).
+- **Conclusion:** vanilla WireMock cannot make a `create` visible in a
+  later `list`, or an `update` visible in a later `get`, full stop. This
+  isn't a gap in this generator — it's a ceiling in the tool.
+
+### 9.2 What a real per-record store needs: `wiremock-state-extension`
+
+The official-adjacent (`github.com/wiremock` org) `wiremock-state-
+extension` adds exactly the missing piece: a context-scoped store (one
+`state` record or an append-only `list` of records per context key),
+wired declaratively into stub JSON via `serveEventListeners`
+(`recordState`, `deleteState`, list `addLast`/`deleteFirst`/
+`deleteLast`/`deleteIndex`/`deleteWhere`) and a `state` Handlebars helper
+to read stored properties back into a later response — genuinely
+capable of "`POST /widgets` appends to a list; `GET /widgets` renders
+that list; `GET /widgets/{id}` looks the id up in it." This is real,
+evaluated capability, not a rejected-on-paper option — and it comes with
+real costs:
+
+- **A JVM classpath addition, not a config flag.** It ships as a JAR
+  (`org.wiremock.extensions:wiremock-state-extension` via Gradle/Maven,
+  or a standalone JAR alongside `wiremock-standalone`, or mounted into
+  `/var/wiremock/extensions` in a container) — "generated WireMock
+  stubs" stops meaning "drop JSON files next to any `wiremock/wiremock`
+  image" and starts meaning "run *this* extended image/classpath." Every
+  consumer of this generator's output (webank-mobile's e2e suite,
+  `examples/react-vite-refine`, any future one) inherits that
+  requirement.
+- **No built-in pagination or filter/sort query language.** Both would
+  have to be hand-rolled in Handlebars conditionals per model per field
+  — for a *generated* stub, that's either an explosion of per-field
+  template logic this crate would have to emit, or an honest admission
+  that filtering/sorting/pagination stay unimplemented even with the
+  extension (§7 already scopes those out regardless).
+- **Concurrency: "the lock-level is basically the whole context store"**
+  (the extension's own documented limitation) — fine for a single-writer
+  dev/test loop (the refine.dev example's actual use case), a real
+  constraint for anything higher-concurrency.
+- **Instance-local, not distributed** — a restart or a second WireMock
+  instance loses/splits the store; irrelevant for a local example, real
+  for a shared CI mock.
+
+### 9.3 Decision
+
+This PR does **not** wire in `wiremock-state-extension`. Building the
+per-model Handlebars templates it needs (`serveEventListeners` for
+`create`, `state`-helper-driven bodies for `list`/`get`, delete
+handling, all keyed correctly per model and per id) is a substantial
+second generator inside this crate, not an incremental addition to the
+happy-path static one — and it commits every consumer to a non-vanilla
+WireMock deployment. Per this feature's own instructions, that's a
+dependency-and-complexity tradeoff for the maintainer to weigh, not a
+default to pick silently:
+
+- **Go all-in on `wiremock-state-extension`.** Real create-then-list
+  statefulness, at the cost of a Java extension dependency for every
+  consumer and meaningfully more generator complexity (a second,
+  stateful mapping shape alongside the static one, or a full
+  replacement of it).
+- **Stay static (what this PR ships).** No dependency change, works
+  against any vanilla WireMock, honestly documented as non-stateful
+  (§8.2, §9.1) — `examples/react-vite-refine` would need to design
+  around that (e.g. a fixed seed set of records the UI reads/edits
+  in-memory client-side, not a real create-then-list loop against the
+  mock).
+- **A bounded middle ground was considered and rejected as not
+  actually solving the problem.** Pre-seeding a fixed set of `scenario`-
+  backed "slots" that transition state on `update` could make *one*
+  fixed record's `get` return a second canned body after a matching
+  `PATCH` — but the second body still can't contain whatever the caller
+  actually sent (§9.1's templating limitation), so it demonstrates "the
+  mock changed", not "the mock reflects what you typed." Not worth the
+  added generator complexity for that little payoff.
+
+If the maintainer wants the extension-backed path, it's a follow-up on
+top of this PR's static baseline, not a rewrite of it — the route
+derivation, projection rules, and REST/RPC split in §8 stay valid; only
+the response body/state-wiring layer would change.

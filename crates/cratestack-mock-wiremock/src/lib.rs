@@ -6,19 +6,31 @@
 //! `docs/design/wiremock-stubs.md` for the motivating case, full design,
 //! and open questions this crate's v1 slice deliberately leaves open.
 //!
-//! # Scope (v1)
+//! # Scope (v2 — model CRUD)
 //!
-//! - Covered: `procedure`/`mutation procedure` declarations, under
-//!   `transport rest` (the schema default) or `transport rpc`. Happy-path
-//!   only — every generated stub responds `200` with a synthesized
-//!   instance of the procedure's declared return type, matching on
-//!   request method + path (no body assertion, no error-case variants).
-//! - Not covered yet (tracked as follow-ups in the design doc): `model`
-//!   blocks' REST CRUD routes, `transport grpc` schemas
+//! - Covered: `procedure`/`mutation procedure` declarations, and `model`
+//!   blocks' `list`/`get`/`create`/`update`/`delete` CRUD routes, under
+//!   `transport rest` (the schema default) or `transport rpc`.
+//!   Happy-path only, and **not stateful** — every generated stub
+//!   matches on request method + path (no body assertion) and always
+//!   answers with the *same* deterministic example, regardless of what
+//!   was previously created/updated/deleted through it. A record
+//!   created through a mocked `create` will not appear in a subsequent
+//!   `list`, and an updated field will not appear on a subsequent `get`.
+//!   See `docs/design/wiremock-stubs.md`'s "Model CRUD statefulness"
+//!   section for the full investigation into why (vanilla WireMock
+//!   scenarios hold one string per scenario, not a per-record store; a
+//!   real per-record store needs the third-party
+//!   `wiremock-state-extension` Java extension, a dependency choice left
+//!   to the maintainer) before building anything on top of this crate
+//!   that assumes otherwise.
+//! - Not covered yet (tracked as follow-ups in the design doc):
+//!   `transport grpc` schemas
 //!   ([`WireMockGeneratorError::UnsupportedTransport`]), `FindMany<T>`
 //!   return types ([`WireMockGeneratorError::UnsupportedReturnType`]),
-//!   error-case stubs (WireMock scenarios/priority), and any emulation of
-//!   the auth chokepoint every procedure sits behind.
+//!   error-case stubs (WireMock scenarios/priority), request-body/query
+//!   filter matching, and any emulation of the auth chokepoint every
+//!   procedure/model route sits behind.
 //!
 //! # Example
 //!
@@ -44,6 +56,9 @@ mod config;
 mod error;
 mod generator;
 mod mapping;
+mod model_attrs;
+mod model_mapping;
+mod model_record;
 mod values;
 
 pub use config::{GeneratedWireMockFile, GeneratedWireMockPackage, WireMockGeneratorConfig};

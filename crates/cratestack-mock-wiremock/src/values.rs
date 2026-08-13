@@ -1,5 +1,7 @@
-//! Synthesizes a deterministic example JSON value for a procedure's
-//! return type, recursively, against the schema's own models/types/enums.
+//! Synthesizes a deterministic example JSON value for a `TypeRef`,
+//! recursively, against the schema's own models/types/enums. Shared by
+//! both procedure return-type synthesis (`mapping.rs`) and per-field
+//! model-record synthesis (`model_record.rs`).
 //!
 //! Design choice (see `docs/design/wiremock-stubs.md` "What does a stub
 //! return?"): fixed per-scalar-type defaults, not random values or a
@@ -30,12 +32,12 @@ use crate::error::WireMockGeneratorError;
 /// [`WireMockGeneratorError::UnbreakableCycle`].
 pub(crate) fn synthesize(
     schema: &Schema,
-    procedure_name: &str,
+    owner: &str,
     type_ref: &TypeRef,
     in_progress: &mut Vec<String>,
 ) -> Result<Value, WireMockGeneratorError> {
     if let Some(item) = type_ref.page_item() {
-        let inner = synthesize_named(schema, procedure_name, item, in_progress)?;
+        let inner = synthesize_named(schema, owner, item, in_progress)?;
         return Ok(json!({
             "items": [inner],
             "totalCount": 1,
@@ -54,7 +56,7 @@ pub(crate) fn synthesize(
             .map(|item| item.name.as_str())
             .unwrap_or("?");
         return Err(WireMockGeneratorError::UnsupportedReturnType {
-            procedure: procedure_name.to_owned(),
+            owner: owner.to_owned(),
             type_name: format!("FindMany<{item_name}>"),
             reason: "FindMany<T>'s cursor/edge wire shape isn't modeled by this generator yet",
         });
@@ -68,7 +70,7 @@ pub(crate) fn synthesize(
         // hand-written fixture would.
         return match type_ref.arity {
             TypeArity::Required => Err(WireMockGeneratorError::UnbreakableCycle {
-                procedure: procedure_name.to_owned(),
+                owner: owner.to_owned(),
                 type_name: type_ref.name.clone(),
             }),
             TypeArity::Optional => Ok(Value::Null),
@@ -94,15 +96,13 @@ pub(crate) fn synthesize(
     // already does, just for a cycle that closes one or more levels
     // deeper instead of on this exact `TypeRef`.
     match type_ref.arity {
-        TypeArity::Required => synthesize_base(schema, procedure_name, type_ref, in_progress),
-        TypeArity::Optional => {
-            match synthesize_base(schema, procedure_name, type_ref, in_progress) {
-                Ok(base) => Ok(base),
-                Err(WireMockGeneratorError::UnbreakableCycle { .. }) => Ok(Value::Null),
-                Err(other) => Err(other),
-            }
-        }
-        TypeArity::List => match synthesize_base(schema, procedure_name, type_ref, in_progress) {
+        TypeArity::Required => synthesize_base(schema, owner, type_ref, in_progress),
+        TypeArity::Optional => match synthesize_base(schema, owner, type_ref, in_progress) {
+            Ok(base) => Ok(base),
+            Err(WireMockGeneratorError::UnbreakableCycle { .. }) => Ok(Value::Null),
+            Err(other) => Err(other),
+        },
+        TypeArity::List => match synthesize_base(schema, owner, type_ref, in_progress) {
             Ok(base) => Ok(Value::Array(vec![base])),
             Err(WireMockGeneratorError::UnbreakableCycle { .. }) => Ok(Value::Array(Vec::new())),
             Err(other) => Err(other),
@@ -116,11 +116,11 @@ pub(crate) fn synthesize(
 /// item still participates in the same cycle guard as everything else.
 fn synthesize_named(
     schema: &Schema,
-    procedure_name: &str,
+    owner: &str,
     type_ref: &TypeRef,
     in_progress: &mut Vec<String>,
 ) -> Result<Value, WireMockGeneratorError> {
-    synthesize(schema, procedure_name, type_ref, in_progress)
+    synthesize(schema, owner, type_ref, in_progress)
 }
 
 /// The value for `type_ref.name` (plus `int_args` for `Vector(n)`)
@@ -129,7 +129,7 @@ fn synthesize_named(
 /// [`synthesize`], the caller.
 fn synthesize_base(
     schema: &Schema,
-    procedure_name: &str,
+    owner: &str,
     type_ref: &TypeRef,
     in_progress: &mut Vec<String>,
 ) -> Result<Value, WireMockGeneratorError> {
@@ -160,21 +160,21 @@ fn synthesize_base(
         // array of byte values, not a base64 string); empty is the
         // simplest valid instance.
         "Bytes" => Ok(Value::Array(Vec::new())),
-        other => synthesize_named_reference(schema, procedure_name, other, in_progress),
+        other => synthesize_named_reference(schema, owner, other, in_progress),
     }
 }
 
 fn synthesize_named_reference(
     schema: &Schema,
-    procedure_name: &str,
+    owner: &str,
     name: &str,
     in_progress: &mut Vec<String>,
 ) -> Result<Value, WireMockGeneratorError> {
     if let Some(model) = schema.models.iter().find(|model| model.name == name) {
-        return synthesize_object(schema, procedure_name, name, &model.fields, in_progress);
+        return synthesize_object(schema, owner, name, &model.fields, in_progress);
     }
     if let Some(type_decl) = schema.types.iter().find(|type_decl| type_decl.name == name) {
-        return synthesize_object(schema, procedure_name, name, &type_decl.fields, in_progress);
+        return synthesize_object(schema, owner, name, &type_decl.fields, in_progress);
     }
     if let Some(enum_decl) = schema.enums.iter().find(|enum_decl| enum_decl.name == name) {
         return enum_decl
@@ -182,21 +182,21 @@ fn synthesize_named_reference(
             .first()
             .map(|variant| json!(variant.name))
             .ok_or_else(|| WireMockGeneratorError::UnsupportedReturnType {
-                procedure: procedure_name.to_owned(),
+                owner: owner.to_owned(),
                 type_name: name.to_owned(),
                 reason: "enum declares no variants to pick an example from",
             });
     }
 
     Err(WireMockGeneratorError::UnknownType {
-        procedure: procedure_name.to_owned(),
+        owner: owner.to_owned(),
         type_name: name.to_owned(),
     })
 }
 
 fn synthesize_object(
     schema: &Schema,
-    procedure_name: &str,
+    owner: &str,
     type_name: &str,
     fields: &[Field],
     in_progress: &mut Vec<String>,
@@ -204,7 +204,7 @@ fn synthesize_object(
     in_progress.push(type_name.to_owned());
     let mut object = Map::with_capacity(fields.len());
     for field in fields {
-        let value = synthesize(schema, procedure_name, &field.ty, in_progress);
+        let value = synthesize(schema, owner, &field.ty, in_progress);
         // Pop before propagating an error too, so a caller that catches
         // and continues (none does today, but this keeps the invariant
         // "in_progress reflects only the still-active call stack" true

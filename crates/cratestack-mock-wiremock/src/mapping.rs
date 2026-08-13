@@ -22,13 +22,9 @@ pub(crate) fn build_procedure_mapping(
     config: &WireMockGeneratorConfig,
     procedure: &Procedure,
 ) -> Result<Value, WireMockGeneratorError> {
+    let owner = format!("procedure `{}`", procedure.name);
     let mut in_progress = Vec::new();
-    let body = synthesize(
-        schema,
-        &procedure.name,
-        &procedure.return_type,
-        &mut in_progress,
-    )?;
+    let body = synthesize(schema, &owner, &procedure.return_type, &mut in_progress)?;
 
     let route_path = match schema.transport {
         // `RPC_UNARY_PATH` (`cratestack_core::rpc`) is `/rpc/{op_id}`, but
