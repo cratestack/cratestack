@@ -10,6 +10,10 @@ signing.
 Part of the [CrateStack](https://cratestack.dev) framework. See
 `docs/design/protobuf.md` in the main repository for the full design.
 
+**Planned for removal in v0.9** — gRPC/protobuf support (this crate,
+`transport grpc`, and `cratestack-proto`) is being dropped repo-wide. Don't
+build new integrations against it.
+
 Status: runtime primitives (this crate) plus, behind `cratestack-pg`'s
 `grpc` Cargo feature, macro-generated pb mirror structs and a hand-rolled
 tonic service covering model CRUD (ticket #171) and `procedure`

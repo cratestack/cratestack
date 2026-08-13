@@ -20,7 +20,10 @@ package's weight to your bundle.
 ## Exports
 
 - **`.`** — `RpcLink`, `RpcLinkRequest`, `RpcLinkResponse`, `RpcLinkNext`, `CratestackRpcCodec`,
-  `RpcRequest`, `RpcResponseFrame`, `RpcErrorBody`.
+  `RpcRequest`, `RpcResponseFrame`, `RpcErrorBody`, `RpcCaller`; the streaming counterparts
+  `RpcStreamLinkRequest`, `RpcStreamFrame`, `RpcStreamLinkNext`, `RpcStreamLink`; and, re-exported
+  from `./cbor-seq`, `MalformedCborSeqError`, `RPC_STREAM_ERROR_TAG`, `CborSeqBoundaryScanner`,
+  `classifyCborSeqItem`.
 - **`./test-harness`** — `FakeRuntime`, a minimal in-memory runtime that mirrors
   `CratestackRpcRuntime`'s chain construction exactly, for testing `RpcLink` implementations
   against a real chain instead of a reimplementation of one. Not part of the public API surface —

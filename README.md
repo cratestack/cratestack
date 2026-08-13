@@ -12,18 +12,18 @@ As of `0.4.0` the previous single `cratestack` umbrella crate is split into stri
 
 ```toml
 # Backend service (Postgres + Axum + generated Rust client runtime)
-cratestack = { package = "cratestack-pg", version = "0.7.8" }
+cratestack = { package = "cratestack-pg", version = "0.7" }
 
 # Procedures-only, no-database backend service (Axum + generated Rust
 # client runtime, with `sqlx` genuinely absent from the dependency graph)
-cratestack = { package = "cratestack-api", version = "0.7.8" }
+cratestack = { package = "cratestack-api", version = "0.7" }
 
 # Embedded / mobile / desktop / wasm (rusqlite + shared surface)
-cratestack = { package = "cratestack-sqlite", version = "0.7.8" }
+cratestack = { package = "cratestack-sqlite", version = "0.7" }
 
 # Pure HTTP-client SDK (include_client_schema! only, generated Rust client
 # runtime, with `cratestack-axum` genuinely absent from the dependency graph)
-cratestack = { package = "cratestack-client", version = "0.7.8" }
+cratestack = { package = "cratestack-client", version = "0.7" }
 ```
 
 `cratestack-pg` does not pull in `libsqlite3-sys`, so backend services can depend on the official `sqlx` umbrella crate alongside it without `links = "sqlite3"` collisions. `cratestack-client` does not pull in `cratestack-axum` (and therefore `axum`/`tower`/`hyper`/`tower-http`), so a crate that only ever calls a cratestack server doesn't pay for a full server framework it never runs. See [`CHANGELOG.md`](./CHANGELOG.md) for the full 0.4.0 migration notes.
@@ -43,7 +43,7 @@ What the current slice covers, across those three shapes:
 * mixin declarations and model `@use(...)` expansion
 * **SQL views** (`view <Name> from <Model>, ...`) — read-only, SQL-defined projections over one or more models on both backends; server-side `@@materialized` with `refresh()` via `REFRESH MATERIALIZED VIEW CONCURRENTLY`; same `@@allow("read", …)` policy machinery models use ([ADR-0003](https://cratestack.dev/internals/views-adr))
 * **`datasource { provider = "none" }`** (`db = None`) — a procedures-only server with no database at all: no `model` blocks allowed, and the generated `Cratestack`/router are genuinely `PgPool`-free rather than carrying an always-`None` pool (see [`docs/design/no-database-mode.md`](docs/design/no-database-mode.md))
-* **`transport grpc`** — a `.cstack` schema can declare `transport grpc` instead of REST/RPC, generating `.proto` messages (with a field-number lockfile), a tonic service, and Rust/Dart/TypeScript(gRPC-Web) clients; CRUD-only today, procedures and streaming are still follow-up work (see [`docs/design/protobuf.md`](docs/design/protobuf.md))
+* **`transport grpc`** — a `.cstack` schema can declare `transport grpc` instead of REST/RPC, generating `.proto` messages (with a field-number lockfile), a tonic service, and Rust/Dart/TypeScript(gRPC-Web) clients; covers model CRUD (#171) and `procedure`s, unary or server-streaming (#208) (see [`docs/design/protobuf.md`](docs/design/protobuf.md)). **Planned for removal in v0.9** — don't build new integrations against it.
 
 ## Support Matrix
 
@@ -51,7 +51,7 @@ What the current slice covers, across those three shapes:
 | --- | --- | --- |
 | `datasource` | Supported | `provider` accepts `postgresql` (server), `sqlite` (embedded — native and `wasm32`), or `none` (procedures-only server, no database) |
 | `datasource { provider = "none" }` (`db = None`) | Supported | Server-only; the schema can never declare a `model`. Generates a genuinely `PgPool`-free `Cratestack`/router, with `ModelRouterState` and the event module omitted entirely rather than compiled in as dead code. See [`docs/design/no-database-mode.md`](docs/design/no-database-mode.md). |
-| `transport grpc` | Supported (CRUD only) | Mutually exclusive with REST/RPC transport. Generates `.proto` messages/enums (field-number lockfile), a tonic service, and gRPC clients (Rust, Dart native, TypeScript gRPC-Web). `procedure` declarations aren't wired into the generated gRPC service yet, and there's no streaming support. See [`docs/design/protobuf.md`](docs/design/protobuf.md). |
+| `transport grpc` | Supported — **planned for removal in v0.9** | Mutually exclusive with REST/RPC transport. Generates `.proto` messages/enums (field-number lockfile), a tonic service, and gRPC clients (Rust, Dart native, TypeScript gRPC-Web). Covers model CRUD and `procedure`s (unary or server-streaming). See [`docs/design/protobuf.md`](docs/design/protobuf.md). |
 | `auth` | Supported | Single auth block |
 | `mixin` | Supported | Reusable field sets for models |
 | `model` | Supported | Includes relation and policy attributes in current slice |
@@ -89,8 +89,12 @@ The Rust workspace contains these main packages:
 * `cratestack-redis`: server-side Redis-backed idempotency and rate-limit stores
 * `cratestack-codec-cbor`: CBOR codec
 * `cratestack-codec-json`: JSON codec
+* `cratestack-auth`: signed-request and identity-token auth (SigV4-style request signing/verification over Ed25519, SD-JWT id-token issuance/verification, multi-issuer JWKS resolution)
+* `cratestack-outbox`: transactional outbox pattern — persist a domain event in the same Postgres transaction as the business write it accompanies
+* `cratestack-service`: service-bootstrap batteries (env-driven config, health checks, graceful shutdown) that don't belong to any one `.cstack` schema
 * `cratestack-cli`: `cratestack` command-line tool
 * `cratestack-lsp`: `.cstack` language server
+* `cratestack-migrate`: schema diff and migration generator for `.cstack` schemas
 * `cratestack-studio`: admin and testing surface for `.cstack` schemas, served from a `studio.toml`
 
 The VS Code extension wrapper lives under `packages/cratestack-vscode`.
@@ -436,7 +440,7 @@ Practically, this means:
 
 CrateStack is not yet the right fit for:
 
-* `transport grpc` schemas that declare `procedure`s, or that need server/client streaming — `transport grpc` today covers model CRUD only
+* new integrations built against `transport grpc` — it is supported today (model CRUD plus unary/server-streaming procedures) but is planned for removal in v0.9; don't build on it
 * production-stable exact typed non-Rust client generation across arbitrary projection shapes
 * full ZenStack-style policy and exposure parity
 * runtime custom-field resolution beyond the current generated trait metadata

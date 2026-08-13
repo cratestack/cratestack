@@ -9,7 +9,7 @@ Language Server Protocol implementation for `.cstack` schema files.
 ## Installation
 
 ```bash
-cargo install cratestack-lsp --version 0.6.7
+cargo install cratestack-lsp --version 0.7
 ```
 
 Or build from the workspace:

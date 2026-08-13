@@ -23,9 +23,9 @@ All three are re-exported through the facade crates `cratestack-pg`, `cratestack
 ```toml
 [dependencies]
 # Server-side
-cratestack = { package = "cratestack-pg", version = "0.6.7" }
+cratestack = { package = "cratestack-pg", version = "0.7" }
 # OR embedded-side
-# cratestack = { package = "cratestack-sqlite", version = "0.6.7" }
+# cratestack = { package = "cratestack-sqlite", version = "0.7" }
 ```
 
 ## `include_server_schema!`
@@ -105,7 +105,7 @@ include_client_schema!("../schemas/api.cstack");
 
 A `.cstack` schema can declare `transport grpc` instead of the default REST (or `transport rpc`) transport — mutually exclusive with both. It's rejected with a `compile_error!` in `include_server_schema!` and `include_client_schema!` unless the facade's `grpc` Cargo feature is enabled (`cratestack-pg`'s `grpc` feature — see `crates/cratestack-macros/src/include/reject_grpc.rs`); `include_embedded_schema!` rejects `Grpc` schemas unconditionally, feature or no feature, since the embedded role has no transport at all.
 
-With the feature on, `include_server_schema!` emits `.proto`-mirroring `pb::` message structs (with `From`/`TryFrom` conversions to the domain types), a hand-rolled tonic service that delegates to the same dispatch functions REST/RPC already call (so policy/audit/idempotency behavior is unchanged), and `include_client_schema!` emits a native Rust gRPC client (`client_rust::grpc::CratestackGrpcClient`). Coverage is **CRUD-only today** — `procedure` declarations aren't wired into the generated gRPC service yet, and there's no streaming support. See [`docs/design/protobuf.md`](https://github.com/cratestack/cratestack/blob/main/docs/design/protobuf.md) and the `cratestack-cli generate-proto` subcommand for the standalone `.proto` generator.
+With the feature on, `include_server_schema!` emits `.proto`-mirroring `pb::` message structs (with `From`/`TryFrom` conversions to the domain types) and a hand-rolled tonic service that delegates to the same dispatch functions REST/RPC already call (so policy/audit/idempotency behavior is unchanged). Server-side coverage is model CRUD (#171) **and** `procedure`s, unary or server-streaming (#208). `include_client_schema!` emits a native Rust gRPC client (`client_rust::grpc::CratestackGrpcClient`) — the client generators (Rust and TypeScript gRPC-Web) remain **CRUD-only**: `procedure` declarations aren't wired into the generated client yet (ticket #209's own scope note), so a schema with `procedure`s gets no gRPC client method for them even though the server now dispatches them. `transport grpc` as a whole is **planned for removal in v0.9** — don't build new integrations against it. See [`docs/design/protobuf.md`](https://github.com/cratestack/cratestack/blob/main/docs/design/protobuf.md) and the `cratestack-cli generate-proto` subcommand for the standalone `.proto` generator.
 
 ## Migration from 0.2.x
 

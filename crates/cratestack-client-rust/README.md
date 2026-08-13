@@ -12,7 +12,7 @@ The CBOR and JSON codecs are re-exported as `CborCodec` and `JsonCodec`.
 
 ```toml
 [dependencies]
-cratestack-client-rust = "0.6.7"
+cratestack-client-rust = "0.7"
 tokio = { version = "1", features = ["rt-multi-thread"] }
 url = "2"
 ```
@@ -50,7 +50,7 @@ the gRPC sibling of the REST and RPC transports above:
 
 ```toml
 [dependencies]
-cratestack-client-rust = { version = "0.6.7", features = ["grpc"] }
+cratestack-client-rust = { version = "0.7", features = ["grpc"] }
 ```
 
 The feature is off by default because it pulls in `tonic` (and transitively `prost`,

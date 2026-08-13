@@ -8,8 +8,10 @@
 # `crates/`. An unassigned crate fails the check; see ADR 0014's "unassigned
 # crate" rule.
 #
-# Scope: only packages whose manifest lives under `crates/` (31 as of this
-# writing, cratestack#490's `cratestack-client` included). `examples/*` and
+# Scope: only packages whose manifest lives under `crates/` (35 as of this
+# writing, 34 of them workspace members — `cratestack-studio-ui` is excluded
+# from the workspace and not covered here; cratestack#490's `cratestack-client`
+# is included). `examples/*` and
 # app-shaped workspace members are consumers of the layered architecture,
 # not part of it, and are not covered — neither `docs/design/layering.md`
 # nor ADR 0011 assigns them a layer.

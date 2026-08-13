@@ -31,13 +31,14 @@ This crate deliberately does not use cratestack's own schema macro. See the
 crate-level doc comment (`src/lib.rs`) for the full argument; in short, the
 downstream crate this was absorbed from generated a typed schema purely to
 reach `.pool()` on the resulting handle — every actual read/write already
-ran raw `sqlx`, because cratestack's typed `Json<cratestack::Value>` column
-serialises values in a form that doesn't match the plain-JSONB shape a lake
-snapshotter needs. Reaching for the macro would also force a dependency on
-the `cratestack-pg` L5 facade for a crate whose real logic sits at L2. This
-crate ships a bare DDL constant instead ([`OUTBOX_EVENTS_DDL`]) — the same
-posture `cratestack-sqlx` already takes for its own internal
-`cratestack_audit`/`cratestack_migrations` tables.
+ran raw `sqlx`, and the generated model's typed accessors and `@@allow`
+policy checks were never called from anywhere in the crate. Using
+`include_server_schema!` at all would also force a dependency on the
+`cratestack-pg` L5 facade for a crate whose real logic sits at L2 — a
+placement cost paid for nothing. This crate ships a bare DDL constant
+instead ([`OUTBOX_EVENTS_DDL`]) — the same posture `cratestack-sqlx`
+already takes for its own internal `cratestack_audit`/`cratestack_migrations`
+tables.
 
 ## Installation
 

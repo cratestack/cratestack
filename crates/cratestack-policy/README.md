@@ -12,7 +12,7 @@ The types here are `Copy + 'static` so generated code can embed them as `const`s
 
 ```toml
 [dependencies]
-cratestack-policy = "0.6.7"
+cratestack-policy = "0.7"
 ```
 
 ## Schema Surface
@@ -32,7 +32,7 @@ model Post {
 }
 ```
 
-`include_server_schema!` lowers each `@@allow` clause into a `ReadPolicy { expr: PolicyExpr }` constant. The embedded macro silently drops policy clauses — the device/browser is single-user and authorization is the server's responsibility.
+`include_server_schema!` lowers each `@@allow` clause into a `ReadPolicy { expr: PolicyExpr }` constant. `include_embedded_schema!` compiles the same `@@allow`/`@@deny` clauses into the generated `ModelDescriptor` too — it does not drop them at compile time — but the embedded (`cratestack-rusqlite`) *runtime* never consults that descriptor's policy fields: the device/browser is single-user and authorization is the server's responsibility.
 
 ## Literals
 

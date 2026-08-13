@@ -39,7 +39,7 @@ not a promise about content.
 | [0011](0011-architecture-layer-model.md) | Architecture layer model | Accepted |
 | [0012](0012-no-ioc-container.md) | No IoC container | Accepted |
 | [0013](0013-facade-disjointness-invariant.md) | Facade disjointness invariant | Accepted |
-| [0014](0014-layer-direction-enforcement.md) | Layer direction enforcement | Proposed |
+| [0014](0014-layer-direction-enforcement.md) | Layer direction enforcement | Accepted |
 | [0015](0015-op-executor-l3.md) | OpExecutor as the L3 execution layer | Proposed |
 | [0016](0016-store-spi-scope.md) | Store SPI scope | Proposed |
 

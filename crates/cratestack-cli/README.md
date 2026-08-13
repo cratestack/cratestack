@@ -184,6 +184,35 @@ Flags:
 - `--check` (drift-detection mode: rebuild the lock and `.proto` text in
   memory and compare against what's on disk instead of writing)
 
+### `generate-wiremock` — WireMock stub mappings
+
+```bash
+cratestack generate-wiremock \
+  --schema schemas/catalog.cstack \
+  --out wiremock/mappings \
+  --base-path /api
+```
+
+Generates WireMock stub mappings straight from the schema's `model`/
+`procedure` declarations, so integration/e2e tests can run against a mock
+backend whose wire contract can't drift from the real one without
+regenerating. `transport rest` model CRUD is stateful (a create is visible
+on a later list/get, a delete 404s) but needs more than a plain WireMock —
+see `cratestack-mock-wiremock`'s crate docs, its `README.md`, and
+`docs/design/wiremock-stubs.md` for what's covered and what running the
+stateful stubs costs.
+
+Flags:
+
+- `--schema <PATH>` (required)
+- `--out <PATH>` (required)
+- `--base-path <PREFIX>` (default `/api`) — prepended to every stub's
+  `urlPath`, matching the same-named flag on `generate-dart`/
+  `generate-typescript`; must agree with whatever prefix the deployed
+  server (and any generated client tested against this mock) use.
+- `--check` (drift-detection mode, same semantics as `generate-dart`/
+  `generate-typescript`/`generate-proto` above)
+
 ### `studio` — admin and testing surface
 
 Replaces the old `generate-studio` codegen scaffold. The studio reads a

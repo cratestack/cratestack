@@ -341,13 +341,14 @@ linking the published tarball back to this exact GitHub Actions run and commit. 
 
 - **A public repository** — provenance publishing is rejected for private repos. Already satisfied.
 - **`id-token: write` permission** — set at the job level on `publish-npm`, `publish-npm-api-family`,
-  `publish-npm-cbor-node`, `publish-npm-cbor-web`, and `publish-npm-cbor` (not workflow-wide, since
-  the other jobs in this file don't need it). This is the same permission Trusted Publishing's OIDC
-  exchange uses, so both features share one job-level setting.
+  `publish-npm-cbor-node`, `publish-npm-cbor-web`, `publish-npm-cbor`, and `publish-npm-refine` (not
+  workflow-wide, since the other jobs in this file don't need it). This is the same permission
+  Trusted Publishing's OIDC exchange uses, so both features share one job-level setting.
 - **npm >= 9.5.0** — every publish-npm* job pins `node-version: 24` and additionally runs
-  `npm install -g npm@latest` before publishing, since Trusted Publishing's own >= 11.5.1
-  requirement is stricter than provenance's and isn't guaranteed by whatever npm version happens to
-  ship bundled with a given Node release.
+  `npm install -g npm@^11` before publishing (deliberately pinned to the latest 11.x, not an
+  unbounded `npm@latest` — a fresh npm major has previously regressed Trusted Publishing on this
+  repo), since Trusted Publishing's own >= 11.5.1 requirement is stricter than provenance's and
+  isn't guaranteed by whatever npm version happens to ship bundled with a given Node release.
 - `publish-npm-cbor-node` is the one exception to the `--provenance` flag itself: `napi
   prepublish`'s internal per-subpackage `npm publish` calls don't see a flag passed to the *outer*
   command, so that job does `npm config set provenance true` instead — equivalent, but set globally

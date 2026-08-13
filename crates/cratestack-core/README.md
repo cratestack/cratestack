@@ -21,7 +21,7 @@ Core types, traits, and error handling shared across the CrateStack workspace.
 
 ```toml
 [dependencies]
-cratestack-core = "0.6.7"
+cratestack-core = "0.7"
 ```
 
 At most one `Decimal` backend feature may be selected — `decimal-rust-decimal` (the default, `Copy`, fixed 96-bit precision) or `decimal-bigdecimal` (arbitrary precision, heap-allocated, not `Copy`). Selecting both is a compile error. Selecting neither is allowed as of cratestack#521: `Decimal` is simply not exported, which lets a consumer narrow its dependency graph with `default-features = false` without naming a backend it never uses. A schema that does use a `Decimal` field then fails with rustc's own "cannot find type `Decimal`" rather than a clearer message from this crate.
@@ -46,7 +46,7 @@ assert_eq!(err.public_message(), "internal error");
 assert_eq!(err.detail(), Some("connection refused"));
 ```
 
-Variants: `BadRequest`, `NotAcceptable`, `Unauthorized`, `UnsupportedMediaType`, `Forbidden`, `NotFound`, `Conflict`, `Validation`, `PreconditionFailed`, `Codec`, `Database`, `DatabaseTyped`, `Internal`. The codec/database/internal variants are 5xx-mapped. `CoolError` is `#[non_exhaustive]`, so downstream matches must include a wildcard arm.
+Variants: `BadRequest`, `NotAcceptable`, `Unauthorized`, `UnsupportedMediaType`, `Forbidden`, `NotFound`, `Conflict`, `ConflictTyped`, `Validation`, `PreconditionFailed`, `Codec`, `Database`, `DatabaseTyped`, `Internal`, `Unavailable`. The codec/database/internal variants are 5xx-mapped; `Unavailable` is 503. `CoolError` is `#[non_exhaustive]`, so downstream matches must include a wildcard arm.
 
 `DatabaseTyped` carries a `DbErrorInfo { detail, sqlstate, constraint }` and is produced by `cratestack_sqlx::cool_error_from_sqlx` at sqlx call sites. Use `err.db_sqlstate()` and `err.db_constraint()` to inspect the typed fields instead of substring-matching the stringified detail.
 
@@ -126,7 +126,7 @@ let event = AuditEvent {
 
 ```toml
 [dependencies]
-cratestack-core = { version = "0.6.7", default-features = false, features = ["decimal-rust-decimal"] }
+cratestack-core = { version = "0.7", default-features = false, features = ["decimal-rust-decimal"] }
 # or: features = ["decimal-bigdecimal"]
 ```
 

@@ -10,7 +10,7 @@ Parser and semantic checker for `.cstack` schema files.
 
 ```toml
 [dependencies]
-cratestack-parser = "0.2.2"
+cratestack-parser = "0.7"
 ```
 
 ## Usage

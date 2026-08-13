@@ -101,8 +101,10 @@ pub use uuid;
 
 // `Json<T>` resolves to `cratestack_sqlx::Json<T>` on the server so
 // `sqlx::FromRow` decodes Postgres `jsonb` columns into it directly, using
-// the plain/untagged codec (cratestack#162) rather than `T`'s own
-// (externally-tagged, for `T = Value`) `Serialize`/`Deserialize`. This is
+// the plain/untagged codec (cratestack#162) rather than going through
+// `serde_json` generically. (For `T = Value`, `Value`'s own hand-written
+// `Serialize`/`Deserialize` is untagged too, since cratestack#506 — the
+// two codecs agree on shape, they're just independently maintained.) This is
 // only possible with the `postgres` feature enabled (cratestack#329): models
 // (the only place a "Json" column is decoded from a row) can never exist
 // under `db = None` (cratestack#327's guard), so a `postgres`-disabled build

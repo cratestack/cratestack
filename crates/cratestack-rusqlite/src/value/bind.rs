@@ -58,8 +58,10 @@ fn format_datetime(value: &chrono::DateTime<chrono::Utc>) -> String {
 }
 
 /// Serializes the **plain, untagged** JSON shape (cratestack#162,
-/// cratestack#395) — never `Value`'s own derived, externally-tagged
-/// `Serialize` impl, which would store `{"Map": {}}` instead of `{}`.
+/// cratestack#395) via `to_plain_json` directly, rather than round-
+/// tripping through `serde_json` generically. (`Value`'s own hand-written
+/// `Serialize` is untagged too, since cratestack#506, so both paths agree
+/// on shape — this one just avoids the extra hop.)
 fn format_json(value: &Value) -> String {
     serde_json::to_string(&value.to_plain_json()).unwrap_or_else(|_| "null".to_string())
 }

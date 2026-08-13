@@ -17,7 +17,7 @@ backend runtimes / clients". That line is load-bearing: PR #465 (`6f14f1e`,
 "fix(cratestack-core,cratestack-sql): move storage traits and DDL from cratestack-axum to
 core/sql") cites it verbatim as the rule that had been violated. It is also no longer
 sufficient. `git ls-tree -r --name-only origin/main crates | grep -c 'Cargo.toml$'` returns
-**31** (30 of them workspace members; `cratestack-studio-ui` is excluded). A five-name chain
+**35** (34 of them workspace members; `cratestack-studio-ui` is excluded). A five-name chain
 does not tell you where `cratestack-grpc`, `cratestack-proto`,
 `cratestack-client-store-sqlite` or `cratestack-mock-wiremock` belong, and a rule you cannot
 apply to a new crate without asking the maintainer is a habit, not an architecture.
@@ -83,11 +83,11 @@ any number low enough to forbid `macros -> sqlx` is too low for `pg -> macros` u
 | Layer | Crates |
 |---|---|
 | **L0** Schema IR | `cratestack-parser`, `cratestack-core::schema` |
-| **L1** Contracts | `cratestack-sql`, `cratestack-policy`, `cratestack-core::{store,audit,codec}` |
-| **L2** Adapters | `cratestack-{sqlx,rusqlite,redis}`, `cratestack-codec-{cbor,json}`, `cratestack-client-store-{sqlite,redis}` |
+| **L1** Contracts | `cratestack-sql`, `cratestack-policy`, `cratestack-core::{store,audit,codec}`, `cratestack-auth` |
+| **L2** Adapters | `cratestack-{sqlx,rusqlite,redis}`, `cratestack-codec-{cbor,json}`, `cratestack-client-store-{sqlite,redis}`, `cratestack-outbox`, `cratestack-service` |
 | **L3** Execution | *(empty — see commitment 4)* |
 | **L4** Bindings | `cratestack-{axum,grpc}`, `cratestack-client-{rust,dart,typescript,flutter}`, `cratestack-cbor-{napi,wasm}` |
-| **L5** Facades | `cratestack-{pg,api,sqlite}` |
+| **L5** Facades | `cratestack-{pg,api,sqlite,client}` |
 | **⊥** Compiler | `cratestack-macros`, `cratestack-proto` |
 | Tools | `cratestack-{cli,lsp,migrate,studio,studio-ui,mock-wiremock}` |
 

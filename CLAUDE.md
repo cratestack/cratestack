@@ -43,7 +43,7 @@ Most workflows are encoded in the `justfile` (`just --list`). The important ones
 - **Version bump:** `just bump 0.x.y` rewrites every `Cargo.toml` version literal and refreshes the lock.
 - **Release:** `just release 0.x.y` (bump → validate → publish in topo order → tag; `PUSH=1` to push).
   Do not hand-maintain publish order — it is topo-sorted from `cargo metadata` at recipe time.
-- **CLI:** `cargo run -p cratestack-cli -- <check|generate-dart|generate-typescript|studio|migrate|init|run|eject|diff|print-ir>`
+- **CLI:** `cargo run -p cratestack-cli -- <check|generate-dart|generate-typescript|generate-proto|generate-wiremock|studio|migrate|init|run|eject|diff|print-ir>`
 - **Regenerate committed example clients:** `just regen-examples` — rewrites the two committed generated
   clients (`examples/flutter-riverpod/client` via `generate-dart --preset riverpod`, and
   `examples/react-vite-swr/client` via `generate-typescript --swr`) in place. Takes an `*args=''`

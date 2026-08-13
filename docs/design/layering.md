@@ -92,11 +92,11 @@ flattering.
 | Layer | Name | Crates | src LoC |
 |---|---|---|---|
 | **L0** | Schema IR | `cratestack-parser`, `cratestack-core::schema` | 9,265 / — |
-| **L1** | Contracts | `cratestack-sql`, `cratestack-core::{store,audit,codec}`, `cratestack-policy` | 2,799 / — / 822 |
-| **L2** | Adapters | `cratestack-sqlx`, `cratestack-rusqlite`, `cratestack-redis`, `cratestack-codec-{cbor,json}`, `cratestack-client-store-{sqlite,redis}` | 10,907 / 4,828 / 2,167 / 59 / 37 / 305 / 245 |
+| **L1** | Contracts | `cratestack-sql`, `cratestack-core::{store,audit,codec}`, `cratestack-policy`, `cratestack-auth` | 2,799 / — / 822 / 4,438 |
+| **L2** | Adapters | `cratestack-sqlx`, `cratestack-rusqlite`, `cratestack-redis`, `cratestack-codec-{cbor,json}`, `cratestack-client-store-{sqlite,redis}`, `cratestack-outbox`, `cratestack-service` | 10,907 / 4,828 / 2,167 / 59 / 37 / 305 / 245 / 644 / 845 |
 | **L3** | Execution | *(nothing — see §5.1)* | 0 |
 | **L4** | Bindings | `cratestack-axum`, `cratestack-grpc`, `cratestack-client-{rust,dart,typescript,flutter}` | 5,212 / 752 / 3,269 / 4,537 / 3,525 / 553 |
-| **L5** | Facades | `cratestack-pg`, `cratestack-api`, `cratestack-sqlite` | 246 / 156 / 75 |
+| **L5** | Facades | `cratestack-pg`, `cratestack-api`, `cratestack-sqlite`, `cratestack-client` | 246 / 156 / 75 / 150 |
 | **⊥** | Compiler | `cratestack-macros` (+ `cratestack-proto`) | 18,172 / 3,013 |
 
 (LoC counted over each crate's `src/` including its in-crate `tests_*.rs`
@@ -220,7 +220,9 @@ is made. This is currently broken — see §5.1.
 **Belongs here:** a `[lib] name = "cratestack"` rename, a set of
 re-exports, and a Cargo feature graph. Nothing else. And that really is
 all they are: `cratestack-pg` is 246 lines of `src/`, `cratestack-api`
-156, `cratestack-sqlite` 75 — most of which is doc comment.
+156, `cratestack-sqlite` 75, `cratestack-client` (added by #490 — pure
+HTTP-client SDK facade, `include_client_schema!` only) 150 — most of
+which is doc comment.
 
 **Must not be here:** logic. A facade that grows a function has stopped
 being a facade.

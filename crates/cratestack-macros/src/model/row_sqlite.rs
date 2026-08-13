@@ -116,9 +116,10 @@ fn sqlite_row_field_decode_expr(
             row.get::<_, Option<::cratestack::DecimalColumn>>(#field_name)?.map(|v| v.0)
         },
         // Decode via the plain, untagged JSON shape (cratestack#162,
-        // cratestack#395) — never `Value`'s own derived, externally-tagged
-        // `Deserialize` impl, which would reject a plain `{}`/`[...]`
-        // column as `{"Map": {}}`/`{"List": [...]}`.
+        // cratestack#395) using `Value::from_plain_json` directly, rather
+        // than round-tripping through `serde_json` generically. (`Value`'s
+        // own hand-written `Deserialize` is untagged too, since
+        // cratestack#506, so both paths agree on shape.)
         ("Json", TypeArity::Required) => quote! {
             {
                 let raw: String = row.get(#field_name)?;

@@ -10,7 +10,7 @@ CBOR codec for CrateStack HTTP transport.
 
 ```toml
 [dependencies]
-cratestack-codec-cbor = "0.6.7"
+cratestack-codec-cbor = "0.7"
 ```
 
 ## Usage
@@ -43,9 +43,9 @@ let client = CratestackClient::new(ClientConfig::new(base_url), CborCodec);
 
 ## Notes
 
-`minicbor-serde` reports `is_human_readable() = true`, which keeps wire compatibility for types whose serde implementations branch on that hint (uuid, chrono). The macro-emitted projection strips `Value::Null` map entries before reaching this codec, so the non-RFC-8949 "Null = empty array" quirk of this backend never lands on the wire.
+`minicbor-serde` reports `is_human_readable() == false`, so types whose serde implementations branch on that hint (uuid, chrono, `cratestack_core::Value`'s `Bytes` arm) take their binary branch under this codec. The macro-emitted projection (`cratestack-axum`'s `ProjectedValue`) gives `Null` its own variant that always calls `serialize_none()`, matching `Option::<T>::None`'s own encoding — the non-RFC-8949 "Null = empty array" quirk this backend has for `serialize_unit()` never lands on the wire because nothing routes a null through that path.
 
-The `application/cbor-seq` framing is reserved for streaming responses (`CBOR_SEQUENCE_CONTENT_TYPE` in `cratestack-axum`), but the codec itself does not implement a sequence decoder — generated routers currently emit single-item responses only.
+The `application/cbor-seq` framing (`CBOR_SEQUENCE_CONTENT_TYPE` in `cratestack-axum`) is used for `@stream` procedure responses — generated routers emit genuinely incremental cbor-seq framing for those today. This crate's own `CborCodec`, though, only implements single-item encode/decode; the sequence framing lives in `cratestack-axum` instead.
 
 ## See Also
 
