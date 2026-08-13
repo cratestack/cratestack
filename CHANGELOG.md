@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.7.16 (2026-08-13)
+
+<!-- TODO: edit this section from the seed below -->
+<!-- seeded from v0.7.15..HEAD at 114365175e36a9ce6eae397034b7ea702756d05b -->
+
+This is an auto-generated seed. Please rewrite into narrative prose describing
+the changes in this release, grouped by concern. Refer to existing entries in
+this file for the house prose style. Do not commit with this placeholder text.
+
+### Changes
+
+#### Features
+
+- --refine supports RPC schemas too (#571) (#586)
+- turn --preset swr into an additive --swr flag (#589)
+- --refine emits the @cratestack/refine ResourceMap (#583)
+- stateful REST model CRUD via wiremock-state-extension (#588)
+- RPC dataProvider for transport rpc schemas (#587)
+
+#### Fixes
+
+- close five more silent-skip CI coverage gaps (#597)
+- drop the `--` separator that broke every vsix build in release-vscode.yml (#584)
+- honour client Accept preference in content negotiation (#593)
+- reject composite @@id instead of panicking (#590)
+- run the stateful WireMock image as non-root (#591)
+- three stateful-CRUD correctness defects (#596)
+- repair broken bootstrap steps across examples/ (#595)
+- stage every packages/*/package.json in `just release`, and correct CLAUDE.md (#592)
+
+#### Documentation
+
+- make the npm bootstrap's build+verify steps non-optional (#585)
+- fix in-repo prose contradicting shipped code (#594)
+
+#### CI
+
+- publish @cratestack/refine and discover packages/*/package.json by glob (#581)
+- pin wasm-bindgen so Trunk stops downloading it mid-build (#601)
+
 ## 0.7.15 (2026-08-13)
 
 ### `@length` on a `Bytes` field now compiles instead of failing `cargo check` with E0308 (#572)
