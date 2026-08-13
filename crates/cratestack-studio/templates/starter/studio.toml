@@ -16,13 +16,18 @@ schema = "schemas/example.cstack"
 mode = "rw"
 
 # [target.db] is a direct SQL connection, not a proxy to a deployed
-# service: writes here bypass @version bumping, @@emit(...) event
-# outbox rows, and @@allow policy checks (cratestack#507). It is NOT
-# equivalent to the generated API. `schemas/example.cstack` declares
-# neither @version nor @@emit, so the bypass is a no-op for this
-# starter — but for a model that declares either, Studio refuses
-# POST/PATCH/DELETE against this target with 403 UNSAFE_DB_WRITE
-# unless `allow_unsafe_writes = true` is set here explicitly.
+# service — it is NOT equivalent to the generated API (cratestack#507,
+# #553). @version bumping is routed for real on every driver. @@emit(...)
+# is routed for real only on driver = "postgres" — SQLite has no
+# event-outbox equivalent, and include_embedded_schema! itself treats
+# @@emit(...) as a no-op on the framework's own embedded backend, so
+# this is a permanent backend capability difference. @@allow policy
+# checks are never evaluated on [target.db] either way.
+# `schemas/example.cstack` declares neither @version nor @@emit, so
+# none of this applies to this starter — but for a model that declares
+# @@emit(...) on a non-Postgres target, Studio refuses
+# POST/PATCH/DELETE against it with 403 UNSAFE_DB_WRITE unless
+# `allow_unsafe_writes = true` is set here explicitly.
 [target.db]
 url = "sqlite:./studio.sqlite"
 driver = "sqlite"
