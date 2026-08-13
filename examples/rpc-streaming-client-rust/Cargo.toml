@@ -23,7 +23,8 @@ tokio = { workspace = true }
 url = { workspace = true }
 
 [dev-dependencies]
-async-stream = "0.3"
+# `tests/smoke.rs` spawns the REAL `rpc-streaming-example` router
+# in-process (rather than a hand-rolled mock) so it exercises actual
+# HTTP content negotiation — see that file's module doc.
 axum = { workspace = true }
-bytes = { workspace = true }
-cratestack-core = { path = "../../crates/cratestack-core" }
+rpc-streaming-example = { path = "../rpc-streaming" }

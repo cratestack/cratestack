@@ -12,7 +12,7 @@ Most users do not depend on this crate directly — it is reached transitively t
 
 ```toml
 [dependencies]
-cratestack-sql = "0.6.7"
+cratestack-sql = "0.7"
 ```
 
 ## Scalar Values

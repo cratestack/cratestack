@@ -1,6 +1,6 @@
 # Streaming RPC links — spike
 
-Status: **spike** (2026-08-02) — no production code changes. See [issue #274](https://github.com/cratestack/cratestack/issues/274).
+Status: **shipped** (2026-08-02 spike; implemented in #277, merged as #299). See [issue #274](https://github.com/cratestack/cratestack/issues/274).
 Scope: `packages/cratestack-ts-types`'s `RpcLink` contract and the generated
 `crates/cratestack-client-typescript/templates/src/rpc-*.ts.j2` templates, for `transport rpc` schemas.
 

@@ -2,14 +2,15 @@
 //! (cratestack#162).
 //!
 //! `sqlx::types::Json<T>` — what generated model structs used before this
-//! fix — round-trips `T` through `T`'s own `Serialize`/`Deserialize`. For
-//! `T = cratestack_core::Value`, that derive is externally tagged (serde's
-//! default for a data-carrying enum), so a column ends up holding
-//! `{"Map": {}}` instead of `{}`, `{"List": [...]}` instead of `[...]`,
-//! and so on. That breaks reading any jsonb cratestack didn't write
-//! itself (legacy rows, other writers, manual inserts — they hold *plain*
-//! JSON) and breaks native jsonb operator queries (`->`/`->>`) against the
-//! column, since the real value sits nested under a variant tag.
+//! fix — round-trips `T` through `T`'s own `Serialize`/`Deserialize`. At
+//! the time of cratestack#162, `T = cratestack_core::Value` derived an
+//! externally-tagged `Serialize`/`Deserialize` (serde's default for a
+//! data-carrying enum), so a column ended up holding `{"Map": {}}` instead
+//! of `{}`, `{"List": [...]}` instead of `[...]`, and so on. That broke
+//! reading any jsonb cratestack didn't write itself (legacy rows, other
+//! writers, manual inserts — they hold *plain* JSON) and broke native
+//! jsonb operator queries (`->`/`->>`) against the column, since the real
+//! value sat nested under a variant tag.
 //!
 //! [`Json`] is a from-scratch local newtype (not a re-export of
 //! `sqlx::types::Json`, and not `cratestack_core::Json` either — both are
@@ -17,9 +18,10 @@
 //! either would violate Rust's orphan rules) whose Postgres impls convert
 //! through [`cratestack_core::Value::to_plain_json`] /
 //! [`cratestack_core::Value::from_plain_json`] instead: the untagged,
-//! natural JSON shape. `Value`'s own derived `Serialize`/`Deserialize`
-//! stays externally tagged and untouched — other call sites (auth claims,
-//! audit payloads, RPC error details) still need the exact variant back.
+//! natural JSON shape. As of cratestack#506, `Value`'s own hand-written
+//! `Serialize`/`Deserialize` (in `cratestack_core::value::codec`) is
+//! *also* untagged on every wire, not just this jsonb column path — see
+//! that module's doc for why.
 //!
 //! The actual jsonb wire format (the leading version byte on binary-format
 //! values, `JSON` vs `JSONB` OID dispatch) is delegated to
@@ -39,12 +41,13 @@ use crate::sqlx::{Decode, Encode, Type};
 /// module docs for why this exists instead of `sqlx::types::Json<Value>`.
 ///
 /// `Serialize`/`Deserialize` stay `#[serde(transparent)]` — delegating
-/// straight to `T`'s own (for `T = Value`, externally-tagged) impl — so
-/// the model struct's HTTP/RPC wire representation is unchanged from
-/// before this fix. Only the *jsonb column* codec below (`sqlx::Type` /
-/// `Encode` / `Decode`, used for the Postgres bind/row-decode path, never
-/// for the wire format) is untagged; that's the actual cratestack#162
-/// bug, scoped to on-disk storage.
+/// straight to `T`'s own impl (for `T = Value`, untagged since
+/// cratestack#506) — so the model struct's HTTP/RPC wire representation is
+/// unchanged from before this fix. The *jsonb column* codec below
+/// (`sqlx::Type` / `Encode` / `Decode`, used for the Postgres bind/
+/// row-decode path, never for the wire format) is untagged too; that's
+/// the actual cratestack#162 fix, scoped to on-disk storage and
+/// independent of `Value`'s own serde impls.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Json<T>(pub T);

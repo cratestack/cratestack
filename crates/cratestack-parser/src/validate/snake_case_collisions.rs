@@ -23,7 +23,7 @@ use cratestack_core::{Field, Model, Schema, SourceSpan};
 use crate::diagnostics::{SchemaError, span_error};
 
 /// Scans `entries` (in declaration order) for the first pair whose names
-/// normalize to the same string under [`to_snake_case`] while remaining
+/// normalize to the same string under `normalize` while remaining
 /// distinct as raw names. Returns `(first_name, colliding_name,
 /// colliding_span, normalized)` for the first collision found, or `None`.
 ///
@@ -31,12 +31,13 @@ use crate::diagnostics::{SchemaError, span_error};
 /// caller already has its own plain duplicate-name check, which fires
 /// first and produces a more direct message ("duplicate field `x`") for
 /// that case.
-fn find_snake_case_collision<'a>(
+pub(super) fn find_collision_by<'a>(
     entries: impl IntoIterator<Item = (&'a str, SourceSpan)>,
+    normalize: impl Fn(&str) -> String,
 ) -> Option<(&'a str, &'a str, SourceSpan, String)> {
     let mut seen: BTreeMap<String, &str> = BTreeMap::new();
     for (name, span) in entries {
-        let normalized = to_snake_case(name);
+        let normalized = normalize(name);
         match seen.get(normalized.as_str()) {
             Some(&existing) if existing != name => {
                 return Some((existing, name, span, normalized));
@@ -48,6 +49,16 @@ fn find_snake_case_collision<'a>(
         }
     }
     None
+}
+
+/// [`find_collision_by`] specialized to [`to_snake_case`] — the
+/// normalization every caller in this module needs.
+/// `super::route_collisions` uses [`find_collision_by`] directly with a
+/// different normalization (`model_route_segment`).
+fn find_snake_case_collision<'a>(
+    entries: impl IntoIterator<Item = (&'a str, SourceSpan)>,
+) -> Option<(&'a str, &'a str, SourceSpan, String)> {
+    find_collision_by(entries, to_snake_case)
 }
 
 /// Reject fields on `owner_kind`/`owner_name` (a model/mixin/type/auth
@@ -74,17 +85,19 @@ pub(super) fn validate_field_column_collisions(
 }
 
 /// Reject two `model` declarations whose names collide after
-/// `to_snake_case` normalization. Distinct from
+/// `to_snake_case` normalization (not pluralized — see
+/// `super::route_collisions::validate_model_route_collisions` for the
+/// pluralized route-segment check this one does *not* perform). Distinct from
 /// [`validate_field_column_collisions`]: this guards the *table* name
-/// (`pluralize(to_snake_case(model.name))`), the generated Rust accessor
-/// constant (`to_snake_case(model.name).to_uppercase()`), and REST route
-/// paths, all of which are keyed off the model name rather than a field
-/// name. Without this, `model Foo` and `model foo` both pass the parser's
-/// raw-name uniqueness check (`type_names::ensure_unique`) — they're
-/// distinct raw identifiers — but collide into the same generated Postgres
-/// table and the same Rust `FOO_MODEL` constant, which today only ever
-/// surfaces as an opaque `error[E0428]: the name FOO_MODEL is defined
-/// multiple times` at the macro call site.
+/// stem and the generated Rust accessor constant
+/// (`to_snake_case(model.name).to_uppercase()`), both keyed off the
+/// model name rather than a field name. Without this, `model Foo` and
+/// `model foo` both pass the parser's raw-name uniqueness check
+/// (`type_names::ensure_unique`) — they're distinct raw identifiers —
+/// but collide into the same generated Postgres table and the same Rust
+/// `FOO_MODEL` constant, which today only ever surfaces as an opaque
+/// `error[E0428]: the name FOO_MODEL is defined multiple times` at the
+/// macro call site.
 pub(super) fn validate_model_name_collisions(models: &[Model]) -> Result<(), SchemaError> {
     let entries = models
         .iter()
@@ -93,9 +106,8 @@ pub(super) fn validate_model_name_collisions(models: &[Model]) -> Result<(), Sch
         return Err(span_error(
             format!(
                 "model `{colliding}` collides with model `{existing}` — both normalize to \
-                 `{normalized}` for the generated SQL table name, Rust accessor constant, and \
-                 REST route path (see `cratestack_core::route_naming::to_snake_case`); rename \
-                 one of them",
+                 `{normalized}` for the generated SQL table name and Rust accessor constant \
+                 (see `cratestack_core::route_naming::to_snake_case`); rename one of them",
             ),
             span,
         ));

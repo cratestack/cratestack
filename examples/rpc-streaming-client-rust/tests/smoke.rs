@@ -1,9 +1,28 @@
 //! End-to-end smoke test for the generated typed streaming method.
 //!
-//! Spawns a tiny axum server that emits an `application/cbor-seq`
-//! response chunk-per-item for `POST /rpc/procedure.ticks`, then
-//! consumes it via the macro-generated `client.procedures().ticks(args)`
-//! method. Verifies:
+//! Spawns the REAL `rpc-streaming-example` server (`rpc_streaming_example::
+//! build_router()` — the exact router `cargo run -p rpc-streaming-example`
+//! serves) in-process, then consumes it via the macro-generated
+//! `client.procedures().ticks(args)` method. This exercises the actual
+//! HTTP content-negotiation path end to end: the generated client sends
+//! `Accept: application/cbor-seq, application/cbor[, application/json]`
+//! (preferring cbor-seq) and the server picks a response `Content-Type`
+//! via `select_response_content_type` in `cratestack-axum`.
+//!
+//! This test previously ran against a hand-rolled mock server that always
+//! answered `application/cbor-seq` regardless of the request's `Accept`
+//! header — which meant it passed even when server-side negotiation
+//! ignored the client's preference order entirely and always returned
+//! buffered `application/cbor` instead (the bug fixed alongside this
+//! test: `select_response_content_type` used to walk its own
+//! `response_types` list, cbor-first, rather than the client's `Accept`
+//! order/`q=` weights). A mock that hardcodes the "right" answer can't
+//! catch a negotiation regression; only the real server's negotiation
+//! logic can. See `crates/cratestack-axum/src/transport/media_type.rs`
+//! and its `mod tests` for focused unit coverage of the negotiation
+//! function itself.
+//!
+//! Verifies:
 //!
 //! 1. Items arrive in order.
 //! 2. The decoder cleanly closes after the last item (no truncated
@@ -11,32 +30,23 @@
 //! 3. The auth header configured on the `RequestAuthorizer` flows
 //!    through to the server.
 //!
-//! Self-contained — does NOT depend on the `rpc-streaming-example`
-//! server crate, so CI runs without orchestrating a second binary.
+//! Depends on `rpc-streaming-example` as a dev-dependency (both are
+//! workspace members; no orchestration of a second binary needed — the
+//! router is built and served in-process on an ephemeral port).
 
-use std::convert::Infallible;
 use std::sync::Arc;
-use std::time::Duration;
 
-use axum::Router;
-use axum::body::Body;
-use axum::http::{HeaderMap, HeaderValue, Response, StatusCode, header};
-use axum::routing::post;
-use bytes::Bytes;
 use cratestack_client_rust::{ClientConfig, CratestackClient};
 use cratestack_codec_cbor::CborCodec;
-use cratestack_core::CoolCodec;
 use rpc_streaming_client_rust_example::{
     StaticAuthId,
     cratestack_schema::{self, Tick, TickerArgs, procedures::ticks},
 };
 use url::Url;
 
-const CBOR_SEQ: &str = "application/cbor-seq";
-
 #[tokio::test]
 async fn streams_each_tick_as_it_arrives() {
-    let (base_url, _server) = spawn_server().await;
+    let (base_url, _server) = spawn_real_server().await;
 
     let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec)
         .with_request_authorizer(Arc::new(StaticAuthId(1)));
@@ -69,12 +79,14 @@ async fn streams_each_tick_as_it_arrives() {
 
 #[tokio::test]
 async fn missing_auth_header_surfaces_as_remote_error_before_stream_opens() {
-    let (base_url, _server) = spawn_server().await;
+    let (base_url, _server) = spawn_real_server().await;
 
-    // Build a client with NO authorizer — the mock server's handler
-    // requires `x-auth-id` and returns 401 if it's missing. The error
-    // path: the generated method returns Err(...) immediately; no
-    // channel is opened.
+    // Build a client with NO authorizer — the real server's `ticks`
+    // procedure is `@allow(auth() != null)` and the example's
+    // `HeaderAuthProvider` authenticates only when `x-auth-id` is
+    // present, so an anonymous request is denied. The error path: the
+    // generated method returns Err(...) immediately; no channel is
+    // opened.
     let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec);
     let client = cratestack_schema::client::Client::new(runtime);
 
@@ -90,11 +102,11 @@ async fn missing_auth_header_surfaces_as_remote_error_before_stream_opens() {
 }
 
 // -----------------------------------------------------------------------------
-// Mock server — chunked cbor-seq emitter for /rpc/procedure.ticks
+// Real server — the exact router `rpc-streaming-example`'s binary serves
 // -----------------------------------------------------------------------------
 
-async fn spawn_server() -> (Url, tokio::task::JoinHandle<()>) {
-    let app = Router::new().route("/rpc/procedure.ticks", post(handle_ticks));
+async fn spawn_real_server() -> (Url, tokio::task::JoinHandle<()>) {
+    let app = rpc_streaming_example::build_router();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("listener should bind");
@@ -104,51 +116,4 @@ async fn spawn_server() -> (Url, tokio::task::JoinHandle<()>) {
     });
     let base_url = Url::parse(&format!("http://{address}/")).expect("base URL parses");
     (base_url, handle)
-}
-
-async fn handle_ticks(headers: HeaderMap, body: Bytes) -> Response<Body> {
-    // Auth: server example reads `x-auth-id` as a positive int. Mirror
-    // that here so the missing-auth test exercises the same shape.
-    let auth_id = headers
-        .get("x-auth-id")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|raw| raw.parse::<i64>().ok());
-    if auth_id.is_none() {
-        return Response::builder()
-            .status(StatusCode::UNAUTHORIZED)
-            .body(Body::from("missing or invalid x-auth-id"))
-            .expect("response builds");
-    }
-
-    // The generated typed method sends the `<proc>::Args` envelope.
-    let input: ticks::Args = CborCodec.decode(&body).expect("decode ticks::Args");
-    let count = input.args.count.max(0);
-
-    let pre_encoded: Vec<Vec<u8>> = (0..count)
-        .map(|index| {
-            CborCodec
-                .encode(&Tick {
-                    index,
-                    value: input.args.start + index,
-                })
-                .expect("encode tick")
-        })
-        .collect();
-
-    // Emit one cbor-seq frame per chunk with a tiny inter-frame delay
-    // so the test exercises chunk-boundary handling, not just a single
-    // fused read.
-    let stream = async_stream::stream! {
-        for bytes in pre_encoded {
-            yield Ok::<_, Infallible>(Bytes::from(bytes));
-            tokio::time::sleep(Duration::from_millis(2)).await;
-        }
-    };
-    let body = Body::from_stream(stream);
-
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, HeaderValue::from_static(CBOR_SEQ))
-        .body(body)
-        .expect("response builds")
 }

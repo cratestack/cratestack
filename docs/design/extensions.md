@@ -31,7 +31,7 @@ Tracking: [#139][139] (original spike; this doc reframes its scope — see §9).
 | What gates the actual code | **A same-named Cargo feature** on every crate whose codegen/runtime needs to change — not the `.cstack` declaration alone. Declaring `extension pgvector { }` without the `pgvector` feature enabled on the relevant crate is a compile error, not a silent no-op. See §2. |
 | What stays swappable | **The implementation.** Each extension defines a trait boundary; the framework ships a reference implementation, but nothing about the extension mechanism requires using it — same freedom already exercised by `AuditSink`/`RateLimitStore`/`IdempotencyStore` today. See §2. |
 | Relationship to the closed rate-limit decision | Reframed, not silently reversed — see §3. The prior doc's objection was to compiling *tunable numbers* into `.cstack`; this proposal never does that. |
-| Implementation status | None. This doc only restructures #139 into a design + scoped follow-up tickets (§8). |
+| Implementation status | Implemented — see the Status line above; all six original follow-up tickets from #139 (§8) shipped as code. |
 
 ## 1. The idea
 

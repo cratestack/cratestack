@@ -108,7 +108,11 @@ model Widget {{
     assert_eq!(create["response"]["status"], 201);
     let create_body = body(&create);
     assert!(create_body.contains("\"id\": 1{{randomValue length=5 type='NUMERIC'}}"));
-    assert!(create_body.contains("(jsonPath request.body '$.name')"));
+    // Presence-tested (`default='...'` + `eq`), not truthiness-tested — a
+    // bare `(jsonPath request.body '$.name')` `#if` would treat `""` the
+    // same as "omitted" (cratestack#588's falsy-value bug).
+    assert!(create_body.contains("(jsonPath request.body '$.name' default="));
+    assert!(create_body.contains("(eq (jsonPath request.body '$.name'"));
 }
 
 #[test]
@@ -155,7 +159,10 @@ model Widget {{
     assert!(get_body.contains("{{state context=request.path property='name'}}"));
 
     let update_body = body(&mapping(&package, "mappings/model.Widget.update.json"));
-    assert!(update_body.contains("(jsonPath request.body '$.name')"));
+    // Presence-tested, not truthiness-tested — see the `create` assertion
+    // above for why a bare `(jsonPath request.body '$.name')` is wrong.
+    assert!(update_body.contains("(jsonPath request.body '$.name' default="));
+    assert!(update_body.contains("(eq (jsonPath request.body '$.name'"));
     assert!(
         update_body.contains("{{state context=request.path property='name'}}"),
         "a PATCH that omits `name` must fall back to the prior stored value: {update_body}"
@@ -192,17 +199,31 @@ model Widget {{
             .starts_with("/api/widgets/"),
         "the per-record context must be keyed off the real detail route: {create_listeners:?}"
     );
+    // The list entry stores a pointer back to the per-record context, not
+    // a denormalized copy of every field — see `model_state::listeners`'
+    // module doc (cratestack#588's concurrency-corruption fix).
+    let list_entry_state = &create_listeners[0]["parameters"]["list"]["addLast"];
+    assert_eq!(
+        list_entry_state["__cratestack_record_context"],
+        create_listeners[1]["parameters"]["context"],
+        "the list entry's pointer must match the per-record context it points at: {create_listeners:?}"
+    );
 
     let update = mapping(&package, "mappings/model.Widget.update.json");
     let update_listeners = update["serveEventListeners"].as_array().unwrap();
     assert_eq!(
         update_listeners.len(),
-        3,
-        "overwrite per-record state, remove stale list entry, re-add updated one"
+        1,
+        "update must ONLY overwrite the per-record context — never touch the shared list \
+         (cratestack#588: the old delete+re-add triplet against the shared list corrupted \
+         under concurrent writes to the same record; a list entry is now a pointer that \
+         never needs updating): {update_listeners:?}"
     );
     assert_eq!(update_listeners[0]["name"], "recordState");
-    assert_eq!(update_listeners[1]["name"], "deleteState");
-    assert_eq!(update_listeners[2]["name"], "recordState");
+    assert_eq!(
+        update_listeners[0]["parameters"]["context"],
+        "{{request.path}}"
+    );
 
     let delete = mapping(&package, "mappings/model.Widget.delete.json");
     let delete_listeners = delete["serveEventListeners"].as_array().unwrap();

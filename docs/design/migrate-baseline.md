@@ -1,8 +1,10 @@
 # Migration baselining against an existing live schema — design spike
 
-Status: **proposed** (2026-07-22) — no code shipped yet. This document is the
-output of the spike requested in issue [#135][135]; it does not implement the
-feature. See "Phasing" (§7) for the follow-up PR sequence.
+Status: **shipped** (2026-07-22 spike; implemented in #203–#205) — this
+document is the output of the spike requested in issue [#135][135]. See
+"Phasing" (§7) for the PR sequence that landed it: #203 (split `diff()`
+into projection + comparison), #204 (Postgres live-schema introspection),
+#205 (`migrate baseline` command).
 
 Scope: `cratestack-migrate`, `cratestack-cli migrate`, `cratestack-sqlx`
 migration runner, and (for Phase D) the "adopting an existing database"

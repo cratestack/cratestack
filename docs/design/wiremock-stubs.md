@@ -592,7 +592,14 @@ pre-built) custom image, not `docker run wiremock/wiremock`.
 - **One shared-list context per model, keyed by the plural route
   segment** (e.g. `posts`) — `wiremock-state-extension`'s `list`
   operations (`addLast`, `deleteWhere`) live here; `list` renders it via
-  `{{#each (state context='posts' property='list' default='[]')}}`.
+  `{{#each (state context='posts' property='list' default='[]')}}`. A
+  list entry stores a **pointer** to its record's per-record context
+  (`__cratestack_record_context`), not a denormalized copy of every
+  field — `list` follows the pointer back with the same `context=`
+  lookup `get`/`delete` use, per record, on every render. §9.8 explains
+  why: an earlier version stored a full copy in the list and kept it in
+  sync on every `update`, which is exactly what corrupted under
+  concurrent writes to one record.
 - **One per-record context per record, keyed by `request.path`** (e.g.
   `/api/posts/42`) — not a hand-built `"<plural>:<id>"` string, because
   this templating stack has no string-concatenation Handlebars helper
@@ -680,3 +687,141 @@ regeneration is still correctly flagged as drift.
   `List` arity, `Json`/`Bytes`/`Vector(n)`, nested `type` references —
   render a fixed example on every response, same as the pre-stateful
   baseline, never reflecting what was actually created/patched.
+
+### 9.8 cratestack#588 follow-up: three correctness defects, found and fixed
+
+An adversarial review of the shipped §9.5–§9.7 design found three real
+defects — each reproduced by hand against the real
+`docker/Dockerfile` image before being fixed, not inferred from reading
+the templates.
+
+**1. Falsy values were silently dropped on `create`/`update`
+(HIGH).** `merge_or_fallback`'s original form was
+`{{#if (jsonPath request.body '$.field')}}<new>{{else}}<fallback>{{/if}}`
+— Handlebars' `#if` is a truthiness test, and JSON `false`/`0`/`""` are
+all falsy, so `#if` treated a present-but-falsy field the same as an
+absent one. Reproduced: `PATCH {"count":0}` on a stored `count:5` left
+`5`; `{"active":false}` left `true`; `{"name":""}` left the prior name.
+**A mock consumer could never zero a counter, toggle a boolean off, or
+clear a string** — worse than a static stub, because it looks like it
+worked.
+
+Fixed by presence-testing instead of truthiness-testing:
+`jsonPath ... default=SENTINEL` (a distinctive constant no real field is
+expected to send) returns the field's real value when present and the
+sentinel only when the key is absent; `eq` (handlebars.java's bundled
+`ConditionalHelpers`, confirmed present in the real extension image)
+compares the two without erroring regardless of the returned value's
+JSON type. See `src/model_state/fragments.rs`'s `merge_or_fallback` doc
+comment for the exact expression and the decisive cases confirmed by
+hand: `0`, `false`, `""`, an absent key, and explicit JSON `null`.
+**Explicit `null` is deliberately treated the same as "absent"** (falls
+back to the prior value, not stored literally) — every field this
+helper wraps is `Required` arity by definition (`Optional` fields are
+never stateful, they're frozen), so there is no valid `null` state for
+a `Required` field to move into; this also falls out of the fix for
+free, since the extension's `jsonPath ... default=` fires for an
+explicit `null` leaf the same as a missing path, confirmed by hand.
+
+**2. Concurrent updates to one record corrupted the shared list
+(HIGH).** `update_listeners` performed
+`recordState(record) → deleteState(list, deleteWhere id) →
+recordState(list, addLast)` against the model's one shared list
+context. `wiremock-state-extension`'s own README states plainly:
+"single updates to contexts... are atomic on instance level" but
+"concurrent requests are currently allowed to change the same
+context... the context can change while a request is performed" — i.e.
+no transaction spans a multi-step sequence — and list entries "cannot
+be modified (only read/deleted)", so there is no atomic "replace this
+one entry" primitive available at all (checked in the extension's
+source before concluding this, not assumed).
+
+Reproduced by hand, three separate runs against the real container:
+300/400/500 concurrent `PATCH`es to **one** record, all `200`s, left
+**15 / 9 / 8 duplicate stale rows** for that same id in
+`GET /api/widgets`. No `500`s were reproduced in this environment (the
+originally reported repro also saw ~11
+`ConcurrentModificationException` `500`s at similar concurrency — timing-
+and load-dependent, and not required to establish the defect: duplicate
+corrupted rows are damning on their own).
+
+Since no atomic multi-step primitive exists, the fix removes the shared
+list from `update`'s write path entirely rather than trying to make the
+non-atomic sequence "safer": a list entry now stores a pointer to its
+record's per-record context (§9.5) instead of a denormalized copy of
+every field, so `list` always reads the current, authoritative
+per-record state at render time. `update` therefore only ever performs
+the one write every other stateful mutation already relies on being
+atomic — `recordState` against a single per-record context — and never
+touches the shared list at all. Re-running the identical load test
+against the fixed generator: **0 duplicates, 0 errors**, across three
+runs at 300/400/500 concurrent `PATCH`es to one record (`list length`
+after the run was always exactly `1` for that id). A full create → list
+→ update → list → delete → list lifecycle was also re-verified against
+the real container to confirm the pointer indirection didn't break
+normal (non-concurrent) behavior.
+
+`create` and `delete` still each touch the shared list exactly once (an
+`addLast`, a `deleteWhere`) — the same non-atomic-multi-step category
+of risk technically still applies to a `create`/`delete` race on the
+*same* id, but id generation makes that collision astronomically
+unlikely in practice, and it was not the reported failure mode. Load-
+tested anyway rather than left as an assumption: 300 concurrently
+created records, then all 300 deleted concurrently (different ids
+contending for the same shared list context) — `0` errors, `0` records
+remaining. A narrower same-id double-delete race (50 concurrent
+`DELETE`s against one already-deleted id) also produced no `500`s or
+corruption (`200`/`404` only, as expected from the `state-matcher` gate
+racing the delete itself) — a residual, much smaller-window risk than
+the fixed `update` case, documented here rather than further reduced,
+since it was not the reported defect and the extension still offers no
+stronger primitive to reduce it with.
+
+**Bottom line for anyone relying on this mock**: single-writer or
+low-concurrency dev/test use (the documented, intended use case — see
+§9.2) is unaffected either way. High-concurrency *writes to the same
+record* are now safe against list corruption (defect 2 is fixed); the
+extension's own instance-level, non-distributed, non-transactional
+design (§9.2) remains a real ceiling this generator cannot lift.
+
+**3. Colliding pluralized route segments served silently wrong data
+(HIGH).** `model Bus` and `model Buse` both route to `/api/buses`:
+`to_snake_case` gives `bus`/`buse` (distinct — the pre-existing
+`validate_model_name_collisions` check passes both), but `pluralize`
+gives `buses` for both (`bus` -> `buses` via the "ends in `s`, append
+`es`" rule; `buse` -> `buses` via the plain "append `s`" rule). No
+error at generation time; `Buse`'s stub was masked by `Bus`'s matcher,
+and — worse — both models shared one state pool
+(`crates/cratestack-mock-wiremock/src/model_state.rs`'s per-model list
+context is keyed by the plural route segment alone), so
+`POST /api/buses {"driver":"Alice"}` returned `Bus`'s shape with
+`driver` silently dropped. Confirmed the real Axum server hits the
+identical collision — `axum::Router::route` panics at startup on an
+exact path/method overlap, and the server's route registration uses the
+identical `pluralize(to_snake_case(...))` composition
+(`cratestack-macros/src/axum/model/routes.rs`) — so this was never a
+mock-only gap.
+
+**Fixed in the parser, not the mock generator.** Root cause was
+`crates/cratestack-parser/src/validate/snake_case_collisions.rs`'s
+`validate_model_name_collisions`, which only ever compared
+`to_snake_case(name)`, never the pluralized route segment two distinct
+snake_case forms can still collide on. Added
+`validate_model_route_collisions`, comparing
+`cratestack_core::route_naming::model_route_segment` (the exact
+function both the real server's route registration and this generator
+already call) instead. Considered the narrow alternative — reject only
+inside `cratestack-mock-wiremock::generate_package` — and rejected it:
+the real server hits the identical panic, so a mock-only guard would
+leave the actual production bug (a server that panics at startup on a
+schema its own parser accepted) unfixed for everyone except this one
+generator's callers. The parser fix's blast radius was checked before
+landing it, not assumed: every `.cstack` file in this repository (154
+files, 205 `model` declarations) was scanned for a route-segment
+collision the existing `to_snake_case`-only check would have missed —
+zero found, and the full `cratestack-parser` test suite (223 tests)
+still passes unmodified. `model_state.rs`'s previous comment asserting
+"no two models' plurals can collide" was false (that was the bug) and
+has been rewritten to state the actual invariant: the parser rejects
+this schema-wide before a `Schema` value can reach this generator at
+all, so this crate relies on — rather than re-derives — that guarantee.

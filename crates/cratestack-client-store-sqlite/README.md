@@ -12,8 +12,8 @@ The store implements the `ClientStateStore` trait from `cratestack-client-rust` 
 
 ```toml
 [dependencies]
-cratestack-client-store-sqlite = "0.6.7"
-cratestack-client-rust = "0.6.7"
+cratestack-client-store-sqlite = "0.7"
+cratestack-client-rust = "0.7"
 ```
 
 ## Usage

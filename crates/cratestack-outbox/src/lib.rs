@@ -25,13 +25,10 @@
 //! full `.cstack` schema and generated a typed `cratestack::Cratestack`
 //! handle via `include_server_schema!(db = Postgres)` purely to reach
 //! `.pool()` on it — every actual read and write in its `OutboxClient` ran
-//! raw `sqlx` against the table directly, and its own module doc recorded
-//! why: cratestack's typed `Json<cratestack::Value>` column serialises a
-//! `serde_json::Value` in its externally-tagged wire form
-//! (`{"Map":{"key":{"String":"..."}}}`), which corrupts the plain-JSONB
-//! shape a lake snapshotter (or any direct `SELECT payload`) expects. The
-//! generated model's typed accessors and its `@@allow` policy checks were
-//! therefore never called from anywhere in the crate.
+//! raw `sqlx` against the table directly. The generated model's typed
+//! accessors and its `@@allow` policy checks were never called from
+//! anywhere in the crate, so the schema declaration bought nothing beyond
+//! the pool handle.
 //!
 //! Using `include_server_schema!` at all would also force this crate to
 //! depend on the `cratestack-pg` L5 facade — the macro is only reachable

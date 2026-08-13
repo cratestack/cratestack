@@ -18,8 +18,10 @@ pub fn decode_datetime(raw: &str) -> FromSqlResult<chrono::DateTime<chrono::Utc>
 
 /// Inverse of [`format_json`](super::bind): parses the on-disk **plain**
 /// JSON shape back into a `Value` via [`Value::from_plain_json`]
-/// (cratestack#162, cratestack#395) — never `Value`'s own derived,
-/// externally-tagged `Deserialize` impl.
+/// (cratestack#162, cratestack#395) rather than round-tripping through
+/// `serde_json` generically. (`Value`'s own hand-written `Deserialize` is
+/// untagged too, since cratestack#506, but this path goes through the
+/// plain-JSON conversion directly rather than `Value`'s own impl.)
 pub fn decode_json(raw: &str) -> FromSqlResult<Value> {
     let plain: serde_json::Value =
         serde_json::from_str(raw).map_err(|error| FromSqlError::Other(Box::new(error)))?;

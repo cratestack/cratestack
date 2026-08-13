@@ -9,6 +9,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::codec::{CBOR_SEQUENCE_CONTENT_TYPE, media_type_matches};
 use crate::error::ClientError;
 use crate::runtime::wire::{RuntimeErrorCode, RuntimeErrorWire};
 use crate::streaming::CborSeqChunkDecoder;
@@ -31,6 +32,14 @@ pub enum RuntimeChunkWire {
 /// `RuntimeHandle::execute_streamed` — the callback returns `false` to
 /// cancel the stream early. The function returns once the stream is
 /// done (by completion, error, or cancellation).
+///
+/// This path forwards raw item bytes to an FFI-side decoder rather than
+/// deserializing to a concrete `T` itself, so unlike
+/// `pump_streamed_response_typed` it has no buffered-cbor fallback to
+/// degrade to. It still checks `Content-Type` up front and fails with a
+/// clear message naming what was received instead of letting a
+/// non-cbor-seq body (e.g. negotiation picked buffered `application/cbor`)
+/// crash the frame decoder on the first chunk.
 pub(crate) async fn pump_streamed_response_callback<F>(
     response: reqwest::Response,
     mut on_chunk: F,
@@ -39,6 +48,27 @@ where
     F: FnMut(RuntimeChunkWire) -> bool,
 {
     use futures_util::StreamExt;
+
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_owned();
+    if !media_type_matches(&content_type, CBOR_SEQUENCE_CONTENT_TYPE) {
+        let err = RuntimeErrorWire {
+            code: RuntimeErrorCode::InvalidResponse,
+            http_status: None,
+            message: format!(
+                "streaming response had Content-Type {content_type:?}, needed \
+                 {CBOR_SEQUENCE_CONTENT_TYPE}",
+            ),
+            remote_code: None,
+            remote_body: None,
+        };
+        on_chunk(RuntimeChunkWire::Error(err.clone()));
+        return Err(err);
+    }
 
     let mut byte_stream = response.bytes_stream();
     let mut decoder = CborSeqChunkDecoder::new();

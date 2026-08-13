@@ -80,13 +80,14 @@ export interface CratestackRpcModelApi<
  *  (`api`, `primaryKey`, `paged`, optional `versionField`), same
  *  reasoning for why they can't be discovered at runtime and have to be
  *  supplied. Hand-write it (as every example in the README does), or
- *  generate it once `cratestack generate-typescript --refine` grows RPC
- *  support (tracked in cratestack#571's own follow-ups) — as of this
- *  package, the generator still rejects `--refine` on an RPC schema
- *  (`TypeScriptGeneratorError::RefineRequiresRest`), so there is no
- *  generated RPC manifest to assign into this type yet; this package's
- *  own tests build one by hand against a real generated RPC client
- *  instead. */
+ *  generate it: `cratestack generate-typescript --refine` has emitted a
+ *  real `refine.ts` typed to `RpcResourceMap` for `transport rpc` schemas
+ *  since issue #571's RPC follow-up (#586 —
+ *  `TypeScriptGeneratorError::RefineRequiresRest` was widened to
+ *  `RefineRequiresRestOrRpc`). This package's own tests check both paths:
+ *  `tests/typecheck/rpc-manifest.ts` builds one by hand against a real
+ *  generated RPC client, and `tests/typecheck/generated-manifest-rpc.ts`
+ *  checks the generator's own output round-trips into this type. */
 export interface RpcResourceConfig<
   TModel = unknown,
   TCreateInput = unknown,

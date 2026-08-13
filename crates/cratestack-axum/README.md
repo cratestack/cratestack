@@ -12,7 +12,7 @@ The crate re-exports `axum` so a service can pull a single dependency.
 
 ```toml
 [dependencies]
-cratestack-axum = "0.6.7"
+cratestack-axum = "0.7"
 ```
 
 ## Generated Router
@@ -52,7 +52,7 @@ The crate exposes header validation, codec encode/decode, and transport-level en
 signature to make the `Forwarded`/`X-Forwarded-For` trust boundary explicit — see
 [Trusted Proxy / Audit `client_ip`](#trusted-proxy--audit-client_ip) below.
 
-The `CBOR_SEQUENCE_CONTENT_TYPE` constant is exported as `application/cbor-seq`; sequence-mode transport is the documented target but is not enabled on generated routers today (a single configured codec per router is the current behaviour).
+The `CBOR_SEQUENCE_CONTENT_TYPE` constant is exported as `application/cbor-seq`; generated routers use it for genuinely incremental cbor-seq streaming on `@stream` procedure responses.
 
 ## Idempotency
 
@@ -223,7 +223,7 @@ let expr: QueryExpr = parse_filter_expression("published = true AND authorId = '
 |-------------------------|-----------------------------|
 | `application/cbor`      | CBOR single item            |
 | `application/json`      | JSON single item            |
-| `application/cbor-seq`  | CBOR sequence (target, not yet enabled on generated routes) |
+| `application/cbor-seq`  | CBOR sequence — used for `@stream` procedure responses |
 
 ## See Also
 

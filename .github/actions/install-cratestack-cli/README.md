@@ -9,7 +9,7 @@ published `.sha256` sidecar, and adds it to `PATH`.
 ```yaml
 - uses: cratestack/cratestack/.github/actions/install-cratestack-cli@main
   with:
-    version: "0.6.7" # optional, defaults to "latest"
+    version: "0.7.15" # optional, defaults to "latest"
 - run: cratestack --help
 ```
 

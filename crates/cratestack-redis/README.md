@@ -13,8 +13,8 @@ Redis-backed server-side infrastructure for CrateStack.
 
 ```toml
 [dependencies]
-cratestack-redis = "0.6.7"
-cratestack-axum = "0.6.7"
+cratestack-redis = "0.7"
+cratestack-axum = "0.7"
 redis = "1"
 ```
 
@@ -49,7 +49,7 @@ private or internal CA. Enable the `tls-rustls` feature to connect over
 
 ```toml
 [dependencies]
-cratestack-redis = { version = "0.6.7", features = ["tls-rustls"] }
+cratestack-redis = { version = "0.7", features = ["tls-rustls"] }
 ```
 
 ```rust

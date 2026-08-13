@@ -1,6 +1,6 @@
 ## Design proposal for #422: MSRV declaration + CI toolchain consumption (revised)
 
-> **Status: proposal, not a decision.** This document exists so the maintainer can make the judgement calls listed under "Decisions needed"; it is not an approved design. Nothing here is implemented.
+> **Status: implemented.** The root `Cargo.toml` declares `rust-version = "1.95.0"` and CI runs a dedicated `msrv` job against it. This document is kept as the record of the judgement calls made under "Decisions needed" below, not as an open proposal.
 
 This issue bundles two independent problems: (1) declaring/enforcing an MSRV, and (2) refreshing and wiring the `examples/no-database-verification*` verification workspaces into CI. Only (1) is blocked on a maintainer decision — (2) is mechanical and can ship as its own PR without waiting on this. This proposal covers only the blocked half, and now explicitly names that split as a decision rather than assuming it.
 

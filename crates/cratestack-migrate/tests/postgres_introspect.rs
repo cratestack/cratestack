@@ -2,20 +2,25 @@
 //! Live-Postgres integration tests for `introspect::postgres` (issue
 //! #204, design doc §5.2/§8 case pattern).
 //!
-//! Skips silently unless `CRATESTACK_TEST_DATABASE_URL` is set — the
-//! same convention every other PG-backed test in the workspace uses
-//! (`just test-pg` sets it). This crate's `postgres-introspect`
-//! feature isn't part of any workspace-wide `just test-pg`/
-//! `just test-pg-tc` invocation by default (it's opt-in, per the
-//! ticket's "no new DB dependency for the default build" requirement),
-//! so run directly:
+//! Backend selection mirrors the standard shim every other PG-backed test
+//! in the workspace uses (`crates/cratestack-pg/tests/support/pg.rs`,
+//! `crates/cratestack-outbox/tests/support/pg.rs`):
 //!
-//! ```sh
-//! just pg-up
-//! CRATESTACK_TEST_DATABASE_URL='postgres://cratestack:cratestack@localhost:55432/cratestack_test' \
-//!   cargo test -p cratestack-migrate --features postgres-introspect
-//! just pg-down
-//! ```
+//! 1. `CRATESTACK_TEST_DATABASE_URL` — connect to an external PG (the
+//!    `just pg-up` / `just test-pg` flow).
+//! 2. `CRATESTACK_USE_TESTCONTAINERS=1` — spawn an ephemeral PG container.
+//! 3. Neither set — skip.
+//!
+//! `CRATESTACK_REQUIRE_DB` turns a connection/container failure into a
+//! panic instead of a skip — the CI gate sets it (`just
+//! test-ci-db-migrate-introspect`), so a broken Docker runner can't
+//! silently green this file's 7 tests while running none of them (a
+//! 2026-08 CI-coverage audit found that is exactly what was happening:
+//! this crate's `postgres-introspect` feature was only ever passed by
+//! `just test-pg`, which no workflow invoked at all). This crate's
+//! `postgres-introspect` feature still isn't part of any workspace-wide
+//! `just test-pg-tc` invocation by default (it's opt-in, per the
+//! ticket's "no new DB dependency for the default build" requirement).
 //!
 //! Every table/view this file creates uses an `introspect_probe_`
 //! prefix and is dropped (`IF EXISTS`) before creation, so tests are
@@ -28,14 +33,85 @@ use cratestack_migrate::ir::{CheckKind, Column, ColumnArity, ColumnType};
 use cratestack_migrate::{Projections, diff_projections, project};
 use sqlx_core::pool::PoolOptions;
 use sqlx_postgres::{PgPool, Postgres};
+use testcontainers::ContainerAsync;
+use testcontainers::runners::AsyncRunner;
+use testcontainers_modules::postgres::Postgres as PostgresContainer;
 
-async fn connect_or_skip() -> Option<PgPool> {
-    let url = std::env::var("CRATESTACK_TEST_DATABASE_URL").ok()?;
-    PoolOptions::<Postgres>::new()
-        .max_connections(2)
-        .connect(&url)
-        .await
-        .ok()
+/// `pool` borrows a connection to whichever backend `connect_or_skip`
+/// selected. `_container` is held only so the testcontainers backend's
+/// container outlives every test that borrows `pool` from it — dropping
+/// it early would tear the database down mid-test — and is never read
+/// directly; it exists for its `Drop` (stops and removes the container).
+struct TestPg {
+    pool: PgPool,
+    _container: Option<ContainerAsync<PostgresContainer>>,
+}
+
+async fn connect_or_skip() -> Option<TestPg> {
+    let require = std::env::var("CRATESTACK_REQUIRE_DB").is_ok();
+
+    fn need<T, E: std::fmt::Display>(r: Result<T, E>, require: bool, ctx: &str) -> Option<T> {
+        match r {
+            Ok(v) => Some(v),
+            Err(e) if require => panic!("CRATESTACK_REQUIRE_DB is set but {ctx} failed: {e}"),
+            Err(_) => None,
+        }
+    }
+
+    if let Ok(url) = std::env::var("CRATESTACK_TEST_DATABASE_URL") {
+        let pool = need(
+            PoolOptions::<Postgres>::new()
+                .max_connections(2)
+                .connect(&url)
+                .await,
+            require,
+            "connecting to CRATESTACK_TEST_DATABASE_URL",
+        )?;
+        return Some(TestPg {
+            pool,
+            _container: None,
+        });
+    }
+
+    if std::env::var("CRATESTACK_USE_TESTCONTAINERS").is_ok() {
+        let container = need(
+            PostgresContainer::default().start().await,
+            require,
+            "starting the Postgres testcontainer (is Docker available?)",
+        )?;
+        let host = need(
+            container.get_host().await,
+            require,
+            "resolving testcontainer host",
+        )?;
+        let port = need(
+            container.get_host_port_ipv4(5432).await,
+            require,
+            "resolving testcontainer port",
+        )?;
+        let url = format!("postgres://postgres:postgres@{host}:{port}/postgres");
+        let pool = need(
+            PoolOptions::<Postgres>::new()
+                .max_connections(2)
+                .connect(&url)
+                .await,
+            require,
+            "connecting to the Postgres testcontainer",
+        )?;
+        return Some(TestPg {
+            pool,
+            _container: Some(container),
+        });
+    }
+
+    if require {
+        panic!(
+            "CRATESTACK_REQUIRE_DB is set but neither CRATESTACK_TEST_DATABASE_URL nor \
+             CRATESTACK_USE_TESTCONTAINERS is set"
+        );
+    }
+
+    None
 }
 
 async fn exec(pool: &PgPool, sql: &str) {
@@ -61,9 +137,10 @@ fn only_table(projections: &Projections, table: &str) -> Projections {
 /// two reports zero drift.
 #[tokio::test]
 async fn round_trip_matches_hand_authored_schema() {
-    let Some(pool) = connect_or_skip().await else {
+    let Some(test_pg) = connect_or_skip().await else {
         return;
     };
+    let pool = test_pg.pool;
     let table = "introspection_probe_customers";
 
     exec(&pool, &format!("DROP TABLE IF EXISTS {table}")).await;
@@ -147,9 +224,10 @@ model IntrospectionProbeCustomer {
 /// doc's central safety rule.
 #[tokio::test]
 async fn unmapped_column_type_is_reported_not_guessed() {
-    let Some(pool) = connect_or_skip().await else {
+    let Some(test_pg) = connect_or_skip().await else {
         return;
     };
+    let pool = test_pg.pool;
     let table = "introspection_probe_prices";
 
     exec(&pool, &format!("DROP TABLE IF EXISTS {table}")).await;
@@ -202,9 +280,10 @@ async fn unmapped_column_type_is_reported_not_guessed() {
 /// schema-side projection would have produced.
 #[tokio::test]
 async fn enum_shaped_check_reconstructs_to_check_kind_enum() {
-    let Some(pool) = connect_or_skip().await else {
+    let Some(test_pg) = connect_or_skip().await else {
         return;
     };
+    let pool = test_pg.pool;
     let table = "introspection_probe_orders";
 
     exec(&pool, &format!("DROP TABLE IF EXISTS {table}")).await;
@@ -250,9 +329,10 @@ async fn enum_shaped_check_reconstructs_to_check_kind_enum() {
 /// over from issue #203.
 #[tokio::test]
 async fn native_enum_type_folds_into_a_check() {
-    let Some(pool) = connect_or_skip().await else {
+    let Some(test_pg) = connect_or_skip().await else {
         return;
     };
+    let pool = test_pg.pool;
     let table = "introspection_probe_tickets";
     let enum_type = "introspection_probe_ticket_status";
 
@@ -316,9 +396,10 @@ async fn native_enum_type_folds_into_a_check() {
 
 #[tokio::test]
 async fn view_is_introspected_with_its_source_table() {
-    let Some(pool) = connect_or_skip().await else {
+    let Some(test_pg) = connect_or_skip().await else {
         return;
     };
+    let pool = test_pg.pool;
     let table = "introspection_probe_accounts";
     let view = "introspection_probe_active_accounts";
 
@@ -353,9 +434,10 @@ async fn view_is_introspected_with_its_source_table() {
 
 #[tokio::test]
 async fn cratestack_migrations_table_itself_is_excluded() {
-    let Some(pool) = connect_or_skip().await else {
+    let Some(test_pg) = connect_or_skip().await else {
         return;
     };
+    let pool = test_pg.pool;
 
     exec(&pool, "DROP TABLE IF EXISTS cratestack_migrations").await;
     exec(
@@ -385,9 +467,10 @@ async fn cratestack_migrations_table_itself_is_excluded() {
 /// so it's skipped rather than mis-attributed to one of its columns.
 #[tokio::test]
 async fn multi_column_check_is_skipped_not_mis_attributed() {
-    let Some(pool) = connect_or_skip().await else {
+    let Some(test_pg) = connect_or_skip().await else {
         return;
     };
+    let pool = test_pg.pool;
     let table = "introspection_probe_ranges";
 
     exec(&pool, &format!("DROP TABLE IF EXISTS {table}")).await;

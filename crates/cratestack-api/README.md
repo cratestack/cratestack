@@ -102,11 +102,12 @@ demonstrated manually instead.
 - **`db = Postgres`** — fails to compile; see above. This crate is
   `db = None`-only, by design, not by an accidentally-missing feature.
 - **`transport grpc`** — `cratestack-grpc`/`prost` are not dependencies of
-  this crate. gRPC codegen is entirely model-driven (CRUD routes generated
-  per `model` block) and procedures aren't wired into the generated gRPC
-  service at all, so a `transport grpc` schema under `db = None` could only
-  ever produce a service with zero methods. `transport rpc` and REST (the
-  default) both work fully.
+  this crate, so a `transport grpc` schema can't be compiled through
+  `cratestack-api` at all, regardless of what the gRPC codegen itself
+  supports (model CRUD and `procedure`s, unary or server-streaming, are
+  both wired in — see `cratestack-grpc`'s README). `transport rpc` and REST
+  (the default) both work fully. `transport grpc` is also planned for
+  removal repo-wide in v0.9, so this gap isn't going to be closed.
 - **Database migrations** — there's no database to migrate.
 
 ## Features

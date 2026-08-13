@@ -101,9 +101,10 @@ fn round_trips_datetime_as_rfc3339_utc() {
 }
 
 /// Regression test for cratestack#395 (follow-up to cratestack#162): the
-/// on-disk TEXT must hold the **plain, untagged** JSON shape, not
-/// `Value`'s own derived, externally-tagged `Serialize` representation
-/// (`{"Map": {"k": {"Int": 1}}}`). `round_trips_json` below only proves
+/// on-disk TEXT must hold the **plain, untagged** JSON shape (matching
+/// what `Value`'s own hand-written `Serialize` also produces, since
+/// cratestack#506 — but this path goes through `to_plain_json` directly
+/// rather than `Value`'s own impl). `round_trips_json` below only proves
 /// internal consistency — a buggy writer paired with a buggy reader still
 /// round-trips — so this test inspects the raw stored bytes directly.
 #[test]

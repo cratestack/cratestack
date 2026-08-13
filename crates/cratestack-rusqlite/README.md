@@ -19,8 +19,8 @@ The architecture is "Rust as real frontend, UI layer is UI only": Rust owns stat
 
 ```toml
 [dependencies]
-cratestack-rusqlite = "0.6.7"
-cratestack-macros = "0.6.7"  # for include_embedded_schema!
+cratestack-rusqlite = "0.7"
+cratestack-macros = "0.7"  # for include_embedded_schema!
 ```
 
 Or via the [`cratestack-sqlite`](../cratestack-sqlite) facade
@@ -29,7 +29,7 @@ Or via the [`cratestack-sqlite`](../cratestack-sqlite) facade
 
 ```toml
 [dependencies]
-cratestack = { package = "cratestack-sqlite", version = "0.6.7" }
+cratestack = { package = "cratestack-sqlite", version = "0.7" }
 ```
 
 ## View delegates
