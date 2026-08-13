@@ -1,0 +1,55 @@
+// Fixture schema for @cratestack/refine's test suite (cratestack#571).
+// Generates a REAL TypeScript client (via `cratestack generate-typescript`)
+// that the package's tests drive directly — not a hand-written mock of the
+// generated shape. Three models, each exercising a distinct thing the
+// dataProvider must handle correctly:
+//
+//   - Widget:  plain CRUD, no @@paged, no @version, primary key named `id`
+//              (the common case; also carries a nullable field for the
+//              filter-operator gating tests — see filter_arms.rs).
+//   - Ledger:  @@paged + @version, primary key named `id` — pagination
+//              arithmetic and If-Match optimistic-locking tests.
+//   - Product: primary key named `sku`, NOT `id` — the id-mapping tests.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Widget {
+  id Int @id
+  name String
+  weight Int?
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
+
+model Ledger {
+  id Int @id
+  label String
+  balance Int
+  version Int @version
+
+  @@paged
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
+
+model Product {
+  sku String @id
+  name String
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}

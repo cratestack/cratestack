@@ -1,0 +1,53 @@
+{
+  "name": "@cratestack/refine",
+  "version": "0.7.14",
+  "description": "A refine.dev DataProvider over CrateStack's generated TypeScript REST client — the safe end-user admin-UI surface that goes through the generated API (policy, validation, @version concurrency, audit), unlike cratestack-studio's direct-to-database sysadmin access.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cratestack/cratestack.git",
+    "directory": "packages/cratestack-refine"
+  },
+  "homepage": "https://cratestack.dev",
+  "bugs": "https://github.com/cratestack/cratestack/issues",
+  "keywords": [
+    "cratestack",
+    "cstack",
+    "refine",
+    "refinedev",
+    "dataProvider",
+    "admin-panel"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "lint": "biome check ."
+  },
+  "peerDependencies": {
+    "@refinedev/core": "^5.0.0"
+  },
+  "devDependencies": {
+    "@refinedev/core": "^5.0.0",
+    "decimal.js": "^10.6.0",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

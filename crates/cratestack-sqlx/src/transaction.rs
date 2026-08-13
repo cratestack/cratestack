@@ -36,6 +36,42 @@
 //!   are). Retrying is exactly what `run_in_isolated_tx` is for; the two
 //!   are orthogonal and composable (see the PR body's isolation
 //!   discussion), not alternatives to pick between.
+//!
+//! ## Composing through here does not close the `AuditSink`/outbox gap (cratestack#534)
+//!
+//! It is tempting to assume that because this is the *sanctioned* way to
+//! compose several write-builder calls, it also gets you the fan-out that
+//! `run()` gives you automatically — an installed [`cratestack_core::AuditSink`]
+//! observing every `@@audit` write, and `@@emit` events reaching their
+//! subscribers. **It does not.** `body` still calls each write builder's
+//! `run_in_tx`, which still only writes the in-database `cratestack_audit`
+//! row / outbox row and hands back a `RunInTxOutcome` — it never dispatches
+//! anything itself, for exactly the same reason it doesn't when called
+//! against a transaction obtained directly from `db.pool().begin()`: there
+//! is still no reliable "after commit" point *inside this crate*, because
+//! `transaction` only knows `body` returned `Ok::<T, _>` for an arbitrary,
+//! caller-chosen `T` — it has no way to discover which `RunInTxOutcome`s
+//! (if any) `body` produced along the way unless `body` hands them back as
+//! part of its own return value.
+//!
+//! This was investigated as a candidate host for cratestack#534's option
+//! (b) ("the runtime takes ownership of dispatch") and found not cleanly
+//! achievable here: even setting aside the arbitrary-`T` problem above,
+//! [`SqlxRuntime::pool`] stays public, so a caller can always open a
+//! transaction with `db.pool().begin()` directly and pass it straight to
+//! `run_in_tx`, bypassing this combinator entirely — the same call
+//! `run_in_tx` accepts from here, because [`Tx`] derefs to a plain
+//! `sqlx::Transaction` before `run_in_tx` ever sees it (see above), so
+//! `run_in_tx` cannot even tell which door the transaction came through.
+//! Any auto-dispatch hook attached only to `transaction()` would therefore
+//! be incomplete by construction, reproducing the exact invisible gap
+//! cratestack#534 exists to close, just for a subset of callers instead of
+//! all of them. **The contract is caller-driven, unconditionally**: after
+//! `transaction()` returns `Ok`, dispatch the audit events yourself via
+//! the generated `Cratestack::dispatch_audit_sink` and drain the outbox
+//! yourself via `Cratestack::events().drain()` — see
+//! [`crate::dispatch_audit_sink`]'s doc comment for the full reasoning,
+//! which applies here unchanged.
 
 use std::ops::{Deref, DerefMut};
 
@@ -87,6 +123,11 @@ impl SqlxRuntime {
     ///
     /// Does not retry — see the module doc comment for why that's left to
     /// [`crate::run_in_isolated_tx`] instead, and how the two compose.
+    ///
+    /// **Does not dispatch to an installed `AuditSink` or drain the
+    /// `@@emit` outbox on its own** — see the module doc comment's
+    /// "Composing through here does not close the `AuditSink`/outbox gap"
+    /// section (cratestack#534) for why that can't be made automatic here.
     pub async fn transaction<F, T>(&self, body: F) -> Result<T, CoolError>
     where
         F: AsyncFnOnce(&mut Tx) -> Result<T, CoolError>,

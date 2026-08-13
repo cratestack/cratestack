@@ -670,6 +670,13 @@ jobs:
   # doesn't set up (that's the whole point of keeping `js`
   # napi/wasm/tauri-free, per the comment above). See the dedicated
   # `js-cbor-napi` / `js-cbor-wasm` jobs instead.
+  #
+  # `cratestack-refine` (issue #571) is excluded the same way, for a
+  # different reason: its own build/lint need nothing beyond Node, but its
+  # *tests* drive a real generated TypeScript client fixture that only the
+  # `cratestack generate-typescript` Rust binary can produce, and that
+  # fixture is deliberately not committed (issue #577). See the dedicated
+  # `js-refine` job instead.
   js:
     name: js (pnpm + turbo)
     runs-on: ubuntu-latest
@@ -707,7 +714,12 @@ jobs:
           restore-keys: |
             turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
       - name: Build, test, lint (turbo)
-        run: pnpm turbo run build test lint --filter='!./packages/cratestack-cbor-node' --filter='!./packages/cratestack-cbor-web'
+        # cratestack-refine excluded alongside cbor-node/cbor-web: its test
+        # suite needs a real generated TypeScript client fixture that only
+        # `cratestack generate-typescript` (a Rust binary) can produce —
+        # see the js-refine job below, which is to this package what
+        # js-cbor-napi/js-cbor-wasm are to those two.
+        run: pnpm turbo run build test lint --filter='!./packages/cratestack-cbor-node' --filter='!./packages/cratestack-cbor-web' --filter='!./packages/cratestack-refine'
 
   # ---- @cratestack/cbor-node (native N-API addon) -----------------------
   # Blocking, but split out of `js` above: this is one of two packages/*
@@ -800,6 +812,48 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build, test, lint @cratestack/cbor-web
         run: pnpm turbo run build test lint --filter='./packages/cratestack-cbor-web'
+
+  # ---- @cratestack/refine (dataProvider over a generated TS client) -----
+  # Same rationale as js-cbor-napi/js-cbor-wasm above, for the third
+  # packages/* package that needs a Rust toolchain the plain `js` job
+  # deliberately doesn't set up — but for a different reason than those
+  # two: this package's own build/lint need nothing beyond Node, only its
+  # *tests* do, because they drive a REAL generated TypeScript client
+  # (cratestack#571) rather than a hand-written stand-in for one. That
+  # fixture is intentionally not committed (cratestack#577 — "don't commit
+  # generated build output"), so it has to be produced here, fresh, by the
+  # real `cratestack generate-typescript` CLI before `pnpm turbo test` runs
+  # — `just refine-fixture` is the single recipe both this job and a local
+  # dev use, so they can't drift apart into two hand-copied invocations
+  # (same discipline as `regen-examples` for the two example clients
+  # below). If this step is ever skipped or misconfigured, the test suite
+  # itself fails loudly (not a silent skip) — see
+  # packages/cratestack-refine/tests/support/assert-fixture-present.ts,
+  # a vitest `globalSetup` that throws with instructions when the fixture
+  # directory is missing.
+  js-refine:
+    name: js (@cratestack/refine)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: Generate the real TypeScript client fixture (cratestack#571/#577)
+        run: just refine-fixture
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: pnpm install
+        env:
+          CRATESTACK_CLI_SKIP_DOWNLOAD: "1"
+        run: pnpm install --frozen-lockfile
+      - name: Build, test, lint @cratestack/refine
+        run: pnpm turbo run build test lint --filter='./packages/cratestack-refine'
 
   # ---- react-vite-swr example (generated `swr`-preset client) -----------
   # Blocking. Issue #306 (epic #298's last story): the example under
