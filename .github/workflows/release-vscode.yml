@@ -1,18 +1,34 @@
-# Builds and publishes the `cratestack-vscode` extension (packages/cratestack-vscode)
-# to the Visual Studio Marketplace and Open VSX on every `vX.Y.Z` tag push, alongside
-# the crates.io/npm/GitHub-Release publishes in release-cli.yml.
+# Builds the `cratestack-vscode` extension (packages/cratestack-vscode) on every
+# `vX.Y.Z` tag push and attaches a platform-specific `.vsix` per target to the same
+# GitHub Release release-cli.yml creates for that tag — the PRIMARY distribution
+# path today. Users install manually: download the `.vsix` for their platform and
+# run `code --install-extension <file>.vsix` (see docs/tooling/vscode-publishing.md).
 #
 # The extension bundles a native `cratestack-lsp` binary under `server/<platform>/`
 # (see server-path.js), so a single vsix can't cover every OS/arch — instead `build`
 # builds cratestack-lsp on a native runner per target and packages a platform-specific
 # vsix via `vsce package --target <target>` — the same way the Marketplace itself
-# distributes per-platform extensions. Publishing a pre-built vsix doesn't need the
-# native OS, so both publish jobs run once on ubuntu-latest against every vsix `build`
-# produced, rather than publishing from inside each matrix leg.
+# would distribute per-platform extensions.
 #
-# Same tag-push-only gate as release-cli.yml's npm jobs: a Marketplace/Open VSX
-# publish can't be cleanly deleted and retried, so a throwaway workflow_dispatch
-# test run must never reach either registry.
+# Marketplace and Open VSX publish jobs also exist below, but are currently DORMANT
+# by design: each gates on its own credential/secret actually being present and
+# soft-skips (logs why, exits 0) otherwise, so this workflow succeeds end-to-end
+# whether or not either is configured. Marketplace publishing is blocked
+# indefinitely — the maintainer's Microsoft account is stuck in a 2FA block/unblock
+# loop, so the Entra ID federated-credential setup below can't be completed — see
+# docs/tooling/vscode-publishing.md. Open VSX has NO such blocker: it's an Eclipse
+# Foundation registry (not a Microsoft one, no Microsoft account needed at all) used
+# by VSCodium/Cursor/Windsurf, and can be turned on independently just by adding
+# `OVSX_PAT` — no code change required, the job is ready and waiting.
+#
+# Both publish jobs stay tag-push-only (same as release-cli.yml's npm jobs): a
+# Marketplace/Open VSX publish can't be cleanly deleted and retried, so a throwaway
+# workflow_dispatch test run must never reach either registry. The GitHub-Release
+# attach job has no such constraint — like release-cli.yml's binary attach, deleting
+# and re-uploading a release asset is safe, so it isn't gated the same way (though
+# this workflow only triggers on tag push regardless, so the distinction is moot
+# today; noted for if a workflow_dispatch re-run path is ever added here, mirroring
+# release-cli.yml's).
 #
 # Marketplace auth uses Microsoft Entra ID workload identity federation (a
 # user-assigned managed identity, no stored secret) rather than a Personal Access
@@ -112,6 +128,41 @@ jobs:
           name: vsix-${{ matrix.vsce_target }}
           path: ${{ steps.vsix.outputs.path }}
           if-no-files-found: error
+
+  # PRIMARY distribution path: attach every platform's .vsix to the GitHub
+  # Release for this tag, the same way release-cli.yml's own `release` job
+  # attaches the cratestack-cli archives — same action, same upsert-by-tag
+  # behavior, no separate release-creation mechanism invented here. Whichever
+  # of the two workflows' release job runs first creates the Release for the
+  # tag; the other one (this job, or release-cli.yml's) finds it already
+  # exists and appends its own files to it instead of failing — the two
+  # workflows race harmlessly since their asset filenames never collide
+  # (`cratestack-cli-*` vs `cratestack-vscode-*.vsix`). Deliberately does not
+  # pass `generate_release_notes` here — release-cli.yml's `release` job
+  # already does that once; doing it again from this job would re-run notes
+  # generation against whatever the release looks like at that moment,
+  # which is redundant and, depending on ordering, could reorder or
+  # duplicate content instead of leaving the notes it already generated
+  # alone.
+  attach-github-release:
+    name: attach vsix to GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: vsix-*
+          path: dist
+          merge-multiple: true
+      - name: List vsix assets
+        run: ls -la dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: dist/*.vsix
+          fail_on_unmatched_files: true
 
   # Requires the AZURE_CLIENT_ID/AZURE_TENANT_ID/AZURE_SUBSCRIPTION_ID repo
   # secrets (a user-assigned managed identity granted publish rights on the

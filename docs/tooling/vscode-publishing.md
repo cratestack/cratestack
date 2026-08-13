@@ -1,23 +1,79 @@
 # VS Code extension publishing setup
 
-`.github/workflows/release-vscode.yml` publishes `packages/cratestack-vscode` to both the
-Visual Studio Marketplace and Open VSX on every `vX.Y.Z` tag push, alongside the crates.io/npm/
-GitHub-Release publishes in `release-cli.yml` (never on a manual `workflow_dispatch` — neither
-publish can be cleanly deleted and retried, so a throwaway test tag must never reach either
-registry).
+## Current status: GitHub Releases only
+
+`.github/workflows/release-vscode.yml` builds `packages/cratestack-vscode` on every `vX.Y.Z` tag
+push and attaches a platform-specific `.vsix` to the same GitHub Release
+`release-cli.yml` creates for that tag — **this is the only channel that actually ships the
+extension today.** There is no Marketplace or Open VSX listing yet. See
+[Manual install for users](#manual-install-for-users) below for what to tell someone who wants the
+extension right now.
+
+The Marketplace and Open VSX publish jobs described in the rest of this document exist in the
+workflow and are fully implemented, but are currently **dormant**: each checks for its own
+credential/secret and soft-skips (logs why, doesn't fail the run) when it isn't set. Re-enabling
+either is a matter of adding the credential described in its section below — no workflow rewrite
+needed.
+
+* **Marketplace: blocked indefinitely.** The maintainer's Microsoft account is stuck in a 2FA
+  block/unblock loop, so the Entra ID managed-identity setup this depends on (needs a working
+  Azure sign-in) cannot currently be completed. See [Marketplace setup](#vs-code-marketplace-one-time-setup)
+  below for what would need to happen if that unblocks.
+* **Open VSX: not blocked at all, and worth doing.** Open VSX is run by the **Eclipse
+  Foundation** — a separate, independent registry from the Microsoft Marketplace, with its own
+  account system (an Eclipse account, not a Microsoft one). It's the registry
+  [VSCodium](https://vscodium.com/), [Cursor](https://www.cursor.com/), and
+  [Windsurf](https://windsurf.com/) use for extensions, since none of them can point at the
+  Microsoft-licensed Marketplace. Nothing about the Microsoft 2FA problem affects this path — see
+  [Open VSX one-time setup](#open-vsx-one-time-setup) below.
+
+---
 
 The extension bundles a native `cratestack-lsp` binary per platform (see `server-path.js`), so the
 `build` job builds `cratestack-lsp` on a native runner per target and packages a platform-specific
 vsix via `vsce package --target <target>` for each of
 `darwin-x64`/`darwin-arm64`/`linux-x64`/`linux-arm64`/`win32-x64` — the same way the Marketplace
-itself distributes per-platform extensions. `publish-marketplace` and `publish-openvsx` each run
+itself distributes per-platform extensions. `attach-github-release` runs once (on `ubuntu-latest`,
+after `build` finishes) and attaches every platform's vsix to the tag's GitHub Release, the same
+way `release-cli.yml`'s own `release` job attaches the `cratestack-cli` archives — same action
+(`softprops/action-gh-release`), same upsert-by-tag behavior, so whichever of the two workflows'
+release job runs first creates the Release and the other appends to it.
+
+`publish-marketplace` and `publish-openvsx` each also run
 once (on `ubuntu-latest`, after `build` finishes) against every vsix `build` produced — publishing a
 pre-built vsix doesn't need the native OS, so there's no reason to repeat the publish step per
 platform. Both publish jobs soft-skip (log a warning, exit 0, without failing the rest of the run)
 when their credentials aren't set, so the workflow succeeds even before everything below is
 configured.
 
+## Manual install for users
+
+Since there's no Marketplace or Open VSX listing yet, this is what to tell someone who wants the
+extension:
+
+1. Go to the [Releases page](https://github.com/cratestack/cratestack/releases) and open the
+   latest `vX.Y.Z` release.
+2. Download the `.vsix` matching your platform:
+   * macOS Apple Silicon: `cratestack-vscode-darwin-arm64-*.vsix`
+   * macOS Intel: `cratestack-vscode-darwin-x64-*.vsix`
+   * Linux x86_64: `cratestack-vscode-linux-x64-*.vsix`
+   * Linux ARM64: `cratestack-vscode-linux-arm64-*.vsix`
+   * Windows x86_64: `cratestack-vscode-win32-x64-*.vsix`
+3. Install it. Either:
+   * Command line: `code --install-extension /path/to/cratestack-vscode-<platform>-<version>.vsix`
+   * VS Code UI: Extensions view (`Ctrl+Shift+X` / `Cmd+Shift+X`) → **···** menu (top-right) →
+     **Install from VSIX...** → pick the downloaded file.
+4. Reload the window if VS Code doesn't prompt automatically. Opening a `.cstack` file should now
+   get syntax highlighting and language-server features (hover, diagnostics, etc.).
+
+To upgrade to a newer release, repeat the same steps with the new `.vsix` — installing over an
+existing version replaces it, no uninstall needed first.
+
 ## VS Code Marketplace one-time setup
+
+> **Currently blocked.** The maintainer's Microsoft account is stuck in a 2FA block/unblock loop,
+> which blocks the Azure sign-in step 1 below needs. This section is left in place, accurate and
+> ready to follow, for whenever that unblocks — nothing about the setup itself has changed.
 
 The publisher ID is `cratestack` (`packages/cratestack-vscode/package.json`'s `publisher` field —
 this can't be changed after the publisher is created, so it has to match exactly).
@@ -100,6 +156,13 @@ needed. No client secret is stored anywhere; `azure/login`'s OIDC exchange (gate
 
 ## Open VSX one-time setup
 
+> **Not blocked by anything above.** Open VSX is the Eclipse Foundation's registry — a completely
+> separate account system from the Microsoft Marketplace (an Eclipse account, not a Microsoft
+> one), so the 2FA issue blocking the Marketplace section above has no bearing here. This is a
+> genuinely available path to a real, install-from-the-editor registry today, not just the manual
+> `.vsix` download above — worth doing independently of when (or whether) the Marketplace path
+> unblocks.
+
 The namespace is `cratestack`, matching the same `publisher` field.
 
 1. Register an Eclipse account at [accounts.eclipse.org](https://accounts.eclipse.org) if you don't
@@ -125,9 +188,13 @@ part of CI), the next tag push publishes the extension to Open VSX — no other 
 A green `release-vscode.yml` run only proves the CLI exited 0 — for the same reason `RELEASE.md`
 independently verifies crates.io/npm rather than trusting the checkmark, confirm directly:
 
-* Marketplace: `https://marketplace.visualstudio.com/items?itemName=cratestack.cratestack-vscode`
-  shows the new version.
-* Open VSX: `https://open-vsx.org/extension/cratestack/cratestack-vscode` shows the new version.
+* GitHub Release (the primary path — check this one first): `gh release view vX.Y.Z` should list
+  five `cratestack-vscode-*.vsix` assets alongside the CLI binaries.
+* Marketplace (dormant until configured, see above):
+  `https://marketplace.visualstudio.com/items?itemName=cratestack.cratestack-vscode` shows the new
+  version.
+* Open VSX (dormant until configured, see above):
+  `https://open-vsx.org/extension/cratestack/cratestack-vscode` shows the new version.
 
 ## Known gap: no extension icon
 
