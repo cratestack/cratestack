@@ -36,6 +36,15 @@ default:
 #     `flutter_rust_bridge_codegen` and is NOT checked in, so any
 #     workspace-wide compile that includes it fails with E0583 on a
 #     fresh checkout. The test recipes exclude it for the same reason.
+#     This is a PERMANENT, deliberate exclusion (cratestack#563 decided
+#     it, not just re-confirmed it): flutter_rust_bridge glue is
+#     generated in CI (and locally via `just frb-generate`, below), never
+#     committed. Any future frb-bridged crate — e.g. the native crate
+#     backing the published `cratestack_cbor` pub.dev package — follows
+#     the identical pattern: added to `[workspace] members`, added to
+#     every `--exclude` list alongside `embedded_flutter_native`, glue
+#     regenerated via `just frb-generate <dir>` locally and in CI before
+#     any build/test step touches it.
 #   * NO `--all-features` — `--all-features` turns on both
 #     `decimal-rust-decimal` and `decimal-bigdecimal`, which are
 #     mutually exclusive backends (cratestack#495), tripping a
@@ -599,6 +608,24 @@ verify-changelog:
 # test suite actually runs instead of silently rotting.
 changelog-seed-test:
 	./.ci/changelog-seed-tests.sh
+
+# Regenerate flutter_rust_bridge glue (Rust `frb_generated.rs` plus the
+# Dart bindings a `flutter_rust_bridge.yaml` in DIR points at) for one
+# frb-bridged crate/example. Glue is deliberately NOT committed
+# (cratestack#563 decision — see the `--exclude embedded_flutter_native`
+# comment on `all-checks` above for the full rationale and which crates
+# this applies to); this recipe is the "generate locally" half of that
+# decision, CI's regeneration step is the other half.
+#
+# Usage: `just frb-generate examples/embedded-flutter`
+frb-generate DIR:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if ! command -v flutter_rust_bridge_codegen >/dev/null; then
+	  echo "flutter_rust_bridge_codegen not found. Run: cargo install flutter_rust_bridge_codegen" >&2
+	  exit 1
+	fi
+	(cd "{{DIR}}" && flutter_rust_bridge_codegen generate)
 
 # Bundle the Studio UI for publishing: source tarball (for `studio
 # eject --with-ui`) and the Trunk-built wasm/JS dist (embedded into

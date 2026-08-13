@@ -1300,6 +1300,7 @@ dependencies = [
  "async-stream",
  "axum",
  "bytes",
+ "chrono",
  "cratestack-client-rust",
  "cratestack-codec-cbor",
  "cratestack-core",
@@ -1307,6 +1308,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "url",
+ "uuid",
 ]
 
 [[package]]

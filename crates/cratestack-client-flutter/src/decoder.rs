@@ -27,7 +27,8 @@ use crate::types::FlutterRuntimeError;
 /// await for (final chunk in response.data!.stream) {
 ///   final items = await decoder.feed(Uint8List.fromList(chunk));
 ///   for (final item in items) {
-///     controller.add(cbor.decode(item)); // pure-Dart per-item decode
+///     final json = await cborDecodeJson(bytes: item); // crate::cbor, native
+///     controller.add(jsonDecode(json));
 ///   }
 /// }
 /// if (decoder.pendingLen() > 0) {
@@ -39,6 +40,13 @@ use crate::types::FlutterRuntimeError;
 /// request, cancellation, retry, and interceptor concerns live with
 /// the Dart-side HTTP client. The boundary-detection logic stays in
 /// Rust because it's where `minicbor::Decoder::skip` already lives.
+///
+/// Solves a different problem than [`crate::cbor`] (cratestack#563):
+/// this type finds item *boundaries* in the stream; `crate::cbor::decode_json`
+/// decodes the bytes of each item once found — the two compose, as shown
+/// above, rather than overlapping. (Before `crate::cbor` existed, this
+/// doc comment recommended "any pure-Dart CBOR package" for that step;
+/// prefer the native decoder now.)
 ///
 /// For Flutter apps that want HTTP-and-decoding to stay in Rust, use
 /// [`crate::FlutterRuntime::execute_streamed`] /

@@ -30,12 +30,12 @@ codec-json = ["cratestack-client-rust/codec-json"]
 # `cratestack-client-rust.workspace = true` edge below picks up neither of
 # `cratestack-client-rust`'s own `decimal-rust-decimal`/`decimal-bigdecimal`
 # features at all (cratestack#495).
-# Also forwards to `cratestack-codec-cbor`/`cratestack-core`, this crate's
-# dev-dependency-only test fixtures — Cargo's feature resolver unifies
-# dev-dependency feature requests with the rest of the graph for the same
-# workspace member, so leaving those on a hardcoded backend would conflict
-# with `--features decimal-bigdecimal` under `cargo test`/`cargo check
-# --all-targets`.
+# Also forwards to `cratestack-codec-cbor`/`cratestack-core`: the `cbor`
+# module (cratestack#563) uses `CborCodec` directly, and a `Decimal`-typed
+# dev-dependency test fixture exercises the same backend, so both real and
+# dev-dependency edges need the choice threaded through, or
+# `--features decimal-bigdecimal` under `cargo test`/`cargo check
+# --all-targets` conflicts with a hardcoded backend here.
 decimal-rust-decimal = [
     "cratestack-client-rust/decimal-rust-decimal",
     "cratestack-codec-cbor/decimal-rust-decimal",
@@ -49,6 +49,11 @@ decimal-bigdecimal = [
 
 [dependencies]
 cratestack-client-rust.workspace = true
+# Real (not dev-only) as of cratestack#563: the `cbor` module wraps
+# `CborCodec` directly for the flutter_rust_bridge-facing encode/decode
+# entry points — see `src/cbor.rs`.
+cratestack-codec-cbor.workspace = true
+cratestack-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
@@ -56,10 +61,8 @@ serde_json.workspace = true
 async-stream = "0.3"
 axum.workspace = true
 bytes.workspace = true
-# Plain edges: see the `decimal-rust-decimal`/`decimal-bigdecimal` feature
-# forwards above.
-cratestack-codec-cbor.workspace = true
-cratestack-core.workspace = true
+chrono.workspace = true
 serde.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time", "sync"] }
 url.workspace = true
+uuid.workspace = true

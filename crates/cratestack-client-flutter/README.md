@@ -82,7 +82,7 @@ final Stream<FlutterChunkWire> stream = executeStreamed(
 await for (final chunk in stream) {
     switch (chunk) {
         case FlutterChunkWire_Item(:final field0):
-            final item = cbor.decode(field0); // any Dart CBOR package
+            final item = jsonDecode(await cborDecodeJson(bytes: field0)); // crate::cbor (cratestack#563)
             renderRow(item);
         case FlutterChunkWire_End():
             break;
@@ -126,7 +126,7 @@ pub use cratestack_client_flutter::FlutterCborSeqDecoder;
 ```
 
 ```dart
-import 'package:cbor/cbor.dart';
+import 'dart:convert';
 import 'package:dio/dio.dart';
 
 final decoder = FlutterCborSeqDecoder();
@@ -145,7 +145,7 @@ final response = await dio.post<ResponseBody>(
 await for (final chunk in response.data!.stream) {
     final items = await decoder.feed(Uint8List.fromList(chunk));
     for (final item in items) {
-        controller.add(cbor.decode(item));   // pure-Dart per-item decode
+        controller.add(jsonDecode(await cborDecodeJson(bytes: item))); // crate::cbor (cratestack#563)
     }
 }
 if (decoder.pendingLen() > 0) {
@@ -161,6 +161,47 @@ This is **complementary** to `execute_streamed` / `rpc_call_streamed`, not a rep
 |---|---|
 | `execute_streamed` / `rpc_call_streamed` | Streaming is uncommon in the app and you want one HTTP stack (reqwest in Rust) for everything. |
 | `FlutterCborSeqDecoder` + dio | Streaming is central; you want native HTTP visibility, dio interceptors, or to avoid shipping reqwest+rustls for the streaming path. |
+
+## CBOR codec (`cratestack_cbor`, cratestack#563)
+
+The [`cbor`](src/cbor/mod.rs) module wraps `cratestack-codec-cbor`'s `CborCodec` for `flutter_rust_bridge` — the source
+this crate's frb glue is generated from for the `cratestack_cbor` pub.dev package (publishing infrastructure is a
+separate, follow-up PR; this crate only carries the binding and its tests). It composes with `FlutterCborSeqDecoder`
+above rather than overlapping: that type finds item *boundaries* in a streamed body, `cbor::decode_json` decodes the
+bytes of each item once found.
+
+The boundary type crossing the frb FFI edge is JSON text (`String`), not a native Dart value — flutter_rust_bridge has
+no dynamic "any JSON value" wire type the way napi or wasm-bindgen do, so a Dart caller runs `jsonEncode`/`jsonDecode`
+(both in `dart:convert`) on its side:
+
+```rust
+// In your native crate (the one running flutter_rust_bridge_codegen) — see
+// benches/cbor_bridge/README.md for a complete, runnable example.
+use flutter_rust_bridge::frb;
+
+// #[frb(sync)] matters: the async-default binding measured SLOWER than
+// pure-Dart package:cbor in this crate's own benchmark (see below) — the
+// per-call async isolate/port dispatch dwarfs the actual codec cost for a
+// small payload. Always mark these `sync`.
+#[frb(sync)]
+pub fn cbor_encode_json(json: String) -> Result<Vec<u8>, String> {
+    cratestack_client_flutter::cbor::encode_json(json).map_err(|e| e.message)
+}
+
+#[frb(sync)]
+pub fn cbor_decode_json(bytes: Vec<u8>) -> Result<String, String> {
+    cratestack_client_flutter::cbor::decode_json(bytes).map_err(|e| e.message)
+}
+```
+
+`Decimal` round-trips as a plain JSON string, matching the Dart client generator's existing `Decimal` -> `String`
+convention (`crates/cratestack-client-dart/src/wire_encode.rs`). `Uuid` does **not** byte-match a native
+`uuid::Uuid`-typed struct's `CborCodec` encoding — see `src/cbor/mod.rs`'s module docs and
+`tests/cbor_bridge.rs` for why (a JSON-shaped boundary can't carry `Serializer::is_human_readable() == false`) and
+what that means for a future generator seam.
+
+Round-trip tests: [`tests/cbor_bridge.rs`](tests/cbor_bridge.rs). Benchmark against pure-Dart `package:cbor`, with
+real measured numbers (not carried over from another project): [`benches/cbor_bridge/README.md`](benches/cbor_bridge/README.md).
 
 ## See Also
 

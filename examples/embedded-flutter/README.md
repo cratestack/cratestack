@@ -57,7 +57,11 @@ flutter create . --org dev.cratestack.examples --platforms=macos,ios,android
 flutter_rust_bridge_codegen integrate --rust-crate-name embedded_flutter_native --rust-crate-dir native --no-write-lib --no-integration-test
 
 # 3) Generate the Dart-side bindings from native/src/api/. Re-run this
-#    whenever you change a `pub fn` in `native/src/api/`.
+#    whenever you change a `pub fn` in `native/src/api/` — or run
+#    `just frb-generate examples/embedded-flutter` from the repo root,
+#    which does the same thing (cratestack#563: this is now the
+#    documented, permanent pattern for every flutter_rust_bridge-bridged
+#    crate in this repo, not just this one).
 flutter_rust_bridge_codegen generate
 
 # 4) Install Dart deps + sanity-check the Rust side builds.
