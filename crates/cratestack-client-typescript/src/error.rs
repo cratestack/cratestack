@@ -99,4 +99,14 @@ pub enum TypeScriptGeneratorError {
          gRPC-Web client's typed-protobuf shape; drop `--refine` for this schema"
     )]
     RefineRequiresRestOrRpc,
+    /// The schema declares a composite primary key (`@@id([...])`) on at
+    /// least one model. `include_*_schema!` has rejected these since the
+    /// gap was found (see `cratestack_core::composite_id`), but this
+    /// generator had no equivalent guard and instead panicked inside
+    /// `views.rs`'s `primary_key_field(model).expect(...)` — a panic
+    /// rather than an error, carrying a message (`validated schemas
+    /// always have an id field`) that is simply false: the parser accepts
+    /// such a schema. Same rejection, same wording, as the macro path.
+    #[error("{0}")]
+    CompositePrimaryKeyUnsupported(String),
 }

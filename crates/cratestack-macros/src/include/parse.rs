@@ -133,10 +133,7 @@ fn reject_composite_primary_keys(
         return Err(TokenStream::from(
             syn::Error::new(
                 schema_path.span(),
-                format!(
-                    "model `{}` declares a composite primary key via `@@id([...])`, which is not yet supported by codegen (query builders, routing, and generated clients still assume a single scalar `@id`); see https://github.com/cratestack/cratestack/issues/136 for status",
-                    model.name,
-                ),
+                ::cratestack_core::composite_id::composite_id_unsupported_message(&model.name),
             )
             .to_compile_error(),
         ));
@@ -144,11 +141,12 @@ fn reject_composite_primary_keys(
     Ok(())
 }
 
+// Delegates to `cratestack_core::composite_id` so the CLI generators
+// (which panicked on exactly these schemas until 2026-08-13, because
+// they had no equivalent guard) match this path's behaviour by
+// construction rather than by a second hand-copied `starts_with`.
 fn find_composite_id_model(schema: &cratestack_core::Schema) -> Option<&cratestack_core::Model> {
-    schema
-        .models
-        .iter()
-        .find(|model| model.attributes.iter().any(|a| a.raw.starts_with("@@id(")))
+    ::cratestack_core::composite_id::find_composite_id_model(schema)
 }
 
 #[cfg(test)]

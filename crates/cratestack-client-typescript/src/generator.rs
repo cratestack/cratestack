@@ -11,6 +11,19 @@ pub fn generate_package(
     schema: &Schema,
     config: &TypeScriptGeneratorConfig,
 ) -> Result<GeneratedTypeScriptPackage, TypeScriptGeneratorError> {
+    // Composite `@@id([...])` PKs: refuse with the same message the macro
+    // path uses, BEFORE any view is built. Every downstream view builder
+    // calls `primary_key_field(model).expect(...)`, so without this the
+    // command aborts with a panic — and with a message (`validated
+    // schemas always have an id field`) that is false, since the parser
+    // accepts such a schema happily. First, ahead of the flag checks
+    // below, because it is a property of the schema rather than of any
+    // flag combination. See `cratestack_core::composite_id`.
+    if let Some(model) = ::cratestack_core::composite_id::find_composite_id_model(schema) {
+        return Err(TypeScriptGeneratorError::CompositePrimaryKeyUnsupported(
+            ::cratestack_core::composite_id::composite_id_unsupported_message(&model.name),
+        ));
+    }
     // Issue #571: reject a schema `--refine` cannot produce a
     // type-checking file for, before rendering anything — structural (see
     // `RefineRequiresRestOrRpc`'s doc comment), so failing here is

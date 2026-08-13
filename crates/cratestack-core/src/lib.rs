@@ -12,6 +12,7 @@
 pub mod audit;
 pub mod batch;
 pub mod codec;
+pub mod composite_id;
 pub mod context;
 pub mod decimal;
 pub mod envelope;

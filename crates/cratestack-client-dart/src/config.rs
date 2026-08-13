@@ -84,6 +84,16 @@ pub enum DartGeneratorError {
     TemplateRegistration(&'static str, #[source] minijinja::Error),
     #[error("failed to render template '{0}': {1}")]
     TemplateRender(&'static str, #[source] minijinja::Error),
+    /// The schema declares a composite primary key (`@@id([...])`) on at
+    /// least one model. `include_*_schema!` has rejected these since the
+    /// gap was found (see `cratestack_core::composite_id`), but this
+    /// generator had no equivalent guard and instead panicked in
+    /// `builders_model.rs`'s `primary_key_field(model).expect(...)` — a
+    /// panic, not an error, with a message (`validated schemas always
+    /// have an id field`) that is simply untrue: the parser accepts such
+    /// a schema. Same rejection, same wording, as the macro path.
+    #[error("{0}")]
+    CompositePrimaryKeyUnsupported(String),
     /// `transport grpc` schema, but `DartGeneratorConfig::pb_lock` was
     /// `None`. The gRPC wire codec needs the real field numbers
     /// `cratestack generate-proto` assigns — run that first (or pass its

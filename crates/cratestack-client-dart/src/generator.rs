@@ -17,6 +17,18 @@ pub fn generate_package(
     schema: &Schema,
     config: &DartGeneratorConfig,
 ) -> Result<GeneratedDartPackage, DartGeneratorError> {
+    // Composite `@@id([...])` PKs: refuse with the same message the macro
+    // path uses, BEFORE either preset builds a view. Every model builder
+    // calls `primary_key_field(model).expect(...)`, so without this the
+    // command aborts with a panic and a false claim about what the parser
+    // guarantees. Placed on the shared entry point rather than per-preset
+    // so `riverpod` cannot regain the panic by a later refactor. See
+    // `cratestack_core::composite_id`.
+    if let Some(model) = ::cratestack_core::composite_id::find_composite_id_model(schema) {
+        return Err(DartGeneratorError::CompositePrimaryKeyUnsupported(
+            ::cratestack_core::composite_id::composite_id_unsupported_message(&model.name),
+        ));
+    }
     match config.preset {
         DartPreset::Default => generate_default_package(schema, config),
         DartPreset::Riverpod => crate::riverpod::generate_package(schema, config),
