@@ -6,6 +6,14 @@
 //! handler code can wrap its body in [`run_in_isolated_tx`] to actually
 //! enforce it. A follow-up will auto-wrap procedure dispatch so opting in
 //! requires only the attribute.
+//!
+//! Like `db.transaction(...)` (see `crate::transaction`'s module doc,
+//! cratestack#534), composing write-builder `run_in_tx` calls inside
+//! `body` here does not get you automatic `AuditSink` fan-out or `@@emit`
+//! delivery either, for the identical reason: `body` returns to this
+//! helper's own retry loop, not to a commit hook this crate owns, so
+//! dispatch remains the caller's responsibility after the outer call
+//! returns `Ok`.
 use crate::sqlx;
 
 use std::future::Future;

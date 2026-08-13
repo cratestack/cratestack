@@ -78,11 +78,28 @@ pub struct AuditEvent {
 /// audit table written by `cratestack_sqlx` remains the canonical
 /// record; sinks are best-effort projections.
 ///
+/// **Only the plain `.run(ctx)` write path invokes `record`
+/// automatically.** `.run_in_tx(&mut tx, ctx)` — and `db.transaction(...)`
+/// composed on top of it — persist the `cratestack_audit` row exactly the
+/// same way, but never call `record` themselves: they hand the
+/// transaction back to a caller who owns its commit, so there is no
+/// point inside `cratestack_sqlx` that reliably runs after that commit
+/// succeeds. Instead, every `run_in_tx` variant returns a
+/// `RunInTxOutcome` carrying the `AuditEvent`(s) it already persisted,
+/// and the generated `Cratestack::dispatch_audit_sink(&self, events)` is
+/// the caller's explicit opt-in — call it once, after your own commit
+/// succeeds (cratestack#534). **A sink implementation that assumes
+/// "every audited write reaches `record`" is assuming something the
+/// framework does not guarantee** for any write composed through
+/// `run_in_tx`/`db.transaction(...)`: skipping (or forgetting) the
+/// dispatch call leaves the `cratestack_audit` row committed and
+/// `record` never invoked, silently.
+///
 /// **`record` must not panic.** `cratestack_sqlx`'s dispatch call site
 /// (`dispatch_audit_sink`) awaits `record` after the mutation's
 /// transaction has already committed, with no `catch_unwind` around
 /// it: a panicking implementation unwinds into the caller of `run()`/
-/// `run_in_tx()`. Under an async runtime like Tokio this is typically
+/// `dispatch_audit_sink()`. Under an async runtime like Tokio this is typically
 /// caught at the task boundary rather than crashing the process, but
 /// the in-flight HTTP response for that already-successful, possibly
 /// non-idempotent mutation is lost — a client retrying on a dropped

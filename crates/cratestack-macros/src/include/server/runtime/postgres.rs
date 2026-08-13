@@ -70,6 +70,17 @@ pub(super) fn build_runtime_block(
             /// on `Ok`, rolls back on `Err`. See
             /// `::cratestack::__private::SqlxRuntime::transaction`'s doc
             /// comment for the full rollback-timing and no-retry rationale.
+            ///
+            /// **Composing `run_in_tx` calls through here does not, by
+            /// itself, fan out to an installed `AuditSink` or deliver
+            /// `@@emit` events (cratestack#534)** — that stays exactly as
+            /// caller-driven as it is when you open the transaction
+            /// yourself via `self.pool().begin()`. Collect each
+            /// `RunInTxOutcome::audit_events` and call
+            /// [`Cratestack::dispatch_audit_sink`] once this returns `Ok`,
+            /// and call `self.events().drain()` for the outbox half. See
+            /// `::cratestack::__private::SqlxRuntime::transaction`'s doc
+            /// comment for why this can't be made automatic here.
             pub async fn transaction<F, T>(
                 &self,
                 body: F,

@@ -316,3 +316,105 @@ async fn chained_run_in_tx_outbox_events_are_delivered_only_after_explicit_drain
          the caller drains the outbox after their own commit",
     );
 }
+
+/// **The decisive test for the (c) half of cratestack#534's follow-up.**
+/// `db.transaction(...)` (cratestack#513) is the newer, "sanctioned" way
+/// to compose several write-builder calls — landed after the fix above,
+/// so nothing exercised this combination before. It would be easy for a
+/// caller (or a future maintainer) to assume the sanctioned composition
+/// API also gets automatic `AuditSink` fan-out. It does not, and this
+/// pins that down: chaining the exact same two `run_in_tx` writes through
+/// `cool.transaction(...)` instead of a raw `pool.begin()` transaction
+/// still leaves the installed sink observing ZERO events once the
+/// combinator's own commit has already happened — dispatch is still
+/// entirely the caller's job. See `cratestack_sqlx::transaction`'s module
+/// doc comment ("Composing through here does not close the
+/// `AuditSink`/outbox gap") for the documented claim this test locks in
+/// place; if this assertion ever starts failing because `transaction()`
+/// began auto-dispatching, that doc comment must be corrected in the same
+/// change, not left to silently go stale the way the pre-#534 docs did.
+#[tokio::test]
+async fn chained_db_transaction_writes_do_not_auto_dispatch_to_sink() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    query("INSERT INTO audit_rotation_keys (id, label, revoked) VALUES (20, 'old-key', false)")
+        .execute(pool)
+        .await
+        .expect("seed");
+
+    let sink = RecordingAuditSink::default();
+    let cool = cratestack_schema::Cratestack::builder(pool.clone())
+        .with_audit_sink(Arc::new(sink.clone()))
+        .build();
+    let ctx = operator();
+
+    // The closure's own return type is arbitrary caller code, same as any
+    // `db.transaction(...)` body — `Cratestack::transaction` has no way
+    // to see inside it. This body threads the `RunInTxOutcome::audit_events`
+    // out through its own `Ok(..)` precisely because nothing else would
+    // ever hand them back.
+    let audit_events = cool
+        .transaction(async |tx| {
+            let mut audit_events = Vec::new();
+
+            let revoke = cool
+                .audit_rotation_key()
+                .update(20)
+                .set(cratestack_schema::UpdateAuditRotationKeyInput {
+                    label: None,
+                    revoked: Some(true),
+                })
+                .run_in_tx(tx, &ctx)
+                .await?;
+            audit_events.extend(revoke.audit_events);
+
+            let create = cool
+                .audit_rotation_key()
+                .create(cratestack_schema::CreateAuditRotationKeyInput {
+                    id: 21,
+                    label: "new-key".to_owned(),
+                    revoked: false,
+                })
+                .run_in_tx(tx, &ctx)
+                .await?;
+            audit_events.extend(create.audit_events);
+
+            Ok(audit_events)
+        })
+        .await
+        .expect("both writes should commit via the transaction combinator");
+
+    assert_eq!(
+        audit_events.len(),
+        2,
+        "run_in_tx should still hand back one AuditEvent per @@audit write even when composed \
+         through db.transaction(...)",
+    );
+
+    // *** The decisive assertion: `transaction()` has already returned
+    // `Ok`, meaning its own internal `tx.commit()` already succeeded —
+    // and the sink has still observed nothing. ***
+    assert!(
+        sink.events.lock().unwrap().is_empty(),
+        "cratestack#534 (c): db.transaction(...) must NOT auto-dispatch to the installed \
+         AuditSink after its own commit — this is the documented, deliberately caller-driven \
+         contract, and this assertion would catch a silent regression of it becoming true \
+         by accident",
+    );
+
+    // Confirming the assertion above isn't vacuous (e.g. because nothing
+    // ever reaches the sink at all): the caller's own explicit dispatch
+    // still works, the same as it does for a raw `pool.begin()` transaction.
+    cool.dispatch_audit_sink(&audit_events).await;
+    let recorded = sink.events.lock().unwrap().clone();
+    assert_eq!(
+        recorded.len(),
+        2,
+        "explicit dispatch after db.transaction(...) returns Ok must still deliver both events \
+         — proves the zero-events assertion above is discriminating, not just broken plumbing",
+    );
+}
