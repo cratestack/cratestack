@@ -85,7 +85,8 @@ pub use transport::{
     canonical_request_string,
 };
 pub use validators::{
-    validate_email, validate_iso4217, validate_length, validate_range_i64, validate_uri,
+    validate_email, validate_iso4217, validate_length, validate_length_bytes, validate_range_i64,
+    validate_uri,
 };
 // `validate_range_decimal` takes `&Decimal`, so it only exists when
 // `Decimal` does — see `decimal`'s "Selecting NEITHER feature is not an

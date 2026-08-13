@@ -37,6 +37,40 @@ pub fn validate_length(
     Ok(())
 }
 
+/// `@length` on a `Bytes` field (cratestack#572). `Bytes` generates as
+/// `Vec<u8>`, which has no character encoding to count against, so
+/// "length" here is unambiguously the byte count -- unlike
+/// [`validate_length`], which counts `char`s (Unicode scalar values, not
+/// UTF-8 code units) because `String` genuinely has more than one
+/// plausible notion of "length". A `Vec<u8>` doesn't have that ambiguity,
+/// which is why this is a separate function dispatched by scalar type
+/// (`cratestack-macros/src/validators/emit.rs::emit_length`) rather than a
+/// shared generic: fixed-width digest/hash columns are the motivating use
+/// case (`digest Bytes @length(min: 32, max: 32)`).
+pub fn validate_length_bytes(
+    field: &'static str,
+    value: &[u8],
+    min: Option<usize>,
+    max: Option<usize>,
+) -> Result<(), CoolError> {
+    let len = value.len();
+    if let Some(min) = min
+        && len < min
+    {
+        return Err(CoolError::Validation(format!(
+            "field '{field}' length {len} is below minimum {min}",
+        )));
+    }
+    if let Some(max) = max
+        && len > max
+    {
+        return Err(CoolError::Validation(format!(
+            "field '{field}' length {len} exceeds maximum {max}",
+        )));
+    }
+    Ok(())
+}
+
 pub fn validate_range_i64(
     field: &'static str,
     value: i64,

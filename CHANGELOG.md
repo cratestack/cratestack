@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### `@length` on a `Bytes` field now compiles instead of failing `cargo check` with E0308 (#572)
+
+`cratestack check` accepted `@length(min: ..., max: ...)` on a `Bytes` field — the parser's
+`check_length` deliberately permits `String` and `Bytes` alike — but the codegen for `@length`
+called `::cratestack::validate_length` unconditionally, and that helper is hard-typed to `&str`
+while `Bytes` fields generate as `Vec<u8>`; the emitted `validate()` then failed a schema author's
+own `cargo check` with a type error inside macro-expanded code they never wrote. `crates/cratestack-macros/src/validators/emit.rs`
+now dispatches `@length` on the field's scalar the same way `@range` already dispatches `Int`
+versus `Decimal`, and `Bytes` gets a new sibling helper, `validate_length_bytes`, that counts raw
+byte length rather than reusing `validate_length`'s `char`-count semantics — a `Vec<u8>` has no
+character encoding to count against, so byte length is the only sensible reading, unlike `String`
+where "length" is already ambiguous between chars and UTF-8 code units. `@range`, `@regex`,
+`@email`, `@uri`, and `@iso4217` were audited against every scalar the parser permits them on and
+found not to share this bug — `@length`/`Bytes` was the only parser-accepted, codegen-broken pair.
+
 ## 0.7.14 (2026-08-12)
 
 ### The crates.io publish order no longer mistakes a dev-dependency for a cycle (#564)

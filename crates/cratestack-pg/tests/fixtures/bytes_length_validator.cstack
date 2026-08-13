@@ -1,0 +1,26 @@
+// cratestack#572 regression fixture, server-schema counterpart of
+// `cratestack-sqlite/tests/fixtures/bytes_length_validator.cstack`. See
+// that file's comment for the full mechanism; this fixture exists to
+// prove the fix in `cratestack-macros/src/validators/emit.rs` also covers
+// `include_server_schema!` (`model/inputs.rs::generate_create_input_struct`
+// is the exact same function called by both entry macros — see
+// `include/server/collect/models.rs` and `include/embedded.rs`).
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Blob {
+  id Int @id
+  digest Bytes @length(min: 32, max: 32)
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}

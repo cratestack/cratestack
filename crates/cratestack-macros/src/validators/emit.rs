@@ -62,13 +62,7 @@ pub(super) fn emit_field_validators(
 fn emit_one(field: &Field, scalar: &str, idx: usize, v: &FieldValidator) -> TokenStream {
     let field_name = &field.name;
     match v {
-        FieldValidator::Length { min, max } => {
-            let min_tok = optional_usize(min.map(|n| n as usize));
-            let max_tok = optional_usize(max.map(|n| n as usize));
-            quote! {
-                ::cratestack::validate_length(#field_name, value, #min_tok, #max_tok)?;
-            }
-        }
+        FieldValidator::Length { min, max } => emit_length(field_name, scalar, *min, *max),
         FieldValidator::Range { min, max } => emit_range(field_name, scalar, *min, *max),
         FieldValidator::Regex { pattern } => emit_regex(field, idx, pattern),
         FieldValidator::Email => quote! {
@@ -79,6 +73,28 @@ fn emit_one(field: &Field, scalar: &str, idx: usize, v: &FieldValidator) -> Toke
         },
         FieldValidator::Iso4217 => quote! {
             ::cratestack::validate_iso4217(#field_name, value)?;
+        },
+    }
+}
+
+// Dispatches on the field's scalar the same way `emit_range` dispatches
+// `Int`/`Decimal` — see cratestack#572. `String` and `Bytes` are the only
+// scalars the parser accepts `@length` on
+// (`crates/cratestack-parser/src/validate/validators.rs::check_length`);
+// `Bytes` generates as `Vec<u8>` and needs `&[u8]`, not `&str`, so a
+// single `validate_length(field, value, ..)` call can't type-check both.
+fn emit_length(field_name: &str, scalar: &str, min: Option<u32>, max: Option<u32>) -> TokenStream {
+    let min_tok = optional_usize(min.map(|n| n as usize));
+    let max_tok = optional_usize(max.map(|n| n as usize));
+    match scalar {
+        "Bytes" => quote! {
+            ::cratestack::validate_length_bytes(#field_name, value, #min_tok, #max_tok)?;
+        },
+        // "String" and anything else the parser might loosen in the
+        // future: keep the pre-existing `&str` call as the default so an
+        // unrecognized-but-string-shaped scalar doesn't silently no-op.
+        _ => quote! {
+            ::cratestack::validate_length(#field_name, value, #min_tok, #max_tok)?;
         },
     }
 }

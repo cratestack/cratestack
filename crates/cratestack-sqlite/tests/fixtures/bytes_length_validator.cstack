@@ -1,0 +1,16 @@
+// cratestack#572 repro: `@length` on a `Bytes` field parses/`check`s fine
+// (the parser deliberately allows `Bytes` as an `@length` target — see
+// `crates/cratestack-parser/src/validate/validators.rs::check_length`)
+// but the codegen for `@length` was hard-coded to call `validate_length`,
+// which only accepts `&str`. `Bytes` fields generate as `Vec<u8>`, so this
+// used to fail `cargo check` with E0308 inside macro-expanded code.
+
+datasource db {
+  provider = "sqlite"
+  url = env("DATABASE_URL")
+}
+
+model Blob {
+  id Int @id
+  digest Bytes @length(min: 32, max: 32)
+}
