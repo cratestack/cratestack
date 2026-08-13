@@ -111,35 +111,74 @@ by a new package just because a sibling already has one configured:
      `build-cbor-node` matrix + `publish-npm-cbor-node` job need to build and publish the remaining
      platforms.
 
-  The remaining 4 subpackages still each need this same one-time manual-publish bootstrap before
-  Trusted Publishing can cover them — CI can build their binaries (via `workflow_dispatch` against
-  an existing tag, no code changes needed), but **cannot** do their first publish, for the same
-  "name must already exist" reason. Until all 5 have been through this once, `publish-npm-cbor-node`
-  will keep failing on whichever platform subpackages haven't been bootstrapped yet — it's one
+  **All 5 platform subpackages have since been bootstrapped** and publish from CI on every tag —
+  verified against the registry on 2026-08-13, all six `cbor-node*` names at `0.7.15`. The procedure
+  above is kept because it is the recipe for the *next* napi target added to `napi.targets`, which
+  will need exactly this treatment before its first tag: `publish-npm-cbor-node` is one
   `npm publish` step publishing everything `napi.targets` declares, not a per-subpackage loop that
-  tolerates individual failures (unlike `publish-npm-api-family`'s bash loop). Downloading all 5
-  `workflow_dispatch`-built binaries to one machine and repeating steps 2-4 per platform (narrowing
-  `napi.targets` to each one in turn, or to several at once if you have binaries for them) is the
-  fastest way to close this out without needing physical access to each OS.
+  tolerates individual failures (unlike `publish-npm-api-family`'s bash loop), so a single
+  un-bootstrapped platform name fails the whole job. CI can build a new platform's binary (via
+  `workflow_dispatch` against an existing tag, no code changes needed) but **cannot** do its first
+  publish, for the same "name must already exist" reason. Downloading the `workflow_dispatch`-built
+  binaries to one machine and repeating steps 2-4 per platform (narrowing `napi.targets` to each in
+  turn) closes it out without needing physical access to each OS.
 
 ### Bootstrapping a brand-new package name (applies to every package, not just `cbor-node`)
 
 **Trusted Publishing categorically cannot create a package name.** npm requires a name to already
 exist before you can attach a Trusted Publisher to it, so the *first* publish of any new package is
 unavoidably a manual `npm publish` from a maintainer's machine. The napi-specific dance above is
-only extra work `cbor-node` needs on top of this; a plain-TS package (`@cratestack/refine` being the
-worked example) is just:
+only extra work `cbor-node` needs on top of this; a plain-TS package is otherwise four steps — and
+step 3 is not optional, see below.
 
 ```bash
+# 1. install
 pnpm install --frozen-lockfile
+
+# 2. BUILD. `npm publish` will not do this for you.
 pnpm turbo run build --filter='./packages/cratestack-<name>'
+
+# 3. VERIFY THE TARBALL before publishing anything.
 cd packages/cratestack-<name>
-npm publish --access public   # add --otp=<code> if 2FA prompts, or complete the browser flow
+npm pack --dry-run
+
+# 4. publish (add --otp=<code> if 2FA prompts, or complete the browser flow)
+npm publish --access public
 ```
+
+#### Step 3 is the one that bites: `npm publish` ships an empty package in silence
+
+Every package here declares `"files": ["dist", …]` and has **no `prepublishOnly` build hook**. npm
+packs whatever `dist/` happens to be on disk. If you skipped step 2 — fresh clone, cleaned tree,
+different worktree — there is no `dist/`, and `npm publish` does not warn, error, or exit non-zero.
+It uploads `package.json`, `README.md`, `LICENSE` and calls it a success. The result is a published
+version whose own `main`/`types` point at files that aren't in the tarball, so
+`import … from "@cratestack/<name>"` fails to resolve for every consumer.
+
+This is not hypothetical: `@cratestack/refine@0.7.14` was bootstrapped this way on 2026-08-13 and
+shipped exactly three files.
+
+`npm pack --dry-run` prints the file list and a `total files:` count. **Read it.** The signature of
+the failure is a count of 3:
+
+```text
+npm notice total files: 3      # BROKEN — dist/ is missing, go back to step 2
+npm notice total files: 23     # what a real plain-TS package looks like
+```
+
+A published version cannot be replaced. `npm unpublish` on a package's *only* version deletes the
+name outright, blocks recreating it for 24 hours, and takes the Trusted Publisher configuration with
+it — so the recovery for a bad bootstrap is usually not recovery at all: leave the broken version in
+place and let the next tag publish a correct one over it. Thirty seconds reading `npm pack
+--dry-run` avoids the whole question.
+
+#### Which version to publish
 
 Publish the version **already committed in `package.json`** — do not hand-bump it to the next
 release. Publishing `0.7.15` by hand and then tagging `v0.7.15` makes the CI job hit
 `EPUBLISHCONFLICT` on an already-live version, and the npm jobs are a hard failure, not a skip.
+
+#### No provenance, and the 2FA step can't be automated
 
 No `--provenance` and no `npm config set provenance true` on this manual bootstrap: provenance needs
 npm to detect a supported CI OIDC provider and aborts the whole publish with `EUSAGE: Automatic
@@ -148,8 +187,8 @@ jobs only.
 
 If the publishing account has 2FA set to "required for write actions" — this org's does — `npm
 publish` exits `EOTP` and prints a browser URL to authenticate. **That step can't be delegated or
-scripted**: it needs the maintainer's own terminal and second factor. Everything before it (install,
-build, `npm pack --dry-run` to inspect the tarball) can be prepared by anyone.
+scripted**: it needs the maintainer's own terminal and second factor. Steps 1-3 can be prepared by
+anyone; only step 4 needs the maintainer.
 
 Then, the per-package Trusted Publisher setup:
 
