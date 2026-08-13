@@ -45,6 +45,22 @@ RUN ./gradlew --no-daemon shadowJar
 
 FROM wiremock/wiremock:3.13.2
 COPY --from=extension-build /build/build/libs/wiremock-state-extension-standalone-*.jar /var/wiremock/extensions/
+
+# Run as non-root. `wiremock/wiremock:3.13.2` runs as root out of the box,
+# which trips this repo's own Dockerfile scan (Trivy DS-0002, HIGH) in the
+# `quality` CI job — and is worth fixing on its merits, not just to get a
+# green check: this image exists to be run by consumers and in examples,
+# and nothing it does needs root.
+#
+# `ubuntu` (uid 1000) already exists in the base image, so no `useradd`
+# layer is needed. WireMock listens on 8080, above the privileged-port
+# threshold, and the directories it reads (`/var/wiremock/extensions`,
+# `/home/wiremock/*` mappings mounted by the caller) are world-readable —
+# but its default `--root-dir` is `/home/wiremock`, which it writes to for
+# request journalling and recorded mappings, so that has to be owned by
+# the runtime user or startup fails on a read-only path.
+RUN chown -R 1000:1000 /home/wiremock /var/wiremock
+USER 1000:1000
 # `--global-response-templating` is the default here so the image works
 # with no extra flags — every generated stub also declares
 # `"transformers": ["response-template"]` itself, so this is redundant
