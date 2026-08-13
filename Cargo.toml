@@ -53,6 +53,7 @@ members = [
     "examples/embedded-browser-webpack",
     "examples/react-vite-daisyui",
     "examples/react-vite-swr",
+    "examples/react-vite-refine",
     "examples/react-nextjs-daisyui/wasm",
     "examples/react-nextjs-daisyui/napi",
     "examples/tauri-web",

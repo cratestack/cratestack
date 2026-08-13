@@ -691,6 +691,38 @@ refine-rpc-fixture:
 	  --refine \
 	  --package-name refine-fixture-rpc-client
 
+# Generates BOTH build-output artifacts `examples/react-vite-refine/web`
+# needs: the `--refine` TypeScript client (into `web/generated/`) and the
+# WireMock stub mappings (into `wiremock/`). Neither is committed
+# (cratestack#577's "don't commit generated build output" instruction,
+# same discipline as `refine-fixture`/`refine-rpc-fixture` above) — both
+# directories are gitignored, and `web/`'s `predev`/`prebuild`/
+# `pretypecheck` npm scripts fail loudly (not silently) if this recipe
+# hasn't been run yet, via `web/scripts/assert-fixture-present.mjs`.
+#
+# `transport rest` (the schema's default — no `transport rpc` line) is
+# load-bearing here, not incidental: `cratestack-mock-wiremock`'s
+# stateful model-CRUD stubs only exist for REST (its own README's
+# "Scope" section) — a `transport rpc` schema's model stubs stay static,
+# which would make every create/update/delete in the app silently no-op.
+# See `examples/react-vite-refine/README.md` for the full explanation,
+# including the confirmed gap this fixture's WireMock half has no
+# workaround for: the generated stubs don't validate `If-Match`, so the
+# `Post` model's `@version` optimistic-locking demo can show the client
+# SENDING it but not the mock REJECTING a stale one — see that README's
+# "What this demo can't prove" section.
+react-vite-refine-fixture:
+	rm -rf examples/react-vite-refine/web/generated
+	cargo run -p cratestack-cli -- generate-typescript \
+	  --schema examples/react-vite-refine/schema.cstack \
+	  --out examples/react-vite-refine/web/generated \
+	  --refine \
+	  --package-name react-vite-refine-client
+	rm -rf examples/react-vite-refine/wiremock
+	cargo run -p cratestack-cli -- generate-wiremock \
+	  --schema examples/react-vite-refine/schema.cstack \
+	  --out examples/react-vite-refine/wiremock
+
 # Layer-direction check (ADR 0014, docs/adr/0014-layer-direction-enforcement.md)
 # — blocking CI gate. Asserts every NORMAL cratestack-* -> cratestack-* edge
 # among the crates under `crates/` satisfies `dep.layer <= self.layer`

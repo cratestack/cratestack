@@ -1,0 +1,21 @@
+[package]
+name = "react-vite-refine-example"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+publish = false
+description = "Schema-only example (no server, no database): a refine.dev admin app driven by CrateStack's --refine TypeScript codegen against a generated, stateful WireMock backend. This crate's own tests only prove the schema and its generated WireMock/TypeScript output offline; see web/ for the app and README.md for the full run path."
+
+[lints]
+workspace = true
+
+[lib]
+name = "react_vite_refine_example"
+path = "src/lib.rs"
+
+[dev-dependencies]
+cratestack-core = { path = "../../crates/cratestack-core" }
+cratestack-parser = { path = "../../crates/cratestack-parser" }
+cratestack-client-typescript = { path = "../../crates/cratestack-client-typescript" }
+cratestack-mock-wiremock = { path = "../../crates/cratestack-mock-wiremock" }
+serde_json = { workspace = true }

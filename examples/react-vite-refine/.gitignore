@@ -1,0 +1,8 @@
+# Generated build output — never committed (maintainer instruction,
+# cratestack#577's precedent). Both are produced by `just
+# react-vite-refine-fixture` from the repo root; see README.md.
+web/generated/
+wiremock/
+
+web/dist/
+web/node_modules/

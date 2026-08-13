@@ -5448,6 +5448,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "react-vite-refine-example"
+version = "0.1.0"
+dependencies = [
+ "cratestack-client-typescript",
+ "cratestack-core",
+ "cratestack-mock-wiremock",
+ "cratestack-parser",
+ "serde_json",
+]
+
+[[package]]
 name = "react-vite-swr-example"
 version = "0.1.0"
 dependencies = [

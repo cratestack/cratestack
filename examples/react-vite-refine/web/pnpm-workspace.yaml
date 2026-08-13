@@ -1,0 +1,20 @@
+# `web/` is its OWN pnpm workspace root (`packages: - "."`), not folded
+# into the repo root's `packages/*` workspace or a two-package
+# `client/`+`web/` split like `examples/react-vite-swr`. Two reasons,
+# both load-bearing:
+#
+# 1. Without a pnpm-workspace.yaml here, `pnpm install` run inside `web/`
+#    walks up to the repo root's, reports "Scope: all N workspace
+#    projects", exits 0, and installs nothing into `web/` — the exact
+#    silent no-op cratestack#595 fixed for embedded-browser-vite/
+#    -webpack/-vite-pwa and react-vite-daisyui's `web/`. This file is
+#    the same fix, `packages: - "."`.
+# 2. Unlike react-vite-swr, this example's generated TypeScript client is
+#    NOT committed (issue #571's own example, per the maintainer's
+#    "don't commit generated output" instruction) — it's generated
+#    straight into `generated/` by `just react-vite-refine-fixture`
+#    (gitignored) and imported by relative path (`../generated/src/
+#    client.js`), not linked as a `workspace:*` sibling package. There is
+#    no second package to list here.
+packages:
+  - "."

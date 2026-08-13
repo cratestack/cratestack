@@ -1,0 +1,182 @@
+:root {
+  color-scheme: light dark;
+  --fg: #1c1c1f;
+  --bg: #ffffff;
+  --muted: #6b6b70;
+  --border: #e2e2e6;
+  --accent: #3b5bfd;
+  --danger: #c02b3a;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: #ececef;
+    --bg: #17171a;
+    --muted: #9a9aa1;
+    --border: #2c2c31;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.shell {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 4rem;
+}
+
+.shell-header {
+  padding-bottom: 1.25rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+h1 {
+  font-size: 1.35rem;
+  margin: 0 0 0.4rem;
+}
+
+h2 {
+  font-size: 1.05rem;
+  margin: 0 0 0.75rem;
+}
+
+.hint {
+  font-weight: 400;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.tabs {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 1rem;
+}
+
+.tab {
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.tab.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1rem;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+th {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+
+input[type="text"],
+input:not([type]) {
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 0.35rem;
+  background: transparent;
+  color: var(--fg);
+  font-size: 0.9rem;
+  width: 100%;
+}
+
+.create-form {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.create-form input {
+  flex: 1;
+  min-width: 8rem;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+button {
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--accent);
+  border-radius: 0.35rem;
+  background: var(--accent);
+  color: white;
+  font-size: 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+button + button {
+  margin-left: 0.35rem;
+}
+
+button.danger {
+  border-color: var(--danger);
+  background: transparent;
+  color: var(--danger);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.error {
+  color: var(--danger);
+  font-size: 0.9rem;
+}
+
+.callout {
+  font-size: 0.85rem;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 1rem;
+}
+
+code {
+  font-size: 0.85em;
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  padding: 0.1em 0.35em;
+  border-radius: 0.25em;
+}

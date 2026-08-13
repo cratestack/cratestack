@@ -961,6 +961,102 @@ jobs:
           pnpm --filter react-vite-swr-web run typecheck
           pnpm --filter react-vite-swr-web run lint
 
+  # ---- react-vite-refine example (generated client + WireMock backend) --
+  # Blocking. Docs: examples/react-vite-refine/README.md. Unlike
+  # react-vite-swr-example above, NOTHING generated is committed here —
+  # neither the `--refine` TypeScript client nor the WireMock stub
+  # mappings (maintainer instruction: don't commit generated build
+  # output) — and there is no Postgres server at all: `just
+  # react-vite-refine-fixture` produces both artifacts fresh every run,
+  # and the "backend" this app talks to is a real container built from
+  # `crates/cratestack-mock-wiremock/docker/Dockerfile` — the only
+  # WireMock image that actually works for the stateful model-CRUD
+  # stubs (a plain `wiremock/wiremock` + the extension's published jar
+  # throws `AbstractMethodError`; see that crate's README before
+  # changing anything here). GitHub-hosted `ubuntu-latest` runners ship
+  # Docker already (same assumption the testcontainers-based `tests-db`/
+  # `tests-redis` jobs make), so this job builds the image with a plain
+  # `docker build`/`docker run` — one fixed, long-lived container for the
+  # whole job — rather than testcontainers, which up to now this repo has
+  # only ever used to pull a prebuilt image (Postgres/Redis), never to
+  # build one from source. This is also the FIRST CI job anywhere in this
+  # repo that actually builds and runs `cratestack-mock-wiremock`'s
+  # Docker image (its own `tests/models.rs`/`tests/procedures.rs` assert
+  # on generated Handlebars template *text* only, offline — see that
+  # file's doc comment) — a real, if bounded, new cost: the image's build
+  # clones and Gradle-builds `wiremock-state-extension` from source, and
+  # there is no Docker layer caching wired here yet (nothing in this repo
+  # does that today), so a cold cache pays that cost on every run.
+  #
+  # Covered here: `cargo test` (offline, no Docker — the schema/generator
+  # coverage in tests/smoke.rs), the real docker build + run, the
+  # generated client + web app build/typecheck/lint, and `pnpm run
+  # verify` — a real create/list/update/delete/404 round trip against the
+  # LIVE container (web/scripts/verify.ts), including the confirmed,
+  # asserted gap that a stale `If-Match` is NOT rejected by this mock
+  # (see the example's README "What this demo can't prove" section — that
+  # gap is asserted, not just documented, so a future
+  # `cratestack-mock-wiremock` change that fixes it fails this job loudly
+  # instead of leaving the README quietly wrong).
+  react-vite-refine-example:
+    name: js (react-vite-refine example)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: cargo test (offline schema + generator coverage)
+        run: cargo test -p react-vite-refine-example
+      - name: Generate the TypeScript client + WireMock stubs
+        run: just react-vite-refine-fixture
+      - name: Build the stateful WireMock image
+        run: |
+          docker build -t cratestack-wiremock-stateful \
+            -f crates/cratestack-mock-wiremock/docker/Dockerfile \
+            crates/cratestack-mock-wiremock/docker
+      - name: Run the WireMock container and wait for it to be healthy
+        run: |
+          set -euo pipefail
+          docker run -d --name cratestack-refine-mock -p 8080:8080 \
+            -v "$PWD/examples/react-vite-refine/wiremock/mappings:/home/wiremock/mappings:ro" \
+            cratestack-wiremock-stateful
+          for _ in $(seq 1 30); do
+            if curl -sf -o /dev/null http://localhost:8080/api/categories; then
+              echo "WireMock is up"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "WireMock never became healthy" >&2
+          docker logs cratestack-refine-mock
+          exit 1
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: examples/react-vite-refine/web/pnpm-lock.yaml
+      - name: pnpm install
+        working-directory: examples/react-vite-refine/web
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck + lint the web app (also typechecks the generated client)
+        working-directory: examples/react-vite-refine/web
+        run: |
+          pnpm run typecheck
+          pnpm run lint
+      - name: Build
+        working-directory: examples/react-vite-refine/web
+        run: pnpm run build
+      - name: Live CRUD verification against the WireMock container
+        working-directory: examples/react-vite-refine/web
+        run: pnpm run verify
+      - name: Stop the WireMock container
+        if: always()
+        run: docker rm -f cratestack-refine-mock || true
+
   # ---- install-cratestack-cli action smoke test --------------------------
   # Blocking. Proves the composite action in
   # .github/actions/install-cratestack-cli actually works, not just that its

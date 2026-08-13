@@ -124,6 +124,7 @@ See [`grpc-widgets/README.md`](grpc-widgets/README.md) for the client-side run s
 | Example | Macro(s) | Shape |
 |---|---|---|
 | [`react-vite-swr/`](react-vite-swr) | `include_server_schema!` (`transport rest`) | Postgres + axum REST server, plus a `cratestack generate-typescript --swr` client (checked in under `client/`) consumed by a real React + Vite app with **zero hand-written data-fetching code** — every `useSWR`/`useSWRMutation` call, cache key, and fetcher is generated. Also calls a plain generated function from a Node script, outside React, proving the swr layout's two-layer (plain functions + hooks) design is real. |
+| [`react-vite-refine/`](react-vite-refine) | No server macro — schema only (`transport rest`) | No database, no hand-written server: a `cratestack generate-typescript --refine` client + `cratestack generate-wiremock` stubs drive a real [refine.dev](https://refine.dev) admin app (`@cratestack/refine`'s `createCratestackDataProvider`) against a live, stateful WireMock container built from `crates/cratestack-mock-wiremock`. Three models exercise plain CRUD, `@@paged` + `@version` optimistic locking, and a non-`id` primary key. |
 
 ```bash
 docker compose up -d postgres
@@ -132,6 +133,18 @@ cd examples/react-vite-swr && pnpm install && pnpm --filter react-vite-swr-web r
 ```
 
 See [`react-vite-swr/README.md`](react-vite-swr/README.md) for the full schema → generate → run path.
+
+```bash
+just react-vite-refine-fixture
+docker build -t cratestack-wiremock-stateful -f crates/cratestack-mock-wiremock/docker/Dockerfile crates/cratestack-mock-wiremock/docker
+docker run -d --name cratestack-refine-mock -p 8080:8080 -v "$(pwd)/examples/react-vite-refine/wiremock/mappings:/home/wiremock/mappings:ro" cratestack-wiremock-stateful
+cd examples/react-vite-refine/web && pnpm install && pnpm run dev
+```
+
+See [`react-vite-refine/README.md`](react-vite-refine/README.md) for the full run path, the
+deliberate "no sort/filter/pagination controls" decision, and the confirmed gaps in what this mock
+backend can prove (`If-Match` is sent but not enforced; `create` never honors a client-submitted
+primary key).
 
 ## Phase F — Generated Dart/Flutter client presets
 
@@ -214,6 +227,7 @@ Snapshot of what's been actually exercised end-to-end against a real runtime, vs
 | `grpc-widgets` | ✅ | ✅ | Real server booted against Postgres; both `ts-client-e2e.mjs` (Node/`tsx`, gRPC-Web over `fetch`) and `dart-client/tool/e2e.dart` (`dart run`, native HTTP/2 via `package:grpc`) ran create/get/list/update/delete/get-after-delete against it live, including the typed error path (`not_found`) on both clients |
 | `react-vite-swr` | ✅ | ✅ | Real server booted against Postgres; `pnpm --filter react-vite-swr-web run dev` in a real browser (Claude Preview) — created a board via `useCreateBoard` and watched the list refresh with no manual refetch, opened its detail screen, toggled/deleted tasks via `useUpdateTask`/`useDeleteTask` (both invalidated the list live), watched the `estimateFocusMinutes` procedure hook's estimate recompute automatically each time. `pnpm run seed` (`tsx`, plain generated functions, no React) separately created data and called the procedure outside any component. |
 | `flutter-riverpod` | n/a (no Rust crate — reuses `react-vite-swr`'s server; `client/`'s own `flutter test` is the analog) | ✅ macOS desktop | Real `react-vite-swr` server booted against Postgres; `flutter run -d macos` — created a board via the generated `BoardCreateController` and watched the list refresh (`ref.invalidate(boardListProvider)`, no manual refetch), opened its detail screen, toggled/deleted tasks via the generated `TaskUpdateController`/`TaskDeleteController` (both invalidated the list live), watched the `estimateFocusMinutes` procedure provider's estimate recompute automatically each time. Two real bugs found and fixed live during this run (a missing `Accept` header in `CratestackDioAdapter`, and a controller auto-dispose race) — see `flutter-riverpod/README.md`. |
+| `react-vite-refine` | ✅ (5 offline tests, no Docker) | ✅ | Real stateful WireMock container (built from `crates/cratestack-mock-wiremock/docker/Dockerfile`) — `pnpm run verify` (`web/scripts/verify.ts`, outside React) drove create → list → update → delete → 404 live for all three models, confirmed the falsy `published: false` round trip, and confirmed (asserted, not assumed) that a stale `If-Match` gets `200` not `412` against this mock. Also driven by hand in a real browser (Claude Preview): added/edited/deleted rows on all three tabs, confirmed against the container's own state via `fetch`. See `react-vite-refine/README.md`'s "What this demo can't prove" for the two confirmed gaps this surfaced in `cratestack-mock-wiremock`. |
 
 What "end-to-end" means here:
 

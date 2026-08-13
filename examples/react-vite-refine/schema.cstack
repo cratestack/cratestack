@@ -1,0 +1,76 @@
+// End-to-end example schema for `examples/react-vite-refine` (a
+// refine.dev admin app driven entirely by CrateStack codegen against a
+// GENERATED WIREMOCK BACKEND — no database, no hand-written server; see
+// docs/design/wiremock-stubs.md §"planned no-database example"). Three
+// models chosen to exercise the cases that actually differ in the
+// generated client + `@cratestack/refine` provider:
+//
+//   - Category: plain CRUD, `@id` named `id`, no `@@paged`, no
+//     `@version` — the common case, and the baseline every other model
+//     is contrasted against below.
+//   - Post: `@@paged` + `@version` — real `limit`/`offset` pagination
+//     shape (`Page<Post>` with `totalCount`) and `If-Match` optimistic
+//     locking wiring. `published Boolean` also exercises the
+//     create/update falsy-value round trip through the stateful WireMock
+//     stubs (cratestack#588 — `false` must persist as `false`, not be
+//     treated as "field omitted").
+//   - Tag: `@id` named `slug`, not `id` — the primary-key-mapping case
+//     (`@cratestack/refine` synthesizes a client-side `id` field from
+//     whatever the real `@id` is).
+//
+// `transport rest` (the default — no `transport rpc` line): WireMock's
+// STATEFUL model-CRUD stubs only exist for `transport rest`
+// (`crates/cratestack-mock-wiremock/README.md`'s "Scope" section) —
+// `transport rpc` model CRUD stays static/deterministic (one fixed
+// example replayed on every request), which would make every
+// create/update/delete in this app silently no-op against the UI. REST
+// is the only transport this demo could be honest with.
+//
+// IMPORTANT, read before wiring `web/`'s Post edit form: the generated
+// WireMock stubs do NOT validate `If-Match` (no request-header matching
+// anywhere in `cratestack-mock-wiremock`'s generator — see the example
+// README's "What this demo can't prove" section). A stale update against
+// this mock returns 200 and silently overwrites, unlike a real
+// `cratestack-pg` server. Don't build a UI flow that implies otherwise.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Category {
+  id Int @id
+  name String
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
+
+model Post {
+  id Int @id
+  title String
+  published Boolean
+  version Int @version
+
+  @@paged
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
+
+model Tag {
+  slug String @id
+  label String
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
