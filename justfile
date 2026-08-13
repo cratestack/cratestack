@@ -1191,14 +1191,23 @@ release VERSION mode='real':
 	just bump {{VERSION}}
 	just release-check
 	# Commit the bump (unless already committed). Studio tarballs are
-	# gitignored by design and don't get staged. `bump` also rewrites the
-	# two npm package.json files (cli-npm, api) in lockstep — stage those
-	# explicitly too, not just Cargo.toml/Cargo.lock, or their version
-	# bumps are silently left uncommitted.
-	if ! git diff --quiet -- '**/Cargo.toml' Cargo.lock packages/cratestack-cli-npm/package.json packages/cratestack-api/package.json; then
-	  git add ':(glob)**/Cargo.toml' Cargo.lock \
-	    packages/cratestack-cli-npm/package.json \
-	    packages/cratestack-api/package.json
+	# gitignored by design and don't get staged.
+	#
+	# `':(glob)packages/*/package.json'`, NOT a hand-listed pair. `bump`
+	# rewrites EVERY `packages/*/package.json` (see its own comment on why
+	# the hardcoded list there was replaced), so naming only cli-npm and
+	# api left the other 14 packages' version bumps uncommitted — silently,
+	# since `bump` really did rewrite them in the working tree. A release
+	# cut through this path then tags a tree where most packages still
+	# carry the previous version, and the next CI publish hits
+	# EPUBLISHCONFLICT on whichever ones did move.
+	#
+	# prepare-release.yml already carries the identical glob fix (#581) with
+	# the same reasoning; it was never backported here, so the documented
+	# local fallback in RELEASE.md kept the bug the CI path had shed.
+	if ! git diff --quiet -- '**/Cargo.toml' Cargo.lock ':(glob)packages/*/package.json'; then
+	  git add ':(glob)**/Cargo.toml' Cargo.lock pnpm-lock.yaml \
+	    ':(glob)packages/*/package.json'
 	  git commit -m "chore: bump workspace to v{{VERSION}}"
 	fi
 	just release-publish {{mode}}
