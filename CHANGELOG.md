@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.15 (2026-08-13)
 
 ### `@length` on a `Bytes` field now compiles instead of failing `cargo check` with E0308 (#572)
 
