@@ -37,20 +37,25 @@ configured connections, and serves the API and UI at the bind address
   truncation) are mapped back to the same `422 VALIDATION_ERROR`
   envelope. `ro`-mode targets reject writes with `403 FORBIDDEN`.
 
-  **`[target.db]` is a direct SQL connection, not the generated API.**
-  It bypasses `@version` bumping, `@@emit(...)` event outbox rows, and
-  `@@allow` policy checks entirely — see the crate's rustdoc for the
-  full rationale (cratestack#507). For any model that declares
-  `@version` or `@@emit(...)`, Studio refuses to write it through a
-  `[target.db]` target unless that target sets
-  `allow_unsafe_writes = true`, and names the specific attribute in a
-  `403 UNSAFE_DB_WRITE` when it does refuse. `[target.api]` targets are
-  unaffected — those writes go through the deployed service's own
-  generated routes, which already apply `@version`/`@@emit`/`@@allow`.
-  `@@allow` enforcement on `[target.db]` itself is unchanged by this —
-  it remains unenforced on both reads and writes there, which is worth
-  weighing before pointing Studio at a schema with policy-gated or
-  `@sensitive` fields.
+  **`[target.db]` is a direct SQL connection, not the generated API** —
+  see the crate's rustdoc for the full rationale (cratestack#507, #553).
+  `@version` bumping is routed for real on every `[target.db]` backend
+  (Postgres and SQLite alike), so a `@version`-only model is never
+  refused. `@@emit(...)` is routed for real — a `cratestack_event_outbox`
+  row lands in the same transaction — **only on Postgres**; SQLite has
+  no event-outbox equivalent, and `include_embedded_schema!` treats
+  `@@emit(...)` as a no-op on the framework's own embedded backend, so
+  this is a permanent backend capability difference, not an unfinished
+  feature. Studio refuses `POST`/`PATCH`/`DELETE` against an
+  `@@emit(...)` model on a non-Postgres `[target.db]` target with a
+  `403 UNSAFE_DB_WRITE` naming the attribute, unless that target sets
+  `allow_unsafe_writes = true`. `[target.api]` targets are unaffected —
+  those writes go through the deployed service's own generated routes,
+  which already apply `@version`/`@@emit`/`@@allow`. `@@allow`
+  enforcement on `[target.db]` itself is unchanged by this — it remains
+  unenforced on both reads and writes there, which is worth weighing
+  before pointing Studio at a schema with policy-gated or `@sensitive`
+  fields.
 - **SQL preview + query plans** — render the SQL an operation would run
   without touching the database, optionally asking the driver to
   `EXPLAIN` it. Studio never issues `EXPLAIN ANALYZE`.

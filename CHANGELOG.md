@@ -17,6 +17,29 @@ where "length" is already ambiguous between chars and UTF-8 code units. `@range`
 `@email`, `@uri`, and `@iso4217` were audited against every scalar the parser permits them on and
 found not to share this bug — `@length`/`Bytes` was the only parser-accepted, codegen-broken pair.
 
+### `cratestack-studio`'s crate rustdoc, README, and starter `studio.toml` comments no longer contradict #553's shipped behavior (#507)
+
+#553 routed `[target.db]` `@version` bumping onto every backend and `@@emit(...)` outbox writes onto
+Postgres, but left the crate-level rustdoc, `README.md`, both starter `studio.toml` templates, and
+`TargetDb::allow_unsafe_writes`'s own doc comment saying the pre-#553 thing: that `@version` is
+"never bumped" and `@@emit(...)` "never writes" an outbox row, unconditionally, with routing
+"remain[ing] an open, unimplemented option". All five now state the real, per-backend picture and
+why it's permanent rather than a to-do: `include_embedded_schema!` treats `@@emit(...)` as a no-op
+on the framework's own generated embedded backend (no design exists for a SQLite outbox anywhere in
+the framework, embedded or Studio), so Studio refusing an `@@emit(...)` write on a non-Postgres
+`[target.db]` target without `allow_unsafe_writes` mirrors a real framework capability boundary, not
+an invented Studio-only guarantee — closing cratestack#507's SQLite half by leaving the refusal in
+place and documenting it prominently (option "b"), not by giving SQLite an outbox nothing else in
+the framework has. No code path changed; `crates/cratestack-studio/src/api/records/guards/tests.rs`
+and `crates/cratestack-studio/tests/unsafe_db_writes.rs` already pinned the exact refusal shape
+(refused for `@@emit(...)` alone or combined with `@version`, never for `@version` alone, never for
+an unrelated model) and both still pass unchanged, alongside `tests/postgres_routed_writes.rs` and
+`tests/postgres_unsafe_writes.rs` confirming #553's Postgres behavior is unaffected. Separately, a
+post-merge review of #553 raised a P2 — Studio's own `build_update_sql` bumps `version` off only a PK
+predicate, with no expected-version check, so two concurrent Studio writes can lose an update, distinct
+from #553's proof that a *third party's* later CAS sees the bump — left open as a maintainer decision
+(Studio is an admin surface; a raw overwrite there may be intended) rather than changed here.
+
 ## 0.7.14 (2026-08-12)
 
 ### The crates.io publish order no longer mistakes a dev-dependency for a cycle (#564)

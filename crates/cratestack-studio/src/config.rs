@@ -105,23 +105,28 @@ pub struct TargetDb {
     pub driver: DbDriver,
     #[serde(default)]
     pub max_connections: Option<u32>,
-    /// Opt-in escape hatch for writing `@version`/`@@emit` models
-    /// straight through this `[target.db]` connection.
+    /// Opt-in escape hatch for writing an `@@emit(...)` model straight
+    /// through this `[target.db]` connection on a backend that has no
+    /// event-outbox equivalent to route it through.
     ///
-    /// A `[target.db]` target talks raw SQL, not the descriptor path the
-    /// generated server runs — it does not bump `@version` columns, does
-    /// not write `cratestack_event_outbox` rows for `@@emit`-annotated
-    /// models, and does not evaluate `@@allow` policies (see the crate's
-    /// top-level rustdoc for the full list of what a `[target.db]` target
-    /// does *not* do). Left `false` (the default), Studio refuses `POST`
-    /// / `PATCH` / `DELETE` against any model carrying `@version` or
-    /// `@@emit(...)` on a `rw` `[target.db]` target with a
-    /// `403 UNSAFE_DB_WRITE` naming the attribute, so the bypass has to
-    /// be chosen per target rather than discovered after the fact
-    /// (cratestack#507). Models with neither annotation are unaffected
-    /// either way. Setting this to `true` is what chooses the bypass —
-    /// it does not change what actually happens on the wire, only
-    /// whether Studio will let you do it silently.
+    /// `@version` bumping is routed for real on every `[target.db]`
+    /// backend (Postgres and SQLite alike), so it's never what this flag
+    /// gates — see the crate's top-level rustdoc ("`[target.db]` is not
+    /// the generated API") for the full per-attribute breakdown. Only
+    /// `@@emit(...)` can still be unroutable: `cratestack-rusqlite` has
+    /// no `cratestack_event_outbox` table, and `include_embedded_schema!`
+    /// itself treats `@@emit(...)` as a no-op on the framework's own
+    /// embedded backend, so this is a permanent backend capability
+    /// difference, not a gap Studio is expected to close. Left `false`
+    /// (the default), Studio refuses `POST` / `PATCH` / `DELETE` against
+    /// any `@@emit(...)` model on a non-Postgres `rw` `[target.db]`
+    /// target with a `403 UNSAFE_DB_WRITE` naming the attribute, so the
+    /// bypass has to be chosen per target rather than discovered after
+    /// the fact (cratestack#507, #553). Models with no `@@emit(...)`, and
+    /// any model at all on a Postgres target, are unaffected either way.
+    /// Setting this to `true` is what chooses the bypass — it does not
+    /// change what actually happens on the wire, only whether Studio
+    /// will let you do it silently.
     #[serde(default)]
     pub allow_unsafe_writes: bool,
 }
