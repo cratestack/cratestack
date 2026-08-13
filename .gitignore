@@ -21,6 +21,16 @@ packages/cratestack-cbor-node/native.d.mts
 packages/cratestack-cbor-node/*.node
 packages/cratestack-cbor-node/npm/
 
+# @cratestack/refine's test fixture — a real generated TypeScript client,
+# produced by `just refine-fixture` (cargo run -p cratestack-cli --
+# generate-typescript against packages/cratestack-refine/tests/fixtures/
+# refine_fixture.cstack). Generated build output, never committed
+# (cratestack#577); CI's `js (@cratestack/refine)` job regenerates it fresh
+# on a Rust-toolchain runner before testing. The test suite fails loudly,
+# not silently, if this is missing locally — see
+# packages/cratestack-refine/tests/support/assert-fixture-present.ts.
+packages/cratestack-refine/tests/fixtures/generated-client/
+
 *.tar.gz
 
 # Quality pipeline: generated at scan time, never committed (see

@@ -17,6 +17,26 @@ where "length" is already ambiguous between chars and UTF-8 code units. `@range`
 `@email`, `@uri`, and `@iso4217` were audited against every scalar the parser permits them on and
 found not to share this bug — `@length`/`Bytes` was the only parser-accepted, codegen-broken pair.
 
+### `@cratestack/refine` — a refine.dev `DataProvider` over the generated TypeScript REST client (#571)
+
+New package `packages/cratestack-refine`, the safe end-user admin-UI surface `cratestack-studio`
+deliberately isn't: Studio talks to `[target.db]` directly and bypasses `@@allow`, while a refine app
+built on `@cratestack/refine` goes through the generated API and inherits policy, validation,
+`@version` concurrency, and audit. Ships as a hand-written runtime package plus a small per-resource
+manifest (`createCratestackDataProvider({ resource: { api, primaryKey, paged, versionField } })`),
+not a code generator — the generated client carries no runtime metadata (primary-key name, `@@paged`,
+`@version`) to discover, so a generator would only ever emit the same few-line object literal a
+developer can write directly against their own schema. Implements `getList`/`getOne`/`getMany`/
+`create`/`update`/`deleteOne`, plus `createMany`/`updateMany`/`deleteMany` as N sequential
+single-record round trips (the generated REST client exposes no batch endpoint to back a real atomic
+bulk operation). refine's filter operators map onto the generated list route's `field__operator=value`
+query convention; an operator with no cratestack equivalent (`endswith`, `between`, `nin`, `containss`,
+refine's `or`/`and` groups) throws rather than silently dropping the filter. `@version` models get
+`If-Match` threaded automatically through both update and delete (cratestack#493/#519/#538), with a
+stale write surfaced as a distinguishable `412` conflict rather than a generic failure — proven by a
+test that drives a real generated client against a fake server enforcing the contract, not a mock that
+always says yes. `liveProvider` and `authProvider` remain out of scope, tracked as follow-ups.
+
 ## 0.7.14 (2026-08-12)
 
 ### The crates.io publish order no longer mistakes a dev-dependency for a cycle (#564)
