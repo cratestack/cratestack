@@ -111,7 +111,18 @@ jobs:
           if [ "${{ runner.os }}" = "Windows" ]; then
             exe="cratestack-lsp.exe"
           fi
-          pnpm run stage-server -- "../../target/${{ matrix.target }}/release/${exe}"
+          # NO `--` before the path. pnpm (unlike npm) forwards the `--`
+          # separator to the script verbatim rather than consuming it, so
+          # `pnpm run stage-server -- <path>` invoked
+          # `node ./scripts/stage-server.mjs "--" "<path>"`, and
+          # stage-server.mjs reads `process.argv[2]` — it resolved the
+          # literal string `--` against the extension root and died with
+          # `cratestack-lsp binary not found at .../cratestack-vscode/--`.
+          # That failed all five platform legs of the v0.7.15 release, so
+          # no vsix was attached at all. Confirmed by hand both ways: with
+          # `--` the resolved path is `.../cratestack-vscode/--`; without
+          # it, `.../target/<profile>/cratestack-lsp`, which stages.
+          pnpm run stage-server "../../target/${{ matrix.target }}/release/${exe}"
       - name: Package vsix
         working-directory: packages/cratestack-vscode
         run: npx @vscode/vsce package --no-dependencies --target ${{ matrix.vsce_target }}
