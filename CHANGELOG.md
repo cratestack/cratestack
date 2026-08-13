@@ -2,43 +2,105 @@
 
 ## 0.7.16 (2026-08-13)
 
-<!-- TODO: edit this section from the seed below -->
-<!-- seeded from v0.7.15..HEAD at 114365175e36a9ce6eae397034b7ea702756d05b -->
+### Breaking
 
-This is an auto-generated seed. Please rewrite into narrative prose describing
-the changes in this release, grouped by concern. Refer to existing entries in
-this file for the house prose style. Do not commit with this placeholder text.
+#### `--preset swr` is replaced by an additive `--swr` flag (#589)
 
-### Changes
+`cratestack generate-typescript --preset <default|swr>` produced *either* layout, so teams
+wanting both ran the generator twice into two directories and depended on two packages. `--swr`
+now **adds** the file-per-model + SWR-hooks layout under `src/swr/`, alongside the default one, in
+the same package — reachable as `<package-name>/swr` (plus `/swr/models/*`, `/swr/procedures`,
+`/swr/procedures.hooks`) through `exports` subpaths. One run, both layouts. `--preset` is gone
+from `generate-typescript`; Dart's `--preset riverpod` is unchanged.
 
-#### Features
+Note that the root and `/swr` `CratestackRuntime` are structurally identical but *nominally
+distinct* classes, so a runtime built from the package root cannot be passed to a `/swr` hook.
+Import it from `/swr` when using the hooks — the generated README says so too.
 
-- --refine supports RPC schemas too (#571) (#586)
-- turn --preset swr into an additive --swr flag (#589)
-- --refine emits the @cratestack/refine ResourceMap (#583)
-- stateful REST model CRUD via wiremock-state-extension (#588)
-- RPC dataProvider for transport rpc schemas (#587)
+#### Composite `@@id([...])` is a clean error rather than a panic (#590)
 
-#### Fixes
+`generate-typescript` and `generate-dart` aborted with `thread 'main' panicked … validated
+schemas always have an id field` on any schema containing a composite primary key. That message
+was also untrue: the parser accepts such schemas. `include_*_schema!` had rejected them properly
+since #136; the CLI generators simply never went through that guard. Both now return the same
+message the macros emit, naming the model and the tracking issue. The shared predicate lives in
+`cratestack_core::composite_id` so the paths cannot drift apart again.
 
-- close five more silent-skip CI coverage gaps (#597)
-- drop the `--` separator that broke every vsix build in release-vscode.yml (#584)
-- honour client Accept preference in content negotiation (#593)
-- reject composite @@id instead of panicking (#590)
-- run the stateful WireMock image as non-root (#591)
-- three stateful-CRUD correctness defects (#596)
-- repair broken bootstrap steps across examples/ (#595)
-- stage every packages/*/package.json in `just release`, and correct CLAUDE.md (#592)
+Colliding pluralized route segments (`model Bus` + `model Buse`, both `/buses`) are now rejected
+at parse time (#596). The real server already panicked at startup on such schemas; every codegen
+target now refuses them up front instead.
 
-#### Documentation
+### Content negotiation honours the client's `Accept` preference (#593)
 
-- make the npm bootstrap's build+verify steps non-optional (#585)
-- fix in-repo prose contradicting shipped code (#594)
+`select_response_content_type` walked the *server's* `response_types` list and returned the first
+entry the client merely tolerated, discarding `Accept` ordering and `q=` weights. The generated
+Rust client sends `Accept: application/cbor-seq, application/cbor` to prefer streaming and degrade
+gracefully — and always got buffered cbor, then died in the frame decoder:
 
-#### CI
+```
+codec error: decode cbor-seq item: unexpected type array at position 0: expected map
+```
 
-- publish @cratestack/refine and discover packages/*/package.json by glob (#581)
-- pin wasm-bindgen so Trunk stops downloading it mid-build (#601)
+Following `examples/README.md`'s streaming walkthrough verbatim crashed. Negotiation now
+implements RFC 9110 §12.5.1 — preference order, `q=` weights, `q=0` exclusion, wildcard
+specificity — and the streaming client checks `Content-Type` before framing bytes rather than
+assuming. The example's own test previously ran against a mock that ignored negotiation entirely;
+it now drives the real server.
+
+### refine.dev support covers RPC schemas (#583, #586, #587)
+
+`@cratestack/refine` gained `createCratestackRpcDataProvider` and `RpcResourceMap` alongside the
+REST provider, and `generate-typescript --refine` emits the resource manifest for REST *and* RPC
+schemas — same function name, transport-appropriate type, so consumer code is identical either
+way. Only `transport grpc` is rejected. Optimistic locking works identically across transports:
+both dispatch paths read `If-Match` from the same shared handler.
+
+### WireMock stubs are stateful, and correct (#588, #591, #596)
+
+`generate-wiremock` now emits stateful model CRUD for REST schemas — a created record appears in
+the next list, an update is visible on the next get, a deleted record 404s — via
+`wiremock-state-extension`, built by `crates/cratestack-mock-wiremock/docker/Dockerfile` (the
+published jar is unusable against any `wiremock/wiremock` image; see the design doc). RPC stubs
+and procedure stubs remain static, and list filtering/sorting/pagination are not implemented.
+
+Three correctness defects found and fixed before this shipped: falsy values (`false`, `0`, `""`)
+were silently dropped so a mock consumer could never toggle a boolean off or zero a counter;
+concurrent updates to one record corrupted shared list state; and colliding route segments served
+one model's data under another's shape. The image runs as a non-root user.
+
+### Five test suites that had never executed now run (#597)
+
+Suites that printed `ok` while doing nothing, all now wired into CI with `CRATESTACK_REQUIRE_DB=1`
+turning a missing database into a failure rather than a skip:
+
+- `cratestack-outbox`'s transactional guarantees — atomic persist, cursor-ordered drain, GC sweep.
+  Previously "5 passed; finished in 0.00s" with no database touched; now 7.59s of real I/O.
+- `cratestack-migrate`'s Postgres introspection (7 tests, behind a feature no job enabled).
+- The CLI's `migrate baseline` tests (5 tests, gated on a variable CI never set).
+- The `rate_limit` and `pgvector` feature-gated tests, which compiled to empty binaries.
+- The generated RPC refine manifest, which CI never typechecked.
+
+### Release pipeline
+
+`just release` staged only two of the sixteen `packages/*/package.json` files, silently leaving
+fourteen version bumps uncommitted and setting up an `EPUBLISHCONFLICT` on the next publish — the
+same defect fixed in `prepare-release.yml` in #581 and never backported (#592). Trunk's unpinned
+mid-build download of `wasm-bindgen` — which killed the v0.7.15 crates.io publish partway and
+blocked three merges — is now pinned to the version derived from the studio-ui lockfile, so it
+cannot drift back silently (#601). `@cratestack/refine` publishes from CI (#581), and the VS Code
+extension's vsix build works again (#584).
+
+`cratestack-studio` and `cratestack-cli` rejoin at this release; they were stranded at 0.7.12 by
+the publish failures above.
+
+### Documentation and examples
+
+Several examples failed when their documented steps were followed verbatim — `pnpm install`
+silently installing nothing in four browser examples, a command wrong in two ways, a bootstrap
+step that would clobber tracked source (#595). In-repo prose contradicting shipped code was swept:
+gRPC procedures described as unsupported after they shipped, `Value`'s wire format described as
+tagged since #506 made it untagged, and three design docs claiming nothing had shipped (#594).
+The npm bootstrap's build-and-verify steps are no longer optional (#585).
 
 ## 0.7.15 (2026-08-13)
 
