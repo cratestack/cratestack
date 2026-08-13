@@ -81,23 +81,23 @@ pub enum TypeScriptGeneratorError {
         second: String,
         file_stem: String,
     },
-    /// Issue #571: `--refine` against a non-REST schema. This is a real
-    /// structural incompatibility, not an unimplemented feature.
-    /// `@cratestack/refine`'s `CratestackModelApi` is duck-typed against
-    /// the REST client's method shape — `list(options)` where `options`
-    /// carries a `CratestackFetchQuery`, and the provider builds
-    /// `{ filters, sort, limit, offset }` into it. The RPC client's
-    /// `list(query, options)` takes the query *positionally* as a
-    /// `CratestackRpcListQuery`, and the gRPC-Web client speaks typed
-    /// protobuf with no URL-query shaping at all. An emitted `refine.ts`
-    /// would fail `tsc` in the consumer's package, so this refuses up
-    /// front instead.
+    /// Issue #571 (lifted for RPC by the same issue's follow-up): `--refine`
+    /// against a `transport grpc` schema. REST and RPC both get a real
+    /// `@cratestack/refine` provider — `RefineResourceView`'s four facts
+    /// (`api`, `primaryKey`, `paged`, `versionField`) are transport-agnostic,
+    /// and `@cratestack/refine` ships an `RpcResourceMap`/RPC-shaped
+    /// `DataProvider` alongside the REST one for exactly this. gRPC-Web
+    /// stays out: it speaks typed protobuf with no URL-query shaping at
+    /// all, and #571's `@cratestack/refine` package has no provider for
+    /// that wire shape (tracked as a Scope "Out of scope" item in
+    /// `packages/cratestack-refine/README.md`, not merely unimplemented
+    /// here) — an emitted `refine.ts` would have nothing to `tsc` against,
+    /// so this refuses up front instead.
     #[error(
-        "`--refine` needs a REST schema — `@cratestack/refine`'s DataProvider is written against \
-         the REST client's `list(options)`/`CratestackFetchQuery` shape, which the RPC and \
-         gRPC-Web clients do not share; drop `--refine` for this schema"
+        "`--refine` needs a REST or RPC schema — `@cratestack/refine` has no provider for the \
+         gRPC-Web client's typed-protobuf shape; drop `--refine` for this schema"
     )]
-    RefineRequiresRest,
+    RefineRequiresRestOrRpc,
     /// Issue #571: `--refine` combined with `--preset swr`. The emitted
     /// `ResourceMap` binds each resource to a generated model API *object*
     /// (`client.widgets`), and the `swr` preset emits no client class at

@@ -155,22 +155,33 @@ fn the_flag_declares_the_dependency_and_re_exports_the_module() {
 }
 
 #[test]
-fn refine_is_rejected_for_transports_whose_client_shape_it_cannot_drive() {
-    // `@cratestack/refine` builds a `CratestackFetchQuery` into
-    // `list(options)`. The RPC client takes its query positionally, as a
-    // different type — an emitted refine.ts would fail `tsc` in the
-    // consumer's package, so the generator refuses instead.
-    let rpc_schema = REFINE_SCHEMA.replace("datasource db {", "transport rpc\n\ndatasource db {");
-    let error = try_generate(&rpc_schema, true, TypeScriptPreset::Default)
-        .expect_err("--refine on an RPC schema should be rejected");
+fn refine_is_rejected_for_grpc_which_has_no_provider_to_bind_to() {
+    // The gRPC-Web client speaks typed protobuf with no URL-query shaping
+    // at all, and `@cratestack/refine` ships no provider for that shape —
+    // an emitted refine.ts would have nothing to `tsc` against, so the
+    // generator refuses instead. (REST and RPC are both supported — see
+    // `refine_supports_rpc_schemas_too` below.)
+    let grpc_schema = REFINE_SCHEMA.replace("datasource db {", "transport grpc\n\ndatasource db {");
+    let error = try_generate(&grpc_schema, true, TypeScriptPreset::Default)
+        .expect_err("--refine on a gRPC-Web schema should be rejected");
     assert!(
-        matches!(error, TypeScriptGeneratorError::RefineRequiresRest),
-        "expected RefineRequiresRest, got: {error}"
+        matches!(error, TypeScriptGeneratorError::RefineRequiresRestOrRpc),
+        "expected RefineRequiresRestOrRpc, got: {error}"
     );
-    // …and the same schema without the flag still generates fine, so the
-    // rejection is scoped to the flag and not to the schema.
-    try_generate(&rpc_schema, false, TypeScriptPreset::Default)
-        .expect("an RPC schema without --refine is unaffected");
+    // The same schema without the flag fails too (this fixture has no
+    // `.pb.lock`, which `transport grpc` needs regardless of `--refine` —
+    // see `generator_grpc.rs`), but for its own reason, not this one: the
+    // rejection above is scoped to the flag, not baked into a schema that
+    // categorically cannot generate.
+    let error_without_flag = try_generate(&grpc_schema, false, TypeScriptPreset::Default)
+        .expect_err("this fixture has no .pb.lock, so a plain grpc generation fails too");
+    assert!(
+        !matches!(
+            error_without_flag,
+            TypeScriptGeneratorError::RefineRequiresRestOrRpc
+        ),
+        "without --refine, the failure must not be the refine-specific one: {error_without_flag}"
+    );
 }
 
 #[test]
@@ -181,6 +192,120 @@ fn refine_is_rejected_for_the_swr_preset_which_has_no_client_class() {
         matches!(error, TypeScriptGeneratorError::RefineUnsupportedPreset),
         "expected RefineUnsupportedPreset, got: {error}"
     );
+}
+
+// --- RPC coverage: issue #571's follow-up lifts `RefineRequiresRest` to
+// `RefineRequiresRestOrRpc`, so RPC schemas now get a manifest too. The
+// four per-resource facts are transport-agnostic (`crate::refine`'s module
+// doc); what has to change per transport is the `@cratestack/refine` type
+// `cratestackRefineResources()` is typed to return.
+
+#[test]
+fn refine_supports_rpc_schemas_with_the_same_per_resource_facts_as_rest() {
+    let package = generate(&rpc_schema(), true);
+    let refine = file(&package, "src/refine.ts");
+
+    assert!(
+        refine.contains(
+            "\"widgets\": {\n      api: client.widgets,\n      primaryKey: \"id\",\n      paged: false,\n    },"
+        ),
+        "widgets entry is wrong for an RPC schema:\n{refine}"
+    );
+    assert!(
+        refine.contains(
+            "\"ledgers\": {\n      api: client.ledgers,\n      primaryKey: \"id\",\n      paged: true,\n      versionField: \"revision\",\n    },"
+        ),
+        "ledgers entry is wrong for an RPC schema:\n{refine}"
+    );
+    assert!(
+        refine.contains("primaryKey: \"sku\","),
+        "products entry should carry the non-`id` primary key for an RPC schema too:\n{refine}"
+    );
+}
+
+/// The contract with `@cratestack/refine`'s RPC provider (added alongside
+/// this change): the emitted function is named identically across
+/// transports (`cratestackRefineResources`) so consumer code doesn't
+/// change when a schema switches transport — only the return *type*
+/// switches, to `RpcResourceMap`.
+#[test]
+fn refine_types_an_rpc_schemas_manifest_as_rpc_resource_map() {
+    let rpc_package = generate(&rpc_schema(), true);
+    let rpc_refine = file(&rpc_package, "src/refine.ts");
+    assert!(
+        rpc_refine.contains("import type { RpcResourceMap } from \"@cratestack/refine\";"),
+        "RPC refine.ts must import RpcResourceMap, not ResourceMap:\n{rpc_refine}"
+    );
+    assert!(
+        rpc_refine.contains(
+            "export function cratestackRefineResources(client: RefineTestClientClient): RpcResourceMap {"
+        ),
+        "RPC refine.ts's cratestackRefineResources() must return RpcResourceMap:\n{rpc_refine}"
+    );
+    assert!(
+        !rpc_refine.contains("): ResourceMap {"),
+        "RPC refine.ts must not fall back to the REST ResourceMap type:\n{rpc_refine}"
+    );
+
+    // …and REST keeps the plain `ResourceMap` it always had — the RPC
+    // branch must be additive to the type name, not a global rename.
+    let rest_package = generate(REFINE_SCHEMA, true);
+    let rest_refine = file(&rest_package, "src/refine.ts");
+    assert!(
+        rest_refine.contains("import type { ResourceMap } from \"@cratestack/refine\";"),
+        "REST refine.ts must still import the plain ResourceMap:\n{rest_refine}"
+    );
+    assert!(
+        !rest_refine.contains("RpcResourceMap"),
+        "REST refine.ts must not mention RpcResourceMap at all:\n{rest_refine}"
+    );
+}
+
+#[test]
+fn refine_flag_is_additive_for_rpc_schemas_too() {
+    let source = rpc_schema();
+    let plain = generate(&source, false);
+    let with_refine = generate(&source, true);
+
+    assert!(
+        !plain.files.iter().any(|f| f.file_name == "src/refine.ts"),
+        "src/refine.ts must not be emitted for an RPC schema without the flag"
+    );
+
+    for file in &plain.files {
+        let counterpart = with_refine
+            .files
+            .iter()
+            .find(|candidate| candidate.file_name == file.file_name)
+            .unwrap_or_else(|| panic!("--refine dropped {} for an RPC schema", file.file_name));
+        if matches!(file.file_name.as_str(), "package.json" | "src/index.ts") {
+            continue;
+        }
+        assert_eq!(
+            file.contents, counterpart.contents,
+            "--refine changed {} for an RPC schema — it must only ADD a file",
+            file.file_name
+        );
+    }
+}
+
+#[test]
+fn refine_flag_re_exports_from_rpc_index_too() {
+    let with_refine = generate(&rpc_schema(), true);
+    assert!(
+        file(&with_refine, "src/index.ts").contains("export * from \"./refine.js\";"),
+        "RPC src/index.ts should re-export the generated manifest"
+    );
+
+    let without_refine = generate(&rpc_schema(), false);
+    assert!(
+        !file(&without_refine, "src/index.ts").contains("refine"),
+        "RPC src/index.ts must not mention refine at all without the flag"
+    );
+}
+
+fn rpc_schema() -> String {
+    REFINE_SCHEMA.replace("datasource db {", "transport rpc\n\ndatasource db {")
 }
 
 fn generate(source: &str, refine: bool) -> GeneratedTypeScriptPackage {

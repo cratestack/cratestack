@@ -148,11 +148,15 @@ pub(crate) const GRPC_TEMPLATE_SPECS: &[TemplateSpec] = &[
     },
 ];
 
-// Issue #571's `--refine` opt-in: one extra file, appended to the REST
-// spec list only when `TypeScriptGeneratorConfig::refine` is set. Kept
-// out of `COMMON_TEMPLATE_SPECS`/`REST_TEMPLATE_SPECS` deliberately —
-// those are unconditional, and `refine.ts` must not appear in a default
-// run (`tests/snapshot.rs` pins that output byte-for-byte).
+// Issue #571's `--refine` opt-in: one extra file, appended to the REST or
+// RPC spec list only when `TypeScriptGeneratorConfig::refine` is set (the
+// template itself picks `ResourceMap` vs `RpcResourceMap` per transport —
+// see `crate::context::build_template_context`'s `refine_resource_map_type`
+// and `crate::refine`'s module doc; `crate::generator` rejects `--refine`
+// before this function is ever reached for `transport grpc`). Kept out of
+// `COMMON_TEMPLATE_SPECS`/`REST_TEMPLATE_SPECS`/`RPC_TEMPLATE_SPECS`
+// deliberately — those are unconditional, and `refine.ts` must not appear
+// in a default run (`tests/snapshot.rs` pins that output byte-for-byte).
 pub(crate) const REFINE_TEMPLATE_SPECS: &[TemplateSpec] = &[TemplateSpec {
     template_name: "refine.ts.j2",
     output_path: OutputPath::Fixed("src/refine.ts"),
@@ -170,10 +174,12 @@ pub(crate) const REFINE_TEMPLATE_SPECS: &[TemplateSpec] = &[TemplateSpec {
 /// POST with a typed body), but both transports now have a real typed
 /// `list` input.
 ///
-/// `refine` (issue #571) appends one extra REST-only spec. It is a
-/// parameter rather than a fourth `TransportStyle` arm because it is
-/// additive to an otherwise unchanged REST run — `refine: false` returns
-/// exactly the list this function returned before the flag existed.
+/// `refine` (issue #571) appends one extra spec for REST or RPC schemas
+/// (never gRPC-Web — `crate::generator` rejects that combination before
+/// reaching here). It is a parameter rather than folded into `mode_specs`
+/// because it is additive to an otherwise unchanged run — `refine: false`
+/// returns exactly the list this function returned before the flag
+/// existed.
 pub(crate) fn template_specs_for(
     transport: TransportStyle,
     refine: bool,

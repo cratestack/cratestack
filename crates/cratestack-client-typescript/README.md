@@ -98,21 +98,25 @@ cratestack generate-typescript \
 ## `--refine` (`TypeScriptGeneratorConfig::refine`)
 
 Adds one file, `src/refine.ts`, holding the
-[`@cratestack/refine`](https://www.npmjs.com/package/@cratestack/refine) `ResourceMap` for
-the schema — per model: the generated model API, the `@id` field's name, the `@@paged`
-flag, and the `@version` field if there is one. Those four facts are in the schema but
-appear nowhere at runtime in the generated client (they live only in its TypeScript
-types), so a refine app would otherwise have to restate them by hand.
+[`@cratestack/refine`](https://www.npmjs.com/package/@cratestack/refine) resource manifest
+for the schema — per model: the generated model API, the `@id` field's name, the
+`@@paged` flag, and the `@version` field if there is one. Those four facts are in the
+schema but appear nowhere at runtime in the generated client (they live only in its
+TypeScript types), so a refine app would otherwise have to restate them by hand. The four
+facts are transport-agnostic, so REST and RPC schemas get the same per-resource data —
+only the emitted `cratestackRefineResources()`'s return type changes, to whichever
+`@cratestack/refine` type matches that transport's provider (`ResourceMap` for REST,
+`RpcResourceMap` for RPC).
 
 Additive by construction: with the flag off, every emitted file is byte-identical, and
 `tests/refine_generator.rs` asserts that rather than trusting it. With it on, only
 `package.json` (peer/dev dependency) and `src/index.ts` (re-export) change alongside the
 new file.
 
-REST + `preset = Default` only — `generate_package` returns `RefineRequiresRest` /
+REST/RPC + `preset = Default` only — `generate_package` returns `RefineRequiresRestOrRpc` /
 `RefineUnsupportedPreset` rather than emitting a file that couldn't type-check. See
-`src/refine.rs`'s module doc for why each other combination is structurally impossible
-rather than merely unimplemented.
+`src/refine.rs`'s module doc for why gRPC-Web and the `swr` preset are structurally
+impossible rather than merely unimplemented.
 
 ```bash
 cratestack generate-typescript \

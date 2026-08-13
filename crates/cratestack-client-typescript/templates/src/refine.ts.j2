@@ -5,7 +5,7 @@
 // TypeScript types and exposes nowhere at runtime: which model API backs
 // the resource, the `@id` field's name, whether the model is `@@paged`,
 // and which field carries `@version` (if any).
-import type { ResourceMap } from "@cratestack/refine";
+import type { {{ refine_resource_map_type }} } from "@cratestack/refine";
 
 import type { {{ client_class_name }} } from "./client.js";
 
@@ -30,7 +30,7 @@ export type CratestackRefineResource = never;
  *
  * The keys are the resource names to use in `<Refine resources={...}>`.
  */
-export function cratestackRefineResources(client: {{ client_class_name }}): ResourceMap {
+export function cratestackRefineResources(client: {{ client_class_name }}): {{ refine_resource_map_type }} {
   return {
 {% for resource in refine_resources %}
     "{{ resource.accessor }}": {

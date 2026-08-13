@@ -42,15 +42,16 @@ pub struct TypeScriptGeneratorConfig {
     /// `transport grpc` schema — see `TypeScriptGeneratorError::MissingPbLock`.
     pub pb_lock: Option<PbLock>,
     /// Issue #571: additionally emit `src/refine.ts`, the
-    /// `@cratestack/refine` `ResourceMap` factory for this schema (see
+    /// `@cratestack/refine` resource-manifest factory for this schema (see
     /// `crate::refine`'s module doc for what it contains and why it is
     /// generated rather than hand-written).
     ///
     /// Purely additive — `false` (the default) leaves every other emitted
     /// file byte-identical, which is what `tests/snapshot.rs` pins.
-    /// Supported only with `TypeScriptPreset::Default` on a REST schema;
-    /// `generate_package` rejects any other combination rather than
-    /// emitting a file that cannot type-check.
+    /// Supported only with `TypeScriptPreset::Default` on a REST or RPC
+    /// schema; `generate_package` rejects any other combination (gRPC-Web,
+    /// or the `swr` preset) rather than emitting a file that cannot
+    /// type-check.
     pub refine: bool,
     /// Hex-encoded SHA-256 of the schema file's raw bytes (issue #178) —
     /// computed once by the CLI (`cli_support::hash_schema_source`, the

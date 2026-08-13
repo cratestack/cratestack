@@ -90,15 +90,17 @@ pub(crate) enum Command {
         #[arg(long, value_enum, default_value_t = TypeScriptPresetArg::Default)]
         preset: TypeScriptPresetArg,
         /// Also emit `src/refine.ts` (issue #571): the
-        /// `@cratestack/refine` `ResourceMap` for this schema — one entry
-        /// per model, carrying the `@id` field name, `@@paged`, and
+        /// `@cratestack/refine` resource manifest for this schema — one
+        /// entry per model, carrying the `@id` field name, `@@paged`, and
         /// `@version` facts the refine DataProvider needs and the
         /// generated client encodes only in its TypeScript types.
         ///
         /// Purely additive: every other emitted file is byte-identical
-        /// with and without it. REST schemas and `--preset default` only
-        /// — the RPC/gRPC-Web clients don't share the REST client's
-        /// method shape, and `swr` emits no client class to bind to.
+        /// with and without it. REST and RPC schemas with `--preset
+        /// default` only — the manifest is typed `ResourceMap` for REST
+        /// and `RpcResourceMap` for RPC. gRPC-Web has no
+        /// `@cratestack/refine` provider to bind to, and `swr` emits no
+        /// client class to bind to.
         #[arg(long)]
         refine: bool,
     },

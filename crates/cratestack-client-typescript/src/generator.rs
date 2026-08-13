@@ -18,12 +18,16 @@ pub fn generate_package(
     // is strictly better than emitting a `refine.ts` that breaks `tsc`
     // in the consumer's package — the generator's own output would look
     // successful and the failure would surface a build step later.
+    //
+    // REST and RPC both work — `@cratestack/refine` ships a provider for
+    // each (`ResourceMap`/`RpcResourceMap`). Only gRPC-Web has no provider
+    // to bind to, so it stays the one rejected transport.
     if config.refine {
         if config.preset != TypeScriptPreset::Default {
             return Err(TypeScriptGeneratorError::RefineUnsupportedPreset);
         }
-        if schema.transport != TransportStyle::Rest {
-            return Err(TypeScriptGeneratorError::RefineRequiresRest);
+        if schema.transport == TransportStyle::Grpc {
+            return Err(TypeScriptGeneratorError::RefineRequiresRestOrRpc);
         }
     }
     let files = match config.preset {

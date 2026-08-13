@@ -166,8 +166,16 @@ await dataProvider.custom!({
   anywhere in `crates/cratestack-client-typescript/templates/`), even though the server has a real
   subscribe endpoint. Needs a TS SSE client first.
 - **`authProvider`** — a separate, orthogonal concern from data access.
-- **RPC-transport schemas** (`transport rpc`) — this package's filter/pagination query-string
-  convention is REST-specific. An RPC dataProvider needs its own mapping layer.
+- **RPC-transport schemas** (`transport rpc`) — this package's `DataProvider` above is written
+  against the REST client's `list(options)`/`CratestackFetchQuery` shape, which the RPC client
+  does not share (its `list(query, options)` takes the query positionally, as a
+  `CratestackRpcListQuery`), so it needs its own mapping layer, not documented here.
+  The generator-side restriction this depended on has been lifted (cratestack#571's follow-up):
+  `cratestack generate-typescript --refine` now emits an `src/refine.ts` for `transport rpc`
+  schemas too, typed `RpcResourceMap` instead of `ResourceMap` — see
+  `crates/cratestack-client-typescript/README.md`'s `--refine` section. That manifest is
+  transport-agnostic (same four facts either way); it is this package's RPC-shaped provider
+  that is the remaining piece, tracked as a companion change.
 
 **A known, pre-existing gap this package inherits rather than causes:** route suppression
 (cratestack#514) isn't implemented, so a policy-denied `create`/`update`/`delete` still generates a

@@ -105,14 +105,17 @@ Flags:
   for SWR hooks. `swr` does not support `transport grpc` schemas yet.
 - `--refine` — additionally emit `src/refine.ts`, the
   [`@cratestack/refine`](https://www.npmjs.com/package/@cratestack/refine)
-  `ResourceMap` for this schema: one entry per model carrying its `@id`
+  resource manifest for this schema: one entry per model carrying its `@id`
   field name, `@@paged` flag, and `@version` field, bound to the matching
   generated model API. Purely additive — every other emitted file is
   byte-identical with and without it — and it also adds
   `@cratestack/refine`/`@refinedev/core` to the generated `package.json`'s
-  peer/dev dependencies. REST schemas and `--preset default` only: the
-  RPC and gRPC-Web clients don't share the REST client's method shape,
-  and `swr` emits no client class for a resource to bind to.
+  peer/dev dependencies. REST and RPC schemas with `--preset default` only:
+  the emitted manifest is typed `ResourceMap` for REST and `RpcResourceMap`
+  for RPC, matching whichever `@cratestack/refine` provider that transport
+  ships. gRPC-Web has no provider to bind to (typed protobuf, no
+  URL-query shaping), and `swr` emits no client class for a resource to
+  bind to, so both stay unsupported.
 
   ```bash
   cratestack generate-typescript \

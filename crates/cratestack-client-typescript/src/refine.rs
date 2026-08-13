@@ -19,12 +19,24 @@
 //! second source of truth that drifts silently the moment a model gains
 //! `@version` or `@@paged`.
 //!
-//! Scope is REST + `--preset default` only, enforced in
+//! All four facts are transport-agnostic — they come off the schema's
+//! `Model`, not off any transport-specific client shape — so this module
+//! builds the same [`RefineResourceView`]s for REST and RPC schemas alike.
+//! What differs per transport is which `@cratestack/refine` type the
+//! emitted `cratestackRefineResources()` is typed to return
+//! ([`refine_resource_map_type`]: `ResourceMap` for REST, `RpcResourceMap`
+//! for RPC — threaded into `refine.ts.j2` by
+//! `crate::context::build_template_context` as
+//! `refine_resource_map_type`), because REST and RPC generated clients
+//! have different `list()` shapes and so need different
+//! `@cratestack/refine` providers to bind to.
+//!
+//! Scope is REST/RPC + `--preset default` only, enforced in
 //! `crate::generator` rather than here — see
-//! `TypeScriptGeneratorError::RefineRequiresRest`/`RefineUnsupportedPreset`
-//! for why each other combination cannot work.
+//! `TypeScriptGeneratorError::RefineRequiresRestOrRpc`/`RefineUnsupportedPreset`
+//! for why gRPC-Web and the `swr` preset cannot work.
 
-use cratestack_core::{Model, Schema};
+use cratestack_core::{Model, Schema, TransportStyle};
 use serde::Serialize;
 
 use crate::naming::{pluralize, to_camel_case};
@@ -75,5 +87,21 @@ fn build_refine_resource(model: &Model) -> RefineResourceView {
         primary_key: primary_key.name.clone(),
         paged: is_paged_model(model),
         version_field: version_field(model).map(|field| field.name.clone()),
+    }
+}
+
+/// The `@cratestack/refine` type `refine.ts.j2`'s `cratestackRefineResources()`
+/// is typed to return for this schema's transport — see this module's doc
+/// for why REST and RPC need different provider types even though
+/// [`RefineResourceView`]'s facts are identical either way. Called from
+/// `crate::context::build_template_context` only when `refine` is on;
+/// `transport grpc` never reaches here in practice (`crate::generator`
+/// rejects `--refine` on a gRPC-Web schema first), so it falls back to the
+/// REST name rather than panicking on a path a regressed upstream guard
+/// could still reach.
+pub(crate) fn refine_resource_map_type(transport: TransportStyle) -> &'static str {
+    match transport {
+        TransportStyle::Rpc => "RpcResourceMap",
+        TransportStyle::Rest | TransportStyle::Grpc => "ResourceMap",
     }
 }

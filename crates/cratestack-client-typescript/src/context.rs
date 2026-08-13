@@ -11,7 +11,7 @@ use crate::find_many_views::{
 use crate::grpc::GrpcContext;
 use crate::naming::{occupied_type_names, package_class_stem, to_pascal_case};
 use crate::procedure_views::{ProcedureView, build_procedure};
-use crate::refine::{RefineResourceView, build_refine_resources};
+use crate::refine::{RefineResourceView, build_refine_resources, refine_resource_map_type};
 use crate::types::{
     enum_name_set, is_generated_on_create, is_primary_key, model_allows_create, model_name_set,
     scalar_model_fields, visible_model_fields,
@@ -65,6 +65,11 @@ pub(crate) struct TemplateContext {
     /// One entry per model, empty unless `refine` is set. See
     /// `crate::refine`.
     refine_resources: Vec<RefineResourceView>,
+    /// The `@cratestack/refine` type `refine.ts.j2`'s
+    /// `cratestackRefineResources()` is typed to return — see
+    /// `crate::refine::refine_resource_map_type`. Empty when `refine` is
+    /// off, where `refine.ts` isn't rendered at all.
+    refine_resource_map_type: String,
 }
 
 pub(crate) fn build_template_context(
@@ -222,6 +227,11 @@ pub(crate) fn build_template_context(
             build_refine_resources(schema)
         } else {
             Vec::new()
+        },
+        refine_resource_map_type: if config.refine {
+            refine_resource_map_type(schema.transport).to_owned()
+        } else {
+            String::new()
         },
     })
 }
