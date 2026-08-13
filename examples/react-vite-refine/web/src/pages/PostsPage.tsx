@@ -2,15 +2,13 @@
 // sends a real `If-Match` header on every update/delete here, built from
 // whichever version it last saw for this record (README's "Optimistic
 // locking" section) — verified against the live WireMock container (see
-// this example's README, "Verification"). What that verification also
-// shows: THIS MOCK DOES NOT ENFORCE IT. `cratestack-mock-wiremock`'s
-// generated stubs match on method + path only (no request-header
-// matching anywhere in that generator — confirmed in
-// `../../tests/smoke.rs`'s `wiremock_stubs_do_not_validate_if_match_or_any_request_header`
-// test), and never increments `version` server-side either. A stale
-// update here succeeds instead of conflicting with a 412. The callout
-// below says so; don't remove it without re-verifying against a real
-// `cratestack-pg` server or an updated `cratestack-mock-wiremock`.
+// this example's README, "Verification"). Since #605 the mock ENFORCES it,
+// mirroring the real server: a stale or absent `If-Match` gets a 412, and
+// a successful update bumps `version` and returns the new `ETag`. Guarded
+// by `../../tests/smoke.rs`'s
+// `wiremock_stubs_enforce_if_match_on_the_versioned_model` and asserted
+// live in `web/scripts/verify.ts`, so a regression fails CI rather than
+// silently turning this page's conflict handling into decoration.
 import { useCreate, useDelete, useList, useUpdate } from "@refinedev/core";
 import { type FormEvent, useState } from "react";
 import type { Post } from "../../generated/src/models.js";
@@ -53,8 +51,10 @@ export function PostsPage() {
         Posts <span className="hint">`@@paged` + `@version` — optimistic-locking wiring</span>
       </h2>
       <p className="callout">
-        This mock backend does not check <code>If-Match</code> — a stale save below will succeed,
-        not conflict. See README.md's "What this demo can't prove".
+        Optimistic locking is live here: this backend enforces <code>If-Match</code>, so saving a
+        row that someone else already changed conflicts with a <code>412</code> instead of
+        silently overwriting. List filtering, sorting and pagination are <em>not</em> implemented
+        by the mock, which is why this table offers none.
       </p>
       <QueryState isLoading={query.isLoading} isError={query.isError} error={query.error} />
       <table>

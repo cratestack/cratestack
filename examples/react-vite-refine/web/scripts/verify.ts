@@ -119,26 +119,48 @@ async function verifyPostFalsyRoundTripAndIfMatchGap() {
     { title: "Launch (v2)" },
     { headers: { "If-Match": '"0"' } },
   );
-  console.log(
-    `Server-reported version after update: ${firstUpdate.version} (mock never increments it)`,
+  console.log(`Server-reported version after update: ${firstUpdate.version} (bumped by the mock)`);
+  assert(
+    firstUpdate.version === 1,
+    "a correct If-Match must bump the stored version — got " + firstUpdate.version,
   );
 
-  // THE CONFIRMED GAP (see README.md "What this demo can't prove" and
-  // tests/smoke.rs): send an obviously-stale If-Match and confirm the
-  // mock does NOT reject it. A real cratestack-pg server would 412 here.
+  // Optimistic locking, end to end. The mock enforces `If-Match` exactly
+  // as a real cratestack-pg server does (#605), so the version we just
+  // consumed is now stale and replaying it must be REJECTED.
   const staleResponse = await fetch(`${BASE_URL}/api/posts/${id}`, {
     method: "PATCH",
-    headers: { "content-type": "application/json", "If-Match": '"9999999"' },
-    body: JSON.stringify({ title: "Launch (stale write, should be REJECTED by a real server)" }),
+    headers: { "content-type": "application/json", "If-Match": '"0"' },
+    body: JSON.stringify({ title: "Launch (replayed stale write)" }),
   });
-  console.log(`\nStale If-Match PATCH -> HTTP ${staleResponse.status} (real server: 412)`);
+  console.log(`\nReplayed stale If-Match PATCH -> HTTP ${staleResponse.status} (expected 412)`);
   assert(
-    staleResponse.status === 200,
-    "documents a KNOWN GAP: if this ever becomes 412, cratestack-mock-wiremock gained If-Match " +
-      "support — update README.md's \"What this demo can't prove\" section and this assertion",
+    staleResponse.status === 412,
+    `a stale If-Match must be rejected with 412, got ${staleResponse.status}`,
   );
 
-  await client.posts.delete(id, { headers: { "If-Match": '"0"' } });
+  // The other three rows of the contract, so a regression in any one of
+  // them fails this script rather than being noticed by a user.
+  for (const [label, header, expected] of [
+    ["absent If-Match", undefined, 412],
+    ["If-Match: *", "*", 400],
+    ["malformed If-Match", "0", 400],
+  ] as const) {
+    const response = await fetch(`${BASE_URL}/api/posts/${id}`, {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+        ...(header ? { "If-Match": header } : {}),
+      },
+      body: JSON.stringify({ title: "should not apply" }),
+    });
+    console.log(`${label} -> HTTP ${response.status} (expected ${expected})`);
+    assert(response.status === expected, `${label}: expected ${expected}, got ${response.status}`);
+  }
+
+  // Delete enforces If-Match too — the real server closed that asymmetry
+  // deliberately, and the mock mirrors it. Version is 1 after the update.
+  await client.posts.delete(id, { headers: { "If-Match": '"1"' } });
   const afterDelete = await client.posts.get(id).catch((error) => error);
   assert(
     afterDelete &&

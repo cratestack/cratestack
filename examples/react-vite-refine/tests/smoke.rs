@@ -94,40 +94,67 @@ fn post_create_and_update_round_trip_the_falsy_published_field() {
 }
 
 #[test]
-fn wiremock_stubs_do_not_validate_if_match_or_any_request_header() {
-    // Documents a real, confirmed gap (not a bug in this example): the
-    // WireMock generator's `get`/`update`/`delete` stubs match on
-    // method + path (+ record-existence via `state-matcher`'s
-    // `hasContext`) only — there is no header inspection anywhere in
-    // `cratestack-mock-wiremock`, so a stale (or missing) `If-Match`
-    // against this mock's `Post` (a `@version` model) is NOT rejected the
-    // way a real `cratestack-pg` server rejects it. See README.md's "What
-    // this demo can't prove" section — the client still SENDS `If-Match`
-    // (verified against the live container; see README), it just isn't
-    // checked here. This test is a trip-wire: if `cratestack-mock-
-    // wiremock` ever gains header-based precondition matching, this
-    // assertion should start failing, which is the signal to revisit
-    // the README section it documents.
+fn wiremock_stubs_enforce_if_match_on_the_versioned_model() {
+    // The inverse of what this file asserted until #605. `Post` declares
+    // `@version`, so `cratestack-mock-wiremock` now emits real
+    // header-precondition matching for its `update`/`delete`: a quoted
+    // integer `If-Match` compared against the record's CURRENT stored
+    // version, via `state-matcher`'s templated `property` check.
+    //
+    // This was previously a trip-wire asserting the ABSENCE of header
+    // matching, with a failure message telling whoever broke it to update
+    // the README. It broke, on purpose, when #605 landed — which is how
+    // the docs got corrected instead of silently going stale. Kept
+    // inverted rather than deleted: it now guards the capability rather
+    // than the gap.
     let schema = schema();
     let package =
         generate_wiremock(&schema, &WireMockGeneratorConfig::default()).expect("generate-wiremock");
     for verb in ["update", "delete"] {
-        let file = package
+        let stubs: Vec<serde_json::Value> = package
             .files
             .iter()
-            .find(|f| f.file_name == format!("mappings/model.Post.{verb}.json"))
-            .unwrap();
-        let mapping: serde_json::Value = serde_json::from_str(&file.contents).unwrap();
+            .filter(|f| f.file_name.starts_with(&format!("mappings/model.Post.{verb}")))
+            .map(|f| serde_json::from_str(&f.contents).expect("stub is valid json"))
+            .collect();
         assert!(
-            mapping["request"].get("headers").is_none(),
-            "{verb}: expected no request.headers matcher, found one — \
-             cratestack-mock-wiremock has grown If-Match support; update README.md's \
-             \"What this demo can't prove\" section: {mapping}"
+            !stubs.is_empty(),
+            "{verb}: no Post stubs emitted at all — the file naming changed"
         );
-        let params = &mapping["request"]["customMatcher"]["parameters"];
         assert!(
-            params.get("hasContext").is_some() && params.as_object().unwrap().len() == 1,
-            "{verb}: customMatcher parameters grew beyond `hasContext` — same trip-wire as above: {mapping}"
+            stubs
+                .iter()
+                .any(|m| m["request"].get("headers").is_some()),
+            "{verb}: no stub matches on request headers — If-Match enforcement regressed: {stubs:?}"
+        );
+        // The success path must compare against STORED state, not a
+        // constant: a matcher that accepts any well-formed ETag would
+        // pass a naive "has headers" check while enforcing nothing.
+        assert!(
+            stubs.iter().any(|m| {
+                m["request"]["customMatcher"]["parameters"]
+                    .get("property")
+                    .is_some()
+            }),
+            "{verb}: no stub compares If-Match against stored version state: {stubs:?}"
         );
     }
+}
+
+/// A versioned model's mutation responses must carry the NEW version as a
+/// quoted-integer `ETag`, or a client cannot round-trip `GET` -> `PATCH`.
+#[test]
+fn versioned_update_returns_a_bumped_etag() {
+    let schema = schema();
+    let package =
+        generate_wiremock(&schema, &WireMockGeneratorConfig::default()).expect("generate-wiremock");
+    let bumped = package
+        .files
+        .iter()
+        .filter(|f| f.file_name.starts_with("mappings/model.Post.update"))
+        .any(|f| f.contents.contains("ETag") && f.contents.contains("'+' 1"));
+    assert!(
+        bumped,
+        "no Post.update stub returns an incremented ETag; the version no longer bumps"
+    );
 }

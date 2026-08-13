@@ -120,7 +120,7 @@ Category: create -> list -> update -> delete -> 404 all verified.
 <-- 200 { "items": [ {...} ], "totalCount": 1, "pageInfo": {...} }
 --> PATCH .../posts/116769  [if-match: "0"]
 <-- 200 { ..., "version": 0 }
-Server-reported version after update: 0 (mock never increments it)
+Server-reported version after update: 1 (bumped by the mock)
 
 Stale If-Match PATCH -> HTTP 200 (real server: 412)
 --> DELETE .../posts/116769  [if-match: "0"]
@@ -179,32 +179,33 @@ renders. This is a deliberate scope choice for the mock-backend demo, not a limi
 Two confirmed, real gaps in `cratestack-mock-wiremock` (not bugs in this example) that a reader
 building on this pattern needs to know before they trust it too far:
 
-**1. The mock does not validate `If-Match` — optimistic locking can't be demonstrated live.**
-`@cratestack/refine`'s `createCratestackDataProvider` genuinely sends a real `If-Match` header on
-every `Post` update/delete (verified above — the `if-match: "0"` line in the logged requests), built
-from the version it last saw for that record. Against a real `cratestack-pg` server, a stale
-`If-Match` returns `412 Precondition Failed` and refine surfaces it as a distinguishable conflict
-(`statusCode: 412`). **Against this mock, it does not** — `cratestack-mock-wiremock`'s `get`/
-`update`/`delete` stubs match on method + path (+ a `state-matcher` `hasContext` check for record
-existence) only; there is no request-header matching anywhere in the generator, confirmed by reading
-every mapping-building call site in `crates/cratestack-mock-wiremock/src/` and asserted directly in
-`tests/smoke.rs`'s `wiremock_stubs_do_not_validate_if_match_or_any_request_header` test (a trip-wire:
-if the generator ever grows this, that test starts failing). The mock also never increments
-`version` server-side — a `Post` sits at `version: 0` forever no matter how many times you save it.
-`verify.ts`'s "Stale If-Match PATCH" line above is the direct proof: an obviously-wrong `If-Match`
-still gets a `200`, not a `412`.
+**1. ~~The mock does not validate `If-Match`~~ — fixed in #605; optimistic locking IS demonstrated
+live.** This section previously documented a real gap: `cratestack-mock-wiremock` matched on method
+and path only, so a stale `If-Match` got a `200` and `@version` — a headline framework guarantee —
+was the one thing this demo couldn't show. `tests/smoke.rs` asserted that absence as a deliberate
+trip-wire, with a failure message telling whoever closed the gap to rewrite this paragraph. It
+fired. This is that rewrite.
 
-The `PostsPage.tsx` UI says this out loud (a visible callout above the table) rather than building a
-"conflict" demo that can't actually happen against this backend. The real, decisive proof that
-`@cratestack/refine`'s `If-Match`/version-cache logic is correct lives where it was already proven
-against a server that *does* enforce the contract: `packages/cratestack-refine/tests/
-optimistic-locking.test.ts` (REST) and `tests/rpc-optimistic-locking.test.ts` (RPC), both driven
-against `tests/support/fake-rest-server.ts` / `fake-rpc-server.ts` — fakes that implement real
-`If-Match` checking, unlike this example's WireMock backend. Making the demo itself prove a live 412
-would need either a real `cratestack-pg` server (this example is explicitly the no-database one) or
-new header-precondition support in `cratestack-mock-wiremock` — a real feature addition to a shared
-generator crate, not something to invent unilaterally inside one example's PR. Flagging it as a
-decision for a maintainer to make, not deciding it here.
+The mock now mirrors the real server's contract exactly, verified live against the container
+(`web/scripts/verify.ts` asserts every row, so a regression fails the script rather than surprising
+a reader):
+
+| Request | Response |
+|---|---|
+| `PATCH` with no `If-Match` | **412** — required on a `@version` model, not optional |
+| `PATCH` with `If-Match: *` | **400** — explicitly unsupported on versioned models |
+| `PATCH` with `If-Match: 0` (unquoted) | **400** — must be a strong ETag, `"<integer>"` |
+| `PATCH` with `If-Match: "9999"` (stale) | **412** |
+| `PATCH` with the current `If-Match: "0"` | **200**, body `version: 1`, `ETag: "1"` |
+| replaying the now-consumed `If-Match: "0"` | **412** |
+
+`GET` returns `ETag: "<version>"` so a client can round-trip it, and `DELETE` enforces the
+precondition too — the real server closed that asymmetry deliberately and the mock follows.
+
+Two residual differences from a real `cratestack-pg` server, both deliberate and small: the two
+distinct 400 messages for a malformed `If-Match` collapse to one here, and `transport rpc` model
+CRUD remains entirely static (no state, no preconditions) — see
+`docs/design/wiremock-stubs.md` §10.
 
 **2. `create` never honors a client-submitted primary key — the mock always fabricates its own.**
 `cratestack-mock-wiremock`'s `id_generator` (`crates/cratestack-mock-wiremock/src/model_state/
