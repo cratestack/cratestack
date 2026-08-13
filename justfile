@@ -896,20 +896,34 @@ release-publish mode='real':
 	m = json.load(sys.stdin)
 	pkgs = {p["name"]: p for p in m["packages"]
 	        if p["name"].startswith("cratestack") and p.get("publish") != []}
-	# `kind == "dev"` is excluded deliberately: a dev-dependency cycle is
-	# legal in Cargo and irrelevant to publish order, because `cargo
-	# publish` never needs a dev-dependency to already exist on the
-	# registry to package a crate. cratestack#540 added
-	# `cratestack-api` as a dev-dependency of `cratestack-macros` (for
-	# the `Authorized`-witness expansion tests) while `cratestack-api`
-	# depends on `cratestack-macros` normally — a legitimate pairing
-	# that this sort previously read as a hard cycle, aborting the
-	# v0.7.13 crates.io publish after npm and the GitHub release had
-	# already gone out. Build dependencies (`kind == "build"`) DO
-	# constrain publish order and are deliberately kept.
+	# What constrains publish order is NOT the dependency's kind — it is
+	# whether the edge survives into the published manifest. `cargo
+	# publish` strips a path-only dependency (no `version` field), which
+	# `cargo metadata` reports as `req == "*"`. Any edge carrying a real
+	# version requirement must resolve from the registry at package time,
+	# so the dependency has to be published first — dev-dependencies very
+	# much included.
+	#
+	# Both mistakes have now been made here, so both are worth recording:
+	#
+	#   - Counting every edge (original): read the legitimate pair
+	#     `cratestack-macros --dev--> cratestack-api` (path-only, req="*")
+	#     against `cratestack-api -> cratestack-macros` (normal) as a hard
+	#     cycle, and aborted the whole publish.
+	#   - Excluding every dev edge (cratestack#564): dropped the real
+	#     constraint `cratestack-client-store-sqlite --dev--> cratestack-
+	#     client-rust` (req="^0.7.x", inherited from `[workspace.
+	#     dependencies]`, which carries a version), producing an order that
+	#     published store-sqlite before client-rust. cargo then failed with
+	#     "failed to select a version for the requirement
+	#     cratestack-client-rust = ^0.7.14" — after three crates had
+	#     already uploaded.
+	#
+	# So: keep every edge with a concrete version requirement regardless of
+	# kind, and drop only the path-only ones cargo will strip anyway.
 	graph = {n: {d["name"] for d in p["dependencies"]
 	             if d["name"] in pkgs and d["name"] != n
-	             and d.get("kind") != "dev"}
+	             and d["req"] != "*"}
 	         for n, p in pkgs.items()}
 	dry_safe = sorted(n for n, d in graph.items() if not d)
 	order, remaining = [], copy.deepcopy(graph)
@@ -921,6 +935,27 @@ release-publish mode='real':
 	        order.append(n); del remaining[n]
 	    for d in remaining.values():
 	        d.difference_update(leaves)
+	# Assert the order is actually PUBLISHABLE, not merely acyclic. The
+	# sort not crashing was previously mistaken for verification; it is
+	# not. For every edge that survives into a published manifest
+	# (req != "*"), the dependency must appear strictly earlier in `order`
+	# than the dependent, or `cargo publish` fails mid-run at that crate —
+	# with everything before it already irrevocably uploaded. That is the
+	# exact failure cratestack#564 shipped, and it is cheap to rule out.
+	position = {name: i for i, name in enumerate(order)}
+	violations = []
+	for name, pkg in pkgs.items():
+	    for dep in pkg["dependencies"]:
+	        target = dep["name"]
+	        if target not in pkgs or target == name or dep["req"] == "*":
+	            continue
+	        if position[target] >= position[name]:
+	            violations.append(
+	                f"{name} (position {position[name]}) requires {target} "
+	                f"{dep['req']} but that publishes at position {position[target]}")
+	if violations:
+	    sys.exit("publish order would fail — a dependency publishes after its "
+	             "dependent:\n  " + "\n  ".join(sorted(violations)))
 	print(" ".join(order))
 	print(" ".join(dry_safe))
 	PYEOF
