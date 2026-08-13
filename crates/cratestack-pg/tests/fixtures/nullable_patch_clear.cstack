@@ -1,0 +1,26 @@
+// cratestack#567 fixture — a minimal model with one nullable, one
+// non-nullable field, purpose-built for `../nullable_patch_clear.rs`'s
+// three-state PATCH test (field omitted / explicit null / explicit
+// value). Deliberately has no validators (`nullable_update_validator
+// .cstack` already covers the #537 interaction) so this fixture isolates
+// the deserialization mechanism alone.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model PatchClearTarget {
+  id Int @id
+  name String
+  note String?
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}

@@ -17,6 +17,31 @@ where "length" is already ambiguous between chars and UTF-8 code units. `@range`
 `@email`, `@uri`, and `@iso4217` were audited against every scalar the parser permits them on and
 found not to share this bug — `@length`/`Bytes` was the only parser-accepted, codegen-broken pair.
 
+### JSON/CBOR `null` in a PATCH body now actually clears a nullable field, instead of silently doing nothing (#567)
+
+**Behavior change for existing callers:** sending an explicit `null` for a nullable field in a
+`PATCH` body previously left that column completely unchanged (a silent no-op indistinguishable
+from omitting the key); it now sets the column to SQL `NULL`, matching what `Update{Model}Input`'s
+own `Option<Option<T>>` shape always implied. `Update{Model}Input`'s generated `Deserialize` had no
+`deserialize_with` for its nullable fields, so serde-derive's blanket `Option<T>: Deserialize`
+collapsed both "key absent" and "key present with `null`" to the same outer `None`, and
+`update_sql_value` reads a `None` field as untouched and skips the column — so "clear this field"
+was unreachable over the wire on every transport (REST JSON, CBOR, and RPC all share the same
+generated `Deserialize` impl, since `CoolCodec::decode` is generic over the target type). Fixing
+only that inbound side would have been a worse regression on its own: every generated client
+(Rust/Dart/TypeScript) builds a full `Update{Model}Input` with `..Default::default()` for untouched
+fields and serializes the whole struct, so it was already sending `"field": null` for fields it
+never touched — harmless only because the deserialize bug treated that the same as an absent key.
+`crates/cratestack-macros/src/model/struct_only.rs::struct_field_definition` now emits
+`#[serde(default, deserialize_with = "::cratestack::deserialize_double_option", skip_serializing_if
+= "Option::is_none")]` on nullable update-input fields specifically (non-nullable fields, and every
+`Create{Model}Input` field, are untouched by this change): the new `cratestack_core::patch::deserialize_double_option`
+helper recurses into the inner `Option` on decode, and `skip_serializing_if` keeps an untouched
+field off the wire entirely on encode, so the three states — field omitted, explicitly cleared,
+explicitly set — stay distinguishable in both directions. #537's "an explicit `Some(None)` is a
+validation no-op" design decision (`crates/cratestack-macros/src/validators/emit.rs`) still holds:
+that state is now actually reachable over the wire for the first time, and the validator correctly
+still skips it.
 ### `cratestack-studio`'s crate rustdoc, README, and starter `studio.toml` comments no longer contradict #553's shipped behavior (#507)
 
 #553 routed `[target.db]` `@version` bumping onto every backend and `@@emit(...)` outbox writes onto
