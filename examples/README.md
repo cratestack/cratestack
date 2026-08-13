@@ -85,9 +85,18 @@ The Rust side of all three is *checked* in CI, not tested — CI's `check`/`msrv
 `just check`, which `cargo check --workspace`s everything except `embedded_flutter_native`
 (that crate needs `flutter_rust_bridge_codegen`-generated glue that isn't checked in; see
 `embedded-flutter/README.md`), so `tauri-native-shell-example` and `embedded-expo-native`
-get a compile check but `embedded_flutter_native` doesn't even do that. None of the three run
-`cargo test` in CI — `justfile`'s `test-ci-host` recipe explicitly excludes all three (host-side,
-no wasm/desktop toolchain, no container). To actually run their Rust tests locally:
+get a compile check but `embedded_flutter_native` doesn't even do that.
+
+Their `cargo test` coverage differs per crate, as of #597:
+
+- **`embedded-expo-native` runs in CI.** Its three tests (dispatcher round-trip and two error
+  paths) execute in `test-ci-host` — they need no platform SDK, only the host toolchain.
+- **`tauri-native-shell-example` does not.** Still excluded: its 2 tests need the GTK/WebKit
+  dev packages no test job installs.
+- **`embedded_flutter_native` does not**, and can't — it is excluded from `--workspace`
+  entirely, since its `mod frb_generated;` source is generated and gitignored.
+
+To run their Rust tests locally:
 
 ```bash
 cargo test -p tauri-native-shell-example
