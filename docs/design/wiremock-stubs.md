@@ -6,16 +6,22 @@ CRUD routes (`list`/`get`/`create`/`update`/`delete`). `transport rest`
 model CRUD is **stateful** (§9) — real create-then-list/update-then-get/
 delete-then-404 behavior, backed by `wiremock-state-extension`, verified
 against a real WireMock instance built from `crates/cratestack-mock-
-wiremock/docker/Dockerfile`. `transport rpc` model CRUD and every
-procedure stay static/deterministic (§8, §9.4). Scope and open
+wiremock/docker/Dockerfile`. An `@version` model's `update`/`delete`
+also enforce `If-Match` and `get`/`update` carry an `ETag` (§10) — the
+same real-container verification standard. `transport rpc` model CRUD
+and every procedure stay static/deterministic (§8, §9.4). Scope and open
 questions below are current, not historical: several are deliberately
 deferred, not resolved.
 Scope: a new generator crate (`crates/cratestack-mock-wiremock`), a new CLI
 subcommand (`generate-wiremock`), no changes to `cratestack-parser` or
 `cratestack-macros`.
-Tracking: issue #438. Model CRUD (§8) motivated by the `refine.dev`
-admin app, `packages/cratestack-refine`, and its planned no-database
-example, `examples/react-vite-refine`.
+Tracking: issue #438; the `If-Match` gap (§10) surfaced as a trip-wire in
+`examples/react-vite-refine` (PR #604, `feat/react-vite-refine-example`,
+unmerged as of this section — see that PR's `tests/smoke.rs::
+wiremock_stubs_do_not_validate_if_match_or_any_request_header` for what
+needs reconciling once both land). Model CRUD (§8) motivated by the
+`refine.dev` admin app, `packages/cratestack-refine`, and its planned
+no-database example, `examples/react-vite-refine`.
 
 ## 1. The problem
 
@@ -825,3 +831,199 @@ still passes unmodified. `model_state.rs`'s previous comment asserting
 has been rewritten to state the actual invariant: the parser rejects
 this schema-wide before a `Schema` value can reach this generator at
 all, so this crate relies on — rather than re-derives — that guarantee.
+
+## 10. If-Match / optimistic locking — investigated, decided, and built
+
+Through §9.8, a model's `@version` field was just another `Required Int`
+field to this generator — echoed/merged like `count` or `age`, with no
+connection to `If-Match` at all. A stale `PATCH` returned `200`. This
+section covers closing that gap: mirroring
+`crates/cratestack-axum/src/headers/etag.rs::parse_if_match_version`,
+`crates/cratestack-sqlx/src/query/write/update.rs`'s
+`version = version + 1` / `WHERE version = $expected`, and
+`CoolError::status_code`'s 4xx mapping, for `update`/`delete` on a
+versioned model, plus an `ETag` on `get`/`update` responses.
+
+### 10.1 The question: can `wiremock-state-extension`'s `state-matcher`
+compare a *request header* against *stored per-record state*?
+
+Every existing `customMatcher` use in this generator (§9.5) only ever
+checks `hasContext` — "does a record exist at this path" — never a
+property's *value*. The extension's own README documents `property`
+matching (comparing a stored property against a `StringValuePattern`)
+and separately documents that `hasContext`/`hasNotContext` accept
+templated values, but never says whether `property`'s own matcher
+*value* is templated, and never shows an example comparing a stored
+value against anything from the request itself.
+
+Read `StateRequestMatcher.java` at the pinned commit
+(`docker/Dockerfile`'s `WIREMOCK_STATE_EXTENSION_COMMIT`) to settle it:
+`calculateMatch` calls
+`it.getKey().evaluate(context, renderTemplateRecursively(model, it.getValue()))`
+— the whole `property` parameters map (including nested `equalTo`/`not`
+values) is run through `renderTemplateRecursively`, which applies
+WireMock's own `TemplateEngine` (the same one `response-template` and
+`hasContext`/`hasNotContext` already use) to every string leaf, *before*
+`ContextMatcher.property`'s evaluator ever runs `patterns.match(storedValue)`.
+So a matcher value like `{{regexExtract request.headers.If-Match '[0-9]+' ...}}`
+renders to the header's digits first, and *that* rendered string is what
+gets compared against the stored `version` property. No extension change
+needed — this was reachable the whole time, just undocumented.
+
+Confirmed by hand against the real `docker/Dockerfile` image (not just
+read from source) with a hand-built `POST`/`GET`/five-`PATCH`-case
+mapping set before touching the generator at all: absent/`*`/malformed/
+stale/current `If-Match` headers each hit the intended stub and only
+that stub, `version` state correctly bumped via WireMock's bundled
+`math` helper (`{{math (state context=... property='version') '+' 1}}`
+— jknack `NumberHelpers`, part of the same `response-template`
+transformer, not something the state extension itself adds), and the
+resulting `ETag` round-tripped correctly across `GET` → `PATCH` →
+stale-`PATCH`.
+
+### 10.2 Design
+
+For a model with no `@version` field: **completely unaffected** — no
+code path in `crate::model_state::version_gate` is ever reached, and
+`build_stateful_rest_mappings` keeps building exactly the same single
+`hasContext`-only stub per verb it always did. Confirmed with a byte-
+for-byte diff: the same schema generated with and without this change's
+code produces an identical `mappings/` directory when the model has no
+`@version` field.
+
+For a model that declares `@version`, `update`/`delete` each fan out
+from one stub into five, gated in ascending WireMock `priority` (lower
+number wins first):
+
+| # | Case | Native WireMock header match | `state-matcher` `property` check | Status |
+|---|---|---|---|---|
+| 1 | `If-Match` absent | `{"If-Match": {"absent": true}}` | none | `412` |
+| 2 | `If-Match: *` | `{"If-Match": {"equalTo": "*"}}` | none | `400` |
+| 3 | present, not a strong quoted ETag | `{"If-Match": {"doesNotMatch": "^\"-?[0-9]+\"$"}}` | none | `400` |
+| 4 | well-formed, stale | `{"If-Match": {"matches": "^\"-?[0-9]+\"$"}}` | `version not equalTo <header digits>` | `412` |
+| 5 | well-formed, current | same as #4 | `version equalTo <header digits>` | the real response |
+
+Priority only has real disambiguating work to do at one seam: `*` also
+satisfies case 3's `doesNotMatch` (it isn't a strong ETag either), so
+case 2 must outrank case 3 — confirmed by hand, then encoded as
+`priority: 2` vs `priority: 3` rather than left to declaration-order
+luck. Every other pair is mutually exclusive by header content alone (a
+header is present or absent; a present value matches the strong-ETag
+regex or it doesn't), so priority is otherwise inert defense in depth.
+`<header digits>` is `{{regexExtract request.headers.If-Match '[0-9]+' default='...'}}`
+— the stored `version` property is always the bare integer (never
+quoted internally, only at the HTTP `ETag`/`If-Match` boundary), so
+comparing it against the header's digits directly avoids needing the
+extension to understand quoting at all.
+
+Case 5's response is what `update`/`delete` always rendered before this
+change, plus:
+
+- **`version` is no longer an ordinary echoed/merged field.** `create`
+  always seeds it at the literal `0` (mirroring `create_exec.rs`'s
+  server-side seed — a real `Create<M>Input` never carries `@version`
+  at all, so nothing about it is ever taken from the request body).
+  `update`'s success case always renders the *stored* version plus one
+  via `{{math (state context=... property='version') '+' 1}}` (mirroring
+  `update_exec.rs`'s `version = version + 1` — a real
+  `UpdateModelInput` never carries it either). Both values are then
+  harvested back into `recordState` from the already-rendered response
+  body (`{{jsonPath response.body '$.version'}}`), same as every other
+  field — never recomputed a second time (§9.5's own harvesting
+  principle, unchanged).
+- **`get` and `update`'s success case gain an `ETag: "<version>"`
+  response header** (`crates/cratestack-axum/src/headers/etag.rs::
+  set_version_etag`'s exact quoted-integer format) — `get`'s is the
+  current stored version, `update`'s is the post-bump one, matching
+  `get_etag_apply`/`update_etag_apply` in `crates/cratestack-macros/
+  src/axum/model/prep/etag.rs` exactly. **`delete` never gets one** —
+  there's no `delete_etag_apply` token in the real codegen, only
+  `delete_if_match_apply`, so a deleted record's response correctly
+  advertises nothing. **`create` never gets one either** (no
+  `create_etag_apply` token exists at all).
+
+Error bodies mirror `cratestack_core::CoolErrorResponse`'s exact wire
+shape (`{code, message, details}`, no extra wrapper —
+`crates/cratestack-axum/src/transport/http_transport.rs` serializes
+this directly for REST), with `code`/`message` matching the real
+`CoolError` variant and text as closely as a static-per-case mock
+reasonably can. One simplification, stated plainly rather than silently
+approximated: `parse_if_match_version` gives two different messages for
+"not quoted at all" vs "quoted but not an integer" (both `400`); this
+generator's case 3 uses one message for both, since the two collapse to
+the identical `doesNotMatch` regex check and a mock's request-header
+matching has no way to re-run the real function's own two-step parse to
+tell them apart without hand-rolling that parse in Handlebars.
+
+### 10.3 Real verification
+
+Built `docker/Dockerfile` into a real image, generated `mappings/` from
+a real `.cstack` schema (`model Widget { id Int @id; name String;
+version Int @version }`) via the actual `cratestack generate-wiremock`
+CLI, mounted it into the container, and drove real HTTP:
+
+| Request | Response |
+|---|---|
+| `POST /api/widgets {"name":"gadget"}` | `201`, `{"id":147110,"name":"gadget","version":0}` |
+| `GET /api/widgets/147110` | `200`, `ETag: "0"` |
+| `PATCH` (no `If-Match`) | `412`, `{"code":"PRECONDITION_FAILED","message":"If-Match header required",...}` |
+| `PATCH` `If-Match: *` | `400`, `{"code":"BAD_REQUEST","message":"If-Match: * is not supported on versioned models",...}` |
+| `PATCH` `If-Match: bogus` | `400`, `{"code":"BAD_REQUEST","message":"If-Match must be a strong ETag of the form \"<integer>\"",...}` |
+| `PATCH` `If-Match: W/"0"` (weak) | `400`, same message — a weak validator is not a strong one |
+| `PATCH` `If-Match: "99"` (stale) | `412`, `{"code":"PRECONDITION_FAILED","message":"version mismatch: expected 99, found 0",...}` |
+| `PATCH` `If-Match: "0"` `{"name":"renamed"}` | `200`, `ETag: "1"`, `{"id":147110,"name":"renamed","version":1}` |
+| `PATCH` again, `If-Match: "0"` (now stale) | `412`, `"version mismatch: expected 0, found 1"` |
+| `GET /api/widgets/147110` | `200`, `ETag: "1"`, shows `"renamed"` |
+| `DELETE` `If-Match: "0"` (stale) | `412` |
+| `DELETE` (absent) | `412` |
+| `DELETE` `If-Match: "1"` (current) | `200`, no `ETag` header, pre-delete snapshot |
+| `GET /api/widgets/147110` again | `404` (WireMock's own — no stub's `hasContext` matches) |
+
+The full round trip (`GET` → take `ETag` → `PATCH` with it → success →
+`PATCH` again with the now-stale value → `412`) is proven end to end by
+rows 2, 8, and 9 above.
+
+**Non-versioned models are unaffected — proven, not just argued.**
+Generated the identical schema minus `@version` twice: once against
+this change's generator, once against the pre-change generator
+(`git stash`). `diff -r` on the two `mappings/` directories: identical.
+Ran the pre-change-shaped stubs live too: `PATCH` with no `If-Match`
+header at all against a plain model still returns `200` — the mock
+never grew a header requirement it shouldn't have.
+
+`--check` still round-trips cleanly both directions: a freshly generated
+directory reports no drift, and deleting one of the new
+`update-if-match-*.json` files and re-running `--check` correctly
+reports it as drift (`missing: mappings/model.Widget.update-if-match-
+stale.json`).
+
+**Test counts.** `cargo test -p cratestack-mock-wiremock`: 32 tests
+before this change (3 unit + 14 `models.rs` + 14 `procedures.rs` + 1
+doctest), 40 after (+8 new in `tests/models_if_match.rs`). Reverting
+just `src/` (keeping the new test file) and re-running: 6 of the 8 new
+tests fail red, confirming they exercise real new behavior rather than
+restating an existing invariant; the other 2
+(`non_versioned_model_emits_no_header_matcher_anywhere`,
+`versioned_model_generation_is_deterministic`) are intentionally
+regression/invariant tests that are *supposed* to hold both before and
+after — they weren't counted toward the 6.
+
+### 10.4 What this doesn't cover
+
+- **`transport rpc` model CRUD.** Still fully static (§8, §9.7) — no
+  `If-Match` handling of any kind, versioned model or not. The same
+  "no unique-per-request key" limitation that keeps RPC out of §9's
+  statefulness applies equally here: there is no per-record context to
+  gate a header check against in the first place.
+- **The two distinct real 400 messages for a malformed `If-Match`
+  collapse to one** in this mock (§10.2's last paragraph) — a real
+  client only needs the status code and rough shape to test against a
+  mock, and the two real messages differ only in wording, not meaning.
+- **A negative stored version is impossible in practice** (the real
+  server never produces one — `version` only ever counts up from `0`),
+  but `STRONG_ETAG_PATTERN` accepts a leading `-` at the shape-check
+  level anyway, for the same reason `parse_if_match_version`'s own
+  `i64::parse` does: rejecting it would be an extra rule this generator
+  invents that the real header parser doesn't have. A negative
+  `If-Match` simply can never equal a non-negative stored version, so it
+  always falls through to the "stale" case — never silently accepted.

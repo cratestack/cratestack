@@ -40,6 +40,19 @@ pub(crate) fn is_paged_model(model: &Model) -> bool {
         .any(|attribute| attribute.raw == "@@paged")
 }
 
+/// Field carries `@version` — the optimistic-lock column. Mirrors
+/// `crates/cratestack-macros/src/shared/attrs.rs`'s predicate of the
+/// same name; parser validation (`cratestack-parser/src/validate/
+/// model_attributes.rs`) guarantees at most one per model and that it's
+/// a required `Int`, so this generator never needs to re-check either
+/// of those — only whether the attribute is present at all.
+pub(crate) fn is_version_field(field: &Field) -> bool {
+    field
+        .attributes
+        .iter()
+        .any(|attribute| attribute.raw == "@version")
+}
+
 /// Field's type names another declared model — a relation field,
 /// populated only via `include=<relation>` and excluded from the
 /// default projection this generator synthesizes.
