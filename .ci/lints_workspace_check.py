@@ -57,6 +57,12 @@ EXEMPT_MANUAL_OVERRIDE = {
     "crates/cratestack-cbor-napi",
     "examples/embedded-expo/native",
     "examples/react-nextjs-daisyui/napi",
+    # flutter_rust_bridge's generated `frb_generated.rs` (gitignored;
+    # produced by `just frb-generate examples/embedded-flutter`) crosses a
+    # raw Dart<->Rust FFI boundary and cannot compile under the workspace
+    # `unsafe_code = "forbid"`. Same category as the three above, and the
+    # reason this crate previously could not be built at all — see #600.
+    "examples/embedded-flutter/native",
 }
 
 
