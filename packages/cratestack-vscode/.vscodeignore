@@ -2,7 +2,6 @@
 .vscode-test/**
 node_modules/**
 *.vsix
-server/**/coolstack-lsp
 server/**/*.map
 test/**
 scripts/**

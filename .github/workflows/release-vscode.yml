@@ -1,0 +1,268 @@
+# Builds the `cratestack-vscode` extension (packages/cratestack-vscode) on every
+# `vX.Y.Z` tag push and attaches a platform-specific `.vsix` per target to the same
+# GitHub Release release-cli.yml creates for that tag — the PRIMARY distribution
+# path today. Users install manually: download the `.vsix` for their platform and
+# run `code --install-extension <file>.vsix` (see docs/tooling/vscode-publishing.md).
+#
+# The extension bundles a native `cratestack-lsp` binary under `server/<platform>/`
+# (see server-path.js), so a single vsix can't cover every OS/arch — instead `build`
+# builds cratestack-lsp on a native runner per target and packages a platform-specific
+# vsix via `vsce package --target <target>` — the same way the Marketplace itself
+# would distribute per-platform extensions.
+#
+# Marketplace and Open VSX publish jobs also exist below, but are currently DORMANT
+# by design: each gates on its own credential/secret actually being present and
+# soft-skips (logs why, exits 0) otherwise, so this workflow succeeds end-to-end
+# whether or not either is configured. Marketplace publishing is blocked
+# indefinitely — the maintainer's Microsoft account is stuck in a 2FA block/unblock
+# loop, so the Entra ID federated-credential setup below can't be completed — see
+# docs/tooling/vscode-publishing.md. Open VSX has NO such blocker: it's an Eclipse
+# Foundation registry (not a Microsoft one, no Microsoft account needed at all) used
+# by VSCodium/Cursor/Windsurf, and can be turned on independently just by adding
+# `OVSX_PAT` — no code change required, the job is ready and waiting.
+#
+# Both publish jobs stay tag-push-only (same as release-cli.yml's npm jobs): a
+# Marketplace/Open VSX publish can't be cleanly deleted and retried, so a throwaway
+# workflow_dispatch test run must never reach either registry. The GitHub-Release
+# attach job has no such constraint — like release-cli.yml's binary attach, deleting
+# and re-uploading a release asset is safe, so it isn't gated the same way (though
+# this workflow only triggers on tag push regardless, so the distinction is moot
+# today; noted for if a workflow_dispatch re-run path is ever added here, mirroring
+# release-cli.yml's).
+#
+# Marketplace auth uses Microsoft Entra ID workload identity federation (a
+# user-assigned managed identity, no stored secret) rather than a Personal Access
+# Token — global Marketplace PATs are being retired 2026-12-01, and this sidesteps
+# that entirely. See docs/tooling/vscode-publishing.md for the one-time Azure +
+# Marketplace + GitHub Environment setup this depends on. Open VSX has no
+# OIDC/Entra equivalent, so its publish step still uses a plain access token.
+name: Release VS Code Extension
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: release-vscode-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build (${{ matrix.vsce_target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+            vsce_target: darwin-x64
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            vsce_target: darwin-arm64
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            vsce_target: linux-x64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            vsce_target: linux-arm64
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            vsce_target: win32-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-vscode-${{ matrix.target }}
+      # Scoped to -p cratestack-lsp, not --workspace, so this needs none of
+      # the GTK/WebKit dev packages the tauri-* example crates pull in on
+      # Linux (see CLAUDE.md's Linux prerequisite note).
+      - name: Build cratestack-lsp
+        run: cargo build --release --locked -p cratestack-lsp --target ${{ matrix.target }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: pnpm install
+        # pnpm resolves the whole workspace from here (see
+        # pnpm-workspace.yaml), which runs cratestack-cli-npm's postinstall
+        # too — that downloads the GitHub Release binary matching the tag
+        # this workflow just ran on. release-cli.yml's `build`/`release`
+        # jobs (which create that release asset) run independently of this
+        # workflow and may not have finished yet, so skip the download here
+        # the same way ci.yml does — this job never touches that binary.
+        working-directory: packages/cratestack-vscode
+        env:
+          CRATESTACK_CLI_SKIP_DOWNLOAD: "1"
+        run: pnpm install --frozen-lockfile
+      - name: Stage cratestack-lsp binary
+        shell: bash
+        working-directory: packages/cratestack-vscode
+        run: |
+          set -euo pipefail
+          exe="cratestack-lsp"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            exe="cratestack-lsp.exe"
+          fi
+          pnpm run stage-server -- "../../target/${{ matrix.target }}/release/${exe}"
+      - name: Package vsix
+        working-directory: packages/cratestack-vscode
+        run: npx @vscode/vsce package --no-dependencies --target ${{ matrix.vsce_target }}
+      - name: Find packaged vsix
+        id: vsix
+        shell: bash
+        working-directory: packages/cratestack-vscode
+        run: |
+          set -euo pipefail
+          file=$(find . -maxdepth 1 -name '*.vsix' -print -quit)
+          echo "path=packages/cratestack-vscode/$file" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix-${{ matrix.vsce_target }}
+          path: ${{ steps.vsix.outputs.path }}
+          if-no-files-found: error
+
+  # PRIMARY distribution path: attach every platform's .vsix to the GitHub
+  # Release for this tag, the same way release-cli.yml's own `release` job
+  # attaches the cratestack-cli archives — same action, same upsert-by-tag
+  # behavior, no separate release-creation mechanism invented here. Whichever
+  # of the two workflows' release job runs first creates the Release for the
+  # tag; the other one (this job, or release-cli.yml's) finds it already
+  # exists and appends its own files to it instead of failing — the two
+  # workflows race harmlessly since their asset filenames never collide
+  # (`cratestack-cli-*` vs `cratestack-vscode-*.vsix`). Deliberately does not
+  # pass `generate_release_notes` here — release-cli.yml's `release` job
+  # already does that once; doing it again from this job would re-run notes
+  # generation against whatever the release looks like at that moment,
+  # which is redundant and, depending on ordering, could reorder or
+  # duplicate content instead of leaving the notes it already generated
+  # alone.
+  attach-github-release:
+    name: attach vsix to GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: vsix-*
+          path: dist
+          merge-multiple: true
+      - name: List vsix assets
+        run: ls -la dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: dist/*.vsix
+          fail_on_unmatched_files: true
+
+  # Requires the AZURE_CLIENT_ID/AZURE_TENANT_ID/AZURE_SUBSCRIPTION_ID repo
+  # secrets (a user-assigned managed identity granted publish rights on the
+  # `cratestack` Marketplace publisher) and a `vscode-marketplace` GitHub
+  # Environment whose name matches the managed identity's federated
+  # credential subject (`repo:cratestack/cratestack:environment:vscode-marketplace`)
+  # — GitHub environment-scoped OIDC subjects are stable across tags, unlike
+  # a per-tag ref subject, which federated credentials can't wildcard-match.
+  # See docs/tooling/vscode-publishing.md for the one-time setup. Soft-skips
+  # (logs + exits 0) when the secret isn't set yet, matching release-cli.yml's
+  # publish-npm soft-skip convention — so this workflow succeeds end-to-end
+  # even before the secrets exist.
+  publish-marketplace:
+    name: publish (Marketplace)
+    needs: build
+    runs-on: ubuntu-latest
+    environment: vscode-marketplace
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: vsix-*
+          path: dist
+          merge-multiple: true
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: pnpm install
+        working-directory: packages/cratestack-vscode
+        env:
+          CRATESTACK_CLI_SKIP_DOWNLOAD: "1"
+        run: pnpm install --frozen-lockfile
+      - name: Check Marketplace credentials configured
+        id: creds
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        run: |
+          if [ -n "${AZURE_CLIENT_ID:-}" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "AZURE_CLIENT_ID secret not set; skipping Marketplace publish." >&2
+            echo "See docs/tooling/vscode-publishing.md for setup." >&2
+          fi
+      - uses: azure/login@v3
+        if: steps.creds.outputs.configured == 'true'
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Publish to VS Code Marketplace
+        if: steps.creds.outputs.configured == 'true'
+        shell: bash
+        working-directory: packages/cratestack-vscode
+        run: |
+          set -euo pipefail
+          for f in ../../dist/*.vsix; do
+            npx @vscode/vsce publish --no-dependencies --skip-duplicate --azure-credential --packagePath "$f"
+          done
+
+  # Requires a repo secret named OVSX_PAT: an Open VSX access token for a
+  # namespace named `cratestack`. Same soft-skip convention as above — Open
+  # VSX has no OIDC/Entra equivalent to the Marketplace job's approach, so
+  # this stays a plain token.
+  publish-openvsx:
+    name: publish (Open VSX)
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: vsix-*
+          path: dist
+          merge-multiple: true
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: pnpm install
+        working-directory: packages/cratestack-vscode
+        env:
+          CRATESTACK_CLI_SKIP_DOWNLOAD: "1"
+        run: pnpm install --frozen-lockfile
+      - name: Publish to Open VSX
+        shell: bash
+        working-directory: packages/cratestack-vscode
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          set -euo pipefail
+          if [ -z "${OVSX_PAT:-}" ]; then
+            echo "OVSX_PAT secret not set; skipping Open VSX publish." >&2
+            echo "See docs/tooling/vscode-publishing.md for setup." >&2
+            exit 0
+          fi
+          for f in ../../dist/*.vsix; do
+            npx ovsx publish "$f" --skip-duplicate -p "$OVSX_PAT"
+          done

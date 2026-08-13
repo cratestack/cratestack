@@ -1,0 +1,14 @@
+// cratestack#567 fixture (embedded counterpart of
+// `cratestack-pg/tests/fixtures/nullable_patch_clear.cstack`) — same
+// shape, no policies, since `include_embedded_schema!` enforces none.
+
+datasource db {
+  provider = "sqlite"
+  url = env("DATABASE_URL")
+}
+
+model PatchClearTarget {
+  id Int @id
+  name String
+  note String?
+}
