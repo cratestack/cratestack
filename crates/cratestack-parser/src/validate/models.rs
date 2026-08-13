@@ -13,6 +13,7 @@ use crate::validate::model_attributes::{validate_model_attributes, validate_mode
 use crate::validate::model_relation::validate_field_relation;
 use crate::validate::pb::validate_pb_field_attribute;
 use crate::validate::reserved_idents::validate_reserved_identifier;
+use crate::validate::route_collisions::validate_model_route_collisions;
 use crate::validate::snake_case_collisions::{
     validate_field_column_collisions, validate_model_name_collisions,
 };
@@ -39,6 +40,7 @@ pub(super) fn validate_models(
     let type_decl_names = collect_type_decl_names(schema);
 
     validate_model_name_collisions(&schema.models)?;
+    validate_model_route_collisions(&schema.models)?;
 
     for model in &schema.models {
         validate_reserved_identifier(

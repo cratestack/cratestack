@@ -8,6 +8,16 @@
 
 use crate::model_attrs::ScalarKind;
 
+/// The JSON key a *list* entry (never a per-record context) stores its
+/// own per-record context path under — see `super::listeners`'
+/// module doc for why. Not derived from any schema field name, so it
+/// can never collide with a real model field (`.cstack` field names are
+/// plain identifiers; this key's `__cratestack_` prefix and non-
+/// identifier-adjacent shape make an accidental collision practically
+/// impossible, and even a colliding field would only ever affect the
+/// mock's own bookkeeping, never a real deployment).
+pub(crate) const LIST_ENTRY_CONTEXT_KEY: &str = "__cratestack_record_context";
+
 /// Wraps `expr` (a bare Handlebars expression, e.g. `{{state ...}}`) in
 /// literal JSON quotes if `kind` needs them (`QuotedString`), or leaves
 /// it bare for `Number`/`Bool` so the rendered text is an unquoted JSON
@@ -42,13 +52,59 @@ pub(crate) fn read_state(field: &str, context_expr: &str) -> String {
     format!("{{{{state context={context_expr} property='{field}'}}}}")
 }
 
-/// `{{#if (jsonPath request.body '$.field')}}<new>{{else}}<fallback>{{/if}}`
-/// — PATCH semantics for one field: the caller's new value if the patch
-/// body included it, otherwise whatever `fallback` renders (typically
-/// [`read_state`] against the prior stored value).
+/// A value no real request field is expected to send — used by
+/// [`merge_or_fallback`] to tell "key absent from the request body" apart
+/// from "key present with a falsy value" (see that function's doc
+/// comment). Not a security boundary (this is a mock's mutable request
+/// body, not an access-controlled input), so a distinctive plain string
+/// is enough; it doesn't need to be cryptographically unguessable.
+const ABSENT_SENTINEL: &str = "__cratestack_wiremock_absent__";
+
+/// `{{#if (eq (jsonPath request.body '$.field' default=SENTINEL)
+/// SENTINEL)}}<fallback>{{else}}<new>{{/if}}` — PATCH semantics for one
+/// field: the caller's new value if the patch body included it,
+/// otherwise whatever `fallback` renders (typically [`read_state`]
+/// against the prior stored value).
+///
+/// This presence-tests the field instead of testing its truthiness.
+/// The naive `{{#if (jsonPath request.body '$.field')}}` this replaces
+/// treats Handlebars/JSON falsy values (`false`, `0`, `""`) the same as
+/// "absent" — confirmed by hand against the real extension: `PATCH
+/// {"count":0}` on a stored `count:5` left `5` untouched, `{"active":
+/// false}` left `true` untouched, and `{"name":""}` left the prior name
+/// untouched. A mock consumer could never zero a counter, clear a
+/// string, or toggle a boolean off.
+///
+/// The fix: `jsonPath ... default=SENTINEL` returns the field's real
+/// value when the key is present with a non-null value (whatever it is,
+/// including `0`/`false`/`""`), and the sentinel both when the key is
+/// missing *and* when it's present but explicitly `null` (confirmed by
+/// hand — the extension's `jsonPath` helper treats a JSON `null` leaf
+/// the same as a missing path for `default=` purposes, it does not
+/// return a literal `null`); `eq` (bundled in handlebars.java's
+/// `ConditionalHelpers`, confirmed available in the real extension
+/// image) compares the two tri-state-safely regardless of the returned
+/// value's JSON type — a number/boolean/string all compare `false`
+/// against a string sentinel without erroring, confirmed by hand.
+///
+/// **Explicit JSON `null` is therefore treated the same as "absent"
+/// (falls back), not stored as a literal `null`.** This falls out of
+/// the `jsonPath`/`default=` behavior above without extra code, and it's
+/// also the semantically right call: this helper only ever wraps a
+/// stateful field, and every stateful field
+/// ([`crate::model_attrs::ScalarKind`]) is `Required` arity by
+/// definition — `Optional`/nullable fields are never stateful, they're
+/// frozen (see `crate::model_state::fields`). A `Required` field has no
+/// valid `null` state to move into, so treating a client's explicit
+/// `null` as "leave it alone" is the least-surprising behavior for a
+/// mock: the alternative (storing a literal `null` into a field the
+/// schema declares non-nullable) would make a later `get` return a
+/// shape the real server's type could never produce. Confirmed by hand:
+/// `{"count":null}` and `{}` render identically.
 pub(crate) fn merge_or_fallback(field: &str, fallback: &str) -> String {
     format!(
-        "{{{{#if (jsonPath request.body '$.{field}')}}}}{{{{jsonPath request.body '$.{field}'}}}}{{{{else}}}}{fallback}{{{{/if}}}}"
+        "{{{{#if (eq (jsonPath request.body '$.{field}' default='{ABSENT_SENTINEL}') \
+         '{ABSENT_SENTINEL}')}}}}{fallback}{{{{else}}}}{{{{jsonPath request.body '$.{field}'}}}}{{{{/if}}}}"
     )
 }
 
@@ -90,5 +146,30 @@ mod tests {
         assert_eq!(quote_wrap(ScalarKind::QuotedString, "X"), "\"X\"");
         assert_eq!(quote_wrap(ScalarKind::Number, "X"), "X");
         assert_eq!(quote_wrap(ScalarKind::Bool, "X"), "X");
+    }
+
+    /// Presence-tested (`eq (jsonPath ... default=SENTINEL) SENTINEL`),
+    /// never a bare truthiness `#if` on the field's own value — a bare
+    /// `#if` is exactly the cratestack#588 falsy-value bug this replaced
+    /// (see the function's own doc comment for the real-request repro).
+    #[test]
+    fn merge_or_fallback_presence_tests_not_truthiness_tests() {
+        let expr = merge_or_fallback("count", "FALLBACK");
+        assert!(
+            expr.contains("(eq (jsonPath request.body '$.count' default="),
+            "must presence-test via `eq`+`default=`, not a bare `#if`: {expr}"
+        );
+        assert!(
+            !expr.starts_with("{{#if (jsonPath request.body '$.count')}}"),
+            "must not regress to the naive truthiness-testing form: {expr}"
+        );
+        assert!(
+            expr.contains("FALLBACK"),
+            "fallback branch must survive: {expr}"
+        );
+        assert!(
+            expr.contains("{{jsonPath request.body '$.count'}}"),
+            "the present-value branch must still echo the real request value: {expr}"
+        );
     }
 }

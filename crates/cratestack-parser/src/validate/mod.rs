@@ -9,6 +9,7 @@ mod pb;
 mod procedure_idents;
 mod procedures;
 mod reserved_idents;
+mod route_collisions;
 mod snake_case_collisions;
 mod stream_attribute;
 mod type_names;

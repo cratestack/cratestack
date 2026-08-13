@@ -198,3 +198,59 @@ model Bar {
 
     assert_eq!(schema.models.len(), 2);
 }
+
+/// `Bus` -> `to_snake_case` `bus` -> `pluralize` `buses` (`s`-ending stems
+/// get `es`); `Buse` -> `to_snake_case` `buse` -> `pluralize` `buses` (a
+/// bare `s`, since `buse` doesn't end in `s` or a consonant+`y`). Distinct
+/// `to_snake_case` forms (so `validate_model_name_collisions` alone lets
+/// this through) but the identical pluralized REST route segment
+/// `/buses` — the real Axum server panics at startup registering both
+/// models' routes, and (pre-fix) `cratestack-mock-wiremock` silently
+/// generated two model stubs sharing one route and one state pool with no
+/// error at all.
+#[test]
+fn rejects_model_names_whose_pluralized_route_segments_collide_despite_distinct_snake_case() {
+    let error = parse_schema(
+        r#"
+datasource db {
+  provider = "postgresql"
+}
+
+model Bus {
+  id Int @id
+}
+
+model Buse {
+  id Int @id
+}
+"#,
+    )
+    .expect_err("`Bus` and `Buse` both route to `/buses` and must be rejected");
+
+    let message = error.to_string();
+    assert!(message.contains("Bus"), "error: {message}");
+    assert!(message.contains("Buse"), "error: {message}");
+    assert!(message.contains("buses"), "error: {message}");
+}
+
+#[test]
+fn distinct_pluralized_route_segments_are_fine() {
+    let schema = parse_schema(
+        r#"
+datasource db {
+  provider = "postgresql"
+}
+
+model Bus {
+  id Int @id
+}
+
+model Car {
+  id Int @id
+}
+"#,
+    )
+    .expect("`Bus`/`Car` route to distinct `/buses`/`/cars` segments and must parse fine");
+
+    assert_eq!(schema.models.len(), 2);
+}

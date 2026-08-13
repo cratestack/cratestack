@@ -9,7 +9,9 @@
 //! ambiguity and is invisible in the rendered JSON.
 
 use super::fields::ModelFieldPlan;
-use super::fragments::{id_generator, merge_or_fallback, quote_wrap, read_state};
+use super::fragments::{
+    LIST_ENTRY_CONTEXT_KEY, id_generator, merge_or_fallback, quote_wrap, read_state,
+};
 
 fn assemble_object(pairs: &[(String, String)]) -> String {
     let body = pairs
@@ -96,19 +98,17 @@ pub(crate) fn update_body(plan: &ModelFieldPlan, context_expr: &str) -> String {
     assemble_object(&pairs)
 }
 
-/// One `list` item, reading from the current `{{#each}}` loop variable
-/// (`{{this.<field>}}`) instead of a `context=` lookup.
+/// One `list` item. A list entry is a pointer, not a denormalized copy
+/// of the record's fields (see `super::listeners`' module doc for why:
+/// keeping the shared list's own copy in sync on every `update` is
+/// exactly the non-atomic multi-step write that corrupted under
+/// concurrency) — so every field, including the id, is read back from
+/// the current `{{#each}}` loop item's [`LIST_ENTRY_CONTEXT_KEY`]
+/// pointer via a `context=` lookup, identical to [`read_body`]'s own
+/// per-record read, just against `this.<pointer key>` instead of a
+/// fixed `context_expr` string.
 pub(crate) fn list_item_body(plan: &ModelFieldPlan) -> String {
-    let mut pairs = vec![(
-        plan.pk_name.clone(),
-        quote_wrap(plan.pk_kind, &format!("{{{{this.{}}}}}", plan.pk_name)),
-    )];
-    for field in &plan.stateful {
-        let value = quote_wrap(field.kind, &format!("{{{{this.{}}}}}", field.name));
-        pairs.push((field.name.clone(), value));
-    }
-    pairs.extend(frozen_pairs(plan));
-    assemble_object(&pairs)
+    read_body(plan, &format!("this.{LIST_ENTRY_CONTEXT_KEY}"))
 }
 
 /// `GET /<plural>` full response body: every stored record in

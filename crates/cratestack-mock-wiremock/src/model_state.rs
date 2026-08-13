@@ -51,8 +51,13 @@ pub(crate) fn build_stateful_rest_mappings(
     let detail_pattern = format!("^{}/{}/[^/]+$", regex_escape(base), regex_escape(&plural));
 
     // The shared collection's state-store context is just the plural
-    // name — one WireMock instance serves one schema's stubs, so no two
-    // models' plurals can collide (route paths already can't). A
+    // name. Two distinct models routing to the same plural (e.g. `Bus`
+    // and `Buse`, both `/api/buses`) would collide their contexts and
+    // silently share one state pool — but `cratestack-parser`'s
+    // `validate_model_route_collisions` rejects that schema-wide at
+    // parse time (cratestack#588's follow-up), before a `Schema` value
+    // can ever reach this generator, so it's a parser invariant this
+    // code relies on rather than something this code re-checks. A
     // per-record context, by contrast, must be unique across every
     // record of every model: `request.path` (e.g. `/api/posts/42`) is
     // already exactly that, for free, on every REST detail request — no
@@ -105,11 +110,7 @@ pub(crate) fn build_stateful_rest_mappings(
         has_context_matcher,
         200,
         &body::update_body(&plan, "request.path"),
-        Some(listeners::update_listeners(
-            &plan,
-            &plural,
-            "{{request.path}}",
-        )),
+        Some(listeners::update_listeners(&plan, "{{request.path}}")),
         &model.name,
         "update",
     );

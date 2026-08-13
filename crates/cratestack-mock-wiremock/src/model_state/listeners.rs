@@ -14,11 +14,46 @@
 //! an `Int` field correctly (the *response* still renders it unquoted;
 //! only [`super::body`]'s render-time `quote_wrap` controls what the
 //! client sees).
+//!
+//! **`update` never touches the shared list — by design, not oversight.**
+//! An earlier version had `update` overwrite the per-record context AND
+//! replace its entry in the shared list (`deleteState(deleteWhere)` +
+//! `recordState(addLast)`), on the theory that the list needed its own
+//! up-to-date copy of every field for `list` to render correctly. That
+//! non-atomic three-step sequence against one shared list context is
+//! exactly what corrupted under concurrency: `wiremock-state-extension`
+//! documents "single updates to contexts... are atomic on instance
+//! level" but "the context can change while a request is performed" —
+//! i.e. no transaction spans the three steps — and its list entries
+//! "cannot be modified (only read/deleted)", so there is no atomic
+//! "replace this one entry" primitive to reach for instead (checked
+//! against the extension's own README before concluding this). Reproduced
+//! by hand: 300+ concurrent `PATCH`es to one record left double-digit
+//! duplicate stale rows for that same id in the shared list (see
+//! `docs/design/wiremock-stubs.md`'s "Model CRUD statefulness" section
+//! for the exact repro and counts).
+//!
+//! The fix removes the shared list from `update`'s write path entirely:
+//! a list entry now stores only a pointer — [`fragments::
+//! LIST_ENTRY_CONTEXT_KEY`], the record's own per-record context path —
+//! not a denormalized copy of every field. [`super::body::list_item_body`]
+//! renders each list item by following that pointer back to the
+//! authoritative per-record context (the exact same lookup `get`/`delete`
+//! already use), instead of reading a stale, list-local snapshot. `update`
+//! therefore only ever performs the one write every other stateful field
+//! mutation already relies on being atomic: `recordState` against a
+//! single per-record context. `create` and `delete` still each touch the
+//! shared list exactly once (an add, a delete) — the same category of
+//! non-atomic multi-step risk technically still applies to a `create`/
+//! `delete` race on the *same* id, but that's a materially smaller
+//! window (one id is created and deleted at most once each, versus
+//! `update`'s expected repeated-write pattern) and was not the reported
+//! failure mode.
 
 use serde_json::{Value, json};
 
 use super::fields::ModelFieldPlan;
-use super::fragments::echo_from_response;
+use super::fragments::{LIST_ENTRY_CONTEXT_KEY, echo_from_response};
 
 fn state_object(plan: &ModelFieldPlan) -> Value {
     let mut object = serde_json::Map::new();
@@ -32,11 +67,23 @@ fn state_object(plan: &ModelFieldPlan) -> Value {
     Value::Object(object)
 }
 
+/// [`state_object`] plus [`LIST_ENTRY_CONTEXT_KEY`] pointing back at
+/// `record_context` — the shape a *list* entry stores, as opposed to a
+/// per-record context's own state (which never needs to point at
+/// itself).
+fn list_entry_object(plan: &ModelFieldPlan, record_context: &str) -> Value {
+    let Value::Object(mut object) = state_object(plan) else {
+        unreachable!("state_object always returns a JSON object")
+    };
+    object.insert(LIST_ENTRY_CONTEXT_KEY.to_owned(), json!(record_context));
+    Value::Object(object)
+}
+
 /// `POST /<plural>`: record the new row under its own per-record
 /// context (`record_context`, already the fully-templated
 /// `"<detail_base>/{{jsonPath response.body '$.id'}}"` string) AND
-/// append it to the shared `plural_context` list — the two facts
-/// `get`/`delete` and `list` each need.
+/// append a pointer to it to the shared `plural_context` list — the two
+/// facts `get`/`delete` and `list` each need.
 pub(crate) fn create_listeners(
     plan: &ModelFieldPlan,
     plural_context: &str,
@@ -47,7 +94,7 @@ pub(crate) fn create_listeners(
             "name": "recordState",
             "parameters": {
                 "context": plural_context,
-                "list": { "addLast": state_object(plan) },
+                "list": { "addLast": list_entry_object(plan, record_context) },
             },
         },
         {
@@ -61,38 +108,13 @@ pub(crate) fn create_listeners(
 }
 
 /// `PATCH /<plural>/{id}`: overwrite the per-record context with the
-/// merged (patched) row, then replace that row's entry in the shared
-/// list (delete-by-id, re-add) — the extension has no "update this one
-/// list entry in place" operation, so removing and re-appending is the
-/// only way `list` stays consistent with the per-record context.
-pub(crate) fn update_listeners(
-    plan: &ModelFieldPlan,
-    plural_context: &str,
-    record_context: &str,
-) -> Value {
+/// merged (patched) row. Nothing else — see this module's doc comment
+/// for why the shared list is deliberately never touched here.
+pub(crate) fn update_listeners(plan: &ModelFieldPlan, record_context: &str) -> Value {
     json!([
         {
             "name": "recordState",
             "parameters": { "context": record_context, "state": state_object(plan) },
-        },
-        {
-            "name": "deleteState",
-            "parameters": {
-                "context": plural_context,
-                "list": {
-                    "deleteWhere": {
-                        "property": plan.pk_name,
-                        "value": echo_from_response(&plan.pk_name),
-                    },
-                },
-            },
-        },
-        {
-            "name": "recordState",
-            "parameters": {
-                "context": plural_context,
-                "list": { "addLast": state_object(plan) },
-            },
         },
     ])
 }
