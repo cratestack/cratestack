@@ -13,11 +13,13 @@
 //! exercises from the Rust-client side; this test is its TypeScript-side
 //! counterpart.
 //!
-//! Deliberately covers both the default and `swr` presets — both ship
-//! their own `list()`/`{{ list_fn }}` call site wired to
-//! `toRpcListInput`, and both share the same generated `src/queries.ts`
-//! (see `crate::templates::specs`/`crate::swr::templates`'s module docs
-//! for why that file is reused verbatim rather than duplicated).
+//! Deliberately covers both the default layout and `--swr`'s subtree —
+//! both ship their own `list()`/`{{ list_fn }}` call site wired to
+//! `toRpcListInput`, and both reuse the same `queries.ts` template
+//! verbatim (see `crate::templates::specs`/`crate::swr::templates`'s
+//! module docs for why that file is reused rather than duplicated as a
+//! distinct template — it lands at `src/queries.ts` for the default
+//! layout and `src/swr/queries.ts` for the `--swr` subtree).
 //!
 //! Same Node-availability skip convention as `tests/swr_runtime.rs`:
 //! no Rust CI job in this repo currently provisions Node, so this
@@ -29,7 +31,7 @@ use std::io::Write as _;
 use std::process::Command;
 
 use cratestack_axum::rpc::{RpcListInput, RpcListPredicate};
-use cratestack_client_typescript::{TypeScriptGeneratorConfig, TypeScriptPreset, generate_package};
+use cratestack_client_typescript::{TypeScriptGeneratorConfig, generate_package};
 
 #[test]
 fn to_rpc_list_input_matches_the_real_rpc_list_input_wire_shape() {
@@ -42,23 +44,23 @@ fn to_rpc_list_input_matches_the_real_rpc_list_input_wire_shape() {
         return;
     }
 
-    for preset in [TypeScriptPreset::Default, TypeScriptPreset::Swr] {
-        assert_generated_wire_shape_matches_rpc_list_input(preset);
+    for swr in [false, true] {
+        assert_generated_wire_shape_matches_rpc_list_input(swr);
     }
 }
 
-fn assert_generated_wire_shape_matches_rpc_list_input(preset: TypeScriptPreset) {
+fn assert_generated_wire_shape_matches_rpc_list_input(swr: bool) {
     let schema = cratestack_parser::parse_schema_file("tests/fixtures/tiny_rpc.cstack")
         .expect("fixture should parse");
     let package = generate_package(
         &schema,
         &TypeScriptGeneratorConfig {
             package_name: "rpc-list-query-wire-check".to_owned(),
-            preset,
+            swr,
             ..TypeScriptGeneratorConfig::default()
         },
     )
-    .unwrap_or_else(|error| panic!("{preset:?}: package should render: {error}"));
+    .unwrap_or_else(|error| panic!("swr={swr}: package should render: {error}"));
 
     let dir = tempfile::tempdir().expect("tempdir");
     for file in &package.files {
@@ -68,21 +70,34 @@ fn assert_generated_wire_shape_matches_rpc_list_input(preset: TypeScriptPreset) 
         }
         std::fs::write(&path, &file.contents).expect("write generated file");
     }
+    // The default layout's own `src/queries.ts` is always generated
+    // regardless of `swr`; when `swr` is on, its `src/swr/queries.ts`
+    // sibling is what this test actually exercises below.
+    let queries_relative = if swr {
+        "src/swr/queries.ts"
+    } else {
+        "src/queries.ts"
+    };
     assert!(
-        dir.path().join("src/queries.ts").is_file(),
-        "{preset:?}: expected src/queries.ts to be generated for an RPC schema"
+        dir.path().join(queries_relative).is_file(),
+        "swr={swr}: expected {queries_relative} to be generated for an RPC schema"
     );
 
     // Same field values as `crates/cratestack-axum/src/rpc/tests_list.rs`'s
     // `synthesize_list_query_round_trips_through_parse_query_pairs`, plus
     // an `or` value (that existing Rust test leaves `or: None`) so this
     // test also covers the one field the Rust-side test doesn't.
+    let import_specifier = if swr {
+        "./src/swr/queries"
+    } else {
+        "./src/queries"
+    };
     let script_path = dir.path().join("smoke.ts");
     let mut script = std::fs::File::create(&script_path).expect("create smoke script");
     write!(
         script,
         r#"
-import {{ toRpcListInput }} from "./src/queries";
+import {{ toRpcListInput }} from "{import_specifier}";
 
 const input = toRpcListInput({{
   limit: 20,
@@ -107,7 +122,7 @@ console.log(JSON.stringify(input));
         .expect("run npx tsx");
     assert!(
         output.status.success(),
-        "{preset:?}: generated toRpcListInput() failed to run under Node:\nstdout: {}\nstderr: {}",
+        "swr={swr}: generated toRpcListInput() failed to run under Node:\nstdout: {}\nstderr: {}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -117,7 +132,7 @@ console.log(JSON.stringify(input));
         .lines()
         .last()
         .and_then(|line| serde_json::from_str(line).ok())
-        .unwrap_or_else(|| panic!("{preset:?}: smoke script did not print valid JSON:\n{stdout}"));
+        .unwrap_or_else(|| panic!("swr={swr}: smoke script did not print valid JSON:\n{stdout}"));
 
     let mut include_fields = BTreeMap::new();
     include_fields.insert(
@@ -143,7 +158,7 @@ console.log(JSON.stringify(input));
 
     assert_eq!(
         actual_json, expected_json,
-        "{preset:?}: generated toRpcListInput() output does not match \
+        "swr={swr}: generated toRpcListInput() output does not match \
          serde_json::to_value(&RpcListInput {{ .. }}) — the RPC dispatcher \
          (crates/cratestack-macros/src/transport/rpc.rs) decodes the request \
          body straight into RpcListInput with this exact field set, so any \

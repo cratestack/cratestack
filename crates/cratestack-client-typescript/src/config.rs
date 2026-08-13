@@ -2,33 +2,28 @@ use std::path::PathBuf;
 
 use cratestack_proto::PbLock;
 
-/// Which output layout `generate_package` emits (issue #304, epic #298).
-///
-/// `Default` is today's monolithic layout (`src/models.ts`, `src/client.ts`,
-/// ...) and stays byte-identical forever — every existing consumer depends
-/// on it. `Swr` is the new file-per-model layout: `src/models/<model>.ts`
-/// per model (types + plain framework-free async functions) and
-/// `src/procedures.ts` for procedures. The name and default value are
-/// deliberately kept in lockstep with the Dart generator's sibling flag
-/// (#297) so the two CLIs stay consistent for anyone using both.
-///
-/// `Swr` only lays out files this way — it does not yet emit any SWR hook.
-/// That's #305, built on top of this preset's file layout.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum TypeScriptPreset {
-    #[default]
-    Default,
-    Swr,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeScriptGeneratorConfig {
     pub package_name: String,
     pub base_path: String,
     pub template_dir: Option<PathBuf>,
-    /// See [`TypeScriptPreset`]. Defaults to `TypeScriptPreset::Default`,
-    /// today's byte-identical output.
-    pub preset: TypeScriptPreset,
+    /// Issue #591 (originally #304/#305 as `--preset swr`, now a
+    /// composable flag rather than a mutually-exclusive preset — see
+    /// `crate::swr`'s module doc for the full rationale): additionally
+    /// emit the file-per-model + SWR-hooks layout under `src/swr/`,
+    /// reachable by consumers as `<package_name>/swr` (and
+    /// `<package_name>/swr/models/*`, `/swr/procedures`,
+    /// `/swr/procedures.hooks`) via a `package.json` `exports` subpath.
+    ///
+    /// Purely additive — `false` (the default) leaves every other emitted
+    /// file byte-identical to before this flag existed, which is what
+    /// `tests/snapshot.rs` pins. The default layout at `src/` is always
+    /// emitted regardless of this flag; `swr: true` adds the `src/swr/`
+    /// subtree alongside it rather than replacing it, so a consumer who
+    /// used to run this generator twice (once per preset, into two
+    /// directories/packages) gets both layouts from one run into one
+    /// package instead.
+    pub swr: bool,
     /// Emit model interfaces with every scalar field required (matching the
     /// schema's own nullability) instead of forcing every field optional to
     /// account for partial `fields`/`include` projection. For consumers that
@@ -48,10 +43,11 @@ pub struct TypeScriptGeneratorConfig {
     ///
     /// Purely additive — `false` (the default) leaves every other emitted
     /// file byte-identical, which is what `tests/snapshot.rs` pins.
-    /// Supported only with `TypeScriptPreset::Default` on a REST or RPC
-    /// schema; `generate_package` rejects any other combination (gRPC-Web,
-    /// or the `swr` preset) rather than emitting a file that cannot
-    /// type-check.
+    /// REST or RPC schemas only; `generate_package` rejects a `transport
+    /// grpc` schema rather than emitting a file that cannot type-check.
+    /// Composes freely with `swr: true` — `src/refine.ts` binds to the
+    /// default layout's client class, which is always emitted regardless
+    /// of `swr`.
     pub refine: bool,
     /// Hex-encoded SHA-256 of the schema file's raw bytes (issue #178) —
     /// computed once by the CLI (`cli_support::hash_schema_source`, the
@@ -73,7 +69,7 @@ impl Default for TypeScriptGeneratorConfig {
             package_name: "cratestack-client".to_owned(),
             base_path: "/api".to_owned(),
             template_dir: None,
-            preset: TypeScriptPreset::Default,
+            swr: false,
             full_selection: false,
             refine: false,
             pb_lock: None,

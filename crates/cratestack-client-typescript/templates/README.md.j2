@@ -165,3 +165,31 @@ This parses correctly regardless of which `Decimal` backend built the server
 plain positional notation (`"0.0000001"`) and the scientific notation `bigdecimal` emits
 past `rust_decimal`'s ~28-29 significant-digit capacity (`"1E-7"`) decode to the identical
 value, and this package always re-encodes in plain notation.
+{%- if swr %}
+
+## SWR (file-per-model layout + hooks)
+
+This package also carries the `swr` layout under `src/swr/` — one file per model (types
+plus plain, framework-free `async` functions), a sibling `.hooks.ts` per model/procedures
+file with `useSWR`/`useSWRMutation` hooks wrapping those functions, and a shared
+`swrKeys` cache-key factory. It coexists with the layout documented above; nothing here
+changes what's exported from the package root.
+
+```ts
+import { CratestackRuntime } from "{{ package_name }}/swr";
+import { useWidget } from "{{ package_name }}/swr/models/widget.hooks";
+```
+
+Import exactly the functions/hooks you call. `swr`/React are only required if you import
+a `.hooks` module — plain functions (`{{ package_name }}/swr/models/<model>`) need
+nothing but the runtime. See `{{ package_name }}/swr`'s own module for the full model
+list, and `{{ package_name }}/swr/procedures`/`/swr/procedures.hooks` for procedures.
+
+**One `CratestackRuntime` per surface.** The root and `/swr` each construct their own
+`CratestackRuntime` class from the same template, so the two are structurally identical
+but *not* interchangeable at the type level (private fields make them nominally distinct
+classes) — a runtime built via `new {{ client_class_name }}(...)`'s constructor or the
+root's own `CratestackRuntime` will not type-check against a `/swr` function or hook, and
+vice versa. Construct the runtime from whichever surface you're calling into, and keep
+that choice consistent within one component/module.
+{%- endif %}

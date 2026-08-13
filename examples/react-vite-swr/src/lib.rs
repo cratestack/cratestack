@@ -1,4 +1,4 @@
-//! Server half of the `swr`-preset end-to-end example (issue #306, the
+//! Server half of the `--swr`-flag end-to-end example (issue #306, the
 //! last story of epic #298). Two models (`Board` has many `Task`s) plus
 //! one stateless procedure, exposed over `transport rest` — see
 //! `schema.cstack` for why this shape and why REST.

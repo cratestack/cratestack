@@ -7,9 +7,7 @@ use crate::cli_support::{
     hash_schema_source, into_generated_files, json_check_failure, json_check_success,
     parse_schema_or_render, render_schema_error, write_generated_files,
 };
-use crate::cli_types::{
-    Cli, Command, DartPresetArg, MigrateAction, OutputFormat, StudioCmd, TypeScriptPresetArg,
-};
+use crate::cli_types::{Cli, Command, DartPresetArg, MigrateAction, OutputFormat, StudioCmd};
 use crate::drift::check_drift;
 
 #[cfg(test)]
@@ -45,7 +43,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             template_dir,
             check,
             full_selection,
-            preset,
+            swr,
             refine,
         } => handle_generate_typescript(
             schema,
@@ -55,7 +53,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             template_dir,
             check,
             full_selection,
-            preset,
+            swr,
             refine,
         )?,
         Command::GenerateProto {
@@ -177,23 +175,19 @@ fn handle_generate_typescript(
     template_dir: Option<PathBuf>,
     check: bool,
     full_selection: bool,
-    preset: TypeScriptPresetArg,
+    swr: bool,
     refine: bool,
 ) -> Result<()> {
     let parsed = parse_schema_or_render(&schema)?;
     let pb_lock = read_pb_lock_if_present(&schema)?;
     let schema_sha256 = hash_schema_source(&schema)?;
-    let preset = match preset {
-        TypeScriptPresetArg::Default => cratestack_client_typescript::TypeScriptPreset::Default,
-        TypeScriptPresetArg::Swr => cratestack_client_typescript::TypeScriptPreset::Swr,
-    };
     let package = cratestack_client_typescript::generate_package(
         &parsed,
         &cratestack_client_typescript::TypeScriptGeneratorConfig {
             package_name,
             base_path,
             template_dir,
-            preset,
+            swr,
             full_selection,
             refine,
             pb_lock,

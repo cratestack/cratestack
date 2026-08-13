@@ -2,11 +2,11 @@ import { type FormEvent, useState } from "react";
 // Every hook here is generated — nothing in this file hand-writes a
 // `useSWR` call, a cache key, or a fetcher. `useBoards` reads the list;
 // `useCreateBoard` is a mutation whose success invalidates that same
-// list (see `client/src/models/board.hooks.ts`'s own header comment for
-// the fixed invalidation rule) — that invalidation is what makes the
+// list (see `client/src/swr/models/board.hooks.ts`'s own header comment
+// for the fixed invalidation rule) — that invalidation is what makes the
 // list below refresh the instant a board is created, with no manual
 // `mutate()`/refetch call anywhere in this component.
-import { useBoards, useCreateBoard } from "react-vite-swr-client/models/board.hooks";
+import { useBoards, useCreateBoard } from "react-vite-swr-client/swr/models/board.hooks";
 import { runtime } from "../runtime.ts";
 
 export function BoardsScreen({ onSelectBoard }: { onSelectBoard: (id: number) => void }) {

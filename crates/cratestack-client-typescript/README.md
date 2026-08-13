@@ -17,8 +17,7 @@ cratestack generate-typescript \
   --schema schemas/catalog.cstack \
   --out packages/catalog-client \
   --package-name @example/catalog-client \
-  --base-path /api \
-  --preset default
+  --base-path /api
 ```
 
 To call the generator from Rust:
@@ -43,7 +42,7 @@ let package = generate_package(&schema, &TypeScriptGeneratorConfig {
 
 ## Generated Package Layout
 
-For the `default` preset (REST or RPC transport):
+For the default layout (REST or RPC transport):
 
 ```
 package.json
@@ -76,23 +75,39 @@ query-string-shaped) and no procedure surface (procedures aren't wired into the
 generated gRPC service). This is selected automatically by the schema's declared
 transport, not a CLI flag.
 
-## Presets
+## `--swr` (`TypeScriptGeneratorConfig::swr`)
 
-`--preset` (`TypeScriptPreset` in `src/config.rs`) picks the output layout for REST/RPC
-schemas:
+Additionally emits a file-per-model layout under `src/swr/`, alongside (not instead of)
+the default layout above: `src/swr/models/<model>.ts` per model (types plus plain,
+framework-free async functions) with a sibling `<model>.hooks.ts` of
+`useSWR`/`useSWRMutation` hooks, `src/swr/procedures.ts` (+ `.hooks.ts`) for procedures,
+and a `src/swr/swr-keys.ts` shared cache-key factory. Reachable by a consumer as
+`<package_name>/swr` (plus `/swr/models/*`, `/swr/procedures`, `/swr/procedures.hooks`)
+via a `package.json` `exports` subpath the flag adds. Not supported for `transport grpc`
+schemas.
 
-- `default` — today's monolithic layout above (`src/models.ts`, `src/client.ts`, ...),
-  byte-identical forever.
-- `swr` — a file-per-model layout instead: `src/models/<model>.ts` per model (types plus
-  plain framework-free async functions) and `src/procedures.ts` for procedures. This is
-  the structural foundation for SWR hooks (not yet emitted by this preset). Not supported
-  for `transport grpc` schemas.
+Purely additive by construction (`tests/swr_generator.rs::swr_rest_file_set_is_additive_to_the_default_layout`
+and its RPC counterpart pin this): `swr: false` (the default) leaves every other emitted
+file byte-identical to before the flag existed, same discipline as `--refine` below.
+Composes freely with `--refine` — both bind to / add onto the default layout, which is
+always emitted.
+
+Issue #591 turned this from a mutually-exclusive `--preset <default|swr>` into this
+additive flag: a consumer who wanted both layouts used to run the generator twice, into
+two directories, and depend on two packages. One caveat worth knowing: the default
+layout's `CratestackRuntime` and the `/swr` subtree's `CratestackRuntime` are two
+separate classes compiled from the same template (mirroring what "two directories" used
+to produce) — structurally identical, but not interchangeable at the type level (private
+fields make TypeScript treat them as nominally distinct). Construct the runtime from
+whichever entry point you're calling into, and keep that choice consistent within one
+module — see the generated package's own `README.md` (rendered by `templates/README.md.j2`)
+for the full note.
 
 ```bash
 cratestack generate-typescript \
   --schema schemas/catalog.cstack \
   --out packages/catalog-client \
-  --preset swr
+  --swr
 ```
 
 ## `--refine` (`TypeScriptGeneratorConfig::refine`)
@@ -113,10 +128,11 @@ Additive by construction: with the flag off, every emitted file is byte-identica
 `package.json` (peer/dev dependency) and `src/index.ts` (re-export) change alongside the
 new file.
 
-REST/RPC + `preset = Default` only — `generate_package` returns `RefineRequiresRestOrRpc` /
-`RefineUnsupportedPreset` rather than emitting a file that couldn't type-check. See
-`src/refine.rs`'s module doc for why gRPC-Web and the `swr` preset are structurally
-impossible rather than merely unimplemented.
+REST/RPC only — `generate_package` returns `RefineRequiresRestOrRpc` rather than emitting
+a file that couldn't type-check on a `transport grpc` schema. See `src/refine.rs`'s
+module doc for why gRPC-Web is structurally impossible rather than merely unimplemented.
+Independent of `--swr`: the manifest binds to the default layout's client class, which is
+always emitted regardless of that flag.
 
 ```bash
 cratestack generate-typescript \

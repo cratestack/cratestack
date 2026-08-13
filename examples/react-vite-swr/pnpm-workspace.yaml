@@ -1,6 +1,6 @@
 # This example is a small, self-contained two-package pnpm workspace
 # (mirroring `examples/react-nextjs-daisyui/pnpm-workspace.yaml`'s
-# napi+web split): `client/` is the generated `--preset swr` TypeScript
+# napi+web split): `client/` is the generated `--swr` TypeScript
 # package, `web/` is the React app that depends on it via
 # `"react-vite-swr-client": "workspace:*"`. `examples/*` is deliberately
 # NOT part of the root pnpm workspace (see `package.json`'s own

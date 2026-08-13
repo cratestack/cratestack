@@ -536,10 +536,10 @@ jobs:
         run: just verify-dart
 
   # ---- TypeScript client verification (issue #419) --------------------------
-  # Blocking. Proves the `default` preset TypeScript client output typechecks
-  # for both REST and RPC transports. While the `react-vite-swr-example` job
-  # already exercises the `swr` preset over REST, it was the *only* TypeScript
-  # job doing real typechecking — RPC fixtures existed as Rust-side generator
+  # Blocking. Proves the default TypeScript client layout typechecks for
+  # both REST and RPC transports. While the `react-vite-swr-example` job
+  # already exercises `--swr` over REST, it was the *only* TypeScript job
+  # doing real typechecking — RPC fixtures existed as Rust-side generator
   # test snapshots but were never run through `tsc` (unlike Dart, which has
   # both `ci_rest` and `ci_rpc` fixtures exercised through `flutter analyze`).
   #
@@ -561,13 +561,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Generate + tsc typecheck (default preset, REST + RPC)
+      - name: Generate + tsc typecheck (default layout, REST + RPC)
         run: just verify-typescript
 
   # ---- Flutter + Riverpod example app (issue #303, epic #297's last story) ----
   # Blocking. Proves the `riverpod` preset end to end in a real Flutter app,
   # the same "example app, not just fixtures" bar `react-vite-swr-example`
-  # sets for the TypeScript `swr` preset. Reuses `react-vite-swr`'s own
+  # sets for the TypeScript `--swr` flag. Reuses `react-vite-swr`'s own
   # schema/server (`examples/react-vite-swr/schema.cstack`) rather than
   # standing up a second Postgres-backed server crate — see this example's
   # README for why.
@@ -858,8 +858,9 @@ jobs:
       - name: Build, test, lint @cratestack/refine
         run: pnpm turbo run build test lint --filter='./packages/cratestack-refine'
 
-  # ---- react-vite-swr example (generated `swr`-preset client) -----------
-  # Blocking. Issue #306 (epic #298's last story): the example under
+  # ---- react-vite-swr example (generated client with --swr) -------------
+  # Blocking. Issue #306 (epic #298's last story), flag shape updated by
+  # issue #591 (`--preset swr` -> additive `--swr`): the example under
   # examples/react-vite-swr is NOT part of the `packages/*` pnpm workspace
   # (see the `js` job's own comment on why examples/* is scoped out) — it's
   # its own two-package pnpm workspace (`client/` + `web/`, via its own
@@ -869,10 +870,10 @@ jobs:
   # folding into `js` above.
   #
   # Covered here: the checked-in `client/` matches the real
-  # `cratestack generate-typescript --preset swr` output (`--check`, so it
-  # can't silently drift), the example server crate builds and its offline
-  # test passes, and both the generated client and the web app typecheck,
-  # with the web app additionally linted.
+  # `cratestack generate-typescript --swr` output (`--check`, so it can't
+  # silently drift), the example server crate builds and its offline test
+  # passes, and both the generated client and the web app typecheck, with
+  # the web app additionally linted.
   #
   # NOT covered here (deliberately, cost-consciously — this repo's own
   # `dart-verify` job takes the same generate-and-typecheck-only approach

@@ -11,7 +11,7 @@ export function App() {
   return (
     <div className="page">
       <header className="page-header">
-        <span className="page-title">cratestack · react + vite + swr preset</span>
+        <span className="page-title">cratestack · react + vite + swr</span>
       </header>
       <main className="page-main">
         {selectedBoardId === null ? (

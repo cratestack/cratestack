@@ -1,51 +1,38 @@
-//! Template specs for the `swr` preset (issues #304/#305). A handful of
-//! specs reuse the default preset's own compiled-in templates verbatim —
-//! `runtime.ts`/`queries.ts`/`links.ts`/`cbor-*.ts`/`stream-terminal.ts`
-//! and `tsconfig.json` need no per-preset changes, since they're already
-//! model-agnostic (see each `.j2` file's own header comment) — everything
-//! else (`package.json`, `README.md`, the per-model file + its sibling
-//! hooks file, `shared.ts`, `swr-keys.ts`, `procedures.ts` + its sibling
-//! hooks file, `index.ts`) is new and preset-specific. See `super`'s own
-//! doc comment for why each model/`procedures.ts` gets a *separate*
-//! `.hooks.ts` file rather than the hooks living in the same file as the
-//! plain functions.
+//! Template specs for the `--swr` flag (issues #304/#305, made additive by
+//! #591). A handful of specs reuse the default layout's own compiled-in
+//! templates verbatim — `runtime.ts`/`queries.ts`/`links.ts`/
+//! `cbor-*.ts`/`stream-terminal.ts` need no per-layout changes, since
+//! they're already model-agnostic (see each `.j2` file's own header
+//! comment) — everything else (the per-model file + its sibling hooks
+//! file, `shared.ts`, `swr-keys.ts`, `procedures.ts` + its sibling hooks
+//! file, `index.ts`) is `swr`-specific. `package.json`/`tsconfig.json`/
+//! `README.md` are deliberately NOT in this list — issue #591 made
+//! `--swr` additive to the default layout rather than a replacement for
+//! it, so those three come from the default layout's own copies (always
+//! emitted, `--swr` or not) instead of being duplicated here. See
+//! `super`'s own doc comment for the full rationale, and for why each
+//! model/`procedures.ts` gets a *separate* `.hooks.ts` file rather than
+//! the hooks living in the same file as the plain functions.
 
 use cratestack_core::TransportStyle;
 
 use crate::templates::{OutputPath, TemplateSpec};
 
-const COMMON: &[TemplateSpec] = &[
-    TemplateSpec {
-        template_name: "swr-package.json.j2",
-        output_path: OutputPath::Fixed("package.json"),
-        default_source: include_str!("../../templates/swr-package.json.j2"),
-    },
-    TemplateSpec {
-        template_name: "tsconfig.json.j2",
-        output_path: OutputPath::Fixed("tsconfig.json"),
-        default_source: include_str!("../../templates/tsconfig.json.j2"),
-    },
-    TemplateSpec {
-        template_name: "swr-README.md.j2",
-        output_path: OutputPath::Fixed("README.md"),
-        default_source: include_str!("../../templates/swr-README.md.j2"),
-    },
-    TemplateSpec {
-        template_name: "swr-models-shared.ts.j2",
-        output_path: OutputPath::Fixed("src/models/shared.ts"),
-        default_source: include_str!("../../templates/src/swr/models-shared.ts.j2"),
-    },
-];
+const COMMON: &[TemplateSpec] = &[TemplateSpec {
+    template_name: "swr-models-shared.ts.j2",
+    output_path: OutputPath::Fixed("src/swr/models/shared.ts"),
+    default_source: include_str!("../../templates/src/swr/models-shared.ts.j2"),
+}];
 
 const REST: &[TemplateSpec] = &[
     TemplateSpec {
         template_name: "rest-runtime.ts.j2",
-        output_path: OutputPath::Fixed("src/runtime.ts"),
+        output_path: OutputPath::Fixed("src/swr/runtime.ts"),
         default_source: include_str!("../../templates/src/rest-runtime.ts.j2"),
     },
     TemplateSpec {
         template_name: "rest-queries.ts.j2",
-        output_path: OutputPath::Fixed("src/queries.ts"),
+        output_path: OutputPath::Fixed("src/swr/queries.ts"),
         default_source: include_str!("../../templates/src/rest-queries.ts.j2"),
     },
     TemplateSpec {
@@ -60,22 +47,22 @@ const REST: &[TemplateSpec] = &[
     },
     TemplateSpec {
         template_name: "swr-procedures-rest.ts.j2",
-        output_path: OutputPath::Fixed("src/procedures.ts"),
+        output_path: OutputPath::Fixed("src/swr/procedures.ts"),
         default_source: include_str!("../../templates/src/swr/procedures-rest.ts.j2"),
     },
     TemplateSpec {
         template_name: "swr-procedures-hooks-rest.ts.j2",
-        output_path: OutputPath::Fixed("src/procedures.hooks.ts"),
+        output_path: OutputPath::Fixed("src/swr/procedures.hooks.ts"),
         default_source: include_str!("../../templates/src/swr/procedures-hooks-rest.ts.j2"),
     },
     TemplateSpec {
         template_name: "swr-keys-rest.ts.j2",
-        output_path: OutputPath::Fixed("src/swr-keys.ts"),
+        output_path: OutputPath::Fixed("src/swr/swr-keys.ts"),
         default_source: include_str!("../../templates/src/swr/keys-rest.ts.j2"),
     },
     TemplateSpec {
         template_name: "swr-index-rest.ts.j2",
-        output_path: OutputPath::Fixed("src/index.ts"),
+        output_path: OutputPath::Fixed("src/swr/index.ts"),
         default_source: include_str!("../../templates/src/swr/index-rest.ts.j2"),
     },
 ];
@@ -83,35 +70,35 @@ const REST: &[TemplateSpec] = &[
 const RPC: &[TemplateSpec] = &[
     TemplateSpec {
         template_name: "rpc-runtime.ts.j2",
-        output_path: OutputPath::Fixed("src/runtime.ts"),
+        output_path: OutputPath::Fixed("src/swr/runtime.ts"),
         default_source: include_str!("../../templates/src/rpc-runtime.ts.j2"),
     },
     TemplateSpec {
         template_name: "rpc-links.ts.j2",
-        output_path: OutputPath::Fixed("src/links.ts"),
+        output_path: OutputPath::Fixed("src/swr/links.ts"),
         default_source: include_str!("../../templates/src/rpc-links.ts.j2"),
     },
     TemplateSpec {
         template_name: "rpc-cbor-item.ts.j2",
-        output_path: OutputPath::Fixed("src/cbor-item.ts"),
+        output_path: OutputPath::Fixed("src/swr/cbor-item.ts"),
         default_source: include_str!("../../templates/src/rpc-cbor-item.ts.j2"),
     },
     TemplateSpec {
         template_name: "rpc-cbor-seq.ts.j2",
-        output_path: OutputPath::Fixed("src/cbor-seq.ts"),
+        output_path: OutputPath::Fixed("src/swr/cbor-seq.ts"),
         default_source: include_str!("../../templates/src/rpc-cbor-seq.ts.j2"),
     },
     TemplateSpec {
         template_name: "rpc-stream-terminal.ts.j2",
-        output_path: OutputPath::Fixed("src/stream-terminal.ts"),
+        output_path: OutputPath::Fixed("src/swr/stream-terminal.ts"),
         default_source: include_str!("../../templates/src/rpc-stream-terminal.ts.j2"),
     },
     // Typed `model.<X>.list` query builder (issue #333) — reused verbatim
-    // from the default preset, same as `rest-queries.ts.j2` is reused for
-    // the REST arm above: model-agnostic, so no swr-specific variant.
+    // from the default layout, same as `rest-queries.ts.j2` is reused for
+    // the REST arm above: model-agnostic, so no `swr`-specific variant.
     TemplateSpec {
         template_name: "rpc-queries.ts.j2",
-        output_path: OutputPath::Fixed("src/queries.ts"),
+        output_path: OutputPath::Fixed("src/swr/queries.ts"),
         default_source: include_str!("../../templates/src/rpc-queries.ts.j2"),
     },
     TemplateSpec {
@@ -126,22 +113,22 @@ const RPC: &[TemplateSpec] = &[
     },
     TemplateSpec {
         template_name: "swr-procedures-rpc.ts.j2",
-        output_path: OutputPath::Fixed("src/procedures.ts"),
+        output_path: OutputPath::Fixed("src/swr/procedures.ts"),
         default_source: include_str!("../../templates/src/swr/procedures-rpc.ts.j2"),
     },
     TemplateSpec {
         template_name: "swr-procedures-hooks-rpc.ts.j2",
-        output_path: OutputPath::Fixed("src/procedures.hooks.ts"),
+        output_path: OutputPath::Fixed("src/swr/procedures.hooks.ts"),
         default_source: include_str!("../../templates/src/swr/procedures-hooks-rpc.ts.j2"),
     },
     TemplateSpec {
         template_name: "swr-keys-rpc.ts.j2",
-        output_path: OutputPath::Fixed("src/swr-keys.ts"),
+        output_path: OutputPath::Fixed("src/swr/swr-keys.ts"),
         default_source: include_str!("../../templates/src/swr/keys-rpc.ts.j2"),
     },
     TemplateSpec {
         template_name: "swr-index-rpc.ts.j2",
-        output_path: OutputPath::Fixed("src/index.ts"),
+        output_path: OutputPath::Fixed("src/swr/index.ts"),
         default_source: include_str!("../../templates/src/swr/index-rpc.ts.j2"),
     },
 ];

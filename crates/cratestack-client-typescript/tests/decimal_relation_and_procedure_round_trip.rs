@@ -12,7 +12,7 @@
 use std::fs;
 use std::process::Command;
 
-use cratestack_client_typescript::{TypeScriptGeneratorConfig, TypeScriptPreset, generate_package};
+use cratestack_client_typescript::{TypeScriptGeneratorConfig, generate_package};
 
 const FIXTURE: &str = "tests/fixtures/decimal_relation_and_procedure.cstack";
 const JS_FIXTURE_DIR: &str = concat!(
@@ -21,10 +21,10 @@ const JS_FIXTURE_DIR: &str = concat!(
 );
 
 #[test]
-fn default_preset_revives_relation_and_procedure_decimal_fields() {
+fn default_layout_revives_relation_and_procedure_decimal_fields() {
     if !node_npm_npx_available() {
         eprintln!(
-            "skipping default_preset_revives_relation_and_procedure_decimal_fields: \
+            "skipping default_layout_revives_relation_and_procedure_decimal_fields: \
              `node`/`npm`/`npx` not on PATH (expected in this repo's Rust-only CI jobs)"
         );
         return;
@@ -35,7 +35,7 @@ fn default_preset_revives_relation_and_procedure_decimal_fields() {
         &schema,
         &TypeScriptGeneratorConfig {
             package_name: "decimal-relation-and-procedure-check".to_owned(),
-            preset: TypeScriptPreset::Default,
+            swr: false,
             ..TypeScriptGeneratorConfig::default()
         },
     )
@@ -45,10 +45,10 @@ fn default_preset_revives_relation_and_procedure_decimal_fields() {
 }
 
 #[test]
-fn swr_preset_revives_relation_and_procedure_decimal_fields() {
+fn swr_layout_revives_relation_and_procedure_decimal_fields() {
     if !node_npm_npx_available() {
         eprintln!(
-            "skipping swr_preset_revives_relation_and_procedure_decimal_fields: \
+            "skipping swr_layout_revives_relation_and_procedure_decimal_fields: \
              `node`/`npm`/`npx` not on PATH (expected in this repo's Rust-only CI jobs)"
         );
         return;
@@ -59,11 +59,11 @@ fn swr_preset_revives_relation_and_procedure_decimal_fields() {
         &schema,
         &TypeScriptGeneratorConfig {
             package_name: "decimal-relation-and-procedure-check-swr".to_owned(),
-            preset: TypeScriptPreset::Swr,
+            swr: true,
             ..TypeScriptGeneratorConfig::default()
         },
     )
-    .expect("swr template should render");
+    .expect("--swr template should render");
 
     run_vitest_against_generated_package(&package, "swr.test.ts", 3);
 }

@@ -31,10 +31,11 @@
 //! have different `list()` shapes and so need different
 //! `@cratestack/refine` providers to bind to.
 //!
-//! Scope is REST/RPC + `--preset default` only, enforced in
-//! `crate::generator` rather than here — see
-//! `TypeScriptGeneratorError::RefineRequiresRestOrRpc`/`RefineUnsupportedPreset`
-//! for why gRPC-Web and the `swr` preset cannot work.
+//! Scope is REST/RPC only, enforced in `crate::generator` rather than
+//! here — see `TypeScriptGeneratorError::RefineRequiresRestOrRpc` for why
+//! gRPC-Web cannot work. Composes freely with `--swr`: the emitted
+//! manifest binds to the default layout's client class (`client.widgets`),
+//! which is always emitted regardless of `--swr`.
 
 use cratestack_core::{Model, Schema, TransportStyle};
 use serde::Serialize;

@@ -1,5 +1,5 @@
 import type { Task } from "react-vite-swr-client";
-import { useDeleteTask, useUpdateTask } from "react-vite-swr-client/models/task.hooks";
+import { useDeleteTask, useUpdateTask } from "react-vite-swr-client/swr/models/task.hooks";
 import { runtime } from "../runtime.ts";
 
 // Split out of `BoardDetailScreen` because `useUpdateTask`/`useDeleteTask`

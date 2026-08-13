@@ -98,11 +98,26 @@ Flags:
 - `--template-dir <PATH>` (optional)
 - `--check` (drift-detection mode — see below)
 - `--full-selection` (emit fully-required model interfaces, driven by the schema's own nullability, instead of the projection-driven optional-everywhere default — for consumers that never do partial `fields`/`include` selection)
-- `--preset <default|swr>` (default `default`) — `default` is today's
-  monolithic layout (`src/models.ts`, `src/client.ts`, ...). `swr` emits
-  one `src/models/<model>.ts` per model (types + plain framework-free
-  async functions) plus `src/procedures.ts`, the structural foundation
-  for SWR hooks. `swr` does not support `transport grpc` schemas yet.
+- `--swr` — additionally emit the file-per-model + SWR-hooks layout under
+  `src/swr/`: one `src/swr/models/<model>.ts` per model (types + plain
+  framework-free async functions) plus a sibling `<model>.hooks.ts` of
+  `useSWR`/`useSWRMutation` hooks, and a `src/swr/procedures.ts` (+
+  `.hooks.ts`) for procedures — reachable from a consumer as
+  `<package-name>/swr` (plus `/swr/models/*`, `/swr/procedures`,
+  `/swr/procedures.hooks`) via a `package.json` `exports` subpath.
+  Purely additive: the default layout at `src/` is always emitted
+  regardless of this flag, `--swr` adds `src/swr/` alongside it rather
+  than replacing it (issue #591 — this used to be the mutually-exclusive
+  `--preset <default|swr>`; running the generator twice into two
+  directories for both layouts is no longer necessary). Does not support
+  `transport grpc` schemas yet.
+
+  ```bash
+  cratestack generate-typescript \
+    --schema schemas/catalog.cstack \
+    --out packages/catalog-client \
+    --swr
+  ```
 - `--refine` — additionally emit `src/refine.ts`, the
   [`@cratestack/refine`](https://www.npmjs.com/package/@cratestack/refine)
   resource manifest for this schema: one entry per model carrying its `@id`
@@ -110,12 +125,13 @@ Flags:
   generated model API. Purely additive — every other emitted file is
   byte-identical with and without it — and it also adds
   `@cratestack/refine`/`@refinedev/core` to the generated `package.json`'s
-  peer/dev dependencies. REST and RPC schemas with `--preset default` only:
-  the emitted manifest is typed `ResourceMap` for REST and `RpcResourceMap`
-  for RPC, matching whichever `@cratestack/refine` provider that transport
-  ships. gRPC-Web has no provider to bind to (typed protobuf, no
-  URL-query shaping), and `swr` emits no client class for a resource to
-  bind to, so both stay unsupported.
+  peer/dev dependencies. REST and RPC schemas only: the emitted manifest is
+  typed `ResourceMap` for REST and `RpcResourceMap` for RPC, matching
+  whichever `@cratestack/refine` provider that transport ships. gRPC-Web
+  has no provider to bind to (typed protobuf, no URL-query shaping), so it
+  stays unsupported. Composes freely with `--swr`: the manifest binds to
+  the default layout's client class, which is always emitted regardless
+  of `--swr`.
 
   ```bash
   cratestack generate-typescript \

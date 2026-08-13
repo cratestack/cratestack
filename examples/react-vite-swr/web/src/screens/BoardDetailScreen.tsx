@@ -1,7 +1,7 @@
 import { type FormEvent, useMemo, useState } from "react";
-import { useBoard } from "react-vite-swr-client/models/board.hooks";
-import { useCreateTask, useTasks } from "react-vite-swr-client/models/task.hooks";
-import { useEstimateFocusMinutesQuery } from "react-vite-swr-client/procedures.hooks";
+import { useBoard } from "react-vite-swr-client/swr/models/board.hooks";
+import { useCreateTask, useTasks } from "react-vite-swr-client/swr/models/task.hooks";
+import { useEstimateFocusMinutesQuery } from "react-vite-swr-client/swr/procedures.hooks";
 import { runtime } from "../runtime.ts";
 import { TaskRow } from "./TaskRow.tsx";
 

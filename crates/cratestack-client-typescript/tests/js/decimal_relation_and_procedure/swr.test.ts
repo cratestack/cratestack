@@ -5,10 +5,10 @@
 // (relation-embedded field revival), against the real generated
 // per-model-file layout, not a generated-text assertion.
 import { describe, expect, it } from "vitest";
-import { Decimal } from "./src/models/shared.js";
-import { getInvoice } from "./src/models/invoice.js";
-import { quote, quickQuote } from "./src/procedures.js";
-import { CratestackRuntime } from "./src/runtime.js";
+import { Decimal } from "./src/swr/models/shared.js";
+import { getInvoice } from "./src/swr/models/invoice.js";
+import { quote, quickQuote } from "./src/swr/procedures.js";
+import { CratestackRuntime } from "./src/swr/runtime.js";
 
 function stubFetch(body: unknown): typeof fetch {
   return async () =>

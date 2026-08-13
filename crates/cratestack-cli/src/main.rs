@@ -26,7 +26,7 @@ mod tests {
 
     use crate::Cli;
     use crate::cli_support::{json_check_failure, json_check_success};
-    use crate::cli_types::{Command, DartPresetArg, StudioCmd, TypeScriptPresetArg};
+    use crate::cli_types::{Command, DartPresetArg, StudioCmd};
 
     #[test]
     fn json_success_payload_has_empty_diagnostics() {
@@ -161,7 +161,7 @@ mod tests {
                 template_dir,
                 check,
                 full_selection,
-                preset,
+                swr,
                 refine,
             } => {
                 assert_eq!(schema, PathBuf::from("schema.cstack"));
@@ -171,7 +171,10 @@ mod tests {
                 assert_eq!(template_dir, None);
                 assert!(!check);
                 assert!(!full_selection);
-                assert_eq!(preset, TypeScriptPresetArg::Default);
+                assert!(
+                    !swr,
+                    "--swr must default to off (issue #591: opt-in, additive)"
+                );
                 assert!(
                     !refine,
                     "--refine must default to off (issue #571: opt-in, additive)"
@@ -182,10 +185,10 @@ mod tests {
     }
 
     #[test]
-    fn generate_typescript_clap_accepts_swr_preset_flag() {
-        // Issue #304: `--preset swr` selects the new file-per-model
-        // layout; the value must clap-parse to the `Swr` variant (kebab
-        // renamed to the literal string `swr`).
+    fn generate_typescript_clap_accepts_swr_flag() {
+        // Issue #591: `--swr` additionally emits the file-per-model +
+        // hooks layout under `src/swr/`, alongside (not instead of) the
+        // default layout.
         let cli = Cli::parse_from([
             "cratestack",
             "generate-typescript",
@@ -193,13 +196,12 @@ mod tests {
             "schema.cstack",
             "--out",
             "out",
-            "--preset",
-            "swr",
+            "--swr",
         ]);
 
         match cli.command {
-            Command::GenerateTypeScript { preset, .. } => {
-                assert_eq!(preset, TypeScriptPresetArg::Swr);
+            Command::GenerateTypeScript { swr, .. } => {
+                assert!(swr);
             }
             _ => panic!("expected generate-typescript command"),
         }

@@ -638,7 +638,7 @@ fn generate_for_with_full_config(
             package_name: package_name.to_owned(),
             base_path: "/api".to_owned(),
             template_dir: None,
-            preset: cratestack_client_typescript::TypeScriptPreset::Default,
+            swr: false,
             full_selection,
             refine: false,
             pb_lock: None,

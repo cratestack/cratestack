@@ -49,11 +49,13 @@ example below shows one), but the generated one cannot drift: a model that gains
 whose `@id` is not called `id`, updates itself on the next `generate-typescript` run instead of
 failing quietly at runtime.
 
-`--refine` works for **both** REST and RPC schemas, on the default preset. The emitted function is
-the same shape either way — `cratestackRefineResources(client)` — typed `ResourceMap` for REST and
-`RpcResourceMap` for RPC, so consumer code is identical across transports. Only `transport grpc` is
-rejected (`TypeScriptGeneratorError::RefineRequiresRestOrRpc`): its client speaks typed protobuf
-with no URL-query shaping, so there is nothing for this provider to drive. See [Scope](#scope).
+`--refine` works for **both** REST and RPC schemas. The emitted function is the same shape either
+way — `cratestackRefineResources(client)` — typed `ResourceMap` for REST and `RpcResourceMap` for
+RPC, so consumer code is identical across transports. Only `transport grpc` is rejected
+(`TypeScriptGeneratorError::RefineRequiresRestOrRpc`): its client speaks typed protobuf with no
+URL-query shaping, so there is nothing for this provider to drive. It also composes freely with
+`--swr` (the file-per-model + hooks layout, `<package-name>/swr`): the manifest binds to the
+always-emitted default layout's client class regardless of that flag. See [Scope](#scope).
 
 ## Usage (REST)
 

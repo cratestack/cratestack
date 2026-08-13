@@ -40,7 +40,7 @@ use std::io::Write as _;
 use std::net::TcpListener;
 use std::process::Command;
 
-use cratestack_client_typescript::{TypeScriptGeneratorConfig, TypeScriptPreset, generate_package};
+use cratestack_client_typescript::{TypeScriptGeneratorConfig, generate_package};
 
 #[test]
 fn generated_plain_function_runs_outside_any_react_context() {
@@ -59,11 +59,11 @@ fn generated_plain_function_runs_outside_any_react_context() {
         &schema,
         &TypeScriptGeneratorConfig {
             package_name: "swr-runtime-check".to_owned(),
-            preset: TypeScriptPreset::Swr,
+            swr: true,
             ..TypeScriptGeneratorConfig::default()
         },
     )
-    .expect("swr preset should render");
+    .expect("--swr should render");
 
     let dir = tempfile::tempdir().expect("tempdir");
     for file in &package.files {
@@ -100,8 +100,8 @@ fn generated_plain_function_runs_outside_any_react_context() {
     write!(
         script,
         r#"
-import {{ CratestackRuntime }} from "./src/runtime";
-import {{ getWidget }} from "./src/models/widget";
+import {{ CratestackRuntime }} from "./src/swr/runtime";
+import {{ getWidget }} from "./src/swr/models/widget";
 
 const runtime = new CratestackRuntime("http://127.0.0.1:{port}", {{ basePath: "/api" }});
 const widget = await getWidget(runtime, 1);

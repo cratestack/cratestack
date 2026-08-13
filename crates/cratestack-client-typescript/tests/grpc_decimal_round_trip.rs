@@ -18,7 +18,7 @@
 use std::fs;
 use std::process::Command;
 
-use cratestack_client_typescript::{TypeScriptGeneratorConfig, TypeScriptPreset, generate_package};
+use cratestack_client_typescript::{TypeScriptGeneratorConfig, generate_package};
 
 const SCHEMA: &str = r#"
 transport grpc
@@ -104,7 +104,7 @@ fn grpc_decimal_round_trips_through_encode_decode_message() {
             package_name: "@example/grpc-decimal".to_owned(),
             base_path: "/".to_owned(),
             template_dir: None,
-            preset: TypeScriptPreset::Default,
+            swr: false,
             full_selection: false,
             refine: false,
             pb_lock: Some(lock),

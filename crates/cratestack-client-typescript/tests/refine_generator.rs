@@ -14,7 +14,7 @@
 
 use cratestack_client_typescript::{
     GeneratedTypeScriptPackage, TypeScriptGeneratorConfig, TypeScriptGeneratorError,
-    TypeScriptPreset, generate_package,
+    generate_package,
 };
 
 const REFINE_SCHEMA: &str = r#"
@@ -160,9 +160,10 @@ fn refine_is_rejected_for_grpc_which_has_no_provider_to_bind_to() {
     // at all, and `@cratestack/refine` ships no provider for that shape —
     // an emitted refine.ts would have nothing to `tsc` against, so the
     // generator refuses instead. (REST and RPC are both supported — see
-    // `refine_supports_rpc_schemas_too` below.)
+    // `refine_supports_rpc_schemas_with_the_same_per_resource_facts_as_rest`
+    // below.)
     let grpc_schema = REFINE_SCHEMA.replace("datasource db {", "transport grpc\n\ndatasource db {");
-    let error = try_generate(&grpc_schema, true, TypeScriptPreset::Default)
+    let error = try_generate(&grpc_schema, true, false)
         .expect_err("--refine on a gRPC-Web schema should be rejected");
     assert!(
         matches!(error, TypeScriptGeneratorError::RefineRequiresRestOrRpc),
@@ -173,7 +174,7 @@ fn refine_is_rejected_for_grpc_which_has_no_provider_to_bind_to() {
     // see `generator_grpc.rs`), but for its own reason, not this one: the
     // rejection above is scoped to the flag, not baked into a schema that
     // categorically cannot generate.
-    let error_without_flag = try_generate(&grpc_schema, false, TypeScriptPreset::Default)
+    let error_without_flag = try_generate(&grpc_schema, false, false)
         .expect_err("this fixture has no .pb.lock, so a plain grpc generation fails too");
     assert!(
         !matches!(
@@ -184,13 +185,25 @@ fn refine_is_rejected_for_grpc_which_has_no_provider_to_bind_to() {
     );
 }
 
+/// Issue #591: `--preset swr` used to make `--refine` outright reject the
+/// combination (`RefineUnsupportedPreset`) because the swr layout
+/// *replaced* the default one, leaving no client class for a
+/// `ResourceConfig` to bind to. `--swr` is additive now — the default
+/// layout (and its client class) is always emitted regardless — so the
+/// two compose freely: `--refine --swr` succeeds and emits both
+/// `src/refine.ts` (bound to the always-present client class) and the
+/// `src/swr/**` subtree.
 #[test]
-fn refine_is_rejected_for_the_swr_preset_which_has_no_client_class() {
-    let error = try_generate(REFINE_SCHEMA, true, TypeScriptPreset::Swr)
-        .expect_err("--refine with --preset swr should be rejected");
+fn refine_and_swr_compose_without_conflict() {
+    let package =
+        try_generate(REFINE_SCHEMA, true, true).expect("--refine --swr should compose cleanly");
     assert!(
-        matches!(error, TypeScriptGeneratorError::RefineUnsupportedPreset),
-        "expected RefineUnsupportedPreset, got: {error}"
+        file_named(&package, "src/refine.ts").is_some(),
+        "--refine should still emit src/refine.ts alongside --swr"
+    );
+    assert!(
+        file_named(&package, "src/swr/index.ts").is_some(),
+        "--swr should still emit its subtree alongside --refine"
     );
 }
 
@@ -309,20 +322,20 @@ fn rpc_schema() -> String {
 }
 
 fn generate(source: &str, refine: bool) -> GeneratedTypeScriptPackage {
-    try_generate(source, refine, TypeScriptPreset::Default).expect("fixture schema should generate")
+    try_generate(source, refine, false).expect("fixture schema should generate")
 }
 
 fn try_generate(
     source: &str,
     refine: bool,
-    preset: TypeScriptPreset,
+    swr: bool,
 ) -> Result<GeneratedTypeScriptPackage, TypeScriptGeneratorError> {
     let schema = cratestack_parser::parse_schema(source).expect("fixture schema should parse");
     generate_package(
         &schema,
         &TypeScriptGeneratorConfig {
             package_name: "refine-test-client".to_owned(),
-            preset,
+            swr,
             refine,
             ..TypeScriptGeneratorConfig::default()
         },
@@ -336,4 +349,12 @@ fn file<'a>(package: &'a GeneratedTypeScriptPackage, name: &str) -> &'a str {
         .find(|file| file.file_name == name)
         .map(|file| file.contents.as_str())
         .unwrap_or_else(|| panic!("generated package should contain {name}"))
+}
+
+fn file_named<'a>(package: &'a GeneratedTypeScriptPackage, name: &str) -> Option<&'a str> {
+    package
+        .files
+        .iter()
+        .find(|file| file.file_name == name)
+        .map(|file| file.contents.as_str())
 }

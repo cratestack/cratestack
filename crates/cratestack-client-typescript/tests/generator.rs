@@ -12,7 +12,7 @@ fn generates_fetch_client_and_tanstack_hooks_for_blog_schema() {
             package_name: "@example/blog-client".to_owned(),
             base_path: "/cstack".to_owned(),
             template_dir: None,
-            preset: cratestack_client_typescript::TypeScriptPreset::Default,
+            swr: false,
             full_selection: false,
             refine: false,
             pb_lock: None,

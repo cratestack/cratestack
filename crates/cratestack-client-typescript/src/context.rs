@@ -70,6 +70,13 @@ pub(crate) struct TemplateContext {
     /// `crate::refine::refine_resource_map_type`. Empty when `refine` is
     /// off, where `refine.ts` isn't rendered at all.
     refine_resource_map_type: String,
+    /// Issue #591 (`--swr`). Mirrors `TypeScriptGeneratorConfig::swr`, and
+    /// is read by `package.json.j2` — the only unconditional template that
+    /// changes under the flag, gaining the `"./swr"` `exports` subpaths
+    /// and the `swr`/`react` peer/dev dependencies. `src/swr/**` itself is
+    /// a wholly separate file set (`crate::swr::generate`), not gated by
+    /// this field.
+    swr: bool,
 }
 
 pub(crate) fn build_template_context(
@@ -233,5 +240,6 @@ pub(crate) fn build_template_context(
         } else {
             String::new()
         },
+        swr: config.swr,
     })
 }

@@ -1,99 +1,181 @@
 # react-vite-swr-client
 
-Generated CrateStack TypeScript client package (`swr` preset — issues #304, #305). One file per
-model under `src/models/`, holding that model's types and plain, framework-free `async` functions,
-plus a sibling `<model>.hooks.ts` with one `useSWR`/`useSWRMutation` hook per operation. Import
-exactly the functions/hooks you call — the plain-function file and its hooks file are separate
-modules on purpose (see `src/swr/mod.rs`'s module doc): importing `<model>.ts` alone never requires
-`swr`/React to be installed at all.
+Generated CrateStack TypeScript client with a fetch transport and TanStack Query hooks.
 
 ```ts
-import { CratestackRuntime } from "react-vite-swr-client";
-import { getBoard, listBoards } from "react-vite-swr-client/models/board";
+import { ReactViteSwrClientClient } from "react-vite-swr-client";
 
-const runtime = new CratestackRuntime("https://api.example.com", {
+const client = new ReactViteSwrClientClient("https://api.example.com");
+```
+
+The generated client uses `/api` as its API base path by default.
+
+## Runtime Setup
+
+```ts
+const client = new ReactViteSwrClientClient("https://api.example.com", {
   basePath: "/api",
+  headers: async () => ({
+    authorization: `Bearer ${await tokenStore.getAccessToken()}`,
+    "x-request-id": crypto.randomUUID(),
+  }),
 });
 ```
 
-Every plain function takes the runtime as its first argument, so it's callable from a React
-component, a server action, a plain Node script, or a test — importing one never pulls in React or
-`swr` (see `tests/swr_runtime.rs` for the framework-free proof). The hooks are an optional layer on
-top: install the peer dependencies (`swr`, `react`) only if you import a `.hooks` module.
+Per-call headers are also supported:
+
+```ts
+const headers = {
+  authorization: `Bearer ${accessToken}`,
+  "idempotency-key": idempotencyKey,
+};
+```
 
 ## Models
 
-- `src/models/board.ts` — `listBoards`, `getBoard`, `createBoard`, `updateBoard`, `deleteBoard`
-- `src/models/board.hooks.ts` — `useBoards`, `useBoard`, `useCreateBoard`, `useUpdateBoard`, `useDeleteBoard`
-- `src/models/task.ts` — `listTasks`, `getTask`, `createTask`, `updateTask`, `deleteTask`
-- `src/models/task.hooks.ts` — `useTasks`, `useTask`, `useCreateTask`, `useUpdateTask`, `useDeleteTask`
+- `client.boards`
+- `client.tasks`
+
+### List
 
 ```ts
-const items = await listBoards(runtime, {
-  query: { limit: 20, sort: ["-id"] },
+const pageOrItems = await client.boards.list({
+  query: {
+    fields: ["id"],
+    include: [],
+    includeFields: {},
+    limit: 20,
+    offset: 0,
+    sort: ["-id"],
+  },
 });
-
-const item = await getBoard(runtime, id);
-const created = await createBoard(runtime, input);
-const updated = await updateBoard(runtime, id, patch);
-await deleteBoard(runtime, id);
 ```
 
-The same operations as hooks, inside a component (note the `.hooks` subpath):
+### Detail
 
-```tsx
-import { useBoards, useBoard } from "react-vite-swr-client/models/board.hooks";
+```ts
+const item = await client.boards.get(id, {
+  query: {
+    fields: ["id"],
+  },
+  headers,
+});
+```
 
-const { data: items } = useBoards(runtime);
-const { data: item } = useBoard(runtime, id); // id may be null/undefined — skips the request
-const { trigger: createBoard } = useCreateBoard(runtime);
-const { trigger: updateBoard } = useUpdateBoard(runtime, id);
-const { trigger: deleteBoard } = useDeleteBoard(runtime, id);
+### Create, Update, Delete
+
+```ts
+const created = await client.boards.create(input, { headers });
+const updated = await client.boards.update(created.id, patch, { headers });
+await client.boards.delete(updated.id, { headers });
 ```
 
 ## Procedures
 
-- `src/procedures.ts` — `estimateFocusMinutes`; `src/procedures.hooks.ts` —
-`useEstimateFocusMinutesQuery`
-```ts
-import { estimateFocusMinutes } from "react-vite-swr-client/procedures";
+- `client.procedures.estimateFocusMinutes`
 
-const result = await estimateFocusMinutes(runtime, args);
+```ts
+const result = await client.procedures.estimateFocusMinutes(args, {
+  headers,
+});
 ```
 
-## Hooks and cache invalidation
+## TanStack Query
 
-`src/swr-keys.ts` exports `swrKeys`, the single, shared key factory every hook builds its cache
-key through — keys are nested under each model's/procedure's own schema-unique name (or route, for
-REST), never derived through a lossy casing transform, so two similarly-named operations can never
-collide (see that file's header comment).
+```tsx
+import {
+  ReactViteSwrClientClient,
+  useBoardListQuery,
+  useCreateBoardMutation,
+} from "react-vite-swr-client";
 
-Mutation hooks invalidate per a fixed rule, stated once per model's hooks file
-(`src/models/*.hooks.ts`'s own header comment) and applied identically everywhere:
+function BoardList({ client }: { client: ReactViteSwrClientClient }) {
+  const list = useBoardListQuery(client, {
+    query: {
+      fields: ["id"],
+      limit: 20,
+    },
+    queryOptions: {
+      staleTime: 30_000,
+    },
+  });
 
-- **create** invalidates the model's list (every cached list, regardless of filter/pagination args).
-- **update** invalidates the list **and** the mutated entity's own detail (both refetch).
-- **delete** invalidates the list **and** drops the deleted entity's detail from the cache outright
-  (no refetch — the entity is gone).
+  const create = useCreateBoardMutation(client);
 
-This rule is fixed, not configurable per call. Call `mutate`/`swrKeys` directly if you need
-different invalidation. Procedure hooks never invalidate anything — that is model CRUD's job.
+  if (list.isPending) {
+    return null;
+  }
+  if (list.isError) {
+    return <ErrorState error={list.error} />;
+  }
 
-## Shared types
+  return <ListView data={list.data} onCreate={(input) => create.mutate(input)} />;
+}
+```
 
-Enums and `type` blocks referenced by more than one model (or by no model at all — a declared but
-unused type) live in `src/models/shared.ts` and are imported by their consumers. A type referenced
-by exactly one model is defined inline in that model's own file instead. See
-`cratestack-client-typescript`'s `src/swr/ownership.rs` for the computation that decides this.
+## React Native
+
+React Native app runtimes provide `fetch`; pass the mobile API origin and keep auth token lookup in your app layer.
+
+```ts
+export function createClient(accessToken: string | null) {
+  return new ReactViteSwrClientClient(process.env.EXPO_PUBLIC_API_ORIGIN!, {
+    basePath: "/api",
+    headers: {
+      ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
+      "x-client": "sample-mobile",
+    },
+  });
+}
+```
 
 ## Decimal Fields
 
 A `Decimal`-typed schema field is generated as a real `decimal.js`-backed `Decimal`
-(cratestack#498, re-exported from `src/models/shared.ts`), not a `string` — construct one with
-`new Decimal(input)`, format with `.toString()`, compare/do arithmetic with
-`.plus()`/`.minus()`/`.cmp()`/`.equals()` instead of raw string/number operations. Like this
-package's `default` preset, every generated function that decodes a server response (the per-model
-`src/models/*.ts` functions and `src/procedures.ts`) calls a `reviveDecimalFields`/
-`reviveDecimalScalar` decode hook, so a `Decimal`-typed field — including one reached through an
-`include`d relation, or a procedure's own return type — is a real `Decimal` instance at runtime, not
-just at the type level.
+(cratestack#498), not a `string`:
+
+```ts
+import { Decimal } from "react-vite-swr-client";
+const item = await client.boards.get(id);
+console.log(item.amountField.toString()); // e.g. "0.0000001", never scientific notation
+const total = item.amountField.plus(item.taxField); // real arbitrary-precision arithmetic
+```
+
+**Migration from pre-#498 generated clients:** code that treated a `Decimal` field as a
+`string` (string concatenation, `Number()`/`parseFloat`, `===` comparison) needs to switch
+to `Decimal`'s own API — `new Decimal(input)` to construct one, `.toString()` to format,
+`.plus()`/`.minus()`/`.times()`/`.div()`/`.cmp()`/`.equals()` for arithmetic and comparison.
+`DecimalFilter`'s `eq`/`ne`/`lt`/`lte`/`gt`/`gte`/`in` fields need the same treatment when
+building a `Where`/`FindMany` argument by hand — encoding a `Decimal` still works with
+`JSON.stringify` alone (no extra glue needed), but decoding one from raw JSON does not.
+
+This parses correctly regardless of which `Decimal` backend built the server
+(`decimal-rust-decimal` or `decimal-bigdecimal` — see `cratestack-core`'s README): both
+plain positional notation (`"0.0000001"`) and the scientific notation `bigdecimal` emits
+past `rust_decimal`'s ~28-29 significant-digit capacity (`"1E-7"`) decode to the identical
+value, and this package always re-encodes in plain notation.
+## SWR (file-per-model layout + hooks)
+
+This package also carries the `swr` layout under `src/swr/` — one file per model (types
+plus plain, framework-free `async` functions), a sibling `.hooks.ts` per model/procedures
+file with `useSWR`/`useSWRMutation` hooks wrapping those functions, and a shared
+`swrKeys` cache-key factory. It coexists with the layout documented above; nothing here
+changes what's exported from the package root.
+
+```ts
+import { CratestackRuntime } from "react-vite-swr-client/swr";
+import { useWidget } from "react-vite-swr-client/swr/models/widget.hooks";
+```
+
+Import exactly the functions/hooks you call. `swr`/React are only required if you import
+a `.hooks` module — plain functions (`react-vite-swr-client/swr/models/<model>`) need
+nothing but the runtime. See `react-vite-swr-client/swr`'s own module for the full model
+list, and `react-vite-swr-client/swr/procedures`/`/swr/procedures.hooks` for procedures.
+
+**One `CratestackRuntime` per surface.** The root and `/swr` each construct their own
+`CratestackRuntime` class from the same template, so the two are structurally identical
+but *not* interchangeable at the type level (private fields make them nominally distinct
+classes) — a runtime built via `new ReactViteSwrClientClient(...)`'s constructor or the
+root's own `CratestackRuntime` will not type-check against a `/swr` function or hook, and
+vice versa. Construct the runtime from whichever surface you're calling into, and keep
+that choice consistent within one component/module.

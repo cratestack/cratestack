@@ -1,6 +1,6 @@
 //! Server entry point — see `lib.rs` for the schema, procedure, and
 //! `build_router`/`ensure_schema`; see `tests/smoke.rs` for the wire-shape
-//! demos; see `web/` for the `--preset swr` client consuming this server.
+//! demos; see `web/` for the `--swr` client consuming this server.
 
 use react_vite_swr_example::{build_router, ensure_schema};
 use std::net::SocketAddr;

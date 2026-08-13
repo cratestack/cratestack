@@ -10,6 +10,24 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     }
+{% if swr %},
+    "./swr": {
+      "types": "./dist/swr/index.d.ts",
+      "import": "./dist/swr/index.js"
+    },
+    "./swr/models/*": {
+      "types": "./dist/swr/models/*.d.ts",
+      "import": "./dist/swr/models/*.js"
+    },
+    "./swr/procedures": {
+      "types": "./dist/swr/procedures.d.ts",
+      "import": "./dist/swr/procedures.js"
+    },
+    "./swr/procedures.hooks": {
+      "types": "./dist/swr/procedures.hooks.d.ts",
+      "import": "./dist/swr/procedures.hooks.js"
+    }
+{% endif %}
   },
   "files": [
     "dist"
@@ -22,6 +40,10 @@
     "@cratestack/refine": "{{ refine_version_requirement }}",
     "@refinedev/core": "^5.0.0",
 {% endif %}
+{% if swr %}
+    "react": "^18.0.0 || ^19.0.0",
+    "swr": "^2.2.0",
+{% endif %}
     "@tanstack/react-query": "^5.0.0"
   },
   "dependencies": {
@@ -31,6 +53,11 @@
 {% if refine %}
     "@cratestack/refine": "{{ refine_version_requirement }}",
     "@refinedev/core": "^5.0.0",
+{% endif %}
+{% if swr %}
+    "@types/react": "^18.0.0 || ^19.0.0",
+    "react": "^18.0.0 || ^19.0.0",
+    "swr": "^2.2.0",
 {% endif %}
     "@tanstack/react-query": "^5.0.0",
     "typescript": "^7.0.2"

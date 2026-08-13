@@ -1,13 +1,33 @@
-//! The `swr` preset (issues #304/#305, epic #298): one
-//! `src/models/<model>.ts` file per model (types + plain framework-free
-//! async functions), a shared-types file for types 2+ models reference,
-//! and a `src/procedures.ts` for procedures in the same shape — plus,
-//! per model/procedures file, a sibling `.hooks.ts` file of `useSWR`/
-//! `useSWRMutation` hooks wrapping those functions. This module is a
-//! sibling pipeline to `crate::generator`'s default path, not a
-//! modification of it — see `generator.rs`'s doc comment for why keeping
-//! them separate is what makes the default preset's byte-identical
-//! guarantee easy to trust.
+//! The `--swr` flag (issues #304/#305/epic #298, turned from a
+//! mutually-exclusive `--preset swr` into an additive flag by issue #591):
+//! one `src/swr/models/<model>.ts` file per model (types + plain
+//! framework-free async functions), a shared-types file for types 2+
+//! models reference, and a `src/swr/procedures.ts` for procedures in the
+//! same shape — plus, per model/procedures file, a sibling `.hooks.ts`
+//! file of `useSWR`/`useSWRMutation` hooks wrapping those functions. This
+//! module is a sibling pipeline to `crate::generator`'s default path, not
+//! a modification of it — see `generator.rs`'s doc comment for why
+//! keeping them separate is what makes the default layout's
+//! byte-identical guarantee easy to trust.
+//!
+//! ## Why `src/swr/`, not a second package (issue #591)
+//!
+//! Before #591, `--preset swr` picked this layout *instead of* the
+//! default one — a consumer who wanted both had to run the generator
+//! twice, into two directories, and depend on two packages. `--swr` nests
+//! this entire subtree under `src/swr/` in the *same* package the default
+//! layout occupies at `src/` instead: every template below is reused
+//! verbatim from when it was a standalone package (its internal relative
+//! imports — `./`, `./models/`, `../queries.js`, etc. — are unchanged,
+//! since the whole subtree still moves together), only the *top-level*
+//! output path each file lands at gained a `src/swr/` prefix. The
+//! package's own `package.json`/`tsconfig.json`/`README.md` are no longer
+//! duplicated here — the default layout's copies already cover the whole
+//! package, `tsconfig.json`'s `"include": ["src/**/*.ts"]` already reaches
+//! `src/swr/**` with no change needed, and `package.json.j2` gains a
+//! `"./swr"` (+ `"./swr/models/*"`, `"./swr/procedures"`,
+//! `"./swr/procedures.hooks"`) `exports` subpath and the `swr`/`react`
+//! peer/dev dependencies only when `swr: true`.
 //!
 //! ## Why hooks are a *sibling* file, not appended to the plain-function
 //! ## file (issue #305)
@@ -51,7 +71,7 @@ pub(crate) fn generate(
     config: &TypeScriptGeneratorConfig,
 ) -> Result<Vec<GeneratedTypeScriptFile>, TypeScriptGeneratorError> {
     if schema.transport == TransportStyle::Grpc {
-        return Err(TypeScriptGeneratorError::SwrPresetUnsupportedForGrpc);
+        return Err(TypeScriptGeneratorError::SwrUnsupportedForGrpc);
     }
 
     let specs = templates::swr_template_specs_for(schema.transport);
@@ -82,7 +102,7 @@ pub(crate) fn generate(
                         TypeScriptGeneratorError::TemplateRender(spec.template_name, error)
                     })?;
                     files.push(GeneratedTypeScriptFile {
-                        file_name: format!("src/models/{}{suffix}", model_context.file_stem),
+                        file_name: format!("src/swr/models/{}{suffix}", model_context.file_stem),
                         contents,
                     });
                 }
@@ -93,7 +113,7 @@ pub(crate) fn generate(
     Ok(files)
 }
 
-/// Issue #344: `PerModel` output paths (`src/models/{{ file_stem }}.ts`
+/// Issue #344: `PerModel` output paths (`src/swr/models/{{ file_stem }}.ts`
 /// and its `.hooks.ts` sibling) are keyed solely by
 /// `SwrModelFileContext::file_stem`, which `crate::naming::to_kebab_case`
 /// derives from the model's schema name through the same lossy tokenizer

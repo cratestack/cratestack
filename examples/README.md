@@ -108,7 +108,7 @@ See [`grpc-widgets/README.md`](grpc-widgets/README.md) for the client-side run s
 
 | Example | Macro(s) | Shape |
 |---|---|---|
-| [`react-vite-swr/`](react-vite-swr) | `include_server_schema!` (`transport rest`) | Postgres + axum REST server, plus a `cratestack generate-typescript --preset swr` client (checked in under `client/`) consumed by a real React + Vite app with **zero hand-written data-fetching code** — every `useSWR`/`useSWRMutation` call, cache key, and fetcher is generated. Also calls a plain generated function from a Node script, outside React, proving the preset's two-layer (plain functions + hooks) design is real. |
+| [`react-vite-swr/`](react-vite-swr) | `include_server_schema!` (`transport rest`) | Postgres + axum REST server, plus a `cratestack generate-typescript --swr` client (checked in under `client/`) consumed by a real React + Vite app with **zero hand-written data-fetching code** — every `useSWR`/`useSWRMutation` call, cache key, and fetcher is generated. Also calls a plain generated function from a Node script, outside React, proving the swr layout's two-layer (plain functions + hooks) design is real. |
 
 ```bash
 docker compose up -d postgres

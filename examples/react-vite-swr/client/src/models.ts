@@ -1,0 +1,304 @@
+import type { JsonValue } from "./runtime.js";
+import DecimalJs from "decimal.js";
+
+// cratestack#498: every `Decimal`-typed schema field is carried as a real
+// arbitrary-precision value, not a wire-format-dependent opaque `string`.
+// #495/#496 made `decimal-bigdecimal` a real server-side backend for
+// values beyond `rust_decimal`'s ~28-29 significant-digit cap, but
+// `rust_decimal`'s `Display` never emits scientific notation while
+// `bigdecimal`'s does past a magnitude threshold (`"0.0000001"` vs.
+// `"1E-7"` for the identical value) — a client that just typed the field
+// `string` saw a backend-dependent format and had no way to do
+// arithmetic/comparison on it at all. `decimal.js` parses both notations
+// into the identical value (`new Decimal("1E-7").equals(new
+// Decimal("0.0000001"))` is `true`), closing that gap.
+//
+// Cloned with an effectively-unbounded exponential-notation threshold
+// (`toExpNeg`/`toExpPos`) rather than used directly: decimal.js's own
+// default `.toString()`/`.toJSON()` (the encode path every `JSON.stringify`
+// call and this package's default JSON-based RPC codec go through — see
+// `rpc-runtime.ts.j2`'s `jsonRpcCodec`) switches to scientific notation
+// past ±7/21 orders of magnitude, which would make even an *ordinary*
+// value like `0.00000001` re-encode as `"1e-8"`. Forcing plain positional
+// notation instead matches `rust_decimal`'s own `Display` exactly, so a
+// re-encoded value is always accepted back by a server on *either*
+// backend without needing to know whether it parses scientific notation.
+export const Decimal = DecimalJs.clone({ toExpNeg: -1e9, toExpPos: 1e9 });
+export type Decimal = DecimalJs;
+
+/** One model/`type`'s own decode-time shape: `keys` are its *direct*
+ *  `Decimal` field wire names; `nested` maps a field name to the shape
+ *  name (a {@link decimalShapes} key) that field's own value should be
+ *  revived against, for any field whose type is itself another declared
+ *  model/`type`. See {@link decimalShapes}'s doc comment for why this is
+ *  keyed by structural path (via `nested`) rather than a single flat,
+ *  schema-wide field-name set. */
+export interface DecimalShape {
+  readonly keys: readonly string[];
+  readonly nested: Readonly<Record<string, string>>;
+}
+
+/** One entry per model/`type` this schema declares (`crate::decimal::
+ *  build_decimal_shapes`) — `reviveDecimalFields`'s registry.
+ *
+ *  cratestack#499 review: an earlier version of this revival scheme kept a
+ *  single flat `Set<string>` of every `Decimal` field name reachable from
+ *  a response's root type (its own fields *and* every relation's/`type`'s
+ *  fields, unioned together) and matched it against a decoded response's
+ *  keys at *any* nesting depth. That's provably unsound the moment two
+ *  *different* reachable types can each contribute a field name to the
+ *  same flat set: a non-`Decimal` field in one type that happens to share
+ *  a name with a `Decimal` field in another reachable type gets wrongly
+ *  converted. Confirmed empirically (not just theorized) with an
+ *  `Order.total: Decimal` + related `Account.total: String` schema,
+ *  `include`-ing the relation: a real (non-numeric) account reference
+ *  threw `[DecimalError] Invalid argument]` decoding a perfectly valid
+ *  response, and a numeric-looking one (`"00123"`) was silently corrupted
+ *  into `Decimal("123")`, losing its leading zeros.
+ *
+ *  This registry fixes that by keeping every type's `Decimal` field names
+ *  in *that type's own* `DecimalShape` only, never merged with another
+ *  type's. `reviveShaped` (below) looks up a nested field's *own* shape
+ *  via `nested` rather than testing the parent's key set against it, so
+ *  `Account.total` is only ever checked against *Account's* shape (which,
+ *  correctly, has no `total` key) — not `Order`'s. */
+export const decimalShapes: Readonly<Record<string, DecimalShape>> = {
+  Board: { keys: [], nested: {  } },
+  Task: { keys: [], nested: { 'board': 'Board' } },
+  FocusEstimateArgs: { keys: [], nested: {  } },
+  FocusEstimateResult: { keys: [], nested: {  } },
+};
+
+/** Decodes `value` against the named entry in {@link decimalShapes},
+ *  replacing every string at a key that shape's own `keys` names with a
+ *  real {@link Decimal}, and recursing into any key `nested` names using
+ *  *that* field's own shape. `shapeName` not found in the registry (a
+ *  plain scalar or enum return, e.g. `echoName(): string`) is a
+ *  documented no-op fast path, so every model/procedure call site calls
+ *  this unconditionally rather than the generator branching per call
+ *  site. */
+export function reviveDecimalFields(value: unknown, shapeName: string): unknown {
+  const shape = decimalShapes[shapeName];
+  if (!shape) {
+    return value;
+  }
+  return reviveShaped(value, shape);
+}
+
+/** {@link reviveDecimalFields} for a `Page<T>` envelope: applies `T`'s own
+ *  shape to `.items` (a `Page` envelope's own keys — `items`/`totalCount`/
+ *  `pageInfo` — are never themselves `T`'s fields, so `T`'s shape can't be
+ *  applied to the envelope directly the way a plain `T`/`T[]` response
+ *  can), leaving `totalCount`/`pageInfo` untouched. */
+export function revivePagedDecimalFields(value: unknown, shapeName: string): unknown {
+  const shape = decimalShapes[shapeName];
+  if (!shape || value === null || typeof value !== "object" || !("items" in value)) {
+    return value;
+  }
+  const page = value as { items: unknown };
+  return { ...page, items: reviveShaped(page.items, shape) };
+}
+
+function reviveShaped(value: unknown, shape: DecimalShape): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => reviveShaped(item, shape));
+  }
+  if (value !== null && typeof value === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      const nestedShapeName = shape.nested[key];
+      if (nestedShapeName !== undefined) {
+        const nestedShape = decimalShapes[nestedShapeName];
+        result[key] = nestedShape ? reviveShaped(entry, nestedShape) : entry;
+      } else if (shape.keys.includes(key) && typeof entry === "string") {
+        result[key] = new Decimal(entry);
+      } else {
+        result[key] = entry;
+      }
+    }
+    return result;
+  }
+  return value;
+}
+
+/** Counterpart to {@link reviveDecimalFields} for a procedure whose return
+ *  type is `Decimal` itself (optionally `?`/`[]`) rather than an object
+ *  with `Decimal`-typed fields — `reviveDecimalFields` only walks
+ *  object/array *containers* looking for shaped properties, so a raw
+ *  top-level decoded string (or `null`, or an array of strings) needs this
+ *  simpler counterpart instead (cratestack#498 F2: a procedure like
+ *  `quote(): Decimal` was previously declared `Decimal` but decoded as an
+ *  untouched `string`). See `views.rs::ProcedureView::decimal_revival_kind`
+ *  for which generated call sites use this vs. `reviveDecimalFields`. */
+export function reviveDecimalScalar(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => reviveDecimalScalar(item));
+  }
+  return typeof value === "string" ? new Decimal(value) : value;
+}
+
+// Mirrors cratestack-core::page::{Page, PageInfo} exactly — this is
+// the literal wire shape every `@@paged` list route serializes with
+// `#[serde(rename_all = "camelCase")]`, not an independently designed
+// client-side type. Keep field names and optionality in lockstep with
+// that struct; do not add/rename fields here without changing it
+// there first.
+export interface PageInfo {
+  limit: number | null;
+  offset: number | null;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+}
+
+export interface Page<T> {
+  items: T[];
+  totalCount: number | null;
+  pageInfo: PageInfo;
+}
+
+// Mirrors cratestack-core::page::PageInput exactly — the request-side
+// counterpart to Page/PageInfo above, currently usable only as a
+// procedure argument type. Keep field names and optionality in lockstep
+// with that struct.
+export interface PageInput {
+  limit: number | null;
+  offset: number | null;
+}
+
+// Shared building blocks for every `<Model>Where`/`<Model>FindMany`
+// pair below (search-with-filters for procedures — mirrors
+// cratestack-core::find_many::FieldFilterInput and
+// cratestack-macros's per-model `<Model>Where`/`<Model>SortField`/
+// `<Model>OrderByClause`/`<Model>FindManyInput` exactly). Usable only
+// as a procedure argument type.
+export interface EqualityFilter<V> {
+  eq?: V;
+  ne?: V;
+  in?: V[];
+  isNull?: boolean;
+}
+
+export interface ComparableFilter<V> extends EqualityFilter<V> {
+  lt?: V;
+  lte?: V;
+  gt?: V;
+  gte?: V;
+}
+
+export interface StringFilter extends ComparableFilter<string> {
+  contains?: string;
+  startsWith?: string;
+}
+
+export type NumberFilter = ComparableFilter<number>;
+export type BooleanFilter = EqualityFilter<boolean>;
+export type UuidFilter = ComparableFilter<string>;
+export type DateTimeFilter = ComparableFilter<string>;
+// cratestack#498: `Decimal`, not `string` — see this file's own
+// `Decimal`/`reviveDecimalFields` doc comments above for why. Unlike a
+// response's own `Decimal` fields, a `DecimalFilter` only ever travels
+// *outbound* as part of a `<Model>Where`/`FindMany` procedure argument
+// (`find_many_views.rs`'s own doc comment — "usable only as a procedure
+// argument type"), so it needs no `reviveDecimalFields` counterpart on
+// decode: `Decimal.prototype.toJSON` (an alias for `.toString()`) makes
+// `JSON.stringify` — both a plain REST request body and this package's
+// default `jsonRpcCodec` go through it — encode a `Decimal` correctly
+// with no generated glue at all.
+export type DecimalFilter = ComparableFilter<Decimal>;
+
+export type SortDirection = "asc" | "desc";
+
+export type BoardSortField = 'id' | 'name';
+export const BoardSortFieldValues = [
+  "id",
+  "name",
+] as const satisfies readonly BoardSortField[];
+
+export type TaskSortField = 'id' | 'title' | 'done' | 'boardId';
+export const TaskSortFieldValues = [
+  "id",
+  "title",
+  "done",
+  "boardId",
+] as const satisfies readonly TaskSortField[];
+
+export interface FocusEstimateArgs {
+  taskCount: number;
+  minutesPerTask: number;
+}
+
+export interface FocusEstimateResult {
+  totalMinutes: number;
+}
+
+export interface Board {
+  id?: number;
+  name?: string;
+}
+
+export interface CreateBoardInput {
+  id: number;
+  name: string;
+}
+
+export interface UpdateBoardInput {
+  name?: string;
+}
+
+export interface BoardWhere {
+  id?: NumberFilter;
+  name?: StringFilter;
+}
+
+export interface BoardOrderByClause {
+  field: BoardSortField;
+  direction: SortDirection;
+}
+
+export interface BoardFindMany {
+  where?: BoardWhere;
+  orderBy?: BoardOrderByClause[];
+}
+
+export interface Task {
+  id?: number;
+  title?: string;
+  done?: boolean;
+  boardId?: number;
+  board?: Board;
+}
+
+export interface CreateTaskInput {
+  id: number;
+  title: string;
+  done: boolean;
+  boardId: number;
+}
+
+export interface UpdateTaskInput {
+  title?: string;
+  done?: boolean;
+  boardId?: number;
+}
+
+export interface TaskWhere {
+  id?: NumberFilter;
+  title?: StringFilter;
+  done?: BooleanFilter;
+  boardId?: NumberFilter;
+}
+
+export interface TaskOrderByClause {
+  field: TaskSortField;
+  direction: SortDirection;
+}
+
+export interface TaskFindMany {
+  where?: TaskWhere;
+  orderBy?: TaskOrderByClause[];
+}
+
+export interface EstimateFocusMinutesArgs {
+  args: FocusEstimateArgs;
+}
+

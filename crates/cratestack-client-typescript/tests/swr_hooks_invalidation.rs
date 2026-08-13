@@ -25,7 +25,7 @@
 use std::fs;
 use std::process::Command;
 
-use cratestack_client_typescript::{TypeScriptGeneratorConfig, TypeScriptPreset, generate_package};
+use cratestack_client_typescript::{TypeScriptGeneratorConfig, generate_package};
 
 #[test]
 fn mutation_hooks_invalidate_exactly_the_documented_queries() {
@@ -45,11 +45,11 @@ fn mutation_hooks_invalidate_exactly_the_documented_queries() {
         &schema,
         &TypeScriptGeneratorConfig {
             package_name: "swr-hooks-invalidation-check".to_owned(),
-            preset: TypeScriptPreset::Swr,
+            swr: true,
             ..TypeScriptGeneratorConfig::default()
         },
     )
-    .expect("swr preset should render");
+    .expect("--swr should render");
 
     let dir = tempfile::tempdir().expect("tempdir");
     for file in &package.files {

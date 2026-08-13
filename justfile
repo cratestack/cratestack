@@ -486,15 +486,15 @@ verify-dart:
 # not just that its generated text matches a Rust-side snapshot (issue #419).
 # Generates a REST and an RPC package during the run from committed
 # fixtures (crates/cratestack-client-typescript/tests/fixtures/ci_{rest,rpc}.cstack
-# and examples/react-vite-swr/schema.cstack — which uses swr preset over REST)
+# and examples/react-vite-swr/schema.cstack — which uses --swr over REST)
 # via the real `cratestack generate-typescript` CLI, then runs `pnpm build`
 # (which invokes `tsc`) on each.
 #
 # Unlike `dart-verify` which generates on-the-fly from fixtures, the
-# REST/swr example already has committed generated output under
-# examples/react-vite-swr/client/. That fixture exercises the swr preset
-# over REST; this recipe adds an RPC fixture to prove RPC templates
-# typecheck too.
+# REST/--swr example already has committed generated output under
+# examples/react-vite-swr/client/. That fixture exercises `--swr` over
+# REST; this recipe adds an RPC fixture to prove RPC templates typecheck
+# too.
 verify-typescript:
 	#!/usr/bin/env bash
 	set -euo pipefail
@@ -503,22 +503,20 @@ verify-typescript:
 
 	# Generate and typecheck REST fixture
 	pkg="$out/default/rest"
-	echo "=== generate-typescript --preset default (REST): ci_rest.cstack -> $pkg ==="
+	echo "=== generate-typescript (REST): ci_rest.cstack -> $pkg ==="
 	cargo run --quiet -p cratestack-cli -- generate-typescript \
 	  --schema "crates/cratestack-client-typescript/tests/fixtures/ci_rest.cstack" \
 	  --out "$pkg" \
-	  --preset default \
 	  --package-name typescript-verify-rest
 	echo "=== npm install and build (typechecks with tsc): $pkg ==="
 	(cd "$pkg" && npm install && npm run build)
 
 	# Generate and typecheck RPC fixture
 	pkg="$out/default/rpc"
-	echo "=== generate-typescript --preset default (RPC): ci_rpc.cstack -> $pkg ==="
+	echo "=== generate-typescript (RPC): ci_rpc.cstack -> $pkg ==="
 	cargo run --quiet -p cratestack-cli -- generate-typescript \
 	  --schema "crates/cratestack-client-typescript/tests/fixtures/ci_rpc.cstack" \
 	  --out "$pkg" \
-	  --preset default \
 	  --package-name typescript-verify-rpc
 	echo "=== npm install and build (typechecks with tsc): $pkg ==="
 	(cd "$pkg" && npm install && npm run build)
@@ -529,8 +527,8 @@ verify-typescript:
 # Regenerate the two committed example clients in place (issue #471).
 #
 # `examples/flutter-riverpod/client` (via `generate-dart --preset riverpod`)
-# and `examples/react-vite-swr/client` (via `generate-typescript --preset
-# swr`) are committed generated output, guarded only by a CI `--check` step
+# and `examples/react-vite-swr/client` (via `generate-typescript --swr`) are
+# committed generated output, guarded only by a CI `--check` step
 # (the `flutter (flutter-riverpod example)` and `js (react-vite-swr
 # example)` jobs in `.github/workflows/ci.yml`). Before this recipe existed
 # there was no local command that could reconcile a template change
@@ -559,7 +557,7 @@ regen-examples *args='':
 	cargo run -p cratestack-cli -- generate-typescript \
 	  --schema examples/react-vite-swr/schema.cstack \
 	  --out examples/react-vite-swr/client \
-	  --preset swr \
+	  --swr \
 	  --package-name react-vite-swr-client {{args}}
 
 # Generates @cratestack/refine's test fixture (cratestack#571/#577): a REAL
@@ -590,7 +588,6 @@ refine-fixture:
 	cargo run -p cratestack-cli -- generate-typescript \
 	  --schema packages/cratestack-refine/tests/fixtures/refine_fixture.cstack \
 	  --out packages/cratestack-refine/tests/fixtures/generated-client \
-	  --preset default \
 	  --refine \
 	  --package-name refine-fixture-client
 
@@ -616,7 +613,6 @@ refine-rpc-fixture:
 	cargo run -p cratestack-cli -- generate-typescript \
 	  --schema packages/cratestack-refine/tests/fixtures/refine_fixture_rpc.cstack \
 	  --out packages/cratestack-refine/tests/fixtures/generated-client-rpc \
-	  --preset default \
 	  --package-name refine-fixture-rpc-client
 
 # Layer-direction check (ADR 0014, docs/adr/0014-layer-direction-enforcement.md)

@@ -1,7 +1,7 @@
 {
   "name": "react-vite-swr-client",
   "version": "0.0.0",
-  "description": "Generated CrateStack TypeScript client package (swr preset — file-per-model, framework-free).",
+  "description": "Generated CrateStack TypeScript client package.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -9,18 +9,23 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    }
+,
+    "./swr": {
+      "types": "./dist/swr/index.d.ts",
+      "import": "./dist/swr/index.js"
     },
-    "./models/*": {
-      "types": "./dist/models/*.d.ts",
-      "import": "./dist/models/*.js"
+    "./swr/models/*": {
+      "types": "./dist/swr/models/*.d.ts",
+      "import": "./dist/swr/models/*.js"
     },
-    "./procedures": {
-      "types": "./dist/procedures.d.ts",
-      "import": "./dist/procedures.js"
+    "./swr/procedures": {
+      "types": "./dist/swr/procedures.d.ts",
+      "import": "./dist/swr/procedures.js"
     },
-    "./procedures.hooks": {
-      "types": "./dist/procedures.hooks.d.ts",
-      "import": "./dist/procedures.hooks.js"
+    "./swr/procedures.hooks": {
+      "types": "./dist/swr/procedures.hooks.d.ts",
+      "import": "./dist/swr/procedures.hooks.js"
     }
   },
   "files": [
@@ -31,7 +36,8 @@
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0",
-    "swr": "^2.2.0"
+    "swr": "^2.2.0",
+    "@tanstack/react-query": "^5.0.0"
   },
   "dependencies": {
     "decimal.js": "^10.6.0"
@@ -40,6 +46,7 @@
     "@types/react": "^18.0.0 || ^19.0.0",
     "react": "^18.0.0 || ^19.0.0",
     "swr": "^2.2.0",
+    "@tanstack/react-query": "^5.0.0",
     "typescript": "^7.0.2"
   }
 }

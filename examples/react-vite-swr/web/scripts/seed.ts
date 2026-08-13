@@ -2,8 +2,8 @@
 // outside React — a script, not a page load. Every import below comes
 // straight from the generated package's plain-function source files, no
 // `.hooks` subpath, no `swr`/React installed — proving the functions in
-// `client/src/models/*.ts` and `client/src/procedures.ts` really are
-// framework-free, the same claim `tests/swr_runtime.rs` makes on the
+// `client/src/swr/models/*.ts` and `client/src/swr/procedures.ts` really
+// are framework-free, the same claim `tests/swr_runtime.rs` makes on the
 // Rust side of the generator.
 //
 // Run via `tsx` (a plain TS runner, not a UI framework), matching that
@@ -11,9 +11,9 @@
 // (`cargo run -p react-vite-swr-example`):
 //   pnpm run seed
 //
-// Imports below are relative source paths into `../client/src`, not the
-// installed `react-vite-swr-client` package name, for a real, if
-// unglamorous, reason: the generator's compiled `client/dist/` output
+// Imports below are relative source paths into `../client/src/swr`, not
+// the installed `react-vite-swr-client/swr` package subpath, for a real,
+// if unglamorous, reason: the generator's compiled `client/dist/` output
 // currently can't be `import`ed by plain Node at all — every relative
 // import in every generated file (`./runtime`, `../queries`, ...) is
 // missing its `.js` extension, which Node's ESM resolver requires
@@ -23,7 +23,7 @@
 // already-compiled `.js` this script would otherwise load through
 // `node_modules`. Filed as https://github.com/cratestack/cratestack/issues/315
 // rather than silently worked around — fixing it properly means adding
-// `.js` extensions across ~20 template files (both presets, REST/RPC),
+// `.js` extensions across ~20 template files (both layouts, REST/RPC),
 // out of scope for this example. This script demonstrates the plain-
 // function-outside-React claim for real; it does not demonstrate the
 // installed-package path, which is what #315 tracks.
@@ -33,7 +33,7 @@ import {
   createTask,
   estimateFocusMinutes,
   listBoards,
-} from "../../client/src/index.ts";
+} from "../../client/src/swr/index.ts";
 
 const runtime = new CratestackRuntime("http://127.0.0.1:3210", {
   basePath: "/api",

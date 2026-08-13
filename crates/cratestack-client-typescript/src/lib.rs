@@ -13,9 +13,6 @@ mod templates;
 mod types;
 mod views;
 
-pub use config::{
-    GeneratedTypeScriptFile, GeneratedTypeScriptPackage, TypeScriptGeneratorConfig,
-    TypeScriptPreset,
-};
+pub use config::{GeneratedTypeScriptFile, GeneratedTypeScriptPackage, TypeScriptGeneratorConfig};
 pub use error::TypeScriptGeneratorError;
 pub use generator::generate_package;

@@ -17,7 +17,7 @@
 use std::fs;
 use std::process::Command;
 
-use cratestack_client_typescript::{TypeScriptGeneratorConfig, TypeScriptPreset, generate_package};
+use cratestack_client_typescript::{TypeScriptGeneratorConfig, generate_package};
 
 #[test]
 fn paged_model_output_type_checks() {
@@ -37,11 +37,11 @@ fn paged_model_output_type_checks() {
             &schema,
             &TypeScriptGeneratorConfig {
                 package_name: "swr-paged-model-tsc-check".to_owned(),
-                preset: TypeScriptPreset::Swr,
+                swr: true,
                 ..TypeScriptGeneratorConfig::default()
             },
         )
-        .unwrap_or_else(|error| panic!("{fixture}: swr preset should render: {error}"));
+        .unwrap_or_else(|error| panic!("{fixture}: --swr should render: {error}"));
 
         let dir = tempfile::tempdir().expect("tempdir");
         for file in &package.files {

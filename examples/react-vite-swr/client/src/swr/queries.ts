@@ -1,0 +1,63 @@
+export interface CratestackFetchQuery {
+  fields?: string[];
+  include?: string[];
+  includeFields?: Record<string, string[]>;
+  sort?: string[];
+  limit?: number;
+  offset?: number;
+  /** Top-level filter expression in the server's `?where=` DSL, e.g. `"published=true,authorId=42"`. */
+  where?: string;
+  /** Disjunction filter in the server's `?or=` DSL, e.g. `"role=admin|role=owner"`. */
+  or?: string;
+  /** Arbitrary `key=value` predicates spread as individual query params, e.g. `{ published: "true" }` → `?published=true`. */
+  filters?: Record<string, string>;
+}
+
+export interface CratestackRequestConfig {
+  signal?: AbortSignal;
+  headers?: HeadersInit;
+}
+
+export interface CratestackQueryRequestConfig extends CratestackRequestConfig {
+  query?: CratestackFetchQuery;
+}
+
+export function toSearchQuery(query?: CratestackFetchQuery): Record<string, unknown> | undefined {
+  if (!query) {
+    return undefined;
+  }
+
+  const output: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(query.filters ?? {})) {
+    output[key] = value;
+  }
+  if (query.fields?.length) {
+    output.fields = query.fields.join(",");
+  }
+  if (query.include?.length) {
+    output.include = query.include.join(",");
+  }
+  if (query.sort?.length) {
+    output.sort = query.sort.join(",");
+  }
+  if (query.limit !== undefined) {
+    output.limit = query.limit;
+  }
+  if (query.offset !== undefined) {
+    output.offset = query.offset;
+  }
+  if (query.where) {
+    output.where = query.where;
+  }
+  if (query.or) {
+    output.or = query.or;
+  }
+
+  for (const [path, fields] of Object.entries(query.includeFields ?? {})) {
+    if (fields.length > 0) {
+      output[`includeFields[${path}]`] = fields.join(",");
+    }
+  }
+
+  return output;
+}

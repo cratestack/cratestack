@@ -45,20 +45,21 @@ pub enum TypeScriptGeneratorError {
         "`.pb.lock` is missing an entry for message `{message}`{field}: re-run `cratestack generate-proto` to refresh it"
     )]
     MissingPbLockEntry { message: String, field: String },
-    /// `--preset swr` combined with a `transport grpc` schema. The `swr`
-    /// preset (issue #304, epic #298) targets RPC and REST only for its
-    /// first pass — gRPC-Web is explicitly out of scope (see the epic's
-    /// "Out" scope list) because its wire shape (typed protobuf fields, no
+    /// `--swr` combined with a `transport grpc` schema. The `swr` layout
+    /// (originally issue #304/epic #298, now the `--swr` flag — see
+    /// `crate::swr`'s module doc) targets RPC and REST only for its first
+    /// pass — gRPC-Web is explicitly out of scope (see the epic's "Out"
+    /// scope list) because its wire shape (typed protobuf fields, no
     /// URL-query shaping, no procedure surface — see `crate::grpc`'s module
-    /// doc) doesn't fit the plain-fetch-function shape this preset emits.
-    /// Use `--preset default` for a `transport grpc` schema today.
+    /// doc) doesn't fit the plain-fetch-function shape `--swr` emits. Drop
+    /// `--swr` for a `transport grpc` schema today.
     #[error(
-        "`--preset swr` does not support `transport grpc` schemas yet — gRPC-Web is out of \
-         scope for issue #304; use `--preset default` for this schema"
+        "`--swr` does not support `transport grpc` schemas yet — gRPC-Web is out of scope for \
+         issue #304; drop `--swr` for this schema"
     )]
-    SwrPresetUnsupportedForGrpc,
-    /// Issue #344: the `swr` preset's per-model file name
-    /// (`src/models/{{ file_stem }}.ts`) is derived from
+    SwrUnsupportedForGrpc,
+    /// Issue #344: `--swr`'s per-model file name
+    /// (`src/swr/models/{{ file_stem }}.ts`) is derived from
     /// `crate::naming::to_kebab_case`, which — like `to_camel_case`/
     /// `to_pascal_case`/`to_snake_case` — tokenizes through the same
     /// lossy `split_words` (splits on `_`/`-`/` ` *and* case boundaries).
@@ -73,8 +74,8 @@ pub enum TypeScriptGeneratorError {
     /// silent data loss a schema author has no way to notice short of
     /// diffing generator output on disk.
     #[error(
-        "swr preset: models `{first}` and `{second}` both normalize to the file name \
-         `src/models/{file_stem}.ts` — rename one of them so their kebab-case forms differ"
+        "--swr: models `{first}` and `{second}` both normalize to the file name \
+         `src/swr/models/{file_stem}.ts` — rename one of them so their kebab-case forms differ"
     )]
     SwrModelFileNameCollision {
         first: String,
@@ -98,17 +99,4 @@ pub enum TypeScriptGeneratorError {
          gRPC-Web client's typed-protobuf shape; drop `--refine` for this schema"
     )]
     RefineRequiresRestOrRpc,
-    /// Issue #571: `--refine` combined with `--preset swr`. The emitted
-    /// `ResourceMap` binds each resource to a generated model API *object*
-    /// (`client.widgets`), and the `swr` preset emits no client class at
-    /// all — just free functions (`listWidgets`, `getWidget`, …) with
-    /// nothing to bind `ResourceConfig::api` to. Wiring refine to the swr
-    /// layout would mean a different provider shape in
-    /// `@cratestack/refine`, not a different template here.
-    #[error(
-        "`--refine` is only supported with `--preset default` — the `swr` preset emits free \
-         functions and no client class, so there is no model API object for a refine \
-         `ResourceConfig` to bind to"
-    )]
-    RefineUnsupportedPreset,
 }

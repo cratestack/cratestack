@@ -80,15 +80,23 @@ pub(crate) enum Command {
         /// consumers that always fetch full objects.
         #[arg(long)]
         full_selection: bool,
-        /// Output layout (issue #304). `default` is today's monolithic
-        /// layout (`src/models.ts`, `src/client.ts`, ...) and stays
-        /// byte-identical forever. `swr` emits one `src/models/<model>.ts`
-        /// per model (types + plain framework-free async functions) and a
-        /// `src/procedures.ts` for procedures — the structural foundation
-        /// #305 builds SWR hooks on top of. `swr` does not support
-        /// `transport grpc` schemas yet.
-        #[arg(long, value_enum, default_value_t = TypeScriptPresetArg::Default)]
-        preset: TypeScriptPresetArg,
+        /// Additionally emit the file-per-model + SWR-hooks layout under
+        /// `src/swr/` (issues #304/#305, made additive by #591 — see
+        /// `cratestack_client_typescript::swr`'s module doc for the full
+        /// rationale). One `src/swr/models/<model>.ts` per model (types +
+        /// plain framework-free async functions) plus a sibling
+        /// `<model>.hooks.ts` of `useSWR`/`useSWRMutation` hooks, and a
+        /// `src/swr/procedures.ts` (+ `.hooks.ts`) for procedures.
+        /// Reachable from a consumer as `<package-name>/swr` (plus
+        /// `/swr/models/*`, `/swr/procedures`, `/swr/procedures.hooks`)
+        /// via a `package.json` `exports` subpath.
+        ///
+        /// Purely additive: the default layout at `src/` is always
+        /// emitted regardless of this flag; `--swr` adds the `src/swr/`
+        /// subtree alongside it rather than replacing it. Does not
+        /// support `transport grpc` schemas yet.
+        #[arg(long)]
+        swr: bool,
         /// Also emit `src/refine.ts` (issue #571): the
         /// `@cratestack/refine` resource manifest for this schema — one
         /// entry per model, carrying the `@id` field name, `@@paged`, and
@@ -96,11 +104,12 @@ pub(crate) enum Command {
         /// generated client encodes only in its TypeScript types.
         ///
         /// Purely additive: every other emitted file is byte-identical
-        /// with and without it. REST and RPC schemas with `--preset
-        /// default` only — the manifest is typed `ResourceMap` for REST
-        /// and `RpcResourceMap` for RPC. gRPC-Web has no
-        /// `@cratestack/refine` provider to bind to, and `swr` emits no
-        /// client class to bind to.
+        /// with and without it. REST and RPC schemas only — the manifest
+        /// is typed `ResourceMap` for REST and `RpcResourceMap` for RPC;
+        /// gRPC-Web has no `@cratestack/refine` provider to bind to.
+        /// Composes freely with `--swr`: the manifest binds to the
+        /// default layout's client class, which is always emitted
+        /// regardless of `--swr`.
         #[arg(long)]
         refine: bool,
     },
@@ -323,16 +332,4 @@ pub(crate) enum BaselineBackendArg {
 pub(crate) enum OutputFormat {
     Human,
     Json,
-}
-
-/// CLI-facing mirror of `cratestack_client_typescript::TypeScriptPreset`
-/// (issue #304) — `clap::ValueEnum` needs its own type, not the library's,
-/// so `cli_handlers::handle_generate_typescript` converts one to the
-/// other. Variant names and the default match the Dart CLI's sibling flag
-/// (#297) so `generate-typescript --preset swr` and `generate-dart
-/// --preset swr` stay consistent for anyone using both.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
-pub(crate) enum TypeScriptPresetArg {
-    Default,
-    Swr,
 }

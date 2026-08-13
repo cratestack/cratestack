@@ -10,9 +10,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { SWRConfig } from "swr";
-import { CratestackRpcRuntime } from "./src/runtime";
-import { useWidgets, useWidget, useCreateWidget, useUpdateWidget, useDeleteWidget } from "./src/models/widget.hooks";
-import { useGadgets } from "./src/models/gadget.hooks";
+import { CratestackRpcRuntime } from "./src/swr/runtime";
+import { useWidgets, useWidget, useCreateWidget, useUpdateWidget, useDeleteWidget } from "./src/swr/models/widget.hooks";
+import { useGadgets } from "./src/swr/models/gadget.hooks";
 
 afterEach(() => cleanup());
 

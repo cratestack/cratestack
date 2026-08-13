@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 
 use super::{handle_generate_dart, handle_generate_typescript};
-use crate::cli_types::{DartPresetArg, TypeScriptPresetArg};
+use crate::cli_types::DartPresetArg;
 
 fn write_schema(dir: &TempDir, source: &str) -> PathBuf {
     let path = dir.path().join("schema.cstack");
@@ -42,23 +42,23 @@ model Account {
 "#;
 
 fn generate_ts(schema: PathBuf, out: PathBuf, check: bool) -> anyhow::Result<()> {
-    generate_ts_with_preset(schema, out, check, TypeScriptPresetArg::Default)
+    generate_ts_with_swr(schema, out, check, false)
 }
 
-fn generate_ts_with_preset(
+fn generate_ts_with_swr(
     schema: PathBuf,
     out: PathBuf,
     check: bool,
-    preset: TypeScriptPresetArg,
+    swr: bool,
 ) -> anyhow::Result<()> {
-    generate_ts_with_preset_and_refine(schema, out, check, preset, false)
+    generate_ts_with_swr_and_refine(schema, out, check, swr, false)
 }
 
-fn generate_ts_with_preset_and_refine(
+fn generate_ts_with_swr_and_refine(
     schema: PathBuf,
     out: PathBuf,
     check: bool,
-    preset: TypeScriptPresetArg,
+    swr: bool,
     refine: bool,
 ) -> anyhow::Result<()> {
     handle_generate_typescript(
@@ -69,7 +69,7 @@ fn generate_ts_with_preset_and_refine(
         None,
         check,
         false,
-        preset,
+        swr,
         refine,
     )
 }
@@ -156,12 +156,11 @@ fn typescript_check_does_not_write_files() {
     );
 }
 
-// Issue #304: `--check` must be preset-aware — the expected file *set*
-// differs between `default` and `swr` (`src/models.ts` vs.
-// `src/models/<model>.ts` + `src/models/shared.ts` + `src/procedures.ts`,
-// no `src/client.ts`/`src/react-query.ts`), and neither direction should
-// be treated as spurious drift just because the file lists don't match
-// each other.
+// Issue #591: `--check` must be `--swr`-aware — the expected file *set*
+// grows (additively — `src/swr/models/<model>.ts` etc. alongside, not
+// instead of, `src/models.ts`) when `--swr` is on, and neither direction
+// should be treated as spurious drift just because the file lists don't
+// match each other.
 
 #[test]
 fn typescript_swr_check_passes_when_output_matches_schema() {
@@ -169,43 +168,59 @@ fn typescript_swr_check_passes_when_output_matches_schema() {
     let schema = write_schema(&dir, INITIAL_SCHEMA);
     let out = dir.path().join("client");
 
-    generate_ts_with_preset(schema.clone(), out.clone(), false, TypeScriptPresetArg::Swr)
-        .expect("initial swr generate");
-    generate_ts_with_preset(schema, out, true, TypeScriptPresetArg::Swr)
-        .expect("check --preset swr should pass against its own unmodified output");
+    generate_ts_with_swr(schema.clone(), out.clone(), false, true).expect("initial swr generate");
+    generate_ts_with_swr(schema, out, true, true)
+        .expect("check --swr should pass against its own unmodified output");
 }
 
 #[test]
-fn typescript_swr_check_flags_default_preset_output_as_real_drift() {
-    // Generate with the default preset, then run `--check --preset swr`
-    // against the same directory: this must fail with real `missing`
-    // (swr's files) and `unexpected` (default's `src/models.ts`, etc.)
-    // entries — not silently pass just because both runs are "generated
-    // TypeScript output". A drift-check that swallowed the differing file
-    // set here would defeat the point of `--check` for anyone switching
-    // presets.
+fn typescript_check_flags_missing_swr_files_as_real_drift_when_swr_is_added() {
+    // Generate without `--swr`, then run `--check --swr` against the same
+    // directory: this must fail with `missing` entries for every
+    // `src/swr/**` file — not silently pass just because the default
+    // layout (still present in both runs — `--swr` is additive, never a
+    // replacement) matches. A drift-check that swallowed this gap would
+    // defeat the point of `--check` for anyone turning `--swr` on for an
+    // existing generated package.
     let dir = TempDir::new().expect("tempdir");
     let schema = write_schema(&dir, INITIAL_SCHEMA);
     let out = dir.path().join("client");
 
-    generate_ts_with_preset(
-        schema.clone(),
-        out.clone(),
-        false,
-        TypeScriptPresetArg::Default,
-    )
-    .expect("initial default generate");
+    generate_ts_with_swr(schema.clone(), out.clone(), false, false)
+        .expect("initial generate without --swr");
 
-    let error = generate_ts_with_preset(schema, out, true, TypeScriptPresetArg::Swr)
-        .expect_err("check --preset swr against default-preset output should report drift");
+    let error = generate_ts_with_swr(schema, out, true, true)
+        .expect_err("check --swr against non-swr output should report drift");
     let message = error.to_string();
     assert!(
-        message.contains("missing: src/models/account.ts"),
+        message.contains("missing: src/swr/models/account.ts"),
         "swr's per-model file should be reported missing:\n{message}"
     );
     assert!(
-        message.contains("unexpected: src/models.ts"),
-        "default's monolithic models.ts should be reported unexpected:\n{message}"
+        !message.contains("unexpected: src/models.ts"),
+        "the default layout's src/models.ts is unaffected by --swr and must not be reported \
+         as drift:\n{message}"
+    );
+}
+
+#[test]
+fn typescript_check_flags_extra_swr_files_as_real_drift_when_swr_is_removed() {
+    // The reverse direction: generate WITH `--swr`, then check without it
+    // — every `src/swr/**` file must be reported `unexpected`, and the
+    // default layout must stay clean.
+    let dir = TempDir::new().expect("tempdir");
+    let schema = write_schema(&dir, INITIAL_SCHEMA);
+    let out = dir.path().join("client");
+
+    generate_ts_with_swr(schema.clone(), out.clone(), false, true)
+        .expect("initial generate with --swr");
+
+    let error = generate_ts_with_swr(schema, out, true, false)
+        .expect_err("check without --swr against swr output should report drift");
+    let message = error.to_string();
+    assert!(
+        message.contains("unexpected: src/swr/models/account.ts"),
+        "swr's per-model file should be reported unexpected:\n{message}"
     );
 }
 

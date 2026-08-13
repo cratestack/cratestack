@@ -24,7 +24,7 @@ use std::io::Write as _;
 use std::net::TcpListener;
 use std::process::Command;
 
-use cratestack_client_typescript::{TypeScriptGeneratorConfig, TypeScriptPreset, generate_package};
+use cratestack_client_typescript::{TypeScriptGeneratorConfig, generate_package};
 
 #[test]
 fn generated_package_compiled_dist_imports_under_plain_node_esm() {
@@ -43,11 +43,11 @@ fn generated_package_compiled_dist_imports_under_plain_node_esm() {
         &schema,
         &TypeScriptGeneratorConfig {
             package_name: "node-dist-esm-check".to_owned(),
-            preset: TypeScriptPreset::Swr,
+            swr: true,
             ..TypeScriptGeneratorConfig::default()
         },
     )
-    .expect("swr preset should render");
+    .expect("--swr should render");
 
     let pkg_dir = tempfile::tempdir().expect("pkg tempdir");
     for file in &package.files {
@@ -145,7 +145,7 @@ fn generated_package_compiled_dist_imports_under_plain_node_esm() {
     write!(
         script,
         r#"
-import {{ CratestackRuntime, getWidget }} from "node-dist-esm-check";
+import {{ CratestackRuntime, getWidget }} from "node-dist-esm-check/swr";
 
 const runtime = new CratestackRuntime("http://127.0.0.1:{port}", {{ basePath: "/api" }});
 const widget = await getWidget(runtime, 1);
