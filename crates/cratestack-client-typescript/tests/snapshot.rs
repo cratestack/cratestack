@@ -640,6 +640,7 @@ fn generate_for_with_full_config(
             template_dir: None,
             preset: cratestack_client_typescript::TypeScriptPreset::Default,
             full_selection,
+            refine: false,
             pb_lock: None,
             schema_sha256: schema_sha256.to_owned(),
         },

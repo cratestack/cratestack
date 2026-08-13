@@ -35,7 +35,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "vitest run",
+    "test": "tsc --noEmit -p tsconfig.typecheck.json && vitest run",
     "lint": "biome check ."
   },
   "peerDependencies": {

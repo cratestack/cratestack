@@ -162,6 +162,7 @@ mod tests {
                 check,
                 full_selection,
                 preset,
+                refine,
             } => {
                 assert_eq!(schema, PathBuf::from("schema.cstack"));
                 assert_eq!(out, PathBuf::from("out"));
@@ -171,6 +172,10 @@ mod tests {
                 assert!(!check);
                 assert!(!full_selection);
                 assert_eq!(preset, TypeScriptPresetArg::Default);
+                assert!(
+                    !refine,
+                    "--refine must default to off (issue #571: opt-in, additive)"
+                );
             }
             _ => panic!("expected generate-typescript command"),
         }

@@ -28,6 +28,7 @@ fn config_with_lock(pb_lock: PbLock) -> TypeScriptGeneratorConfig {
         template_dir: None,
         preset: cratestack_client_typescript::TypeScriptPreset::Default,
         full_selection: false,
+        refine: false,
         pb_lock: Some(pb_lock),
         // gRPC-Web is out of scope for the schema-fingerprint header (issue
         // #178) — this crate's TypeScriptGeneratorConfig::schema_sha256 doc

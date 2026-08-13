@@ -578,12 +578,20 @@ regen-examples *args='':
 # suite's own `tests/support/assert-fixture-present.ts` (a vitest
 # `globalSetup`) throws with this recipe's name if the fixture is missing,
 # rather than silently skipping.
+#
+# `--refine` is load-bearing here, not decoration: it makes the generator
+# emit `src/refine.ts`, the `ResourceMap` for this schema. Two things in
+# the package depend on it being there — `tests/generated-manifest.test.ts`
+# drives it at runtime, and `tsc --noEmit -p tsconfig.typecheck.json` (the
+# first half of the package's `test` script) proves it actually satisfies
+# `ResourceConfig`, which no string assertion over generated source could.
 refine-fixture:
 	rm -rf packages/cratestack-refine/tests/fixtures/generated-client
 	cargo run -p cratestack-cli -- generate-typescript \
 	  --schema packages/cratestack-refine/tests/fixtures/refine_fixture.cstack \
 	  --out packages/cratestack-refine/tests/fixtures/generated-client \
 	  --preset default \
+	  --refine \
 	  --package-name refine-fixture-client
 
 # Layer-direction check (ADR 0014, docs/adr/0014-layer-direction-enforcement.md)

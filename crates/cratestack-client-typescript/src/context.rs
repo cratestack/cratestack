@@ -11,6 +11,7 @@ use crate::find_many_views::{
 use crate::grpc::GrpcContext;
 use crate::naming::{occupied_type_names, package_class_stem, to_pascal_case};
 use crate::procedure_views::{ProcedureView, build_procedure};
+use crate::refine::{RefineResourceView, build_refine_resources};
 use crate::types::{
     enum_name_set, is_generated_on_create, is_primary_key, model_allows_create, model_name_set,
     scalar_model_fields, visible_model_fields,
@@ -44,6 +45,26 @@ pub(crate) struct TemplateContext {
     /// doc. `None` for REST/RPC, where the REST/RPC-specific templates
     /// never reference `grpc.*` in the first place.
     grpc: Option<GrpcContext>,
+    /// Issue #571 (`--refine`). Mirrors
+    /// `TypeScriptGeneratorConfig::refine`, and is read by the two
+    /// *unconditional* templates that also change under the flag —
+    /// `package.json.j2` (adds the `@cratestack/refine` peer/dev
+    /// dependency) and `rest-index.ts.j2` (re-exports `./refine.js`).
+    /// `src/refine.ts` itself is gated by spec selection, not by this
+    /// field, so it is simply absent from a default run.
+    refine: bool,
+    /// The semver range the generated `package.json` pins
+    /// `@cratestack/refine` to under `--refine`. Derived from this
+    /// crate's own `CARGO_PKG_VERSION`, which `just bump` moves in
+    /// lockstep with the npm package — a generated client and the
+    /// `@cratestack/refine` it was generated against are the same
+    /// release, and a caret range on a `0.x` version resolves to that
+    /// minor line only. Empty when `refine` is off, where no template
+    /// reads it.
+    refine_version_requirement: String,
+    /// One entry per model, empty unless `refine` is set. See
+    /// `crate::refine`.
+    refine_resources: Vec<RefineResourceView>,
 }
 
 pub(crate) fn build_template_context(
@@ -188,5 +209,19 @@ pub(crate) fn build_template_context(
         mutation_procedures,
         decimal_shapes,
         grpc,
+        refine: config.refine,
+        refine_version_requirement: if config.refine {
+            format!("^{}", env!("CARGO_PKG_VERSION"))
+        } else {
+            String::new()
+        },
+        // Built only when the flag is on: a default run has no template
+        // that reads this, and walking every model to fill a list nothing
+        // renders would be wasted work on the hot path.
+        refine_resources: if config.refine {
+            build_refine_resources(schema)
+        } else {
+            Vec::new()
+        },
     })
 }

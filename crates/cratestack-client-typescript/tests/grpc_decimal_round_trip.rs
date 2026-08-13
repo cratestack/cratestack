@@ -106,6 +106,7 @@ fn grpc_decimal_round_trips_through_encode_decode_message() {
             template_dir: None,
             preset: TypeScriptPreset::Default,
             full_selection: false,
+            refine: false,
             pb_lock: Some(lock),
             schema_sha256: "unused-for-grpc-web".to_owned(),
         },

@@ -103,6 +103,23 @@ Flags:
   one `src/models/<model>.ts` per model (types + plain framework-free
   async functions) plus `src/procedures.ts`, the structural foundation
   for SWR hooks. `swr` does not support `transport grpc` schemas yet.
+- `--refine` — additionally emit `src/refine.ts`, the
+  [`@cratestack/refine`](https://www.npmjs.com/package/@cratestack/refine)
+  `ResourceMap` for this schema: one entry per model carrying its `@id`
+  field name, `@@paged` flag, and `@version` field, bound to the matching
+  generated model API. Purely additive — every other emitted file is
+  byte-identical with and without it — and it also adds
+  `@cratestack/refine`/`@refinedev/core` to the generated `package.json`'s
+  peer/dev dependencies. REST schemas and `--preset default` only: the
+  RPC and gRPC-Web clients don't share the REST client's method shape,
+  and `swr` emits no client class for a resource to bind to.
+
+  ```bash
+  cratestack generate-typescript \
+    --schema schemas/catalog.cstack \
+    --out packages/catalog-client \
+    --refine
+  ```
 
 ### `--check` — drift detection (CI guard)
 

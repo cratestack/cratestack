@@ -46,6 +46,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             check,
             full_selection,
             preset,
+            refine,
         } => handle_generate_typescript(
             schema,
             out,
@@ -55,6 +56,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             check,
             full_selection,
             preset,
+            refine,
         )?,
         Command::GenerateProto {
             schema,
@@ -176,6 +178,7 @@ fn handle_generate_typescript(
     check: bool,
     full_selection: bool,
     preset: TypeScriptPresetArg,
+    refine: bool,
 ) -> Result<()> {
     let parsed = parse_schema_or_render(&schema)?;
     let pb_lock = read_pb_lock_if_present(&schema)?;
@@ -192,6 +195,7 @@ fn handle_generate_typescript(
             template_dir,
             preset,
             full_selection,
+            refine,
             pb_lock,
             schema_sha256,
         },

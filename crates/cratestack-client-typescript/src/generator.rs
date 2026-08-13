@@ -1,4 +1,4 @@
-use cratestack_core::Schema;
+use cratestack_core::{Schema, TransportStyle};
 
 use crate::config::{
     GeneratedTypeScriptFile, GeneratedTypeScriptPackage, TypeScriptGeneratorConfig,
@@ -12,6 +12,20 @@ pub fn generate_package(
     schema: &Schema,
     config: &TypeScriptGeneratorConfig,
 ) -> Result<GeneratedTypeScriptPackage, TypeScriptGeneratorError> {
+    // Issue #571: reject the combinations `--refine` cannot produce a
+    // type-checking file for, before rendering anything. Both are
+    // structural (see each error variant's doc comment), so failing here
+    // is strictly better than emitting a `refine.ts` that breaks `tsc`
+    // in the consumer's package — the generator's own output would look
+    // successful and the failure would surface a build step later.
+    if config.refine {
+        if config.preset != TypeScriptPreset::Default {
+            return Err(TypeScriptGeneratorError::RefineUnsupportedPreset);
+        }
+        if schema.transport != TransportStyle::Rest {
+            return Err(TypeScriptGeneratorError::RefineRequiresRest);
+        }
+    }
     let files = match config.preset {
         TypeScriptPreset::Default => generate_default_package(schema, config)?,
         TypeScriptPreset::Swr => crate::swr::generate(schema, config)?,
@@ -29,7 +43,7 @@ fn generate_default_package(
     schema: &Schema,
     config: &TypeScriptGeneratorConfig,
 ) -> Result<Vec<GeneratedTypeScriptFile>, TypeScriptGeneratorError> {
-    let specs = template_specs_for(schema.transport)?;
+    let specs = template_specs_for(schema.transport, config.refine)?;
     let environment = build_environment(config.template_dir.as_deref(), &specs)?;
     let context = build_template_context(schema, config)?;
     specs

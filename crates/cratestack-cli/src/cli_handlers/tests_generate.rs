@@ -51,6 +51,16 @@ fn generate_ts_with_preset(
     check: bool,
     preset: TypeScriptPresetArg,
 ) -> anyhow::Result<()> {
+    generate_ts_with_preset_and_refine(schema, out, check, preset, false)
+}
+
+fn generate_ts_with_preset_and_refine(
+    schema: PathBuf,
+    out: PathBuf,
+    check: bool,
+    preset: TypeScriptPresetArg,
+    refine: bool,
+) -> anyhow::Result<()> {
     handle_generate_typescript(
         schema,
         out,
@@ -60,6 +70,7 @@ fn generate_ts_with_preset(
         check,
         false,
         preset,
+        refine,
     )
 }
 

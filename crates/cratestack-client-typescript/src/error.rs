@@ -81,4 +81,34 @@ pub enum TypeScriptGeneratorError {
         second: String,
         file_stem: String,
     },
+    /// Issue #571: `--refine` against a non-REST schema. This is a real
+    /// structural incompatibility, not an unimplemented feature.
+    /// `@cratestack/refine`'s `CratestackModelApi` is duck-typed against
+    /// the REST client's method shape — `list(options)` where `options`
+    /// carries a `CratestackFetchQuery`, and the provider builds
+    /// `{ filters, sort, limit, offset }` into it. The RPC client's
+    /// `list(query, options)` takes the query *positionally* as a
+    /// `CratestackRpcListQuery`, and the gRPC-Web client speaks typed
+    /// protobuf with no URL-query shaping at all. An emitted `refine.ts`
+    /// would fail `tsc` in the consumer's package, so this refuses up
+    /// front instead.
+    #[error(
+        "`--refine` needs a REST schema — `@cratestack/refine`'s DataProvider is written against \
+         the REST client's `list(options)`/`CratestackFetchQuery` shape, which the RPC and \
+         gRPC-Web clients do not share; drop `--refine` for this schema"
+    )]
+    RefineRequiresRest,
+    /// Issue #571: `--refine` combined with `--preset swr`. The emitted
+    /// `ResourceMap` binds each resource to a generated model API *object*
+    /// (`client.widgets`), and the `swr` preset emits no client class at
+    /// all — just free functions (`listWidgets`, `getWidget`, …) with
+    /// nothing to bind `ResourceConfig::api` to. Wiring refine to the swr
+    /// layout would mean a different provider shape in
+    /// `@cratestack/refine`, not a different template here.
+    #[error(
+        "`--refine` is only supported with `--preset default` — the `swr` preset emits free \
+         functions and no client class, so there is no model API object for a refine \
+         `ResourceConfig` to bind to"
+    )]
+    RefineUnsupportedPreset,
 }

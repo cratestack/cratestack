@@ -168,3 +168,22 @@ pub(crate) fn is_paged_model(model: &Model) -> bool {
         .iter()
         .any(|attribute| attribute.raw == "@@paged")
 }
+
+/// The model's `@version` field, if it declares one — the optimistic-
+/// concurrency column the server matches `If-Match` against. Exact-match
+/// on `@version` (not `starts_with`, unlike `is_primary_key`'s `@id`)
+/// because `@version` takes no arguments; the parser rejects any other
+/// spelling. Matches how every other crate finds it
+/// (`cratestack-macros::model::descriptor`, `cratestack-studio::data::model_info`).
+///
+/// Only `crate::refine` reads this today: the generated REST client sends
+/// `If-Match` from a caller-supplied header, so nothing else in this
+/// crate needs to know which field carries the version.
+pub(crate) fn version_field(model: &Model) -> Option<&Field> {
+    model.fields.iter().find(|field| {
+        field
+            .attributes
+            .iter()
+            .any(|attribute| attribute.raw == "@version")
+    })
+}

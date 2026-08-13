@@ -95,6 +95,32 @@ cratestack generate-typescript \
   --preset swr
 ```
 
+## `--refine` (`TypeScriptGeneratorConfig::refine`)
+
+Adds one file, `src/refine.ts`, holding the
+[`@cratestack/refine`](https://www.npmjs.com/package/@cratestack/refine) `ResourceMap` for
+the schema — per model: the generated model API, the `@id` field's name, the `@@paged`
+flag, and the `@version` field if there is one. Those four facts are in the schema but
+appear nowhere at runtime in the generated client (they live only in its TypeScript
+types), so a refine app would otherwise have to restate them by hand.
+
+Additive by construction: with the flag off, every emitted file is byte-identical, and
+`tests/refine_generator.rs` asserts that rather than trusting it. With it on, only
+`package.json` (peer/dev dependency) and `src/index.ts` (re-export) change alongside the
+new file.
+
+REST + `preset = Default` only — `generate_package` returns `RefineRequiresRest` /
+`RefineUnsupportedPreset` rather than emitting a file that couldn't type-check. See
+`src/refine.rs`'s module doc for why each other combination is structurally impossible
+rather than merely unimplemented.
+
+```bash
+cratestack generate-typescript \
+  --schema schemas/catalog.cstack \
+  --out packages/catalog-client \
+  --refine
+```
+
 ## See Also
 
 - `cratestack-cli` — `generate-typescript` command

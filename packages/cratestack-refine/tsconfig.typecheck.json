@@ -1,0 +1,35 @@
+{
+  // Compile-only proof that `cratestack generate-typescript --refine`
+  // output satisfies this package's own `ResourceMap` (cratestack#571).
+  //
+  // `vitest` transpiles without type-checking, so `tests/*.test.ts` alone
+  // can never establish that — a generated `paged: "yes"`, or a model API
+  // missing `update`, would sail straight through a green run. This config
+  // runs `tsc --noEmit` over `tests/typecheck/`, whose one file assigns
+  // the generated manifest to `ResourceMap` and does nothing else.
+  //
+  // Deliberately narrow — `src/` plus `tests/typecheck/` only, NOT the
+  // whole test tree. Two reasons, both about not smuggling unrelated work
+  // in: the rest of `tests/` has never been type-checked and has
+  // pre-existing errors under this package's strict settings (an
+  // intentionally-malformed `{ create: undefined }` resource in
+  // `index.test.ts`, an `exactOptionalPropertyTypes` violation in
+  // `fake-rest-server.ts`), and pulling in `tests/support/` would drag
+  // `@types/node` and `@tanstack/react-query` in as new dependencies for
+  // no gain here. Widening this to the full tree is a reasonable
+  // follow-up; it is not this change.
+  //
+  // `paths` maps this package's own public name to its source: the
+  // generated `refine.ts` imports `@cratestack/refine` by name (it is
+  // written for a consumer, not for us), and inside the package that
+  // specifier has nothing to resolve to.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "paths": {
+      "@cratestack/refine": ["./src/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "tests/typecheck/**/*.ts"]
+}

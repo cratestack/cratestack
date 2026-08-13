@@ -7,6 +7,7 @@ mod generator;
 mod grpc;
 mod naming;
 mod procedure_views;
+mod refine;
 mod swr;
 mod templates;
 mod types;

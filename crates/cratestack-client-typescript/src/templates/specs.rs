@@ -148,6 +148,17 @@ pub(crate) const GRPC_TEMPLATE_SPECS: &[TemplateSpec] = &[
     },
 ];
 
+// Issue #571's `--refine` opt-in: one extra file, appended to the REST
+// spec list only when `TypeScriptGeneratorConfig::refine` is set. Kept
+// out of `COMMON_TEMPLATE_SPECS`/`REST_TEMPLATE_SPECS` deliberately —
+// those are unconditional, and `refine.ts` must not appear in a default
+// run (`tests/snapshot.rs` pins that output byte-for-byte).
+pub(crate) const REFINE_TEMPLATE_SPECS: &[TemplateSpec] = &[TemplateSpec {
+    template_name: "refine.ts.j2",
+    output_path: OutputPath::Fixed("src/refine.ts"),
+    default_source: include_str!("../../templates/src/refine.ts.j2"),
+}];
+
 /// Pick the right template specs for the schema's declared transport.
 /// REST schemas get the historical fetch-based client + the
 /// `CratestackFetchQuery` helpers; RPC schemas get a CratestackRpcRuntime
@@ -158,16 +169,25 @@ pub(crate) const GRPC_TEMPLATE_SPECS: &[TemplateSpec] = &[
 /// URL query string (no URL-query shaping needed when every call is a
 /// POST with a typed body), but both transports now have a real typed
 /// `list` input.
+///
+/// `refine` (issue #571) appends one extra REST-only spec. It is a
+/// parameter rather than a fourth `TransportStyle` arm because it is
+/// additive to an otherwise unchanged REST run — `refine: false` returns
+/// exactly the list this function returned before the flag existed.
 pub(crate) fn template_specs_for(
     transport: TransportStyle,
+    refine: bool,
 ) -> Result<Vec<TemplateSpec>, TypeScriptGeneratorError> {
     let mode_specs = match transport {
         TransportStyle::Rest => REST_TEMPLATE_SPECS,
         TransportStyle::Rpc => RPC_TEMPLATE_SPECS,
         TransportStyle::Grpc => GRPC_TEMPLATE_SPECS,
     };
-    let mut specs = Vec::with_capacity(COMMON_TEMPLATE_SPECS.len() + mode_specs.len());
+    let refine_specs = if refine { REFINE_TEMPLATE_SPECS } else { &[] };
+    let mut specs =
+        Vec::with_capacity(COMMON_TEMPLATE_SPECS.len() + mode_specs.len() + refine_specs.len());
     specs.extend_from_slice(COMMON_TEMPLATE_SPECS);
     specs.extend_from_slice(mode_specs);
+    specs.extend_from_slice(refine_specs);
     Ok(specs)
 }

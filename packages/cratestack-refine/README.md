@@ -13,32 +13,55 @@ surface, Studio is the sysadmin one.
 This package covers REST-transport schemas only (`generate-typescript`'s default transport, no
 `transport rpc`) — see [Scope](#scope) below.
 
-## Why a runtime package, not a generator
+## A runtime package with a generated manifest
 
-The open question cratestack#571 asked to settle first: how much of this genuinely has to be
-generated per schema? Answer: none of it, given a small hand-written manifest.
+A `DataProvider` needs four things per resource — the generated API object itself, the model's
+primary-key field name, whether it declares `@@paged`, and whether/where it declares `@version`.
+None of them has a *runtime* discovery path: the generated client carries no `$meta` object and no
+introspection endpoint, nothing beyond what its TypeScript **types** already encode at compile time
+(confirmed against the real generated `client.ts`/`models.ts` this package's own tests drive — see
+[tests/](./tests)). So the provider itself has to be a hand-written runtime function; there is
+nothing schema-shaped in its logic to generate.
 
-A `DataProvider` needs three schema facts per resource — its primary-key field name, whether its
-model declares `@@paged`, and whether/where it declares `@version` — plus the resource's own
-generated API object. None of those four things has a runtime discovery path: the generated client
-carries no `$meta` object, no introspection endpoint, nothing beyond what its TypeScript *types*
-already encode at compile time (confirmed by reading the real generated `client.ts`/`models.ts`
-output this package's own tests drive — see [tests/](./tests)). Whether or not `@cratestack/refine`
-ships a code generator, an app still needs to write down those four things per resource somewhere.
-A generator that emits a five-line object literal isn't materially cheaper to maintain than writing
-that object literal directly against the schema the developer already wrote — it's a second
-artifact to keep in sync instead of one. So this package is exactly what `createCratestackDataProvider`
-below is: a hand-written runtime function over a hand-written manifest, no `cratestack generate-*`
-subcommand, no build step beyond `tsc`.
+The **manifest** is a different question, and cratestack#571 settled it the other way: those four
+facts all live in the `.cstack` schema, so the generator emits them. Pass `--refine` to
+`cratestack generate-typescript` and it writes an extra `src/refine.ts` next to the client:
+
+```bash
+cratestack generate-typescript \
+  --schema schema.cstack \
+  --out ./generated \
+  --refine
+```
+
+```ts
+// generated/src/refine.ts — generated, do not edit
+export function cratestackRefineResources(client: ExampleApiClientClient): ResourceMap { … }
+```
+
+Writing that manifest by hand is still perfectly supported (it is a plain object literal, and every
+example below shows one), but the generated one cannot drift: a model that gains `@version`, or one
+whose `@id` is not called `id`, updates itself on the next `generate-typescript` run instead of
+failing quietly at runtime.
+
+`--refine` requires a REST schema and the default preset — see [Scope](#scope).
 
 ## Usage
 
+With the generated manifest:
+
 ```ts
 import { createCratestackDataProvider } from "@cratestack/refine";
-import { ExampleApiClientClient } from "./generated/client"; // your project's generated REST client
+import { ExampleApiClientClient } from "./generated/src/client.js";
+import { cratestackRefineResources } from "./generated/src/refine.js";
 
 const client = new ExampleApiClientClient("https://api.example.com", { basePath: "/api" });
+const dataProvider = createCratestackDataProvider(cratestackRefineResources(client));
+```
 
+Or writing the manifest yourself — identical shape, and what the generated file contains:
+
+```ts
 const dataProvider = createCratestackDataProvider({
   widgets: { api: client.widgets, primaryKey: "id", paged: false },
   ledgers: { api: client.ledgers, primaryKey: "id", paged: true, versionField: "version" },

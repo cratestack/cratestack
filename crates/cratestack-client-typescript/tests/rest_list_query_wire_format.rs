@@ -273,6 +273,7 @@ fn generate_for(
             template_dir: None,
             preset: cratestack_client_typescript::TypeScriptPreset::Default,
             full_selection: false,
+            refine: false,
             pb_lock: None,
             schema_sha256: String::new(),
         },

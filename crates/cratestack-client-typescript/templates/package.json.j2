@@ -18,12 +18,20 @@
     "build": "tsc -p tsconfig.json"
   },
   "peerDependencies": {
+{% if refine %}
+    "@cratestack/refine": "{{ refine_version_requirement }}",
+    "@refinedev/core": "^5.0.0",
+{% endif %}
     "@tanstack/react-query": "^5.0.0"
   },
   "dependencies": {
     "decimal.js": "^10.6.0"
   },
   "devDependencies": {
+{% if refine %}
+    "@cratestack/refine": "{{ refine_version_requirement }}",
+    "@refinedev/core": "^5.0.0",
+{% endif %}
     "@tanstack/react-query": "^5.0.0",
     "typescript": "^7.0.2"
   }

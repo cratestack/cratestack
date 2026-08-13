@@ -79,11 +79,15 @@ export interface CreateCratestackDataProviderOptions {
 
 /** Builds a refine `DataProvider` over one or more cratestack generated
  *  REST model classes (`client.widgets`, `client.ledgers`, …), given a
- *  small hand-written manifest describing each resource's primary-key
- *  field, `@@paged` status, and `@version` field. See the package
- *  README's "Why a runtime package, not a generator" section for why
- *  that manifest is hand-written rather than produced by a codegen step
- *  — this function *is* the whole package; there is no CLI subcommand.
+ *  manifest describing each resource's primary-key field, `@@paged`
+ *  status, and `@version` field.
+ *
+ *  Write that manifest by hand, or generate it: `cratestack
+ *  generate-typescript --refine` emits a `src/refine.ts` next to the
+ *  client whose `cratestackRefineResources(client)` returns exactly this
+ *  {@link ResourceMap}. The provider itself is not generated and has no
+ *  CLI subcommand — see the package README's "A runtime package with a
+ *  generated manifest" section for the split.
  *
  *  RPC-transport schemas aren't wired here — see the README's "REST
  *  only" note. */

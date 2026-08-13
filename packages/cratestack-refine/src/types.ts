@@ -63,13 +63,15 @@ export interface CratestackHttpErrorLike {
   message?: string;
 }
 
-/** One resource's binding to a generated model class — the "thin
- *  manifest" this package needs instead of a generator (see the README's
- *  "Why a runtime package, not a generator" section). Every field here
+/** One resource's binding to a generated model class. Every field here
  *  is a fact about the `.cstack` model that the generated client's own
  *  TypeScript types encode at compile time but expose nowhere at
  *  runtime — there is no `client.widgets.$meta` object to introspect,
- *  confirmed by reading the generated `client.ts`/`models.ts` output. */
+ *  confirmed by reading the generated `client.ts`/`models.ts` output.
+ *
+ *  Hand-write it, or let `cratestack generate-typescript --refine` emit
+ *  it from the schema those facts came from — see the README's "A
+ *  runtime package with a generated manifest". */
 export interface ResourceConfig<TModel = unknown, TCreateInput = unknown, TUpdateInput = unknown> {
   api: CratestackModelApi<TModel, TCreateInput, TUpdateInput>;
   /** The schema's `@id` field name. refine assumes `id`; cratestack's
