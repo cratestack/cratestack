@@ -553,6 +553,30 @@ regen-examples *args='':
 	  --preset swr \
 	  --package-name react-vite-swr-client {{args}}
 
+# Generates @cratestack/refine's test fixture (cratestack#571/#577): a REAL
+# TypeScript client, produced by the real `cratestack generate-typescript`
+# CLI from packages/cratestack-refine/tests/fixtures/refine_fixture.cstack,
+# into packages/cratestack-refine/tests/fixtures/generated-client — so the
+# package's tests drive an actual generated client rather than a
+# hand-written stand-in for one.
+#
+# Unlike `regen-examples` above, this is NOT committed output — it's
+# gitignored (cratestack#577 maintainer feedback: don't commit generated
+# build output). CI's `js (@cratestack/refine)` job (the one Rust-toolchain
+# JS job, mirroring `js-cbor-napi`/`js-cbor-web`'s carve-out for a real npm
+# package that needs a Rust step the toolchain-free `js` job can't provide)
+# runs this recipe before testing. Local devs need it too — the test
+# suite's own `tests/support/assert-fixture-present.ts` (a vitest
+# `globalSetup`) throws with this recipe's name if the fixture is missing,
+# rather than silently skipping.
+refine-fixture:
+	rm -rf packages/cratestack-refine/tests/fixtures/generated-client
+	cargo run -p cratestack-cli -- generate-typescript \
+	  --schema packages/cratestack-refine/tests/fixtures/refine_fixture.cstack \
+	  --out packages/cratestack-refine/tests/fixtures/generated-client \
+	  --preset default \
+	  --package-name refine-fixture-client
+
 # Layer-direction check (ADR 0014, docs/adr/0014-layer-direction-enforcement.md)
 # — blocking CI gate. Asserts every NORMAL cratestack-* -> cratestack-* edge
 # among the crates under `crates/` satisfies `dep.layer <= self.layer`
