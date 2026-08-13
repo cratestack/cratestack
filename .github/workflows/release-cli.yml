@@ -91,9 +91,10 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.tag }}
       - uses: dtolnay/rust-toolchain@stable
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: just,trunk
+      # Pins wasm-bindgen-cli to the studio-ui lockfile's exact version so
+      # Trunk resolves it from PATH instead of downloading it mid-build.
+      # See the action's header for the incident and the verification.
+      - uses: ./.github/actions/install-trunk-toolchain
       - name: Bundle Studio UI
         run: just bundle-studio-ui
       - uses: actions/upload-artifact@v4
@@ -126,9 +127,10 @@ jobs:
           ref: ${{ needs.prepare.outputs.tag }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: just,trunk
+      # Pins wasm-bindgen-cli to the studio-ui lockfile's exact version so
+      # Trunk resolves it from PATH instead of downloading it mid-build.
+      # See the action's header for the incident and the verification.
+      - uses: ./.github/actions/install-trunk-toolchain
       - name: Publish crates (just release-publish real)
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

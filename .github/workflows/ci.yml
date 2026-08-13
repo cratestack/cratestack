@@ -266,9 +266,10 @@ jobs:
       # rust-toolchain.toml's `targets` for the pinned channel.
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: just,trunk
+      # Pins wasm-bindgen-cli to the studio-ui lockfile's exact version so
+      # Trunk resolves it from PATH instead of downloading it mid-build.
+      # See the action's header for the incident and the verification.
+      - uses: ./.github/actions/install-trunk-toolchain
       # The `embed-ui` feature (default) embeds the Trunk-built Studio UI via
       # rust-embed, and cratestack-studio's api_smoke tests assert the real
       # index.html is served. The dist isn't checked in, so build it here;

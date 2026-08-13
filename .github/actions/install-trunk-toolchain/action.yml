@@ -1,0 +1,75 @@
+name: Install trunk toolchain
+description: >-
+  Installs `just`, `trunk`, and a wasm-bindgen-cli pinned to the exact version
+  cratestack-studio-ui's lockfile requires, so Trunk never downloads it mid-build.
+
+# WHY THIS EXISTS
+#
+# Trunk resolves `wasm-bindgen` by EXACT version match. If a binary of the
+# required version is on `$PATH` it uses it and fetches nothing; otherwise it
+# downloads from GitHub releases in the middle of the build. That download is an
+# unpinned network fetch on the critical path, and it failed five times on
+# 2026-08-13 alone — killing the v0.7.15 crates.io publish partway (leaving
+# `cratestack-studio` and `cratestack-cli` unpublished) and blocking three PR
+# merges:
+#
+#   error from build pipeline
+#     3: failed downloading release archive
+#     5: error sending request for url
+#        (https://github.com/rustwasm/wasm-bindgen/releases/download/0.2.125/...)
+#     6: client error (SendRequest)
+#
+# `publish-npm-cbor-web` already pre-installs binaryen for exactly this reason
+# after an earlier release died the same way; that treatment simply never
+# reached the four jobs that run Trunk.
+#
+# BOTH DIRECTIONS VERIFIED BY HAND (2026-08-13), not inferred from Trunk's docs:
+#
+#   * wasm-bindgen 0.2.125 on PATH  -> `trunk build --offline` SUCCEEDS and
+#     `~/.cache/trunk/` stays empty, i.e. nothing was downloaded.
+#   * wasm-bindgen 0.2.121 on PATH  -> "couldn't find the required version
+#     (0.2.125) of the application wasm-bindgen (found: 0.2.121), unable to
+#     download in offline mode".
+#
+# The second case is why the version is READ FROM THE LOCKFILE rather than
+# hardcoded here. A hardcoded pin that drifts from `Cargo.lock` doesn't fail —
+# Trunk just silently resumes downloading, and the flake comes back with no
+# signal that the guard stopped working. Deriving it means the pin cannot drift.
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve wasm-bindgen version from cratestack-studio-ui's lockfile
+      id: wb
+      shell: bash
+      run: |
+        set -euo pipefail
+        lock="crates/cratestack-studio-ui/Cargo.lock"
+        # The `[[package]]` entry named exactly `wasm-bindgen` — not
+        # `wasm-bindgen-shared`/`-macro`/`-cli`, which carry their own versions.
+        version=$(awk '
+          /^name = "wasm-bindgen"$/ { want = 1; next }
+          want && /^version = / { gsub(/[",]/, "", $3); print $3; exit }
+        ' "$lock")
+        if [ -z "${version:-}" ]; then
+          echo "::error::could not read the wasm-bindgen version from ${lock}. Trunk resolves this binary by exact version; without it CI would silently resume downloading mid-build (see this action's header comment)." >&2
+          exit 1
+        fi
+        echo "version=${version}" >> "$GITHUB_OUTPUT"
+        echo "pinning wasm-bindgen-cli@${version} (from ${lock})"
+
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: just,trunk,wasm-bindgen-cli@${{ steps.wb.outputs.version }}
+
+    - name: Assert Trunk will use the pinned binary
+      shell: bash
+      run: |
+        set -euo pipefail
+        want="${{ steps.wb.outputs.version }}"
+        got=$(wasm-bindgen --version | awk '{print $2}')
+        if [ "$got" != "$want" ]; then
+          echo "::error::wasm-bindgen on PATH is ${got}, lockfile wants ${want}. Trunk matches on exact version, so it would download ${want} mid-build — the failure mode this action exists to prevent." >&2
+          exit 1
+        fi
+        echo "wasm-bindgen ${got} on PATH matches the lockfile; Trunk will not download."

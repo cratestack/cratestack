@@ -115,9 +115,10 @@ jobs:
       - uses: ./.github/actions/tauri-linux-deps
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: just,trunk
+      # Pins wasm-bindgen-cli to the studio-ui lockfile's exact version so
+      # Trunk resolves it from PATH instead of downloading it mid-build.
+      # See the action's header for the incident and the verification.
+      - uses: ./.github/actions/install-trunk-toolchain
       - uses: pnpm/action-setup@v4
       # Not node-version 20: real failure hit on v0.6.8's actual release
       # validation — `swr_hooks_invalidation`'s vitest run (installs real
