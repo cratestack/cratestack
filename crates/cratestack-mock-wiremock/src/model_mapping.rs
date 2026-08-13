@@ -1,15 +1,15 @@
 //! Builds the five WireMock stub-mapping JSON documents
-//! (`list`/`get`/`create`/`update`/`delete`) a `model` block's REST or
-//! RPC CRUD routes need. Route derivation delegates to [`rest`]/[`rpc`]
-//! (transport-specific path shapes); the response body — one
-//! deterministic example record, or that record wrapped in the `list`
-//! envelope — is shared across every verb and both transports, since
-//! REST and RPC dispatch to the exact same handler body for a given
-//! verb (`crates/cratestack-macros/src/axum/model/handlers_crud.rs`'s
-//! doc comments: "RPC dispatch passes `POST /rpc/model.<M>.<verb>` with
-//! ..." on each REST handler).
+//! (`list`/`get`/`create`/`update`/`delete`) a `model` block's CRUD
+//! routes need. `transport rest` schemas get the stateful generator
+//! (`crate::model_state` — real per-record create/list/update/delete
+//! against `wiremock-state-extension`, see `docs/design/
+//! wiremock-stubs.md`'s "Model CRUD statefulness" section);
+//! `transport rpc` schemas still get the static v1 baseline (one
+//! deterministic example record, no state), because the extension's
+//! per-record context needs a value unique to *this* request that isn't
+//! the id-bearing URL path RPC doesn't have — see [`rpc`]'s module doc
+//! for the full reasoning.
 
-mod rest;
 mod rpc;
 
 use std::collections::BTreeSet;
@@ -21,26 +21,39 @@ use crate::config::WireMockGeneratorConfig;
 use crate::error::WireMockGeneratorError;
 use crate::model_attrs::{is_paged_model, is_primary_key};
 use crate::model_record::{list_envelope, synthesize_model_record};
+use crate::model_state::build_stateful_rest_mappings;
 
-/// One verb's request-match shape, transport-agnostic.
+/// One verb's request-match shape — only used by the static (`rpc`)
+/// path now; the stateful REST path builds its own richer mapping
+/// shape directly (`crate::model_state`).
 pub(crate) struct VerbRoute {
     pub(crate) verb: &'static str,
     pub(crate) method: &'static str,
-    /// An exact `urlPath` if `is_pattern` is false, a `urlPathPattern`
-    /// regex otherwise (REST's `get`/`update`/`delete` need a `{id}`
-    /// wildcard; RPC's five routes are always exact — see `rpc.rs`).
     pub(crate) url: String,
-    pub(crate) is_pattern: bool,
     pub(crate) status: u16,
 }
 
 /// Builds the `(verb, mapping)` pairs for every CRUD route `model`
-/// declares, in `["list", "get", "create", "update", "delete"]` order —
-/// matching `generate_model_axum_routes`
-/// (`crates/cratestack-macros/src/axum/model/routes.rs`) for REST, and
-/// `generate_model_rpc_dispatch_arms`
-/// (`crates/cratestack-macros/src/transport/rpc.rs`) for RPC.
+/// declares, in `["list", "get", "create", "update", "delete"]` order.
 pub(crate) fn build_model_mappings(
+    schema: &Schema,
+    config: &WireMockGeneratorConfig,
+    model: &Model,
+    model_names: &BTreeSet<&str>,
+) -> Result<Vec<(&'static str, Value)>, WireMockGeneratorError> {
+    match schema.transport {
+        TransportStyle::Rest => build_stateful_rest_mappings(schema, config, model, model_names),
+        TransportStyle::Rpc | TransportStyle::Grpc => {
+            build_static_rpc_mappings(schema, config, model, model_names)
+        }
+    }
+}
+
+/// The pre-stateful v1 shape, kept for `transport rpc` (see the module
+/// doc). `TransportStyle::Grpc` also lands here, same as before this
+/// change — unreachable in practice since `generate_package` rejects
+/// `Grpc` schemas before any model is processed.
+fn build_static_rpc_mappings(
     schema: &Schema,
     config: &WireMockGeneratorConfig,
     model: &Model,
@@ -55,33 +68,20 @@ pub(crate) fn build_model_mappings(
     let record = synthesize_model_record(schema, model, model_names)?;
     let list_body = list_envelope(is_paged_model(model), &record);
     let base = config.base_path.trim_end_matches('/');
-
-    let routes = match schema.transport {
-        TransportStyle::Rpc => rpc::rpc_routes(base, &model.name),
-        TransportStyle::Rest | TransportStyle::Grpc => {
-            let plural = cratestack_core::route_naming::model_route_segment(&model.name);
-            rest::rest_routes(base, &plural)
-        }
-    };
+    let routes = rpc::rpc_routes(base, &model.name);
     // Same order as `routes`: list, get, create, update, delete.
     let bodies = [&list_body, &record, &record, &record, &record];
 
     Ok(routes
         .into_iter()
         .zip(bodies)
-        .map(|(route, body)| (route.verb, build_mapping(&route, body, &model.name)))
+        .map(|(route, body)| (route.verb, build_static_mapping(&route, body, &model.name)))
         .collect())
 }
 
-fn build_mapping(route: &VerbRoute, body: &Value, model_name: &str) -> Value {
-    let request = if route.is_pattern {
-        json!({ "method": route.method, "urlPathPattern": route.url })
-    } else {
-        json!({ "method": route.method, "urlPath": route.url })
-    };
-
+fn build_static_mapping(route: &VerbRoute, body: &Value, model_name: &str) -> Value {
     json!({
-        "request": request,
+        "request": { "method": route.method, "urlPath": route.url },
         "response": {
             "status": route.status,
             "headers": { "Content-Type": "application/json" },

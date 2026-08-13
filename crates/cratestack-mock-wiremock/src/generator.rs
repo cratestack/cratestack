@@ -21,6 +21,17 @@ pub fn generate_package(
     if schema.transport == TransportStyle::Grpc {
         return Err(WireMockGeneratorError::UnsupportedTransport);
     }
+    // Same guard, same shared message, as `generate-typescript`/
+    // `generate-dart` (cratestack#590) — schema-wide and up front,
+    // before any file is generated, matching those two generators'
+    // behavior exactly rather than re-deriving the `@@id([...])` check
+    // locally (see `cratestack_core::composite_id`'s own doc comment on
+    // why a second copy of that predicate is how these paths drift).
+    if let Some(model) = cratestack_core::composite_id::find_composite_id_model(schema) {
+        return Err(WireMockGeneratorError::CompositePrimaryKeyUnsupported(
+            cratestack_core::composite_id::composite_id_unsupported_message(&model.name),
+        ));
+    }
 
     let mut files = schema
         .procedures

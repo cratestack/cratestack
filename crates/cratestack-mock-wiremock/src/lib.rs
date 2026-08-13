@@ -6,31 +6,43 @@
 //! `docs/design/wiremock-stubs.md` for the motivating case, full design,
 //! and open questions this crate's v1 slice deliberately leaves open.
 //!
-//! # Scope (v2 — model CRUD)
+//! # Scope (v3 — stateful model CRUD)
 //!
-//! - Covered: `procedure`/`mutation procedure` declarations, and `model`
-//!   blocks' `list`/`get`/`create`/`update`/`delete` CRUD routes, under
-//!   `transport rest` (the schema default) or `transport rpc`.
-//!   Happy-path only, and **not stateful** — every generated stub
-//!   matches on request method + path (no body assertion) and always
-//!   answers with the *same* deterministic example, regardless of what
-//!   was previously created/updated/deleted through it. A record
-//!   created through a mocked `create` will not appear in a subsequent
-//!   `list`, and an updated field will not appear on a subsequent `get`.
-//!   See `docs/design/wiremock-stubs.md`'s "Model CRUD statefulness"
-//!   section for the full investigation into why (vanilla WireMock
-//!   scenarios hold one string per scenario, not a per-record store; a
-//!   real per-record store needs the third-party
-//!   `wiremock-state-extension` Java extension, a dependency choice left
-//!   to the maintainer) before building anything on top of this crate
-//!   that assumes otherwise.
-//! - Not covered yet (tracked as follow-ups in the design doc):
+//! - Covered: `procedure`/`mutation procedure` declarations (always
+//!   static/happy-path — see below), and `model` blocks'
+//!   `list`/`get`/`create`/`update`/`delete` CRUD routes.
+//! - **`transport rest` model CRUD is stateful.** A record created
+//!   through a mocked `create` appears in a subsequent `list`; an
+//!   `update` is visible on a subsequent `get`; a `delete`d record's
+//!   `get` returns `404`, not a stale body — all backed by a real
+//!   per-record store (`wiremock-state-extension`, see
+//!   `crate::model_state`'s module doc), not a fixed example replayed
+//!   on every request. **This needs more than a plain
+//!   `docker run wiremock/wiremock`** — see this crate's `README.md`
+//!   and `docs/design/wiremock-stubs.md`'s "Model CRUD statefulness"
+//!   section for exactly what, and why a vanilla WireMock instance
+//!   cannot do this at all (investigated and ruled out before the
+//!   extension-backed path was built). Fields whose type this generator
+//!   can't round-trip through the extension's state store (`Optional`/
+//!   `List` arity, `Json`/`Bytes`/`Vector`, or a nested `type`) fall
+//!   back to a fixed example value, same on every response — see
+//!   `crate::model_attrs::ScalarKind`. List filtering
+//!   (`field__operator=value`), sorting, and `limit`/`offset` are not
+//!   implemented; every `list` response is the complete, unfiltered,
+//!   unpaginated collection regardless of query string.
+//! - **`transport rpc` model CRUD stays static** (the pre-stateful v1
+//!   shape: one deterministic example, replayed identically on every
+//!   request) — the extension's per-record context needs something
+//!   unique to each request that REST gets for free (the id-bearing URL
+//!   path) and RPC doesn't (the id lives in the request body, and this
+//!   templating stack has no string-concatenation helper to build a
+//!   unique key from it; see `crate::model_mapping::rpc`'s module doc).
+//! - Not covered (tracked as follow-ups in the design doc):
 //!   `transport grpc` schemas
 //!   ([`WireMockGeneratorError::UnsupportedTransport`]), `FindMany<T>`
 //!   return types ([`WireMockGeneratorError::UnsupportedReturnType`]),
-//!   error-case stubs (WireMock scenarios/priority), request-body/query
-//!   filter matching, and any emulation of the auth chokepoint every
-//!   procedure/model route sits behind.
+//!   error-case stubs, request-body assertion, and any emulation of the
+//!   auth chokepoint every procedure/model route sits behind.
 //!
 //! # Example
 //!
@@ -59,6 +71,7 @@ mod mapping;
 mod model_attrs;
 mod model_mapping;
 mod model_record;
+mod model_state;
 mod values;
 
 pub use config::{GeneratedWireMockFile, GeneratedWireMockPackage, WireMockGeneratorConfig};

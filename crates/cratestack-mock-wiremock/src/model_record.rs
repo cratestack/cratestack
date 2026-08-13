@@ -1,5 +1,10 @@
-//! Synthesizes a single example instance of a model's default REST/RPC
+//! Synthesizes a single, static example instance of a model's default
 //! projection, and wraps it into the `list` route's response envelope.
+//! This is the pre-stateful v1 shape — still used for `transport rpc`
+//! model CRUD (`crate::model_mapping::rpc`) and, unchanged, for every
+//! procedure return type (`crate::mapping`). `transport rest` model
+//! CRUD moved to the stateful generator, `crate::model_state`, which
+//! does not use this module.
 
 use std::collections::BTreeSet;
 

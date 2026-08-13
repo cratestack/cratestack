@@ -89,6 +89,20 @@ pub enum WireMockGeneratorError {
     )]
     ModelMissingPrimaryKey { model: String },
 
+    /// The model declares a composite primary key (`@@id([...])`)
+    /// instead of a single scalar `@id` field. `cratestack_core::
+    /// composite_id` is the one shared predicate + message every
+    /// codegen entry point (the macros, `generate-typescript`,
+    /// `generate-dart`, and this crate) uses to reject these — see that
+    /// module's doc comment for why (query builders, routing, and
+    /// generated clients all assume exactly one scalar PK column).
+    /// Message text comes verbatim from
+    /// `cratestack_core::composite_id::composite_id_unsupported_message`,
+    /// so a user sees the identical wording regardless of which
+    /// generator rejected their schema.
+    #[error("{0}")]
+    CompositePrimaryKeyUnsupported(String),
+
     /// Serializing the assembled mapping (schema-derived example value
     /// plus the request/response envelope) to JSON failed. `serde_json`
     /// only fails on a handful of programmer-error conditions (e.g. a

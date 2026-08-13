@@ -10,7 +10,7 @@
 
 use std::collections::BTreeSet;
 
-use cratestack_core::{Field, Model};
+use cratestack_core::{Field, Model, Schema, TypeArity};
 
 /// Field carries an `@id`-prefixed attribute — the model's primary key.
 pub(crate) fn is_primary_key(field: &Field) -> bool {
@@ -45,4 +45,48 @@ pub(crate) fn is_paged_model(model: &Model) -> bool {
 /// default projection this generator synthesizes.
 pub(crate) fn is_relation_field(model_names: &BTreeSet<&str>, field: &Field) -> bool {
     model_names.contains(field.ty.name.as_str())
+}
+
+/// How a field's value round-trips through the WireMock stub's hand-
+/// assembled JSON text (`crates/cratestack-mock-wiremock/src/
+/// model_state/`) — whether the rendered Handlebars fragment needs to be
+/// wrapped in literal quotes to stay valid JSON, or is a bare JSON
+/// number/boolean. Only `Required`-arity scalars this generator knows
+/// how to echo/store through `wiremock-state-extension` classify as
+/// [`ScalarKind::Number`]/[`ScalarKind::Bool`]/[`ScalarKind::QuotedString`]
+/// — everything else (`Optional`/`List` arity, `Json`/`Bytes`/`Vector`,
+/// or a nested `type`/enum-as-object) is [`ScalarKind::Unsupported`] and
+/// falls back to a frozen, non-stateful example value instead (see
+/// `docs/design/wiremock-stubs.md`'s "Model CRUD statefulness" section
+/// for why: the extension's per-record state store only round-trips
+/// scalar leaf properties, not arbitrary nested JSON).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ScalarKind {
+    Number,
+    Bool,
+    QuotedString,
+    Unsupported,
+}
+
+pub(crate) fn classify_field_kind(schema: &Schema, field: &Field) -> ScalarKind {
+    if field.ty.arity != TypeArity::Required {
+        return ScalarKind::Unsupported;
+    }
+    match field.ty.name.as_str() {
+        "Int" | "Float" => ScalarKind::Number,
+        "Boolean" => ScalarKind::Bool,
+        "String" | "Cuid" | "Uuid" | "DateTime" => ScalarKind::QuotedString,
+        other => {
+            // An enum variant renders as a plain JSON string (its variant
+            // name), same wire shape as `String` — echoing/storing it
+            // through the state store is exactly as safe as any other
+            // string-kind field. Anything else (a nested `type`, `Json`,
+            // `Bytes`, `Vector(n)`) is unsupported.
+            if schema.enums.iter().any(|e| e.name == other) {
+                ScalarKind::QuotedString
+            } else {
+                ScalarKind::Unsupported
+            }
+        }
+    }
 }
