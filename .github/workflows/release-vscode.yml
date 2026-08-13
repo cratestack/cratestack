@@ -132,7 +132,24 @@ jobs:
         working-directory: packages/cratestack-vscode
         run: |
           set -euo pipefail
-          file=$(find . -maxdepth 1 -name '*.vsix' -print -quit)
+          # `-printf '%f'` yields the BARE filename. `-print` yields
+          # `./name.vsix`, and prefixing that produced
+          # `packages/cratestack-vscode/./name.vsix`, which
+          # `actions/upload-artifact@v4` rejects outright:
+          #
+          #   Invalid pattern '...packages/cratestack-vscode/./cratestack-vscode-linux-x64-0.7.16.vsix'.
+          #   Relative pathing '.' and '..' is not allowed.
+          #
+          # Every platform leg failed on this for v0.7.15 and v0.7.16, so
+          # the vsix has never been attached to a release. The packaging
+          # step itself always worked (2.01 MB, 11 files) — which is why
+          # this looked like a fixed problem after #584 repaired the
+          # `--` separator. #584 fixed packaging and uncovered this.
+          file=$(find . -maxdepth 1 -name '*.vsix' -printf '%f\n' | head -n1)
+          if [ -z "$file" ]; then
+            echo "::error::vsce produced no .vsix in packages/cratestack-vscode" >&2
+            exit 1
+          fi
           echo "path=packages/cratestack-vscode/$file" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
