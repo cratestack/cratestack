@@ -212,6 +212,30 @@ jobs:
         # `required-features = ["postgres", "decimal-bigdecimal"]`, so the
         # default-feature step above never builds or runs it.
         run: just test-ci-db-decimal-bigdecimal --locked
+      - name: cargo test (cratestack-outbox, testcontainers Postgres)
+        # A 2026-08 CI-coverage audit found `cratestack-outbox`'s 5
+        # transactional-outbox tests (atomic persist/rollback, cursor-
+        # ordered drain, GC sweep) had never been run by any workflow —
+        # `grep -rn outbox .github/workflows/*.yml` matched nothing before
+        # this step, despite the crate correctly implementing the standard
+        # `connect_or_skip`/`CRATESTACK_REQUIRE_DB` shim.
+        run: just test-ci-db-outbox --locked
+      - name: cargo test (cratestack-migrate postgres-introspect, testcontainers Postgres)
+        # A 2026-08 CI-coverage audit found these 7 live-introspection
+        # tests (issue #204) were gated `#![cfg(feature =
+        # "postgres-introspect")]`, and the only recipe that ever passed
+        # that feature was `just test-pg`, which no workflow invoked at
+        # all (`grep -rn test-pg .github/workflows/*.yml` matched
+        # nothing before this step).
+        run: just test-ci-db-migrate-introspect --locked
+      - name: cargo test (cratestack-cli migrate baseline, testcontainers Postgres)
+        # A 2026-08 CI-coverage audit found these 5 `migrate baseline`
+        # tests (issue #205) only ever checked
+        # `CRATESTACK_TEST_DATABASE_URL`, with no testcontainers fallback
+        # and no `CRATESTACK_REQUIRE_DB` hard-fail — unlike every other
+        # PG test in this repo — so 4 of the 5 (the DB-touching ones)
+        # silently skipped on every CI run.
+        run: just test-ci-db-cli-baseline --locked
 
   tests-redis:
     name: tests (redis)

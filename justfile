@@ -190,6 +190,47 @@ test-ci-db *args='':
 test-ci-db-decimal-bigdecimal *args='':
 	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --no-default-features --features postgres,decimal-bigdecimal --test decimal_bigdecimal_backend {{args}}
 
+# Shard addendum: `cratestack-outbox`'s 5 live-Postgres tests (atomic
+# persist/rollback, cursor-ordered drain, GC sweep) — a 2026-08 CI-coverage
+# audit found no workflow ever invoked them (`grep -rn outbox
+# .github/workflows/*.yml` matched nothing before this line), despite the
+# crate correctly implementing the standard `connect_or_skip` +
+# `CRATESTACK_REQUIRE_DB` shim (`crates/cratestack-outbox/tests/support/pg.rs`,
+# copied from `cratestack-pg`'s). Confirmed via `cargo test -p
+# cratestack-outbox --test outbox_roundtrip -- --list` printing `5 tests`
+# while silently running none of them without a DB. Mirrors `test-ci-db`'s
+# testcontainers pattern one-for-one.
+test-ci-db-outbox *args='':
+	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-outbox --test outbox_roundtrip {{args}}
+
+# Shard addendum: `cratestack-migrate`'s live-Postgres introspection tests
+# (issue #204, `crates/cratestack-migrate/tests/postgres_introspect.rs`),
+# gated `#![cfg(feature = "postgres-introspect")]`. A 2026-08 CI-coverage
+# audit found the only recipe that ever passed that feature was `just
+# test-pg`, which no workflow invokes at all (`grep -rn test-pg
+# .github/workflows/*.yml` matched nothing before this line) — so these 7
+# tests never ran in CI. `connect_or_skip` here now supports the same
+# `CRATESTACK_USE_TESTCONTAINERS`/`CRATESTACK_REQUIRE_DB` shim every other
+# PG-backed test in the workspace uses (it previously only checked
+# `CRATESTACK_TEST_DATABASE_URL`, with no CI-reachable fallback).
+test-ci-db-migrate-introspect *args='':
+	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-migrate --features postgres-introspect --test postgres_introspect {{args}}
+
+# Shard addendum: `cratestack-cli`'s 5 `migrate baseline` integration tests
+# (issue #205, `crates/cratestack-cli/src/migrate/tests_baseline/*.rs`,
+# collected under `migrate::tests_baseline` in the `cratestack` unittests
+# binary). A 2026-08 CI-coverage audit found `isolated_test_db` only ever
+# checked `CRATESTACK_TEST_DATABASE_URL`, with no testcontainers fallback
+# and no `CRATESTACK_REQUIRE_DB` hard-fail — unlike every other PG test in
+# this repo — and CI never sets that variable, so 4 of the 5 tests (the
+# ones that touch a database) silently skipped on every run. Now supports
+# the standard shim, so this runs them for real. Scoped to the one test
+# filter (`migrate::tests_baseline::`) so this doesn't re-run the whole
+# `cratestack-cli` unit-test suite a second time (`test-ci-host` already
+# does, with no DB, where the DB-touching subset just skips).
+test-ci-db-cli-baseline *args='':
+	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-cli migrate::tests_baseline:: {{args}}
+
 # Shard: the Redis-backed crate via testcontainers (issue #418). Idempotency
 # and rate-limit stores are the primitives the `banking_*` fixtures lean on
 # for correctness under retries/concurrency, so this mirrors `test-ci-db`'s
@@ -225,9 +266,36 @@ test-ci-studio-db *args='':
 # smoke tests, with no container, no wasm/desktop toolchain, and no GTK.
 # Uses --exclude (a denylist) rather than -p so inline `#[cfg(test)]` unit
 # tests in crates without a tests/ dir (core, parser, sqlx, macros, …) keep
-# running. Excludes the three shards above, the flutter glue crate, and the
-# heavy example crates that have zero tests (already compiled by `check` and
-# the `embedded-examples` gate).
+# running. Excludes the three shards above, the flutter glue crate, and:
+#
+#   * `tauri-web-shell-example` / `tauri-native-shell-example` — genuine
+#     environment constraint, not a "zero tests" claim (a prior version of
+#     this comment said exactly that for all nine crates below, which a
+#     2026-08 CI-coverage audit found false for seven of them). Both link
+#     `webkit2gtk-sys`/`soup3-sys` on Linux, which fail to even *compile*
+#     without `libgtk-3-dev`/`libwebkit2gtk-4.1-dev` installed (verified:
+#     `cargo test -p tauri-web-shell-example` and `-p
+#     tauri-native-shell-example` both fail at the `pkg-config` build-script
+#     step on a stock runner) — no test job here installs those packages.
+#     `tauri-native-shell-example` carries 2 real tests that would run fine
+#     once that dependency is met; `tauri-web-shell-example` has none.
+#   * `react-nextjs-daisyui-napi` — the one crate here that actually has
+#     zero tests (`cargo test -p react-nextjs-daisyui-napi -- --list`
+#     prints `0 tests`).
+#
+# Every other previously-excluded crate — `tauri-web-wasm-example`,
+# `embedded-browser-vite-example`, `embedded-browser-vite-pwa-example`,
+# `embedded-browser-webpack-example`, `react-vite-daisyui-example`,
+# `react-nextjs-daisyui-wasm`, `embedded-expo-native` — carries real
+# `#[cfg(test)] mod tests { #[test] ... }` coverage (CRUD round trips,
+# cursor filtering, dispatcher error paths; ~12 tests total across the
+# nine crates this comment used to wave away) that compiles and runs fine
+# on the host target with no wasm32/GTK toolchain at all — their
+# `wasm-bindgen`-only code lives behind `#[cfg(target_arch = "wasm32")]`
+# and is simply absent from a native build, same as this shard's other
+# members. They are no longer excluded. (They were, and still are,
+# separately compiled by the `check` job and the `embedded-examples` gate
+# — this shard is what actually *runs* their tests.)
 test-ci-host *args='':
 	#!/usr/bin/env bash
 	set -euo pipefail
@@ -238,14 +306,19 @@ test-ci-host *args='':
 		--exclude cratestack-studio \
 		--exclude tauri-web-shell-example \
 		--exclude tauri-native-shell-example \
-		--exclude tauri-web-wasm-example \
-		--exclude embedded-browser-vite-example \
-		--exclude embedded-browser-vite-pwa-example \
-		--exclude embedded-browser-webpack-example \
-		--exclude react-vite-daisyui-example \
-		--exclude react-nextjs-daisyui-wasm \
-		--exclude react-nextjs-daisyui-napi \
-		--exclude embedded-expo-native {{args}}
+		--exclude react-nextjs-daisyui-napi {{args}}
+	# The three lines below close a `--features`-forwarding gap identical to
+	# the one `test-ci-db`'s own `--features grpc` comment documents (a
+	# 2026-08 CI-coverage audit found these three were missed by that same
+	# sweep): each test file is gated `#![cfg(feature = "...")]` or a
+	# Cargo-level `required-features`, so it compiles to an empty 0-test
+	# binary under the plain `--workspace` run above. None needs a
+	# database. `pgvector_distance_query.rs` is deliberately NOT included
+	# here — it's self-documented as needing the `pgvector/pgvector`
+	# Postgres image, not the stock one this shard (or any shard) runs.
+	cargo test -p cratestack-pg --features rate_limit --test rate_limit_extension {{args}}
+	cargo test -p cratestack-pg --features pgvector --test pgvector_feature_forwarding {{args}}
+	cargo test -p cratestack-client --features pgvector,rate_limit --test extension_feature_forwarding {{args}}
 
 # Report-only: surfaces the current pass/fail state of every `#[ignore]`d
 # test without blocking CI (2026-08 policy-layer coverage audit, Phase 3 —
@@ -271,20 +344,15 @@ test-ci-ignored-report *args='':
 	pg_status=$?
 	echo ""
 	echo "=== Ignored tests: workspace host shard (no DB, no wasm/desktop toolchain) ==="
+	# Same exclude list as `test-ci-host` (see that recipe's comment for why
+	# only these three stay excluded).
 	cargo test --workspace \
 		--exclude embedded_flutter_native \
 		--exclude cratestack-pg \
 		--exclude cratestack-studio \
 		--exclude tauri-web-shell-example \
 		--exclude tauri-native-shell-example \
-		--exclude tauri-web-wasm-example \
-		--exclude embedded-browser-vite-example \
-		--exclude embedded-browser-vite-pwa-example \
-		--exclude embedded-browser-webpack-example \
-		--exclude react-vite-daisyui-example \
-		--exclude react-nextjs-daisyui-wasm \
-		--exclude react-nextjs-daisyui-napi \
-		--exclude embedded-expo-native {{args}} -- --ignored --nocapture
+		--exclude react-nextjs-daisyui-napi {{args}} -- --ignored --nocapture
 	host_status=$?
 	echo ""
 	echo "=== Ignored-test report summary ==="
@@ -602,17 +670,25 @@ refine-fixture:
 # gitignored, regenerated by CI's `js (@cratestack/refine)` job and by
 # `tests/support/assert-fixture-present.ts`'s local-dev check.
 #
-# NO `--refine` here: the generator still rejects `--refine` on an RPC
-# schema (`TypeScriptGeneratorError::RefineRequiresRest`) as of this
-# recipe — RPC support for the `--refine`-generated manifest is tracked
-# separately. This fixture drives `createCratestackRpcDataProvider`
-# against a hand-written `RpcResourceMap`, same as every example in the
-# package README.
+# `--refine` IS passed here, same as `refine-fixture` above: issue #571's
+# RPC follow-up (#586) lifted `TypeScriptGeneratorError::RefineRequiresRest`
+# to `RefineRequiresRestOrRpc` — the generator has emitted a real
+# `src/refine.ts` (typed to `RpcResourceMap`) for `transport rpc` schemas
+# since then. A prior version of this comment said otherwise; a 2026-08
+# CI-coverage audit found that made this recipe (and therefore CI's `js
+# (@cratestack/refine)` job) never generate or typecheck that file at all —
+# `tests/typecheck/generated-manifest-rpc.ts` is the round-trip proof this
+# unlocks, the RPC sibling of `tests/typecheck/generated-manifest.ts`.
+# `tests/typecheck/rpc-manifest.ts`'s hand-written `RpcResourceMap` stays
+# alongside it — it proves the generated model classes themselves satisfy
+# `CratestackRpcModelApi` independent of the manifest generator, same as
+# every hand-written example in the package README.
 refine-rpc-fixture:
 	rm -rf packages/cratestack-refine/tests/fixtures/generated-client-rpc
 	cargo run -p cratestack-cli -- generate-typescript \
 	  --schema packages/cratestack-refine/tests/fixtures/refine_fixture_rpc.cstack \
 	  --out packages/cratestack-refine/tests/fixtures/generated-client-rpc \
+	  --refine \
 	  --package-name refine-fixture-rpc-client
 
 # Layer-direction check (ADR 0014, docs/adr/0014-layer-direction-enforcement.md)

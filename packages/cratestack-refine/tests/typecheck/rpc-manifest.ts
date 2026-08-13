@@ -4,15 +4,20 @@
 // `just refine-rpc-fixture` against `refine_fixture_rpc.cstack`) stops
 // structurally satisfying `RpcResourceMap`/`CratestackRpcModelApi`.
 //
-// There is no generated `refine.ts` to assign here the way
-// `generated-manifest.ts` does for REST — `cratestack generate-typescript
-// --refine` still rejects `transport rpc` schemas
-// (`TypeScriptGeneratorError::RefineRequiresRest`), so this package's own
-// tests build the manifest by hand, exactly as every RPC example in the
-// README does. This file's assertion is narrower than the REST one as a
-// result: it proves the real generated RPC model classes are assignable
-// to `CratestackRpcModelApi`, not that a generator emits a correct
-// mapping (there is no such generator output to check yet).
+// `cratestack generate-typescript --refine` DOES now emit a real
+// `refine.ts` for `transport rpc` schemas too (issue #571's RPC follow-up,
+// #586 — `TypeScriptGeneratorError::RefineRequiresRest` was widened to
+// `RefineRequiresRestOrRpc`, and `just refine-rpc-fixture` passes
+// `--refine`). That generated manifest's own round trip is checked by the
+// sibling file `generated-manifest-rpc.ts`, the RPC equivalent of REST's
+// `generated-manifest.ts`.
+//
+// This file stays alongside it deliberately, hand-building the manifest
+// exactly as every RPC example in the README does: it proves the real
+// generated RPC model classes are assignable to `CratestackRpcModelApi`
+// on their own structural merits, independent of whether the manifest
+// generator wires them up correctly — a narrower, complementary claim to
+// `generated-manifest-rpc.ts`'s, not a stand-in for it.
 
 import type { RpcResourceMap } from "../../src/rpc-types.js";
 import type { RefineFixtureRpcClientClient } from "../fixtures/generated-client-rpc/src/client.js";
