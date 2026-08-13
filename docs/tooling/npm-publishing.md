@@ -21,6 +21,11 @@ like a GitHub Release, so a throwaway test tag must never reach a registry):
   across a 5-target matrix (same targets as the `cratestack-cli` binary matrix above) and published
   as **6 separate npm packages** — the main `@cratestack/cbor-node` plus one auto-generated
   platform-specific subpackage per target (see below).
+- **`@cratestack/refine`** (`publish-npm-refine` job, `packages/cratestack-refine/`, issue #571) — a
+  refine.dev dataProvider over the generated TypeScript REST client. Plain TS shipping its own
+  compiled `dist/`, same shape as the API family, but its own job rather than an entry in that job's
+  loop: it has no `@cratestack/*` dependency (only a `@refinedev/core` peer), and a missing Trusted
+  Publisher entry on the newest name shouldn't abort the loop for the ten packages beside it.
 
 `publish-crates` soft-skips (logs a warning, exits 0, without failing the rest of the release)
 when `CARGO_REGISTRY_TOKEN` isn't set. The npm jobs are a **hard cutover, not a soft-skip**: they
@@ -36,7 +41,7 @@ Every npm package authenticates with npm's [Trusted Publishing](https://docs.npm
 all, no rotation, no EOTP failure mode (see the superseded section below for what that used to
 look like).
 
-For **each** of the 19 packages — this is a one-per-package setting, not shared, and not inherited
+For **each** of the 20 packages — this is a one-per-package setting, not shared, and not inherited
 by a new package just because a sibling already has one configured:
 
 - `@cratestack/cli`
@@ -44,6 +49,7 @@ by a new package just because a sibling already has one configured:
   `@cratestack/runtime-fetch`, `@cratestack/runtime-axios`, `@cratestack/validator-zod`,
   `@cratestack/validator-yup`, `@cratestack/adapter-tanstack-query`, `@cratestack/adapter-rtk`
 - `@cratestack/cbor`, `@cratestack/cbor-web`
+- `@cratestack/refine`
 - `@cratestack/cbor-node` **plus 5 auto-generated platform subpackages, one per `napi.targets`
   entry** in `packages/cratestack-cbor-node/package.json` — `napi prepublish` names them
   `<packageName>-<platform>` (scope preserved): `@cratestack/cbor-node-darwin-x64`,
@@ -116,10 +122,41 @@ by a new package just because a sibling already has one configured:
   `napi.targets` to each one in turn, or to several at once if you have binaries for them) is the
   fastest way to close this out without needing physical access to each OS.
 
+### Bootstrapping a brand-new package name (applies to every package, not just `cbor-node`)
+
+**Trusted Publishing categorically cannot create a package name.** npm requires a name to already
+exist before you can attach a Trusted Publisher to it, so the *first* publish of any new package is
+unavoidably a manual `npm publish` from a maintainer's machine. The napi-specific dance above is
+only extra work `cbor-node` needs on top of this; a plain-TS package (`@cratestack/refine` being the
+worked example) is just:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm turbo run build --filter='./packages/cratestack-<name>'
+cd packages/cratestack-<name>
+npm publish --access public   # add --otp=<code> if 2FA prompts, or complete the browser flow
+```
+
+Publish the version **already committed in `package.json`** — do not hand-bump it to the next
+release. Publishing `0.7.15` by hand and then tagging `v0.7.15` makes the CI job hit
+`EPUBLISHCONFLICT` on an already-live version, and the npm jobs are a hard failure, not a skip.
+
+No `--provenance` and no `npm config set provenance true` on this manual bootstrap: provenance needs
+npm to detect a supported CI OIDC provider and aborts the whole publish with `EUSAGE: Automatic
+provenance generation not supported for provider: null` on a local run. Provenance is for the CI
+jobs only.
+
+If the publishing account has 2FA set to "required for write actions" — this org's does — `npm
+publish` exits `EOTP` and prints a browser URL to authenticate. **That step can't be delegated or
+scripted**: it needs the maintainer's own terminal and second factor. Everything before it (install,
+build, `npm pack --dry-run` to inspect the tarball) can be prepared by anyone.
+
+Then, the per-package Trusted Publisher setup:
+
 1. On npmjs.com, sign in as a member of the `@cratestack` org with publish rights, and open the
    package's Settings page (`npmjs.com/package/@cratestack/<name>/access`) — the package must
-   already exist on the registry (an initial manual `npm publish` from a maintainer's machine, or
-   just reserving the name) before its Trusted Publisher can be configured.
+   already exist on the registry (the manual bootstrap publish above, or just reserving the name)
+   before its Trusted Publisher can be configured.
 2. Find the **Trusted Publisher** section and add a GitHub Actions trusted publisher with:
    * **Organization or user:** `cratestack`
    * **Repository:** `cratestack`

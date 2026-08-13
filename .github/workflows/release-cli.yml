@@ -3,9 +3,9 @@
 # Also publishes every workspace crate to crates.io and every npm package
 # this repo ships, with npm provenance attached: @cratestack/cli (the
 # binary-fetching npm wrapper), the @cratestack/api family (10 hand-written
-# packages shipping their own compiled dist/), and the @cratestack/cbor
+# packages shipping their own compiled dist/), the @cratestack/cbor
 # family (cbor, cbor-node — a real napi-rs multi-platform native addon,
-# cbor-web).
+# cbor-web), and @cratestack/refine.
 #
 # Triggers on a `vX.Y.Z` tag push. The normal way to produce one is the
 # "Prepare Release" workflow (bump versions → open a PR → merging it
@@ -672,3 +672,47 @@ jobs:
         run: npm install -g npm@^11
       - name: Publish @cratestack/cbor
         run: .github/scripts/npm-publish.sh packages/cratestack-cbor --access public --provenance
+
+  # @cratestack/refine (issue #571) — a refine.dev dataProvider over the
+  # generated TypeScript REST client. Deliberately its own job rather than
+  # an 11th entry in publish-npm-api-family's loop: it is not part of the
+  # @cratestack/api split (no `@cratestack/*` dependency at all, only a
+  # `@refinedev/core` peer), and a missing Trusted Publisher entry on the
+  # newest package name shouldn't be able to abort that loop. Same plain-TS
+  # shape as publish-npm-cbor above — own compiled dist/ in the tarball, no
+  # Rust/wasm toolchain, no ordering dependency beyond `prepare`.
+  #
+  # NOTE this job's build is `tsc` only. The package's *tests* need a real
+  # generated client (`just refine-fixture`, which builds cratestack-cli) —
+  # that runs in ci.yml's `js (@cratestack/refine)` job on every PR, not
+  # here; a release tag publishes what CI already proved.
+  publish-npm-refine:
+    name: publish npm package (@cratestack/refine)
+    if: github.event_name == 'push'
+    needs: [prepare]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - name: pnpm install
+        env:
+          CRATESTACK_CLI_SKIP_DOWNLOAD: "1"
+        run: pnpm install --frozen-lockfile
+      - name: Build @cratestack/refine
+        run: pnpm turbo run build --filter='./packages/cratestack-refine'
+      # Pinned to the latest 11.x, not an unbounded `npm@latest` — see the
+      # `publish-npm-cbor-node` job's own comment on this same step for why.
+      - name: Ensure npm supports Trusted Publishing
+        run: npm install -g npm@^11
+      - name: Publish @cratestack/refine
+        run: .github/scripts/npm-publish.sh packages/cratestack-refine --access public --provenance

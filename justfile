@@ -744,36 +744,32 @@ bump NEW:
 	    if (/^version = "$cur"/ || m{path = "crates/}) {
 	      s/version = "$cur"/version = "$new"/g;
 	    }'
-	# Keep the @cratestack/cli npm wrapper's version (and the release
-	# asset tag it downloads), every package in the split @cratestack/api
-	# family (ts-types, link-*, runtime-*, validator-*, adapter-*, and the
-	# api compat shim itself), the @cratestack/cbor family (cbor,
-	# cbor-node, cbor-web), and the cratestack-vscode extension's own
-	# package.json in lockstep with the workspace version — scoped to
-	# these package.json files, not the unrelated example apps'. vscode's
-	# vsix is now built and versioned per release tag (release-vscode.yml
-	# attaches it to the same GitHub Release as the CLI binaries), so it
-	# needs to move in lockstep like the rest, not stay pinned
-	# independently. A single literal-string replace (not just the
-	# `"version": "..."` key) also catches each package's own pinned
-	# `"@cratestack/xyz": "$current"` cross-references to its siblings,
-	# which need to move in lockstep too.
-	perl -i -pe "s/\Q\"$current\"\E/\"{{NEW}}\"/g" \
-	  packages/cratestack-cli-npm/package.json \
-	  packages/cratestack-api/package.json \
-	  packages/cratestack-ts-types/package.json \
-	  packages/cratestack-link-batch/package.json \
-	  packages/cratestack-link-logger/package.json \
-	  packages/cratestack-runtime-fetch/package.json \
-	  packages/cratestack-runtime-axios/package.json \
-	  packages/cratestack-validator-zod/package.json \
-	  packages/cratestack-validator-yup/package.json \
-	  packages/cratestack-adapter-tanstack-query/package.json \
-	  packages/cratestack-adapter-rtk/package.json \
-	  packages/cratestack-cbor/package.json \
-	  packages/cratestack-cbor-node/package.json \
-	  packages/cratestack-cbor-web/package.json \
-	  packages/cratestack-vscode/package.json
+	# Keep every package this repo ships under `packages/` in lockstep with
+	# the workspace version: the @cratestack/cli npm wrapper (and the
+	# release asset tag it downloads), the split @cratestack/api family
+	# (ts-types, link-*, runtime-*, validator-*, adapter-*, and the api
+	# compat shim), the @cratestack/cbor family (cbor, cbor-node,
+	# cbor-web), @cratestack/refine, and the cratestack-vscode extension.
+	# vscode's vsix is built and versioned per release tag
+	# (release-vscode.yml attaches it to the same GitHub Release as the CLI
+	# binaries), so it moves in lockstep like the rest rather than staying
+	# pinned independently.
+	#
+	# DISCOVERED by glob, not enumerated. The previous hardcoded list went
+	# stale the moment `packages/cratestack-refine` landed (#577): the new
+	# package kept its old version through a bump, which would then make
+	# release-cli.yml's publish job re-publish an already-live version and
+	# hard-fail the release. Every directory under `packages/` is
+	# version-locked to the workspace today; if one ever must NOT be, add
+	# an explicit exclusion here rather than reverting to a manual list.
+	# `packages/*/package.json` is one level deep, so it can't reach into a
+	# package's own `node_modules/`. The glob is scoped to `packages/`, not
+	# the unrelated example apps' package.json files.
+	#
+	# A single literal-string replace (not just the `"version": "..."` key)
+	# also catches each package's own pinned `"@cratestack/xyz": "$current"`
+	# cross-references to its siblings, which need to move in lockstep too.
+	perl -i -pe "s/\Q\"$current\"\E/\"{{NEW}}\"/g" packages/*/package.json
 	# Refresh pnpm-lock.yaml so the version-literal edits above (which change
 	# specifiers like `"@cratestack/ts-types": "{{NEW}}"`) are reflected in the
 	# lockfile's `specifier:` entries too — otherwise a later `pnpm install

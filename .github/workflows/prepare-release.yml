@@ -180,18 +180,22 @@ jobs:
             || echo "npm dry-run for @cratestack/cli didn't complete (often just missing local npm auth) — not fatal for a rehearsal." >&2
           echo "::endgroup::"
 
-          echo "::group::npm dry-run — @cratestack/api family"
+          echo "::group::npm dry-run — @cratestack/api family + @cratestack/refine"
           pnpm install --frozen-lockfile
-          pnpm turbo run build --filter='./packages/cratestack-ts-types' --filter='./packages/cratestack-link-batch' --filter='./packages/cratestack-link-logger' --filter='./packages/cratestack-runtime-fetch' --filter='./packages/cratestack-runtime-axios' --filter='./packages/cratestack-validator-zod' --filter='./packages/cratestack-validator-yup' --filter='./packages/cratestack-adapter-tanstack-query' --filter='./packages/cratestack-adapter-rtk' --filter='./packages/cratestack-api'
+          pnpm turbo run build --filter='./packages/cratestack-ts-types' --filter='./packages/cratestack-link-batch' --filter='./packages/cratestack-link-logger' --filter='./packages/cratestack-runtime-fetch' --filter='./packages/cratestack-runtime-axios' --filter='./packages/cratestack-validator-zod' --filter='./packages/cratestack-validator-yup' --filter='./packages/cratestack-adapter-tanstack-query' --filter='./packages/cratestack-adapter-rtk' --filter='./packages/cratestack-api' --filter='./packages/cratestack-refine'
           # ts-types has no dependents needing it published first for a
           # dry-run (nothing actually hits the registry), but the order
           # mirrors the real publish-npm-api-family job for consistency.
+          # cratestack-refine isn't part of that family (its own
+          # publish-npm-refine job) but rehearses identically — plain tsc
+          # build, own dist/ in the tarball — so it rides along here rather
+          # than duplicating the whole group.
           for pkg in \
             cratestack-ts-types cratestack-link-batch cratestack-link-logger \
             cratestack-runtime-fetch cratestack-runtime-axios \
             cratestack-validator-zod cratestack-validator-yup \
             cratestack-adapter-tanstack-query cratestack-adapter-rtk \
-            cratestack-api; do
+            cratestack-api cratestack-refine; do
             (cd "packages/$pkg" && npm publish --dry-run --access public) \
               || echo "npm dry-run for $pkg didn't complete (often just missing local npm auth) — not fatal for a rehearsal." >&2
           done
@@ -241,21 +245,25 @@ jobs:
           # shipped it and it had to be caught and fixed by hand on the
           # release branch (see that PR for the concrete symptom: `error:
           # cannot update the lock file ... because --locked was passed`).
+          # `':(glob)packages/*/package.json'` for exactly the same reason
+          # as the lockfile pathspec above, one class of drift later: this
+          # used to enumerate the package.json files by hand, and that list
+          # had already fallen behind `just bump`'s — it never gained
+          # `packages/cratestack-vscode` and never gained
+          # `packages/cratestack-refine` (#577). `just bump` rewrites every
+          # `packages/*/package.json` in the runner's working tree, so a
+          # missing entry here doesn't fail anything loudly; it silently
+          # drops that file from the bump commit, and the release ships that
+          # package still carrying the PREVIOUS version. For an npm-published
+          # package that then makes release-cli.yml's publish job re-publish
+          # an already-live version — a hard failure mid-release, since the
+          # npm jobs are a hard cutover with no skip path. A glob is the
+          # self-maintaining form: `*` in a `:(glob)` pathspec doesn't match
+          # `/`, so this is exactly one level deep and can't reach into a
+          # package's own `node_modules/`. `just bump`'s own perl invocation
+          # uses the identical glob — the two must stay in agreement.
           git add CHANGELOG.md ':(glob)**/Cargo.toml' ':(glob)**/Cargo.lock' pnpm-lock.yaml \
-            packages/cratestack-cli-npm/package.json \
-            packages/cratestack-api/package.json \
-            packages/cratestack-ts-types/package.json \
-            packages/cratestack-link-batch/package.json \
-            packages/cratestack-link-logger/package.json \
-            packages/cratestack-runtime-fetch/package.json \
-            packages/cratestack-runtime-axios/package.json \
-            packages/cratestack-validator-zod/package.json \
-            packages/cratestack-validator-yup/package.json \
-            packages/cratestack-adapter-tanstack-query/package.json \
-            packages/cratestack-adapter-rtk/package.json \
-            packages/cratestack-cbor/package.json \
-            packages/cratestack-cbor-node/package.json \
-            packages/cratestack-cbor-web/package.json
+            ':(glob)packages/*/package.json'
           git commit -m "chore: bump workspace to v${version} and seed CHANGELOG section"
           git push origin "$branch"
 
@@ -287,7 +295,7 @@ jobs:
 
           This PR changes:
 
-          - Bumps the workspace version to \`${version}\` across every crate's \`Cargo.toml\`, \`Cargo.lock\`, and every npm package (\`packages/cratestack-cli-npm\`, the split \`@cratestack/api\` family: \`cratestack-api\`, \`cratestack-ts-types\`, \`cratestack-link-batch\`, \`cratestack-link-logger\`, \`cratestack-runtime-fetch\`, \`cratestack-runtime-axios\`, \`cratestack-validator-zod\`, \`cratestack-validator-yup\`, \`cratestack-adapter-tanstack-query\`, \`cratestack-adapter-rtk\`, and the \`@cratestack/cbor\` family: \`cratestack-cbor\`, \`cratestack-cbor-node\`, \`cratestack-cbor-web\`), refreshing \`pnpm-lock.yaml\` to match.
+          - Bumps the workspace version to \`${version}\` across every crate's \`Cargo.toml\`, \`Cargo.lock\`, and every \`packages/*/package.json\` (\`@cratestack/cli\`; the split \`@cratestack/api\` family: \`api\`, \`ts-types\`, \`link-batch\`, \`link-logger\`, \`runtime-fetch\`, \`runtime-axios\`, \`validator-zod\`, \`validator-yup\`, \`adapter-tanstack-query\`, \`adapter-rtk\`; the \`@cratestack/cbor\` family: \`cbor\`, \`cbor-node\`, \`cbor-web\`; \`@cratestack/refine\`; and the \`cratestack-vscode\` extension), refreshing \`pnpm-lock.yaml\` to match. The list is a glob, not an enumeration — a new package under \`packages/\` is picked up automatically.
 
           It solves:
 
