@@ -8,18 +8,26 @@
 //! See ADR 0004 for the full design:
 //! <https://cratestack.dev/internals/schema-diff-adr>.
 
+mod checksum;
 mod convert;
 mod diff;
 pub mod emit;
 mod error;
+#[cfg(feature = "postgres-introspect")]
+pub mod introspect;
 pub mod ir;
 mod naming;
+mod projection;
 mod snapshot;
 
-pub use diff::diff;
+pub use checksum::projections_checksum;
+pub use convert::TableProjection;
+pub use diff::views::ViewProjection;
+pub use diff::{diff, diff_projections};
 pub use emit::EmittedMigration;
 pub use error::MigrateError;
-pub use naming::{check_name, column_name, index_name_unique, table_name};
+pub use naming::{check_name, column_name, fk_name, index_name_unique, table_name};
+pub use projection::{Projections, project};
 pub use snapshot::{
     SNAPSHOT_FORMAT_VERSION, Snapshot, read_or_empty, read_snapshot, write_snapshot,
 };

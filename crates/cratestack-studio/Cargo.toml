@@ -2,6 +2,7 @@
 name = "cratestack-studio"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 description = "CrateStack Studio — admin and testing surface for .cstack schemas, served as a local web app."
@@ -31,8 +32,11 @@ include = [
     "README.md",
 ]
 
+[lints]
+workspace = true
+
 [features]
-default = ["embed-ui"]
+default = ["embed-ui", "decimal-rust-decimal"]
 # Bundle the Leptos UI's Trunk output into the binary via `rust-embed`.
 # `build.rs` materializes the dist into `$OUT_DIR/ui-dist` from either
 # the local sibling (dev) or the published `embedded-ui-dist.tar.gz`,
@@ -40,6 +44,29 @@ default = ["embed-ui"]
 # the bundle is empty, the server transparently falls back to a
 # placeholder page.
 embed-ui = ["dep:rust-embed"]
+# Forwards to `cratestack-core`'s mutually-exclusive decimal backend choice
+# (see that crate's Cargo.toml for the full rationale). Required because
+# `cratestack-core`'s dependency edge has `default-features = false` at the
+# workspace root — every direct consumer must explicitly re-select a
+# backend, or `cratestack-core` fails to compile at all (cratestack#495).
+# Also forwards to `cratestack-sql`/`cratestack-migrate`/`cratestack-parser`/
+# `cratestack-sqlx` (added for cratestack#507's routed-write outbox reuse —
+# see that dependency's own comment below), this crate's direct
+# `cratestack-core` consumers, so all five stay in lockstep.
+decimal-rust-decimal = [
+    "cratestack-core/decimal-rust-decimal",
+    "cratestack-sql/decimal-rust-decimal",
+    "cratestack-migrate/decimal-rust-decimal",
+    "cratestack-parser/decimal-rust-decimal",
+    "cratestack-sqlx/decimal-rust-decimal",
+]
+decimal-bigdecimal = [
+    "cratestack-core/decimal-bigdecimal",
+    "cratestack-sql/decimal-bigdecimal",
+    "cratestack-migrate/decimal-bigdecimal",
+    "cratestack-parser/decimal-bigdecimal",
+    "cratestack-sqlx/decimal-bigdecimal",
+]
 
 [dependencies]
 anyhow.workspace = true
@@ -49,10 +76,30 @@ cratestack-core.workspace = true
 cratestack-migrate.workspace = true
 cratestack-parser.workspace = true
 cratestack-sql.workspace = true
+# Postgres-only: cratestack#507 ("option 3") routes `[target.db]` writes
+# on models with `@version`/`@@emit` through the same
+# `cratestack_event_outbox` table primitives (`enqueue_event_outbox`,
+# `ensure_event_outbox_table`) the generated server's descriptor path
+# uses, instead of reimplementing that table's schema a second time in
+# this crate where it could drift. `cratestack-sqlx` pins the exact same
+# `sqlx-core`/`sqlx-postgres` versions this crate already depends on
+# directly (both `=0.8.6` at the workspace root) via its own
+# `sqlx-core`/`sqlx-postgres`-only shim (see that crate's `lib.rs` doc
+# comment on why it avoids the `sqlx` umbrella crate) — so this adds no
+# second copy of sqlx's split crates to the dependency graph, and
+# `&sqlx_postgres::PgPool`/`Transaction` values pass across the crate
+# boundary as the same concrete types. `cratestack-studio` is a `tool` in
+# `docs/adr/layers.toml` (may depend on anything), and `cratestack-sqlx`
+# is `L2`, so this doesn't create a layering violation.
+cratestack-sqlx.workspace = true
 flate2 = "1"
 tar = "0.4"
 regex.workspace = true
 reqwest.workspace = true
+# #440: `reqwest`'s `rustls-no-provider` feature needs a `rustls::crypto::
+# CryptoProvider` installed before any `Client` is built — `data/api.rs`'s
+# `ApiSource::new` installs a `ring` fallback if nothing is installed yet.
+rustls.workspace = true
 rusqlite.workspace = true
 rust-embed = { workspace = true, optional = true, features = ["mime-guess", "interpolate-folder-path"] }
 serde = { workspace = true, features = ["derive"] }
@@ -74,3 +121,5 @@ tar = "0.4"
 
 [dev-dependencies]
 tempfile = "3"
+testcontainers.workspace = true
+testcontainers-modules.workspace = true

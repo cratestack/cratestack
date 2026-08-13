@@ -16,10 +16,20 @@ pub fn decode_datetime(raw: &str) -> FromSqlResult<chrono::DateTime<chrono::Utc>
         .map_err(|error| FromSqlError::Other(Box::new(error)))
 }
 
+/// Inverse of [`format_json`](super::bind): parses the on-disk **plain**
+/// JSON shape back into a `Value` via [`Value::from_plain_json`]
+/// (cratestack#162, cratestack#395) — never `Value`'s own derived,
+/// externally-tagged `Deserialize` impl.
 pub fn decode_json(raw: &str) -> FromSqlResult<Value> {
-    serde_json::from_str(raw).map_err(|error| FromSqlError::Other(Box::new(error)))
+    let plain: serde_json::Value =
+        serde_json::from_str(raw).map_err(|error| FromSqlError::Other(Box::new(error)))?;
+    Ok(Value::from_plain_json(plain))
 }
 
+// `cratestack_core::Decimal` only exists when a decimal backend is
+// selected (cratestack#505) — see `cratestack-core/src/decimal.rs`'s
+// module doc.
+#[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
 pub fn decode_decimal(raw: &str) -> FromSqlResult<cratestack_core::Decimal> {
     raw.parse::<cratestack_core::Decimal>().map_err(|error| {
         FromSqlError::Other(Box::new(std::io::Error::new(

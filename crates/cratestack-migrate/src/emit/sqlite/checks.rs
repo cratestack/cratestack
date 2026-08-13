@@ -12,6 +12,9 @@ use crate::ir::{AddCheck, CheckKind, DropCheck};
 use super::idents::quote_ident;
 
 pub(super) fn emit_add_check(sql: &mut String, check: &AddCheck) {
+    if is_enum_membership(&check.kind) {
+        return;
+    }
     writeln!(
         sql,
         "-- SQLite: ADD CONSTRAINT {} CHECK ({}) — \
@@ -23,12 +26,31 @@ pub(super) fn emit_add_check(sql: &mut String, check: &AddCheck) {
 }
 
 pub(super) fn emit_drop_check(sql: &mut String, check: &DropCheck) {
+    if is_enum_membership(&check.kind) {
+        return;
+    }
     writeln!(
         sql,
         "-- SQLite: DROP CONSTRAINT {} — requires table rebuild on SQLite.",
         check.name
     )
     .unwrap();
+}
+
+/// Enum membership constraints have no SQLite footprint, so they emit
+/// nothing at all — not even the table-rebuild marker the validator
+/// checks leave behind.
+///
+/// Every SQLite column is declared `BLOB` (see the module docs), which
+/// applies no type or domain constraint of its own, and the generated
+/// rusqlite row decoder already rejects an unknown variant when it
+/// `.parse()`s the stored string. Emitting a "hand-write a table
+/// rebuild" marker for a constraint the framework derives
+/// automatically — and which SQLite never had — would be noise on
+/// every enum column. This preserves the pre-existing contract that
+/// enums have no SQLite footprint (issue #228 changed only Postgres).
+fn is_enum_membership(kind: &CheckKind) -> bool {
+    matches!(kind, CheckKind::Enum { .. })
 }
 
 fn render_check_predicate_sqlite(column: &str, kind: &CheckKind) -> String {
@@ -50,5 +72,18 @@ fn render_check_predicate_sqlite(column: &str, kind: &CheckKind) -> String {
         // enough for ISO 4217 codes which are exactly 3 uppercase
         // ASCII letters.
         CheckKind::Iso4217 => format!("{c} GLOB '[A-Z][A-Z][A-Z]'"),
+        // Not reached — `is_enum_membership` short-circuits both
+        // callers before they render a predicate. Rendered correctly
+        // anyway so the match carries no unreachable panic. SQLite has
+        // no array type, so the `list` case has no distinct form here.
+        CheckKind::Enum { variants, .. } => {
+            let literals: Vec<String> = variants
+                .iter()
+                .map(|variant| format!("'{}'", variant.replace('\'', "''")))
+                .collect();
+            format!("{c} IN ({})", literals.join(", "))
+        }
+        // Introspection-only — see `CheckKind::Raw`'s doc comment.
+        CheckKind::Raw(sql) => sql.clone(),
     }
 }

@@ -6,6 +6,14 @@ id = 1
 name = 2
 reserved = []
 
+[messages.EchoWidgetNameInput]
+name = 1
+reserved = []
+
+[messages.EchoWidgetNameOutput]
+result = 1
+reserved = []
+
 [messages.PageInfo]
 has_next_page = 3
 has_previous_page = 4
@@ -32,9 +40,23 @@ reserved = []
 name = 1
 reserved = []
 
+[messages.WhoAmIInput]
+reserved = []
+
+[messages.WhoAmIOutput]
+result = 1
+reserved = []
+
 [messages.Widget]
 id = 1
 name = 2
+reserved = []
+
+[messages.WidgetNameSamplesInput]
+reserved = []
+
+[messages.WidgetNameSamplesOutput]
+result = 1
 reserved = []
 
 [messages.WidgetRpcListInput]

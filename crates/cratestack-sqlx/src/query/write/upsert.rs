@@ -14,8 +14,12 @@
 
 use cratestack_core::{CoolContext, CoolError};
 
-use crate::{ConflictTarget, ModelDescriptor, SqlxRuntime, UpsertModelInput, sqlx};
+use crate::audit::{RunInTxOutcome, dispatch_audit_sink};
+use crate::{
+    ConflictTarget, ModelDescriptor, SqlxRuntime, UpsertModelInput, cool_error_from_sqlx, sqlx,
+};
 
+use super::upsert_do_nothing::UpsertRecordDoNothing;
 use super::upsert_exec::run_upsert_in_tx;
 
 #[derive(Debug, Clone)]
@@ -37,6 +41,33 @@ where
     pub fn on_conflict(mut self, target: ConflictTarget) -> Self {
         self.conflict_target = target;
         self
+    }
+
+    /// Switch this call to `ON CONFLICT ... DO NOTHING` semantics
+    /// (cratestack#487), independent of `descriptor.upsert_update_columns`:
+    /// on conflict, leave the existing row completely untouched instead
+    /// of merging `upsert_update_columns` into it. This is the
+    /// idempotent-insert shape ledger-style writes need — e.g. a
+    /// cash-in claim that inserts a `PENDING` row and treats a
+    /// conflict as "already in flight" must never let a retry's blank
+    /// values overwrite an existing `COMPLETED` row's `transfer_ref`.
+    ///
+    /// Returns a distinct builder type rather than a flag on
+    /// `UpsertRecord` because the return shape genuinely changes: a
+    /// real `DO NOTHING` returns nothing on conflict, so the caller
+    /// needs `Inserted` vs `Existing` distinguishable in the type
+    /// ([`crate::UpsertOutcome`]) rather than collapsed into a plain
+    /// `M` the way `.run()` returns it today. Encoding that as a
+    /// separate type also means existing `.upsert(..).run(..)` callers
+    /// keep their `Result<M, CoolError>` signature unchanged — this is
+    /// purely additive, not a behavior change for the DO UPDATE path.
+    pub fn do_nothing(self) -> UpsertRecordDoNothing<'a, M, PK, I> {
+        UpsertRecordDoNothing {
+            runtime: self.runtime,
+            descriptor: self.descriptor,
+            input: self.input,
+            conflict_target: self.conflict_target,
+        }
     }
 
     /// Render an approximate SQL preview. The actual upsert wraps a
@@ -88,12 +119,8 @@ where
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
         let runtime = self.runtime;
-        let mut tx = runtime
-            .pool()
-            .begin()
-            .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
-        let (record, emits_event) = run_upsert_in_tx(
+        let mut tx = runtime.pool().begin().await.map_err(cool_error_from_sqlx)?;
+        let (record, emits_event, audit_event) = run_upsert_in_tx(
             &mut tx,
             runtime,
             self.descriptor,
@@ -102,29 +129,32 @@ where
             ctx,
         )
         .await?;
-        tx.commit()
-            .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+        tx.commit().await.map_err(cool_error_from_sqlx)?;
         if emits_event {
             let _ = runtime.drain_event_outbox().await;
+        }
+        if let Some(event) = &audit_event {
+            dispatch_audit_sink(runtime, std::slice::from_ref(event)).await;
         }
         Ok(record)
     }
 
     /// Like [`Self::run`] but participates in a caller-supplied
     /// transaction. The conflict probe runs against `tx`, so the row
-    /// lock is held until the caller commits. The event outbox is not
-    /// drained here.
+    /// lock is held until the caller commits. Neither the event outbox
+    /// drain nor the `AuditSink` fan-out happens here — see
+    /// `create.rs`'s `run_in_tx` doc comment for the full contract and
+    /// how a caller opts into both after their own commit.
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
         ctx: &CoolContext,
-    ) -> Result<M, CoolError>
+    ) -> Result<RunInTxOutcome<M>, CoolError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
-        let (record, _) = run_upsert_in_tx(
+        let (record, _emits_event, audit_event) = run_upsert_in_tx(
             tx,
             self.runtime,
             self.descriptor,
@@ -133,6 +163,9 @@ where
             ctx,
         )
         .await?;
-        Ok(record)
+        Ok(RunInTxOutcome::new(
+            record,
+            audit_event.into_iter().collect(),
+        ))
     }
 }

@@ -20,21 +20,29 @@
 use std::collections::BTreeMap;
 
 use cratestack_core::{Schema, View};
+use serde::{Deserialize, Serialize};
 
 use crate::ir::{CreateMaterializedView, CreateView, DropMaterializedView, DropView, Op};
 
-/// Internal projection of a view at one side of a diff. Carries the
+/// Projection of a view at one side of a diff. Carries the
 /// dialect-specific SQL body chosen at projection time.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct ViewProjection {
-    pub(super) name: String,
-    pub(super) sql: String,
-    pub(super) is_materialized: bool,
-    pub(super) primary_key: String,
-    pub(super) source_tables: Vec<String>,
+///
+/// This is the view half of the [`crate::Projections`] seam (see
+/// `crate::projection`) — the table half is [`crate::TableProjection`].
+///
+/// `Serialize`/`Deserialize` (issue #205): needed for the same reason
+/// as [`crate::TableProjection`]'s — [`crate::Snapshot`] persists a
+/// whole [`crate::Projections`] value, views included.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ViewProjection {
+    pub name: String,
+    pub sql: String,
+    pub is_materialized: bool,
+    pub primary_key: String,
+    pub source_tables: Vec<String>,
 }
 
-pub(super) fn project_views(schema: &Schema) -> BTreeMap<String, ViewProjection> {
+pub(crate) fn project_views(schema: &Schema) -> BTreeMap<String, ViewProjection> {
     let dialect = dialect_for(schema);
     schema
         .views
@@ -121,13 +129,14 @@ pub(super) struct ViewDiff {
     pub(super) creates: Vec<Op>,
 }
 
-pub(super) fn diff_views(prev: &Schema, next: &Schema) -> ViewDiff {
-    let prev_views = project_views(prev);
-    let next_views = project_views(next);
+pub(super) fn diff_views(
+    prev_views: &BTreeMap<String, ViewProjection>,
+    next_views: &BTreeMap<String, ViewProjection>,
+) -> ViewDiff {
     let mut diff = ViewDiff::default();
 
     // Drops: anything in prev that's not in next.
-    for (name, prev_proj) in &prev_views {
+    for (name, prev_proj) in prev_views {
         if !next_views.contains_key(name) {
             diff.drops.push(if prev_proj.is_materialized {
                 Op::DropMaterializedView(DropMaterializedView { name: name.clone() })
@@ -137,7 +146,7 @@ pub(super) fn diff_views(prev: &Schema, next: &Schema) -> ViewDiff {
         }
     }
 
-    for (name, next_proj) in &next_views {
+    for (name, next_proj) in next_views {
         match prev_views.get(name) {
             None => {
                 // New view → CreateView / CreateMaterializedView.

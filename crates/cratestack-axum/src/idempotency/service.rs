@@ -8,22 +8,24 @@ use axum::body::Body;
 use axum::extract::Request;
 use axum::response::Response;
 use cratestack_core::CoolError;
-use http::{StatusCode, header};
+use http::header;
 use tower::Service;
 
+use super::complete::buffer_and_persist_response;
 use super::hash::{hash_request, is_idempotent_target_method};
-use super::headers::encode_headers;
 use super::parse::parse_idempotency_key;
 use super::record::ReservationOutcome;
 use super::responses::{error_response, in_flight_response, replay_response};
 use super::store::{IdempotencyStore, MAX_BODY_BYTES};
+use super::stream_bypass::is_streamed_response;
 
 #[derive(Clone)]
 pub struct IdempotencyService<S> {
     pub(super) inner: S,
     pub(super) store: Arc<dyn IdempotencyStore>,
     pub(super) ttl: Duration,
-    pub(super) principal_fingerprint: Arc<dyn Fn(&Request) -> String + Send + Sync>,
+    pub(super) principal_fingerprint:
+        Arc<dyn Fn(&Request) -> Result<String, CoolError> + Send + Sync>,
 }
 
 impl<S> Service<Request> for IdempotencyService<S>
@@ -61,7 +63,10 @@ where
                 Ok(None) => return inner.call(req).await,
                 Err(error) => return Ok(error_response(error)),
             };
-            let principal = (principal_fp)(&req);
+            let principal = match (principal_fp)(&req) {
+                Ok(principal) => principal,
+                Err(error) => return Ok(error_response(error)),
+            };
             // Hash the full path + query string. Skipping the query
             // makes `POST /transfer?dry_run=true` collide with
             // `POST /transfer?dry_run=false` under the same key, so a
@@ -144,48 +149,31 @@ where
                     )));
                 }
             };
-            let (rparts, rbody) = response.into_parts();
-            let rbytes = match axum::body::to_bytes(rbody, MAX_BODY_BYTES).await {
-                Ok(b) => b,
-                Err(_) => {
-                    // Drop the reservation so retries can attempt
-                    // again — but only if our token still holds.
-                    let _ = store.release(&principal, &key, token).await;
-                    let mut e = error_response(CoolError::Internal(
-                        "response body exceeded idempotency buffer".to_owned(),
-                    ));
-                    *e.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                    return Ok(e);
-                }
-            };
-            // Capture the full header set so the replay reproduces the
-            // original handler's `Location`, `ETag`, cache directives,
-            // `Content-Type`, etc. Hop-by-hop and framework-computed
-            // headers are filtered inside `encode_headers`. Pre-fix
-            // the middleware only persisted `Content-Type`, so a
-            // `201 Created` with a `Location` header replayed as
-            // `201 Created` with no `Location` — different observable
-            // behaviour from the original execution.
-            let headers_blob = encode_headers(&rparts.headers);
-
-            // Persist the completion. Best-effort: on store failure we
-            // still return the live response so the caller observes the
-            // mutation that DID happen; banks running strict mode can
-            // wrap the store in a fail-closed adapter. The `token`
-            // guard means a handler whose reservation got reclaimed
-            // (TTL expired, retry took over) silently fails this
-            // write rather than poisoning the newer reservation's row.
-            let _ = store
-                .complete(
-                    &principal,
-                    &key,
-                    token,
-                    rparts.status.as_u16(),
-                    &headers_blob,
-                    &rbytes,
-                )
-                .await;
-            Ok(Response::from_parts(rparts, Body::from(rbytes)))
+            if is_streamed_response(&response) {
+                // Genuinely incremental response (a `@stream` procedure,
+                // cratestack#283) — buffering it here would silently
+                // defeat streaming, and idempotency-replaying a partial
+                // stream has no defined semantics. The handler already
+                // ran, so refusing to forward its output would only
+                // discard completed work; instead we bypass buffering
+                // entirely, release the reservation so a legitimate
+                // retry isn't stuck "in flight" forever, and say so
+                // loudly. See `super::stream_bypass` for the full
+                // rationale.
+                let _ = store.release(&principal, &key, token).await;
+                tracing::warn!(
+                    target: "cratestack",
+                    cratestack_operation = "idempotency",
+                    "idempotency key supplied for a @stream response body; streaming \
+                     responses are not idempotency-replayable — bypassing buffering/replay \
+                     for this call (see cratestack#283)",
+                );
+                return Ok(response);
+            }
+            Ok(
+                buffer_and_persist_response(store.as_ref(), &principal, &key, token, response)
+                    .await,
+            )
         })
     }
 }

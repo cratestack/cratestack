@@ -1,15 +1,18 @@
 //! RPC sub-module emitted inside `pub mod axum { ... }` when the
-//! schema declares `transport rpc`. Mounts `POST /rpc/{op_id}` (unary)
-//! and `POST /rpc/batch` (sequence of frames). For `transport rest`
-//! schemas the returned TokenStream is empty.
+//! schema declares `transport rpc`. Mounts `POST /rpc/{op_id}` (unary),
+//! `POST /rpc/batch` (sequence of frames), and `GET /rpc/subscribe/
+//! {op_id}` (SSE subscriptions, §3.4a). For `transport rest` schemas
+//! the returned TokenStream is empty.
 
 mod batch;
+mod subscribe;
 
 use quote::quote;
 
 pub(super) fn build_rpc_module(
     is_rpc: bool,
     rpc_dispatch_arms: &[proc_macro2::TokenStream],
+    rpc_subscribe_dispatch_arms: &[proc_macro2::TokenStream],
 ) -> proc_macro2::TokenStream {
     if !is_rpc {
         return quote! {};
@@ -17,6 +20,7 @@ pub(super) fn build_rpc_module(
 
     let dispatch_block = build_dispatch_block(rpc_dispatch_arms);
     let batch_block = batch::build_batch_block();
+    let subscribe_block = subscribe::build_subscribe_block(rpc_subscribe_dispatch_arms);
 
     quote! {
         #[derive(Clone)]
@@ -42,14 +46,23 @@ pub(super) fn build_rpc_module(
 
         #dispatch_block
         #batch_block
+        #subscribe_block
 
         /// Build the RPC router for `transport rpc` schemas. Mounts
-        /// `POST /rpc/{op_id}` (unary) and `POST /rpc/batch` (frames).
+        /// `POST /rpc/{op_id}` (unary), `POST /rpc/batch` (frames), and
+        /// `GET /rpc/subscribe/{op_id}` (SSE subscriptions, §3.4a).
+        ///
+        /// `body_limit_bytes` (cratestack#413) is applied once as the
+        /// outermost `DefaultBodyLimit` layer — see
+        /// `axum_module/router_fn.rs`'s module doc for why this has to be
+        /// a real parameter rather than a default a consumer re-layers on
+        /// top of.
         pub fn rpc_router<R, C, Auth>(
             db: super::Cratestack,
             registry: R,
             codec: C,
             auth_provider: Auth,
+            body_limit_bytes: usize,
         ) -> axum::Router
         where
             R: super::procedures::ProcedureRegistry,
@@ -63,9 +76,14 @@ pub(super) fn build_rpc_module(
                     axum::routing::post(rpc_batch_dispatch),
                 )
                 .route(
+                    ::cratestack::rpc::RPC_SUBSCRIBE_PATH,
+                    axum::routing::get(rpc_subscribe_dispatch),
+                )
+                .route(
                     ::cratestack::rpc::RPC_UNARY_PATH,
                     axum::routing::post(rpc_dispatch),
                 )
+                .layer(::cratestack::axum::extract::DefaultBodyLimit::max(body_limit_bytes))
                 .with_state(state)
         }
     }
@@ -84,6 +102,7 @@ fn build_dispatch_block(arms: &[proc_macro2::TokenStream]) -> proc_macro2::Token
             headers: ::cratestack::axum::http::HeaderMap,
             op_id: &str,
             body: ::cratestack::axum::body::Bytes,
+            client_ip_ctx: ClientIpContext,
         ) -> ::cratestack::axum::response::Response
         where
             R: super::procedures::ProcedureRegistry,
@@ -124,6 +143,7 @@ fn build_dispatch_block(arms: &[proc_macro2::TokenStream]) -> proc_macro2::Token
             ::cratestack::axum::extract::Path(op_id):
                 ::cratestack::axum::extract::Path<String>,
             headers: ::cratestack::axum::http::HeaderMap,
+            client_ip_ctx: ClientIpContext,
             body: ::cratestack::axum::body::Bytes,
         ) -> ::cratestack::axum::response::Response
         where
@@ -131,7 +151,7 @@ fn build_dispatch_block(arms: &[proc_macro2::TokenStream]) -> proc_macro2::Token
             C: HttpTransport,
             Auth: ::cratestack::AuthProvider,
         {
-            rpc_dispatch_inner(state, headers, &op_id, body).await
+            rpc_dispatch_inner(state, headers, &op_id, body, client_ip_ctx).await
         }
     }
 }

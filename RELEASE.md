@@ -4,7 +4,8 @@ CrateStack publishes through the common public Rust and editor channels:
 
 * Rust crates: crates.io and docs.rs
 * CLI binaries and release notes: GitHub Releases
-* VS Code extension: Visual Studio Marketplace and Open VSX
+* VS Code extension: `.vsix` files attached to GitHub Releases (Marketplace and Open VSX
+  publishing exist in CI but are dormant — see below)
 * Documentation site: Mintlify or equivalent static docs hosting from `docs-site/`
 
 ## Quickstart (CI-driven — preferred)
@@ -17,25 +18,36 @@ credentials. Run the **"Prepare Release"** GitHub Actions workflow
   entirely inside the CI job. No git writes at all (no commit, branch, PR,
   or tag) — safe to run repeatedly against any version to rehearse.
 * `mode: real` — bumps versions, commits, and pushes a `release/vX.Y.Z`
-  branch, then tries to open a normal PR
-  (`chore: bump workspace to vX.Y.Z`) against `main`, with the merged PRs
-  since the last release listed as the source-of-truth. **Review and merge
-  that PR like any other change** — this is the one human checkpoint in an
-  otherwise fully automated pipeline.
+  branch, then opens a normal PR (`chore: bump workspace to vX.Y.Z`)
+  against `main`, with the merged PRs since the last release listed as the
+  source-of-truth. **Review and merge that PR like any other change** — this
+  is the one human checkpoint in an otherwise fully automated pipeline.
 
-  **Standing limitation — the workflow's own PR-open step currently fails.**
-  This repo's GitHub org has "Allow GitHub Actions to create and approve
-  pull requests" turned off (Settings → Actions → General → Workflow
-  permissions), so the final `gh pr create` call in the "Open release PR"
-  step fails with `GitHub Actions is not permitted to create or approve
-  pull requests`. This is an org-wide policy, not something fixable from
-  this repo's own settings or from the workflow YAML — confirmed by a 409
-  when attempting to flip the setting via the API. **The bump commit and
-  branch push both still succeed** — only PR creation fails — so after a
-  `mode: real` dispatch, check the workflow run: if it stopped at "Open
-  release PR", a human opens the PR by hand for the already-pushed branch.
-  See [Troubleshooting → PR creation fails](#pr-creation-fails-github-actions-is-not-permitted-to-create-or-approve-pull-requests)
-  below for the exact commands and PR-body template to use.
+  **The "Open release PR" step's `gh pr create` call itself now succeeds**
+  (the org's "Allow GitHub Actions to create and approve pull requests"
+  setting — Settings → Actions → General → Workflow permissions — that
+  used to block it is no longer off; this section used to document that as
+  a standing limitation, now stale, see the note below and
+  [Troubleshooting → PR creation fails](#pr-creation-fails-github-actions-is-not-permitted-to-create-or-approve-pull-requests)
+  for the recovery procedure that's still worth keeping in case that
+  org setting regresses).
+
+  **A separate, previously-undiagnosed problem (cratestack#531): the
+  resulting PR ran zero CI.** GitHub does not trigger further workflow runs
+  for an event (including a PR being opened) raised by the default
+  `GITHUB_TOKEN` — the same anti-recursion rule `cut-release-tag.yml` hit
+  for its tag push (see that file's header comment). `v0.7.12` shipped an
+  unedited `CHANGELOG.md` seed as a direct result: nothing verified the
+  bump PR at all, not even the changelog gate that would have caught it.
+  Fixed by making "Open release PR" use the same `RELEASE_PAT` secret
+  `cut-release-tag.yml` already relies on (falling back to `github.token`,
+  with a loud `::warning::` if unset) — a PAT-authored PR-open is an
+  ordinary external event as far as GitHub's trigger engine is concerned,
+  so `ci.yml`/`governance.yml` fire on it normally, same as any other PR.
+  See `RELEASE_PAT`'s setup section in `docs/tooling/npm-publishing.md` —
+  it now needs `pull-requests: write` in addition to `contents: write` if
+  it's a fine-grained PAT, since it's used for PR creation too, not just
+  the tag push.
 
 Once the bump PR is merged (by whichever route it got opened), everything
 else happens on its own:
@@ -46,19 +58,31 @@ else happens on its own:
 2. That same tag push also triggers **"Release CLI Binaries"**
    (`.github/workflows/release-cli.yml`): publishes every crate to
    crates.io (`CARGO_REGISTRY_TOKEN`), builds and attaches cross-platform
-   `cratestack-cli` binaries to a GitHub Release, and publishes both npm
-   packages (`@cratestack/cli`, `@cratestack/api`) with provenance
-   (`NPM_TOKEN`). See [`docs/tooling/npm-publishing.md`](docs/tooling/npm-publishing.md)
-   for one-time secret setup.
+   `cratestack-cli` binaries to a GitHub Release, and publishes every npm
+   package (`@cratestack/cli` plus the 10-package `@cratestack/api`
+   family — `api`, `ts-types`, `link-batch`, `link-logger`,
+   `runtime-fetch`, `runtime-axios`, `validator-zod`, `validator-yup`,
+   `adapter-tanstack-query`, `adapter-rtk`) with provenance via npm's
+   OIDC Trusted Publishing (no token at all). See
+   [`docs/tooling/npm-publishing.md`](docs/tooling/npm-publishing.md) for
+   one-time setup.
 3. ...and **"Release VS Code Extension"**
    (`.github/workflows/release-vscode.yml`): builds `cratestack-lsp` per
-   platform, then publishes `packages/cratestack-vscode` to the Visual
-   Studio Marketplace via Entra ID workload identity (a managed identity,
-   no stored PAT — `AZURE_CLIENT_ID`/`AZURE_TENANT_ID`/
-   `AZURE_SUBSCRIPTION_ID` on a `vscode-marketplace` GitHub Environment)
-   and to Open VSX (`OVSX_PAT`). See
+   platform, packages a `.vsix` per platform, and attaches all five to the
+   same GitHub Release `release-cli.yml` creates for the tag — this is the
+   **primary distribution path** today. Marketplace (Entra ID workload
+   identity — `AZURE_CLIENT_ID`/`AZURE_TENANT_ID`/`AZURE_SUBSCRIPTION_ID` on
+   a `vscode-marketplace` GitHub Environment) and Open VSX (`OVSX_PAT`)
+   publish jobs also exist in this workflow, but are currently **dormant**:
+   the maintainer's Microsoft account is stuck in a 2FA block/unblock loop
+   that blocks the Azure federated-credential setup the Marketplace path
+   needs, so that job soft-skips indefinitely for now. Open VSX has no such
+   blocker (it's an Eclipse Foundation registry, not a Microsoft one) and
+   could be turned on independently by adding `OVSX_PAT`. See
    [`docs/tooling/vscode-publishing.md`](docs/tooling/vscode-publishing.md)
-   for one-time publisher/namespace + identity setup.
+   for the manual-install instructions users need today, plus the one-time
+   publisher/namespace + identity setup for re-enabling either registry
+   later.
 
 Step 1 only reliably cascades into step 2 because `cut-release-tag.yml`
 pushes the tag using a `RELEASE_PAT` repo secret instead of the default
@@ -82,13 +106,23 @@ either documented as permanent workarounds (PR creation) or fixed and
 re-verified (the `RELEASE_PAT` trigger issue, and the `NPM_TOKEN` token-type
 issue).
 
-**`release-vscode.yml` is newer and not yet configured**: as of `v0.4.16`
-none of the Marketplace Entra ID identity, the `vscode-marketplace`
-Environment, or `OVSX_PAT` exist yet, so every tag push soft-skips both
-publish jobs (the `build` job still runs and uploads vsix artifacts per
-platform, proving the packaging side works). See
-[`docs/tooling/vscode-publishing.md`](docs/tooling/vscode-publishing.md) for
-the one-time publisher/namespace/identity setup that unblocks this.
+**npm publishing switched to Trusted Publishing after `v0.4.16`**: `publish-npm` and
+`publish-npm-api` no longer read `NPM_TOKEN` at all — they authenticate via npm's OIDC Trusted
+Publishing instead, which needs no GitHub secret but does need a one-time Trusted Publisher
+configured per package on npmjs.com (see
+[`docs/tooling/npm-publishing.md`](docs/tooling/npm-publishing.md)). Unlike the old PAT, there's no
+secret to check for absence, so **until that's configured, both jobs fail** rather than
+soft-skipping — a deliberate hard cutover, not yet re-verified end-to-end against a real tag push.
+
+**`release-vscode.yml` is newer, and its Marketplace/Open VSX jobs are dormant by design.** The
+`build` job (per-platform `.vsix` packaging) and the GitHub-Release attach step are the real,
+currently-shipping path and have run clean. Neither the Marketplace Entra ID identity, the
+`vscode-marketplace` Environment, nor `OVSX_PAT` exist yet — both publish jobs soft-skip on every
+tag push until that's configured (Marketplace is blocked on an unrelated Microsoft-account 2FA
+issue; Open VSX has no such blocker and is unblocked whenever someone wants to set up the
+Eclipse-Foundation-side token). See
+[`docs/tooling/vscode-publishing.md`](docs/tooling/vscode-publishing.md) for the one-time
+publisher/namespace/identity setup that unblocks either.
 
 ### Why `RELEASE_PAT` exists, and why the bump goes through a PR at all
 
@@ -130,8 +164,9 @@ just release 0.3.4 dry          # rehearsal: dry-run publishes, no tag
 Underlying recipes you can also run individually:
 
 * `just bump 0.3.4` — rewrite `0.x.y` → `0.3.4` across every `Cargo.toml`
-  and the two npm `package.json`s (`packages/cratestack-cli-npm`,
-  `packages/cratestack-api`), and refresh `Cargo.lock`. Idempotent.
+  and every npm `package.json` (`packages/cratestack-cli-npm` and the
+  10-package `@cratestack/api` family), and refresh `Cargo.lock`.
+  Idempotent.
 * `just release-check` — workspace check + workspace tests (skips
   `embedded_flutter_native`).
 * `just bundle-studio-ui` — refresh `embedded-ui.tar.gz` and
@@ -144,8 +179,9 @@ Underlying recipes you can also run individually:
   with the studio's tarball-dirty allowance.
 
 The Rust-crate flow described in the rest of this document is the manual
-fallback these recipes wrap. The VS Code extension still ships on its own
-cadence — see [Publish Editor Extension](#publish-editor-extension).
+fallback these recipes wrap. The VS Code extension's `.vsix` files ship on
+the same tag push via `release-vscode.yml` — see
+[Publish Editor Extension](#publish-editor-extension).
 
 ## Troubleshooting
 
@@ -154,19 +190,32 @@ what to do about each. Pattern-match the symptom first.
 
 ### PR creation fails: "GitHub Actions is not permitted to create or approve pull requests"
 
+**Status as of cratestack#531's investigation: not currently reproducing.**
+`gh api repos/cratestack/cratestack/actions/permissions/workflow` reports
+`can_approve_pull_request_reviews: true`, and PR #528 (the `v0.7.12` bump
+PR) was opened successfully by this workflow's own `gh pr create` call,
+authored as `github-actions[bot]`. This section previously said this failure
+mode was "standing and unresolved" — that was accurate when written but is
+no longer the observed behavior; the org setting below was evidently
+switched on since. Left in place (not deleted) as a real recovery procedure
+in case it regresses — pattern-match the symptom below first.
+
 **Symptom:** "Prepare Release" (`mode: real`) fails at the "Open release PR"
 step with this exact message in the log. The bump commit and
 `release/vX.Y.Z` branch push both already succeeded before this step —
 only PR creation failed.
 
-**Cause:** an org-level GitHub setting — Settings → Actions → General →
-Workflow permissions → "Allow GitHub Actions to create and approve pull
-requests" — is off, and (confirmed) attempting to flip it via the API
-returns a 409: `"The organization does not allow GitHub Actions to create
-or approve pull requests"`. This is **standing and unresolved** — it is an
-org-wide policy, not a per-repo setting or something the workflow YAML can
-work around. Expect every future `mode: real` dispatch to fail at this
-exact step.
+**Cause (when this does occur):** an org-level GitHub setting — Settings →
+Actions → General → Workflow permissions → "Allow GitHub Actions to create
+and approve pull requests" — is off. Confirmed previously to also reject
+being flipped via the API (409: `"The organization does not allow GitHub
+Actions to create or approve pull requests"`) — an org-wide policy, not a
+per-repo setting or something the workflow YAML can work around.
+
+**Do not confuse this with cratestack#531** (a release-bump PR that opens
+fine but runs zero CI) — that's a different failure mode, caused by the
+GITHUB_TOKEN anti-recursion rule, not this org setting. See the Quickstart
+section above and `prepare-release.yml`'s header comment for that one.
 
 **Fix (manual, every time):** a human (or an agent with a real
 authenticated `gh`/browser session — the Actions-internal `GITHUB_TOKEN`
@@ -226,6 +275,11 @@ re-verified on `v0.4.15` and `v0.4.16` (`gh run view` on the resulting
 
 ### npm publish fails with `EOTP` / "This operation requires a one-time password"
 
+**Historical — no longer applicable.** Both npm jobs stopped reading `NPM_TOKEN` entirely in favor
+of OIDC Trusted Publishing (see [Prerequisites](#prerequisites) and
+[`docs/tooling/npm-publishing.md`](docs/tooling/npm-publishing.md)), which has no token to be the
+wrong type. Kept below for anyone tracing back through old `v0.4.15` run logs.
+
 **Symptom:** `publish-npm` and/or `publish-npm-api` fail with
 `npm error code EOTP` / `npm error This operation requires a one-time
 password from your authenticator.`
@@ -235,14 +289,7 @@ account with 2FA-on-publish enabled, not an **Automation**-type token.
 Only Automation tokens (npmjs.com → Access Tokens → Generate New Token →
 Automation) skip the OTP requirement for unattended/CI publishing — this
 is npm's design, not something the workflow can retry around. This hit
-both npm packages on `v0.4.15`.
-
-**Fix:** generate a new Automation token on npmjs.com and rotate the
-`NPM_TOKEN` repo secret to it, then re-run the release (a fresh version
-bump — npm publishes can't be retried against an already-attempted
-version/tarball). See
-[`docs/tooling/npm-publishing.md`](docs/tooling/npm-publishing.md#npm-one-time-setup-needs-cratestack-npm-org-access).
-Confirmed fixed on `v0.4.16`.
+both npm packages on `v0.4.15`, fixed by rotating to an Automation token for `v0.4.16`.
 
 ### Verifying a release actually shipped
 
@@ -255,9 +302,10 @@ live:
 # it isn't.
 curl -A "cratestack-release-check" https://crates.io/api/v1/crates/cratestack-core/0.4.16
 
-# npm — both packages
+# npm — @cratestack/cli plus the @cratestack/api family (repeat per package)
 curl https://registry.npmjs.org/@cratestack/cli/0.4.16
 curl https://registry.npmjs.org/@cratestack/api/0.4.16
+curl https://registry.npmjs.org/@cratestack/ts-types/0.4.16
 
 # GitHub Release — expect 5 platform binaries + 5 matching .sha256 files
 gh release view v0.4.16
@@ -277,7 +325,7 @@ binary matching its own `package.json` version — which `just bump` just
 wrote to the new, not-yet-released version. This is already fixed by
 setting `CRATESTACK_CLI_SKIP_DOWNLOAD=1` on the relevant `pnpm install`
 steps (`ci.yml`'s `js` job, `prepare-release.yml`'s dry-run rehearsal, and
-`release-cli.yml`'s `publish-npm-api` job) — if this resurfaces, check
+`release-cli.yml`'s `publish-npm-api-family` job) — if this resurfaces, check
 that a new `pnpm install` call site added elsewhere hasn't missed the same
 env var.
 
@@ -286,11 +334,14 @@ env var.
 Required credentials are intentionally read from the environment:
 
 * `CARGO_REGISTRY_TOKEN` for crates.io
-* `AZURE_CLIENT_ID` / `AZURE_TENANT_ID` / `AZURE_SUBSCRIPTION_ID` for the Visual Studio Marketplace
-  (Entra ID workload identity federation — a managed identity, no PAT; a local manual publish
-  outside CI can still use `vsce login`/a personal PAT instead, see
-  [`docs/tooling/vscode-publishing.md`](docs/tooling/vscode-publishing.md))
-* `OVSX_PAT` for Open VSX
+* npm's OIDC Trusted Publishing for `@cratestack/cli` and every package in the `@cratestack/api`
+  family — no GitHub secret at all, a per-package Trusted Publisher configured on npmjs.com
+  instead (see [`docs/tooling/npm-publishing.md`](docs/tooling/npm-publishing.md))
+* No credential is required for the VS Code extension's primary path — its `.vsix` files attach to
+  the GitHub Release like the CLI binaries do. `AZURE_CLIENT_ID` / `AZURE_TENANT_ID` /
+  `AZURE_SUBSCRIPTION_ID` (Entra ID workload identity federation) and `OVSX_PAT` remain as
+  currently-dormant, optional credentials for the Marketplace and Open VSX publish jobs
+  respectively — see [`docs/tooling/vscode-publishing.md`](docs/tooling/vscode-publishing.md)
 * GitHub permissions to push tags and create releases
 
 See [`docs/tooling/npm-publishing.md`](docs/tooling/npm-publishing.md) and
@@ -364,14 +415,22 @@ list drifted out of sync with the actual workspace dep graph.
 
 ## Publish Editor Extension
 
-Build and stage the language server first:
+`release-vscode.yml` handles this on every `vX.Y.Z` tag push: it builds `cratestack-lsp` per
+platform, packages a `.vsix` per platform, and attaches all five to the tag's GitHub Release — no
+manual step needed for the primary path. Users install with
+`code --install-extension <file>.vsix` (see
+[`docs/tooling/vscode-publishing.md`](docs/tooling/vscode-publishing.md#manual-install-for-users)).
+
+The Marketplace and Open VSX publish jobs in the same workflow are dormant until their credentials
+are configured (see [Prerequisites](#prerequisites) above). To publish manually from a local
+machine once you have your own credentials:
 
 ```sh
 cargo build --release -p cratestack-lsp
 cd packages/cratestack-vscode
 pnpm run package:vsix
-pnpm run publish:vscode-marketplace
-pnpm run publish:open-vsx
+pnpm run publish:vscode-marketplace   # needs a personal Marketplace PAT via `vsce login`
+pnpm run publish:open-vsx             # needs OVSX_PAT
 ```
 
 ## Tag

@@ -134,6 +134,7 @@ async fn main() {
         source: Arc::new(SqliteSource::new(catalog_conn(), schema.clone())),
         has_db: true,
         has_api: false,
+        allow_unsafe_db_writes: false,
     };
 
     let analytics = LoadedTarget {
@@ -145,6 +146,7 @@ async fn main() {
         source: Arc::new(SqliteSource::new(catalog_conn(), schema.clone())),
         has_db: true,
         has_api: false,
+        allow_unsafe_db_writes: false,
     };
 
     let upstream = LoadedTarget {
@@ -159,6 +161,7 @@ async fn main() {
         ),
         has_db: false,
         has_api: true,
+        allow_unsafe_db_writes: false,
     };
 
     let workspace = Arc::new(LoadedWorkspace {
@@ -166,6 +169,7 @@ async fn main() {
             name: "acme-platform".to_owned(),
             default_mode: TargetMode::Ro,
             cors_dev: true,
+            audit_file: None,
         },
         targets: vec![Arc::new(catalog), Arc::new(analytics), Arc::new(upstream)],
         audit: Arc::new(AuditLog::new()),

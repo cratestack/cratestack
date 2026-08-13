@@ -1,0 +1,37 @@
+// Issue #302: one `@riverpod` provider per procedure, built by watching
+// `{{ provider_prefix }}ProceduresApiProvider` (declared above) — the
+// same existing DI provider `ProceduresApi`'s own methods already go
+// through. Query-kind procedures get a plain `Future`-returning function
+// (mirrors a model's `get`/`list` providers); mutation-kind procedures
+// get a controller class (mirrors a model's create/update/delete
+// controllers) — see `model_providers.dart.j2`'s header comment for why
+// writes aren't forced into the same shape as reads.
+{% for procedure in procedures %}
+{% set operation = procedure_operations[loop.index0] %}
+{% if operation.kind == "mutation" %}
+@riverpod
+class {{ operation.symbol }} extends _${{ operation.symbol }} {
+  @override
+  FutureOr<{{ operation.nullable_return_type }}> build() => null;
+
+  Future<{{ procedure.return_type }}> {{ operation.mutation_method_name }}({{ procedure.args_name }} args) async {
+    state = const AsyncValue.loading();
+    try {
+      final result = await ref.read({{ provider_prefix }}ProceduresApiProvider).{{ procedure.method_name }}(args);
+      state = AsyncValue.data(result);
+      return result;
+    } catch (error, stackTrace) {
+      state = AsyncValue.error(error, stackTrace);
+      rethrow;
+    }
+  }
+}
+
+{% else %}
+@riverpod
+Future<{{ procedure.return_type }}> {{ operation.symbol }}(Ref ref, {{ procedure.args_name }} args) {
+  return ref.watch({{ provider_prefix }}ProceduresApiProvider).{{ procedure.method_name }}(args);
+}
+
+{% endif %}
+{% endfor %}

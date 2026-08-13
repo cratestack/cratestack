@@ -13,8 +13,15 @@ PG_URL := "postgres://cratestack:cratestack@localhost:55432/cratestack_test"
 #     per-item helpers take one positional arg per field/concern.
 #   * type_complexity     — sqlx query-result tuples and generated bounds.
 #   * manual_async_fn     — examples/tests return `impl Future` by hand.
-#   * missing_safety_doc  — only ever fires in the FFI example crates;
-#     library `unsafe` is forbidden workspace-wide.
+#   * missing_safety_doc  — only ever fires in the FFI crates/examples that
+#     hold a documented `unsafe_code = "allow"` override (napi-derive
+#     trampolines, raw C-ABI exports — see EXEMPT_MANUAL_OVERRIDE in
+#     `.ci/lints_workspace_check.py`); every other member declares
+#     `[lints]\nworkspace = true` (cratestack#523, `just
+#     verify-lints-optin`), so `unsafe_code = "forbid"` is actually
+#     enforced there, not just documented. Note wasm-bindgen crates
+#     (`cratestack-cbor-wasm`, `cratestack-studio-ui`) need no override —
+#     verified they compile clean under the forbid.
 clippy_allow := "-A clippy::too_many_arguments -A clippy::type_complexity -A clippy::manual_async_fn -A clippy::missing_safety_doc"
 
 default:
@@ -31,9 +38,11 @@ default:
 #     fresh checkout. The test recipes exclude it for the same reason.
 #   * NO `--all-features` — `--all-features` turns on both
 #     `decimal-rust-decimal` and `decimal-bigdecimal`, which are
-#     mutually exclusive (and bigdecimal is unimplemented), tripping a
-#     `compile_error!` in cratestack-core. Default features select the
-#     one working decimal backend, which is the only compilable config.
+#     mutually exclusive backends (cratestack#495), tripping a
+#     `compile_error!` in cratestack-core. Default features select
+#     `decimal-rust-decimal`; pass `--features decimal-bigdecimal
+#     --no-default-features` on individual `-p` invocations to build
+#     against the other one instead.
 all-checks:
 	@echo "Running Rust formatting, lint, and checks"
 	just _fmt
@@ -82,6 +91,17 @@ lint:
 fmt-check:
 	just _fmt --check
 
+# Feature-graph regression matrix (cratestack#421, cratestack#495) —
+# blocking CI gate. Asserts `decimal-rust-decimal`/`decimal-bigdecimal` are
+# mutually exclusive (not "neither selectable" — #495 made the second
+# backend real), that `cratestack-core`'s default feature set never leaks
+# through a `--no-default-features` consumer, and that `rust_decimal` is
+# never reachable anywhere in the graph once `decimal-bigdecimal` is
+# selected. See `.ci/feature-matrix.sh` for the full rationale and the
+# exact commands run.
+feature-matrix:
+	./.ci/feature-matrix.sh
+
 # Bring the Postgres test container up (idempotent; waits for ready).
 pg-up:
 	@docker compose up -d postgres >/dev/null
@@ -94,13 +114,17 @@ pg-down:
 	@echo "postgres stopped"
 
 # Run the full workspace test suite against a real Postgres, with auto-teardown on exit.
+# `--features cratestack-migrate/postgres-introspect` opts just that one
+# workspace member into its feature-gated live-introspection tests
+# (issue #204) — the default `--workspace` feature set otherwise leaves
+# `cratestack-migrate` on its DB-dependency-free default build.
 test-pg *args='':
 	#!/usr/bin/env bash
 	set -euo pipefail
 	cleanup() { docker compose down >/dev/null 2>&1 || true; echo "postgres stopped"; }
 	trap cleanup EXIT
 	just pg-up
-	CRATESTACK_TEST_DATABASE_URL='{{PG_URL}}' cargo test --workspace --exclude embedded_flutter_native {{args}}
+	CRATESTACK_TEST_DATABASE_URL='{{PG_URL}}' cargo test --workspace --exclude embedded_flutter_native --features cratestack-migrate/postgres-introspect {{args}}
 
 # Run only the cratestack-pg integration tests against PG (faster inner loop).
 # Targets the server-facade package explicitly — the workspace also
@@ -120,33 +144,124 @@ test-pg-tc *args='':
 	CRATESTACK_USE_TESTCONTAINERS=1 cargo test --workspace --exclude embedded_flutter_native {{args}}
 
 # --- CI test shards -------------------------------------------------------
-# CI runs the suite as three parallel shards (see .github/workflows/ci.yml)
+# CI runs the suite as four parallel shards (see .github/workflows/ci.yml)
 # so no single runner compiles the whole workspace — the tauri/wasm/napi
 # example crates otherwise push the runner past its disk limit. Each shard
 # is also usable locally.
 
-# Shard: the Postgres-backed crate via testcontainers. The flaky
-# `generated_routes_emit_tracing_events` lives here, so CI wraps this shard
-# in a 3x retry. (cratestack-redis's e2e tests gate on CRATESTACK_REDIS_TEST_URL
-# and skip without it, so they ride along in `test-ci-host`, unchanged.)
+# Shard: the Postgres-backed crate via testcontainers.
+# (cratestack-redis no longer rides along here: it has its own blocking
+# `tests-redis` job backed by the `test-ci-redis` recipe below.)
+# `--features grpc` (cratestack#524 gap-closing test): without it, every
+# `#![cfg(feature = "grpc")]`-gated integration test file (`transport_grpc.rs`,
+# `grpc_auth_provider_extensions.rs`, `trusted_proxy_client_ip_grpc.rs`,
+# `transport_grpc_crud_dispatch.rs`) still compiles — cargo builds every
+# file under `tests/` regardless of an inner `#![cfg(...)]` — but as an
+# EMPTY 0-test binary, so this whole gRPC test surface was silently never
+# exercised by `tests-db` before this line existed. Confirmed via
+# `cargo test -p cratestack-pg --test transport_grpc -- --list` printing
+# `0 tests` without this flag vs. 5 with it.
 test-ci-db *args='':
-	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg {{args}}
+	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --features grpc {{args}}
+
+# Shard addendum: the `decimal-bigdecimal` backend's own live-Postgres
+# round-trip test (cratestack#421 AC3, cratestack#495/#496). This file is
+# gated `required-features = ["postgres", "decimal-bigdecimal"]`
+# (`crates/cratestack-pg/tests/decimal_bigdecimal_backend.rs`), so it is
+# never even compiled by `test-ci-db` above, which runs under
+# `cratestack-pg`'s *default* feature set (`decimal-rust-decimal`).
+# `.ci/feature-matrix.sh` proves the backend *compiles* clean end to end;
+# this proves it actually *works* — a `Decimal` field round-trips through
+# real Postgres `NUMERIC` without precision loss, including a value beyond
+# `rust_decimal`'s ~28-29 significant-digit capacity that only
+# `decimal-bigdecimal` can represent at all. Without this recipe wired
+# into CI, a regression in the bigdecimal codec/bind path would still pass
+# every existing gate (compiles clean, no `rust_decimal` in the graph)
+# while being silently broken at runtime.
+test-ci-db-decimal-bigdecimal *args='':
+	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --no-default-features --features postgres,decimal-bigdecimal --test decimal_bigdecimal_backend {{args}}
+
+# Shard: the Redis-backed crate via testcontainers (issue #418). Idempotency
+# and rate-limit stores are the primitives the `banking_*` fixtures lean on
+# for correctness under retries/concurrency, so this mirrors `test-ci-db`'s
+# testcontainers pattern one-for-one rather than riding along in the host
+# shard, where the tests used to skip silently for lack of a Redis.
+test-ci-redis *args='':
+	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-redis {{args}}
 
 # Shard: the Studio crate, whose api_smoke tests assert the Trunk-built UI
 # is embedded. CI runs `trunk build` first; no database needed.
 test-ci-studio *args='':
 	cargo test -p cratestack-studio {{args}}
 
+# Shard addendum: cratestack-studio's four `tests/postgres_*.rs` files
+# (postgres_explain, postgres_routed_writes, postgres_row_keys,
+# postgres_unsafe_writes) — the live-Postgres coverage that, until CI
+# started setting CRATESTACK_REQUIRE_DB/CRATESTACK_USE_TESTCONTAINERS for
+# this recipe, skipped silently on every run (a coverage audit found this
+# is how the duplicate-column bug PR #553 fixed shipped in the first
+# place: its decisive test never actually ran in CI). Mirrors
+# `test-ci-db`'s testcontainers pattern one-for-one, scoped to just these
+# four test binaries so the plain `test-ci-studio` run above isn't
+# duplicated wholesale.
+test-ci-studio-db *args='':
+	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-studio \
+		--test postgres_explain \
+		--test postgres_routed_writes \
+		--test postgres_row_keys \
+		--test postgres_unsafe_writes \
+		{{args}}
+
 # Shard: everything else — the remaining framework crates + light example
 # smoke tests, with no container, no wasm/desktop toolchain, and no GTK.
 # Uses --exclude (a denylist) rather than -p so inline `#[cfg(test)]` unit
 # tests in crates without a tests/ dir (core, parser, sqlx, macros, …) keep
-# running. Excludes the two shards above, the flutter glue crate, and the
+# running. Excludes the three shards above, the flutter glue crate, and the
 # heavy example crates that have zero tests (already compiled by `check` and
 # the `embedded-examples` gate).
 test-ci-host *args='':
 	#!/usr/bin/env bash
 	set -euo pipefail
+	cargo test --workspace \
+		--exclude embedded_flutter_native \
+		--exclude cratestack-pg \
+		--exclude cratestack-redis \
+		--exclude cratestack-studio \
+		--exclude tauri-web-shell-example \
+		--exclude tauri-native-shell-example \
+		--exclude tauri-web-wasm-example \
+		--exclude embedded-browser-vite-example \
+		--exclude embedded-browser-vite-pwa-example \
+		--exclude embedded-browser-webpack-example \
+		--exclude react-vite-daisyui-example \
+		--exclude react-nextjs-daisyui-wasm \
+		--exclude react-nextjs-daisyui-napi \
+		--exclude embedded-expo-native {{args}}
+
+# Report-only: surfaces the current pass/fail state of every `#[ignore]`d
+# test without blocking CI (2026-08 policy-layer coverage audit, Phase 3 —
+# nothing else in this repo ever runs or surfaces an ignored test, which is
+# exactly how four policy-enforcement tests, two of them catching REAL
+# authorization bugs, went unrun for months: `git grep -rn "\-\-include-ignored\|-- --ignored"`
+# matched nothing anywhere in `.github/workflows/` or this justfile before
+# this recipe). Reuses `test-ci-db`'s testcontainers Postgres (where every
+# DB-backed `#[ignore]` lives) and `test-ci-host`'s exclude list (for
+# no-DB ignores, e.g. cratestack-sqlx's characterization test for the
+# auth-bypass bug found alongside this mechanism) — deliberately skips
+# `cratestack-studio` and the wasm/tauri example crates as this recipe
+# has no Trunk/GTK toolchain step of its own. Always exits 0: a red
+# ignored test here is not a regression to fix in this job, it's a
+# defect (real or stale) to triage in the test's own `#[ignore]` reason —
+# see the top-level report this recipe prints for exactly which ones
+# failed.
+test-ci-ignored-report *args='':
+	#!/usr/bin/env bash
+	set -uo pipefail
+	echo "=== Ignored tests: cratestack-pg (testcontainers Postgres) ==="
+	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg {{args}} -- --ignored --nocapture
+	pg_status=$?
+	echo ""
+	echo "=== Ignored tests: workspace host shard (no DB, no wasm/desktop toolchain) ==="
 	cargo test --workspace \
 		--exclude embedded_flutter_native \
 		--exclude cratestack-pg \
@@ -160,7 +275,330 @@ test-ci-host *args='':
 		--exclude react-vite-daisyui-example \
 		--exclude react-nextjs-daisyui-wasm \
 		--exclude react-nextjs-daisyui-napi \
-		--exclude embedded-expo-native {{args}}
+		--exclude embedded-expo-native {{args}} -- --ignored --nocapture
+	host_status=$?
+	echo ""
+	echo "=== Ignored-test report summary ==="
+	if [ "$pg_status" -ne 0 ] || [ "$host_status" -ne 0 ]; then
+		echo "One or more #[ignore]d tests failed to run cleanly (pg shard exit=$pg_status, host shard exit=$host_status)."
+		echo "This is expected for any test whose #[ignore] reason says REAL BUG — read that reason string before treating a red result here as new."
+	else
+		echo "All #[ignore]d tests ran clean (0 failures) — every one of them is a candidate to have its #[ignore] removed in a follow-up PR."
+	fi
+	exit 0
+
+# Verify the Dart client generator's OUTPUT actually compiles, not just
+# that its generated text matches a Rust-side snapshot (issue #300).
+# Generates a REST and an RPC package during the run from committed
+# fixtures (crates/cratestack-client-dart/tests/fixtures/ci_{rest,rpc}.cstack
+# — multiple models, an enum, a relation, and a procedure each) via the
+# real `cratestack generate-dart` CLI, then runs `flutter analyze` on
+# each. This is the same check CI's `dart (generated packages)` job runs.
+#
+# Issue #301 extends this to also cover `--preset riverpod`: the same
+# ci_rest/ci_rpc fixtures (proving the fan-out layout compiles under both
+# transports) plus riverpod_shared_ownership.cstack (a dedicated fixture
+# for the ownership rule — an enum genuinely shared by two models, a
+# nested type reached only through a procedure, and a User -> Post[] ->
+# User relation cycle across two per-model files).
+#
+# Issue #302 extends the riverpod-preset loop further: every riverpod
+# fixture now also runs `dart run build_runner build
+# --delete-conflicting-outputs` BEFORE `flutter analyze` — the ticket's
+# load-bearing check, since a malformed `@riverpod` annotation surfaces
+# as a `build_runner` error, not a `dart analyze` one, so analyze alone
+# would not catch it — and `flutter test` after, which actually exercises
+# the generated `test/*_test.dart`'s override-propagation proof (a fake
+# adapter overrides the existing `xAdapterProvider`, then a generated
+# operation provider is read and asserted to have gone through it).
+# `riverpod_provider_collision.cstack` is a new fixture in this set: two
+# models whose *naive* per-operation provider names would collide, plus a
+# procedure that collides with one of the models' own controller name —
+# proving the collision escalation in `provider_naming.rs` produces
+# distinct names that still compile end to end (not just distinct in a
+# Rust-side text assertion).
+#
+# Issue #303: `build_runner` is no longer invoked as a separate bash line
+# here — every riverpod fixture regenerates with `generate-dart`'s own
+# `--run-build-runner` flag instead, so this recipe is also the CI proof
+# that the flag itself (not just a hand-rolled `dart run build_runner
+# build`) actually works end to end against the real pinned toolchain.
+# `flutter pub get` still runs as its own step first: `--run-build-runner`
+# deliberately runs only the one command the acceptance criteria specify
+# (`dart run build_runner build --delete-conflicting-outputs`), not an
+# implicit `pub get`, so dependencies must already be resolved before it.
+#
+# Requires the Flutter SDK on PATH, not just the Dart SDK: the generated
+# `pubspec.yaml` depends on `sdk: flutter` (the `flutter`/`flutter_test`
+# packages) and `flutter_riverpod` — a standalone Dart SDK install has no
+# Flutter pub cache to resolve those against (verified empirically before
+# choosing this over `dart-lang/setup-dart`).
+verify-dart:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if ! command -v flutter >/dev/null; then
+	  echo "flutter not found on PATH — install the Flutter SDK: https://docs.flutter.dev/get-started/install" >&2
+	  exit 1
+	fi
+	out=target/dart-verify
+	rm -rf "$out"
+
+	verify_pkg() {
+	  local pkg="$1"
+	  echo "=== flutter pub get: $pkg ==="
+	  (cd "$pkg" && flutter pub get)
+	  echo "=== flutter analyze: $pkg ==="
+	  # --fatal-warnings (Dart's own default): a warning-level finding
+	  # fails the build — unused imports, dead code, deprecated API use
+	  # are real signal on generated code that should never carry them.
+	  # --no-fatal-infos: info-level style suggestions don't fail the
+	  # build here. `flutter analyze` (unlike plain `dart analyze`)
+	  # defaults `--fatal-infos` to ON; the two pre-existing info
+	  # findings this surfaced on today's templates (a doc-comment
+	  # angle-bracket lint in runtime.dart, and a nullable-narrowing
+	  # suggestion on constants.dart's schema-hash constant that's a
+	  # structural false positive — the field is `String?` because it
+	  # can be null for hash-less configs, even though this particular
+	  # generated instance's literal happens to be non-null) are noise,
+	  # not evidence the generator is broken, so they don't gate the
+	  # build. See the PR that introduced this recipe for the follow-up
+	  # issue tracking them.
+	  (cd "$pkg" && flutter analyze --fatal-warnings --no-fatal-infos)
+	}
+
+	# riverpod-preset-only: deliberately does NOT call `verify_pkg` (which
+	# runs `flutter analyze` first) — `flutter analyze` on a freshly
+	# generated riverpod package, before `build_runner` has run, reports
+	# real `uri_has_not_been_generated`/`undefined_identifier` errors for
+	# every `part '<file>.g.dart'` directive and every `@riverpod`
+	# annotation's `ref`/`state` usage (verified empirically; this is
+	# exactly the ticket's "a malformed annotation surfaces as a
+	# build_runner error, not an analyzer error" risk, but the inverse
+	# also holds — analyze alone, run too early, is *always* red here,
+	# which would make this recipe permanently fail). Order is therefore
+	# pub get -> build_runner -> analyze -> test, matching the acceptance
+	# criteria's own "dart analyze is clean AFTER build_runner" wording.
+	verify_riverpod_pkg() {
+	  local pkg="$1"
+	  local schema="$2"
+	  local library_name="$3"
+	  echo "=== flutter pub get: $pkg ==="
+	  (cd "$pkg" && flutter pub get)
+	  echo "=== generate-dart --preset riverpod --run-build-runner: $pkg ==="
+	  cargo run --quiet -p cratestack-cli -- generate-dart \
+	    --schema "$schema" \
+	    --out "$pkg" \
+	    --library-name "$library_name" \
+	    --preset riverpod \
+	    --run-build-runner
+	  echo "=== flutter analyze (post build_runner): $pkg ==="
+	  (cd "$pkg" && flutter analyze --fatal-warnings --no-fatal-infos)
+	  echo "=== flutter test: $pkg ==="
+	  (cd "$pkg" && flutter test)
+	}
+
+	fixtures=(ci_rest ci_rpc)
+	for fixture in "${fixtures[@]}"; do
+	  pkg="$out/default/$fixture"
+	  echo "=== generate-dart --preset default: $fixture -> $pkg ==="
+	  cargo run --quiet -p cratestack-cli -- generate-dart \
+	    --schema "crates/cratestack-client-dart/tests/fixtures/$fixture.cstack" \
+	    --out "$pkg" \
+	    --library-name "dart_verify_${fixture}"
+	  verify_pkg "$pkg"
+	done
+
+	riverpod_fixtures=(ci_rest ci_rpc riverpod_shared_ownership riverpod_provider_collision)
+	for fixture in "${riverpod_fixtures[@]}"; do
+	  pkg="$out/riverpod/$fixture"
+	  schema="crates/cratestack-client-dart/tests/fixtures/$fixture.cstack"
+	  library_name="dart_verify_riverpod_${fixture}"
+	  echo "=== generate-dart --preset riverpod: $fixture -> $pkg ==="
+	  cargo run --quiet -p cratestack-cli -- generate-dart \
+	    --schema "$schema" \
+	    --out "$pkg" \
+	    --library-name "$library_name" \
+	    --preset riverpod
+	  verify_riverpod_pkg "$pkg" "$schema" "$library_name"
+	done
+
+	# cratestack#407 (AC5): the last open acceptance criterion — prove,
+	# don't merely inspect, that the generated Dart client treats a
+	# declared `@status(202)` REST success status as success. The Rust
+	# client was already proven this way
+	# (crates/cratestack-client/tests/status_attribute_client_round_trip.rs);
+	# the Dart half was inspected (no explicit `validateStatus` override
+	# found in the REST-runtime templates) but never run — that inference
+	# is exactly what this checks instead of repeating. Both `default` and
+	# `riverpod` presets are generated from the same fixture with the same
+	# `--library-name` on purpose: both derive identical class/import names
+	# from it, so the one hand-written test file
+	# (status_override_202_test.dart) runs unmodified against either
+	# package. RPC transport is out of scope here — `@status` is rejected
+	# at schema-compile time under `transport rpc`, so there is no RPC
+	# generated-client path to check.
+	status_schema="crates/cratestack-client-dart/tests/fixtures/status_override.cstack"
+	status_test="crates/cratestack-client-dart/tests/fixtures/status_override_202_test.dart"
+	status_library="dart_status_verify"
+
+	status_default_pkg="$out/status-202/default"
+	echo "=== generate-dart --preset default: status_override -> $status_default_pkg ==="
+	cargo run --quiet -p cratestack-cli -- generate-dart \
+	  --schema "$status_schema" \
+	  --out "$status_default_pkg" \
+	  --library-name "$status_library"
+	(cd "$status_default_pkg" && flutter pub get)
+	mkdir -p "$status_default_pkg/test"
+	cp "$status_test" "$status_default_pkg/test/status_202_test.dart"
+	echo "=== flutter test (real HTTP round trip, @status(202) proof): $status_default_pkg ==="
+	(cd "$status_default_pkg" && flutter test test/status_202_test.dart)
+
+	status_riverpod_pkg="$out/status-202/riverpod"
+	echo "=== generate-dart --preset riverpod: status_override -> $status_riverpod_pkg ==="
+	cargo run --quiet -p cratestack-cli -- generate-dart \
+	  --schema "$status_schema" \
+	  --out "$status_riverpod_pkg" \
+	  --library-name "$status_library" \
+	  --preset riverpod
+	(cd "$status_riverpod_pkg" && flutter pub get)
+	echo "=== generate-dart --preset riverpod --run-build-runner: $status_riverpod_pkg ==="
+	cargo run --quiet -p cratestack-cli -- generate-dart \
+	  --schema "$status_schema" \
+	  --out "$status_riverpod_pkg" \
+	  --library-name "$status_library" \
+	  --preset riverpod \
+	  --run-build-runner
+	mkdir -p "$status_riverpod_pkg/test"
+	cp "$status_test" "$status_riverpod_pkg/test/status_202_test.dart"
+	echo "=== flutter test (real HTTP round trip, @status(202) proof): $status_riverpod_pkg ==="
+	(cd "$status_riverpod_pkg" && flutter test test/status_202_test.dart)
+
+# Verify the TypeScript client generator's OUTPUT actually typechecks,
+# not just that its generated text matches a Rust-side snapshot (issue #419).
+# Generates a REST and an RPC package during the run from committed
+# fixtures (crates/cratestack-client-typescript/tests/fixtures/ci_{rest,rpc}.cstack
+# and examples/react-vite-swr/schema.cstack — which uses swr preset over REST)
+# via the real `cratestack generate-typescript` CLI, then runs `pnpm build`
+# (which invokes `tsc`) on each.
+#
+# Unlike `dart-verify` which generates on-the-fly from fixtures, the
+# REST/swr example already has committed generated output under
+# examples/react-vite-swr/client/. That fixture exercises the swr preset
+# over REST; this recipe adds an RPC fixture to prove RPC templates
+# typecheck too.
+verify-typescript:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	out=target/typescript-verify
+	rm -rf "$out"
+
+	# Generate and typecheck REST fixture
+	pkg="$out/default/rest"
+	echo "=== generate-typescript --preset default (REST): ci_rest.cstack -> $pkg ==="
+	cargo run --quiet -p cratestack-cli -- generate-typescript \
+	  --schema "crates/cratestack-client-typescript/tests/fixtures/ci_rest.cstack" \
+	  --out "$pkg" \
+	  --preset default \
+	  --package-name typescript-verify-rest
+	echo "=== npm install and build (typechecks with tsc): $pkg ==="
+	(cd "$pkg" && npm install && npm run build)
+
+	# Generate and typecheck RPC fixture
+	pkg="$out/default/rpc"
+	echo "=== generate-typescript --preset default (RPC): ci_rpc.cstack -> $pkg ==="
+	cargo run --quiet -p cratestack-cli -- generate-typescript \
+	  --schema "crates/cratestack-client-typescript/tests/fixtures/ci_rpc.cstack" \
+	  --out "$pkg" \
+	  --preset default \
+	  --package-name typescript-verify-rpc
+	echo "=== npm install and build (typechecks with tsc): $pkg ==="
+	(cd "$pkg" && npm install && npm run build)
+
+	echo ""
+	echo "✓ TypeScript REST and RPC fixtures generated and typechecked successfully"
+
+# Regenerate the two committed example clients in place (issue #471).
+#
+# `examples/flutter-riverpod/client` (via `generate-dart --preset riverpod`)
+# and `examples/react-vite-swr/client` (via `generate-typescript --preset
+# swr`) are committed generated output, guarded only by a CI `--check` step
+# (the `flutter (flutter-riverpod example)` and `js (react-vite-swr
+# example)` jobs in `.github/workflows/ci.yml`). Before this recipe existed
+# there was no local command that could reconcile a template change
+# against them — the only way to find out a template edit had drifted the
+# committed examples was to push and read CI (see #444/#470/#471).
+#
+# `ci.yml`'s `flutter-riverpod-example`/`react-vite-swr-example` drift-check
+# steps call this same recipe as `just regen-examples --check` — one
+# mechanism, not a hand-copied third invocation — so the recipe and CI
+# cannot copy-paste diverge (same `*args=''` passthrough shape as `check`
+# above, which CI calls as `just check --locked`). Local, no-arg use
+# defaults to write mode.
+#
+# Unlike `verify-dart`/`verify-typescript` above (which generate throwaway
+# packages from fixtures into `target/`), this recipe overwrites the
+# committed example directories directly. Run it with no args, review
+# `git diff`, and commit the result — a non-empty diff on an otherwise-
+# unmodified checkout of `main` means the committed examples have already
+# drifted from their templates.
+regen-examples *args='':
+	cargo run -p cratestack-cli -- generate-dart \
+	  --schema examples/react-vite-swr/schema.cstack \
+	  --out examples/flutter-riverpod/client \
+	  --library-name flutter_riverpod_client \
+	  --preset riverpod {{args}}
+	cargo run -p cratestack-cli -- generate-typescript \
+	  --schema examples/react-vite-swr/schema.cstack \
+	  --out examples/react-vite-swr/client \
+	  --preset swr \
+	  --package-name react-vite-swr-client {{args}}
+
+# Layer-direction check (ADR 0014, docs/adr/0014-layer-direction-enforcement.md)
+# — blocking CI gate. Asserts every NORMAL cratestack-* -> cratestack-* edge
+# among the crates under `crates/` satisfies `dep.layer <= self.layer`
+# against `docs/adr/layers.toml`, with target-gated normal dependencies
+# included and dev-/build-dependencies exempt. Known violations are tracked
+# in `.ci/layer-direction-allowlist.toml` (currently empty — #475, the
+# client-store-{sqlite,redis} -> client-rust back-edge, was the only entry
+# and is fixed) and don't fail the build; an allowlist entry that no longer
+# matches a real violation does. See `.ci/layer-direction-check.sh` for the
+# full rationale.
+verify-layering:
+	./.ci/layer-direction-check.sh
+
+# Workspace-lints opt-in check (cratestack#523) — blocking CI gate. Asserts
+# every root workspace member declares `[lints]\nworkspace = true`, so the
+# root `[workspace.lints.rust] unsafe_code = "forbid"` table (which Cargo
+# otherwise silently ignores for any non-opted-in member) actually applies.
+# The three FFI-boundary crates that manually override `unsafe_code =
+# "allow"` instead (napi-derive/wasm-bindgen trampolines, raw C-ABI
+# exports — Cargo rejects combining `workspace = true` with a per-package
+# override in the same manifest) are checked for that override instead of
+# the opt-in. Standalone example/vitrine workspaces excluded from the root
+# `[workspace] members` list (`cratestack-studio-ui`, the `no-database-
+# verification*` crates, `client-only-verification`) are checked for their
+# own local `[workspace.lints.rust] unsafe_code = "forbid"` declaration,
+# since the root workspace's table can't reach a disjoint workspace. See
+# `.ci/lints-workspace-check.sh` for the full rationale.
+verify-lints-optin:
+	./.ci/lints-workspace-check.sh
+
+# Changelog verification: detect unedited seeds.
+#
+# Ensures that CHANGELOG.md contains no auto-generated seeds with the
+# TODO marker still present. This is load-bearing: an unedited seed reaching
+# main silently degrades the changelog from prose to a commit list, which is
+# worse than today's honest gap (it looks maintained, but isn't).
+#
+# Blocking CI gate for any PR that touches CHANGELOG.md.
+verify-changelog:
+	./.ci/changelog-check.sh
+
+# Test changelog-seed.sh and changelog-check.sh against an isolated sandbox
+# copy of CHANGELOG.md (never the real, tracked file). Wired into CI so the
+# test suite actually runs instead of silently rotting.
+changelog-seed-test:
+	./.ci/changelog-seed-tests.sh
 
 # Bundle the Studio UI for publishing: source tarball (for `studio
 # eject --with-ui`) and the Trunk-built wasm/JS dist (embedded into
@@ -231,25 +669,162 @@ bump NEW:
 	# `perl -i` instead of `sed -i` for portability: BSD sed (macOS)
 	# requires `-i ''` while GNU sed (Linux/CI) rejects the empty arg,
 	# so a single recipe can't satisfy both. perl's in-place edit is
-	# identical across platforms. `\Q...\E` quotemetas the current
-	# version so its dots match literally rather than as `.` wildcards.
+	# identical across platforms. `quotemeta` on the current version makes
+	# its dots match literally rather than as `.` wildcards.
+	#
+	# Scoped to the VALUE OF A `version =` KEY, on either a package-version
+	# line (`^version = "X"`, i.e. the root workspace package and the
+	# excluded studio-ui sibling) or a workspace inter-crate dependency line
+	# (which always carries `path = "crates/"`). Replacing the bare literal
+	# `"X"` everywhere instead — as this recipe used to — also rewrites
+	# unrelated third-party dependencies that happen to sit at the same
+	# version: bumping 0.7.1 -> 0.7.2 turned `serde_urlencoded = "0.7.1"`
+	# (root Cargo.toml) into `"0.7.2"`, which does not exist on crates.io,
+	# and the release failed at `cargo update` with "failed to select a
+	# version for the requirement `serde_urlencoded = ^0.7.2`". The bug is
+	# dormant for most bumps — it only fires when the new workspace version
+	# collides with some dependency's — so scope this narrowly rather than
+	# relying on the collision not recurring.
 	find . -name Cargo.toml \
 	  -not -path './target/*' \
 	  -not -path '*/node_modules/*' \
-	  -print0 | xargs -0 perl -i -pe "s/\Q\"$current\"\E/\"{{NEW}}\"/g"
+	  -print0 | CS_CUR="$current" CS_NEW="{{NEW}}" xargs -0 perl -i -pe '
+	    BEGIN { $cur = quotemeta $ENV{CS_CUR}; $new = $ENV{CS_NEW}; }
+	    if (/^version = "$cur"/ || m{path = "crates/}) {
+	      s/version = "$cur"/version = "$new"/g;
+	    }'
 	# Keep the @cratestack/cli npm wrapper's version (and the release
-	# asset tag it downloads), the @cratestack/api package's version, and
-	# the cratestack-vscode extension's version in lockstep with the
-	# workspace version — scoped to these three package.json files, not
-	# the unrelated example apps'.
-	perl -i -pe "s/\Q\"version\": \"$current\"\E/\"version\": \"{{NEW}}\"/" \
+	# asset tag it downloads), every package in the split @cratestack/api
+	# family (ts-types, link-*, runtime-*, validator-*, adapter-*, and the
+	# api compat shim itself), the @cratestack/cbor family (cbor,
+	# cbor-node, cbor-web), and the cratestack-vscode extension's own
+	# package.json in lockstep with the workspace version — scoped to
+	# these package.json files, not the unrelated example apps'. vscode's
+	# vsix is now built and versioned per release tag (release-vscode.yml
+	# attaches it to the same GitHub Release as the CLI binaries), so it
+	# needs to move in lockstep like the rest, not stay pinned
+	# independently. A single literal-string replace (not just the
+	# `"version": "..."` key) also catches each package's own pinned
+	# `"@cratestack/xyz": "$current"` cross-references to its siblings,
+	# which need to move in lockstep too.
+	perl -i -pe "s/\Q\"$current\"\E/\"{{NEW}}\"/g" \
 	  packages/cratestack-cli-npm/package.json \
 	  packages/cratestack-api/package.json \
+	  packages/cratestack-ts-types/package.json \
+	  packages/cratestack-link-batch/package.json \
+	  packages/cratestack-link-logger/package.json \
+	  packages/cratestack-runtime-fetch/package.json \
+	  packages/cratestack-runtime-axios/package.json \
+	  packages/cratestack-validator-zod/package.json \
+	  packages/cratestack-validator-yup/package.json \
+	  packages/cratestack-adapter-tanstack-query/package.json \
+	  packages/cratestack-adapter-rtk/package.json \
+	  packages/cratestack-cbor/package.json \
+	  packages/cratestack-cbor-node/package.json \
+	  packages/cratestack-cbor-web/package.json \
 	  packages/cratestack-vscode/package.json
+	# Refresh pnpm-lock.yaml so the version-literal edits above (which change
+	# specifiers like `"@cratestack/ts-types": "{{NEW}}"`) are reflected in the
+	# lockfile's `specifier:` entries too — otherwise a later `pnpm install
+	# --frozen-lockfile` (every CI job, including release-cli.yml's npm
+	# publish) fails with ERR_PNPM_OUTDATED_LOCKFILE. CRATESTACK_CLI_SKIP_DOWNLOAD
+	# skips cratestack-cli-npm's postinstall download of a release binary that
+	# doesn't exist yet at bump time (nothing has been tagged/published).
+	# `--no-frozen-lockfile` is required explicitly: pnpm auto-detects CI
+	# environments and defaults to frozen-lockfile there even without the
+	# flag, which would make this step fail on the exact staleness it's
+	# meant to fix (confirmed the hard way — this recipe's own first version
+	# broke `prepare-release.yml`'s "Bump workspace version" step in CI).
+	CRATESTACK_CLI_SKIP_DOWNLOAD=1 pnpm install --no-frozen-lockfile
 	# Refresh Cargo.lock so all entries pick up the new version.
 	# Exclude the Flutter crate (uncommitted frb_generated glue → E0583).
 	cargo check --workspace --exclude embedded_flutter_native --quiet
+	# cratestack-studio-ui is its own separate `[workspace]` (excluded from
+	# the root one so contributors aren't forced onto the wasm32 toolchain),
+	# so it has its own Cargo.lock that the check above never touches. Left
+	# unrefreshed here, it silently drifts stale — its own recorded version
+	# stays behind Cargo.toml's — which then breaks any `--locked` build of
+	# that crate until someone notices and hand-fixes it (see #242). A plain
+	# `cargo check` on the host target is enough to update the lock; it
+	# doesn't need the wasm32 target or a wasm-capable clang for that.
+	#
+	# Subshell, not a bare `cd`: this recipe continues below with more
+	# repo-root-relative paths, and a bare `cd` here leaks its directory
+	# change into every one of them. That is exactly what broke `just bump
+	# 0.7.9` in `prepare-release.yml` — the next line failed with `cd:
+	# examples/no-database-verification: No such file or directory`, because
+	# the shell was still sitting in `crates/cratestack-studio-ui`.
+	(cd crates/cratestack-studio-ui && cargo check --quiet)
+	# `examples/no-database-verification`, `-api`, and
+	# `client-only-verification` are each their own `[workspace]` root
+	# (excluded from the root one so a real `cargo tree` proves facade
+	# disjointness for an external consumer — see their READMEs), so like
+	# cratestack-studio-ui above they have their own Cargo.lock that the
+	# root `cargo check` never touches. Left unrefreshed here, their locked
+	# `cratestack-pg`/`cratestack-api`/`cratestack-client` path-dependency
+	# versions silently drift behind the workspace version, which then
+	# breaks any `--locked` build/`cargo tree` in either directory — this is
+	# exactly the staleness that left them at 0.6.3/0.6.4 against 0.7.8
+	# (cratestack#422), and what CI's `facade-disjointness` job now asserts
+	# against with `cargo metadata --locked`.
+	#
+	# DISCOVERED, NOT LISTED. This used to be three hardcoded `cd` lines
+	# with a comment warning that "every standalone workspace under
+	# examples/ must be listed here; adding one without a line below is a
+	# latent CI break that only fires on the next bump". That is precisely
+	# what happened: `examples/db-transaction-verification` arrived with
+	# cratestack#539, was never added to the list, and v0.7.13 shipped with
+	# its Cargo.lock still pinned to 0.7.12 — turning `main` red on the
+	# `facade-disjointness` job ("cannot update the lock file ... because
+	# --locked was passed") and blocking the next release. A warning
+	# comment is not a mechanism; globbing for `[workspace]` is.
+	#
+	# Subshells (not a bare `cd`) so each step's directory change doesn't
+	# leak into the next, same as the cratestack-studio-ui step above —
+	# every directory-changing step in this recipe must be a subshell, since
+	# each is followed by more repo-root-relative paths. A plain
+	# `cargo check` in each is enough
+	# to refresh the lock; Cargo.lock records the full optional-dependency
+	# graph regardless of which features are active, so this also picks up
+	# the `postgres`-gated cratestack-sqlx entry in no-database-verification
+	# without needing `--features postgres` here.
+	found_standalone=0
+	for manifest in examples/*/Cargo.toml; do
+	  grep -q '^\[workspace\]' "$manifest" || continue
+	  dir=$(dirname "$manifest")
+	  found_standalone=$((found_standalone + 1))
+	  echo "refreshing standalone workspace lockfile: $dir"
+	  (cd "$dir" && cargo check --quiet)
+	done
+	# Positive assertion: if the glob ever matches nothing (layout change,
+	# a `for` loop that silently iterated over a literal `examples/*`),
+	# fail loudly rather than bumping with every standalone lockfile left
+	# stale — the silent-skip failure mode this block exists to prevent.
+	if [ "$found_standalone" -eq 0 ]; then
+	  echo "no standalone [workspace] found under examples/ — the discovery glob is broken" >&2
+	  exit 1
+	fi
 	echo "bumped to {{NEW}}. Review with: git diff -- '**/Cargo.toml' Cargo.lock"
+
+# Seed a CHANGELOG.md section for the given VERSION.
+#
+# Writes a new `## X.Y.Z (YYYY-MM-DD)` section to CHANGELOG.md, positioned
+# above the current newest entry, seeded from the commit range since the last
+# release and grouped by conventional-commit type. The section is marked as
+# unedited (with a placeholder TODO comment) so CI/tooling can detect it and
+# block the merge until a human rewrites it into narrative prose.
+#
+# Usage: `just changelog-seed 0.7.9`
+#
+# Non-negotiables (enforced by the script):
+#   1. Refuse to write if a section for that version already exists
+#   2. The generated section must be detected and rejected by CI if unedited
+#
+# This script mirrors `.github/workflows/prepare-release.yml:202`'s existing
+# commit-range machinery, but outputs to a persistent file instead of
+# discarding it.
+changelog-seed VERSION:
+	./.ci/changelog-seed.sh {{VERSION}}
 
 # Workspace-wide validation gate. Mirrors what `just release` runs
 # before publishing. Skips fmt + clippy because `all-checks` is the
@@ -267,15 +842,8 @@ bump NEW:
 # regularly this is usually masked by leftover build artifacts — it only
 # reliably surfaces on a clean environment (e.g. CI).
 #
-# Test stage is retried up to 3x to absorb known-flaky tests (notably
-# `generated_routes_emit_tracing_events`, which intermittently misses
-# tracing events under workspace concurrency — see its source comment).
-# A genuine regression will fail all 3 attempts and still block the
-# release; only flakes get masked.
-#
 # Emergency override: `SKIP_TESTS=1 just release-check` bypasses the
-# test stage entirely. Use only when you know the failing test is the
-# known flake and you've already verified it passes in isolation.
+# test stage entirely.
 release-check:
 	#!/usr/bin/env bash
 	set -euo pipefail
@@ -285,24 +853,7 @@ release-check:
 	  echo "release-check: SKIP_TESTS=1 — bypassing workspace tests." >&2
 	  exit 0
 	fi
-	attempt=1
-	max=3
-	while [ "$attempt" -le "$max" ]; do
-	  echo ""
-	  echo "=== test attempt $attempt/$max ==="
-	  if cargo test --workspace --exclude embedded_flutter_native; then
-	    exit 0
-	  fi
-	  if [ "$attempt" -eq "$max" ]; then
-	    echo "" >&2
-	    echo "release-check: tests failed after $max attempts." >&2
-	    echo "If you've verified this is a known flake (e.g. tracing event capture)," >&2
-	    echo "rerun with: SKIP_TESTS=1 just release-check" >&2
-	    exit 1
-	  fi
-	  echo "tests failed; retrying ($((attempt + 1))/$max)..."
-	  attempt=$((attempt + 1))
-	done
+	cargo test --workspace --exclude embedded_flutter_native
 
 # Publish every workspace crate to crates.io in dependency order.
 #
@@ -344,14 +895,26 @@ release-publish mode='real':
 	# published anywhere before — see the `--allow-dirty`/dry-run
 	# handling below for why every other crate is structurally
 	# unpackageable in that situation, no matter what flags are passed.
-	topo_output=$(cargo metadata --format-version=1 --no-deps 2>/dev/null | \
+	topo_output=$(cargo metadata --format-version=1 --no-deps | \
 	  python3 -c "$(cat <<'PYEOF'
 	import json, sys, copy
 	m = json.load(sys.stdin)
 	pkgs = {p["name"]: p for p in m["packages"]
 	        if p["name"].startswith("cratestack") and p.get("publish") != []}
+	# `kind == "dev"` is excluded deliberately: a dev-dependency cycle is
+	# legal in Cargo and irrelevant to publish order, because `cargo
+	# publish` never needs a dev-dependency to already exist on the
+	# registry to package a crate. cratestack#540 added
+	# `cratestack-api` as a dev-dependency of `cratestack-macros` (for
+	# the `Authorized`-witness expansion tests) while `cratestack-api`
+	# depends on `cratestack-macros` normally — a legitimate pairing
+	# that this sort previously read as a hard cycle, aborting the
+	# v0.7.13 crates.io publish after npm and the GitHub release had
+	# already gone out. Build dependencies (`kind == "build"`) DO
+	# constrain publish order and are deliberately kept.
 	graph = {n: {d["name"] for d in p["dependencies"]
-	             if d["name"] in pkgs and d["name"] != n}
+	             if d["name"] in pkgs and d["name"] != n
+	             and d.get("kind") != "dev"}
 	         for n, p in pkgs.items()}
 	dry_safe = sorted(n for n, d in graph.items() if not d)
 	order, remaining = [], copy.deepcopy(graph)

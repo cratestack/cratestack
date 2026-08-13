@@ -31,6 +31,21 @@ pub enum ApiError {
     Unsupported(&'static str),
     #[error("target is read-only")]
     Forbidden,
+    /// A `[target.db]` write to a model carrying `@version` and/or
+    /// `@@emit(...)` was refused because the target hasn't opted into
+    /// `allow_unsafe_writes` (cratestack#507). Direct SQL bypasses the
+    /// descriptor path the generated server runs, so it neither bumps
+    /// `@version` columns nor writes `cratestack_event_outbox` rows —
+    /// silently, unless refused here.
+    #[error(
+        "target '{target}' would write model '{model}' straight to SQL, bypassing {annotations}; \
+         set `allow_unsafe_writes = true` on this target's [target.db] to opt in"
+    )]
+    UnsafeDbWrite {
+        target: String,
+        model: String,
+        annotations: String,
+    },
     #[error("payload failed validation")]
     Validation(Vec<FieldError>),
     #[error("invalid request body: {0}")]
@@ -55,6 +70,7 @@ impl ApiError {
             ApiError::BadRequest(_) => StatusCode::BAD_REQUEST,
             ApiError::Unsupported(_) => StatusCode::NOT_IMPLEMENTED,
             ApiError::Forbidden => StatusCode::FORBIDDEN,
+            ApiError::UnsafeDbWrite { .. } => StatusCode::FORBIDDEN,
             ApiError::Validation(_) => StatusCode::UNPROCESSABLE_ENTITY,
             ApiError::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,
             ApiError::Upstream(_) => StatusCode::BAD_GATEWAY,
@@ -73,6 +89,7 @@ impl ApiError {
             ApiError::BadRequest(_) => "BAD_REQUEST",
             ApiError::Unsupported(_) => "UNSUPPORTED",
             ApiError::Forbidden => "FORBIDDEN",
+            ApiError::UnsafeDbWrite { .. } => "UNSAFE_DB_WRITE",
             ApiError::Validation(_) => "VALIDATION_ERROR",
             ApiError::Database(_) => "DATABASE_ERROR",
             ApiError::Upstream(_) => "UPSTREAM_ERROR",
@@ -95,6 +112,7 @@ impl From<DataError> for ApiError {
             DataError::Forbidden => ApiError::Forbidden,
             DataError::Validation(errors) => ApiError::Validation(errors),
             DataError::Db(e) => ApiError::Database(e.to_string()),
+            DataError::EventOutbox(e) => ApiError::Database(e.to_string()),
             DataError::Sqlite(e) => ApiError::Database(e.to_string()),
             DataError::Api(e) => ApiError::Upstream(e.to_string()),
             DataError::BlockingJoin(msg) => ApiError::Internal(msg),

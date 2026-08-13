@@ -4,9 +4,11 @@ use cratestack_core::Schema;
 use rusqlite::Connection;
 
 use super::SqliteSource;
+use super::preview;
 use super::sql::{build_json_object, build_list_sql};
 use crate::data::PageRequest;
-use crate::data::model_info::{PkCast, resolve_model};
+use crate::data::model_info::{PkCast, resolve_model, version_column};
+use crate::data::{Row, SqlOp};
 
 fn parse(text: &str) -> Schema {
     cratestack_parser::parse_schema(text).expect("schema parses")
@@ -170,4 +172,111 @@ async fn follow_returns_rows_matching_filter_column() {
         .collect();
     assert!(titles.contains(&"first"));
     assert!(titles.contains(&"second"));
+}
+
+const VERSIONED_SCHEMA: &str = r#"
+    model Widget {
+      id String @id
+      version Int @version
+      name String
+    }
+"#;
+
+/// cratestack#507 post-merge regression (found in review of PR #553):
+/// same defect as the Postgres twin — `preview_sql` always runs with
+/// `payload = None`, and `SqlOp::Create`'s no-payload branch used to
+/// seed `@version` to 0 *in addition to* the sample columns already
+/// including it, producing `INSERT INTO "widgets" ("id", "version",
+/// "name", "version") ...`, which SQLite rejects ("duplicate column
+/// name").
+#[test]
+fn create_preview_with_no_payload_names_version_column_once() {
+    let schema = parse(VERSIONED_SCHEMA);
+    let (model, info) = resolve_model(&schema, "Widget").unwrap();
+    let version_col = version_column(model);
+    let rendered = preview::render(&info, version_col.as_deref(), SqlOp::Create, None, None);
+    let column_list = rendered
+        .sql
+        .split("VALUES")
+        .next()
+        .expect("insert has a VALUES clause");
+    assert_eq!(
+        column_list.matches(r#""version""#).count(),
+        1,
+        "version column must be named exactly once in the INSERT column list: {}",
+        rendered.sql
+    );
+}
+
+/// Same defect, `SqlOp::Update` shape: two SET assignments to the
+/// same `version` column.
+#[test]
+fn update_preview_with_no_payload_sets_version_column_once() {
+    let schema = parse(VERSIONED_SCHEMA);
+    let (model, info) = resolve_model(&schema, "Widget").unwrap();
+    let version_col = version_column(model);
+    let rendered = preview::render(
+        &info,
+        version_col.as_deref(),
+        SqlOp::Update,
+        Some("w1"),
+        None,
+    );
+    assert_eq!(
+        rendered.sql.matches(r#""version" = "#).count(),
+        1,
+        "version column must be SET exactly once: {}",
+        rendered.sql
+    );
+}
+
+/// Guards against overcorrecting: `build_payload_bindings` already
+/// strips `@version` from a real payload, so a `Some(payload)` preview
+/// must still seed it exactly once on `Create`.
+#[test]
+fn create_preview_with_payload_still_seeds_version_column() {
+    let schema = parse(VERSIONED_SCHEMA);
+    let (model, info) = resolve_model(&schema, "Widget").unwrap();
+    let version_col = version_column(model);
+    let payload: Row = serde_json::from_value(serde_json::json!({ "name": "gadget" })).unwrap();
+    let rendered = preview::render(
+        &info,
+        version_col.as_deref(),
+        SqlOp::Create,
+        None,
+        Some(&payload),
+    );
+    let column_list = rendered
+        .sql
+        .split("VALUES")
+        .next()
+        .expect("insert has a VALUES clause");
+    assert_eq!(
+        column_list.matches(r#""version""#).count(),
+        1,
+        "{}",
+        rendered.sql
+    );
+}
+
+/// Same guard for `Update`: a real payload must still get the bump.
+#[test]
+fn update_preview_with_payload_still_bumps_version_column() {
+    let schema = parse(VERSIONED_SCHEMA);
+    let (model, info) = resolve_model(&schema, "Widget").unwrap();
+    let version_col = version_column(model);
+    let payload: Row = serde_json::from_value(serde_json::json!({ "name": "gadget" })).unwrap();
+    let rendered = preview::render(
+        &info,
+        version_col.as_deref(),
+        SqlOp::Update,
+        Some("w1"),
+        Some(&payload),
+    );
+    assert_eq!(
+        rendered.sql.matches(r#""version" = "#).count(),
+        1,
+        "{}",
+        rendered.sql
+    );
 }

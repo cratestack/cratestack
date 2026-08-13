@@ -1,5 +1,4 @@
-use cratestack_axum::ratelimit::RateLimitDecision;
-use cratestack_core::CoolError;
+use cratestack_core::{CoolError, RateLimitDecision};
 use redis::Value as RedisValue;
 
 pub(super) fn parse_consume_outcome(value: RedisValue) -> Result<RateLimitDecision, CoolError> {

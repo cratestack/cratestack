@@ -16,6 +16,7 @@ mod scoped_find_many_projected;
 mod scoped_find_many_with;
 mod scoped_find_unique;
 mod scoped_update_many;
+mod scoped_upsert;
 mod scoped_writes;
 mod view;
 
@@ -31,7 +32,6 @@ pub use scoped_find_many_projected::ScopedProjectedFindMany;
 pub use scoped_find_many_with::ScopedFindManyWith;
 pub use scoped_find_unique::{ScopedFindUnique, ScopedProjectedFindUnique};
 pub use scoped_update_many::{ScopedUpdateMany, ScopedUpdateManySet};
-pub use scoped_writes::{
-    ScopedCreateRecord, ScopedUpdateRecord, ScopedUpdateRecordSet, ScopedUpsertRecord,
-};
+pub use scoped_upsert::{ScopedUpsertRecord, ScopedUpsertRecordDoNothing};
+pub use scoped_writes::{ScopedCreateRecord, ScopedUpdateRecord, ScopedUpdateRecordSet};
 pub use view::{ViewDelegate, ViewDelegateNoUnique};

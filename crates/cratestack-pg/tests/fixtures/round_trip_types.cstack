@@ -1,0 +1,84 @@
+// Round-trip fixture for cratestack#232 — every entry in
+// `cratestack_parser::builtin_type_names()` except `Page` (which is only
+// valid as a procedure return type, never a plain field type — see
+// `validate_type_ref` in cratestack-parser), crossed with
+// {Required, Optional} arity, plus a declared enum crossed with the same
+// two arities.
+//
+// See `../round_trip_types.rs` for the test: it parses *this exact file*
+// independently, runs it through `cratestack_migrate::diff` +
+// `emit::postgres` to get real emitted DDL (not hand-written SQL, unlike
+// every other fixture in this directory), applies that DDL to a live
+// Postgres, writes through the generated `Create...Input` path, and reads
+// back through the generated decoder.
+//
+// Split into two models rather than one model carrying all 21 fields:
+// `RoundTripScalar` (the 9 non-enum builtins usable at Required arity,
+// plus `Json` which is Required-capable on this backend — see below) and
+// `RoundTripEnum` (the declared enum). That way a storage disagreement
+// isolated to enum columns (exactly what #228 was) fails only the enum
+// test and doesn't block verifying the other scalars in the same run.
+//
+// `jsonReq`/`jsonOpt` are both present here (Postgres backend only): the
+// generated model struct derives `Default` (needed for column-projection
+// placeholders), and on this backend `Json` resolves to
+// `cratestack_sqlx::Json<T>` (cratestack#162 — a local newtype with its
+// own plain-JSON jsonb codec, not a re-export of `sqlx::types::Json<T>`),
+// which derives `Default` conditionally on `T: Default` — satisfied here
+// since `cratestack::Value` implements `Default`. The embedded/SQLite
+// mirror of this fixture omits `jsonReq`:
+// there, `Json` resolves to `cratestack_core::Json<T>`, which has no
+// `Default` impl at all, so a *required* `Json` field fails to compile
+// there today (a real, independently-confirmed backend asymmetry — filed
+// separately, unrelated to the emitter/decoder storage-mapping gap #232
+// is about).
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+enum RoundTripStatus {
+  Active
+  Inactive
+}
+
+model RoundTripScalar {
+  id Int @id
+  stringReq String
+  stringOpt String?
+  cuidReq Cuid
+  cuidOpt Cuid?
+  intReq Int
+  intOpt Int?
+  floatReq Float
+  floatOpt Float?
+  booleanReq Boolean
+  booleanOpt Boolean?
+  dateTimeReq DateTime
+  dateTimeOpt DateTime?
+  decimalReq Decimal
+  decimalOpt Decimal?
+  jsonReq Json
+  jsonOpt Json?
+  bytesReq Bytes
+  bytesOpt Bytes?
+  uuidReq Uuid
+  uuidOpt Uuid?
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}
+
+model RoundTripEnum {
+  id Int @id
+  statusReq RoundTripStatus
+  statusOpt RoundTripStatus?
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}

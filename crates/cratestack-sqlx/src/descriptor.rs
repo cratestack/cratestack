@@ -1,15 +1,21 @@
+mod event_outbox;
+
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use crate::sqlx;
 
 use cratestack_core::{
-    CoolError, CoolEventBus, CoolEventEnvelope, CoolEventFuture, ModelEventKind,
+    AuditSink, CoolError, CoolEventBus, CoolEventEnvelope, CoolEventFuture, ModelEventKind,
+    NoopAuditSink, SubscriptionHandle,
 };
 
 use crate::error::cool_error_from_sqlx;
+use event_outbox::EventOutboxRow;
 
-#[derive(Debug, Clone)]
+pub use event_outbox::{enqueue_event_outbox, ensure_event_outbox_table};
+
+#[derive(Clone)]
 pub struct SqlxRuntime {
     pool: sqlx::PgPool,
     events: CoolEventBus,
@@ -20,6 +26,34 @@ pub struct SqlxRuntime {
     // the first call, which is what self-deadlocked chained
     // `run_in_tx` audit writes in a caller-managed transaction.
     audit_table_ensured: Arc<AtomicBool>,
+    // Installation point for cratestack#473: defaults to `NoopAuditSink`
+    // so existing callers of `new()` see no behavior change. Installed
+    // via `with_audit_sink` (mirrors `IdempotencyLayer::new`/
+    // `with_principal_fingerprint`'s builder shape). The DB write in
+    // `crate::audit::enqueue_audit_event` remains the sole source of
+    // truth; this is a best-effort downstream projection dispatched
+    // from `crate::audit::dispatch_audit_sink` after the owning
+    // transaction commits.
+    audit_sink: Arc<dyn AuditSink>,
+}
+
+// `dyn AuditSink` has no `Debug` bound (matching `IdempotencyStore` /
+// `RateLimitStore`, neither of which require one either), so this can't
+// be `#[derive(Debug)]` — same reason `CoolEventBus` hand-rolls its own
+// `Debug` impl instead of deriving one.
+impl std::fmt::Debug for SqlxRuntime {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SqlxRuntime")
+            .field("pool", &self.pool)
+            .field("events", &self.events)
+            .field(
+                "audit_table_ensured",
+                &self
+                    .audit_table_ensured
+                    .load(std::sync::atomic::Ordering::Relaxed),
+            )
+            .finish_non_exhaustive()
+    }
 }
 
 impl SqlxRuntime {
@@ -28,6 +62,7 @@ impl SqlxRuntime {
             pool,
             events: CoolEventBus::default(),
             audit_table_ensured: Arc::new(AtomicBool::new(false)),
+            audit_sink: Arc::new(NoopAuditSink),
         }
     }
 
@@ -39,12 +74,41 @@ impl SqlxRuntime {
         &self.audit_table_ensured
     }
 
+    /// Install a custom [`AuditSink`] that every `@@audit` mutation on
+    /// this runtime fans out to, in addition to the in-database
+    /// `cratestack_audit` table row `enqueue_audit_event` always
+    /// writes. Composable via [`cratestack_core::MulticastAuditSink`]
+    /// for more than one downstream (Kafka, Redis pubsub, a webhook —
+    /// this crate ships none of them; see `AuditSink`'s doc comment).
+    pub fn with_audit_sink(mut self, sink: Arc<dyn AuditSink>) -> Self {
+        self.audit_sink = sink;
+        self
+    }
+
+    pub(crate) fn audit_sink(&self) -> &Arc<dyn AuditSink> {
+        &self.audit_sink
+    }
+
     #[doc(hidden)]
-    pub fn subscribe<F>(&self, model: &'static str, operation: ModelEventKind, handler: F)
+    pub fn subscribe<F>(
+        &self,
+        model: &'static str,
+        operation: ModelEventKind,
+        handler: F,
+    ) -> SubscriptionHandle
     where
         F: Fn(CoolEventEnvelope) -> CoolEventFuture + Send + Sync + 'static,
     {
-        self.events.subscribe(model, operation, handler);
+        self.events.subscribe(model, operation, handler)
+    }
+
+    /// An owned, cheaply-cloneable handle onto the underlying
+    /// `CoolEventBus` — needed by callers (e.g. `@@subscribe` SSE
+    /// dispatch, cratestack#390) that outlive the `&SqlxRuntime` borrow
+    /// `subscribe`/`unsubscribe` would otherwise require.
+    #[doc(hidden)]
+    pub fn events_bus(&self) -> CoolEventBus {
+        self.events.clone()
     }
 
     #[doc(hidden)]
@@ -95,98 +159,4 @@ impl SqlxRuntime {
 
         Ok(delivered)
     }
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct EventOutboxRow {
-    pub(crate) event_id: uuid::Uuid,
-    pub(crate) model: String,
-    pub(crate) operation: String,
-    pub(crate) occurred_at: chrono::DateTime<chrono::Utc>,
-    pub(crate) payload: serde_json::Value,
-    pub(crate) attempts: i64,
-    pub(crate) last_error: Option<String>,
-}
-
-// Hand-written `FromRow` impl. We can't use `#[derive(sqlx::FromRow)]` because
-// the derive macro hardcodes `::sqlx::*` paths that don't resolve through our
-// `crate::sqlx` shim (the shim is module-scoped, not crate-aliased).
-impl<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> for EventOutboxRow {
-    fn from_row(row: &'r sqlx::postgres::PgRow) -> Result<Self, sqlx::Error> {
-        use sqlx::Row;
-        Ok(Self {
-            event_id: row.try_get("event_id")?,
-            model: row.try_get("model")?,
-            operation: row.try_get("operation")?,
-            occurred_at: row.try_get("occurred_at")?,
-            payload: row.try_get("payload")?,
-            attempts: row.try_get("attempts")?,
-            last_error: row.try_get("last_error")?,
-        })
-    }
-}
-
-impl EventOutboxRow {
-    pub(crate) fn try_into_envelope(self) -> Result<CoolEventEnvelope, CoolError> {
-        let _ = self.attempts;
-        let _ = &self.last_error;
-        Ok(CoolEventEnvelope {
-            event_id: self.event_id,
-            model: self.model,
-            operation: ModelEventKind::parse(&self.operation)?,
-            occurred_at: self.occurred_at,
-            data: self.payload,
-        })
-    }
-}
-
-pub(crate) async fn ensure_event_outbox_table<'e, E>(executor: E) -> Result<(), CoolError>
-where
-    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
-{
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS cratestack_event_outbox (\
-            event_id UUID PRIMARY KEY, \
-            model TEXT NOT NULL, \
-            operation TEXT NOT NULL, \
-            occurred_at TIMESTAMPTZ NOT NULL, \
-            payload JSONB NOT NULL, \
-            delivered_at TIMESTAMPTZ, \
-            attempts BIGINT NOT NULL DEFAULT 0, \
-            last_error TEXT\
-        )",
-    )
-    .execute(executor)
-    .await
-    .map_err(cool_error_from_sqlx)?;
-
-    Ok(())
-}
-
-pub(crate) async fn enqueue_event_outbox<'e, E, T>(
-    executor: E,
-    model: &'static str,
-    operation: ModelEventKind,
-    data: &T,
-) -> Result<(), CoolError>
-where
-    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
-    T: serde::Serialize,
-{
-    let payload = serde_json::to_value(data)
-        .map_err(|error| CoolError::Codec(format!("failed to encode event payload: {error}")))?;
-    sqlx::query(
-        "INSERT INTO cratestack_event_outbox (event_id, model, operation, occurred_at, payload) \
-         VALUES ($1, $2, $3, $4, $5)",
-    )
-    .bind(uuid::Uuid::new_v4())
-    .bind(model)
-    .bind(operation.as_str())
-    .bind(chrono::Utc::now())
-    .bind(payload)
-    .execute(executor)
-    .await
-    .map_err(cool_error_from_sqlx)?;
-
-    Ok(())
 }

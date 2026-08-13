@@ -1,0 +1,296 @@
+name: Quality
+
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+  schedule:
+    # Weekly scan: Sundays 02:00 UTC
+    - cron: "0 2 * * 0"
+  workflow_dispatch:
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  # Required by github/codeql-action/upload-sarif in the optional Code
+  # Scanning step below (only runs when vars.ENABLE_CODE_SCANNING is set).
+  security-events: write
+
+jobs:
+  quality-checks:
+    name: quality
+    runs-on: ubuntu-latest
+
+    steps:
+      # Fetch full history so reviewdog can calculate PR diffs correctly
+      # actions/checkout v6.1.0
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+
+      # ====================================================================
+      # Install scanners
+      #
+      # "Offline" for this pipeline means no centralized SaaS quality
+      # platform (no SonarQube server) — not zero network access. GitHub
+      # Actions and the tools below still need outbound access to fetch
+      # their own pinned releases, same as any other action in this repo.
+      # Every install below is pinned to an exact version/SHA, never a
+      # floating tag.
+      # ====================================================================
+
+      # taiki-e/install-action v2.85.2 — already used elsewhere in this
+      # repo (ci.yml, for `just`/`trunk`); installs prebuilt binaries, no
+      # compiling from source.
+      - name: Install trivy, cargo-audit, cargo-deny
+        uses: taiki-e/install-action@41049aa56687c35e0afa74eed4f09cec4f9afabf
+        with:
+          tool: trivy,cargo-audit,cargo-deny
+
+      # reviewdog/action-setup v1.5.0 — official installer for the
+      # reviewdog CLI itself (distinct from the scanner-specific reporting
+      # actions below; this just puts the `reviewdog` binary on PATH).
+      - name: Install reviewdog
+        uses: reviewdog/action-setup@d8a7baabd7f3e8544ee4dbde3ee41d0011c3a93f
+        with:
+          reviewdog_version: v0.20.3
+
+      # actions/setup-python v7.0.0 + a version-pinned pip install. Semgrep
+      # ships prebuilt wheels for Linux, so this doesn't compile anything;
+      # there's no widely-used dedicated "setup semgrep" action, and this is
+      # the pattern Semgrep's own docs recommend for non-SaaS CI usage.
+      - name: Set up Python for Semgrep
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+
+      - name: Install Semgrep
+        run: pip install semgrep==1.171.0
+
+      # gitleaks has no viable action to install just the CLI: the official
+      # gitleaks/gitleaks-action is, as of v3, a commercial product under a
+      # proprietary EULA (not open source), and taiki-e/install-action's
+      # tool list doesn't include it (it's a Go binary, not a Rust crate, so
+      # its cargo-binstall fallback doesn't apply either). The underlying
+      # gitleaks CLI itself is still free and MIT-licensed, so install that
+      # directly from its GitHub Releases, pinned to an exact version and
+      # verified against its published sha256 checksum.
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          GITLEAKS_VERSION="8.30.1"
+          GITLEAKS_SHA256="551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+          curl -sSL -o /tmp/gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+
+      # actionlint has the same "no trustworthy dedicated action" situation
+      # as gitleaks: third-party "setup-actionlint" marketplace actions are
+      # low-visibility, unaudited projects. actionlint itself publishes
+      # checksummed releases, so install that directly, pinned + verified.
+      - name: Install actionlint
+        run: |
+          set -euo pipefail
+          ACTIONLINT_VERSION="1.7.12"
+          ACTIONLINT_SHA256="8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+          curl -sSL -o /tmp/actionlint.tar.gz \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  /tmp/actionlint.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
+          sudo install -m 0755 /tmp/actionlint /usr/local/bin/actionlint
+
+      # ====================================================================
+      # Verify the install steps above actually worked
+      #
+      # Every tool checked here was just installed a few steps up, so unlike
+      # the old self-hosted-runner design, a missing tool here is never
+      # "not provisioned yet" — it means one of the install steps silently
+      # failed, and the job should stop with a clear message rather than
+      # let every scanner below degrade to a "not found" skip.
+      # ====================================================================
+
+      - name: Verify toolchain
+        run: |
+          set -euo pipefail
+
+          echo "Checking installed tools..."
+          FAILED=0
+
+          check_tool() {
+            local name="$1"
+            local version_cmd="$2"
+            if ! command -v "$name" &> /dev/null; then
+              echo "error: $name not found — its install step above must have failed"
+              FAILED=1
+            else
+              echo "✓ $name $(eval "$version_cmd" 2>&1 | head -1)"
+            fi
+          }
+
+          check_tool semgrep "semgrep --version"
+          check_tool gitleaks "gitleaks version"
+          check_tool trivy "trivy version | grep Version"
+          check_tool cargo-audit "cargo audit --version"
+          # cargo subcommands are separate binaries (cargo-<name>) on PATH;
+          # checking `cargo` itself would not catch cargo-deny specifically
+          # missing.
+          check_tool cargo-deny "cargo deny --version"
+          check_tool actionlint "actionlint -version"
+          check_tool reviewdog "reviewdog -version"
+          check_tool python3 "python3 --version"
+
+          if [[ "$FAILED" -ne 0 ]]; then
+            echo ""
+            echo "One or more tool installs failed — see the install steps above for the actual error."
+            exit 1
+          fi
+
+      # ====================================================================
+      # Run quality checks
+      # ====================================================================
+
+      - name: Run quality checks
+        run: .ci/quality/run.sh
+        env:
+          # Set scan type based on trigger
+          SCAN_TYPE: ${{ github.event_name == 'pull_request' && 'pr' || 'full' }}
+
+      # ====================================================================
+      # Publish reports as artifacts
+      # ====================================================================
+
+      - name: Upload SARIF reports
+        if: always()
+        # actions/upload-artifact v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: quality-reports
+          path: .ci/quality/reports/
+          retention-days: 30
+
+      # ====================================================================
+      # Run quality gate
+      # ====================================================================
+
+      - name: Quality gate
+        if: always()
+        run: .ci/quality/gate.sh
+
+      # ====================================================================
+      # Publish PR review comments via reviewdog
+      #
+      # Invokes the reviewdog CLI directly (installed via reviewdog/action-setup
+      # above) — never the reviewdog hosted service/GitHub App. Confirmed via
+      # reviewdog's own source (cmd/reviewdog/doghouse.go: skipDoghouseServer())
+      # that both reporters below always take the direct-GitHub-API path when
+      # run inside GitHub Actions without REVIEWDOG_TOKEN set, never doghouse.
+      #
+      # -f=sarif            parse the merged SARIF as input
+      # -reporter=github-pr-review   post actual PR review comments, one per
+      #                      finding, visible under the PR's Conversation tab
+      #                      (unlike github-pr-check, which only posts Check
+      #                      Run annotations under Checks/Files-changed).
+      #                      Unlike github-pr-check, github-pr-review has NO
+      #                      built-in fork-safe fallback (confirmed by reading
+      #                      reviewdog's source: only the github-check/
+      #                      github-pr-check case has fork-degradation logic;
+      #                      github-pr-review would just fail to post when
+      #                      GITHUB_TOKEN is read-only on a fork PR). So fork
+      #                      PRs are detected explicitly below and degraded to
+      #                      github-pr-annotations instead — plain GitHub
+      #                      Actions log annotations, which need no write
+      #                      permission at all (confirmed: its diff service
+      #                      falls back to local git CLI, and its comment
+      #                      service just prints `::error file=...::` lines).
+      #                      No pull_request_target is used here, so
+      #                      untrusted fork code is never checked out or
+      #                      executed with elevated permissions either way.
+      # -filter-mode=added  only consider added/modified lines in the diff
+      # -fail-level=error   exit non-zero only for error-level findings on
+      #                      added lines; warnings/notes are reported but
+      #                      never fail the check
+      # ====================================================================
+
+      - name: Post PR review via reviewdog
+        if: github.event_name == 'pull_request' && always()
+        run: |
+          set -uo pipefail
+
+          if ! command -v reviewdog &> /dev/null; then
+            echo "::warning::reviewdog not found on this runner; skipping PR review. See .ci/quality/TOOLCHAIN.md for provisioning."
+            exit 0
+          fi
+
+          REPORTER=github-pr-review
+          if [[ "$IS_FORK_PR" == "true" ]]; then
+            echo "::notice::Fork PR — GITHUB_TOKEN is read-only here, so degrading to log annotations instead of PR review comments."
+            REPORTER=github-pr-annotations
+          fi
+
+          reviewdog \
+            -f=sarif \
+            -reporter="$REPORTER" \
+            -filter-mode=added \
+            -fail-level=error \
+            < .ci/quality/reports/quality.sarif
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IS_FORK_PR: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+
+      # ====================================================================
+      # Optional: Upload to GitHub Code Scanning
+      # (Only on main branch when explicitly enabled)
+      # ====================================================================
+
+      - name: Upload to GitHub Code Scanning
+        if: |
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          vars.ENABLE_CODE_SCANNING == 'true' &&
+          always()
+        # github/codeql-action v3.37.3
+        uses: github/codeql-action/upload-sarif@f081e69141f6ea0aa740920b0c7012cd81a4fbe6
+        with:
+          sarif_file: .ci/quality/reports/quality.sarif
+          category: quality-offline-pipeline
+
+      # ====================================================================
+      # Summary
+      # ====================================================================
+
+      - name: Print summary
+        if: always()
+        run: |
+          cat > /tmp/summary.md << 'EOF'
+          ## Quality Checks Summary
+
+          **Merged SARIF Report:** `.ci/quality/reports/quality.sarif`
+
+          **Individual Tool Reports:**
+          - Semgrep: `.ci/quality/reports/semgrep.sarif`
+          - Gitleaks: `.ci/quality/reports/gitleaks.sarif`
+          - cargo audit: `.ci/quality/reports/cargo-audit.txt`
+          - cargo deny: `.ci/quality/reports/cargo-deny.txt`
+          - Trivy config: `.ci/quality/reports/trivy-config.sarif`
+
+          **Run Locally:**
+          ```bash
+          .ci/quality/run.sh
+          ```
+
+          **View Reports:**
+          - Artifacts → quality-reports
+          - Or: https://github.com/${{ github.repository }}/security/code-scanning (if enabled)
+
+          **Suppress Findings:**
+          See `.ci/baselines/README.md` for baseline management.
+          EOF
+
+          cat /tmp/summary.md >> "$GITHUB_STEP_SUMMARY"

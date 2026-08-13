@@ -1,0 +1,19 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+extension pgvector {
+}
+
+model Document {
+  id Int @id
+  label String
+  embedding Vector(3)
+
+  @@allow("read", auth() != null)
+}

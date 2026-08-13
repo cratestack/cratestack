@@ -8,6 +8,8 @@ pub use read::{
     Aggregate, AggregateColumn, AggregateCount, FindMany, FindManyWith, FindUnique,
     ProjectedFindMany, ProjectedFindUnique,
 };
+#[cfg(test)]
+pub(crate) use support::evaluate_input_predicate_for_tests;
 #[allow(unused_imports)]
 pub(crate) use support::{
     ReadPolicyKind, apply_create_defaults, auth_value_to_sql, authorize_record_action,
@@ -18,6 +20,7 @@ pub(crate) use support::{
 #[allow(unused_imports)]
 pub use write::{
     CreateRecord, DeleteMany, DeleteRecord, UpdateMany, UpdateManySet, UpdateRecord,
-    UpdateRecordSet, UpsertRecord, create_record_with_executor, render_update_many_preview_sql,
-    render_update_preview_sql, update_record_with_executor,
+    UpdateRecordSet, UpsertOutcome, UpsertRecord, UpsertRecordDoNothing,
+    create_record_with_executor, render_update_many_preview_sql, render_update_preview_sql,
+    update_record_with_executor,
 };

@@ -2,17 +2,21 @@
 name = "embedded-browser-webpack-example"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 publish = false
 description = "Browser-targeted embedded SQLite example built on cratestack-rusqlite + include_embedded_schema!. Compiles to wasm32-unknown-unknown; the Webpack 5/TypeScript frontend loads the wasm bundle inside a Dedicated Worker and persists data via OPFS. Same Rust source as embedded-browser-vite — only the bundler differs."
+
+[lints]
+workspace = true
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 chrono = { workspace = true }
-cratestack = { package = "cratestack-sqlite", path = "../../crates/cratestack-sqlite", version = "0.4.4" }
-cratestack-macros = { path = "../../crates/cratestack-macros", version = "0.4.4" }
-cratestack-rusqlite = { path = "../../crates/cratestack-rusqlite", version = "0.4.4" }
+cratestack = { package = "cratestack-sqlite", path = "../../crates/cratestack-sqlite" }
+cratestack-macros = { path = "../../crates/cratestack-macros" }
+cratestack-rusqlite = { path = "../../crates/cratestack-rusqlite" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true, features = ["js"] }

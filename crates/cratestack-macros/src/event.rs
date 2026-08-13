@@ -43,9 +43,40 @@ pub(crate) fn generate_event_module(models: &[Model]) -> Result<proc_macro2::Tok
                     Self { runtime }
                 }
 
-                #[doc = "Drains pending model events from the transactional outbox."]
+                /// Drains pending model events from the transactional
+                /// outbox, delivering each to its subscribed handler(s)
+                /// and marking it delivered.
+                ///
+                /// **This is also the `@@emit` opt-in for a `run_in_tx`
+                /// caller (cratestack#534).** `run_in_tx` write builders
+                /// enqueue their outbox row inside the caller's
+                /// transaction (same in-transaction guarantee as the
+                /// `cratestack_audit` row), but never drain it — same
+                /// reason they never dispatch to an `AuditSink` either:
+                /// there's no reliable "after commit" point inside this
+                /// crate when the caller owns the commit. Unlike audit
+                /// dispatch, closing this needed no new method: drain
+                /// re-scans for anything not yet marked delivered rather
+                /// than requiring a specific event handed back, so this
+                /// pre-existing method (cratestack#390) already serves as
+                /// the caller-driven opt-in — call it once, after your own
+                /// `tx.commit()` succeeds. See
+                /// `Cratestack::dispatch_audit_sink`'s doc comment for the
+                /// audit-table equivalent, which did need a new method
+                /// because the events themselves have to come back from
+                /// `run_in_tx`.
                 pub async fn drain(&self) -> Result<usize, ::cratestack::CoolError> {
                     self.runtime.drain_event_outbox().await
+                }
+
+                /// Internal-only: an owned handle onto the underlying
+                /// `CoolEventBus`, for generated code (`@@subscribe` SSE
+                /// dispatch, cratestack#390) that needs to build a
+                /// `SubscriptionGuard` outliving this borrowed
+                /// `Subscriptions<'a>`. Not part of the public API.
+                #[doc(hidden)]
+                pub fn __event_bus(&self) -> ::cratestack::CoolEventBus {
+                    self.runtime.events_bus()
                 }
 
                 #(#methods)*
@@ -107,7 +138,7 @@ fn generate_model_event_methods(model: &Model) -> Result<proc_macro2::TokenStrea
 
             quote! {
                 #docs
-                pub fn #method_ident<F, Fut>(&self, handler: F)
+                pub fn #method_ident<F, Fut>(&self, handler: F) -> ::cratestack::SubscriptionHandle
                 where
                     F: Fn(#alias_ident) -> Fut + Send + Sync + 'static,
                     Fut: ::core::future::Future<Output = Result<(), ::cratestack::CoolError>>
@@ -121,7 +152,7 @@ fn generate_model_event_methods(model: &Model) -> Result<proc_macro2::TokenStrea
                             let typed = <::cratestack::ModelEvent<super::models::#model_ident> as ::core::convert::TryFrom<::cratestack::CoolEventEnvelope>>::try_from(event)?;
                             (handler)(typed).await
                         })
-                    });
+                    })
                 }
             }
         })

@@ -20,6 +20,19 @@
 //! [dependencies]
 //! cratestack = { package = "cratestack-pg", version = "0.4" }
 //! ```
+//!
+//! `sqlx`/`cratestack-sqlx` sit behind the default-on `postgres` Cargo
+//! feature (cratestack#329). A `db = None`-only consumer
+//! (`include_server_schema!(schema, db = None)`, cratestack#328) can drop
+//! `sqlx` from its dependency graph entirely:
+//!
+//! ```toml
+//! [dependencies]
+//! cratestack = { package = "cratestack-pg", version = "0.4", default-features = false }
+//! ```
+//!
+//! See `docs/design/no-database-mode.md` for when `db = None` applies and
+//! what it gives up.
 
 // Both `cratestack_core` and `cratestack_axum` expose `codec` and
 // `transport` modules, and the facade re-exports both crates with a glob.
@@ -28,9 +41,34 @@
 // rather than dropping either glob.
 #![allow(ambiguous_glob_reexports)]
 
+// Re-exported so the axum dispatch tokens `cratestack-macros` generates
+// for `@stream` procedures (`crate::axum::procedure::invoke_call`) can
+// reference `::cratestack::async_stream::stream!` without every
+// consumer adding `async-stream` to their own `Cargo.toml`. Needed
+// because the `ProcedureRegistry` trait method's `db`/`ctx` parameters
+// are borrowed (`&Cratestack`/`&CoolContext`), and — per return-position
+// `impl Trait` in traits' default lifetime-capture rules — the returned
+// `Stream` is only valid as long as those borrows are; wrapping the
+// call in a self-contained `async_stream::stream!` generator that owns
+// `db`/`ctx`/`registry`/`args` internally is what lets the resulting
+// `Stream` outlive the dispatch function's own stack frame (needed
+// since it travels all the way into the HTTP response body). Mirrors
+// how `futures` is re-exported below for the same
+// "codegen references a fixed path, consumers shouldn't have to
+// duplicate the dependency" reason.
+pub use async_stream;
 pub use chrono;
 pub use cratestack_client_rust as client_rust;
 pub use cratestack_core::*;
+// Re-exported (renamed from the `futures-util` crate, which is what
+// actually implements it) so `@stream` procedures' generated
+// `ProcedureRegistry` trait method — `impl ::cratestack::futures::Stream<
+// Item = Result<T, CoolError>> + Send` (see
+// `cratestack-macros/src/procedure.rs`) — has somewhere to point without
+// every consumer adding its own `futures`/`futures-core`/`futures-util`
+// dependency. Mirrors how `chrono`/`uuid` are re-exported above for the
+// same "codegen references a fixed path, consumers shouldn't have to
+// duplicate the dependency" reason.
 pub use cratestack_macros::{
     include_client_schema, include_embedded_schema, include_server_schema,
 };
@@ -40,6 +78,7 @@ pub use cratestack_policy::{
     ProcedurePolicyLiteral, ProcedurePredicate, ReadPolicy, ReadPredicate, RelationQuantifier,
     authorize_procedure,
 };
+pub use futures_util as futures;
 
 // SQL primitives shared by every backend — re-exported directly from
 // `cratestack-sql` so consumers don't transit through `cratestack-sqlx`.
@@ -47,9 +86,11 @@ pub use cratestack_sql::{
     CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault, CreateDefaultType,
     CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName, IntoSqlValue,
     JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder,
-    OrderClause, Projection, ReadSource, RelationFilter, RelationInclude, SortDirection,
-    SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue, UpdateModelInput, UpsertModelInput,
-    ViewDescriptor, WriteSource, coalesce, point,
+    OrderCatalog, OrderClause, OrderRelationEdge, Orderable, Projection, ReadSource,
+    RelationFilter, RelationHop, RelationInclude, ResolvedOrderTarget, SortDirection,
+    SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue, Unorderable, UpdateModelInput,
+    UpsertModelInput, VectorDistanceExpr, VectorDistanceFilter, VectorMetric, ViewDescriptor,
+    WriteSource, coalesce, is_orderable, order_value_sql, point, resolve_order_target, wrap_filter,
 };
 
 pub use regex;
@@ -58,12 +99,33 @@ pub use serde_json;
 pub use tracing;
 pub use uuid;
 
-// `Json<T>` resolves to `sqlx::types::Json<T>` on the server so
-// `sqlx::FromRow` decodes Postgres `jsonb` columns into it directly.
-pub use cratestack_sqlx::sqlx::types::Json;
+// `Json<T>` resolves to `cratestack_sqlx::Json<T>` on the server so
+// `sqlx::FromRow` decodes Postgres `jsonb` columns into it directly, using
+// the plain/untagged codec (cratestack#162) rather than `T`'s own
+// (externally-tagged, for `T = Value`) `Serialize`/`Deserialize`. This is
+// only possible with the `postgres` feature enabled (cratestack#329): models
+// (the only place a "Json" column is decoded from a row) can never exist
+// under `db = None` (cratestack#327's guard), so a `postgres`-disabled build
+// falls back to `cratestack-core`'s own backend-agnostic `Json<T>` newtype,
+// which is all a `db = None` schema's procedure args/returns ever need —
+// they only flow through serde (JSON/CBOR codecs), never `sqlx::FromRow`.
+#[cfg(not(feature = "postgres"))]
+pub use cratestack_core::json::Json;
+#[cfg(feature = "postgres")]
+pub use cratestack_sqlx::Json;
+
+// `Vector(n)` model fields decode/encode through `pgvector::Vector` at
+// the sqlx boundary (see `cratestack-macros`' generated `FromRow` impl
+// and `SqlValue::Vector` bind path) — re-exported so macro-emitted
+// `::cratestack::pgvector::Vector` paths resolve. Requires this
+// facade's own `pgvector` feature, which forwards to both
+// `cratestack-macros/pgvector` (the compile-time declaration gate)
+// and `cratestack-sqlx/pgvector` (the real column codec) in lockstep.
+#[cfg(feature = "pgvector")]
+pub use cratestack_sqlx::pgvector;
 
 // -----------------------------------------------------------------------------
-// Server surface — sqlx, axum, audit/idempotency/migrations/isolation.
+// Server surface — axum, audit/idempotency/migrations/isolation.
 // -----------------------------------------------------------------------------
 
 pub use cratestack_axum::axum;
@@ -92,45 +154,64 @@ pub mod grpc {
 // types from `cratestack-core::rpc`).
 pub use cratestack_axum::rpc;
 
+// Everything below is sqlx (Postgres)-backed and only compiled in when the
+// default-on `postgres` feature is enabled (cratestack#329). A `db = None`
+// -only consumer builds with `default-features = false` (or explicitly
+// disables `postgres`) to drop `sqlx`/`cratestack-sqlx` from its dependency
+// graph entirely — nothing generated under `db = None` ever references these
+// symbols, since models (the only consumers of them) can never exist in a
+// `datasource { provider = "none" }` schema.
+#[cfg(feature = "postgres")]
 pub use cratestack_sqlx::AUDIT_TABLE_DDL;
+#[cfg(feature = "postgres")]
 pub use cratestack_sqlx::sqlx;
+#[cfg(feature = "postgres")]
 pub use cratestack_sqlx::{
     Aggregate, AggregateColumn, AggregateCount, CreateRecord, DeleteMany, DeleteRecord, FindMany,
     FindManyWith, FindUnique, FromPartialPgRow, ModelDelegate, ProjectedFindMany,
-    ProjectedFindUnique, ScopedAggregate, ScopedAggregateColumn, ScopedAggregateCount,
-    ScopedCreateRecord, ScopedDeleteMany, ScopedDeleteRecord, ScopedFindMany, ScopedFindManyWith,
-    ScopedFindUnique, ScopedModelDelegate, ScopedProjectedFindMany, ScopedProjectedFindUnique,
-    ScopedUpdateMany, ScopedUpdateManySet, ScopedUpdateRecord, ScopedUpdateRecordSet,
-    SqlxIdempotencyStore, UpdateMany, UpdateManySet, UpdateRecord, UpdateRecordSet, ViewDelegate,
-    ViewDelegateNoUnique, create_record_with_executor, update_record_with_executor,
+    ProjectedFindUnique, RunInTxOutcome, ScopedAggregate, ScopedAggregateColumn,
+    ScopedAggregateCount, ScopedCreateRecord, ScopedDeleteMany, ScopedDeleteRecord, ScopedFindMany,
+    ScopedFindManyWith, ScopedFindUnique, ScopedModelDelegate, ScopedProjectedFindMany,
+    ScopedProjectedFindUnique, ScopedUpdateMany, ScopedUpdateManySet, ScopedUpdateRecord,
+    ScopedUpdateRecordSet, ScopedUpsertRecord, ScopedUpsertRecordDoNothing, SqlxIdempotencyStore,
+    UpdateMany, UpdateManySet, UpdateRecord, UpdateRecordSet, UpsertOutcome, UpsertRecord,
+    UpsertRecordDoNothing, ViewDelegate, ViewDelegateNoUnique, create_record_with_executor,
+    update_record_with_executor,
 };
+#[cfg(feature = "postgres")]
 pub use cratestack_sqlx::{
     MIGRATIONS_TABLE_DDL, Migration, MigrationState, MigrationStatus, apply_pending,
     ensure_migrations_table, status,
 };
+#[cfg(feature = "postgres")]
 pub use cratestack_sqlx::{
-    cool_error_from_sqlx, run_in_isolated_tx, run_in_isolated_tx_with_retries,
+    Tx, cool_error_from_sqlx, run_in_isolated_tx, run_in_isolated_tx_with_retries,
 };
 
-/// Crypto provider selection — banks running on FIPS-validated hardware
-/// enable the `crypto-aws-lc-rs` feature. The function below surfaces an
-/// error early when the feature is missing so the wrong build can't slip
-/// into a regulated production cluster.
+/// Crypto provider selection for FIPS-validated deployments.
 ///
-/// Operational steps for a real FIPS deployment (out of scope for the
-/// framework itself):
+/// **`crypto-aws-lc-rs` is not implemented yet.** Enabling it is a hard
+/// `compile_error!`, not a working FIPS mode — this used to return `Ok(())`
+/// without installing any provider, which is a false assurance in a
+/// compliance-facing API: a service that called this and checked for `Ok`
+/// got an affirmative return while still running on the non-FIPS `ring`
+/// backend. See <https://github.com/cratestack/cratestack/issues/334>.
 ///
-/// 1. Build with `--features crypto-aws-lc-rs`.
-/// 2. Use an `aws-lc-rs`/`rustls` build configured against the vendor's
-///    FIPS-validated `libcrypto`.
-/// 3. Call [`install_fips_crypto_provider`] from your service's `main`
-///    *before* any TLS-using code runs.
-/// 4. Pin the binary's `cargo audit` report and the validated module's
-///    certificate id in your release process.
+/// Making this real requires the TLS backend becoming a genuine choice
+/// across `cratestack-sqlx` and `cratestack-client-rust` (both currently
+/// hard-select `ring`), not just adding `aws-lc-rs` as a dependency here —
+/// Cargo features are additive, so enabling `crypto-aws-lc-rs` today would
+/// only add a second provider alongside `ring`, not replace it. Until that
+/// backend-selection work lands, this function fails to compile under the
+/// feature rather than silently lying about what it installed.
 pub fn install_fips_crypto_provider() -> Result<(), cratestack_core::CoolError> {
     #[cfg(feature = "crypto-aws-lc-rs")]
     {
-        Ok(())
+        compile_error!(
+            "cratestack-pg's `crypto-aws-lc-rs` feature does not install a FIPS-validated \
+             crypto provider yet — see install_fips_crypto_provider's doc comment and \
+             https://github.com/cratestack/cratestack/issues/334. Do not enable this feature."
+        )
     }
     #[cfg(not(feature = "crypto-aws-lc-rs"))]
     {
@@ -144,12 +225,29 @@ pub fn install_fips_crypto_provider() -> Result<(), cratestack_core::CoolError> 
 
 #[doc(hidden)]
 pub mod __private {
+    #[cfg(feature = "postgres")]
     pub use cratestack_sqlx::SqlxRuntime;
+    // Not part of the public API surface — the generated
+    // `Cratestack::dispatch_audit_sink` (cratestack#534) is the
+    // consumer-facing wrapper around this; see its doc comment.
+    #[cfg(feature = "postgres")]
+    pub use cratestack_sqlx::dispatch_audit_sink;
 
     /// Re-exports for the macro-emitted RPC dispatcher. Not part of the
     /// public API surface — schema authors should never reference these
     /// directly. Public helpers live at `cratestack::rpc::*`.
     pub use cratestack_axum::rpc::{
         bridge_grpc_response, decode_rpc_body, encode_rpc_value, response_to_frame,
+    };
+
+    /// `@@subscribe` SSE dispatch (`GET /rpc/subscribe/{op_id}`, design
+    /// doc §3.4a, cratestack#390): the bounded-channel bridge from a
+    /// `CoolEventBus` push callback to a `Stream`, and the encoder that
+    /// turns that `Stream` into a `text/event-stream` response. Not
+    /// part of the public API surface for the same reason as the rest
+    /// of this module.
+    pub use cratestack_axum::rpc::{
+        encode_model_event_sse_response, guarded_receiver_stream, subscription_channel,
+        validate_subscribe_accept_header,
     };
 }

@@ -1,3 +1,4 @@
+mod build_runner;
 mod cli_handlers;
 mod cli_support;
 mod cli_types;
@@ -25,7 +26,7 @@ mod tests {
 
     use crate::Cli;
     use crate::cli_support::{json_check_failure, json_check_success};
-    use crate::cli_types::{Command, StudioCmd};
+    use crate::cli_types::{Command, DartPresetArg, StudioCmd, TypeScriptPresetArg};
 
     #[test]
     fn json_success_payload_has_empty_diagnostics() {
@@ -55,6 +56,92 @@ mod tests {
     }
 
     #[test]
+    fn generate_dart_clap_defaults() {
+        let cli = Cli::parse_from([
+            "cratestack",
+            "generate-dart",
+            "--schema",
+            "schema.cstack",
+            "--out",
+            "out",
+        ]);
+
+        match cli.command {
+            Command::GenerateDart {
+                schema,
+                out,
+                library_name,
+                base_path,
+                template_dir,
+                check,
+                preset,
+                run_build_runner,
+            } => {
+                assert_eq!(schema, PathBuf::from("schema.cstack"));
+                assert_eq!(out, PathBuf::from("out"));
+                assert_eq!(library_name, "cratestack_client");
+                assert_eq!(base_path, "/api");
+                assert_eq!(template_dir, None);
+                assert!(!check);
+                assert_eq!(preset, DartPresetArg::Default);
+                assert!(
+                    !run_build_runner,
+                    "--run-build-runner must default to off (issue #303: opt-in, not default)"
+                );
+            }
+            _ => panic!("expected generate-dart command"),
+        }
+    }
+
+    #[test]
+    fn generate_dart_clap_accepts_riverpod_preset() {
+        let cli = Cli::parse_from([
+            "cratestack",
+            "generate-dart",
+            "--schema",
+            "schema.cstack",
+            "--out",
+            "out",
+            "--preset",
+            "riverpod",
+        ]);
+
+        match cli.command {
+            Command::GenerateDart { preset, .. } => {
+                assert_eq!(preset, DartPresetArg::Riverpod);
+            }
+            _ => panic!("expected generate-dart command"),
+        }
+    }
+
+    #[test]
+    fn generate_dart_clap_accepts_run_build_runner_flag() {
+        let cli = Cli::parse_from([
+            "cratestack",
+            "generate-dart",
+            "--schema",
+            "schema.cstack",
+            "--out",
+            "out",
+            "--preset",
+            "riverpod",
+            "--run-build-runner",
+        ]);
+
+        match cli.command {
+            Command::GenerateDart {
+                preset,
+                run_build_runner,
+                ..
+            } => {
+                assert_eq!(preset, DartPresetArg::Riverpod);
+                assert!(run_build_runner);
+            }
+            _ => panic!("expected generate-dart command"),
+        }
+    }
+
+    #[test]
     fn generate_typescript_clap_defaults() {
         let cli = Cli::parse_from([
             "cratestack",
@@ -74,6 +161,7 @@ mod tests {
                 template_dir,
                 check,
                 full_selection,
+                preset,
             } => {
                 assert_eq!(schema, PathBuf::from("schema.cstack"));
                 assert_eq!(out, PathBuf::from("out"));
@@ -82,6 +170,31 @@ mod tests {
                 assert_eq!(template_dir, None);
                 assert!(!check);
                 assert!(!full_selection);
+                assert_eq!(preset, TypeScriptPresetArg::Default);
+            }
+            _ => panic!("expected generate-typescript command"),
+        }
+    }
+
+    #[test]
+    fn generate_typescript_clap_accepts_swr_preset_flag() {
+        // Issue #304: `--preset swr` selects the new file-per-model
+        // layout; the value must clap-parse to the `Swr` variant (kebab
+        // renamed to the literal string `swr`).
+        let cli = Cli::parse_from([
+            "cratestack",
+            "generate-typescript",
+            "--schema",
+            "schema.cstack",
+            "--out",
+            "out",
+            "--preset",
+            "swr",
+        ]);
+
+        match cli.command {
+            Command::GenerateTypeScript { preset, .. } => {
+                assert_eq!(preset, TypeScriptPresetArg::Swr);
             }
             _ => panic!("expected generate-typescript command"),
         }
@@ -158,6 +271,33 @@ mod tests {
     }
 
     #[test]
+    fn generate_wiremock_clap_defaults() {
+        let cli = Cli::parse_from([
+            "cratestack",
+            "generate-wiremock",
+            "--schema",
+            "schema.cstack",
+            "--out",
+            "out",
+        ]);
+
+        match cli.command {
+            Command::GenerateWiremock {
+                schema,
+                out,
+                base_path,
+                check,
+            } => {
+                assert_eq!(schema, PathBuf::from("schema.cstack"));
+                assert_eq!(out, PathBuf::from("out"));
+                assert_eq!(base_path, "/api");
+                assert!(!check);
+            }
+            _ => panic!("expected generate-wiremock command"),
+        }
+    }
+
+    #[test]
     fn studio_run_clap_defaults() {
         let cli = Cli::parse_from(["cratestack", "studio", "run"]);
         match cli.command {
@@ -196,6 +336,20 @@ mod tests {
             }
             _ => panic!("expected diff command"),
         }
+    }
+
+    #[test]
+    fn version_long_flag_is_accepted() {
+        let result = Cli::try_parse_from(["cratestack", "--version"]);
+        let error = result.expect_err("--version should short-circuit parsing");
+        assert_eq!(error.kind(), clap::error::ErrorKind::DisplayVersion);
+    }
+
+    #[test]
+    fn version_short_flag_is_accepted() {
+        let result = Cli::try_parse_from(["cratestack", "-V"]);
+        let error = result.expect_err("-V should short-circuit parsing");
+        assert_eq!(error.kind(), clap::error::ErrorKind::DisplayVersion);
     }
 
     #[test]

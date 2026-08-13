@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use cratestack_core::Schema;
 
-use crate::audit::AuditLog;
+use crate::audit::{AuditLog, AuditStoreError};
 use crate::config::{DbDriver, StudioConfig, StudioConfigError, TargetMode, WorkspaceConfig};
 use crate::data::DataSource;
 
@@ -42,6 +42,12 @@ pub struct LoadedTarget {
     /// `true` when this target has a `[target.api]` block. May be true
     /// alongside `has_db`.
     pub has_api: bool,
+    /// Mirrors `[target.db].allow_unsafe_writes` (`false` when the
+    /// target has no `[target.db]` block at all). Gates whether writes to
+    /// `@version`/`@@emit` models are refused on this target — see
+    /// [`TargetDb::allow_unsafe_writes`](crate::config::TargetDb::allow_unsafe_writes)
+    /// and `cratestack#507`.
+    pub allow_unsafe_db_writes: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -84,6 +90,15 @@ pub enum WorkspaceError {
         #[source]
         source: reqwest::Error,
     },
+    /// `[workspace] audit_file` was set but the sink couldn't be
+    /// opened. Fatal on purpose: persistence was asked for explicitly,
+    /// so degrading quietly to the in-memory buffer would misreport
+    /// what Studio is doing.
+    #[error("failed to open the configured audit log: {source}")]
+    AuditStore {
+        #[source]
+        source: AuditStoreError,
+    },
 }
 
 /// Open a SQLite connection from a `studio.toml` URL.
@@ -119,10 +134,23 @@ impl LoadedWorkspace {
             ));
         }
 
+        let audit = match &raw.workspace.audit_file {
+            Some(path) => {
+                let resolved = if path.is_absolute() {
+                    path.clone()
+                } else {
+                    base_dir.join(path)
+                };
+                AuditLog::persistent(&resolved)
+                    .map_err(|source| WorkspaceError::AuditStore { source })?
+            }
+            None => AuditLog::new(),
+        };
+
         Ok(Arc::new(Self {
             config: raw.workspace,
             targets,
-            audit: Arc::new(AuditLog::new()),
+            audit: Arc::new(audit),
         }))
     }
 

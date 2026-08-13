@@ -8,7 +8,7 @@ export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue
 // `tracing::warn!`, never a rejection. Empty when the CLI wasn't given a
 // schema fingerprint (e.g. this crate used as a library directly, or a
 // test) — the header is simply omitted in that case.
-export const SCHEMA_SHA256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+export const SCHEMA_SHA256: string = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const SCHEMA_SHA_HEADER = "x-cratestack-schema-sha";
 
 export interface CratestackClientOptions {
@@ -47,7 +47,15 @@ export class CratestackRuntime {
   constructor(origin: string, options: CratestackClientOptions = {}) {
     this.origin = origin.replace(/\/+$/, "");
     this.basePath = options.basePath ?? "/api";
-    this.fetchFn = options.fetch ?? fetch;
+    // `.bind(globalThis)`, not the bare global — some browsers' `fetch`
+    // is spec'd to throw `TypeError: Illegal invocation` when called
+    // with a receiver other than the global object (verified for real:
+    // storing the bare function on `this` and calling it as
+    // `this.fetchFn(...)` reproduces exactly that in Chrome/Vite dev,
+    // even though the same code runs fine under Node's `fetch`, which
+    // is why this was never caught by a Node-only test). A caller-
+    // supplied `options.fetch` is trusted to already be correctly bound.
+    this.fetchFn = options.fetch ?? fetch.bind(globalThis);
     this.defaultHeaders = options.headers;
   }
 

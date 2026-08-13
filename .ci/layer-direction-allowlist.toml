@@ -1,0 +1,22 @@
+# Narrow, dated allowlist for the layer-direction check (ADR 0014,
+# `.ci/layer-direction-check.sh`).
+#
+# Every entry names exactly ONE edge (one dependent crate, one dependency
+# crate) — never a whole crate and never a whole layer pair. A crate-wide or
+# layer-wide entry would hide any *other* violation the same crate grows
+# later; per-edge is the only shape that keeps the allowlist from becoming a
+# second, silent way to disable the check.
+#
+# The checker treats an unmatched entry (one that names an edge which either
+# no longer exists in `cargo metadata`, or no longer violates
+# `docs/adr/layers.toml`) as a hard failure — an unused allowlist entry is
+# exactly as stale as a `#[allow(dead_code)]` nobody removed, and "ideally
+# an error so it cannot rot" is the explicit requirement this file exists
+# under. Remove the entry in the same PR that fixes the edge.
+#
+# Each entry:
+#   from   = dependent crate (the one with the Cargo.toml dependency line)
+#   to     = dependency crate
+#   issue  = "#NNN" — the tracking issue for the violation (required)
+#   added  = "YYYY-MM-DD" — the date the entry was added (required)
+#   reason = one line of context (required)

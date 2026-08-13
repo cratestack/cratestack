@@ -139,6 +139,19 @@ pub(crate) fn render_filter_expr(
                  schemas that use FieldRef::covers_geography / dwithin_geography are server-only",
             );
         }
+        FilterExpr::VectorDistance(_) => {
+            // pgvector distance predicates require the Postgres `vector`
+            // extension, which the embedded runtime never ships — a
+            // schema declaring `extension pgvector { }` is already a
+            // hard `compile_error!` for `include_embedded_schema!`
+            // (cratestack#161), so `FieldRef::distance_to` should never
+            // actually be reachable here. Fail loud rather than emit
+            // SQLite SQL that would reject `<->`/`<=>`/`<#>` anyway.
+            panic!(
+                "pgvector distance filters are not supported on the embedded rusqlite backend; \
+                 schemas that use FieldRef::distance_to are server-only",
+            );
+        }
     }
 }
 

@@ -1,10 +1,13 @@
 use cratestack_core::{Field, Model};
 
 use crate::diagnostics::{SchemaError, span_error};
+use crate::relation_actions::{RelationAction, parse_relation_action};
 
 pub(crate) struct ParsedRelationAttribute {
     pub(crate) fields: Vec<String>,
     pub(crate) references: Vec<String>,
+    pub(crate) on_delete: Option<RelationAction>,
+    pub(crate) on_update: Option<RelationAction>,
 }
 
 pub(crate) fn parse_relation_attribute(raw: &str) -> Result<ParsedRelationAttribute, String> {
@@ -16,6 +19,8 @@ pub(crate) fn parse_relation_attribute(raw: &str) -> Result<ParsedRelationAttrib
 
     let mut fields = None;
     let mut references = None;
+    let mut on_delete = None;
+    let mut on_update = None;
     for entry in split_top_level(inner, ',') {
         let (key, value) = entry
             .split_once(':')
@@ -23,6 +28,8 @@ pub(crate) fn parse_relation_attribute(raw: &str) -> Result<ParsedRelationAttrib
         match key.trim() {
             "fields" => fields = Some(parse_relation_list(value.trim())?),
             "references" => references = Some(parse_relation_list(value.trim())?),
+            "onDelete" => on_delete = Some(parse_relation_action(value.trim())?),
+            "onUpdate" => on_update = Some(parse_relation_action(value.trim())?),
             other => return Err(format!("unsupported @relation key `{other}`")),
         }
     }
@@ -31,6 +38,8 @@ pub(crate) fn parse_relation_attribute(raw: &str) -> Result<ParsedRelationAttrib
         fields: fields.ok_or_else(|| "@relation(...) is missing fields:[...]".to_owned())?,
         references: references
             .ok_or_else(|| "@relation(...) is missing references:[...]".to_owned())?,
+        on_delete,
+        on_update,
     })
 }
 

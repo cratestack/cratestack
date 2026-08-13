@@ -7,9 +7,11 @@
 
 transport rpc
 
+// cratestack#329: genuinely procedures-only (no `model` blocks), so
+// `datasource { provider = "none" }` instead of a Postgres connection
+// string — see `docs/design/no-database-mode.md`.
 datasource db {
-  provider = "postgresql"
-  url = env("DATABASE_URL")
+  provider = "none"
 }
 
 auth Caller {
@@ -26,9 +28,25 @@ type Tick {
   value Int
 }
 
-// Returns N ticks of `value = start + index`. With
-// `Accept: application/cbor-seq` each chunk arrives independently — try
-// pointing at this from a streaming-aware client to see backpressure work.
-// With the default Accept the same op returns a single CBOR `Vec<Tick>`.
+// Returns N ticks of `value = start + index`, produced one at a time
+// (see `@stream` on `Procedures::ticks` in `src/lib.rs`) rather than
+// collected into a `Vec` up front. With `Accept: application/cbor-seq`
+// each chunk arrives independently — try pointing at this from a
+// streaming-aware client to see backpressure work. With the default
+// Accept the same op still returns a single CBOR `Vec<Tick>`; `@stream`
+// only changes how the *implementer* produces items, not the wire
+// contract (that's cratestack#283's concern, not this schema's).
 procedure ticks(args: TickerArgs): Tick[]
   @allow(auth() != null)
+  @stream
+
+// Same shape as `ticks`, but always fails partway through — a
+// genuinely-streaming server that hits a mid-stream error (issue #281).
+// `Accept: application/cbor-seq` gets a real response ending in the
+// CBOR-tagged error sentinel; `packages/cratestack-ts-types` uses this
+// procedure's real wire bytes as a fixture for the TypeScript
+// boundary-scanner's error-recognition path (issue #277), rather than a
+// hand-rolled one, per that ticket's own risk mitigation.
+procedure flakyTicks(args: TickerArgs): Tick[]
+  @allow(auth() != null)
+  @stream

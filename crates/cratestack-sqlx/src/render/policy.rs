@@ -11,6 +11,14 @@ use crate::{PolicyExpr, ReadPolicy, RelationQuantifier};
 
 use super::policy_predicate::render_policy_predicate;
 
+/// Render a read policy (allow/deny clauses) as a single, fully
+/// parenthesized boolean expression.
+///
+/// The outer parentheses are load-bearing, not cosmetic. This function
+/// guarantees a self-contained boolean group, so callers can safely
+/// splice the output after `AND` without reintroducing precedence bugs
+/// (see `push_action_policy_query` for the asymmetric alternate form).
+/// Regression test: `tests_read_policy_predicates::deny_beats_allow_precedence`.
 pub(crate) fn render_read_policy_sql(
     allow_policies: &[ReadPolicy],
     deny_policies: &[ReadPolicy],
@@ -18,16 +26,16 @@ pub(crate) fn render_read_policy_sql(
     bind_index: &mut usize,
 ) -> Option<String> {
     if allow_policies.is_empty() {
-        return Some("FALSE".to_owned());
+        return Some("(FALSE)".to_owned());
     }
 
     let allow_sql = render_allow_policy_sql(allow_policies, ctx, bind_index)?;
     if deny_policies.is_empty() {
-        return Some(allow_sql);
+        return Some(format!("({})", allow_sql));
     }
 
     let deny_sql = render_allow_policy_sql(deny_policies, ctx, bind_index)?;
-    Some(format!("NOT ({deny_sql}) AND ({allow_sql})"))
+    Some(format!("(NOT ({deny_sql}) AND ({allow_sql}))"))
 }
 
 fn render_allow_policy_sql(

@@ -51,7 +51,7 @@ async fn dbgenerated_probe_migration_and_insert_behavior() {
 
     let empty = parse_schema("").expect("empty schema should parse");
     let next = parse_schema(SCHEMA).expect("probe schema should parse");
-    let migration = postgres::emit(&diff(&empty, &next));
+    let migration = postgres::emit(&diff(&empty, &next).expect("diff should succeed"));
 
     // Bug 1: the emitted DDL must never contain the invalid literal.
     assert!(

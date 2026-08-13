@@ -171,6 +171,18 @@ impl From<ClientError> for FlutterRuntimeError {
                     .and_then(|value| serde_json::to_vec(value).ok()),
                 message,
             },
+            // `ClientError` is `#[non_exhaustive]` (declared in
+            // `cratestack-client-rust`); this crate is a downstream
+            // consumer, so a catch-all arm is required for any variant
+            // added later and is not optional even though every current
+            // variant is already matched above.
+            _ => Self {
+                code: RuntimeErrorCode::InvalidResponse as u32,
+                http_status: None,
+                message: value.to_string(),
+                remote_code: None,
+                remote_body: None,
+            },
         }
     }
 }

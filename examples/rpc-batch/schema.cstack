@@ -8,9 +8,11 @@
 
 transport rpc
 
+// cratestack#329: genuinely procedures-only (no `model` blocks), so
+// `datasource { provider = "none" }` instead of a Postgres connection
+// string — see `docs/design/no-database-mode.md`.
 datasource db {
-  provider = "postgresql"
-  url = env("DATABASE_URL")
+  provider = "none"
 }
 
 auth Caller {

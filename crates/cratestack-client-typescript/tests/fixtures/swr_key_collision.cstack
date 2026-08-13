@@ -1,0 +1,57 @@
+// Key-collision fixture for issue #305's cache-key factory (AC #4:
+// "two models with similar operation names must not produce colliding
+// keys — prove with a fixture designed to collide"). `UserGroup` and
+// `User_Group` are two distinct, valid schema identifiers whose words
+// tokenize identically (`crate::naming::split_words` splits on both an
+// uppercase boundary and an explicit `_`, so both become `["User",
+// "Group"]`) — meaning `crate::views::ModelApiView::list_query_key`
+// (built for the react-query preset: `to_camel_case(name) + "List"`)
+// collapses BOTH models to the literal string `"userGroupList"`, a
+// real, silent property-overwrite collision in that preset's flat
+// `cratestackQueryKeys` object (out of scope to fix here — see
+// `src/swr/templates.rs`'s module doc and the PR that introduces this
+// fixture for the flagged follow-up).
+//
+// `src/swr-keys.ts` (this preset) nests keys under each model's own
+// literal schema name instead (`swrKeys.model.UserGroup` vs
+// `swrKeys.model.User_Group`) — two distinct object properties, because
+// `cratestack-parser` already guarantees model names are unique
+// verbatim strings, sidestepping the casing-collapse risk entirely.
+//
+// `transport rpc` deliberately, not REST: RPC op ids are built directly
+// from `model.name` (parser-unique, no transform), so this fixture
+// isolates exactly the naming-collision risk AC #4 asks about. REST's
+// own route derivation (`pluralize(to_snake_case(name))`) happens to
+// collide for this SAME pair too (`/user_groups` for both) — a
+// different, deeper, pre-existing issue (two models genuinely sharing
+// one REST route is already broken at the HTTP level, independent of
+// SWR or this preset) flagged separately, not proven or fixed by this
+// fixture.
+//
+// Issue #344: the SAME `split_words` collapse that made `UserGroup`/
+// `User_Group` a good fixture for AC #4 above also collapses
+// `crate::naming::to_kebab_case(name)` — the `swr` preset's per-model
+// *file* name (`src/models/{{ file_stem }}.ts`) — to the identical
+// `user-group` stem for both models. That was an undetected second bug:
+// `swr` generation for this exact fixture used to succeed while silently
+// clobbering `src/models/user-group.ts` with whichever model was
+// processed last. `swr::reject_model_file_name_collisions` now catches
+// it and fails generation outright, so this fixture can no longer
+// generate under the `swr` preset at all — see
+// `tests/swr_generator.rs`'s `swr_preset_rejects_colliding_model_file_names`.
+
+transport rpc
+
+model UserGroup {
+  id Int @id
+  name String
+
+  @@allow("create", auth() != null)
+}
+
+model User_Group {
+  id Int @id
+  label String
+
+  @@allow("create", auth() != null)
+}

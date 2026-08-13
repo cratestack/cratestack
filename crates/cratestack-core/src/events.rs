@@ -1,14 +1,16 @@
 //! Model-event bus: typed `created/updated/deleted` envelopes that
 //! procedure handlers can subscribe to.
 
-use std::collections::BTreeMap;
+mod bus;
+
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Arc, RwLock};
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::CoolError;
+
+pub use bus::{CoolEventBus, SubscriptionGuard, SubscriptionHandle};
 
 pub type CoolEventFuture = Pin<Box<dyn Future<Output = Result<(), CoolError>> + Send + 'static>>;
 
@@ -74,58 +76,6 @@ where
                 CoolError::Codec(format!("failed to decode event payload: {error}"))
             })?,
         })
-    }
-}
-
-type EventHandler = Arc<dyn Fn(CoolEventEnvelope) -> CoolEventFuture + Send + Sync>;
-
-#[derive(Clone, Default)]
-pub struct CoolEventBus {
-    handlers: Arc<RwLock<BTreeMap<String, Vec<EventHandler>>>>,
-}
-
-impl std::fmt::Debug for CoolEventBus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let handler_count = self
-            .handlers
-            .read()
-            .map(|handlers| handlers.values().map(Vec::len).sum::<usize>())
-            .unwrap_or_default();
-        f.debug_struct("CoolEventBus")
-            .field("handler_count", &handler_count)
-            .finish()
-    }
-}
-
-impl CoolEventBus {
-    pub fn subscribe<F>(&self, model: &'static str, operation: ModelEventKind, handler: F)
-    where
-        F: Fn(CoolEventEnvelope) -> CoolEventFuture + Send + Sync + 'static,
-    {
-        let mut handlers = self
-            .handlers
-            .write()
-            .expect("event bus handler registry should not be poisoned");
-        handlers
-            .entry(event_topic(model, operation))
-            .or_default()
-            .push(Arc::new(handler));
-    }
-
-    pub async fn emit(&self, envelope: CoolEventEnvelope) -> Result<(), CoolError> {
-        let handlers = self
-            .handlers
-            .read()
-            .expect("event bus handler registry should not be poisoned")
-            .get(&event_topic(&envelope.model, envelope.operation))
-            .cloned()
-            .unwrap_or_default();
-
-        for handler in handlers {
-            handler(envelope.clone()).await?;
-        }
-
-        Ok(())
     }
 }
 

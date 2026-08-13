@@ -1,10 +1,13 @@
-//! Single-row write wrappers: create / upsert / update.
+//! Single-row write wrappers: create / update. Upsert (`ScopedUpsertRecord`
+//! / `ScopedUpsertRecordDoNothing`) lives in `scoped_upsert.rs` — split
+//! out once `.do_nothing()` (cratestack#487) pushed this file over the
+//! 200-LoC ceiling.
 
 use cratestack_core::{CoolContext, CoolError};
 
+use crate::audit::RunInTxOutcome;
 use crate::{
-    CreateModelInput, CreateRecord, UpdateModelInput, UpdateRecord, UpdateRecordSet,
-    UpsertModelInput, UpsertRecord, sqlx,
+    CreateModelInput, CreateRecord, UpdateModelInput, UpdateRecord, UpdateRecordSet, sqlx,
 };
 
 #[derive(Debug, Clone)]
@@ -37,55 +40,9 @@ where
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-    ) -> Result<M, CoolError>
+    ) -> Result<RunInTxOutcome<M>, CoolError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
-    {
-        self.request.run_in_tx(tx, &self.ctx).await
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct ScopedUpsertRecord<'a, M: 'static, PK: 'static, I> {
-    request: UpsertRecord<'a, M, PK, I>,
-    ctx: CoolContext,
-}
-
-impl<'a, M: 'static, PK: 'static, I> ScopedUpsertRecord<'a, M, PK, I> {
-    pub(super) fn new(request: UpsertRecord<'a, M, PK, I>, ctx: CoolContext) -> Self {
-        Self { request, ctx }
-    }
-}
-
-impl<'a, M: 'static, PK: 'static, I> ScopedUpsertRecord<'a, M, PK, I>
-where
-    I: UpsertModelInput<M>,
-{
-    /// See [`UpsertRecord::on_conflict`].
-    pub fn on_conflict(mut self, target: cratestack_sql::ConflictTarget) -> Self {
-        self.request = self.request.on_conflict(target);
-        self
-    }
-
-    pub fn preview_sql(&self) -> String {
-        self.request.preview_sql()
-    }
-
-    pub async fn run(self) -> Result<M, CoolError>
-    where
-        for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
-        PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
-    {
-        self.request.run(&self.ctx).await
-    }
-
-    pub async fn run_in_tx<'tx>(
-        self,
-        tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-    ) -> Result<M, CoolError>
-    where
-        for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
-        PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
         self.request.run_in_tx(tx, &self.ctx).await
     }
@@ -135,7 +92,7 @@ where
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-    ) -> Result<M, CoolError>
+    ) -> Result<RunInTxOutcome<M>, CoolError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
         PK: Send + Clone + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,

@@ -1,4 +1,4 @@
-use cratestack_client_dart::{DartGeneratorConfig, generate_package};
+use cratestack_client_dart::{DartGeneratorConfig, DartPreset, generate_package};
 use cratestack_parser::parse_schema;
 use std::fs;
 use std::path::PathBuf;
@@ -22,6 +22,8 @@ fn generates_runtime_based_and_riverpod_client_for_blog_schema() {
             library_name: "blog_client".to_owned(),
             base_path: "/api".to_owned(),
             template_dir: None,
+            preset: DartPreset::Default,
+            pb_lock: None,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
         },
     )
@@ -273,6 +275,8 @@ procedure searchOrders(args: SearchOrdersArgs): SearchOrdersArgs
             library_name: "order_client".to_owned(),
             base_path: "/api".to_owned(),
             template_dir: None,
+            preset: DartPreset::Default,
+            pb_lock: None,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
         },
     )
@@ -299,6 +303,8 @@ fn generates_real_dart_enums_for_schema_enum_fields_and_procedures() {
             library_name: "enum_client".to_owned(),
             base_path: "/api".to_owned(),
             template_dir: None,
+            preset: DartPreset::Default,
+            pb_lock: None,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
         },
     )
@@ -385,6 +391,8 @@ fn prefers_template_override_directory_when_provided() {
             library_name: "blog_client".to_owned(),
             base_path: "/api".to_owned(),
             template_dir: Some(template_dir.clone()),
+            preset: DartPreset::Default,
+            pb_lock: None,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
         },
     )
@@ -406,6 +414,79 @@ fn project_tmp_path(label: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../tmp/client-dart-tests")
         .join(format!("{label}-{suffix}"))
+}
+
+#[test]
+fn decimal_scalar_maps_to_a_real_decimal_type() {
+    // cratestack#498: `Decimal`-typed fields must be a real
+    // `package:decimal` value, not the wire-format string they're carried
+    // as — see this crate's `dart_types.rs`/`wire_decode.rs`/
+    // `wire_encode.rs` doc comments on their "Decimal" arms for why.
+    let schema = cratestack_parser::parse_schema_file("tests/fixtures/decimal_scalar.cstack")
+        .expect("fixture schema should parse");
+
+    let package = generate_package(
+        &schema,
+        &DartGeneratorConfig {
+            library_name: "decimal_scalar_client".to_owned(),
+            base_path: "/api".to_owned(),
+            template_dir: None,
+            preset: DartPreset::Default,
+            pb_lock: None,
+            schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
+        },
+    )
+    .expect("default template should render");
+
+    let pubspec = package_file(&package, "pubspec.yaml");
+    let models = package_file(&package, "lib/src/models.dart");
+
+    assert!(
+        pubspec.contains("decimal: ^3.2.6"),
+        "pubspec.yaml must declare the `decimal` package dependency, got:\n{pubspec}"
+    );
+    assert!(
+        models.contains("import 'package:decimal/decimal.dart';"),
+        "models.dart must import package:decimal, got:\n{models}"
+    );
+    // The generated `Invoice` model class itself forces every field
+    // nullable (`DataClassKind::ProjectionModel` — partial `fields`/
+    // `include` projection support, the Dart counterpart to TS's
+    // `InterfaceKind::Model`), so even `amountXaf` — required in the
+    // schema — is `Decimal?` here; `CreateInvoiceInput` is where the
+    // schema's own required-ness survives, asserted below.
+    assert!(
+        models.contains("final Decimal? amountXaf;"),
+        "Invoice.amountXaf must be typed `Decimal?`, got:\n{models}"
+    );
+    assert!(
+        models.contains("final Decimal? discountXaf;"),
+        "an optional Decimal field must be typed `Decimal?`, got:\n{models}"
+    );
+    assert!(
+        models.contains(
+            "amountXaf: value['amountXaf'] == null ? null : Decimal.parse(value['amountXaf'] as String)"
+        ),
+        "an optional-in-this-class Decimal field must decode via `Decimal.parse`, got:\n{models}"
+    );
+    assert!(
+        models.contains("'amountXaf': amountXaf?.toString()"),
+        "an optional-in-this-class Decimal field must encode via `.toString()`, got:\n{models}"
+    );
+    assert!(
+        models.contains("final Decimal amountXaf;")
+            && models.contains(
+                "amountXaf: Decimal.parse(cratestackRequireWireValue('CreateInvoiceInput', 'amountXaf', value['amountXaf']) as String)"
+            )
+            && models.contains("'amountXaf': amountXaf.toString()"),
+        "CreateInvoiceInput.amountXaf (schema-required) must be typed `Decimal` \
+         and decode/encode via the non-nullable `Decimal.parse`/`.toString()` \
+         forms, got:\n{models}"
+    );
+    assert!(
+        models.contains("final Decimal? eq;") && models.contains("class DecimalFilter"),
+        "DecimalFilter's comparison operands must be typed `Decimal?`, got:\n{models}"
+    );
 }
 
 fn package_file<'a>(

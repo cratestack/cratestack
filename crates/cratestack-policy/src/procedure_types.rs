@@ -11,6 +11,13 @@ pub enum ProcedurePolicyLiteral {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProcedurePredicate {
+    /// A bare boolean literal used as a whole `@allow`/`@deny` clause, e.g.
+    /// `@allow(true)`. Unlike every other variant, this reads nothing off
+    /// `args`/`ctx` — the outcome is fixed at schema-compile time. Exists
+    /// so `@allow(true)`/`@allow(false)` parse as the literal predicates
+    /// they read as, rather than as an unresolved input-field reference
+    /// named `true`/`false`.
+    Literal(bool),
     AuthNotNull,
     AuthIsNull,
     HasRole {

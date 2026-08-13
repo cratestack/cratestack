@@ -132,14 +132,21 @@ pub(super) fn render_column(column: &Column) -> String {
 fn render_type(ty: &ColumnType, arity: ColumnArity) -> String {
     let base = match ty {
         ColumnType::Scalar(name) => scalar_to_postgres(name).to_owned(),
-        // Enum and composite type identifiers are snake-cased so the
-        // SQL type name matches the convention used elsewhere in the
-        // generator (tables, columns) and so that case-mismatched
-        // references don't silently resolve to different identifiers
-        // under Postgres's unquoted-lowercase rule.
-        ColumnType::Enum(name) | ColumnType::UserDefined(name) => {
-            quote_ident(&naming::column_name(name))
-        }
+        // Enums are stored as TEXT, not as a native `CREATE TYPE ...
+        // AS ENUM`. The generated row decoders read every enum field
+        // with `try_get::<String>` and `.parse()`, so a native enum
+        // column fails to decode on every read (issue #228). The
+        // validation the native type would have given is recovered by
+        // a `CHECK (col IN (...))` constraint — see
+        // `super::checks` and `crate::convert::enum_check_kind`.
+        ColumnType::Enum(_) => "TEXT".to_owned(),
+        // Composite type identifiers are snake-cased so the SQL type
+        // name matches the convention used elsewhere in the generator
+        // (tables, columns) and so that case-mismatched references
+        // don't silently resolve to different identifiers under
+        // Postgres's unquoted-lowercase rule.
+        ColumnType::UserDefined(name) => quote_ident(&naming::column_name(name)),
+        ColumnType::Vector(dimension) => render_vector_type(*dimension),
     };
     match arity {
         ColumnArity::List => format!("{base}[]"),
@@ -147,6 +154,40 @@ fn render_type(ty: &ColumnType, arity: ColumnArity) -> String {
     }
 }
 
+/// Renders `Vector(n)` as Postgres's parametric `vector(n)` column
+/// type (the `pgvector` extension — see `docs/design/extensions.md`
+/// §6). Gated behind the `pgvector` Cargo feature: reaching this with
+/// the feature disabled means an `Op::EnsureExtension`/`ColumnType::
+/// Vector` was constructed without going through the parser's own
+/// gate (`extension pgvector { }` must be declared for `Vector(n)` to
+/// parse at all), so a hard panic is the right failure mode rather
+/// than silently emitting a `vector(n)` column type this build never
+/// opted into supporting.
+#[cfg(feature = "pgvector")]
+fn render_vector_type(dimension: u32) -> String {
+    format!("vector({dimension})")
+}
+
+#[cfg(not(feature = "pgvector"))]
+fn render_vector_type(dimension: u32) -> String {
+    unreachable!(
+        "ColumnType::Vector({dimension}) reached the Postgres emitter without the \
+         `pgvector` Cargo feature enabled on cratestack-migrate — this should be \
+         unreachable because only a schema declaring `extension pgvector {{ }}` produces a \
+         `Vector(n)` column, and cratestack-parser requires that declaration up front"
+    );
+}
+
+/// Maps a `.cstack` builtin scalar name to its Postgres column type.
+///
+/// `name` is only ever one of `cratestack_parser::builtin_type_names()`
+/// (minus `Page`, which never reaches here — see `convert/fields.rs`'s
+/// `ColumnType::Scalar` vs `Enum`/`UserDefined` split) or an unrecognized
+/// name from a schema this crate doesn't validate directly. There is
+/// deliberately no `"Date"` arm: `BUILTIN_TYPES` has never contained a
+/// bare `Date` type (only `DateTime`), so that arm was unreachable dead
+/// code that read as a supported feature — see cratestack#232. New
+/// builtins need a matching arm added here.
 fn scalar_to_postgres(name: &str) -> &'static str {
     match name {
         "String" | "Cuid" => "TEXT",
@@ -155,7 +196,6 @@ fn scalar_to_postgres(name: &str) -> &'static str {
         "Decimal" => "NUMERIC",
         "Boolean" => "BOOLEAN",
         "DateTime" => "TIMESTAMPTZ",
-        "Date" => "DATE",
         "Json" => "JSONB",
         "Bytes" => "BYTEA",
         "Uuid" => "UUID",

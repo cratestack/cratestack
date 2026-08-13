@@ -2,7 +2,9 @@ import {
   CratestackRpcRuntime,
   type CratestackRpcCallOptions,
   type CratestackRpcClientOptions,
-} from "./runtime";
+} from "./runtime.js";
+import { toRpcListInput, type CratestackRpcListQuery } from "./queries.js";
+import { reviveDecimalFields, revivePagedDecimalFields, reviveDecimalScalar } from "./models.js";
 import type {
 {% for interface in interfaces %}
   {{ interface.name }},
@@ -11,7 +13,7 @@ import type {
   {{ enum.name }},
 {% endfor %}
   Page,
-} from "./models";
+} from "./models.js";
 
 export class {{ client_class_name }} {
   readonly runtime: CratestackRpcRuntime;
@@ -35,29 +37,29 @@ export class {{ client_class_name }} {
 export class {{ model.api_name }} {
   constructor(private readonly runtime: CratestackRpcRuntime) {}
 
-  list(input: Record<string, unknown> = {}, options: CratestackRpcCallOptions = {}): Promise<{{ model.list_return_type }}> {
-    return this.runtime.call<Record<string, unknown>, {{ model.list_return_type }}>(
+  list(query: CratestackRpcListQuery = {}, options: CratestackRpcCallOptions = {}): Promise<{{ model.list_return_type }}> {
+    return this.runtime.call<Record<string, unknown>, unknown>(
       "model.{{ model.name }}.list",
-      input,
+      toRpcListInput(query),
       options,
-    );
+    ).then((value) => {% if model.is_paged %}revivePagedDecimalFields{% else %}reviveDecimalFields{% endif %}(value, '{{ model.decimal_shape_name }}') as {{ model.list_return_type }});
   }
 
   get(id: {{ model.primary_key_type }}, options: CratestackRpcCallOptions = {}): Promise<{{ model.name }}> {
-    return this.runtime.call<{ id: {{ model.primary_key_type }} }, {{ model.name }}>(
+    return this.runtime.call<{ id: {{ model.primary_key_type }} }, unknown>(
       "model.{{ model.name }}.get",
       { id },
       options,
-    );
+    ).then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model.name }});
   }
 
 {% if model.allows_create %}
   create(input: {{ model.create_input_name }}, options: CratestackRpcCallOptions = {}): Promise<{{ model.name }}> {
-    return this.runtime.call<{{ model.create_input_name }}, {{ model.name }}>(
+    return this.runtime.call<{{ model.create_input_name }}, unknown>(
       "model.{{ model.name }}.create",
       input,
       options,
-    );
+    ).then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model.name }});
   }
 
 {% endif %}
@@ -66,11 +68,11 @@ export class {{ model.api_name }} {
     patch: {{ model.update_input_name }},
     options: CratestackRpcCallOptions = {},
   ): Promise<{{ model.name }}> {
-    return this.runtime.call<{ id: {{ model.primary_key_type }}; patch: {{ model.update_input_name }} }, {{ model.name }}>(
+    return this.runtime.call<{ id: {{ model.primary_key_type }}; patch: {{ model.update_input_name }} }, unknown>(
       "model.{{ model.name }}.update",
       { id, patch },
       options,
-    );
+    ).then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model.name }});
   }
 
   delete(id: {{ model.primary_key_type }}, options: CratestackRpcCallOptions = {}): Promise<void> {
@@ -87,13 +89,23 @@ export class ProceduresApi {
   constructor(private readonly runtime: CratestackRpcRuntime) {}
 
 {% for procedure in procedures %}
+{% if procedure.decimal_revival_kind == "scalar" %}
   {{ procedure.method_name }}(args: {{ procedure.args_name }}, options: CratestackRpcCallOptions = {}): Promise<{{ procedure.return_type }}> {
-    return this.runtime.call<{{ procedure.args_name }}, {{ procedure.return_type }}>(
+    return this.runtime.call<{{ procedure.args_name }}, unknown>(
       "procedure.{{ procedure.name }}",
       args,
       options,
-    );
+    ).then((value) => reviveDecimalScalar(value) as {{ procedure.return_type }});
   }
+{% else %}
+  {{ procedure.method_name }}(args: {{ procedure.args_name }}, options: CratestackRpcCallOptions = {}): Promise<{{ procedure.return_type }}> {
+    return this.runtime.call<{{ procedure.args_name }}, unknown>(
+      "procedure.{{ procedure.name }}",
+      args,
+      options,
+    ).then((value) => {% if procedure.decimal_paged %}revivePagedDecimalFields{% else %}reviveDecimalFields{% endif %}(value, '{{ procedure.decimal_shape_name }}') as {{ procedure.return_type }});
+  }
+{% endif %}
 
 {% endfor %}
 }

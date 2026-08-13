@@ -4,9 +4,12 @@
 
 Rust workspace for a schema-first framework (`.cstack` files). Three deployment roles via schema macros: `include_server_schema!` (Postgres + Axum), `include_embedded_schema!` (SQLite native + wasm32), `include_client_schema!` (HTTP client).
 
-Two main facade crates, both publish as lib named `cratestack`:
+Four facade crates, all publish as lib named `cratestack` (pre-existing drift note: this
+list previously said "two" and omitted `cratestack-api`; corrected alongside cratestack#490):
 - `cratestack = { package = "cratestack-pg" }` — backend services
+- `cratestack = { package = "cratestack-api" }` — procedures-only, no-database backend services
 - `cratestack = { package = "cratestack-sqlite" }` — embedded/mobile
+- `cratestack = { package = "cratestack-client" }` — pure HTTP-client SDKs, no `cratestack-axum`
 
 ## Core Commands
 
@@ -39,6 +42,34 @@ just test-pg-tc                                  # same via testcontainers
 
 - `unsafe_code = "forbid"` (workspace-level)
 - Clippy runs with `-D warnings` in `just all-checks`
+
+## Direct sqlx use is correct here — do not "fix" it
+
+Downstream consumers of this framework operate under a policy that bans hand-written SQL and direct
+`sqlx` dependencies in favour of the generated model client (webank-context ADR 0038). **That policy
+explicitly exempts this repository**, which is the layer that wraps sqlx: `cratestack-sqlx`,
+`cratestack-pg` and `cratestack-cli` depend on and re-export sqlx by design, and the SQL builders in
+`crates/cratestack-sqlx/src/query/` are the implementation the policy points consumers at.
+
+Recorded here so a future reader does not mistake this for the drift that policy is aimed at. If you
+are consolidating sqlx usage, consolidate it — but do not remove it, and do not route it through a
+facade that does not exist.
+
+Two gaps that policy names as blocking its consumers, both filed against this repo, worth knowing
+about when touching the relevant code:
+
+- **A server-internal write path.** `crates/cratestack-sqlx/src/query/write/create_exec.rs:46-58`
+  gates `create`/`update`/`delete` through the model's `@@allow` policies identically for a
+  procedure and for the generated REST route. Consumers therefore cannot let server code write
+  through the ORM without also opening a public CRUD route for that action — which is why they all
+  hand-write their writes instead. This is the single largest adoption blocker downstream.
+- **Per-call-site `ON CONFLICT DO NOTHING`.** The `DO NOTHING`-equivalent at
+  `crates/cratestack-sqlx/src/query/write/upsert_sql.rs:131-139` (`DO UPDATE SET pk = EXCLUDED.pk`,
+  preserving `RETURNING`) is selected by the **model descriptor** — it fires only when
+  `descriptor.upsert_update_columns` is empty. A model with any updatable column therefore cannot
+  express "insert, or read back without mutating" for one specific write, which is the shape
+  ledger-style idempotent inserts need. The alternative today is that a retry silently overwrites
+  a settled row.
 
 ## Wasm Build Requirements
 
@@ -80,7 +111,7 @@ Use `just bump NEW_VERSION` — it rewrites every `Cargo.toml` in the repo and r
 
 ## Key Patterns
 
-- `[lib] name = "cratestack"` in `cratestack-pg` and `cratestack-sqlite` allows integration tests to resolve `::cratestack::*` paths directly
+- `[lib] name = "cratestack"` in all four facades (`cratestack-pg`, `cratestack-api`, `cratestack-sqlite`, `cratestack-client`) allows integration tests to resolve `::cratestack::*` paths directly
 - `@@materialized` views only on server backend — macro hard-errors on embedded
 - Policies (`@@allow`/`@@deny`) are enforced server-side only; embedded backend doesn't gate access
 <!-- BEGIN: AI Governance stanza (managed by ADORSYS-GIS/ai-governance) -->

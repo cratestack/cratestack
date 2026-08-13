@@ -8,11 +8,108 @@ allow = [
     "Zlib",
     "CDLA-Permissive-2.0",
     "Unicode-3.0",
-    "Apache-2.0 WITH LLVM-exception"
+    "Apache-2.0 WITH LLVM-exception",
+    # OSI-approved, MIT-equivalent-minus-attribution-clause; pulled in by
+    # borrow-or-share (fluent-uri -> ls-types -> tower-lsp-server), a direct
+    # dependency of the published `cratestack-lsp` crate.
+    "MIT-0",
+    # OSI-approved permissive license (BSD/MIT-like, with clearer patent
+    # language). Pulled in by minicbor / minicbor-serde, direct dependencies
+    # of `cratestack-axum` and `cratestack-codec-cbor` — the default wire
+    # format for every published server/client crate. Not copyleft.
+    "BlueOak-1.0.0",
+    # OSI-approved permissive license (Boost Software License). Pulled in
+    # by xxhash-rust via `redis`, a dependency of the published
+    # `cratestack-redis` and `cratestack-client-store-redis` crates.
+    "BSL-1.0",
+    # Public-domain-equivalent dedication (FSF Free/Libre); not copyleft.
+    # Pulled in by `notify`, used only by the dev-only, unpublished
+    # `embedded-daemon-example` (file-watch reload loop).
+    "CC0-1.0",
+]
+confidence-threshold = 0.8
+
+# Per-crate exceptions, NOT a blanket allow. MPL-2.0 is weak copyleft and is
+# deliberately excluded from the global `allow` list above so that any
+# *other*, not-yet-vetted MPL-2.0 crate that enters the graph still fails
+# the gate and gets a human look. The five crates below are individually
+# vetted and scoped by name; see the PR/report for the maintainer-facing
+# writeup of what each one actually reaches.
+exceptions = [
+    # cssparser / cssparser-macros / dtoa-short / selectors: reachable only
+    # via `dom_query` -> `tauri-utils` -> `tauri`, consumed exclusively by
+    # the unpublished `tauri-native-shell-example` / `tauri-web-shell-example`
+    # crates (desktop shell examples, not part of the published surface).
+    { allow = ["MPL-2.0"], crate = "cssparser" },
+    { allow = ["MPL-2.0"], crate = "cssparser-macros" },
+    { allow = ["MPL-2.0"], crate = "dtoa-short" },
+    { allow = ["MPL-2.0"], crate = "selectors" },
+    # option-ext: reachable via `dirs-sys` -> `dirs` -> `shellexpand` ->
+    # `rust-embed` (the `interpolate-folder-path` feature, needed to expand
+    # `$OUT_DIR` in `cratestack-studio`'s `#[folder = "$OUT_DIR/ui-dist"]`
+    # embed path) -> the PUBLISHED `cratestack-studio` crate (and, via the
+    # same `dirs` dependency, also the tauri examples). This is the one
+    # MPL-2.0 exception that touches a published crate's build — flagged
+    # explicitly for maintainer sign-off, not a decision made silently here.
+    { allow = ["MPL-2.0"], crate = "option-ext" },
 ]
 
+[licenses.private]
+# Left at the default (false): every workspace crate, published or not,
+# still gets its license checked — see the unlicensed-crate fixes (adding
+# `license.workspace = true` to the example crates) rather than exempting
+# them here.
+ignore = false
+
 [advisories]
-ignore = []
+ignore = [
+    # --- Unmaintained: gtk-rs GTK3 bindings ---
+    # All ten reachable only via glib/gtk -> tauri (Linux webview backend),
+    # consumed exclusively by the unpublished tauri-native-shell-example /
+    # tauri-web-shell-example crates. No maintained GTK3 binding exists;
+    # gtk-rs's own recommendation is to migrate to GTK4, which is a Tauri
+    # upstream decision, not something fixable from this repo.
+    { id = "RUSTSEC-2024-0413", reason = "gtk-rs GTK3 `atk` binding, unmaintained upstream; reachable only via tauri examples (tauri-native-shell-example, tauri-web-shell-example), not any published crate" },
+    { id = "RUSTSEC-2024-0416", reason = "gtk-rs GTK3 `atk-sys` binding, unmaintained upstream; reachable only via tauri examples" },
+    { id = "RUSTSEC-2024-0412", reason = "gtk-rs GTK3 `gdk` binding, unmaintained upstream; reachable only via tauri examples" },
+    { id = "RUSTSEC-2024-0418", reason = "gtk-rs GTK3 `gdk-sys` binding, unmaintained upstream; reachable only via tauri examples" },
+    { id = "RUSTSEC-2024-0411", reason = "gtk-rs GTK3 `gdkwayland-sys` binding, unmaintained upstream; reachable only via tauri examples" },
+    { id = "RUSTSEC-2024-0417", reason = "gtk-rs GTK3 `gdkx11` binding, unmaintained upstream; reachable only via tauri examples" },
+    { id = "RUSTSEC-2024-0414", reason = "gtk-rs GTK3 `gdkx11-sys` binding, unmaintained upstream; reachable only via tauri examples" },
+    { id = "RUSTSEC-2024-0415", reason = "gtk-rs GTK3 `gtk` binding, unmaintained upstream; reachable only via tauri examples" },
+    { id = "RUSTSEC-2024-0420", reason = "gtk-rs GTK3 `gtk-sys` binding, unmaintained upstream; reachable only via tauri examples" },
+    { id = "RUSTSEC-2024-0419", reason = "gtk-rs GTK3 `gtk3-macros` binding, unmaintained upstream; reachable only via tauri examples" },
+
+    # --- Unmaintained: proc-macro-error ---
+    # Pulled in by glib-macros/gtk3-macros (same Linux tauri webview chain
+    # above); no safe replacement exists that gtk-rs 0.18 itself depends on.
+    { id = "RUSTSEC-2024-0370", reason = "proc-macro-error, unmaintained upstream; pulled in via glib-macros/gtk3-macros in the tauri Linux webview chain, only reachable from tauri-native-shell-example / tauri-web-shell-example" },
+
+    # --- Unmaintained: rust-unic family ---
+    # Pulled in via urlpattern -> tauri-utils -> tauri; RUSTSEC advisories
+    # for this family explicitly state "no safe upgrade is available"
+    # (recommended replacement is icu_properties / unicode-ident, which is
+    # an upstream tauri-utils/urlpattern migration, not ours to make).
+    { id = "RUSTSEC-2025-0081", reason = "unic-char-property, unmaintained upstream (no safe upgrade); reachable only via urlpattern -> tauri-utils -> tauri examples" },
+    { id = "RUSTSEC-2025-0075", reason = "unic-char-range, unmaintained upstream (no safe upgrade); reachable only via urlpattern -> tauri-utils -> tauri examples" },
+    { id = "RUSTSEC-2025-0080", reason = "unic-common, unmaintained upstream (no safe upgrade); reachable only via urlpattern -> tauri-utils -> tauri examples" },
+    { id = "RUSTSEC-2025-0100", reason = "unic-ucd-ident, unmaintained upstream (no safe upgrade); reachable only via urlpattern -> tauri-utils -> tauri examples" },
+    { id = "RUSTSEC-2025-0098", reason = "unic-ucd-version, unmaintained upstream (no safe upgrade); reachable only via urlpattern -> tauri-utils -> tauri examples" },
+
+    # --- Vulnerabilities: quick-xml (via plist, via tauri) ---
+    # Fix is quick-xml >=0.41.0, but `plist` v1.9.0 (the version tauri
+    # v2.11.5, the latest tauri 2.x, depends on) pins `quick-xml = "^0.39.2"`
+    # — verified by `cargo update -p quick-xml` (no-op) and
+    # `cargo update -p quick-xml --precise 0.41.0` (hard version-selection
+    # failure against plist's own requirement). No safe upgrade is available
+    # from this repo today; reachable only via tauri-native-shell-example /
+    # tauri-web-shell-example (which parse local, trusted plist/Info.plist
+    # build metadata, not attacker-controlled XML), never from any
+    # published crate. Revisit when tauri ships a plist >=1.10 or an
+    # equivalent quick-xml bump.
+    { id = "RUSTSEC-2026-0194", reason = "quick-xml quadratic duplicate-attribute check; pinned below the fix by plist v1.9.0 (tauri's dependency) requiring quick-xml ^0.39.2; reachable only via tauri examples parsing trusted local plist files, not any published crate or untrusted input" },
+    { id = "RUSTSEC-2026-0195", reason = "quick-xml unbounded namespace-declaration allocation; same plist v1.9.0 pin as RUSTSEC-2026-0194; reachable only via tauri examples parsing trusted local plist files, not any published crate or untrusted input" },
+]
 
 [bans]
 multiple-versions = "warn"

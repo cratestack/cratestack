@@ -34,7 +34,7 @@ pub(crate) use messages::GrpcMessageView;
 pub(crate) use methods::GrpcModelView;
 use serde::Serialize;
 
-use crate::templates::TypeScriptGeneratorError;
+use crate::error::TypeScriptGeneratorError;
 use crate::types::{enum_name_set, primary_key_field};
 
 #[derive(Debug, Clone, Serialize)]

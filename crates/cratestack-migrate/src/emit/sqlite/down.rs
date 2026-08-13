@@ -2,7 +2,7 @@
 
 use std::fmt::Write as _;
 
-use crate::ir::{Op, RenameColumn, RenameTable};
+use crate::ir::{CheckKind, Op, RenameColumn, RenameTable};
 
 use super::columns::emit_rename_column;
 use super::idents::quote_ident;
@@ -47,12 +47,25 @@ pub(super) fn emit_down_op(sql: &mut String, op: &Op) {
         Op::DropTable(_) | Op::DropColumn(_) | Op::DropIndex(_) | Op::AlterColumnType(_) => {
             // Routed through the error stub above when lossy.
         }
-        Op::CreateEnum(_) | Op::AlterEnumAddVariant(_) | Op::DropEnum(_) => {
-            // Enum ops have no SQLite footprint; nothing to reverse.
+        Op::AddCheck(check) => {
+            if !matches!(check.kind, CheckKind::Enum { .. }) {
+                sql.push_str(
+                    "-- SQLite CHECK constraint reversal (DROP): removing a CHECK added by the forward op requires the same table rebuild as the forward op.\n",
+                );
+            }
         }
-        Op::AddCheck(_) | Op::DropCheck(_) => {
+        Op::DropCheck(check) => {
+            // Enum membership checks have no SQLite footprint in
+            // either direction — see `super::checks`.
+            if !matches!(check.kind, CheckKind::Enum { .. }) {
+                sql.push_str(
+                    "-- SQLite CHECK constraint reversal (ADD): restoring a CHECK removed by the forward op requires the same table rebuild as the forward op.\n",
+                );
+            }
+        }
+        Op::AddForeignKey(_) | Op::DropForeignKey(_) => {
             sql.push_str(
-                "-- SQLite CHECK constraint reversal requires the same table rebuild as the forward op.\n",
+                "-- SQLite foreign key reversal requires the same table rebuild as the forward op.\n",
             );
         }
         Op::CreateView(view) => {
@@ -72,6 +85,9 @@ pub(super) fn emit_down_op(sql: &mut String, op: &Op) {
             unreachable!(
                 "materialized view ops have no SQLite equivalent and should never reach the SQLite emitter"
             );
+        }
+        Op::EnsureExtension(_) => {
+            // No SQLite equivalent — nothing to reverse.
         }
     }
 }

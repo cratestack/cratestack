@@ -1,0 +1,36 @@
+// Dedicated Decimal-scalar fixture (cratestack#498) — the Dart
+// counterpart to `cratestack-client-typescript`'s
+// `tests/fixtures/decimal_scalar.cstack`, same `Invoice` shape so both
+// SDKs' generator tests exercise the identical schema.
+//
+// `customer`/`QuoteResult` (F6 remediation, cratestack#499's review):
+// proves Dart's `Model.fromWire`/`toWire()` chokepoint really does revive
+// a relation-embedded `Decimal` field and a procedure's own `Decimal`-
+// bearing return type with no extra generator work — unlike TypeScript,
+// which needed dedicated fixes for both (see this repo's `cratestack#498`
+// PR remediation for the equivalent TS holes this fixture's decode test
+// proves Dart never had).
+
+model Customer {
+  id Cuid @id @default(cs_cuid())
+  balance Decimal
+
+  @@allow("list", true)
+}
+
+model Invoice {
+  id Cuid @id @default(cs_cuid())
+  reference String
+  amountXaf Decimal
+  discountXaf Decimal?
+  customerId Cuid
+  customer Customer @relation(fields:[customerId],references:[id])
+
+  @@allow("list", true)
+}
+
+type QuoteResult {
+  price Decimal
+}
+
+procedure quote(reference: String): QuoteResult

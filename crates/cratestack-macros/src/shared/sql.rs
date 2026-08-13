@@ -7,6 +7,9 @@ use quote::quote;
 
 use super::{ident, to_snake_case};
 
+#[cfg(test)]
+mod tests;
+
 pub(crate) fn create_sql_value(
     field: &Field,
     enum_names: &BTreeSet<&str>,
@@ -123,6 +126,13 @@ pub(crate) fn sql_value_tokens(
             match #value {
                 Some(value) => ::cratestack::SqlValue::Decimal(value),
                 None => ::cratestack::SqlValue::NullDecimal,
+            }
+        },
+        ("Vector", TypeArity::Required) => quote! { ::cratestack::SqlValue::Vector(#value) },
+        ("Vector", TypeArity::Optional) => quote! {
+            match #value {
+                Some(value) => ::cratestack::SqlValue::Vector(value),
+                None => ::cratestack::SqlValue::NullVector,
             }
         },
         _ => panic!("unsupported SQLx value type for this slice"),

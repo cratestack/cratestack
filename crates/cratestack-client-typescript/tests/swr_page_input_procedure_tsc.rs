@@ -1,0 +1,95 @@
+//! Real-compiler proof for the `PageInput` procedure-argument import gap
+//! that `tests/swr_generator.rs`'s
+//! `page_input_procedure_argument_imports_page_input_in_every_file_that_uses_it`
+//! checks by string — see `swr_paged_model_tsc.rs`'s module doc for why a
+//! string assertion alone can't tell "imports the type it uses" from
+//! "happens to contain the substring", and follows that file's structure
+//! (and Node-availability skip convention) verbatim, swapped to the
+//! `PageInput` fixtures.
+
+use std::fs;
+use std::process::Command;
+
+use cratestack_client_typescript::{TypeScriptGeneratorConfig, TypeScriptPreset, generate_package};
+
+#[test]
+fn page_input_procedure_output_type_checks() {
+    if !node_npm_npx_available() {
+        eprintln!(
+            "skipping page_input_procedure_output_type_checks: `node`/`npm`/`npx` not on PATH \
+             (expected in this repo's Rust-only CI jobs — see this test's module doc)"
+        );
+        return;
+    }
+
+    for fixture in ["swr_page_input_procedure", "swr_page_input_procedure_rpc"] {
+        let schema =
+            cratestack_parser::parse_schema_file(format!("tests/fixtures/{fixture}.cstack"))
+                .unwrap_or_else(|error| panic!("fixture {fixture} should parse: {error}"));
+        let package = generate_package(
+            &schema,
+            &TypeScriptGeneratorConfig {
+                package_name: "swr-page-input-procedure-tsc-check".to_owned(),
+                preset: TypeScriptPreset::Swr,
+                ..TypeScriptGeneratorConfig::default()
+            },
+        )
+        .unwrap_or_else(|error| panic!("{fixture}: swr preset should render: {error}"));
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        for file in &package.files {
+            let path = dir.path().join(&file.file_name);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).expect("create parent dir");
+            }
+            fs::write(&path, &file.contents).expect("write generated file");
+        }
+
+        let install = Command::new("npm")
+            .args([
+                "install",
+                "--no-save",
+                "--no-audit",
+                "--no-fund",
+                "typescript@5",
+                "swr",
+            ])
+            .current_dir(dir.path())
+            .output()
+            .expect("run npm install");
+        assert!(
+            install.status.success(),
+            "{fixture}: npm install failed:\nstdout: {}\nstderr: {}",
+            String::from_utf8_lossy(&install.stdout),
+            String::from_utf8_lossy(&install.stderr)
+        );
+
+        let tsc = Command::new("npx")
+            .args(["--yes", "tsc", "--noEmit", "-p", "tsconfig.json"])
+            .current_dir(dir.path())
+            .output()
+            .expect("run npx tsc");
+
+        let stdout = String::from_utf8_lossy(&tsc.stdout);
+        let stderr = String::from_utf8_lossy(&tsc.stderr);
+        assert!(
+            !stdout.contains("Cannot find name 'PageInput'")
+                && !stderr.contains("Cannot find name 'PageInput'"),
+            "{fixture}: tsc reported a missing `PageInput` type — the exact regression this \
+             test guards against:\nstdout: {stdout}\nstderr: {stderr}"
+        );
+        assert!(
+            tsc.status.success(),
+            "{fixture}: tsc reported unexpected errors:\nstdout: {stdout}\nstderr: {stderr}"
+        );
+    }
+}
+
+fn node_npm_npx_available() -> bool {
+    ["node", "npm", "npx"].iter().all(|bin| {
+        Command::new(bin)
+            .arg("--version")
+            .output()
+            .is_ok_and(|output| output.status.success())
+    })
+}

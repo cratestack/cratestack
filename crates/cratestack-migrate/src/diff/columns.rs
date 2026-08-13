@@ -40,20 +40,7 @@ pub(super) fn diff_columns(prev: &TableProjection, next: &TableProjection) -> Co
     // Column-level renames: a next-side column with
     // `@rename(from = "...")` consumes the matching prev-side column
     // so we don't emit drop+add for it.
-    let column_renamed_from: BTreeMap<&str, &str> = next
-        .column_renames
-        .iter()
-        .filter_map(|(new, old)| {
-            if prev_columns.contains_key(old.as_str())
-                && !prev_columns.contains_key(new.as_str())
-                && next_columns.contains_key(new.as_str())
-            {
-                Some((new.as_str(), old.as_str()))
-            } else {
-                None
-            }
-        })
-        .collect();
+    let column_renamed_from = column_rename_map(prev, next);
     let consumed_prev_columns: BTreeSet<&str> = column_renamed_from.values().copied().collect();
 
     for (new_name, old_name) in &column_renamed_from {
@@ -121,6 +108,37 @@ pub(super) fn diff_columns(prev: &TableProjection, next: &TableProjection) -> Co
     }
 
     out
+}
+
+/// Resolves `next.column_renames` into an eligible new-name → old-name
+/// map: a next-side column with `@rename(from = "...")` only counts as
+/// a rename (rather than a coincidental drop+add) when the old name
+/// existed on `prev`, the new name didn't already exist on `prev`
+/// (otherwise it's a collision, not a rename), and the new name still
+/// exists on `next`. Shared by [`diff_columns`] (to emit
+/// [`Op::RenameColumn`] and avoid a spurious drop+add) and
+/// `primary_key::check_primary_key_unchanged` (to avoid treating a
+/// renamed `@id`/`@@id([...])` column as a primary-key change,
+/// issue #536 regression).
+pub(super) fn column_rename_map<'a>(
+    prev: &'a TableProjection,
+    next: &'a TableProjection,
+) -> BTreeMap<&'a str, &'a str> {
+    let prev_columns: BTreeSet<&str> = prev.columns.iter().map(|c| c.name.as_str()).collect();
+    let next_columns: BTreeSet<&str> = next.columns.iter().map(|c| c.name.as_str()).collect();
+    next.column_renames
+        .iter()
+        .filter_map(|(new, old)| {
+            if prev_columns.contains(old.as_str())
+                && !prev_columns.contains(new.as_str())
+                && next_columns.contains(new.as_str())
+            {
+                Some((new.as_str(), old.as_str()))
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 /// Compare a column's previous and next definitions and emit the

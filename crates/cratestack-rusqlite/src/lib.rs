@@ -22,9 +22,11 @@ pub use cratestack_sql::{
     CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault, CreateDefaultType,
     CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName, IntoSqlValue,
     JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder,
-    OrderClause, Projection, RelationFilter, RelationInclude, RelationQuantifier, SortDirection,
-    SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue, SqliteDialect, UpdateModelInput,
-    UpsertModelInput, coalesce, point,
+    OrderClause, Orderable, Projection, RelationFilter, RelationHop, RelationInclude,
+    RelationQuantifier, SortDirection, SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue,
+    SqliteDialect, Unorderable, UpdateModelInput, UpsertModelInput, VectorDistanceExpr,
+    VectorDistanceFilter, VectorMetric, coalesce, is_orderable, order_value_sql, point,
+    wrap_filter,
 };
 
 pub use batch::{BatchCreate, BatchDelete, BatchGet, BatchUpdate, BatchUpdateItem, BatchUpsert};
@@ -40,8 +42,10 @@ pub use render::{
 pub use row::{FromPartialRusqliteRow, FromRusqliteRow};
 pub use runtime::{RusqliteError, RusqliteRuntime};
 pub use value::{
-    DateTimeColumn, DecimalColumn, JsonColumn, SqlValueParam, UuidColumn, decode_datetime,
-    decode_decimal, decode_json, decode_uuid,
+    DateTimeColumn, JsonColumn, SqlValueParam, UuidColumn, decode_datetime, decode_json,
+    decode_uuid,
 };
+#[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
+pub use value::{DecimalColumn, decode_decimal};
 
 pub use rusqlite;

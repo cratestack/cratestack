@@ -8,17 +8,25 @@ The implementation is still pre-1.0. As of `0.3.0` the framework is organized ar
 * **`include_embedded_schema!("schema.cstack")`** — `cratestack-rusqlite` only. Native mobile/desktop **and** `wasm32-unknown-unknown` (browser, OPFS-backed) from the same source. No sqlx, no axum.
 * **`include_client_schema!("schema.cstack")`** — HTTP client stubs only. Treats another service's `.cstack` as a contract; owns no database.
 
-As of `0.4.0` the previous single `cratestack` umbrella crate is split into two strictly disjoint sub-facades that consumers pick between via Cargo's `package =` rename:
+As of `0.4.0` the previous single `cratestack` umbrella crate is split into strictly disjoint sub-facades that consumers pick between via Cargo's `package =` rename — a fourth, `cratestack-client`, was added by [cratestack#490](https://github.com/cratestack/cratestack/issues/490):
 
 ```toml
 # Backend service (Postgres + Axum + generated Rust client runtime)
-cratestack = { package = "cratestack-pg", version = "0.4" }
+cratestack = { package = "cratestack-pg", version = "0.7.8" }
+
+# Procedures-only, no-database backend service (Axum + generated Rust
+# client runtime, with `sqlx` genuinely absent from the dependency graph)
+cratestack = { package = "cratestack-api", version = "0.7.8" }
 
 # Embedded / mobile / desktop / wasm (rusqlite + shared surface)
-cratestack = { package = "cratestack-sqlite", version = "0.4" }
+cratestack = { package = "cratestack-sqlite", version = "0.7.8" }
+
+# Pure HTTP-client SDK (include_client_schema! only, generated Rust client
+# runtime, with `cratestack-axum` genuinely absent from the dependency graph)
+cratestack = { package = "cratestack-client", version = "0.7.8" }
 ```
 
-`cratestack-pg` does not pull in `libsqlite3-sys`, so backend services can depend on the official `sqlx` umbrella crate alongside it without `links = "sqlite3"` collisions. See [`CHANGELOG.md`](./CHANGELOG.md) for the full 0.4.0 migration notes.
+`cratestack-pg` does not pull in `libsqlite3-sys`, so backend services can depend on the official `sqlx` umbrella crate alongside it without `links = "sqlite3"` collisions. `cratestack-client` does not pull in `cratestack-axum` (and therefore `axum`/`tower`/`hyper`/`tower-http`), so a crate that only ever calls a cratestack server doesn't pay for a full server framework it never runs. See [`CHANGELOG.md`](./CHANGELOG.md) for the full 0.4.0 migration notes.
 
 What the current slice covers, across those three shapes:
 
@@ -34,12 +42,16 @@ What the current slice covers, across those three shapes:
 * Studio scaffold generation for one or more schemas
 * mixin declarations and model `@use(...)` expansion
 * **SQL views** (`view <Name> from <Model>, ...`) — read-only, SQL-defined projections over one or more models on both backends; server-side `@@materialized` with `refresh()` via `REFRESH MATERIALIZED VIEW CONCURRENTLY`; same `@@allow("read", …)` policy machinery models use ([ADR-0003](https://cratestack.dev/internals/views-adr))
+* **`datasource { provider = "none" }`** (`db = None`) — a procedures-only server with no database at all: no `model` blocks allowed, and the generated `Cratestack`/router are genuinely `PgPool`-free rather than carrying an always-`None` pool (see [`docs/design/no-database-mode.md`](docs/design/no-database-mode.md))
+* **`transport grpc`** — a `.cstack` schema can declare `transport grpc` instead of REST/RPC, generating `.proto` messages (with a field-number lockfile), a tonic service, and Rust/Dart/TypeScript(gRPC-Web) clients; CRUD-only today, procedures and streaming are still follow-up work (see [`docs/design/protobuf.md`](docs/design/protobuf.md))
 
 ## Support Matrix
 
 | `.cstack` capability | Status | Notes |
 | --- | --- | --- |
-| `datasource` | Supported | `provider` accepts `postgresql` (server) or `sqlite` (embedded — native and `wasm32`) |
+| `datasource` | Supported | `provider` accepts `postgresql` (server), `sqlite` (embedded — native and `wasm32`), or `none` (procedures-only server, no database) |
+| `datasource { provider = "none" }` (`db = None`) | Supported | Server-only; the schema can never declare a `model`. Generates a genuinely `PgPool`-free `Cratestack`/router, with `ModelRouterState` and the event module omitted entirely rather than compiled in as dead code. See [`docs/design/no-database-mode.md`](docs/design/no-database-mode.md). |
+| `transport grpc` | Supported (CRUD only) | Mutually exclusive with REST/RPC transport. Generates `.proto` messages/enums (field-number lockfile), a tonic service, and gRPC clients (Rust, Dart native, TypeScript gRPC-Web). `procedure` declarations aren't wired into the generated gRPC service yet, and there's no streaming support. See [`docs/design/protobuf.md`](docs/design/protobuf.md). |
 | `auth` | Supported | Single auth block |
 | `mixin` | Supported | Reusable field sets for models |
 | `model` | Supported | Includes relation and policy attributes in current slice |
@@ -55,11 +67,15 @@ What the current slice covers, across those three shapes:
 The Rust workspace contains these main packages:
 
 * `cratestack-pg`: server-side facade — sqlx (Postgres) + axum + generated Rust client runtime + the shared schema surface. Picked via `cratestack = { package = "cratestack-pg" }`.
+* `cratestack-api`: procedures-only, no-database server facade — Axum + generated Rust client runtime, with `sqlx` genuinely absent from the dependency graph. Picked via `cratestack = { package = "cratestack-api" }` for `datasource { provider = "none" }` schemas.
 * `cratestack-sqlite`: embedded facade — rusqlite (SQLite on native + `wasm32`) + the shared schema surface. Picked via `cratestack = { package = "cratestack-sqlite" }`. Also re-exports `cratestack-client-rust` on native targets so hybrid consumers (NAPI / Tauri shells) can call `include_client_schema!` alongside `include_embedded_schema!`.
+* `cratestack-client`: pure HTTP-client SDK facade — re-exports only `include_client_schema!` plus the generated Rust client runtime and shared schema surface, with `cratestack-axum` genuinely absent from the dependency graph. Picked via `cratestack = { package = "cratestack-client" }` for a crate that only ever calls a cratestack server.
 * `cratestack-core`: shared metadata, auth context, codec, error, and envelope types
 * `cratestack-parser`: `.cstack` parser and semantic checker
 * `cratestack-policy`: canonical policy literals, predicates, and procedure-policy evaluation types
 * `cratestack-macros`: compile-time schema and client generation
+* `cratestack-proto`: `.proto` message/enum generator plus the field-number lockfile (`generate-proto`)
+* `cratestack-grpc`: server-side tonic service integration for `transport grpc` schemas
 * `cratestack-sql`: dialect-agnostic SQL primitives shared by both backends
 * `cratestack-sqlx`: SQLx-backed Postgres runtime and query/delegate primitives
 * `cratestack-rusqlite`: embedded SQLite backend (sync, no tokio, no policies; native and `wasm32-unknown-unknown` via `sqlite-wasm-rs`)
@@ -76,7 +92,6 @@ The Rust workspace contains these main packages:
 * `cratestack-cli`: `cratestack` command-line tool
 * `cratestack-lsp`: `.cstack` language server
 * `cratestack-studio`: admin and testing surface for `.cstack` schemas, served from a `studio.toml`
-* `cratestack-studio-generator`: transitional shim that will host `studio eject` in Phase 2 of the studio rewrite
 
 The VS Code extension wrapper lives under `packages/cratestack-vscode`.
 
@@ -85,7 +100,10 @@ The VS Code extension wrapper lives under `packages/cratestack-vscode`.
 From the repository root:
 
 ```sh
-cargo build --workspace
+# --exclude embedded_flutter_native: this example crate needs
+# flutter_rust_bridge-generated glue that isn't checked in, so a plain
+# `--workspace` build fails on a fresh checkout.
+cargo build --workspace --exclude embedded_flutter_native
 cargo run -p cratestack-cli -- --help
 ```
 
@@ -366,7 +384,12 @@ cargo run -p cratestack-cli -- studio run      # binds 127.0.0.1:7878
 A target in `studio.toml` declares one `.cstack`, a `[target.db]` block
 (sqlx pool), a `[target.api]` block (deployed cratestack service), or
 both. The 0.3.x Jinja-templated `generate-studio` scaffold is gone —
-`cratestack studio eject` will replace it in Phase 2 of the rewrite.
+`cratestack studio eject --out <dir>` replaces it with a self-contained
+starter binary crate (`Cargo.toml`, `studio.toml`, an example schema,
+`src/main.rs`). Pass `--with-ui` to also unpack the Leptos+Trunk UI
+sources into `<out>/ui/` for front-end customization, and `--name` to
+set the project name written into the generated `Cargo.toml`/`README.md`
+(defaults to `--out`'s directory basename).
 
 ## VS Code
 
@@ -399,11 +422,21 @@ JSON and CBOR are first-class codecs. COSE is treated as a planned optional enve
 
 Generated Axum routes currently enforce a single configured codec per router rather than negotiated multi-codec transport. `application/cbor-seq` is documented as a target transport mode, but it is not implemented yet.
 
+### TLS crypto provider (`rustls-no-provider`)
+
+Generated Rust clients (`cratestack-client-rust`'s `CratestackClient`) and Studio's REST `ApiSource` build on `reqwest`'s `rustls-no-provider` feature, not `rustls` — as of #440, this crate no longer forces `aws-lc-rs` as the TLS crypto provider onto every consumer of `cratestack`/`cratestack-pg` (it used to, unconditionally, which broke `*-unknown-linux-musl`/`scratch` container builds and any `cargo-deny` policy banning `aws-lc-rs`, since `aws-lc-rs` needs a C toolchain and `ring` doesn't).
+
+Practically, this means:
+
+* **You don't need to do anything to keep working.** `CratestackClient::new` and `ApiSource::new` install a `ring`-backed `rustls::crypto::CryptoProvider` themselves if the process doesn't already have one — the same zero-config experience as before, just on `ring` instead of `aws-lc-rs`.
+* **If your own application installs a provider first** (any backend — `ring`, `aws-lc-rs`, or a custom one — via `rustls::crypto::CryptoProvider::install_default()` before constructing your first `CratestackClient`/`ApiSource`), that choice wins; the fallback above only installs if nothing is set yet.
+* **`CratestackClient::with_http_client`** takes a `reqwest::Client` you already built, so this doesn't apply — you're responsible for whatever provider that client needed.
+
 ## Current Limits
 
 CrateStack is not yet the right fit for:
 
-* highly customized non-REST transport protocols
+* `transport grpc` schemas that declare `procedure`s, or that need server/client streaming — `transport grpc` today covers model CRUD only
 * production-stable exact typed non-Rust client generation across arbitrary projection shapes
 * full ZenStack-style policy and exposure parity
 * runtime custom-field resolution beyond the current generated trait metadata
@@ -424,6 +457,12 @@ Run the VS Code package smoke test:
 cd packages/cratestack-vscode
 pnpm install
 pnpm run test:smoke
+```
+
+Run the offline quality pipeline (SAST, secrets, dependency scanning — see [`docs/quality-pipeline.md`](docs/quality-pipeline.md)):
+
+```sh
+.ci/quality/run.sh
 ```
 
 ## Release

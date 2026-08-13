@@ -2,7 +2,7 @@
   "name": "cratestack-vscode",
   "displayName": "CrateStack",
   "description": "VS Code support for CrateStack .cstack schemas",
-  "version": "0.4.16",
+  "version": "0.7.14",
   "publisher": "cratestack",
   "license": "MIT",
   "repository": {
@@ -80,10 +80,10 @@
     }
   },
   "devDependencies": {
-    "@vscode/test-electron": "^2.5.2",
-    "@vscode/vsce": "^3.6.2"
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^3.9.2"
   },
   "dependencies": {
-    "vscode-languageclient": "^9.0.1"
+    "vscode-languageclient": "^10.1.0"
   }
 }

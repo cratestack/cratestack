@@ -58,6 +58,54 @@ fn rpc_client_invokes_runtime_call_with_dotted_op_ids() {
     );
 }
 
+/// Issue #333: `list()` must take the typed `CratestackRpcListQuery`
+/// (not a bare `Record<string, unknown>`) and forward it through
+/// `toRpcListInput()`, and `queries.ts` — the RPC counterpart of REST's
+/// `queries.ts` — must actually be generated and exported from the
+/// package root.
+#[test]
+fn rpc_client_uses_typed_list_query_builder() {
+    let package = generate_for("tiny_rpc", "tiny-rpc-client");
+
+    let queries = package_file(&package, "src/queries.ts");
+    assert!(
+        queries.contains("export interface CratestackRpcListQuery"),
+        "queries.ts is missing CratestackRpcListQuery:\n{queries}"
+    );
+    assert!(
+        queries.contains("export function toRpcListInput("),
+        "queries.ts is missing toRpcListInput:\n{queries}"
+    );
+
+    let client = package_file(&package, "src/client.ts");
+    assert!(
+        client.contains(
+            "import { toRpcListInput, type CratestackRpcListQuery } from \"./queries.js\";"
+        ),
+        "client.ts does not import the typed list-query builder:\n{client}"
+    );
+    assert!(
+        !client.contains("list(input: Record<string, unknown>"),
+        "client.ts's list() is still typed as a bare Record, not CratestackRpcListQuery:\n{client}"
+    );
+    assert!(
+        client.contains(
+            "list(query: CratestackRpcListQuery = {}, options: CratestackRpcCallOptions = {})"
+        ),
+        "client.ts's list() is not typed as CratestackRpcListQuery:\n{client}"
+    );
+    assert!(
+        client.contains("toRpcListInput(query)"),
+        "client.ts's list() does not forward its query through toRpcListInput:\n{client}"
+    );
+
+    let index = package_file(&package, "src/index.ts");
+    assert!(
+        index.contains("export * from \"./queries.js\";"),
+        "index.ts does not re-export queries.ts:\n{index}"
+    );
+}
+
 #[test]
 fn rpc_runtime_exports_rpc_error_class() {
     let package = generate_for("tiny_rpc", "tiny-rpc-client");
@@ -193,6 +241,42 @@ fn generated_rest_runtime_satisfies_exact_optional_property_types() {
          type-check under exactOptionalPropertyTypes, since the source config types \
          (CratestackRequestConfig etc.) are themselves optional-without-undefined:\n{runtime}"
     );
+    assert!(
+        runtime.contains("export const SCHEMA_SHA256: string ="),
+        "SCHEMA_SHA256 must be explicitly widened to `string` — otherwise TS infers the \
+         literal type of whatever hash was baked in at generation time, and comparing a \
+         non-empty literal against \"\" in request() fails to type-check (verified with \
+         a real `tsc --noEmit` run against a schema with a real, non-empty schema_sha256 — \
+         this snapshot's SNAPSHOT_SCHEMA_SHA256 fixture value happens to be exactly that \
+         case):\n{runtime}"
+    );
+}
+
+#[test]
+fn runtimes_bind_the_default_fetch_to_globalthis() {
+    // Real bug found while running the issue #306 example app for real
+    // in a browser (Vite dev, Chrome): `this.fetchFn = options.fetch ??
+    // fetch;` stores the *unbound* global `fetch` function, and calling
+    // it later as `this.fetchFn(...)` invokes it with `this ===
+    // <runtime instance>` instead of the global object. Some browsers'
+    // `fetch` is spec'd to throw `TypeError: Illegal invocation` for a
+    // wrong receiver — reproduced for real (`useBoards()` failed with
+    // exactly that message on first render). Node's `fetch` doesn't
+    // enforce this, which is why no existing (Node-only) test caught
+    // it. All three fetch-based runtimes must bind to `globalThis`.
+    let rest = generate_for("tiny_rest", "tiny-rest-client");
+    let rest_runtime = package_file(&rest, "src/runtime.ts");
+    assert!(
+        rest_runtime.contains("options.fetch ?? fetch.bind(globalThis)"),
+        "REST runtime must bind the default fetch to globalThis:\n{rest_runtime}"
+    );
+
+    let rpc = generate_for("tiny_rpc", "tiny-rpc-client");
+    let rpc_runtime = package_file(&rpc, "src/runtime.ts");
+    assert!(
+        rpc_runtime.contains("options.fetch ?? fetch.bind(globalThis)"),
+        "RPC runtime must bind the default fetch to globalThis:\n{rpc_runtime}"
+    );
 }
 
 #[test]
@@ -271,13 +355,27 @@ fn schema_sha256_header_is_baked_into_rest_and_rpc_runtimes() {
     // non-empty — REST via its single `request<T>` method (shared by
     // get/post/patch/delete), RPC via its single `buildHeaders` method
     // (shared by call/batch/stream).
+    //
+    // Real bug found while building the issue #306 example app: this
+    // assertion used to expect the REST runtime's constant WITHOUT the
+    // `: string` widening `generated_rpc_runtime_satisfies_exact_optional_property_types`
+    // (below) already required and explains for RPC — meaning the REST
+    // template (`rest-runtime.ts.j2`) shipped without it, and a real
+    // `tsc --noEmit` against any REST package generated with a real,
+    // non-empty `schema_sha256` (i.e. every real `cratestack
+    // generate-typescript` invocation, both presets — this template is
+    // shared) failed with TS2367 on `if (SCHEMA_SHA256 !== "")`: a
+    // `const` initializer's inferred literal type can never equal `""`,
+    // which TypeScript treats as a comparison error. Fixed in
+    // `rest-runtime.ts.j2` to match the RPC template; this assertion now
+    // locks in the fix instead of the bug.
     let rest = generate_for("tiny_rest", "tiny-rest-client");
     let rest_runtime = package_file(&rest, "src/runtime.ts");
     assert!(
         rest_runtime.contains(&format!(
-            "export const SCHEMA_SHA256 = \"{SNAPSHOT_SCHEMA_SHA256}\";"
+            "export const SCHEMA_SHA256: string = \"{SNAPSHOT_SCHEMA_SHA256}\";"
         )),
-        "REST runtime must bake the configured schema SHA-256:\n{rest_runtime}"
+        "REST runtime must bake the configured schema SHA-256, widened to `string`:\n{rest_runtime}"
     );
     assert!(
         rest_runtime.contains("headers.set(SCHEMA_SHA_HEADER, SCHEMA_SHA256);"),
@@ -310,7 +408,7 @@ fn empty_schema_sha256_bakes_an_empty_constant_that_omits_the_header_at_runtime(
     let package = generate_for_with_schema_sha("tiny_rest", "tiny-rest-client", "");
     let runtime = package_file(&package, "src/runtime.ts");
     assert!(
-        runtime.contains("export const SCHEMA_SHA256 = \"\";"),
+        runtime.contains("export const SCHEMA_SHA256: string = \"\";"),
         "an unconfigured schema_sha256 must bake an empty SCHEMA_SHA256 constant:\n{runtime}"
     );
     assert!(
@@ -322,11 +420,13 @@ fn empty_schema_sha256_bakes_an_empty_constant_that_omits_the_header_at_runtime(
 #[test]
 fn rpc_runtime_supports_composable_links_chain() {
     // Issue #182: `call()`/`batch()` run through an ordered `links` chain
-    // terminating in the real fetch; `stream()` deliberately bypasses it
-    // (a link would need to clone/replay a streamed body, defeating
-    // streaming). No links declared must reduce to the exact terminal
-    // call — proven structurally by the `reduceRight` construction, not
-    // just documented.
+    // terminating in the real fetch. No links declared must reduce to
+    // the exact terminal call — proven structurally by the
+    // `reduceRight` construction, not just documented. `stream()` used
+    // to bypass this chain entirely; issue #277 gave it its own
+    // separate `streamChain` instead (see
+    // `rpc_runtime_supports_composable_stream_links_chain`) — it no
+    // longer touches `this.chain` at all, which this test still pins.
     let package = generate_for("tiny_rpc", "tiny-rpc-client");
     let runtime = package_file(&package, "src/runtime.ts");
     assert!(
@@ -334,7 +434,10 @@ fn rpc_runtime_supports_composable_links_chain() {
         "CratestackRpcClientOptions must accept a links chain:\n{runtime}"
     );
     assert!(
-        runtime.contains("import type { RpcLink, RpcLinkNext, RpcLinkRequest } from \"./links\";"),
+        runtime.contains(
+            "import type { RpcLink, RpcLinkNext, RpcLinkRequest, RpcStreamLink, RpcStreamLinkNext } \
+             from \"./links.js\";"
+        ),
         "runtime.ts must import the link chain types from ./links:\n{runtime}"
     );
     assert!(
@@ -349,10 +452,10 @@ fn rpc_runtime_supports_composable_links_chain() {
          fetching directly:\n{runtime}"
     );
     assert!(
-        !runtime.contains("stream")
-            || !runtime[runtime.find("async *stream").expect("stream() must exist")..]
-                .contains("this.chain"),
-        "stream() must bypass the links chain entirely:\n{runtime}"
+        !runtime[runtime.find("async *stream").expect("stream() must exist")..]
+            .contains("this.chain"),
+        "stream() must never touch the unary/batch `this.chain` — it has its own \
+         `this.streamChain` (issue #277):\n{runtime}"
     );
 
     let links = package_file(&package, "src/links.ts");
@@ -367,8 +470,99 @@ fn rpc_runtime_supports_composable_links_chain() {
 
     let index = package_file(&package, "src/index.ts");
     assert!(
-        index.contains("export * from \"./links\";"),
+        index.contains("export * from \"./links.js\";"),
         "index.ts must re-export the links module:\n{index}"
+    );
+}
+
+#[test]
+fn rpc_runtime_supports_composable_stream_links_chain() {
+    // Issue #277: `stream()` runs through its own `streamLinks` chain —
+    // same `reduceRight`/no-op-when-empty contract `links` already has,
+    // but frame-shaped (`RpcStreamFrame`) instead of `Response`-shaped,
+    // and terminating in a real boundary-scan of `application/cbor-seq`
+    // bytes instead of a single `Response` read.
+    let package = generate_for("tiny_rpc", "tiny-rpc-client");
+    let runtime = package_file(&package, "src/runtime.ts");
+    assert!(
+        runtime.contains("streamLinks?: RpcStreamLink[];"),
+        "CratestackRpcClientOptions must accept a streamLinks chain:\n{runtime}"
+    );
+    assert!(
+        runtime.contains(
+            "this.streamChain = (options.streamLinks ?? []).reduceRight<RpcStreamLinkNext>("
+        ),
+        "runtime must build the stream chain via reduceRight so an empty array collapses to \
+         the terminal stream link unchanged:\n{runtime}"
+    );
+    assert!(
+        runtime.contains("import { terminalStreamLink } from \"./stream-terminal.js\";"),
+        "runtime.ts must import the stream chain's terminal link from ./stream-terminal:\n{runtime}"
+    );
+    let stream_body = &runtime[runtime.find("async *stream").expect("stream() must exist")..];
+    assert!(
+        stream_body.contains("for await (const frame of this.streamChain({"),
+        "stream() must consume this.streamChain instead of fetching directly:\n{runtime}"
+    );
+    assert!(
+        stream_body.contains("throw new CratestackRpcStreamError(frame.error);"),
+        "stream() must convert a mid-stream `{{ kind: \"error\" }}` frame into a thrown \
+         CratestackRpcStreamError, outside the chain, mirroring how call()/batch() already \
+         throw CratestackRpcError outside their chain:\n{runtime}"
+    );
+
+    let links = package_file(&package, "src/links.ts");
+    assert!(
+        links.contains("export type RpcStreamLink ="),
+        "links.ts must export the RpcStreamLink type:\n{links}"
+    );
+    assert!(
+        links.contains("export type RpcStreamLinkNext ="),
+        "links.ts must export the RpcStreamLinkNext type:\n{links}"
+    );
+    assert!(
+        links.contains("export interface RpcStreamLinkRequest"),
+        "links.ts must export the RpcStreamLinkRequest type:\n{links}"
+    );
+    assert!(
+        links.contains("export type RpcStreamFrame<O = unknown> ="),
+        "links.ts must export the RpcStreamFrame discriminated union:\n{links}"
+    );
+    assert!(
+        links.contains("export function createLoggerStreamLink("),
+        "links.ts must ship a reference stream link mirroring createLoggerLink:\n{links}"
+    );
+
+    let stream_terminal = package_file(&package, "src/stream-terminal.ts");
+    assert!(
+        stream_terminal.contains("export const terminalStreamLink: RpcStreamLinkNext ="),
+        "stream-terminal.ts must export the terminal stream link:\n{stream_terminal}"
+    );
+
+    let cbor_seq = package_file(&package, "src/cbor-seq.ts");
+    assert!(
+        cbor_seq.contains("export const RPC_STREAM_ERROR_TAG = 48900;"),
+        "cbor-seq.ts must pin the RPC_STREAM_ERROR_TAG constant to the same value as \
+         cratestack_core::rpc::RPC_STREAM_ERROR_TAG:\n{cbor_seq}"
+    );
+    assert!(
+        cbor_seq.contains("export class CborSeqBoundaryScanner"),
+        "cbor-seq.ts must export the boundary scanner:\n{cbor_seq}"
+    );
+    assert!(
+        cbor_seq.contains("export function classifyCborSeqItem"),
+        "cbor-seq.ts must export the error-sentinel classification helper:\n{cbor_seq}"
+    );
+
+    let index = package_file(&package, "src/index.ts");
+    assert!(
+        index.contains("export * from \"./cbor-seq.js\";"),
+        "index.ts must re-export the public cbor-seq module:\n{index}"
+    );
+    assert!(
+        !index.contains("export * from \"./cbor-item.js\";"),
+        "src/cbor-item.ts is an internal implementation detail (the low-level single-item \
+         walk) — it must not be re-exported from index.ts:\n{index}"
     );
 }
 
@@ -444,6 +638,7 @@ fn generate_for_with_full_config(
             package_name: package_name.to_owned(),
             base_path: "/api".to_owned(),
             template_dir: None,
+            preset: cratestack_client_typescript::TypeScriptPreset::Default,
             full_selection,
             pb_lock: None,
             schema_sha256: schema_sha256.to_owned(),

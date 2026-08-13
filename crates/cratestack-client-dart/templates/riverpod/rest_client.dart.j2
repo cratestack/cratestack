@@ -1,0 +1,46 @@
+{% for import in imports %}
+{{ import }}
+{% endfor %}
+
+class {{ client_class_name }} {
+  {{ client_class_name }}(this._adapter, {this.basePath = '{{ base_path_literal }}'});
+
+  final CratestackClientAdapter _adapter;
+  final String basePath;
+
+  Future<Object?> execute(
+    String method,
+    String path, {
+    Object? body,
+    Map<String, Object?>? queryParameters,
+    CratestackCallOptions? options,
+  }) {
+    return _adapter.execute(
+      CratestackRequest(
+        method: method,
+        path: '$basePath$path',
+        queryParameters: queryParameters,
+        body: body,
+      ),
+      options: options,
+    );
+  }
+
+{% for accessor in model_accessors %}
+  {{ accessor.api_class_name }} get {{ accessor.accessor }} => {{ accessor.api_class_name }}(this);
+{% endfor %}
+  ProceduresApi get procedures => ProceduresApi(this);
+}
+
+final {{ provider_prefix }}AdapterProvider = Provider<CratestackClientAdapter>((ref) {
+  throw UnimplementedError('Override {{ provider_prefix }}AdapterProvider before reading the generated CrateStack client.');
+});
+
+final {{ provider_prefix }}BasePathProvider = Provider<String>((ref) => '{{ base_path_literal }}');
+
+final {{ provider_prefix }}ClientProvider = Provider<{{ client_class_name }}>((ref) {
+  return {{ client_class_name }}(
+    ref.watch({{ provider_prefix }}AdapterProvider),
+    basePath: ref.watch({{ provider_prefix }}BasePathProvider),
+  );
+});

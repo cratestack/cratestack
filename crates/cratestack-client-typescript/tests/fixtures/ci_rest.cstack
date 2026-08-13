@@ -1,0 +1,49 @@
+// Richer REST fixture for the TypeScript CI-verification harness (issue #419).
+// Same shape as the Dart ci_rest.cstack: multiple models, a relation, an enum
+// (as a field, an array field, and a procedure return type), and both a query
+// and a mutation procedure — to exercise the full template surface that needs
+// to typecheck.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth SessionUser {
+  id Int
+}
+
+enum PostStatus {
+  draft
+  published
+  archived
+}
+
+type PostStatusFilter {
+  statuses PostStatus[]
+}
+
+model Author {
+  id Int @id
+  name String
+  posts Post[] @relation(fields:[id],references:[authorId])
+}
+
+model Post {
+  id Int @id
+  title String
+  status PostStatus
+  published Boolean
+  authorId Int
+  author Author @relation(fields:[authorId],references:[id])
+
+  @@allow("read", published || authorId == auth().id)
+  @@allow("create", auth() != null)
+  @@paged
+}
+
+procedure listPosts(filter: PostStatusFilter?): Post[]
+  @allow(auth() != null)
+
+mutation procedure currentStatus(postId: Int): PostStatus
+  @allow(auth() != null)

@@ -1,0 +1,121 @@
+// Generated CrateStack Dart gRPC runtime for `transport grpc` schemas
+// (ticket #210, the Dart counterpart to the TypeScript gRPC-Web runtime,
+// `docs/design/protobuf.md` §5/§9). Hand-rolled protobuf *message* codec
+// for the bounded field-type set §4.1 maps `.cstack` scalars onto (int64,
+// double, bool, string, bytes, `Timestamp`, enum, embedded message,
+// repeated) — no `protoc`/`protoc-gen-dart` step, no protobuf-runtime
+// dependency. Framing/HTTP-2/trailers are handled by `package:grpc`
+// itself: unlike the gRPC-Web runtime, this file never touches raw
+// sockets or frame headers.
+
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:grpc/grpc.dart';
+
+typedef CratestackValueMap = Map<String, Object?>;
+
+CratestackValueMap cratestackAsValueMap(Object? value) {
+  if (value is CratestackValueMap) {
+    return value;
+  }
+  final map = value as Map;
+  return map.map((key, entry) => MapEntry(key.toString(), entry as Object?));
+}
+
+List<Object?> cratestackAsValueList(Object? value) {
+  if (value is List<Object?>) {
+    return value;
+  }
+  return List<Object?>.from(value as List);
+}
+
+Object cratestackRequireWireValue(String ownerName, String fieldName, Object? value) {
+  if (value == null) {
+    throw FormatException('Missing required field $ownerName.$fieldName');
+  }
+  return value;
+}
+
+// ---------------------------------------------------------------------
+// Wire primitives: varint, fixed64, length-delimited framing. Plain 64-bit
+// `int` throughout (the Dart VM/AOT native target this client is scoped
+// to has 64-bit `int`; this mirrors `.cstack Int` already mapping to
+// Dart's native `int` elsewhere in this generator).
+// ---------------------------------------------------------------------
+
+const int _wireVarint = 0;
+const int _wireFixed64 = 1;
+const int _wireLengthDelimited = 2;
+
+Uint8List _encodeVarint(int value) {
+  final bytes = <int>[];
+  var v = value;
+  while (true) {
+    final byte = v & 0x7f;
+    v = v >>> 7;
+    if (v == 0) {
+      bytes.add(byte);
+      break;
+    }
+    bytes.add(byte | 0x80);
+  }
+  return Uint8List.fromList(bytes);
+}
+
+/// Returns `(value, nextOffset)`.
+(int, int) _decodeVarint(Uint8List bytes, int offset) {
+  var result = 0;
+  var shift = 0;
+  var pos = offset;
+  while (true) {
+    if (pos >= bytes.length) {
+      throw CratestackGrpcCodecError('truncated varint in message body');
+    }
+    final byte = bytes[pos];
+    pos += 1;
+    result |= (byte & 0x7f) << shift;
+    if ((byte & 0x80) == 0) {
+      break;
+    }
+    shift += 7;
+  }
+  return (result, pos);
+}
+
+Uint8List _encodeTag(int fieldNumber, int wireType) =>
+    _encodeVarint((fieldNumber << 3) | wireType);
+
+Uint8List _encodeFixed64Double(double value) {
+  final bytes = ByteData(8);
+  bytes.setFloat64(0, value, Endian.little);
+  return bytes.buffer.asUint8List();
+}
+
+double _decodeFixed64Double(Uint8List bytes, int offset) {
+  final view = ByteData.sublistView(bytes, offset, offset + 8);
+  return view.getFloat64(0, Endian.little);
+}
+
+Uint8List _concatBytes(List<List<int>> chunks) {
+  final total = chunks.fold(0, (sum, chunk) => sum + chunk.length);
+  final out = Uint8List(total);
+  var offset = 0;
+  for (final chunk in chunks) {
+    out.setAll(offset, chunk);
+    offset += chunk.length;
+  }
+  return out;
+}
+
+/// Thrown for malformed wire bytes (truncated varint, unsupported wire
+/// type, ...). Distinct from [CratestackGrpcError] (a real server-emitted
+/// gRPC status) — this means the bytes themselves didn't parse.
+class CratestackGrpcCodecError extends Error {
+  CratestackGrpcCodecError(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'CratestackGrpcCodecError: $message';
+}

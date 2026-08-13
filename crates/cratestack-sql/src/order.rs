@@ -1,4 +1,9 @@
-#[derive(Debug, Clone, PartialEq, Eq)]
+use crate::filter::VectorMetric;
+
+// Not `Eq`: `OrderTarget::VectorDistance` carries a `Vec<f32>` query
+// vector, and `f32` has no sound total-equality impl (NaN != NaN) —
+// same reason `FilterExpr`/`SpatialFilter` stop at `PartialEq`.
+#[derive(Debug, Clone, PartialEq)]
 pub struct OrderClause {
     pub target: OrderTarget,
     pub direction: SortDirection,
@@ -20,7 +25,7 @@ pub enum NullOrder {
     Last,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum OrderTarget {
     Column(&'static str),
     RelationScalar {
@@ -28,7 +33,24 @@ pub enum OrderTarget {
         parent_column: &'static str,
         related_table: &'static str,
         related_column: &'static str,
-        value_sql: &'static str,
+        /// Owned rather than `&'static str`: the correlated-subquery chain
+        /// is folded from the traversed relation path at call time (see
+        /// [`crate::order_value_sql`]). It used to be baked in per path at
+        /// macro-expansion time, which is exactly what made codegen
+        /// exponential in relation-graph connectivity (cratestack#252).
+        value_sql: String,
+    },
+    /// Order by distance to a query vector on a `Vector(n)` column (see
+    /// `docs/design/extensions.md` §6/§7, cratestack#163). Built via
+    /// `FieldRef::distance_to(...).asc()`/`.desc()` or the
+    /// `order_by_distance` shorthand. PG-only (pgvector) — the
+    /// embedded rusqlite backend doesn't ship pgvector, so its
+    /// renderer fails loud, mirroring how `FilterExpr::Spatial` is
+    /// handled there.
+    VectorDistance {
+        column: &'static str,
+        metric: VectorMetric,
+        query_vector: Vec<f32>,
     },
 }
 
@@ -41,12 +63,15 @@ impl OrderClause {
         }
     }
 
-    pub const fn relation_scalar(
+    /// Not `const` (unlike [`OrderClause::column`]): `value_sql` is folded
+    /// from the traversed relation path at call time rather than baked in
+    /// at macro-expansion time. See [`crate::order_value_sql`].
+    pub fn relation_scalar(
         parent_table: &'static str,
         parent_column: &'static str,
         related_table: &'static str,
         related_column: &'static str,
-        value_sql: &'static str,
+        value_sql: String,
         direction: SortDirection,
     ) -> Self {
         Self {
@@ -91,7 +116,8 @@ impl OrderClause {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum SortDirection {
     Asc,
     Desc,

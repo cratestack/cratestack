@@ -2,6 +2,7 @@
 name = "react-nextjs-daisyui-napi"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 publish = false
 description = "Server-side N-API addon for the Next.js example. Hosts include_embedded_schema! against a Node-owned SQLite file AND include_client_schema! against an upstream CrateStack service. Loaded by Next.js Route Handlers; never reaches the renderer."
 
@@ -11,15 +12,20 @@ crate-type = ["cdylib", "rlib"]
 [lints.rust]
 # napi-derive expands to unsafe extern "C" trampolines for the JS interop.
 # That's exactly the boundary unsafe is *for*; lift the workspace forbid.
+#
+# Deliberately NOT `[lints]\nworkspace = true` (cratestack#523): Cargo
+# rejects mixing workspace-inherited lints with a per-package override in
+# the same manifest — see crates/cratestack-cbor-napi/Cargo.toml's fuller
+# note, which this mirrors.
 unsafe_code = "allow"
 
 [dependencies]
 chrono = { workspace = true }
-cratestack = { package = "cratestack-sqlite", path = "../../../crates/cratestack-sqlite", version = "0.4.4" }
-cratestack-client-rust = { path = "../../../crates/cratestack-client-rust", version = "0.4.4" }
-cratestack-codec-cbor = { path = "../../../crates/cratestack-codec-cbor", version = "0.4.4" }
-cratestack-macros = { path = "../../../crates/cratestack-macros", version = "0.4.4" }
-cratestack-rusqlite = { path = "../../../crates/cratestack-rusqlite", version = "0.4.4" }
+cratestack = { package = "cratestack-sqlite", path = "../../../crates/cratestack-sqlite" }
+cratestack-client-rust = { path = "../../../crates/cratestack-client-rust" }
+cratestack-codec-cbor = { path = "../../../crates/cratestack-codec-cbor" }
+cratestack-macros = { path = "../../../crates/cratestack-macros" }
+cratestack-rusqlite = { path = "../../../crates/cratestack-rusqlite" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 url = { workspace = true }

@@ -44,6 +44,32 @@ fn returns_hoverable_symbol_docs_from_schema() {
     assert_eq!(symbol.docs, vec!["Email docs".to_owned()]);
 }
 
+/// cratestack#327: hovering a `datasource` block documents `"none"`
+/// alongside the existing `"postgresql"`/`"sqlite"` provider values, so
+/// schema authors discover the no-database mode without reading source.
+#[test]
+fn datasource_hover_documents_none_provider_alongside_postgresql_and_sqlite() {
+    let text = "datasource db {\n  provider = \"none\"\n}\n";
+    let uri = Uri::from_str("file:///schema.cstack").expect("uri should parse");
+    let (schema, diagnostics) = analyze_document(&uri, text);
+
+    assert!(diagnostics.is_empty());
+    let schema = schema.expect("schema should parse");
+    let offset = text
+        .find("datasource")
+        .expect("datasource block should exist");
+    let symbol = locate_symbol(&schema, offset).expect("symbol should resolve");
+
+    assert_eq!(symbol.kind, "datasource");
+    assert!(symbol.detail.contains("\"none\""), "{}", symbol.detail);
+    assert!(
+        symbol.detail.contains("\"postgresql\""),
+        "{}",
+        symbol.detail
+    );
+    assert!(symbol.detail.contains("\"sqlite\""), "{}", symbol.detail);
+}
+
 #[test]
 fn extracts_identifier_at_offset_for_definition_lookup() {
     let text = "model User {\n  userId Int @id\n}\n";

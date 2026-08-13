@@ -1,9 +1,11 @@
 # Builds and publishes prebuilt `cratestack-cli` binaries to a GitHub
 # Release, so consumers can install without a Rust toolchain (see #131).
-# Also publishes every workspace crate to crates.io and both npm packages
-# this repo ships — @cratestack/cli (the binary-fetching npm wrapper) and
-# @cratestack/api (hand-written, ships its own compiled dist/) — with npm
-# provenance attached.
+# Also publishes every workspace crate to crates.io and every npm package
+# this repo ships, with npm provenance attached: @cratestack/cli (the
+# binary-fetching npm wrapper), the @cratestack/api family (10 hand-written
+# packages shipping their own compiled dist/), and the @cratestack/cbor
+# family (cbor, cbor-node — a real napi-rs multi-platform native addon,
+# cbor-web).
 #
 # Triggers on a `vX.Y.Z` tag push. The normal way to produce one is the
 # "Prepare Release" workflow (bump versions → open a PR → merging it
@@ -172,7 +174,7 @@ jobs:
           name: studio-ui-bundle
           path: crates/cratestack-studio
       - name: Build cratestack-cli
-        run: cargo build --release --locked -p cratestack-cli --target ${{ matrix.target }}
+        run: cargo build --profile dist --locked -p cratestack-cli --target ${{ matrix.target }}
       - name: Package archive
         id: package
         shell: bash
@@ -180,7 +182,7 @@ jobs:
           set -euo pipefail
           tag="${{ needs.prepare.outputs.tag }}"
           target="${{ matrix.target }}"
-          bin_dir="target/${target}/release"
+          bin_dir="target/${target}/dist"
           if [ "${{ runner.os }}" = "Windows" ]; then
             asset="cratestack-cli-${target}-${tag}.zip"
             powershell -NoProfile -Command "Compress-Archive -Path '${bin_dir}/cratestack.exe' -DestinationPath '${asset}'"
@@ -223,16 +225,18 @@ jobs:
 
   # Only on a real tag push, never on a manual workflow_dispatch test run —
   # unlike a GitHub Release, an npm publish can't be deleted and retried
-  # cleanly, so a throwaway test tag must not reach the registry. Requires
-  # an NPM_TOKEN repo secret (an npmjs.com token for the @cratestack org,
-  # which someone with org access has to create and add manually); until
-  # then this step logs and no-ops instead of failing the whole release.
-  # NPM_TOKEN must specifically be an npmjs.com **Automation**-type token —
-  # a regular token from a 2FA-on-publish account fails here with `npm
-  # error code EOTP`, confirmed on v0.4.15 (fixed by rotating to an
-  # Automation token for v0.4.16). See docs/tooling/npm-publishing.md.
-  # `id-token: write` (job-scoped, not workflow-wide) is npm provenance's
-  # Sigstore/OIDC requirement — needs a public repo, which this is.
+  # cleanly, so a throwaway test tag must not reach the registry.
+  #
+  # Auth is npm's OIDC "Trusted Publishing" (GA since npm CLI 11.5.1 / Node
+  # 22.14+) — no NPM_TOKEN at all. This is a hard cutover, not a soft-skip:
+  # unlike the PAT it replaces, there's no secret to check for absence, so
+  # until the Trusted Publisher is configured on npmjs.com for this package
+  # (org `cratestack`, repo `cratestack/cratestack`, workflow filename
+  # `release-cli.yml`, no environment) this step just fails rather than
+  # quietly no-op'ing. See docs/tooling/npm-publishing.md for setup.
+  # `id-token: write` (job-scoped, not workflow-wide) is also npm
+  # provenance's Sigstore/OIDC requirement — needs a public repo, which
+  # this is — and is what the trusted-publish token exchange itself uses.
   publish-npm:
     name: publish npm package (@cratestack/cli)
     if: github.event_name == 'push'
@@ -247,28 +251,42 @@ jobs:
           ref: ${{ needs.prepare.outputs.tag }}
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           registry-url: https://registry.npmjs.org
+      # Trusted Publishing needs npm CLI >= 11.5.1 — pinned to the latest
+      # 11.x rather than an unbounded `npm@latest`, since a fresh npm major
+      # is a real, demonstrated risk here, not a hypothetical one: npm
+      # 12.0.2 silently changed `npm pack --dry-run --json`'s output shape
+      # from an array to an object, breaking @napi-rs/cli@3.8.2's hardcoded
+      # array assumption inside `napi prepublish` — confirmed by hand
+      # (`npx -y npm@latest pack --dry-run --json` on a throwaway package)
+      # after publish-npm-cbor-node failed with a generic "Failed to
+      # validate the release package ... Ensure npm is available and the
+      # package can be packed" error that gave no hint of the real cause.
+      - name: Ensure npm supports Trusted Publishing
+        run: npm install -g npm@^11
       - name: Publish @cratestack/cli
-        working-directory: packages/cratestack-cli-npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
-            echo "NPM_TOKEN secret not set; skipping npm publish." >&2
-            echo "See docs/tooling/npm-publishing.md for setup." >&2
-            exit 0
-          fi
-          npm publish --access public --provenance
+        run: .github/scripts/npm-publish.sh packages/cratestack-cli-npm --access public --provenance
 
-  # @cratestack/api ships its own compiled dist/ in the tarball and never
-  # fetches a GitHub Release binary (unlike @cratestack/cli), so it has
-  # no ordering dependency on the `build` matrix — only needs `prepare`
-  # for the resolved tag. Same tag-push-only gate and NPM_TOKEN soft-skip
-  # as publish-npm above, for the same reasons.
-  publish-npm-api:
-    name: publish npm package (@cratestack/api)
+  # @cratestack/api and its split family (ts-types, link-*, runtime-*,
+  # validator-*, adapter-*) all ship their own compiled dist/ in the
+  # tarball and never fetch a GitHub Release binary (unlike
+  # @cratestack/cli), so this job has no ordering dependency on the
+  # `build` matrix — only needs `prepare` for the resolved tag. Same
+  # tag-push-only gate and OIDC Trusted Publishing hard-cutover as
+  # publish-npm above, for the same reasons — EACH of these 10 packages
+  # needs its own separate Trusted Publisher entry on npmjs.com (same
+  # repo/workflow-filename values; see docs/tooling/npm-publishing.md),
+  # not just @cratestack/api's.
+  #
+  # Published in dependency order (ts-types has no `@cratestack/*` deps;
+  # link-*/runtime-*/validator-*/adapter-* depend only on ts-types;
+  # api depends on all of them) even though a registry publish doesn't
+  # strictly require its dependency to already be live — this just
+  # avoids a brief window where `npm view` on a mid-publish package
+  # would show an unresolvable dependency.
+  publish-npm-api-family:
+    name: publish npm packages (@cratestack/api family)
     if: github.event_name == 'push'
     needs: [prepare]
     runs-on: ubuntu-latest
@@ -282,7 +300,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
           registry-url: https://registry.npmjs.org
       - name: pnpm install
@@ -290,24 +308,367 @@ jobs:
         # including cratestack-cli-npm's — which downloads the matching
         # GitHub Release binary for whatever version is in its
         # package.json (the same tag this job checked out). This job
-        # doesn't need that binary (it only builds/publishes
-        # @cratestack/api) and only depends on `prepare`, not `build`/
-        # `release`, so that GitHub Release may not exist yet at this
-        # point — skip the download rather than race it.
+        # doesn't need that binary and only depends on `prepare`, not
+        # `build`/`release`, so that GitHub Release may not exist yet at
+        # this point — skip the download rather than race it.
         env:
           CRATESTACK_CLI_SKIP_DOWNLOAD: "1"
         run: pnpm install --frozen-lockfile
-      - name: Build @cratestack/api
-        run: pnpm --filter @cratestack/api build
-      - name: Publish @cratestack/api
-        working-directory: packages/cratestack-api
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Build @cratestack/api family
+        run: |
+          pnpm turbo run build \
+            --filter='./packages/cratestack-ts-types' \
+            --filter='./packages/cratestack-link-batch' \
+            --filter='./packages/cratestack-link-logger' \
+            --filter='./packages/cratestack-runtime-fetch' \
+            --filter='./packages/cratestack-runtime-axios' \
+            --filter='./packages/cratestack-validator-zod' \
+            --filter='./packages/cratestack-validator-yup' \
+            --filter='./packages/cratestack-adapter-tanstack-query' \
+            --filter='./packages/cratestack-adapter-rtk' \
+            --filter='./packages/cratestack-api'
+      # Trusted Publishing needs npm CLI >= 11.5.1 — pinned to the latest
+      # 11.x rather than an unbounded `npm@latest`, since a fresh npm major
+      # is a real, demonstrated risk here, not a hypothetical one: npm
+      # 12.0.2 silently changed `npm pack --dry-run --json`'s output shape
+      # from an array to an object, breaking @napi-rs/cli@3.8.2's hardcoded
+      # array assumption inside `napi prepublish` — confirmed by hand
+      # (`npx -y npm@latest pack --dry-run --json` on a throwaway package)
+      # after publish-npm-cbor-node failed with a generic "Failed to
+      # validate the release package ... Ensure npm is available and the
+      # package can be packed" error that gave no hint of the real cause.
+      - name: Ensure npm supports Trusted Publishing
+        run: npm install -g npm@^11
+      - name: Publish @cratestack/api family
         run: |
           set -euo pipefail
-          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
-            echo "NPM_TOKEN secret not set; skipping npm publish." >&2
-            echo "See docs/tooling/npm-publishing.md for setup." >&2
-            exit 0
-          fi
-          npm publish --access public --provenance
+          for pkg in \
+            cratestack-ts-types cratestack-link-batch cratestack-link-logger \
+            cratestack-runtime-fetch cratestack-runtime-axios \
+            cratestack-validator-zod cratestack-validator-yup \
+            cratestack-adapter-tanstack-query cratestack-adapter-rtk \
+            cratestack-api; do
+            echo "::group::npm publish $pkg"
+            # Not called directly under `set -e` — that would exit the
+            # script the instant a publish fails, skipping the
+            # `::endgroup::` below and leaving that log group open (and
+            # misleadingly labeled) in the Actions UI for the rest of
+            # the (now-aborted) run.
+            #
+            # An already-published package is a success as far as the
+            # wrapper is concerned, so a re-run of a partially-completed
+            # release no longer dies on the first package that already
+            # landed and skips every package after it. A genuine failure
+            # (bad auth, missing Trusted Publisher entry) still aborts
+            # the loop here, as it should.
+            if ! .github/scripts/npm-publish.sh "packages/$pkg" --access public --provenance; then
+              echo "::endgroup::"
+              exit 1
+            fi
+            echo "::endgroup::"
+          done
+
+  # ---- @cratestack/cbor family (issue #285) ------------------------------
+  # Unlike the API family above, @cratestack/cbor-node is a real napi-rs
+  # native addon (crates/cratestack-cbor-napi) — it needs a per-platform
+  # release binary for each of `napi.targets` in its package.json, matching
+  # the same 5 platforms `build` builds `cratestack-cli` for above. CI's
+  # own `js-cbor-napi` job (ci.yml) deliberately only proves a single-host
+  # sanity build; this is the real release matrix that job's own comment
+  # said was deferred (issue #286's explicit scope note).
+  build-cbor-node:
+    name: build @cratestack/cbor-node (${{ matrix.target }})
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-cbor-node-${{ matrix.target }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: pnpm install
+        env:
+          CRATESTACK_CLI_SKIP_DOWNLOAD: "1"
+        run: pnpm install --frozen-lockfile
+      # Same underlying command as the package's own `build:napi` script,
+      # plus `--target` to cross-build for this matrix leg instead of the
+      # runner's host target. `native.mjs`/`native.d.mts` (the platform-
+      # dispatch JS/TS loader `napi build --platform` generates) come out
+      # identical on every leg — uploaded from each anyway so the publish
+      # job below doesn't need to special-case which leg "owns" them.
+      - name: Build native addon (napi build)
+        working-directory: packages/cratestack-cbor-node
+        # Explicit bash — the default shell on the windows-msvc leg is
+        # PowerShell, which doesn't understand `\` line continuations and
+        # fails to parse this command ("Missing expression after unary
+        # operator '--'"). Same reason `Package archive` above pins it.
+        shell: bash
+        run: |
+          pnpm exec napi build \
+            --manifest-path ../../crates/cratestack-cbor-napi/Cargo.toml \
+            --platform --release --esm \
+            --js native.mjs --dts native.d.mts \
+            --output-dir . \
+            --target ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cbor-node-binary-${{ matrix.target }}
+          path: |
+            packages/cratestack-cbor-node/*.node
+            packages/cratestack-cbor-node/native.mjs
+            packages/cratestack-cbor-node/native.d.mts
+          if-no-files-found: error
+
+  # Downloads every platform's `.node` binary built above into per-leg
+  # subdirectories (deliberately NOT `merge-multiple` — `napi artifacts`
+  # below expects to find each leg's file nested under its own artifact
+  # name, the same layout `actions/download-artifact@v4` produces without
+  # that flag), then runs the real `@napi-rs/cli` scaffolding sequence:
+  # `napi create-npm-dirs` creates `npm/<platform>/package.json` for every
+  # target in `napi.targets`, `napi artifacts` copies each downloaded
+  # `.node` file into its matching `npm/<platform>/` dir (confirmed by
+  # hand: it validates ALL configured targets are present before copying
+  # any of them — an earlier version of this comment assumed `napi
+  # prepublish` alone would handle this via its `prepublishOnly` hook; it
+  # doesn't — `napi prepublish` hard-fails with "Release package directory
+  # does not exist" if `npm/<platform>/` isn't pre-scaffolded, confirmed by
+  # actually running it locally). Only then does `npm publish`'s
+  # `prepublishOnly` hook (`napi prepublish -t npm`, see the package's
+  # package.json) publish each now-populated platform subpackage (e.g.
+  # `@cratestack/cbor-node-darwin-arm64`) BEFORE npm packs and publishes
+  # this main package with `optionalDependencies` pointing at them. Same
+  # tag-push-only gate and OIDC Trusted Publishing hard-cutover as the
+  # other publish-npm* jobs, except EACH of the 5 auto-generated platform
+  # subpackages ALSO needs its own separate Trusted Publisher entry on
+  # npmjs.com, on top of `@cratestack/cbor-node` itself — see
+  # docs/tooling/npm-publishing.md, including the bootstrap note there:
+  # a brand-new package name can't have Trusted Publishing configured
+  # until it's been published manually at least once, so this job will
+  # keep failing for any platform subpackage that hasn't gone through that
+  # one-time manual bootstrap yet, even once all 5 binaries build cleanly.
+  publish-npm-cbor-node:
+    name: publish npm package (@cratestack/cbor-node)
+    if: github.event_name == 'push'
+    needs: [prepare, build-cbor-node]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - name: pnpm install
+        env:
+          CRATESTACK_CLI_SKIP_DOWNLOAD: "1"
+        run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cbor-node-binary-*
+          path: cbor-node-artifacts
+      - name: List downloaded platform binaries
+        run: find cbor-node-artifacts -name '*.node'
+      # `napi artifacts` (below) only handles the `.node` binaries — it
+      # does NOT copy `native.mjs`/`native.d.mts` (the JS/TS loader `napi
+      # build --platform` generates), confirmed the hard way: a first
+      # version of this job without this step failed tsc with "Cannot
+      # find module '../native.mjs'". Every leg's copy is identical (see
+      # build-cbor-node's own comment), so grabbing the first match found
+      # is enough.
+      - name: Copy the native.mjs/native.d.mts loader (identical on every leg)
+        run: |
+          find cbor-node-artifacts -name 'native.mjs' -exec cp {} packages/cratestack-cbor-node/ \; -quit
+          find cbor-node-artifacts -name 'native.d.mts' -exec cp {} packages/cratestack-cbor-node/ \; -quit
+      - name: Scaffold per-platform npm packages
+        working-directory: packages/cratestack-cbor-node
+        run: pnpm exec napi create-npm-dirs
+      - name: Move each platform's binary into its npm/<platform>/ dir
+        working-directory: packages/cratestack-cbor-node
+        run: pnpm exec napi artifacts --output-dir ../../cbor-node-artifacts
+      # cbor-node's own `tsc` doesn't build its workspace dependency
+      # (`@cratestack/ts-types`) — that only happens automatically via
+      # turbo's `^build` dependency graph, which this job deliberately
+      # doesn't invoke for cbor-node itself (its full `build` script also
+      # runs `build:napi`, needing a Rust toolchain this job doesn't set
+      # up). Confirmed the hard way: without this, tsc fails with "Cannot
+      # find module '@cratestack/ts-types'" (no `dist/` to resolve types
+      # against).
+      - name: Build @cratestack/ts-types (cbor-node's only workspace dependency)
+        run: pnpm --filter ./packages/cratestack-ts-types run build
+      - name: Compile TypeScript wrapper (native artifacts already built above)
+        working-directory: packages/cratestack-cbor-node
+        run: pnpm exec tsc -p tsconfig.json
+      # Trusted Publishing needs npm CLI >= 11.5.1 — pinned to the latest
+      # 11.x rather than an unbounded `npm@latest`, since a fresh npm major
+      # is a real, demonstrated risk here, not a hypothetical one: npm
+      # 12.0.2 silently changed `npm pack --dry-run --json`'s output shape
+      # from an array to an object, breaking @napi-rs/cli@3.8.2's hardcoded
+      # array assumption inside `napi prepublish` — confirmed by hand
+      # (`npx -y npm@latest pack --dry-run --json` on a throwaway package)
+      # after publish-npm-cbor-node failed with a generic "Failed to
+      # validate the release package ... Ensure npm is available and the
+      # package can be packed" error that gave no hint of the real cause.
+      - name: Ensure npm supports Trusted Publishing
+        run: npm install -g npm@^11
+      # `--provenance` on the outer `npm publish` only covers THIS command
+      # — it doesn't propagate into the per-platform `npm publish` calls
+      # `napi prepublish` makes internally via the prepublishOnly hook, so
+      # provenance is requested via npm config instead, covering both.
+      # `npm config set` writes to the *user* config (~/.npmrc) by
+      # default, so it applies regardless of which directory it runs
+      # from — the wrapper below cd's into the package itself.
+      - name: Publish @cratestack/cbor-node (+ per-platform subpackages)
+        run: |
+          npm config set provenance true
+          .github/scripts/npm-publish.sh packages/cratestack-cbor-node --access public
+
+  # Same rationale as js-cbor-wasm in ci.yml: needs a real Rust wasm32
+  # toolchain (the package's `prebuild` hook runs `wasm-pack build` against
+  # crates/cratestack-cbor-wasm), so it gets its own toolchain setup rather
+  # than reusing publish-npm-api-family's plain-Node job. No ordering
+  # dependency on `build`/`build-cbor-node` — this package ships its own
+  # compiled wasm bundle in the tarball, same as the API family.
+  publish-npm-cbor-web:
+    name: publish npm package (@cratestack/cbor-web)
+    if: github.event_name == 'push'
+    needs: [prepare]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      # wasm32-unknown-unknown is installed by rustup from
+      # rust-toolchain.toml's `targets` for the pinned channel (same
+      # mechanism ci.yml's js-cbor-wasm job relies on).
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-cbor-web
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+      # wasm-pack only downloads its own `wasm-opt` when one isn't
+      # already on PATH (src/wasm_opt.rs short-circuits on
+      # `which::which("wasm-opt")` with no version check), and the
+      # version it reaches for is hardcoded — 0.15.0, the current
+      # release, still pins binaryen version_117. That download is an
+      # unpinned network fetch in the middle of a release build, and it
+      # is what failed run 31094655414: `failed to download from
+      # .../binaryen-version_117-x86_64-linux.tar.gz`. The asset itself
+      # is fine (it still resolves), so that was a transient
+      # GitHub-releases hiccup — installing wasm-opt ourselves takes the
+      # fetch off the critical path so the same blip can't fail a
+      # release again.
+      #
+      # Pinned to version_130 rather than tracking latest (version_131
+      # at time of writing): 130 is the release upstream wasm-pack
+      # itself vetted in rustwasm/wasm-pack#1599, merged 2026-08-05 but
+      # not yet in a published wasm-pack release. x86_64-linux is
+      # correct here — this job is `runs-on: ubuntu-latest`, no matrix.
+      # taiki-e/install-action has no binaryen manifest, hence the
+      # explicit curl.
+      - name: Install binaryen (wasm-opt), pinned
+        run: |
+          set -euo pipefail
+          curl -fsSL -o binaryen.tar.gz \
+            "https://github.com/WebAssembly/binaryen/releases/download/version_130/binaryen-version_130-x86_64-linux.tar.gz"
+          tar -xzf binaryen.tar.gz
+          echo "$PWD/binaryen-version_130/bin" >> "$GITHUB_PATH"
+          rm binaryen.tar.gz
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - name: pnpm install
+        env:
+          CRATESTACK_CLI_SKIP_DOWNLOAD: "1"
+        run: pnpm install --frozen-lockfile
+      - name: Build @cratestack/cbor-web (wasm-pack + tsc)
+        run: pnpm turbo run build --filter='./packages/cratestack-cbor-web'
+      # Pinned to the latest 11.x, not an unbounded `npm@latest` — see the
+      # `publish-npm-cbor-node` job's own comment on this same step for why
+      # (a real npm 12.x regression broke @napi-rs/cli's release-package
+      # validation there; this job doesn't use napi, but there's no reason
+      # to opt into the same moving-target risk everywhere else too).
+      - name: Ensure npm supports Trusted Publishing
+        run: npm install -g npm@^11
+      - name: Publish @cratestack/cbor-web
+        run: .github/scripts/npm-publish.sh packages/cratestack-cbor-web --access public --provenance
+
+  # The umbrella package (issue #288) — pure TS, conditional node/browser
+  # exports. Gated on both platform packages above (not just `prepare`)
+  # for the same "avoid a window where `npm view` sees an unresolvable
+  # dependency" reason publish-npm-api-family's ordering comment gives,
+  # even though `.npmrc`'s `link-workspace-packages=true` means the local
+  # `pnpm install` below resolves cbor-node/cbor-web from the workspace
+  # symlink either way, not the registry. `turbo.json` deliberately scopes
+  # this package's build dependency to `ts-types#build` only (see that
+  # file's comment) — an ambient-types fallback + graceful test-skip means
+  # this build doesn't actually need cbor-node/cbor-web's dist/ on disk.
+  publish-npm-cbor:
+    name: publish npm package (@cratestack/cbor)
+    if: github.event_name == 'push'
+    needs: [prepare, publish-npm-cbor-node, publish-npm-cbor-web]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - name: pnpm install
+        env:
+          CRATESTACK_CLI_SKIP_DOWNLOAD: "1"
+        run: pnpm install --frozen-lockfile
+      - name: Build @cratestack/cbor
+        run: pnpm turbo run build --filter='./packages/cratestack-cbor'
+      # Pinned to the latest 11.x, not an unbounded `npm@latest` — see the
+      # `publish-npm-cbor-node` job's own comment on this same step for why
+      # (a real npm 12.x regression broke @napi-rs/cli's release-package
+      # validation there; this job doesn't use napi, but there's no reason
+      # to opt into the same moving-target risk everywhere else too).
+      - name: Ensure npm supports Trusted Publishing
+        run: npm install -g npm@^11
+      - name: Publish @cratestack/cbor
+        run: .github/scripts/npm-publish.sh packages/cratestack-cbor --access public --provenance

@@ -2,6 +2,7 @@
 name = "cratestack-core"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 description.workspace = true
@@ -12,12 +13,30 @@ readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 
+[lints]
+workspace = true
+
 [features]
+# Exactly one of these two must be selected — see `src/lib.rs`'s
+# `compile_error!` pair for the enforcement (neither-selected AND
+# both-selected are both hard errors, not silently-resolved defaults).
+# `default-features = false` on this crate's `[workspace.dependencies]`
+# entry (root `Cargo.toml`) means every direct dependency edge onto
+# `cratestack-core` elsewhere in the workspace must explicitly re-select
+# one of these two — that is deliberate (cratestack#495/#421): it is what
+# lets a consumer pick `decimal-bigdecimal` without this crate's own
+# `default` silently forcing `decimal-rust-decimal` back in behind them.
 default = ["decimal-rust-decimal"]
-# Use rust_decimal (128-bit fixed-precision) as the workspace Decimal backend.
+# rust_decimal: 96-bit fixed-precision, stack-allocated, `Copy`. The
+# long-standing default — fast, no heap allocation, but capped at 28-29
+# significant decimal digits.
 decimal-rust-decimal = ["dep:rust_decimal"]
-# Reserved for the alternative arbitrary-precision backend; not yet wired
-# end-to-end. Selecting this feature today will fail compilation.
+# bigdecimal: arbitrary-precision, heap-allocated (backed by `num-bigint`),
+# NOT `Copy` (unlike rust_decimal — every call site that used to rely on
+# implicit `Decimal` copies needs `.clone()` instead; audited across the
+# workspace for cratestack#495). Chosen over rust_decimal when a schema's
+# monetary/precision requirements can exceed 28-29 significant digits, at
+# the cost of an allocation per value.
 decimal-bigdecimal = ["dep:bigdecimal"]
 
 [dependencies]
@@ -39,3 +58,7 @@ bigdecimal = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+# Pins `Value`'s CBOR wire shape against the first-party backend. A
+# dev-dependency rather than a real one: depending on `cratestack-codec-cbor`
+# from core would be a cycle, and the wire shape is core's contract to keep.
+minicbor-serde.workspace = true

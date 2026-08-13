@@ -66,8 +66,12 @@ impl From<cratestack_schema::Note> for NoteView {
 #[cfg(target_arch = "wasm32")]
 mod wasm {
     use super::*;
+    use chrono::*;
+    use cratestack_rusqlite::ddl::*;
     use cratestack_rusqlite::opfs;
+    use cratestack_rusqlite::*;
     use std::cell::RefCell;
+    use uuid::Uuid;
     use wasm_bindgen::prelude::*;
 
     thread_local! {

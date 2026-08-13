@@ -28,6 +28,10 @@ pub(super) const FRAGMENT_TEMPLATES: &[(&str, &str)] = &[
         include_str!("../templates/readme/api_bridge.md.j2"),
     ),
     (
+        "readme/decimal.md.j2",
+        include_str!("../templates/readme/decimal.md.j2"),
+    ),
+    (
         "rpc_runtime/types.dart.j2",
         include_str!("../templates/rpc_runtime/types.dart.j2"),
     ),
@@ -42,5 +46,25 @@ pub(super) const FRAGMENT_TEMPLATES: &[(&str, &str)] = &[
     (
         "rpc_runtime/cbor_seq.dart.j2",
         include_str!("../templates/rpc_runtime/cbor_seq.dart.j2"),
+    ),
+    (
+        "grpc_runtime/wire.dart.j2",
+        include_str!("../templates/grpc_runtime/wire.dart.j2"),
+    ),
+    (
+        "grpc_runtime/codec.dart.j2",
+        include_str!("../templates/grpc_runtime/codec.dart.j2"),
+    ),
+    (
+        "grpc_runtime/decode.dart.j2",
+        include_str!("../templates/grpc_runtime/decode.dart.j2"),
+    ),
+    (
+        "grpc_runtime/errors.dart.j2",
+        include_str!("../templates/grpc_runtime/errors.dart.j2"),
+    ),
+    (
+        "grpc_runtime/channel.dart.j2",
+        include_str!("../templates/grpc_runtime/channel.dart.j2"),
     ),
 ];

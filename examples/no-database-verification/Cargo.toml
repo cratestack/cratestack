@@ -1,0 +1,46 @@
+[workspace]
+# Deliberately its own workspace root — see the description below and this
+# crate's entry in the parent repo's `[workspace] exclude` list. Because it
+# is its own workspace root, it does not inherit the root repo's
+# `[workspace.lints]` table; cratestack#523 requires the `unsafe_code =
+# "forbid"` guarantee to hold here too, so it's declared locally.
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[package]
+name = "no-database-verification"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Standalone crate (cratestack#329) that is NOT a workspace member on purpose — it exists to prove, with a real `cargo tree`, that `sqlx`/`cratestack-sqlx` are absent from a `db = None`-only external consumer's dependency graph by default-features off, and present when the `postgres` feature is enabled. A workspace member can't prove this: Cargo unifies features across every member building the same package in one session, so an in-workspace `default-features = false` example would still get `sqlx` pulled back in transitively by any sibling member that wants Postgres. See this crate's README and the parent PR's Verification section for the exact commands and their output."
+
+[lints]
+workspace = true
+
+[features]
+# Forwards to `cratestack`'s own `postgres` feature so this crate's two
+# proof states (`sqlx` absent / `sqlx` present) are just this one flag.
+postgres = ["cratestack/postgres"]
+
+[dependencies]
+# `decimal-rust-decimal` must be re-added explicitly here (cratestack#496
+# remediation): `default-features = false` drops it from every edge in
+# `cratestack-pg`'s own dependency graph, including its `cratestack-macros`
+# proc-macro edge — and unlike the target-side `cratestack-core` (which
+# still picks up a backend transitively from `cratestack-codec-json`'s own
+# default below), the *host*-side `cratestack-core` compiled in for the
+# `cratestack-macros` proc-macro has no other path to a backend. Without
+# this, `cargo build` here fails with `cratestack-core`'s "enable exactly
+# one decimal backend feature" `compile_error!` — this crate's decimal
+# choice is otherwise irrelevant to what it's proving (sqlx presence vs.
+# absence), so `decimal-rust-decimal` (the default backend) is picked
+# arbitrarily, not `decimal-bigdecimal`.
+cratestack = { package = "cratestack-pg", path = "../../crates/cratestack-pg", default-features = false, features = ["decimal-rust-decimal"] }
+cratestack-codec-json = { path = "../../crates/cratestack-codec-json" }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[dev-dependencies]
+serde_json = "1"
+tower = { version = "0.5", default-features = false, features = ["util"] }

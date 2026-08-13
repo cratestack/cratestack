@@ -1,3 +1,5 @@
+mod uniques;
+
 use super::emit;
 use crate::diff::diff;
 use cratestack_core::Schema;
@@ -31,7 +33,7 @@ model Account {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(migration.up.contains("CREATE TABLE accounts"));
     // Every scalar maps to BLOB per the rusqlite affinity contract.
     assert!(migration.up.contains("id BLOB NOT NULL"));
@@ -61,7 +63,7 @@ model AccountMembership {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(migration.up.contains("CREATE TABLE account_memberships"));
     assert!(
         migration.up.contains("PRIMARY KEY (account_id, subject)"),
@@ -90,7 +92,7 @@ model Account {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         migration
             .up
@@ -120,7 +122,7 @@ model Account {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(migration.has_lossy);
     assert!(migration.down.contains("RAISE(FAIL"));
     assert!(migration.down.contains("DropColumn accounts.legacy"));
@@ -137,7 +139,7 @@ model User {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         migration
             .up
@@ -158,7 +160,7 @@ model Order {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         migration
             .up
@@ -176,7 +178,7 @@ model Article {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     assert!(
         !migration.up.contains("DEFAULT dbgenerated()"),
         "emitted DDL must never contain the literal invalid `DEFAULT dbgenerated()` call: {}",
@@ -220,7 +222,7 @@ model Order {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     // Variant added on the .cstack side; SQLite emits nothing
     // and the migration is not flagged destructive.
     assert!(!migration.has_lossy);
@@ -243,7 +245,7 @@ model Order {
 }
 "#,
     ));
-    let migration = emit(&diff(&prev, &next));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
     // No CREATE TYPE — SQLite has none.
     assert!(!migration.up.contains("CREATE TYPE"));
     // Column still lands as BLOB.
@@ -259,7 +261,145 @@ model Account {
 }
 "#,
     ));
-    let migration = emit(&diff(&s, &s));
+    let migration = emit(&diff(&s, &s).expect("diff should succeed"));
     assert_eq!(migration.up.trim(), "");
     assert_eq!(migration.down.trim(), "");
+}
+
+// Regression coverage for issue #260. SQLite has no `ALTER TABLE ADD
+// CONSTRAINT`, so unlike Postgres a declared `@relation` can't become
+// a real, enforced constraint without a full table-rebuild dance —
+// out of scope here (see `emit::sqlite::foreign_keys` docs). What
+// SQLite *can* do, and previously didn't, is say so: a marker comment
+// naming the constraint that would otherwise silently not exist.
+
+#[test]
+fn relation_emits_rebuild_marker_comment() {
+    let prev = schema(&with_models(""));
+    let next = schema(&with_models(
+        r#"
+model Tenant {
+  id String @id
+}
+
+model Application {
+  id String @id
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+}
+"#,
+    ));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
+    assert!(!migration.has_lossy);
+    assert!(
+        migration.up.contains(
+            "-- SQLite: ADD CONSTRAINT applications_tenant_id_fkey FOREIGN KEY (tenant_id) \
+             REFERENCES tenants (id) — requires table rebuild on SQLite."
+        ),
+        "up was: {}",
+        migration.up
+    );
+    // No real constraint is emitted — SQLite genuinely can't add one
+    // outside CREATE TABLE.
+    assert!(
+        !migration
+            .up
+            .contains("ALTER TABLE applications ADD CONSTRAINT")
+    );
+}
+
+#[test]
+fn removing_a_relation_emits_rebuild_marker_comment() {
+    let prev = schema(&with_models(
+        r#"
+model Tenant {
+  id String @id
+}
+
+model Application {
+  id String @id
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+}
+"#,
+    ));
+    let next = schema(&with_models(
+        r#"
+model Tenant {
+  id String @id
+}
+
+model Application {
+  id String @id
+  tenantId String
+}
+"#,
+    ));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
+    assert!(!migration.has_lossy);
+    assert!(
+        migration
+            .up
+            .contains("-- SQLite: DROP CONSTRAINT applications_tenant_id_fkey"),
+        "up was: {}",
+        migration.up
+    );
+}
+
+#[test]
+fn relation_with_actions_mentions_them_in_the_rebuild_marker_comment() {
+    let prev = schema(&with_models(""));
+    let next = schema(&with_models(
+        r#"
+model Tenant {
+  id String @id
+}
+
+model Application {
+  id String @id
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+}
+"#,
+    ));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
+    assert!(
+        migration.up.contains(
+            "-- SQLite: ADD CONSTRAINT applications_tenant_id_fkey FOREIGN KEY (tenant_id) \
+             REFERENCES tenants (id) ON DELETE CASCADE ON UPDATE RESTRICT — requires table \
+             rebuild on SQLite."
+        ),
+        "up was: {}",
+        migration.up
+    );
+}
+
+#[test]
+fn relation_marker_comment_quotes_reserved_local_column_name() {
+    // Review finding: the marker comment's identifiers weren't quoted,
+    // so a local FK column that collides with a SQLite reserved word
+    // (like `order`) rendered as a bare, ambiguous-looking token —
+    // mirrors the Postgres emitter's `reserved_column_name_is_quoted`.
+    let prev = schema(&with_models(""));
+    let next = schema(&with_models(
+        r#"
+model Target {
+  id Int @id
+}
+
+model Item {
+  id Int @id
+  order Int
+  ref Target @relation(fields: [order], references: [id])
+}
+"#,
+    ));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
+    assert!(
+        migration
+            .up
+            .contains("FOREIGN KEY (\"order\") REFERENCES targets (id)"),
+        "up was: {}",
+        migration.up
+    );
 }

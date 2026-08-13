@@ -1,0 +1,72 @@
+[package]
+name = "cratestack-cbor-napi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Native N-API addon wrapping cratestack-codec-cbor's CborCodec for @cratestack/cbor-node (issue #286). Node-only glue crate — not meant to be depended on by other Cargo crates, so it opts out of the crates.io publish rotation via publish = false."
+# This crate ships only as a compiled .node addon inside an npm package
+# (packages/cratestack-cbor-node), never as a Cargo dependency of anything
+# else in this workspace — publishing it to crates.io would just be dead
+# weight in the release pipeline. Mirrors cratestack-studio-ui's reasoning.
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[lints.rust]
+# napi-derive expands to unsafe extern "C" trampolines for the JS interop.
+# That's exactly the boundary unsafe is *for*; lift the workspace forbid.
+# Mirrors examples/react-nextjs-daisyui/napi/Cargo.toml's justification.
+#
+# Deliberately NOT `[lints]\nworkspace = true` (cratestack#523): Cargo
+# rejects mixing workspace-inherited lints with a per-package override in
+# the same manifest ("cannot override `workspace.lints` in `lints`, either
+# remove the overrides or `lints.workspace = true` and manually specify the
+# lints") — there is no way to inherit-most-lints-but-override-this-one.
+# Since `[workspace.lints.rust]` currently holds exactly this one lint,
+# this table is the manual equivalent; revisit if the workspace table ever
+# grows beyond `unsafe_code`.
+unsafe_code = "allow"
+
+[features]
+# Forwards to `cratestack-core`'s mutually-exclusive decimal backend choice
+# (see that crate's Cargo.toml for the full rationale). Required because
+# `cratestack-core`'s dependency edge has `default-features = false` at the
+# workspace root — every direct consumer must explicitly re-select a
+# backend, or `cratestack-core` fails to compile at all (cratestack#495).
+# Also forwards to `cratestack-codec-cbor`, this crate's other direct
+# `cratestack-core` consumer, so the two stay in lockstep rather than one
+# silently defaulting to a different backend than the other picks.
+default = ["decimal-rust-decimal"]
+decimal-rust-decimal = [
+    "cratestack-core/decimal-rust-decimal",
+    "cratestack-codec-cbor/decimal-rust-decimal",
+]
+decimal-bigdecimal = [
+    "cratestack-core/decimal-bigdecimal",
+    "cratestack-codec-cbor/decimal-bigdecimal",
+]
+
+[dependencies]
+cratestack-codec-cbor = { workspace = true, default-features = false }
+cratestack-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+# napi-rs is host-only — mirrors the react-nextjs-daisyui/napi example's
+# gating pattern, keeping this crate theoretically dual-targetable later
+# even though it is Node-only in practice today. No async entry points are
+# needed (encode/decode are pure CPU-bound work), so this pulls a narrower
+# feature set than the example (no "async"/"tokio_rt"/"chrono_date").
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+napi = { version = "3", default-features = false, features = ["napi9", "serde-json"] }
+napi-derive = "3"
+
+[target.'cfg(not(target_arch = "wasm32"))'.build-dependencies]
+napi-build = "2"

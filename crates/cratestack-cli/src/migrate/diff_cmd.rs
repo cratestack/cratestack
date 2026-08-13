@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use chrono::Utc;
 use cratestack_migrate::{
-    EmittedMigration, Snapshot, diff, emit::postgres, emit::sqlite, read_or_empty, write_snapshot,
+    EmittedMigration, Snapshot, diff_projections, emit::postgres, emit::sqlite, project,
+    read_or_empty, write_snapshot,
 };
 
 use crate::cli_types::MigrateBackendArg;
@@ -34,6 +35,7 @@ pub(crate) fn handle_diff(
 
     let backends = expand(backend);
     let mut nothing_to_do = true;
+    let next_projections = project(&next_schema);
 
     for backend in backends {
         let backend_dir = out_dir.join(backend.slug());
@@ -42,7 +44,8 @@ pub(crate) fn handle_diff(
         let prev_snapshot = read_or_empty(&snapshot_path)
             .with_context(|| format!("reading snapshot at {}", snapshot_path.display()))?;
 
-        let ops = diff(&prev_snapshot.schema, &next_schema);
+        let ops = diff_projections(&prev_snapshot.projections, &next_projections)
+            .with_context(|| format!("diffing [{}]", backend.slug()))?;
         if ops.is_empty() {
             println!("migrate diff [{}]: no changes", backend.slug());
             continue;
@@ -84,7 +87,7 @@ pub(crate) fn handle_diff(
         write_migration(&migration_dir, &migration)
             .with_context(|| format!("writing migration to {}", migration_dir.display()))?;
 
-        let next_snapshot = Snapshot::from_schema(next_schema.clone());
+        let next_snapshot = Snapshot::from_projections(next_projections.clone());
         write_snapshot(&next_snapshot, &snapshot_path)
             .with_context(|| format!("updating snapshot at {}", snapshot_path.display()))?;
 

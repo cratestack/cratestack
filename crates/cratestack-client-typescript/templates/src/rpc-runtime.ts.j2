@@ -7,9 +7,13 @@
 //
 // `call()`/`batch()` run through the composable `links` chain (see
 // `./links`, issue #182) before reaching the real network call;
-// `stream()` bypasses it entirely — see `./links` for why.
+// `stream()` runs through its own separate `streamLinks` chain (issue
+// #277) terminating in a boundary-scan of the response instead of a
+// single `Response` read — see `./links` for why the two chains are
+// separate contracts.
 
-import type { RpcLink, RpcLinkNext, RpcLinkRequest } from "./links";
+import type { RpcLink, RpcLinkNext, RpcLinkRequest, RpcStreamLink, RpcStreamLinkNext } from "./links.js";
+import { terminalStreamLink } from "./stream-terminal.js";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
@@ -62,8 +66,13 @@ export interface CratestackRpcClientOptions {
    *  wrapping the next, terminating in the real network call. Omitted
    *  or empty is a true no-op: requests are byte-identical to not
    *  having this option at all. Applies to `call()`/`batch()` only —
-   *  `stream()` bypasses the chain entirely (see `./links`). */
+   *  `stream()` uses the separate `streamLinks` chain below. */
   links?: RpcLink[];
+  /** Composable interceptor chain for `stream()` (issue #277) — same
+   *  ordering contract as `links`, but frame-shaped instead of
+   *  `Response`-shaped (see `./links`'s `RpcStreamLink` doc comment for
+   *  why). Omitted or empty is a true no-op. */
+  streamLinks?: RpcStreamLink[];
 }
 
 export interface CratestackRpcCallOptions {
@@ -139,7 +148,33 @@ export class CratestackRpcTransportError extends Error {
   }
 }
 
-const CBOR_SEQ_CONTENT_TYPE = "application/cbor-seq";
+/** Thrown by `stream()` when the response ends in the CBOR-tagged
+ *  mid-stream error sentinel (issue #281): a `@stream` procedure that
+ *  failed partway through, after headers were already sent as `200`.
+ *  Deliberately a separate class from {@link CratestackRpcError} rather
+ *  than reusing it with a fabricated `status` — by the time a mid-stream
+ *  error is observable, the real HTTP status has already been committed
+ *  to the wire as `200`, so there is no honest status code to report. */
+export class CratestackRpcStreamError extends Error {
+  readonly code: RpcErrorCode | string;
+  readonly details: unknown;
+  readonly body: RpcErrorBody;
+
+  constructor(body: RpcErrorBody) {
+    super(`RPC stream failed with code ${body.code}: ${body.message}`);
+    this.name = "CratestackRpcStreamError";
+    this.code = body.code;
+    this.details = body.details;
+    this.body = body;
+  }
+}
+
+/** Media type for a genuinely-incremental sequence response (a
+ *  `@stream` procedure negotiated over `Accept: application/cbor-seq` —
+ *  see `cratestack-axum::transport::stream_sequence`). Exported so
+ *  `./stream-terminal` can share this exact constant rather than a
+ *  second copy of the literal. */
+export const CBOR_SEQ_CONTENT_TYPE = "application/cbor-seq";
 
 /** The chain's terminal link — performs the real network call. Always
  *  runs last regardless of what `links` declares; `reduceRight` wraps
@@ -162,18 +197,28 @@ export class CratestackRpcRuntime {
   readonly codec: CratestackRpcCodec;
   readonly defaultHeaders: HeadersInit | (() => HeadersInit | Promise<HeadersInit>) | undefined;
   private readonly chain: RpcLinkNext;
+  private readonly streamChain: RpcStreamLinkNext;
 
   constructor(origin: string, options: CratestackRpcClientOptions = {}) {
     this.origin = origin.replace(/\/+$/, "");
     this.basePath = options.basePath ?? "{{ base_path }}";
-    this.fetchFn = options.fetch ?? fetch;
+    // `.bind(globalThis)` — see `rest-runtime.ts.j2`'s identical line
+    // for why: some browsers' `fetch` throws `TypeError: Illegal
+    // invocation` when invoked with a receiver other than the global
+    // object, which storing the bare function on `this.fetchFn` does.
+    this.fetchFn = options.fetch ?? fetch.bind(globalThis);
     this.codec = options.codec ?? jsonRpcCodec;
     this.defaultHeaders = options.headers;
-    // Empty `links` collapses `reduceRight` to `terminalLink` unchanged
-    // — byte-identical request as before this option existed.
+    // Empty `links`/`streamLinks` collapses `reduceRight` to the
+    // terminal link unchanged — byte-identical request as before either
+    // option existed.
     this.chain = (options.links ?? []).reduceRight<RpcLinkNext>(
       (next, link) => (request) => link(request, next),
       terminalLink,
+    );
+    this.streamChain = (options.streamLinks ?? []).reduceRight<RpcStreamLinkNext>(
+      (next, link) => (request) => link(request, next),
+      terminalStreamLink,
     );
   }
 
@@ -226,10 +271,17 @@ export class CratestackRpcRuntime {
     return (await this.readUnaryResponse(response)) as RpcResponseFrame<O>[];
   }
 
-  /** POST /rpc/{op_id} — sequence-returning call. Yields one `O` per
-   *  frame the server emits. Decoded from a single body matching
-   *  `codec.contentType` when the server picks that codec; CBOR-seq
-   *  streaming responses aren't supported by any codec yet (see below). */
+  /** POST /rpc/{op_id} — sequence-returning call. Runs through the
+   *  `streamLinks` chain (issue #277), terminating in a real fetch. When
+   *  the server picks the configured codec, the body is a single array
+   *  of `O` decoded and yielded in one go (byte-identical to this
+   *  method's pre-#277 behavior). When the server picks
+   *  `application/cbor-seq` (a genuinely-streaming `@stream` procedure),
+   *  items are decoded and yielded incrementally as the boundary
+   *  scanner finds each one — never after buffering the whole body. A
+   *  response ending in the mid-stream error sentinel (issue #281)
+   *  throws {@link CratestackRpcStreamError} instead of yielding a final
+   *  `O` — the stream ends there either way. */
   async *stream<O>(
     opId: string,
     input: unknown,
@@ -239,41 +291,20 @@ export class CratestackRpcRuntime {
     headers.set("Accept", `${CBOR_SEQ_CONTENT_TYPE}, ${this.codec.contentType}`);
     headers.set("Content-Type", this.codec.contentType);
 
-    const response = await this.fetchFn(this.url(`/rpc/${encodeURIComponent(opId)}`), {
-      method: "POST",
+    for await (const frame of this.streamChain({
+      opId,
+      input: input ?? null,
       headers,
-      body: this.codec.encode(input ?? null),
       signal: options.signal ?? null,
-    });
-
-    if (!response.ok) {
-      const body = await readErrorBody(response, this.codec);
-      throw new CratestackRpcError(response.status, body);
-    }
-
-    const contentType = response.headers.get("Content-Type") ?? "";
-    if (matchesContentType(contentType, this.codec.contentType)) {
-      // Server picked the configured codec — body is a single array of `O`.
-      const bytes = new Uint8Array(await response.arrayBuffer());
-      if (bytes.length === 0) {
-        return;
+      codec: this.codec,
+      fetchFn: this.fetchFn,
+      url: this.url(`/rpc/${encodeURIComponent(opId)}`),
+    })) {
+      if (frame.kind === "error") {
+        throw new CratestackRpcStreamError(frame.error);
       }
-      const items = this.codec.decode(bytes) as O[];
-      for (const item of items) {
-        yield item;
-      }
-      return;
+      yield frame.output as O;
     }
-
-    // CBOR sequence — caller is expected to provide a decoder. The
-    // default runtime ships JSON only; CBOR streaming decoding is a
-    // TODO so we surface the unsupported case rather than corrupting
-    // the iterator.
-    // TODO: wire a CBOR-seq decoder (e.g. `cbor-x` streaming reader)
-    //       so streaming works against CBOR servers.
-    throw new CratestackRpcTransportError(
-      `streaming over ${CBOR_SEQ_CONTENT_TYPE} is not yet supported by the default runtime`,
-    );
   }
 
   private async readUnaryResponse(response: Response): Promise<unknown> {
@@ -316,7 +347,9 @@ export class CratestackRpcRuntime {
 // Compares against the media type only (ignores `; charset=...` etc.) so
 // e.g. a `codec.contentType` of `"application/cbor"` doesn't accidentally
 // match an `"application/cbor-seq"` response — `includes()` would.
-function matchesContentType(header: string, expected: string): boolean {
+// Exported so `./stream-terminal` shares this exact check rather than a
+// second, potentially-drifting copy of it.
+export function matchesContentType(header: string, expected: string): boolean {
   const mediaType = header.split(";", 1)[0]?.trim() ?? "";
   return mediaType === expected;
 }
@@ -330,7 +363,11 @@ async function resolveHeaders(
   return headers;
 }
 
-async function readErrorBody(response: Response, codec: CratestackRpcCodec): Promise<RpcErrorBody> {
+/** Best-effort decode of a non-2xx response body as `RpcErrorBody`.
+ *  Exported so `./stream-terminal`'s terminal stream link reuses the
+ *  exact same fallback behavior `call()`/`batch()` already have for a
+ *  malformed/empty/undecodable error body, rather than a second copy. */
+export async function readErrorBody(response: Response, codec: CratestackRpcCodec): Promise<RpcErrorBody> {
   const bytes = new Uint8Array(await response.arrayBuffer().catch(() => new ArrayBuffer(0)));
   if (bytes.length === 0) {
     return { code: "internal", message: `RPC call returned status ${response.status}` };

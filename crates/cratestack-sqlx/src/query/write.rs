@@ -16,7 +16,11 @@ mod update_many;
 mod update_many_exec;
 mod update_run;
 mod upsert;
+mod upsert_do_nothing;
+mod upsert_do_nothing_exec;
+mod upsert_do_nothing_sql;
 mod upsert_exec;
+mod upsert_outcome;
 mod upsert_sql;
 
 pub use create::CreateRecord;
@@ -28,3 +32,5 @@ pub use update::{UpdateRecord, UpdateRecordSet};
 pub use update_exec::update_record_with_executor;
 pub use update_many::{UpdateMany, UpdateManySet};
 pub use upsert::UpsertRecord;
+pub use upsert_do_nothing::UpsertRecordDoNothing;
+pub use upsert_outcome::UpsertOutcome;

@@ -36,14 +36,157 @@ jobs:
       - name: cargo check (workspace, all targets)
         # `--locked` also fails if the build itself would change the lock.
         run: just check --locked
+      - name: cargo check (embedded facade for wasm32-unknown-unknown)
+        # Prove the embedded backend compiles to the documented wasm32 target
+        # (issue #419). The workspace check above is host-target only; this
+        # step verifies the wasm32 surface in isolation (without Postgres
+        # features that would drag in sqlx/rust_decimal).
+        run: cargo check --locked -p cratestack-sqlite --target wasm32-unknown-unknown
+      - name: Assert rustc, rust-toolchain.toml, and Cargo.toml rust-version agree
+        # Verify the MSRV declaration (#422) stays synchronized with the
+        # pinned toolchain and what rustc actually resolved to. Three-way
+        # equality guards against the rust-version/rust-toolchain.toml
+        # drift path the two-way check alone would leave uncovered.
+        run: |
+          resolved=$(rustc --version | awk '{print $2}')
+          pinned=$(awk -F'"' '/^channel/{print $2}' rust-toolchain.toml)
+          declared=$(awk -F'"' '/^rust-version/{print $2; exit}' Cargo.toml)
+          echo "resolved rustc: $resolved | rust-toolchain.toml: $pinned | Cargo.toml rust-version: $declared"
+          [ "$resolved" = "$pinned" ] || { echo "::error::CI resolved rustc $resolved, expected rust-toolchain.toml's $pinned"; exit 1; }
+          [ "$pinned" = "$declared" ] || { echo "::error::rust-toolchain.toml ($pinned) and Cargo.toml rust-version ($declared) have drifted apart"; exit 1; }
+
+  msrv:
+    name: msrv (1.95.0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/tauri-linux-deps
+      - uses: dtolnay/rust-toolchain@1.95.0
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - run: just check --locked
+
+  facade-disjointness:
+    name: facade disjointness (examples/no-database-verification*, examples/client-only-verification, examples/db-transaction-verification)
+    runs-on: ubuntu-latest
+    # `examples/no-database-verification`, `-api`, and `client-only-
+    # verification` are each their own `[workspace]` root (see their
+    # READMEs) specifically so a real `cargo tree` proves what an external
+    # consumer's dependency graph would actually contain — a workspace
+    # member can't prove this, because Cargo unifies features across every
+    # member building a shared dependency in one session (cratestack#329,
+    # cratestack#347, cratestack#490). This job re-runs those proofs on
+    # every PR so a stale/broken lockfile or a regressed disjointness
+    # guarantee fails CI instead of silently drifting (cratestack#422).
+    #
+    # `examples/db-transaction-verification` (cratestack#513) is the same
+    # pattern applied to a *direct*-dependency claim rather than a
+    # transitive-absence one: `sqlx` is expected (and present) transitively
+    # via `cratestack-sqlx`, so its proof is "no `sqlx = ...` line in this
+    # Cargo.toml", not "cargo tree has no sqlx at all" — plus a real
+    # Postgres run (testcontainers; GitHub-hosted runners ship Docker) to
+    # prove `db.transaction(...)` actually works from that Cargo.toml, not
+    # just that it compiles.
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            examples/no-database-verification
+            examples/no-database-verification-api
+            examples/client-only-verification
+            examples/db-transaction-verification
+      - name: Assert Cargo.lock is up to date (no-database-verification)
+        working-directory: examples/no-database-verification
+        run: cargo metadata --locked --format-version=1 > /dev/null
+      - name: Assert Cargo.lock is up to date (no-database-verification-api)
+        working-directory: examples/no-database-verification-api
+        run: cargo metadata --locked --format-version=1 > /dev/null
+      - name: Assert Cargo.lock is up to date (client-only-verification)
+        working-directory: examples/client-only-verification
+        run: cargo metadata --locked --format-version=1 > /dev/null
+      - name: Assert Cargo.lock is up to date (db-transaction-verification)
+        working-directory: examples/db-transaction-verification
+        run: cargo metadata --locked --format-version=1 > /dev/null
+      - name: sqlx absent by default (no-database-verification, postgres feature off)
+        working-directory: examples/no-database-verification
+        run: |
+          if cargo tree --locked | grep -qi sqlx; then
+            echo "::error::expected no sqlx/cratestack-sqlx in the default (postgres feature off) dependency graph"
+            cargo tree --locked | grep -i sqlx
+            exit 1
+          fi
+      - name: sqlx present behind the postgres feature (no-database-verification)
+        working-directory: examples/no-database-verification
+        run: |
+          if ! cargo tree --locked --features postgres | grep -qi sqlx; then
+            echo "::error::expected cratestack-sqlx in the dependency graph with --features postgres"
+            exit 1
+          fi
+      - name: sqlx absent unconditionally (no-database-verification-api)
+        working-directory: examples/no-database-verification-api
+        run: |
+          if cargo tree --locked | grep -qi sqlx; then
+            echo "::error::expected no sqlx/cratestack-sqlx in the cratestack-api dependency graph"
+            cargo tree --locked | grep -i sqlx
+            exit 1
+          fi
+      - name: axum absent unconditionally (client-only-verification)
+        # `cratestack-client` has no `grpc` Cargo feature (the one thing
+        # that could ever pull `tonic` -> `axum` in transitively — see
+        # `crates/cratestack-client/src/lib.rs`'s module doc), so its
+        # default feature set is its only state to prove absence for, same
+        # as `no-database-verification-api` above. `tower`/`hyper`/
+        # `tower-http` are deliberately NOT asserted absent here — they
+        # arrive via `reqwest` (the HTTP client transport
+        # `cratestack-client-rust` builds on), not via `cratestack-axum`,
+        # and asserting them absent would assert something false and
+        # unrelated to what this crate exists to prove. See this example's
+        # README "Why tower/hyper/tower-http aren't asserted absent".
+        working-directory: examples/client-only-verification
+        run: |
+          if cargo tree --locked | grep -qi axum; then
+            echo "::error::expected no axum/cratestack-axum in the cratestack-client dependency graph"
+            cargo tree --locked | grep -i axum
+            exit 1
+          fi
+      - name: no direct sqlx dependency (db-transaction-verification)
+        working-directory: examples/db-transaction-verification
+        run: |
+          if grep -Eq '^\s*sqlx\s*=' Cargo.toml; then
+            echo "::error::expected no direct sqlx dependency in db-transaction-verification's Cargo.toml"
+            exit 1
+          fi
+      - name: cargo test (no-database-verification, both feature states)
+        working-directory: examples/no-database-verification
+        run: |
+          cargo test --locked
+          cargo test --locked --features postgres
+      - name: cargo test (no-database-verification-api)
+        working-directory: examples/no-database-verification-api
+        run: cargo test --locked
+      - name: cargo test (client-only-verification)
+        working-directory: examples/client-only-verification
+        run: cargo test --locked
+      - name: cargo test against real Postgres (db-transaction-verification)
+        working-directory: examples/db-transaction-verification
+        env:
+          # Force the testcontainer/DB connection failure mode to a hard
+          # error rather than a silent per-test skip — same rationale as
+          # the `tests-db` job's own `CRATESTACK_REQUIRE_DB`.
+          CRATESTACK_REQUIRE_DB: "1"
+        run: cargo test --locked
 
   # ---- Test shards -----------------------------------------------------
-  # The suite is split into three parallel jobs so no single runner has to
+  # The suite is split into four parallel jobs so no single runner has to
   # compile the whole workspace — pulling the tauri/wasm/napi example crates
   # into one `cargo test --workspace` exhausts the runner's disk. Each shard
   # needs only its own slice of the toolchain (Docker / Trunk / neither), and
   # none needs the GTK/WebKit deps since the tauri examples are excluded.
-  # Recipes: `test-ci-{db,studio,host}` in the justfile.
+  # Recipes: `test-ci-{db,redis,studio,host}` in the justfile.
   tests-db:
     name: tests (db — Postgres)
     runs-on: ubuntu-latest
@@ -60,20 +203,35 @@ jobs:
         with:
           tool: just
       - name: cargo test (testcontainers Postgres)
-        # Retry up to 3x to absorb the known-flaky
-        # `generated_routes_emit_tracing_events` (cratestack-pg; intermittently
-        # misses tracing events under concurrency — same rationale as the
-        # `release-check` recipe). A genuine regression fails all three and
-        # still blocks. `--locked` also asserts the committed Cargo.lock.
-        run: |
-          for attempt in 1 2 3; do
-            echo "::group::test attempt $attempt/3"
-            if just test-ci-db --locked; then echo "::endgroup::"; exit 0; fi
-            echo "::endgroup::"
-            echo "attempt $attempt failed"
-          done
-          echo "tests failed after 3 attempts" >&2
-          exit 1
+        run: just test-ci-db --locked
+      - name: cargo test (decimal-bigdecimal backend, testcontainers Postgres)
+        # cratestack#421 AC3: proves a consumer can select the non-default
+        # decimal backend end to end and actually USE it, not just compile
+        # against it (`.ci/feature-matrix.sh`, in the feature-matrix job,
+        # already covers the compile-only bar). This test file is gated
+        # `required-features = ["postgres", "decimal-bigdecimal"]`, so the
+        # default-feature step above never builds or runs it.
+        run: just test-ci-db-decimal-bigdecimal --locked
+
+  tests-redis:
+    name: tests (redis)
+    runs-on: ubuntu-latest
+    env:
+      # Same rationale as `tests-db`'s CRATESTACK_REQUIRE_DB: turn a failed
+      # testcontainer/connection into a hard error instead of a silent
+      # per-test skip, so a broken Docker runner can't pass this gate green
+      # while skipping all 115 idempotency/rate-limit tests (issue #418).
+      CRATESTACK_REQUIRE_REDIS: "1"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: cargo test (testcontainers Redis)
+        # `--locked` also asserts the committed Cargo.lock.
+        run: just test-ci-redis --locked
 
   tests-studio:
     name: tests (studio + Trunk UI)
@@ -98,6 +256,23 @@ jobs:
         working-directory: crates/cratestack-studio-ui
       - name: cargo test (studio)
         run: just test-ci-studio --locked
+      - name: cargo test (studio — Postgres-backed, testcontainers)
+        # `crates/cratestack-studio/tests/postgres_*.rs` skip silently
+        # unless CRATESTACK_TEST_DATABASE_URL or CRATESTACK_USE_TESTCONTAINERS
+        # is set — neither of which this job used to set, so this decisive
+        # coverage reported `ok` on every CI run without ever touching a
+        # real database (a coverage audit found this is how the duplicate-
+        # column bug PR #553 fixed shipped: its own regression test never
+        # actually ran here). CRATESTACK_REQUIRE_DB turns a failed
+        # testcontainer/DB connection into a hard error instead of a
+        # silent skip, same rationale as the `tests-db` job's own
+        # CRATESTACK_REQUIRE_DB. A separate step in this job (not a
+        # separate job) so the Trunk UI build above — needed by
+        # `test-ci-studio`'s api_smoke tests, not by these — isn't paid
+        # for a second time.
+        env:
+          CRATESTACK_REQUIRE_DB: "1"
+        run: just test-ci-studio-db --locked
 
   tests-host:
     name: tests (host — everything else)
@@ -110,10 +285,49 @@ jobs:
         with:
           tool: just
       - name: cargo test (host — no DB, no wasm/desktop toolchain)
-        # All remaining crates + light example smoke tests. DB- and
-        # Redis-gated tests skip cleanly here (no REQUIRE_DB). `--locked`
-        # asserts the committed Cargo.lock.
+        # All remaining crates + light example smoke tests. DB-gated tests
+        # skip cleanly here (no REQUIRE_DB). cratestack-redis is excluded
+        # from this shard entirely — it has its own blocking `tests-redis`
+        # job above (issue #418). `--locked` asserts the committed
+        # Cargo.lock.
         run: just test-ci-host --locked
+
+  # ---- Ignored-test report (non-blocking) -------------------------------
+  # Report-only, never blocks the PR gate: closes the structural hole a
+  # 2026-08 audit of the policy layer found — an `#[ignore]`d test could
+  # (and did) sit un-run forever, since nothing anywhere ran `-- --ignored`
+  # (confirmed at the time: no workflow, no justfile recipe, anywhere in
+  # this repo passed `--include-ignored`/`-- --ignored`). Two of the four
+  # `#[ignore]`s that audit found were REAL, confirmed authorization bugs
+  # silently sitting unreported for an unknown length of time — this job
+  # exists so that can't happen invisibly again. `continue-on-error: true`
+  # is the actual non-blocking mechanism (a red run here shows as a
+  # yellow/neutral check, never fails the required-checks gate); the
+  # recipe itself also always `exit 0`s, as a second, redundant belt, so
+  # a local `just test-ci-ignored-report` run behaves the same way.
+  # `CRATESTACK_REQUIRE_DB` is set for the same reason `tests-db` sets it —
+  # without it, a broken testcontainers/Docker runner would silently skip
+  # every DB-backed `#[ignore]` and this job would report a false "all
+  # clean" instead of surfacing the real, tracked bugs.
+  #
+  # This does NOT replace reading `#[ignore]` reason strings during
+  # review — it's a safety net for the case where nobody does that for a
+  # while, not a substitute for it.
+  tests-ignored-report:
+    name: tests (ignored — report only, non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      CRATESTACK_REQUIRE_DB: "1"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: cargo test -- --ignored (report only)
+        run: just test-ci-ignored-report --locked
 
   # ---- Embedded-isolation gate -----------------------------------------
   # Blocking. Builds the embedded (rusqlite) surface and its examples WITHOUT
@@ -141,12 +355,100 @@ jobs:
         # crates out of the graph, so rust_decimal resolves without `std` —
         # the exact config the examples must compile under.
         run: cargo build --locked -p cratestack-sqlite --examples
+      - name: Build embedded facade for wasm32-unknown-unknown
+        # Prove one of the documented wasm32 browser examples actually
+        # compiles to that target (issue #419). This is a cargo build,
+        # not a full wasm-pack/Trunk build (which would need extra tools),
+        # but it proves the example's Rust surface is wasm32-compatible.
+        run: cargo build --locked -p embedded-browser-vite-example --target wasm32-unknown-unknown
       - name: Build standalone embedded example crates in isolation
         run: |
           cargo build --locked \
             -p embedded-cli-example \
             -p embedded-daemon-example \
             -p embedded-webhook-example
+
+  # ---- Feature-graph regression matrix (cratestack#421, cratestack#495) -
+  # Blocking. Runs a representative matrix across every crate either issue
+  # touched: (1) `decimal-rust-decimal`/`decimal-bigdecimal` are asserted
+  # mutually exclusive (#495 made the second backend real — it used to be
+  # a dead `compile_error!`, #421's fix was "must not be selectable at
+  # all"), (2) every facade with its own decimal toggle compiles clean
+  # under its default feature set and BOTH backends individually, with
+  # `cratestack-core`'s `default = ["decimal-rust-decimal"]` asserted to
+  # never leak through and `rust_decimal` asserted unreachable once
+  # `decimal-bigdecimal` is selected — verified via `cargo tree
+  # -e features`, since that's a property of the *resolved dependency
+  # graph*, not something a plain `#[test]` inside a crate can observe —
+  # and (3) every "plain" crate whose `cratestack-core` edge became
+  # explicit still compiles, including the wasm32-only edges. See
+  # `.ci/feature-matrix.sh`.
+  feature-matrix:
+    name: feature matrix (cratestack#421, cratestack#495)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: Feature-graph regression matrix
+        run: just feature-matrix
+
+  # Layer-direction check (ADR 0014). Manifest-only (`cargo metadata
+  # --no-deps`) — no toolchain component beyond stable Rust + Python 3
+  # (already on the runner image) is needed, so no `rust-cache`/`just`
+  # install step is required either; kept minimal on purpose.
+  layer-direction:
+    name: layer direction (ADR 0014)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Layer-direction check
+        run: ./.ci/layer-direction-check.sh
+
+  # Workspace-lints opt-in check (cratestack#523). Manifest-only (`cargo
+  # metadata --no-deps`) — same reasoning as `layer-direction` above, no
+  # `rust-cache`/`just` install step needed.
+  lints-workspace-optin:
+    name: workspace lints opt-in (cratestack#523)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Workspace-lints opt-in check
+        run: ./.ci/lints-workspace-check.sh
+
+  # Changelog verification (issue #479). Detects unedited changelog seeds
+  # that would silently degrade the changelog from prose to a commit list
+  # (worse than an honest gap, because it looks maintained but isn't).
+  # Blocking gate for any PR that touches CHANGELOG.md.
+  changelog-verify:
+    name: changelog (no unedited seeds)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: Changelog verification
+        run: just verify-changelog
+
+  # Tests for changelog-seed.sh/changelog-check.sh themselves (issue #479).
+  # Runs against an isolated sandbox copy of CHANGELOG.md, never the real,
+  # tracked file — see .ci/changelog-seed-tests.sh.
+  changelog-seed-test:
+    name: changelog (seed/check script tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: Changelog seed/check tests
+        run: just changelog-seed-test
 
   # ---- Lint gates ------------------------------------------------------
   # Blocking. Determinism comes from rust-toolchain.toml pinning the
@@ -184,13 +486,190 @@ jobs:
       - name: cargo fmt --check
         run: just fmt-check
 
+  # ---- Dart generator verification --------------------------------------
+  # Blocking. Closes a pre-existing hole (issue #300, first story of epic
+  # #297): before this job, nothing in CI ever ran the emitted Dart through
+  # a Dart/Flutter toolchain — `grep -rn "dart\|flutter" .github/workflows/`
+  # matched only rustdoc-pages.yml, and the Rust-side snapshot tests under
+  # crates/cratestack-client-dart/tests/ only assert on generated *text*,
+  # which can't catch a missing import, an undefined symbol, or a type
+  # error in the emitted Dart. That gap is real: see `templates.rs`'s
+  # `REST_TEMPLATE_SPECS` comment for a historical case where an RPC
+  # package reusing a REST-only template failed `flutter analyze` with 3
+  # undefined-symbol errors, caught only by a one-off manual run.
+  #
+  # Follows the sibling-job pattern established by `js (@cratestack/cbor-
+  # node)` / `js (@cratestack/cbor-web)`: a dedicated job with its own
+  # toolchain setup, not folded into an existing Rust job.
+  #
+  # `just verify-dart` generates a REST and an RPC package DURING the job
+  # from committed fixtures (crates/cratestack-client-dart/tests/fixtures/
+  # ci_{rest,rpc}.cstack — multiple models, an enum, a relation, and a
+  # procedure each, richer than the tiny_* snapshot fixtures) via the real
+  # `cratestack generate-dart` CLI, then runs `flutter analyze` on each —
+  # see the justfile recipe's own comment for why Flutter (not the plain
+  # Dart SDK) is required and for the analyzer-severity decision
+  # (`--fatal-warnings`, `--no-fatal-infos`).
+  #
+  # Issue #301 extended the recipe to also cover `--preset riverpod`: the
+  # same ci_rest/ci_rpc fixtures plus a dedicated
+  # riverpod_shared_ownership.cstack fixture for the per-model fan-out
+  # layout's ownership rule (a genuinely shared enum, a procedure-only
+  # nested type, and a relation cycle across mutually-importing model
+  # files) — still one job, the preset matrix lives inside `just
+  # verify-dart` itself.
+  dart-verify:
+    name: dart (generated packages)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate + flutter analyze (default + riverpod presets, REST + RPC)
+        run: just verify-dart
+
+  # ---- TypeScript client verification (issue #419) --------------------------
+  # Blocking. Proves the `default` preset TypeScript client output typechecks
+  # for both REST and RPC transports. While the `react-vite-swr-example` job
+  # already exercises the `swr` preset over REST, it was the *only* TypeScript
+  # job doing real typechecking — RPC fixtures existed as Rust-side generator
+  # test snapshots but were never run through `tsc` (unlike Dart, which has
+  # both `ci_rest` and `ci_rpc` fixtures exercised through `flutter analyze`).
+  #
+  # `just verify-typescript` generates both fixtures from committed `.cstack`
+  # files, then runs `npm install` and `npm run build` (which invokes `tsc`)
+  # on each, the same discipline `dart-verify` uses. The REST fixture proves
+  # the default template set produces valid TypeScript; the RPC fixture
+  # proves the RPC-specific template overrides do as well.
+  typescript-verify:
+    name: typescript (generated packages — REST + RPC)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Generate + tsc typecheck (default preset, REST + RPC)
+        run: just verify-typescript
+
+  # ---- Flutter + Riverpod example app (issue #303, epic #297's last story) ----
+  # Blocking. Proves the `riverpod` preset end to end in a real Flutter app,
+  # the same "example app, not just fixtures" bar `react-vite-swr-example`
+  # sets for the TypeScript `swr` preset. Reuses `react-vite-swr`'s own
+  # schema/server (`examples/react-vite-swr/schema.cstack`) rather than
+  # standing up a second Postgres-backed server crate — see this example's
+  # README for why.
+  #
+  # `examples/flutter-riverpod/app` deliberately never gets `flutter build`/
+  # `flutter run` here: it has no committed platform scaffolding (`android/`,
+  # `ios/`, `macos/` are gitignored and regenerated locally via
+  # `flutter create .`, the same precedent `embedded-flutter` set), and
+  # building one would need a real device/simulator target this runner
+  # doesn't have. What *is* covered: the committed `client/` matches the
+  # real generator (`--check`, same drift-check discipline
+  # `react-vite-swr-example` uses), `dart run build_runner build` actually
+  # expands the checked-in `@riverpod` annotations (via `generate-dart
+  # --run-build-runner` itself — this job doubles as CI coverage for that
+  # flag), `flutter analyze` is clean on both `client/` and `app/`, and
+  # `flutter test` passes for both — including `app/test/boards_screen_test.dart`,
+  # a real `flutter_test` widget test that pumps the actual `BoardsScreen`
+  # against a fake adapter and asserts on rendered text, not just a
+  # `ProviderContainer.read`. What's NOT covered here: an actual
+  # `flutter run` against a live server — see the PR description's manual
+  # verification section for that (run locally with the pinned SDK).
+  flutter-riverpod-example:
+    name: flutter (flutter-riverpod example)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Assert the committed example clients match the real generator
+        run: just regen-examples --check
+      # --- issue #471: drift above must not mask the coverage below -----
+      # The drift-check step has no `continue-on-error`, so a failure
+      # there still fails the job overall (`!cancelled()` only overrides
+      # the *default* `success()` guard on downstream steps — it does not
+      # swallow the failure). Every step below therefore gets
+      # `if: ${{ !cancelled() }}` so a red drift check no longer skips six
+      # steps of real Flutter coverage (the #444 regression: two days
+      # where this job was red *and* ran zero analyze/test). `!cancelled()`
+      # rather than `always()` so a cancelled run still skips cleanly
+      # instead of racing a teardown. None of these steps depend on the
+      # drift step's outcome: this one regenerates the client for real
+      # (no `--check`), so `flutter analyze`/`flutter test` below always
+      # run against freshly generated, buildable code even when the
+      # committed copy has drifted.
+      - name: Regenerate + run build_runner via --run-build-runner (issue #303)
+        if: ${{ !cancelled() }}
+        run: |
+          cd examples/flutter-riverpod/client && flutter pub get
+          cd "$GITHUB_WORKSPACE"
+          cargo run -p cratestack-cli -- generate-dart \
+            --schema examples/react-vite-swr/schema.cstack \
+            --out examples/flutter-riverpod/client \
+            --library-name flutter_riverpod_client \
+            --preset riverpod \
+            --run-build-runner
+      - name: flutter analyze (client)
+        if: ${{ !cancelled() }}
+        working-directory: examples/flutter-riverpod/client
+        run: flutter analyze --fatal-warnings --no-fatal-infos
+      - name: flutter test (client)
+        if: ${{ !cancelled() }}
+        working-directory: examples/flutter-riverpod/client
+        run: flutter test
+      - name: flutter pub get (app)
+        if: ${{ !cancelled() }}
+        working-directory: examples/flutter-riverpod/app
+        run: flutter pub get
+      - name: flutter analyze (app)
+        if: ${{ !cancelled() }}
+        working-directory: examples/flutter-riverpod/app
+        run: flutter analyze --fatal-warnings --no-fatal-infos
+      - name: flutter test (app)
+        if: ${{ !cancelled() }}
+        working-directory: examples/flutter-riverpod/app
+        run: flutter test
+
   # ---- JS packages (packages/*) -----------------------------------------
-  # Blocking. Covers the hand-written npm packages (currently
-  # @cratestack/api; @cratestack/cli and cratestack-vscode have no
-  # build/test/lint scripts, so turbo simply skips them). `examples/*` is
-  # NOT part of this pnpm workspace — those are self-contained consumer
-  # projects with their own toolchains (napi/wasm/tauri), scoped out via
-  # `pnpm-workspace.yaml`'s `packages/*` glob.
+  # Blocking. Covers the hand-written npm packages — @cratestack/api's
+  # split family (ts-types, link-batch, link-logger, runtime-fetch,
+  # runtime-axios, validator-zod, validator-yup, adapter-tanstack-query,
+  # adapter-rtk, and the api compat shim itself); @cratestack/cli and
+  # cratestack-vscode have no build/test/lint scripts, so turbo simply
+  # skips them. `examples/*` is NOT part of this pnpm workspace — those
+  # are self-contained consumer projects with their own toolchains
+  # (napi/wasm/tauri), scoped out via `pnpm-workspace.yaml`'s
+  # `packages/*` glob.
+  #
+  # `cratestack-cbor-node` (issue #286) and `cratestack-cbor-web` (issue
+  # #287) ARE part of this pnpm workspace (packages/*) but are excluded
+  # from this job's turbo run via `--filter` — unlike every other package
+  # here, their "build" scripts need a real Rust toolchain (`napi build`
+  # / `wasm-pack build` respectively), which this job deliberately
+  # doesn't set up (that's the whole point of keeping `js`
+  # napi/wasm/tauri-free, per the comment above). See the dedicated
+  # `js-cbor-napi` / `js-cbor-wasm` jobs instead.
   js:
     name: js (pnpm + turbo)
     runs-on: ubuntu-latest
@@ -228,4 +707,223 @@ jobs:
           restore-keys: |
             turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
       - name: Build, test, lint (turbo)
-        run: pnpm turbo run build test lint
+        run: pnpm turbo run build test lint --filter='!./packages/cratestack-cbor-node' --filter='!./packages/cratestack-cbor-web'
+
+  # ---- @cratestack/cbor-node (native N-API addon) -----------------------
+  # Blocking, but split out of `js` above: this is one of two packages/*
+  # packages whose "build" script needs a real Rust toolchain (`napi build`
+  # compiles crates/cratestack-cbor-napi), so it gets its own toolchain
+  # setup instead of adding that requirement to every other JS package's
+  # job. Single-platform (this runner's host target) sanity build+test —
+  # NOT the full per-platform release matrix `release-cli.yml` uses for
+  # `cratestack-cli`. That matrix (multiple OS/arch legs, `napi artifacts`,
+  # `napi prepublish -t npm`, optionalDependencies subpackage publishing)
+  # is deliberately deferred — see the PR that introduced this job (issue
+  # #286) for the explicit scope note. This job only proves the crate +
+  # package genuinely build and pass tests on CI, not that every published
+  # target does.
+  js-cbor-napi:
+    name: js (@cratestack/cbor-node)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: pnpm install
+        env:
+          CRATESTACK_CLI_SKIP_DOWNLOAD: "1"
+        run: pnpm install --frozen-lockfile
+      - name: Build, test, lint @cratestack/cbor-node
+        run: pnpm turbo run build test lint --filter='./packages/cratestack-cbor-node'
+      # @cratestack/cbor (issue #288, the umbrella package) deliberately has
+      # no `^build` dependency on @cratestack/cbor-node in turbo.json (see
+      # that file's comment) — the plain `js` job above excludes cbor-node,
+      # so the umbrella's own build/test can't require it there. Its Node
+      # round-trip suite (tests/node.test.ts) self-skips when
+      # @cratestack/cbor-node isn't actually built on disk, which would make
+      # every `js` job run skip it silently forever if this were its only
+      # exercise. Running it here — as its own step, AFTER cbor-node's own
+      # build step above already produced real dist/native.mjs output — is
+      # what gives it real, non-skipped Node-side coverage. (Separate step,
+      # not a combined `--filter`, on purpose: two packages passed to one
+      # turbo invocation with no dependency edge between them have no
+      # guaranteed build order, which would make this a race instead of a
+      # guarantee.)
+      - name: Build, test, lint @cratestack/cbor (Node-side real coverage)
+        run: pnpm turbo run build test lint --filter='./packages/cratestack-cbor'
+
+  # ---- @cratestack/cbor-web (wasm-bindgen addon) -------------------------
+  # Same rationale as js-cbor-napi above, for the other Rust-toolchain-
+  # needing packages/* package: its "build" script's `prebuild` hook runs
+  # `wasm-pack build`, needing a Rust wasm32 toolchain the plain `js` job
+  # deliberately doesn't set up.
+  js-cbor-wasm:
+    name: js (@cratestack/cbor-web)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      # wasm32-unknown-unknown is installed by rustup from
+      # rust-toolchain.toml's `targets` for the pinned channel (same
+      # mechanism the `tests-studio` job's Trunk build relies on).
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+      # Same reason as the publish-npm-cbor-web job in release-cli.yml,
+      # which carries the full explanation: wasm-pack downloads its own
+      # binaryen (hardcoded version_117) mid-build unless a `wasm-opt`
+      # is already on PATH, and that unpinned fetch failed a real
+      # release run. This job runs the same `wasm-pack build` on every
+      # push, so it is exposed to the identical flake.
+      - name: Install binaryen (wasm-opt), pinned
+        run: |
+          set -euo pipefail
+          curl -fsSL -o binaryen.tar.gz \
+            "https://github.com/WebAssembly/binaryen/releases/download/version_130/binaryen-version_130-x86_64-linux.tar.gz"
+          tar -xzf binaryen.tar.gz
+          echo "$PWD/binaryen-version_130/bin" >> "$GITHUB_PATH"
+          rm binaryen.tar.gz
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: pnpm install
+        env:
+          CRATESTACK_CLI_SKIP_DOWNLOAD: "1"
+        run: pnpm install --frozen-lockfile
+      - name: Build, test, lint @cratestack/cbor-web
+        run: pnpm turbo run build test lint --filter='./packages/cratestack-cbor-web'
+
+  # ---- react-vite-swr example (generated `swr`-preset client) -----------
+  # Blocking. Issue #306 (epic #298's last story): the example under
+  # examples/react-vite-swr is NOT part of the `packages/*` pnpm workspace
+  # (see the `js` job's own comment on why examples/* is scoped out) — it's
+  # its own two-package pnpm workspace (`client/` + `web/`, via its own
+  # pnpm-workspace.yaml, mirroring react-nextjs-daisyui's napi+web split).
+  # Gets its own toolchain setup (Rust, for the drift check against the
+  # real generator + the example server's offline test) rather than
+  # folding into `js` above.
+  #
+  # Covered here: the checked-in `client/` matches the real
+  # `cratestack generate-typescript --preset swr` output (`--check`, so it
+  # can't silently drift), the example server crate builds and its offline
+  # test passes, and both the generated client and the web app typecheck,
+  # with the web app additionally linted.
+  #
+  # NOT covered here (deliberately, cost-consciously — this repo's own
+  # `dart-verify` job takes the same generate-and-typecheck-only approach
+  # rather than actually running the generated app): a real Postgres-
+  # backed run of the server (the example's
+  # `crud_and_procedure_round_trip_over_http` test skips silently here,
+  # same as every other `CRATESTACK_TEST_DATABASE_URL`-gated test outside
+  # `tests-db`/`just test-pg`) and driving the React app in a real browser
+  # to observe mutation invalidation — both were run manually against a
+  # real Postgres instance; see the PR description for what was run and
+  # observed.
+  react-vite-swr-example:
+    name: js (react-vite-swr example)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: Assert the committed example clients match the real generator
+        run: just regen-examples --check
+      # --- issue #471: drift above must not mask the coverage below -----
+      # Same fix as `flutter-riverpod-example`, applied to every step in
+      # this job (the drift check here sits ahead of *all* real coverage —
+      # cargo test, pnpm install, the client build, and the web app
+      # typecheck/lint — unlike the Flutter job, where setup steps precede
+      # the drift check too). No `continue-on-error` on the drift step, so
+      # the job still ends red on drift; `if: ${{ !cancelled() }}` only
+      # overrides the default `success()` guard so these steps run anyway.
+      # Unlike the Flutter job, nothing here regenerates the client before
+      # building it, so "Build the generated client" typechecks whatever
+      # is actually committed (including drift) — that's the correct
+      # signal: it's real coverage of the committed code, not a re-derived
+      # copy of it.
+      - name: cargo test (offline — the DB-gated test skips cleanly without CRATESTACK_TEST_DATABASE_URL)
+        if: ${{ !cancelled() }}
+        run: cargo test -p react-vite-swr-example
+      - uses: pnpm/action-setup@v4
+        if: ${{ !cancelled() }}
+      - uses: actions/setup-node@v4
+        if: ${{ !cancelled() }}
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: examples/react-vite-swr/pnpm-lock.yaml
+      - name: pnpm install
+        if: ${{ !cancelled() }}
+        working-directory: examples/react-vite-swr
+        run: pnpm install --frozen-lockfile
+      - name: Build the generated client (typechecks client/ for real)
+        if: ${{ !cancelled() }}
+        working-directory: examples/react-vite-swr
+        run: pnpm --filter react-vite-swr-client run build
+      - name: Typecheck + lint the web app
+        if: ${{ !cancelled() }}
+        working-directory: examples/react-vite-swr
+        run: |
+          pnpm --filter react-vite-swr-web run typecheck
+          pnpm --filter react-vite-swr-web run lint
+
+  # ---- install-cratestack-cli action smoke test --------------------------
+  # Blocking. Proves the composite action in
+  # .github/actions/install-cratestack-cli actually works, not just that its
+  # YAML parses — same 5-target matrix release-cli.yml's own `build` job
+  # uses, so every OS/arch the action claims to support gets a real,
+  # network-backed download + checksum-verify + exec on its real runner
+  # type. `version: latest` resolves whatever the newest real release is
+  # (this repo always has one), so the test doesn't need updating on every
+  # bump. `cratestack --help` is the actual proof the binary runs, not just
+  # that it downloaded — a checksum match alone doesn't prove the archive
+  # contains a working executable for that platform. Not `--version`:
+  # confirmed by hand against a real downloaded binary that this CLI has
+  # no top-level version flag, only `-h`/`--help` (`Cli`'s clap derive
+  # doesn't expose one).
+  install-cratestack-cli-smoke-test:
+    name: install-cratestack-cli (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/install-cratestack-cli
+        id: install
+        with:
+          version: latest
+      - name: Confirm the resolved version was actually reported
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${{ steps.install.outputs.version }}" ]; then
+            echo "::error::install-cratestack-cli produced no version output" >&2
+            exit 1
+          fi
+          echo "Resolved version: ${{ steps.install.outputs.version }}"
+      - name: cratestack --help actually runs
+        shell: bash
+        run: cratestack --help

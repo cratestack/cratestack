@@ -56,6 +56,15 @@ fn precondition_failed_maps_to_412() {
 }
 
 #[test]
+fn unavailable_maps_to_503_and_passes_message_through() {
+    let err = CoolError::Unavailable("subscription lagged".to_owned());
+    assert_eq!(err.status_code(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(err.code(), "UNAVAILABLE");
+    let response = err.into_response();
+    assert_eq!(response.message, "subscription lagged");
+}
+
+#[test]
 fn detail_is_none_for_empty_string() {
     let err = CoolError::Internal(String::new());
     assert_eq!(err.detail(), None);

@@ -1,0 +1,10 @@
+datasource db {
+  provider = "sqlite"
+  url = env("DATABASE_URL")
+}
+
+model Probe {
+  id Int @id
+  payload Json
+  note Json?
+}

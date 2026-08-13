@@ -94,6 +94,25 @@ pub(super) fn generate_generated_model_client(
                 self.runtime.get(&format!("{}/{}", #route_path, id), &[], headers).await
             }
 
+            /// Same call as [`Self::get`], but returns the status and
+            /// response headers alongside the record (issue #493) — read
+            /// `TypedResponse::header("etag")` off the result to get the
+            /// value [`Self::update_with_response`] needs as `If-Match`
+            /// on an `@version` model. `delete_with_response` needs it
+            /// too, since cratestack#519: the server enforces `If-Match`
+            /// on `DELETE` exactly like `PATCH` (see
+            /// [`Self::delete_with_response`]).
+            pub async fn get_with_response(
+                &self,
+                id: &#primary_key_type,
+                headers: &[::cratestack::client_rust::HeaderPair<'_>],
+            ) -> Result<
+                ::cratestack::client_rust::TypedResponse<super::models::#model_ident>,
+                ::cratestack::client_rust::ClientError,
+            > {
+                self.runtime.get_with_response(&format!("{}/{}", #route_path, id), &[], headers).await
+            }
+
             pub async fn get_view<P>(
                 &self,
                 id: &#primary_key_type,
@@ -125,12 +144,51 @@ pub(super) fn generate_generated_model_client(
                 self.runtime.patch(&format!("{}/{}", #route_path, id), input, headers).await
             }
 
+            /// Same call as [`Self::update`], but returns the status and
+            /// response headers alongside the record (issue #493) — on
+            /// an `@version` model, `headers` must carry `If-Match`
+            /// (from a prior [`Self::get_with_response`]), and the
+            /// response's `ETag` is the value a chained update needs
+            /// next.
+            pub async fn update_with_response(
+                &self,
+                id: &#primary_key_type,
+                input: &super::inputs::#update_input_ident,
+                headers: &[::cratestack::client_rust::HeaderPair<'_>],
+            ) -> Result<
+                ::cratestack::client_rust::TypedResponse<super::models::#model_ident>,
+                ::cratestack::client_rust::ClientError,
+            > {
+                self.runtime.patch_with_response(&format!("{}/{}", #route_path, id), input, headers).await
+            }
+
             pub async fn delete(
                 &self,
                 id: &#primary_key_type,
                 headers: &[::cratestack::client_rust::HeaderPair<'_>],
             ) -> Result<super::models::#model_ident, ::cratestack::client_rust::ClientError> {
                 self.runtime.delete(&format!("{}/{}", #route_path, id), headers).await
+            }
+
+            /// Same call as [`Self::delete`], but returns the status and
+            /// response headers alongside the record (issue #493) — for
+            /// reading e.g. a `Retry-After` on a `429`, or any other
+            /// out-of-band signal a server sends on a delete response.
+            ///
+            /// Part of the `@version` optimistic-locking round trip
+            /// since cratestack#519: like [`Self::update_with_response`],
+            /// the server requires `If-Match` in `headers` on an
+            /// `@version` model and returns `412` on a stale or missing
+            /// value.
+            pub async fn delete_with_response(
+                &self,
+                id: &#primary_key_type,
+                headers: &[::cratestack::client_rust::HeaderPair<'_>],
+            ) -> Result<
+                ::cratestack::client_rust::TypedResponse<super::models::#model_ident>,
+                ::cratestack::client_rust::ClientError,
+            > {
+                self.runtime.delete_with_response(&format!("{}/{}", #route_path, id), headers).await
             }
         }
     })

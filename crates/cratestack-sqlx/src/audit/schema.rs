@@ -55,20 +55,15 @@ pub(crate) async fn ensure_audit_table(runtime: &SqlxRuntime) -> Result<(), Cool
         return Ok(());
     }
 
-    // sqlx prepared statements accept only one statement per query;
-    // multi-statement DDL is split on `;`. Sub-statements are
-    // idempotent (`CREATE ... IF NOT EXISTS`), so this stays safe
-    // under concurrent first-runs.
-    for statement in AUDIT_TABLE_DDL
-        .split(';')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        sqlx::query(statement)
-            .execute(runtime.pool())
-            .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
-    }
+    // `raw_sql` sends the whole DDL block as one batch over PG's
+    // simple-query protocol instead of splitting on `;` client-side
+    // (which would corrupt any dollar-quoted body). Sub-statements are
+    // idempotent (`CREATE ... IF NOT EXISTS`), so this stays safe under
+    // concurrent first-runs.
+    sqlx::raw_sql(AUDIT_TABLE_DDL)
+        .execute(runtime.pool())
+        .await
+        .map_err(|error| CoolError::Database(error.to_string()))?;
 
     runtime.audit_table_ensured().store(true, Ordering::Release);
     Ok(())

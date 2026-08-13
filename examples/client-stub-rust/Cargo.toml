@@ -2,23 +2,27 @@
 name = "client-stub-rust-example"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 publish = false
 description = "Standalone HTTP-client binary built on cratestack-client-rust via include_client_schema!. The 'backend service that talks to another backend service' shape."
+
+[lints]
+workspace = true
 
 [[bin]]
 name = "client-stub"
 path = "src/main.rs"
 
 [dependencies]
-cratestack = { package = "cratestack-pg", path = "../../crates/cratestack-pg", version = "0.4.4" }
-cratestack-client-rust = { path = "../../crates/cratestack-client-rust", version = "0.4.4" }
-cratestack-codec-cbor = { path = "../../crates/cratestack-codec-cbor", version = "0.4.4" }
+cratestack = { package = "cratestack-pg", path = "../../crates/cratestack-pg" }
+cratestack-client-rust = { path = "../../crates/cratestack-client-rust" }
+cratestack-codec-cbor = { path = "../../crates/cratestack-codec-cbor" }
 serde = { workspace = true }
 tokio = { workspace = true }
 url = { workspace = true }
 
 [dev-dependencies]
 axum = { workspace = true }
-cratestack-axum = { path = "../../crates/cratestack-axum", version = "0.4.4" }
-cratestack-codec-json = { path = "../../crates/cratestack-codec-json", version = "0.4.4" }
+cratestack-axum = { path = "../../crates/cratestack-axum" }
+cratestack-codec-json = { path = "../../crates/cratestack-codec-json" }
 serde_json = { workspace = true }

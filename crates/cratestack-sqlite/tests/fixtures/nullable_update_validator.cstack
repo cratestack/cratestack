@@ -1,0 +1,23 @@
+// cratestack#537 regression fixture: a validator attribute on a
+// *nullable* field used to make the generated `Update{Model}Input::validate()`
+// fail to compile. Update inputs wrap every field in an extra `Option<T>`
+// ("field omitted" vs. present), and a nullable column is *separately*
+// `Option<T>` ("set this column to NULL") — the two are independent, so a
+// nullable + validated field on an update input is `Option<Option<T>>`.
+// Before the fix, `validators/emit.rs` OR'd the two "is this wrapped in an
+// Option" conditions into one boolean and only unwrapped once, leaving a
+// `&Option<T>` where the validator helper expects `&T`.
+//
+// Both `@length` (String) and `@range` (Int) are exercised here since the
+// bug is in the shared unwrap-depth logic, not in any one validator.
+
+datasource db {
+  provider = "sqlite"
+  url = env("DATABASE_URL")
+}
+
+model Note {
+  id Int @id
+  body String? @length(min: 1, max: 64)
+  priority Int? @range(min: 1, max: 5)
+}

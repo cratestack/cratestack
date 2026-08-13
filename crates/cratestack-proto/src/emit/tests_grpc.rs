@@ -29,6 +29,7 @@ fn ty(name: &str, arity: TypeArity) -> TypeRef {
         name_span: span(),
         arity,
         generic_args: vec![],
+        int_args: Vec::new(),
     }
 }
 
@@ -91,6 +92,7 @@ fn grpc_schema() -> Schema {
         procedures: vec![],
         views: vec![],
         transport: TransportStyle::Grpc,
+        declared_extensions: Default::default(),
     }
 }
 
@@ -207,6 +209,7 @@ fn page_returning_procedure_still_synthesizes_pageof_and_shares_it_with_model_li
                 name_span: span(),
                 arity: TypeArity::Required,
                 generic_args: vec![ty("Order", TypeArity::Required)],
+                int_args: Vec::new(),
             },
         )],
         ..grpc_schema()

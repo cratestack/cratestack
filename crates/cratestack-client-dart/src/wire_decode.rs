@@ -30,6 +30,7 @@ pub(crate) fn decode_value_expr(
                         name_span: synthetic_span(),
                         arity: TypeArity::Required,
                         generic_args: ty.generic_args.clone(),
+                        int_args: ty.int_args.clone(),
                     },
                     enum_names,
                 );
@@ -44,6 +45,7 @@ pub(crate) fn decode_value_expr(
                         name_span: synthetic_span(),
                         arity: TypeArity::Required,
                         generic_args: ty.generic_args.clone(),
+                        int_args: ty.int_args.clone(),
                     },
                     enum_names,
                 );
@@ -64,6 +66,7 @@ pub(crate) fn decode_value_expr(
                         name_span: synthetic_span(),
                         arity: TypeArity::Optional,
                         generic_args: ty.generic_args.clone(),
+                        int_args: ty.int_args.clone(),
                     },
                     enum_names,
                 )
@@ -88,6 +91,16 @@ fn decode_required_scalar(expr: &str, ty: &TypeRef, enum_names: &BTreeSet<&str>)
         );
     }
 
+    if ty.is_find_many() {
+        let item = ty
+            .find_many_item()
+            .expect("validated FindMany<T> should include an item type");
+        return format!(
+            "{}FindMany.fromWire(cratestackAsValueMap({expr}))",
+            item.name
+        );
+    }
+
     if enum_names.contains(ty.name.as_str()) {
         return format!("{}.fromWire({expr})", ty.name);
     }
@@ -100,6 +113,13 @@ fn decode_required_scalar(expr: &str, ty: &TypeRef, enum_names: &BTreeSet<&str>)
         "DateTime" => format!("DateTime.parse({expr} as String)"),
         "Json" => expr.to_owned(),
         "Bytes" => format!("Uint8List.fromList(List<int>.from(cratestackAsValueList({expr})))"),
+        // cratestack#498: `Decimal.parse` (unlike `double.parse`) accepts
+        // both the plain positional notation `rust_decimal` always emits
+        // and the scientific notation `bigdecimal` switches to past a
+        // magnitude threshold, producing the identical value either way —
+        // that equivalence is the entire point (see this crate's
+        // `dart_types.rs` doc comment on the "Decimal" arm).
+        "Decimal" => format!("Decimal.parse({expr} as String)"),
         other => format!("{other}.fromWire(cratestackAsValueMap({expr}))"),
     }
 }
@@ -116,6 +136,7 @@ fn decode_optional_scalar(expr: &str, ty: &TypeRef, enum_names: &BTreeSet<&str>)
             name_span: synthetic_span(),
             arity: TypeArity::Required,
             generic_args: ty.generic_args.clone(),
+            int_args: ty.int_args.clone(),
         },
         enum_names,
     );

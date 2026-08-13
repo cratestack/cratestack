@@ -1,0 +1,19 @@
+// Regression fixture for the built-in `FindMany<Model>` procedure-argument
+// type: search-with-filters, structured-JSON, per-model `{ where?:
+// PostWhere; orderBy?: PostOrderByClause[]; }` shape (see
+// `find_many_views.rs`) — the shared filter operator classes
+// (`StringFilter`/`NumberFilter`/etc.) are hardcoded once (mirroring
+// `Page`/`PageInfo`/`PageInput`), but `PostWhere`/`PostSortField`/
+// `PostOrderByClause`/`PostFindMany` themselves are generated per model.
+// Exercises both the `default` preset (everything in one `models.dart`,
+// no import needed) and the `riverpod` preset (`PostFindMany` etc. live
+// in `models/post.dart`; the shared filter classes/`SortDirection` live
+// in `models/shared_types.dart`, imported by both `post.dart` and
+// `procedures.dart`).
+
+model Post {
+  id Int @id
+  title String
+}
+
+procedure searchPosts(query: FindMany<Post>): Post[]

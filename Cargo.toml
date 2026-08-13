@@ -2,8 +2,13 @@
 resolver = "3"
 members = [
     "crates/cratestack",
+    "crates/cratestack-api",
+    "crates/cratestack-auth",
     "crates/cratestack-axum",
+    "crates/cratestack-cbor-napi",
+    "crates/cratestack-cbor-wasm",
     "crates/cratestack-cli",
+    "crates/cratestack-client",
     "crates/cratestack-client-dart",
     "crates/cratestack-client-flutter",
     "crates/cratestack-client-typescript",
@@ -17,21 +22,24 @@ members = [
     "crates/cratestack-lsp",
     "crates/cratestack-macros",
     "crates/cratestack-migrate",
+    "crates/cratestack-mock-wiremock",
+    "crates/cratestack-outbox",
     "crates/cratestack-parser",
     "crates/cratestack-pg",
     "crates/cratestack-policy",
     "crates/cratestack-proto",
     "crates/cratestack-redis",
     "crates/cratestack-rusqlite",
+    "crates/cratestack-service",
     "crates/cratestack-sql",
     "crates/cratestack-sqlite",
     "crates/cratestack-sqlx",
     "crates/cratestack-studio",
-    "crates/cratestack-studio-generator",
     "examples/embedded-cli",
     "examples/embedded-daemon",
     "examples/embedded-webhook",
     "examples/grpc-widgets",
+    "examples/grpc-widgets/rust-client",
     "examples/client-stub-rust",
     "examples/client-multi-service",
     "examples/microservice-pair",
@@ -44,6 +52,7 @@ members = [
     "examples/embedded-browser-vite-pwa",
     "examples/embedded-browser-webpack",
     "examples/react-vite-daisyui",
+    "examples/react-vite-swr",
     "examples/react-nextjs-daisyui/wasm",
     "examples/react-nextjs-daisyui/napi",
     "examples/tauri-web",
@@ -60,11 +69,39 @@ exclude = [
     # workspace member — keeping it out of `cargo check --workspace`
     # avoids forcing every developer onto the wasm32 toolchain.
     "crates/cratestack-studio-ui",
+    # cratestack#329: deliberately NOT a workspace member. Cargo unifies a
+    # dependency's features across every member that builds it in the same
+    # session, so an in-workspace crate can never prove `sqlx` is absent
+    # from a `default-features = false` consumer's graph — some sibling
+    # member always wants `postgres` too, and the shared `cratestack-pg`
+    # instance would end up built with it regardless of this crate's own
+    # `Cargo.toml`. Run its `cargo tree` checks from inside its own
+    # directory (a standalone workspace root) instead of via `-p` here.
+    "examples/no-database-verification",
+    # cratestack#347: same reasoning as `examples/no-database-verification`
+    # directly above, but proving `sqlx` absence for a `cratestack-api`
+    # consumer instead of a `cratestack-pg` with `default-features = false`
+    # one.
+    "examples/no-database-verification-api",
+    # cratestack#490: same reasoning as the two entries above, but proving
+    # `cratestack-axum` (and therefore `axum`/`tower`/`hyper`/`tower-http`)
+    # absence for a `cratestack-client` consumer.
+    "examples/client-only-verification",
+    # cratestack#513: same underlying reasoning as the three entries above
+    # (own `Cargo.lock`/target dir so `cargo tree`/a plain `grep` on
+    # `Cargo.toml` reflects what an external consumer's build would
+    # actually contain), applied to a *direct*-dependency claim rather
+    # than a transitive-absence one: `sqlx` IS present transitively here
+    # (via `cratestack-sqlx`) — the proof is that this crate's own
+    # `Cargo.toml` never lists it, and `db.transaction(...)` still works
+    # without ever naming a `sqlx` type.
+    "examples/db-transaction-verification",
 ]
 
 [workspace.package]
-version = "0.4.16"
+version = "0.7.14"
 edition = "2024"
+rust-version = "1.95.0"
 license = "MIT"
 description = "Rust-native schema-first framework for typed HTTP APIs, generated clients, and backend services."
 repository = "https://github.com/cratestack/cratestack"
@@ -79,48 +116,197 @@ authors = [
 
 [workspace.dependencies]
 anyhow = "1"
-ariadne = "0.6.0"
+ariadne = "0.6"
+async-stream = "0.3"
 axum = "0"
 bytes = "1"
 chumsky = "0"
+# `cratestack-auth`'s COSE-signed enrolment challenges (`build_cose_enroll_response`/
+# `parse_cose_enroll_response`).
+coset = "0.4.2"
+# `cratestack-auth`'s challenge/enrollment/service-signing-key ids
+# (`cuid2::create_id()`), same generator every other `@paralleldrive/cuid2`-
+# style id in this workspace's downstream consumers already standardises on.
+cuid2 = "0.1.4"
+# `cratestack-auth`'s signed-request canonical signing/verification, SD-JWT
+# id-token issuance/verification, and per-service `ServiceSigningKey`.
+ed25519-dalek = "2.2.0"
+erased-serde = "0.4"
+# `Dir<'_>`-embedded migration trees for `cratestack-service`'s
+# `migrations::migrations_from_dir` (feature-gated behind that crate's
+# `postgres` feature, so this dependency only actually compiles into a
+# graph that also pulls `cratestack-sqlx`).
+include_dir = "0.7"
+# Direct dependency as of #415 (trusted-proxy CIDR allowlists): already
+# present transitively via `hyper-util`, so this promotes an existing
+# dependency-tree member rather than introducing a new one.
+ipnet = "2"
 minicbor = "2.2.1"
 minicbor-serde = { version = "0.6.2", features = ["std"] }
 chrono = { version = "0", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
-cratestack-axum = { path = "crates/cratestack-axum", version = "0.4.16" }
-cratestack-client-dart = { path = "crates/cratestack-client-dart", version = "0.4.16" }
-cratestack-client-flutter = { path = "crates/cratestack-client-flutter", version = "0.4.16" }
-cratestack-client-typescript = { path = "crates/cratestack-client-typescript", version = "0.4.16" }
-cratestack-client-store-redis = { path = "crates/cratestack-client-store-redis", version = "0.4.16" }
-cratestack-client-rust = { path = "crates/cratestack-client-rust", version = "0.4.16", default-features = false }
-cratestack-client-store-sqlite = { path = "crates/cratestack-client-store-sqlite", version = "0.4.16" }
-cratestack-codec-cbor = { path = "crates/cratestack-codec-cbor", version = "0.4.16" }
-cratestack-codec-json = { path = "crates/cratestack-codec-json", version = "0.4.16" }
-cratestack-core = { path = "crates/cratestack-core", version = "0.4.16" }
-cratestack-grpc = { path = "crates/cratestack-grpc", version = "0.4.16" }
-cratestack-macros = { path = "crates/cratestack-macros", version = "0.4.16" }
-cratestack-migrate = { path = "crates/cratestack-migrate", version = "0.4.16" }
-cratestack-parser = { path = "crates/cratestack-parser", version = "0.4.16" }
-cratestack-pg = { path = "crates/cratestack-pg", version = "0.4.16" }
-cratestack-policy = { path = "crates/cratestack-policy", version = "0.4.16" }
-cratestack-proto = { path = "crates/cratestack-proto", version = "0.4.16" }
-cratestack-redis = { path = "crates/cratestack-redis", version = "0.4.16" }
-cratestack-rusqlite = { path = "crates/cratestack-rusqlite", version = "0.4.16" }
-cratestack-sql = { path = "crates/cratestack-sql", version = "0.4.16" }
-cratestack-sqlite = { path = "crates/cratestack-sqlite", version = "0.4.16" }
-cratestack-sqlx = { path = "crates/cratestack-sqlx", version = "0.4.16" }
-cratestack-studio = { path = "crates/cratestack-studio", version = "0.4.16" }
-cratestack-studio-generator = { path = "crates/cratestack-studio-generator", version = "0.4.16" }
+cratestack-api = { path = "crates/cratestack-api", version = "0.7.14" }
+# `default-features = false` (cratestack#495): real (non-dev) dependency of
+# `cratestack-pg`/`cratestack-api` — see each consumer's own decimal
+# feature for the forward. Without this, `cratestack-axum`'s own
+# `default = ["decimal-rust-decimal"]` would activate unconditionally,
+# defeating `decimal-bigdecimal` for either facade.
+cratestack-axum = { path = "crates/cratestack-axum", version = "0.7.14", default-features = false }
+cratestack-client = { path = "crates/cratestack-client", version = "0.7.14" }
+# `default-features = false` (cratestack#495, closed for cratestack-cli's own
+# edge by #496): real (non-optional) dependency of `cratestack-cli` — see
+# that crate's own decimal feature for the forward. Without this,
+# `cratestack-client-dart`'s own `default = ["decimal-rust-decimal"]` would
+# activate unconditionally regardless of which backend `cratestack-cli`
+# itself selected, the same leak this issue closed for every other crate in
+# the closure.
+cratestack-client-dart = { path = "crates/cratestack-client-dart", version = "0.7.14", default-features = false }
+cratestack-client-flutter = { path = "crates/cratestack-client-flutter", version = "0.7.14" }
+# `default-features = false` (cratestack#496): mirrors `cratestack-client-dart`
+# above — real dependency of `cratestack-cli`.
+cratestack-client-typescript = { path = "crates/cratestack-client-typescript", version = "0.7.14", default-features = false }
+cratestack-client-store-redis = { path = "crates/cratestack-client-store-redis", version = "0.7.14" }
+cratestack-client-rust = { path = "crates/cratestack-client-rust", version = "0.7.14", default-features = false }
+cratestack-client-store-sqlite = { path = "crates/cratestack-client-store-sqlite", version = "0.7.14" }
+# `default-features = false` (cratestack#495): both codecs are direct,
+# unconditional (non-optional) `cratestack-core` consumers of their own —
+# see each crate's own Cargo.toml. Without this, a consumer that
+# mandatorily depends on one of them (e.g. `cratestack-client-rust`'s
+# `cratestack-codec-cbor` edge) could never actually reach
+# `decimal-bigdecimal`: the codec's own default `decimal-rust-decimal`
+# would activate unconditionally as a side effect of depending on it at
+# all, unrelated to whatever backend the depending crate itself selected.
+cratestack-codec-cbor = { path = "crates/cratestack-codec-cbor", version = "0.7.14", default-features = false }
+cratestack-codec-json = { path = "crates/cratestack-codec-json", version = "0.7.14", default-features = false }
+cratestack-core = { path = "crates/cratestack-core", version = "0.7.14", default-features = false }
+cratestack-grpc = { path = "crates/cratestack-grpc", version = "0.7.14" }
+# `default-features = false` (cratestack#495): although this crate's own
+# proc-macro implementation never constructs a `cratestack_core::Decimal`
+# value (it only emits `::cratestack::Decimal` tokens into the schema it
+# expands), it IS a real Cargo dependency of every facade, and its own
+# `default = ["decimal-rust-decimal"]` would otherwise activate
+# unconditionally — showing up in `cargo tree -e features` and breaking
+# the "no rust_decimal anywhere in the graph" bar `--features
+# decimal-bigdecimal` is supposed to satisfy — regardless of which backend
+# the depending facade actually chose.
+cratestack-macros = { path = "crates/cratestack-macros", version = "0.7.14", default-features = false }
+# `default-features = false` (cratestack#495): real dependency of
+# `cratestack-cli` and `cratestack-studio`, dev-dependency of
+# `cratestack-pg` — see each consumer's own decimal feature for the
+# forward.
+cratestack-migrate = { path = "crates/cratestack-migrate", version = "0.7.14", default-features = false }
+# `default-features = false` (cratestack#496): mirrors `cratestack-client-dart`
+# above — real dependency of `cratestack-cli`.
+cratestack-mock-wiremock = { path = "crates/cratestack-mock-wiremock", version = "0.7.14", default-features = false }
+# `default-features = false` (cratestack#495): `cratestack-parser` is a
+# real (non-optional) dependency of `cratestack-macros` and every
+# server-side facade — see each consumer's own `decimal-rust-decimal`/
+# `decimal-bigdecimal` feature for the forward.
+cratestack-parser = { path = "crates/cratestack-parser", version = "0.7.14", default-features = false }
+cratestack-pg = { path = "crates/cratestack-pg", version = "0.7.14" }
+# `default-features = false` (cratestack#495): same reasoning as
+# `cratestack-macros` above — `cratestack-policy`'s own source never
+# constructs a `cratestack_core::Decimal`, but it IS a real dependency of
+# `cratestack-sql`/`cratestack-sqlx`/every server-side facade, so its own
+# default backend choice must not activate independently of theirs.
+cratestack-policy = { path = "crates/cratestack-policy", version = "0.7.14", default-features = false }
+# `default-features = false` (cratestack#495): real dependency of
+# `cratestack-macros`, `cratestack-client-typescript`, and
+# `cratestack-client-dart` — see each consumer's own decimal feature.
+cratestack-proto = { path = "crates/cratestack-proto", version = "0.7.14", default-features = false }
+cratestack-redis = { path = "crates/cratestack-redis", version = "0.7.14" }
+cratestack-rusqlite = { path = "crates/cratestack-rusqlite", version = "0.7.14", default-features = false }
+cratestack-service = { path = "crates/cratestack-service", version = "0.7.14" }
+# `default-features = false` added alongside `cratestack-core`/`-sqlx`/
+# `-rusqlite` above for cratestack#495: `cratestack-sql`'s own
+# `default = ["decimal-rust-decimal"]` would otherwise force that backend
+# into every plain `cratestack-sql.workspace = true` consumer regardless
+# of which `Decimal` backend they'd actually selected via
+# `cratestack-core`, defeating `decimal-bigdecimal` for any of them.
+cratestack-sql = { path = "crates/cratestack-sql", version = "0.7.14", default-features = false }
+cratestack-sqlite = { path = "crates/cratestack-sqlite", version = "0.7.14" }
+cratestack-sqlx = { path = "crates/cratestack-sqlx", version = "0.7.14", default-features = false }
+# `default-features = false` (cratestack#496): mirrors `cratestack-client-dart`
+# above — real dependency of `cratestack-cli`. Note this only affects
+# `cratestack-studio`'s decimal-backend toggle, not its separately-gated
+# `embed-ui` feature — `cratestack-cli`'s own edge re-adds `embed-ui`
+# explicitly (see that crate's Cargo.toml) since turning off ALL default
+# features here also turns off `embed-ui`, which was previously implicit.
+cratestack-studio = { path = "crates/cratestack-studio", version = "0.7.14", default-features = false }
 minijinja = "2"
 prost = "0.13"
 prost-types = "0.13"
 tonic = "0.13"
 tonic-web = "0.13"
-reqwest = { version = "0", default-features = false, features = ["rustls-tls", "stream"] }
+# Was pinned to the `0` line via the `rustls-tls` feature (reqwest 0.12-only
+# name) until #435: that name doesn't exist on reqwest 0.13, so Cargo could
+# only satisfy `cratestack-client-rust`'s edge with the newest 0.12.x release
+# still carrying it, forking any 0.13-based consumer's dependency graph in
+# two even though the bare "0" requirement was nominally 0.13-permissive.
+# `rustls` (0.13's rename) restores single-version resolution for any
+# consumer already on reqwest 0.13, which is exactly what
+# `CratestackClient::with_http_client` needs to be useful for a caller
+# supplying its own TLS-identity-bearing client (e.g. mTLS). `query` is
+# REQUIRED, not incidental — reqwest 0.13 splits `RequestBuilder::query()`
+# behind this feature (unconditional on 0.12); `cratestack-studio`'s
+# `data/api/ops.rs` calls it directly.
+#
+# #440: `rustls` is not a bare "use rustls" switch on reqwest 0.13 — its own
+# `Cargo.toml` defines it as `["__rustls-aws-lc-rs", "dep:rustls-platform-
+# verifier", "__rustls"]`, so it unconditionally selects **`aws-lc-rs`** as
+# the TLS crypto provider. Because `cratestack-pg`'s published `Cargo.toml`
+# depends on `cratestack-client-rust` UNCONDITIONALLY (no optional feature
+# gate), that choice reached every workspace that depends on `cratestack` at
+# all the moment this crate is anywhere in the graph — not only consumers
+# that construct an HTTP client themselves. Downstream (ADORSYS-GIS/webank-
+# services), that broke a from-scratch `*-unknown-linux-musl`/`scratch`
+# container build (`aws-lc-rs` needs a cross C toolchain; `ring` doesn't) and
+# tripped a `cargo-deny` ban with no carve-out, once cratestack-pg landed 0.7.3.
+#
+# Fixed by requesting `rustls-no-provider` instead: same `rustls`-backed TLS
+# stack (`__rustls` — `rustls`, `hyper-rustls`, `tokio-rustls` are all still
+# pulled in), minus the forced provider selection. A consumer that wants
+# `aws-lc-rs` can still opt into it on their own `reqwest` entry (Cargo
+# features are additive); one that doesn't is no longer overridden.
+#
+# Same fix shape as marcjazz/authkestra#179 (a reqwest feature there forcing
+# aws-lc-rs onto every consumer of an unrelated crate, for the identical
+# reason), with one difference worth being explicit about: `rustls-no-
+# provider` PANICS at `Client::build()`/`Client::new()` time (reqwest
+# 0.13.4's `default_rustls_crypto_provider()`), not merely on first HTTPS
+# request, if no `rustls::crypto::CryptoProvider` is installed. Authkestra's
+# fix kept the aws-lc-rs-selecting feature as its OWN crates' default for
+# exactly this reason — turning it on for every existing user by default
+# would trade a silent dependency change for a runtime crash. That tradeoff
+# doesn't apply the same way here: this `reqwest` entry is an internal
+# implementation detail of `cratestack-client-rust`, not a feature this repo
+# forwards to ITS OWN consumers' Cargo.toml the way authkestra's crates did —
+# there is no "default" to preserve at this layer, only this workspace's own
+# test suite and examples, which this change audits and fixes directly (see
+# the `rustls::crypto::ring::default_provider().install_default()` calls
+# this same PR adds). A consumer embedding `cratestack-client-rust` still
+# needs to install a provider of their own before constructing a client —
+# see the README for the one-line snippet.
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "stream", "query"] }
+# #440: `rustls-no-provider` (see the `reqwest` entry above) needs a
+# `rustls::crypto::CryptoProvider` installed before any `reqwest::Client` /
+# `CratestackClient` is built, or it panics at construction time. `ring` is
+# the pure-Rust, no-C-toolchain-needed backend (`aws-lc-rs` is exactly what
+# #440 exists to stop forcing), used only to make this workspace's OWN test
+# suite and examples build a working `Client` again — never enabled as a
+# default for downstream consumers, who choose (and install) their own
+# provider. `default-features = false` because `rustls`'s own `default`
+# feature pulls in `aws_lc_rs`; `std`/`tls12`/`logging` are the non-provider
+# pieces of that default set, kept so behavior otherwise matches upstream
+# `rustls` defaults.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 rusqlite = { version = "0.39", features = ["bundled", "fallible_uint"] }
 redis = "1.2.0"
 regex = "1"
+# `cratestack-auth`'s `ServiceSigningKey::ephemeral` (test/local-dev signing
+# identity minting via `OsRng.fill_bytes`).
+rand = "0.8.5"
 rust_decimal = { version = "1", default-features = false, features = ["serde-str"] }
 bigdecimal = { version = "0.4", default-features = false, features = ["serde"] }
 sha2 = "0.10"
@@ -135,6 +321,13 @@ proc-macro2 = "1"
 rust-embed = { version = "8", default-features = false }
 quote = "1"
 serde = { version = "1.0.228", features = ["derive"] }
+# `default-features = false` + only the `sqlx` feature: pgvector's own
+# `sqlx` feature depends on the umbrella `sqlx` crate scoped to
+# `features = ["postgres"]`, so it never pulls in `sqlx-sqlite` (see
+# `cratestack-sqlx`'s `pgvector` feature doc comment for the full
+# rationale — this is what keeps it compatible with the sqlx-core/
+# sqlx-postgres-direct shim `cratestack-sqlx` already uses).
+pgvector = { version = "0.4", default-features = false, features = ["sqlx"] }
 sqlx-core = { version = "=0.8.6", default-features = false, features = ["migrate", "any", "_rt-tokio", "_tls-rustls-ring-webpki"] }
 sqlx-postgres = { version = "=0.8.6", default-features = false, features = ["chrono", "uuid", "json", "migrate", "any", "offline"] }
 syn = { version = "2.0.108", features = ["full"] }
@@ -154,8 +347,42 @@ uuid = { version = "1", features = ["serde", "v4"] }
 [workspace.lints.rust]
 unsafe_code = "forbid"
 
+# `lto` is build-wide (Cargo can't scope it per package), so it's set once
+# here for the whole graph. `thin` LTO gets nearly all of fat LTO's size/perf
+# win at a fraction of the peak-memory and wall-clock cost during codegen —
+# that combination (fat LTO + a single codegen unit) is the single biggest
+# driver of exploding rustc/LLVM memory on schemas that expand into a lot of
+# generated code (`include_server_schema!` emits models × CRUD × policy ×
+# RPC dispatch × relations into one compilation unit). `opt-level`/
+# `codegen-units` ARE per-package overridable, so only the crates that ship
+# as size-constrained binaries (mobile native libs embedded in an app
+# bundle) opt back into the aggressive settings below.
 [profile.release]
+lto = "thin"
+opt-level = 3
+codegen-units = 16
+incremental = false
+
+# Mobile native libs: shipped inside an app bundle, so binary size is a real
+# constraint. `cratestack-studio-ui` needs the same tradeoff but is excluded
+# from this workspace (its own Trunk-built Cargo.toml already sets it).
+[profile.release.package.embedded_flutter_native]
+opt-level = "z"
+codegen-units = 1
+
+[profile.release.package.embedded-expo-native]
+opt-level = "z"
+codegen-units = 1
+
+# Max size squeeze for artifacts that are actually shipped/downloaded as a
+# binary — currently just the `cratestack-cli` prebuilt npm binaries (see
+# release-cli.yml). Fat LTO + a single codegen unit costs real build memory
+# and time, which is fine here: this profile runs once per release in CI,
+# not on every dev/service build, so it doesn't reintroduce the blanket tax
+# `[profile.release]` used to impose on every crate in the graph.
+[profile.dist]
+inherits = "release"
 lto = true
 opt-level = "z"
 codegen-units = 1
-incremental = false
+strip = true

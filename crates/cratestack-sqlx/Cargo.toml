@@ -2,6 +2,7 @@
 name = "cratestack-sqlx"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 description.workspace = true
@@ -12,27 +13,57 @@ readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 
+[lints]
+workspace = true
+
 [features]
 default = ["decimal-rust-decimal"]
 decimal-rust-decimal = [
     "cratestack-core/decimal-rust-decimal",
     "cratestack-sql/decimal-rust-decimal",
+    "cratestack-policy/decimal-rust-decimal",
     "dep:rust_decimal",
     "sqlx-core/rust_decimal",
     "sqlx-postgres/rust_decimal",
 ]
+# Mirrors `decimal-rust-decimal` above for the `bigdecimal` backend
+# (cratestack#495). `sqlx-core`/`sqlx-postgres` 0.8.6 both declare
+# `bigdecimal` as a plain optional dependency (no explicit `[features]`
+# entry for it, same as `rust_decimal` above) — Cargo auto-generates the
+# matching implicit feature for any optional dependency declared without
+# `dep:` syntax, which is what `sqlx-core/bigdecimal` /
+# `sqlx-postgres/bigdecimal` below select. This is what gives
+# `cratestack_core::Decimal` (== `bigdecimal::BigDecimal` under this
+# feature) real `sqlx::Type`/`Encode`/`Decode` impls against Postgres's
+# `NUMERIC` wire format — the same integration point
+# `query/support/values.rs`'s `push_bind_value` and `cratestack-macros`'
+# generated `row.try_get(...)` calls go through regardless of which
+# backend is active, since neither references a concrete backend type by
+# name.
 decimal-bigdecimal = [
     "cratestack-core/decimal-bigdecimal",
     "cratestack-sql/decimal-bigdecimal",
+    "cratestack-policy/decimal-bigdecimal",
     "dep:bigdecimal",
     "sqlx-core/bigdecimal",
     "sqlx-postgres/bigdecimal",
 ]
+# Column-type support for `Vector(n)` fields (the `pgvector` extension
+# — see `docs/design/extensions.md` §6). Pulls in the `pgvector` crate
+# purely for its `sqlx::Type`/`Encode`/`Decode` impls against
+# Postgres's `vector` wire format — reinventing that binary encoding
+# by hand isn't worth it. `default-features = false` + only the
+# `sqlx` feature keeps this from pulling `sqlx-sqlite` (which would
+# reintroduce the exact `libsqlite3-sys` conflict with `rusqlite` that
+# the `sqlx` compatibility shim above exists to avoid): the `pgvector`
+# crate's own `sqlx` feature depends on the umbrella `sqlx` crate with
+# `default-features = false, features = ["postgres"]` only, so
+# `sqlx-sqlite` never enters the resolved graph.
+pgvector = ["dep:pgvector", "dep:sqlx"]
 
 [dependencies]
 async-trait.workspace = true
 chrono.workspace = true
-cratestack-axum.workspace = true
 cratestack-core.workspace = true
 cratestack-policy.workspace = true
 cratestack-sql.workspace = true
@@ -42,8 +73,22 @@ sha2.workspace = true
 sqlx-core.workspace = true
 sqlx-postgres.workspace = true
 tokio.workspace = true
+tracing.workspace = true
 uuid.workspace = true
 rust_decimal = { workspace = true, optional = true }
 bigdecimal = { workspace = true, optional = true }
+pgvector = { workspace = true, optional = true }
+# Pins the transitive `sqlx` facade crate pgvector's `sqlx` feature
+# pulls in to exactly the version whose `sqlx-core`/`sqlx-postgres`
+# match our own direct `=0.8.6` pins above. Without this, pgvector's
+# own (loose) `>= 0.8, < 0.10` requirement lets Cargo resolve a
+# separate, newer `sqlx-core`/`sqlx-postgres` (e.g. 0.9.x) alongside
+# our pinned 0.8.6 ones, and `pgvector::Vector`'s `Encode`/`Type` impls
+# (written against the newer copy) then fail to satisfy
+# `QueryBuilder::push_bind`'s bound (written against ours) — not a
+# missing impl, just two incompatible copies of the same trait. Not
+# used directly (we still go through the `sqlx-core`/`sqlx-postgres`
+# shim above), this dependency exists purely to anchor the resolver.
+sqlx = { version = "=0.8.6", default-features = false, features = ["postgres"], optional = true }
 
 [dev-dependencies]

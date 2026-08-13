@@ -1,0 +1,25 @@
+// cratestack#398 regression fixture: every field name below is a Rust
+// keyword. `include_embedded_schema!` used to emit these verbatim (no
+// raw-identifier escaping), producing uncompilable Rust — see the issue's
+// own tested table. This fixture is the exact keyword list from that
+// table, minus `self`/`Self`/`super`/`crate` (which the parser now
+// rejects at schema-parse time instead — see
+// `cratestack_parser::tests_reserved_keywords`).
+
+datasource db {
+  provider = "sqlite"
+  url = env("DATABASE_URL")
+}
+
+model KeywordField {
+  id Int @id
+  match String
+  type String
+  ref String
+  move String
+  impl String
+  fn String
+  let String
+  loop String
+  box String
+}

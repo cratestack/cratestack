@@ -64,11 +64,12 @@ fn relation_scalar_order_preview_uses_correlated_subquery() {
         "author_id",
         "users",
         "id",
-        "users.email",
+        "users.email".to_owned(),
         SortDirection::Asc,
     );
     let mut sql = String::new();
-    render_order_clause_sql(&clause, &mut sql);
+    let mut bind_index = 1usize;
+    render_order_clause_sql(&clause, &mut sql, &mut bind_index);
 
     assert_eq!(
         sql,
@@ -102,6 +103,6 @@ fn relation_policy_preview_uses_exists_subquery() {
 
     assert_eq!(
         sql,
-        "EXISTS (SELECT 1 FROM users WHERE users.id = posts.author_id AND email = $1)"
+        "(EXISTS (SELECT 1 FROM users WHERE users.id = posts.author_id AND email = $1))"
     );
 }

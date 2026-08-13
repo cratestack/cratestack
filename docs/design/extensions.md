@@ -131,16 +131,18 @@ not any schema they compile ever declares the extension, and it would mean
    `AuditSink` today has `NoopAuditSink`/`MulticastAuditSink` but nothing
    stops a third implementation.
 
-**Consequence:** turning `rate_limit` into a first-class extension also
-means moving its *existing*, always-compiled code in `cratestack-axum`
-behind a new `rate_limit` feature, consistent with layer 2 above. That is
-a breaking change for any current consumer linking `cratestack-axum` and
-using `RateLimitLayer` without any feature flag today — call this out
-explicitly for whoever reviews this doc rather than deciding it silently;
-per this repo's own delivery-style convention (hard cutovers, no
-default-on backward-compat shims kept "just in case"), the expectation is
-that the follow-up ticket ships the feature gate live and non-default, not
-soft-launches it behind a default-enabled flag.
+**Consequence (as originally proposed):** turning `rate_limit` into a
+first-class extension could also mean moving its *existing*,
+always-compiled code in `cratestack-axum` behind a new `rate_limit`
+feature, consistent with layer 2 above. That would be a breaking change
+for any current consumer linking `cratestack-axum` and using
+`RateLimitLayer` without any feature flag today — called out explicitly
+here for whoever reviews this doc rather than deciding it silently.
+**Decided during #154's implementation: not done.** The shipped ticket
+scoped this narrower — see §5's revision note — leaving `RateLimitLayer`
+unconditionally compiled and introducing no breaking change. Revisiting
+that split is open follow-up work, not a silent reversal of this
+paragraph's reasoning.
 
 ## 3. Why this doesn't just re-litigate the closed decision
 
@@ -231,12 +233,21 @@ doesn't know what Cargo features the consuming crate has.
 - **Cargo feature:** `rate_limit`, declared on `cratestack-macros` itself
   (the enforcement check in #161 evaluates `cfg!(feature = "rate_limit")`
   against `cratestack-macros`' own compiled features — see §2's revised
-  mechanism), forwarded down from `cratestack-axum` and the
-  `cratestack-pg`/`cratestack-sqlite` facades via `rate_limit =
-  ["cratestack-macros/rate_limit"]`. Gates the dispatch-layer codegen that
-  reads `rate_limited_by_default`; per §2, this also means
-  `RateLimitLayer`'s existing code moves behind this feature rather than
-  staying always-compiled.
+  mechanism), forwarded down from the `cratestack-pg`/`cratestack-sqlite`
+  facades via `rate_limit = ["cratestack-macros/rate_limit"]`. Gates the
+  dispatch-layer codegen that reads `rate_limited_by_default` — i.e. it
+  unlocks the `@no_rate_limit` procedure attribute and the
+  `rate_limited_by_default` field on the generated `OpDescriptor`.
+  **Revised during #154's implementation:** the paragraph below (and §2's
+  "Consequence" note above it) originally proposed that this same feature
+  would also move `cratestack-axum`'s existing `RateLimitLayer`/
+  `RateLimitConfig`/store code behind itself, as a deliberate breaking
+  change. #154 shipped without that move — it stayed scoped to the
+  schema-visible participation flag described here, matching how `@@audit`
+  keeps `AuditSink` selection imperative and untouched. `RateLimitLayer`
+  remains unconditionally compiled into `cratestack-axum`, gated by nothing;
+  whether to feature-gate it later is an open follow-up, not something this
+  Cargo feature does today.
 - **Does not declare:** burst, refill rate, window, key/fingerprint
   function, or store backend (in-memory/Postgres/Redis) — all of that
   stays exactly where it is today, constructed imperatively at app
@@ -335,12 +346,15 @@ Dev Ticket once this doc is accepted, linked under the Epic in §9:
    inside a proc-macro; see §2). Built once, reused by every extension
    rather than each one reimplementing its own check.
 3. **`rate_limit` extension wiring** (Feature, depends on #2) —
-   **shipped**, `feat/154-rate-limit-extension` (#154). Gates
-   `cratestack-axum`'s existing `RateLimitLayer`/`RateLimitConfig`/store
-   code behind a new, **non-default** `rate_limit` Cargo feature (breaking
-   change, confirmed deliberately per §2's note); `@no_rate_limit`
-   procedure attribute (parser + codegen); `rate_limited_by_default`
-   threaded onto generated procedure descriptors.
+   **shipped** (#154). `@no_rate_limit` procedure attribute (parser
+   validation, gated on `extension rate_limit { }` being declared) +
+   `rate_limited_by_default` threaded onto generated `OpDescriptor`s
+   (codegen); `rate_limit` Cargo feature forwarded from
+   `cratestack-pg`/`cratestack-sqlite` to `cratestack-macros`. Deliberately
+   scoped narrower than this doc's original proposal: `cratestack-axum`'s
+   `RateLimitLayer`/`RateLimitConfig`/store code was **not** moved behind
+   the feature and stays unconditionally compiled — see §5's revision
+   note. No breaking change shipped as part of this ticket.
 4. **`pgvector` phase 1: DDL + scalar type** (Feature, depends on #2) —
    **shipped**, `feat/155-pgvector-phase1` (#155). `Vector(n)` scalar
    (backed by the real `pgvector` Rust crate) behind a new `pgvector`

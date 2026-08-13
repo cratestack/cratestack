@@ -1,12 +1,20 @@
 mod config;
 mod context;
+mod decimal;
+mod error;
+mod find_many_views;
 mod generator;
 mod grpc;
 mod naming;
+mod procedure_views;
+mod swr;
 mod templates;
 mod types;
 mod views;
 
-pub use config::{GeneratedTypeScriptFile, GeneratedTypeScriptPackage, TypeScriptGeneratorConfig};
+pub use config::{
+    GeneratedTypeScriptFile, GeneratedTypeScriptPackage, TypeScriptGeneratorConfig,
+    TypeScriptPreset,
+};
+pub use error::TypeScriptGeneratorError;
 pub use generator::generate_package;
-pub use templates::TypeScriptGeneratorError;

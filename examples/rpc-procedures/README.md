@@ -4,9 +4,19 @@ Smallest possible CrateStack RPC server: one query procedure (`greet`) and
 one mutation procedure (`increment`). No database, no models — the example
 focuses on the **RPC binding's unary route shape**.
 
+This is a genuinely no-database schema: `datasource { provider = "none" }` +
+`include_server_schema!(db = None)` (cratestack#327/#328), not a Postgres
+schema with an unopened connection pool. The `cratestack` dependency in
+`Cargo.toml` also sets `default-features = false`, so `sqlx`/`cratestack-sqlx`
+are not compiled into this binary at all (cratestack#329) — see
+[`docs/design/no-database-mode.md`](../../docs/design/no-database-mode.md)
+and the `examples/no-database-verification` crate for the `cargo tree` proof.
+
 ## What you'll see
 
-- A `.cstack` schema declaring `transport rpc` and two procedures.
+- A `.cstack` schema declaring `transport rpc`, `datasource { provider =
+  "none" }`, and two procedures — no `model` blocks (the parser rejects
+  them under `provider = "none"`).
 - The macro emits an `rpc_router(...)` builder that mounts
   `POST /rpc/{op_id}`.
 - The op id appears in the URL: `POST /rpc/procedure.greet`,
@@ -66,8 +76,7 @@ Run them via:
 cargo test -p rpc-procedures-example
 ```
 
-No database setup required — the lazy pg pool is never opened because the
-procedures don't touch it.
+No database setup required — there is no `PgPool` in this example at all.
 
 ## Read next
 

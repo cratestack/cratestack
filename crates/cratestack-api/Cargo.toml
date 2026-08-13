@@ -1,0 +1,127 @@
+[package]
+name = "cratestack-api"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "CrateStack server facade for procedures-only, no-database services — Axum HTTP bindings, generated Rust client runtime, and the shared schema/parser/policy/SQL surface, with `cratestack-sqlx` genuinely absent from the dependency graph. Pick this crate via `cratestack = { package = \"cratestack-api\" }` for `db = None` servers; pick `cratestack-pg` instead the moment a schema needs even one `model`."
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+# Same `[lib]` rename trick as `cratestack-pg`/`cratestack-sqlite`: package is
+# `cratestack-api` on crates.io, but the library is named `cratestack` so
+# integration tests resolve `::cratestack::*` paths (which the schema macros
+# emit) without per-file aliasing. External consumers depend on the package
+# as `cratestack = { package = "cratestack-api" }`.
+
+[lints]
+workspace = true
+
+[lib]
+name = "cratestack"
+path = "src/lib.rs"
+
+[features]
+default = ["decimal-rust-decimal", "codec-json"]
+# Unlike `cratestack-pg`, there is no `postgres` feature here to gate: this
+# crate structurally never depends on `cratestack-sqlx` (see `Cargo.toml`'s
+# `[dependencies]` below and `src/lib.rs`'s doc comment), so these two
+# features only ever need to forward to `cratestack-core`/`cratestack-sql`/
+# `cratestack-client-rust` — there is no sqlx-backed half to conditionally
+# re-add.
+decimal-rust-decimal = [
+    "cratestack-core/decimal-rust-decimal",
+    "cratestack-sql/decimal-rust-decimal",
+    "cratestack-client-rust/decimal-rust-decimal",
+    "cratestack-macros/decimal-rust-decimal",
+    "cratestack-policy/decimal-rust-decimal",
+    "cratestack-parser/decimal-rust-decimal",
+    "cratestack-axum/decimal-rust-decimal",
+    "cratestack-codec-cbor/decimal-rust-decimal",
+    "cratestack-codec-json/decimal-rust-decimal",
+]
+# Mirrors `decimal-rust-decimal` above for the `bigdecimal` backend
+# (cratestack#495).
+decimal-bigdecimal = [
+    "cratestack-core/decimal-bigdecimal",
+    "cratestack-sql/decimal-bigdecimal",
+    "cratestack-client-rust/decimal-bigdecimal",
+    "cratestack-policy/decimal-bigdecimal",
+    "cratestack-parser/decimal-bigdecimal",
+    "cratestack-axum/decimal-bigdecimal",
+    "cratestack-macros/decimal-bigdecimal",
+    "cratestack-codec-cbor/decimal-bigdecimal",
+    "cratestack-codec-json/decimal-bigdecimal",
+]
+# Forwards the JSON codec to the generated client runtime. See
+# `cratestack-pg` for rationale. On by default so `include_client_schema!`
+# keeps offering both CBOR and JSON.
+codec-json = ["cratestack-client-rust/codec-json"]
+
+[dependencies]
+async-stream.workspace = true
+chrono.workspace = true
+cratestack-axum.workspace = true
+cratestack-client-rust.workspace = true
+cratestack-core.workspace = true
+cratestack-macros.workspace = true
+cratestack-parser.workspace = true
+cratestack-policy.workspace = true
+cratestack-sql.workspace = true
+futures-util.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+# `default_fingerprint_collision.rs` (cratestack#416) implements
+# `IdempotencyStore` on an in-memory test double, mirroring the identical
+# pattern already used inside `cratestack-axum`'s own
+# `idempotency::tests_stream_bypass` — already a resolved, non-dev
+# dependency of `cratestack-axum` (this crate's dependency) at workspace
+# version "0.1", so this adds no new dependency to the graph.
+async-trait.workspace = true
+# Plain edges, not hardcoded `features = [...]`: both codecs get their
+# backend from THIS crate's own `decimal-rust-decimal`/`decimal-bigdecimal`
+# feature (see the forwards there) — Cargo's feature resolver unifies
+# dev-dependency feature requests with the rest of the graph for the same
+# workspace member, so hardcoding a backend here independently would
+# conflict with `--features decimal-bigdecimal` under `cargo test`/`cargo
+# check --all-targets`.
+cratestack-codec-cbor.workspace = true
+cratestack-codec-json.workspace = true
+# `trusted_proxy_client_ip.rs`'s real-`TcpListener` test (#415 Finding 4)
+# needs a genuine HTTP client to prove `ConnectInfo` reaches the dispatch
+# path through `into_make_service_with_connect_info` over a real accepted
+# TCP connection, not just a manually-inserted extension (which every other
+# test in that file, deliberately, still uses) — a hand-rolled raw-socket
+# HTTP/1.1 request (an earlier version of this test) raced the server's
+# accept loop under real network-stack scheduling on CI runners with fewer
+# cores, occasionally reading a clean EOF before the response arrived.
+# `reqwest` is already resolved in this workspace (a real, non-dev
+# dependency of `cratestack-client-rust`, itself already a dependency of
+# this crate above), so this adds no new dependency to the graph, only a
+# dev-only edge to an already-resolved one. No TLS/rustls-provider install
+# needed: every request in this test is plain `http://`, never `https://`.
+reqwest.workspace = true
+# `reqwest`'s `rustls-no-provider` feature (workspace `Cargo.toml`) ships no
+# crypto provider — needed here purely to satisfy `reqwest::Client::new()`'s
+# own startup assertion, even though every request in this test is plain
+# `http://` and never actually negotiates TLS. Same pattern as
+# `cratestack-pg`'s `rpc_subscribe_sse.rs` and
+# `cratestack-client-rust::error`'s own fallback.
+rustls.workspace = true
+serde_json.workspace = true
+# `net` on top of the workspace default (`macros`, `rt-multi-thread`): the
+# real-`TcpListener` test above still needs `tokio::net::TcpListener` to
+# bind and serve through — only the *client* side moved to `reqwest`.
+tokio = { workspace = true, features = ["net"] }
+tower.workspace = true
+tracing-subscriber.workspace = true

@@ -1,0 +1,45 @@
+// Generated procedures module for the `swr` preset (issue #304): every
+// procedure's own `<Name>Args` wrapper type plus a plain, framework-free
+// `async` function per procedure. No client class, no React import —
+// every function takes a `CratestackRuntime` as its first argument.
+//
+// A procedure's own `<Name>Args` type is always defined here — it's
+// already scoped to its one procedure
+// (`crate::naming::procedure_wrapper_name`), never shared. Enums/`type`
+// blocks referenced by exactly this file (not by any model) are inlined
+// below too; anything referenced by 2+ consumers (or by a model as well)
+// lives in `./models/shared` and is imported instead — see
+// `cratestack-client-typescript`'s
+// `src/swr/ownership.rs::compute_type_ownership`.
+
+import type { CratestackRuntime } from "./runtime.js";
+import type { CratestackRequestConfig } from "./queries.js";
+// cratestack#498: real (not type-only) import — every function below
+// that decodes a server response calls one of these to turn a
+// `Decimal`-typed return value's wire-format string(s) back into a real
+// `Decimal` (`./models/shared.js`'s doc comments have the full
+// rationale).
+import { reviveDecimalFields, revivePagedDecimalFields, reviveDecimalScalar } from "./models/shared.js";
+
+export interface FocusEstimateArgs {
+  taskCount: number;
+  minutesPerTask: number;
+}
+
+export interface FocusEstimateResult {
+  totalMinutes: number;
+}
+
+export interface EstimateFocusMinutesArgs {
+  args: FocusEstimateArgs;
+}
+
+export async function estimateFocusMinutes(
+  runtime: CratestackRuntime,
+  args: EstimateFocusMinutesArgs,
+  options: CratestackRequestConfig = {},
+): Promise<FocusEstimateResult> {
+  return runtime.post<unknown>("/$procs/estimateFocusMinutes", args, options)
+    .then((value) => reviveDecimalFields(value, 'FocusEstimateResult') as FocusEstimateResult);
+}
+

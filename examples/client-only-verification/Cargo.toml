@@ -1,0 +1,37 @@
+[workspace]
+# Deliberately its own workspace root — see the description below and this
+# crate's entry in the parent repo's `[workspace] exclude` list. Mirrors
+# `examples/no-database-verification-api` (cratestack#347) exactly, but
+# proves the same absence for `cratestack-client` (cratestack#490) instead
+# of `cratestack-api` — here the thing being proved absent is
+# `cratestack-axum` (and therefore `axum`/`tower`/`hyper`/`tower-http`, a
+# full server framework), not `cratestack-sqlx`. Because it is its own
+# workspace root, it does not inherit the root repo's `[workspace.lints]`
+# table; cratestack#523 requires the `unsafe_code = "forbid"` guarantee to
+# hold here too, so it's declared locally.
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[package]
+name = "client-only-verification"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Standalone crate (cratestack#490) that is NOT a workspace member on purpose — it exists to prove, with a real `cargo tree`, that `cratestack-axum` (and therefore `axum`/`tower`/`hyper`/`tower-http`) is absent from a `cratestack-client` consumer's dependency graph. Cargo unifies a shared dependency's features across every workspace member that builds it in the same session, so proving absence requires stepping outside the root workspace's shared graph entirely — same reasoning as `examples/no-database-verification-api` (cratestack#347). See this crate's README and the parent PR's Verification section for the exact commands and their output."
+
+[lints]
+workspace = true
+
+[dependencies]
+cratestack = { package = "cratestack-client", path = "../../crates/cratestack-client" }
+# Generated model/input/procedure structs derive `serde::Serialize`/
+# `serde::Deserialize` via bare `serde::` paths (not `::cratestack::serde::`),
+# so `serde` must be resolvable as this crate's own direct dependency, same
+# as `examples/no-database-verification-api`'s identical `serde` entry.
+serde = { version = "1", features = ["derive"] }
+url = "2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-util", "net"] }
+

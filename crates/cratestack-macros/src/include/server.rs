@@ -13,17 +13,30 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::LitStr;
 
-use super::parse::parse_schema_literal;
+use super::parse::{ServerDb, parse_schema_literal};
 
 use collect::collect_server_schema;
 
-pub(super) fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
+pub(super) fn compose_server_schema(schema_path: &LitStr, db: ServerDb) -> TokenStream {
     let (schema_relative, resolved, schema, schema_sha256) = match parse_schema_literal(schema_path)
     {
         Ok(parsed) => parsed,
         Err(error) => return error,
     };
+    if let Err(error) =
+        super::datasource_guard::guard_server_datasource_provider(schema_path, &schema, db)
+    {
+        return error;
+    }
+    if let Err(error) = super::datasource_guard::guard_server_postgres_backend(schema_path, db) {
+        return error;
+    }
     if let Err(error) = super::reject_grpc::guard_server_grpc_transport(schema_path, &schema) {
+        return error;
+    }
+    if let Err(error) =
+        super::extension_gate::guard_server_declared_extensions(schema_path, &schema)
+    {
         return error;
     }
     let resolved_literal = resolved.display().to_string();
@@ -38,8 +51,9 @@ pub(super) fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
         Err(error) => return error,
     };
 
-    let axum_module = axum_module::build_axum_module(&collected);
+    let axum_module = axum_module::build_axum_module(&collected, db);
     let runtime_block = runtime::build_runtime_block(
+        db,
         &collected.model_accessors,
         &collected.bound_model_accessors,
         &collected.view_accessors,
@@ -67,6 +81,7 @@ pub(super) fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
         create_input_structs,
         update_input_structs,
         upsert_input_impls,
+        find_many_input_structs,
         view_structs,
         view_descriptors,
         view_pg_from_row_impls,
@@ -76,6 +91,32 @@ pub(super) fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
         generated_event_module,
         ..
     } = collected;
+
+    // `datasource { provider = "none" }` schemas can never declare a
+    // `model` (cratestack#327's guard), so `generated_event_module` is
+    // always an empty-bodied `pub mod events { ... }` shell under
+    // `db = None` — a `Subscriptions::new` that nothing in the crate ever
+    // calls (there is no `Cratestack::events()` accessor for `db = None`;
+    // see `runtime::none`'s module doc), which would trip `dead_code`
+    // under this workspace's `-D warnings` gate. Drop it entirely instead
+    // of keeping it as unreachable API surface.
+    let generated_event_module = match db {
+        ServerDb::Postgres => generated_event_module,
+        ServerDb::None => proc_macro2::TokenStream::new(),
+    };
+
+    // `datasource { provider = "none" }` schemas can never declare a
+    // `model` either, so `pg_from_row_impls`/`model_structs`/etc. below
+    // are always empty under `db = None` — but the `use ::cratestack::sqlx;`
+    // import itself would still fail to resolve once `sqlx`/`cratestack-sqlx`
+    // is Cargo-feature-gated behind the (default-on) `postgres` feature
+    // (cratestack#329) and a `db = None`-only consumer disables it. Only
+    // pull the import in for `db = Postgres`, where it's actually needed
+    // for the sqlx `FromRow` impls in this same module.
+    let models_sqlx_import = match db {
+        ServerDb::Postgres => quote! { use ::cratestack::sqlx; },
+        ServerDb::None => proc_macro2::TokenStream::new(),
+    };
 
     let expanded = quote! {
         pub mod cratestack_schema {
@@ -118,7 +159,7 @@ pub(super) fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
 
             pub mod models {
                 use ::cratestack::serde;
-                use ::cratestack::sqlx;
+                #models_sqlx_import
 
                 #(#model_structs)*
                 #(#pg_from_row_impls)*
@@ -146,6 +187,7 @@ pub(super) fn compose_server_schema(schema_path: &LitStr) -> TokenStream {
                 #(#create_input_structs)*
                 #(#update_input_structs)*
                 #(#upsert_input_impls)*
+                #(#find_many_input_structs)*
             }
 
             pub use inputs::*;

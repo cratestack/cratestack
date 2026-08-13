@@ -1,0 +1,31 @@
+// cratestack#398 regression fixture — the exact reproduction from the
+// issue, on the server (Postgres) backend: `include_server_schema!` used
+// to emit these Rust-keyword-named fields verbatim, with no
+// raw-identifier escaping. This is the issue's own tested keyword table,
+// minus `self`/`Self`/`super`/`crate` (rejected at schema-parse time
+// instead — see `cratestack_parser::tests_reserved_keywords`).
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model KeywordField {
+  id Int @id
+  match String
+  type String
+  ref String
+  move String
+  impl String
+  fn String
+  let String
+  loop String
+  box String
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}

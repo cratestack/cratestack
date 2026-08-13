@@ -12,6 +12,53 @@ use tracing_subscriber::prelude::*;
 
 include_server_schema!("tests/fixtures/blog.cstack", db = Postgres);
 
+// Task-local storage for per-test event capture to avoid cross-test pollution
+tokio::task_local! {
+    static TEST_CAPTURE: EventCaptureLayer;
+}
+
+// Global tracing subscriber initialized once per test binary to prevent
+// tracing's callsite Interest cache from being poisoned by tests that run
+// without a subscriber attached. See issue #417.
+static TRACING_INIT: std::sync::Once = std::sync::Once::new();
+
+fn init_tracing() {
+    TRACING_INIT.call_once(|| {
+        let subscriber = tracing_subscriber::registry().with(GlobalCaptureLayer);
+        // Use set_global_default (not set_default) so the subscriber is the
+        // process-wide fallback dispatcher on every OS thread, not just the
+        // one thread that happened to run this Once closure. set_default only
+        // installs a thread-local default: cargo test's multi-threaded harness
+        // (and #[tokio::test]'s multi_thread runtime) spawn many worker
+        // threads, so a thread-local default leaves every other thread
+        // without a subscriber, letting tracing's process-wide, one-time
+        // callsite Interest cache latch onto Interest::never() the first time
+        // an unsubscribed thread reaches a callsite. set_global_default is
+        // itself idempotent (CAS-guarded) and its dispatcher lives for the
+        // remainder of the process, so no leaked guard is needed here.
+        // See issue #417.
+        tracing::subscriber::set_global_default(subscriber)
+            .expect("global tracing subscriber should only be installed once");
+    });
+}
+
+// A global layer that delegates to the task-local capture if set,
+// ensuring the global subscriber always exists for Interest cache correctness.
+#[derive(Clone, Copy)]
+struct GlobalCaptureLayer;
+
+impl<S> Layer<S> for GlobalCaptureLayer
+where
+    S: Subscriber,
+{
+    fn on_event(&self, event: &cratestack::tracing::Event<'_>, _ctx: Context<'_, S>) {
+        // Only capture if this task has set a TEST_CAPTURE via task_local
+        let _ = TEST_CAPTURE.try_with(|capture| {
+            capture.on_event(event, _ctx);
+        });
+    }
+}
+
 mod advanced_policy_schema {
     use super::*;
 
@@ -87,6 +134,7 @@ mod advanced_policy_schema {
             _db: &cratestack_schema::Cratestack,
             _ctx: &CoolContext,
             args: cratestack_schema::procedures::approve_post::Args,
+            _authorized: cratestack_schema::procedures::approve_post::Authorized,
         ) -> impl core::future::Future<
             Output = Result<
                 cratestack_schema::procedures::approve_post::Output,
@@ -110,6 +158,7 @@ mod advanced_policy_schema {
             _db: &cratestack_schema::Cratestack,
             _ctx: &CoolContext,
             args: cratestack_schema::procedures::review_post::Args,
+            _authorized: cratestack_schema::procedures::review_post::Authorized,
         ) -> Result<cratestack_schema::procedures::review_post::Output, cratestack::CoolError>
         {
             Ok(cratestack_schema::AdvancedPost {
@@ -542,6 +591,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for TestProcedures {
         _db: &cratestack_schema::Cratestack,
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::get_feed::Args,
+        _authorized: cratestack_schema::procedures::get_feed::Authorized,
     ) -> Result<cratestack_schema::procedures::get_feed::Output, cratestack::CoolError> {
         Ok(vec![cratestack_schema::Post {
             id: args.limit.unwrap_or(1),
@@ -557,6 +607,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for TestProcedures {
         _db: &cratestack_schema::Cratestack,
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::get_feed_page::Args,
+        _authorized: cratestack_schema::procedures::get_feed_page::Authorized,
     ) -> Result<cratestack_schema::procedures::get_feed_page::Output, cratestack::CoolError> {
         let limit = args.limit.unwrap_or(1);
         let offset = args.offset.unwrap_or(0);
@@ -583,6 +634,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for TestProcedures {
         _db: &cratestack_schema::Cratestack,
         ctx: &CoolContext,
         args: cratestack_schema::procedures::publish_post::Args,
+        _authorized: cratestack_schema::procedures::publish_post::Authorized,
     ) -> impl core::future::Future<
         Output = Result<cratestack_schema::procedures::publish_post::Output, cratestack::CoolError>,
     > + Send {
@@ -618,7 +670,13 @@ fn test_procedure_router(codec: CborCodec) -> cratestack::axum::Router {
 }
 
 fn test_combined_router(codec: CborCodec) -> cratestack::axum::Router {
-    cratestack_schema::axum::router(test_db(), TestProcedures, codec, TestAuthProvider)
+    cratestack_schema::axum::router(
+        test_db(),
+        TestProcedures,
+        codec,
+        TestAuthProvider,
+        cratestack::DEFAULT_BODY_LIMIT_BYTES,
+    )
 }
 
 fn test_negotiated_procedure_router() -> cratestack::axum::Router {
@@ -840,12 +898,13 @@ fn generated_model_descriptor_exposes_query_contract_metadata() {
         &["id", "title", "subtitle", "published", "authorId"]
     );
     assert_eq!(descriptor.allowed_includes, &["author"]);
-    assert!(descriptor.allowed_sorts.contains(&"id"));
-    assert!(descriptor.allowed_sorts.contains(&"author.email"));
-    assert!(
-        descriptor
-            .allowed_sorts
-            .contains(&"author.profile.nickname")
+    // `allowed_sorts` only ever held the model's own top-level scalar
+    // names cheaply; relation-nested keys like "author.profile.nickname"
+    // are validated by the runtime hop resolver instead (cratestack#256),
+    // exercised end to end by the `axum_model_route_*sort*` tests below.
+    assert_eq!(
+        descriptor.allowed_sorts,
+        &["id", "title", "subtitle", "published", "authorId"]
     );
 }
 
@@ -1291,9 +1350,16 @@ async fn read_policies_scope_find_many_for_authenticated_context() {
 
     // Authenticated context binds `auth().id` into the second disjunct
     // of the widened `@@allow("list", ...)` policy.
+    //
+    // The doubled outer parens are expected: `render_read_policy_sql`
+    // (cratestack#428) unconditionally wraps its return value in a
+    // self-contained group, and here that wraps a policy expr whose own
+    // `Or` group already self-parenthesizes. The nesting is semantically
+    // inert but load-bearing for the renderer's contract — see
+    // `render/policy.rs`'s doc comment.
     assert_eq!(
         sql,
-        "SELECT id AS \"id\", title AS \"title\", subtitle AS \"subtitle\", published AS \"published\", author_id AS \"authorId\" FROM posts WHERE (published = TRUE OR author_id = $1)"
+        "SELECT id AS \"id\", title AS \"title\", subtitle AS \"subtitle\", published AS \"published\", author_id AS \"authorId\" FROM posts WHERE ((published = TRUE OR author_id = $1))"
     );
 }
 
@@ -1307,9 +1373,12 @@ async fn read_policies_default_deny_without_matching_context() {
 
     let sql = cool.user().find_many().preview_scoped_sql(&ctx);
 
+    // `render_read_policy_sql` (cratestack#428) always returns a
+    // self-contained parenthesized group, including the empty-allow-list
+    // default-deny case, so `FALSE` now renders as `(FALSE)`.
     assert_eq!(
         sql,
-        "SELECT id AS \"id\", email AS \"email\", role AS \"role\", profile_id AS \"profileId\" FROM users WHERE FALSE"
+        "SELECT id AS \"id\", email AS \"email\", role AS \"role\", profile_id AS \"profileId\" FROM users WHERE (FALSE)"
     );
 }
 
@@ -1451,13 +1520,27 @@ fn generated_field_modules_are_available() {
         .nickname()
         .eq("Zulu")
         .not();
-    let _ = cratestack_schema::post::author::email_eq("owner@example.com");
-    let _ = cratestack_schema::post::author::email_desc();
-    let _ = cratestack_schema::post::author::profile::nickname_eq("Zulu");
-    let _ = cratestack_schema::post::author::profile::nickname_asc();
-    let _ = cratestack_schema::user::sessions::some::label_contains("Revoked");
-    let _ = cratestack_schema::user::sessions::every::revokedAt_is_null();
-    let _ = cratestack_schema::user::sessions::none::label_starts_with("Blocked");
+    let _ = cratestack_schema::post::author()
+        .email()
+        .eq("owner@example.com");
+    let _ = cratestack_schema::post::author().email().desc();
+    let _ = cratestack_schema::post::author()
+        .profile()
+        .nickname()
+        .eq("Zulu");
+    let _ = cratestack_schema::post::author().profile().nickname().asc();
+    let _ = cratestack_schema::user::sessions()
+        .some()
+        .label()
+        .contains("Revoked");
+    let _ = cratestack_schema::user::sessions()
+        .every()
+        .revokedAt()
+        .is_null();
+    let _ = cratestack_schema::user::sessions()
+        .none()
+        .label()
+        .starts_with("Blocked");
     let _ = cratestack_schema::session::createdAt().asc();
     let _ = cratestack_schema::session::externalId().desc();
     let _ = cratestack_schema::session::revokedAt().is_null();
@@ -1605,6 +1688,10 @@ async fn cbor_procedure_route_can_return_cbor_sequence_for_list_output() {
 
 #[tokio::test]
 async fn procedure_route_can_return_paged_output() {
+    // Initialize the global tracing subscriber to prevent Interest cache
+    // poisoning (see issue #417).
+    init_tracing();
+
     let codec = CborCodec;
     let router = test_procedure_router(codec.clone());
     let body = codec
@@ -1649,16 +1736,12 @@ async fn procedure_route_can_return_paged_output() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn generated_routes_emit_tracing_events() {
-    // Scope the subscriber to the request future via `WithSubscriber`
-    // instead of `set_default`. `set_default` installs a thread-local
-    // default and returns a `!Send` guard; holding it across the await
-    // happens to work on a current-thread runtime, but tests under high
-    // parallel load have surfaced as flaky because the polling thread
-    // can run other tasks between yields. `WithSubscriber` attaches the
-    // dispatch to the future itself — events emitted while polling
-    // *this* future see *this* subscriber, regardless of which thread
-    // or runtime polls it.
-    use cratestack::tracing::instrument::WithSubscriber;
+    // Initialize the global tracing subscriber once per test binary.
+    // This ensures tracing's callsite Interest cache is never poisoned by
+    // tests running without a subscriber (see issue #417). Per-test isolation
+    // is achieved via tokio::task_local, which stores the capture layer for
+    // this specific test's events.
+    init_tracing();
 
     let codec = CborCodec;
     let router = test_procedure_router(codec.clone());
@@ -1669,20 +1752,24 @@ async fn generated_routes_emit_tracing_events() {
         })
         .expect("request body should encode");
     let capture = EventCaptureLayer::default();
-    let subscriber = tracing_subscriber::registry().with(capture.clone());
 
-    let response = router
-        .oneshot(
-            Request::post("/$procs/getFeedPage")
-                .header("content-type", CborCodec::CONTENT_TYPE)
-                .header("accept", CborCodec::CONTENT_TYPE)
-                .header("x-auth-id", "9")
-                .body(Body::from(body))
-                .expect("request should build"),
-        )
-        .with_subscriber(subscriber)
-        .await
-        .expect("request should succeed");
+    // Set the task-local capture layer for this test so GlobalCaptureLayer
+    // will record events into it.
+    let response = TEST_CAPTURE
+        .scope(capture.clone(), async {
+            router
+                .oneshot(
+                    Request::post("/$procs/getFeedPage")
+                        .header("content-type", CborCodec::CONTENT_TYPE)
+                        .header("accept", CborCodec::CONTENT_TYPE)
+                        .header("x-auth-id", "9")
+                        .body(Body::from(body))
+                        .expect("request should build"),
+                )
+                .await
+                .expect("request should succeed")
+        })
+        .await;
 
     assert_eq!(response.status(), StatusCode::OK);
     let joined = capture.snapshot().join("\n");
@@ -2093,6 +2180,32 @@ async fn axum_model_route_rejects_invalid_nested_relation_order_by_path() {
 }
 
 #[tokio::test]
+async fn axum_model_route_accepts_valid_nested_relation_order_by_path() {
+    // Regression coverage for cratestack#256: the runtime hop resolver
+    // (`cratestack::resolve_order_target` against the generated
+    // `OrderCatalog`) must still accept a two-hop to-one sort key that
+    // was valid under the old pre-enumerated match arms. The test pool
+    // is lazy and never reaches a live database, so a request that
+    // clears sort validation fails later at the DB call (500) rather
+    // than succeeding (200) -- the boundary this test pins is that it
+    // must NOT be rejected as an unsupported sort field (422), which is
+    // exactly what the old exponential match-arm list also guaranteed.
+    let codec = CborCodec;
+    let router = test_model_router(codec);
+
+    let response = router
+        .oneshot(
+            Request::get("/posts?sort=author.profile.nickname")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("request should succeed");
+
+    assert_ne!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
 async fn axum_model_route_rejects_malformed_or_group() {
     let codec = CborCodec;
     let router = test_model_router(codec);
@@ -2414,6 +2527,7 @@ mod transport_rpc_schema {
             _db: &cratestack_schema::Cratestack,
             _ctx: &CoolContext,
             args: cratestack_schema::procedures::ping::Args,
+            _authorized: cratestack_schema::procedures::ping::Authorized,
         ) -> Result<cratestack_schema::procedures::ping::Output, cratestack::CoolError> {
             Ok(args.args)
         }
@@ -2423,6 +2537,7 @@ mod transport_rpc_schema {
             _db: &cratestack_schema::Cratestack,
             _ctx: &CoolContext,
             args: cratestack_schema::procedures::bump::Args,
+            _authorized: cratestack_schema::procedures::bump::Authorized,
         ) -> Result<cratestack_schema::procedures::bump::Output, cratestack::CoolError> {
             Ok(cratestack_schema::PingArgs {
                 nonce: format!("{}!", args.args.nonce),
@@ -2434,6 +2549,7 @@ mod transport_rpc_schema {
             _db: &cratestack_schema::Cratestack,
             _ctx: &CoolContext,
             args: cratestack_schema::procedures::many_pings::Args,
+            _authorized: cratestack_schema::procedures::many_pings::Authorized,
         ) -> Result<cratestack_schema::procedures::many_pings::Output, cratestack::CoolError>
         {
             let base = args.args.nonce;
@@ -2489,6 +2605,7 @@ mod transport_rpc_schema {
             RpcTestProcedures,
             codec,
             RpcTestAuthProvider,
+            cratestack::DEFAULT_BODY_LIMIT_BYTES,
         )
     }
 

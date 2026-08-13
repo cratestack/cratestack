@@ -67,6 +67,14 @@ pub struct TypeRef {
     pub name_span: SourceSpan,
     pub arity: TypeArity,
     pub generic_args: Vec<TypeRef>,
+    /// Compile-time integer literal arguments to a parametric scalar
+    /// type, e.g. the `1536` in `Vector(1536)`. Empty for every type
+    /// that isn't parametric — currently only `Vector(n)` populates
+    /// this (see `docs/design/extensions.md` §6). `#[serde(default)]`
+    /// keeps deserialization of migration snapshots written before
+    /// this field existed working unchanged.
+    #[serde(default)]
+    pub int_args: Vec<u32>,
 }
 
 impl TypeRef {
@@ -77,6 +85,38 @@ impl TypeRef {
     pub fn page_item(&self) -> Option<&TypeRef> {
         if self.is_page() {
             self.generic_args.first()
+        } else {
+            None
+        }
+    }
+
+    pub fn is_page_input(&self) -> bool {
+        self.name == "PageInput"
+    }
+
+    pub fn is_find_many(&self) -> bool {
+        self.name == "FindMany"
+    }
+
+    pub fn find_many_item(&self) -> Option<&TypeRef> {
+        if self.is_find_many() {
+            self.generic_args.first()
+        } else {
+            None
+        }
+    }
+
+    pub fn is_vector(&self) -> bool {
+        self.name == "Vector"
+    }
+
+    /// The `n` in `Vector(n)`, if this is a well-formed vector type
+    /// reference (exactly one integer argument). Validation
+    /// (`cratestack-parser`) is responsible for rejecting any other
+    /// shape before this is relied upon by codegen.
+    pub fn vector_dim(&self) -> Option<u32> {
+        if self.is_vector() {
+            self.int_args.first().copied()
         } else {
             None
         }

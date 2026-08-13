@@ -100,14 +100,27 @@ pub(super) fn build_insert_sql(info: &ModelSqlInfo<'_>, columns: &[String]) -> S
     )
 }
 
-pub(super) fn build_update_sql(info: &ModelSqlInfo<'_>, columns: &[String]) -> String {
+/// See `crate::data::postgres::sql::build_update_sql`'s doc comment for
+/// `version_column`'s semantics — identical here, `?N` placeholders in
+/// place of `$N`.
+pub(super) fn build_update_sql(
+    info: &ModelSqlInfo<'_>,
+    columns: &[String],
+    version_column: Option<&str>,
+) -> String {
     let object = build_json_object(info);
-    let assignments = columns
+    let mut assignments = columns
         .iter()
         .enumerate()
         .map(|(i, c)| format!("\"{c}\" = ?{}", i + 1))
         .collect::<Vec<_>>()
         .join(", ");
+    if let Some(v) = version_column {
+        if !assignments.is_empty() {
+            assignments.push_str(", ");
+        }
+        assignments.push_str(&format!("\"{v}\" = \"{v}\" + 1"));
+    }
     let pk_placeholder = columns.len() + 1;
     let pk = &info.pk_column;
     let pk_predicate = match info.pk_cast {

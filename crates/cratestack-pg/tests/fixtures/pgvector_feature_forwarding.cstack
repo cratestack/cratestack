@@ -1,0 +1,12 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+extension pgvector {
+}
+
+model Document {
+  id Int @id
+  embedding Vector(3)
+}

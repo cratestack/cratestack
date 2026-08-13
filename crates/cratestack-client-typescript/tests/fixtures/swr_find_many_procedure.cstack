@@ -1,0 +1,16 @@
+// Regression fixture for the built-in `FindMany<Model>` + `swr` preset
+// codegen gap: a `FindMany<Model>` procedure argument is literal-inlined
+// as the bare non-generic name `FindMany` (the client-side type never
+// depends on the model), so the ownership graph
+// (`src/swr/ownership.rs::compute_type_ownership`) never sees it as a
+// consumer edge — it only tracks user-declared enums/`type` blocks, not
+// the `Page`/`PageInfo`/`PageInput`/`FindMany` builtins.
+// `src/swr/context.rs` has to add that import by hand, mirroring
+// `swr_page_input_procedure.cstack`'s own regression coverage.
+
+model Post {
+  id Int @id
+  title String
+}
+
+procedure searchPosts(query: FindMany<Post>): Post[]

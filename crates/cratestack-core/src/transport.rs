@@ -16,6 +16,18 @@ pub struct RouteTransportDescriptor {
     pub method: &'static str,
     pub path: &'static str,
     pub capabilities: RouteTransportCapabilities,
+    /// Whether the dispatcher should treat this route as participating in
+    /// rate limiting. `true` for every route by default; `false` only for
+    /// a procedure marked `@no_rate_limit` in a schema that declares
+    /// `extension rate_limit { }` (`docs/design/extensions.md` §5) — model
+    /// CRUD routes have no opt-out today and are always `true`. Mirrors
+    /// `OpDescriptor::rate_limited_by_default` (cratestack#474) so REST
+    /// and RPC transports carry the same fact about the same op, even
+    /// though only one of `ROUTE_TRANSPORTS`/`OPS` is ever populated for
+    /// a given schema. This is participation only: it carries no
+    /// burst/refill/window numbers, and changes nothing about whether
+    /// `RateLimitLayer` is actually wired up at runtime.
+    pub rate_limited_by_default: bool,
 }
 
 /// Wire-shape of a single op in a `transport rpc` schema. See
@@ -45,10 +57,21 @@ pub struct OpDescriptor {
     /// Whether the op can be safely retried without an idempotency
     /// key. True for reads and pure procedures; false for mutations.
     pub idempotent_by_default: bool,
+    /// Whether the dispatcher should treat this op as participating in
+    /// rate limiting. `true` for every op by default; `false` only for a
+    /// procedure marked `@no_rate_limit` in a schema that declares
+    /// `extension rate_limit { }` (`docs/design/extensions.md` §5) — model
+    /// CRUD ops have no opt-out today and are always `true`. This is
+    /// participation only: it carries no burst/refill/window numbers, and
+    /// changes nothing about whether `RateLimitLayer` is actually wired up
+    /// at runtime, mirroring how `idempotent_by_default` above describes a
+    /// fact about the op rather than configuring anything.
+    pub rate_limited_by_default: bool,
     pub auth_required: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum OpKind {
     /// One input, one output. The common case — every CRUD verb and
     /// every non-streaming procedure.
@@ -56,10 +79,15 @@ pub enum OpKind {
     /// One input, a finite sequence of outputs. Used for `@stream`
     /// procedures and (future) streamed `list`. Terminates server-side.
     Sequence,
-    /// One input, an open-ended sequence of outputs ended only by
-    /// client cancellation or disconnect. WebSocket-only — see §3.4
-    /// of the design doc. Fire-and-forget: no cursors, no replay
-    /// buffer.
+    /// No input, an open-ended sequence of outputs ended only by
+    /// backpressure overflow or client disconnect. Emitted for
+    /// `model.<X>.subscribe` when a model declares `@@subscribe`.
+    /// Dispatched today via SSE (`GET /rpc/subscribe/{op_id}`, design
+    /// doc §3.4a) — the recommended first binding per issue #183's
+    /// spike decision; WebSocket (§3.4) remains speced but unbuilt,
+    /// gated on a real bidirectional/high-multiplexing need. Both
+    /// bindings share the same fire-and-forget semantics: no cursors,
+    /// no replay buffer.
     Subscription,
 }
 
@@ -69,6 +97,8 @@ impl OpKind {
             OpKind::Unary => "unary",
             OpKind::Sequence => "sequence",
             OpKind::Subscription => "subscription",
+            #[allow(unreachable_patterns)]
+            _ => "unknown",
         }
     }
 }
@@ -90,4 +120,44 @@ pub fn canonical_request_string(
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
     format!("{method}\n{path}\n{query}\n{content_type}\n{body_hex}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn op_kind_as_str() {
+        assert_eq!(OpKind::Unary.as_str(), "unary");
+        assert_eq!(OpKind::Sequence.as_str(), "sequence");
+        assert_eq!(OpKind::Subscription.as_str(), "subscription");
+    }
+
+    #[test]
+    fn op_kind_equality() {
+        assert_eq!(OpKind::Unary, OpKind::Unary);
+        assert_ne!(OpKind::Unary, OpKind::Sequence);
+        assert_ne!(OpKind::Sequence, OpKind::Subscription);
+    }
+
+    #[test]
+    fn canonical_request_string_empty() {
+        let result = canonical_request_string("GET", "/api/users", None, None, b"");
+        assert_eq!(result, "GET\n/api/users\n\n\n");
+    }
+
+    #[test]
+    fn canonical_request_string_with_query_and_content_type() {
+        let result = canonical_request_string(
+            "POST",
+            "/api/users",
+            Some("id=123"),
+            Some("application/json"),
+            b"test",
+        );
+        assert_eq!(
+            result,
+            "POST\n/api/users\nid=123\napplication/json\n74657374"
+        );
+    }
 }

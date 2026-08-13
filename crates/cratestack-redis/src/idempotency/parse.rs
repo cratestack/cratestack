@@ -1,5 +1,4 @@
-use cratestack_axum::idempotency::{IdempotencyRecord, ReservationOutcome};
-use cratestack_core::CoolError;
+use cratestack_core::{CoolError, IdempotencyRecord, ReservationOutcome};
 use redis::Value as RedisValue;
 use uuid::Uuid;
 

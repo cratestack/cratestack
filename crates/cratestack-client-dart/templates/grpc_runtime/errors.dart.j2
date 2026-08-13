@@ -1,0 +1,49 @@
+// ---------------------------------------------------------------------
+// Errors — the numeric gRPC `status` on `package:grpc`'s `GrpcError`
+// mapped to the same friendly string codes the TypeScript gRPC-Web
+// runtime uses (`grpc-web-runtime.ts.j2`'s `GRPC_STATUS_TO_CODE`), via
+// the inverse of `cratestack-grpc::error::rpc_code_to_tonic_code` — every
+// code that table produces round-trips back to its original string; an
+// unrecognized number falls back to its decimal string form rather than
+// losing information.
+// ---------------------------------------------------------------------
+
+const Map<int, String> _grpcStatusToCode = {
+  1: 'canceled',
+  2: 'unknown',
+  3: 'invalid_argument',
+  4: 'deadline_exceeded',
+  5: 'not_found',
+  6: 'conflict',
+  7: 'permission_denied',
+  9: 'failed_precondition',
+  12: 'unimplemented',
+  13: 'internal',
+  14: 'unavailable',
+  16: 'unauthenticated',
+};
+
+String cratestackGrpcStatusToErrorCode(int status) =>
+    _grpcStatusToCode[status] ?? status.toString();
+
+/// Thrown by [CratestackGrpcRuntime] when a call fails with a real gRPC
+/// status. Wraps `package:grpc`'s `GrpcError`, surfacing the same
+/// friendly `code` string the TypeScript gRPC-Web client's
+/// `CratestackGrpcError` does, so both generated clients report the same
+/// string for the same server-side error.
+class CratestackGrpcError implements Exception {
+  const CratestackGrpcError(this.status, this.message);
+
+  factory CratestackGrpcError.fromGrpcError(GrpcError error) {
+    return CratestackGrpcError(error.code, error.message ?? '');
+  }
+
+  final int status;
+  final String message;
+
+  String get code => cratestackGrpcStatusToErrorCode(status);
+
+  @override
+  String toString() =>
+      'CratestackGrpcError(code=$code, status=$status, message=$message)';
+}

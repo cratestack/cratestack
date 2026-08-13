@@ -1,15 +1,16 @@
 use std::collections::BTreeSet;
 
+use cratestack_core::route_naming;
 use cratestack_core::{Model, Procedure, TypeArity};
 
 use crate::dart_types::dart_type;
-use crate::idents::{dart_identifier, pluralize, to_camel_case, to_snake_case};
+use crate::idents::{dart_identifier, pluralize, to_camel_case};
 use crate::naming::{
     is_paged_model, is_relation_field, primary_key_field, procedure_wrapper_name,
     scalar_model_fields,
 };
 use crate::views::{
-    ConstantView, ModelApiView, ProcedureView, SelectedFieldAccessorView,
+    ConstantView, ModelAccessorView, ModelApiView, ProcedureView, SelectedFieldAccessorView,
     SelectedRelationAccessorView, SelectionGroupView, SelectionModelView,
 };
 use crate::wire_decode::decode_value_expr;
@@ -100,6 +101,14 @@ pub(crate) fn build_selection_model(
     }
 }
 
+pub(crate) fn build_model_accessor(model: &Model, provider_prefix: &str) -> ModelAccessorView {
+    ModelAccessorView {
+        accessor: pluralize(&to_camel_case(&model.name)),
+        api_class_name: format!("{}Api", model.name),
+        provider_name: format!("{provider_prefix}{}ApiProvider", model.name),
+    }
+}
+
 pub(crate) fn build_model_api(model: &Model) -> ModelApiView {
     let primary_key = primary_key_field(model).expect("validated schemas always have an id field");
     let paged = is_paged_model(model);
@@ -108,8 +117,13 @@ pub(crate) fn build_model_api(model: &Model) -> ModelApiView {
         model_name: model.name.clone(),
         create_input_name: format!("Create{}Input", model.name),
         update_input_name: format!("Update{}Input", model.name),
-        route: format!("/{}", pluralize(&to_snake_case(&model.name))),
-        detail_route: format!("/{}/$id", pluralize(&to_snake_case(&model.name))),
+        // cratestack#345: must match the server's real Axum route
+        // registration exactly (`cratestack-macros::axum::model::routes`)
+        // — derived through the shared canonical algorithm, not this
+        // crate's own `to_snake_case`/`pluralize` (client-only identifier
+        // naming, not a wire-format contract).
+        route: format!("/{}", route_naming::model_route_segment(&model.name)),
+        detail_route: format!("/{}/$id", route_naming::model_route_segment(&model.name)),
         primary_key_type: dart_type(&primary_key.ty, false),
         is_paged: paged,
         list_return_type: if paged {

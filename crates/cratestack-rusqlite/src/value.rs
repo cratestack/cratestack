@@ -22,5 +22,9 @@ mod decode;
 mod tests;
 
 pub use bind::SqlValueParam;
-pub use columns::{DateTimeColumn, DecimalColumn, JsonColumn, UuidColumn};
-pub use decode::{decode_datetime, decode_decimal, decode_json, decode_uuid};
+#[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
+pub use columns::DecimalColumn;
+pub use columns::{DateTimeColumn, JsonColumn, UuidColumn};
+#[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
+pub use decode::decode_decimal;
+pub use decode::{decode_datetime, decode_json, decode_uuid};

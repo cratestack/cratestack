@@ -1,0 +1,90 @@
+// Regression fixture for cratestack#252: `include_server_schema!` expansion
+// was exponential in relation-graph connectivity, not linear in model count
+// -- a path-per-type `Path` unit struct meant emitted-type count equalled
+// simple-path count through the graph. 6 chained bidirectional models took
+// ~1080s / 6.4GB to `cargo check` under the old recursive emitter; a real
+// 16-model production schema could not build at all on 32GB. Fixed in #253
+// by carrying the traversed path as a runtime value instead of a type chain.
+//
+// This fixture chains 10 models, each linked to both neighbours (to-one
+// `parent` + to-many `children`), comfortably past the connectivity where
+// the old emitter diverged. Compiling within the normal test suite's time
+// budget IS the regression guard -- if the exponential behaviour returns,
+// this file's own build time will explode long before reaching 16 models.
+
+model StressNode0 {
+  id Int @id
+  name String
+  children StressNode1[] @relation(fields:[id],references:[parentId])
+}
+
+model StressNode1 {
+  id Int @id
+  name String
+  parentId Int
+  parent StressNode0 @relation(fields:[parentId],references:[id])
+  children StressNode2[] @relation(fields:[id],references:[parentId])
+}
+
+model StressNode2 {
+  id Int @id
+  name String
+  parentId Int
+  parent StressNode1 @relation(fields:[parentId],references:[id])
+  children StressNode3[] @relation(fields:[id],references:[parentId])
+}
+
+model StressNode3 {
+  id Int @id
+  name String
+  parentId Int
+  parent StressNode2 @relation(fields:[parentId],references:[id])
+  children StressNode4[] @relation(fields:[id],references:[parentId])
+}
+
+model StressNode4 {
+  id Int @id
+  name String
+  parentId Int
+  parent StressNode3 @relation(fields:[parentId],references:[id])
+  children StressNode5[] @relation(fields:[id],references:[parentId])
+}
+
+model StressNode5 {
+  id Int @id
+  name String
+  parentId Int
+  parent StressNode4 @relation(fields:[parentId],references:[id])
+  children StressNode6[] @relation(fields:[id],references:[parentId])
+}
+
+model StressNode6 {
+  id Int @id
+  name String
+  parentId Int
+  parent StressNode5 @relation(fields:[parentId],references:[id])
+  children StressNode7[] @relation(fields:[id],references:[parentId])
+}
+
+model StressNode7 {
+  id Int @id
+  name String
+  parentId Int
+  parent StressNode6 @relation(fields:[parentId],references:[id])
+  children StressNode8[] @relation(fields:[id],references:[parentId])
+}
+
+model StressNode8 {
+  id Int @id
+  name String
+  parentId Int
+  parent StressNode7 @relation(fields:[parentId],references:[id])
+  children StressNode9[] @relation(fields:[id],references:[parentId])
+}
+
+model StressNode9 {
+  id Int @id
+  name String
+  parentId Int
+  parent StressNode8 @relation(fields:[parentId],references:[id])
+}

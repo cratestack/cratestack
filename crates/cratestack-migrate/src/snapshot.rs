@@ -1,12 +1,29 @@
-//! Committed snapshot of a `.cstack` schema as of the last generated
-//! migration. The diff engine compares the current `.cstack` against
-//! this snapshot to produce a new migration.
+//! Committed snapshot of a schema's SQL shape as of the last generated
+//! migration (or, since issue #205, the last `migrate baseline` run).
+//! The diff engine compares the current `.cstack` against this
+//! snapshot to produce a new migration.
 //!
 //! The snapshot is written as pretty-printed JSON, one file per
 //! backend (`migrations/postgres/schema.snapshot.json`,
 //! `migrations/sqlite/schema.snapshot.json`). It must be committed
 //! to source control — `cratestack migrate verify` is the CI gate
 //! that confirms it hasn't been tampered with.
+//!
+//! **Format version 2 (issue #205):** the snapshot stores
+//! [`Projections`] — the backend-agnostic IR — rather than a full
+//! `cratestack_core::Schema` as format version 1 did. A `Schema` can't
+//! represent what `cratestack migrate baseline` establishes as a
+//! starting point: introspecting a live database recovers table/
+//! column/index/check shape, never `mixins`, `procedures`, `auth`, or
+//! attribute provenance (design doc `docs/design/migrate-baseline.md`
+//! §5.3), so there is no `Schema` a baseline run could honestly write.
+//! Storing the IR directly removes that mismatch — `cratestack migrate
+//! diff` and `cratestack migrate baseline` now write the exact same
+//! shape, and the "previous state" for a diff is always literally the
+//! SQL shape currently on record, not an aspirational schema. This is
+//! a breaking on-disk format change with no migration path: version-1
+//! snapshots are rejected (see [`read_snapshot`]) and must be
+//! regenerated. Pre-1.0, so no compatibility shim is provided.
 
 #[cfg(test)]
 mod tests;
@@ -18,43 +35,41 @@ use cratestack_core::Schema;
 use serde::{Deserialize, Serialize};
 
 use crate::error::MigrateError;
+use crate::projection::{Projections, project};
 
 /// Snapshot format version. Bump when the on-disk shape changes in a
 /// way that requires regeneration. The diff engine refuses to operate
 /// on snapshots whose `format_version` it does not understand.
-pub const SNAPSHOT_FORMAT_VERSION: u32 = 1;
+pub const SNAPSHOT_FORMAT_VERSION: u32 = 2;
 
-/// Serialized form of a `.cstack` schema, plus metadata the diff
-/// engine needs to interpret it correctly.
+/// Serialized "previous state" the diff engine compares against: the
+/// [`Projections`] IR, plus metadata needed to interpret it correctly.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Snapshot {
     pub format_version: u32,
-    pub schema: Schema,
+    pub projections: Projections,
 }
 
 impl Snapshot {
-    pub fn from_schema(schema: Schema) -> Self {
+    pub fn from_projections(projections: Projections) -> Self {
         Self {
             format_version: SNAPSHOT_FORMAT_VERSION,
-            schema,
+            projections,
         }
     }
 
-    /// An empty snapshot — used as the "previous schema" when
+    /// Project a parsed `.cstack` [`Schema`] and wrap it as a
+    /// snapshot — the path `cratestack migrate diff` uses after
+    /// writing a migration, so the next diff starts from "the schema
+    /// as of the last generated migration."
+    pub fn from_schema(schema: &Schema) -> Self {
+        Self::from_projections(project(schema))
+    }
+
+    /// An empty snapshot — used as the "previous state" when
     /// generating the very first migration for a backend.
     pub fn empty() -> Self {
-        Self::from_schema(Schema {
-            datasource: None,
-            auth: None,
-            config_blocks: Vec::new(),
-            mixins: Vec::new(),
-            models: Vec::new(),
-            types: Vec::new(),
-            enums: Vec::new(),
-            procedures: Vec::new(),
-            views: Vec::new(),
-            transport: Default::default(),
-        })
+        Self::from_projections(Projections::default())
     }
 }
 

@@ -2,6 +2,7 @@
 name = "embedded-expo-native"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 publish = false
 description = "Rust cdylib for the embedded-expo example. Exposes a single `cratestack_dispatch` C-ABI entry point that decodes a JSON OperationRequest, executes against the Note model via ModelDelegate, and returns a serialized OperationResponse. The Expo native module on iOS/Android calls this entry point and ferries bytes to/from JS."
 
@@ -13,13 +14,18 @@ crate-type = ["cdylib", "rlib", "staticlib"]
 # The C ABI exports below intentionally hand raw pointers across the
 # language boundary; that's the unsafe code's whole reason for existing.
 # Lift the workspace-wide forbid.
+#
+# Deliberately NOT `[lints]\nworkspace = true` (cratestack#523): Cargo
+# rejects mixing workspace-inherited lints with a per-package override in
+# the same manifest — see crates/cratestack-cbor-napi/Cargo.toml's fuller
+# note, which this mirrors.
 unsafe_code = "allow"
 
 [dependencies]
 chrono = { workspace = true }
-cratestack = { package = "cratestack-sqlite", path = "../../../crates/cratestack-sqlite", version = "0.4.4" }
-cratestack-macros = { path = "../../../crates/cratestack-macros", version = "0.4.4" }
-cratestack-rusqlite = { path = "../../../crates/cratestack-rusqlite", version = "0.4.4" }
+cratestack = { package = "cratestack-sqlite", path = "../../../crates/cratestack-sqlite" }
+cratestack-macros = { path = "../../../crates/cratestack-macros" }
+cratestack-rusqlite = { path = "../../../crates/cratestack-rusqlite" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }

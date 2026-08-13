@@ -5,6 +5,34 @@ below (§4.1) has been reframed by [extensions.md](extensions.md), which
 proposes a `rate_limit` **extension** that declares capability-participation
 only (never tunable numbers). The idempotency finding (§4.2 onward) is
 unaffected and remains the current decision.
+**Update (cratestack#473):** every citation of "`AuditSink` selection" below
+was written when `AuditSink` had no installation path at all — a consumer
+could construct `NoopAuditSink`/`MulticastAuditSink` but had nowhere to hand
+one to, and `AuditSink::record` was never invoked anywhere in the workspace.
+cratestack#473 wired a real seam (`SqlxRuntime::with_audit_sink` /
+generated `CratestackBuilder::with_audit_sink`, dispatched post-commit from
+each write path — see `crates/cratestack-sqlx/src/audit/sink.rs`), so the
+precedent these sections lean on is now genuinely true rather than aspirational.
+No wording below needed to change in substance, only to point at the concrete
+method names instead of the sink types alone.
+**Update (cratestack#542):** §3 describes the "overridable key/fingerprint
+closure" as `Arc<dyn Fn(&Request) -> String>`. That signature is still
+accurate for the *override* entry points
+(`IdempotencyLayer::with_principal_fingerprint`/`RateLimitLayer::with_key_fn`,
+which remain infallible by design — opting out of the default is the
+caller's explicit choice), but it no longer describes the *default*
+function's stored type or behavior. cratestack#542 changed
+`default_principal_fingerprint`/`default_key_fn`'s internal signature to
+`Arc<dyn Fn(&Request) -> Result<String, CoolError> + Send + Sync>` and its
+behavior when neither an `Authorization` header nor a
+`ConnectInfo<SocketAddr>` peer is present from silently falling back to a
+shared bucket to refusing the request with `412 Precondition Failed` (see
+`crates/cratestack-axum/src/{idempotency,ratelimit}/layer.rs`). This doesn't
+touch the decision in §4–§6 — the key-derivation function itself, fallible
+or not, was already out of scope for `.cstack` and stays there — but a
+reader relying on §3's type for the *default* path specifically should read
+`Result<String, CoolError>`, not `String`, and should know unverifiable
+callers are now refused rather than pooled.
 Scope: whether `@@idempotent`/`@@rate_limit(...)`-style `.cstack` attributes should
 join `@@audit`/`@@soft_delete`/`@@paged`, or whether `IdempotencyLayer`/`RateLimitLayer`
 stay imperative Rust middleware.
@@ -53,7 +81,9 @@ extra WHERE clause, an extra column, a different response envelope for
 retune the redaction list per deploy without recompiling." Where actual
 per-environment tuning exists — which `AuditSink` to use, where redacted
 events go — that stays in Rust (`NoopAuditSink`/`MulticastAuditSink`,
-constructed at app startup), not in the schema. The schema only declares the
+constructed at app startup and installed via
+`SqlxRuntime::with_audit_sink`/`CratestackBuilder::with_audit_sink`,
+cratestack#473), not in the schema. The schema only declares the
 *shape*; wiring stays imperative even for the concerns that are otherwise
 declarative. That split is the load-bearing precedent for this decision.
 
@@ -73,8 +103,8 @@ declarative. That split is the load-bearing precedent for this decision.
 
 None of that is a fact about a model's rows. It's operational policy that
 varies by deployment tier, load profile, and incident response — the same
-axis that keeps `AuditSink` selection imperative even though `@@audit` itself
-is declarative.
+axis that keeps `AuditSink` installation (`SqlxRuntime::with_audit_sink`)
+imperative even though `@@audit` itself is declarative.
 
 ## 4. The tradeoff, concern by concern
 
@@ -114,7 +144,8 @@ documented in `cratestack-axum/src/idempotency/mod.rs` as inert plumbing for a
 yet. The TTL/store/key-fn config would **not** move into the schema even in
 this design — only the boolean "does this procedure participate in
 idempotency" would, exactly mirroring how `@@audit` declares participation
-while `AuditSink` selection stays in Rust.
+while `AuditSink` installation stays in Rust
+(`SqlxRuntime::with_audit_sink`/`CratestackBuilder::with_audit_sink`).
 
 The reason to defer rather than build this now: `docs/design/rpc-transport.md`
 §4 has already identified that idempotency (along with rate-limiting and
@@ -149,8 +180,10 @@ doesn't start from scratch:
   today, REST+WS after the executor consolidation) decides whether to run the
   op through the idempotency path at all.
 - **Explicitly not in scope for the flag:** TTL, store selection, key/
-  fingerprint function — those stay Rust-level, constructed at startup,
-  exactly as `AuditSink` is today.
+  fingerprint function — those stay Rust-level, constructed at startup and
+  installed onto the runtime, exactly as `AuditSink` is today via
+  `SqlxRuntime::with_audit_sink`/`CratestackBuilder::with_audit_sink`
+  (cratestack#473).
 
 ## 6. Proposed follow-up (not scoped for implementation here)
 

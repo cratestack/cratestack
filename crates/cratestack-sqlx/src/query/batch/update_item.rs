@@ -2,16 +2,20 @@
 //! probe, UPDATE ... RETURNING with policy + If-Match, event/audit
 //! fan-out. Per-item failures rollback the savepoint.
 
-use cratestack_core::{AuditOperation, CoolContext, CoolError, ModelEventKind};
+use cratestack_core::{AuditEvent, AuditOperation, CoolContext, CoolError, ModelEventKind};
 use sqlx_core::acquire::Acquire as _;
 
 use crate::audit::{build_audit_event, enqueue_audit_event, fetch_for_audit};
 use crate::descriptor::enqueue_event_outbox;
-use crate::query::support::{push_action_policy_query, push_bind_value};
-use crate::{ModelDescriptor, UpdateModelInput, sqlx};
+use crate::query::support::{classify_unique_violation, push_action_policy_query, push_bind_value};
+use crate::{ModelDescriptor, UpdateModelInput, cool_error_from_sqlx, sqlx};
 
 use super::update::BatchUpdateItem;
 
+/// Returns `(per_item_result, audit_event)` — see
+/// `create_item::run_create_item`'s doc comment for why the event is
+/// collected here but dispatched only by the outer `BatchUpdate::run`
+/// after it commits its transaction.
 pub(super) async fn run_update_item<'tx, M, PK, I>(
     outer: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
     descriptor: &'static ModelDescriptor<M, PK>,
@@ -19,17 +23,15 @@ pub(super) async fn run_update_item<'tx, M, PK, I>(
     ctx: &CoolContext,
     emits_event: bool,
     audit_enabled: bool,
-) -> Result<Result<M, CoolError>, CoolError>
+) -> Result<(Result<M, CoolError>, Option<AuditEvent>), CoolError>
 where
     I: UpdateModelInput<M>,
     PK: Clone + Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
 {
     let (id, input, if_match) = item;
-    let mut item_tx = outer
-        .begin()
-        .await
-        .map_err(|error| CoolError::Database(error.to_string()))?;
+    let mut item_tx = outer.begin().await.map_err(cool_error_from_sqlx)?;
+    let mut audit_event: Option<AuditEvent> = None;
 
     let inner: Result<M, CoolError> = async {
         if descriptor.version_column.is_some() && if_match.is_none() {
@@ -75,6 +77,7 @@ where
                 ctx,
             );
             enqueue_audit_event(&mut *item_tx, &event).await?;
+            audit_event = Some(event);
         }
         Ok(record)
     }
@@ -82,18 +85,12 @@ where
 
     match inner {
         Ok(record) => {
-            item_tx
-                .commit()
-                .await
-                .map_err(|error| CoolError::Database(error.to_string()))?;
-            Ok(Ok(record))
+            item_tx.commit().await.map_err(cool_error_from_sqlx)?;
+            Ok((Ok(record), audit_event))
         }
         Err(item_err) => {
-            item_tx
-                .rollback()
-                .await
-                .map_err(|error| CoolError::Database(error.to_string()))?;
-            Ok(Err(item_err))
+            item_tx.rollback().await.map_err(cool_error_from_sqlx)?;
+            Ok((Err(item_err), None))
         }
     }
 }
@@ -152,7 +149,7 @@ where
         .build_query_as::<M>()
         .fetch_optional(&mut **executor)
         .await
-        .map_err(|error| CoolError::Database(error.to_string()))?;
+        .map_err(classify_unique_violation)?;
     match outcome {
         Some(record) => Ok(record),
         None => {

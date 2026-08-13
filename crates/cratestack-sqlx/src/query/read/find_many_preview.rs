@@ -33,7 +33,7 @@ pub(super) fn preview_sql<M, PK>(find: &FindMany<'_, M, PK>) -> String {
             if index > 0 {
                 sql.push_str(", ");
             }
-            render_order_clause_sql(clause, &mut sql);
+            render_order_clause_sql(clause, &mut sql, &mut bind_index);
         }
     }
 

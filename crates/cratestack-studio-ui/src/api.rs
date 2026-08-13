@@ -123,15 +123,22 @@ pub async fn delete_record(
     .await
 }
 
+/// `explain` opts into a query plan alongside the rendered SQL. It is a
+/// separate flag rather than always-on because rendering the SQL is
+/// free while planning it costs a round trip to the database.
 pub async fn preview_sql(
     target: &str,
     model: &str,
     op: &str,
     pk: Option<&str>,
+    explain: bool,
 ) -> Result<SqlPreview, FetchError> {
     let mut url = format!("/api/targets/{target}/models/{model}/sql?op={op}");
     if let Some(p) = pk {
         url.push_str(&format!("&pk={}", urlencode(p)));
+    }
+    if explain {
+        url.push_str("&explain=true");
     }
     fetch_json(&url).await
 }

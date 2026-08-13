@@ -10,7 +10,7 @@ JSON codec for CrateStack HTTP transport.
 
 ```toml
 [dependencies]
-cratestack-codec-json = "0.2.2"
+cratestack-codec-json = "0.6.7"
 ```
 
 ## Usage

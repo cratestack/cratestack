@@ -6,19 +6,53 @@
 //! the [`RateLimitStore`] trait so all replicas share the same view of
 //! consumption.
 //!
-//! The middleware computes a key per request (the default is the
-//! authorization-header fingerprint, the same shape the idempotency layer
-//! uses) and refuses with `429` plus a `Retry-After` header when the bucket
-//! is empty. Banks running tenant-scoped budgeting can swap the key
-//! function for tenant-id.
+//! The middleware computes a key per request (the default hashes the
+//! `Authorization` header when present and otherwise falls back to the
+//! verified TCP peer address, the same shape the idempotency layer uses)
+//! and refuses with `429` plus a `Retry-After` header when the bucket is
+//! empty. Banks running tenant-scoped budgeting can swap the key function
+//! for tenant-id.
+//!
+//! Usage:
+//! ```ignore
+//! use cratestack_axum::ratelimit::{InMemoryRateLimitStore, RateLimitConfig, RateLimitLayer};
+//! use std::net::SocketAddr;
+//! let store = std::sync::Arc::new(InMemoryRateLimitStore::default());
+//! let router = generated_router.layer(RateLimitLayer::new(store, RateLimitConfig::new(100, 1.0)));
+//!
+//! // The peer-address fallback below only kicks in when the server is
+//! // served through `into_make_service_with_connect_info`:
+//! let listener = tokio::net::TcpListener::bind(addr).await?;
+//! axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).await?;
+//! ```
+//!
+//! **This wiring matters.** Nothing in this crate — and, as of this
+//! writing, no example shipped in this repository — serves through
+//! `into_make_service_with_connect_info` by default; every example uses
+//! plain `into_make_service()`. Without it, `ConnectInfo<SocketAddr>` is
+//! never present in request extensions, so *every* request without an
+//! `Authorization` header is refused with `412 Precondition Failed`
+//! (cratestack#416 — the default used to silently collapse such requests
+//! onto a shared `"anonymous"` bucket instead, which meant no per-caller
+//! throttling at all for that traffic; it now refuses rather than risk
+//! that collision). Consumers who authenticate via cookies/mTLS rather
+//! than an `Authorization` header — and who cannot serve through
+//! `into_make_service_with_connect_info` — must supply
+//! [`RateLimitLayer::with_key_fn`] explicitly.
 
 mod config;
 mod layer;
+mod rest_ops_filter;
+mod rpc_ops_filter;
 mod store;
 
 pub use config::{_bucket_capacity_for, RateLimitConfig, RateLimitDecision};
 pub use layer::{RateLimitLayer, RateLimitService};
+pub use rest_ops_filter::build_rest_ops_filter;
+pub use rpc_ops_filter::build_rpc_ops_filter;
 pub use store::{InMemoryRateLimitStore, RateLimitStore};
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_key_fn;

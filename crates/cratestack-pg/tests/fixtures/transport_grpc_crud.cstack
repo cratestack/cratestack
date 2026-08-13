@@ -1,0 +1,33 @@
+// Dedicated fixture for `transport_grpc_crud_dispatch.rs` (cratestack#524,
+// refs #426): a real DB-backed regression test for the gRPC CRUD arm
+// builders. Deliberately a separate fixture/model from
+// `transport_grpc.cstack`'s `Widget` — that fixture's own gRPC test files
+// (`transport_grpc.rs`, `grpc_auth_provider_extensions.rs`,
+// `trusted_proxy_client_ip_grpc.rs`) all use `connect_lazy` and never
+// `CREATE TABLE widgets` for real, so introducing a real DB-backed
+// `widgets` table here would collide with the OTHER (unrelated)
+// `transport_rpc.cstack` fixture's own `Widget` model, which
+// `rpc_subscribe_sse.rs`/`rpc_canonical_request.rs` already create for
+// real — caught by `fixture_table_names.rs`'s static collision guard.
+// `Gadget` avoids that collision entirely.
+
+transport grpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Gadget {
+  id Int @id
+  name String
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}

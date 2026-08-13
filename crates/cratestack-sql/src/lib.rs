@@ -17,7 +17,10 @@
 mod descriptor;
 mod dialect;
 mod filter;
+mod idempotency;
 mod order;
+mod order_catalog;
+mod relation_path;
 mod values;
 
 pub use descriptor::{
@@ -28,9 +31,16 @@ pub use dialect::{Dialect, PostgresDialect, SqliteDialect};
 pub use filter::{
     CoalesceExpr, CoalesceFilter, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName,
     JsonFilter, JsonTextPath, RelationFilter, RelationQuantifier, SpatialFilter, SpatialPoint,
-    coalesce, point,
+    VectorDistanceExpr, VectorDistanceFilter, VectorMetric, coalesce, point,
 };
+pub use idempotency::IDEMPOTENCY_TABLE_DDL;
 pub use order::{NullOrder, OrderClause, OrderTarget, SortDirection};
+pub use order_catalog::{
+    OrderCatalog, OrderRelationEdge, ResolvedOrderTarget, resolve_order_target,
+};
+pub use relation_path::{
+    Orderable, RelationHop, Unorderable, is_orderable, order_value_sql, wrap_filter,
+};
 pub use values::{
     ConflictTarget, CreateModelInput, FilterValue, IntoSqlValue, ModelPrimaryKey, Projection,
     RelationInclude, SqlColumnValue, SqlValue, UpdateModelInput, UpsertModelInput,

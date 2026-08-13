@@ -5,6 +5,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 #[derive(Debug, Parser)]
 #[command(name = "cratestack")]
 #[command(about = "CrateStack schema tooling")]
+#[command(version)]
 pub(crate) struct Cli {
     #[command(subcommand)]
     pub(crate) command: Command,
@@ -34,6 +35,27 @@ pub(crate) enum Command {
         /// files that differ if the two don't match.
         #[arg(long)]
         check: bool,
+        /// `default` (today's monolithic `lib/src/models.dart`/
+        /// `lib/src/apis.dart`, byte-identical to pre-#301 output) or
+        /// `riverpod` (one file per model under `lib/src/models/`, plus
+        /// a shared file for cross-model types, procedures in their own
+        /// file, and the package-wide DI providers in `lib/src/client.dart`).
+        #[arg(long, value_enum, default_value_t = DartPresetArg::Default)]
+        preset: DartPresetArg,
+        /// Opt-in (issue #303): after generation, shell out to `dart run
+        /// build_runner build --delete-conflicting-outputs` in `--out` so
+        /// a `--preset riverpod` package's `@riverpod` annotations are
+        /// actually expanded — the annotated Dart alone does not
+        /// compile/analyze until `build_runner` runs. Off by default: a
+        /// Rust CLI invoking another toolchain unprompted would be a
+        /// surprising behaviour change for existing/scripted callers. No
+        /// effect together with `--check` (drift-detection mode never
+        /// writes files to run `build_runner` against). Requires a Dart
+        /// SDK on `PATH` — see `crate::build_runner::BuildRunnerError`
+        /// for the failure modes when it's missing or `build_runner`
+        /// itself fails.
+        #[arg(long)]
+        run_build_runner: bool,
     },
     #[command(name = "generate-typescript", alias = "generate-ts")]
     GenerateTypeScript {
@@ -58,6 +80,15 @@ pub(crate) enum Command {
         /// consumers that always fetch full objects.
         #[arg(long)]
         full_selection: bool,
+        /// Output layout (issue #304). `default` is today's monolithic
+        /// layout (`src/models.ts`, `src/client.ts`, ...) and stays
+        /// byte-identical forever. `swr` emits one `src/models/<model>.ts`
+        /// per model (types + plain framework-free async functions) and a
+        /// `src/procedures.ts` for procedures — the structural foundation
+        /// #305 builds SWR hooks on top of. `swr` does not support
+        /// `transport grpc` schemas yet.
+        #[arg(long, value_enum, default_value_t = TypeScriptPresetArg::Default)]
+        preset: TypeScriptPresetArg,
     },
     /// Emit a `.proto` file describing the schema's messages/enums
     /// (no `service` block — that needs `transport grpc`, ticket #170)
@@ -77,6 +108,32 @@ pub(crate) enum Command {
         package: Option<String>,
         /// Drift-detection mode: rebuild the lock and `.proto` text in
         /// memory and compare against what's on disk instead of writing.
+        #[arg(long)]
+        check: bool,
+    },
+    /// Emit WireMock stub mappings (one per procedure) derived from the
+    /// schema's own `procedure`/`mutation procedure` declarations, so
+    /// integration/e2e tests can run against a mock backend whose wire
+    /// contract can't drift from the real one without regenerating.
+    /// v1 scope: happy-path stubs for procedures only — see
+    /// `cratestack_mock_wiremock`'s crate docs and
+    /// `docs/design/wiremock-stubs.md` for what's covered.
+    #[command(name = "generate-wiremock")]
+    GenerateWiremock {
+        #[arg(long)]
+        schema: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
+        /// Prefix prepended to every stub's `urlPath`, matching the
+        /// same-named flag on `generate-dart`/`generate-typescript` —
+        /// must agree with whatever prefix the deployed server (and any
+        /// generated client being tested against this mock) are
+        /// configured with.
+        #[arg(long, default_value = "/api")]
+        base_path: String,
+        /// Drift-detection mode: generate in memory and diff against
+        /// `--out` instead of writing. Exits non-zero and lists the
+        /// files that differ if the two don't match.
         #[arg(long)]
         check: bool,
     },
@@ -174,6 +231,62 @@ pub(crate) enum MigrateAction {
         #[arg(long)]
         allow_destructive: bool,
     },
+    /// Adopt an already-existing database as the starting point for
+    /// `migrate diff` (issue #205, design doc
+    /// `docs/design/migrate-baseline.md`). Introspects `--database-url`,
+    /// prints a drift report against `--schema` grouped by table, and
+    /// writes the snapshot from the introspected shape — plus a
+    /// synthetic row in `cratestack_migrations` recording the
+    /// adoption, so `apply_pending()` doesn't try to recreate what
+    /// baseline already accounted for. Refuses to run if a snapshot
+    /// already exists at the target path.
+    Baseline {
+        #[arg(long)]
+        schema: PathBuf,
+        /// Postgres connection string to introspect. Required (unlike
+        /// `migrate diff`, baseline has nothing to do without a live
+        /// database) — also the database the synthetic baseline row
+        /// is recorded into.
+        #[arg(long)]
+        database_url: String,
+        /// Root directory for per-backend migration trees, matching
+        /// `migrate diff`'s default and flag.
+        #[arg(long, default_value = "migrations")]
+        out_dir: PathBuf,
+        /// Baseline is Postgres-only for v1 (design doc §6, open
+        /// question 2 — no long-lived "existing production database"
+        /// story exists for embedded/SQLite targets today). The flag
+        /// exists so the surface matches `migrate diff`'s and a future
+        /// backend doesn't need a breaking CLI change; `postgres` is
+        /// the only accepted value right now.
+        #[arg(long, value_enum, default_value_t = BaselineBackendArg::Postgres)]
+        backend: BaselineBackendArg,
+        /// Fail (non-zero exit, no writes) if any drift is found
+        /// between the live database and `--schema`, instead of the
+        /// default report-and-succeed behavior. For teams that want
+        /// baselining to double as a "prove the schema already
+        /// matches" CI gate.
+        #[arg(long)]
+        strict: bool,
+    },
+}
+
+/// CLI-facing mirror of `cratestack_client_dart::DartPreset` — kept as a
+/// separate `ValueEnum` (rather than deriving `ValueEnum` on the library
+/// type itself) so the library crate doesn't need a `clap` dependency.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub(crate) enum DartPresetArg {
+    Default,
+    Riverpod,
+}
+
+impl From<DartPresetArg> for cratestack_client_dart::DartPreset {
+    fn from(value: DartPresetArg) -> Self {
+        match value {
+            DartPresetArg::Default => cratestack_client_dart::DartPreset::Default,
+            DartPresetArg::Riverpod => cratestack_client_dart::DartPreset::Riverpod,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -183,8 +296,29 @@ pub(crate) enum MigrateBackendArg {
     Both,
 }
 
+/// `migrate baseline`'s `--backend` value set — deliberately just
+/// `Postgres` (not [`MigrateBackendArg`]'s three variants) so
+/// "baseline is Postgres-only for v1" is enforced at the type level
+/// rather than by rejecting `Sqlite`/`Both` at runtime.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub(crate) enum BaselineBackendArg {
+    Postgres,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 pub(crate) enum OutputFormat {
     Human,
     Json,
+}
+
+/// CLI-facing mirror of `cratestack_client_typescript::TypeScriptPreset`
+/// (issue #304) — `clap::ValueEnum` needs its own type, not the library's,
+/// so `cli_handlers::handle_generate_typescript` converts one to the
+/// other. Variant names and the default match the Dart CLI's sibling flag
+/// (#297) so `generate-typescript --preset swr` and `generate-dart
+/// --preset swr` stay consistent for anyone using both.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub(crate) enum TypeScriptPresetArg {
+    Default,
+    Swr,
 }

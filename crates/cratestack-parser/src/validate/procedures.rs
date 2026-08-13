@@ -1,3 +1,5 @@
+use cratestack_core::ExtensionKind;
+
 use crate::diagnostics::{SchemaError, span_error};
 
 /// Parse and validate the `@isolation("...")` procedure attribute. At most
@@ -181,6 +183,168 @@ pub(super) fn validate_procedure_deprecated_attribute(
         return Err(span_error(
             format!(
                 "procedure `{}` @deprecated argument must be a quoted string",
+                procedure.name,
+            ),
+            attr.span,
+        ));
+    }
+    Ok(())
+}
+
+/// Validate `@status(202)` on procedures. Declares the REST transport's
+/// success-path (`Ok(...)`) HTTP status; `CoolError`'s own status mapping
+/// governs the `Err` branch unconditionally and is untouched by this
+/// attribute (`crates/cratestack-axum/src/transport/encode_unary.rs`).
+/// Restricted to `200..=299`: `CoolError` already owns the 3xx/4xx/5xx
+/// space, so anything outside 2xx here would create two competing sources
+/// of truth for a response's error status. The exact 2xx boundary (e.g.
+/// whether `200`/`204` should be rejected as redundant-or-nonsensical) is
+/// an open design question the source issue explicitly reserves for the
+/// maintainer — see cratestack#407 — so this only enforces "is a real
+/// 2xx", nothing stricter.
+///
+/// Known limitation, deliberately left unenforced here (a maintainer
+/// decision, not something to silently narrow): `@status(204)` is
+/// accepted by this `200..=299` range check but `encode_response`
+/// (`crates/cratestack-axum/src/transport/encode_unary.rs`) always
+/// serializes and attaches a body regardless of status, so a declared
+/// `204` currently produces a `204 No Content` response that carries a
+/// body — a protocol violation per RFC 9110 §15.3.5. Tracked as a
+/// follow-up rather than fixed here.
+///
+/// Transport-scoped: this attribute only has REST semantics
+/// (`generate_procedure_axum_handler` threads it through the REST
+/// success-path encoder). `generate_procedure_axum_handler` also backs
+/// the RPC unary dispatch arm (`crate::transport::rpc`) — `#dispatch_ident`
+/// is shared across REST and RPC — so an unrejected `@status` on a
+/// `transport rpc` schema would silently become wire-visible there too
+/// (`convert_handler_error_response` passes any `is_success()` HTTP
+/// status through unchanged onto the RPC envelope). Rejected here at
+/// schema-compile time instead of extended to RPC: whether RPC should
+/// honour a declared status is a real design question left to the
+/// maintainer, not something to decide by extending scope silently.
+/// gRPC (`TransportStyle::Grpc`) is left unrestricted — tonic's gRPC
+/// status model never reads the inner HTTP status this attribute
+/// controls, so the combination is inert there, not silently wrong.
+pub(super) fn validate_procedure_status_attribute(
+    procedure: &cratestack_core::Procedure,
+    schema: &cratestack_core::Schema,
+) -> Result<(), SchemaError> {
+    let matches: Vec<&cratestack_core::Attribute> = procedure
+        .attributes
+        .iter()
+        .filter(|a| a.raw.starts_with("@status"))
+        .collect();
+    if matches.is_empty() {
+        return Ok(());
+    }
+    if matches.len() > 1 {
+        return Err(span_error(
+            format!(
+                "procedure `{}` declares more than one @status attribute",
+                procedure.name,
+            ),
+            matches[1].span,
+        ));
+    }
+    let attr = matches[0];
+    if schema.transport == cratestack_core::TransportStyle::Rpc {
+        return Err(span_error(
+            format!(
+                "procedure `{}` declares @status, which is a REST-only attribute, but this \
+                 schema declares `transport rpc` — RPC unary dispatch shares the same handler \
+                 REST uses, so @status would silently change the RPC response's HTTP status; \
+                 remove @status from this procedure or switch the schema back to `transport rest`",
+                procedure.name,
+            ),
+            attr.span,
+        ));
+    }
+    let inner = attr
+        .raw
+        .strip_prefix("@status(")
+        .and_then(|s| s.strip_suffix(')'))
+        .ok_or_else(|| {
+            span_error(
+                format!(
+                    "procedure `{}` @status requires a numeric status code argument like @status(202)",
+                    procedure.name,
+                ),
+                attr.span,
+            )
+        })?
+        .trim();
+    let code: u16 = inner.parse().map_err(|_| {
+        span_error(
+            format!(
+                "procedure `{}` @status argument must be an integer HTTP status code, got `{inner}`",
+                procedure.name,
+            ),
+            attr.span,
+        )
+    })?;
+    if !(200..=299).contains(&code) {
+        return Err(span_error(
+            format!(
+                "procedure `{}` @status({code}) is outside the allowed 2xx range 200..=299 \
+                 — non-2xx status is CoolError's error-mapping's job, not @status's",
+                procedure.name,
+            ),
+            attr.span,
+        ));
+    }
+    Ok(())
+}
+
+/// Validate the bare `@no_rate_limit` procedure attribute
+/// (`docs/design/extensions.md` §5). It takes no arguments (mirrors
+/// `@deprecated`'s bare form above) and is only valid syntax when the
+/// enclosing schema has declared `extension rate_limit { }` — declaring the
+/// extension is what unlocks the attribute at all (layer 1 of the extension
+/// model, `docs/design/extensions.md` §2); using it without that declaration
+/// is a validation error here, distinct from and earlier than the Cargo
+/// feature check `cratestack-macros`' `extension_gate` module performs at
+/// macro-expansion time (layer 2).
+pub(super) fn validate_procedure_no_rate_limit_attribute(
+    procedure: &cratestack_core::Procedure,
+    schema: &cratestack_core::Schema,
+) -> Result<(), SchemaError> {
+    let matches: Vec<&cratestack_core::Attribute> = procedure
+        .attributes
+        .iter()
+        .filter(|a| a.raw == "@no_rate_limit" || a.raw.starts_with("@no_rate_limit("))
+        .collect();
+    if matches.is_empty() {
+        return Ok(());
+    }
+    if matches.len() > 1 {
+        return Err(span_error(
+            format!(
+                "procedure `{}` declares more than one @no_rate_limit attribute",
+                procedure.name,
+            ),
+            matches[1].span,
+        ));
+    }
+    let attr = matches[0];
+    if attr.raw != "@no_rate_limit" {
+        return Err(span_error(
+            format!(
+                "procedure `{}` @no_rate_limit does not take any arguments",
+                procedure.name,
+            ),
+            attr.span,
+        ));
+    }
+    if !schema
+        .declared_extensions
+        .contains(&ExtensionKind::RateLimit)
+    {
+        return Err(span_error(
+            format!(
+                "procedure `{}` uses @no_rate_limit, but this schema does not declare \
+                 `extension rate_limit {{ }}` — add the extension block before opting a \
+                 procedure out of rate limiting",
                 procedure.name,
             ),
             attr.span,

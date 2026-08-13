@@ -21,10 +21,12 @@ use support::pg;
 include_server_schema!("tests/fixtures/banking_batches.cstack", db = Postgres);
 
 async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
-    query("DROP TABLE IF EXISTS cratestack_audit, cratestack_event_outbox, batch_rows")
-        .execute(pool)
-        .await
-        .expect("drop tables");
+    query(
+        "DROP TABLE IF EXISTS cratestack_audit, cratestack_event_outbox, batch_rows, unique_pairs",
+    )
+    .execute(pool)
+    .await
+    .expect("drop tables");
     query(
         "CREATE TABLE batch_rows (
             id BIGINT PRIMARY KEY,
@@ -36,6 +38,18 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     .execute(pool)
     .await
     .expect("create batch_rows");
+    query(
+        "CREATE TABLE unique_pairs (
+            id BIGINT PRIMARY KEY,
+            scope TEXT NOT NULL,
+            key TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            UNIQUE(scope, key)
+        )",
+    )
+    .execute(pool)
+    .await
+    .expect("create unique_pairs");
 }
 
 fn operator() -> CoolContext {
@@ -54,7 +68,7 @@ fn ok_value(
     }
 }
 
-fn err_code(item: &cratestack::BatchItemResult<cratestack_schema::BatchRow>) -> &str {
+fn err_code<T>(item: &cratestack::BatchItemResult<T>) -> &str {
     match &item.status {
         BatchItemStatus::Error { error } => error.code.as_str(),
         BatchItemStatus::Ok { .. } => {
@@ -408,6 +422,164 @@ async fn batch_duplicate_pk_rejects_before_any_audit_or_outbox_write() {
         .map(|row| row.get(0))
         .unwrap_or(0);
     assert_eq!(outbox_count, 0);
+}
+
+// ───── batch equivalent of #267/#269: unique violations must map to
+// CONFLICT, not a generic DATABASE_ERROR ─────────────────────────────────
+//
+// `unique_pairs` carries a real `UNIQUE(scope, key)` constraint distinct
+// from its PK (mirrors `Pair` in builder_extensions_tier2.cstack). Each
+// per-item batch write (`batch_create`/`batch_update`/`batch_upsert`) runs
+// its terminal INSERT/UPDATE/UPSERT through `classify_unique_violation`,
+// which must map SQLSTATE 23505 to `CoolError::Conflict` — matching the
+// single-row `.create()`/`.update()` paths' semantics — instead of losing
+// it as an opaque `CoolError::Database` string.
+
+#[tokio::test]
+async fn batch_create_unique_constraint_violation_maps_to_conflict() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+
+    let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
+    let ctx = operator();
+
+    // Two items collide on (scope, key) despite distinct PKs.
+    let response = cool
+        .unique_pair()
+        .batch_create(vec![
+            cratestack_schema::CreateUniquePairInput {
+                id: 1,
+                scope: "shared".into(),
+                key: "dup".into(),
+                payload: "v1".into(),
+            },
+            cratestack_schema::CreateUniquePairInput {
+                id: 2,
+                scope: "shared".into(),
+                key: "dup".into(),
+                payload: "v2".into(),
+            },
+        ])
+        .run(&ctx)
+        .await
+        .expect("batch_create infra ok despite per-item failure");
+
+    assert_eq!(response.summary.ok, 1);
+    assert_eq!(response.summary.err, 1);
+    assert_eq!(
+        err_code(&response.results[1]),
+        "CONFLICT",
+        "unique-constraint violation must map to CONFLICT, not a generic DATABASE_ERROR",
+    );
+}
+
+#[tokio::test]
+async fn batch_update_unique_constraint_violation_maps_to_conflict() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+
+    let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
+    let ctx = operator();
+
+    cool.unique_pair()
+        .batch_create(vec![
+            cratestack_schema::CreateUniquePairInput {
+                id: 1,
+                scope: "shared".into(),
+                key: "abc".into(),
+                payload: "v1".into(),
+            },
+            cratestack_schema::CreateUniquePairInput {
+                id: 2,
+                scope: "shared".into(),
+                key: "xyz".into(),
+                payload: "v2".into(),
+            },
+        ])
+        .run(&ctx)
+        .await
+        .expect("seed");
+
+    // Retarget item 2's key onto item 1's (scope, key). Before the fix,
+    // `update_item.rs`'s terminal UPDATE had no 23505 classification at
+    // all, so this surfaced as a generic DATABASE_ERROR.
+    let response = cool
+        .unique_pair()
+        .batch_update(vec![(
+            2,
+            cratestack_schema::UpdateUniquePairInput {
+                scope: None,
+                key: Some("abc".into()),
+                payload: None,
+            },
+            None,
+        )])
+        .run(&ctx)
+        .await
+        .expect("batch_update infra ok despite per-item failure");
+
+    assert_eq!(response.summary.err, 1);
+    assert_eq!(
+        err_code(&response.results[0]),
+        "CONFLICT",
+        "unique-constraint violation on update must map to CONFLICT",
+    );
+}
+
+#[tokio::test]
+async fn batch_upsert_unique_constraint_violation_maps_to_conflict() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+
+    let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
+    let ctx = operator();
+
+    cool.unique_pair()
+        .create(cratestack_schema::CreateUniquePairInput {
+            id: 1,
+            scope: "shared".into(),
+            key: "abc".into(),
+            payload: "v1".into(),
+        })
+        .run(&ctx)
+        .await
+        .expect("seed existing row");
+
+    // New id — so `ON CONFLICT (id)` doesn't absorb it — but the same
+    // (scope, key) as the seeded row, hitting the secondary UNIQUE
+    // constraint on the INSERT branch. Before the fix, `upsert_sql.rs`'s
+    // terminal upsert had no 23505 classification, so this surfaced as a
+    // generic DATABASE_ERROR.
+    let response = cool
+        .unique_pair()
+        .batch_upsert(vec![cratestack_schema::CreateUniquePairInput {
+            id: 2,
+            scope: "shared".into(),
+            key: "abc".into(),
+            payload: "v2".into(),
+        }])
+        .run(&ctx)
+        .await
+        .expect("batch_upsert infra ok despite per-item failure");
+
+    assert_eq!(response.summary.err, 1);
+    assert_eq!(
+        err_code(&response.results[0]),
+        "CONFLICT",
+        "unique-constraint violation on upsert must map to CONFLICT",
+    );
 }
 
 // Tiny conversion helper that lets us spell out a row's columns in a

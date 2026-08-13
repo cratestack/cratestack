@@ -21,8 +21,8 @@ use cratestack_core::{Model, TypeArity};
 use quote::quote;
 
 use crate::relation::{
-    generate_relation_include_arm, generate_relation_include_fields_validation_arm,
-    generate_relation_include_path_validation_arm, generate_relation_order_by_arms,
+    generate_model_order_catalog, generate_relation_include_arm,
+    generate_relation_include_fields_validation_arm, generate_relation_include_path_validation_arm,
     generate_relation_query_guard,
 };
 use crate::shared::{model_name_set, relation_model_fields, scalar_model_fields};
@@ -53,10 +53,7 @@ pub(crate) fn generate_model_axum_handlers(
         .into_iter()
         .map(|field| generate_order_by_arm(field_module_ident, field))
         .collect();
-    let relation_order_by_arms = relation_model_fields(model, &model_names)
-        .into_iter()
-        .map(|field| generate_relation_order_by_arms(model, field, models))
-        .collect::<Result<Vec<_>, String>>()?;
+    let order_catalog = generate_model_order_catalog(model, models)?;
     let relation_include_arms = relation_model_fields(model, &model_names)
         .into_iter()
         .map(|field| {
@@ -76,7 +73,6 @@ pub(crate) fn generate_model_axum_handlers(
         query_filter_arms,
         relation_filter_guards,
         order_by_arms,
-        relation_order_by_arms,
         relation_include_arms,
         relation_include_path_validation_arms,
         relation_include_fields_validation_arms,
@@ -84,7 +80,7 @@ pub(crate) fn generate_model_axum_handlers(
 
     let query_helpers = builders::build_query_helpers(&p, &arms);
     let validate_helpers = builders::build_validate_helpers(&p, &arms);
-    let projection_helpers = serializers::build_projection_helpers(&p);
+    let projection_helpers = serializers::build_projection_helpers(&p, model, &model_names);
     let serialize_helper = serializers::build_serialize_helper(&p, &arms);
     let list_builder = serializers::build_list_builder(&p, &arms);
     let list_handler = handlers_list::build_list_handler(&p);
@@ -96,6 +92,7 @@ pub(crate) fn generate_model_axum_handlers(
     let _ = TypeArity::List; // ensure import used (referenced via prep)
 
     Ok(quote! {
+        #order_catalog
         #query_helpers
         #validate_helpers
         #projection_helpers

@@ -1,14 +1,22 @@
 //! `transport grpc` server codegen (ticket #171,
 //! `docs/design/protobuf.md` §7). Orchestrates:
 //!
-//! 1. [`lock`] — read + validate the committed `<schema>.pb.lock`.
-//! 2. [`message`]/[`update_message`] — `pb::{Model,TypeDecl,Create<M>Input,
+//! 1. [`crate::include::grpc_pb::lock`] — read + validate the committed
+//!    `<schema>.pb.lock`.
+//! 2. [`crate::include::grpc_pb::message`]/[`crate::include::grpc_pb::
+//!    update_message`] — `pb::{Model,TypeDecl,Create<M>Input,
 //!    Update<M>Input}` mirror structs + `From`/`TryFrom` domain
-//!    conversions.
+//!    conversions. Shared with `include::client::grpc` (ticket #209) via
+//!    `crate::include::grpc_pb::build_domain_pb_items` — see that module's
+//!    doc for why this part of the pb surface is role-agnostic.
 //! 3. [`rpc_inputs`]/[`rpc_list`] — the gRPC-only request/response wrapper
 //!    messages (`<Model>RpcPkInput`, `<Model>RpcUpdateInput`,
 //!    `<Model>RpcListInput`, `StringList`, `RpcListPredicate`,
-//!    `PageOf<Model>`, `PageInfo`).
+//!    `PageOf<Model>`, `PageInfo`). **Server-only** — these bake in
+//!    decode-only inherent methods only the hand-rolled service below
+//!    calls; `include::client::grpc::rpc_inputs` builds its own
+//!    encode-facing equivalents rather than reusing these (see that
+//!    module's doc).
 //! 4. [`service`] — the hand-rolled tonic service (`tower::Service` +
 //!    `NamedService`) whose method bodies decode a pb request, call the
 //!    same `super::axum::handle_*_dispatch` fn REST/RPC already call (via
@@ -23,27 +31,33 @@
 //! rejected the schema with a `compile_error!` before this module runs
 //! otherwise, so everything below can assume the feature is live.
 //!
-//! **Scope note (ticket #171, judgment call):** this pass covers model
-//! CRUD (`list`/`get`/`create`/`update`/`delete`) end to end, including
-//! server streaming plumbing shared with procedures. `transport grpc`
-//! *procedures* are not yet wired into the generated service — a model
-//! with no primary key or with `create` policy-gated off already narrows
-//! correctly (mirroring `cratestack-proto::emit::service`'s own gating),
-//! but a schema with `procedure` declarations gets no gRPC method for
-//! them yet. Tracked as follow-up rather than attempted here given the
-//! ticket's own risk register ("may need splitting once ticket 3 lands
-//! and the shape is concrete").
+//! **Scope (ticket #171 model CRUD, ticket #208 procedures):** this pass
+//! covers model CRUD (`list`/`get`/`create`/`update`/`delete`) end to
+//! end — a model with no primary key or with `create` policy-gated off
+//! already narrows correctly (mirroring `cratestack-proto::emit::
+//! service`'s own gating) — *and* `procedure` declarations, unary or
+//! server-streaming per [`cratestack_core::TypeArity::List`] (see
+//! [`service::build_service`]'s doc for exactly what "server-streaming"
+//! means here). [`procedures`] builds the per-procedure `pb::<Base>
+//! {Input,Output}` mirror messages; any `Page<T>` a procedure returns
+//! that isn't already covered by a model-with-pk's own `PageOf<Model>`
+//! (below) gets its `PageOf<Item>` synthesized here too, deduplicated
+//! against both sources the same way `cratestack-proto::emit::
+//! synth_page::synthesize_pages` already deduplicates them in the
+//! `.pb.lock`/`.proto`.
 
-mod fields;
-mod lock;
-mod message;
+mod api_server;
+mod arm_support;
+mod crud_arm_list;
+mod crud_arm_spec;
+mod crud_arms;
+mod procedure_arms;
+mod procedures;
 mod rpc_inputs;
 mod rpc_list;
-mod scalar;
 mod service;
-mod update_message;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::path::Path;
 
 use cratestack_core::{Schema, TransportStyle};
@@ -51,11 +65,7 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::LitStr;
 
-use crate::shared::{
-    is_generated_on_create, is_primary_key, is_readonly_field, is_server_only_field,
-    is_version_field,
-};
-use fields::{model_allows_create, scalar_model_fields, visible_model_fields, visible_type_fields};
+use crate::include::grpc_pb::{build_domain_pb_items, models_with_pk, numbers_for};
 
 pub(super) fn build_grpc_module(
     schema: &Schema,
@@ -68,90 +78,16 @@ pub(super) fn build_grpc_module(
 
     let extra_messages = cratestack_proto::synthesize_messages(schema)
         .map_err(|error| super::collect::compile_error(schema_path, error.to_string()))?;
-    let pb_lock = lock::load_pb_lock(schema, schema_resolved, &extra_messages)
-        .map_err(|error| super::collect::compile_error(schema_path, error))?;
+    let pb_lock =
+        crate::include::grpc_pb::lock::load_pb_lock(schema, schema_resolved, &extra_messages)
+            .map_err(|error| super::collect::compile_error(schema_path, error))?;
 
-    let model_names: BTreeSet<&str> = schema.models.iter().map(|m| m.name.as_str()).collect();
     let enum_names: BTreeSet<&str> = schema.enums.iter().map(|e| e.name.as_str()).collect();
 
-    let mut pb_items = Vec::new();
-
-    for model in &schema.models {
-        let numbers = numbers_for(&pb_lock, &model.name)
-            .map_err(|error| super::collect::compile_error(schema_path, error))?;
-        let fields = visible_model_fields(model);
-        let domain_path = {
-            let ident = crate::shared::ident(&model.name);
-            quote! { super::super::#ident }
-        };
-        let rendered =
-            message::render_message(&model.name, domain_path, &fields, numbers, &enum_names)
-                .map_err(|error| super::collect::compile_error(schema_path, error))?;
-        pb_items.push(rendered.tokens);
-
-        if model_allows_create(model) {
-            let create_name = format!("Create{}Input", model.name);
-            let create_numbers = numbers_for(&pb_lock, &create_name)
-                .map_err(|error| super::collect::compile_error(schema_path, error))?;
-            let create_fields = scalar_model_fields(model, &model_names)
-                .into_iter()
-                .filter(|field| !is_generated_on_create(field))
-                .collect::<Vec<_>>();
-            let create_ident = crate::shared::ident(&create_name);
-            let rendered = message::render_message(
-                &create_name,
-                quote! { super::super::#create_ident },
-                &create_fields,
-                create_numbers,
-                &enum_names,
-            )
-            .map_err(|error| super::collect::compile_error(schema_path, error))?;
-            pb_items.push(rendered.tokens);
-        }
-
-        let update_name = format!("Update{}Input", model.name);
-        let update_numbers = numbers_for(&pb_lock, &update_name)
-            .map_err(|error| super::collect::compile_error(schema_path, error))?;
-        let update_fields = update_input_fields(model, &model_names);
-        let update_ident = crate::shared::ident(&update_name);
-        let rendered = update_message::render_update_message(
-            &update_name,
-            quote! { super::super::#update_ident },
-            &update_fields,
-            update_numbers,
-            &enum_names,
-        )
+    let mut pb_items = build_domain_pb_items(schema, &pb_lock, &enum_names)
         .map_err(|error| super::collect::compile_error(schema_path, error))?;
-        pb_items.push(rendered.tokens);
-    }
 
-    for ty in &schema.types {
-        let numbers = numbers_for(&pb_lock, &ty.name)
-            .map_err(|error| super::collect::compile_error(schema_path, error))?;
-        let fields = visible_type_fields(ty);
-        let ty_ident = crate::shared::ident(&ty.name);
-        let rendered = message::render_message(
-            &ty.name,
-            quote! { super::super::#ty_ident },
-            &fields,
-            numbers,
-            &enum_names,
-        )
-        .map_err(|error| super::collect::compile_error(schema_path, error))?;
-        pb_items.push(rendered.tokens);
-    }
-
-    let models_with_pk: Vec<(&cratestack_core::Model, &cratestack_core::Field)> = schema
-        .models
-        .iter()
-        .filter_map(|model| {
-            model
-                .fields
-                .iter()
-                .find(|field| is_primary_key(field))
-                .map(|pk| (model, pk))
-        })
-        .collect();
+    let models_with_pk = models_with_pk(schema);
 
     if !models_with_pk.is_empty() {
         let string_list_numbers = numbers_for(&pb_lock, "StringList")
@@ -201,6 +137,50 @@ pub(super) fn build_grpc_module(
         }
     }
 
+    // Ticket #208: per-procedure `<Base>Input`/`<Base>Output` mirrors,
+    // plus any `PageOf<Item>` a `Page<T>`-returning procedure needs that
+    // the models-with-pk loop above didn't already emit — deduplicated
+    // the same way `cratestack-proto::emit::synth_page::synthesize_pages`
+    // deduplicates the two sources in the `.pb.lock`/`.proto` itself, so
+    // a schema where a model's own `list` and a procedure both return
+    // `Page<SameModel>` gets exactly one `PageOfSameModel` mirror.
+    let covered_pages: BTreeSet<String> = models_with_pk
+        .iter()
+        .map(|(model, _)| format!("PageOf{}", model.name))
+        .collect();
+    let mut extra_pages_emitted: BTreeSet<String> = BTreeSet::new();
+    for procedure in &schema.procedures {
+        let base = cratestack_proto::to_pascal_case(&procedure.name);
+        let input_numbers = numbers_for(&pb_lock, &format!("{base}Input"))
+            .map_err(|error| super::collect::compile_error(schema_path, error))?;
+        pb_items.push(
+            procedures::render_procedure_input(procedure, input_numbers, &enum_names)
+                .map_err(|error| super::collect::compile_error(schema_path, error))?,
+        );
+        let output_numbers = numbers_for(&pb_lock, &format!("{base}Output"))
+            .map_err(|error| super::collect::compile_error(schema_path, error))?;
+        pb_items.push(
+            procedures::render_procedure_output(procedure, output_numbers, &enum_names)
+                .map_err(|error| super::collect::compile_error(schema_path, error))?,
+        );
+
+        let Some(item) = procedure.return_type.page_item() else {
+            continue;
+        };
+        let message_name = format!("PageOf{}", item.name);
+        if covered_pages.contains(&message_name)
+            || !extra_pages_emitted.insert(message_name.clone())
+        {
+            continue;
+        }
+        let page_numbers = numbers_for(&pb_lock, &message_name)
+            .map_err(|error| super::collect::compile_error(schema_path, error))?;
+        pb_items.push(
+            rpc_list::render_page_of(&item.name, page_numbers)
+                .map_err(|error| super::collect::compile_error(schema_path, error))?,
+        );
+    }
+
     let package = pb_lock.package.clone().unwrap_or_default();
     let service_tokens = service::build_service(schema, &package, &models_with_pk);
 
@@ -212,32 +192,4 @@ pub(super) fn build_grpc_module(
             #service_tokens
         }
     })
-}
-
-fn numbers_for<'a>(
-    lock: &'a cratestack_proto::PbLock,
-    message: &str,
-) -> Result<&'a BTreeMap<String, i32>, String> {
-    lock.messages
-        .get(message)
-        .map(|entry| &entry.fields)
-        .ok_or_else(|| format!("no `.pb.lock` entry for message `{message}`"))
-}
-
-/// Mirrors `crate::model::inputs::update_input_fields` (PK/`@readonly`/
-/// `@server_only`/`@version` excluded) — see `update_message.rs`'s module
-/// doc for why this must match the *domain* `Update<M>Input` struct's
-/// field set exactly, not `cratestack-proto`'s own (slightly broader)
-/// `Update<M>Input` lock entry.
-fn update_input_fields<'a>(
-    model: &'a cratestack_core::Model,
-    model_names: &BTreeSet<&str>,
-) -> Vec<&'a cratestack_core::Field> {
-    scalar_model_fields(model, model_names)
-        .into_iter()
-        .filter(|field| !is_primary_key(field))
-        .filter(|field| !is_readonly_field(field))
-        .filter(|field| !is_server_only_field(field))
-        .filter(|field| !is_version_field(field))
-        .collect()
 }

@@ -2,6 +2,7 @@
 name = "cratestack-cli"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 description.workspace = true
@@ -11,6 +12,9 @@ documentation.workspace = true
 readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
+
+[lints]
+workspace = true
 
 [[bin]]
 name = "cratestack"
@@ -28,20 +32,88 @@ pkg-fmt = "tgz"
 [package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
 pkg-fmt = "zip"
 
+[features]
+# Forwards to `cratestack-core`'s mutually-exclusive decimal backend choice
+# (see that crate's Cargo.toml for the full rationale). Required because
+# `cratestack-core`'s dependency edge has `default-features = false` at the
+# workspace root — every direct consumer must explicitly re-select a
+# backend, or `cratestack-core` fails to compile at all (cratestack#495).
+# Also forwards to `cratestack-sqlx`, `cratestack-parser`, `cratestack-proto`,
+# `cratestack-migrate`, `cratestack-studio`, `cratestack-mock-wiremock`,
+# `cratestack-client-dart`, and `cratestack-client-typescript` — this
+# crate's other direct `cratestack-core`-consuming dependencies. The last
+# four were previously plain `.workspace = true` edges with no
+# `default-features = false`, so their own `default = ["decimal-rust-decimal"]`
+# stayed force-enabled regardless of what this feature selected — a
+# `--no-default-features --features decimal-bigdecimal` build hard-failed
+# with a `compile_error!` that pointed nowhere near the real cause (a
+# missing forward, not a real backend conflict). Fixed for cratestack#496 by
+# widening the same `default-features = false` + explicit-forward pattern
+# already used here to those four edges too, so all eight stay in lockstep.
+default = ["decimal-rust-decimal"]
+decimal-rust-decimal = [
+    "cratestack-core/decimal-rust-decimal",
+    "cratestack-sqlx/decimal-rust-decimal",
+    "cratestack-parser/decimal-rust-decimal",
+    "cratestack-proto/decimal-rust-decimal",
+    "cratestack-migrate/decimal-rust-decimal",
+    "cratestack-studio/decimal-rust-decimal",
+    "cratestack-mock-wiremock/decimal-rust-decimal",
+    "cratestack-client-dart/decimal-rust-decimal",
+    "cratestack-client-typescript/decimal-rust-decimal",
+]
+decimal-bigdecimal = [
+    "cratestack-core/decimal-bigdecimal",
+    "cratestack-sqlx/decimal-bigdecimal",
+    "cratestack-parser/decimal-bigdecimal",
+    "cratestack-proto/decimal-bigdecimal",
+    "cratestack-migrate/decimal-bigdecimal",
+    "cratestack-studio/decimal-bigdecimal",
+    "cratestack-mock-wiremock/decimal-bigdecimal",
+    "cratestack-client-dart/decimal-bigdecimal",
+    "cratestack-client-typescript/decimal-bigdecimal",
+]
+
 [dependencies]
 anyhow.workspace = true
 chrono.workspace = true
 clap.workspace = true
-cratestack-client-dart.workspace = true
-cratestack-client-typescript.workspace = true
+# `default-features = false` + explicit forward above (cratestack#495/#496):
+# see the `decimal-rust-decimal`/`decimal-bigdecimal` feature doc comment.
+cratestack-client-dart = { workspace = true, default-features = false }
+cratestack-client-typescript = { workspace = true, default-features = false }
 cratestack-core.workspace = true
-cratestack-migrate.workspace = true
+# `postgres-introspect` unconditional (not opt-in): `migrate baseline`
+# (issue #205) is a normal subcommand of the shipped binary, not a
+# cargo-feature-gated build variant — every `cratestack` binary needs
+# `introspect::postgres` available at runtime.
+cratestack-migrate = { workspace = true, features = ["postgres-introspect"] }
+# `default-features = false` + explicit forward above — same as
+# `cratestack-client-dart`/`-typescript`.
+cratestack-mock-wiremock = { workspace = true, default-features = false }
 cratestack-parser.workspace = true
 cratestack-proto.workspace = true
-cratestack-studio.workspace = true
+# `cratestack-cli`'s first dependency on the runtime migrations-table
+# shape (issue #205): `migrate baseline` seeds a synthetic row via
+# `cratestack_sqlx::{Migration, apply_pending}` so the authoring side
+# (`cratestack-migrate`'s snapshot) and the runtime applier agree on
+# what's already there. See the PR description for the snapshot-only
+# vs. snapshot+synthetic-row design call.
+cratestack-sqlx.workspace = true
+# `default-features = false` + explicit forward above — same as
+# `cratestack-client-dart`/`-typescript`/`-mock-wiremock`. Note this only
+# controls `cratestack-studio`'s own `decimal-rust-decimal`/
+# `decimal-bigdecimal` toggle, not its `embed-ui` feature (still
+# default-on via its own `default = ["embed-ui", "decimal-rust-decimal"]`
+# when this crate doesn't override it — but since we now pass
+# `default-features = false`, `embed-ui` must be re-added explicitly too).
+cratestack-studio = { workspace = true, default-features = false, features = ["embed-ui"] }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+sqlx-core.workspace = true
+sqlx-postgres.workspace = true
+thiserror.workspace = true
 tokio.workspace = true
 url.workspace = true
 

@@ -2,6 +2,7 @@
 name = "cratestack-redis"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 description.workspace = true
@@ -12,9 +13,11 @@ readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 async-trait.workspace = true
-cratestack-axum.workspace = true
 cratestack-core.workspace = true
 redis = { workspace = true, features = ["aio", "tokio-comp", "script", "connection-manager"] }
 sha2.workspace = true
@@ -23,11 +26,35 @@ uuid.workspace = true
 
 [dev-dependencies]
 axum.workspace = true
+# Plain edge: see the `decimal-rust-decimal`/`decimal-bigdecimal` feature
+# forwards below.
+cratestack-axum.workspace = true
 http.workspace = true
+testcontainers = { workspace = true, features = ["http_wait"] }
+testcontainers-modules = { workspace = true, features = ["redis"] }
 tokio.workspace = true
 tower.workspace = true
 
 [features]
+default = ["decimal-rust-decimal"]
+# Forwards to `cratestack-core`'s mutually-exclusive decimal backend choice
+# (see that crate's Cargo.toml for the full rationale). Required because
+# `cratestack-core`'s dependency edge has `default-features = false` at the
+# workspace root — every direct consumer must explicitly re-select a
+# backend, or `cratestack-core` fails to compile at all (cratestack#495).
+# Also forwards to `cratestack-axum`, this crate's dev-dependency-only test
+# fixture — Cargo's feature resolver unifies dev-dependency feature
+# requests with the rest of the graph for the same workspace member, so
+# leaving it on a hardcoded backend would conflict with `--features
+# decimal-bigdecimal` under `cargo test`/`cargo check --all-targets`.
+decimal-rust-decimal = [
+    "cratestack-core/decimal-rust-decimal",
+    "cratestack-axum/decimal-rust-decimal",
+]
+decimal-bigdecimal = [
+    "cratestack-core/decimal-bigdecimal",
+    "cratestack-axum/decimal-bigdecimal",
+]
 # Enables `rediss://` (TLS) connections against a Postgres-managed or
 # self-hosted Redis whose only listener is TLS — common for managed/HA
 # Redis behind a private CA. Forwards to the upstream `redis` crate's

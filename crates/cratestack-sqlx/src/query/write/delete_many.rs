@@ -8,7 +8,8 @@
 
 use cratestack_core::{BatchSummary, CoolContext, CoolError};
 
-use crate::{FilterExpr, ModelDescriptor, SqlxRuntime, sqlx};
+use crate::audit::{RunInTxOutcome, dispatch_audit_sink};
+use crate::{FilterExpr, ModelDescriptor, SqlxRuntime, cool_error_from_sqlx, sqlx};
 
 use super::delete_many_exec::run_delete_many_in_tx;
 
@@ -72,32 +73,31 @@ impl<'a, M: 'static, PK: 'static> DeleteMany<'a, M, PK> {
     {
         let runtime = self.runtime;
         let descriptor = self.descriptor;
-        let mut tx = runtime
-            .pool()
-            .begin()
-            .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
-        let (summary, emits_event) =
+        let mut tx = runtime.pool().begin().await.map_err(cool_error_from_sqlx)?;
+        let (summary, emits_event, audit_events) =
             run_delete_many_in_tx(&mut tx, runtime, descriptor, &self.filters, ctx).await?;
-        tx.commit()
-            .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+        tx.commit().await.map_err(cool_error_from_sqlx)?;
         if emits_event {
             let _ = runtime.drain_event_outbox().await;
         }
+        dispatch_audit_sink(runtime, &audit_events).await;
         Ok(summary)
     }
 
+    /// Neither the `AuditSink` fan-out nor the event outbox drain
+    /// happens here — see `create.rs`'s `run_in_tx` doc comment for the
+    /// full contract and how a caller opts into both after their own
+    /// commit.
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
         ctx: &CoolContext,
-    ) -> Result<BatchSummary, CoolError>
+    ) -> Result<RunInTxOutcome<BatchSummary>, CoolError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
     {
-        let (summary, _) =
+        let (summary, _emits_event, audit_events) =
             run_delete_many_in_tx(tx, self.runtime, self.descriptor, &self.filters, ctx).await?;
-        Ok(summary)
+        Ok(RunInTxOutcome::new(summary, audit_events))
     }
 }

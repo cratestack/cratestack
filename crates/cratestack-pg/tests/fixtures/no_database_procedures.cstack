@@ -1,0 +1,18 @@
+// cratestack#327: `datasource { provider = "none" }` declares a no-database,
+// procedures-only schema. No `model` blocks are allowed here (the parser
+// rejects them) — only types and procedures.
+
+datasource db {
+  provider = "none"
+}
+
+type PingArgs {
+  message String
+}
+
+type PingReply {
+  echo String
+}
+
+procedure ping(args: PingArgs): PingReply
+  @allow(auth() != null)

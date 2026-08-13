@@ -1,0 +1,127 @@
+// Issue #302: one `@riverpod` provider per operation, built by watching
+// `{{ accessor.provider_name }}` — the existing `Provider<{{ accessor.api_class_name }}>`
+// relocated by #301 (right above this block) — never the adapter/client
+// providers in `client.dart` directly. Overriding
+// `{{ provider_prefix }}AdapterProvider` alone (the pre-existing Dio
+// override point) is enough to change what every provider below does.
+
+{% if is_rest %}
+// Issue #331: `query` forwards straight to the underlying `XApi`
+// method's own `CratestackFetchQuery?`/`CratestackListQuery?` parameter
+// — the same fully-featured filter/pagination/sort/field-selection
+// builder `rest-queries.dart.j2` already gives the plain, non-Riverpod
+// client. Both query classes carry hand-rolled `operator ==`/
+// `hashCode` (see `rest-queries.dart.j2`'s own comment) specifically so
+// this works as a `@riverpod` family argument: a freshly-constructed
+// query with the same values as a previous one must be `==` to it, or
+// Riverpod's family cache never dedupes and the provider restarts
+// `AsyncLoading` on every rebuild.
+@riverpod
+Future<{{ model_api.model_name }}> {{ operations.get_function_name }}(
+  Ref ref,
+  {{ model_api.primary_key_type }} id, {
+  CratestackFetchQuery? query,
+}) {
+  return ref.watch({{ accessor.provider_name }}).get(id, query: query);
+}
+
+@riverpod
+Future<{{ model_api.list_return_type }}> {{ operations.list_function_name }}(Ref ref, {
+  CratestackListQuery? query,
+}) {
+  return ref.watch({{ accessor.provider_name }}).list(query: query);
+}
+{% else %}
+@riverpod
+Future<{{ model_api.model_name }}> {{ operations.get_function_name }}(Ref ref, {{ model_api.primary_key_type }} id) {
+  return ref.watch({{ accessor.provider_name }}).get(id);
+}
+
+// Issue #331: RPC transport has no typed query-builder class (unlike
+// REST's `CratestackListQuery` — see this story's PR body for the
+// explicit, documented decision). `WidgetApi.list()` itself still
+// takes a bare `Map<String, Object?> input` (unchanged, `rpc_model.dart.j2`), but
+// this provider's own parameter is `IMap<String, Object?>` — not
+// `Map<String, Object?>` — because `Map`'s default `==` is
+// identity-based (the exact caching bug just described for REST's
+// `query` param above would reappear here otherwise); `IMap`
+// (`fast_immutable_collections`, already a riverpod-preset dependency)
+// has real value equality, so a `@riverpod` family lookup with a
+// freshly-built-but-equal input actually dedupes.
+@riverpod
+Future<{{ model_api.list_return_type }}> {{ operations.list_function_name }}(Ref ref, {
+  IMap<String, Object?>? input,
+}) {
+  return ref.watch({{ accessor.provider_name }}).list(input: input?.unlock ?? const <String, Object?>{});
+}
+{% endif %}
+
+// Writes are controllers, not `FutureProvider`s: a mutation isn't a value
+// to cache and re-fetch on every listener, it's an action with its own
+// loading/error/success lifecycle. `AsyncNotifier`'s `state` gives
+// widgets that lifecycle for free (`.isLoading`, `.hasError`, `.value`)
+// while the method itself still returns the created/updated/deleted
+// record directly for callers that just want the result.
+
+@riverpod
+class {{ operations.create_controller_name }} extends _${{ operations.create_controller_name }} {
+  @override
+  FutureOr<{{ model_api.model_name }}?> build() => null;
+
+  Future<{{ model_api.model_name }}> create({{ model_api.create_input_name }} input) async {
+    state = const AsyncValue.loading();
+    try {
+      final result = await ref.read({{ accessor.provider_name }}).create(input);
+      state = AsyncValue.data(result);
+      return result;
+    } catch (error, stackTrace) {
+      state = AsyncValue.error(error, stackTrace);
+      rethrow;
+    }
+  }
+}
+
+@riverpod
+class {{ operations.update_controller_name }} extends _${{ operations.update_controller_name }} {
+  @override
+  FutureOr<{{ model_api.model_name }}?> build() => null;
+
+  // Named `save`, not `update`: `AsyncNotifier`/`_$AsyncClassModifier`
+  // (the riverpod_generator-produced base class) already declares its
+  // own `update(FutureOr<ValueT> Function(ValueT) cb, {onError})` method
+  // for mutating `state` from its previous value. A same-named override
+  // here with an incompatible signature is a real `dart analyze`
+  // `invalid_override` error (confirmed empirically), not a style
+  // choice — `{{ accessor.provider_name }}`'s own `.update(id, patch)`
+  // call below is unaffected; only this controller's own method needed
+  // renaming.
+  Future<{{ model_api.model_name }}> save({{ model_api.primary_key_type }} id, {{ model_api.update_input_name }} patch) async {
+    state = const AsyncValue.loading();
+    try {
+      final result = await ref.read({{ accessor.provider_name }}).update(id, patch);
+      state = AsyncValue.data(result);
+      return result;
+    } catch (error, stackTrace) {
+      state = AsyncValue.error(error, stackTrace);
+      rethrow;
+    }
+  }
+}
+
+@riverpod
+class {{ operations.delete_controller_name }} extends _${{ operations.delete_controller_name }} {
+  @override
+  FutureOr<{{ model_api.model_name }}?> build() => null;
+
+  Future<{{ model_api.model_name }}> delete({{ model_api.primary_key_type }} id) async {
+    state = const AsyncValue.loading();
+    try {
+      final result = await ref.read({{ accessor.provider_name }}).delete(id);
+      state = AsyncValue.data(result);
+      return result;
+    } catch (error, stackTrace) {
+      state = AsyncValue.error(error, stackTrace);
+      rethrow;
+    }
+  }
+}

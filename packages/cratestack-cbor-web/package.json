@@ -1,0 +1,55 @@
+{
+  "name": "@cratestack/cbor-web",
+  "version": "0.7.14",
+  "description": "wasm-bindgen CBOR codec for browser CrateStack RPC clients. Async one-time WASM init, synchronous encode/decode after — backed by the same Rust CborCodec the server and Rust client already use.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cratestack/cratestack.git",
+    "directory": "packages/cratestack-cbor-web"
+  },
+  "homepage": "https://cratestack.dev",
+  "bugs": "https://github.com/cratestack/cratestack/issues",
+  "keywords": [
+    "cratestack",
+    "cstack",
+    "rpc",
+    "cbor",
+    "wasm",
+    "codec"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "wasm:build": "node ../../examples/scripts/wasm-build.mjs --crate ../../crates/cratestack-cbor-wasm --target web --out-dir ../../packages/cratestack-cbor-web/src/wasm-pkg",
+    "wasm:build:dev": "node ../../examples/scripts/wasm-build.mjs --crate ../../crates/cratestack-cbor-wasm --target web --out-dir ../../packages/cratestack-cbor-web/src/wasm-pkg --dev",
+    "prebuild": "pnpm run wasm:build",
+    "build": "tsc -p tsconfig.json && mkdir -p dist/wasm-pkg && cp src/wasm-pkg/cratestack_cbor_wasm.js src/wasm-pkg/cratestack_cbor_wasm_bg.wasm dist/wasm-pkg/",
+    "pretest": "pnpm run wasm:build:dev",
+    "test": "vitest run",
+    "lint": "biome check ."
+  },
+  "dependencies": {
+    "@cratestack/ts-types": "0.7.14"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

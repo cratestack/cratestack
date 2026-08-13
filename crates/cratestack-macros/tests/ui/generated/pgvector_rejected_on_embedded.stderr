@@ -1,0 +1,5 @@
+error: schema declares `extension pgvector { }`, but `include_embedded_schema!` can never support it, no matter which Cargo features are enabled — pgvector is a Postgres extension and the embedded backend is rusqlite-only, so there is no `vector(n)` column type or `CREATE EXTENSION` for it to map onto. Use `include_server_schema!` instead (with its `pgvector` Cargo feature enabled once cratestack#155 lands) for schemas that need `Vector(n)` fields, or drop the `extension pgvector { }` block from schemas meant for the embedded backend. See docs/design/extensions.md §6.
+ --> tests/ui/generated/pgvector_rejected_on_embedded.rs
+  |
+  | cratestack_macros::include_embedded_schema!("/tmp/cratestack-macros-ui-161/pgvector_extension_embedded.cstack");
+  |                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -265,3 +265,272 @@ async fn pk_default_upsert_unchanged_after_composite_refactor() {
         .expect("default upsert updates on PK");
     assert_eq!(second.payload, "v2");
 }
+
+// ───── #267 regression: SQLSTATE/constraint must survive create/update ──────
+//
+// Every generated write query used to collapse `sqlx::Error` into
+// `CoolError::Database(error.to_string())`, discarding the driver's
+// SQLSTATE and constraint name before the error reached application
+// code. These hit `pairs`' real `UNIQUE(scope, key)` constraint through
+// the ordinary `.create()` / `.update()` delegates (not a hand-built
+// `CoolError`), so they only pass once `cool_error_from_sqlx` is
+// actually wired into `create_exec.rs` / `update_exec.rs`.
+
+#[tokio::test]
+async fn create_with_unique_constraint_violation_preserves_sqlstate_and_constraint() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+
+    let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
+    let ctx = operator();
+
+    cool.pair()
+        .create(cratestack_schema::CreatePairInput {
+            id: 1,
+            scope: "session".into(),
+            key: "abc".into(),
+            payload: "v1".into(),
+        })
+        .run(&ctx)
+        .await
+        .expect("first create succeeds");
+
+    // Same (scope, key), different id — violates `UNIQUE(scope, key)`.
+    let err = cool
+        .pair()
+        .create(cratestack_schema::CreatePairInput {
+            id: 2,
+            scope: "session".into(),
+            key: "abc".into(),
+            payload: "v2".into(),
+        })
+        .run(&ctx)
+        .await
+        .expect_err("duplicate (scope, key) must be rejected by the database");
+
+    assert_eq!(
+        err.db_sqlstate(),
+        Some("23505"),
+        "unique violation must surface its real SQLSTATE, got: {err}",
+    );
+    assert!(
+        err.db_constraint().is_some(),
+        "unique violation must surface the constraint name, got: {err}",
+    );
+}
+
+#[tokio::test]
+async fn update_with_unique_constraint_violation_preserves_sqlstate_and_constraint() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+
+    let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
+    let ctx = operator();
+
+    cool.pair()
+        .create(cratestack_schema::CreatePairInput {
+            id: 1,
+            scope: "session".into(),
+            key: "abc".into(),
+            payload: "v1".into(),
+        })
+        .run(&ctx)
+        .await
+        .expect("first pair created");
+    cool.pair()
+        .create(cratestack_schema::CreatePairInput {
+            id: 2,
+            scope: "session".into(),
+            key: "xyz".into(),
+            payload: "v2".into(),
+        })
+        .run(&ctx)
+        .await
+        .expect("second pair created");
+
+    // Retarget pair 2's key onto pair 1's (scope, key).
+    let err = cool
+        .pair()
+        .update(2_i64)
+        .set(cratestack_schema::UpdatePairInput {
+            scope: None,
+            key: Some("abc".into()),
+            payload: None,
+        })
+        .run(&ctx)
+        .await
+        .expect_err("update onto an existing (scope, key) must be rejected by the database");
+
+    assert_eq!(
+        err.db_sqlstate(),
+        Some("23505"),
+        "unique violation on update must surface its real SQLSTATE, got: {err}",
+    );
+    assert!(
+        err.db_constraint().is_some(),
+        "unique violation on update must surface the constraint name, got: {err}",
+    );
+}
+
+#[tokio::test]
+async fn single_row_create_returns_conflict_on_unique_violation() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+
+    let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
+    let ctx = operator();
+
+    cool.pair()
+        .create(cratestack_schema::CreatePairInput {
+            id: 1,
+            scope: "session".into(),
+            key: "abc".into(),
+            payload: "v1".into(),
+        })
+        .run(&ctx)
+        .await
+        .expect("first create succeeds");
+
+    // Same (scope, key), different id — violates `UNIQUE(scope, key)`.
+    let err = cool
+        .pair()
+        .create(cratestack_schema::CreatePairInput {
+            id: 2,
+            scope: "session".into(),
+            key: "abc".into(),
+            payload: "v2".into(),
+        })
+        .run(&ctx)
+        .await
+        .expect_err("duplicate (scope, key) must be rejected as a conflict");
+
+    assert_eq!(
+        err.code(),
+        "CONFLICT",
+        "single-row create on unique violation must return CONFLICT (409), got: {err}",
+    );
+}
+
+#[tokio::test]
+async fn single_row_update_returns_conflict_on_unique_violation() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+
+    let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
+    let ctx = operator();
+
+    cool.pair()
+        .create(cratestack_schema::CreatePairInput {
+            id: 1,
+            scope: "session".into(),
+            key: "abc".into(),
+            payload: "v1".into(),
+        })
+        .run(&ctx)
+        .await
+        .expect("first pair created");
+    cool.pair()
+        .create(cratestack_schema::CreatePairInput {
+            id: 2,
+            scope: "session".into(),
+            key: "xyz".into(),
+            payload: "v2".into(),
+        })
+        .run(&ctx)
+        .await
+        .expect("second pair created");
+
+    // Retarget pair 2's key onto pair 1's (scope, key).
+    let err = cool
+        .pair()
+        .update(2_i64)
+        .set(cratestack_schema::UpdatePairInput {
+            scope: None,
+            key: Some("abc".into()),
+            payload: None,
+        })
+        .run(&ctx)
+        .await
+        .expect_err("update onto an existing (scope, key) must be rejected as a conflict");
+
+    assert_eq!(
+        err.code(),
+        "CONFLICT",
+        "single-row update on unique violation must return CONFLICT (409), got: {err}",
+    );
+}
+
+#[tokio::test]
+async fn single_row_upsert_returns_conflict_on_non_conflict_target_unique_violation() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+
+    let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
+    let ctx = operator();
+
+    // Insert the first pair with id=1 — this is the (scope, key) the
+    // insert-branch upsert below will collide with.
+    cool.pair()
+        .create(cratestack_schema::CreatePairInput {
+            id: 1,
+            scope: "session".into(),
+            key: "abc".into(),
+            payload: "v1".into(),
+        })
+        .run(&ctx)
+        .await
+        .expect("first pair created");
+    // An unrelated second row so the schema has more than one (scope,
+    // key) pair in play before the conflicting upsert below.
+    cool.pair()
+        .create(cratestack_schema::CreatePairInput {
+            id: 2,
+            scope: "data".into(),
+            key: "xyz".into(),
+            payload: "v2".into(),
+        })
+        .run(&ctx)
+        .await
+        .expect("second pair created");
+
+    // Upsert id=3 (new, will insert) with (scope, key) = ("session", "abc")
+    // which already exists on id=1. This should fail on the unique
+    // constraint (the insert branch, not the PK-conflict/update branch).
+    let err = cool
+        .pair()
+        .upsert(cratestack_schema::CreatePairInput {
+            id: 3,
+            scope: "session".into(),
+            key: "abc".into(),
+            payload: "v3".into(),
+        })
+        .run(&ctx)
+        .await
+        .expect_err("upsert insert branch on unique violation must be rejected as a conflict");
+
+    assert_eq!(
+        err.code(),
+        "CONFLICT",
+        "single-row upsert on unique violation must return CONFLICT (409), got: {err}",
+    );
+}

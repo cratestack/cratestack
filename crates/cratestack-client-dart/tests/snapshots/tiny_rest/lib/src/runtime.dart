@@ -20,9 +20,10 @@ typedef CratestackValueMap = Map<String, Object?>;
 ///
 /// The `cbor` package hands maps back as `Map<Object?, Object?>` (and
 /// nested maps/lists likewise), which is *not* a `Map<String, dynamic>`
-/// — casting it directly throws `_Map<Object?, Object?> is not a subtype
-/// of Map<String, dynamic>` at runtime. JSON-decoded bodies already have
-/// `String` keys, so for them this is a cheap structural walk.
+/// — casting it directly throws a `TypeError` (`_Map<Object?, Object?>`
+/// is not a subtype of `Map<String, dynamic>`) at runtime. JSON-decoded
+/// bodies already have `String` keys, so for them this is a cheap
+/// structural walk.
 Object? cratestackNormalizeWire(Object? value) {
   // `Uint8List` implements `List<int>`, so it must be matched before the
   // generic `List` branch — otherwise CBOR byte strings (`Bytes` fields)
@@ -123,6 +124,22 @@ class CratestackDioAdapter implements CratestackClientAdapter {
       options: Options(
         method: request.method,
         headers: {
+          // Explicit, not left to Dio's/the platform HTTP client's own
+          // default (typically `*/*`, sometimes nothing at all): a
+          // server exposing more than one wire codec (e.g. this router
+          // also serving `application/cbor` for other adapters) may
+          // resolve an absent/wildcard `Accept` to something other than
+          // JSON — and a router that *only* has a JSON codec wired up
+          // can still 406/error on a request that didn't ask for JSON
+          // by name. Reproduced for real (issue #303): a plain `curl`
+          // with no `Accept` header against a REST server built with
+          // only `JsonCodec` returned "no encoder configured for
+          // response Content-Type application/cbor", not JSON. Matches
+          // `CratestackCborDioAdapter`'s own explicit `Accept` below and
+          // the TypeScript REST runtime's `headers.set("Accept",
+          // "application/json")`, which this adapter had fallen out of
+          // parity with.
+          'Accept': 'application/json',
           if (cratestackSchemaSha256 != null)
             'x-cratestack-schema-sha': cratestackSchemaSha256!,
           ...request.headers,

@@ -174,6 +174,97 @@ model Account {
 }
 
 #[test]
+fn accepts_subscribe_attribute_alongside_emit_under_transport_rpc() {
+    let schema = parse_schema(
+        r#"
+transport rpc
+
+model Widget {
+  id Int @id
+  name String
+
+  @@emit(created, updated, deleted)
+  @@subscribe
+}
+"#,
+    )
+    .expect("model with @@subscribe + @@emit under transport rpc should parse");
+
+    let attrs = &schema.models[0].attributes;
+    assert!(attrs.iter().any(|a| a.raw == "@@subscribe"));
+    assert!(
+        attrs
+            .iter()
+            .any(|a| a.raw == "@@emit(created, updated, deleted)")
+    );
+}
+
+#[test]
+fn rejects_subscribe_with_arguments() {
+    let error = parse_schema(
+        r#"
+transport rpc
+
+model Widget {
+  id Int @id
+
+  @@emit(created)
+  @@subscribe(filter: "id")
+}
+"#,
+    )
+    .expect_err("@@subscribe(...) should fail");
+
+    assert!(
+        error.to_string().contains("does not take arguments"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn rejects_subscribe_without_emit() {
+    let error = parse_schema(
+        r#"
+transport rpc
+
+model Widget {
+  id Int @id
+
+  @@subscribe
+}
+"#,
+    )
+    .expect_err("@@subscribe without @@emit(...) should fail");
+
+    assert!(
+        error.to_string().contains("no `@@emit(...)`"),
+        "error: {error}",
+    );
+}
+
+#[test]
+fn rejects_subscribe_outside_transport_rpc() {
+    let error = parse_schema(
+        r#"
+model Widget {
+  id Int @id
+
+  @@emit(created)
+  @@subscribe
+}
+"#,
+    )
+    .expect_err("@@subscribe under the default `transport rest` should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("requires the schema to declare `transport rpc`"),
+        "error: {error}",
+    );
+}
+
+#[test]
 fn accepts_composite_id_attribute() {
     let schema = parse_schema(
         r#"

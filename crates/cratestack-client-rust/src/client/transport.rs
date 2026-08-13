@@ -42,14 +42,16 @@ where
     ) -> Result<RuntimeResponseWire, ClientError> {
         let url = build_url(&self.config.base_url, path, canonical_query)?;
         let accept = accept_override.unwrap_or_else(|| self.codec.accept_header_value());
-        let header_map = self.build_header_map(
-            &method,
-            path,
-            body.as_deref(),
-            canonical_query,
-            headers,
-            accept,
-        )?;
+        let header_map = self
+            .build_header_map(
+                &method,
+                path,
+                body.as_deref(),
+                canonical_query,
+                headers,
+                accept,
+            )
+            .await?;
 
         let mut request = self.http.request(method.clone(), url).headers(header_map);
         if let Some(body) = body {
@@ -102,14 +104,16 @@ where
         accept: &'static str,
     ) -> Result<reqwest::Response, ClientError> {
         let url = build_url(&self.config.base_url, path, canonical_query)?;
-        let header_map = self.build_header_map(
-            &method,
-            path,
-            body.as_deref(),
-            canonical_query,
-            headers,
-            accept,
-        )?;
+        let header_map = self
+            .build_header_map(
+                &method,
+                path,
+                body.as_deref(),
+                canonical_query,
+                headers,
+                accept,
+            )
+            .await?;
 
         let mut request = self.http.request(method.clone(), url).headers(header_map);
         if let Some(body) = body {

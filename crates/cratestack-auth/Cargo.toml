@@ -1,0 +1,69 @@
+[package]
+name = "cratestack-auth"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "CrateStack signed-request + identity-token auth: SigV4-style Ed25519 request signing/verification, SD-JWT id-token issuance/verification, multi-issuer JWKS resolution, per-service signing identities, and COSE-signed enrolment challenges. The axum middleware/router/extractor surface sits behind the default-on `axum` feature so a signing-only consumer (e.g. a cratestack-client) can skip it."
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = ["axum"]
+# Gates every item that touches the `axum` crate itself (not the plain
+# `http` crate, which this crate depends on unconditionally for
+# `HeaderMap`/`Method`/`Uri`): the `require_signed_request` tower
+# middleware, `jwks_router`'s mountable `axum::Router`, and the
+# `FromRequestParts` extractor impls on `CurrentPrincipal`/
+# `AuthenticatedPrincipal`. Everything else — signing/verifying a
+# canonical request, minting/verifying an SD-JWT id-token, loading or
+# minting a `ServiceSigningKey`, resolving keys via `MultiIssuerJwksVerifier`
+# (a `reqwest` GET, not an axum route), building/parsing a COSE enrolment
+# challenge, and implementing `cratestack_core::AuthProvider` itself — needs
+# no axum route/middleware machinery and stays available with this feature
+# off. On by default so an existing server consumer sees no behavior change;
+# a `cratestack-client`-only consumer that just wants to *sign* outgoing
+# requests can `default-features = false` to keep axum (and its own
+# tower/hyper/matchit tree) out of its build.
+axum = ["dep:axum"]
+
+[dependencies]
+async-trait.workspace = true
+axum = { workspace = true, optional = true }
+base64.workspace = true
+chrono.workspace = true
+coset.workspace = true
+cratestack-core.workspace = true
+cuid2.workspace = true
+ed25519-dalek.workspace = true
+http.workspace = true
+minicbor-serde.workspace = true
+rand.workspace = true
+redis = { workspace = true, features = ["tokio-comp"] }
+reqwest = { workspace = true, features = ["json"] }
+# `reqwest`'s `rustls-no-provider` feature (see the workspace `Cargo.toml`'s
+# `reqwest` entry) ships no crypto provider — `Client::build()` panics at
+# construction time unless one is already installed process-wide.
+# `IdTokenVerifier::new`/`MultiIssuerJwksVerifier::new` build a `reqwest::Client`
+# internally, so this crate installs the same `ring` fallback
+# `cratestack-client-rust::client::core::ensure_crypto_provider` does, for the
+# identical reason (courtesy fallback, never overrides a consumer's own choice).
+rustls.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net"] }
+tower.workspace = true

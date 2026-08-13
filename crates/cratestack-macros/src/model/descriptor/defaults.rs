@@ -45,6 +45,8 @@ pub(super) fn collect_create_defaults(
                     ));
                 }
 
+                let auth_field_required = !matches!(auth_field_decl.ty.arity, TypeArity::Optional);
+
                 kind.map(|kind| {
                     quote! {
                         ::cratestack::CreateDefault {
@@ -52,6 +54,7 @@ pub(super) fn collect_create_defaults(
                             auth_field: #auth_field,
                             ty: #kind,
                             nullable: #nullable,
+                            auth_field_required: #auth_field_required,
                         }
                     }
                 })

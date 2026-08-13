@@ -2,14 +2,20 @@ import {
   CratestackRpcRuntime,
   type CratestackRpcCallOptions,
   type CratestackRpcClientOptions,
-} from "./runtime";
+} from "./runtime.js";
+import { toRpcListInput, type CratestackRpcListQuery } from "./queries.js";
+import { reviveDecimalFields, revivePagedDecimalFields, reviveDecimalScalar } from "./models.js";
 import type {
   Widget,
   CreateWidgetInput,
   UpdateWidgetInput,
+  WidgetWhere,
+  WidgetOrderByClause,
+  WidgetFindMany,
   EchoNameArgs,
+  WidgetSortField,
   Page,
-} from "./models";
+} from "./models.js";
 
 export class TinyRpcClientClient {
   readonly runtime: CratestackRpcRuntime;
@@ -28,28 +34,28 @@ export class TinyRpcClientClient {
 export class WidgetApi {
   constructor(private readonly runtime: CratestackRpcRuntime) {}
 
-  list(input: Record<string, unknown> = {}, options: CratestackRpcCallOptions = {}): Promise<Widget[]> {
-    return this.runtime.call<Record<string, unknown>, Widget[]>(
+  list(query: CratestackRpcListQuery = {}, options: CratestackRpcCallOptions = {}): Promise<Widget[]> {
+    return this.runtime.call<Record<string, unknown>, unknown>(
       "model.Widget.list",
-      input,
+      toRpcListInput(query),
       options,
-    );
+    ).then((value) => reviveDecimalFields(value, 'Widget') as Widget[]);
   }
 
   get(id: number, options: CratestackRpcCallOptions = {}): Promise<Widget> {
-    return this.runtime.call<{ id: number }, Widget>(
+    return this.runtime.call<{ id: number }, unknown>(
       "model.Widget.get",
       { id },
       options,
-    );
+    ).then((value) => reviveDecimalFields(value, 'Widget') as Widget);
   }
 
   create(input: CreateWidgetInput, options: CratestackRpcCallOptions = {}): Promise<Widget> {
-    return this.runtime.call<CreateWidgetInput, Widget>(
+    return this.runtime.call<CreateWidgetInput, unknown>(
       "model.Widget.create",
       input,
       options,
-    );
+    ).then((value) => reviveDecimalFields(value, 'Widget') as Widget);
   }
 
   update(
@@ -57,11 +63,11 @@ export class WidgetApi {
     patch: UpdateWidgetInput,
     options: CratestackRpcCallOptions = {},
   ): Promise<Widget> {
-    return this.runtime.call<{ id: number; patch: UpdateWidgetInput }, Widget>(
+    return this.runtime.call<{ id: number; patch: UpdateWidgetInput }, unknown>(
       "model.Widget.update",
       { id, patch },
       options,
-    );
+    ).then((value) => reviveDecimalFields(value, 'Widget') as Widget);
   }
 
   delete(id: number, options: CratestackRpcCallOptions = {}): Promise<void> {
@@ -77,11 +83,11 @@ export class ProceduresApi {
   constructor(private readonly runtime: CratestackRpcRuntime) {}
 
   echoName(args: EchoNameArgs, options: CratestackRpcCallOptions = {}): Promise<string> {
-    return this.runtime.call<EchoNameArgs, string>(
+    return this.runtime.call<EchoNameArgs, unknown>(
       "procedure.echoName",
       args,
       options,
-    );
+    ).then((value) => reviveDecimalFields(value, 'String') as string);
   }
 
 }

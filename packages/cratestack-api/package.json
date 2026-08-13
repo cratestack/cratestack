@@ -1,7 +1,7 @@
 {
   "name": "@cratestack/api",
-  "version": "0.4.16",
-  "description": "Composable links for CrateStack's generated TypeScript RPC client — batching, logging, and more.",
+  "version": "0.7.14",
+  "description": "Compat umbrella over the split @cratestack/{ts-types,link-*,runtime-*,validator-*,adapter-*} family for CrateStack's generated TypeScript RPC client — batching, logging, and more.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -10,25 +10,76 @@
   },
   "homepage": "https://cratestack.dev",
   "bugs": "https://github.com/cratestack/cratestack/issues",
-  "keywords": ["cratestack", "cstack", "rpc", "batching", "trpc-links"],
+  "keywords": [
+    "cratestack",
+    "cstack",
+    "rpc",
+    "batching",
+    "trpc-links"
+  ],
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./runtime-fetch": {
+      "types": "./dist/runtime-fetch.d.ts",
+      "import": "./dist/runtime-fetch.js"
+    },
+    "./runtime-axios": {
+      "types": "./dist/runtime-axios.d.ts",
+      "import": "./dist/runtime-axios.js"
+    },
+    "./validator-zod": {
+      "types": "./dist/validator-zod.d.ts",
+      "import": "./dist/validator-zod.js"
+    },
+    "./validator-yup": {
+      "types": "./dist/validator-yup.d.ts",
+      "import": "./dist/validator-yup.js"
+    },
+    "./adapter-tanstack-query": {
+      "types": "./dist/adapter-tanstack-query.d.ts",
+      "import": "./dist/adapter-tanstack-query.js"
+    },
+    "./adapter-rtk": {
+      "types": "./dist/adapter-rtk.d.ts",
+      "import": "./dist/adapter-rtk.js"
     }
   },
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "lint": "biome check ."
   },
+  "dependencies": {
+    "@cratestack/ts-types": "0.7.14",
+    "@cratestack/link-batch": "0.7.14",
+    "@cratestack/link-logger": "0.7.14",
+    "@cratestack/runtime-fetch": "0.7.14",
+    "@cratestack/runtime-axios": "0.7.14",
+    "@cratestack/validator-zod": "0.7.14",
+    "@cratestack/validator-yup": "0.7.14",
+    "@cratestack/adapter-tanstack-query": "0.7.14",
+    "@cratestack/adapter-rtk": "0.7.14"
+  },
   "devDependencies": {
-    "typescript": "^5.7.0",
-    "vitest": "^3.0.0"
+    "@reduxjs/toolkit": "^2.0.0",
+    "@tanstack/query-core": "^5.0.0",
+    "axios": "^1.7.0",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10",
+    "yup": "^1.4.0",
+    "zod": "^4.0.0"
   },
   "engines": {
     "node": ">=18"

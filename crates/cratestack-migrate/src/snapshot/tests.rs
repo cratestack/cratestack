@@ -24,7 +24,7 @@ fn parse(source: &str) -> Schema {
 #[test]
 fn snapshot_round_trips_through_disk() {
     let schema = parse(TINY_SCHEMA);
-    let snapshot = Snapshot::from_schema(schema);
+    let snapshot = Snapshot::from_schema(&schema);
 
     let dir = TempDir::new().expect("tempdir");
     let path = dir.path().join("schema.snapshot.json");
@@ -37,7 +37,7 @@ fn snapshot_round_trips_through_disk() {
 #[test]
 fn write_creates_missing_parent_directories() {
     let schema = parse(TINY_SCHEMA);
-    let snapshot = Snapshot::from_schema(schema);
+    let snapshot = Snapshot::from_schema(&schema);
 
     let dir = TempDir::new().expect("tempdir");
     let path = dir
@@ -52,7 +52,7 @@ fn write_creates_missing_parent_directories() {
 #[test]
 fn write_emits_pretty_json_with_trailing_newline() {
     let schema = parse(TINY_SCHEMA);
-    let snapshot = Snapshot::from_schema(schema);
+    let snapshot = Snapshot::from_schema(&schema);
 
     let dir = TempDir::new().expect("tempdir");
     let path = dir.path().join("schema.snapshot.json");
@@ -69,7 +69,7 @@ fn write_emits_pretty_json_with_trailing_newline() {
 #[test]
 fn read_rejects_incompatible_format_version() {
     let schema = parse(TINY_SCHEMA);
-    let mut snapshot = Snapshot::from_schema(schema);
+    let mut snapshot = Snapshot::from_schema(&schema);
     snapshot.format_version = SNAPSHOT_FORMAT_VERSION + 99;
 
     let dir = TempDir::new().expect("tempdir");

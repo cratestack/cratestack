@@ -30,7 +30,7 @@ Schema macros emit `::cratestack::*` paths. Alias this crate as
 
 ```toml
 [dependencies]
-cratestack = { package = "cratestack-sqlite", version = "0.4" }
+cratestack = { package = "cratestack-sqlite", version = "0.6.7" }
 ```
 
 Then in code:
@@ -53,4 +53,23 @@ and [ADR-0003](https://cratestack.dev/internals/views-adr).
 ## Features
 
 - `decimal-rust-decimal` *(default)* — `Decimal` columns use `rust_decimal`.
-- `decimal-bigdecimal` — alternative `bigdecimal` backend.
+- `decimal-bigdecimal` — arbitrary-precision `bigdecimal` backend instead
+  (heap-allocated, not `Copy` — see `cratestack-core`'s README for the
+  trait differences). Mutually exclusive with `decimal-rust-decimal`;
+  selecting both is a compile error. Selecting *neither* is allowed as of
+  cratestack#521 — the `Decimal` type is simply not exported, so only a schema
+  that actually uses a `Decimal` field fails, with rustc's own "cannot find
+  type `Decimal`". **Wire compatibility
+  constraint:** ordinary values encode identically to `rust_decimal` on
+  the wire, but values past `rust_decimal`'s ~28-29 significant-digit
+  capacity serialize as scientific notation (e.g. `"1E-29"`), which a
+  `rust_decimal` peer fails to decode. The shipped Dart/TypeScript client
+  SDKs generate a real arbitrary-precision `Decimal` type as of
+  cratestack#498 (**breaking** — see each package's migration note) that
+  parses both notations, so pairing this backend with a generated client
+  is safe regardless of magnitude — see `cratestack-core`'s README for
+  the full picture and the two scope notes (gRPC-preset clients, the
+  TypeScript `swr` preset) that still apply.
+- `codec-json` *(default)* — forwards the JSON codec to the generated
+  client runtime, alongside CBOR. On `wasm32` the client runtime isn't
+  linked (no `reqwest`), so this feature has no effect there.

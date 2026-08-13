@@ -32,6 +32,17 @@ pub(super) fn parse_policy_term(
         return Ok(quote! { ::cratestack::ReadPredicate::AuthIsNull });
     }
 
+    // `auth().isSystem()` (issue #486 / ADR 0038 blocker B1). Must be
+    // recognised *before* `parse_builtin_policy_call`, which finds the
+    // first `(` in the term — for `auth().isSystem()` that is `auth`'s,
+    // so it would otherwise report "policy function `auth` requires a
+    // string literal argument" instead of lowering the term. Whitespace
+    // is normalized because the AST splitter only trims term edges, not
+    // interior whitespace.
+    if is_auth_is_system_term(term) {
+        return Ok(quote! { ::cratestack::ReadPredicate::AuthIsSystem });
+    }
+
     if let Some(function) = parse_builtin_policy_call(term) {
         return parse_builtin_model_policy_term(function?);
     }
@@ -78,6 +89,16 @@ pub(super) fn parse_policy_term(
             column: #column,
         }
     })
+}
+
+/// Recognises `auth().isSystem()` (and the bare `isSystem()` shorthand)
+/// with any interior whitespace, e.g. `auth() . isSystem ()`.
+fn is_auth_is_system_term(term: &str) -> bool {
+    let squashed = term
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect::<String>();
+    squashed == "auth().isSystem()" || squashed == "isSystem()"
 }
 
 fn parse_builtin_model_policy_term(

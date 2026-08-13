@@ -24,6 +24,7 @@ fn cool_error_code_to_rpc_code_covers_every_cool_error_variant() {
         CoolError::Codec("x".into()),
         CoolError::Database("x".into()),
         CoolError::Internal("x".into()),
+        CoolError::Unavailable("x".into()),
     ] {
         let cool_code = variant.code();
         let direct = rpc_code(&variant);
@@ -93,6 +94,7 @@ fn rpc_code_maps_each_cool_error_variant() {
     assert_eq!(rpc_code(&CoolError::Codec("x".into())), "invalid_argument");
     assert_eq!(rpc_code(&CoolError::Database("x".into())), "internal");
     assert_eq!(rpc_code(&CoolError::Internal("x".into())), "internal");
+    assert_eq!(rpc_code(&CoolError::Unavailable("x".into())), "unavailable");
 }
 
 #[test]

@@ -73,7 +73,7 @@ impl<'a, M: 'static, PK: 'static> FindUnique<'a, M, PK> {
         };
         if let Some(policy_clause) = render_read_policy_sql(allow, deny, ctx, &mut bind_index) {
             sql.push_str(&format!(
-                " WHERE ({policy_clause}) AND {} = ${bind_index} LIMIT 1",
+                " WHERE {policy_clause} AND {} = ${bind_index} LIMIT 1",
                 self.descriptor.primary_key()
             ));
         } else {

@@ -3,7 +3,7 @@ use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
 
 use crate::codec::HttpClientCodec;
-use crate::error::ClientError;
+use crate::error::{ClientError, TransportError};
 use crate::runtime::wire::RuntimeResponseWire;
 
 /// Error variant produced by the RPC client when a remote call fails with
@@ -35,9 +35,10 @@ impl std::error::Error for RpcRemoteError {}
 /// `RpcRemoteError { code, message, details }` rather than the
 /// REST-shaped `CoolErrorResponse`.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum RpcClientError {
     #[error("transport error: {0}")]
-    Transport(#[from] reqwest::Error),
+    Transport(#[source] TransportError),
     #[error("codec error: {0}")]
     Codec(#[from] CoolError),
     #[error("invalid response: {0}")]

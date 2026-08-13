@@ -7,7 +7,11 @@ use cratestack_sql::OrderTarget;
 
 use crate::{OrderClause, SortDirection};
 
-pub(crate) fn render_order_clause_sql(clause: &OrderClause, sql: &mut String) {
+pub(crate) fn render_order_clause_sql(
+    clause: &OrderClause,
+    sql: &mut String,
+    bind_index: &mut usize,
+) {
     match &clause.target {
         OrderTarget::Column(column) => {
             let _ = write!(
@@ -37,6 +41,21 @@ pub(crate) fn render_order_clause_sql(clause: &OrderClause, sql: &mut String) {
                 sort_direction_sql(clause.direction),
                 null_order_sql(clause.null_order),
             );
+        }
+        OrderTarget::VectorDistance { column, metric, .. } => {
+            // Only the query vector binds a placeholder — the column
+            // and operator are static SQL text, matching how
+            // `render_spatial_filter_sql` treats its column names.
+            let _ = write!(
+                sql,
+                "({} {} ${}) {} {}",
+                column,
+                metric.sql_operator(),
+                *bind_index,
+                sort_direction_sql(clause.direction),
+                null_order_sql(clause.null_order),
+            );
+            *bind_index += 1;
         }
     }
 }

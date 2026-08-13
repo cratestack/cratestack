@@ -53,16 +53,13 @@ pub struct MigrationState {
 }
 
 pub async fn ensure_migrations_table(pool: &sqlx::PgPool) -> Result<(), CoolError> {
-    for statement in MIGRATIONS_TABLE_DDL
-        .split(';')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        sqlx::query(statement)
-            .execute(pool)
-            .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
-    }
+    // `raw_sql` sends the whole DDL block as one round-trip over PG's
+    // simple-query protocol, which understands `;`-separated statements
+    // (and dollar-quoting) natively — no client-side splitting needed.
+    sqlx::raw_sql(MIGRATIONS_TABLE_DDL)
+        .execute(pool)
+        .await
+        .map_err(|error| CoolError::Database(error.to_string()))?;
     Ok(())
 }
 
@@ -136,21 +133,15 @@ pub async fn apply_pending(
             .begin()
             .await
             .map_err(|error| CoolError::Database(error.to_string()))?;
-        // PG prepared statements only carry one command per round-trip.
-        // Split on `;` inside the migration's transaction so partial
-        // state can't survive a mid-script failure (audit/idempotency
-        // DDL helpers do the same).
-        for statement in migration
-            .up
-            .split(';')
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-        {
-            sqlx::query(statement)
-                .execute(&mut *tx)
-                .await
-                .map_err(|error| CoolError::Database(error.to_string()))?;
-        }
+        // `raw_sql` sends the whole `up` script as one batch over PG's
+        // simple-query protocol inside this transaction, so a mid-script
+        // failure can't leave partial state (and dollar-quoted PL/pgSQL
+        // bodies survive intact — no client-side `;` splitting, which
+        // would cut inside a `$$...$$` block).
+        sqlx::raw_sql(&migration.up)
+            .execute(&mut *tx)
+            .await
+            .map_err(|error| CoolError::Database(error.to_string()))?;
         sqlx::query(
             "INSERT INTO cratestack_migrations (id, description, checksum) VALUES ($1, $2, $3)",
         )

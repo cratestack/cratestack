@@ -22,6 +22,8 @@ use cratestack::include_server_schema;
 use cratestack::sqlx::postgres::PgPoolOptions;
 use cratestack_codec_cbor::CborCodec;
 use cratestack_codec_json::JsonCodec;
+use cratestack_grpc::{frame_grpc_message, strip_grpc_frame};
+use prost::Message as _;
 
 include_server_schema!("tests/fixtures/transport_grpc.cstack", db = Postgres);
 
@@ -44,6 +46,60 @@ impl cratestack::AuthProvider for AllowAllAuth {
     ) -> impl std::future::Future<Output = Result<cratestack::CoolContext, Self::Error>> + Send
     {
         std::future::ready(Ok(cratestack::CoolContext::authenticated([])))
+    }
+}
+
+/// Ticket #208: neither procedure touches the database — same
+/// minimalism as `examples/rpc-procedures`' own `Procedures` registry;
+/// this fixture's job is proving gRPC dispatch, not business logic.
+#[derive(Clone, Default)]
+struct Procedures;
+
+impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
+    fn echo_widget_name(
+        &self,
+        _db: &cratestack_schema::Cratestack,
+        _ctx: &cratestack::CoolContext,
+        args: cratestack_schema::procedures::echo_widget_name::Args,
+        _authorized: cratestack_schema::procedures::echo_widget_name::Authorized,
+    ) -> impl std::future::Future<
+        Output = Result<
+            cratestack_schema::procedures::echo_widget_name::Output,
+            cratestack::CoolError,
+        >,
+    > + Send {
+        async move { Ok(format!("echo: {}", args.name)) }
+    }
+
+    fn widget_name_samples(
+        &self,
+        _db: &cratestack_schema::Cratestack,
+        _ctx: &cratestack::CoolContext,
+        _args: cratestack_schema::procedures::widget_name_samples::Args,
+        _authorized: cratestack_schema::procedures::widget_name_samples::Authorized,
+    ) -> impl std::future::Future<
+        Output = Result<
+            cratestack_schema::procedures::widget_name_samples::Output,
+            cratestack::CoolError,
+        >,
+    > + Send {
+        async move { Ok(vec!["alpha".to_owned(), "beta".to_owned()]) }
+    }
+
+    /// #415: exercised by `trusted_proxy_client_ip_grpc.rs`, not this
+    /// file — kept minimal here since this file's job is proving the
+    /// generated code compiles/mounts, not the trusted-proxy behavior.
+    fn who_am_i(
+        &self,
+        _db: &cratestack_schema::Cratestack,
+        ctx: &cratestack::CoolContext,
+        _args: cratestack_schema::procedures::who_am_i::Args,
+        _authorized: cratestack_schema::procedures::who_am_i::Authorized,
+    ) -> impl std::future::Future<
+        Output = Result<cratestack_schema::procedures::who_am_i::Output, cratestack::CoolError>,
+    > + Send {
+        let client_ip = ctx.client_ip().unwrap_or("none").to_owned();
+        async move { Ok(client_ip) }
     }
 }
 
@@ -71,12 +127,8 @@ fn pb_mirror_round_trips_widget() {
 async fn grpc_service_mounts_into_axum_router() {
     let db = test_db();
     let codec = CodecSet::new(CborCodec, JsonCodec);
-    let state = cratestack_schema::axum::ModelRouterState {
-        db,
-        codec,
-        auth_provider: AllowAllAuth,
-    };
-    let _router: cratestack::axum::Router = cratestack_schema::grpc::into_router(state);
+    let _router: cratestack::axum::Router =
+        cratestack_schema::grpc::into_router(db, Procedures, codec, AllowAllAuth);
 }
 
 /// Ticket #172, Part A: the macro-generated `into_router` must come back
@@ -94,12 +146,8 @@ async fn generated_router_exposes_grpc_status_headers_for_browsers() {
 
     let db = test_db();
     let codec = CodecSet::new(CborCodec, JsonCodec);
-    let state = cratestack_schema::axum::ModelRouterState {
-        db,
-        codec,
-        auth_provider: AllowAllAuth,
-    };
-    let router: cratestack::axum::Router = cratestack_schema::grpc::into_router(state);
+    let router: cratestack::axum::Router =
+        cratestack_schema::grpc::into_router(db, Procedures, codec, AllowAllAuth);
 
     let request = cratestack::axum::http::Request::builder()
         .method("POST")
@@ -123,4 +171,100 @@ async fn generated_router_exposes_grpc_status_headers_for_browsers() {
             "expected '{header_name}' in Access-Control-Expose-Headers, got '{exposed}'"
         );
     }
+}
+
+/// Ticket #208, AC 1: a unary procedure dispatches through the router —
+/// decoded pb request -> `procedures::echo_widget_name::Args` -> the
+/// exact same `handle_echo_widget_name_dispatch` fn REST/RPC would call
+/// -> bridged back into `pb::EchoWidgetNameOutput`. A real gRPC frame in,
+/// a real gRPC frame out — `strip_grpc_frame`/`prost::Message::decode`
+/// on the response body proves the dispatch actually ran and returned
+/// the expected value, not just that the route matched.
+#[tokio::test]
+async fn grpc_unary_procedure_dispatches_through_router() {
+    use tower::ServiceExt;
+
+    let db = test_db();
+    let codec = CodecSet::new(CborCodec, JsonCodec);
+    let router: cratestack::axum::Router =
+        cratestack_schema::grpc::into_router(db, Procedures, codec, AllowAllAuth);
+
+    let input = cratestack_schema::grpc::pb::EchoWidgetNameInput {
+        name: Some("gizmo".to_owned()),
+    };
+    let framed = frame_grpc_message(&input.encode_to_vec(), false);
+
+    let request = cratestack::axum::http::Request::builder()
+        .method("POST")
+        .uri("/widgets_api.Api/ProcedureEchoWidgetName")
+        .header("content-type", "application/grpc")
+        // `tonic_web::GrpcWebLayer` (applied by `apply_grpc_web`, mounted
+        // by every macro-generated `into_router`) only passes a
+        // non-grpc-web `Content-Type` straight through to the inner
+        // tonic service on real HTTP/2 — see `tonic-web-0.13.1`'s
+        // `GrpcWebService::call`, `RequestKind::Other(Version::HTTP_2)`
+        // vs. a bare 400 for every other HTTP version. This in-process
+        // `tower::ServiceExt::oneshot` call never negotiates ALPN, so the
+        // version has to be set explicitly rather than assumed.
+        .version(cratestack::axum::http::Version::HTTP_2)
+        .body(cratestack::axum::body::Body::from(framed))
+        .unwrap();
+
+    let response = router.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), cratestack::axum::http::StatusCode::OK);
+
+    let body = cratestack::axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let unframed = strip_grpc_frame(&body).expect("response must carry one gRPC message frame");
+    let output = cratestack_schema::grpc::pb::EchoWidgetNameOutput::decode(unframed)
+        .expect("response frame must decode as EchoWidgetNameOutput");
+    assert_eq!(output.result.as_deref(), Some("echo: gizmo"));
+}
+
+/// Ticket #208, AC 2: a `List`-arity procedure dispatches through the
+/// router using tonic's `ServerStreamingService` — see `service.rs`'s
+/// module doc for exactly what "streams" means here (the whole
+/// `repeated result` list travels in the one streamed message this
+/// fixture's `widgetNameSamples` produces). The load-bearing part of
+/// this test is that `grpc.server_streaming(...)` — not
+/// `grpc.unary(...)` — is what answered the call at all.
+#[tokio::test]
+async fn grpc_streaming_procedure_dispatches_through_router() {
+    use tower::ServiceExt;
+
+    let db = test_db();
+    let codec = CodecSet::new(CborCodec, JsonCodec);
+    let router: cratestack::axum::Router =
+        cratestack_schema::grpc::into_router(db, Procedures, codec, AllowAllAuth);
+
+    let input = cratestack_schema::grpc::pb::WidgetNameSamplesInput {};
+    let framed = frame_grpc_message(&input.encode_to_vec(), false);
+
+    let request = cratestack::axum::http::Request::builder()
+        .method("POST")
+        .uri("/widgets_api.Api/ProcedureWidgetNameSamples")
+        .header("content-type", "application/grpc")
+        // `tonic_web::GrpcWebLayer` (applied by `apply_grpc_web`, mounted
+        // by every macro-generated `into_router`) only passes a
+        // non-grpc-web `Content-Type` straight through to the inner
+        // tonic service on real HTTP/2 — see `tonic-web-0.13.1`'s
+        // `GrpcWebService::call`, `RequestKind::Other(Version::HTTP_2)`
+        // vs. a bare 400 for every other HTTP version. This in-process
+        // `tower::ServiceExt::oneshot` call never negotiates ALPN, so the
+        // version has to be set explicitly rather than assumed.
+        .version(cratestack::axum::http::Version::HTTP_2)
+        .body(cratestack::axum::body::Body::from(framed))
+        .unwrap();
+
+    let response = router.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), cratestack::axum::http::StatusCode::OK);
+
+    let body = cratestack::axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let unframed = strip_grpc_frame(&body).expect("response must carry one gRPC message frame");
+    let output = cratestack_schema::grpc::pb::WidgetNameSamplesOutput::decode(unframed)
+        .expect("response frame must decode as WidgetNameSamplesOutput");
+    assert_eq!(output.result, vec!["alpha".to_owned(), "beta".to_owned()]);
 }

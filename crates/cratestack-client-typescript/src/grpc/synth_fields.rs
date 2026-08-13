@@ -73,6 +73,7 @@ pub(crate) fn scalar_ty(name: &str, arity: TypeArity) -> TypeRef {
         name_span: synthetic_span(),
         arity,
         generic_args: vec![],
+        int_args: Vec::new(),
     }
 }
 

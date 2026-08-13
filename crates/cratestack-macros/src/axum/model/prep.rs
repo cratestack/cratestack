@@ -8,6 +8,7 @@ mod list_logging;
 use cratestack_core::Model;
 use quote::quote;
 
+use crate::relation::order_catalog_ident;
 use crate::shared::{
     ident, is_paged_model, is_primary_key, pluralize, rust_type_tokens, to_snake_case,
 };
@@ -45,6 +46,7 @@ pub(super) struct ModelHandlerPrep {
     pub(super) serialize_model_value_ident: syn::Ident,
     pub(super) filter_expr_builder_ident: syn::Ident,
     pub(super) query_expr_builder_ident: syn::Ident,
+    pub(super) order_catalog_ident: syn::Ident,
     pub(super) list_capabilities: proc_macro2::TokenStream,
     pub(super) write_capabilities: proc_macro2::TokenStream,
     pub(super) detail_capabilities: proc_macro2::TokenStream,
@@ -58,6 +60,8 @@ pub(super) struct ModelHandlerPrep {
     pub(super) update_if_match_apply: proc_macro2::TokenStream,
     pub(super) update_etag_extract: proc_macro2::TokenStream,
     pub(super) update_etag_apply: proc_macro2::TokenStream,
+    pub(super) delete_if_match_decl: proc_macro2::TokenStream,
+    pub(super) delete_if_match_apply: proc_macro2::TokenStream,
     pub(super) get_etag_extract_decl: proc_macro2::TokenStream,
     pub(super) get_etag_capture: proc_macro2::TokenStream,
     pub(super) get_etag_apply: proc_macro2::TokenStream,
@@ -87,14 +91,14 @@ pub(super) fn build_prep(model: &Model) -> Result<ModelHandlerPrep, String> {
         .ok_or_else(|| format!("model {} is missing a primary key", model.name))?;
     let primary_key_type = rust_type_tokens(&primary_key.ty);
     let list_response_type = if paged {
-        quote! { ::cratestack::Page<::cratestack::serde_json::Value> }
+        quote! { ::cratestack::Page<::cratestack::ProjectedValue> }
     } else {
-        quote! { Vec<::cratestack::serde_json::Value> }
+        quote! { Vec<::cratestack::ProjectedValue> }
     };
     let list_header_error_encoder = if paged {
-        quote! { ::cratestack::encode_transport_result_with_status_for::<_, ::cratestack::Page<::cratestack::serde_json::Value>>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error)) }
+        quote! { ::cratestack::encode_transport_result_with_status_for::<_, ::cratestack::Page<::cratestack::ProjectedValue>>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error)) }
     } else {
-        quote! { ::cratestack::encode_transport_result_with_status_for::<_, Vec<::cratestack::serde_json::Value>>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error)) }
+        quote! { ::cratestack::encode_transport_result_with_status_for::<_, Vec<::cratestack::ProjectedValue>>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error)) }
     };
     let create_auth_preflight = if create_requires_authenticated_context(model) {
         quote! {
@@ -160,6 +164,7 @@ pub(super) fn build_prep(model: &Model) -> Result<ModelHandlerPrep, String> {
         serialize_model_value_ident: ident(&format!("serialize_{}_model_value", snake)),
         filter_expr_builder_ident: ident(&format!("build_{}_filter_expr", snake)),
         query_expr_builder_ident: ident(&format!("build_{}_query_expr", snake)),
+        order_catalog_ident: order_catalog_ident(&model.name),
         list_capabilities: model_read_transport_capabilities_tokens(),
         write_capabilities: model_write_transport_capabilities_tokens(),
         detail_capabilities: model_read_transport_capabilities_tokens(),
@@ -173,6 +178,8 @@ pub(super) fn build_prep(model: &Model) -> Result<ModelHandlerPrep, String> {
         update_if_match_apply: etag.update_if_match_apply,
         update_etag_extract: etag.update_etag_extract,
         update_etag_apply: etag.update_etag_apply,
+        delete_if_match_decl: etag.delete_if_match_decl,
+        delete_if_match_apply: etag.delete_if_match_apply,
         get_etag_extract_decl: etag.get_etag_extract_decl,
         get_etag_capture: etag.get_etag_capture,
         get_etag_apply: etag.get_etag_apply,

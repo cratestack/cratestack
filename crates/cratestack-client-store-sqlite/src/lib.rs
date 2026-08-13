@@ -12,7 +12,7 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use chrono::Utc;
-    use cratestack_client_rust::{ClientStateStore, RequestJournalEntry};
+    use cratestack_core::{ClientStateStore, RequestJournalEntry};
 
     use super::SqliteStateStore;
 

@@ -1,27 +1,27 @@
 import 'package:tiny_rpc_client/tiny_rpc_client.dart';
 
 void main() {
-  const fetchQuery = CratestackFetchQuery();
-  final selection = WidgetSelection();
-  selection.id();
-  final listQuery = selection.toListQuery(
-    sort: '-id',
-    limit: 20,
-    offset: 0,
-    where: 'published=true',
-    orFilters: ['published=true', 'published=false'],
-    filters: {'status': 'active'},
+  // `CratestackRpcCallOptions` (headers/idempotency key) is the RPC
+  // transport's per-call options type — the REST transport's URL-query
+  // builder types have no equivalent here. RPC calls carry a typed body
+  // instead of a URL query, so there is no query-builder surface to
+  // exercise in this package.
+  const options = CratestackRpcCallOptions(
+    headers: {'x-client': 'example'},
+    idempotencyKey: 'example-key',
   );
-  final projection = selection.asProjection();
+  assert(options.idempotencyKey == 'example-key');
+  assert(options.headers['x-client'] == 'example');
 
-  assert(listQuery.toQueryParameters()['sort'] == '-id');
-  assert(listQuery.toQueryParameters()['limit'] == 20);
-  assert(listQuery.toQueryParameters()['offset'] == 0);
-  assert(listQuery.toQueryParameters()['where'] == 'published=true');
-  assert(listQuery.toQueryParameters()['or'] == 'published=true|published=false');
-  assert(listQuery.toQueryParameters()['status'] == 'active');
-  assert(fetchQuery.toQueryParameters().isEmpty);
-  assert(listQuery.toQueryParameters()['fields'] != null);
-  assert(selection.toFetchQuery().toQueryParameters().isNotEmpty);
-  assert(projection.toFetchQuery().toQueryParameters().isNotEmpty);
+  // Generated model API entry points:
+  // - widgets
+
+  // Generated procedures:
+  // - echoName(...)
+
+  // Round-trips the generated model class through the same
+  // fromWire/toWire pair every RPC response and request body uses.
+  final sample = Widget.fromWire(const <String, Object?>{});
+  final wire = sample.toWire();
+  assert(wire.containsKey('id'));
 }

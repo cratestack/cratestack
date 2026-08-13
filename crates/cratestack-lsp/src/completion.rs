@@ -25,9 +25,31 @@ pub(crate) fn completion_items(schema: Option<&Schema>) -> Vec<CompletionItem> {
         "@allow",
         "@custom",
         "@@allow",
+        "@@id",
+        "@@unique",
     ];
-    let builtin_types = [
-        "String", "Cuid", "Int", "Float", "Boolean", "DateTime", "Json", "Bytes", "Uuid",
+    // Sourced from the parser's authoritative list rather than hand-copied,
+    // so this can't silently drift the way it did before `Decimal` was
+    // added here (cratestack#232) — a real editor regression that shipped
+    // with nothing to catch it. `Page` is excluded: it's only valid as a
+    // procedure return type (`Page<T>`), never a plain completable field
+    // type — see `cratestack_parser::validate::type_names::validate_type_ref`.
+    let builtin_types = cratestack_parser::builtin_type_names()
+        .iter()
+        .copied()
+        .filter(|name| *name != "Page");
+
+    // The three values `validate_datasource` (cratestack-parser) accepts for
+    // `datasource { provider = "..." }`. `"none"` (cratestack#327) declares
+    // a no-database, procedures-only schema — surfaced here so schema
+    // authors discover it without reading source.
+    let datasource_providers = [
+        ("\"postgresql\"", "sqlx Postgres backend"),
+        ("\"sqlite\"", "rusqlite embedded backend"),
+        (
+            "\"none\"",
+            "no database (procedures-only server mode, cratestack#327) — no `model` block allowed",
+        ),
     ];
 
     let mut items = keywords
@@ -44,6 +66,17 @@ pub(crate) fn completion_items(schema: Option<&Schema>) -> Vec<CompletionItem> {
         kind: Some(CompletionItemKind::TYPE_PARAMETER),
         ..CompletionItem::default()
     }));
+
+    items.extend(
+        datasource_providers
+            .into_iter()
+            .map(|(label, detail)| CompletionItem {
+                label: label.to_owned(),
+                kind: Some(CompletionItemKind::ENUM_MEMBER),
+                detail: Some(detail.to_owned()),
+                ..CompletionItem::default()
+            }),
+    );
 
     let mut seen = BTreeSet::new();
     if let Some(schema) = schema {
@@ -152,4 +185,55 @@ pub(crate) fn completion_items(schema: Option<&Schema>) -> Vec<CompletionItem> {
     }
 
     items
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression test for cratestack#232: the builtin-type completion list
+    /// had silently drifted from `cratestack_parser::builtin_type_names()`
+    /// (missing `Decimal`), and nothing caught it. This pins the two lists
+    /// together so a future drift fails the suite instead of shipping.
+    #[test]
+    fn builtin_type_completions_match_parser_list_minus_page() {
+        let labels: std::collections::BTreeSet<String> = completion_items(None)
+            .into_iter()
+            .filter(|item| item.kind == Some(CompletionItemKind::TYPE_PARAMETER))
+            .map(|item| item.label)
+            .collect();
+
+        let expected: std::collections::BTreeSet<String> = cratestack_parser::builtin_type_names()
+            .iter()
+            .copied()
+            .filter(|name| *name != "Page")
+            .map(str::to_owned)
+            .collect();
+
+        assert_eq!(
+            labels, expected,
+            "completion list must track cratestack_parser::builtin_type_names() \
+             (minus `Page`) — see cratestack#232",
+        );
+    }
+
+    /// cratestack#327: `datasource { provider = "none" }` must be offered
+    /// alongside the existing `"postgresql"`/`"sqlite"` provider values.
+    #[test]
+    fn datasource_provider_completions_include_none_alongside_postgresql_and_sqlite() {
+        let labels: std::collections::BTreeSet<String> = completion_items(None)
+            .into_iter()
+            .filter(|item| item.kind == Some(CompletionItemKind::ENUM_MEMBER))
+            .map(|item| item.label)
+            .collect();
+
+        assert_eq!(
+            labels,
+            std::collections::BTreeSet::from([
+                "\"postgresql\"".to_owned(),
+                "\"sqlite\"".to_owned(),
+                "\"none\"".to_owned(),
+            ])
+        );
+    }
 }

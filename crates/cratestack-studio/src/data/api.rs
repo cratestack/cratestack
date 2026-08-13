@@ -23,7 +23,8 @@ use cratestack_core::Schema;
 use reqwest::Client;
 
 use super::{
-    ColumnSnapshot, DataError, DataSource, Page, PageRequest, PkCast, Row, SqlOp, SqlPreview,
+    ColumnSnapshot, DataError, DataSource, Page, PageRequest, PkCast, QueryPlan, Row, SqlOp,
+    SqlPreview,
 };
 use crate::config::ApiAuth;
 
@@ -36,12 +37,25 @@ pub struct ApiSource {
     schema: Arc<Schema>,
 }
 
+/// Installs a `ring`-backed `rustls::crypto::CryptoProvider` if the process
+/// doesn't already have one. See `cratestack-client-rust`'s
+/// `client/core.rs::ensure_crypto_provider` (#440) for the full rationale —
+/// same fix, duplicated here rather than shared, since this crate depends on
+/// `reqwest` independently of `cratestack-client-rust`. `install_default()`
+/// only takes effect the first time it succeeds process-wide, so a host
+/// application that already installed its own provider before calling
+/// `ApiSource::new` keeps that choice.
+fn ensure_crypto_provider() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 impl ApiSource {
     pub fn new(
         base_url: String,
         auth: Option<&ApiAuth>,
         schema: Arc<Schema>,
     ) -> Result<Self, reqwest::Error> {
+        ensure_crypto_provider();
         let client = Client::builder().build()?;
         let auth_header = auth.map(|a| match a {
             ApiAuth::Bearer { token } => ("Authorization".to_owned(), format!("Bearer {token}")),
@@ -115,6 +129,17 @@ impl DataSource for ApiSource {
     ) -> Result<SqlPreview, DataError> {
         Err(DataError::Unsupported {
             what: "SQL preview against API targets — the upstream service runs the query, not Studio",
+        })
+    }
+
+    async fn explain(
+        &self,
+        _op: SqlOp,
+        _model: &str,
+        _pk: Option<&str>,
+    ) -> Result<QueryPlan, DataError> {
+        Err(DataError::Unsupported {
+            what: "EXPLAIN against API targets — only the upstream service can plan its own queries",
         })
     }
 

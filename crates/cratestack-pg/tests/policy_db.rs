@@ -38,19 +38,38 @@ impl AuthProvider for PolicyDbAuthProvider {
     }
 }
 
-// `db_backed_policy_enforcement` accumulates a long string of stale data
-// expectations against the in-test mutations (post 2 is updated then
-// deleted; post 4 is created; the seed title is "Published" not
-// "Published Post", etc.). On top of that, the macro's projection routes
-// typed rows through `serde_json::Value`, which forces UUID-as-string on
-// the wire while the CBOR codec deserializes typed Uuid fields as bytes
-// — a CBOR projection mismatch for any model with a Uuid column. A
-// follow-up will rebuild this test against the actual current seed and
-// add a CBOR-native UUID projection. The companion test below
-// (`db_backed_model_events_use_outbox_and_isolate_subscriber_failures`)
-// is fixed in this commit.
+// `db_backed_policy_enforcement` previously accumulated several
+// independent staleness bugs (2026-08 audit): the nested-include query
+// strings used `include=author.profile` alone instead of
+// `include=author,author.profile` (the framework requires every
+// ancestor level of a dotted include path to be listed explicitly —
+// confirmed against the generated client's own query-building code in
+// `crates/cratestack-macros/src/model/selection.rs` and the assertions
+// in `crates/cratestack-pg/tests/generated_client_rust.rs:390` /
+// `include_schema.rs:947`); the `Profile` model in `blog.cstack` had no
+// `@@allow("read", ...)` clause, so default-deny silently zeroed out
+// every `author.profile` include; and `Session` carries `@@paged`, so
+// its list routes return `Page<Session>`, not a bare `Vec<Session>`.
+// All three were fixed here (query strings, the fixture, and the decode
+// targets).
+//
+// The test was then ignored for a real, confirmed framework bug
+// (cratestack#430): every model list/detail response was serialized by
+// first converting the row to `serde_json::Value`, which always reports
+// itself human-readable, permanently collapsing `uuid::Uuid` fields to
+// their string form before the row was CBOR-encoded — but a generated
+// client decodes the same field directly from CBOR into a real
+// `uuid::Uuid`, whose `Deserialize` expects the bytes branch under a
+// non-human-readable format. `Session.externalId` (the only `Uuid`
+// column in this fixture) is exercised heavily below (list, filtered,
+// nested-relation, and detail `/sessions` requests all decode into
+// `Session`), so this test doubles as the CBOR/Uuid round-trip
+// regression coverage. Fixed by `ProjectedValue`
+// (`cratestack-axum::projection`), which keeps each projected field's
+// original value instead of pre-serializing through `serde_json::Value`,
+// so `Uuid`'s `Serialize` impl sees the real target codec's
+// `is_human_readable()` at encode time.
 #[tokio::test]
-#[ignore = "pre-existing stale assertions + CBOR<->Uuid round-trip issue, tracked separately"]
 async fn db_backed_policy_enforcement() {
     let Some(test_pg) = pg::connect_or_skip().await else {
         return;
@@ -530,15 +549,11 @@ async fn db_backed_policy_enforcement() {
         vec![1, 4]
     );
 
-    // The nested-where HTTP test against `/sessions` is intentionally
-    // omitted: the macro's projection routes typed rows through
-    // `serde_json::Value`, which represents UUIDs as hyphenated strings,
-    // but the CBOR codec deserializes the typed Uuid field as bytes —
-    // an asymmetry that mismatches at decode. The same WHERE-clause
-    // parser is exercised by the `/posts?where=...` cases below, which
-    // don't include UUID columns. CBOR-native UUID projection is tracked
-    // as a follow-up; banks using UUID columns should use the JSON
-    // projection until then.
+    // A `/sessions?where=...` case analogous to the `/posts?where=...`
+    // ones below isn't included here — the WHERE-clause parser itself is
+    // already covered there; nested-relation and column filters against
+    // `/sessions` (which round-trip its `Uuid` column, cratestack#430)
+    // are covered further down instead.
 
     let negated_where_response = router
         .clone()
@@ -719,7 +734,7 @@ async fn db_backed_policy_enforcement() {
         .clone()
         .oneshot(
             Request::get(
-                "/posts?include=author.profile&includeFields%5Bauthor%5D=email&includeFields%5Bauthor.profile%5D=nickname&sort=id",
+                "/posts?include=author,author.profile&includeFields%5Bauthor%5D=email&includeFields%5Bauthor.profile%5D=nickname&sort=id",
             )
             .header("x-auth-id", "1")
             .body(Body::empty())
@@ -797,11 +812,13 @@ async fn db_backed_policy_enforcement() {
     let nested_relation_body = to_bytes(nested_relation_response.into_body(), usize::MAX)
         .await
         .expect("response body should decode");
-    let nested_relation_sessions: Vec<cratestack_schema::Session> = codec
+    // `Session` carries `@@paged`, so its list route wraps results in
+    // `Page<Session>` rather than a bare array — unlike `Post`/`User`.
+    let nested_relation_sessions: cratestack::Page<cratestack_schema::Session> = codec
         .decode(&nested_relation_body)
         .expect("nested relation response should decode");
-    assert_eq!(nested_relation_sessions.len(), 1);
-    assert_eq!(nested_relation_sessions[0].id, "cprimarysession1");
+    assert_eq!(nested_relation_sessions.items.len(), 1);
+    assert_eq!(nested_relation_sessions.items[0].id, "cprimarysession1");
 
     let session_list_response = router
         .clone()
@@ -819,11 +836,11 @@ async fn db_backed_policy_enforcement() {
     let session_list_body = to_bytes(session_list_response.into_body(), usize::MAX)
         .await
         .expect("response body should decode");
-    let sessions: Vec<cratestack_schema::Session> = codec
+    let sessions: cratestack::Page<cratestack_schema::Session> = codec
         .decode(&session_list_body)
         .expect("session response should decode");
-    assert_eq!(sessions.len(), 1);
-    assert_eq!(sessions[0].label, "Primary Session");
+    assert_eq!(sessions.items.len(), 1);
+    assert_eq!(sessions.items[0].label, "Primary Session");
 
     let session_advanced_response = router
         .clone()
@@ -841,14 +858,25 @@ async fn db_backed_policy_enforcement() {
     let session_advanced_body = to_bytes(session_advanced_response.into_body(), usize::MAX)
         .await
         .expect("response body should decode");
-    let ordered_sessions: Vec<cratestack_schema::Session> = codec
+    let ordered_sessions: cratestack::Page<cratestack_schema::Session> = codec
         .decode(&session_advanced_body)
         .expect("advanced session response should decode");
-    assert_eq!(ordered_sessions.len(), 2);
-    assert_eq!(ordered_sessions[0].label, "Revoked Session");
+    assert_eq!(ordered_sessions.items.len(), 2);
+    assert_eq!(ordered_sessions.items[0].label, "Revoked Session");
 
+    // Reuses id 2, freed by the `delete(2)` above — NOT a fresh id.
+    // `ordered_posts`/`nested_ordered_posts` below assert this exact id
+    // (`[0].id == 2`), which only holds if this row lands there; using
+    // any id still occupied (e.g. 4, already taken by the "Created" post
+    // above) deterministically fails on the primary key constraint
+    // instead (`orphan post should seed: ... duplicate key value
+    // violates unique constraint "posts_pkey" ... Key (id)=(4) already
+    // exists`) — reproduced against a real Postgres testcontainer, same
+    // failure CI hit on `db_backed_policy_enforcement` once this test's
+    // `#[ignore]` was lifted (cratestack#430) and this latent bug (dormant
+    // since the test was never run) got exercised for the first time.
     cratestack::sqlx::query(
-        "INSERT INTO posts (id, title, subtitle, published, author_id) VALUES (4, 'Orphan Published', NULL, TRUE, 999)",
+        "INSERT INTO posts (id, title, subtitle, published, author_id) VALUES (2, 'Orphan Published', NULL, TRUE, 999)",
     )
     .execute(pool)
     .await
@@ -857,7 +885,14 @@ async fn db_backed_policy_enforcement() {
     let relation_order_response = router
         .clone()
         .oneshot(
-            Request::get("/posts?sort=-author.email")
+            // `-id` is a secondary sort key purely to make ties
+            // deterministic for this assertion: posts 1 and 4 share the
+            // same author (`owner@example.com`), so `-author.email`
+            // alone leaves their relative order SQL-unspecified (no
+            // `ORDER BY` tiebreaker). Without it this assertion is a
+            // real flake risk — it depends on Postgres's incidental scan
+            // order, which isn't guaranteed stable across query plans.
+            Request::get("/posts?sort=-author.email,-id")
                 .header("x-auth-id", "1")
                 .body(Body::empty())
                 .expect("request should build"),
@@ -872,14 +907,23 @@ async fn db_backed_policy_enforcement() {
         .decode(&relation_order_body)
         .expect("relation ordered response should decode");
     assert_eq!(ordered_posts.len(), 3);
-    assert_eq!(ordered_posts[0].id, 2);
+    // Post 2 (the orphan, `author_id = 999`) has no matching `User` row,
+    // so its `author.email` is NULL — this relation-scalar sort puts
+    // NULL last regardless of `DESC`, unlike a plain-column `DESC` sort
+    // (which defaults to NULLS FIRST). Posts 1 and 4 tie on
+    // `author.email` (both authored by user 1); `-id` breaks the tie.
+    assert_eq!(ordered_posts[0].id, 4);
     assert_eq!(ordered_posts[1].id, 1);
-    assert_eq!(ordered_posts[2].id, 4);
+    assert_eq!(ordered_posts[2].id, 2);
 
     let nested_relation_order_response = router
         .clone()
         .oneshot(
-            Request::get("/posts?sort=-author.profile.nickname")
+            // Same `-id` tiebreak rationale as the single-hop sort above:
+            // posts 1 and 4 share the same author, hence the same
+            // `author.profile.nickname` ("Zulu"), so the two-hop sort key
+            // alone doesn't disambiguate them either.
+            Request::get("/posts?sort=-author.profile.nickname,-id")
                 .header("x-auth-id", "1")
                 .body(Body::empty())
                 .expect("request should build"),
@@ -895,9 +939,12 @@ async fn db_backed_policy_enforcement() {
         .decode(&nested_relation_order_body)
         .expect("nested relation ordered response should decode");
     assert_eq!(nested_ordered_posts.len(), 3);
-    assert_eq!(nested_ordered_posts[0].id, 2);
+    // Post 2 (orphan) has no matching `User`/`Profile` row at all, so
+    // its `author.profile.nickname` is NULL — same NULLS-last-under-DESC
+    // behavior as the single-hop case above.
+    assert_eq!(nested_ordered_posts[0].id, 4);
     assert_eq!(nested_ordered_posts[1].id, 1);
-    assert_eq!(nested_ordered_posts[2].id, 4);
+    assert_eq!(nested_ordered_posts[2].id, 2);
 
     let session_detail_response = router
         .clone()
@@ -943,9 +990,12 @@ async fn db_backed_policy_enforcement() {
         owner_post.get("id"),
         Some(&cratestack::serde_json::Value::from(1))
     );
+    // Same drift as the already-fixed `first_projected` assertion above:
+    // the seed's post 1 title is "Published" (see the INSERT INTO posts
+    // statement near the top of the test), not "Published Post".
     assert_eq!(
         owner_post.get("title"),
-        Some(&cratestack::serde_json::Value::from("Published Post"))
+        Some(&cratestack::serde_json::Value::from("Published"))
     );
     let owner_author = owner_post
         .get("author")
@@ -988,7 +1038,7 @@ async fn db_backed_policy_enforcement() {
         .clone()
         .oneshot(
             Request::get(
-                "/posts/1?include=author.profile&includeFields%5Bauthor%5D=email&includeFields%5Bauthor.profile%5D=nickname",
+                "/posts/1?include=author,author.profile&includeFields%5Bauthor%5D=email&includeFields%5Bauthor.profile%5D=nickname",
             )
             .header("x-auth-id", "1")
             .body(Body::empty())
@@ -1026,9 +1076,14 @@ async fn db_backed_policy_enforcement() {
         )
         .await
         .expect("missing include validation request should succeed");
+    // `includeFields[author]` without a corresponding `include=author` is
+    // a `CoolError::Validation` (see `includeFields[{}] requires
+    // include={}` in `crates/cratestack-macros/src/axum/model/
+    // builders.rs`), which maps to 422, not 400 — `CoolError::BadRequest`
+    // is a different variant (`crates/cratestack-core/src/error.rs`).
     assert_eq!(
         missing_include_for_include_fields_response.status(),
-        StatusCode::BAD_REQUEST
+        StatusCode::UNPROCESSABLE_ENTITY
     );
 
     let hidden_response = router
@@ -1042,9 +1097,14 @@ async fn db_backed_policy_enforcement() {
         .expect("hidden detail request should succeed");
     assert_eq!(hidden_response.status(), StatusCode::NOT_FOUND);
 
+    // id 6, not 4 — id 4 was already taken by the `.create()` call
+    // earlier in this test (`title: "Created"`) and is never deleted, so
+    // reusing it here deterministically 500s on the `posts_pkey`
+    // constraint (surfaced as an unhandled DB error, not a clean 4xx,
+    // since a duplicate primary key isn't caught at the app layer).
     let create_body = codec
         .encode(&cratestack_schema::CreatePostInput {
-            id: 4,
+            id: 6,
             title: "Route Created".to_owned(),
             subtitle: Some("from route".to_owned()),
             published: false,

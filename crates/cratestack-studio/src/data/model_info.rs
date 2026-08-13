@@ -4,7 +4,7 @@
 //! into a sibling module so the new SQLite source can reuse it without
 //! pulling Postgres-specific types.
 
-use cratestack_core::{Field, Model, Schema, TypeArity};
+use cratestack_core::{Field, Model, ModelEventKind, Schema, TypeArity, parse_emit_attribute};
 use cratestack_migrate::{column_name, table_name};
 
 use super::DataError;
@@ -27,10 +27,11 @@ pub(crate) struct ModelSqlInfo<'a> {
 
 #[derive(Debug, Clone)]
 pub(crate) struct ColumnInfo<'a> {
-    /// The field's `.cstack` name (camelCase). Used by the snippet
-    /// generator's column-name lookup and by the JSON-object alias
-    /// labels emitted into projected rows.
-    #[allow(dead_code)]
+    /// The field's `.cstack` name (camelCase). Both dialects project
+    /// rows keyed by this rather than by `column_name`, which is what
+    /// makes [`crate::data::Row`]'s "keys are field names" contract
+    /// true: SQLite labels its `json_object(...)` pairs with it, and
+    /// Postgres aliases each selected column to it.
     pub field_name: &'a str,
     pub column_name: String,
 }
@@ -91,6 +92,38 @@ pub(crate) fn find_pk_field(model: &Model) -> Option<&Field> {
         .fields
         .iter()
         .find(|f| f.attributes.iter().any(|a| a.raw.starts_with("@id")))
+}
+
+/// The SQL column name of `model`'s `@version` field, if it declares
+/// one. The parser guarantees at most one `@version` field per model,
+/// that it's a required `Int`, and that it isn't also `@id`
+/// (`cratestack-parser/src/validate/model_attributes.rs`), so a column
+/// found here is always safe to increment arithmetically.
+pub(crate) fn version_column(model: &Model) -> Option<String> {
+    model
+        .fields
+        .iter()
+        .find(|f| f.attributes.iter().any(|a| a.raw == "@version"))
+        .map(|f| column_name(&f.name))
+}
+
+/// The set of operations `model`'s `@@emit(...)` attribute(s) declare,
+/// deduplicated. Empty when the model has no `@@emit` at all. Mirrors
+/// `cratestack-macros::event::model_emitted_events` (the codegen path's
+/// equivalent), reusing the same `cratestack_core::parse_emit_attribute`
+/// parser so the two never disagree on what a given `@@emit(...)` string
+/// means. Malformed `@@emit(...)` text is treated as declaring nothing —
+/// the parser's own semantic checker is what rejects it at schema-load
+/// time; this is a runtime read of an already-validated schema.
+pub(crate) fn emitted_events(model: &Model) -> Vec<ModelEventKind> {
+    let mut emitted = Vec::new();
+    for attribute in &model.attributes {
+        if attribute.raw.starts_with("@@emit(") {
+            emitted.extend(parse_emit_attribute(&attribute.raw).unwrap_or_default());
+        }
+    }
+    emitted.dedup();
+    emitted
 }
 
 /// A field counts as scalar if its arity isn't `List` and its declared

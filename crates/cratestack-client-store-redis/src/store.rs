@@ -1,9 +1,7 @@
 //! Redis-backed implementation of `ClientStateStore`.
 
 use chrono::Utc;
-use cratestack_client_rust::{
-    ClientError, ClientStateStore, PersistedClientState, RequestJournalEntry,
-};
+use cratestack_core::{ClientStateStore, CoolError, PersistedClientState, RequestJournalEntry};
 use redis::Commands;
 
 use crate::config::RedisStateStoreConfig;
@@ -19,7 +17,7 @@ impl RedisStateStore {
     pub fn open(
         redis_url: impl redis::IntoConnectionInfo,
         key_prefix: impl Into<String>,
-    ) -> Result<Self, ClientError> {
+    ) -> Result<Self, CoolError> {
         let client = redis::Client::open(redis_url).map_err(redis_error)?;
         Ok(Self::from_client(client, key_prefix))
     }
@@ -43,11 +41,11 @@ impl RedisStateStore {
         self.config.request_journal_key()
     }
 
-    fn connection(&self) -> Result<redis::Connection, ClientError> {
+    fn connection(&self) -> Result<redis::Connection, CoolError> {
         self.client.get_connection().map_err(redis_error)
     }
 
-    fn bootstrap(&self, connection: &mut redis::Connection) -> Result<(), ClientError> {
+    fn bootstrap(&self, connection: &mut redis::Connection) -> Result<(), CoolError> {
         let meta_key = self.config.meta_key();
         let exists: bool = connection.exists(&meta_key).map_err(redis_error)?;
         if !exists {
@@ -67,7 +65,7 @@ impl RedisStateStore {
 }
 
 impl ClientStateStore for RedisStateStore {
-    fn load(&self) -> Result<PersistedClientState, ClientError> {
+    fn load(&self) -> Result<PersistedClientState, CoolError> {
         let mut connection = self.connection()?;
         self.bootstrap(&mut connection)?;
 
@@ -85,7 +83,7 @@ impl ClientStateStore for RedisStateStore {
             .into_iter()
             .map(|entry| {
                 serde_json::from_str::<RequestJournalEntry>(&entry).map_err(|error| {
-                    ClientError::State(format!(
+                    CoolError::Internal(format!(
                         "failed to decode Redis request journal entry from {journal_key}: {error}"
                     ))
                 })
@@ -99,7 +97,7 @@ impl ClientStateStore for RedisStateStore {
         })
     }
 
-    fn save(&self, state: &PersistedClientState) -> Result<(), ClientError> {
+    fn save(&self, state: &PersistedClientState) -> Result<(), CoolError> {
         let mut connection = self.connection()?;
         let meta_key = self.config.meta_key();
         let journal_key = self.config.request_journal_key();
@@ -123,7 +121,7 @@ impl ClientStateStore for RedisStateStore {
         Ok(())
     }
 
-    fn append_request_journal(&self, entry: &RequestJournalEntry) -> Result<(), ClientError> {
+    fn append_request_journal(&self, entry: &RequestJournalEntry) -> Result<(), CoolError> {
         let mut connection = self.connection()?;
         self.bootstrap(&mut connection)?;
         let meta_key = self.config.meta_key();
@@ -142,20 +140,20 @@ impl ClientStateStore for RedisStateStore {
     }
 }
 
-pub(crate) fn encode_entry(entry: &RequestJournalEntry) -> Result<String, ClientError> {
+pub(crate) fn encode_entry(entry: &RequestJournalEntry) -> Result<String, CoolError> {
     serde_json::to_string(entry).map_err(|error| {
-        ClientError::State(format!("failed to encode Redis journal entry: {error}"))
+        CoolError::Internal(format!("failed to encode Redis journal entry: {error}"))
     })
 }
 
-fn redis_error(error: redis::RedisError) -> ClientError {
-    ClientError::State(format!("Redis state store error: {error}"))
+fn redis_error(error: redis::RedisError) -> CoolError {
+    CoolError::Internal(format!("Redis state store error: {error}"))
 }
 
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
-    use cratestack_client_rust::RequestJournalEntry;
+    use cratestack_core::RequestJournalEntry;
 
     use super::{RedisStateStore, encode_entry};
 

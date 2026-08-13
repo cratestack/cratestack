@@ -53,6 +53,7 @@ pub(super) fn synthesize_pages(
                 name_span: model.name_span,
                 arity: TypeArity::Required,
                 generic_args: vec![],
+                int_args: Vec::new(),
             };
             page_items.entry(page_message_name(&item)).or_insert(item);
         }
@@ -69,7 +70,13 @@ pub(super) fn synthesize_pages(
     Ok(())
 }
 
-pub(super) fn monomorphize_return_type(return_type: &TypeRef) -> TypeRef {
+/// `pub` (not `pub(super)`) since ticket #208: `emit::mod` re-exports
+/// this so `cratestack-macros::include::server::grpc::procedures` can
+/// compute the exact same `<Base>Output.result` field type this crate's
+/// own [`super::synth::synthesize_messages`] already used to number that
+/// field in the `.pb.lock` — reusing the monomorphization rule rather
+/// than re-deriving `Page<T>` -> `PageOf<Item>` a second time.
+pub fn monomorphize_return_type(return_type: &TypeRef) -> TypeRef {
     if !return_type.is_page() {
         return return_type.clone();
     }
@@ -81,6 +88,7 @@ pub(super) fn monomorphize_return_type(return_type: &TypeRef) -> TypeRef {
         name_span: return_type.name_span,
         arity: TypeArity::Required,
         generic_args: vec![],
+        int_args: Vec::new(),
     }
 }
 
@@ -97,6 +105,7 @@ fn page_of_fields(item: &TypeRef) -> Vec<Field> {
                 name_span: item.name_span,
                 arity: TypeArity::List,
                 generic_args: vec![],
+                int_args: Vec::new(),
             },
         ),
         synthetic_field("total_count", scalar_ty("Int", TypeArity::Optional)),
@@ -127,6 +136,7 @@ fn scalar_ty(name: &str, arity: TypeArity) -> TypeRef {
         name_span: synthetic_span(),
         arity,
         generic_args: vec![],
+        int_args: Vec::new(),
     }
 }
 

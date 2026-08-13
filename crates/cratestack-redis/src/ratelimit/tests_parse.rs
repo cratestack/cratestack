@@ -1,7 +1,6 @@
 #![cfg(test)]
 
-use cratestack_axum::ratelimit::RateLimitDecision;
-use cratestack_core::CoolError;
+use cratestack_core::{CoolError, RateLimitDecision};
 use redis::Value as RedisValue;
 
 use super::parse::parse_consume_outcome;

@@ -11,9 +11,9 @@ use syn::LitStr;
 use crate::axum::{generate_model_axum_handlers, generate_model_axum_routes};
 use crate::model::{
     generate_bound_model_accessor, generate_create_input_struct, generate_field_module,
-    generate_model_accessor, generate_model_descriptor, generate_model_struct_only,
-    generate_pg_from_row_impl, generate_primary_key_accessor_impl, generate_update_input_struct,
-    generate_upsert_input_struct,
+    generate_find_many_input, generate_model_accessor, generate_model_descriptor,
+    generate_model_struct_only, generate_pg_from_row_impl, generate_primary_key_accessor_impl,
+    generate_update_input_struct, generate_upsert_input_struct,
 };
 use crate::transport::{generate_model_transport_constants, generate_model_transport_entries};
 
@@ -28,6 +28,7 @@ pub(super) struct ModelCollected {
     pub(super) create_input_structs: Vec<Ts>,
     pub(super) update_input_structs: Vec<Ts>,
     pub(super) upsert_input_impls: Vec<Ts>,
+    pub(super) find_many_input_structs: Vec<Ts>,
     pub(super) accessors: Vec<Ts>,
     pub(super) bound_accessors: Vec<Ts>,
     pub(super) axum_handler_defs: Vec<Ts>,
@@ -85,6 +86,12 @@ pub(super) fn collect_models(
         .iter()
         .map(|model| generate_upsert_input_struct(model, model_name_set, enum_name_set))
         .collect();
+    let find_many_input_structs = schema
+        .models
+        .iter()
+        .map(|model| generate_find_many_input(model, model_name_set))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| compile_error(schema_path, e))?;
     let accessors = schema.models.iter().map(generate_model_accessor).collect();
     let bound_accessors = schema
         .models
@@ -122,6 +129,7 @@ pub(super) fn collect_models(
         create_input_structs,
         update_input_structs,
         upsert_input_impls,
+        find_many_input_structs,
         accessors,
         bound_accessors,
         axum_handler_defs,

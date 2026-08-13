@@ -37,6 +37,16 @@ different Accept and checks the response shape:
 - `zero_count_returns_empty_sequence` — empty `Sequence` ops produce zero
   chunks + a clean end-of-body. No special end marker on the wire.
 
+There's a second procedure, `procedure.flakyTicks`, same shape as
+`ticks` but always failing after its successful items — a
+genuinely-streaming server hitting a mid-stream error
+([cratestack#281](https://github.com/cratestack/cratestack/issues/281)'s
+CBOR-tagged error sentinel, produced here by the real production encoder,
+not a hand-rolled fixture). `tests/stream_ts_fixture_bytes.rs` captures
+both procedures' real wire bytes as fixtures for
+`packages/cratestack-ts-types`'s TypeScript CBOR-seq boundary-scanner
+tests ([cratestack#277](https://github.com/cratestack/cratestack/issues/277)).
+
 Run:
 
 ```bash

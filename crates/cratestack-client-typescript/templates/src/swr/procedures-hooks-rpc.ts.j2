@@ -1,0 +1,78 @@
+// Generated SWR hooks for this schema's procedures (issue #305) — a
+// sibling file to `./procedures` (the plain, framework-free functions
+// from issue #304), not appended into it: see
+// `cratestack-client-typescript`'s `src/swr/mod.rs` module doc for why
+// hooks and plain functions can't share a file without breaking the
+// framework-free guarantee.
+//
+// Every hook below is a thin wrapper: the fetching logic lives exactly
+// once, in the plain function it calls, never duplicated here. Cache
+// keys always come from `swrKeys` (`./swr-keys`), never a hand-written
+// literal. A query-kind procedure gets a `useSWR` hook whose `args`
+// parameter accepts `null`/`undefined` — SWR's conditional-fetching
+// idiom (`useSWR(null, ...)` never fires) — for the same "argument not
+// known yet" case model detail hooks handle. A mutation-kind procedure
+// gets a `useSWRMutation` hook; procedures have no list/detail to
+// invalidate (that's model CRUD's job — see `src/models/*.hooks.ts`'s
+// own invalidation-rule comment), so these never call `mutate`.
+
+import useSWR, { type SWRConfiguration, type SWRResponse } from "swr";
+import useSWRMutation, {
+  type SWRMutationConfiguration,
+  type SWRMutationResponse,
+} from "swr/mutation";
+import type { CratestackRpcRuntime } from "./runtime.js";
+import { swrKeys } from "./swr-keys.js";
+{% for import in procedures_file.imports %}
+import type { {{ import.type_names_joined }} } from "{{ import.path }}";
+{% endfor %}
+import {
+{% for procedure in procedures_file.procedures %}
+  {{ procedure.method_name }},
+  type {{ procedure.args_name }},
+{% endfor %}
+{% for enum in procedures_file.owned_enums %}
+  type {{ enum.name }},
+{% endfor %}
+{% for interface in procedures_file.owned_interfaces %}
+  type {{ interface.name }},
+{% endfor %}
+} from "./procedures.js";
+
+{% for procedure in procedures_file.procedures %}
+{% if procedure.kind == "query" %}
+export function use{{ procedure.hook_name }}Query(
+  runtime: CratestackRpcRuntime,
+  args: {{ procedure.args_name }} | null | undefined,
+  config?: SWRConfiguration<{{ procedure.return_type }}, Error>,
+): SWRResponse<{{ procedure.return_type }}, Error> {
+  return useSWR(
+    swrKeys.procedure.{{ procedure.name }}(args),
+    () => {{ procedure.method_name }}(runtime, args as {{ procedure.args_name }}),
+    config,
+  );
+}
+{% else %}
+export function use{{ procedure.hook_name }}Mutation(
+  runtime: CratestackRpcRuntime,
+  config?: SWRMutationConfiguration<
+    {{ procedure.return_type }},
+    Error,
+    ReturnType<typeof swrKeys.procedure.{{ procedure.name }}>,
+    {{ procedure.args_name }}
+  >,
+): SWRMutationResponse<
+  {{ procedure.return_type }},
+  Error,
+  ReturnType<typeof swrKeys.procedure.{{ procedure.name }}>,
+  {{ procedure.args_name }}
+> {
+  return useSWRMutation(
+    swrKeys.procedure.{{ procedure.name }}(),
+    (_key, { arg }: { arg: {{ procedure.args_name }} }) => {{ procedure.method_name }}(runtime, arg),
+    config,
+  );
+}
+{% endif %}
+
+{% endfor %}

@@ -1,6 +1,10 @@
 //! `include_client_schema!` composer — emits the HTTP client surface:
 //! model/input/procedure stubs for talking to a server over the wire.
-//! No DB at all.
+//! No DB at all. For a `transport grpc` schema (ticket #209), also emits a
+//! native `tonic`-based gRPC client under `cratestack_schema::grpc` — see
+//! [`grpc`]'s module doc.
+
+mod grpc;
 
 use std::collections::BTreeSet;
 
@@ -11,7 +15,7 @@ use syn::LitStr;
 use crate::client::generate_client_module;
 use crate::model::{
     generate_client_create_input_struct, generate_client_field_module,
-    generate_client_model_struct, generate_client_update_input_struct,
+    generate_client_model_struct, generate_client_update_input_struct, generate_find_many_types,
 };
 use crate::procedure::generate_client_procedure_module;
 use crate::shared::schema_lit;
@@ -25,13 +29,18 @@ pub(super) fn compose_client_schema(schema_path: &LitStr) -> TokenStream {
         Ok(parsed) => parsed,
         Err(error) => return error,
     };
-    if let Err(error) = super::reject_grpc::guard_client_or_embedded_grpc_transport(
-        schema_path,
-        &schema,
-        "include_client_schema",
-    ) {
+    if let Err(error) = super::reject_grpc::guard_client_grpc_transport(schema_path, &schema) {
         return error;
     }
+    if let Err(error) =
+        super::extension_gate::guard_client_declared_extensions(schema_path, &schema)
+    {
+        return error;
+    }
+    let grpc_module = match grpc::build_client_grpc_module(&schema, &resolved, schema_path) {
+        Ok(tokens) => tokens,
+        Err(error) => return error,
+    };
     let resolved_literal = resolved.display().to_string();
 
     let model_names = schema.models.iter().map(|model| schema_lit(&model.name));
@@ -64,6 +73,16 @@ pub(super) fn compose_client_schema(schema_path: &LitStr) -> TokenStream {
         .models
         .iter()
         .map(|model| generate_client_update_input_struct(model, &model_name_set, &enum_name_set));
+    // `<Model>Where`/`<Model>SortField`/`<Model>OrderByClause`/
+    // `<Model>FindManyInput` — the types a `FindMany<Model>` procedure
+    // argument needs (issue #371's redesign). No `build_<model>_query_
+    // from_find_many` here: that entry point needs a live `Cratestack`
+    // DB handle and query builder, neither of which a pure HTTP client
+    // has — see `generate_find_many_types`'s doc.
+    let find_many_input_structs = schema
+        .models
+        .iter()
+        .map(|model| generate_find_many_types(model, &model_name_set));
     // Client field modules: same surface as server field modules minus
     // emissions that hard-reference `*_MODEL` descriptors (which the
     // client composer doesn't emit). See `FieldModuleKind::Client`.
@@ -150,6 +169,7 @@ pub(super) fn compose_client_schema(schema_path: &LitStr) -> TokenStream {
 
                 #(#create_input_structs)*
                 #(#update_input_structs)*
+                #(#find_many_input_structs)*
             }
 
             pub use inputs::*;
@@ -161,6 +181,8 @@ pub(super) fn compose_client_schema(schema_path: &LitStr) -> TokenStream {
 
                 #(#procedure_modules)*
             }
+
+            #grpc_module
         }
     };
 

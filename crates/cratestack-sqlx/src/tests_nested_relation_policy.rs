@@ -33,6 +33,6 @@ fn nested_relation_policy_preview_uses_recursive_exists_and_quantifiers() {
 
     assert_eq!(
         sql,
-        "EXISTS (SELECT 1 FROM users WHERE users.id = posts.author_id AND NOT EXISTS (SELECT 1 FROM memberships WHERE memberships.user_id = users.id AND NOT (active = $1)))"
+        "(EXISTS (SELECT 1 FROM users WHERE users.id = posts.author_id AND NOT EXISTS (SELECT 1 FROM memberships WHERE memberships.user_id = users.id AND NOT (active = $1))))"
     );
 }

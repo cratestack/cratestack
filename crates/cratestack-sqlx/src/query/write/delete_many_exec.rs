@@ -3,20 +3,26 @@
 //! delete policy clause, fan-out audit + event, return
 //! `BatchSummary`.
 
-use cratestack_core::{AuditOperation, BatchSummary, CoolContext, CoolError, ModelEventKind};
+use cratestack_core::{
+    AuditEvent, AuditOperation, BatchSummary, CoolContext, CoolError, ModelEventKind,
+};
 
 use crate::audit::{build_audit_event, enqueue_audit_event, ensure_audit_table};
 use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
 use crate::query::support::{push_action_policy_query, push_filter_query};
-use crate::{FilterExpr, ModelDescriptor, SqlxRuntime, sqlx};
+use crate::{FilterExpr, ModelDescriptor, SqlxRuntime, cool_error_from_sqlx, sqlx};
 
+/// Returns `(summary, emits_any_event, audit_events)` — see
+/// `update_many_exec::run_update_many_in_tx`'s doc comment for why the
+/// caller, not this function, decides when to drain the outbox / fan
+/// the audit events out.
 pub(super) async fn run_delete_many_in_tx<'tx, M, PK>(
     tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
     runtime: &SqlxRuntime,
     descriptor: &'static ModelDescriptor<M, PK>,
     filters: &[FilterExpr],
     ctx: &CoolContext,
-) -> Result<(BatchSummary, bool), CoolError>
+) -> Result<(BatchSummary, bool, Vec<AuditEvent>), CoolError>
 where
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
 {
@@ -77,12 +83,13 @@ where
         .build_query_as::<M>()
         .fetch_all(&mut **tx)
         .await
-        .map_err(|error| CoolError::Database(error.to_string()))?;
+        .map_err(cool_error_from_sqlx)?;
 
     // Fan-out one audit + one outbox entry per actually-deleted row.
     // The RETURNING row IS the audit "before" snapshot for hard
     // deletes; for soft deletes it's the post-tombstone state, but
     // the operation kind still records the delete intent.
+    let mut audit_events = Vec::new();
     for record in &removed {
         if emits_event {
             enqueue_event_outbox(
@@ -97,6 +104,7 @@ where
             let before = serde_json::to_value(record).ok();
             let event = build_audit_event(descriptor, AuditOperation::Delete, before, None, ctx);
             enqueue_audit_event(&mut **tx, &event).await?;
+            audit_events.push(event);
         }
     }
 
@@ -108,5 +116,6 @@ where
             err: 0,
         },
         emits_event,
+        audit_events,
     ))
 }

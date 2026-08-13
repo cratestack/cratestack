@@ -8,13 +8,11 @@ use quote::quote;
 
 use crate::shared::supports_comparison;
 
-use super::super::types::RelationPathSegment;
 use super::op_expr;
 
-pub(in super::super) fn append_required_builder_methods(
+pub(crate) fn append_required_builder_methods(
     methods: &mut Vec<proc_macro2::TokenStream>,
     field: &Field,
-    wrappers: &[RelationPathSegment],
     field_type: &proc_macro2::TokenStream,
     column: &str,
 ) {
@@ -22,9 +20,9 @@ pub(in super::super) fn append_required_builder_methods(
         return;
     }
 
-    let eq = op_expr(field_type, column, quote! { eq(value) }, wrappers);
-    let ne = op_expr(field_type, column, quote! { ne(value) }, wrappers);
-    let in_ = op_expr(field_type, column, quote! { in_(values) }, wrappers);
+    let eq = op_expr(field_type, column, quote! { eq(value) });
+    let ne = op_expr(field_type, column, quote! { ne(value) });
+    let in_ = op_expr(field_type, column, quote! { in_(values) });
     methods.push(quote! {
         pub fn eq<V: ::cratestack::IntoSqlValue>(self, value: V) -> ::cratestack::FilterExpr {
             #eq
@@ -48,10 +46,10 @@ pub(in super::super) fn append_required_builder_methods(
     if !supports_comparison(field) {
         return;
     }
-    let lt = op_expr(field_type, column, quote! { lt(value) }, wrappers);
-    let lte = op_expr(field_type, column, quote! { lte(value) }, wrappers);
-    let gt = op_expr(field_type, column, quote! { gt(value) }, wrappers);
-    let gte = op_expr(field_type, column, quote! { gte(value) }, wrappers);
+    let lt = op_expr(field_type, column, quote! { lt(value) });
+    let lte = op_expr(field_type, column, quote! { lte(value) });
+    let gt = op_expr(field_type, column, quote! { gt(value) });
+    let gte = op_expr(field_type, column, quote! { gte(value) });
     methods.push(quote! {
         pub fn lt<V: ::cratestack::IntoSqlValue>(self, value: V) -> ::cratestack::FilterExpr {
             #lt
@@ -74,18 +72,17 @@ pub(in super::super) fn append_required_builder_methods(
     });
 }
 
-pub(in super::super) fn append_boolean_builder_methods(
+pub(crate) fn append_boolean_builder_methods(
     methods: &mut Vec<proc_macro2::TokenStream>,
     field: &Field,
-    wrappers: &[RelationPathSegment],
     field_type: &proc_macro2::TokenStream,
     column: &str,
 ) {
     if !(field.ty.name == "Boolean" && field.ty.arity == TypeArity::Required) {
         return;
     }
-    let is_true = op_expr(field_type, column, quote! { is_true() }, wrappers);
-    let is_false = op_expr(field_type, column, quote! { is_false() }, wrappers);
+    let is_true = op_expr(field_type, column, quote! { is_true() });
+    let is_false = op_expr(field_type, column, quote! { is_false() });
     methods.push(quote! {
         pub fn is_true(self) -> ::cratestack::FilterExpr {
             #is_true
@@ -98,10 +95,9 @@ pub(in super::super) fn append_boolean_builder_methods(
     });
 }
 
-pub(in super::super) fn append_required_text_builder_methods(
+pub(crate) fn append_required_text_builder_methods(
     methods: &mut Vec<proc_macro2::TokenStream>,
     field: &Field,
-    wrappers: &[RelationPathSegment],
     field_type: &proc_macro2::TokenStream,
     column: &str,
 ) {
@@ -110,8 +106,8 @@ pub(in super::super) fn append_required_text_builder_methods(
     {
         return;
     }
-    let contains = op_expr(field_type, column, quote! { contains(value) }, wrappers);
-    let starts_with = op_expr(field_type, column, quote! { starts_with(value) }, wrappers);
+    let contains = op_expr(field_type, column, quote! { contains(value) });
+    let starts_with = op_expr(field_type, column, quote! { starts_with(value) });
     methods.push(quote! {
         pub fn contains(self, value: impl ::core::convert::Into<String>) -> ::cratestack::FilterExpr {
             #contains
@@ -124,18 +120,17 @@ pub(in super::super) fn append_required_text_builder_methods(
     });
 }
 
-pub(in super::super) fn append_optional_builder_methods(
+pub(crate) fn append_optional_builder_methods(
     methods: &mut Vec<proc_macro2::TokenStream>,
     field: &Field,
-    wrappers: &[RelationPathSegment],
     field_type: &proc_macro2::TokenStream,
     column: &str,
 ) {
     if field.ty.arity != TypeArity::Optional {
         return;
     }
-    let is_null = op_expr(field_type, column, quote! { is_null() }, wrappers);
-    let is_not_null = op_expr(field_type, column, quote! { is_not_null() }, wrappers);
+    let is_null = op_expr(field_type, column, quote! { is_null() });
+    let is_not_null = op_expr(field_type, column, quote! { is_not_null() });
     methods.push(quote! {
         pub fn is_null(self) -> ::cratestack::FilterExpr {
             #is_null
@@ -148,18 +143,17 @@ pub(in super::super) fn append_optional_builder_methods(
     });
 }
 
-pub(in super::super) fn append_optional_string_builder_methods(
+pub(crate) fn append_optional_string_builder_methods(
     methods: &mut Vec<proc_macro2::TokenStream>,
     field: &Field,
-    wrappers: &[RelationPathSegment],
     field_type: &proc_macro2::TokenStream,
     column: &str,
 ) {
     if !(field.ty.name == "String" && field.ty.arity == TypeArity::Optional) {
         return;
     }
-    let contains = op_expr(field_type, column, quote! { contains(value) }, wrappers);
-    let starts_with = op_expr(field_type, column, quote! { starts_with(value) }, wrappers);
+    let contains = op_expr(field_type, column, quote! { contains(value) });
+    let starts_with = op_expr(field_type, column, quote! { starts_with(value) });
     methods.push(quote! {
         pub fn contains(self, value: impl ::core::convert::Into<String>) -> ::cratestack::FilterExpr {
             #contains

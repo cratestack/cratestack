@@ -32,6 +32,25 @@ pub(super) fn emit_drop_check(sql: &mut String, check: &DropCheck) {
 fn render_check_predicate_postgres(column: &str, kind: &CheckKind) -> String {
     let c = quote_ident(column);
     match kind {
+        CheckKind::Enum { variants, list } => {
+            let literals: Vec<String> = variants
+                .iter()
+                .map(|variant| format!("'{}'", variant.replace('\'', "''")))
+                .collect();
+            // `variants` is never empty — the projection skips the
+            // check entirely for a variant-less enum.
+            if *list {
+                // Array containment: every element of the column must
+                // be one of the variants. NULL and `{}` both pass,
+                // matching scalar `IN` semantics for NULL.
+                format!("{c} <@ ARRAY[{}]::TEXT[]", literals.join(", "))
+            } else {
+                // NULL passes: `NULL IN (...)` is NULL, and a CHECK
+                // only fails on FALSE. Nullable enum columns therefore
+                // need no special casing.
+                format!("{c} IN ({})", literals.join(", "))
+            }
+        }
         CheckKind::Range { min, max } => match (min, max) {
             (Some(min), Some(max)) => format!("{c} >= {min} AND {c} <= {max}"),
             (Some(min), None) => format!("{c} >= {min}"),
@@ -45,5 +64,12 @@ fn render_check_predicate_postgres(column: &str, kind: &CheckKind) -> String {
             (None, None) => "TRUE".to_owned(),
         },
         CheckKind::Iso4217 => format!("{c} ~ '^[A-Z]{{3}}$'"),
+        // Introspection-only (see `CheckKind::Raw`'s doc comment): the
+        // predicate text was captured verbatim from
+        // `pg_get_constraintdef`, so rendering it back is a no-op.
+        // Only reachable if an introspected `Projections` is ever fed
+        // through `emit` directly rather than through `diff_projections`
+        // + a fresh `.cstack`-side check.
+        CheckKind::Raw(sql) => sql.clone(),
     }
 }

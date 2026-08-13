@@ -106,7 +106,7 @@ Flutter UI is calling, just over a generated Dart facade.
 ## Tests
 
 ```bash
-cargo test -p embedded-flutter-native       # Rust API surface, in-memory smoke
+cargo test -p embedded_flutter_native        # Rust API surface, in-memory smoke
 ```
 
 Dart-level testing (widget tests against the bindings) lives in a future PR — it would need either a mocked native lib

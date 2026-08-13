@@ -7,7 +7,9 @@ use crate::cli_support::{
     hash_schema_source, into_generated_files, json_check_failure, json_check_success,
     parse_schema_or_render, render_schema_error, write_generated_files,
 };
-use crate::cli_types::{Cli, Command, MigrateAction, OutputFormat, StudioCmd};
+use crate::cli_types::{
+    Cli, Command, DartPresetArg, MigrateAction, OutputFormat, StudioCmd, TypeScriptPresetArg,
+};
 use crate::drift::check_drift;
 
 #[cfg(test)]
@@ -23,7 +25,18 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             base_path,
             template_dir,
             check,
-        } => handle_generate_dart(schema, out, library_name, base_path, template_dir, check)?,
+            preset,
+            run_build_runner,
+        } => handle_generate_dart(
+            schema,
+            out,
+            library_name,
+            base_path,
+            template_dir,
+            check,
+            preset,
+            run_build_runner,
+        )?,
         Command::GenerateTypeScript {
             schema,
             out,
@@ -32,6 +45,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             template_dir,
             check,
             full_selection,
+            preset,
         } => handle_generate_typescript(
             schema,
             out,
@@ -40,6 +54,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             template_dir,
             check,
             full_selection,
+            preset,
         )?,
         Command::GenerateProto {
             schema,
@@ -47,6 +62,12 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             package,
             check,
         } => crate::generate_proto::handle_generate_proto(schema, out, package, check)?,
+        Command::GenerateWiremock {
+            schema,
+            out,
+            base_path,
+            check,
+        } => handle_generate_wiremock(schema, out, base_path, check)?,
         Command::Studio { cmd } => handle_studio(cmd)?,
         Command::PrintIr { schema } => handle_print_ir(schema)?,
         Command::Migrate { action } => match action {
@@ -57,6 +78,13 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 name,
                 allow_destructive,
             } => crate::migrate::handle_diff(schema, out_dir, backend, name, allow_destructive)?,
+            MigrateAction::Baseline {
+                schema,
+                database_url,
+                out_dir,
+                backend,
+                strict,
+            } => crate::migrate::handle_baseline(schema, database_url, out_dir, backend, strict)?,
         },
         Command::Diff { old, new, json } => handle_diff_schemas(old, new, json)?,
     }
@@ -101,8 +129,11 @@ fn handle_generate_dart(
     base_path: String,
     template_dir: Option<PathBuf>,
     check: bool,
+    preset: DartPresetArg,
+    run_build_runner: bool,
 ) -> Result<()> {
     let parsed = parse_schema_or_render(&schema)?;
+    let pb_lock = read_pb_lock_if_present(&schema)?;
     let schema_sha256 = hash_schema_source(&schema)?;
     let package = cratestack_client_dart::generate_package(
         &parsed,
@@ -110,6 +141,8 @@ fn handle_generate_dart(
             library_name,
             base_path,
             template_dir,
+            preset: preset.into(),
+            pb_lock,
             schema_sha256,
         },
     )?;
@@ -121,6 +154,16 @@ fn handle_generate_dart(
 
     write_generated_files(&out, files)?;
     println!("generated Dart client package: {}", out.display());
+
+    if run_build_runner {
+        println!(
+            "running `dart run build_runner build --delete-conflicting-outputs` in {}...",
+            out.display()
+        );
+        crate::build_runner::run_build_runner(&out)?;
+        println!("build_runner finished");
+    }
+
     Ok(())
 }
 
@@ -132,16 +175,22 @@ fn handle_generate_typescript(
     template_dir: Option<PathBuf>,
     check: bool,
     full_selection: bool,
+    preset: TypeScriptPresetArg,
 ) -> Result<()> {
     let parsed = parse_schema_or_render(&schema)?;
     let pb_lock = read_pb_lock_if_present(&schema)?;
     let schema_sha256 = hash_schema_source(&schema)?;
+    let preset = match preset {
+        TypeScriptPresetArg::Default => cratestack_client_typescript::TypeScriptPreset::Default,
+        TypeScriptPresetArg::Swr => cratestack_client_typescript::TypeScriptPreset::Swr,
+    };
     let package = cratestack_client_typescript::generate_package(
         &parsed,
         &cratestack_client_typescript::TypeScriptGeneratorConfig {
             package_name,
             base_path,
             template_dir,
+            preset,
             full_selection,
             pb_lock,
             schema_sha256,
@@ -158,14 +207,38 @@ fn handle_generate_typescript(
     Ok(())
 }
 
+fn handle_generate_wiremock(
+    schema: PathBuf,
+    out: PathBuf,
+    base_path: String,
+    check: bool,
+) -> Result<()> {
+    let parsed = parse_schema_or_render(&schema)?;
+    let package = cratestack_mock_wiremock::generate_package(
+        &parsed,
+        &cratestack_mock_wiremock::WireMockGeneratorConfig { base_path },
+    )?;
+    let files = into_generated_files(package.files);
+
+    if check {
+        return check_drift(&out, &files, "WireMock");
+    }
+
+    write_generated_files(&out, files)?;
+    println!("generated WireMock stub mappings: {}", out.display());
+    Ok(())
+}
+
 /// `transport grpc` schemas need the schema's `<schema>.pb.lock` to
-/// generate a gRPC-Web client (real field numbers, `docs/design/
-/// protobuf.md` §3.3) — same derived path `cratestack generate-proto`
-/// itself uses (`crate::generate_proto::handle_generate_proto`). REST/RPC
-/// schemas don't have (or need) one, so a missing file here is not an
-/// error at this layer — `cratestack_client_typescript::generate_package`
-/// is what turns "no lock" into a hard error, and only for `transport
-/// grpc` schemas.
+/// generate a gRPC client — TypeScript's gRPC-Web client (ticket #172) and
+/// Dart's native `package:grpc` client (ticket #210) alike — for the real
+/// field numbers (`docs/design/protobuf.md` §3.3), the same derived path
+/// `cratestack generate-proto` itself uses
+/// (`crate::generate_proto::handle_generate_proto`). REST/RPC schemas
+/// don't have (or need) one, so a missing file here is not an error at
+/// this layer — `cratestack_client_typescript::generate_package`/
+/// `cratestack_client_dart::generate_package` are what turn "no lock" into
+/// a hard error, and only for `transport grpc` schemas.
 fn read_pb_lock_if_present(schema: &std::path::Path) -> Result<Option<cratestack_proto::PbLock>> {
     let lock_path = schema.with_extension("pb.lock");
     if !lock_path.exists() {

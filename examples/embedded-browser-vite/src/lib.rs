@@ -65,8 +65,19 @@ impl From<cratestack_schema::Note> for NoteView {
 #[cfg(target_arch = "wasm32")]
 mod wasm {
     use super::*;
+    // Pre-existing gap: this module never actually compiled to wasm32 (no
+    // CI coverage for that target — see the crate's own test doc comment),
+    // and was missing the same imports the `tests` module below already
+    // has for the identical types (`create_table_sql`, `Utc`, `Uuid`,
+    // `ModelDelegate`). Discovered and fixed while adding a real-bundler
+    // verification for @cratestack/cbor-web (issue #287): `wasm-pack build`
+    // needs this crate to compile clean, not just `cargo check` on host.
+    use chrono::*;
+    use cratestack_rusqlite::ddl::*;
     use cratestack_rusqlite::opfs;
+    use cratestack_rusqlite::*;
     use std::cell::RefCell;
+    use uuid::Uuid;
     use wasm_bindgen::prelude::*;
 
     thread_local! {

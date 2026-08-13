@@ -9,42 +9,77 @@
 
 mod checks;
 mod fields;
+mod indexes;
+mod relations;
 mod renames;
+mod uniques;
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use cratestack_core::{Model, Schema, parse_composite_id_attribute};
+use serde::{Deserialize, Serialize};
 
-use crate::ir::{AddCheck, AddIndex, Column};
+use crate::ir::{AddCheck, AddForeignKey, AddIndex, CheckKind, Column, ColumnArity, ColumnType};
 use crate::naming::{check_name, column_name, index_name_unique, table_name};
 
 use checks::{check_kind_slug, collect_check_kinds, field_has_db_enforce};
 use fields::{field_has_unique, field_to_column, is_relation_field};
+use indexes::model_index_indexes;
+use relations::relation_foreign_key;
 use renames::{field_rename_from, model_rename_from};
+use uniques::composite_unique_indexes;
 
 /// IR-side projection of a model: the table plus any indexes implied
 /// by field-level attributes.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct TableProjection {
-    pub(crate) name: String,
+///
+/// This is one half of the [`crate::Projections`] seam (see
+/// `crate::projection`): anything that can produce a `TableProjection`
+/// for every table it knows about — not just [`project_model`] reading
+/// a parsed `.cstack` `Schema` — can be diffed with
+/// [`crate::diff_projections`].
+///
+/// `Serialize`/`Deserialize` (issue #205): `Projections` is the
+/// on-disk shape [`crate::Snapshot`] persists, so every table it
+/// carries needs to round-trip through JSON — including a snapshot
+/// [`crate::introspect::postgres::introspect`] produced, which is a
+/// `Projections` value with no `Schema` behind it at all.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TableProjection {
+    pub name: String,
     /// Old SQL table name declared via `@@rename(from = "...")`, if
     /// any. Used by the diff engine to match this projection against
     /// the previous schema's projection of the same logical table.
-    pub(crate) rename_from: Option<String>,
-    pub(crate) columns: Vec<Column>,
+    pub rename_from: Option<String>,
+    pub columns: Vec<Column>,
     /// Map from current SQL column name → previous SQL column name,
     /// for fields that carry `@rename(from = "...")`. Empty when
     /// there are no column renames.
-    pub(crate) column_renames: Vec<(String, String)>,
-    pub(crate) indexes: Vec<AddIndex>,
+    pub column_renames: Vec<(String, String)>,
+    pub indexes: Vec<AddIndex>,
     /// CHECK constraints implied by `@db_enforce` on validator
     /// attributes (`@range`, `@length`, `@iso4217`).
-    pub(crate) checks: Vec<AddCheck>,
+    pub checks: Vec<AddCheck>,
+    /// Foreign keys promoted from the owning side of a
+    /// `@relation(fields:[...], references:[...])` field. Empty for
+    /// the "many" side of a relation, which has no physical column.
+    pub foreign_keys: Vec<AddForeignKey>,
 }
 
 pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
     let known_enums: HashSet<&str> = schema.enums.iter().map(|e| e.name.as_str()).collect();
     let known_types: HashSet<&str> = schema.types.iter().map(|t| t.name.as_str()).collect();
+    // Variants in declaration order, so the emitted `IN (...)` list
+    // reads the same way the `.cstack` enum does.
+    let enum_variants: BTreeMap<&str, Vec<String>> = schema
+        .enums
+        .iter()
+        .map(|decl| {
+            (
+                decl.name.as_str(),
+                decl.variants.iter().map(|v| v.name.clone()).collect(),
+            )
+        })
+        .collect();
 
     let table = table_name(&model.name);
     // `@@rename(from = "...")` and `@rename(from = "...")` take the
@@ -72,13 +107,17 @@ pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
     let mut column_renames = Vec::new();
     let mut indexes = Vec::new();
     let mut checks = Vec::new();
+    let mut foreign_keys = Vec::new();
 
     for field in &model.fields {
         if is_relation_field(field) {
             // Relation virtual fields (`@relation`) don't produce a
             // column themselves; the foreign-key column lives on the
-            // owning side as a regular scalar field. Slice 8+ will
-            // promote relations to foreign-key IR ops.
+            // owning side as a regular scalar field. The relation
+            // itself is promoted to a foreign-key constraint here.
+            if let Some(fk) = relation_foreign_key(field, schema, &table) {
+                foreign_keys.push(fk);
+            }
             continue;
         }
 
@@ -91,10 +130,12 @@ pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
         }
         if field_has_unique(field) && !column.primary_key {
             indexes.push(AddIndex {
-                name: index_name_unique(&table, &column.name),
+                name: index_name_unique(&table, &[column.name.as_str()]),
                 table: table.clone(),
                 columns: vec![column.name.clone()],
                 unique: true,
+                using: None,
+                opclass: None,
             });
         }
         if field_has_db_enforce(field) {
@@ -108,8 +149,24 @@ pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
                 });
             }
         }
+        if let Some(kind) = enum_check_kind(&column, &enum_variants) {
+            checks.push(AddCheck {
+                table: table.clone(),
+                column: column.name.clone(),
+                name: check_name(&table, &column.name, check_kind_slug(&kind)),
+                kind,
+            });
+        }
         columns.push(column);
     }
+
+    // Model-level `@@unique([...])` composite constraints, projected
+    // once the columns they reference are known (issue #262).
+    indexes.extend(composite_unique_indexes(model, &table, &columns));
+    // Model-level `@@index([...], using: ..., opclass: "...")` general
+    // (non-unique) indexes, same timing requirement as above (issue
+    // #156).
+    indexes.extend(model_index_indexes(model, &table, &columns));
 
     TableProjection {
         name: table,
@@ -118,5 +175,28 @@ pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
         column_renames,
         indexes,
         checks,
+        foreign_keys,
     }
+}
+
+/// The membership constraint that stands in for a native enum type on
+/// an enum-typed column (issue #228). Returns `None` for non-enum
+/// columns, and for the degenerate case of an enum declared with no
+/// variants — `IN ()` is not valid SQL, and there is nothing useful to
+/// constrain.
+fn enum_check_kind(
+    column: &Column,
+    enum_variants: &BTreeMap<&str, Vec<String>>,
+) -> Option<CheckKind> {
+    let ColumnType::Enum(name) = &column.ty else {
+        return None;
+    };
+    let variants = enum_variants.get(name.as_str())?;
+    if variants.is_empty() {
+        return None;
+    }
+    Some(CheckKind::Enum {
+        variants: variants.clone(),
+        list: matches!(column.arity, ColumnArity::List),
+    })
 }

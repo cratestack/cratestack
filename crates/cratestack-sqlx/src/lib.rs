@@ -69,12 +69,15 @@ mod descriptor;
 mod error;
 mod idempotency;
 mod isolation;
+mod json;
 mod migrations;
 mod partial_row;
 mod query;
 mod render;
 #[cfg(test)]
 mod tests_coalesce;
+#[cfg(test)]
+mod tests_create_defaults;
 #[cfg(test)]
 mod tests_descriptor;
 #[cfg(test)]
@@ -90,15 +93,36 @@ mod tests_nested_relation_policy;
 #[cfg(test)]
 mod tests_optional;
 #[cfg(test)]
+mod tests_pgvector;
+#[cfg(test)]
+mod tests_policy_precedence_bug;
+#[cfg(test)]
+mod tests_read_policy_field_predicates;
+#[cfg(test)]
+mod tests_read_policy_predicates;
+#[cfg(test)]
 mod tests_relation;
+#[cfg(test)]
+mod tests_system_principal_policy;
 #[cfg(test)]
 mod tests_update;
 #[cfg(test)]
 mod tests_update_many;
+mod transaction;
 
 pub use partial_row::FromPartialPgRow;
 
-pub use audit::{AUDIT_TABLE_DDL, primary_key_from_snapshot, snapshot_model};
+pub use json::Json;
+/// Re-exported so generated code (and the facade crates) can reach
+/// `::cratestack::pgvector::Vector` without depending on the
+/// `pgvector` crate directly — mirrors how `sqlx` above is re-exposed
+/// as a shim rather than depended on separately by every consumer.
+#[cfg(feature = "pgvector")]
+pub use pgvector;
+
+pub use audit::{
+    AUDIT_TABLE_DDL, RunInTxOutcome, dispatch_audit_sink, primary_key_from_snapshot, snapshot_model,
+};
 pub use error::cool_error_from_sqlx;
 pub use idempotency::{SqlxIdempotencyStore, expiry_from};
 pub use isolation::{run_in_isolated_tx, run_in_isolated_tx_with_retries};
@@ -106,15 +130,17 @@ pub use migrations::{
     MIGRATIONS_TABLE_DDL, Migration, MigrationState, MigrationStatus, apply_pending,
     ensure_migrations_table, status,
 };
+pub use transaction::Tx;
 
 pub use cratestack_policy::{PolicyExpr, PolicyLiteral, ReadPolicy, ReadPredicate};
 pub use cratestack_sql::{
     CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault, CreateDefaultType,
     CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName, IntoSqlValue,
     JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder,
-    OrderClause, Projection, RelationFilter, RelationInclude, RelationQuantifier, SortDirection,
-    SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue, UpdateModelInput, UpsertModelInput,
-    coalesce, point,
+    OrderClause, Orderable, Projection, RelationFilter, RelationHop, RelationInclude,
+    RelationQuantifier, SortDirection, SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue,
+    Unorderable, UpdateModelInput, UpsertModelInput, VectorDistanceExpr, VectorDistanceFilter,
+    VectorMetric, coalesce, is_orderable, order_value_sql, point, wrap_filter,
 };
 pub use delegate::{
     ModelDelegate, ScopedAggregate, ScopedAggregateColumn, ScopedAggregateCount, ScopedBatchCreate,
@@ -122,12 +148,13 @@ pub use delegate::{
     ScopedDeleteMany, ScopedDeleteRecord, ScopedFindMany, ScopedFindManyWith, ScopedFindUnique,
     ScopedModelDelegate, ScopedProjectedFindMany, ScopedProjectedFindUnique, ScopedUpdateMany,
     ScopedUpdateManySet, ScopedUpdateRecord, ScopedUpdateRecordSet, ScopedUpsertRecord,
-    ViewDelegate, ViewDelegateNoUnique,
+    ScopedUpsertRecordDoNothing, ViewDelegate, ViewDelegateNoUnique,
 };
-pub use descriptor::SqlxRuntime;
+pub use descriptor::{SqlxRuntime, enqueue_event_outbox, ensure_event_outbox_table};
 pub use query::{
     Aggregate, AggregateColumn, AggregateCount, BatchCreate, BatchDelete, BatchGet, BatchUpdate,
     BatchUpdateItem, BatchUpsert, CreateRecord, DeleteMany, DeleteRecord, FindMany, FindManyWith,
     FindUnique, ProjectedFindMany, ProjectedFindUnique, UpdateMany, UpdateManySet, UpdateRecord,
-    UpdateRecordSet, UpsertRecord, create_record_with_executor, update_record_with_executor,
+    UpdateRecordSet, UpsertOutcome, UpsertRecord, UpsertRecordDoNothing,
+    create_record_with_executor, update_record_with_executor,
 };

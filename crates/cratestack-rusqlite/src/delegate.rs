@@ -7,6 +7,7 @@ mod create;
 mod delete;
 mod delete_many;
 mod find_many;
+mod find_many_paginate;
 mod find_many_with;
 mod find_unique;
 mod model;

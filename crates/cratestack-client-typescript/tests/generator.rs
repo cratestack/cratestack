@@ -12,6 +12,7 @@ fn generates_fetch_client_and_tanstack_hooks_for_blog_schema() {
             package_name: "@example/blog-client".to_owned(),
             base_path: "/cstack".to_owned(),
             template_dir: None,
+            preset: cratestack_client_typescript::TypeScriptPreset::Default,
             full_selection: false,
             pb_lock: None,
             schema_sha256: "blogschemasha256testvalue0000000000000000000000000000000000".to_owned(),
@@ -54,14 +55,20 @@ fn generates_fetch_client_and_tanstack_hooks_for_blog_schema() {
     assert!(
         client.contains("list(options: CratestackQueryRequestConfig = {}): Promise<Page<Session>>")
     );
-    assert!(
-        client.contains("return this.runtime.post<Post>(\"/$procs/publishPost\", args, options);")
-    );
+    // cratestack#498/#499 F2: every procedure call site now decodes
+    // through `reviveDecimalFields`, keyed by the return type's own
+    // `decimalShapes` registry entry name (`Post` here — `blog.cstack`'s
+    // `Post` has no `Decimal` field, so the registry entry is a no-op,
+    // but the wrapper is unconditional, mirroring the model CRUD methods
+    // right above it).
+    assert!(client.contains(
+        "return this.runtime.post<unknown>(\"/$procs/publishPost\", args, options)\n      .then((value) => reviveDecimalFields(value, 'Post') as Post);"
+    ));
     assert!(react_query.contains("useQuery"));
     assert!(react_query.contains("useMutation"));
     assert!(react_query.contains("usePostListQuery"));
     assert!(react_query.contains("usePublishPostMutation"));
-    assert!(index.contains("export * from \"./react-query\";"));
+    assert!(index.contains("export * from \"./react-query.js\";"));
 }
 
 /// Regression test: `Page<T>`/`PageInfo` must match
@@ -97,6 +104,85 @@ fn page_and_page_info_match_the_core_wire_shape() {
          pageInfo: PageInfo;\n\
          }"
     ));
+}
+
+#[test]
+fn page_input_procedure_argument_generates_correctly() {
+    let schema = cratestack_parser::parse_schema(
+        r#"
+type FeedReply {
+  limit Int
+  offset Int
+}
+
+procedure listFeed(page: PageInput): FeedReply
+"#,
+    )
+    .expect("PageInput fixture schema should parse");
+
+    let package = generate_package(&schema, &TypeScriptGeneratorConfig::default())
+        .expect("default template should render");
+    let models = package_file(&package, "src/models.ts");
+    let client = package_file(&package, "src/client.ts");
+
+    assert!(models.contains(
+        "export interface PageInput {\n  \
+         limit: number | null;\n  \
+         offset: number | null;\n\
+         }"
+    ));
+    assert!(models.contains("export interface ListFeedArgs {\n  page: PageInput;\n}"));
+    assert!(client.contains("listFeed(args: ListFeedArgs"));
+}
+
+#[test]
+fn find_many_procedure_argument_generates_correctly() {
+    let schema = cratestack_parser::parse_schema(
+        r#"
+model Post {
+  id Int @id
+  title String
+}
+
+procedure searchPosts(query: FindMany<Post>): Post[]
+"#,
+    )
+    .expect("FindMany fixture schema should parse");
+
+    let package = generate_package(&schema, &TypeScriptGeneratorConfig::default())
+        .expect("default template should render");
+    let models = package_file(&package, "src/models.ts");
+    let client = package_file(&package, "src/client.ts");
+
+    // Shared filter-operator primitives (once per package, not per model).
+    assert!(models.contains("export interface EqualityFilter<V> {"));
+    assert!(models.contains("export interface ComparableFilter<V> extends EqualityFilter<V> {"));
+    assert!(models.contains("export interface StringFilter extends ComparableFilter<string> {"));
+    assert!(models.contains("export type NumberFilter = ComparableFilter<number>;"));
+    assert!(models.contains(r#"export type SortDirection = "asc" | "desc";"#));
+
+    // Per-model `PostWhere`/`PostSortField`/`PostOrderByClause`/`PostFindMany`.
+    assert!(models.contains("export type PostSortField = 'id' | 'title';"));
+    assert!(models.contains(
+        "export interface PostWhere {\n  \
+         id?: NumberFilter;\n  \
+         title?: StringFilter;\n\
+         }"
+    ));
+    assert!(models.contains(
+        "export interface PostOrderByClause {\n  \
+         field: PostSortField;\n  \
+         direction: SortDirection;\n\
+         }"
+    ));
+    assert!(models.contains(
+        "export interface PostFindMany {\n  \
+         where?: PostWhere;\n  \
+         orderBy?: PostOrderByClause[];\n\
+         }"
+    ));
+    assert!(models.contains("export interface SearchPostsArgs {\n  query: PostFindMany;\n}"));
+    assert!(client.contains("searchPosts(args: SearchPostsArgs"));
 }
 
 #[test]
@@ -205,4 +291,92 @@ fn package_file<'a>(
         .unwrap_or_else(|| panic!("missing generated file {file_name}"))
         .contents
         .as_str()
+}
+
+#[test]
+fn decimal_scalar_maps_to_a_real_declared_decimal_type() {
+    // Historical regression (pre-cratestack#498): `ts_type()` had no
+    // `Decimal` arm at all, so `Decimal` fell through to the catch-all and
+    // was emitted verbatim as a TS type name that nothing declares —
+    // generation still succeeded, and the breakage only surfaced at `tsc`
+    // with `TS2304: Cannot find name 'Decimal'`, which a generation-only
+    // assertion wouldn't catch.
+    //
+    // cratestack#498 replaced the interim `string` mapping (which merely
+    // fixed the `tsc` failure without giving the SDK a decimal type) with
+    // a real one: `Decimal` is now `models.ts`'s own exported
+    // `decimal.js`-backed class (`DecimalJs.clone({...})`, see
+    // `models.ts.j2`'s doc comment), not the bare wire-format string. This
+    // is the "give the SDKs a real decimal type" approach, not "canonicalize
+    // the wire" — the maintainer's recorded decision on cratestack#498.
+    let schema = cratestack_parser::parse_schema_file("tests/fixtures/decimal_scalar.cstack")
+        .expect("fixture schema should parse");
+
+    let package = generate_package(&schema, &TypeScriptGeneratorConfig::default())
+        .expect("default template should render");
+    let models = package_file(&package, "src/models.ts");
+
+    assert!(
+        models.contains("amountXaf?: Decimal;"),
+        "a required Decimal field must be typed `Decimal`, got:\n{models}"
+    );
+    assert!(
+        models.contains("discountXaf?: Decimal | null;"),
+        "an optional Decimal field must be typed `Decimal | null`, got:\n{models}"
+    );
+    assert!(
+        models.contains("export const Decimal = DecimalJs.clone("),
+        "models.ts must export a real, plain-notation-configured `Decimal` value, got:\n{models}"
+    );
+    assert!(
+        models.contains("export type Decimal = DecimalJs;"),
+        "models.ts must export the `Decimal` instance type, got:\n{models}"
+    );
+    assert!(
+        models.contains("export function reviveDecimalFields("),
+        "models.ts must export the decode-side revival helper, got:\n{models}"
+    );
+    assert!(
+        models.contains("export type DecimalFilter = ComparableFilter<Decimal>;"),
+        "DecimalFilter's comparison operands must be typed `Decimal`, got:\n{models}"
+    );
+
+    let client = package_file(&package, "src/client.ts");
+    assert!(
+        client.contains("reviveDecimalFields(value, 'Invoice')"),
+        "the REST client's Invoice CRUD methods must revive via Invoice's own \
+         decimalShapes entry on decode, got:\n{client}"
+    );
+
+    let package_json = package_file(&package, "package.json");
+    assert!(
+        package_json.contains("\"decimal.js\""),
+        "package.json must declare the decimal.js runtime dependency, got:\n{package_json}"
+    );
+}
+
+#[test]
+fn decimal_scalar_revives_on_decode_over_rpc_transport_too() {
+    // Requirement #6 (cratestack#498): both REST and RPC transports.
+    // `decimal_scalar_maps_to_a_real_declared_decimal_type` proves the
+    // REST-transport `rest-client.ts.j2`; this proves the RPC-transport
+    // `rpc-client.ts.j2` gets the identical `reviveDecimalFields` wiring.
+    let schema = cratestack_parser::parse_schema_file("tests/fixtures/decimal_scalar_rpc.cstack")
+        .expect("fixture schema should parse");
+
+    let package = generate_package(&schema, &TypeScriptGeneratorConfig::default())
+        .expect("default template should render");
+    let client = package_file(&package, "src/client.ts");
+
+    for op in ["model.Invoice.list", "model.Invoice.get"] {
+        assert!(
+            client.contains(op),
+            "expected RPC op `{op}` to still be generated, got:\n{client}"
+        );
+    }
+    assert!(
+        client.contains("reviveDecimalFields(value, 'Invoice')"),
+        "the RPC client's Invoice CRUD methods must revive via Invoice's own \
+         decimalShapes entry on decode, got:\n{client}"
+    );
 }

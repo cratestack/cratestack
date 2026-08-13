@@ -8,6 +8,7 @@
 //! - GET requests bypass the layer entirely.
 
 use cratestack::axum::body::{Body, to_bytes};
+use cratestack::axum::extract::ConnectInfo;
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack::include_server_schema;
 use cratestack::sqlx::query;
@@ -18,6 +19,19 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tower::ServiceBuilder;
 use tower::util::ServiceExt;
+
+/// A verifiable caller identity for POST requests routed through the
+/// default (non-overridden) `IdempotencyLayer`. cratestack#416 made the
+/// default principal fingerprint refuse requests with neither an
+/// `Authorization` header nor a `ConnectInfo<SocketAddr>` peer, and
+/// `oneshot` never populates `ConnectInfo` on its own — every test in this
+/// file that drives the default fingerprint through a real request needs
+/// this standing in for the real socket peer.
+fn with_peer(mut req: Request<Body>) -> Request<Body> {
+    let peer: std::net::SocketAddr = "192.0.2.77:1".parse().unwrap();
+    req.extensions_mut().insert(ConnectInfo(peer));
+    req
+}
 
 include_server_schema!("tests/fixtures/banking_idempotency.cstack", db = Postgres);
 
@@ -92,14 +106,14 @@ async fn same_key_same_body_replays_response_with_marker_header() {
 
     let first = router
         .clone()
-        .oneshot(
+        .oneshot(with_peer(
             Request::post("/vouchers")
                 .header("content-type", JsonCodec::CONTENT_TYPE)
                 .header("accept", JsonCodec::CONTENT_TYPE)
                 .header("idempotency-key", "txn-001")
                 .body(Body::from(body))
                 .expect("req"),
-        )
+        ))
         .await
         .expect("first");
     assert_eq!(first.status(), StatusCode::CREATED);
@@ -110,14 +124,14 @@ async fn same_key_same_body_replays_response_with_marker_header() {
     // that and return the cached response instead.
     let second = router
         .clone()
-        .oneshot(
+        .oneshot(with_peer(
             Request::post("/vouchers")
                 .header("content-type", JsonCodec::CONTENT_TYPE)
                 .header("accept", JsonCodec::CONTENT_TYPE)
                 .header("idempotency-key", "txn-001")
                 .body(Body::from(body))
                 .expect("req"),
-        )
+        ))
         .await
         .expect("second");
 
@@ -159,28 +173,28 @@ async fn same_key_different_body_returns_idempotency_conflict() {
 
     let first = router
         .clone()
-        .oneshot(
+        .oneshot(with_peer(
             Request::post("/vouchers")
                 .header("content-type", JsonCodec::CONTENT_TYPE)
                 .header("accept", JsonCodec::CONTENT_TYPE)
                 .header("idempotency-key", "txn-conflict")
                 .body(Body::from(first_body))
                 .expect("req"),
-        )
+        ))
         .await
         .expect("first");
     assert_eq!(first.status(), StatusCode::CREATED);
 
     let second = router
         .clone()
-        .oneshot(
+        .oneshot(with_peer(
             Request::post("/vouchers")
                 .header("content-type", JsonCodec::CONTENT_TYPE)
                 .header("accept", JsonCodec::CONTENT_TYPE)
                 .header("idempotency-key", "txn-conflict")
                 .body(Body::from(second_body))
                 .expect("req"),
-        )
+        ))
         .await
         .expect("second");
     assert_eq!(second.status(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -234,13 +248,13 @@ async fn concurrent_requests_with_same_key_execute_handler_exactly_once() {
     let body = r#"{"from":1,"to":2,"amount":100}"#;
     let send = |router: Router| async move {
         router
-            .oneshot(
+            .oneshot(with_peer(
                 Request::post("/transfer")
                     .header("content-type", "application/json")
                     .header("idempotency-key", "transfer-001")
                     .body(Body::from(body))
                     .expect("req"),
-            )
+            ))
             .await
             .expect("send")
     };
@@ -563,13 +577,13 @@ async fn replay_preserves_response_headers_emitted_by_the_handler() {
     let body = r#"{"amount":100}"#;
     let send = |router: Router| async move {
         router
-            .oneshot(
+            .oneshot(with_peer(
                 Request::post("/transfers")
                     .header("content-type", "application/json")
                     .header("idempotency-key", "replay-headers-001")
                     .body(Body::from(body))
                     .expect("req"),
-            )
+            ))
             .await
             .expect("send")
     };
@@ -637,28 +651,28 @@ async fn same_key_with_different_query_string_does_not_replay() {
 
     let first = router
         .clone()
-        .oneshot(
+        .oneshot(with_peer(
             Request::post("/vouchers?dry_run=true")
                 .header("content-type", JsonCodec::CONTENT_TYPE)
                 .header("accept", JsonCodec::CONTENT_TYPE)
                 .header("idempotency-key", "qs-501")
                 .body(Body::from(body))
                 .expect("first req"),
-        )
+        ))
         .await
         .expect("first send");
     assert_eq!(first.status(), StatusCode::CREATED);
 
     let second = router
         .clone()
-        .oneshot(
+        .oneshot(with_peer(
             Request::post("/vouchers?dry_run=false")
                 .header("content-type", JsonCodec::CONTENT_TYPE)
                 .header("accept", JsonCodec::CONTENT_TYPE)
                 .header("idempotency-key", "qs-501")
                 .body(Body::from(body))
                 .expect("second req"),
-        )
+        ))
         .await
         .expect("second send");
 

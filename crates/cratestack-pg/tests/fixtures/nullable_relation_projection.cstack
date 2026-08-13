@@ -1,0 +1,38 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+// Model names are `ProjWidgetOwner`/`ProjWidget` (not `Owner`/`Widget`)
+// so their auto-derived tables don't collide with any other fixture's
+// tables on the shared external test Postgres — same convention as
+// `AdvancedUser`/`AdvancedPost` in `advanced_policy.cstack`.
+//
+// Exists specifically to close a coverage gap left by cratestack#430's
+// fix (`ProjectedValue`, `crates/cratestack-axum/src/projection.rs`):
+// every other HTTP-level `include=` assertion in this test suite
+// (`policy_db.rs`) covers a relation that's actually present on the
+// wire. None of them exercise the *null* branch of a to-one relation
+// include over a real HTTP request/response round trip — the exact
+// path whose null encoding changed in that PR (from a stripped/absent
+// key to an explicit `ProjectedValue::Null` -> `serialize_none()`).
+// `nullable_relation_include_over_http.rs` is that missing case.
+model ProjWidgetOwner {
+  id Int @id
+  name String
+
+  @@allow("read", auth() != null)
+}
+
+model ProjWidget {
+  id Int @id
+  label String
+  ownerId Int?
+  owner ProjWidgetOwner? @relation(fields:[ownerId],references:[id])
+
+  @@allow("read", auth() != null)
+}

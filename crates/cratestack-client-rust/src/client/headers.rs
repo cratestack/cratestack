@@ -22,8 +22,11 @@ where
     /// Build a reqwest `HeaderMap` for a request, applying ACCEPT,
     /// CONTENT_TYPE, authorizer-emitted headers, and per-call extras.
     /// Returns the resolved content type (so the journal entry can
-    /// record it consistently).
-    pub(crate) fn build_header_map(
+    /// record it consistently). Async (issue #453) because
+    /// `RequestAuthorizer::authorize` is — every caller is already inside
+    /// an async fn (`request_raw_with_query_and_accept` and friends), so
+    /// awaiting here is a localized change, not a structural one.
+    pub(crate) async fn build_header_map(
         &self,
         method: &Method,
         path: &str,
@@ -63,7 +66,7 @@ where
                 body: body.map(<[u8]>::to_vec).unwrap_or_default(),
                 canonical_request,
             };
-            for (name, value) in authorizer.authorize(&authorization_request)? {
+            for (name, value) in authorizer.authorize(&authorization_request).await? {
                 header_map.insert(
                     HeaderName::from_bytes(name.as_bytes()).map_err(|error| {
                         ClientError::BadInput(format!("invalid header name '{name}': {error}"))
@@ -105,5 +108,43 @@ where
                     .map(ToOwned::to_owned),
                 recorded_at: Utc::now(),
             })
+            // Not `.map_err(ClientError::from)` — see the comment on
+            // `CratestackClient::state` in `client/core.rs`: the blanket
+            // `From<CoolError>` targets `ClientError::Codec`, which would
+            // misreport a local state-store failure as a remote/codec error.
+            .map_err(|error| ClientError::State(error.to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use crate::client::core::CratestackClient;
+    use crate::config::ClientConfig;
+
+    use super::*;
+
+    /// Regression test for #475's review findings, mirroring
+    /// `client::core::tests::state_store_error_maps_to_client_error_state`:
+    /// `record_request`'s state-store failure must surface as
+    /// `ClientError::State`, not `ClientError::Codec`.
+    #[test]
+    fn record_request_state_store_error_maps_to_client_error_state() {
+        let client = CratestackClient::cbor(ClientConfig::new(
+            "http://example.invalid".parse().expect("valid url"),
+        ))
+        .with_state_store(Arc::new(crate::client::core::tests::FailingStateStore));
+
+        let error = client
+            .record_request("GET", "/widgets", StatusCode::OK, &HeaderMap::new())
+            .expect_err("state store is rigged to fail");
+
+        match error {
+            ClientError::State(message) => {
+                assert!(message.contains("simulated state store failure"));
+            }
+            other => panic!("expected ClientError::State for a state-store failure, got {other:?}"),
+        }
     }
 }

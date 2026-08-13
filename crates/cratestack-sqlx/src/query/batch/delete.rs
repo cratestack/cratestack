@@ -7,10 +7,12 @@ use std::hash::Hash;
 
 use cratestack_core::{AuditOperation, BatchResponse, CoolContext, CoolError, ModelEventKind};
 
-use crate::audit::{build_audit_event, enqueue_audit_event, ensure_audit_table};
+use crate::audit::{
+    build_audit_event, dispatch_audit_sink, enqueue_audit_event, ensure_audit_table,
+};
 use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
 use crate::query::support::push_action_policy_query;
-use crate::{ModelDescriptor, ModelPrimaryKey, SqlxRuntime, sqlx};
+use crate::{ModelDescriptor, ModelPrimaryKey, SqlxRuntime, cool_error_from_sqlx, sqlx};
 
 use super::validate::{reject_duplicate_pks, validate_batch_size};
 
@@ -50,7 +52,7 @@ impl<'a, M: 'static, PK: 'static> BatchDelete<'a, M, PK> {
             .pool()
             .begin()
             .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+            .map_err(cool_error_from_sqlx)?;
         if emits_event {
             ensure_event_outbox_table(&mut *tx).await?;
         }
@@ -100,10 +102,11 @@ impl<'a, M: 'static, PK: 'static> BatchDelete<'a, M, PK> {
             .build_query_as::<M>()
             .fetch_all(&mut *tx)
             .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+            .map_err(cool_error_from_sqlx)?;
 
         // The RETURNING row IS the "before" snapshot — DELETE/soft-
         // delete returns the pre-mutation state.
+        let mut audit_events = Vec::new();
         for record in &deleted {
             if emits_event {
                 enqueue_event_outbox(
@@ -119,16 +122,16 @@ impl<'a, M: 'static, PK: 'static> BatchDelete<'a, M, PK> {
                 let event =
                     build_audit_event(self.descriptor, AuditOperation::Delete, before, None, ctx);
                 enqueue_audit_event(&mut *tx, &event).await?;
+                audit_events.push(event);
             }
         }
 
-        tx.commit()
-            .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+        tx.commit().await.map_err(cool_error_from_sqlx)?;
 
         if emits_event {
             let _ = self.runtime.drain_event_outbox().await;
         }
+        dispatch_audit_sink(self.runtime, &audit_events).await;
 
         // Walk-and-match: any input id whose row isn't in `deleted`
         // failed the WHERE (tombstoned, policy denied, never existed).

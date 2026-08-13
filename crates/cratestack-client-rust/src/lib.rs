@@ -3,6 +3,8 @@ mod client;
 mod codec;
 mod config;
 mod error;
+#[cfg(feature = "grpc")]
+pub mod grpc;
 mod rpc;
 mod runtime;
 mod state;
@@ -20,7 +22,7 @@ pub use cratestack_core::rpc::{
 };
 
 pub use auth::{AuthorizationRequest, RequestAuthorizer};
-pub use client::CratestackClient;
+pub use client::{CratestackClient, TypedResponse};
 pub use codec::HttpClientCodec;
 pub use config::ClientConfig;
 pub use cratestack_core::ProjectionDecoder;

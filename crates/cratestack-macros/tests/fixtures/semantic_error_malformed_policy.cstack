@@ -1,0 +1,12 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model User {
+  id Int @id
+  email String
+  banned Boolean
+
+  @@allow("read", (banned)
+}

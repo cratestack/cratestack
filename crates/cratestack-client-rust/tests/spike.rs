@@ -43,8 +43,9 @@ struct AppState {
 
 struct CanonicalAuthorizationAuthorizer;
 
+#[async_trait::async_trait]
 impl RequestAuthorizer for CanonicalAuthorizationAuthorizer {
-    fn authorize(
+    async fn authorize(
         &self,
         request: &AuthorizationRequest,
     ) -> Result<Vec<(String, String)>, ClientError> {

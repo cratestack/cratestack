@@ -12,7 +12,8 @@
 
 mod checks;
 mod columns;
-mod enums;
+mod extensions;
+mod foreign_keys;
 mod ops;
 mod views;
 
@@ -20,7 +21,8 @@ use serde::{Deserialize, Serialize};
 
 pub use checks::{AddCheck, CheckKind, DropCheck};
 pub use columns::{Column, ColumnArity, ColumnDefault, ColumnType};
-pub use enums::{AlterEnumAddVariant, CreateEnum, DropEnum};
+pub use extensions::EnsureExtension;
+pub use foreign_keys::{AddForeignKey, DropForeignKey, ForeignKeyAction};
 pub use ops::{
     AddColumn, AddIndex, AlterColumnDefault, AlterColumnNullability, AlterColumnType, CreateTable,
     DropColumn, DropIndex, DropTable, RenameColumn, RenameTable,
@@ -54,16 +56,16 @@ pub enum Op {
     AlterColumnDefault(AlterColumnDefault),
     RenameTable(RenameTable),
     RenameColumn(RenameColumn),
-    CreateEnum(CreateEnum),
-    AlterEnumAddVariant(AlterEnumAddVariant),
-    DropEnum(DropEnum),
     AddCheck(AddCheck),
     DropCheck(DropCheck),
+    AddForeignKey(AddForeignKey),
+    DropForeignKey(DropForeignKey),
     CreateView(CreateView),
     DropView(DropView),
     ReplaceView(ReplaceView),
     CreateMaterializedView(CreateMaterializedView),
     DropMaterializedView(DropMaterializedView),
+    EnsureExtension(EnsureExtension),
 }
 
 impl Op {
@@ -93,18 +95,31 @@ impl Op {
             // Renames preserve all data; both backends support
             // ALTER TABLE … RENAME on modern versions.
             Op::RenameTable(_) | Op::RenameColumn(_) => Destructiveness::Safe,
-            // Creating an enum or adding a variant is safe. Dropping
-            // an enum entirely is lossy (rows that reference it on
-            // other tables would need to be migrated first; the
-            // generator does not attempt that automatically).
-            Op::CreateEnum(_) | Op::AlterEnumAddVariant(_) => Destructiveness::Safe,
-            Op::DropEnum(_) => Destructiveness::Lossy,
-            // Adding a CHECK constraint is conservatively Blocking —
-            // existing rows that don't satisfy it will block the
-            // ALTER on a non-empty table.
-            Op::AddCheck(_) => Destructiveness::Blocking,
+            // Adding a validator CHECK constraint is conservatively
+            // Blocking — existing rows that don't satisfy it will
+            // block the ALTER on a non-empty table.
+            //
+            // An enum CHECK is the exception. It is only ever emitted
+            // alongside the column it constrains (CREATE TABLE, ADD
+            // COLUMN — no pre-existing rows), or as the second half of
+            // a variant *addition*, which widens the accepted set and
+            // therefore cannot reject a row that already passed. The
+            // one case that can fail on existing data is removing a
+            // variant; see the note in `diff::checks`.
+            Op::AddCheck(check) => match check.kind {
+                CheckKind::Enum { .. } => Destructiveness::Safe,
+                _ => Destructiveness::Blocking,
+            },
             // Dropping a CHECK constraint never destroys data.
             Op::DropCheck(_) => Destructiveness::Safe,
+            // A foreign key can fail to validate against existing
+            // orphaned rows, but so can a UNIQUE index against
+            // existing duplicates (`Op::AddIndex`, above) — both are
+            // classified Safe for the same reason: the DDL either
+            // succeeds outright or the migration transaction aborts
+            // with no partial data loss. Dropping a foreign key, like
+            // dropping any other constraint, never destroys data.
+            Op::AddForeignKey(_) | Op::DropForeignKey(_) => Destructiveness::Safe,
             // View creates and replaces never destroy data (the view
             // is a read-only projection over existing tables; replace
             // swaps the SQL body, not the underlying rows).
@@ -114,8 +129,11 @@ impl Op {
             // Dropping a view doesn't destroy source rows but does
             // destroy a queryable surface — treat as Lossy so the
             // generator requires explicit opt-in, mirroring DropTable
-            // / DropEnum semantics.
+            // semantics.
             Op::DropView(_) | Op::DropMaterializedView(_) => Destructiveness::Lossy,
+            // `CREATE EXTENSION IF NOT EXISTS` is idempotent and never
+            // touches existing rows.
+            Op::EnsureExtension(_) => Destructiveness::Safe,
         }
     }
 }

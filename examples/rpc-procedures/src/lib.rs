@@ -8,20 +8,32 @@
 //!
 //! See `tests/smoke.rs` for the wire-shape demos. The `bin/server.rs` entry
 //! point starts an axum server on `127.0.0.1:3000`.
+//!
+//! cratestack#329: this example used to fake "no database" with a
+//! `PgPoolOptions::connect_lazy` pool that was never opened. It now uses
+//! the real first-class feature — `datasource { provider = "none" }` +
+//! `db = None` (cratestack#327/#328) — so there is no connection string,
+//! no `PgPool`, and (with this crate's `default-features = false`
+//! `cratestack` dependency) no `sqlx` compiled into this binary at all.
+//! See `docs/design/no-database-mode.md`.
 
 use cratestack::axum::Router;
-use cratestack::sqlx::postgres::PgPoolOptions;
 use cratestack::{AuthProvider, CodecSet, CoolContext, CoolError, RequestContext, Value};
 use cratestack_codec_cbor::CborCodec;
 use cratestack_codec_json::JsonCodec;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 
-cratestack::include_server_schema!("schema.cstack", db = Postgres);
+cratestack::include_server_schema!("schema.cstack", db = None);
 
 // Re-export the generated module so tests + binary share one path to
 // the `procedures::greet::Args`, `GreetReply`, etc. types.
 pub use cratestack_schema as schema;
+
+// cratestack#512: the documented, compiling example of calling a
+// procedure correctly from non-HTTP code (a cron job here) — see that
+// module's doc comment.
+pub mod internal_worker;
 
 /// In-memory counter shared across all `increment` invocations. Real
 /// services would persist this — the example is about the RPC dispatch
@@ -37,6 +49,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
         _db: &cratestack_schema::Cratestack,
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::greet::Args,
+        _authorized: cratestack_schema::procedures::greet::Authorized,
     ) -> impl core::future::Future<
         Output = Result<cratestack_schema::procedures::greet::Output, CoolError>,
     > + Send {
@@ -52,6 +65,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
         _db: &cratestack_schema::Cratestack,
         _ctx: &CoolContext,
         args: cratestack_schema::procedures::increment::Args,
+        _authorized: cratestack_schema::procedures::increment::Authorized,
     ) -> impl core::future::Future<
         Output = Result<cratestack_schema::procedures::increment::Output, CoolError>,
     > + Send {
@@ -87,20 +101,17 @@ impl AuthProvider for HeaderAuthProvider {
     }
 }
 
-/// Build the example's RPC router. `connect_lazy` means we never open a
-/// real DB connection — the example's procedures don't touch the DB.
+/// Build the example's RPC router. `db = None` means `Cratestack::builder()`
+/// takes zero parameters — there is no `PgPool` to construct, lazily or
+/// otherwise.
 pub fn build_router() -> Router {
-    let url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://example:example@localhost/example".to_owned());
-    let pool = PgPoolOptions::new()
-        .connect_lazy(&url)
-        .expect("connect_lazy parses the URL but opens no socket");
-    let db = cratestack_schema::Cratestack::builder(pool).build();
+    let db = cratestack_schema::Cratestack::builder().build();
 
     cratestack_schema::axum::rpc_router(
         db,
         Procedures::default(),
         CodecSet::new(CborCodec, JsonCodec),
         HeaderAuthProvider,
+        cratestack::DEFAULT_BODY_LIMIT_BYTES,
     )
 }

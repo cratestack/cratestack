@@ -1,0 +1,60 @@
+// SQLite/embedded mirror of
+// `crates/cratestack-pg/tests/fixtures/round_trip_types.cstack` — see that
+// file's header and `../round_trip_types.rs` for the shared rationale
+// (cratestack#232).
+//
+// Embedded has no policy enforcement (see `docs/`/`CLAUDE.md`), so there
+// are no `@@allow` attributes here.
+//
+// `jsonReq` (Required-arity `Json`) is intentionally omitted here, unlike
+// the Postgres fixture: on this backend `Json` resolves to
+// `cratestack_core::Json<T>`, which has no `Default` impl at all (unlike
+// `sqlx::types::Json<T>` on the server backend, which derives `Default`
+// conditionally on `T: Default`). The generated model struct derives
+// `Default` (needed for column-projection placeholders), so a *required*
+// `Json` field fails to compile on this backend today — a real,
+// independently-confirmed backend asymmetry, filed separately and
+// unrelated to the emitter/decoder storage-mapping gap #232 is about.
+
+datasource db {
+  provider = "sqlite"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+enum RoundTripStatus {
+  Active
+  Inactive
+}
+
+model RoundTripScalar {
+  id Int @id
+  stringReq String
+  stringOpt String?
+  cuidReq Cuid
+  cuidOpt Cuid?
+  intReq Int
+  intOpt Int?
+  floatReq Float
+  floatOpt Float?
+  booleanReq Boolean
+  booleanOpt Boolean?
+  dateTimeReq DateTime
+  dateTimeOpt DateTime?
+  decimalReq Decimal
+  decimalOpt Decimal?
+  jsonOpt Json?
+  bytesReq Bytes
+  bytesOpt Bytes?
+  uuidReq Uuid
+  uuidOpt Uuid?
+}
+
+model RoundTripEnum {
+  id Int @id
+  statusReq RoundTripStatus
+  statusOpt RoundTripStatus?
+}

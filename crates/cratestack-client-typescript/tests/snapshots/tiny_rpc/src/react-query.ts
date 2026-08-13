@@ -4,33 +4,38 @@ import {
   type UseMutationOptions,
   type UseQueryOptions,
 } from "@tanstack/react-query";
-import type { TinyRpcClientClient } from "./client";
+import type { TinyRpcClientClient } from "./client.js";
 import type {
   Widget,
   CreateWidgetInput,
   UpdateWidgetInput,
+  WidgetWhere,
+  WidgetOrderByClause,
+  WidgetFindMany,
   EchoNameArgs,
+  WidgetSortField,
   Page,
-} from "./models";
-import type { CratestackRpcCallOptions } from "./runtime";
+} from "./models.js";
+import type { CratestackRpcCallOptions } from "./runtime.js";
+import type { CratestackRpcListQuery } from "./queries.js";
 
 export const cratestackQueryKeys = {
-  widgetList: (input?: Record<string, unknown>) => ["model.Widget.list", input] as const,
+  widgetList: (query?: CratestackRpcListQuery) => ["model.Widget.list", query] as const,
   widgetDetail: (id: number) => ["model.Widget.get", id] as const,
   echoNameProcedure: (args: EchoNameArgs) => ["procedure.echoName", args] as const,
 };
 
 export function useWidgetListQuery(
   client: TinyRpcClientClient,
-  input: Record<string, unknown> = {},
+  query: CratestackRpcListQuery = {},
   options: CratestackRpcCallOptions & {
     queryOptions?: Omit<UseQueryOptions<Widget[]>, "queryKey" | "queryFn">;
   } = {},
 ) {
   return useQuery({
     ...options.queryOptions,
-    queryKey: cratestackQueryKeys.widgetList(input),
-    queryFn: ({ signal }) => client.widgets.list(input, { ...options, signal }),
+    queryKey: cratestackQueryKeys.widgetList(query),
+    queryFn: ({ signal }) => client.widgets.list(query, { ...options, signal }),
   });
 }
 

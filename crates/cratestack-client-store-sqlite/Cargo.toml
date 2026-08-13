@@ -2,6 +2,7 @@
 name = "cratestack-client-store-sqlite"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 description.workspace = true
@@ -12,13 +13,43 @@ readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 
+[lints]
+workspace = true
+
+[features]
+# Forwards to `cratestack-core`'s mutually-exclusive decimal backend choice
+# (see that crate's Cargo.toml for the full rationale). Required because
+# `cratestack-core`'s dependency edge has `default-features = false` at the
+# workspace root — every direct consumer must explicitly re-select a
+# backend, or `cratestack-core` fails to compile at all (cratestack#495).
+default = ["decimal-rust-decimal"]
+# Also forwards to `cratestack-client-rust`/`cratestack-codec-cbor`, this
+# crate's dev-dependency-only test fixtures — Cargo's feature resolver
+# unifies dev-dependency feature requests with the rest of the graph for
+# the same workspace member, so leaving those on a hardcoded backend would
+# conflict with `--features decimal-bigdecimal` under `cargo test`/`cargo
+# check --all-targets`.
+decimal-rust-decimal = [
+    "cratestack-core/decimal-rust-decimal",
+    "cratestack-client-rust/decimal-rust-decimal",
+    "cratestack-codec-cbor/decimal-rust-decimal",
+]
+decimal-bigdecimal = [
+    "cratestack-core/decimal-bigdecimal",
+    "cratestack-client-rust/decimal-bigdecimal",
+    "cratestack-codec-cbor/decimal-bigdecimal",
+]
+
 [dependencies]
 chrono.workspace = true
-cratestack-client-rust.workspace = true
+cratestack-core.workspace = true
 rusqlite.workspace = true
 
 [dev-dependencies]
 axum.workspace = true
+# Plain edges: see the `decimal-rust-decimal`/`decimal-bigdecimal` feature
+# forwards above.
+cratestack-client-rust.workspace = true
 cratestack-codec-cbor.workspace = true
 cratestack-core.workspace = true
 serde.workspace = true

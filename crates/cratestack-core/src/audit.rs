@@ -77,6 +77,18 @@ pub struct AuditEvent {
 /// buckets) for long-term retention or SIEM ingestion. The in-database
 /// audit table written by `cratestack_sqlx` remains the canonical
 /// record; sinks are best-effort projections.
+///
+/// **`record` must not panic.** `cratestack_sqlx`'s dispatch call site
+/// (`dispatch_audit_sink`) awaits `record` after the mutation's
+/// transaction has already committed, with no `catch_unwind` around
+/// it: a panicking implementation unwinds into the caller of `run()`/
+/// `run_in_tx()`. Under an async runtime like Tokio this is typically
+/// caught at the task boundary rather than crashing the process, but
+/// the in-flight HTTP response for that already-successful, possibly
+/// non-idempotent mutation is lost — a client retrying on a dropped
+/// connection can resubmit a write that already happened. Return
+/// `Err(CoolError)` for any failure instead; it is logged and
+/// swallowed by design (sinks are best-effort), which panicking is not.
 #[async_trait::async_trait]
 pub trait AuditSink: Send + Sync + 'static {
     async fn record(&self, event: &AuditEvent) -> Result<(), CoolError>;

@@ -2,7 +2,8 @@
 
 #![cfg(test)]
 
-use super::inputs::{RpcListInput, RpcListPredicate};
+use cratestack_core::rpc::{RpcListInput, RpcListPredicate};
+
 use super::synthesize::synthesize_list_query;
 
 #[test]

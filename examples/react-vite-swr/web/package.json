@@ -1,0 +1,30 @@
+{
+  "name": "react-vite-swr-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "predev": "pnpm --filter react-vite-swr-client run build",
+    "dev": "vite",
+    "prebuild": "pnpm --filter react-vite-swr-client run build",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "seed": "tsx scripts/seed.ts"
+  },
+  "dependencies": {
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-vite-swr-client": "workspace:*",
+    "swr": "^2.2.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.6",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.0.5",
+    "tsx": "^4.19.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.0"
+  }
+}

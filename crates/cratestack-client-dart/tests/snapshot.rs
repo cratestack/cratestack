@@ -5,7 +5,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use cratestack_client_dart::{DartGeneratorConfig, GeneratedDartPackage, generate_package};
+use cratestack_client_dart::{
+    DartGeneratorConfig, DartPreset, GeneratedDartPackage, generate_package,
+};
 
 /// Deterministic stand-in for `cli_support::hash_schema_source`'s real
 /// output (issue #178) — a real SHA-256 hex digest, distinct from
@@ -88,6 +90,38 @@ fn rest_runtime_keeps_existing_adapter_interface() {
     );
 }
 
+/// Regression test for a real bug found while building the
+/// `examples/flutter-riverpod` end-to-end example (issue #303):
+/// `CratestackDioAdapter.execute` never set an `Accept` header, unlike
+/// `CratestackCborDioAdapter` right below it (which always has) and the
+/// TypeScript REST runtime's `headers.set("Accept", "application/json")`
+/// (`crates/cratestack-client-typescript/templates/rest-runtime.ts.j2`).
+/// Reproduced live: a plain `curl` with no `Accept` header against a
+/// real `--preset riverpod` example server (Postgres + axum, wired with
+/// only `JsonCodec`) returned "no encoder configured for response
+/// Content-Type application/cbor", not JSON — the router's own
+/// content-negotiation default doesn't fall back to the one codec that
+/// was actually registered. Every REST JSON adapter call must state its
+/// preference explicitly rather than rely on that default.
+#[test]
+fn rest_dio_adapter_sends_an_explicit_json_accept_header() {
+    let package = generate_for("tiny_rest", "tiny_rest_client");
+    let runtime = package_file(&package, "lib/src/runtime.dart");
+    let dio_adapter_start = runtime
+        .find("class CratestackDioAdapter")
+        .expect("runtime.dart should declare CratestackDioAdapter");
+    let cbor_adapter_start = runtime
+        .find("class CratestackCborDioAdapter")
+        .expect("runtime.dart should declare CratestackCborDioAdapter");
+    let dio_adapter_body = &runtime[dio_adapter_start..cbor_adapter_start];
+    assert!(
+        dio_adapter_body.contains("'Accept': 'application/json'"),
+        "CratestackDioAdapter must send an explicit Accept: application/json \
+         header, matching CratestackCborDioAdapter's own explicit Accept and \
+         the TypeScript REST runtime's parity behaviour:\n{dio_adapter_body}"
+    );
+}
+
 #[test]
 fn rpc_skips_queries_dart() {
     let rpc = generate_for("tiny_rpc", "tiny_rpc_client");
@@ -104,6 +138,41 @@ fn rpc_skips_queries_dart() {
             .any(|file| file.file_name == "lib/src/queries.dart"),
         "REST schemas should still emit queries.dart"
     );
+}
+
+/// Regression test for a real bug: `example/main.dart` and
+/// `test/*_test.dart` used to be shared, transport-agnostic templates
+/// that hard-coded `CratestackFetchQuery`/`{Model}Selection` — types only
+/// `rest-queries.dart.j2` (REST-only) defines. Every RPC-transport
+/// generated package shipped an example and a test file that failed
+/// `flutter analyze` with undefined-symbol errors. Confirmed by
+/// generating `tiny_rpc.cstack` and running `flutter analyze` on the
+/// output before this fix landed. RPC now gets its own
+/// `rpc-example-main.dart.j2`/`rpc-package-test.dart.j2` pair.
+#[test]
+fn rpc_example_and_test_do_not_reference_rest_only_query_types() {
+    let rpc = generate_for("tiny_rpc", "tiny_rpc_client");
+    let example = package_file(&rpc, "example/main.dart");
+    let test_file = package_file(&rpc, "test/tiny_rpc_client_test.dart");
+
+    for content in [example, test_file] {
+        assert!(
+            !content.contains("CratestackFetchQuery") && !content.contains("Selection"),
+            "RPC example/test must not reference REST-only query-builder types:\n{content}"
+        );
+        assert!(
+            content.contains("CratestackRpcCallOptions"),
+            "RPC example/test should exercise the RPC transport's own runtime type:\n{content}"
+        );
+        // `Widget` is `tiny_rpc.cstack`'s sole model — its projection
+        // class round-trips through fromWire/toWire with no required
+        // constructor args (every field is optional on that class kind),
+        // so this is safe to assert generically.
+        assert!(
+            content.contains("Widget.fromWire(const <String, Object?>{})"),
+            "RPC example/test should round-trip the generated model class:\n{content}"
+        );
+    }
 }
 
 fn run_snapshot(fixture_stem: &str, library_name: &str) {
@@ -126,6 +195,8 @@ fn generate_for(fixture_stem: &str, library_name: &str) -> GeneratedDartPackage 
             library_name: library_name.to_owned(),
             base_path: "/api".to_owned(),
             template_dir: None,
+            preset: DartPreset::Default,
+            pb_lock: None,
             schema_sha256: SNAPSHOT_SCHEMA_SHA256.to_owned(),
         },
     )

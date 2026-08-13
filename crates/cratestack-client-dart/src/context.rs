@@ -2,9 +2,14 @@ use cratestack_core::{Field, Schema};
 
 use crate::builders::{build_data_class, build_enum_view};
 use crate::builders_model::{
-    build_model_api, build_procedure, build_selection_group, build_selection_model,
+    build_model_accessor, build_model_api, build_procedure, build_selection_group,
+    build_selection_model,
 };
-use crate::config::DartGeneratorConfig;
+use crate::config::{DartGeneratorConfig, DartGeneratorError, DartPreset};
+use crate::find_many_views::{
+    build_find_many_data_class, build_order_by_clause_data_class, build_sort_field_enum,
+    build_where_data_class,
+};
 use crate::idents::{
     dart_identifier, escape_dart_string, pluralize, to_camel_case, to_pascal_case,
 };
@@ -12,14 +17,12 @@ use crate::naming::{
     enum_name_set, is_generated_on_create, is_primary_key, is_relation_field, model_name_set,
     occupied_type_names, procedure_wrapper_name, scalar_model_fields,
 };
-use crate::views::{
-    ConstantView, DataClassKind, ModelAccessorView, SampleModelView, TemplateContext,
-};
+use crate::views::{ConstantView, DataClassKind, SampleModelView, TemplateContext};
 
 pub(crate) fn build_template_context(
     schema: &Schema,
     config: &DartGeneratorConfig,
-) -> TemplateContext {
+) -> Result<TemplateContext, DartGeneratorError> {
     let model_names = model_name_set(&schema.models);
     let enum_names = enum_name_set(&schema.enums);
     let occupied_type_names = occupied_type_names(schema);
@@ -30,7 +33,7 @@ pub(crate) fn build_template_context(
     // `Option<&'static str>` rather than ever sending an empty header.
     let schema_sha256 =
         (!config.schema_sha256.is_empty()).then(|| escape_dart_string(&config.schema_sha256));
-    let enum_types = schema.enums.iter().map(build_enum_view).collect();
+    let mut enum_types: Vec<_> = schema.enums.iter().map(build_enum_view).collect();
 
     let mut data_classes = Vec::new();
     for ty in &schema.types {
@@ -78,6 +81,18 @@ pub(crate) fn build_template_context(
             DataClassKind::Patch,
             &enum_names,
         ));
+
+        // `<Model>Where`/`<Model>SortField`/`<Model>OrderByClause`/
+        // `<Model>FindMany` — generated for every model unconditionally,
+        // same as `Create`/`Update<Model>Input` above, regardless of
+        // whether a procedure actually declares `FindMany<Model>`.
+        let where_class = build_where_data_class(model, &model_names);
+        if let Some(where_class) = where_class.clone() {
+            data_classes.push(where_class);
+        }
+        enum_types.push(build_sort_field_enum(model, &model_names));
+        data_classes.push(build_order_by_clause_data_class(model));
+        data_classes.push(build_find_many_data_class(model, where_class.is_some()));
     }
 
     for procedure in &schema.procedures {
@@ -117,11 +132,7 @@ pub(crate) fn build_template_context(
     let model_accessors = schema
         .models
         .iter()
-        .map(|model| ModelAccessorView {
-            accessor: pluralize(&to_camel_case(&model.name)),
-            api_class_name: format!("{}Api", model.name),
-            provider_name: format!("{provider_prefix}{}ApiProvider", model.name),
-        })
+        .map(|model| build_model_accessor(model, &provider_prefix))
         .collect();
 
     let model_apis = schema.models.iter().map(build_model_api).collect();
@@ -171,7 +182,9 @@ pub(crate) fn build_template_context(
         }
     });
 
-    TemplateContext {
+    let grpc = crate::grpc::build_grpc_context(schema, config.pb_lock.as_ref())?;
+
+    Ok(TemplateContext {
         package_name: config.library_name.clone(),
         client_class_name,
         provider_prefix,
@@ -187,5 +200,7 @@ pub(crate) fn build_template_context(
         query_procedures,
         mutation_procedures,
         sample_model,
-    }
+        grpc,
+        is_riverpod_preset: config.preset == DartPreset::Riverpod,
+    })
 }

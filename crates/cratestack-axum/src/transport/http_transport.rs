@@ -1,6 +1,7 @@
 use axum::http::StatusCode;
 use axum::response::Response;
 use cratestack_core::{CoolCodec, CoolError, CoolErrorResponse};
+use futures_util::Stream;
 use serde::{Deserialize, Serialize};
 
 use crate::codec::encode_codec_response;
@@ -8,8 +9,44 @@ use crate::codec::encode_codec_response;
 use super::CBOR_SEQUENCE_CONTENT_TYPE;
 use super::internal::encode_cbor_sequence_response;
 use super::media_type::media_type_matches;
+use super::stream_sequence::encode_cbor_sequence_stream_response;
 
 pub trait HttpTransport: Clone + Send + Sync + 'static {
+    /// Whether this transport actually has an encoder for `content_type`
+    /// (cratestack#489). `RouteTransportCapabilities::response_types`
+    /// (`cratestack-core`) is a compile-time list of what the transport
+    /// *shape* can carry (e.g. both CBOR and JSON, for every route), not
+    /// what the concrete codec(s) wired into this particular router were
+    /// built with — a router constructed with a single `JsonCodec` still
+    /// emits a `response_types` list that names `application/cbor`.
+    ///
+    /// Two callers narrow that static list to what this transport can
+    /// genuinely produce before any `Accept` matching happens:
+    /// `select_transport_response_content_type` (response negotiation,
+    /// `transport/media_type.rs`) and `encodable_response_types` (the
+    /// `Accept` preflight, `transport/validate.rs`). Each filters through
+    /// this method and hands the already-filtered slice to
+    /// `select_response_content_type` / `validate_transport_accept_header`,
+    /// which take a plain `&[&str]` and never call `can_encode`
+    /// themselves. The result is that the server can never select — or
+    /// pre-approve, then later fail on — a `Content-Type` it has no
+    /// encoder for.
+    ///
+    /// Defaulted rather than required: this trait is public API — and is
+    /// re-exported through both the `cratestack-pg` and `cratestack-api`
+    /// facades via their `pub use cratestack_axum::*`, so it is part of
+    /// two published surfaces, not just this crate's. A required method
+    /// would break any downstream `HttpTransport` impl that isn't one of
+    /// the two in this crate. The default reports every content type as
+    /// encodable, i.e. it preserves exactly the pre-cratestack#489
+    /// behavior (trust the static capability list) for any implementor
+    /// that hasn't opted in yet — such an implementor keeps the #489 bug
+    /// until it overrides this. Both in-repo impls below override it with
+    /// their real answer.
+    fn can_encode(&self, _content_type: &str) -> bool {
+        true
+    }
+
     fn decode_request<T>(&self, content_type: &str, body: &[u8]) -> Result<T, CoolError>
     where
         T: for<'de> Deserialize<'de>;
@@ -38,12 +75,37 @@ pub trait HttpTransport: Clone + Send + Sync + 'static {
         status: StatusCode,
         value: &CoolErrorResponse,
     ) -> Result<Response, CoolError>;
+
+    /// Genuinely incremental counterpart to [`Self::encode_sequence_response`]
+    /// for `@stream` procedures (cratestack#283): `values` is encoded and
+    /// flushed item-by-item via `axum::body::Body::from_stream` instead
+    /// of collected into a `Vec` first. Only meaningful for
+    /// `application/cbor-seq` — implementations reject any other
+    /// `content_type`, mirroring how the higher-level
+    /// `encode_transport_stream_result_with_status_for` only calls this
+    /// when cbor-seq was negotiated (anything else falls back to the
+    /// buffered `encode_sequence_response` path there).
+    fn encode_sequence_stream_response<T, S>(
+        &self,
+        content_type: &str,
+        status: StatusCode,
+        values: S,
+    ) -> Result<Response, CoolError>
+    where
+        T: Serialize + Send + 'static,
+        S: Stream<Item = Result<T, CoolError>> + Send + 'static;
 }
 
 impl<C> HttpTransport for C
 where
     C: CoolCodec,
 {
+    fn can_encode(&self, content_type: &str) -> bool {
+        media_type_matches(content_type, C::CONTENT_TYPE)
+            || (content_type == CBOR_SEQUENCE_CONTENT_TYPE
+                && C::CONTENT_TYPE == CborCodecMarker::CONTENT_TYPE)
+    }
+
     fn decode_request<T>(&self, content_type: &str, body: &[u8]) -> Result<T, CoolError>
     where
         T: for<'de> Deserialize<'de>,
@@ -101,6 +163,26 @@ where
             encode_cbor_sequence_response(self, status, std::slice::from_ref(value))
         } else {
             self.encode_response(content_type, status, value)
+        }
+    }
+
+    fn encode_sequence_stream_response<T, S>(
+        &self,
+        content_type: &str,
+        status: StatusCode,
+        values: S,
+    ) -> Result<Response, CoolError>
+    where
+        T: Serialize + Send + 'static,
+        S: Stream<Item = Result<T, CoolError>> + Send + 'static,
+    {
+        if content_type == CBOR_SEQUENCE_CONTENT_TYPE {
+            encode_cbor_sequence_stream_response(self.clone(), status, values)
+        } else {
+            Err(CoolError::NotAcceptable(format!(
+                "incremental sequence streaming requires {CBOR_SEQUENCE_CONTENT_TYPE}, got \
+                 response Content-Type {content_type}"
+            )))
         }
     }
 }

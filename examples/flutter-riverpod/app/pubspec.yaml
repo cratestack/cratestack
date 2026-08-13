@@ -1,0 +1,32 @@
+name: flutter_riverpod_example_app
+description: >-
+  End-to-end example app for issue #303 (epic #297's last story): consumes
+  a `cratestack generate-dart --preset riverpod` client with zero
+  hand-written providers.
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^3.3.1
+  dio: ^5.8.0+1
+  # The generated client (see ../client) — path dependency, exactly like
+  # any other locally-owned package. This app never depends on riverpod
+  # code generation itself (no `riverpod_generator`/`build_runner` dev
+  # dependency here): every `@riverpod` provider it reads was already
+  # expanded when `client/` was generated and built — see the top-level
+  # README's "full path" section.
+  flutter_riverpod_client:
+    path: ../client
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true

@@ -4,15 +4,19 @@ import {
   type UseMutationOptions,
   type UseQueryOptions,
 } from "@tanstack/react-query";
-import type { TinyRestClientClient } from "./client";
+import type { TinyRestClientClient } from "./client.js";
 import type {
   Widget,
   CreateWidgetInput,
   UpdateWidgetInput,
+  WidgetWhere,
+  WidgetOrderByClause,
+  WidgetFindMany,
   EchoNameArgs,
+  WidgetSortField,
   Page,
-} from "./models";
-import type { CratestackQueryRequestConfig, CratestackRequestConfig } from "./queries";
+} from "./models.js";
+import type { CratestackQueryRequestConfig, CratestackRequestConfig } from "./queries.js";
 
 export const cratestackQueryKeys = {
   widgetList: (options?: CratestackQueryRequestConfig) => ["/widgets", "list", options?.query] as const,

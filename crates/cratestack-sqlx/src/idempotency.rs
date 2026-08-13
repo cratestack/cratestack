@@ -14,8 +14,8 @@ mod operations;
 use std::time::SystemTime;
 
 use async_trait::async_trait;
-use cratestack_axum::idempotency::{IDEMPOTENCY_TABLE_DDL, IdempotencyStore, ReservationOutcome};
-use cratestack_core::CoolError;
+use cratestack_core::{CoolError, IdempotencyStore, ReservationOutcome};
+use cratestack_sql::IDEMPOTENCY_TABLE_DDL;
 
 use crate::sqlx;
 
@@ -32,19 +32,13 @@ impl SqlxIdempotencyStore {
     /// Ensure the table exists. Banks typically run this via their own
     /// migration tooling; exposed here for convenience.
     pub async fn ensure_schema(&self) -> Result<(), CoolError> {
-        // Multi-statement DDL (table + index) — prepared statements
-        // only accept one statement at a time, so split + execute
-        // sequentially.
-        for statement in IDEMPOTENCY_TABLE_DDL
-            .split(';')
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-        {
-            sqlx::query(statement)
-                .execute(&self.pool)
-                .await
-                .map_err(|error| CoolError::Database(error.to_string()))?;
-        }
+        // Multi-statement DDL (table + index) — `raw_sql` sends it as one
+        // batch over PG's simple-query protocol instead of splitting on
+        // `;` client-side, which would corrupt any dollar-quoted body.
+        sqlx::raw_sql(IDEMPOTENCY_TABLE_DDL)
+            .execute(&self.pool)
+            .await
+            .map_err(|error| CoolError::Database(error.to_string()))?;
         Ok(())
     }
 

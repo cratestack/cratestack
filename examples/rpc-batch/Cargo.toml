@@ -2,17 +2,25 @@
 name = "rpc-batch-example"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 publish = false
 description = "RPC server demonstrating POST /rpc/batch: multiple ops in one round-trip, per-frame error isolation, request order preserved on the response."
+
+[lints]
+workspace = true
 
 [[bin]]
 name = "rpc-batch-server"
 path = "src/main.rs"
 
 [dependencies]
-cratestack = { package = "cratestack-pg", path = "../../crates/cratestack-pg", version = "0.4.4" }
-cratestack-codec-cbor = { path = "../../crates/cratestack-codec-cbor", version = "0.4.4" }
-cratestack-codec-json = { path = "../../crates/cratestack-codec-json", version = "0.4.4" }
+# `cratestack-api` (cratestack#347) is the first-class no-database facade —
+# `sqlx`/`cratestack-sqlx` are not a dependency of this crate at all, under
+# any feature. This schema is `db = None`, so they were never needed. See
+# `examples/no-database-verification-api` for the `cargo tree` proof.
+cratestack = { package = "cratestack-api", path = "../../crates/cratestack-api" }
+cratestack-codec-cbor = { path = "../../crates/cratestack-codec-cbor" }
+cratestack-codec-json = { path = "../../crates/cratestack-codec-json" }
 serde = { workspace = true }
 tokio = { workspace = true }
 

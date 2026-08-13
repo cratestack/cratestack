@@ -5,7 +5,10 @@
 //!
 //! - [`include_server_schema`] — full server: sqlx Postgres backend,
 //!   `Cratestack` runtime, axum router, procedure handlers, events. No
-//!   rusqlite anywhere in the output.
+//!   rusqlite anywhere in the output. Its `db = Postgres` / `db = None`
+//!   argument is cross-checked against the schema's own `datasource.provider`
+//!   (cratestack#327) — a mismatch is a compile-time error. `db = None`'s
+//!   codegen is otherwise unchanged for now (see the epic's later stories).
 //! - [`include_embedded_schema`] — embedded ORM only: rusqlite backend
 //!   (works on mobile/desktop and on `wasm32-unknown-unknown` via
 //!   `sqlite-wasm-rs`). No sqlx, no axum, no procedures.
@@ -17,7 +20,10 @@
 //! role.
 
 mod client;
+mod datasource_guard;
 mod embedded;
+mod extension_gate;
+mod grpc_pb;
 mod parse;
 mod reject_grpc;
 mod server;
@@ -29,8 +35,7 @@ use parse::ServerSchemaArgs;
 
 pub(crate) fn include_server_schema(input: TokenStream) -> TokenStream {
     let args = parse_macro_input!(input as ServerSchemaArgs);
-    let _ = args.db; // Postgres-only today; reserved for future backends.
-    server::compose_server_schema(&args.schema_path)
+    server::compose_server_schema(&args.schema_path, args.db)
 }
 
 pub(crate) fn include_embedded_schema(input: TokenStream) -> TokenStream {

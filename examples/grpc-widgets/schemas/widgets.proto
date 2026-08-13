@@ -22,6 +22,14 @@ message CreateWidgetInput {
   optional string name = 2;
 }
 
+message EchoWidgetNameInput {
+  optional string name = 1;
+}
+
+message EchoWidgetNameOutput {
+  optional string result = 1;
+}
+
 message PageInfo {
   optional int64 limit = 1;
   optional int64 offset = 2;
@@ -53,6 +61,13 @@ message Widget {
   optional string name = 2;
 }
 
+message WidgetNameSamplesInput {
+}
+
+message WidgetNameSamplesOutput {
+  repeated string result = 1;
+}
+
 message WidgetRpcListInput {
   optional int64 limit = 1;
   optional int64 offset = 2;
@@ -80,4 +95,6 @@ service Api {
   rpc ModelWidgetCreate(CreateWidgetInput) returns (Widget);
   rpc ModelWidgetUpdate(WidgetRpcUpdateInput) returns (Widget);
   rpc ModelWidgetDelete(WidgetRpcPkInput) returns (Widget);
+  rpc ProcedureEchoWidgetName(EchoWidgetNameInput) returns (EchoWidgetNameOutput);
+  rpc ProcedureWidgetNameSamples(WidgetNameSamplesInput) returns (stream WidgetNameSamplesOutput);
 }

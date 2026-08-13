@@ -1,0 +1,13 @@
+// RPC-transport counterpart of `swr_page_input_procedure.cstack` — same
+// gap (see that fixture's header comment), exercised through
+// `models-rpc.ts.j2`/`procedures-rpc.ts.j2` instead of the REST
+// templates.
+
+transport rpc
+
+type FeedReply {
+  limit Int
+  offset Int
+}
+
+procedure listFeed(page: PageInput): FeedReply

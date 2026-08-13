@@ -7,10 +7,11 @@
 //! `schema.transport == TransportStyle::Grpc`.
 //!
 //! They mirror hand-written Rust types with no `.cstack` counterpart —
-//! `cratestack_axum::rpc::inputs::{RpcPkInput, RpcUpdateInput, RpcListInput,
-//! RpcListPredicate}` — the same "translate a fixed Rust shape into proto"
-//! category of work ticket #169 already did for `PageInfo`
-//! (`synth_page.rs`).
+//! `cratestack_core::rpc::{RpcPkInput, RpcUpdateInput, RpcListInput,
+//! RpcListPredicate}` (moved here from `cratestack_axum::rpc::inputs` by
+//! cratestack#490; see that module's doc comment) — the same "translate a
+//! fixed Rust shape into proto" category of work ticket #169 already did
+//! for `PageInfo` (`synth_page.rs`).
 //!
 //! Simplification, documented per ticket #170: every field here goes
 //! through the same universal proto3 `optional` rule as everything else
@@ -166,6 +167,7 @@ fn scalar_ty(name: &str, arity: TypeArity) -> TypeRef {
         name_span: synthetic_span(),
         arity,
         generic_args: vec![],
+        int_args: Vec::new(),
     }
 }
 

@@ -52,7 +52,7 @@ pub(super) fn collect_column_lists(model: &Model, models: &[Model]) -> Result<Co
             quote! { #name }
         })
         .collect();
-    let allowed_sorts = collect_allowed_sort_keys(model, models)?
+    let allowed_sorts = collect_allowed_sort_keys(model, models)
         .into_iter()
         .map(|field| quote! { #field })
         .collect();

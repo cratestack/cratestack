@@ -1,0 +1,14 @@
+error: ␛[31mError:␛[0m duplicate model name `User`
+           ␛[38;5;246m╭␛[0m␛[38;5;246m─␛[0m␛[38;5;246m[␛[0m /tmp/cratestack-macros-ui-semantic-420/semantic_error_duplicate_model.cstack:9:1 ␛[38;5;246m]␛[0m
+           ␛[38;5;246m│␛[0m
+        ␛[38;5;246m 9 │␛[0m ␛[31m╭␛[0m␛[31m─␛[0m␛[31m▶␛[0m␛[31m ␛[0m␛[31mm␛[0m␛[31mo␛[0m␛[31md␛[0m␛[31me␛[0m␛[31ml␛[0m␛[31m ␛[0m␛[31mU␛[0m␛[31ms␛[0m␛[31me␛[0m␛[31mr␛[0m␛[31m ␛[0m␛[31m{␛[0m
+        ␛[38;5;240m   ┆␛[0m ␛[31m┆␛[0m
+        ␛[38;5;246m11 │␛[0m ␛[31m├␛[0m␛[31m─␛[0m␛[31m▶␛[0m␛[31m ␛[0m␛[31m}␛[0m
+        ␛[38;5;240m   │␛[0m ␛[31m│␛[0m
+        ␛[38;5;240m   │␛[0m ␛[31m╰␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m duplicate model name `User`
+       ␛[38;5;246m────╯␛[0m
+
+ --> tests/ui/generated/semantic_error_duplicate_model.rs
+  |
+  | cratestack_macros::include_embedded_schema!("/tmp/cratestack-macros-ui-semantic-420/semantic_error_duplicate_model.cstack");
+  |                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

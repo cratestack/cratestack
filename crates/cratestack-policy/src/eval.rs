@@ -76,6 +76,7 @@ fn procedure_predicate_matches<A: ProcedureArgs + ?Sized>(
     ctx: &CoolContext,
 ) -> bool {
     match predicate {
+        ProcedurePredicate::Literal(value) => value,
         ProcedurePredicate::AuthNotNull => ctx.is_authenticated(),
         ProcedurePredicate::AuthIsNull => !ctx.is_authenticated(),
         ProcedurePredicate::HasRole { role } => context_has_role(ctx, role),

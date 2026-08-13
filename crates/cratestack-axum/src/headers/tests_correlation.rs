@@ -2,6 +2,8 @@
 
 use axum::http::{HeaderMap, HeaderValue};
 
+use crate::trusted_proxy::ForwardedHeader;
+
 use super::forwarded::parse_client_ip;
 use super::traceparent::parse_traceparent;
 
@@ -50,25 +52,38 @@ fn rejects_all_zero_trace_id() {
     assert_eq!(err.code(), "BAD_REQUEST");
 }
 
+/// #415 Finding 1: `Forwarded` must NOT take priority over
+/// `X-Forwarded-For` — the pre-fix behavior this test used to assert was
+/// the confirmed spoofing bypass (a real proxy sets XFF and never touches
+/// `Forwarded`, so an unconditionally-preferred `Forwarded` header is, in
+/// practice, entirely attacker-authored). The default header selection is
+/// [`ForwardedHeader::XForwardedFor`]; see `tests_header_precedence.rs`
+/// for the full trust-boundary regression coverage of this fix.
 #[test]
-fn rfc7239_forwarded_takes_priority_over_x_forwarded_for() {
+fn default_header_selection_is_x_forwarded_for_not_forwarded() {
     let mut headers = HeaderMap::new();
     headers.insert(
         "forwarded",
         HeaderValue::from_static("for=192.0.2.43;proto=https"),
     );
     headers.insert("x-forwarded-for", HeaderValue::from_static("10.0.0.1"));
-    assert_eq!(parse_client_ip(&headers), Some("192.0.2.43".to_owned()));
+    assert_eq!(
+        parse_client_ip(&headers, 1, ForwardedHeader::XForwardedFor),
+        Some("10.0.0.1".to_owned())
+    );
 }
 
+/// `parse_client_ip` only walks the chain and strips the RFC 7239
+/// quoted-string syntax (`for="..."`); bracket/port normalization of the
+/// selected hop now happens later, via `parse_hop_ip`, once a hop is
+/// actually chosen for recording — see `tests_ip_validation.rs` for that
+/// coverage (Finding 2). This test documents the split: the raw walk
+/// intentionally keeps the brackets.
 #[test]
-fn x_forwarded_for_takes_leftmost_address() {
-    let h = headers_with("x-forwarded-for", "192.0.2.43, 10.0.0.1");
-    assert_eq!(parse_client_ip(&h), Some("192.0.2.43".to_owned()));
-}
-
-#[test]
-fn client_ip_strips_brackets_around_ipv6() {
+fn forwarded_header_raw_entry_keeps_brackets_until_parse_hop_ip_normalizes_them() {
     let h = headers_with("forwarded", "for=\"[2001:db8::1]\"");
-    assert_eq!(parse_client_ip(&h), Some("2001:db8::1".to_owned()));
+    assert_eq!(
+        parse_client_ip(&h, 1, ForwardedHeader::Forwarded),
+        Some("[2001:db8::1]".to_owned())
+    );
 }

@@ -2,17 +2,21 @@
 name = "tauri-web-wasm-example"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 publish = false
 description = "Wasm cdylib loaded inside a Tauri 2 webview. include_embedded_schema! drives the local SQLite store (OPFS-backed) for the embedded side of the tauri-web example; the matching native Tauri shell lives at ./src-tauri and uses include_client_schema! to call remote CrateStack services from the trusted side."
+
+[lints]
+workspace = true
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 chrono = { workspace = true }
-cratestack = { package = "cratestack-sqlite", path = "../../crates/cratestack-sqlite", version = "0.4.4" }
-cratestack-macros = { path = "../../crates/cratestack-macros", version = "0.4.4" }
-cratestack-rusqlite = { path = "../../crates/cratestack-rusqlite", version = "0.4.4" }
+cratestack = { package = "cratestack-sqlite", path = "../../crates/cratestack-sqlite" }
+cratestack-macros = { path = "../../crates/cratestack-macros" }
+cratestack-rusqlite = { path = "../../crates/cratestack-rusqlite" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true, features = ["js"] }

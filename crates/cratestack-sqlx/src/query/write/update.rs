@@ -2,7 +2,9 @@
 
 use cratestack_core::{AuditOperation, CoolContext, CoolError, ModelEventKind};
 
-use crate::audit::{build_audit_event, enqueue_audit_event, ensure_audit_table, fetch_for_audit};
+use crate::audit::{
+    RunInTxOutcome, build_audit_event, enqueue_audit_event, ensure_audit_table, fetch_for_audit,
+};
 use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
 use crate::{ModelDescriptor, SqlxRuntime, UpdateModelInput, sqlx};
 
@@ -60,11 +62,15 @@ where
         )
     }
 
+    /// Participates in a caller-supplied transaction. Neither the
+    /// `AuditSink` fan-out nor the event outbox drain happens here —
+    /// see `create.rs`'s `run_in_tx` doc comment for the full contract
+    /// and how a caller opts into both after their own commit.
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
         ctx: &CoolContext,
-    ) -> Result<M, CoolError>
+    ) -> Result<RunInTxOutcome<M>, CoolError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
         PK: Send + Clone + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
@@ -109,6 +115,7 @@ where
             )
             .await?;
         }
+        let mut audit_event = None;
         if audit_enabled {
             let after = serde_json::to_value(&record).ok();
             let event = build_audit_event(
@@ -119,8 +126,12 @@ where
                 ctx,
             );
             enqueue_audit_event(&mut **tx, &event).await?;
+            audit_event = Some(event);
         }
-        Ok(record)
+        Ok(RunInTxOutcome::new(
+            record,
+            audit_event.into_iter().collect(),
+        ))
     }
 
     pub async fn run(self, ctx: &CoolContext) -> Result<M, CoolError>

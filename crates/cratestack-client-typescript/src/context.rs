@@ -2,16 +2,22 @@ use cratestack_core::{Field, Schema, TransportStyle};
 use serde::Serialize;
 
 use crate::config::TypeScriptGeneratorConfig;
+use crate::decimal::{DecimalShapeView, build_decimal_shapes};
+use crate::error::TypeScriptGeneratorError;
+use crate::find_many_views::{
+    build_find_many_interface, build_order_by_clause_interface, build_sort_field_view,
+    build_where_interface,
+};
 use crate::grpc::GrpcContext;
 use crate::naming::{occupied_type_names, package_class_stem, to_pascal_case};
-use crate::templates::TypeScriptGeneratorError;
+use crate::procedure_views::{ProcedureView, build_procedure};
 use crate::types::{
     enum_name_set, is_generated_on_create, is_primary_key, model_allows_create, model_name_set,
     scalar_model_fields, visible_model_fields,
 };
 use crate::views::{
-    EnumView, InterfaceKind, InterfaceView, ModelApiView, ProcedureView, build_enum_view,
-    build_interface, build_model_api, build_procedure,
+    EnumView, InterfaceKind, InterfaceView, ModelApiView, build_enum_view, build_interface,
+    build_model_api, disambiguate_model_api_keys,
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -29,6 +35,11 @@ pub(crate) struct TemplateContext {
     procedures: Vec<ProcedureView>,
     query_procedures: Vec<ProcedureView>,
     mutation_procedures: Vec<ProcedureView>,
+    /// One row per model/`type` in the schema — the generated
+    /// `decimalShapes` registry `models.ts.j2` renders and every decode
+    /// call site looks a name up in (`crate::decimal`'s module doc has the
+    /// full rationale; cratestack#499 review remediation).
+    decimal_shapes: Vec<DecimalShapeView>,
     /// Only set for `transport grpc` schemas — see `crate::grpc`'s module
     /// doc. `None` for REST/RPC, where the REST/RPC-specific templates
     /// never reference `grpc.*` in the first place.
@@ -42,12 +53,13 @@ pub(crate) fn build_template_context(
     let model_names = model_name_set(&schema.models);
     let enum_names = enum_name_set(&schema.enums);
     let occupied_type_names = occupied_type_names(schema);
+    let decimal_shapes = build_decimal_shapes(schema);
     let client_class_name = format!(
         "{}Client",
         to_pascal_case(&package_class_stem(&config.package_name))
     );
 
-    let enums = schema.enums.iter().map(build_enum_view).collect();
+    let mut enums = schema.enums.iter().map(build_enum_view).collect::<Vec<_>>();
     let mut interfaces = Vec::new();
     for ty in &schema.types {
         interfaces.push(build_interface(
@@ -98,6 +110,14 @@ pub(crate) fn build_template_context(
             InterfaceKind::Patch,
             &enum_names,
         ));
+
+        let where_interface = build_where_interface(model, &model_names);
+        if let Some(where_interface) = where_interface.clone() {
+            interfaces.push(where_interface);
+        }
+        enums.push(build_sort_field_view(model, &model_names));
+        interfaces.push(build_order_by_clause_interface(model));
+        interfaces.push(build_find_many_interface(model, where_interface.is_some()));
     }
     for procedure in &schema.procedures {
         let fields = procedure
@@ -120,11 +140,12 @@ pub(crate) fn build_template_context(
         ));
     }
 
-    let models = schema
+    let mut models = schema
         .models
         .iter()
         .map(build_model_api)
         .collect::<Vec<_>>();
+    disambiguate_model_api_keys(&mut models);
     // `transport grpc` never routes procedures at all — ticket #171 didn't
     // wire them into the generated tonic service (see `crate::grpc`'s
     // module doc) — so a gRPC-Web client exposing `.procedures.foo()`
@@ -165,6 +186,7 @@ pub(crate) fn build_template_context(
         procedures,
         query_procedures,
         mutation_procedures,
+        decimal_shapes,
         grpc,
     })
 }

@@ -1,0 +1,33 @@
+// cratestack#513 verification fixture: two models written together inside
+// one `db.transaction(...)` call, so the proof is a genuine multi-write
+// transaction rather than a single INSERT.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Widget {
+  id Int @id
+  label String
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
+
+model WidgetNote {
+  id Int @id
+  widgetId Int
+  note String
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}

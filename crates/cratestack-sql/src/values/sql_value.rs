@@ -10,7 +10,19 @@ pub enum SqlValue {
     Uuid(uuid::Uuid),
     DateTime(chrono::DateTime<chrono::Utc>),
     Json(Value),
+    /// Only exists when a decimal backend is selected (cratestack#505):
+    /// `cratestack_core::Decimal` itself doesn't exist otherwise — see
+    /// `cratestack-core/src/decimal.rs`'s module doc. `NullDecimal` below
+    /// stays unconditional since it carries no `Decimal` payload.
+    #[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
     Decimal(cratestack_core::Decimal),
+    /// A `Vector(n)` field's value (see `docs/design/extensions.md`
+    /// §6). Defined unconditionally — no `pgvector` dependency is
+    /// needed to hold a `Vec<f32>` — but only ever constructed by
+    /// generated code gated on the `pgvector` Cargo feature (#161's
+    /// compile-time check), and only ever bound to a real column by
+    /// `cratestack-sqlx`'s own `pgvector`-gated encode path.
+    Vector(Vec<f32>),
     NullBool,
     NullInt,
     NullFloat,
@@ -20,6 +32,7 @@ pub enum SqlValue {
     NullDateTime,
     NullJson,
     NullDecimal,
+    NullVector,
 }
 
 #[derive(Debug, Clone, PartialEq)]

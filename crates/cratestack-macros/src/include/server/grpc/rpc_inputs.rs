@@ -23,7 +23,7 @@ use quote::quote;
 
 use crate::shared::{ident, rust_type_tokens};
 
-use super::scalar::{domain_from_wire_expr, scalar_wire};
+use crate::include::grpc_pb::scalar::{domain_from_wire_expr, scalar_wire};
 
 pub(super) fn lock_number(
     numbers: &BTreeMap<String, i32>,

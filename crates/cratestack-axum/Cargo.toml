@@ -2,6 +2,7 @@
 name = "cratestack-axum"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 description.workspace = true
@@ -12,20 +13,68 @@ readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 
+[lints]
+workspace = true
+
+[features]
+# Forwards to `cratestack-core`'s mutually-exclusive decimal backend choice
+# (see that crate's Cargo.toml for the full rationale). Required because
+# `cratestack-core`'s dependency edge has `default-features = false` at the
+# workspace root — every direct consumer must explicitly re-select a
+# backend, or `cratestack-core` fails to compile at all (cratestack#495).
+# Also forwards to `cratestack-sql`, this crate's other direct
+# `cratestack-core` consumer (same `default-features = false` treatment,
+# see root `Cargo.toml`), so the two stay in lockstep.
+default = ["decimal-rust-decimal"]
+# Also forwards to `cratestack-codec-cbor`/`cratestack-codec-json`, this
+# crate's dev-dependency-only codec test fixtures — Cargo's feature
+# resolver unifies dev-dependency feature requests with the rest of the
+# graph for the same workspace member, so leaving those on a hardcoded
+# backend would conflict with `--features decimal-bigdecimal` under
+# `cargo test`/`cargo check --all-targets`.
+decimal-rust-decimal = [
+    "cratestack-core/decimal-rust-decimal",
+    "cratestack-sql/decimal-rust-decimal",
+    "cratestack-codec-cbor/decimal-rust-decimal",
+    "cratestack-codec-json/decimal-rust-decimal",
+]
+decimal-bigdecimal = [
+    "cratestack-core/decimal-bigdecimal",
+    "cratestack-sql/decimal-bigdecimal",
+    "cratestack-codec-cbor/decimal-bigdecimal",
+    "cratestack-codec-json/decimal-bigdecimal",
+]
+
 [dependencies]
 async-trait.workspace = true
 axum.workspace = true
 bytes.workspace = true
 cratestack-core.workspace = true
+cratestack-sql.workspace = true
+erased-serde.workspace = true
+futures-util.workspace = true
 http.workspace = true
+ipnet.workspace = true
+minicbor = { workspace = true, features = ["alloc"] }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+# Only `sync` (the `@@subscribe` SSE bridge's bounded `mpsc` channel,
+# `crates/cratestack-axum/src/rpc/subscription_bridge.rs`, cratestack#390) —
+# the runtime-driving features (`macros`, `net`, `rt-multi-thread`, `time`)
+# stay dev-only below since production code here never starts its own
+# runtime or listens on a socket; it's a library the host binary drives.
+tokio = { workspace = true, features = ["sync"] }
 tower.workspace = true
 tracing.workspace = true
 url.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+# Plain edges: see the `decimal-rust-decimal`/`decimal-bigdecimal` feature
+# forwards above.
 cratestack-codec-cbor.workspace = true
-tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+cratestack-codec-json.workspace = true
+minicbor-serde.workspace = true
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "time"] }
+tracing-subscriber.workspace = true

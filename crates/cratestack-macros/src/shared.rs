@@ -2,6 +2,7 @@
 //! generator. Anything bigger lives in sibling submodules.
 
 mod attrs;
+mod procedure_attrs;
 mod sql;
 mod types;
 mod value;
@@ -17,6 +18,7 @@ pub(crate) use attrs::{
     is_primary_key, is_readonly_field, is_sensitive_field, is_server_only_field, is_version_field,
     supports_comparison,
 };
+pub(crate) use procedure_attrs::is_stream_procedure;
 pub(crate) use sql::{create_sql_value, sql_value_tokens, update_sql_value};
 pub(crate) use types::{
     field_definition, query_scalar_list_parser_tokens, query_scalar_parser_tokens,
@@ -28,8 +30,23 @@ pub(crate) fn schema_lit(value: &str) -> LitStr {
     LitStr::new(value, proc_macro2::Span::call_site())
 }
 
+/// Turns a schema-authored name (field, relation, etc.) into a Rust
+/// identifier, escaping it as a raw identifier (`r#type`) when it collides
+/// with a Rust keyword — see cratestack#398. `self`/`Self`/`super`/`crate`
+/// have no valid identifier spelling at all (not even raw); those are
+/// rejected earlier, at schema-parse time
+/// (`cratestack_parser::validate::fields`), so by the time codegen calls
+/// this function they should never appear here. If one slips through
+/// anyway, fall back to a plain (non-raw) identifier rather than panicking
+/// — `syn::Ident::new_raw` panics on exactly those four strings — so the
+/// failure surfaces as an ordinary `rustc` parse error instead of a macro
+/// panic.
 pub(crate) fn ident(value: &str) -> syn::Ident {
-    syn::Ident::new(value, proc_macro2::Span::call_site())
+    if cratestack_core::rust_keywords::is_raw_escapable_keyword(value) {
+        syn::Ident::new_raw(value, proc_macro2::Span::call_site())
+    } else {
+        syn::Ident::new(value, proc_macro2::Span::call_site())
+    }
 }
 
 pub(crate) fn doc_attrs(docs: &[String]) -> proc_macro2::TokenStream {
@@ -91,27 +108,11 @@ pub(crate) fn find_model<'a>(models: &'a [Model], name: &str) -> Option<&'a Mode
     models.iter().find(|model| model.name == name)
 }
 
-pub(crate) fn to_snake_case(value: &str) -> String {
-    let mut output = String::new();
-    for (index, character) in value.chars().enumerate() {
-        if character.is_uppercase() {
-            if index > 0 {
-                output.push('_');
-            }
-            for lowercase in character.to_lowercase() {
-                output.push(lowercase);
-            }
-        } else {
-            output.push(character);
-        }
-    }
-    output
-}
-
-pub(crate) fn pluralize(value: &str) -> String {
-    if value.ends_with('s') {
-        format!("{value}es")
-    } else {
-        format!("{value}s")
-    }
-}
+// cratestack#345: this is the server's real, load-bearing REST route
+// algorithm (see `axum::model::routes::generate_model_axum_routes`).
+// Sourced from `cratestack_core::route_naming` — already a shared
+// dependency of this crate and of `cratestack-client-typescript` /
+// `cratestack-client-dart` — so the client generators import the exact
+// same implementation instead of reimplementing it. Do not redefine these
+// locally.
+pub(crate) use cratestack_core::route_naming::{pluralize, to_snake_case};

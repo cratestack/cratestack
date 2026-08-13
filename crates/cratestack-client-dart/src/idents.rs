@@ -66,14 +66,6 @@ pub(crate) fn to_pascal_case(value: &str) -> String {
         .collect::<String>()
 }
 
-pub(crate) fn to_snake_case(value: &str) -> String {
-    split_words(value)
-        .into_iter()
-        .map(|word| word.to_lowercase())
-        .collect::<Vec<_>>()
-        .join("_")
-}
-
 fn split_words(value: &str) -> Vec<String> {
     let mut words = Vec::new();
     let mut current = String::new();

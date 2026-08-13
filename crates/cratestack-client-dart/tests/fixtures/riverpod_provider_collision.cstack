@@ -1,0 +1,37 @@
+// Acceptance fixture for issue #302's per-operation `@riverpod` provider
+// naming — deliberately constructed so the *naive* scheme
+// (`{camelCase(model.name)}{OpWord}`) collides, proving
+// `crate::riverpod::provider_naming::reserve_operation_symbol`'s
+// escalate-on-detected-collision behavior actually fires rather than
+// merely asserting the scheme "looks" collision-free:
+//
+// - `Widget.list`'s naive provider function name is `widgetList`.
+//   `WidgetList.get`'s naive provider function name is also `widgetList`
+//   (`camelCase("WidgetList")` == `camelCase("Widget") + "List"`). Both
+//   land in DIFFERENT generated files (`widget.dart` / `widget_list.dart`)
+//   but the riverpod preset's library entrypoint (`build_library.rs`)
+//   exports every model file flatly, so this is a real `dart analyze`
+//   "ambiguous export" the moment both symbols exist unresolved.
+// - `Widget.create`'s naive controller class name is
+//   `WidgetCreateController`. The `widgetCreate` mutation procedure's
+//   naive controller class name (`{PascalCase(procedure.name)}Controller`)
+//   is also `WidgetCreateController` — the same collision, but across a
+//   model and a procedure rather than across two models.
+//
+// See `tests/riverpod_providers.rs` for the assertions this fixture
+// backs (both collisions actually detected and escalated to distinct,
+// deterministic names) and `justfile`'s `verify-dart` for the real
+// `flutter analyze`/`build_runner` proof that the escalated names
+// genuinely compile.
+
+model Widget {
+  id Int @id
+  name String
+}
+
+model WidgetList {
+  id Int @id
+  label String
+}
+
+mutation procedure widgetCreate(name: String): Widget

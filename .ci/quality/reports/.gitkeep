@@ -1,0 +1,2 @@
+# This file ensures the reports directory exists in git
+# Actual reports are generated at runtime and not committed

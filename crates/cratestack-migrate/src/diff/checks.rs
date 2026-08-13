@@ -24,6 +24,7 @@ pub(super) fn diff_checks(prev: &TableProjection, next: &TableProjection) -> Che
                 table: check.table.clone(),
                 column: check.column.clone(),
                 name: check.name.clone(),
+                kind: check.kind.clone(),
             }));
         }
     }
@@ -32,13 +33,24 @@ pub(super) fn diff_checks(prev: &TableProjection, next: &TableProjection) -> Che
             out.adds.push(Op::AddCheck((*check).clone()));
         } else if let Some(prev_check) = prev.checks.iter().find(|c| c.name.as_str() == *name) {
             // Same name on both sides — compare kinds. A kind change
-            // means the bounds tightened/loosened or the validator
-            // type changed; emit drop + add.
+            // means the bounds tightened/loosened, the validator type
+            // changed, or (for `CheckKind::Enum`) the variant set
+            // changed. Emit drop + add.
+            //
+            // Adding an enum variant widens the accepted set, so the
+            // rebuilt constraint cannot reject a row that already
+            // passed — this is the path that replaces the old
+            // `ALTER TYPE ... ADD VALUE`, without its transactional
+            // restrictions. *Removing* a variant narrows the set and
+            // can fail on existing rows holding the removed value;
+            // that is a genuine schema-level decision the diff engine
+            // does not try to backfill around.
             if prev_check.kind != check.kind {
                 out.drops.push(Op::DropCheck(DropCheck {
                     table: prev_check.table.clone(),
                     column: prev_check.column.clone(),
                     name: prev_check.name.clone(),
+                    kind: prev_check.kind.clone(),
                 }));
                 out.adds.push(Op::AddCheck((*check).clone()));
             }

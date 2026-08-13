@@ -1,0 +1,181 @@
+//! Runtime proof for issue #304's AC #5 ("The plain functions are
+//! genuinely framework-free — no React import, no hook, usable from
+//! Node. This is proven by a test that imports and calls one outside
+//! any React context.") — `tests/swr_generator.rs` already proves the
+//! static half (no `"react"`/hook text in generated `.ts` sources); this
+//! proves it by actually running one.
+//!
+//! This generates the `swr` preset's `tiny_rest` package to a temp
+//! directory, starts a real local HTTP stub server, and runs a small
+//! script (via `npx tsx` — a plain TS runner, not a UI framework) that
+//! imports `getWidget` and calls it against that server — if the
+//! generated code accidentally pulled in React or any other framework
+//! dependency, module resolution would fail outright, not just silently
+//! succeed.
+//!
+//! cratestack#499 (the `swr` preset's F3 decode-side revival fix): unlike
+//! before, `getWidget` (and every generated model function) now really
+//! does `import { reviveDecimalFields } from "./shared.js"` — a genuine
+//! (not type-only) import — which in turn genuinely imports `decimal.js`,
+//! regardless of whether `Widget` itself has a `Decimal` field. `npm
+//! install` is required before running the smoke script now, mirroring
+//! `tests/rest_list_query_wire_format.rs`'s own identical fix for the
+//! `default` preset's `client.ts` (see that test's own comment on the
+//! exact same failure mode: `npx tsx` hangs rather than failing fast when
+//! it can't resolve `decimal.js` from a `node_modules` that was never
+//! installed — confirmed empirically here too). This test still proves
+//! AC #5's actual claim (no React/hook import anywhere in the invoked
+//! module graph) — `decimal.js` is a deliberate, disclosed runtime
+//! dependency every generated package has needed since cratestack#498,
+//! not a framework.
+//!
+//! No Rust CI job in this repo currently provisions Node (`js` is the
+//! only one, and it doesn't run `cargo test`) — see `.github/workflows/ci.yml`.
+//! So this test degrades to a skip (printed, not silently swallowed) when
+//! `node`/`npx` aren't on `PATH`, rather than failing a CI job that was
+//! never going to have them. Where Node *is* available (local dev, or a
+//! future CI job that adds it), this is a real, non-trivial verification.
+
+use std::io::Write as _;
+use std::net::TcpListener;
+use std::process::Command;
+
+use cratestack_client_typescript::{TypeScriptGeneratorConfig, TypeScriptPreset, generate_package};
+
+#[test]
+fn generated_plain_function_runs_outside_any_react_context() {
+    if !node_and_npx_available() {
+        eprintln!(
+            "skipping generated_plain_function_runs_outside_any_react_context: \
+             `node`/`npx` not on PATH (expected in this repo's Rust-only CI jobs — \
+             see tests/swr_runtime.rs's module doc)"
+        );
+        return;
+    }
+
+    let schema = cratestack_parser::parse_schema_file("tests/fixtures/tiny_rest.cstack")
+        .expect("fixture should parse");
+    let package = generate_package(
+        &schema,
+        &TypeScriptGeneratorConfig {
+            package_name: "swr-runtime-check".to_owned(),
+            preset: TypeScriptPreset::Swr,
+            ..TypeScriptGeneratorConfig::default()
+        },
+    )
+    .expect("swr preset should render");
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    for file in &package.files {
+        let path = dir.path().join(&file.file_name);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("create parent dir");
+        }
+        std::fs::write(&path, &file.contents).expect("write generated file");
+    }
+
+    // cratestack#499: see this file's own module doc — `getWidget`'s
+    // module graph now genuinely imports `decimal.js`, so `npx tsx` needs
+    // a real `node_modules` to resolve it against.
+    let install = Command::new("npm")
+        .args(["install", "--no-audit", "--no-fund"])
+        .current_dir(dir.path())
+        .output()
+        .expect("run npm install");
+    assert!(
+        install.status.success(),
+        "npm install failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&install.stdout),
+        String::from_utf8_lossy(&install.stderr)
+    );
+
+    // A real stub server, not a mock — the function under test does a
+    // genuine `fetch()`.
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind stub server");
+    let port = listener.local_addr().expect("local addr").port();
+    let server = std::thread::spawn(move || serve_one_widget_request(listener));
+
+    let script_path = dir.path().join("smoke.ts");
+    let mut script = std::fs::File::create(&script_path).expect("create smoke script");
+    write!(
+        script,
+        r#"
+import {{ CratestackRuntime }} from "./src/runtime";
+import {{ getWidget }} from "./src/models/widget";
+
+const runtime = new CratestackRuntime("http://127.0.0.1:{port}", {{ basePath: "/api" }});
+const widget = await getWidget(runtime, 1);
+if (widget.name !== "Test Widget") {{
+  throw new Error(`unexpected widget: ${{JSON.stringify(widget)}}`);
+}}
+console.log("SWR_RUNTIME_CHECK_OK");
+"#
+    )
+    .expect("write smoke script");
+
+    let output = Command::new("npx")
+        .args(["--yes", "tsx", "smoke.ts"])
+        .current_dir(dir.path())
+        .output()
+        .expect("run npx tsx");
+
+    server.join().expect("stub server thread");
+
+    assert!(
+        output.status.success(),
+        "generated plain function failed to run under plain Node (tsx, no React/hooks \
+         anywhere in the invoked module graph):\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("SWR_RUNTIME_CHECK_OK"),
+        "smoke script did not print its success marker:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn node_and_npx_available() -> bool {
+    Command::new("node")
+        .arg("--version")
+        .output()
+        .is_ok_and(|output| output.status.success())
+        && Command::new("npx")
+            .arg("--version")
+            .output()
+            .is_ok_and(|output| output.status.success())
+}
+
+/// Accepts exactly one HTTP connection, replies to any request with the
+/// fixture's `Widget` JSON shape, then returns. Hand-rolled instead of
+/// pulling in an HTTP server crate — this only needs to prove one real
+/// `fetch()` round-trip.
+fn serve_one_widget_request(listener: TcpListener) {
+    use std::io::{BufRead, BufReader, Write};
+
+    let (stream, _) = listener.accept().expect("accept stub connection");
+    let mut reader = BufReader::new(stream.try_clone().expect("clone stream"));
+    // Drain the request line + headers; the response is the same
+    // regardless of path/method for this single-shot stub.
+    let mut line = String::new();
+    loop {
+        line.clear();
+        let read = reader.read_line(&mut line).expect("read request line");
+        if read == 0 || line == "\r\n" {
+            break;
+        }
+    }
+
+    let body = r#"{"id":1,"name":"Test Widget","weight":null}"#;
+    let response = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        body.len(),
+        body
+    );
+    let mut stream = stream;
+    stream
+        .write_all(response.as_bytes())
+        .expect("write stub response");
+    stream.flush().expect("flush stub response");
+}

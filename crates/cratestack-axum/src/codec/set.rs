@@ -1,10 +1,12 @@
 use axum::http::StatusCode;
 use axum::response::Response;
 use cratestack_core::{CoolCodec, CoolError, CoolErrorResponse};
+use futures_util::Stream;
 use serde::{Deserialize, Serialize};
 
 use crate::transport::{
     CBOR_SEQUENCE_CONTENT_TYPE, CborCodecMarker, HttpTransport, encode_cbor_sequence_response,
+    encode_cbor_sequence_stream_response,
 };
 
 use super::encode::encode_codec_response;
@@ -26,6 +28,15 @@ where
     Primary: CoolCodec,
     Secondary: CoolCodec,
 {
+    fn can_encode(&self, content_type: &str) -> bool {
+        if content_type == CBOR_SEQUENCE_CONTENT_TYPE {
+            Primary::CONTENT_TYPE == CborCodecMarker::CONTENT_TYPE
+                || Secondary::CONTENT_TYPE == CborCodecMarker::CONTENT_TYPE
+        } else {
+            content_type == Primary::CONTENT_TYPE || content_type == Secondary::CONTENT_TYPE
+        }
+    }
+
     fn decode_request<T>(&self, content_type: &str, body: &[u8]) -> Result<T, CoolError>
     where
         T: for<'de> Deserialize<'de>,
@@ -113,4 +124,34 @@ where
             )))
         }
     }
+
+    fn encode_sequence_stream_response<T, S>(
+        &self,
+        content_type: &str,
+        status: StatusCode,
+        values: S,
+    ) -> Result<Response, CoolError>
+    where
+        T: Serialize + Send + 'static,
+        S: Stream<Item = Result<T, CoolError>> + Send + 'static,
+    {
+        if content_type != CBOR_SEQUENCE_CONTENT_TYPE {
+            return Err(CoolError::NotAcceptable(format!(
+                "incremental sequence streaming requires {CBOR_SEQUENCE_CONTENT_TYPE}, got \
+                 response Content-Type {content_type}"
+            )));
+        }
+        if Primary::CONTENT_TYPE == CborCodecMarker::CONTENT_TYPE {
+            encode_cbor_sequence_stream_response(self.primary.clone(), status, values)
+        } else if Secondary::CONTENT_TYPE == CborCodecMarker::CONTENT_TYPE {
+            encode_cbor_sequence_stream_response(self.secondary.clone(), status, values)
+        } else {
+            Err(CoolError::NotAcceptable(
+                "router does not have a CBOR codec for cbor-seq responses".to_owned(),
+            ))
+        }
+    }
 }
+
+#[cfg(test)]
+mod tests;

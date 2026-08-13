@@ -1,0 +1,23 @@
+// Fixture for `status_attribute_client_round_trip.rs` (cratestack#407): a
+// single procedure declaring `@status(202)` — the point is settling the
+// issue's open client-generator question with evidence, not inference:
+// does `cratestack-client-rust`'s generated call site treat a `202`
+// response as success (like `crates/cratestack-client-rust/src/client/
+// transport.rs`'s `status.is_success()` check suggests) or does it
+// silently require exactly `200`?
+
+datasource db {
+  provider = "none"
+}
+
+type SubmitArgs {
+  message String
+}
+
+type SubmitReply {
+  echo String
+}
+
+procedure submit(args: SubmitArgs): SubmitReply
+  @status(202)
+  @allow(auth() != null)

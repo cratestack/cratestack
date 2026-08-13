@@ -1,6 +1,1773 @@
 # Changelog
 
-## 0.4.0 (unreleased)
+## 0.7.14 (2026-08-12)
+
+### The crates.io publish order no longer mistakes a dev-dependency for a cycle (#564)
+
+`just release-publish` decides the order it uploads crates by topo-sorting the `cratestack-*`
+workspace packages out of `cargo metadata`, and it counted every dependency edge regardless of
+kind. That is wrong for dev-dependencies: `cargo publish` never needs one to already exist on the
+registry in order to package a crate, so a dev-dependency edge places no constraint on publish
+order and may legally point "backwards". #540 added `cratestack-api` as a dev-dependency of
+`cratestack-macros` — for the `Authorized`-witness expansion tests — while `cratestack-api` already
+depended on `cratestack-macros` normally, and the sort read that legitimate pair as a hard cycle
+and aborted the whole publish. The sort now excludes `kind == "dev"` edges while still counting
+build dependencies, which genuinely do constrain ordering. Two supporting changes: cycle detection
+is unchanged and still aborts on a real cycle, and the recipe no longer discards `cargo metadata`'s
+stderr, which previously reduced any underlying metadata failure to a single generic "failed to
+compute publish order" line with the actual cause thrown away.
+
+### `just bump` discovers standalone example workspaces instead of relying on a hand-maintained list (#565)
+
+Several crates under `examples/` are their own `[workspace]` roots, deliberately excluded from the
+root workspace so that a real `cargo tree` in each one proves facade disjointness for an external
+consumer. Each therefore carries its own `Cargo.lock` that the root `cargo check` never touches, and
+`just bump` has to refresh them explicitly or their locked path-dependency versions silently drift
+behind the workspace version — breaking every `--locked` build and `cargo metadata` call in that
+directory. The refresh step listed three such directories by hand, and carried a comment warning
+that "every standalone workspace under examples/ must be listed here; adding one without a line
+below is a latent CI break that only fires on the next bump". `examples/db-transaction-verification`
+arrived with #539 and was never added, so the warning came true exactly as written. The step now
+globs `examples/*/Cargo.toml` for a `[workspace]` table and refreshes whatever it finds, and asserts
+it found at least one so that a future layout change breaks the bump loudly rather than silently
+refreshing nothing — the same silent-skip failure the block exists to prevent.
+
+### Every `AuditSink` dispatch site is now covered by a test bound to it (#473)
+
+`@@audit` fan-out to an installed `AuditSink` is wired identically into eleven write paths — `create`,
+`update`, `delete`, `upsert`, `upsert_do_nothing`, `update_many` and `delete_many`, plus the four
+`batch_*` variants — but only two of them (`create` and `batch_create`) had a test asserting the sink
+actually received the event. The other nine were structurally identical and entirely unverified, so a
+copy/paste omission in any one of them would have passed CI silently. That matters more than an
+ordinary coverage gap, because the whole value of an audit sink is that it fires unconditionally: one
+that observes nine write kinds out of eleven is a weaker guarantee than one that observes none,
+since the hole is invisible. `banking_audit.rs` now asserts sink receipt for all eleven, each test
+checking an exact event count so that a double-dispatch regression fails too, and each was verified
+by removing its own dispatch call and confirming that precisely the matching test — and no other —
+turned red. No defect was found: all eleven already dispatched correctly. What changed is that this
+is now demonstrated rather than assumed.
+
+### The generated gRPC CRUD surface is now exercised by CI (#524)
+
+`crates/cratestack-pg`'s gRPC integration tests are gated behind `#![cfg(feature = "grpc")]`, and
+`grpc` is not one of the crate's default features. The CI test recipe never passed `--features grpc`,
+so every one of those files — `transport_grpc.rs`, `grpc_auth_provider_extensions.rs` and
+`trusted_proxy_client_ip_grpc.rs` — compiled to an empty zero-test binary and reported `ok` on every
+run. Cargo builds every file under `tests/` regardless of an inner `#![cfg(...)]`, so nothing about
+the output distinguished "these tests passed" from "these tests do not exist"; `--list` printed
+`0 tests` where it now prints five. The recipe now enables the feature, which switches that entire
+pre-existing gRPC suite on. Alongside it, a new test drives create/get/list/update/delete through the
+real generated `into_router()` against a live Postgres, giving the five deduplicated CRUD arm
+builders a regression test that fails when an arm is mis-wired — verified by swapping two arms'
+dispatch functions and confirming the corresponding tests go red. That refactor previously rested on
+a one-time manual `cargo expand` comparison with nothing checked in to catch a later mistake.
+
+### The decimal-backend feature exclusivity is documented as a graph-wide invariant (#505)
+
+`decimal-rust-decimal` and `decimal-bigdecimal` are mutually exclusive, and because Cargo unifies
+features across a dependency graph, that exclusivity is a property of the whole build rather than of
+any one crate's manifest. Two independent libraries that each legitimately select a different backend
+therefore cannot coexist in one binary, and neither author can resolve it alone. The `cratestack-core`
+and `cratestack-pg` READMEs now state this explicitly rather than leaving it to be discovered by
+hitting the `compile_error!`.
+
+## 0.7.13 (2026-08-12)
+
+### Fixed a validator attribute on a nullable field breaking `Update{Model}Input::validate()` (#537)
+
+`@length`, `@range`, and every other validator attribute on a nullable field (`String?`, `Int?`, …)
+made the generated `Update{Model}Input::validate()` fail to compile, because update inputs wrap
+every field in an extra `Option<T>` ("field omitted") that is independent of the column's own
+nullability ("set this column to NULL") — `cratestack-macros/src/validators/emit.rs` OR'd the two
+conditions into a single boolean and only unwrapped one `Option` level instead of counting them
+separately, leaving a `&Option<T>` where the validator helper expected `&T`. `Create{Model}Input`
+was unaffected (a nullable field there is only ever a single `Option<T>`). The fix counts the two
+levels independently and unwraps twice when both apply; an explicit "set to NULL" on update
+(`Some(None)`) is treated as a no-op for validation purposes, matching how a nullable field is
+already allowed to be null on create.
+### Release-bump PRs now run CI, and `prepare-release` no longer strands already-written changelog prose (#531)
+
+`v0.7.12` tagged and shipped with an unedited `CHANGELOG.md` seed — the placeholder text telling a
+human to rewrite it into prose, including the sentence "Do not commit with this placeholder text,"
+was itself committed, tagged, and published. Two independent defects combined to let that happen.
+First, the "Prepare Release" workflow opened its bump PR (#528) using the default `GITHUB_TOKEN`;
+GitHub's anti-recursion protection means an event raised by that token never triggers further
+workflow runs, so the PR's head commit had zero check-runs — no changelog gate, no governance
+check, no build or test, nothing. `prepare-release.yml` now opens that PR (and pushes its branch)
+using the same `RELEASE_PAT` secret `cut-release-tag.yml` already relies on for its tag push,
+falling back to `github.token` with a loud warning if the secret is unset, so the PR is raised as an
+ordinary external event and the normal required checks run against it like any other PR. Second,
+`changelog-seed.sh` inserted the new dated release heading *above* any existing `## Unreleased`
+section instead of converting it — so prose written by the three PRs that had landed since
+`v0.7.11` was stranded under a stale, buried `## Unreleased` heading while the release section
+itself held only the placeholder seed. The script now converts an existing `## Unreleased` section
+into the new dated heading in place, carrying its prose forward untouched, and falls back to the
+seed only when there is genuinely nothing to carry (the section absent, or present but empty).
+### `AuthProvider::authenticate` can now read the request's `http::Extensions` — breaking (#550)
+
+`RequestContext` gained a new `pub extensions: &'a http::Extensions` field, populated on every
+transport (REST, RPC unary/`/rpc/batch`/`/rpc/subscribe`, and gRPC) from the real inbound request, so
+an `AuthProvider` implementation can observe whatever a preceding tower/axum layer inserted into
+extensions before authentication ran — `ConnectInfo<SocketAddr>`, an mTLS peer identity, a tenant
+already resolved upstream, a trace/session handle, and so on. Before this change the only way to pass
+such data into `authenticate()` was to smuggle it back through a header, which is exactly the spoofable
+channel the trusted-proxy work (#415/#416/#526) exists to constrain; extensions are populated
+in-process by layers the deployer chose to install, so they are a legitimate trust source distinct from
+headers/body, which remain wire-controlled and attacker-influenced. The plumbing reuses
+`ClientIpContext` (already threaded through every generated dispatch fn for `ConnectInfo`/
+`TrustedProxyConfig`) rather than adding a brand-new parameter, so all three transports pick up the new
+field through the same seam gRPC's `into_router()` already used to read `ConnectInfo`/
+`TrustedProxyConfig` off `http::Request::extensions()` directly.
+
+**Breaking:** `RequestContext` is a public struct with public fields; any code that constructs one
+directly (as opposed to only reading `&RequestContext<'_>` inside an `AuthProvider` impl, which needs
+no changes) must add the new `extensions` field. The blanket `impl<F, E> AuthProvider for F where F:
+Fn(&HeaderMap) -> Result<CoolContext, E>` is unaffected and needs no migration.
+
+**Performance.** `ClientIpContext::from_extensions` now clones the request's full `http::Extensions`
+map on every request, unconditionally, on every transport — measured (`cratestack-axum`'s
+`tests_extensions_clone_cost.rs`) at roughly 30-150ns per request against a realistic served-router
+extensions map, the same order of magnitude as (and never meaningfully above) the `HeaderMap` clone
+every generated dispatch fn already pays unconditionally today; both are noise next to a real
+request's network/DB round trip. This can't be avoided by borrowing instead of cloning: axum-core's
+`FromRequestParts::from_request_parts` returns an owned value with no lifetime tied to its `&mut
+Parts` argument, and by the time a generated dispatch fn runs, the original `Parts` no longer exists
+as a distinct value to borrow from — see `ClientIpContext`'s doc comment for the full reasoning.
+Consumers who insert a large non-`Arc`-backed value into `http::Extensions` now pay that clone's real
+cost on every request, not just when it's read; wrap such values in `Arc` before inserting.
+### `cratestack-studio` routes `[target.db]` writes through the generated server's own `@version`/`@@emit` primitives instead of refusing them (#507)
+
+PR #516 made Studio refuse (`403 UNSAFE_DB_WRITE`) a `[target.db]` write to a model declaring
+`@version` or `@@emit(...)` unless the target opted into `allow_unsafe_writes`, turning a silent
+correctness bug into a choice. This closes the other half: wherever it's structurally possible,
+Studio now applies those semantics for real instead of refusing. `@version` bumping is routed on
+every backend (Postgres and SQLite alike bump the column server-side, exactly like the generated
+server and `cratestack-rusqlite` already do), so a model that only declares `@version` is never
+refused anymore. `@@emit(...)` is routed on Postgres targets by writing a `cratestack_event_outbox`
+row through the same `cratestack_sqlx::enqueue_event_outbox`/`ensure_event_outbox_table` primitives
+the generated server's descriptor path uses (now `pub`, and relaxed to accept `&str` model names
+since Studio parses schemas at runtime rather than generating `'static` ones) — inside the same
+transaction as the row mutation, so a crash between the two can't commit one without the other.
+SQLite has no event-outbox equivalent at all, so a model declaring `@@emit(...)` on a SQLite
+`[target.db]` target is still refused unless `allow_unsafe_writes` is set; that refusal, and the
+audit-trail/log signal PR #516 added for it, are unchanged. `@@allow` enforcement on `[target.db]`
+reads and writes remains deliberately out of scope, per the same maintainer framing PR #516 used.
+### `run_in_tx` callers can now opt into `AuditSink` fan-out — breaking (#534)
+
+#473/#517 made `AuditSink` a real installable seam for every `run()` write path, but explicitly
+left `run_in_tx` (the caller-managed-transaction escape hatch) unable to fan out at all: dispatch
+had no reliable "after commit" point inside the crate, `dispatch_audit_sink` was `pub(crate)`, and
+no `run_in_tx` variant returned the `AuditEvent` a caller would have needed even if it had been
+public. `crates/cratestack-pg/tests/banking_chained_audit_tx.rs` — two `run_in_tx` writes to
+`@@audit` models chained in one caller-managed transaction — used to leave a real installed
+`AuditSink` observing zero events for that transaction, silently, even though the in-database
+`cratestack_audit` rows committed correctly.
+
+Every `run_in_tx` variant (`create`, `update`, `delete`, `upsert` and `.do_nothing()`,
+`update_many`, `delete_many` — seven call sites, plus their `Scoped*`/`.bind(ctx)` wrappers) now
+returns a `RunInTxOutcome<T>` carrying the `AuditEvent`(s) it already built and persisted inside
+`tx`, and `cratestack_sqlx::dispatch_audit_sink` is `pub` instead of `pub(crate)`. The generated
+`Cratestack::dispatch_audit_sink(&self, events)` (and the `.bind(ctx)`-bound equivalent) is the
+ergonomic surface: a caller who owns the transaction collects `audit_events` from each
+`RunInTxOutcome` and calls it once, after their own `tx.commit()` succeeds — dispatch remains
+caller-driven, not automatic, and still never runs from inside a transaction or for a rolled-back
+one. The in-transaction `cratestack_audit` row write is unchanged (still the sole write, still the
+source of truth), and `run()`'s existing single dispatch-after-its-own-commit is unaffected — a
+sabotage-and-restore guard test (`banking_audit.rs::custom_audit_sink_receives_the_create_event`)
+confirms `run()` still dispatches exactly once, not twice.
+
+The identical `@@emit` event-outbox asymmetry needed no code change: `Cratestack::events().drain()`
+(added by #390) already re-scans `cratestack_event_outbox` for undelivered rows rather than needing
+a specific event handed back from `run_in_tx`, so it was already a working caller-driven opt-in —
+just undocumented and untested for this shape until now. Both halves are covered by new tests in
+`banking_chained_audit_tx.rs`, run against real Postgres.
+
+**Breaking:** the seven `run_in_tx` methods (and their `Scoped*` wrappers) now return
+`Result<RunInTxOutcome<T>, CoolError>` instead of `Result<T, CoolError>` — access the previous
+return value via `.value` (e.g. `outcome.value.id`). Acceptable pre-1.0 under lockstep versioning;
+see the PR body for the two documented alternatives (a runtime-owned commit hook, or leaving the
+gap as permanently-documented behavior) the maintainer may still prefer instead.
+
+### `IdempotencyLayer`/`RateLimitLayer` refuse requests they cannot fingerprint, instead of pooling them into a shared `"anonymous"` namespace — breaking (#416)
+
+The default `IdempotencyLayer`/`RateLimitLayer` fingerprint hashes the `Authorization` header when
+present and otherwise falls back to the verified TCP peer address via axum's
+`ConnectInfo<SocketAddr>` (that fallback shipped in #459). But `ConnectInfo` is only populated when
+the server is served through `.into_make_service_with_connect_info::<SocketAddr>()` — and nothing
+in this repository does that by default; every shipped example uses plain `.into_make_service()`.
+So in the real, documented, un-overridden default, every request without an `Authorization` header
+silently collapsed onto a single shared `"anonymous"` idempotency namespace / rate-limit bucket:
+two distinct unauthenticated callers reusing an `Idempotency-Key` could replay each other's
+response, and any two such callers could exhaust each other's rate-limit budget. #526 fixed a
+related hole (#415, `Forwarded`/`X-Forwarded-For` spoofing the fallback) but explicitly left this
+one open per its own closing comment; #416 was nonetheless closed alongside it, which was a
+mistake — the acceptance criteria ("default configuration cannot place distinct callers in a
+shared namespace") were still unmet.
+
+`default_principal_fingerprint`/`default_key_fn` now refuse the request (`412 Precondition
+Failed`) instead of falling back to `"anonymous"` when neither an `Authorization` header nor a
+`ConnectInfo<SocketAddr>` peer is available — there is no unforgeable value left to key on at that
+point, so the fix does not manufacture one. `Forwarded`/`X-Forwarded-For` are still never
+consulted (unchanged from #459/#526) — an attacker still cannot pick their own bucket. A `Once`
+(process-lifetime, not per-request) `tracing::warn!` names the fix and the two ways to resolve it,
+mirroring the identical pattern #526 introduced for the missing-`ConnectInfo` misconfiguration
+warning.
+
+**Breaking:** any deployment that (a) uses the default fingerprint/key function, (b) serves
+without `into_make_service_with_connect_info`, and (c) receives requests without an `Authorization`
+header now gets `412` on those requests instead of silent (and unsafe) success. `with_key_fn`/
+`with_principal_fingerprint` overrides are unaffected — their closures remain infallible; opting
+out of the default is the caller's explicit choice, including any deliberate shared bucket.
+
+**Migration.** Either wire `.into_make_service_with_connect_info::<SocketAddr>()` (the socket peer
+becomes the fallback identity, exactly as #459 intended), or supply
+`IdempotencyLayer::with_principal_fingerprint(...)`/`RateLimitLayer::with_key_fn(...)` explicitly
+for deployments that authenticate via cookies/mTLS rather than `Authorization` and cannot serve
+through `into_make_service_with_connect_info`.
+
+### `@status(<code>)` generated-client verification: Dart confirmed (#407)
+
+Closes the last open acceptance criterion on cratestack#407. `@status(<code>)` itself shipped in
+#511 (see the "Per-procedure `@status(<code>)`" entry below, now under the 0.7.11 section); its
+AC5 required at least one generated client to be *proven*, not just inspected, to treat a
+declared non-200 2xx as success. The Rust client was already proven end-to-end against a mock
+returning a bare `202`. The Dart client had only been inspected — no explicit `validateStatus`
+override was found in the REST-runtime templates, from which it was *inferred* (never run) that
+Dio's own default `validateStatus` (`200 <= status < 300`) applies unmodified.
+
+That inference now has real evidence: a new `just verify-dart` step generates a client from a
+`@status(202)` fixture for both the `default` and `riverpod` presets (both talk HTTP directly via
+`dio`, no Rust FFI bridge) and runs it against a real `dart:io HttpServer` answering with a bare
+`202` — no `200` anywhere in the exchange — asserting the decoded reply. A `5xx` negative control
+in the same test proves the client still surfaces real errors, so the positive assertion isn't
+just "accepts everything." Both presets pass. RPC transport is out of scope, since `@status` is
+already rejected at schema-compile time under `transport rpc`.
+
+### `ProcedureRegistry` methods now require a witness only policy enforcement can produce — breaking (#512)
+
+The most natural-looking way to call a procedure from non-HTTP code — `registry.my_procedure(&db,
+&ctx, args).await` — silently skipped every `@allow`/`@deny` check. Policy enforcement lived only
+in the generated `invoke_with_db`/`invoke` wrappers the axum/RPC/gRPC dispatch handlers call;
+the `ProcedureRegistry` trait method a schema's implementor actually writes had no policy code at
+all, and no example anywhere showed the (undocumented, closure-wrapping) shape that did. This was
+the last remaining silent-bypass shape from epic #488 — severity isn't "policy can be bypassed"
+(anyone with the database can do that already); it's that the bypass was the *default* outcome of
+writing the most readable code, with nothing in the type system, no lint, and no example pointing
+the other way.
+
+Fixed at the type level, not by convention: every generated `ProcedureRegistry` method now takes a
+trailing `Authorized` witness — a zero-sized marker type, private tuple field, defined in the same
+generated module as `authorize_with_db`/`invoke_with_db`. Nothing outside that module — not this
+same generated crate's `axum`/`rpc`/`grpc` dispatch code, not a `ProcedureRegistry` implementor's
+own code, not any other procedure's module — can construct one; the only way to obtain one is to
+call `authorize_with_db` (which runs `@allow`/`@deny` and any `@authorize` model checks) and get
+back `Ok`. `registry.my_procedure(&db, &ctx, args)` is therefore now an ordinary Rust arity
+mismatch, not a policy check that happens to run and pass — confirmed with a `trybuild`
+compile-fail fixture (`crates/cratestack-macros/tests/ui_procedure_registry_witness.rs`) that
+fails if the witness parameter is ever removed from codegen.
+
+The HTTP/RPC/gRPC dispatch paths are unchanged: they already called `invoke_with_db`, which is now
+also the sanctioned way to invoke a procedure from non-HTTP code (a cron job, background worker, or
+admin tool) — see `examples/rpc-procedures/src/internal_worker.rs` for a worked example, including
+using `auth().isSystem()` (#486)'s `SystemContext` as the caller identity.
+
+**Migration.** Every existing `ProcedureRegistry` implementation gains a new, unused-by-default
+last parameter on every method: add `_authorized: <procedure>::Authorized` (any name; the value has
+no API surface — it exists only to be received, not read) to each method signature. Mechanical, no
+behavior to reason about. If you were calling a `ProcedureRegistry` method directly rather than
+through the generated router (the exact bypass this fixes), replace that call with
+`<procedure>::invoke_with_db(&db, &args, &ctx, |authorized| async move { registry.<method>(&db,
+&ctx, args, authorized).await }).await` — the same call the generated dispatch handlers make.
+### `DELETE` on an `@version` model now enforces `If-Match`, matching `PATCH` — breaking (#519)
+
+`DELETE` on a model declaring `@version` silently ignored optimistic concurrency: `PATCH`
+required `If-Match` and returned `412` on a stale or missing value, but `DELETE` proceeded
+regardless of whether the caller sent one, sent a stale one, or sent none at all. #493 assumed the
+two verbs already behaved the same way, and PR #510 nearly shipped a client SDK documenting an
+`If-Match`-on-`DELETE` round trip the server didn't actually support — the gap was caught in
+review and filed as #519 for a maintainer decision instead. The decision: close the asymmetry
+rather than document it. `DELETE` on an `@version` model now requires `If-Match` and returns `412`
+on a stale or missing value, exactly like `PATCH`. The gate gates purely on the model declaring
+`@version`, independent of whether it also declares `@@soft_delete` — a soft-deleted row is still
+a real mutation (an `UPDATE ... SET deleted_at = NOW()` under the hood) and gets the same
+protection a hard delete does, with no separate soft-delete carve-out.
+
+Server-side: `cratestack-macros/src/axum/model/prep/etag.rs` emits a `delete_if_match_decl`/
+`delete_if_match_apply` pair mirroring the existing `update_if_match_*` tokens, wired into
+`build_delete_handler` in `handlers_crud.rs`. `cratestack-sqlx`'s `DeleteRecord`/
+`ScopedDeleteRecord` gain an `if_match(expected: i64)` builder step mirroring
+`UpdateRecordSet::if_match`; the version-mismatch-vs-policy-denial disambiguation this needs is
+now shared between the update and delete paths via `query::support::probe_current_version`
+(previously private to the update exec path only).
+
+Client-side: `CratestackClient::delete_with_response` (`cratestack-client-rust`) and the generated
+`<Model>Client::delete_with_response`/`delete` (`cratestack-macros`'s REST client codegen) had
+their rustdoc corrected — both previously stated the server does *not* enforce `If-Match` on
+`DELETE`; that claim is no longer true.
+
+**Breaking:** any deployed client issuing a bare `DELETE` against a versioned model's REST route,
+or calling the typed delegate's `.delete(id).run(...)` without `.if_match(expected)`, now gets
+`412 Precondition Failed` instead of a successful delete.
+
+**Migration.** Before upgrading, audit every caller that deletes an `@version` model:
+
+1. **Generated REST/RPC clients:** read the current `ETag` first (`get_with_response`, or the
+   `ETag` returned by a prior mutation) and pass it as `If-Match` on the delete call —
+   `delete_with_response(id, &[("if-match", etag)])` instead of `delete_with_response(id, &[])`.
+2. **Direct `cratestack-sqlx` delegate callers:** add `.if_match(expected_version)` to
+   `cool.<model>().delete(id)` calls, the same way versioned `.update(id).set(input)` calls already
+   need `.if_match(...)`.
+3. **Hand-rolled HTTP clients:** send an `If-Match: "<version>"` header on `DELETE` requests
+   against `@version` models, same as is already required on `PATCH`.
+
+A model with no `@version` field is unaffected — the gate is a no-op when `version_column` is
+`None`, exactly as it already is for `PATCH`.
+
+### New crate: `cratestack-auth` — signed-request + identity-token auth (absorption 3 of 3)
+
+SigV4-style canonical-request construction/signing/verification over Ed25519, SD-JWT id-token
+issuance and verification, multi-issuer JWKS resolution, per-service signing identities, and
+COSE-signed enrolment challenges — absorbed from a downstream project's `auth-kit`, by far the
+largest of the three absorptions (~4,100 lines against `cratestack-service`'s and
+`cratestack-outbox`'s few hundred each).
+
+**Security verification (the reason this absorption existed at all).** The source crate's
+`challenge_signing_key()` previously returned a hardcoded Ed25519 seed literal, permanently
+compromised by having been committed to that repository's git history. That was already fixed
+upstream before this absorption began: the function loads the seed from an env var
+(`CHALLENGE_SIGNING_KEY_ENV`, renamed here to `CRATESTACK_AUTH_CHALLENGE_SIGNING_KEY`) and fails
+closed — absent, empty, or whitespace-only is a hard `AuthError::MissingSigningKeyEnv`, never a
+default or a silently-generated ephemeral key. This absorption re-verified that fix by grepping
+the entire absorbed surface for byte-array literals that could be key material: every hit is
+either a small-integer synthetic test fixture (`[7u8; 32]`, `[9u8; 32]`, `[11u8; 32]`, ...,
+clearly distinct from the burned seed and never used as a production default) or
+`ServiceSigningKey::ephemeral`'s `OsRng.fill_bytes` (test/local-dev only, explicitly documented as
+such). No hardcoded key material was found anywhere in the absorbed code. The fail-closed
+contract is preserved and given two new dedicated unit tests
+(`challenge_signing_key_fails_closed_when_env_var_is_absent` /
+`..._is_whitespace_only`) that exercise it directly against an injected lookup function, rather
+than through a real env var.
+
+**Why an injected lookup function, not `std::env::set_var` in tests:** this workspace `forbid`s
+`unsafe_code`, and `std::env::set_var`/`remove_var` require an `unsafe` block as of the 2024
+edition — the source crate's two `challenge_signing_key` tests wrapped exactly that in `unsafe`
+blocks guarded by a process-wide `Mutex`. Ported here as `challenge_signing_key_from(lookup_env:
+impl Fn(&str) -> Result<String, VarError>)`, the same injectable env-lookup seam
+`cratestack-service`'s `ServiceConfig::from_env_with` established (#529) — no process environment
+is touched, and the COSE build/parse round-trip test now exercises the COSE logic directly against
+a freshly-generated test-only key (`build_cose_enroll_response_with_key`/
+`parse_cose_enroll_response_with_key`) rather than through env-var loading, which is a strictly
+better test of both concerns in isolation.
+
+**Placement:** `cratestack-auth = 1` in `docs/adr/layers.toml` (ADR 0014) — verified via `cargo
+tree -p cratestack-auth -e normal` (with and without `--no-default-features`): both report exactly
+one `cratestack-*` line, `cratestack-core`. The types the source crate reached through a
+`cratestack::{AuthProvider, CoolContext, RequestContext, CoolError}` facade re-export
+(`cratestack = { package = "cratestack-pg" }` downstream) all turn out to live in
+`cratestack-core` itself (`context.rs`), not in `cratestack-axum` — and the `cratestack::axum::
+http::{HeaderMap, Method, Uri}` types it also reached through that facade are themselves just the
+plain `http` crate, which `cratestack-axum` only re-exports (`pub use axum;` → `pub use http`
+transitively). So the real graph never needed `cratestack-axum` at all; this crate depends on the
+external `http` crate directly for those types, the same way `cratestack-core` itself already
+does. Same "lowest layer the real graph supports" rule `cratestack-macros`/`cratestack-proto` use
+in `layers.toml` for the identical reason (depends only on L0).
+
+**Feature gating:** a default-on `axum` Cargo feature gates the three items that genuinely need
+the `axum` crate (not just `http`): `require_signed_request` (the tower auth middleware),
+`jwks_router` (the mountable `axum::Router` serving `/jwks.json`), and the `FromRequestParts`
+extractor impls on `CurrentPrincipal`/`AuthenticatedPrincipal`. Everything else — signing and
+verifying a canonical request, `SignedRequestAuthProvider`'s `cratestack_core::AuthProvider` impl,
+SD-JWT issuance/verification, `ServiceSigningKey`, `MultiIssuerJwksVerifier` (a `reqwest` GET, not
+an axum route), and COSE challenge build/parse — needs no axum route or middleware machinery and
+stays available with the feature off, so a `cratestack-client`-only consumer that just wants to
+*sign* outgoing requests can skip axum (and its own tower/hyper/matchit tree) entirely. Verified
+both ways: `cargo check`/`cargo clippy`/`cargo test -p cratestack-auth` all pass with default
+features (37 tests) and with `--no-default-features` (34 tests — the three `jwks_router`-dependent
+tests are themselves feature-gated).
+
+**Not split into two crates.** The predecessor absorptions raised "does the whole thing belong,
+or does it split" as an open question per crate; here the axum-touching surface shrank to three
+items once the `http`-vs-`axum` distinction above was drawn, which is small enough that gating
+inside one crate (the `cratestack-service` `postgres`-feature shape) reads more like the rest of
+this workspace's facade-disjointness pattern than standing up a second crate would.
+
+**`ServiceConfig` overlap:** `cratestack-service` (#529) deliberately dropped `issuer_url`/
+`jwks_url` from its own config, flagging them as this crate's concern. This absorption keeps that
+split rather than extending `ServiceConfig`: `MultiIssuerJwksVerifier` is inherently
+multi-issuer (a `{issuer → jwks_url}` map), which a single `issuer_url`/`jwks_url` field pair on
+`ServiceConfig` could not represent, and `ServiceSigningKey::from_env`/`IdTokenVerifier::new`/
+`SignedRequestVerifier::from_env` already have their own env-var-driven construction — adding a
+third, `ServiceConfig`-shaped path would be a second, weaker way to build the same thing.
+
+**Parameterised away:** every `VAAM_*` env var (`VAAM_AUTH_CHALLENGE_SIGNING_KEY` →
+`CRATESTACK_AUTH_CHALLENGE_SIGNING_KEY`, and the four `VAAM_SIGNATURE_*`/`VAAM_ID_TOKEN_AUDIENCE`
+equivalents → `CRATESTACK_AUTH_*`), the `urn:vaam:...` id-token grant type → `urn:cratestack:...`,
+the `vaam:signature-nonce` Redis key prefix → `cratestack:signature-nonce`, the
+`vaam-business-services` default audience → `cratestack-issued-tokens`, and every
+`vaam-mobile`/`*.vaam.local`/`@vaam.store` literal in doc comments and test fixtures. Also dropped:
+the downstream `error-kit` dependency (a CBOR/JSON/COSE content-negotiation envelope this crate's
+`require_signed_request` middleware and principal extractors used only for a plain
+`{code, message}` error body) in favor of a small in-crate JSON helper
+(`response::error_response`) built on `cratestack_core::CoolErrorResponse`, the framework's own
+REST error shape.
+
+**Also fixed in passing:** `IdTokenVerifier::new`/`MultiIssuerJwksVerifier::new` both build a
+`reqwest::Client` internally; under this workspace's `rustls-no-provider` reqwest feature that
+panics at construction time unless a crypto provider is already installed process-wide. Both now
+call the same `ensure_crypto_provider()` courtesy-fallback `cratestack-client-rust` already
+established for the identical reason — a real gap the source crate didn't have to worry about
+because its own application entrypoint happened to install a provider first.
+
+**Test coverage added:** `middleware::require_signed_request` had no direct test in the source
+crate; it now has three (missing `Authorization` header → 401, a validly signed request installs
+the principal and reaches the handler, a tampered signature → 401), alongside the pre-existing
+coverage this absorption carried over — canonical-request signing/verification (valid and
+tampered/reused-nonce), SD-JWT selective-disclosure round-trips, JWKS-based JWT verification
+(valid and tampered payload), and the cnf-bound proof-of-possession fallback (including the
+revoked-device-resolver-is-authoritative regression).
+
+No existing crate changed; this is purely additive.
+
+### `migrate diff` now refuses a primary-key change on an existing table instead of silently emitting nothing, and two field-level `@id` on one model is rejected at parse time (#536)
+
+Changing an existing table's `@@id([...])` — adding, removing, or reordering primary-key columns —
+previously produced a completely empty diff: no operations, no error, no warning, letting the
+schema and the database silently drift apart. `migrate diff`/`migrate baseline` now return a
+structured `MigrateError::PrimaryKeyChanged` naming the table and the before/after key instead,
+deliberately refusing rather than generating a half-designed migration: a correct primary-key
+change needs constraint drop/recreate ordering, dependent foreign keys, and a data-safety story
+for a populated table that the diff engine does not have. Separately, `@@id([a, b])` has always
+been hard-rejected at macro expansion citing #136 (codegen still assumes a single scalar `@id`),
+but the equivalent `a String @id` / `b String @id` spelling — two field-level `@id` attributes on
+one model — validated cleanly and let `cratestack-migrate` silently emit a real multi-column
+`PRIMARY KEY`, bypassing that same guard. `cratestack-parser` now rejects a second field-level
+`@id` with the same #136 reasoning, so both spellings are refused consistently. Both changes are
+purely additive refusals on constructs that either never reached codegen (`@@id([...])`, #136) or
+validated cleanly by accident (two field-level `@id`); no existing valid schema is affected.
+
+**Breaking (internal API):** `cratestack_migrate::diff`/`diff_projections` now return
+`Result<Vec<Op>, MigrateError>` instead of an infallible `Vec<Op>`, so the refusal has somewhere
+to go. Every in-tree caller (`cratestack-cli`'s `migrate diff`/`migrate baseline`, and every test
+across `cratestack-migrate`/`cratestack-pg`) is updated; any out-of-tree direct caller of these two
+functions needs the same `?`/`.expect(...)` treatment.
+
+### Fixed a regression: renaming a primary-key column now migrates again instead of being refused as a primary-key change (#536)
+
+A post-merge review of #536/#551 found that its new `PrimaryKeyChanged` refusal (above) compared
+raw column *names* without resolving column-level `@rename(from = "...")` first, so renaming an
+`@id`/`@@id([...])` column — a previously-working, fully-supported operation that lowers to a plain
+`RENAME COLUMN` — was misdiagnosed as a primary-key change and refused outright. `RENAME COLUMN`
+preserves whatever constraint already references the column on both backends, so the key's actual
+structure (arity, order, logical identity) was never changing; only its name was. `diff::primary_key`
+now resolves each previous-side key column through the same rename map `diff::columns` already
+builds from `@rename(from = "...")` before comparing, extracted into a shared
+`diff::columns::column_rename_map` helper so both call sites stay on one implementation. A genuine
+reorder or a change to the key's column set is still refused exactly as before — resolving a rename
+only changes a renamed column's *name* in the comparison, never its position.
+### `cratestack-studio` no longer emits invalid SQL previewing a `Create`/`Update` on an `@version` model without a payload (#507)
+
+A post-merge review of #553 found that `preview_sql`'s no-payload fallback (`sample_column_names`)
+listed every scalar column, including `@version`, and then both the `Create` and `Update` branches
+applied the version column a second time on top of that — seeding it to `0` again for `Create`, and
+appending the `"version" = "version" + 1` bump again for `Update` — because that logic assumed
+`@version` was never already present in the sample set (the way `collect_payload` already excludes it
+from a real payload). The result was `INSERT INTO "t" ("id", "version", ..., "version") ...`, which
+Postgres rejects with "column ... specified more than once" and SQLite rejects as a duplicate column
+name, and two conflicting `SET` assignments to the same column on `Update`. Since Studio's preview
+endpoint always calls `preview_sql` with `payload = None`, this broke SQL preview for every request
+against every `@version` model on both the Postgres and SQLite backends. `sample_column_names` now
+excludes `version_column` from the synthesized sample set, mirroring what the payload collectors
+already did, so the version column is applied exactly once regardless of which branch produced it.
+
+### CI now actually runs `cratestack-studio`'s four live-Postgres test files instead of silently skipping them (#507)
+
+`crates/cratestack-studio/tests/{postgres_explain,postgres_routed_writes,postgres_row_keys,postgres_unsafe_writes}.rs`
+are the decisive Postgres-backed coverage for Studio's data layer, but a coverage audit found the
+`tests-studio` CI job set neither `CRATESTACK_TEST_DATABASE_URL` nor `CRATESTACK_USE_TESTCONTAINERS`,
+so all four files skipped silently and reported `ok` on every run without ever touching a real
+database — this is exactly how the duplicate-column bug PR #553 fixed shipped in the first place,
+since its own regression test never actually executed in CI. Worse, three of the four files
+(`postgres_explain`, `postgres_row_keys`, `postgres_unsafe_writes`) had never adopted the
+testcontainers/`CRATESTACK_REQUIRE_DB` machinery `postgres_routed_writes` introduced for #507
+itself, so turning those CI knobs on alone would have left them skipping forever; a new shared
+`tests/support/pg.rs` (mirroring `cratestack-pg`'s and `cratestack-outbox`'s own test-support
+modules) now backs all four files, and a dedicated `test-ci-studio-db` recipe runs them under
+`CRATESTACK_USE_TESTCONTAINERS=1` as a second step in the `tests-studio` job (not a separate job,
+so the Trunk UI build isn't paid for twice), with `CRATESTACK_REQUIRE_DB=1` turning a broken
+Docker or a misconfigured run into a hard failure instead of a quiet skip.
+
+## 0.7.12 (2026-08-11)
+
+
+### New crate: `cratestack-outbox` — transactional outbox (absorption 2 of 3, phase 1b)
+
+The transactional outbox pattern, absorbed from a downstream project's `events-kit`:
+`OutboxClient::persist_in_tx` writes an event as an ordinary row inside the *caller's own*
+Postgres transaction, so the event exists if and only if the business write that produced it
+committed — closing the classic dual-write gap between "save the row" and "publish the event." A
+separate snapshotter drains them via `OutboxClient::drain`, paging through events in `id`
+(UUIDv7, insertion-order) ascending order via an opaque cursor; `axum_handler::{drain_handler,
+gc_handler}` expose that drain, plus a retention sweep (`OutboxClient::gc_older_than`), as two
+axum handlers with JSON/CBOR content negotiation.
+
+Unlike the `cratestack-service` pilot, the source crate could not be ported as-is: it declared a
+full `.cstack` schema and generated a typed `cratestack::Cratestack` handle via
+`include_server_schema!(db = Postgres)`, purely to reach `.pool()` on it — every actual read and
+write already ran raw `sqlx` against the table directly, because cratestack's typed
+`Json<cratestack::Value>` column serialises a value in its externally-tagged wire form, which
+does not match the plain-JSONB shape a downstream lake snapshotter expects. The generated
+model's typed accessors and its `@@allow` policy check were never called from anywhere in the
+source crate. Reaching for the macro would also have forced this crate to depend on the
+`cratestack-pg` L5 facade — `include_server_schema!` is only reachable through it — for logic
+that otherwise belongs at L2, and `docs/design/layering.md` §2's L5 rule ("a facade that grows a
+function has stopped being a facade") already rules out folding this logic into `cratestack-pg`
+directly. So the macro was dropped rather than ported: `cratestack-outbox` hand-writes its one
+table directly against `cratestack-sqlx`, the same posture `cratestack-sqlx` itself already takes
+for its own internal `cratestack_audit`/`cratestack_migrations` tables — a bare DDL constant
+(`OUTBOX_EVENTS_DDL`) a caller copies into their own migration, plus hand-written queries against
+it, going through `cratestack-sqlx`'s `run_in_isolated_tx_with_retries` and
+`cool_error_from_sqlx` rather than the source crate's manual error-string mapping. The table is
+renamed `cratestack_outbox_events` (from the source crate's bare `outbox_events`) to match that
+same `cratestack_*` internal-table convention.
+
+Layer assignment: `cratestack-outbox = 2` in `docs/adr/layers.toml` (ADR 0014) — its only normal
+`cratestack-*` dependencies are `cratestack-core` (L1, `CoolError`/`TransactionIsolation`) and
+`cratestack-sqlx` (L2), both `<= 2`, and nothing in the workspace depends on it. Unlike
+`cratestack-service`, the `cratestack-sqlx` dependency here is unconditional rather than behind a
+Cargo feature: this crate's only reason to exist is a Postgres transaction
+(`OutboxClient::persist_in_tx` takes a `sqlx::Transaction<'_, sqlx::Postgres>` by construction),
+so a feature gate would either always be on or produce an empty, non-functional crate when off —
+the same posture `cratestack-sqlx`/`cratestack-redis` themselves already take for their own
+backend dependency.
+
+Also dropped while absorbing: the sibling `error-kit` dependency (a response-envelope crate with
+a `meta`/COSE-body shape this crate's two handlers never used) in favor of a small in-crate
+JSON/CBOR content-negotiation module; and the downstream `test-kit`/`VAAM_E2E_DATABASE_ADMIN_URL`
+test harness, replaced with this workspace's own `CRATESTACK_TEST_DATABASE_URL` /
+`CRATESTACK_USE_TESTCONTAINERS` convention (`tests/support/pg.rs`, copied from
+`cratestack-pg`'s). No existing crate changed; this is purely additive.
+
+### New crate: `cratestack-service` — service-bootstrap batteries (pilot absorption, phase 1b)
+
+Every CrateStack-backed service ends up hand-writing the same handful of things that have
+nothing to do with its schema: read the port from the environment, expose `/healthz` and
+`/healthz/ready` for `kubectl`, install a `tracing_subscriber` before the first log line, and
+serve the router. `cratestack-service` is a new, additive facade-adjacent crate that provides
+all four, absorbed and generalized from two small internal helper crates (`telemetry-kit`,
+`db-kit`) a downstream project had built for exactly this purpose because they are fused to
+CrateStack's own trait system and can never be published standalone — they exist to fill a gap
+the framework should arguably cover. This is the pilot for a larger absorption effort; two more
+downstream crates (`events-kit`, `auth-kit`) are expected to follow the same shape.
+
+`telemetry::init` wraps `tracing_subscriber` (env-driven filter, optional JSON output,
+idempotent). `ServiceConfig::from_env` plus the `health` module provide an env-driven config
+struct and a `/healthz`/`/healthz/ready` router whose readiness checks are opt-in — Redis and
+object storage are only probed when their URL is actually configured, and a degraded dependency
+now correctly returns HTTP 503 rather than 200 with a body field a kubelet probe never reads.
+`run` installs request tracing and serves. Every environment variable this crate reads is
+prefixed with a caller-supplied string (`ServiceConfig::from_env("AUTH", ...)` reads
+`AUTH_SERVICE_HOST`, `AUTH_DATABASE_URL`, ...) — unlike the downstream code it was absorbed
+from, this crate ships no fixed prefix, no default connection string, and no built-in
+service-name-to-database-name table; those are application specifics, not framework surface.
+
+The Postgres-specific pieces (`ServiceConfig::database_url`/`state`, the readiness Postgres
+check, and the new `migrations` module — `migrations_from_dir`, loading an
+`include_dir!`-embedded migration tree, plus a `run_migrations` convenience wrapper over
+`cratestack-sqlx`'s existing `Migration`/`apply_pending`) sit behind a `postgres` Cargo feature,
+on by default and named after `cratestack-pg`'s own feature of the same shape. Disabled
+(`default-features = false`), this crate has no `cratestack-sqlx` — and therefore no `sqlx` — in
+its dependency graph at all (verified via `cargo tree`), so a `cratestack-api` or
+`cratestack-sqlite` consumer can use the config/health/telemetry/run surface without inheriting a
+database binding their chosen facade deliberately excludes.
+
+Layer assignment: `cratestack-service = 2` in `docs/adr/layers.toml` (ADR 0014) — its only real
+`cratestack-*` dependencies are `cratestack-core` (L1) and, feature-gated, `cratestack-sqlx`
+(L2), and nothing in the workspace depends on it (it's a leaf, consumed directly by application
+binaries, the same posture every facade already has). No existing crate changed; this is purely
+additive.
+
+### `Forwarded`/`X-Forwarded-For` are now honored only from a configured trusted proxy — breaking (#415)
+
+`enrich_context_from_headers` — public, re-exported as `cratestack::enrich_context_from_headers`
+— trusted `Forwarded`/`X-Forwarded-For` unconditionally when recording the audit `client_ip`,
+so a direct client could forge the value that lands in the audit trail. It now takes the
+trusted-proxy configuration and the verified socket peer explicitly, and only honors headers
+from a peer the consumer has allowlisted.
+
+**Breaking:** `enrich_context_from_headers(ctx, headers)` is now
+`enrich_context_from_headers(ctx, headers, trusted_proxy: Option<&TrustedProxyConfig>, peer:
+Option<SocketAddr>)`. `parse_client_ip(headers)` is now `parse_client_ip(headers, max_hops:
+usize, header: ForwardedHeader)`. `router()`'s own signature is unchanged (Option A′ — see
+`docs/design/trusted-proxy-client-ip.md`).
+
+**Migration.** Deployments behind a reverse proxy that rely on `Forwarded`/`X-Forwarded-For`
+being recorded as audit `client_ip` must, after upgrading:
+
+1. Serve via `.into_make_service_with_connect_info::<SocketAddr>()`.
+2. Apply `.layer(axum::Extension(TrustedProxyConfig::trusting([<proxy IPs/CIDRs>]).max_hops(N)))`
+   on **every** router the app serves — including the gRPC router (`into_router()`) for
+   `transport grpc` schemas, which is a separate `axum::Router` instance not covered by
+   protecting `router()` alone.
+3. If the deployment's proxy emits RFC 7239 `Forwarded` rather than the legacy
+   `X-Forwarded-For` (uncommon — most proxies emit XFF), additionally call
+   `.forwarded_header(ForwardedHeader::Forwarded)` on the config. **Only one of the two headers
+   is ever honored**, defaulting to `X-Forwarded-For`; see below.
+
+Without both (1) and (2), `client_ip` is `None` (or the proxy's own address) rather than the
+client's — the safe default, never a guess and never a trusted-by-default header. When that
+combination is detected — a `TrustedProxyConfig` applied with no `ConnectInfo` peer ever
+arriving — a `tracing::warn!` (logged once per process, not per request) now flags it, so the
+misconfiguration is discoverable in logs rather than silently degrading `client_ip` to `None`
+forever.
+
+`max_hops` counts **right-to-left** — in from the end of the chain nearest the trusted proxy,
+not the `max_hops`-th entry from the left. A left-to-right reading re-opens the exact spoofing
+gap this change closes for any chain longer than one hop.
+
+**Only `X-Forwarded-For` is honored by default; `Forwarded` requires an explicit opt-in.** RFC
+7239 `Forwarded` and the legacy `X-Forwarded-For` are alternatives, not complements — a real
+proxy (nginx, an AWS ALB, HAProxy's defaults) emits one or the other, never both meaningfully.
+An earlier draft of this change inspected `Forwarded` first, unconditionally, whenever it was
+present — since almost no real proxy ever sets that header, an attacker could add an entirely
+unvalidated `Forwarded` header and have it silently override a legitimate, hop-counted
+`X-Forwarded-For` chain, defeating the trust check outright. `TrustedProxyConfig` now takes a
+`forwarded_header: ForwardedHeader` (`XForwardedFor` by default; `.forwarded_header(Forwarded)`
+opts a deployment into the RFC 7239 header instead) and only that one header is ever inspected.
+
+**The selected hop is validated as a real IP address before being recorded.** Neither
+`parse_client_ip` nor `enrich_context_from_headers` previously checked the resolved value
+against `IpAddr::from_str` — a malformed or spoofed string (not even a valid address, e.g.
+`666.666.666.666`), or an unstripped port suffix (`10.0.0.5:5678`), could land in the audit
+trail verbatim. The selected hop is now parsed as an `IpAddr` (handling a port-suffixed IPv4
+address, bracketed IPv6 with or without a port, and RFC 7239's quoted-string `for="..."` syntax)
+before being recorded; on failure this falls back to the verified socket peer if trusted, or
+`None` otherwise — never an unparseable string.
+
+**Duplicate header occurrences are merged, not first-wins.** RFC 7230 §3.2.2 makes repeated
+list-type header lines semantically equivalent to one comma-joined value. `HeaderMap::get` only
+returns the first occurrence; a proxy that appends its hop as a *second* `X-Forwarded-For`
+header line (rather than extending the first) had that value silently dropped in favor of
+whichever line an attacker sent first. Every occurrence of the selected header is now
+concatenated, in wire order, before the chain is walked.
+
+This PR enables the idempotency/rate-limit `ConnectInfo<SocketAddr>` fallback (already shipped
+for #416) to actually engage in practice, for deployments that apply the migration above — it
+does **not** close #416 itself. #416's acceptance criteria require the *default* configuration
+(no operator action) to never place distinct callers in a shared namespace, and the default
+still collapses unauthenticated callers onto `"anonymous"` unless an operator wires
+`into_make_service_with_connect_info`. #416 stays open.
+
+### Generated servers now enforce request/batch/response size bounds (#413) — breaking
+
+The generated Axum surface had three independent missing limits on the same request path: `/rpc/batch`
+decoded and dispatched an unbounded number of frames, no layer capped the size of an inbound request
+body, and four `axum::body::to_bytes(response.into_body(), usize::MAX)` call sites in the RPC binding
+buffered responses without limit. Individually survivable; together, a single oversized batch body could
+multiply the per-frame `authenticate()` + policy + dispatch cost (identical to a unary call) by however
+many minimal frames fit in an unbounded body, with each frame's response then buffered without limit too.
+
+- **`/rpc/batch` frame cap.** Rejected before the per-frame dispatch loop runs (zero frames dispatch on an
+  over-limit batch — not truncated to the first `BATCH_MAX_ITEMS`), matching the same `1000`-frame ceiling
+  and `CoolError::Validation` error shape `cratestack-sqlx`'s and `cratestack-rusqlite`'s own batch-size
+  guards already use.
+- **Request body limit — makes an existing implicit limit explicit, not a new one.** `router()` and
+  `rpc_router()` (both generated per schema) now take an explicit `body_limit_bytes: usize` parameter,
+  applied once via `axum::extract::DefaultBodyLimit::max(..)`. The new
+  `cratestack_core::DEFAULT_BODY_LIMIT_BYTES` constant is **2 MiB — deliberately matching axum's own
+  built-in `Bytes` default**, which every generated handler already extracted against (`axum-core`'s
+  `Bytes: FromRequest` refuses bodies over 2 MiB with no layer required at all). This makes the change
+  **provably a no-op at runtime**: it names, documents, and makes overridable a limit that was already
+  there and already enforced, rather than silently tightening what an existing deployment can send. See
+  `docs/design/request-response-size-bounds.md` Decision 2 for the full reasoning (an earlier
+  implementation pass set this to 1 MiB before that doc was consulted; corrected to 2 MiB once it was).
+  **This is a genuine parameter, not a default a consumer re-layers on top of afterward** — re-layering
+  `DefaultBodyLimit` on a `Router` that already has one baked in does not work in either direction
+  (verified empirically; see the design doc and `crates/cratestack-core/src/limits.rs`'s module doc) — a
+  deployment needing a larger limit passes a larger `body_limit_bytes` to `router(...)`/`rpc_router(...)`
+  instead. `model_router()`/`procedure_router()` (the lower-level constructors `router()` merges) are
+  unchanged and remain unbounded when called directly, matching their existing signatures.
+- **Response-rebuffer bound.** The four `to_bytes(.., usize::MAX)` sites in
+  `crates/cratestack-axum/src/rpc/{batch,error_encode,grpc_bridge,codec_helpers}.rs` now use
+  `cratestack_core::MAX_RESPONSE_REBUFFER_BYTES` (8 MiB — 4× the request default, with headroom for a
+  response that legitimately echoes a request payload plus server-added columns). Every site already
+  matched on `to_bytes`'s `Result`, so exceeding the bound degrades to the existing synthesized
+  `CoolError::Internal`/error-frame path, not a panic.
+
+**Migration:** the *function signature* of `router(db, registry, codec, auth_provider)` and
+`rpc_router(db, registry, codec, auth_provider)` is breaking — every call site needs a fifth argument to
+compile against the new version, and `cratestack::DEFAULT_BODY_LIMIT_BYTES` is the value that reproduces
+today's runtime behavior exactly (no request that succeeds today starts failing at the default). A
+deployment that has already worked around axum's implicit 2 MiB `Bytes` cap for a specific large-payload
+endpoint should pass a larger `body_limit_bytes` explicitly, now that the limit is named and real rather
+than an axum implementation detail.
+
+**Flagged, not changed:** `DEFAULT_BODY_LIMIT_BYTES` and `MAX_BODY_BYTES` (the idempotency middleware's
+own request-buffering cap) are now numerically equal — both 2 MiB. Traced through the actual mechanism,
+`axum::body::to_bytes(body, limit)` is literally `Limited::new(body, limit).collect()`, the same
+`http_body_util::Limited` primitive `DefaultBodyLimit`'s `Bytes` extractor itself builds on — so there is
+no body size where the two disagree on accept/reject; they're the identical check running twice for a
+request that also carries an `Idempotency-Key`. The only observable difference for that narrow request
+class is which layer rejects first and therefore which error shape a client sees (a custom 400 from
+`IdempotencyService` vs. axum's raw 413) — not a coverage gap. Full trace in
+`docs/design/request-response-size-bounds.md`'s coherence note. `MAX_BODY_BYTES` itself is unchanged.
+
+### `cratestack-macros`: `resolver = "1"` removed — no more workspace-wide cargo warning (#497, #525)
+
+`crates/cratestack-macros/Cargo.toml` carried a `resolver = "1"` that made **every** `cargo`
+invocation anywhere in the workspace emit `warning: resolver for the non root package will be
+ignored`, for every contributor and every CI job. Cargo genuinely ignores the field for the real
+workspace build; its only effect was on the synthetic mini-workspace `trybuild` generates per
+fixture, where resolver 1's unified feature pools papered over `cratestack-core` selecting no
+decimal backend and tripping the "enable exactly one" `compile_error!`.
+
+Removing the `NEITHER`-selected arm (#505, this release) removed the reason the field was
+load-bearing, so it is simply deleted — one manifest, 56 deletions, no replacement mechanism
+needed. `cargo test -p cratestack-macros --test ui` and `--test ui_semantic` still pass with
+their full fixture counts, and `.ci/feature-matrix.sh` still fails when a `cratestack-core` edge
+is deliberately re-pinned, so the guard that made this risky is verified intact rather than
+assumed.
+
+## 0.7.11 (2026-08-11)
+
+### `cratestack-core`: selecting no decimal backend is no longer a hard compile error (#505, #521)
+
+`cratestack-core` used to hard-fail with `compile_error!("enable exactly one decimal backend
+feature — decimal-rust-decimal or decimal-bigdecimal")` whenever a consumer built it (directly
+or transitively) with `default-features = false` and neither `decimal-rust-decimal` nor
+`decimal-bigdecimal` selected. That bit a consumer that legitimately narrows its dependency graph
+this way and never uses a `Decimal`-typed field at all — e.g. `cratestack-api` (`provider =
+"none"`, no `model` blocks) — forcing it to name a decimal backend it never touches. The break
+was invisible in a `cargo check --workspace` run (feature unification from other workspace
+members hid it) until the affected crate was built alone — exactly what happened in the field
+(ADORSYS-GIS/webank-services#279).
+
+Selecting *both* backends at once is still a hard `compile_error!` — that half of the invariant
+is unchanged and stays a graph-wide constraint (documented in `cratestack-core`'s crate-level
+rustdoc and in `CLAUDE.md`): two independent dependents in the same build, each individually
+well-formed and each deliberately choosing a different backend, can still force an unbuildable
+combined graph. Making the two backends genuinely additive (or moving the choice off Cargo
+features entirely) remains open, unaddressed by this change, and reserved for a future,
+maintainer-scoped design decision.
+
+**What actually changed:** `cratestack-core::Decimal` (and everything in this crate and its
+downstream SQL layer that references it unconditionally — `cratestack-core::validate_range_decimal`,
+`cratestack-sql::SqlValue::Decimal`, `cratestack-sql`'s `IntoSqlValue for Decimal`, and the
+matching bind/decode arms in `cratestack-rusqlite` and `cratestack-sqlx`) is now `#[cfg]`-gated on
+"a decimal backend is selected", the same pattern throughout. With neither backend selected,
+these symbols simply don't exist on the public surface instead of hard-erroring the whole build —
+a consumer that never references `Decimal`, directly or via a schema with no `Decimal`-typed
+field, now builds cleanly across every facade (`cratestack-pg`, `cratestack-api`,
+`cratestack-sqlite`, `cratestack-client`, plus `cratestack-axum`/`cratestack-studio`), even under
+`--no-default-features`. A consumer that *does* try to use `Decimal` without picking a backend
+now gets a plain rustc "cannot find type/variant `Decimal`" from wherever the reference lives,
+instead of the old, single, clearer `compile_error!` naming the missing choice — a diagnostic
+regression accepted in exchange for not hard-failing every backend-agnostic consumer.
+
+No consumer-visible signature or behavior change for anyone who already selects a decimal backend
+(the default, `decimal-rust-decimal`, or the opt-in `decimal-bigdecimal`) — this only affects
+builds that previously hit the removed `compile_error!`.
+
+### `AuditSink` gets a real installation path (#473, #517)
+
+`cratestack_core::AuditSink` (plus `NoopAuditSink`/`MulticastAuditSink`) has existed since
+before this release, but had nowhere to be installed: a consumer could construct a sink and had
+no way to hand it to the runtime, and `AuditSink::record` was never invoked anywhere in the
+workspace — `cratestack-sqlx/src/audit.rs`'s own module doc claimed fan-out "goes through
+`AuditSink`" while that was, in fact, dead code.
+
+`SqlxRuntime` now carries an installable `Arc<dyn AuditSink>` (default `NoopAuditSink`, so
+existing `SqlxRuntime::new(pool)` callers see no behavior change), installed via
+`SqlxRuntime::with_audit_sink` or, for schema consumers, the macro-generated
+`CratestackBuilder::with_audit_sink` — the same shape `IdempotencyStore`/`RateLimitStore` use.
+Every `@@audit` write path (`create`/`update`/`delete`/`upsert`, their `_many` and batch
+variants) now fans the event out to the installed sink *after* its owning transaction commits,
+never from inside it: the in-database `cratestack_audit` row remains the sole in-transaction
+write and source of truth (unchanged, no double-write), and a sink is never invoked for a
+mutation that ultimately rolled back. Sink errors are logged (`tracing::warn!`), not propagated
+— by the time the sink runs, the mutation already committed, so failing the caller's request
+over a downstream projection hiccup would be strictly worse than a best-effort delivery.
+`run_in_tx` variants (caller-managed transaction) do not fan out, mirroring the existing event
+outbox, which has never drained from `run_in_tx` either. **This is a real gap, not just a
+deferral**: there is currently no way for a `run_in_tx` caller to opt into sink fan-out
+themselves — the dispatch helper is crate-private and no `run_in_tx` variant returns the
+`AuditEvent` it would need — so a caller chaining `run_in_tx` calls across a caller-managed
+transaction (see `crates/cratestack-pg/tests/banking_chained_audit_tx.rs`) gets the
+in-transaction `cratestack_audit` row on commit but a real installed `AuditSink` observes
+nothing for that transaction, silently. Worth its own follow-up issue; see
+`crates/cratestack-sqlx/src/audit/sink.rs`'s doc comment for the full reasoning. Dispatch is
+also sequential, not concurrent, so the added latency of a slow sink is per-row on
+`update_many`/`delete_many`/batch paths, not per-request.
+
+### `cratestack-studio`: refuse silent `@version`/`@@emit` bypass on `[target.db]` writes — breaking (#516, cratestack#507)
+
+A write through `cratestack studio` against a `[target.db]` target went straight to SQL: it never
+bumped a model's `@version` column and never wrote a `cratestack_event_outbox` row for an
+`@@emit`-annotated model, and neither omission was reported anywhere — the request returned `200`
+with the updated row. Both consequences are silent and outlive the request: a stale `@version`
+still satisfies a later `if_match`, so optimistic concurrency does not fail-safe, it silently does
+not apply; and `@@emit` side effects (for example customer-facing delivery webhooks) never fire,
+with no trace that one was skipped.
+
+Studio now refuses `POST`/`PATCH`/`DELETE` on a `rw` `[target.db]` target against any model that
+declares `@version` or `@@emit(...)`, returning `403 UNSAFE_DB_WRITE` and naming the specific
+attribute(s) that triggered the refusal, unless the target sets `allow_unsafe_writes = true` in
+`studio.toml`. The refusal runs in the HTTP handler (`require_safe_write`,
+`crates/cratestack-studio/src/api/records/guards.rs`) before any `DataSource` call, so it applies
+identically to Postgres- and SQLite-backed targets, and models with neither annotation are
+unaffected either way. A write allowed only because a target opted in is also loud after the fact,
+not just at the moment the config flag is set: it logs a `tracing::warn!` naming the target, model,
+and skipped annotation(s), and `AuditEntry` gains an `unsafe_write: bool` field (default `false`,
+`#[serde(default)]` so a pre-upgrade JSONL audit sidecar still replays cleanly) so `GET /api/audit`
+and the sidecar can distinguish a bypass write from an ordinary one.
+
+The `@@allow` half of the original report — an unauthenticated `[target.db]` read returning a
+`@sensitive` field in cleartext — is deliberately left alone here; it is arguably intended for a
+direct-DB admin tool and is tracked separately for a maintainer decision, not fixed unilaterally in
+this change. Likewise, routing `[target.db]` writes through the same descriptor path the generated
+server uses (so `@version`/`@@emit` would actually apply, rather than being refused) remains
+unimplemented and is left for a future, larger change.
+
+**Migration.** Any existing `rw` `[target.db]` deployment whose schema declares a model with
+`@version` or `@@emit(...)` will start getting `403 UNSAFE_DB_WRITE` on `POST`/`PATCH`/`DELETE`
+against that model through Studio. Add `allow_unsafe_writes = true` under that target's
+`[target.db]` block in `studio.toml` to keep the previous (silent-bypass) behavior, or leave it
+unset and route those writes through `[target.api]` instead, where `@version`, `@@emit`, and
+`@@allow` all apply exactly as declared in the schema. Reads and `[target.api]`-only targets are
+unaffected either way.
+
+### Per-procedure `@status(<code>)` for REST success responses (#407, #511)
+
+`generate_procedure_axum_handler` hardcoded `axum::http::StatusCode::OK` for every procedure's
+`Ok(...)` response, with no schema-level way to declare a different 2xx status (e.g. `202
+Accepted` for a submit-and-acknowledge procedure whose real verdict arrives later via webhook).
+A schema author can now write:
+
+```
+procedure submitKycDocument(args: SubmitKycDocumentInput): KycPresignReply
+  @status(202)
+```
+
+`cratestack-parser` validates the argument is a real `200..=299` status at schema-compile time
+(anything outside that range, or on a `transport rpc` schema — see below — is rejected with a
+clear diagnostic, not a runtime surprise); `cratestack-macros` threads the declared status into
+`result_encoder` for the unary, `TypeArity::List`, and `@stream` branches alike, replacing the
+previously-hardcoded literal in all three. Absent the attribute, codegen is byte-identical to
+before (the pre-existing cratestack#283 pinned-token regression test is unchanged). Error
+responses are untouched either way — `CoolError`'s own status mapping governs `Err(...)`
+unconditionally, independent of `@status`.
+
+`@status` is REST-only and is rejected at schema-compile time on `transport rpc` schemas: RPC
+unary dispatch shares the exact same generated handler REST uses, so an unrejected `@status`
+there would silently become wire-visible on the RPC response too. `transport grpc` is
+unaffected either way — tonic's gRPC status model never reads the inner HTTP status this
+attribute controls, so the combination is inert, not wrong, and stays allowed.
+
+Known limitation, left for a follow-up rather than silently narrowed here: `@status(204)` is
+accepted by the `200..=299` range check, but the REST encoder always serializes and attaches a
+response body regardless of declared status, so a declared `204` currently produces a
+`204 No Content` response that carries a body — a protocol violation per RFC 9110 §15.3.5.
+
+### Typed Rust client can read response headers — `*_with_response` methods (#493, #510)
+
+`decode_typed_response` (`cratestack-client-rust/src/client/decode.rs`) read `response.headers`
+only to find `Content-Type`, then returned the decoded body alone — every typed call built on it
+(`get`/`post`/`patch`/`delete`, and the generated `<Model>Client`'s `list`/`get`/`create`/`update`/
+`delete`) discarded every response header. For any `@version` model, that made the typed client
+structurally unable to do a concurrency-safe `PATCH`: CrateStack's optimistic-locking contract
+requires `If-Match` on that verb, with the current version handed back as `ETag` on `GET` — so
+the required round trip, `GET` → read `ETag` → `PATCH` with `If-Match`, had no typed path through
+its middle step. The same gap hid `Idempotency-Replayed` (on a replayed create) and `Retry-After`
+(on a `429`) from a typed caller. **Note:** `DELETE` is not part of that contract — the server
+does not currently enforce `If-Match` on `DELETE` for any model, versioned or not (see below).
+
+Added a `TypedResponse<Output> { value, status, headers }` (with a case-insensitive
+`.header(name)` accessor, plus `.header_values(name)` for the rare header that legitimately
+repeats, e.g. `Set-Cookie`) and a parallel `*_with_response` method next to every existing typed
+method: `CratestackClient::{get,post,patch,delete}_with_response`, and on the generated REST
+`<Model>Client`, `get_with_response`/`update_with_response`/`delete_with_response`. Purely
+additive — `decode_typed_response` is now implemented in terms of a new
+`decode_typed_response_with_metadata`, but keeps its exact original signature and behavior, so
+every existing call site (including every already-generated client) keeps compiling and behaving
+identically with no changes required.
+
+`delete_with_response` ships alongside `get_with_response`/`patch_with_response` for surface
+symmetry (status and headers on every write, not just versioned ones — useful for e.g. reading a
+`Retry-After` on a `429`), but unlike `patch_with_response`, sending `If-Match` on a `DELETE` has
+**no concurrency-safety effect today**: the server accepts and ignores it. Server-side `If-Match`
+enforcement on `DELETE` is a real gap in CrateStack's optimistic-locking story — deliberately
+*not* implemented here, since it is a separate feature decision outside this issue's scope, and
+reported for its own follow-up issue instead.
+
+Scoped to REST transport. RPC transport (`transport rpc`) has no `ETag`/`If-Match` handling
+anywhere server-side — a schema-versioned model's concurrency control there, if any, would need
+to travel through the request/response body, not an HTTP header — so there is nothing to wire on
+the RPC client's `BatchableCall` surface for this issue. Projection reads (`get_view`/`list_view`/
+`list_view_paged`) and `create_with_response` on the generated model client are also left
+out-of-scope: the acceptance-driving round trip is `GET` → `ETag` → `PATCH` with `If-Match`, which
+`get_with_response`/`update_with_response` cover in full; a create-side `Idempotency-Replayed`
+reader is still reachable today via the (now also additive) `CratestackClient::post_with_response`
+directly, just not yet wrapped by the generated `<Model>Client::create_with_response`.
+
+Verified: `cargo test -p cratestack-client-rust` (unit coverage of
+`decode_typed_response_with_metadata` against hand-built responses, including an `ETag`-shaped
+header and a case-insensitive lookup; a real-HTTP-server integration test in
+`tests/typed_response.rs` proving `get_with_response` → `ETag` → `patch_with_response` with
+`If-Match` round-trips end-to-end, a 412-on-stale-`If-Match` case, and that the plain
+`get`/`patch` methods are unchanged) and `cargo test -p cratestack-client` (a new
+`tests/generated_client_versioning.rs`, using a schema borrowed verbatim from
+`cratestack-pg/tests/fixtures/banking_versioning.cstack`, proving the *generated* `<Model>Client`
+reaches the same round trip, not just the underlying runtime).
+
+### `Value` serializes untagged on the wire, matching what it already persists — breaking (#506)
+
+`cratestack_core::Value` derived `Serialize`/`Deserialize`, which emits serde's
+externally-tagged enum representation. `Value::String("foo")` went on the wire as
+`{"String":"foo"}` rather than `"foo"`, and an empty map as `{"Map":{}}` rather than `{}`.
+cratestack#162 / #395 fixed that for a schema `Json` **column** by routing persistence through
+`Value::to_plain_json`, but only for the column — every other path still carried the tag:
+procedure arguments and results typed `Json`, auth claims, audit payloads, RPC error details.
+
+The practical cost landed on consumers. A `Json?` procedure argument rejected `"foo"` and
+required `{"String":"foo"}`, so every caller hand-wrote the tag at every call site, and every
+generated Dart and TypeScript client inherited a shape no other JSON or CBOR producer emits.
+The persisted shape and the wire shape disagreed for the same value.
+
+`Serialize`/`Deserialize` are now hand-written and untagged (`cratestack-core/src/value/codec.rs`).
+`serde_json::to_value(&value)` now produces exactly `value.to_plain_json()`, and
+`deserialize_any` accepts whatever a self-describing format hands over. `to_plain_json` /
+`from_plain_json` are kept: they are infallible and total (substituting `null` for a NaN float,
+which the persistence layer relies on) and they make the on-disk contract explicit at the call
+site rather than implicit in a serde impl.
+
+Two format-specific details, both measured against the first-party backends rather than assumed:
+
+- **`Null` serializes via `serialize_none`, never `serialize_unit`.** `minicbor-serde` encodes
+  `()` as `0x80` — an empty *array*, not RFC 8949 null — while `None` correctly encodes as
+  `0xf6`. `serialize_unit` would have put that non-conformant shape on the wire for any
+  `Value::Null` nested in a list or sent as a bare argument. This matches the choice
+  `ProjectedValue::Null` already makes for the same reason (#430).
+- **`Bytes` branches on `is_human_readable()`.** Binary formats get a native byte string
+  (CBOR `0x44 de ad be ef`) and round-trip losslessly. Human-readable formats get the same
+  base64 string `to_plain_json` already writes, and inherit the same documented asymmetry —
+  a JSON string always decodes back as `Value::String`, because nothing distinguishes base64
+  from ordinary text.
+
+**Migration.** Anything that persisted a `Value` through its serde impl rather than through
+`to_plain_json` — a custom `AuditSink`, a Redis-backed store — will read old tagged rows as
+`Value::Map` with a single variant-named key. Redis-backed state self-heals on TTL expiry.
+Callers that hand-wrote the tag to satisfy the old wire format must stop: send `"foo"`, not
+`{"String":"foo"}`. Regenerate Dart/TypeScript clients.
+
+### `cratestack-codec-cbor`: corrected a false claim in the encoder comment
+
+The comment asserted that `minicbor-serde` reports `is_human_readable() == true`. It reports
+**false** — verified by encoding a probe type whose `Serialize` echoes the hint, which emits
+`0xf4`. `cratestack-axum`'s `projection.rs` (#430) already documented the correct behavior, so
+the two disagreed. The comment also still described the `Value::Null`-stripping workaround that
+#430 removed. No behavior change; the code was right and the comment was wrong.
+
+### Pluralizer gains the standard English `y -> ies` rule — breaking (#504, #509)
+
+`cratestack_core::route_naming::pluralize` (and, via it, `cratestack-migrate::naming::table_name`)
+had no `y -> ies` case: any model name ending in a consonant + `y` derived the wrong plural —
+`category` -> `categorys`, `webhook_delivery` -> `webhook_deliverys` — instead of the
+grammatically correct `categories` / `webhook_deliveries`. This wasn't just cosmetic: the derived
+name is the actual SQL table the generated model client queries, so a consumer who hand-wrote a
+migration using the correct English plural got `relation "webhook_deliverys" does not exist` the
+moment the generated client touched that model — a real production defect downstream
+(webank-services' `adminGetWebhooks`; see cratestack#504's linked ADR).
+
+`pluralize` now applies the standard rule: consonant + `y` -> `ies` (`category` -> `categories`);
+vowel + `y` (`day`) or anything else -> plain `+s`. `cratestack-migrate::naming::pluralize`, a
+second hand-synced copy of the same function that had already drifted apart from this one, is
+deleted; `cratestack-migrate::naming::table_name` now calls `cratestack_core::route_naming::pluralize`
+directly, so there is exactly one implementation to keep correct going forward.
+
+This changes both generated REST route segments and generated table names for **every**
+model/view whose name ends in a consonant + `y`. It does *not* touch
+`cratestack-client-typescript::naming` or `cratestack-client-dart::idents`, the two SDK
+accessor/method-name generators (`db.categories()`, `useCategories()`) — they already implement
+the correct consonant/vowel rule and were deliberately out of scope here.
+
+**Migration.** This is a breaking change to generated table names and REST routes for any schema
+with a model/view name ending in a consonant + `y` (`Category`, `Delivery`, `Entry`, `Query`,
+...). `cratestack-migrate`'s diff engine matches tables **by name only** and never infers a
+rename (`crates/cratestack-migrate/src/diff.rs`) — running `cratestack migrate diff` against a
+schema with a deployed `categorys` table, without further action, emits `DropTable(categorys)` +
+`CreateTable(categories)`, and applying that migration **destroys the table's data**. Before
+running `migrate diff` after upgrading past this change, declare
+`@@rename(from = "<old_table_name>")` on every affected model (e.g.
+`@@rename(from = "categorys")` on `model Category`) so the diff engine emits
+`ALTER TABLE ... RENAME TO ...` instead — verified end-to-end by
+`crates/cratestack-migrate/src/emit/postgres/tests/renames.rs`'s
+`pluralization_change_with_rename_marker_is_a_rename_not_drop_and_create` test (and its sibling
+`..._without_rename_marker_drops_and_recreates`, which pins down the destructive default if this
+step is skipped). Any generated Dart/TypeScript/Rust client built against the old route segment
+for such a model will 404 against a server built with this fix, and vice versa, until both sides
+are rebuilt together.
+
+### CI, tooling, and internal fixes
+
+`grpc/service.rs`'s five CRUD arm builders (`build_get_arm`/`build_delete_arm`/`build_create_arm`/
+`build_update_arm`/`build_list_arm`) each independently reimplemented the same per-arm marker
+struct, `UnaryService` impl, and `CoolError`-to-`tonic::Status` mapping, differing only in which
+dispatch fn to call and how many arguments to thread through. Deduplicated into a shared
+`build_unary_arm(ArmSpec)` helper; generated output is unchanged — verified byte-identical via
+`cargo expand` before and after, including a paged-list and a create-disallowed fixture the
+existing test suite didn't otherwise exercise (#524).
+
+CI now actually runs `cratestack-pg/tests/decimal_bigdecimal_backend.rs`, the live-Postgres
+`decimal-bigdecimal` round-trip test #495/#496 added but never wired into a job: `tests-db` only
+built `cratestack-pg` under its default feature set, and `.ci/feature-matrix.sh` only ever ran
+`cargo check`, never `cargo test`, so a runtime regression in that codec/bind path would have
+passed every existing gate silently (#520).
+
+`just regen-examples` regenerates the two committed generated example clients
+(`examples/flutter-riverpod/client`, `examples/react-vite-swr/client`) locally, reusing the exact
+generator invocations `ci.yml`'s drift-check steps run so the recipe and CI can't copy-paste
+diverge. Both example CI jobs' downstream steps (`cargo test`, `flutter analyze`/`test`, `pnpm
+install`/`tsc`) now run and report their own pass/fail even when the drift check itself fails,
+instead of being silently skipped behind it (#508).
+
+The release-bump commit's `git add` staged the root `Cargo.lock` by name only, silently dropping
+the four other lockfiles `just bump` also refreshes on disk (`crates/cratestack-studio-ui/Cargo.lock`
+and the three standalone `examples/*-verification*/Cargo.lock` files, each its own `[workspace]`
+root) — the exact gap that broke v0.7.10's own release PR (`facade-disjointness` failed with
+`--locked` because one of those lockfiles was stale). Now staged via a glob pattern, closing the
+gap structurally rather than chasing individual filenames (#503).
+
+## 0.7.10 (2026-08-09)
+
+### Per-call-site `ON CONFLICT DO NOTHING` for idempotent inserts (#487, ADR 0038 blocker B3)
+
+`.upsert(..).run(..)` only ever emitted `INSERT ... ON CONFLICT DO UPDATE`. A model with any `upsert_update_columns` had no way to express "insert, or read back without mutating" — the fallback to a no-op `pk = EXCLUDED.pk` self-assignment only kicked in when `descriptor.upsert_update_columns` was empty, a property of the *model*, not the call site. Concretely: a cash-in claim inserting a `PENDING` row and treating a unique violation as "already in flight" would have a retry's blank values silently overwrite an existing `COMPLETED` row's `transfer_ref`/`new_balance_xaf`/`completed_at` — ledger corruption on retry, not a cosmetic gap. Consumers were hand-rolling `DO NOTHING RETURNING id` + a fallback `SELECT` to avoid exactly this.
+
+`UpsertRecord` (from `cool.model().upsert(input)`) gains `.do_nothing()`, switching to a distinct builder (`UpsertRecordDoNothing`, mirrored for the `.bind(ctx)`-scoped delegate as `ScopedUpsertRecordDoNothing`) whose `.run()`/`.run_in_tx()` return `UpsertOutcome<M>` — `Inserted(M)` or `Existing(M)` — instead of a bare `M`, since a real `DO NOTHING` returns nothing on conflict and the caller needs "I inserted this" distinguishable from "this already existed and I left it alone." This is additive: `.upsert(..).run(..)` without `.do_nothing()` keeps its `Result<M, CoolError>` signature and DO UPDATE semantics unchanged.
+
+Race semantics, spelled out in `UpsertOutcome`'s doc comment: the runtime always resolves the conflict target under the same `SELECT ... FOR UPDATE` row lock the DO UPDATE path already uses. If the probe finds an existing row, that lock guarantees it's still there at commit, so `Existing` is returned directly with no second statement — DO NOTHING genuinely never touches the row (no trigger fan-out, no `xmax` bump, no WAL), unlike the DO UPDATE path's no-op self-assignment fallback, which is a real (if degenerate) write. If the probe finds nothing, the actual `INSERT ... ON CONFLICT DO NOTHING RETURNING` still runs (not a plain `INSERT`) because "no row" from a `SELECT` doesn't lock anything — a concurrent transaction can still win the race. On that loss, the runtime performs one more locked read to hand back the row the other transaction actually committed; if *that* row is deleted before the fallback read completes (a second, narrower race), it surfaces `CoolError::Conflict` rather than inventing a result, and the caller retries.
+
+The existing empty-`upsert_update_columns` no-op-self-assignment fallback in the plain DO UPDATE path is kept, deliberately not merged into `.do_nothing()`: it exists to make `RETURNING` resolve for a *model* shape (zero eligible update columns), while `.do_nothing()` is an explicit *per-call* opt-in independent of that shape, and the two have different storage-layer effects (no-op `DO UPDATE` still fires triggers/bumps `xmax`; genuine `DO NOTHING` doesn't). Merging them would either force every empty-`upsert_update_columns` model onto DO-NOTHING semantics for existing callers or make `.do_nothing()` pay for trigger fan-out it explicitly asked to avoid.
+
+Scoped to `cratestack-sqlx` (Postgres) only. `cratestack-rusqlite` has an equivalent `INSERT ... ON CONFLICT DO UPDATE` upsert path (`render_upsert_with_conflict`) and SQLite supports `DO NOTHING RETURNING` too, but that backend's upsert is a single statement with no pre-probe (no policy/audit/event machinery to preserve, but also no existing "inserted vs. existing" discriminator to build on) — giving it the same capability is a materially different, smaller design left as follow-up rather than folded in here.
+
+New PG-backed regression coverage in `crates/cratestack-pg/tests/upsert_do_nothing.rs`: a ledger-corruption reproduction (insert with real values, retry via `.do_nothing()` with blank values, assert the row is byte-for-byte unmodified — confirmed failing on `main`/028cdc5 via `.upsert().run()`, the only pre-#487 API, before this change existed to fix it), an `Inserted`-vs-`Existing` distinguishability test with audit/event-outbox assertions (no `Updated` event or audit row on the `Existing` branch), a same-fixture regression test that the plain DO UPDATE path is unaffected, and an empty-`upsert_update_columns` model case.
+
+### Generated Dart and TypeScript clients get a real `Decimal` type (#498) — breaking
+
+`cratestack-client-dart` and `cratestack-client-typescript` used to carry every `Decimal`-typed field as an opaque wire-format string — harmless for the default `decimal-rust-decimal` backend (which never emits scientific notation), but silently wrong once #495/#496 made `decimal-bigdecimal` (arbitrary precision, beyond `rust_decimal`'s ~28-29 significant-digit cap) a real, selectable server backend: `bigdecimal`'s `Display` switches to scientific notation past a magnitude threshold (`"0.0000001"` on `rust_decimal`, `"1E-7"` on `bigdecimal`, for the identical value), so the *string form* a Dart/TS client saw depended on which backend built the server, and neither SDK could parse, compare, or do arithmetic on the value at all — the exact case #495/#496's own PR flagged as unfinished business.
+
+The maintainer's recorded decision (of the three approaches priced in #498's own ticket — wire canonicalization, a real client-side decimal type, or refusing the combination) is the middle one: give the SDKs a real decimal type, not change what the wire carries.
+
+- **Dart**: `Decimal`-typed fields (including `DecimalFilter`'s comparison operands) are now `package:decimal`'s `Decimal` class, not `String`. `wire_decode.rs`/`wire_encode.rs` decode via `Decimal.parse` (accepts both plain and scientific notation into the identical value) and encode via `.toString()` (always plain positional notation, matching `rust_decimal`'s own `Display`). Every generated `pubspec.yaml` (default, riverpod, and gRPC presets — gRPC reuses the same generated model classes) gains a `decimal: ^3.2.6` dependency. Because Dart's `Model.fromWire`/`.toWire()` factories are the single decode/encode chokepoint every transport (REST, RPC, and gRPC's own message registry — `grpc_runtime/decode.dart.j2`'s `decodeMessage` hands a plain `Map` to the exact same `fromWire`) already routes through, this is a complete fix: gRPC's proto3 wire type stays `string` (unchanged, see below) but the in-memory value on every transport is a real `Decimal`.
+- **TypeScript**: `Decimal`-typed fields are now `decimal.js`'s `Decimal` class (re-exported from the generated `models.ts` as a `DecimalJs.clone({ toExpNeg: -1e9, toExpPos: 1e9 })` — an unbounded-exponent clone, so `.toString()`/`.toJSON()` always emit plain positional notation too, for the same reason as Dart's `.toString()` choice). `decimal.js` is a `dependencies` entry (not `peerDependencies`, unlike `@tanstack/react-query`) in every generated `package.json` — every consumer needs a working `Decimal` implementation and there's no app-owned-singleton constraint the way there is for React/react-query, so nothing is gained by pushing the choice onto the app. Adds ~32 KB minified / ~13 KB minified+gzip, zero transitive dependencies (measured: `npm view decimal.js dist.unpackedSize` reports 284 KB unpacked; a local `terser` minify of the runtime file alone is 32,328 bytes, 12,860 gzipped).
+
+  Unlike Dart, this package had **no decode/encode chokepoint at all** before this change — every response was a blind `JSON.parse`/codec-decode cast with `as T`, no runtime transform of any kind (a `DateTime` field is still a bare `string`, by design). A real `Decimal` instance needs an actual runtime replace of the wire string, so `models.ts.j2` gains a `decimalShapes` registry (one `DecimalShape { keys, nested }` entry per model/`type` the schema declares — `crate::decimal::build_decimal_shapes`), a `reviveDecimalFields(value, shapeName)`/`revivePagedDecimalFields(value, shapeName)` pair keyed by that registry, and a `reviveDecimalScalar(value)` counterpart for a return value that is itself `Decimal` (not wrapped in an object). Every generated decode call site — the `default`-preset REST (`rest-client.ts.j2`) and RPC (`rpc-client.ts.j2`) clients' `list`/`get`/`create`/`update` methods **and their `ProceduresApi`**, the `swr` preset's per-model functions (`models-rest.ts.j2`/`models-rpc.ts.j2`) **and its `procedures.ts`** — calls one of these unconditionally, keyed by the decoded type's own registry entry name (a name with no entry, e.g. a plain scalar/enum return, is a documented fast-path no-op, so this is a uniform, always-present `.then(...)` wrapper rather than the generator branching per call site). A relation-embedded `Decimal` field (a `Post.author.balance` shape) revives too, not just a flat field on the root — `reviveShaped` routes a nested field to *its own* type's shape via `nested`, recursively. `Decimal.prototype.toJSON` (an alias for `.toString()`) makes the *encode* direction (`JSON.stringify`, which both a REST request body and this package's default `jsonRpcCodec` go through) work automatically, with no generated glue needed. `DecimalFilter`'s comparison operands are `ComparableFilter<Decimal>` now; they never need decode-side revival since a `Where`/`FindMany` argument only ever travels outbound.
+
+  **A real bug was caught and fixed by a second reviewer before this landed, not just theorized:** the first version of this scheme (`crate::decimal::DecimalReachability`) kept a single flat `Set<string>` of every `Decimal` field name reachable from a response's root type — its own fields *and* every relation's/`type`'s fields, unioned together — and matched it against a decoded response's keys at *any* nesting depth. That is unsound the moment two *different* reachable types can each contribute a field name to the same flat set: an `Order.total: Decimal` + related `Account.total: String` schema, `include`-ing the relation, either threw `[DecimalError] Invalid argument]` decoding a real (non-numeric) account reference or silently corrupted a numeric-looking one (`"00123"` -> `Decimal("123")`, losing its leading zeros) — reproduced empirically (`tests/fixtures/decimal_name_collision.cstack`, `tests/decimal_collision_regression.rs`), not just reasoned about. Replaced with the path-aware `decimalShapes` registry above: every type keeps its own `Decimal` field names in its own shape, never merged with another type's, so `Account.total` is only ever checked against *Account's* shape (which correctly has no `total` key).
+
+- **gRPC (both SDKs):** `grpc/wire.rs` still maps `Decimal` to proto3 `string` on the wire (unchanged, matching `cratestack-proto::emit::scalar::map_scalar`). Dart's gRPC preset reuses the identical `Model.fromWire`/`.toWire()` factories the REST/RPC presets use (confirmed by generating a `transport grpc` schema with a `Decimal` field and running `flutter analyze`/`flutter test` — clean, including a real relation-embedded-field and procedure-return-type round trip), so it's not just non-broken, it's *correct*: proto3 carries a string, the in-memory value is a real `Decimal` — and, since Dart's decode always goes through a real per-field-typed `fromWire`, never a flat name-keyed set, it was never exposed to the collision class above either. TypeScript's gRPC-Web preset gains a dedicated `"decimal"` `GrpcWireKind` (`wire.rs`, `grpc-web-runtime.ts.j2`'s `encodeScalar`/`decodeScalar`/`zeroValue`) — same proto3 `string` wire bytes, decoded into a real `Decimal` (imported from `./models.js`) rather than the raw JS `string` an earlier draft of this change left it as; a probe schema (`transport grpc`, a `Decimal` field) both `tsc`-typechecks and round-trips a scientific-notation value through the real generated `encodeMessage`/`decodeMessage`, proven by a real `npx vitest run`. gRPC's own decode (`decodeMessage`) is per-message-type-scoped by construction (field descriptors are looked up per message, never name-matched across types), so it was never exposed to the flat-key collision class either.
+
+**Breaking, on the default `decimal-rust-decimal` backend, whether or not a schema uses `decimal-bigdecimal` at all:** existing app code doing `model.amountField` and expecting a `string`/`String` now gets a `Decimal`/`decimal.js` `Decimal` instance instead. Migration: replace `String`/string-typed usage of a `Decimal` field with the respective library's API — Dart: `Decimal.parse(input)` to construct, `.toString()` to format, comparison operators/`compareTo` work directly; TypeScript: `new Decimal(input)`, `.toString()`, `.plus()`/`.minus()`/`.cmp()` etc. instead of raw arithmetic/string comparison. `DecimalFilter`'s `eq`/`ne`/`lt`/`lte`/`gt`/`gte`/`in` fields need the same treatment when constructing a `Where`/`FindMany` argument by hand.
+
+Verified: `cargo test -p cratestack-client-dart -p cratestack-client-typescript` (generator/snapshot suites, all fixtures reviewed line by line, not just re-recorded); two new real-toolchain round-trip tests — `cratestack-client-dart/tests/decimal_round_trip.rs` (`flutter pub get` + `flutter test` against a generated package) and `cratestack-client-typescript/tests/decimal_round_trip.rs` (`npm install` + `npx vitest run`) — proving a value beyond `rust_decimal`'s capacity, in both plain and scientific notation, round-trips through the real generated `fromWire`/`toWire` (Dart) and REST client (TypeScript) with its value intact; `just verify-dart`/`just verify-typescript` (generation + `flutter analyze`/`tsc` against the `ci_rest`/`ci_rpc`/riverpod fixtures, none of which declare a `Decimal` field, so this also proves the `DecimalFilter`-only boilerplate change doesn't regress every existing generated package).
+
+### `auth().isSystem()` — a system principal for server-internal reads and writes (#486, ADR 0038 blocker B1)
+
+Model policies can now name a trusted system principal instead of only end-user claims: `@@allow("update", auth().isSystem() || subjectId == auth().subjectId)`. This is the half of #486's proposal being shipped now — the spike in #485 (closed, do-not-merge) also prototyped `@@internal(...)` route suppression, but that covers REST only and is a false guarantee under `transport rpc` (a "suppressed" route would still be reachable over RPC); the spike's own recommendation, followed here, was to ship `isSystem()` first since it alone unblocks the read-side problem route suppression does nothing for. `@@internal` is **not** part of this change.
+
+Today, giving server code (procedures, workers, reconciliation jobs) a way to write through the ORM means adding an `@@allow("update", ...)` policy, which also opens a public CRUD route for that action — and an owner-scoped `@@allow("detail", subjectId == auth().subjectId)` denies a legitimate internal read, since a service caller carries no subject claim. Both push consumers toward hand-written raw SQL instead of the generated surface.
+
+`isSystem()` is a term a policy **names**, not a bypass flag: `db.model().unchecked().update(...)` was explicitly rejected because it would move authorization out of the schema into scattered call sites, with nothing distinguishing a legitimate escalation from an accidental one. `cratestack_core::SystemContext::for_service("...")` is the only way to obtain a `CoolContext` that satisfies `auth().isSystem()`; it has no `From`/`TryFrom<CoolContext>` and no constructor accepting an existing (e.g. request-derived) context, and the backing flag is a private, `#[serde(skip)]` field on `CoolContext` — so no `AuthProvider` implementation, and no deserialized/wire-carried context, can ever produce one. **Fail-closed:** a model whose policies never write `isSystem()` gains nothing from a system caller — the predicate only ever satisfies a clause a schema author wrote down, proven by `model_that_never_names_is_system_denies_system_callers` (`cratestack-sqlx`) and `system_caller_is_denied_on_a_model_that_never_names_is_system` (PG-backed, `cratestack-pg/tests/system_principal.rs`). **Auditable:** `SystemContext::for_service` records the service name as both the `id` (`system:<service>`) and `service` claims, which flow unchanged into the existing `cratestack_audit` actor — no new audit machinery needed, see `system_write_is_captured_in_the_audit_trail`.
+
+Wired through all three places a model read policy is evaluated: the create-path in-process evaluator (`cratestack-sqlx::query::support::create::evaluate_input_predicate`), the `QueryBuilder` pushdown used by row-scoped write authorization (`query::support::policy_predicate::push_policy_predicate`), and the SQL-string renderer used by `find_unique`/list reads (`render::policy_predicate::render_policy_predicate`) — this last one is why PG-backed coverage exists alongside the unit tests: it's the read path route suppression could never have fixed. `auth().isSystem()` is recognised in the model policy-term parser (`cratestack-macros::policy::model::term`) ahead of the generic builtin-call parser, which would otherwise misparse `auth()`'s own parens as the function call.
+
+Verified: `cargo test -p cratestack-core -p cratestack-policy -p cratestack-macros -p cratestack-sqlx`, plus `cratestack-pg/tests/system_principal.rs` against a real Postgres (`just test-pg-only system_principal`), covering all five acceptance criteria — system-permitted where named (read and write), fail-closed where not named, non-system callers unaffected, audit capture, and an HTTP-request forgery attempt (a plausible "naively forward a client claim" `AuthProvider` bug) that still cannot produce a system context.
+
+### A real `decimal-bigdecimal` backend (#495) (#496) — breaking
+
+`decimal-bigdecimal` was removed in #464/cfde4e0 for being a dead `compile_error!` — declared but never implemented. This implements it for real: `cratestack-core::Decimal` is now `cfg`-gated per backend (`rust_decimal::Decimal` under `decimal-rust-decimal`, `bigdecimal::BigDecimal` under `decimal-bigdecimal`), with two `compile_error!`s enforcing that exactly one is selected — neither (the pre-existing check) and now also both (new: the two are mutually exclusive, so `--all-features` trips it again, this time for a real reason).
+
+The two backends are not drop-in equivalents: `rust_decimal::Decimal` is `Copy`; `bigdecimal::BigDecimal` heap-allocates and is not. A workspace-wide audit for double-moves/implicit-copy reliance (source and tests) found exactly one real call site — `cratestack-sqlx`'s `push_bind_value` dereferenced a `&Decimal` to bind it (`*value`), which only compiles for a `Copy` type — fixed with `.clone()`, which degrades to a cheap bitwise copy under `decimal-rust-decimal` and a real allocation under `decimal-bigdecimal`. No `derive(Copy)` on any `Decimal`-carrying type exists anywhere in the workspace. Both backends implement `Clone`/`Debug`/`Display`/`FromStr`/`PartialEq`/`PartialOrd`/`Ord`/`Eq`/`Hash`/`Default`, so no other trait bound needed to change.
+
+Making the swap reachable, not just possible in `cratestack-core` alone, meant widening #421's "one shared `default-features = false` dependency edge" pattern to the full transitive closure between a facade and `cratestack-core`: `cratestack-sql`, `cratestack-policy`, `cratestack-parser`, `cratestack-proto`, `cratestack-macros`, `cratestack-axum`, `cratestack-codec-cbor`, and `cratestack-codec-json` all gained the same `default-features = false` (at the workspace-dependency site) plus explicit per-consumer `decimal-rust-decimal`/`decimal-bigdecimal` forwards that `cratestack-core`/`cratestack-sqlx`/`cratestack-rusqlite`/`cratestack-client-rust` already had — a single crate left pinning `decimal-rust-decimal` anywhere in that closure re-forces it for the whole graph, since Cargo features are additive and unify globally. `cratestack-sqlx`'s `decimal-bigdecimal` feature forwards to `sqlx-core`/`sqlx-postgres`'s own (implicit, un-gated-by-name) `bigdecimal` features, giving `cratestack_core::Decimal` real `sqlx::Type`/`Encode`/`Decode` impls against Postgres `NUMERIC` under either backend through the exact same integration points (`push_bind_value`, generated `row.try_get(...)`) — neither of which names a concrete backend type.
+
+`cratestack-pg`'s `postgres` feature previously forwarded `cratestack-sqlx/decimal-rust-decimal` unconditionally (the #421 fix, reasonable when there was only one backend to want). That's now removed: forcing a specific backend there would make `--features postgres,decimal-bigdecimal` request both backends on `cratestack-sqlx` simultaneously, hitting the new mutual-exclusion `compile_error!` — exactly the outcome this issue exists to avoid. `postgres` alone (no explicit decimal feature) is consequently a deliberate compile failure now; `.ci/feature-matrix.sh` asserts this explicitly so a future "fix" that silently re-adds the force gets caught.
+
+**Breaking:** any consumer of `cratestack-pg`, `cratestack-api`, `cratestack-sqlite`, or `cratestack-client` using `default-features = false` must now explicitly select `decimal-rust-decimal` or `decimal-bigdecimal` — a bare `--no-default-features` (or `default-features = false` with no re-added decimal feature) that used to silently resolve to `rust_decimal` is now a `compile_error!`. `examples/no-database-verification` hit exactly this (`cratestack-pg` with `default-features = false`, the configuration `crates/cratestack-pg/README.md` documents) and needed an explicit `features = ["decimal-rust-decimal"]` re-add — see that example's own `Cargo.toml` comment for why the *host*-side `cratestack-core` (compiled in for the `cratestack-macros` proc-macro) has no other path to a backend even when a target-side dependency happens to request one.
+
+One structural limitation found and left as an intentional workaround, not a design choice: `cratestack-macros/tests/ui.rs`'s `trybuild`-based compile-fail suite generates a synthetic crate that copies `cratestack-macros`' entire `[dependencies]` table (including `cratestack-core`) onto its own dependency list — separate from the proc-macro's own resolution of the same package — and `trybuild`'s feature-copying logic only preserves `dep:xxx` weak-optional-dependency forwards, silently dropping ordinary `"pkg/feature"` strings. The copied `cratestack-core` edge therefore never received a decimal-backend forward and hit the "neither selected" `compile_error!` for a test unrelated to decimals at all. Fixed by adding `resolver = "1"` to `cratestack-macros`' own `[package]` — genuinely ignored by Cargo for build purposes on this crate as a real workspace member (the root `[workspace] resolver = "3"` governs there regardless; only `trybuild`'s standalone synthetic mini-workspace obeys it, reuniting the two copies' feature resolution the way they did before this backend existed), but **not silent**: it emits `warning: resolver for the non root package will be ignored` on every `cargo check`/`build`/`test` invocation anywhere in the workspace (verified: even `cargo check -p cratestack-core`, an unrelated crate, prints it), because Cargo evaluates the full workspace manifest tree regardless of which package is targeted. That tradeoff — permanent, harmless build noise vs. a broken `trybuild` suite, given `trybuild` has no configuration hook to avoid this and hardcoding the decimal feature on the edge instead would re-open the exact leak #495 closes — is accepted for now; see `cratestack-macros/Cargo.toml`'s own comment for the alternatives considered and rejected.
+
+`cratestack-cli`'s four remaining tool-crate dependencies (`cratestack-studio`, `cratestack-mock-wiremock`, `cratestack-client-dart`, `cratestack-client-typescript`) were plain `.workspace = true` edges with no `default-features = false`, so their own `decimal-rust-decimal` default stayed force-enabled regardless of what `cratestack-cli` itself requested — `cargo check -p cratestack-cli --no-default-features --features decimal-bigdecimal` hard-failed with a `compile_error!` that pointed nowhere near the real cause. Fixed for #496 by widening the same `default-features = false` + explicit-forward treatment to those four edges too; `cratestack-cli` now fully displaces `rust_decimal` under `decimal-bigdecimal`, closing the gap the original #495 PR left as out-of-scope.
+
+**Cross-backend wire compatibility constraint:** ordinary `Decimal` values encode identically on the wire (CBOR and JSON) under either backend, but `bigdecimal` emits scientific notation (e.g. `"1E-29"`) for values past `rust_decimal`'s ~28-29 significant-digit capacity, which a `rust_decimal` peer cannot decode. Since the shipped Dart and TypeScript client SDKs only ever target the default (`rust_decimal`) backend, a `decimal-bigdecimal` server cannot safely use its extra precision when talking to them — see `crates/cratestack-core/README.md` and the facades' feature docs for the full deployment constraint.
+
+Verified: `cargo check -p cratestack-pg --no-default-features --features postgres,decimal-bigdecimal`, `cargo check -p cratestack-client --no-default-features --features decimal-bigdecimal`, `cargo check -p cratestack-cli --no-default-features --features decimal-bigdecimal`, and `cargo tree -p cratestack-client --no-default-features --features decimal-bigdecimal -e features | grep rust_decimal` (prints nothing) all pass, plus a new live-Postgres round-trip test (`cratestack-pg/tests/decimal_bigdecimal_backend.rs`, `required-features = ["postgres", "decimal-bigdecimal"]`, mirrors `pgvector_feature_forwarding.rs`'s pattern) confirming both an in-range and a beyond-`rust_decimal`-capacity `Decimal` field round-trip through `NUMERIC` under the new backend without precision loss.
+
+### A fourth facade, `cratestack-client`, for pure HTTP-client SDK crates (#490)
+
+`include_client_schema!` was previously only reachable through `cratestack-pg`, `cratestack-api`, or `cratestack-sqlite` — all three of which carry `cratestack-axum` (and therefore `axum`/`tower`/`hyper`/`tower-http`, a full server framework) unconditionally, even when a consumer only ever calls a cratestack server and never runs one. `cratestack-client` re-exports **only** `include_client_schema!` (not the other two entry macros — reaching for either now fails with a plain name-resolution error) plus the generated Rust client runtime and the handful of type re-exports client codegen actually references, derived empirically by tracing every `::cratestack::` path `include_client_schema!`'s expansion can emit. `cratestack-axum` is structurally absent from its dependency graph under default features — proved by a new standalone verification workspace, `examples/client-only-verification` (mirrors `examples/no-database-verification-api`'s cratestack#347 precedent: its own `[workspace]` root with a committed `Cargo.lock`, not a member of the root workspace, since Cargo unifies features across workspace members). This facade has no `grpc` Cargo feature: `cratestack-client-rust`'s own `grpc` feature pulls `tonic`, which pulls `axum` transitively, defeating the point; a gRPC-client consumer should depend on `cratestack-client-rust` directly with `features = ["grpc"]` instead.
+
+Building the empirical re-export list surfaced a real, pre-existing gap: `RpcListInput`/`RpcPkInput`/`RpcUpdateInput`/`RpcListPredicate` (the RPC model-CRUD input envelopes `transport rpc` client codegen references as `::cratestack::rpc::*`) were defined in `cratestack-axum::rpc::inputs`, not `cratestack-core::rpc` alongside their sibling wire shapes (`RpcErrorBody`, `RpcRequest`, `RpcResponseFrame`) — an oversight relative to that module's own stated goal ("clients can depend on a single source of truth without pulling in axum"), invisible until a facade without `cratestack-axum` in its graph tried to compile a `transport rpc` schema with model CRUD. The four types move to `cratestack-core::rpc`, with `cratestack-axum::rpc` re-exporting them unchanged — same names, same shapes, same wire format, so `cratestack-pg`/`cratestack-api`/`cratestack-sqlite` see no behavior change.
+
+The facade also declares `pgvector` and `rate_limit` Cargo features. `include_client_schema!` runs the same extension-declaration gate as the server and embedded macros, so without them a schema containing `extension pgvector { }` or `extension rate_limit { }` was a hard `compile_error!` through this facade with no feature to opt into — which, since a client SDK is generated from the same `.cstack` the server is built from, ruled out every server schema using embeddings or rate limiting. Unlike `cratestack-pg`'s same-named features these forward to `cratestack-macros` alone, with no runtime half: a `Vector(n)` field reaches the generated client as a plain `Vec<f32>` (the `pgvector` crate is involved only at the server's sqlx row-decode boundary) and `@no_rate_limit` only affects enforcement living in `cratestack-axum`. They are schema-compatibility switches, not feature implementations.
+### `cratestack-axum` response content-type negotiation stops picking codecs the router can't actually encode (#489)
+
+A router built with a single codec (e.g. `router(db, procedures, JsonCodec, auth)`) returned a spurious `406 Not Acceptable` — `no encoder configured for response Content-Type application/cbor` — whenever a client's `Accept` header named `application/cbor` alongside `application/json`, even though the router had a perfectly good JSON encoder. Root cause: `RouteTransportCapabilities::response_types` is a compile-time list describing what the *transport shape* (REST/RPC binding) can carry across every possible codec configuration, not what the concrete `HttpTransport` a given router was actually constructed with can encode — `select_response_content_type` picked the first entry of that static list the client's `Accept` named, with no way to know the router only had one codec wired up.
+
+`HttpTransport` gains a `can_encode(&self, content_type: &str) -> bool` method (defaulted to `true` — preserves the pre-#489 behavior for any downstream impl that hasn't opted in, since a required method would be a breaking change to this public trait), implemented honestly by both in-repo impls: the blanket `impl<C: CoolCodec> HttpTransport for C` and `CodecSet<Primary, Secondary>` (including the `application/cbor-seq` special case, encodable whenever *either* slot is a CBOR codec, regardless of position). Response negotiation (`select_transport_response_content_type`, used by both `encode_transport_result_with_status_for` and the sequence/`@stream` encoders) and the `Accept` preflight (`validate_transport_request_headers_for`/`validate_transport_response_headers_for`) now both filter the advertised `response_types` through `can_encode` before matching against `Accept` — the preflight fix additionally means a mutation like a model `create` now fails fast on an unsatisfiable `Accept` *before* its DB write runs, not only afterward when the response encoder finally catches it. A `NotAcceptable` the negotiator does return now names what the router actually serves, not the static list. One behavior change reaches slightly beyond the literal repro: a request carrying **no `Accept` header at all** previously got `default_response_type` unchecked, which for a JSON-only router is the codegen-baked `application/cbor` — the same 406 by another route. It now falls back to the first encodable type instead. Routers whose default is genuinely encodable (every dual-codec router, and any single-codec router whose codec matches the default) negotiate exactly as before. RPC unary/batch dispatch and gRPC bridging funnel through the same `encode_transport_result_with_status_for`/`RPC_BINDING_CAPABILITIES` path, so they're fixed by the same change; `validate_subscribe_accept_header` (SSE `@@subscribe`) was audited and left alone since it always produces `text/event-stream` unconditionally — there's no static-list-vs-codec gap there to begin with.
+
+### `ClientStateStore` moves out of `cratestack-client-rust` into `cratestack-core` (#475) (#482) — breaking
+
+`cratestack-client-store-sqlite` and `cratestack-client-store-redis` are storage adapters, but both depended on `cratestack-client-rust` — an HTTP transport binding — for the sole reason that `ClientStateStore` (plus `PersistedClientState`, `RequestJournalEntry`, `InMemoryStateStore`, `JsonFileStateStore`) happened to be defined there: an L2 → L4 back-edge, the client-side twin of the `cratestack-sqlx`/`cratestack-redis` → `cratestack-axum` edge #465 fixed server-side and the violation `docs/design/layering.md` named as still open. The trait and its companion types move to `cratestack-core::store::client_state`, with `cratestack-client-rust::state` kept as a back-compat re-export so existing `use cratestack_client_rust::state::...` paths keep compiling. `cratestack-client-store-redis` no longer depends on `cratestack-client-rust` at all; `cratestack-client-store-sqlite` keeps it only as a `[dev-dependencies]` entry for its test fixtures — `cargo tree -p cratestack-client-store-sqlite -i cratestack-client-rust` now reports a dev-dependency path only, and the same command for `-store-redis` reports no path at all. **Breaking:** anyone implementing `ClientStateStore` directly against `cratestack_client_rust::ClientStateStore` (rather than the re-export) needs to retarget `cratestack_core::ClientStateStore`; the trait's shape is unchanged.
+
+`CratestackClient::state()` and the internal `record_request` journal-write path convert the moved trait's `CoolError` back to `ClientError::State(..)` explicitly at both call sites, rather than through `ClientError`'s blanket `From<CoolError>` (which targets `ClientError::Codec`, for genuine wire-codec failures) — an initial version of this move routed state-store failures through that blanket conversion, which would have silently reclassified local state-store I/O failures (a locked/corrupt JSON file, a poisoned mutex) as fabricated HTTP-500 `RuntimeErrorCode::Codec` errors instead of `RuntimeErrorCode::State`, reaching as far as the Dart/Flutter FFI boundary. Regression tests (`client::core::tests::state_store_error_maps_to_client_error_state`, `client::headers::tests::record_request_state_store_error_maps_to_client_error_state`) exercise a rigged-to-fail state store and assert the resulting `ClientError` variant.
+
+### CI, release tooling, and process fixes
+
+Layer direction (ADR 0014) is now CI-enforced: `docs/adr/layers.toml` assigns every `cratestack-*` crate a layer, and `.ci/layer-direction-check.sh` reads the real `cargo metadata` dependency graph and fails on any `cratestack-*` → `cratestack-*` edge pointing at a higher layer, or on a crate under `crates/` missing from the manifest (#477).
+
+The release pipeline now actually writes a changelog. Nothing did before — `prepare-release.yml` already walked the commit range to build its release-PR body, but discarded that output rather than persisting it, which is why this file had been caught up by hand-written backfill PRs instead. `.ci/changelog-seed.sh` seeds a `## X.Y.Z` section per release (grouped by conventional-commit type, marked with a TODO placeholder), `.ci/changelog-check.sh` fails CI on an unedited marker so a seed can't silently reach `main` as a raw commit list instead of prose, and `just changelog-seed VERSION` runs it locally (#479/#483). Everything from `v0.5.0` through `v0.7.8` — thirteen releases — was itself backfilled by hand in a dedicated pass, since it had gone undocumented (#478).
+
+`@no_rate_limit` reached the generated `OpDescriptor` (`rate_limited_by_default: false`) and was covered by tests at every layer except the one that mattered: `cratestack-axum`'s `RateLimitLayer` never read the flag, so an annotated procedure was still throttled at runtime regardless. Fixed with an ops-filter wired into both REST and RPC dispatch (#474/#481).
+
+`rust-version = "1.95.0"` is now declared in `[workspace.package]`, matching the existing `rust-toolchain.toml` pin, with a dedicated `msrv` CI job building the workspace on that exact toolchain and a three-way drift check (resolved `rustc --version`, the toolchain file, and `Cargo.toml`'s declared `rust-version`) added to the existing `check` job (#422/#480).
+
+`AGENTS.md` now records that this repo's own `cratestack-sqlx`/`cratestack-pg`/`cratestack-cli` dependencies on `sqlx` are a deliberate exemption from the no-raw-SQL policy downstream consumers (webank-context ADR 0038) are adopting — this is the layer that wraps sqlx, not an instance of the drift that policy targets (#484).
+
+`just bump`'s `cratestack-studio-ui` step changed directory with a bare `cd`, which leaked into every repo-root-relative path after it — including the standalone example-workspace lock-refresh steps `#422`/`#480` and later PRs added, which silently never ran as a result. Wrapped in a subshell like the steps around it (#494).
+
+## 0.7.8 (2026-08-08)
+
+### Rate-limit and idempotency layers stop trusting spoofable proxy headers (#416)
+
+`cratestack-axum`'s idempotency and rate-limit layers previously fell back to a shared literal `"anonymous"` bucket whenever a request carried no `Authorization` header — weak, but at least not attacker-steerable. A first attempt at improving this replaced the fallback with a client-IP parsed from the `Forwarded`/`X-Forwarded-For` headers, which turned out to be worse: the crate has no trusted-proxy configuration to verify or strip those headers, so any caller reaching the service directly, or through a proxy that doesn't rewrite them, could mint a fresh rate-limit bucket per request or land in another caller's idempotency namespace just by setting an arbitrary header value.
+
+The header-parsed fallback is replaced with axum's `ConnectInfo<SocketAddr>`, which reflects the actual accepted TCP socket and can't be spoofed by the client; when `ConnectInfo` isn't available the layers fall back to the original shared `"anonymous"` bucket rather than trusting an unverifiable header. This closes the header-spoofing hole, but not the underlying gap it was filed against (#416): no shipped example, including the flagship `server_basic.rs`, and no macro-generated wiring actually serves through `into_make_service_with_connect_info`, so in every default/documented deployment today, unauthenticated callers still collapse onto the shared bucket. #416 stays open; picking a config surface that guarantees `ConnectInfo` availability across every server-wiring path is left to the still-maintainer-blocked trusted-proxy design (#415).
+
+### Storage traits move out of the HTTP crate; the layer model gets written down (#424, #472)
+
+`IdempotencyStore`, `RateLimitStore`/`RateLimitConfig`/`RateLimitDecision`, and the idempotency-table DDL lived in `cratestack-axum`, which meant `cratestack-sqlx` and `cratestack-redis` depended on the HTTP transport crate solely to implement those traits — a back-edge against the intended `parser → core/policy/sql → macros → runtimes` direction. They move to `cratestack-core::store::{idempotency,ratelimit}` and `cratestack-sql::idempotency`, with re-exports kept in `cratestack-axum` for source compatibility; `cargo tree -i cratestack-axum` now returns no match from either `cratestack-sqlx` or `cratestack-redis` (#424).
+
+A companion, docs-only change adds `docs/design/layering.md` and ADRs 0011–0016, naming six layers (L0 Schema IR through L5 Facades, plus the orthogonal compiler) and writing down the dependency-direction rule that `CLAUDE.md` previously expressed as a five-crate chain that no longer covers a thirty-crate workspace. Three ADRs are Accepted (the layer model itself, no IoC container, facade disjointness); three are Proposed, naming decisions still open for a maintainer call (#472).
+
+### Feature graph: the default-features leak is closed, and the dead `decimal-bigdecimal` feature is gone (#421)
+
+`cratestack-core` declared `default = ["decimal-rust-decimal"]`, but none of its ~27 internal dependency edges, nor the `cratestack-pg → cratestack-sqlx` / `cratestack-sqlite → cratestack-rusqlite` facade-to-runtime edges, set `default-features = false`, so that default was force-enabled workspace-wide regardless of what a consumer explicitly asked for. `default-features = false` is now set at the workspace-dependency site for `cratestack-core`, `cratestack-sqlx`, and `cratestack-rusqlite` (Cargo requires the override there, not per-member), with every plain `cratestack-core.workspace = true` edge re-enabling `decimal-rust-decimal` explicitly, since it's currently the only backend `cratestack-core` can compile with at all. Closing the leak also surfaced a real, previously-unreachable gap: `cratestack-sqlx`'s query-builder support code binds `cratestack_core::Decimal` unconditionally, so `cratestack-pg --no-default-features --features postgres` alone would have failed to compile without also forwarding `cratestack-sqlx/decimal-rust-decimal` — fixed in the same change.
+
+Alongside this, the `decimal-bigdecimal` feature — reserved but never implemented, and an unconditional `compile_error!` if enabled — is removed rather than left as a no-op trap. A new `.ci/feature-matrix.sh`, wired into `just feature-matrix` and a CI job, checks every facade with its own decimal toggle (pg, sqlite, sql, sqlx, rusqlite, api, cli) under both its default and a narrowed `--no-default-features` selection, plus the wasm32-only backend paths. **Breaking** for anyone relying on the previous implicit default: a `--no-default-features` consumer of `cratestack-core`/`-sqlx`/`-rusqlite` must now request `decimal-rust-decimal` explicitly. This addresses part of #421 — removing rather than implementing an alternative backend means a consumer still can't select a non-default decimal backend, so the issue remains open.
+
+### `cratestack-client-rust`: `reqwest::Error` no longer leaks through the public error type (#425) — breaking
+
+`ClientError::Transport` previously wrapped `reqwest::Error` directly via `#[from]`, exposing a third-party error type in a public enum's match arm. `ClientError::Transport`/`RpcClientError::Transport` now wrap a new opaque `TransportError` instead, with `reqwest_error()`/`into_source()` accessors and `std::error::Error::source()` wired through so chain-walking still reaches the original `reqwest::Error`. `ClientError`, `RpcClientError`, and `OpKind` are now `#[non_exhaustive]`, so future variants don't break downstream exhaustive matches — `cratestack-client-flutter`'s conversion match needed a wildcard arm to keep compiling. `ExtensionKind` was deliberately left exhaustive: its own doc comment calls it "a closed list by design," and a first pass that added `#[non_exhaustive]` there was reverted after review, since it would have forced silent fallback arms into safety-critical internal matches (feature gating, DDL mapping).
+
+### sqlx: unique-violation conflicts and the read-policy SQL contract
+
+Single-row `create`/`update` operations that hit a unique-constraint violation returned a generic 500 instead of a 409 Conflict; fixed via a new `CoolError::ConflictTyped(DbErrorInfo)` variant that still carries the SQLSTATE and constraint name the existing `db_sqlstate()`/`db_constraint()` accessors depend on (#414). Separately, `render_read_policy_sql` now unconditionally wraps its output in a self-contained parenthesized group, matching the contract `push_action_policy_query` already committed to in 0.7.2 (#410) — described by its own commit as a latent-hazard fix rather than a live exploit, since both real call sites already wrapped defensively, but it closes the door on a future call site reintroducing an operator-precedence authorization bypass (#428).
+
+### CI and test-infrastructure catch-up
+
+A blocking `tests-redis` job now runs `cratestack-redis`'s test suite against a real Redis via testcontainers, mirroring the existing Postgres pattern with its own `CRATESTACK_REQUIRE_REDIS` guard (#418). CI also gained a `cargo check --target wasm32-unknown-unknown` step for `cratestack-sqlite`, a wasm32 build of the embedded-browser-vite example, and a `typescript-verify` job that generates and `tsc`-checks both REST and RPC TypeScript fixtures (#419).
+
+`generated_routes_emit_tracing_events`, flaky enough to need a documented 3x CI retry, turned out to be a real bug: `init_tracing()` called `tracing::subscriber::set_default()`, which only installs a thread-local dispatcher on the one thread running the `std::sync::Once` closure, so every other worker thread spawned by `cargo test`'s multi-threaded harness fell back to `NoSubscriber` and silently dropped events. Switching to `set_global_default()` fixed it for real, and the CI retry loop is removed (#417). A trybuild fixture nominally testing malformed-policy diagnostics turned out to contain no `@@allow`/`@@deny` at all and is replaced with a genuinely malformed policy predicate (#420). Separately, the committed `examples/flutter-riverpod` client was regenerated after its templates changed in 0.7.5 but the fixture itself hadn't been, leaving `generate-dart --check` red on `main` since 2026-08-06 (#470).
+
+### Docs: proposals for four decision-blocked issues (#469)
+
+One design note each for #413, #415, #422, and #426 — confirmed defects that can't be implemented until a maintainer makes a call an agent has no standing to make. Docs only, no code changes.
+
+## 0.7.7 (2026-08-08)
+
+### `RequestAuthorizer::authorize` becomes async (#453) (#454) — breaking
+
+`cratestack-client-rust`'s `RequestAuthorizer` trait had a synchronous `authorize` method, unusable for a real credential provider — an OAuth2 client-credentials token with a refresh-on-expiry cache, for instance, needs an HTTP call on a cache miss. The only workarounds were `block_on` (panics or deadlocks depending on the runtime) or pre-fetching and stashing a token, which reintroduces the expiry race the cache existed to avoid.
+
+`authorize` is now `async fn`, via `#[async_trait]` rather than a bare AFIT, because both `CratestackClient::with_request_authorizer` and `CratestackGrpcClient::with_request_authorizer` store the authorizer behind `Arc<dyn RequestAuthorizer>` and native AFIT isn't object-safe — the same shape `cratestack_core::audit::AuditSink` already uses. **Breaking:** every implementor must change `authorize` to `async fn` and add `#[async_trait::async_trait]` to the impl block. This release updates every in-workspace implementor and the README's sample impl; external code implementing the trait needs the same change.
+
+### TypeScript client: `Decimal` model fields now generate valid TypeScript (#456) (#455)
+
+`ts_type()` in `cratestack-client-typescript` had no `Decimal` arm, so a model field typed `Decimal` fell through to the catch-all and was emitted verbatim as a TypeScript type name nothing declares — generation reported success, and the failure only surfaced later at `tsc` as `TS2304: Cannot find name 'Decimal'`, once per field. Fixed by mapping `Decimal` to `string`, matching the two sibling call sites already in the same crate. The new regression test asserts the emitted annotation itself and was verified against a consumer schema with three `Decimal` fields, which now passes `tsc --noEmit` with zero `TS2304` where it previously failed with six.
+
+### Docs correction: half-landed-release recovery advice
+
+The recovery guidance added in 0.7.6 (#450) claimed a half-landed release could be recovered by fixing the cause and re-running the failed jobs against the same tag. That's only true for a transient failure: every publish job checks out the release tag, so a fix merged to `main` afterward is absent from a re-run, and `workflow_dispatch` only rebuilds binaries — it never touches crates.io or npm. Recovering v0.7.5 hit exactly this, and was instead recovered by releasing v0.7.6; `docs/tooling/npm-publishing.md` now says so (#452).
+
+## 0.7.6 (2026-08-07)
+
+### Model responses no longer round-trip through `serde_json::Value` before the wire codec (#430, #449)
+
+Every list/detail response row was projected through `serde_json::to_value` before the real wire codec (`JsonCodec`/`CborCodec`) touched it. `serde_json::Value` always reports itself as human-readable, so any field whose `Serialize` impl branches on that hint took the human-readable path unconditionally — for `Uuid`, that meant the generated Rust client's `Uuid::deserialize` ran its bytes-branch against a text string under the default CBOR wire format and failed on every model with a `Uuid` column. This was the reason `policy_db.rs::db_backed_policy_enforcement` had been `#[ignore]`d.
+
+The fix introduces `cratestack_axum::ProjectedValue`, a format-preserving intermediate that keeps each scalar leaf behind a type-erased `erased_serde::Serialize` object instead of pre-serializing to JSON, deferring the human-readable decision to the actual target serializer chosen per request via content negotiation. Its `Null` variant calls `serialize_none()` directly, which also retires a documented workaround that stripped null map entries to dodge a separate `minicbor-serde` quirk — that old workaround had never been applied to nullable to-one relation `include`s, so this incidentally fixes a second, latent CBOR-null bug there too. Landing this also surfaced several of `db_backed_policy_enforcement`'s own latent bugs (id-reuse across seeded rows, unspecified tie-break ordering, a stale expectation, a wrong status code); those are fixed and the test now runs for real in CI.
+
+### Required auth fields can no longer silently resolve to NULL (#431, #448)
+
+A `@default(auth().field)` backed by a *required* field in the schema's `auth` block was, on a missing value in the actual auth context, silently written as NULL rather than rejected — a real policy bypass for tenant-scoping fields, since SQL's `NULL != X` evaluates to NULL, not true. `resolve_default_value()` now tracks the auth block's declared arity for the field via a new `auth_field_required` flag, and returns `CoolError::Validation` when a required auth field is absent, before policy evaluation runs. A follow-up commit fixed a regression the initial version introduced — the required-field check had jumped ahead of the existing anonymous-caller check, turning an unauthenticated request's expected 403 into a 422 — and adds no-DB unit coverage of all branches.
+
+### Parser rejects `type`/`enum`/`model` names that collide once normalized (#429, #447)
+
+Declarations of different kinds whose names collided only after `to_snake_case` normalization were previously accepted silently, even though `type`/`enum` land in the same generated `types` module and `model` in a `models` module, both re-exported at the parent scope — a real collision there generates conflicting Rust symbols. The fix reuses the `find_snake_case_collision` helper from 0.7.2 (#408) to reject the three kind-pairs that actually share generated symbols. A follow-up commit narrowed an over-eager first pass that also rejected `mixin` and `auth` against every other kind: neither a mixin's own name nor an auth block's name is ever emitted as a generated identifier, so reuse there is legitimate.
+
+### CI: idempotent npm publishes, pinned `wasm-opt` for releases (#450)
+
+The v0.7.5 release run half-landed: crates.io and two npm packages published at 0.7.5 while every other npm package was stranded at 0.7.4, and re-running the workflow couldn't recover it. Two causes: npm's retry to Sigstore's Rekor log can race its own already-landed write and get back a 409 that `sigstore-js` surfaces as fatal rather than benign; and `wasm-pack` only downloads its own pinned `binaryen` when no `wasm-opt` is already on `PATH`, leaving an unpinned network fetch on the release build's critical path. Neither publish job had re-run tolerance either — a bare `npm publish` fails outright on an already-published version. All five `npm publish` call sites now route through `.github/scripts/npm-publish.sh`, which retries the Sigstore 409 with backoff and treats "already published" as success; both the release and CI wasm jobs now pre-install a pinned `binaryen` onto `PATH` ahead of `wasm-pack`.
+
+### Docs: three facades documented, vestigial studio-generator shim removed (#427, #446)
+
+`CLAUDE.md`'s facade section is updated from describing two facades to all three (`cratestack-pg`, `cratestack-api`, `cratestack-sqlite`), and `crates/cratestack-studio-generator` — a one-line re-export of `cratestack-studio::eject` that no workspace member depended on — is deleted, along with its references from the root `Cargo.toml`, `README.md`, and CI.
+
+## 0.7.5 (2026-08-06)
+
+### Dart Riverpod preset: fix `flutter analyze` failures on no-model and paged-first-model schemas (#443, #444)
+
+`generate-dart --preset riverpod`'s generated `test/<package>_test.dart` imported `flutter_riverpod`/`flutter_test` unconditionally, but the only code using them was gated on `override_proof`, which is `None` whenever the schema has no models (a `provider = "none"` procedures-only service) or its first model in schema order is paged. For that legitimate schema shape both imports went unused, and the generated package's own lint config enables `unused_import`, so `flutter analyze` failed unconditionally. The fix gates the `flutter_riverpod` import the same way the RPC template's `fast_immutable_collections` import already was, and replaces the top-level bare `assert(...)` query-parameter checks with a real executed `test(...)` case. Confirmed against a real no-model service: `flutter analyze` went from 2 `unused_import` warnings to 0. None of the existing riverpod-preset snapshot fixtures exercised this shape, which is how it went uncaught; the three affected snapshots were refreshed.
+
+Workspace bumped to 0.7.5 (#445) — version-literal and lockfile updates only.
+
+## 0.7.4 (2026-08-05)
+
+### `cratestack-mock-wiremock`: WireMock stubs generated from schema procedures (#438, #439)
+
+A new crate, `cratestack-mock-wiremock`, and a `cratestack generate-wiremock` CLI subcommand derive WireMock stub mappings directly from a `.cstack` schema's procedures, so integration/e2e tests can run against a mock backend whose wire contract cannot silently drift from the real one. v1 scope is deliberately narrow: happy-path stubs for `procedure`/`mutation procedure` under `transport rest`/`rpc`, matched on method and path only — model CRUD routes, `transport grpc`, error-case stubs, and auth emulation are deferred. The crate was validated end-to-end against a real 1900-line, 40-procedure schema, producing 40 correct mapping files and a clean `--check` rerun.
+
+Two review findings landed before merge. The RPC-transport stub built its `urlPath` as `/rpc/<name>` instead of the actual `/rpc/procedure.<name>` the RPC dispatch generator emits — every RPC-transport stub would have silently never matched a real client's request. And the cycle guard for synthesizing stub payload values only checked for a direct repeat of the *same* type name, so a mutual cycle like `type A { b: B[] }` / `type B { a: A }` raised a false unbreakable-cycle error even though `{ "b": [] }` is a perfectly finite value. Both are fixed with regression tests.
+
+### `cratestack-client-rust`: stop forcing `aws-lc-rs` onto every consumer (#440, #441)
+
+0.7.3's reqwest dependency requested the `rustls` feature, which on reqwest 0.13 unconditionally selects `aws-lc-rs` as the TLS crypto provider. Because `cratestack-pg` depends on `cratestack-client-rust` unconditionally, this forced `aws-lc-rs` onto every workspace depending on `cratestack` at all — breaking a from-scratch musl/scratch build (`aws-lc-rs` needs a cross C toolchain; `ring` doesn't) and tripping any `cargo-deny` policy banning `aws-lc-rs`. The fix switches to reqwest's `rustls-no-provider` feature, which keeps the rustls-backed stack but drops the forced provider selection; because that feature panics at `Client::build()` time if no provider was installed, `CratestackClient::new` and Studio's `ApiSource::new` now install a `ring` fallback provider (idempotent, a no-op if a consumer already installed one). `cargo tree -i aws-lc-rs` now shows no match anywhere in the workspace.
+
+Workspace bumped to 0.7.4 (#442) — no user-facing content beyond the version number.
+
+## 0.7.3 (2026-08-05)
+
+### `cratestack-client-rust`: unpin `reqwest` to 0.13, off the dead `rustls-tls` feature name (#435) (#436)
+
+The workspace's `reqwest` entry requested `rustls-tls`, a 0.12-only feature name (0.13 renamed it to `rustls`/`rustls-no-provider`), so even though the bare version requirement looked 0.13-permissive, Cargo could only satisfy the edge with the newest 0.12.x release still carrying the old name. Any downstream workspace also depending on reqwest 0.13 directly ended up with two live, incompatible `reqwest` instances in one dependency graph — confirmed against a real downstream `Cargo.lock` — which silently defeated `CratestackClient::with_http_client`'s dependency-injection point, since a caller's 0.13-typed client didn't unify with this crate's 0.12-typed one.
+
+The fix pins to `reqwest = "0.13"` with `rustls` (0.13's rename, which auto-installs the `aws-lc-rs` provider — later replaced in 0.7.4) plus the newly-required `query` feature, since 0.13 splits `RequestBuilder::query()` behind it and `cratestack-studio` calls it directly. Closes #435.
+
+## 0.7.2 (2026-08-05)
+
+### Extensions: a declarative surface for opt-in capabilities (epic #152 done)
+
+`.cstack` schemas can now declare `extension rate_limit { }` / `extension pgvector { }` as a new top-level block, recorded on `Schema.declared_extensions` (#153). On its own this is declare-only, but it feeds a shared compile-time gate: all three entry macros check every declared extension against the compiling crate's own Cargo features and fail with a `compile_error!` naming the extension and the feature to enable, instead of silently doing nothing when declaration and feature disagree (#161). `include_embedded_schema!` also rejects `extension pgvector { }` unconditionally, since pgvector has no embedded equivalent.
+
+`rate_limit` is the first extension built on that gate: a bare `@no_rate_limit` procedure attribute, valid only when the schema declares `extension rate_limit { }`, flips a procedure's `rate_limited_by_default` to `false` (#154) — deliberately narrower than the epic's own proposal, since `cratestack-axum`'s existing `RateLimitLayer`/`RateLimitConfig` stay unconditionally compiled, with no numeric config or store-selection changes.
+
+### pgvector: vector columns, ANN indexes, and distance queries (#155, #156, #163)
+
+`pgvector` goes from a declared name to a working scalar type across three phases. Phase 1 adds `Vector(n)` as a parametric scalar, emits `CREATE EXTENSION IF NOT EXISTS vector;` DDL, and wires `SqlValue::Vector`/`NullVector` through the sqlx encode/decode boundary behind a new `pgvector` Cargo feature; `include_embedded_schema!` rejects `Vector(n)` outright (#155). Phase 2 generalizes `@@index([...], using: ..., opclass: "...")` — a general-purpose model attribute, not pgvector-specific — so index DDL can request `ivfflat`/`hnsw` in place of the implicit btree, with existing `@unique`-derived indexes still rendering byte-identical DDL to before (#156). Finally, `FieldRef::distance_to(metric, query_vector)` gives `.asc()`/`.desc()` ordering and threshold filtering, with `VectorMetric::{L2,Cosine,InnerProduct}` mapping 1:1 to pgvector's operators (#163).
+
+### Migration baselining: adopt an existing live database (epic #202 done)
+
+`cratestack migrate` gains the ability to point at an already-running Postgres database and adopt it, closing the gap where `migrate diff` against a missing snapshot always diffed against an empty schema and emitted a full `CREATE TABLE` for tables that already existed. Phase A extracts the `Schema -> IR` projection step into a public `project()`/`Projections` seam, a pure refactor that Phase B plugs into (#203). Phase B adds `cratestack-migrate::introspect::postgres`, gated behind an opt-in `postgres-introspect` feature, which queries a live database's `information_schema`/`pg_catalog` state and produces the same `Projections` shape `project()` produces from a parsed schema — anything it can't map is reported as `UnmappedColumn` rather than guessed at (#204). Phase C wires both into `cratestack migrate baseline`: introspect, diff against the authored schema for a drift report (never a hard failure by default), write the introspected snapshot, and record a synthetic row in `cratestack_migrations` (#205).
+
+**Breaking:** the migration snapshot format now stores `Projections` (the IR) instead of a `Schema`, bumping the on-disk snapshot format version from 1 to 2 — a baseline run has no `Schema` to write, and a drifted database's snapshot needs to reflect live reality rather than the aspirational schema.
+
+### `@@subscribe`: SSE subscriptions for RPC transport (#183, #390)
+
+A spike into whether the existing SSE streaming machinery could cover one-way `@@subscribe` model-event feeds — previously locked to a still-unimplemented WebSocket-only design — concluded yes: the cancellation objection that ruled out SSE for arbitrary streaming doesn't hold for a fire-and-forget, no-replay, one-subscription-per-connection feed (#183). `@@subscribe` — a bare model attribute requiring `@@emit(...)` and `transport rpc` — now emits `OpKind::Subscription`, dispatched at `GET /rpc/subscribe/{op_id}` through the existing outbox-drain pipeline. Backpressure is a bounded per-subscription channel that closes on overflow, surfaced as a terminal SSE error event (#390).
+
+### gRPC: procedures and server-streaming (#208)
+
+`procedure` declarations now reach the tonic gRPC service: unary procedures get a `UnaryService` method and list-arity procedures get a `ServerStreamingService` method, both dispatched through the same handler function — and therefore the same policy/audit pipeline — that REST and RPC already call.
+
+### Correctness fixes: JSON columns, keyword-named fields, and route derivation
+
+Both database backends persisted `Json`-typed columns through `cratestack_core::Value`'s own externally-tagged `Serialize`/`Deserialize` instead of plain JSON, so an empty map landed on disk as `{"Map": {}}` — breaking any read of jsonb the framework didn't write itself, and native `jsonb`/`->`/`->>` queries. Fixed on Postgres via a new `cratestack_sqlx::Json<T>` newtype (#162), then equivalently on the embedded rusqlite backend (#395).
+
+A field named after a Rust keyword (`match`, `type`, `ref`, `move`, ...) emitted uncompilable code in every generated struct, decode impl, and client — fixed by funneling Rust-identifier emission through a shared `ident()` helper that emits raw-identifier form where one exists, and rejecting `self`/`Self`/`super`/`crate` at schema-parse time (#398).
+
+The server's real Axum route derivation and the TypeScript/Dart client generators' route derivation were three independently-maintained algorithms that agreed on plain PascalCase names but diverged on any name containing a literal underscore, producing client routes the server never registered — unified onto a single `cratestack-core::route_naming` module (#345). Separately, the TypeScript `swr` preset's per-model file name could collide for two distinct, parser-valid model names, silently clobbering one file's output with the other's; generation now rejects that up front (#344).
+
+### Parser and policy correctness
+
+Field names were deduplicated on the raw `.cstack` name rather than `to_snake_case`, so two fields normalizing to the same SQL column compiled to valid Rust but emitted a table with a duplicate column and no error; and reserved-identifier rejection only ran at field call sites, so a colliding enum name failed later as an opaque parser error at the macro invocation. Both are now checked at every identifier site (#408).
+
+`@allow(true)`/`@deny(true)` — a bare boolean literal as a procedure-level policy clause — failed to parse, falling through to field resolution and erroring as an unknown input field; a new `ProcedurePredicate::Literal(bool)` variant gives schema authors a direct way to mark a procedure public (#405, #406). Separately, `push_action_policy_query` wrapped its emitted SQL in parentheses only on its `@@deny`-present branch, leaving the other branch's boolean grouping dependent on the caller; both branches now wrap unconditionally. Fixing this also revived the `policy_db*` integration test suite, which had sat entirely `#[ignore]`d and run nowhere in CI (#410).
+
+### Small fixes, CI, and release plumbing
+
+`cratestack-cli` gains a working `--version`/`-V` flag (#201). `cargo deny check` is now a real gate — CI previously caught its non-zero exit, logged it as expected, and continued — with every existing license/advisory hit resolved on its merits (#409). `just bump` previously replaced every occurrence of the bare version literal across every `Cargo.toml`, which also rewrote unrelated third-party dependencies pinned to the same version number; the 0.7.1 → 0.7.2 bump itself broke this way, turning `serde_urlencoded = "0.7.1"` into a nonexistent `"0.7.2"`, and the replace is now scoped to actual `version =` keys (#432).
+
+## 0.7.1 (2026-08-03)
+
+A follow-up fix to 0.7.0's `FindMany<Model>`: `include_client_schema!` never generated the `PostFindManyInput`-style types the server composer did, so any schema using `FindMany<Model>` as a procedure argument failed Rust HTTP client generation with "cannot find type." Fixed by splitting the shared type generation out of the server-only query-builder wrapper, with a new regression test proving the wire format round-trips through the client-generated types, not just that the macro compiles (#381).
+
+## 0.7.0 (2026-08-03)
+
+### `FindMany<Model>`: built-in search-with-filters procedure argument (#371)
+
+Procedures gain a built-in generic argument type for search-with-filters, following up on `PageInput` (0.6.7). A procedure can now declare `searchPosts(query: FindMany<Post>, page: PageInput): Page<Post>` — filtering/sorting and pagination stay two independent, orthogonal arguments. It's restricted to procedure-argument position, and `Model` must be a declared model rather than a `type` block, since filtering needs a real table's columns to validate field names against.
+
+The shape went through a real redesign mid-implementation: the first cut reused the existing `list` route's flat string-DSL (`{ where: String?, orderBy: String? }`). That was replaced before release with structured, per-model typed filters across all three generators — Rust server (`PostWhere`/`PostSortField`/`PostFindManyInput`, built on a shared `FieldFilterInput<V>`), TypeScript, and Dart (default/riverpod) — since a caller-facing query language is worth getting typed once rather than passing through a string. `orderBy` is a `Vec<OrderByClause>` rather than a single object, since neither `serde_json::Map` nor JS object key order is guaranteed to preserve multi-key sort order.
+
+Server-side codegen adds one `build_<model>_query_from_find_many` function per model, reusing the model's own already-generated list-route filter/sort machinery, so a `FindMany<Post>` argument validates against exactly the same allowed fields a REST `?where=` on `/posts` already does. The client-side `FindMany` type is deliberately non-generic across Rust/TypeScript/Dart, since the wire shape never depends on the model. Two real bugs surfaced only by running generated output through real tooling: `SearchPostsArgs` decoding via a now-nonexistent bare `FindMany.fromWire`, and a generated `models/post.dart` missing its `shared_types.dart` import.
+
+Also, `cratestack-sqlite`'s README now documents the `codec-json` feature, which had gone undocumented since 0.6.8.
+
+## 0.6.8 (2026-08-03)
+
+Release pipeline and dependency-maintenance patch, no framework or generated-code changes. `release-cli.yml`'s five `publish-npm-*` jobs pinned `npm@^11` instead of always installing latest, after npm 12 changed `npm pack --dry-run --json`'s output shape and broke `@napi-rs/cli`'s pack detection (#369); `prepare-release.yml`'s Node version was bumped from 20 to 24 to match `ci.yml`, after an `undici`/Node version mismatch broke `swr_hooks_invalidation`'s vitest run on that job specifically (#377).
+
+TypeScript, vitest, biome (1→2), turbo, and the vscode extension's dependencies move forward across the pnpm workspace, along with client codegen templates and example projects — each bump verified with a real build/typecheck/test run; two pins were deliberately held back after checking against the real toolchain (Dart `riverpod`'s analyzer ceiling, `embedded-browser-webpack`'s TypeScript pin against `ts-loader` 9.6.2). Also fixes #358: the `riverpod` preset's generated `build_runner` cap was `<2.15.0`, but the actual break is in 2.15.2; the cap is now `<2.15.2` (#364). A prior wasm32 import fix to `embedded-browser-vite`'s `mod wasm` block had never been copied to three sibling example crates carrying the identical block, so all three were silently failing to build for wasm32 (#373). Five further commits bring READMEs, example indexes, and CLI docs back in sync with shipped code, following an audit that found version pins as stale as 0.2.2 (#372–#376).
+
+## 0.6.7 (2026-08-03)
+
+### Embedded backend gets real pagination; new built-in `PageInput` (#363, #366)
+
+`@@paged` shapes a generated `list` route's response envelope on REST/RPC/gRPC, but `include_embedded_schema!` generates no routes at all, so a `@@paged` model there previously just compiled to nothing, silently. The first fix attempt rejected `@@paged` on embedded schemas outright with a `compile_error!`, mirroring the existing `@@materialized`-on-embedded guard — but per the maintainer's pushback on that approach ("this is our software, what's blocking us?", #366), rejection papered over a gap that `cratestack-rusqlite` already had the pieces to close.
+
+`FindMany` (on both models and views) now has `.paginate(PageInput) -> Page<M>` and `.paginate_in_tx`, backed by a new `render_count` and a real `COUNT(*)` run inside the same connection borrow as the paginated `SELECT`, so the count and the page it describes can't be split by a concurrent write. It's available unconditionally on every model, the same "no attribute wiring needed" treatment `@@audit`/`@@emit` already get.
+
+Alongside this, a built-in `PageInput` procedure-argument type (`{ limit: Int?, offset: Int? }`) fills a gap on the request side that `Page<T>`/`PageInfo` already covered on the response side. `PageInput::resolve(max_limit)` applies the same `MAX_LIST_LIMIT` clamp rule generated `list` routes already use, and is wired through the Rust server and the Rust/TypeScript/Dart clients. gRPC's existing `@@paged`-independent behavior was confirmed already correct and left unchanged.
+
+### Release and CI plumbing
+
+Three small fixes: the `publish-npm-cbor-node` release job failed `tsc` on its first real OIDC publish attempt because `napi artifacts` only copies `.node` binaries, not `native.mjs`/`native.d.mts`, and the job never built `@cratestack/ts-types` as its own step (#362). The same PR also fixed `prepare-release.yml`'s `git add` list, the root cause of 0.6.6's bump PR landing with the lockfile bumped but the cbor family's `package.json`s left stale.
+
+A new `install-cratestack-cli` composite GitHub Action downloads a prebuilt `cratestack-cli` binary for the runner's OS/arch, verifies its SHA-256, and adds it to `PATH` with no Rust toolchain required (#365). Getting it working against the real 0.6.6 release surfaced two platform-specific bugs in the same PR: a `grep -m1` piped from `curl` under `set -o pipefail` could SIGPIPE-abort the script, fixed by buffering and parsing with `jq`; and Windows' Git Bash `tar` can't read `.zip` archives, fixed by branching to PowerShell's `Expand-Archive` on Windows.
+
+Finally, `examples/react-vite-daisyui`'s `tsconfig.json` was missing `allowImportingTsExtensions`, so `npm run typecheck` failed with TS5097 on its own `.ts`/`.tsx`-suffixed sibling imports (#367).
+
+## 0.6.6 (2026-08-03)
+
+Release-and-CI plumbing only, hardening the `@cratestack/cbor-node` npm publish pipeline: three fixes land back-to-back, working through the still-unproven release path one failure at a time. The Windows leg of the 0.6.5 release failed because the napi build step's multi-line `run:` used `\` line continuations, fine under bash but parsed by PowerShell as a unary `--` operator; `shell: bash` is now pinned on that step (#356). That surfaced a chain of pipeline gaps that had never been exercised end-to-end — `build-cbor-node`'s job gate excluded `workflow_dispatch`, `publish-npm-cbor-node` was missing the `napi create-npm-dirs`/`napi artifacts` scaffolding steps its own `prepublishOnly` hook depends on, and its artifact download switched from a flat layout to per-platform subdirectories to match how `napi artifacts` matches `.node` files to targets. Separately, `cratestack-cbor`/`-cbor-node`/`-cbor-web`'s `package.json` versions had been stuck at 0.5.2, which — because pnpm's `link-workspace-packages=true` only symlinks a workspace dependency when the pinned semver matches — silently resolved their `@cratestack/ts-types` dependency to the real published 0.5.2 package instead of local workspace source, so all three packages had quietly been building against three-versions-stale types (#357).
+
+The same lockstep-version gap then broke the 0.6.6 bump itself: `prepare-release.yml`'s bump-PR `git add` list still only staged the original 11 api-family `package.json` files, so `just bump` wrote the cbor version bump to disk but git never committed it, breaking every JS CI job with `ERR_PNPM_OUTDATED_LOCKFILE`. Fixed by adding the cbor family to this workflow's own `git add` list (#360). No framework or generated-code behavior changed in this release.
+
+## 0.6.5 (2026-08-03)
+
+### `cratestack-api`: a third facade, and `db = None` genuinely drops `sqlx` (epic #326 done)
+
+Epic #326's last story lands: `cratestack-pg` gains a default-on `postgres` Cargo feature gating `sqlx`/`cratestack-sqlx`, so a `db = None`-only consumer can `default-features = false` and have `sqlx` genuinely absent from `cargo tree`, not just unused. `rpc-procedures`, `rpc-batch`, `rpc-streaming`, and `rpc-batch-debounce` move off their old `connect_lazy(&url)` workaround onto real `datasource { provider = "none" }` + `db = None` schemas (#329).
+
+A direct follow-up (#347, landed as #350) goes further: `crates/cratestack-api` is a new, fully separate third facade — following `cratestack-pg`'s and `cratestack-sqlite`'s exact structural pattern — that never depends on `cratestack-sqlx` under any feature. A new compile-time guard, `guard_server_postgres_backend`, turns `db = Postgres` under this sqlx-less facade into one clear `compile_error!` instead of a wall of unrelated resolution errors. `examples/no-database-verification-api` proves the absence with a real `cargo tree` check, and all four `db = None` examples migrate onto the new crate; `cratestack-pg` + `default-features = false` keeps working as the pre-existing alternative path.
+
+### Native Rust gRPC client for `transport grpc` schemas (#209)
+
+`include_client_schema!` now generates a typed, tonic-based Rust client for `transport grpc` schemas — one method per model CRUD verb, matching the surface the server runtime and the gRPC-Web TypeScript client already expose. The compile-time guard that unconditionally rejected client-side gRPC codegen splits into `guard_client_grpc_transport` (now feature-gated) and `guard_embedded_grpc_transport` (still an unconditional reject). `cratestack-client-rust` gains an optional `grpc` feature and a `CratestackGrpcClient<T>` runtime with its own `RequestAuthorizer`/schema-sha handling and a deliberate, documented reimplementation of `cratestack-grpc`'s canonicalization, kept byte-identical to the server side without pulling axum/tonic-web into client-only binaries.
+
+### TypeScript client: query builders and Node ESM correctness
+
+RPC transport's generated list/`use` hooks previously took only an untyped `Record<string, unknown>`. A new `CratestackRpcListQuery`/`toRpcListInput` pair — the RPC counterpart of REST's existing query-builder pair — gives it the same typed shape (#333, landed as #352).
+
+More seriously: `CratestackFetchQuery` typed `where`/`filters`/`orFilters` as JSON-ish objects, and its fallback `JSON.stringify()`'d them into the URL — but the real server grammar (`FilterExpressionParser` in `cratestack-axum`) is a flat-text DSL, not JSON, so any caller populating these fields as documented got a hard 400 from a real server, with zero test coverage catching it. Fixed to mirror the Dart client's convention: `where`/`or` are now pre-built DSL strings, and `filters` is a flat `Record<string, string>`. **This is a breaking change to `CratestackFetchQuery`'s public shape**, fixed directly per this repo's hard-cutover convention (#351). A new test runs the generated client under real Node and feeds the captured request URL through the real `cratestack-axum` parser.
+
+A third fix: every relative import/export in the TypeScript templates was extensionless, which resolves under a bundler but fails under plain Node's native ESM resolver with `ERR_MODULE_NOT_FOUND` — fixed at the template level and in the `swr` preset's dynamically-assembled cross-file imports (#315, landed as #343).
+
+### Dart client: riverpod query forwarding and analyzer cleanliness
+
+REST's generated list/get `@riverpod` providers now accept optional query objects and forward them to the underlying API calls, instead of always calling with zero arguments. This required hand-rolled `operator ==`/`hashCode` on those query classes — Riverpod's family providers dedupe by argument *value* equality, and a freshly-constructed-but-equal query previously never hit the cache. RPC's list provider forwards an untyped `IMap<String, Object?>` bag rather than a typed query builder, a documented decision to expose the existing untyped RPC contract now rather than design a full typed one (#331, landed as #349). Two pre-existing `flutter analyze` info-level findings are also fixed across every generated package, bringing default-severity `flutter analyze` to zero issues everywhere (#308, landed as #346).
+
+### FIPS crypto: false success made impossible
+
+`install_fips_crypto_provider()` returned `Ok(())` without installing any crypto provider, and the `aws-lc-rs` feature it gates enabled nothing — a false assurance in a compliance-facing API. Wiring a real provider needs the TLS backend to become a genuine per-crate choice first, which is out of scope here; until that lands, enabling the feature is now a hard `compile_error!` instead of a silent no-op (#334, landed as #341).
+
+### Plumbing
+
+The `@cratestack/cbor`/`cbor-node`/`cbor-web` family (shipped earlier but never released to npm) gets its release wiring: four new jobs in `release-cli.yml` build and publish the napi-rs native addon, the wasm-bindgen browser build, and the pure-TS umbrella in dependency order (#342). The gRPC e2e test added alongside the new Rust client was breaking every default `cargo test --workspace` run because nothing started its target server first; it now skips quietly on connection failure (#353). CHANGELOG.md also gained its 0.5.0–0.6.4 backfill in this range (#339).
+
+## 0.6.4 (2026-08-02)
+
+### Dart Riverpod preset: build_runner integration + example app (epic #297 done)
+
+`generate-dart` gains an opt-in `--run-build-runner` flag that shells out to
+`dart run build_runner build --delete-conflicting-outputs` after
+generation, with a clear "no Dart SDK found on `PATH`" error (naming the
+manual fallback command) rather than a panic or a silent no-op when the
+tool isn't there. A real Flutter app, `examples/flutter-riverpod`, consumes
+a `--preset riverpod` client with zero hand-written providers — the
+epic's own success metric — overriding the adapter provider to point at a
+real local server. This is the fourth and final story of epic #297,
+closing it (#303).
+
+### `datasource none`: procedures-only servers without a database (epic #326, in progress)
+
+`.cstack` schemas can now declare `datasource { provider = "none" }`,
+rejecting any `model` block in the same schema, and `include_server_schema!`
+cross-checks this against its own `db` argument for the first time — until
+now `db = Postgres` was the macro's only accepted value and the argument
+was silently discarded rather than checked against anything. `db = None`
+then generates a genuinely `PgPool`-free `Cratestack`/router — not an
+unused parameter or an always-`None` `Option<PgPool>`, a structurally
+different generated type, with `ModelRouterState` and the event module
+omitted entirely rather than compiled in as dead code. A real integration
+test round-trips a procedure call over HTTP with zero `sqlx` import
+anywhere in its own setup (#327, #335). `sqlx` Cargo-feature-gating and
+migrating the framework's own examples off their `connect_lazy` workaround
+are tracked separately and still open (#329).
+
+### Dart Riverpod preset: real equality for generated data classes
+
+Every `riverpod`-preset generated Dart data class (models, `Create<M>Input`/
+`Update<M>Input`, procedure argument wrapper types) now gets real
+`operator ==`/`hashCode`/`copyWith` via `dart_mappable`. Without this, a
+`@riverpod` "family" provider taking a generated class as its argument
+never settled — Riverpod dedupes family providers by argument *value*
+equality, and a freshly-constructed instance on every rebuild (an entirely
+ordinary pattern) never matched a prior instance by identity, so the
+provider restarted `AsyncLoading` forever. Reproduced live against a real
+server before the fix. Relation-list fields also switched to
+`fast_immutable_collections`' `IList<T>` in place of `List<T>` (#325, #336).
+
+## 0.6.3 (2026-08-02)
+
+Small follow-ups to the two client-preset epics landed in 0.6.1:
+
+* One `@riverpod` provider per operation for the Dart `riverpod` preset —
+  parameterized `Future` providers for reads, `AsyncNotifier` controllers
+  for writes — built by watching the preset's existing per-model DI layer
+  rather than reconstructing adapter access from scratch (#302).
+* TypeScript `swr` preset: a `@@paged` model's generated file was missing
+  its `Page`/`PageInfo` import, a real `tsc` failure (#318).
+* TypeScript REST client: widened the `SCHEMA_SHA256` constant's type to
+  `string` — with a real, non-empty schema hash baked in, TypeScript
+  inferred a literal type and flagged the runtime's own `=== ""` check as
+  having no possible overlap (#323).
+
+## 0.6.1 (2026-08-02)
+
+### TypeScript SWR preset
+
+A second, opinionated TypeScript client preset, `--preset swr`: one file
+per model with plain, framework-free async functions underneath and a
+`useSWR`/`useSWRMutation` hook per operation on top, so the functions stay
+usable from a script, a server action, or a test with zero React/SWR in
+the import graph. Cache invalidation follows an explicit, documented rule
+(create invalidates the list; update invalidates the list and the detail;
+delete invalidates the list and drops the detail) proven by a real test
+asserting exact refetch counts, not just that the code compiles. A real
+end-to-end example app, `examples/react-vite-swr`, demonstrates it against
+a live server with browser-observed cascading invalidation (#304, #305,
+#320). Also fixes a real duplicate-key collision in the *default*
+react-query preset's key object, surfaced while building the example
+(#319).
+
+### Dart Riverpod preset (started)
+
+First story of a new, parallel Dart preset: `--preset riverpod` fans
+generated output out to one file per model instead of a single monolithic
+`models.dart`/`apis.dart` (#301). Also closes a real, pre-existing gap —
+nothing in CI had ever run generated Dart through an actual Dart/Flutter
+toolchain before this; the existing snapshot tests only assert on
+generated *text*, which can't catch a missing import or an undefined
+symbol (#300).
+
+## 0.6.0 (2026-08-02)
+
+### `@cratestack/api` split into a 9-package family
+
+`@cratestack/api` is split into `ts-types`, `link-batch`, `link-logger`,
+`runtime-fetch`, `runtime-axios`, `validator-zod`, `validator-yup`,
+`adapter-tanstack-query`, and `adapter-rtk`, so a client that only needs
+types isn't forced to ship batching/logging/HTTP-adapter code it never
+calls. `@cratestack/api` itself becomes a backward-compatible re-export
+shim over the new packages (#265). A follow-up fixes `link-batch`
+silently dropping per-call headers/fetch overrides/codec choice when
+partitioning a batch — flushes are now grouped by transport signature
+instead of merged blindly (#273).
+
+### RPC streaming: genuine incremental delivery + a first-party CBOR codec family
+
+`@stream`-marked procedures now stream for real: the server encodes and
+flushes each item onto the HTTP body as it's produced instead of
+buffering the whole sequence before the first byte goes out, with a
+CBOR-tagged sentinel (tag 48900) as the final item on a mid-stream
+failure (#292, #294). The original design's mid-stream error mechanism (a
+trailing content-type chunk) turned out to be physically unrealizable
+over HTTP/browser `fetch` and was corrected before implementation, not
+after (#289). The generated TypeScript RPC client gets a matching
+`RpcStreamLink` chain and a hand-rolled CBOR-seq boundary scanner, tested
+against real wire bytes captured from the generated server rather than
+hand-built fixtures (#277, #299).
+
+Alongside this, a new first-party CBOR codec family —
+`@cratestack/cbor-node` (napi-rs), `@cratestack/cbor-web` (wasm-bindgen),
+and `@cratestack/cbor` (an umbrella package with conditional `node`/
+`browser`/default exports) — wraps the existing Rust `cratestack-codec-cbor`
+crate for both native Node and browser targets (#286, #287, #288, #291,
+#293).
+
+### Migrations: foreign keys, `onDelete`/`onUpdate`, unique indexes
+
+`@relation` fields now emit real `FOREIGN KEY` constraints (#260, #261),
+with `onDelete`/`onUpdate` actions declarable in the schema (#268), and
+model-level `@@unique([...])` now emits a real `CREATE UNIQUE INDEX`
+(#266).
+
+### Other fixes
+
+* Two `sqlx` fixes preserve SQLSTATE/constraint-name classification on
+  generated write queries and batch write queries, instead of collapsing
+  every constraint violation into a generic error.
+* Migration/DDL SQL is no longer split on literal `;` characters, which
+  broke on any statement containing one inside a string or comment.
+* Two macro-side fixes replace an exponential REST `orderBy` match-arm
+  enumeration with runtime relation-hop resolution (#279), and drop a
+  vestigial `Result` that was masking a real SQL-correctness gap (#280).
+
+## 0.5.2 (2026-08-02)
+
+Infra only: `npm publish` switched from long-lived tokens to OIDC trusted
+publishing — no user-facing change (#221).
+
+## 0.5.1 (2026-08-01)
+
+Test-only: adds a relation-connectivity regression fixture closing a gap
+left by the exponential-relation-codegen fix in 0.5.0 — no user-facing
+change (#257).
+
+## 0.5.0 (2026-08-01)
+
+**Breaking:** relation codegen for models with many interrelated `@relation`
+fields was exponential in the number of relations, making some real-world
+schemas fail to compile at all. Fixed to be linear (#253). Also drops
+stale version pins from example crates' path dependencies (#254).
+
+## 0.4.18 (2026-07-31)
+
+### Studio: Postgres row-keying fix, persistent audit log, EXPLAIN
+
+`Row` is documented as keyed by `.cstack` field name, and the UI, cursor
+pagination, relation-follow, and audit log all rely on that contract — but
+the Postgres data source keyed rows by raw snake_case column name instead.
+camelCase and snake_case coincide for single-word fields, which is why this
+went unnoticed; on a realistic schema, every multi-word field silently broke
+table rendering, pagination's "Next" button, relation follow, and the audit
+log's recorded PK. Fixed by aliasing each projected column to its field name.
+
+Also new: an opt-in persistent audit log (`[workspace] audit_file`, an
+append-only JSONL sidecar replayed on boot, replacing in-memory-only
+history), and query plans (`GET .../sql?explain=true` plus an "Explain"
+toggle in the Studio UI). (#240)
+
+### Studio: edit form no longer corrupts NULL columns on save
+
+Opening a row with a NULL nullable column, clicking Edit, and clicking Save
+without changing anything wrote the literal string `"—"` (the read-only
+table's display placeholder for NULL) into that column instead of leaving it
+NULL. The edit-form snapshot was reusing the display-formatting helper to
+seed the editable form; it now maps NULL to the same "no value" sentinel
+every editor widget already uses, matching what the save path already
+expects. (#242)
+
+## 0.4.17 (2026-07-30)
+
+### Parser and migrate hardening around storage-type edge cases
+
+A cluster of related fixes tightening what the parser accepts and what
+`cratestack-migrate` emits, found while generating a round-trip test for
+every builtin scalar/enum across Postgres, SQLite, and the LSP (#232, #237):
+
+* Postgres now stores enums as `TEXT` + `CHECK` (not a native `CREATE TYPE
+  ... AS ENUM`), and bareword enum defaults are quoted correctly in the
+  emitted DDL (#233).
+* `type` blocks can no longer be used as a model field's storage type —
+  they're a payload shape for procedures, not a column type (#235).
+* List-arity scalar/enum model fields are rejected on datasource-backed
+  schemas, since there's no portable column type for "array of enum" across
+  both backends (#229, via #236).
+* Reconciled `#233`'s enum-list emitter test with `#229`/`#236`'s new
+  list-arity parser rejection — the two landed close together and briefly
+  disagreed on enum-list fields (#238).
+* `Json` now derives `Default`, fixing a compile failure under
+  `include_embedded_schema!` for models with a default-valued `Json` field
+  (#234).
+
+### Other fixes
+
+* Rate-limit store errors are logged instead of failing the request
+  silently (#215).
+* A CI-only quality pipeline (informal replacement for a paid SonarQube
+  instance) landed across several follow-up PRs — pinned-action scanners,
+  PR review-comment output instead of Check annotations, and a documented
+  gap-until-landed note for interim coverage (#216, #218, #220, #222, #225).
+
+### Dart: native gRPC client generator
+
+`generate-dart` gains a native gRPC client generator for schemas declaring
+`transport grpc`, plus channel-shutdown and per-call option exposure on the
+generated client, and gRPC-specific example/test templates (a pre-existing
+RPC-transport example/test bug was caught and fixed during review) (#210,
+via #211, #213, #214).
+
+## 0.4.16 (2026-07-26)
+
+No code changes. A clean recut of the release pipeline after v0.4.14 (which
+shipped GitHub-Release-only by deliberate choice) and v0.4.15 (crates.io +
+GitHub Release succeeded, but both npm publishes failed with `EOTP` — the
+configured `NPM_TOKEN` wasn't an Automation-type token). v0.4.16 is the
+first release to publish successfully to crates.io, npm (`@cratestack/cli`
+and `@cratestack/api`), and GitHub Release binaries in one shot, with zero
+manual publish steps.
+
+## 0.4.15 (2026-07-26)
+
+`cut-release-tag.yml`'s tag push now uses a dedicated `RELEASE_PAT` instead
+of the default `GITHUB_TOKEN` (#197). GitHub's anti-recursion protection
+silently no-ops any downstream workflow trigger from a push made with the
+default token — the tag itself lands fine, but `release-cli.yml` never
+fires off it. A PAT-authored push is treated as a normal external push and
+correctly cascades into the rest of the pipeline.
+
+## 0.4.14 (2026-07-26)
+
+### Protobuf + gRPC support
+
+`.cstack` schemas can now declare `transport grpc`, generating `.proto`
+message/enum definitions (with a field-number lockfile so wire numbers
+don't silently renumber across schema edits) and gRPC service surfaces.
+Design doc (#166) and implementation (across #168–#172) landed same-day
+(#167, #176). CRUD-only for this release — procedure/streaming support and
+a Rust gRPC client were carved out as follow-up tickets.
+
+### Schema-fingerprint drift header
+
+Every response now carries an `x-cratestack-schema-sha` header — a
+warn-only fingerprint of the server's schema, so a client running against
+a stale generated SDK can detect drift without a hard version pin. Shipped
+for the Rust server first (#179), then Dart and TypeScript REST/RPC clients
+(#180).
+
+### RPC client DX: composable link chain
+
+The generated TypeScript RPC client gains a composable `RpcLink` chain
+(request/response middleware — logging, batching, auth injection, etc.),
+published alongside a new `@cratestack/api` npm package carrying the
+batching link and other cross-cutting concerns out of the generated code
+itself (#182, #186).
+
+### CI-driven release pipeline
+
+The first version of the fully automated release flow: a `prepare-release`
+workflow bumps versions and opens a PR, merging it auto-tags via
+`cut-release-tag.yml`, and the tag push triggers `release-cli.yml` to
+publish crates.io + npm + GitHub Release binaries with no manual steps
+(#188). Landed rough — this version alone needed eight follow-up fixes to
+get a real dry run and then a real dispatch through the pipeline end to
+end: missing GTK/WebKit deps in CI (#189), the release-check test stage
+needing a bundled Studio UI first (#190), `cargo publish --dry-run`
+needing `--allow-dirty` (#191) and `--no-verify` (#192) in dry mode, dry
+mode needing to skip non-leaf crates entirely since a never-published
+version can't resolve as a dependency (#193), and two npm `pnpm install`
+call sites needing to skip the `cratestack-cli` binary download since
+neither actually needs it (#194, #196). (The pipeline's tag-push
+anti-recursion bug that blocked this version's own crates.io/npm publish
+is the separate v0.4.15 fix above.)
+
+### Other fixes
+
+* `Cuid` scalar validation relaxed to accept `cuid2` ids, not just the
+  original `cuid` format (#150, via #158).
+* `cratestack-redis` gains a `tls-rustls` feature for `rediss://`
+  connections (#151, via #159), and later in this same version switches
+  to caching and reusing a single connection instead of opening one per
+  call (#175, decision recorded in #177).
+* Design doc proposing an `Extensions` concept, reframing the rate-limiting
+  half of #139's declarative-surface decision (#160).
+* Clippy `too_many_arguments`/`type_complexity` cleanup in `cratestack-sql`
+  and `cratestack-sqlx` (#184, #185).
+
+## 0.4.13 (2026-07-22)
+
+A dense release — nine PRs, several the direct result of a full backlog
+pass over long-open tickets:
+
+* **`--check` drift-detection mode** for `generate-typescript` /
+  `generate-dart`: exits non-zero if generated output would differ from
+  what's on disk, for CI gates (#141).
+* **Prebuilt `cratestack-cli` binaries** — GitHub Releases, `cargo-binstall`
+  support, and an npm-installable wrapper, so installing the CLI no longer
+  requires a Rust toolchain (#142).
+* **`--full-selection` flag** for `generate-typescript`, emitting a fully-
+  required model type alongside the normal partial-selection type (#140).
+* **`cratestack diff`** — a new CLI subcommand that diffs two `.cstack`
+  schemas and classifies each change by its effect on the generated wire
+  contract (breaking / additive / internal-only), exiting non-zero on any
+  breaking change so it can gate CI on schema PRs (#144).
+* **Migrate baselining design spike** — a doc-only PR spiking Postgres
+  live-schema introspection for baselining an existing database against a
+  `.cstack` schema, not yet implemented (#135, via #143).
+* **Composite primary keys** via `@@id([...])` — parser and
+  `cratestack-migrate` DDL support landed; query builders, clients, and
+  policy integration are follow-up work (#145).
+* **Idempotency/rate-limiting declarative-surface decision** — a design
+  doc settling that rate-limiting stays an imperative, hand-wired concern
+  permanently, while idempotency is deferred pending an `OpExecutor` gate
+  (#139, via #146).
+* **`dbgenerated()` fix** — emits valid SQL instead of a broken default
+  expression, and warns when the expression can't be verified against the
+  target dialect (#148).
+* **Type-block field-reference fix** — qualifies a `type` block's
+  references to model types correctly instead of emitting an ambiguous
+  reference (#137, via #147).
+
+## 0.4.12 (2026-07-22)
+
+The generated TypeScript RPC client runtime now satisfies its own
+`exactOptionalPropertyTypes` compiler setting — a previous release enabled
+the stricter TS option in the generated code but the runtime itself wasn't
+compliant, so consumers with the same setting on saw type errors (#129).
+
+## 0.4.11 (2026-07-22)
+
+* Fixed `Page<T>`/`PageInfo`'s generated TypeScript shape not matching
+  what the wire actually sends (#124).
+* Capped the `list` route's page-size limit consistently across REST and
+  RPC transports, and made the RPC codec pluggable rather than hardcoded
+  (#126, closing #123 and #125).
+
+## 0.4.10 (2026-07-22)
+
+A round of audit-driven correctness fixes: a self-deadlock in the audit
+path, a wrong soft-delete snapshot, a server-only field leaking into the
+generated TypeScript client, and incorrect gating on TypeScript's generated
+`create` calls (#120) — plus a fix for cross-binary test table-name
+collisions inside `cratestack-pg`'s own test suite (#121).
+
+## 0.4.9 (2026-06-17)
+
+* Dart's CBOR decoder now normalizes decoded maps to `Map<String,
+  Object?>` instead of a more loosely-typed map shape (#115).
+* Fixed the `sqlite_offline_first` example failing to compile standalone,
+  and guarded the embedded examples in CI (#106).
+
+## 0.4.8 (2026-06-15)
+
+Studio UI chrome revamp: reworked visual chrome and a multi-`.cstack`
+target switcher, so one running Studio instance can browse several
+schemas' targets from the same UI (#105). The repo also adopted an
+AI-governance kit for issue/PR templates and contribution process around
+this time (#104).
+
+## 0.4.7 (2026-06-08)
+
+For schemas using `transport rpc`, the op id is now the canonical request
+identity — the value request signing and tracing key off, rather than an
+incidental routing detail (#102).
+
+## 0.4.6 (2026-06-07)
+
+Fixed `BatchableCall` mis-encoding `None` optionals as a CBOR empty array
+instead of a CBOR null in the Rust client (#100).
+
+## 0.4.4 (2026-05-20)
+
+* Published a documentation-only `cratestack` landing crate to crates.io
+  — after the umbrella-facade split below removed the real `cratestack`
+  crate, this keeps the name from going orphaned/squattable and points
+  visitors at `cratestack-pg` / `cratestack-sqlite` (#97, doctests
+  disabled on it in a same-day follow-up, #98).
+* `CoolError` now preserves the full typed `DatabaseError` chain instead
+  of flattening it, so callers can match on the underlying driver error
+  (#99).
+
+## 0.4.3 (2026-05-19)
+
+Follow-up to the facade split below: fixed generator-fixture test paths
+that still pointed at the removed `cratestack` umbrella instead of
+`cratestack-pg` (#96).
+
+## 0.4.2 (2026-05-19)
 
 ### Breaking: the `cratestack` umbrella facade was split
 
@@ -147,41 +1914,49 @@ repo (`cratestack-docs` [#21](https://github.com/cratestack/cratestack-docs/pull
   `crates/cratestack-pg/tests/`; the SQLite e2e test under
   `crates/cratestack-sqlite/tests/`. No test logic was changed.
 
-## 0.3.3 (unreleased)
+### Other fixes
 
-### Workspace-wide 200-LoC refactor
+* Projected-query decoding now tolerates a missing optional field instead
+  of erroring, matching how a partial `SELECT` projection is actually
+  expected to behave (#93).
+* `codec-json` is now an opt-out feature on `cratestack-client-rust`
+  rather than always-on (#94).
+* CI's rustdoc build now points at `cratestack-pg`, the facade split's
+  replacement for the removed `cratestack` umbrella (#95), and the
+  release workflow gained a test-retry + `SKIP_TESTS` escape hatch for
+  known-flaky suites (#81).
 
-Every `.rs` file under `crates/*/src/` is now ≤200 LoC, landed across 16
-PRs (#57–#76). No public API changes — all splits preserve the crate
-surface via `pub use` re-exports. The major rewrites:
+## 0.3.7 (2026-05-18)
 
-- `cratestack-sqlx` and `cratestack-rusqlite` delegate / render / batch /
-  value modules split into focused submodules
-- `cratestack-axum` idempotency, rpc, transport, ratelimit, headers,
-  codec all broken into per-concern files
-- `cratestack-macros` four giants split (include / model / axum /
-  relation), medium files re-grouped
-- `cratestack-client-{dart,rust,typescript,flutter}` `lib.rs` split into
-  per-concern modules (largest: client-rust at 2369 → 18 submodules)
-- `cratestack-parser` 880-line `parse.rs`, 1086-line `validate.rs`, and
-  1336-line `tests.rs` split per topic
-- `cratestack-lsp` `main.rs` (1273 LoC) split into 11 submodules
-- `cratestack-client-dart` README and rpc-runtime jinja templates split
-  via `{% include %}` fragments (loader sets
-  `set_keep_trailing_newline(true)` for byte-identical output)
-- Inline `#[cfg(test)] mod tests` blocks throughout the workspace
-  extracted into `tests_<topic>.rs` siblings
+No code changes beyond the version bump itself.
 
-### README fixups
+## 0.3.6 (2026-05-18)
 
-Four crate READMEs (`cratestack-axum`, `cratestack-sqlx`,
-`cratestack-client-rust`, `cratestack-parser`) still referenced the
-pre-0.3.0 macro names (`include_schema!`,
-`include_client_macro!`) — updated to the current
-`include_server_schema!` / `include_client_schema!`. The `client-rust`
-README's two duplicate sections (one per old macro) collapse into one.
+Release tooling: publish order is now computed from `cargo metadata`'s
+real dependency graph instead of a hand-maintained list, so a new crate
+gets the right publish position automatically instead of needing a
+manual list edit every time (#80).
 
-## 0.3.2 (unreleased)
+## 0.3.5 (2026-05-18)
+
+Release tooling: `release-publish` is now idempotent and resumable — a
+partial failure partway through publishing the workspace can be re-run
+and picks up where it left off instead of re-attempting crates that
+already published successfully (#79).
+
+## 0.3.4 (2026-05-17)
+
+Studio's `eject` command is redesigned from a UI-fork-only tool into a
+full-project starter scaffold: `cratestack studio eject --out <dir>`
+now writes a runnable binary crate (`Cargo.toml`, `src/main.rs`,
+`studio.toml`, an example schema) with the Leptos UI already bundled
+in; `--with-ui` additionally unpacks the UI's Trunk sources for
+front-end customization. The UI itself moves to a sibling
+`crates/cratestack-studio/ui/` crate, embedded into the release binary
+as a tarball rather than generated from templates, and
+`cratestack-studio-generator` folds into `cratestack-studio` (#78).
+
+## 0.3.3 (2026-05-17)
 
 ### Studio rewrite — Phase 1d + 4 (typed editors + power tools)
 
@@ -635,6 +2410,116 @@ strings, then `cratestack studio run`. There is no automated migration
 of the 0.3.x multi-crate output — it was generated code and should be
 regenerated from the new shape.
 
+### RPC transport (v1): `transport rpc` as an alternative to REST
+
+A `.cstack` schema now picks exactly one generation style via a
+top-level `transport rest|rpc` directive (default `rest`, so existing
+schemas parse unchanged) — one binding's worth of public surface, not
+both. Under `transport rpc`, every CRUD verb per model and every
+procedure gets an op id (`model.User.list`, `procedure.publishPost`),
+dispatched over two endpoints instead of a route per model/verb:
+
+```
+POST /rpc/:op_id       # unary
+POST /rpc/batch        # server may parallelize; no in-batch dependencies,
+                        # no transactional mode — use a procedure or two
+                        # round trips for composite ops
+```
+
+The op id lives in the URL rather than the request body — operationally
+honest, since nginx/CDN/HTTP tracing all work per-route that way — and
+client codegen branches on the schema's transport style, so a generated
+SDK ships one client's worth of code, not both (#20–#24, examples in
+#27). Error responses use gRPC-style codes in a stable `RpcErrorBody`
+shape (#23). Streaming (`application/cbor-seq`) needed no code change
+at all: content negotiation on the existing sequence encoder already
+handled it (#24).
+
+**Deferred:** the WebSocket binding and `@@subscribe`-driven
+subscriptions from the original design are not part of this release —
+today's audit/event-bus consumers are server-to-server and don't need
+a WS channel, so this is picked up when a concrete consumer needs it,
+not before (#25).
+
+### ORM additions
+
+Landed alongside the RPC work above, independent of transport style:
+
+- **Transaction-aware writes**: `.for_update()` and `update_many` join
+  the existing write surface, both participating correctly in an
+  ambient transaction (#26).
+- **Composite-key upsert** and **`find_unique` detail policy** support
+  (#28).
+- **Nullable-OR filter** and a **`COALESCE` multi-column filter** for
+  querying across nullable columns without hand-written SQL (#29).
+- **`aggregate`**, **`delete_many`**, and `NULLS FIRST`/`NULLS LAST`
+  ordering (#37).
+- **JSONB filter operators** — `json_has_key` + `json_get_text` (#42).
+- **`FindMany.include()`** — to-one relation side-loading in a single
+  round trip (#44).
+- **PostGIS spatial filters** — `covers_geography` + `dwithin_geography`
+  (#48).
+- **Column projection** — `find_*.select(...)` returning a typed
+  `Projection<T>` instead of the full model (#51).
+- **`ProjectedFindMany.run_in_tx`**, plus an `enum` `Default` fix (#55).
+
+### Client streaming (cbor-seq)
+
+The generated clients gain first-class consumers for the streaming
+transport introduced above:
+
+- **Rust**: `RpcClient::call_streaming` returns an `mpsc::Receiver`,
+  fed by a `cbor-seq` streaming decoder (#30, #34). Also gains a typed
+  batch API — same method, two consumption modes (#53).
+- **Dart**: `CborSeqStreamTransformer` + a decoder-handle contract
+  (#43), and an `rpc_call_streamed` FFI entrypoint for
+  `/rpc/{op_id}` (#39).
+- **Flutter**: `execute_streamed` FFI shim over the cbor-seq path
+  (#33), and `FlutterCborSeqDecoder` for `dio`-driven streaming (#40).
+- **Codegen**: client generators now branch on `Schema.transport` to
+  emit RPC clients where the schema calls for them (#32, #50).
+
+### Workspace-wide 200-LoC refactor
+
+Every `.rs` file under `crates/*/src/` is now ≤200 LoC, landed across 16
+PRs (#57–#76). No public API changes — all splits preserve the crate
+surface via `pub use` re-exports. The major rewrites:
+
+- `cratestack-sqlx` and `cratestack-rusqlite` delegate / render / batch /
+  value modules split into focused submodules
+- `cratestack-axum` idempotency, rpc, transport, ratelimit, headers,
+  codec all broken into per-concern files
+- `cratestack-macros` four giants split (include / model / axum /
+  relation), medium files re-grouped
+- `cratestack-client-{dart,rust,typescript,flutter}` `lib.rs` split into
+  per-concern modules (largest: client-rust at 2369 → 18 submodules)
+- `cratestack-parser` 880-line `parse.rs`, 1086-line `validate.rs`, and
+  1336-line `tests.rs` split per topic
+- `cratestack-lsp` `main.rs` (1273 LoC) split into 11 submodules
+- `cratestack-client-dart` README and rpc-runtime jinja templates split
+  via `{% include %}` fragments (loader sets
+  `set_keep_trailing_newline(true)` for byte-identical output)
+- Inline `#[cfg(test)] mod tests` blocks throughout the workspace
+  extracted into `tests_<topic>.rs` siblings
+
+### README fixups
+
+Four crate READMEs (`cratestack-axum`, `cratestack-sqlx`,
+`cratestack-client-rust`, `cratestack-parser`) still referenced the
+pre-0.3.0 macro names (`include_schema!`,
+`include_client_macro!`) — updated to the current
+`include_server_schema!` / `include_client_schema!`. The `client-rust`
+README's two duplicate sections (one per old macro) collapse into one.
+
+### Other
+
+Test-support scaffolding (`tests/support/pg.rs`) covering
+compose/testcontainers/skip backend selection for PG-backed integration
+tests (#19), and an internal `cratestack-axum` module split
+(codec/transport/headers/query) with deduped RPC helpers (#31).
+
+## 0.3.2 (2026-05-14)
+
 ### Batch primitives — tRPC-style per-item envelope
 
 Five new ORM methods on every model delegate, on both the sqlx (server) and rusqlite (embedded) backends:
@@ -710,7 +2595,53 @@ summary: 2 total, 1 ok, 1 err
 - **Auto-generated `POST /<model>/batch-*` axum routes**: the wire envelope types (`BatchRequest<I>` / `BatchResponse<T>`) are stable in `cratestack-core` so apps can hand-roll a thin handler against the ORM today. Macro-driven route emission per model lands in a follow-up.
 - **Per-item `if_match` on the embedded `batch_update`**: the rusqlite layer doesn't enforce `@version` for single rows either; consistency over surprise.
 
-## 0.3.1 (unreleased)
+## 0.3.1 (2026-05-14)
+
+### New crate: `cratestack-migrate` — schema diff + migration generator
+
+Implements ADR-0004, the *authoring* side of the migration story: a new
+`cratestack-migrate` crate diffs a parsed `.cstack` against a committed
+snapshot and emits per-backend SQL migrations. The runner (already in
+`cratestack-sqlx`) is unchanged — it consumes the generated SQL
+identically to hand-written migrations.
+
+```
+cratestack migrate diff --schema schema.cstack --out-dir migrations --backend both --name <slug>
+```
+
+Per-backend output lives under
+`migrations/<postgres|sqlite>/<timestamp>_<slug>/` as `up.sql` /
+`down.sql`, alongside a committed `schema.snapshot.json`. The diff
+engine produces a backend-agnostic op list ordered by DDL dependencies
+(enums → renames → drops → creates → adds → check constraints → enum
+drops), covering table/column add-drop, indexes (from `@unique`),
+column type/nullability/default changes, renames (`@@rename` /
+`@rename`), enums, and check constraints (`@db_enforce` promotion of
+`@range` / `@length` / `@iso4217`).
+
+**Destructiveness gating.** Every op is classified Safe / Lossy /
+Blocking; `--allow-destructive` is required to write any migration
+containing a lossy op, and `down.sql` for a lossy migration is an
+explicit error stub (`RAISE EXCEPTION` / `RAISE(FAIL, ...)`) rather
+than a real rollback — matching the runner's irreversible-by-default
+posture (#16).
+
+**Deferred (intentional):** `migrate verify` and `migrate drift` need
+ephemeral DB spawning and live introspection, each with its own CI
+footprint; view-block IR ops need the `view` block itself (ADR-0003)
+built out first; `DropEnumVariant` needs a Postgres swap-dance plus a
+backfill plan for referencing rows.
+
+### Examples, docs, and CI
+
+- Pure-Rust example set covering all three 0.3.0 macros side by side
+  (#10), and a root README rewrite for the macro split (#11).
+- In-browser embedded SQLite example plus a wasm32 facade refactor
+  (#12); `embedded-expo` × `embedded-flutter` × `tauri-native` (#14);
+  `embedded-daemon` + `embedded-webhook` showing async I/O layered
+  around the sync `ModelDelegate` (#15).
+- CI's rustdoc job now restricts to the framework crates so it doesn't
+  pull in GTK transitively via the Tauri examples (#13).
 
 ### Upsert primitive
 
@@ -739,7 +2670,7 @@ Semantics:
 
 - `ModelDescriptor::new(...)` gained one trailing argument (`upsert_update_columns`). Schemas built through `include_*_schema!` are unaffected; hand-rolled descriptors need the extra `&[]`.
 
-## 0.3.0 (unreleased)
+## 0.3.0 (2026-05-13)
 
 ### Headline: three macros, one schema, no dead weight
 
@@ -789,8 +2720,109 @@ The split is **strict**: `include_server_schema!` does not emit anything rusqlit
 - `cratestack-sqlx` could lose its `cratestack::sqlx::*` compatibility shim once we've validated nobody depends on it externally. Tracked as a 0.4.0 cleanup.
 - Multi-DB support (MySQL, SQLite-via-sqlx) for `include_server_schema!` — the `db = …` arg parser is ready; the codegen needs the abstraction.
 
-## 0.1.0
+## 0.2.3 (2026-05-12)
 
-Initial public extraction release.
+`cratestack-redis` gains **`RedisRateLimitStore`**, enforcing a single
+global token-bucket per key across replicas via one atomic
+read-refill-decrement-write Lua script; bucket state lives at
+`<prefix>:rl:<sha256(key)>` with a self-refreshing `EXPIRE` so idle
+keys evict themselves. Skips its live-Redis integration tests cleanly
+when no Redis is configured, matching the sqlx-store test pattern
+(#7).
 
-This release includes the Rust workspace, CLI, parser, macros, codecs, Axum and SQLx integration crates, generated Rust/Dart/TypeScript client support, the `.cstack` language server, and the VS Code extension package.
+## 0.2.2 (2026-05-12)
+
+Docs-only: every crate README rewritten against its actual API
+surface rather than aspirational/stale examples (#6).
+
+## 0.2.1 (2026-05-12)
+
+### New crate: `cratestack-rusqlite` — the embedded SQLite backend
+
+The embedded backend's real implementation: `ddl`, `delegate`,
+`render`, `row`, `runtime`, and `value` modules, plus an `ffi` layer
+for non-Rust embedders (#4).
+
+### New crate: `cratestack-redis` — `RedisIdempotencyStore`
+
+A server-side Redis-backed idempotency store, sibling to
+`cratestack-sqlx`'s `SqlxIdempotencyStore`, for multi-replica
+deployments that need shared idempotency state across instances rather
+than per-process memory. Atomicity comes from three Lua scripts
+(`reserve_or_fetch`, `complete`, `release`) run via `EVALSHA` with
+`NOSCRIPT` fallback; reservation lifetimes are driven by `PEXPIREAT`,
+and token rotation on reclaim plus token/status guards inside
+`complete`/`release` stop a stale handler from poisoning a newer
+reservation. State lives in one Redis hash per `(principal, key)` at
+`<prefix>:idem:<sha256(principal || 0x00 || key)>` (#5).
+
+## 0.2.0 (2026-05-12)
+
+The first version actually published to crates.io. (`v0.1.0` was never
+published under that number — see the note at the bottom of this file.)
+
+### Banking-readiness: a three-phase hardening pass
+
+The framework's first push from e-commerce-production-grade toward
+banking-grade, landed as one large merge (#2, #3):
+
+- **Phase 1 — correctness & money.** `Decimal` scalar
+  (feature-flagged `decimal-rust-decimal` / `decimal-bigdecimal`, the
+  latter still a `compile_error!` stub), error redaction (4xx messages
+  public, 5xx detail-only), optimistic locking (`@version` +
+  If-Match/ETag), schema validation attributes (`@length` / `@range` /
+  `@regex` / `@email` / `@uri` / `@iso4217`), idempotency
+  (`IdempotencyLayer` + `SqlxIdempotencyStore`, opt-in via
+  `Router::layer(...)`, not auto-wired into macro-generated routers).
+- **Phase 2 — compliance & integrity.** Audit log (`@@audit`,
+  before/after snapshots), field-level policy (`@readonly` /
+  `@server_only`), transaction isolation (`@isolation("...")`),
+  PII/data classification (`@pii` / `@sensitive`), correlation IDs
+  (traceparent propagation).
+- **Phase 3 — hardening & ecosystem.** HMAC signed envelope
+  (`COSE_Sign1`/ES256 trait-ready, not yet implemented), rate limiting
+  (`RateLimitLayer`), anti-replay nonce store, API versioning
+  (`@api_version`), soft-delete (`@@soft_delete`, GC left as a
+  follow-up), FIPS crypto feature flag (a real FIPS certification
+  still needs a vendor-validated libcrypto), and a migration engine
+  (`cratestack_migrations` table + `apply_pending` — schema-diff-driven
+  generation was explicitly out of scope at this point; that landed
+  later as `cratestack-migrate`, see `v0.3.1`).
+
+**Known-outstanding at this point:** `IdempotencyLayer` still isn't
+auto-wired into macro-generated routers by default; `RedisNonceStore`
+doesn't exist yet (`RedisIdempotencyStore` and `RedisRateLimitStore`
+land in `v0.2.1`/`v0.2.3`, right after this); `COSE_Sign1` has no real
+ES256/EdDSA signing behind it yet, trait surface only.
+
+### CLI, mixins, and the TypeScript client
+
+- **`cratestack` CLI** for schema tooling, the framework's first
+  command-line surface.
+- **Mixin support** — `@use` composes shared field groups into
+  `.cstack` models.
+- **Generated TypeScript client** gains TanStack Query hooks, and a
+  Rust **client-only macro** (the predecessor to what later became
+  `include_client_schema!` in the `v0.3.0` three-macro split) for
+  generated Rust clients, plus request-authorization support.
+- **`cratestack-client-store-redis`** — a Redis-backed client-side
+  state store.
+- Backend-to-backend client guidance defaults to the CBOR codec and
+  clarifies OAuth2 endpoint handling.
+
+### Public release housekeeping
+
+The repo's public GitHub Pages docs deployment (custom domain +
+rustdoc root redirect) is fixed, and the codebase is scrubbed of
+internal-only references from before the project's public rename —
+this is the release the rest of this changelog's history starts
+counting from.
+
+---
+
+`v0.1.0` doesn't have a section above because it was never published —
+no crates.io release, no tag. It was the version number in `Cargo.toml`
+during the project's pre-public "extraction" work (renaming from an
+internal codename, stripping internal-only references, standing up the
+CLI/docs/public-release plumbing) before the very first real release,
+which shipped as `v0.2.0` above instead.

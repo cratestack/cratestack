@@ -1,0 +1,23 @@
+// Regression fixture for the built-in `FindMany<Model>` procedure-argument
+// type: search-with-filters for procedures. Structured, typed per-model
+// `PostWhere`/`PostOrderByClause` (not a raw filter string) — see
+// `cratestack-macros/src/model/find_many_input.rs`.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model Post {
+  id Int @id
+  title String
+  subtitle String?
+  published Boolean
+  authorId Int
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}
+
+procedure searchPosts(query: FindMany<Post>): Post[]
+  @allow(auth() != null)

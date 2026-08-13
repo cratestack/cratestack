@@ -1,7 +1,10 @@
+use crate::OrderClause;
+
 use super::expr::FilterExpr;
 use super::field_ref::FieldRef;
 use super::json::{JsonFilter, JsonTextPath};
 use super::spatial::{SpatialFilter, SpatialPoint};
+use super::vector::{VectorDistanceExpr, VectorMetric};
 
 impl<M, T> FieldRef<M, T> {
     /// PG: `col ? 'key'` — the JSON document contains `key` as a
@@ -60,5 +63,45 @@ impl<M, T> FieldRef<M, T> {
             lat: point.lat,
             radius_meters,
         })
+    }
+}
+
+impl<M> FieldRef<M, Vec<f32>> {
+    /// Left-hand operand of a `Vector(n)` distance comparison (see
+    /// `docs/design/extensions.md` §6/§7, cratestack#163) — chain a
+    /// comparator (`.lt`/`.lte`/`.gt`/`.gte`/`.eq`) for a threshold
+    /// filter, or `.asc`/`.desc` to use it as an `ORDER BY` target. The
+    /// metric is never inferred from an index (a similarity search
+    /// must keep working with no vector index present, per AC #2 on
+    /// cratestack#163) — pass it explicitly, or derive it from a known
+    /// index opclass via [`VectorMetric::from_opclass`].
+    ///
+    /// PG-only (pgvector); the embedded rusqlite backend fails loud at
+    /// render time if reached, mirroring [`Self::covers_geography`].
+    pub fn distance_to(self, metric: VectorMetric, query_vector: Vec<f32>) -> VectorDistanceExpr {
+        VectorDistanceExpr::new(self.column, metric, query_vector)
+    }
+
+    /// Shorthand for `distance_to(metric, query_vector).asc()` — order
+    /// by distance, nearest first, the standard k-NN similarity-search
+    /// shape.
+    pub fn order_by_distance(self, metric: VectorMetric, query_vector: Vec<f32>) -> OrderClause {
+        self.distance_to(metric, query_vector).asc()
+    }
+}
+
+impl<M> FieldRef<M, Option<Vec<f32>>> {
+    /// Same as [`FieldRef::<M, Vec<f32>>::distance_to`] for a nullable
+    /// `Vector(n)` column. Rows with a `NULL` vector compare as `NULL`
+    /// distance, which sorts last under the framework's default
+    /// `NULLS LAST` ordering ([`crate::NullOrder`]) and never matches a
+    /// threshold filter.
+    pub fn distance_to(self, metric: VectorMetric, query_vector: Vec<f32>) -> VectorDistanceExpr {
+        VectorDistanceExpr::new(self.column, metric, query_vector)
+    }
+
+    /// Shorthand for `distance_to(metric, query_vector).asc()`.
+    pub fn order_by_distance(self, metric: VectorMetric, query_vector: Vec<f32>) -> OrderClause {
+        self.distance_to(metric, query_vector).asc()
     }
 }

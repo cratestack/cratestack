@@ -38,6 +38,7 @@ use cratestack_core::{Field, Schema, TransportStyle};
 
 pub use error::ProtoEmitError;
 pub use synth::synthesize_messages;
+pub use synth_page::monomorphize_return_type;
 
 use crate::PbLock;
 use mirror::{visible_model_fields, visible_type_fields};

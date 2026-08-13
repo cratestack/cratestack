@@ -4,9 +4,11 @@
 
 use cratestack_core::{AuditOperation, CoolContext, CoolError, ModelEventKind};
 
-use crate::audit::{build_audit_event, enqueue_audit_event, ensure_audit_table};
+use crate::audit::{
+    RunInTxOutcome, build_audit_event, dispatch_audit_sink, enqueue_audit_event, ensure_audit_table,
+};
 use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
-use crate::{CreateModelInput, ModelDescriptor, SqlxRuntime, sqlx};
+use crate::{CreateModelInput, ModelDescriptor, SqlxRuntime, cool_error_from_sqlx, sqlx};
 
 use super::create_exec::create_record_with_executor;
 
@@ -44,13 +46,26 @@ where
 
     /// Like [`Self::run`] but participates in a caller-supplied
     /// transaction. The insert + outbox + audit writes all happen
-    /// inside `tx`; caller commits. Event outbox is *not* drained —
-    /// the outbox row isn't visible to the drain worker until commit.
+    /// inside `tx`; caller commits.
+    ///
+    /// Neither the event outbox nor the `AuditSink` fan-out run here —
+    /// both are post-commit, best-effort projections, and this
+    /// function has no visibility into when, or whether, the caller
+    /// commits `tx` (see [`crate::audit::dispatch_audit_sink`]'s doc
+    /// comment for the full reasoning). Unlike before cratestack#534,
+    /// though, neither is a dead end: this returns a
+    /// [`RunInTxOutcome`] carrying the `AuditEvent` this call built (if
+    /// `@@audit`), for the caller to pass to
+    /// `Cratestack::dispatch_audit_sink` once *their* commit succeeds;
+    /// and if the model `@@emit`s, the caller can call the pre-existing
+    /// `Cratestack::events().drain()` (cratestack#390) the same way — it
+    /// re-scans for any undelivered outbox row, so it needs no event
+    /// handed back to find this one.
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
         ctx: &CoolContext,
-    ) -> Result<M, CoolError>
+    ) -> Result<RunInTxOutcome<M>, CoolError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
     {
@@ -79,13 +94,18 @@ where
             )
             .await?;
         }
+        let mut audit_event = None;
         if audit_enabled {
             let after = serde_json::to_value(&record).ok();
             let event =
                 build_audit_event(self.descriptor, AuditOperation::Create, None, after, ctx);
             enqueue_audit_event(&mut **tx, &event).await?;
+            audit_event = Some(event);
         }
-        Ok(record)
+        Ok(RunInTxOutcome::new(
+            record,
+            audit_event.into_iter().collect(),
+        ))
     }
 
     pub async fn run(self, ctx: &CoolContext) -> Result<M, CoolError>
@@ -95,13 +115,14 @@ where
         let emits_event = self.descriptor.emits(ModelEventKind::Created);
         let audit_enabled = self.descriptor.audit_enabled;
         let needs_tx = emits_event || audit_enabled;
+        let mut audit_event = None;
         let record = if needs_tx {
             let mut tx = self
                 .runtime
                 .pool()
                 .begin()
                 .await
-                .map_err(|error| CoolError::Database(error.to_string()))?;
+                .map_err(cool_error_from_sqlx)?;
             if emits_event {
                 ensure_event_outbox_table(&mut *tx).await?;
             }
@@ -130,10 +151,9 @@ where
                 let event =
                     build_audit_event(self.descriptor, AuditOperation::Create, None, after, ctx);
                 enqueue_audit_event(&mut *tx, &event).await?;
+                audit_event = Some(event);
             }
-            tx.commit()
-                .await
-                .map_err(|error| CoolError::Database(error.to_string()))?;
+            tx.commit().await.map_err(cool_error_from_sqlx)?;
             record
         } else {
             create_record_with_executor(
@@ -148,6 +168,9 @@ where
 
         if emits_event {
             let _ = self.runtime.drain_event_outbox().await;
+        }
+        if let Some(event) = &audit_event {
+            dispatch_audit_sink(self.runtime, std::slice::from_ref(event)).await;
         }
 
         Ok(record)

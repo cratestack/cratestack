@@ -186,7 +186,13 @@ async fn run_in_tx_create_commits_audit_and_outbox_alongside_row() {
         .run_in_tx(&mut tx, &ctx)
         .await
         .expect("create in tx succeeds");
-    assert_eq!(created.id, 42);
+    assert_eq!(created.value.id, 42);
+    assert_eq!(
+        created.audit_events.len(),
+        1,
+        "run_in_tx should return the AuditEvent it built for an @@audit model \
+         (cratestack#534), for the caller to dispatch after commit",
+    );
     tx.commit().await.expect("commit");
 
     let found: i64 = query("SELECT balance FROM batch_rows WHERE id = 42")

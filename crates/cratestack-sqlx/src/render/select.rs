@@ -36,7 +36,7 @@ pub(crate) fn render_scoped_select_sql<M, PK>(
 
     match (user_clause, policy_clause) {
         (Some(user_clause), Some(policy_clause)) => {
-            let _ = write!(sql, " WHERE {user_clause} AND ({policy_clause})");
+            let _ = write!(sql, " WHERE {user_clause} AND {policy_clause}");
         }
         (Some(user_clause), None) => {
             let _ = write!(sql, " WHERE {user_clause}");
@@ -53,7 +53,7 @@ pub(crate) fn render_scoped_select_sql<M, PK>(
             if index > 0 {
                 sql.push_str(", ");
             }
-            render_order_clause_sql(clause, &mut sql);
+            render_order_clause_sql(clause, &mut sql, &mut bind_index);
         }
     }
 

@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 use cratestack_core::Model;
 use quote::quote;
 
-use crate::relation::generate_relation_order_module;
+use crate::relation::{generate_model_path_types, generate_relation_root_module};
 use crate::shared::{
     ident, relation_model_fields, rust_type_tokens, scalar_model_fields, to_snake_case,
 };
@@ -75,18 +75,50 @@ fn generate_field_module_with_kind(
         .into_iter()
         .map(|field| {
             let function_ident = ident(&field.name);
-            let module_ident = ident(&field.name);
-            quote! {
-                #[allow(non_snake_case)]
-                pub fn #function_ident() -> self::#module_ident::Path {
-                    self::#module_ident::Path
-                }
+            let link = crate::relation::relation_link(model, field, models)?;
+            if link.is_to_many {
+                // No `Root` for to-many: hand back the target model's
+                // pending-quantifier type directly.
+                let target_module = ident(&to_snake_case(&field.ty.name));
+                let parent_table = link.parent_table.as_str();
+                let parent_column = link.parent_column.as_str();
+                let related_table = link.related_table.as_str();
+                let related_column = link.related_column.as_str();
+                Ok(quote! {
+                    #[allow(non_snake_case)]
+                    pub fn #function_ident() -> super::#target_module::RelToMany {
+                        super::#target_module::RelToMany::__from_hops(
+                            ::std::vec::Vec::from([
+                                ::cratestack::RelationHop::new(
+                                    #parent_table,
+                                    #parent_column,
+                                    #related_table,
+                                    #related_column,
+                                    ::cratestack::RelationQuantifier::ToOne,
+                                ),
+                            ]),
+                        )
+                    }
+                })
+            } else {
+                let module_ident = ident(&field.name);
+                Ok(quote! {
+                    #[allow(non_snake_case)]
+                    pub fn #function_ident() -> self::#module_ident::Root {
+                        self::#module_ident::Root
+                    }
+                })
             }
-        });
+        })
+        .collect::<Result<Vec<_>, String>>()?;
     let relation_modules = relation_model_fields(model, model_names)
         .into_iter()
-        .map(|relation_field| generate_relation_order_module(model, relation_field, models, kind))
-        .collect::<Result<Vec<_>, String>>()?;
+        .map(|relation_field| generate_relation_root_module(model, relation_field, models, kind))
+        .collect::<Result<Vec<_>, String>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    let path_types = generate_model_path_types(model, models)?;
     let selection_module = generate_selection_module(model, model_names, models)?;
 
     Ok(quote! {
@@ -103,6 +135,8 @@ fn generate_field_module_with_kind(
             pub fn include_selection() -> self::selection::IncludeSelection {
                 self::selection::IncludeSelection::default()
             }
+
+            #path_types
 
             #(#relation_modules)*
 

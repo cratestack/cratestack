@@ -115,16 +115,20 @@ fn sqlite_row_field_decode_expr(
         ("Decimal", TypeArity::Optional) => quote! {
             row.get::<_, Option<::cratestack::DecimalColumn>>(#field_name)?.map(|v| v.0)
         },
+        // Decode via the plain, untagged JSON shape (cratestack#162,
+        // cratestack#395) — never `Value`'s own derived, externally-tagged
+        // `Deserialize` impl, which would reject a plain `{}`/`[...]`
+        // column as `{"Map": {}}`/`{"List": [...]}`.
         ("Json", TypeArity::Required) => quote! {
             {
                 let raw: String = row.get(#field_name)?;
-                let value: ::cratestack::Value = ::serde_json::from_str(&raw)
+                let plain: ::serde_json::Value = ::serde_json::from_str(&raw)
                     .map_err(|error| ::cratestack::rusqlite::Error::FromSqlConversionFailure(
                         0,
                         ::cratestack::rusqlite::types::Type::Text,
                         Box::new(error),
                     ))?;
-                ::cratestack::Json(value)
+                ::cratestack::Json(::cratestack::Value::from_plain_json(plain))
             }
         },
         ("Json", TypeArity::Optional) => quote! {
@@ -132,13 +136,13 @@ fn sqlite_row_field_decode_expr(
                 let raw: Option<String> = row.get(#field_name)?;
                 match raw {
                     Some(text) => {
-                        let value: ::cratestack::Value = ::serde_json::from_str(&text)
+                        let plain: ::serde_json::Value = ::serde_json::from_str(&text)
                             .map_err(|error| ::cratestack::rusqlite::Error::FromSqlConversionFailure(
                                 0,
                                 ::cratestack::rusqlite::types::Type::Text,
                                 Box::new(error),
                             ))?;
-                        Some(::cratestack::Json(value))
+                        Some(::cratestack::Json(::cratestack::Value::from_plain_json(plain)))
                     }
                     None => None,
                 }
@@ -183,6 +187,9 @@ fn enum_decode_expr(field: &Field, field_name: &str) -> proc_macro2::TokenStream
                 }
             }
         }
+        // Unreachable as of #229; see the matching note in `row_pg.rs`.
+        // No write-side counterpart either: `cratestack-rusqlite`'s
+        // `ToSql` (`src/value/bind.rs`) has no array case.
         TypeArity::List => {
             let decode_error = parse_error(quote! { error.to_string() });
             quote! {

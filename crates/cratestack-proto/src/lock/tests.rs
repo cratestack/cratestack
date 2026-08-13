@@ -25,6 +25,7 @@ fn field(name: &str, attrs: &[&str]) -> Field {
             name_span: span(),
             arity: TypeArity::Required,
             generic_args: vec![],
+            int_args: Vec::new(),
         },
         attributes: attrs
             .iter()
@@ -77,6 +78,7 @@ fn empty_schema() -> Schema {
         procedures: vec![],
         views: vec![],
         transport: TransportStyle::default(),
+        declared_extensions: Default::default(),
     }
 }
 

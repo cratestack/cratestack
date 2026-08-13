@@ -1,0 +1,106 @@
+[package]
+name = "cratestack-client"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "CrateStack facade for pure HTTP-client SDK crates — the `include_client_schema!` macro plus the generated Rust client runtime and the handful of type re-exports (`Page`, `Decimal`, `chrono`, `uuid`, `serde`) generated client code references, with `cratestack-axum` (and therefore `axum`/`tower`/`hyper`/`tower-http`) structurally absent from the dependency graph. Pick this crate via `cratestack = { package = \"cratestack-client\" }` for a crate that only ever calls a cratestack server, never runs one."
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+# Same `[lib]` rename trick as `cratestack-pg`/`cratestack-api`/`cratestack-sqlite`:
+# package is `cratestack-client` on crates.io, but the library is named
+# `cratestack` so `include_client_schema!`'s generated `::cratestack::*`
+# paths resolve without per-file aliasing. External consumers depend on the
+# package as `cratestack = { package = "cratestack-client" }`.
+
+[lints]
+workspace = true
+
+[lib]
+name = "cratestack"
+path = "src/lib.rs"
+
+[features]
+default = ["decimal-rust-decimal", "codec-json"]
+# Same rationale as `cratestack-api`'s same-named feature: this crate never
+# depends on `cratestack-sqlx`, under any feature, so `decimal-rust-decimal`
+# only ever needs to forward to `cratestack-core`, `cratestack-sql`, and
+# `cratestack-client-rust` — there is no sqlx-backed half to conditionally
+# re-add.
+decimal-rust-decimal = [
+    "cratestack-core/decimal-rust-decimal",
+    "cratestack-sql/decimal-rust-decimal",
+    "cratestack-client-rust/decimal-rust-decimal",
+    "cratestack-macros/decimal-rust-decimal",
+]
+# Mirrors `decimal-rust-decimal` above for the `bigdecimal` backend
+# (cratestack#495) — this is the feature the acceptance test for that issue
+# exercises directly against this facade.
+decimal-bigdecimal = [
+    "cratestack-core/decimal-bigdecimal",
+    "cratestack-sql/decimal-bigdecimal",
+    "cratestack-client-rust/decimal-bigdecimal",
+    "cratestack-macros/decimal-bigdecimal",
+]
+# Forwards the JSON codec to the generated client runtime. See
+# `cratestack-pg`/`cratestack-api` for rationale — on by default so
+# `include_client_schema!` keeps offering both CBOR and JSON.
+codec-json = ["cratestack-client-rust/codec-json"]
+# Extension-declaration gates (cratestack#161). These forward *only* to
+# `cratestack-macros`, never to a runtime crate, and that asymmetry with
+# `cratestack-pg` is the whole point.
+#
+# `include_client_schema!` runs the same `guard_client_declared_extensions`
+# check as the server/embedded macros (`cratestack-macros/src/include/
+# extension_gate.rs`): a schema declaring `extension pgvector { }` or
+# `extension rate_limit { }` is a `compile_error!` unless the
+# corresponding Cargo feature is live on `cratestack-macros`. Without
+# these two lines there was no way to satisfy that gate through this
+# facade at all — the features simply didn't exist here — so a client SDK
+# could not be generated against any schema declaring either extension,
+# even though nothing extension-specific reaches client codegen.
+#
+# Unlike `cratestack-pg`, neither forwards to a backend: a `Vector(n)`
+# field is emitted as a plain `Vec<f32>` on every composer including the
+# Rust client's (`cratestack-macros/src/shared/types.rs`), with the
+# `pgvector` crate entering only at the sqlx row-decode/bind boundary,
+# which is server-only and structurally absent here. Likewise
+# `rate_limit` only unlocks the `@no_rate_limit` attribute and the
+# `rate_limited_by_default` flag on the generated `OpDescriptor` — the
+# enforcing layer lives in `cratestack-axum`, which this facade doesn't
+# depend on. Both are therefore pure schema-compatibility switches: they
+# let a client be generated against a schema a server elsewhere backs.
+#
+# Off by default, matching every other facade — a schema that doesn't
+# declare the extension never needs them.
+pgvector = ["cratestack-macros/pgvector"]
+rate_limit = ["cratestack-macros/rate_limit"]
+
+[dependencies]
+chrono.workspace = true
+cratestack-client-rust.workspace = true
+cratestack-core.workspace = true
+cratestack-macros.workspace = true
+cratestack-sql.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "io-util", "net"] }
+url.workspace = true
+
+# Only compiled/run under `--features pgvector,rate_limit` — the fixture
+# schema declares both extensions, each a `compile_error!` without its
+# feature (see the feature doc comments above). Mirrors
+# `cratestack-pg`'s `pgvector_feature_forwarding` entry.
+[[test]]
+name = "extension_feature_forwarding"
+path = "tests/extension_feature_forwarding.rs"
+required-features = ["pgvector", "rate_limit"]

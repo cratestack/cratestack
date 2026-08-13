@@ -2,6 +2,7 @@
 name = "cratestack-migrate"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 description.workspace = true
@@ -12,12 +13,48 @@ readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 
+[lints]
+workspace = true
+
+[features]
+default = ["decimal-rust-decimal"]
+# Forwards to `cratestack-core`'s mutually-exclusive decimal backend choice
+# (see that crate's Cargo.toml for the full rationale). Required because
+# `cratestack-core`'s dependency edge has `default-features = false` at the
+# workspace root — every direct consumer must explicitly re-select a
+# backend, or `cratestack-core` fails to compile at all (cratestack#495).
+# There was previously no `default` feature at all on this crate — nothing
+# else here needed one, since `postgres-introspect`/`pgvector` are
+# genuinely opt-in — so this is the first thing that makes one necessary.
+decimal-rust-decimal = ["cratestack-core/decimal-rust-decimal"]
+decimal-bigdecimal = ["cratestack-core/decimal-bigdecimal"]
+# Live Postgres schema introspection (issue #204). Off by default so the
+# pure-diffing core stays free of any DB dependency — only opt in when
+# you actually need `introspect::postgres`.
+postgres-introspect = ["dep:sqlx-core", "dep:sqlx-postgres"]
+# Gate for `pgvector` DDL emission (`CREATE EXTENSION IF NOT EXISTS
+# vector;` + `vector(n)` column rendering — see
+# `docs/design/extensions.md` §6 and `crates/cratestack-macros`'s own
+# gate-only `pgvector` feature, which this mirrors). This crate has no
+# extra dependency to hide behind the feature — DDL emission is plain
+# string formatting — so the gate is enforced as a runtime `cfg!`
+# check in the Postgres emitter (`emit::postgres::extensions`) rather
+# than a dependency-weight concern: building without this feature and
+# then feeding it a schema-derived `Op::EnsureExtension` (which the
+# parser only ever produces for a schema that declares `extension
+# pgvector { }`) is a hard panic, not silently-wrong SQL.
+pgvector = []
+
 [dependencies]
 cratestack-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
+sqlx-core = { workspace = true, optional = true }
+sqlx-postgres = { workspace = true, optional = true }
 
 [dev-dependencies]
 cratestack-parser.workspace = true
 tempfile = "3"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

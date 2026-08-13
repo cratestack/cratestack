@@ -2,6 +2,7 @@
 name = "cratestack-sql"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 description.workspace = true
@@ -12,14 +13,28 @@ readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 
+[lints]
+workspace = true
+
 [features]
 default = ["decimal-rust-decimal"]
 decimal-rust-decimal = [
     "cratestack-core/decimal-rust-decimal",
+    "cratestack-policy/decimal-rust-decimal",
     "dep:rust_decimal",
 ]
+# Mirrors `decimal-rust-decimal` above for the `bigdecimal` backend
+# (cratestack#495). `SqlValue::Decimal`/`FilterValue` etc. only ever name
+# the `cratestack_core::Decimal` alias, never a concrete backend type, so
+# no code in this crate is conditionally compiled per backend — this
+# feature exists purely to forward the choice down to `cratestack-core`
+# and to pull in `bigdecimal` itself (matched by name against the
+# `dep:rust_decimal` pull above, even though nothing here currently
+# references `bigdecimal` by name directly — kept parallel for when it
+# does, e.g. a future `bigdecimal`-specific SQL literal formatter).
 decimal-bigdecimal = [
     "cratestack-core/decimal-bigdecimal",
+    "cratestack-policy/decimal-bigdecimal",
     "dep:bigdecimal",
 ]
 

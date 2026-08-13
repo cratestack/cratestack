@@ -33,6 +33,7 @@ fn round_trip(value: SqlValue) -> SqlValue {
         (SqlValue::Json(_), rusqlite::types::Value::Text(s)) => {
             SqlValue::Json(decode_json(&s).unwrap())
         }
+        #[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
         (SqlValue::Decimal(_), rusqlite::types::Value::Text(s)) => {
             SqlValue::Decimal(decode_decimal(&s).unwrap())
         }
@@ -99,6 +100,30 @@ fn round_trips_datetime_as_rfc3339_utc() {
     assert_eq!(round_trip(SqlValue::DateTime(dt)), SqlValue::DateTime(dt));
 }
 
+/// Regression test for cratestack#395 (follow-up to cratestack#162): the
+/// on-disk TEXT must hold the **plain, untagged** JSON shape, not
+/// `Value`'s own derived, externally-tagged `Serialize` representation
+/// (`{"Map": {"k": {"Int": 1}}}`). `round_trips_json` below only proves
+/// internal consistency — a buggy writer paired with a buggy reader still
+/// round-trips — so this test inspects the raw stored bytes directly.
+#[test]
+fn json_stored_as_plain_untagged_shape() {
+    let conn = Connection::open_in_memory().expect("open in-memory sqlite");
+    conn.execute_batch("CREATE TABLE t (x TEXT)").unwrap();
+    let mut map = std::collections::BTreeMap::new();
+    map.insert("k".to_string(), cratestack_core::Value::Int(1));
+    let v = SqlValue::Json(cratestack_core::Value::Map(map));
+    conn.execute("INSERT INTO t (x) VALUES (?1)", [SqlValueParam(&v)])
+        .unwrap();
+    let stored: String = conn
+        .query_row("SELECT x FROM t", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(
+        stored, r#"{"k":1}"#,
+        "expected plain untagged JSON shape, got tagged Value repr"
+    );
+}
+
 #[test]
 fn round_trips_json() {
     let mut map = std::collections::BTreeMap::new();
@@ -114,10 +139,24 @@ fn round_trips_json() {
     assert_eq!(round_trip(v.clone()), v);
 }
 
+#[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
 #[test]
+// `.clone()` below (not `d` twice): pre-existing bug, unrelated to
+// cratestack#505 — `bigdecimal::BigDecimal` isn't `Copy` (unlike
+// `rust_decimal::Decimal`), so this test only compiled under the default
+// `decimal-rust-decimal` backend before. Never caught by
+// `.ci/feature-matrix.sh`, which only ran `cargo check` (no
+// `--all-targets`) for this crate, never `cargo test`. The `.clone()`
+// itself then trips `clippy::clone_on_copy` under `decimal-rust-decimal`
+// (where `Decimal` happens to be `Copy`) — same rationale as
+// `cratestack-sqlx`'s `push_bind_value`.
+#[allow(clippy::clone_on_copy)]
 fn round_trips_decimal_preserves_precision() {
     let d: cratestack_core::Decimal = "12345.67890".parse().unwrap();
-    assert_eq!(round_trip(SqlValue::Decimal(d)), SqlValue::Decimal(d));
+    assert_eq!(
+        round_trip(SqlValue::Decimal(d.clone())),
+        SqlValue::Decimal(d)
+    );
 }
 
 #[test]

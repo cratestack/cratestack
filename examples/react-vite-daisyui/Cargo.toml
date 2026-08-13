@@ -2,17 +2,21 @@
 name = "react-vite-daisyui-example"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 publish = false
 description = "React + Vite + Tailwind 4 + DaisyUI 5 SPA driving a cratestack-rusqlite ModelDelegate compiled to wasm32-unknown-unknown and persisted via OPFS."
+
+[lints]
+workspace = true
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 chrono = { workspace = true }
-cratestack = { package = "cratestack-sqlite", path = "../../crates/cratestack-sqlite", version = "0.4.4" }
-cratestack-macros = { path = "../../crates/cratestack-macros", version = "0.4.4" }
-cratestack-rusqlite = { path = "../../crates/cratestack-rusqlite", version = "0.4.4" }
+cratestack = { package = "cratestack-sqlite", path = "../../crates/cratestack-sqlite" }
+cratestack-macros = { path = "../../crates/cratestack-macros" }
+cratestack-rusqlite = { path = "../../crates/cratestack-rusqlite" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true, features = ["js"] }

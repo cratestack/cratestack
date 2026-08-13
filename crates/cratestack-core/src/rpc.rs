@@ -23,6 +23,33 @@ pub const RPC_UNARY_PATH: &str = "/rpc/{op_id}";
 /// of [`RpcRequest`] frames.
 pub const RPC_BATCH_PATH: &str = "/rpc/batch";
 
+/// Mount path for `@@subscribe` SSE subscriptions
+/// (`docs/design/rpc-transport.md` §3.4a, cratestack#390). The trailing
+/// segment is the percent-decoded op id, e.g.
+/// `GET /rpc/subscribe/model.User.subscribe`. Unlike [`RPC_UNARY_PATH`]
+/// this is `GET`-only and carries no request body — auth is header-based
+/// (same as every other HTTP RPC binding), not an upgrade-time HMAC like
+/// the WS path (§3.4).
+pub const RPC_SUBSCRIBE_PATH: &str = "/rpc/subscribe/{op_id}";
+
+/// CBOR tag number reserved for the mid-stream error sentinel described
+/// in `docs/design/rpc-transport.md` §3.3: when a genuinely incremental
+/// `application/cbor-seq` sequence response (a `@stream` procedure, see
+/// cratestack#282/#283) fails partway through, the *last* item of the
+/// sequence is `Tag(RPC_STREAM_ERROR_TAG, RpcErrorBody-as-CBOR-map)` —
+/// CBOR major type 6, this tag number, wrapping [`RpcErrorBody`] encoded
+/// as a plain CBOR map — in place of what would otherwise be the next
+/// unwrapped `out` item. No further items follow it; end of body comes
+/// immediately after.
+///
+/// Not IANA-registered. Picked from the CBOR tags registry's "First Come
+/// First Served" range (32768–18446744073709551615;
+/// <https://www.iana.org/assignments/cbor-tags/cbor-tags.xhtml>) and
+/// confirmed unassigned as of 2026-08-02 — see cratestack#281 for the
+/// verification method and the collision-risk flag for a pre-merge
+/// human double-check.
+pub const RPC_STREAM_ERROR_TAG: u64 = 48900;
+
 /// Wire shape of a single error returned by an RPC call. Maps from
 /// [`CoolError`] via [`rpc_code`] + [`CoolError::public_message`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -120,9 +147,10 @@ pub const fn rpc_code(error: &CoolError) -> &'static str {
         CoolError::Unauthorized(_) => "unauthenticated",
         CoolError::Forbidden(_) => "permission_denied",
         CoolError::NotFound(_) => "not_found",
-        CoolError::Conflict(_) => "conflict",
+        CoolError::Conflict(_) | CoolError::ConflictTyped(_) => "conflict",
         CoolError::PreconditionFailed(_) => "failed_precondition",
         CoolError::Database(_) | CoolError::DatabaseTyped(_) | CoolError::Internal(_) => "internal",
+        CoolError::Unavailable(_) => "unavailable",
     }
 }
 
@@ -142,6 +170,7 @@ pub fn cool_error_code_to_rpc_code(code: &str) -> &'static str {
         "CONFLICT" => "conflict",
         "PRECONDITION_FAILED" => "failed_precondition",
         "DATABASE_ERROR" | "INTERNAL_ERROR" => "internal",
+        "UNAVAILABLE" => "unavailable",
         _ => "internal",
     }
 }
@@ -149,3 +178,15 @@ pub fn cool_error_code_to_rpc_code(code: &str) -> &'static str {
 fn cool_value_to_json(value: crate::Value) -> serde_json::Value {
     serde_json::to_value(&value).unwrap_or(serde_json::Value::Null)
 }
+
+// RPC model-CRUD input envelopes. Split into their own module rather than
+// appended here: this file is the wire-shape module and was already at 180
+// lines, and the ~85 lines of input envelopes push it past the ~200-LoC
+// ceiling this workspace keeps. They arrived from `cratestack-axum::rpc::
+// inputs`, which was itself a dedicated file, so the fine-grained layout is
+// preserved rather than flattened. Glob-re-exported so every existing
+// `cratestack_core::rpc::RpcListInput` path — and `cratestack-axum::rpc`'s
+// verbatim re-export of it — resolves unchanged.
+mod inputs;
+
+pub use inputs::*;

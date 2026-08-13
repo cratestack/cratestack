@@ -23,3 +23,22 @@ model Widget {
   @@allow("update", auth() != null)
   @@allow("delete", auth() != null)
 }
+
+// Ticket #208: a unary procedure and a `List`-arity (server-streaming)
+// procedure, exercised end to end by `transport_grpc.rs`'s
+// `grpc_unary_procedure_dispatches_through_router`/
+// `grpc_streaming_procedure_dispatches_through_router` tests.
+procedure echoWidgetName(name: String): String
+  @allow(auth() != null)
+
+procedure widgetNameSamples(): String[]
+  @allow(auth() != null)
+
+// #415: proves the trusted-proxy `client_ip` resolution reaches the
+// separately-built gRPC `into_router()`, not just `router()` — exercised
+// by `trusted_proxy_client_ip_grpc.rs`. Returns the literal string
+// `"none"` rather than an optional scalar so this stays on the same
+// "no nullable procedure return type" footing as every other fixture
+// procedure in this file.
+procedure whoAmI(): String
+  @allow(auth() != null)

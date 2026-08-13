@@ -1,0 +1,79 @@
+// Generated procedures module for the `swr` preset (issue #304): every
+// procedure's own `<Name>Args` wrapper type plus a plain, framework-free
+// `async` function per procedure. No client class, no React import —
+// every function takes a `CratestackRpcRuntime` as its first argument.
+//
+// A procedure's own `<Name>Args` type is always defined here — it's
+// already scoped to its one procedure
+// (`crate::naming::procedure_wrapper_name`), never shared. Enums/`type`
+// blocks referenced by exactly this file (not by any model) are inlined
+// below too; anything referenced by 2+ consumers (or by a model as well)
+// lives in `./models/shared` and is imported instead — see
+// `cratestack-client-typescript`'s
+// `src/swr/ownership.rs::compute_type_ownership`.
+
+import type { CratestackRpcRuntime, CratestackRpcCallOptions } from "./runtime.js";
+// cratestack#498: see `procedures-rest.ts.j2`'s identical import for why
+// this is a real (not type-only) import.
+import { reviveDecimalFields, revivePagedDecimalFields, reviveDecimalScalar } from "./models/shared.js";
+{% for import in procedures_file.imports %}
+import type { {{ import.type_names_joined }} } from "{{ import.path }}";
+{% endfor %}
+
+{% for enum in procedures_file.owned_enums %}
+export type {{ enum.name }} = {{ enum.union }};
+export const {{ enum.name }}Values = [
+{% for value in enum.values %}
+  "{{ value }}",
+{% endfor %}
+] as const satisfies readonly {{ enum.name }}[];
+
+{% endfor %}
+{% for interface in procedures_file.owned_interfaces %}
+export interface {{ interface.name }} {
+{% if interface.has_fields %}
+{% for field in interface.fields %}
+  {{ field.property }}{% if field.optional %}?{% endif %}: {{ field.type_name }};
+{% endfor %}
+{% endif %}
+}
+
+{% endfor %}
+{% for interface in procedures_file.args_interfaces %}
+export interface {{ interface.name }} {
+{% if interface.has_fields %}
+{% for field in interface.fields %}
+  {{ field.property }}{% if field.optional %}?{% endif %}: {{ field.type_name }};
+{% endfor %}
+{% endif %}
+}
+
+{% endfor %}
+{% for procedure in procedures_file.procedures %}
+{% if procedure.decimal_revival_kind == "scalar" %}
+export async function {{ procedure.method_name }}(
+  runtime: CratestackRpcRuntime,
+  args: {{ procedure.args_name }},
+  options: CratestackRpcCallOptions = {},
+): Promise<{{ procedure.return_type }}> {
+  return runtime.call<{{ procedure.args_name }}, unknown>(
+    "procedure.{{ procedure.name }}",
+    args,
+    options,
+  ).then((value) => reviveDecimalScalar(value) as {{ procedure.return_type }});
+}
+{% else %}
+export async function {{ procedure.method_name }}(
+  runtime: CratestackRpcRuntime,
+  args: {{ procedure.args_name }},
+  options: CratestackRpcCallOptions = {},
+): Promise<{{ procedure.return_type }}> {
+  return runtime.call<{{ procedure.args_name }}, unknown>(
+    "procedure.{{ procedure.name }}",
+    args,
+    options,
+  ).then((value) => {% if procedure.decimal_paged %}revivePagedDecimalFields{% else %}reviveDecimalFields{% endif %}(value, '{{ procedure.decimal_shape_name }}') as {{ procedure.return_type }});
+}
+{% endif %}
+
+{% endfor %}

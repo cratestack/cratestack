@@ -1,0 +1,36 @@
+// cratestack#347 verification fixture: a genuinely procedures-only,
+// `datasource { provider = "none" }` schema. No `model` blocks — the parser
+// rejects them under `provider = "none"` (cratestack#327). Same shape as
+// `examples/no-database-verification/schema.cstack` (cratestack#329's own
+// proof fixture) — this crate proves the same absence for `cratestack-api`
+// instead of `cratestack-pg` with `default-features = false`.
+
+datasource db {
+  provider = "none"
+}
+
+type PingArgs {
+  message String
+}
+
+type PingReply {
+  echo String
+}
+
+procedure ping(args: PingArgs): PingReply
+  @allow(auth() != null)
+
+// cratestack#407 verification: `@status(202)` on a REST procedure's
+// success response, and (in tests/smoke.rs) proof that the generated
+// `cratestack-client-rust` client treats it as success like any other 2xx.
+procedure submit(args: PingArgs): PingReply
+  @status(202)
+  @allow(auth() != null)
+
+// cratestack#407 follow-up verification: `@status` must thread into the
+// `@stream` dispatch tail too, not just the unary/`TypeArity::List`
+// branches — see tests/smoke.rs's `streamed_procedure_returns_the_declared_202_status`.
+procedure streamed(args: PingArgs): PingReply[]
+  @stream
+  @status(202)
+  @allow(auth() != null)

@@ -11,6 +11,21 @@ name = "studio"
 # default_mode applies when a target omits `mode`. Values: "ro" | "rw".
 default_mode = "ro"
 
+# Optional: persist the audit log of Studio's own writes (CREATE /
+# UPDATE / DELETE) to an append-only JSONL file, replayed on boot so it
+# survives restarts. Relative paths resolve against this file's
+# directory.
+#
+# Left unset, the audit log lives in process memory only — Studio writes
+# nothing to your filesystem and creates nothing in your database. The
+# file is Studio-local either way: audit rows are never written into the
+# target database's schema.
+#
+# The file is append-only and Studio never rotates or truncates it; the
+# in-memory ring the API serves stays capped regardless of its size.
+#
+# audit_file = ".cratestack-studio/audit.jsonl"
+
 # Example target — replace with your own and remove this stub before booting.
 #
 # [[target]]
@@ -24,6 +39,26 @@ default_mode = "ro"
 # driver = "postgres"
 # max_connections = 5
 #
+# IMPORTANT: a [target.db] target is a direct SQL connection, not a
+# proxy to your deployed service. It is NOT equivalent to the
+# generated API: writes bypass @version bumping, @@emit(...) event
+# outbox rows, and @@allow policy checks entirely (cratestack#507).
+# For a model that declares @version or @@emit(...), Studio refuses
+# POST/PATCH/DELETE against this target with a 403 UNSAFE_DB_WRITE
+# unless you opt in below:
+#
+# allow_unsafe_writes = true
+#
+# @@allow policy is not enforced on [target.db] reads or writes
+# either way — that's judged intended for a direct-DB admin tool, but
+# it means a target on a schema with sensitive/role-gated fields
+# grants unauthenticated database-level access to them through
+# Studio's HTTP API. Prefer [target.api] (below) when the schema
+# declares policies you need enforced.
+#
 # [target.api]
 # base_url = "https://catalog.internal"
 # auth = { kind = "bearer", token = "env:CATALOG_TOKEN" }
+# # Writes through [target.api] go through your deployed service's own
+# # generated routes, so @version, @@emit, and @@allow all apply exactly
+# # as declared in the schema.

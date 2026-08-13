@@ -6,10 +6,29 @@
 
 use crate::data::model_info::{ModelSqlInfo, PkCast};
 
+/// Project every column **aliased back to its `.cstack` field name**.
+///
+/// This alias is not cosmetic. [`crate::data::Row`] documents that row
+/// keys are field names as declared in the model, and every consumer
+/// relies on it: the UI looks up `row[field.name]`,
+/// [`crate::data::common::next_cursor`] extracts the cursor by PK field
+/// name, `relations::extract_filter_value` reads the FK by field name,
+/// and the audit log reads the new PK by field name. The SQLite source
+/// has always honoured that contract (its `json_object(...)` labels are
+/// field names); Postgres did not, because `row_to_json(t.*)` keys the
+/// object by whatever the subquery called its columns — i.e. the
+/// snake_cased *column* names.
+///
+/// The two only coincide for single-word fields (`id`, `status`), which
+/// is why the mismatch stayed invisible: on a schema with `subjectId`
+/// or `createdAt` every one of those lookups missed, blanking cells,
+/// stalling pagination, breaking relation follow, and — worst — making
+/// the drawer's edit form read `""` and write `null` back over
+/// untouched optional columns.
 fn projection(info: &ModelSqlInfo<'_>) -> String {
     info.columns
         .iter()
-        .map(|c| format!("\"{}\"", c.column_name))
+        .map(|c| format!("\"{}\" AS \"{}\"", c.column_name, c.field_name))
         .collect::<Vec<_>>()
         .join(", ")
 }
@@ -102,13 +121,31 @@ pub(super) fn build_insert_sql(info: &ModelSqlInfo<'_>, columns: &[String]) -> S
     )
 }
 
-pub(super) fn build_update_sql(info: &ModelSqlInfo<'_>, columns: &[String]) -> String {
-    let assignments = columns
+/// `version_column`, when the model declares `@version`, is appended to
+/// the `SET` list as `"col" = "col" + 1` — a raw fragment, not a bound
+/// placeholder, so it never disturbs the positional `$N` indices the
+/// payload columns and the trailing PK bind rely on. Always applied when
+/// present; the caller (`ops::update`) only reaches this builder once
+/// the write-mode guard has decided the write is safe to route for real
+/// (cratestack#507's "option 3") — an unroutable `@version` write is
+/// refused before any SQL is built at all.
+pub(super) fn build_update_sql(
+    info: &ModelSqlInfo<'_>,
+    columns: &[String],
+    version_column: Option<&str>,
+) -> String {
+    let mut assignments = columns
         .iter()
         .enumerate()
         .map(|(i, c)| format!("\"{c}\" = ${}", i + 1))
         .collect::<Vec<_>>()
         .join(", ");
+    if let Some(v) = version_column {
+        if !assignments.is_empty() {
+            assignments.push_str(", ");
+        }
+        assignments.push_str(&format!("\"{v}\" = \"{v}\" + 1"));
+    }
     let pk_placeholder = columns.len() + 1;
     let pk = &info.pk_column;
     let pk_predicate = match info.pk_cast {

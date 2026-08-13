@@ -26,6 +26,7 @@ fn config_with_lock(pb_lock: PbLock) -> TypeScriptGeneratorConfig {
         package_name: "@example/widgets-grpc".to_owned(),
         base_path: "/".to_owned(),
         template_dir: None,
+        preset: cratestack_client_typescript::TypeScriptPreset::Default,
         full_selection: false,
         pb_lock: Some(pb_lock),
         // gRPC-Web is out of scope for the schema-fingerprint header (issue

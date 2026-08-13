@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import 'package:decimal/decimal.dart';
+
 import 'runtime.dart';
 
 class PageInfo {
@@ -72,6 +74,336 @@ class Page<T> {
       'pageInfo': pageInfo.toWire(),
     };
   }
+}
+
+class PageInput {
+  const PageInput({this.limit, this.offset});
+
+  final int? limit;
+  final int? offset;
+
+  factory PageInput.fromWire(CratestackValueMap value) {
+    return PageInput(
+      limit: value['limit'] == null ? null : (value['limit'] as num).toInt(),
+      offset: value['offset'] == null ? null : (value['offset'] as num).toInt(),
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+      'limit': limit,
+      'offset': offset,
+    };
+  }
+}
+
+enum SortDirection {
+  asc('asc'),
+  desc('desc');
+
+  const SortDirection(this.wireName);
+
+  final String wireName;
+
+  static SortDirection fromWire(Object? value) {
+    final wireName = value as String;
+    switch (wireName) {
+      case 'asc':
+        return SortDirection.asc;
+      case 'desc':
+        return SortDirection.desc;
+    }
+    throw ArgumentError.value(wireName, 'value', 'Unknown SortDirection value');
+  }
+
+  Object toWire() => wireName;
+}
+
+// Shared building blocks for every `<Model>Where`/`<Model>FindMany` pair
+// (search-with-filters for procedures — mirrors
+// cratestack-core::find_many::FieldFilterInput exactly). Defined once
+// here (like Page/PageInfo/PageInput above) rather than per-model; the
+// per-model `<Model>Where`/`<Model>SortField`/`<Model>OrderByClause`/
+// `<Model>FindMany` classes referencing these are generated below, in
+// the data_classes/enum_types loops. Usable only as a procedure
+// argument type.
+class StringFilter {
+  const StringFilter({
+    this.eq,
+    this.ne,
+    this.in$,
+    this.lt,
+    this.lte,
+    this.gt,
+    this.gte,
+    this.contains,
+    this.startsWith,
+    this.isNull,
+  });
+
+  final String? eq;
+  final String? ne;
+  final List<String>? in$;
+  final String? lt;
+  final String? lte;
+  final String? gt;
+  final String? gte;
+  final String? contains;
+  final String? startsWith;
+  final bool? isNull;
+
+  factory StringFilter.fromWire(CratestackValueMap value) {
+    return StringFilter(
+      eq: value['eq'] as String?,
+      ne: value['ne'] as String?,
+      in$: value['in'] == null
+          ? null
+          : cratestackAsValueList(value['in']).map((item) => item as String).toList(growable: false),
+      lt: value['lt'] as String?,
+      lte: value['lte'] as String?,
+      gt: value['gt'] as String?,
+      gte: value['gte'] as String?,
+      contains: value['contains'] as String?,
+      startsWith: value['startsWith'] as String?,
+      isNull: value['isNull'] as bool?,
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+      'eq': eq,
+      'ne': ne,
+      'in': in$,
+      'lt': lt,
+      'lte': lte,
+      'gt': gt,
+      'gte': gte,
+      'contains': contains,
+      'startsWith': startsWith,
+      'isNull': isNull,
+    };
+  }
+}
+
+class NumberFilter {
+  const NumberFilter({this.eq, this.ne, this.in$, this.lt, this.lte, this.gt, this.gte, this.isNull});
+
+  final num? eq;
+  final num? ne;
+  final List<num>? in$;
+  final num? lt;
+  final num? lte;
+  final num? gt;
+  final num? gte;
+  final bool? isNull;
+
+  factory NumberFilter.fromWire(CratestackValueMap value) {
+    return NumberFilter(
+      eq: value['eq'] as num?,
+      ne: value['ne'] as num?,
+      in$: value['in'] == null
+          ? null
+          : cratestackAsValueList(value['in']).map((item) => item as num).toList(growable: false),
+      lt: value['lt'] as num?,
+      lte: value['lte'] as num?,
+      gt: value['gt'] as num?,
+      gte: value['gte'] as num?,
+      isNull: value['isNull'] as bool?,
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+      'eq': eq,
+      'ne': ne,
+      'in': in$,
+      'lt': lt,
+      'lte': lte,
+      'gt': gt,
+      'gte': gte,
+      'isNull': isNull,
+    };
+  }
+}
+
+class BooleanFilter {
+  const BooleanFilter({this.eq, this.ne, this.in$, this.isNull});
+
+  final bool? eq;
+  final bool? ne;
+  final List<bool>? in$;
+  final bool? isNull;
+
+  factory BooleanFilter.fromWire(CratestackValueMap value) {
+    return BooleanFilter(
+      eq: value['eq'] as bool?,
+      ne: value['ne'] as bool?,
+      in$: value['in'] == null
+          ? null
+          : cratestackAsValueList(value['in']).map((item) => item as bool).toList(growable: false),
+      isNull: value['isNull'] as bool?,
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+      'eq': eq,
+      'ne': ne,
+      'in': in$,
+      'isNull': isNull,
+    };
+  }
+}
+
+class UuidFilter {
+  const UuidFilter({this.eq, this.ne, this.in$, this.lt, this.lte, this.gt, this.gte, this.isNull});
+
+  final String? eq;
+  final String? ne;
+  final List<String>? in$;
+  final String? lt;
+  final String? lte;
+  final String? gt;
+  final String? gte;
+  final bool? isNull;
+
+  factory UuidFilter.fromWire(CratestackValueMap value) {
+    return UuidFilter(
+      eq: value['eq'] as String?,
+      ne: value['ne'] as String?,
+      in$: value['in'] == null
+          ? null
+          : cratestackAsValueList(value['in']).map((item) => item as String).toList(growable: false),
+      lt: value['lt'] as String?,
+      lte: value['lte'] as String?,
+      gt: value['gt'] as String?,
+      gte: value['gte'] as String?,
+      isNull: value['isNull'] as bool?,
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+      'eq': eq,
+      'ne': ne,
+      'in': in$,
+      'lt': lt,
+      'lte': lte,
+      'gt': gt,
+      'gte': gte,
+      'isNull': isNull,
+    };
+  }
+}
+
+class DateTimeFilter {
+  const DateTimeFilter({this.eq, this.ne, this.in$, this.lt, this.lte, this.gt, this.gte, this.isNull});
+
+  final DateTime? eq;
+  final DateTime? ne;
+  final List<DateTime>? in$;
+  final DateTime? lt;
+  final DateTime? lte;
+  final DateTime? gt;
+  final DateTime? gte;
+  final bool? isNull;
+
+  factory DateTimeFilter.fromWire(CratestackValueMap value) {
+    return DateTimeFilter(
+      eq: value['eq'] == null ? null : DateTime.parse(value['eq'] as String),
+      ne: value['ne'] == null ? null : DateTime.parse(value['ne'] as String),
+      in$: value['in'] == null
+          ? null
+          : cratestackAsValueList(value['in']).map((item) => DateTime.parse(item as String)).toList(growable: false),
+      lt: value['lt'] == null ? null : DateTime.parse(value['lt'] as String),
+      lte: value['lte'] == null ? null : DateTime.parse(value['lte'] as String),
+      gt: value['gt'] == null ? null : DateTime.parse(value['gt'] as String),
+      gte: value['gte'] == null ? null : DateTime.parse(value['gte'] as String),
+      isNull: value['isNull'] as bool?,
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+      'eq': eq?.toUtc().toIso8601String(),
+      'ne': ne?.toUtc().toIso8601String(),
+      'in': in$?.map((item) => item.toUtc().toIso8601String()).toList(growable: false),
+      'lt': lt?.toUtc().toIso8601String(),
+      'lte': lte?.toUtc().toIso8601String(),
+      'gt': gt?.toUtc().toIso8601String(),
+      'gte': gte?.toUtc().toIso8601String(),
+      'isNull': isNull,
+    };
+  }
+}
+
+// cratestack#498: `Decimal` (`package:decimal`), not `String` — every
+// comparison operand is a real arbitrary-precision value, parsed the same
+// way regardless of whether the server that produced it is on the
+// `decimal-rust-decimal` or `decimal-bigdecimal` backend (see
+// `dart_type`'s "Decimal" arm in `crate::dart_types` for why those two
+// backends' wire strings otherwise diverge).
+class DecimalFilter {
+  const DecimalFilter({this.eq, this.ne, this.in$, this.lt, this.lte, this.gt, this.gte, this.isNull});
+
+  final Decimal? eq;
+  final Decimal? ne;
+  final List<Decimal>? in$;
+  final Decimal? lt;
+  final Decimal? lte;
+  final Decimal? gt;
+  final Decimal? gte;
+  final bool? isNull;
+
+  factory DecimalFilter.fromWire(CratestackValueMap value) {
+    return DecimalFilter(
+      eq: value['eq'] == null ? null : Decimal.parse(value['eq'] as String),
+      ne: value['ne'] == null ? null : Decimal.parse(value['ne'] as String),
+      in$: value['in'] == null
+          ? null
+          : cratestackAsValueList(value['in']).map((item) => Decimal.parse(item as String)).toList(growable: false),
+      lt: value['lt'] == null ? null : Decimal.parse(value['lt'] as String),
+      lte: value['lte'] == null ? null : Decimal.parse(value['lte'] as String),
+      gt: value['gt'] == null ? null : Decimal.parse(value['gt'] as String),
+      gte: value['gte'] == null ? null : Decimal.parse(value['gte'] as String),
+      isNull: value['isNull'] as bool?,
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+      'eq': eq?.toString(),
+      'ne': ne?.toString(),
+      'in': in$?.map((item) => item.toString()).toList(growable: false),
+      'lt': lt?.toString(),
+      'lte': lte?.toString(),
+      'gt': gt?.toString(),
+      'gte': gte?.toString(),
+      'isNull': isNull,
+    };
+  }
+}
+
+enum WidgetSortField {
+  id('id'),  name('name'),  weight('weight');
+  const WidgetSortField(this.wireName);
+
+  final String wireName;
+
+  static WidgetSortField fromWire(Object? value) {
+    final wireName = value as String;
+    switch (wireName) {
+      case 'id':
+        return WidgetSortField.id;
+      case 'name':
+        return WidgetSortField.name;
+      case 'weight':
+        return WidgetSortField.weight;
+    }
+    throw ArgumentError.value(wireName, 'value', 'Unknown WidgetSortField value');
+  }
+
+  Object toWire() => wireName;
 }
 
 class Widget {
@@ -150,6 +482,82 @@ this.weight,
     return <String, Object?>{
       'name': name,
       'weight': weight,
+    };
+  }
+}
+
+class WidgetWhere {
+  const WidgetWhere({
+this.id,
+this.name,
+this.weight,
+  });
+
+  final NumberFilter? id;
+  final StringFilter? name;
+  final NumberFilter? weight;
+
+  factory WidgetWhere.fromWire(CratestackValueMap value) {
+    return WidgetWhere(
+      id: value['id'] == null ? null : NumberFilter.fromWire(cratestackAsValueMap(value['id'])),
+      name: value['name'] == null ? null : StringFilter.fromWire(cratestackAsValueMap(value['name'])),
+      weight: value['weight'] == null ? null : NumberFilter.fromWire(cratestackAsValueMap(value['weight'])),
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+      'id': id?.toWire(),
+      'name': name?.toWire(),
+      'weight': weight?.toWire(),
+    };
+  }
+}
+
+class WidgetOrderByClause {
+  const WidgetOrderByClause({
+required this.field,
+required this.direction,
+  });
+
+  final WidgetSortField field;
+  final SortDirection direction;
+
+  factory WidgetOrderByClause.fromWire(CratestackValueMap value) {
+    return WidgetOrderByClause(
+      field: WidgetSortField.fromWire(cratestackRequireWireValue('WidgetOrderByClause', 'field', value['field'])),
+      direction: SortDirection.fromWire(cratestackRequireWireValue('WidgetOrderByClause', 'direction', value['direction'])),
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+      'field': field.toWire(),
+      'direction': direction.toWire(),
+    };
+  }
+}
+
+class WidgetFindMany {
+  const WidgetFindMany({
+this.where,
+this.orderBy,
+  });
+
+  final WidgetWhere? where;
+  final List<WidgetOrderByClause>? orderBy;
+
+  factory WidgetFindMany.fromWire(CratestackValueMap value) {
+    return WidgetFindMany(
+      where: value['where'] == null ? null : WidgetWhere.fromWire(cratestackAsValueMap(value['where'])),
+      orderBy: value['orderBy'] == null ? null : cratestackAsValueList(value['orderBy']).map((item) => WidgetOrderByClause.fromWire(cratestackAsValueMap(item))).toList(growable: false),
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+      'where': where?.toWire(),
+      'orderBy': orderBy?.map((item) => item.toWire()).toList(growable: false),
     };
   }
 }

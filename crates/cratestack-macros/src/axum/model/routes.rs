@@ -1,6 +1,9 @@
 //! `.route(...)` chain for the per-model handlers, mounted on the
 //! generated `model_router`.
 
+#[cfg(test)]
+mod tests;
+
 use cratestack_core::Model;
 use quote::quote;
 

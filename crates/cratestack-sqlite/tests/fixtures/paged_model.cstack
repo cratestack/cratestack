@@ -1,0 +1,15 @@
+// Regression fixture: `@@paged` on a model consumed by
+// `include_embedded_schema!` used to be a hard compile error (it shaped
+// nothing — the embedded composer generates no `list` route). It now
+// compiles: real pagination is available unconditionally via
+// `FindMany::paginate` regardless of this attribute — see
+// `cratestack-macros/src/include/embedded.rs`'s module doc. This fixture
+// proves the `@@paged` case specifically still compiles and works.
+
+model Post {
+  id Int @id
+  title String
+  published Boolean
+
+  @@paged
+}

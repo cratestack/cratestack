@@ -4,6 +4,7 @@ use super::coalesce::CoalesceFilter;
 use super::filter::Filter;
 use super::json::JsonFilter;
 use super::spatial::SpatialFilter;
+use super::vector::VectorDistanceFilter;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RelationFilter {
@@ -35,6 +36,13 @@ pub enum FilterExpr {
     /// rusqlite backend doesn't ship SpatiaLite by default, so its
     /// renderer fails loud at codegen time.
     Spatial(SpatialFilter),
+    /// `Vector(n)` distance-to-a-query-vector threshold predicates (see
+    /// `docs/design/extensions.md` §6/§7, cratestack#163) — see
+    /// [`VectorDistanceFilter`]. Built via
+    /// `FieldRef::distance_to(...).lt(...)`/`.lte(...)`/etc. PG-only
+    /// (pgvector); the embedded rusqlite backend fails loud at render
+    /// time, mirroring [`Self::Spatial`].
+    VectorDistance(VectorDistanceFilter),
 }
 
 impl From<Filter> for FilterExpr {

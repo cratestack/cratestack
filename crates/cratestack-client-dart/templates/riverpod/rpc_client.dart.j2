@@ -1,0 +1,24 @@
+{% for import in imports %}
+{{ import }}
+{% endfor %}
+
+class {{ client_class_name }} {
+  {{ client_class_name }}(this._adapter);
+
+  final CratestackRpcAdapter _adapter;
+
+  CratestackRpcAdapter get adapter => _adapter;
+
+{% for accessor in model_accessors %}
+  {{ accessor.api_class_name }} get {{ accessor.accessor }} => {{ accessor.api_class_name }}(this);
+{% endfor %}
+  ProceduresApi get procedures => ProceduresApi(this);
+}
+
+final {{ provider_prefix }}AdapterProvider = Provider<CratestackRpcAdapter>((ref) {
+  throw UnimplementedError('Override {{ provider_prefix }}AdapterProvider before reading the generated CrateStack client.');
+});
+
+final {{ provider_prefix }}ClientProvider = Provider<{{ client_class_name }}>((ref) {
+  return {{ client_class_name }}(ref.watch({{ provider_prefix }}AdapterProvider));
+});

@@ -368,6 +368,21 @@ while the workspace's axum major version and the one tonic builds against
 agree. That version alignment is the first thing ticket 4 should verify,
 before any codegen work.
 
+> **Status.** Ticket #171 shipped model CRUD (`list`/`get`/`create`/
+> `update`/`delete`) over gRPC. Ticket #208 closed the gap that shipped
+> with — `procedure` declarations get a unary tonic method, dispatched
+> through the same `handle_*_dispatch` fn/policy/audit pipeline; a
+> `List`-arity (`OpKind::Sequence`) procedure gets a
+> `tonic::server::ServerStreamingService` method instead. One nuance
+> worth stating precisely: the already-shipped `.proto` contract (ticket
+> #169/#170) gives a `List`-arity procedure's `<Base>Output` a `repeated
+> result` field, not a per-item message — so "server-streaming" here
+> means the whole result travels in one streamed message, genuinely
+> using tonic's server-streaming machinery at the wire level, not
+> itemwise-incremental production. True item-by-item delivery (matching
+> a `@stream` procedure's own incremental behavior over REST/RPC,
+> cratestack#283) remains a smaller, unticketed follow-up.
+
 ### 7.3 Wire details that will bite if left implicit
 
 - **Envelope signing.** `canonical_request_string` takes

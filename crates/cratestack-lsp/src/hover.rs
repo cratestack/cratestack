@@ -11,7 +11,7 @@ pub(crate) fn locate_symbol(schema: &Schema, offset: usize) -> Option<SymbolInfo
         return Some(SymbolInfo {
             kind: "datasource",
             name: datasource.name.clone(),
-            detail: "datasource block".to_owned(),
+            detail: datasource_hover_detail(datasource),
             docs: datasource.docs.clone(),
             selection_span: datasource.span,
         });
@@ -122,6 +122,27 @@ pub(crate) fn locate_symbol(schema: &Schema, offset: usize) -> Option<SymbolInfo
     }
 
     None
+}
+
+/// Hover detail for a `datasource` block: names the current `provider`
+/// value (if any) and documents all three values `validate_datasource`
+/// (cratestack-parser) accepts — `"postgresql"`, `"sqlite"`, and `"none"`
+/// (cratestack#327's no-database, procedures-only mode) — so schema authors
+/// discover `"none"` without reading source.
+fn datasource_hover_detail(datasource: &cratestack_core::Datasource) -> String {
+    let provider = datasource
+        .entries
+        .iter()
+        .find(|entry| entry.key == "provider")
+        .map(|entry| entry.value.trim_matches('"'));
+
+    let providers = "`\"postgresql\"` | `\"sqlite\"` | `\"none\"` (no database, procedures-only)";
+    match provider {
+        Some(provider) => {
+            format!("datasource block (provider: `\"{provider}\"`; valid values: {providers})")
+        }
+        None => format!("datasource block (valid `provider` values: {providers})"),
+    }
 }
 
 fn field_symbol(field: &cratestack_core::Field) -> SymbolInfo {

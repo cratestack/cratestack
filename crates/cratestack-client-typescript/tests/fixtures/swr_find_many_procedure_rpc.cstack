@@ -1,0 +1,13 @@
+// RPC-transport counterpart of `swr_find_many_procedure.cstack` — same
+// gap (see that fixture's header comment), exercised through
+// `models-rpc.ts.j2`/`procedures-rpc.ts.j2` instead of the REST
+// templates.
+
+transport rpc
+
+model Post {
+  id Int @id
+  title String
+}
+
+procedure searchPosts(query: FindMany<Post>): Post[]
