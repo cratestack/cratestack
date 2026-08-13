@@ -12,7 +12,7 @@ use cratestack_core::{Field, Model, Schema};
 
 use crate::error::WireMockGeneratorError;
 use crate::model_attrs::{
-    ScalarKind, classify_field_kind, is_relation_field, is_server_only_field,
+    ScalarKind, classify_field_kind, is_relation_field, is_server_only_field, is_version_field,
 };
 use crate::values::synthesize;
 
@@ -39,6 +39,17 @@ pub(crate) struct ModelFieldPlan {
     pub(crate) pk_name: String,
     pub(crate) pk_type_name: String,
     pub(crate) pk_kind: ScalarKind,
+    /// The `@version` field's name, if the model declares one. Never in
+    /// `stateful`/`frozen` — it needs create/update handling neither
+    /// bucket gives it (see `super::body`'s module doc): a create
+    /// response always seeds it at `0` (never client-supplied — parser
+    /// validation forbids `@version` in a `Create<M>Input` the same way
+    /// the real server's generated input does), and an update response
+    /// always bumps the *stored* value by one (never merges the client's
+    /// request body — a real `@version` column has no SQL `DEFAULT` and
+    /// is never carried by `UpdateModelInput` either,
+    /// `crates/cratestack-macros/src/model/descriptor/columns.rs`).
+    pub(crate) version_name: Option<String>,
     pub(crate) stateful: Vec<StateField>,
     pub(crate) frozen: Vec<FrozenField>,
 }
@@ -56,6 +67,11 @@ pub(crate) fn build_field_plan(
     pk_field: &Field,
 ) -> Result<ModelFieldPlan, WireMockGeneratorError> {
     let owner = format!("model `{}`", model.name);
+    let version_name = model
+        .fields
+        .iter()
+        .find(|field| is_version_field(field))
+        .map(|field| field.name.clone());
     let mut stateful = Vec::new();
     let mut frozen = Vec::new();
 
@@ -63,6 +79,7 @@ pub(crate) fn build_field_plan(
         if field.name == pk_field.name
             || is_relation_field(model_names, field)
             || is_server_only_field(field)
+            || is_version_field(field)
         {
             continue;
         }
@@ -87,6 +104,7 @@ pub(crate) fn build_field_plan(
         pk_name: pk_field.name.clone(),
         pk_type_name: pk_field.ty.name.clone(),
         pk_kind: classify_field_kind(schema, pk_field),
+        version_name,
         stateful,
         frozen,
     })

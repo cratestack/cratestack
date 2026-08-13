@@ -34,13 +34,16 @@ pub(crate) struct VerbRoute {
 }
 
 /// Builds the `(verb, mapping)` pairs for every CRUD route `model`
-/// declares, in `["list", "get", "create", "update", "delete"]` order.
+/// declares. Static `["list", "get", "create", "update", "delete"]`
+/// order for `transport rpc`; for `transport rest` see
+/// `build_stateful_rest_mappings`'s own doc for how an `@version` model
+/// fans `update`/`delete` out into more than one pair each.
 pub(crate) fn build_model_mappings(
     schema: &Schema,
     config: &WireMockGeneratorConfig,
     model: &Model,
     model_names: &BTreeSet<&str>,
-) -> Result<Vec<(&'static str, Value)>, WireMockGeneratorError> {
+) -> Result<Vec<(String, Value)>, WireMockGeneratorError> {
     match schema.transport {
         TransportStyle::Rest => build_stateful_rest_mappings(schema, config, model, model_names),
         TransportStyle::Rpc | TransportStyle::Grpc => {
@@ -58,7 +61,7 @@ fn build_static_rpc_mappings(
     config: &WireMockGeneratorConfig,
     model: &Model,
     model_names: &BTreeSet<&str>,
-) -> Result<Vec<(&'static str, Value)>, WireMockGeneratorError> {
+) -> Result<Vec<(String, Value)>, WireMockGeneratorError> {
     if !model.fields.iter().any(is_primary_key) {
         return Err(WireMockGeneratorError::ModelMissingPrimaryKey {
             model: model.name.clone(),
@@ -75,7 +78,12 @@ fn build_static_rpc_mappings(
     Ok(routes
         .into_iter()
         .zip(bodies)
-        .map(|(route, body)| (route.verb, build_static_mapping(&route, body, &model.name)))
+        .map(|(route, body)| {
+            (
+                route.verb.to_owned(),
+                build_static_mapping(&route, body, &model.name),
+            )
+        })
         .collect())
 }
 

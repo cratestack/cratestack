@@ -12,8 +12,10 @@
 mod body;
 mod fields;
 mod fragments;
+mod if_match;
 mod listeners;
 mod mapping;
+mod version_gate;
 
 use std::collections::BTreeSet;
 
@@ -24,17 +26,25 @@ use crate::config::WireMockGeneratorConfig;
 use crate::error::WireMockGeneratorError;
 use crate::model_attrs::{is_paged_model, is_primary_key};
 use fields::build_field_plan;
-use mapping::{envelope, envelope_with_matcher, regex_escape};
+use fragments::{read_state, version_bump};
+use mapping::{envelope, envelope_with_matcher, regex_escape, with_etag_header};
+use version_gate::gated_mappings;
 
-/// Builds the five stateful `(verb, mapping)` pairs for `model` under
-/// `transport rest`, in `["list", "get", "create", "update", "delete"]`
-/// order.
+/// Builds the stateful `(verb, mapping)` pairs for `model` under
+/// `transport rest`: `["list", "get", "create", "update", "delete"]`
+/// for a plain model, or — for an `@version` model — `"update"`/
+/// `"delete"` each fanned out into five `If-Match`-gated stubs by
+/// [`version_gate::gated_mappings`] (`"update"`, `"update-if-match-
+/// required"`, `"update-if-match-wildcard"`, `"update-if-match-
+/// malformed"`, `"update-if-match-stale"`, and the `delete` equivalents)
+/// alongside an unchanged `"list"`/`"create"`, and a `"get"` whose
+/// response now also carries an `ETag`.
 pub(crate) fn build_stateful_rest_mappings(
     schema: &Schema,
     config: &WireMockGeneratorConfig,
     model: &Model,
     model_names: &BTreeSet<&str>,
-) -> Result<Vec<(&'static str, Value)>, WireMockGeneratorError> {
+) -> Result<Vec<(String, Value)>, WireMockGeneratorError> {
     let pk_field = model
         .fields
         .iter()
@@ -94,7 +104,7 @@ pub(crate) fn build_stateful_rest_mappings(
         &model.name,
         "create",
     );
-    let get_mapping = envelope_with_matcher(
+    let mut get_mapping = envelope_with_matcher(
         "GET",
         &detail_pattern,
         has_context_matcher,
@@ -104,36 +114,72 @@ pub(crate) fn build_stateful_rest_mappings(
         &model.name,
         "get",
     );
-    let update_mapping = envelope_with_matcher(
-        "PATCH",
-        &detail_pattern,
-        has_context_matcher,
-        200,
-        &body::update_body(&plan, "request.path"),
-        Some(listeners::update_listeners(&plan, "{{request.path}}")),
-        &model.name,
-        "update",
-    );
-    let delete_mapping = envelope_with_matcher(
-        "DELETE",
-        &detail_pattern,
-        has_context_matcher,
-        200,
-        &body::read_body(&plan, "request.path"),
-        Some(listeners::delete_listeners(
-            &plan,
-            &plural,
-            "{{request.path}}",
-        )),
-        &model.name,
-        "delete",
-    );
+    let update_listeners = Some(listeners::update_listeners(&plan, "{{request.path}}"));
+    let delete_listeners = Some(listeners::delete_listeners(
+        &plan,
+        &plural,
+        "{{request.path}}",
+    ));
 
-    Ok(vec![
-        ("list", list_mapping),
-        ("get", get_mapping),
-        ("create", create_mapping),
-        ("update", update_mapping),
-        ("delete", delete_mapping),
-    ])
+    let mut mappings = vec![
+        ("list".to_owned(), list_mapping),
+        ("create".to_owned(), create_mapping),
+    ];
+
+    match &plan.version_name {
+        None => {
+            let update_mapping = envelope_with_matcher(
+                "PATCH",
+                &detail_pattern,
+                has_context_matcher,
+                200,
+                &body::update_body(&plan, "request.path"),
+                update_listeners,
+                &model.name,
+                "update",
+            );
+            let delete_mapping = envelope_with_matcher(
+                "DELETE",
+                &detail_pattern,
+                has_context_matcher,
+                200,
+                &body::read_body(&plan, "request.path"),
+                delete_listeners,
+                &model.name,
+                "delete",
+            );
+            mappings.push(("update".to_owned(), update_mapping));
+            mappings.push(("delete".to_owned(), delete_mapping));
+        }
+        Some(version_name) => {
+            get_mapping = with_etag_header(get_mapping, &read_state(version_name, "request.path"));
+            mappings.extend(gated_mappings(
+                "PATCH",
+                &detail_pattern,
+                &plan,
+                200,
+                &body::update_body(&plan, "request.path"),
+                update_listeners,
+                Some(&version_bump(version_name, "request.path")),
+                &model.name,
+                "update",
+            ));
+            mappings.extend(gated_mappings(
+                "DELETE",
+                &detail_pattern,
+                &plan,
+                200,
+                &body::read_body(&plan, "request.path"),
+                delete_listeners,
+                None,
+                &model.name,
+                "delete",
+            ));
+        }
+    }
+    // Insertion order doesn't matter beyond this point — `generator.rs`
+    // sorts the final file list by name for deterministic output.
+    mappings.push(("get".to_owned(), get_mapping));
+
+    Ok(mappings)
 }

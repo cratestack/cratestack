@@ -10,7 +10,7 @@
 
 use super::fields::ModelFieldPlan;
 use super::fragments::{
-    LIST_ENTRY_CONTEXT_KEY, id_generator, merge_or_fallback, quote_wrap, read_state,
+    LIST_ENTRY_CONTEXT_KEY, id_generator, merge_or_fallback, quote_wrap, read_state, version_bump,
 };
 
 fn assemble_object(pairs: &[(String, String)]) -> String {
@@ -31,7 +31,11 @@ fn frozen_pairs(plan: &ModelFieldPlan) -> Vec<(String, String)> {
 
 /// `POST /<plural>` response body: a freshly generated id, every
 /// stateful field echoed from the request body if present (else its
-/// static default), every frozen field at its static default.
+/// static default), every frozen field at its static default, and (for
+/// an `@version` model) the version field always seeded at `0` —
+/// mirroring `create_exec.rs`'s server-side seed exactly: never
+/// echoed/merged from the request body, since a real `Create<M>Input`
+/// never carries `@version` at all.
 pub(crate) fn create_body(plan: &ModelFieldPlan) -> String {
     let mut pairs = vec![(
         plan.pk_name.clone(),
@@ -46,6 +50,9 @@ pub(crate) fn create_body(plan: &ModelFieldPlan) -> String {
             &merge_or_fallback(&field.name, &quote_wrap_default(field)),
         );
         pairs.push((field.name.clone(), value));
+    }
+    if let Some(version_name) = &plan.version_name {
+        pairs.push((version_name.clone(), "0".to_owned()));
     }
     pairs.extend(frozen_pairs(plan));
     assemble_object(&pairs)
@@ -63,9 +70,10 @@ fn quote_wrap_default(field: &super::fields::StateField) -> String {
 
 /// `GET`/`DELETE` detail-route response body: every stateful field read
 /// back from `context_expr`'s stored state, every frozen field at its
-/// static default. Same shape for both verbs — `DELETE`'s response is
-/// the pre-delete snapshot, read before the `serveEventListeners` that
-/// remove it run.
+/// static default, and (for an `@version` model) the current stored
+/// version, unbumped — a plain read, same as any other stateful field.
+/// Same shape for both verbs — `DELETE`'s response is the pre-delete
+/// snapshot, read before the `serveEventListeners` that remove it run.
 pub(crate) fn read_body(plan: &ModelFieldPlan, context_expr: &str) -> String {
     let mut pairs = vec![(
         plan.pk_name.clone(),
@@ -75,6 +83,9 @@ pub(crate) fn read_body(plan: &ModelFieldPlan, context_expr: &str) -> String {
         let value = quote_wrap(field.kind, &read_state(&field.name, context_expr));
         pairs.push((field.name.clone(), value));
     }
+    if let Some(version_name) = &plan.version_name {
+        pairs.push((version_name.clone(), read_state(version_name, context_expr)));
+    }
     pairs.extend(frozen_pairs(plan));
     assemble_object(&pairs)
 }
@@ -83,7 +94,15 @@ pub(crate) fn read_body(plan: &ModelFieldPlan, context_expr: &str) -> String {
 /// re-echoed from prior state); every other stateful field takes the
 /// patch body's value if present, else its prior stored value; frozen
 /// fields stay at their static default (never stateful, so "patching"
-/// one is a no-op the mock can't reflect either way).
+/// one is a no-op the mock can't reflect either way); an `@version`
+/// field is always the *prior stored value plus one* — never merged
+/// from the client's request body (a real `UpdateModelInput` never
+/// carries `@version` either) — mirroring `update_exec.rs`'s
+/// `version = version + 1` exactly. Only ever called for the success
+/// case of the five `If-Match` stubs `super::version_gate` builds for
+/// an `@version` model (`super::model_state`'s non-versioned path keeps
+/// calling this for its own single unconditional stub, where
+/// `version_name` is `None` and this branch is simply skipped).
 pub(crate) fn update_body(plan: &ModelFieldPlan, context_expr: &str) -> String {
     let mut pairs = vec![(
         plan.pk_name.clone(),
@@ -93,6 +112,12 @@ pub(crate) fn update_body(plan: &ModelFieldPlan, context_expr: &str) -> String {
         let fallback = read_state(&field.name, context_expr);
         let value = quote_wrap(field.kind, &merge_or_fallback(&field.name, &fallback));
         pairs.push((field.name.clone(), value));
+    }
+    if let Some(version_name) = &plan.version_name {
+        pairs.push((
+            version_name.clone(),
+            version_bump(version_name, context_expr),
+        ));
     }
     pairs.extend(frozen_pairs(plan));
     assemble_object(&pairs)

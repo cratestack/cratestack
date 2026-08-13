@@ -52,6 +52,23 @@ pub(crate) fn read_state(field: &str, context_expr: &str) -> String {
     format!("{{{{state context={context_expr} property='{field}'}}}}")
 }
 
+/// `{{math (state context=<context_expr> property='field') '+' 1}}` —
+/// `field`'s stored value in `context_expr`, plus one. Used only for an
+/// `@version` field's update-time bump (`super::body::update_body`,
+/// `super::version_gate`'s success-case `ETag`): WireMock's bundled
+/// `math` helper (jknack `NumberHelpers`, confirmed present in the real
+/// extension image — it's part of the same `response-template`
+/// transformer, not something `wiremock-state-extension` adds itself)
+/// accepts a `{{state ...}}` sub-expression directly as its left-hand
+/// operand, no intermediate variable needed. Confirmed by hand: a fresh
+/// record's `version` starts at `0` (`create_body`'s literal seed,
+/// mirroring `create_exec.rs`'s server-side seed), and one successful
+/// `PATCH` renders/stores `1` — matching `update_exec.rs`'s
+/// `version = version + 1` exactly.
+pub(crate) fn version_bump(field: &str, context_expr: &str) -> String {
+    format!("{{{{math (state context={context_expr} property='{field}') '+' 1}}}}")
+}
+
 /// A value no real request field is expected to send — used by
 /// [`merge_or_fallback`] to tell "key absent from the request body" apart
 /// from "key present with a falsy value" (see that function's doc

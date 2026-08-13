@@ -53,6 +53,51 @@ pub(super) fn envelope_with_matcher(
     mapping
 }
 
+/// One of the five `If-Match` sub-cases (`super::version_gate`) for a
+/// `PATCH`/`DELETE` route on an `@version` model: the same
+/// `state-matcher` `hasContext` gate as [`envelope_with_matcher`], plus
+/// native WireMock header matching and (optionally) a `state-matcher`
+/// `property` comparison, at an explicit `priority` so the five stay
+/// resolvable relative to each other regardless of declaration order
+/// (verified by hand against the real extension — see
+/// `docs/design/wiremock-stubs.md`'s "If-Match / optimistic locking"
+/// section).
+pub(super) fn envelope_with_header_matcher(
+    method: &str,
+    url_pattern: &str,
+    headers: Value,
+    matcher_params: Value,
+    status: u16,
+    body: &str,
+    listeners: Option<Value>,
+    model_name: &str,
+    operation: &'static str,
+    priority: u16,
+) -> Value {
+    let request = json!({
+        "method": method,
+        "urlPathPattern": url_pattern,
+        "headers": headers,
+        "customMatcher": { "name": "state-matcher", "parameters": matcher_params },
+    });
+    let mut mapping = build(request, status, body, listeners, model_name, operation);
+    mapping["priority"] = json!(priority);
+    mapping
+}
+
+/// Adds a quoted-integer `ETag` response header (`crates/
+/// cratestack-axum/src/headers/etag.rs::set_version_etag`'s exact
+/// format) around `version_template`, an already-fully-bracketed
+/// Handlebars expression (e.g. the output of `super::fragments::
+/// read_state`/`version_bump`) — used for `get`'s current-version
+/// header and `update`'s post-bump one; never `delete` (the real server
+/// never sets one there either — deleting a record leaves no version to
+/// advertise).
+pub(super) fn with_etag_header(mut mapping: Value, version_template: &str) -> Value {
+    mapping["response"]["headers"]["ETag"] = json!(format!("\"{version_template}\""));
+    mapping
+}
+
 fn build(
     request: Value,
     status: u16,

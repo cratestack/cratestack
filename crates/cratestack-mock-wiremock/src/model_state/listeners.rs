@@ -64,6 +64,17 @@ fn state_object(plan: &ModelFieldPlan) -> Value {
     for field in &plan.stateful {
         object.insert(field.name.clone(), json!(echo_from_response(&field.name)));
     }
+    // Same harvest-from-response principle as every other field above:
+    // `create`'s response always renders `0`, `update`'s (success-case)
+    // response always renders the already-bumped value
+    // (`super::body::update_body`) — this never recomputes the bump
+    // itself, it just persists whatever the response already settled on.
+    if let Some(version_name) = &plan.version_name {
+        object.insert(
+            version_name.clone(),
+            json!(echo_from_response(version_name)),
+        );
+    }
     Value::Object(object)
 }
 
