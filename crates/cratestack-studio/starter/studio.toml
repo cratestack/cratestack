@@ -40,12 +40,19 @@ default_mode = "ro"
 # max_connections = 5
 #
 # IMPORTANT: a [target.db] target is a direct SQL connection, not a
-# proxy to your deployed service. It is NOT equivalent to the
-# generated API: writes bypass @version bumping, @@emit(...) event
-# outbox rows, and @@allow policy checks entirely (cratestack#507).
-# For a model that declares @version or @@emit(...), Studio refuses
-# POST/PATCH/DELETE against this target with a 403 UNSAFE_DB_WRITE
-# unless you opt in below:
+# proxy to your deployed service — it is NOT equivalent to the
+# generated API (cratestack#507, #553):
+#
+# - @version bumping is routed for real on every driver (Postgres and
+#   SQLite alike), so a @version-only model is never refused here.
+# - @@emit(...) is routed for real (a cratestack_event_outbox row lands
+#   in the same transaction) ONLY on driver = "postgres". SQLite has no
+#   event-outbox equivalent, and include_embedded_schema! itself treats
+#   @@emit(...) as a no-op on the framework's own embedded backend — so
+#   this is a permanent backend capability difference, not a gap
+#   waiting to be closed. A model that declares @@emit(...) on a
+#   non-Postgres [target.db] target still gets a 403 UNSAFE_DB_WRITE
+#   unless you opt in below:
 #
 # allow_unsafe_writes = true
 #

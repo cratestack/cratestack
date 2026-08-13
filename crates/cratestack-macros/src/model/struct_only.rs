@@ -117,6 +117,32 @@ pub(crate) fn struct_field_definition(
     // it's a defence-in-depth seam.
     let serde_attr = if is_server_only_field(field) {
         quote! { #[serde(skip_serializing, default)] }
+    } else if wrap_for_patch && matches!(field.ty.arity, TypeArity::Optional) {
+        // A nullable column on an update input is `Option<Option<T>>`:
+        // outer = "did this patch touch the field at all", inner = "the
+        // new value, or NULL to clear". serde-derive's blanket
+        // `Option<T>: Deserialize` only ever peels the outer layer — an
+        // absent key AND an explicit JSON/CBOR `null` both collapse to
+        // outer `None`, so "clear this column" was unreachable over the
+        // wire and silently no-op'd (cratestack#567).
+        // `deserialize_double_option` recurses into the inner `Option`
+        // instead; `default` is required alongside it because a custom
+        // `deserialize_with` opts the field out of serde-derive's own
+        // implicit "missing `Option<T>` field defaults to `None`".
+        // `skip_serializing_if` is the matching fix for the *outbound*
+        // side: every generated client builds a full input struct with
+        // `..Default::default()` and serializes the whole thing, so
+        // without this an untouched field would serialize as `null` —
+        // indistinguishable from (and, after the deserialize fix, wrongly
+        // interpreted as) an explicit clear. See `cratestack_core::patch`
+        // for the full write-up.
+        quote! {
+            #[serde(
+                default,
+                deserialize_with = "::cratestack::deserialize_double_option",
+                skip_serializing_if = "::std::option::Option::is_none"
+            )]
+        }
     } else if matches!(field.ty.arity, TypeArity::Optional) && !wrap_for_patch {
         // Generated model structs declare Optional fields as `Option<T>`,
         // but the wire projection strips `null` map entries before the

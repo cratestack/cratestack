@@ -723,13 +723,17 @@ bump NEW:
 	# Keep the @cratestack/cli npm wrapper's version (and the release
 	# asset tag it downloads), every package in the split @cratestack/api
 	# family (ts-types, link-*, runtime-*, validator-*, adapter-*, and the
-	# api compat shim itself), and the @cratestack/cbor family (cbor,
-	# cbor-node, cbor-web) in lockstep with the workspace version —
-	# scoped to these package.json files, not cratestack-vscode (versioned
-	# independently) or the unrelated example apps'. A single
-	# literal-string replace (not just the `"version": "..."` key) also
-	# catches each package's own pinned `"@cratestack/xyz": "$current"`
-	# cross-references to its siblings, which need to move in lockstep too.
+	# api compat shim itself), the @cratestack/cbor family (cbor,
+	# cbor-node, cbor-web), and the cratestack-vscode extension's own
+	# package.json in lockstep with the workspace version — scoped to
+	# these package.json files, not the unrelated example apps'. vscode's
+	# vsix is now built and versioned per release tag (release-vscode.yml
+	# attaches it to the same GitHub Release as the CLI binaries), so it
+	# needs to move in lockstep like the rest, not stay pinned
+	# independently. A single literal-string replace (not just the
+	# `"version": "..."` key) also catches each package's own pinned
+	# `"@cratestack/xyz": "$current"` cross-references to its siblings,
+	# which need to move in lockstep too.
 	perl -i -pe "s/\Q\"$current\"\E/\"{{NEW}}\"/g" \
 	  packages/cratestack-cli-npm/package.json \
 	  packages/cratestack-api/package.json \
@@ -744,7 +748,8 @@ bump NEW:
 	  packages/cratestack-adapter-rtk/package.json \
 	  packages/cratestack-cbor/package.json \
 	  packages/cratestack-cbor-node/package.json \
-	  packages/cratestack-cbor-web/package.json
+	  packages/cratestack-cbor-web/package.json \
+	  packages/cratestack-vscode/package.json
 	# Refresh pnpm-lock.yaml so the version-literal edits above (which change
 	# specifiers like `"@cratestack/ts-types": "{{NEW}}"`) are reflected in the
 	# lockfile's `specifier:` entries too — otherwise a later `pnpm install

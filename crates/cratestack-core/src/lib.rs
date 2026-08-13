@@ -22,6 +22,7 @@ pub mod idempotency_record;
 pub mod json;
 pub mod limits;
 pub mod page;
+pub mod patch;
 pub mod projection;
 pub mod route_naming;
 pub mod rpc;
@@ -68,6 +69,7 @@ pub use idempotency_record::{IdempotencyRecord, ReservationOutcome};
 pub use json::Json;
 pub use limits::{DEFAULT_BODY_LIMIT_BYTES, MAX_RESPONSE_REBUFFER_BYTES};
 pub use page::{MAX_LIST_LIMIT, Page, PageInfo, PageInput};
+pub use patch::deserialize_double_option;
 pub use projection::ProjectionDecoder;
 pub use schema::{
     Attribute, AuthBlock, ConfigBlock, ConfigEntry, Datasource, EnumDecl, EnumVariant,
