@@ -52,9 +52,9 @@ export function PostsPage() {
       </h2>
       <p className="callout">
         Optimistic locking is live here: this backend enforces <code>If-Match</code>, so saving a
-        row that someone else already changed conflicts with a <code>412</code> instead of
-        silently overwriting. List filtering, sorting and pagination are <em>not</em> implemented
-        by the mock, which is why this table offers none.
+        row that someone else already changed conflicts with a <code>412</code> instead of silently
+        overwriting. List filtering, sorting and pagination are <em>not</em> implemented by the
+        mock, which is why this table offers none.
       </p>
       <QueryState isLoading={query.isLoading} isError={query.isError} error={query.error} />
       <table>

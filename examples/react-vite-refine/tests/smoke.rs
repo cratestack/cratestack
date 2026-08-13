@@ -114,7 +114,10 @@ fn wiremock_stubs_enforce_if_match_on_the_versioned_model() {
         let stubs: Vec<serde_json::Value> = package
             .files
             .iter()
-            .filter(|f| f.file_name.starts_with(&format!("mappings/model.Post.{verb}")))
+            .filter(|f| {
+                f.file_name
+                    .starts_with(&format!("mappings/model.Post.{verb}"))
+            })
             .map(|f| serde_json::from_str(&f.contents).expect("stub is valid json"))
             .collect();
         assert!(
@@ -122,9 +125,7 @@ fn wiremock_stubs_enforce_if_match_on_the_versioned_model() {
             "{verb}: no Post stubs emitted at all — the file naming changed"
         );
         assert!(
-            stubs
-                .iter()
-                .any(|m| m["request"].get("headers").is_some()),
+            stubs.iter().any(|m| m["request"].get("headers").is_some()),
             "{verb}: no stub matches on request headers — If-Match enforcement regressed: {stubs:?}"
         );
         // The success path must compare against STORED state, not a
