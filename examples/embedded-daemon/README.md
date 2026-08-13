@@ -46,15 +46,22 @@ Then in another shell:
 
 ```bash
 mkdir -p /tmp/watch-me
-echo hello > /tmp/watch-me/a.txt        # one row, kind=created
+echo hello > /tmp/watch-me/a.txt        # one row — kind=modified on Linux/inotify (see note below)
 for i in 1 2 3 4 5; do echo $i >> /tmp/watch-me/a.txt; done   # one row, kind=modified, bursts≈5
 rm /tmp/watch-me/a.txt                  # one row, kind=deleted
 ```
 
+> **`kind` for a brand-new file, on Linux.** You might expect the first row to be `kind=created`.
+> In practice, on Linux/inotify a plain `echo hello > a.txt` reliably produces `kind=modified`:
+> the create and the subsequent write both land inside the same debounce window, and the
+> debouncer keeps the most-recent kind, which is `modified`. You'd need a `window-ms` shorter
+> than the gap between the create and write syscalls (or a platform whose FS events don't emit
+> both) to observe `created` here in practice.
+
 Then read back:
 
 ```bash
-sqlite3 /tmp/events.db 'select path, kind, bursts, observed_at from FileEvent order by observed_at;'
+sqlite3 /tmp/events.db 'select path, kind, bursts, observed_at from file_events order by observed_at;'
 ```
 
 `Ctrl-C` flushes any pending debounced entry before exiting — no rows are lost on shutdown.

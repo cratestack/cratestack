@@ -28,7 +28,7 @@ cargo run -p client-stub-rust-example
 cargo test -p client-stub-rust-example
 ```
 
-The example's `tests/smoke.rs` verifies the generated types compile, expose the expected schema constants, and round-trip through serde. Real HTTP round-trips against an in-process mock server are exercised in [`crates/cratestack/tests/generated_client_rust.rs`](../../crates/cratestack/tests/generated_client_rust.rs).
+The example's `tests/smoke.rs` verifies the generated types compile, expose the expected schema constants, and round-trip through serde. Real HTTP round-trips against an in-process mock server are exercised in [`crates/cratestack-pg/tests/generated_client_rust.rs`](../../crates/cratestack-pg/tests/generated_client_rust.rs) (**not** `crates/cratestack/` — that's the empty documentation-only vitrine crate; see the root `CLAUDE.md`'s "Critical test gotcha").
 
 ## See Also
 

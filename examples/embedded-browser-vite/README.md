@@ -40,6 +40,22 @@ The schema is intentionally minimal (one `Note` model) so the focus stays on the
 
 ## Run the demo
 
+This example's `web/` depends on the workspace packages `@cratestack/cbor` and
+`@cratestack/cbor-web` (linked via `link:../../../packages/...` in
+`web/package.json`), and those packages ship compiled `dist/` output that
+isn't checked in — build them once from the repo root first:
+
+```bash
+pnpm install
+pnpm turbo run build --filter='./packages/cratestack-cbor' --filter='./packages/cratestack-cbor-web'
+```
+
+(`@cratestack/cbor`'s own turbo task only depends on `@cratestack/ts-types#build`,
+not `@cratestack/cbor-web#build` — see the comment in the root `turbo.json` — so
+both filters are needed; `@cratestack/ts-types` itself is pulled in automatically.)
+
+Then run the example itself:
+
 ```bash
 cd examples/embedded-browser-vite/web
 pnpm install

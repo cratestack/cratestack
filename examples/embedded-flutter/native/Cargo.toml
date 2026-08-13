@@ -10,8 +10,18 @@ license.workspace = true
 publish = false
 description = "Native cdylib for the embedded-flutter example. Hosts include_embedded_schema! and exposes a small API surface for flutter_rust_bridge to bridge into Dart. The Flutter side imports the generated Dart bindings under lib/src/rust/."
 
-[lints]
-workspace = true
+[lints.rust]
+# flutter_rust_bridge_codegen's generated `frb_generated.rs` (gitignored,
+# produced by `just frb-generate examples/embedded-flutter`) uses `unsafe`
+# to cross the Dart<->Rust FFI boundary — that's its whole reason for
+# existing. Lift the workspace-wide forbid.
+#
+# Deliberately NOT `[lints]\nworkspace = true` (cratestack#523): Cargo
+# rejects mixing workspace-inherited lints with a per-package override in
+# the same manifest — see crates/cratestack-cbor-napi/Cargo.toml's fuller
+# note, which this mirrors (also mirrored by
+# examples/embedded-expo/native/Cargo.toml for the same FFI reason).
+unsafe_code = "allow"
 
 [lib]
 name = "embedded_flutter_native"
