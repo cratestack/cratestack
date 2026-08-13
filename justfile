@@ -935,27 +935,18 @@ release-publish mode='real':
 	        order.append(n); del remaining[n]
 	    for d in remaining.values():
 	        d.difference_update(leaves)
-	# Assert the order is actually PUBLISHABLE, not merely acyclic. The
-	# sort not crashing was previously mistaken for verification; it is
-	# not. For every edge that survives into a published manifest
-	# (req != "*"), the dependency must appear strictly earlier in `order`
-	# than the dependent, or `cargo publish` fails mid-run at that crate —
-	# with everything before it already irrevocably uploaded. That is the
-	# exact failure cratestack#564 shipped, and it is cheap to rule out.
-	position = {name: i for i, name in enumerate(order)}
-	violations = []
-	for name, pkg in pkgs.items():
-	    for dep in pkg["dependencies"]:
-	        target = dep["name"]
-	        if target not in pkgs or target == name or dep["req"] == "*":
-	            continue
-	        if position[target] >= position[name]:
-	            violations.append(
-	                f"{name} (position {position[name]}) requires {target} "
-	                f"{dep['req']} but that publishes at position {position[target]}")
-	if violations:
-	    sys.exit("publish order would fail — a dependency publishes after its "
-	             "dependent:\n  " + "\n  ".join(sorted(violations)))
+	# NOTE on verification: there is deliberately no post-sort
+	# "publishability" assertion here. One was written and removed during
+	# review — it iterated the same edge set the graph is built from, and
+	# Kahn's sort already guarantees that ordering, so it could never fire.
+	# It looked like a safety net and was not one, which is the same class
+	# of mistake cratestack#564 shipped (a change "verified" by observing
+	# that the sort still produced output). The protection here is the edge
+	# predicate above being correct, not a check downstream of it. A
+	# genuinely independent check would have to compare against cargo's own
+	# behaviour — `cargo publish --dry-run` in order — which needs the
+	# network and a registry state, and is not something this recipe can do
+	# offline.
 	print(" ".join(order))
 	print(" ".join(dry_safe))
 	PYEOF
