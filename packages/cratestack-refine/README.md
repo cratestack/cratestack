@@ -1,17 +1,22 @@
 # @cratestack/refine
 
-A [refine.dev](https://refine.dev) `DataProvider` over CrateStack's generated TypeScript **REST**
-client. Wires refine's fixed `getList`/`getOne`/`getMany`/`create`/`update`/`deleteOne` surface to
-a generated model class (`client.widgets`, `client.ledgers`, …), mapping refine's filter operators,
-pagination, primary keys, and `@version` optimistic-locking conflicts onto the server's real
-contract — the same one [cratestack-studio](https://cratestack.dev) deliberately bypasses.
-`cratestack-studio` talks to `[target.db]` directly and skips `@@allow`; a refine app built on this
-package goes through the generated API and inherits policy, validation, `@version` concurrency, and
-audit. That's the reason this package exists (cratestack#571): refine is the safe end-user admin
-surface, Studio is the sysadmin one.
+A [refine.dev](https://refine.dev) `DataProvider` over CrateStack's generated TypeScript client —
+**REST** (`createCratestackDataProvider`) or **RPC** (`createCratestackRpcDataProvider`, for
+`transport rpc` schemas). Wires refine's fixed `getList`/`getOne`/`getMany`/`create`/`update`/
+`deleteOne` surface to a generated model class (`client.widgets`, `client.ledgers`, …), mapping
+refine's filter operators, pagination, primary keys, and `@version` optimistic-locking conflicts
+onto the server's real contract — the same one [cratestack-studio](https://cratestack.dev)
+deliberately bypasses. `cratestack-studio` talks to `[target.db]` directly and skips `@@allow`; a
+refine app built on this package goes through the generated API and inherits policy, validation,
+`@version` concurrency, and audit. That's the reason this package exists (cratestack#571): refine
+is the safe end-user admin surface, Studio is the sysadmin one.
 
-This package covers REST-transport schemas only (`generate-typescript`'s default transport, no
-`transport rpc`) — see [Scope](#scope) below.
+Both transports share this same README except where a section says otherwise — the two providers'
+`getList`/`getOne`/`getMany`/`create`/`update`/`deleteOne`/`createMany`/`updateMany`/`deleteMany`/
+`custom` behavior, filter-operator table, pagination semantics, primary-key handling, and `@version`
+optimistic-locking guarantee are identical; only the wire calls underneath differ. See
+[RPC transport](#rpc-transport) below for what's RPC-specific, and [Scope](#scope) for what neither
+provider does.
 
 ## A runtime package with a generated manifest
 
@@ -44,9 +49,13 @@ example below shows one), but the generated one cannot drift: a model that gains
 whose `@id` is not called `id`, updates itself on the next `generate-typescript` run instead of
 failing quietly at runtime.
 
-`--refine` requires a REST schema and the default preset — see [Scope](#scope).
+`--refine` works for **both** REST and RPC schemas, on the default preset. The emitted function is
+the same shape either way — `cratestackRefineResources(client)` — typed `ResourceMap` for REST and
+`RpcResourceMap` for RPC, so consumer code is identical across transports. Only `transport grpc` is
+rejected (`TypeScriptGeneratorError::RefineRequiresRestOrRpc`): its client speaks typed protobuf
+with no URL-query shaping, so there is nothing for this provider to drive. See [Scope](#scope).
 
-## Usage
+## Usage (REST)
 
 With the generated manifest:
 
@@ -71,10 +80,59 @@ const dataProvider = createCratestackDataProvider({
 
 Pass this straight to refine's `<Refine dataProvider={dataProvider} .../>`.
 
+## RPC transport
+
+For a `transport rpc` schema, use `createCratestackRpcDataProvider` and an `RpcResourceMap` instead
+— same four facts per resource (`api`, `primaryKey`, `paged`, optional `versionField`), same
+`getList`/`getOne`/.../`custom` behavior, same filter-operator table and `@version` guarantee as
+REST. There is no generated manifest for RPC yet (`--refine` rejects RPC schemas — see above), so
+write it by hand:
+
+```ts
+import { createCratestackRpcDataProvider } from "@cratestack/refine";
+import { ExampleApiClientClient } from "./generated/src/client.js";
+
+const client = new ExampleApiClientClient("https://api.example.com", { basePath: "/api" });
+const dataProvider = createCratestackRpcDataProvider({
+  widgets: { api: client.widgets, primaryKey: "id", paged: false },
+  ledgers: { api: client.ledgers, primaryKey: "id", paged: true, versionField: "version" },
+  products: { api: client.products, primaryKey: "sku", paged: false },
+});
+```
+
+What's different from REST, mechanically:
+
+- The generated RPC model class's `list` takes its query positionally
+  (`list(query, options)`) instead of nested in an options object the way REST's `list({ query,
+  headers, signal })` does — `createCratestackRpcDataProvider` builds an `RpcListQuery` (RPC's typed
+  list-input shape) instead of REST's `CratestackFetchQuery`. `get`/`create`/`update`/`delete` are
+  positionally identical between the two transports; only their options type differs
+  (`CratestackRpcCallOptions` vs `CratestackRequestConfig`).
+- Filters compile to `RpcListPredicate[]` (`{ key, value }` pairs) instead of REST's
+  `Record<string,string>` — same `field[__operator]` key convention either way (see
+  [Filters](#filters) below), just a different container shape on the wire.
+- Sort compiles to a single comma-joined string (`"-createdAt,id"`) instead of REST's `string[]`
+  the runtime joins client-side — same `field`/`-field` DSL.
+- **Every unary call carries `If-Match` exactly like REST does.** The RPC dispatch arms
+  (`crates/cratestack-macros/src/transport/rpc.rs`) pass the real HTTP `HeaderMap` straight through
+  to the identical `handle_update_*_dispatch`/`handle_delete_*_dispatch` fns REST uses
+  (`crates/cratestack-macros/src/axum/model/handlers_update.rs`), which read `If-Match` via
+  `parse_if_match_version` — so a stale or missing `If-Match` against a `@version` model returns the
+  same `412 Precondition Failed` on both transports, verified against a real generated RPC client in
+  this package's own test suite (`tests/rpc-optimistic-locking.test.ts`).
+- **`createCratestackRpcDataProvider` never calls `POST /rpc/batch`.** A batch request is one HTTP
+  request carrying N frames, so a per-frame `If-Match` header isn't expressible there —
+  `createMany`/`updateMany`/`deleteMany` are N real unary round trips instead, same non-atomic
+  strategy REST uses (see [createMany / updateMany / deleteMany](#createmany--updatemany--deletemany)
+  below). A batched RPC data provider is possible in principle but out of scope here — see
+  [Scope](#scope).
+
 ## Filters
 
-refine's `CrudFilters` (`{ field, operator, value }`) map onto the generated list route's
-`field__operator=value` query convention — the same operator set the generated client's shared
+Applies to both providers. refine's `CrudFilters` (`{ field, operator, value }`) map onto the same
+`field[__operator]` key convention on both transports — REST's `field__operator=value` query params
+(`toQueryFilters`) and RPC's `RpcListPredicate[]` (`toRpcQueryFilters`) carry an identical `key`,
+just in different container shapes on the wire. Same operator set the generated client's shared
 filter types (`EqualityFilter`/`ComparableFilter`/`StringFilter`) expose:
 
 | refine operator | cratestack query key |
@@ -98,7 +156,8 @@ package can work around.
 
 ## Pagination
 
-refine's `{ current, pageSize }` maps to `limit`/`offset` directly. **`totalCount` is only ever
+Applies to both providers. refine's `{ current, pageSize }` maps to `limit`/`offset` directly.
+**`totalCount` is only ever
 emitted for a `@@paged` model's list route.** Set `paged: false` in a resource's config honestly —
 a non-`@@paged` resource's `getList` still returns real data, but `total` degrades to
 "how many rows this one response returned" rather than a true count. Either add `@@paged` to the
@@ -107,7 +166,7 @@ one (capped) page.
 
 ## Primary keys
 
-refine assumes every record has `id: BaseKey`. cratestack's `@id` can be on any field
+Applies to both providers. refine assumes every record has `id: BaseKey`. cratestack's `@id` can be on any field
 (`primaryKey` in the resource config above). Every returned record gets a synthetic `id` field
 alongside its real primary key so refine's row-selection machinery has something to key off;
 writes (`get`/`update`/`deleteOne`) receive that same value back and pass it straight through as
@@ -117,12 +176,15 @@ this bites: a `<Create>` form's fields must use the schema's real primary-key fi
 
 ## Optimistic locking (`@version` / `If-Match`)
 
-**The single most important correctness point in this package.** A `@version` model requires
-`If-Match` on both update *and* delete (cratestack#493/#519/#538) — missing or stale `If-Match`
-returns `412 Precondition Failed` and leaves the row untouched. refine's `update`/`deleteOne` hooks
-fetch the record before editing it, so the version is known by the time a mutation fires; this
-package remembers it (keyed per `createCratestackDataProvider` call, not module-global) from every
-read/write that returns a fresh record, and sends it automatically. A `412` is surfaced as a
+**The single most important correctness point in this package, and it holds on both transports.**
+A `@version` model requires `If-Match` on both update *and* delete (cratestack#493/#519/#538) —
+missing or stale `If-Match` returns `412 Precondition Failed` and leaves the row untouched, whether
+the request went out as an RPC unary call or a REST `PATCH`/`DELETE` (see
+[RPC transport](#rpc-transport) for why the RPC dispatch path enforces this identically to REST).
+refine's `update`/`deleteOne` hooks fetch the record before editing it, so the version is known by
+the time a mutation fires; each provider remembers it (keyed per `createCratestackDataProvider`/
+`createCratestackRpcDataProvider` call, not module-global) from every read/write that returns a
+fresh record, and sends it automatically. A `412` is surfaced as a
 distinguishable conflict (`statusCode: 412`, a human-readable message) rather than a generic
 failure — check `error.statusCode === 412` in an `onError` handler to show a "someone else changed
 this" message instead of a generic one.
@@ -134,16 +196,20 @@ fail on the wire the way a *stale* value does, so this package refuses to make t
 
 ## `createMany` / `updateMany` / `deleteMany`
 
-Implemented, not declined — but as N sequential single-record round trips (`Promise.all` over
-`create`/`update`/`deleteOne`), not a real batch. The generated REST client exposes no
-`updateMany`/`deleteMany` wrapper around the server's actual `update_many`/`delete_many`, and
-`/rpc/batch` is an RPC-transport-only endpoint. So these three methods work, but without atomicity
-and at the cost of N requests instead of one.
+Implemented, not declined, on both providers — but as N sequential single-record round trips
+(`Promise.all` over `create`/`update`/`deleteOne`), not a real batch. The generated REST client
+exposes no `updateMany`/`deleteMany` wrapper around the server's actual `update_many`/
+`delete_many`. The RPC transport does have a real batch endpoint (`POST /rpc/batch`), but
+`createCratestackRpcDataProvider` deliberately doesn't use it here either — see
+[RPC transport](#rpc-transport) for why (per-frame `If-Match` isn't expressible in a batch request).
+So these three methods work on both transports, but without atomicity and at the cost of N requests
+instead of one.
 
 ## Procedures (`custom`)
 
 A cratestack `procedure` has no other home in a `DataProvider`. Pass a `procedures` map to
-`createCratestackDataProvider`'s second argument and call it through refine's `custom`:
+`createCratestackDataProvider`'s (or `createCratestackRpcDataProvider`'s) second argument and call
+it through refine's `custom` — identical shape on both providers:
 
 ```ts
 const dataProvider = createCratestackDataProvider(resources, {
@@ -164,18 +230,17 @@ await dataProvider.custom!({
 
 - **`liveProvider`** — the generated TypeScript client has no SSE consumer today (no `EventSource`
   anywhere in `crates/cratestack-client-typescript/templates/`), even though the server has a real
-  subscribe endpoint. Needs a TS SSE client first.
-- **`authProvider`** — a separate, orthogonal concern from data access.
-- **RPC-transport schemas** (`transport rpc`) — this package's `DataProvider` above is written
-  against the REST client's `list(options)`/`CratestackFetchQuery` shape, which the RPC client
-  does not share (its `list(query, options)` takes the query positionally, as a
-  `CratestackRpcListQuery`), so it needs its own mapping layer, not documented here.
-  The generator-side restriction this depended on has been lifted (cratestack#571's follow-up):
-  `cratestack generate-typescript --refine` now emits an `src/refine.ts` for `transport rpc`
-  schemas too, typed `RpcResourceMap` instead of `ResourceMap` — see
-  `crates/cratestack-client-typescript/README.md`'s `--refine` section. That manifest is
-  transport-agnostic (same four facts either way); it is this package's RPC-shaped provider
-  that is the remaining piece, tracked as a companion change.
+  subscribe endpoint. Needs a TS SSE client first. Applies to both transports.
+- **`authProvider`** — a separate, orthogonal concern from data access. Applies to both transports.
+- **Batched RPC writes** — `createCratestackRpcDataProvider` never calls `POST /rpc/batch`, even
+  though the RPC transport has one. A per-frame `If-Match` header isn't expressible in a single
+  batch request, and this package's `@version` guarantee is not something it will silently weaken
+  to get atomicity — see [RPC transport](#rpc-transport).
+- **RPC's `where`/`or` filter-expression DSL, and `fields`/`include`/`includeFields` projection** —
+  `CratestackRpcListQuery` supports all of these on the wire, but refine's `CrudFilters`/`Sort`
+  shapes have nothing that maps onto them (refine has no "raw server filter expression" or
+  "relation projection" concept), so this provider never writes to them. Available to a caller who
+  wants to reach past refine's abstraction: call `config.api.list({ where: "..." })` directly.
 
 **A known, pre-existing gap this package inherits rather than causes:** route suppression
 (cratestack#514) isn't implemented, so a policy-denied `create`/`update`/`delete` still generates a

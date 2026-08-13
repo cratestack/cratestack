@@ -30,6 +30,19 @@ import { createVersionCache, forgetVersion, ifMatchHeaders, rememberVersion } fr
 
 export { isCratestackHttpError, toRefineError } from "./errors.js";
 export { toQueryFilters, toSortQuery } from "./filters.js";
+// RPC transport (`transport rpc` schemas) — additive sibling of the REST
+// exports above. See rpc-provider.ts's doc comment for how it differs.
+export { toRpcQueryFilters, toRpcSortQuery } from "./rpc-filters.js";
+export type { CreateCratestackRpcDataProviderOptions } from "./rpc-provider.js";
+export { createCratestackRpcDataProvider } from "./rpc-provider.js";
+export type {
+  CratestackRpcCallOptions,
+  CratestackRpcListQuery,
+  CratestackRpcModelApi,
+  RpcListPredicate,
+  RpcResourceConfig,
+  RpcResourceMap,
+} from "./rpc-types.js";
 export type {
   CratestackFetchQuery,
   CratestackHttpErrorLike,

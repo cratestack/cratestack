@@ -1,4 +1,13 @@
-import type { ResourceConfig } from "./types.js";
+/** The one fact this module needs out of either transport's resource
+ *  config (`ResourceConfig` in `types.ts`, `RpcResourceConfig` in
+ *  `rpc-types.ts`) — deliberately narrower than either so this module
+ *  stays shared between both `createCratestackDataProvider` and
+ *  `createCratestackRpcDataProvider` rather than picking one transport's
+ *  type and asking the other to import it. Both real config types satisfy
+ *  this structurally already; nothing about them changes. */
+export interface VersionedResourceConfig {
+  versionField?: string;
+}
 
 /** `If-Match` is required on both `PATCH` (update) and `DELETE` for a
  *  `@version` model (cratestack#493/#519, closed by #538 — the
@@ -26,7 +35,7 @@ export function rememberVersion(
   resource: string,
   id: unknown,
   record: Record<string, unknown>,
-  config: ResourceConfig,
+  config: VersionedResourceConfig,
 ): void {
   if (!config.versionField) return;
   const version = record[config.versionField];
@@ -52,7 +61,7 @@ export function ifMatchHeaders(
   cache: Map<string, number>,
   resource: string,
   id: unknown,
-  config: ResourceConfig,
+  config: VersionedResourceConfig,
   override?: number,
 ): HeadersInit {
   if (!config.versionField) return {};
