@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.7.17 (2026-08-14)
+
+A maintenance release cut from the 0.7.x line, before the breaking changes now on `main` for
+0.8.0. Its main purpose is to verify that the VS Code extension's `.vsix` actually attaches to a
+GitHub Release — that has never worked, and could only be proved by a real tag.
+
+### The vsix is attached for the first time
+
+`release-vscode.yml`'s five build legs had failed on every release. The extension packaged fine
+(`Packaged: … 11 files, 2.01 MB`); the *upload* was rejected, because the step composed its path
+from `find . -print`, which emits a leading `./`:
+
+```
+Invalid pattern 'packages/cratestack-vscode/./cratestack-vscode-linux-x64-0.7.16.vsix'.
+Relative pathing '.' and '..' is not allowed.
+```
+
+Two earlier repairs each uncovered the next failure in the same chain rather than finishing it:
+#584 fixed a `--` separator that broke packaging, and the first attempt at this fix used
+`find -printf`, a GNU extension that would have passed on the three Linux/Windows legs and failed
+on the two macOS ones. The step now uses a bash glob — no pipe, no `find`, no GNU extension.
+
+### Stateful WireMock stubs enforce `If-Match`
+
+`generate-wiremock`'s stubs for a `@version` model now mirror the real server's optimistic-locking
+contract exactly: a missing `If-Match` is a 412, `If-Match: *` and an unquoted value are 400s, a
+stale value is a 412, and a correct one succeeds with the version bumped and returned as a quoted
+`ETag`. `DELETE` enforces it too. Models without `@version` are byte-for-byte unaffected.
+
+### `examples/react-vite-refine`
+
+A refine.dev admin app over a generated WireMock backend — schema to typed client to
+`@cratestack/refine`'s dataProvider to a working UI, with no database and no hand-written server.
+Live CRUD and optimistic locking are verified against a real container in CI. Note the stubs
+implement no list filtering, sorting or pagination, so the example deliberately offers no such
+controls rather than shipping ones that silently do nothing.
+
 ## 0.7.16 (2026-08-13)
 
 ### Breaking
