@@ -2,27 +2,68 @@
 
 ## 0.8.0 (2026-08-14)
 
-<!-- TODO: edit this section from the seed below -->
-<!-- seeded from v0.7.17..HEAD at 0abfb231c6b83bb0a17a7e7320195c50f72b92b4 -->
+Two breaking changes, both requiring a deliberate edit on upgrade. Read the migration section
+first — neither is silent, but neither fixes itself.
 
-This is an auto-generated seed. Please rewrite into narrative prose describing
-the changes in this release, grouped by concern. Refer to existing entries in
-this file for the house prose style. Do not commit with this placeholder text.
+### Breaking: `Cool*` types are now `Cratestack*`
 
-### Changes
+The framework was originally called CoolStack, and the old name survived in the most-used part of
+the public API — `CratestackError` and `CratestackContext` appear in essentially every
+consumer-written `AuthProvider` impl, procedure signature, and policy call site.
 
-#### Features
+All 11 types are renamed: `CoolError`, `CoolContext`, `CoolCodec`, `CoolErrorResponse`,
+`CoolEventBus`, `CoolEventEnvelope`, `CoolAuthIdentity`, `CoolEventFuture`, `CoolEnvelope`,
+`CoolPrincipal`, `CoolBody`. Public functions carrying the old name went with them —
+`auth_error_to_cratestack_error`, `principal_to_cratestack_context`, `cratestack_error_to_status`,
+`RpcErrorBody::from_cratestack`, and others.
 
-- make decimal-rust-decimal and decimal-bigdecimal additive (cratestack#505 Direction 2) (#609)
+**There are no `#[deprecated]` aliases.** This is a hard break in one release rather than a
+deprecation cycle, which is defensible pre-1.0 with lockstep versioning and avoids shipping a
+second vocabulary that has to be removed later anyway.
 
-#### Documentation
+Note `CratestackContext` (the auth/principal result) is a different type from `RequestContext` (the
+inbound request view), which is unchanged.
 
-- backport the 0.7.17 entry to main (#612)
+**Generated client SDKs are unaffected.** Only two `Cool*` occurrences existed across the Dart and
+TypeScript client crates, so nothing published to npm or pub.dev changes shape.
 
-#### Refactoring
+### Breaking: decimal backends are additive, and the backend is now declared
 
-- finish the Cool*->Cratestack* rename for identifiers and the Studio snippet (#613)
-- rename Cool* public types to Cratestack* (#608)
+`decimal-rust-decimal` and `decimal-bigdecimal` were mutually exclusive, enforced by a
+`compile_error!`. That made them **non-additive**, violating Cargo's core contract: two independent
+crates in one dependency graph, each making a legitimate backend choice, produced a build neither
+author could fix.
+
+```toml
+# crate-a
+cratestack = { package = "cratestack-pg", default-features = false, features = ["decimal-rust-decimal"] }
+# crate-b
+cratestack = { package = "cratestack-pg", default-features = false, features = ["decimal-bigdecimal"] }
+```
+
+Each compiled alone; together they could not compile at all. Both features may now be enabled
+simultaneously, and each dependent gets the type it asked for.
+
+The consequence you must act on: **the entry macros now take a required `decimal = RustDecimal |
+BigDecimal` argument whenever a schema declares a `Decimal` field**, because the backend can no
+longer be inferred from features alone.
+
+```rust
+include_server_schema!("schema.cstack", db = Postgres, decimal = RustDecimal);
+```
+
+Schemas with no `Decimal` field are unaffected. Reported by the ADORSYS-GIS/webank-services
+maintainers with a two-manifest reproduction, which is what made it straightforward to confirm
+fixed at both ends.
+
+### Migrating from 0.7.x
+
+1. Rename `Cool*` → `Cratestack*` throughout. A find-and-replace over the 11 type names and the
+   renamed helper functions covers it; there is no behavioural change hiding in the rename.
+2. If any schema declares a `Decimal` field, add `decimal = RustDecimal` (or `BigDecimal`) to its
+   `include_server_schema!` / `include_embedded_schema!` / `include_client_schema!` call.
+
+Nothing else in 0.8.0 requires action.
 
 ## 0.7.17 (2026-08-14)
 
