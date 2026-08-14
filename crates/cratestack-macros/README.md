@@ -121,7 +121,13 @@ See the workspace `CHANGELOG.md` for full release notes.
 
 ## Decimal Backend
 
-Generated code references `cratestack::Decimal`, which resolves at compile time to either `rust_decimal::Decimal` (`decimal-rust-decimal`, default) or `bigdecimal::BigDecimal` (`decimal-bigdecimal`) — whichever backend the facade the schema is compiled into selected. The two are mutually exclusive: selecting both is a compile error in `cratestack-core`. Selecting neither is allowed as of cratestack#521 — `Decimal` is simply not exported, so generated code referencing it fails with rustc's own "cannot find type `Decimal`".
+A schema that declares a `Decimal` field requires a `decimal = RustDecimal | BigDecimal` argument on its `include_server_schema!`/`include_embedded_schema!`/`include_client_schema!` call — a compile-time schema-authored choice, not a Cargo feature (cratestack#505 Direction 2). Generated code then references `cratestack::RustDecimal` or `cratestack::BigDecimal` directly, resolved at macro-expansion time from that argument. This means two schemas in the same build can each choose a different backend and compile together — `decimal-rust-decimal` and `decimal-bigdecimal` are **not** mutually exclusive on the facade the schemas are compiled into (only the *macro argument* enforces "exactly one, per schema", not the Cargo feature). A schema with no `Decimal` field needs no argument at all (cratestack#521's "neither" case, unaffected).
+
+```rust
+include_server_schema!("schema.cstack", db = Postgres, decimal = RustDecimal);
+```
+
+See [`docs/design/decimal-backend-additivity.md`](https://github.com/cratestack/cratestack/blob/main/docs/design/decimal-backend-additivity.md) for the full design.
 
 ## See Also
 

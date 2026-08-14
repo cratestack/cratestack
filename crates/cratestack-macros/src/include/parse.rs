@@ -1,65 +1,15 @@
-//! Argument parsing for the three top-level include macros + shared
-//! schema file loader. `include_server_schema!` takes `db = Postgres` or
-//! `db = None` (cratestack#327 — "no database" procedures-only server
-//! mode); `include_embedded_schema!` and `include_client_schema!` take a
-//! bare path literal.
+//! Shared schema file loader for the three top-level include macros.
+//! Macro-argument grammars (`db = Postgres`, `decimal = ...`) live in
+//! `schema_args.rs`, re-exported below — see that file's doc for why the
+//! split.
 
 use std::path::PathBuf;
 
 use proc_macro::TokenStream;
 use sha2::{Digest, Sha256};
-use syn::parse::{Parse, ParseStream};
-use syn::{LitStr, Token};
+use syn::LitStr;
 
-/// Supported `db` arguments for `include_server_schema!`.
-///
-/// `Postgres` is the sqlx-backed database mode; `None` is cratestack#327's
-/// "no database" procedures-only mode. Both are cross-checked against the
-/// schema's own `datasource.provider` (`postgresql` / `none` respectively)
-/// by [`super::datasource_guard::guard_server_datasource_provider`] — a
-/// mismatch is a compile-time error, not silently ignored. The parser is
-/// wired so adding `MySql` / `Sqlite`-via-sqlx (when we want them) is a
-/// non-breaking change at call sites that already pass `db = Postgres`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ServerDb {
-    Postgres,
-    None,
-}
-
-/// Parsed arguments for `include_server_schema!("schema.cstack", db = Postgres)`.
-pub(super) struct ServerSchemaArgs {
-    pub(super) schema_path: LitStr,
-    pub(super) db: ServerDb,
-}
-
-impl Parse for ServerSchemaArgs {
-    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
-        let schema_path: LitStr = input.parse()?;
-        input.parse::<Token![,]>()?;
-        let key: syn::Ident = input.parse()?;
-        if key != "db" {
-            return Err(syn::Error::new(
-                key.span(),
-                "expected `db = Postgres` (only the `db` argument is recognised)",
-            ));
-        }
-        input.parse::<Token![=]>()?;
-        let value: syn::Ident = input.parse()?;
-        let db = match value.to_string().as_str() {
-            "Postgres" => ServerDb::Postgres,
-            "None" => ServerDb::None,
-            other => {
-                return Err(syn::Error::new(
-                    value.span(),
-                    format!(
-                        "unsupported db backend `{other}`. supported: Postgres, None. (MySql / sqlite-via-sqlx will land in a future release.)"
-                    ),
-                ));
-            }
-        };
-        Ok(Self { schema_path, db })
-    }
-}
+pub(super) use super::schema_args::{SchemaPathArgs, ServerDb, ServerSchemaArgs};
 
 pub(super) fn parse_schema_literal(
     schema_path: &LitStr,

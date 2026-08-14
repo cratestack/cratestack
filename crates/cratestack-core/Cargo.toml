@@ -17,15 +17,17 @@ categories.workspace = true
 workspace = true
 
 [features]
-# Exactly one of these two must be selected — see `src/lib.rs`'s
-# `compile_error!` pair for the enforcement (neither-selected AND
-# both-selected are both hard errors, not silently-resolved defaults).
-# `default-features = false` on this crate's `[workspace.dependencies]`
-# entry (root `Cargo.toml`) means every direct dependency edge onto
-# `cratestack-core` elsewhere in the workspace must explicitly re-select
-# one of these two — that is deliberate (cratestack#495/#421): it is what
-# lets a consumer pick `decimal-bigdecimal` without this crate's own
-# `default` silently forcing `decimal-rust-decimal` back in behind them.
+# Any combination of these two may be selected — neither, one, or both
+# (cratestack#505 Direction 2; see `src/decimal.rs`'s module doc for the
+# full history: both-selected used to be a hard `compile_error!`, which was
+# itself the defect cratestack#505 reports). `default-features = false` on
+# this crate's `[workspace.dependencies]` entry (root `Cargo.toml`) means
+# every direct dependency edge onto `cratestack-core` elsewhere in the
+# workspace must explicitly re-select one of these two if it wants
+# `Decimal`/`RustDecimal`/`BigDecimal` to exist at all — that is deliberate
+# (cratestack#495/#421): it is what lets a consumer pick `decimal-bigdecimal`
+# without this crate's own `default` silently forcing `decimal-rust-decimal`
+# back in behind them.
 default = ["decimal-rust-decimal"]
 # rust_decimal: 96-bit fixed-precision, stack-allocated, `Copy`. The
 # long-standing default — fast, no heap allocation, but capped at 28-29

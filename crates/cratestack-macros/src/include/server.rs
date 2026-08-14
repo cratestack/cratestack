@@ -13,11 +13,18 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::LitStr;
 
+use crate::shared::decimal_backend::{DecimalBackend, with_decimal_backend};
+
+use super::decimal_arg::resolve_decimal_backend;
 use super::parse::{ServerDb, parse_schema_literal};
 
 use collect::collect_server_schema;
 
-pub(super) fn compose_server_schema(schema_path: &LitStr, db: ServerDb) -> TokenStream {
+pub(super) fn compose_server_schema(
+    schema_path: &LitStr,
+    db: ServerDb,
+    decimal: Option<DecimalBackend>,
+) -> TokenStream {
     let (schema_relative, resolved, schema, schema_sha256) = match parse_schema_literal(schema_path)
     {
         Ok(parsed) => parsed,
@@ -39,201 +46,213 @@ pub(super) fn compose_server_schema(schema_path: &LitStr, db: ServerDb) -> Token
     {
         return error;
     }
-    let resolved_literal = resolved.display().to_string();
-
-    let collected = match collect_server_schema(&schema, schema_path) {
-        Ok(collected) => collected,
+    let decimal_backend = match resolve_decimal_backend(schema_path, &schema, decimal) {
+        Ok(backend) => backend,
         Err(error) => return error,
     };
 
-    let grpc_module = match grpc::build_grpc_module(&schema, &resolved, schema_path) {
-        Ok(tokens) => tokens,
-        Err(error) => return error,
-    };
+    // Wraps the rest of composition — `collect_server_schema` (which
+    // reaches every one of the six `Decimal`-emitting codegen sites) and
+    // the gRPC module build both need the schema's chosen decimal backend
+    // in scope (cratestack#505 Direction 2; see `include::embedded`'s
+    // matching comment).
+    with_decimal_backend(decimal_backend, move || {
+        let resolved_literal = resolved.display().to_string();
 
-    let axum_module = axum_module::build_axum_module(&collected, db);
-    let runtime_block = runtime::build_runtime_block(
-        db,
-        &collected.model_accessors,
-        &collected.bound_model_accessors,
-        &collected.view_accessors,
-    );
+        let collected = match collect_server_schema(&schema, schema_path) {
+            Ok(collected) => collected,
+            Err(error) => return error,
+        };
 
-    // Destructure here for `quote!` interpolation — quoting through the
-    // struct adds a `c.` prefix per field, which `quote!` doesn't accept.
-    let collect::ServerCollected {
-        transport_style_str,
-        mixin_names,
-        model_names,
-        type_names,
-        enum_names,
-        procedure_names,
-        view_names,
-        type_structs,
-        enum_types,
-        custom_field_descriptors,
-        custom_field_resolver_methods,
-        model_structs,
-        pg_from_row_impls,
-        primary_key_accessor_impls,
-        model_descriptors,
-        field_modules,
-        create_input_structs,
-        update_input_structs,
-        upsert_input_impls,
-        find_many_input_structs,
-        view_structs,
-        view_descriptors,
-        view_pg_from_row_impls,
-        procedure_modules,
-        procedure_registry_methods,
-        generated_client_module,
-        generated_event_module,
-        ..
-    } = collected;
+        let grpc_module = match grpc::build_grpc_module(&schema, &resolved, schema_path) {
+            Ok(tokens) => tokens,
+            Err(error) => return error,
+        };
 
-    // `datasource { provider = "none" }` schemas can never declare a
-    // `model` (cratestack#327's guard), so `generated_event_module` is
-    // always an empty-bodied `pub mod events { ... }` shell under
-    // `db = None` — a `Subscriptions::new` that nothing in the crate ever
-    // calls (there is no `Cratestack::events()` accessor for `db = None`;
-    // see `runtime::none`'s module doc), which would trip `dead_code`
-    // under this workspace's `-D warnings` gate. Drop it entirely instead
-    // of keeping it as unreachable API surface.
-    let generated_event_module = match db {
-        ServerDb::Postgres => generated_event_module,
-        ServerDb::None => proc_macro2::TokenStream::new(),
-    };
+        let axum_module = axum_module::build_axum_module(&collected, db);
+        let runtime_block = runtime::build_runtime_block(
+            db,
+            &collected.model_accessors,
+            &collected.bound_model_accessors,
+            &collected.view_accessors,
+        );
 
-    // `datasource { provider = "none" }` schemas can never declare a
-    // `model` either, so `pg_from_row_impls`/`model_structs`/etc. below
-    // are always empty under `db = None` — but the `use ::cratestack::sqlx;`
-    // import itself would still fail to resolve once `sqlx`/`cratestack-sqlx`
-    // is Cargo-feature-gated behind the (default-on) `postgres` feature
-    // (cratestack#329) and a `db = None`-only consumer disables it. Only
-    // pull the import in for `db = Postgres`, where it's actually needed
-    // for the sqlx `FromRow` impls in this same module.
-    let models_sqlx_import = match db {
-        ServerDb::Postgres => quote! { use ::cratestack::sqlx; },
-        ServerDb::None => proc_macro2::TokenStream::new(),
-    };
+        // Destructure here for `quote!` interpolation — quoting through the
+        // struct adds a `c.` prefix per field, which `quote!` doesn't accept.
+        let collect::ServerCollected {
+            transport_style_str,
+            mixin_names,
+            model_names,
+            type_names,
+            enum_names,
+            procedure_names,
+            view_names,
+            type_structs,
+            enum_types,
+            custom_field_descriptors,
+            custom_field_resolver_methods,
+            model_structs,
+            pg_from_row_impls,
+            primary_key_accessor_impls,
+            model_descriptors,
+            field_modules,
+            create_input_structs,
+            update_input_structs,
+            upsert_input_impls,
+            find_many_input_structs,
+            view_structs,
+            view_descriptors,
+            view_pg_from_row_impls,
+            procedure_modules,
+            procedure_registry_methods,
+            generated_client_module,
+            generated_event_module,
+            ..
+        } = collected;
 
-    let expanded = quote! {
-        pub mod cratestack_schema {
-            pub const SCHEMA_PATH: &str = #schema_relative;
-            pub const SCHEMA_SOURCE: &str = include_str!(#resolved_literal);
-            /// Hex-encoded SHA-256 of `SCHEMA_SOURCE`'s raw bytes, computed
-            /// once at macro-expansion time. Not cryptographic-strength
-            /// integrity — it's a drift-detection fingerprint: `axum::router()`
-            /// below layers on middleware that compares a client-sent copy of
-            /// this value against its own and `tracing::warn!`s on mismatch,
-            /// never rejects. See issue #178.
-            pub const SCHEMA_SHA256: &str = #schema_sha256;
-            pub const MIXINS: &[&str] = &[#(#mixin_names),*];
-            pub const MODELS: &[&str] = &[#(#model_names),*];
-            pub const TYPES: &[&str] = &[#(#type_names),*];
-            pub const ENUMS: &[&str] = &[#(#enum_names),*];
-            pub const PROCEDURES: &[&str] = &[#(#procedure_names),*];
-            pub const VIEWS: &[&str] = &[#(#view_names),*];
+        // `datasource { provider = "none" }` schemas can never declare a
+        // `model` (cratestack#327's guard), so `generated_event_module` is
+        // always an empty-bodied `pub mod events { ... }` shell under
+        // `db = None` — a `Subscriptions::new` that nothing in the crate ever
+        // calls (there is no `Cratestack::events()` accessor for `db = None`;
+        // see `runtime::none`'s module doc), which would trip `dead_code`
+        // under this workspace's `-D warnings` gate. Drop it entirely instead
+        // of keeping it as unreachable API surface.
+        let generated_event_module = match db {
+            ServerDb::Postgres => generated_event_module,
+            ServerDb::None => proc_macro2::TokenStream::new(),
+        };
 
-            pub const MIXIN_COUNT: usize = MIXINS.len();
-            pub const MODEL_COUNT: usize = MODELS.len();
-            pub const TYPE_COUNT: usize = TYPES.len();
-            pub const ENUM_COUNT: usize = ENUMS.len();
-            pub const PROCEDURE_COUNT: usize = PROCEDURES.len();
-            pub const VIEW_COUNT: usize = VIEWS.len();
+        // `datasource { provider = "none" }` schemas can never declare a
+        // `model` either, so `pg_from_row_impls`/`model_structs`/etc. below
+        // are always empty under `db = None` — but the `use ::cratestack::sqlx;`
+        // import itself would still fail to resolve once `sqlx`/`cratestack-sqlx`
+        // is Cargo-feature-gated behind the (default-on) `postgres` feature
+        // (cratestack#329) and a `db = None`-only consumer disables it. Only
+        // pull the import in for `db = Postgres`, where it's actually needed
+        // for the sqlx `FromRow` impls in this same module.
+        let models_sqlx_import = match db {
+            ServerDb::Postgres => quote! { use ::cratestack::sqlx; },
+            ServerDb::None => proc_macro2::TokenStream::new(),
+        };
 
-            /// Generation style the schema declared via the `transport`
-            /// directive. Either `"rest"` (the default) or `"rpc"`. See
-            /// `docs/design/rpc-transport.md`.
-            pub const TRANSPORT_STYLE: &str = #transport_style_str;
+        let expanded = quote! {
+            pub mod cratestack_schema {
+                pub const SCHEMA_PATH: &str = #schema_relative;
+                pub const SCHEMA_SOURCE: &str = include_str!(#resolved_literal);
+                /// Hex-encoded SHA-256 of `SCHEMA_SOURCE`'s raw bytes, computed
+                /// once at macro-expansion time. Not cryptographic-strength
+                /// integrity — it's a drift-detection fingerprint: `axum::router()`
+                /// below layers on middleware that compares a client-sent copy of
+                /// this value against its own and `tracing::warn!`s on mismatch,
+                /// never rejects. See issue #178.
+                pub const SCHEMA_SHA256: &str = #schema_sha256;
+                pub const MIXINS: &[&str] = &[#(#mixin_names),*];
+                pub const MODELS: &[&str] = &[#(#model_names),*];
+                pub const TYPES: &[&str] = &[#(#type_names),*];
+                pub const ENUMS: &[&str] = &[#(#enum_names),*];
+                pub const PROCEDURES: &[&str] = &[#(#procedure_names),*];
+                pub const VIEWS: &[&str] = &[#(#view_names),*];
 
-            pub mod types {
-                use ::cratestack::serde;
+                pub const MIXIN_COUNT: usize = MIXINS.len();
+                pub const MODEL_COUNT: usize = MODELS.len();
+                pub const TYPE_COUNT: usize = TYPES.len();
+                pub const ENUM_COUNT: usize = ENUMS.len();
+                pub const PROCEDURE_COUNT: usize = PROCEDURES.len();
+                pub const VIEW_COUNT: usize = VIEWS.len();
 
-                #(#enum_types)*
-                #(#type_structs)*
-            }
+                /// Generation style the schema declared via the `transport`
+                /// directive. Either `"rest"` (the default) or `"rpc"`. See
+                /// `docs/design/rpc-transport.md`.
+                pub const TRANSPORT_STYLE: &str = #transport_style_str;
 
-            pub use types::*;
+                pub mod types {
+                    use ::cratestack::serde;
 
-            pub mod models {
-                use ::cratestack::serde;
-                #models_sqlx_import
-
-                #(#model_structs)*
-                #(#pg_from_row_impls)*
-                #(#primary_key_accessor_impls)*
-                #(#model_descriptors)*
-
-                // View emission (ADR-0003) lives alongside models in
-                // the same `models` module so the view structs share
-                // the same scope as the source models they were
-                // declared `from`. The `runtime.views().<view>()`
-                // accessor reaches into `super::models::<View>` to
-                // construct the `ViewDelegate`.
-                #(#view_structs)*
-                #(#view_pg_from_row_impls)*
-                #(#view_descriptors)*
-            }
-
-            pub use models::*;
-
-            #(#field_modules)*
-
-            pub mod inputs {
-                use ::cratestack::serde;
-
-                #(#create_input_structs)*
-                #(#update_input_structs)*
-                #(#upsert_input_impls)*
-                #(#find_many_input_structs)*
-            }
-
-            pub use inputs::*;
-
-            #generated_client_module
-            #generated_event_module
-
-            pub mod procedures {
-                #(#procedure_modules)*
-
-                pub trait ProcedureRegistry: Clone + Send + Sync + 'static {
-                    #(#procedure_registry_methods)*
-                }
-            }
-
-            pub mod custom {
-                #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-                pub struct CustomFieldDescriptor {
-                    pub owner: &'static str,
-                    pub field: &'static str,
-                    pub resolver_method: &'static str,
+                    #(#enum_types)*
+                    #(#type_structs)*
                 }
 
-                pub const FIELDS: &[CustomFieldDescriptor] = &[
-                    #(#custom_field_descriptors),*
-                ];
+                pub use types::*;
 
-                pub const FIELD_COUNT: usize = FIELDS.len();
+                pub mod models {
+                    use ::cratestack::serde;
+                    #models_sqlx_import
 
-                pub trait CustomFieldResolver: Clone + Send + Sync + 'static {
-                    #(#custom_field_resolver_methods)*
+                    #(#model_structs)*
+                    #(#pg_from_row_impls)*
+                    #(#primary_key_accessor_impls)*
+                    #(#model_descriptors)*
+
+                    // View emission (ADR-0003) lives alongside models in
+                    // the same `models` module so the view structs share
+                    // the same scope as the source models they were
+                    // declared `from`. The `runtime.views().<view>()`
+                    // accessor reaches into `super::models::<View>` to
+                    // construct the `ViewDelegate`.
+                    #(#view_structs)*
+                    #(#view_pg_from_row_impls)*
+                    #(#view_descriptors)*
                 }
+
+                pub use models::*;
+
+                #(#field_modules)*
+
+                pub mod inputs {
+                    use ::cratestack::serde;
+
+                    #(#create_input_structs)*
+                    #(#update_input_structs)*
+                    #(#upsert_input_impls)*
+                    #(#find_many_input_structs)*
+                }
+
+                pub use inputs::*;
+
+                #generated_client_module
+                #generated_event_module
+
+                pub mod procedures {
+                    #(#procedure_modules)*
+
+                    pub trait ProcedureRegistry: Clone + Send + Sync + 'static {
+                        #(#procedure_registry_methods)*
+                    }
+                }
+
+                pub mod custom {
+                    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+                    pub struct CustomFieldDescriptor {
+                        pub owner: &'static str,
+                        pub field: &'static str,
+                        pub resolver_method: &'static str,
+                    }
+
+                    pub const FIELDS: &[CustomFieldDescriptor] = &[
+                        #(#custom_field_descriptors),*
+                    ];
+
+                    pub const FIELD_COUNT: usize = FIELDS.len();
+
+                    pub trait CustomFieldResolver: Clone + Send + Sync + 'static {
+                        #(#custom_field_resolver_methods)*
+                    }
+                }
+
+                pub use custom::CustomFieldResolver;
+
+                pub const CUSTOM_FIELDS: &[custom::CustomFieldDescriptor] = custom::FIELDS;
+                pub const CUSTOM_FIELD_COUNT: usize = custom::FIELD_COUNT;
+
+                #axum_module
+
+                #runtime_block
+
+                #grpc_module
             }
+        };
 
-            pub use custom::CustomFieldResolver;
-
-            pub const CUSTOM_FIELDS: &[custom::CustomFieldDescriptor] = custom::FIELDS;
-            pub const CUSTOM_FIELD_COUNT: usize = custom::FIELD_COUNT;
-
-            #axum_module
-
-            #runtime_block
-
-            #grpc_module
-        }
-    };
-
-    expanded.into()
+        expanded.into()
+    })
 }

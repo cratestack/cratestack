@@ -21,19 +21,31 @@ proc-macro = true
 
 [features]
 default = ["decimal-rust-decimal"]
-# Forwards to `cratestack-core`'s mutually-exclusive decimal backend choice
-# (see that crate's Cargo.toml for the full rationale). Required because
+# Forwards to `cratestack-core`'s (independently-selectable, as of
+# cratestack#505 Direction 2 — see `cratestack-core/src/decimal.rs`'s
+# module doc) decimal backend feature(s). Required because
 # `cratestack-core`'s dependency edge has `default-features = false` at the
 # workspace root — every direct consumer must explicitly re-select a
 # backend, or `cratestack-core` fails to compile at all (cratestack#495).
 # Note this crate is a proc-macro — this feature controls what THIS crate
 # (the macro implementation) compiles against, not what the schema it
-# expands generates; `cratestack::Decimal` in generated code always
-# resolves through whichever facade the consumer picked, independent of
-# this flag. Also forwards to `cratestack-policy`, `cratestack-parser`,
-# and `cratestack-proto` — this crate's other direct `cratestack-core`-
+# expands generates: which concrete `Decimal` type generated code names is
+# decided per macro invocation by the `decimal = RustDecimal | BigDecimal`
+# argument on the three entry macros (`src/include/decimal_arg.rs`), never
+# by this crate's own compiled-in feature set — a proc-macro can only ever
+# observe *its own* features via `cfg!`, not the invoking crate's
+# (cratestack#505 §5), so routing the choice through a Cargo feature here
+# would silently reintroduce the exact bug this crate exists to fix. Also
+# forwards to `cratestack-policy`, `cratestack-parser`, and
+# `cratestack-proto` — this crate's other direct `cratestack-core`-
 # consuming dependencies (each with the same `default-features = false`
-# treatment — see root `Cargo.toml`).
+# treatment — see root `Cargo.toml`). None of the four actually need a
+# concrete `Decimal`/`RustDecimal`/`BigDecimal` type to compile against
+# post-cratestack#505 (all four only ever match the schema type name
+# `"Decimal"` as a string); this toggle is kept for `cratestack-core`
+# itself to build cleanly end-to-end and for parity with every other
+# `cratestack-core`-consuming crate in the workspace, not because any
+# code here names the concrete type.
 decimal-rust-decimal = [
     "cratestack-core/decimal-rust-decimal",
     "cratestack-policy/decimal-rust-decimal",

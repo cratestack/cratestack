@@ -22,9 +22,11 @@ mod decode;
 mod tests;
 
 pub use bind::SqlValueParam;
-#[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
+// `DecimalColumn<D>`/`decode_decimal` are generic over the concrete
+// decimal type (cratestack#505 Direction 2) — unconditional, no decimal
+// feature required to exist. Generated code supplies `D` (e.g.
+// `::cratestack::RustDecimal`), which IS feature-gated.
 pub use columns::DecimalColumn;
 pub use columns::{DateTimeColumn, JsonColumn, UuidColumn};
-#[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
 pub use decode::decode_decimal;
 pub use decode::{decode_datetime, decode_json, decode_uuid};

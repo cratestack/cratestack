@@ -2,6 +2,7 @@
 //! generator. Anything bigger lives in sibling submodules.
 
 mod attrs;
+pub(crate) mod decimal_backend;
 mod procedure_attrs;
 mod sql;
 mod types;

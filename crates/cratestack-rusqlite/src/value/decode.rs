@@ -28,12 +28,15 @@ pub fn decode_json(raw: &str) -> FromSqlResult<Value> {
     Ok(Value::from_plain_json(plain))
 }
 
-// `cratestack_core::Decimal` only exists when a decimal backend is
-// selected (cratestack#505) — see `cratestack-core/src/decimal.rs`'s
-// module doc.
-#[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
-pub fn decode_decimal(raw: &str) -> FromSqlResult<cratestack_core::Decimal> {
-    raw.parse::<cratestack_core::Decimal>().map_err(|error| {
+/// Generic over the concrete decimal type (cratestack#505 Direction 2) —
+/// unconditional, no `#[cfg]` gate. `DecimalColumn<D>` is the only caller;
+/// `D` is inferred from its own type parameter at each call site.
+pub fn decode_decimal<D>(raw: &str) -> FromSqlResult<D>
+where
+    D: std::str::FromStr,
+    D::Err: std::fmt::Display,
+{
+    raw.parse::<D>().map_err(|error| {
         FromSqlError::Other(Box::new(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             format!("invalid decimal value: {error}"),

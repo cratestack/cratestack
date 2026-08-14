@@ -53,10 +53,19 @@ pub use context::{
     AuthProvider, CoolAuthIdentity, CoolContext, PrincipalContext, PrincipalFacet, RequestContext,
     SystemContext,
 };
-// `Decimal` only exists on `decimal-rust-decimal` or `decimal-bigdecimal` —
-// see `decimal`'s module doc for why the "neither" case has no fallback.
-#[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
+// `Decimal` only exists when EXACTLY ONE decimal backend feature is
+// active; `RustDecimal`/`BigDecimal` each only exist under their own
+// feature independently of the other; `DecimalValue` is unconditional —
+// see `decimal`'s module doc (cratestack#505 Direction 2).
+#[cfg(feature = "decimal-bigdecimal")]
+pub use decimal::BigDecimal;
+#[cfg(all(feature = "decimal-rust-decimal", not(feature = "decimal-bigdecimal")))]
 pub use decimal::Decimal;
+#[cfg(all(feature = "decimal-bigdecimal", not(feature = "decimal-rust-decimal")))]
+pub use decimal::Decimal;
+pub use decimal::DecimalValue;
+#[cfg(feature = "decimal-rust-decimal")]
+pub use decimal::RustDecimal;
 pub use envelope::{
     HmacEnvelope, InMemoryNonceStore, KeyProvider, NonceStore, SealedEnvelope, StaticKeyProvider,
 };
@@ -91,9 +100,7 @@ pub use validators::{
     validate_email, validate_iso4217, validate_length, validate_length_bytes, validate_range_i64,
     validate_uri,
 };
-// `validate_range_decimal` takes `&Decimal`, so it only exists when
-// `Decimal` does — see `decimal`'s "Selecting NEITHER feature is not an
-// error" module doc section.
-#[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
+// `validate_range_decimal` is generic over `DecimalValue` (cratestack#505
+// Direction 2), so it's unconditional — no decimal feature required.
 pub use validators::validate_range_decimal;
 pub use value::Value;

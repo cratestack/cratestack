@@ -24,7 +24,10 @@ use cratestack::include_embedded_schema;
 use cratestack::{Decimal, RusqliteRuntime, rusqlite_backend::ddl::create_table_sql};
 use cratestack_rusqlite::ModelDelegate;
 
-include_embedded_schema!("examples/sqlite_offline_first.cstack");
+include_embedded_schema!(
+    "examples/sqlite_offline_first.cstack",
+    decimal = RustDecimal
+);
 
 use cratestack_schema::models::{Account, Transfer};
 use cratestack_schema::{

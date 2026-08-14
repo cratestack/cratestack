@@ -23,6 +23,21 @@
 #      `cratestack-client-rust` already had — a single crate left pinning
 #      `decimal-rust-decimal` anywhere in that closure re-forces it for the
 #      whole graph, since Cargo features are additive and unify globally.
+#   4. #505 Direction 2 (associated-type/marker shape — see
+#      `docs/design/decimal-backend-additivity.md`) removes the "both
+#      selected is a hard error" half of step 3's invariant: `RustDecimal`/
+#      `BigDecimal` are now independently-gated names (never one shared
+#      `Decimal` alias resolving ambiguously), `SqlValue::Decimal` holds a
+#      `Box<dyn DecimalLike>` instead of a fixed concrete type, and
+#      `cratestack-macros` picks which concrete type a given schema uses via
+#      a `decimal = RustDecimal | BigDecimal` macro argument — a
+#      schema-authored choice, not a Cargo feature — so two independent
+#      dependents that each select a different backend feature (this
+#      script's own `[2/7]` step, updated below) now compile together in
+#      one graph instead of hitting the old `compile_error!`. The "neither
+#      selected, and nothing needs one" and "no `rust_decimal` reachable
+#      under `decimal-bigdecimal` alone" guarantees steps 2/3 established
+#      are both still asserted below, unchanged.
 #
 # This script runs a representative matrix across every crate this PR
 # touched (not just the issue's own two repro commands): every facade with
@@ -164,15 +179,39 @@ for check in \
   fi
 done
 
-step "[2/7] decimal-rust-decimal and decimal-bigdecimal are mutually exclusive (cratestack#495); neither is NOT an error (cratestack#505)"
+step "[2/7] decimal-rust-decimal and decimal-bigdecimal are BOTH selectable at once as of cratestack#505 Direction 2; neither is NOT an error either (cratestack#505's earlier, milder half)"
+# Until cratestack#505 Direction 2 landed, this asserted the OPPOSITE: that
+# `cratestack-core --features decimal-rust-decimal,decimal-bigdecimal`
+# together was a hard `compile_error!` (cratestack#495's original mutual-
+# exclusion invariant). That invariant is exactly what cratestack#505
+# reports as the defect — two independent dependents, each individually
+# well-formed, each choosing a different backend, could not appear
+# together in one build. Direction 2 (see `docs/design/decimal-backend-
+# additivity.md` §7(b)/§10) fixes it by never asking `cratestack-core` to
+# pick one: `RustDecimal`/`BigDecimal` are independently-gated names, and
+# `SqlValue::Decimal` no longer pins a concrete type. This step now
+# asserts the FIXED behavior — both together compile cleanly — deliberately
+# inverted from its pre-#505 form; see this script's own step [1/7]-through-
+# [2/7] preamble ("History" item 4) for the reasoning.
 if OUTPUT=$(cargo check -p cratestack-core --no-default-features --features decimal-rust-decimal,decimal-bigdecimal 2>&1); then
-  fail "expected 'cargo check -p cratestack-core --features decimal-rust-decimal,decimal-bigdecimal' (both backends at once) to be rejected, but it succeeded"
-  echo "$OUTPUT"
-elif ! grep -q "mutually exclusive" <<<"$OUTPUT"; then
-  fail "expected the mutual-exclusion compile_error! for both decimal backends, got a different failure instead"
-  echo "$OUTPUT"
+  echo "ok: selecting both decimal backends at once compiles cleanly (cratestack#505 Direction 2)"
 else
-  echo "ok: selecting both decimal backends at once is rejected"
+  fail "expected 'cargo check -p cratestack-core --features decimal-rust-decimal,decimal-bigdecimal' (both backends at once) to succeed as of cratestack#505 Direction 2, but it failed"
+  echo "$OUTPUT"
+fi
+# `cargo test`, not just `cargo check`: proves both `RustDecimal` and
+# `BigDecimal` are actually usable (not just present) together — see
+# `both_decimal_backends_tests` in `src/decimal.rs`.
+if OUTPUT=$(cargo test -p cratestack-core --no-default-features --features decimal-rust-decimal,decimal-bigdecimal 2>&1); then
+  if ! grep -q "both_decimal_backends_tests::both_backends_selected_at_once_compiles_and_runs ... ok" <<<"$OUTPUT"; then
+    fail "cargo test -p cratestack-core --features decimal-rust-decimal,decimal-bigdecimal succeeded, but the cratestack#505 Direction 2 regression test didn't run — check src/decimal.rs's cfg gating"
+    echo "$OUTPUT"
+  else
+    echo "ok: cratestack-core's test suite (including the cratestack#505 Direction 2 regression test) runs with both decimal backends selected"
+  fi
+else
+  fail "cargo test -p cratestack-core --features decimal-rust-decimal,decimal-bigdecimal failed"
+  echo "$OUTPUT"
 fi
 # cratestack#505: this used to be a hard `compile_error!` too (the "neither"
 # arm) — the exact break a consumer legitimately narrowing its graph via

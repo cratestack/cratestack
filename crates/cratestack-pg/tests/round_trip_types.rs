@@ -38,7 +38,11 @@ use cratestack_migrate::diff;
 use cratestack_migrate::emit::postgres;
 use cratestack_parser::parse_schema;
 
-include_server_schema!("tests/fixtures/round_trip_types.cstack", db = Postgres);
+include_server_schema!(
+    "tests/fixtures/round_trip_types.cstack",
+    db = Postgres,
+    decimal = RustDecimal
+);
 
 mod support;
 use support::pg;

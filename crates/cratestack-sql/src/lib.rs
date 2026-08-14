@@ -42,7 +42,7 @@ pub use relation_path::{
     Orderable, RelationHop, Unorderable, is_orderable, order_value_sql, wrap_filter,
 };
 pub use values::{
-    ConflictTarget, CreateModelInput, FilterValue, IntoSqlValue, ModelPrimaryKey, Projection,
-    RelationInclude, SqlColumnValue, SqlValue, UpdateModelInput, UpsertModelInput,
+    ConflictTarget, CreateModelInput, DecimalLike, FilterValue, IntoSqlValue, ModelPrimaryKey,
+    Projection, RelationInclude, SqlColumnValue, SqlValue, UpdateModelInput, UpsertModelInput,
     find_duplicate_sql_value,
 };

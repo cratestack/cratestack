@@ -1,14 +1,16 @@
 # Decimal-backend feature additivity (cratestack#505)
 
-Status: **spike/decision, not implemented.** This document exists so the maintainer can choose
-between Directions 1, 2, and 4 below; it settles the evidence, not the call. No production Rust
-changed as part of this document.
+Status: **implemented.** The maintainer chose Direction 2, the associated-type/marker shape (§7's
+option (b)), and it has shipped — see §13 for what actually landed, how it differs in mechanism
+(not outcome) from §7's own sketch, and the verification evidence. §§1–12 below are the original
+spike/decision document, kept verbatim as the historical record of the evidence the decision was
+based on — do not edit them to retroactively match the implementation; §13 is where the "what
+actually happened" account lives.
 Scope: `cratestack-core`'s `decimal-rust-decimal`/`decimal-bigdecimal` Cargo features and every
 crate that references `cratestack_core::Decimal` or `cratestack_sql::SqlValue::Decimal`.
 Tracking: cratestack#505. Direction 3 (drop the "neither selected" hard error) already **shipped**
-in #521 + #525 — see §1. This document is about the part #521 explicitly declined to fix: see
-`crates/cratestack-core/src/decimal.rs:18-32`, the module doc's own words, "an unresolved, larger
-design change, deliberately out of scope here."
+in #521 + #525 — see §1. Direction 2 (make "both selected" additive instead of a hard error)
+shipped in the PR this document's §13 describes.
 
 ## 1. What #521/#525 already fixed, and what is still open
 
@@ -500,3 +502,134 @@ they're made:
   in `docs/design/layering.md` §4.3, cross-checked against this repo's own `grep -rn` output, not
   independently re-derived from scratch — flagged here so that count is understood as corroborated,
   not re-measured.
+
+## 13. Implementation (closes §10's open question)
+
+Direction 2, §7's option (b), shipped. This section records what actually landed, closing the
+"staying on Direction 4 a while longer" interim position §10 left open — the graph-wide invariant
+§5 describes no longer holds.
+
+### 13.1 What changed, mapped to §4's inventory
+
+- **`cratestack-core`** (`src/decimal.rs`): the "both selected" `compile_error!` is gone.
+  `RustDecimal`/`BigDecimal` are now independently `#[cfg(feature = "decimal-rust-decimal")]` /
+  `#[cfg(feature = "decimal-bigdecimal")]` re-exports (not `any(...)`/exactly-one gated) — both may
+  exist in one compiled `cratestack-core` with no ambiguity, because nothing has to pick between
+  them at this layer any more. The legacy `Decimal` alias is kept, still gated to *exactly one*
+  feature (mirroring the "neither" treatment #521 already established: an ambiguous name simply
+  doesn't exist rather than silently resolving one way, matching §6a's rejection of silent
+  precedence). A new unconditional `DecimalValue` trait (blanket-implemented, structural — no
+  dependency on either backend crate) is the bound every backend-agnostic call site is now written
+  against.
+- **`validators::validate_range_decimal`** is now `fn validate_range_decimal<D: DecimalValue>(...)`
+  — generic, unconditional, no `#[cfg]` gate at all. This is a **cheaper outcome than §7 predicted**:
+  §7 anticipated this site would need a marker/type-argument threaded in; instead making it generic
+  removed the `#[cfg]` gate entirely, and every call site (`cratestack-macros`'
+  `validators/emit.rs`) needed **zero changes** — `D` infers from the field's own concrete type at
+  the call site. One of §4's six codegen sites turned out not to need touching; see §13.4.
+- **`SqlValue::Decimal`** (`cratestack-sql`) now holds `Box<dyn DecimalLike>` — a new, unconditional,
+  object-safe trait (`src/values/decimal_like.rs`) blanket-implemented for anything satisfying
+  `DecimalValue`. This is the §7 "or grows a `Decimal(Box<dyn DecimalLike>)` trait-object variant"
+  alternative explicitly named alongside `SqlValue<D>` — chosen over the generic-parameter route
+  specifically because it does **not** propagate into `ModelDescriptor`/`ReadSource`/`WriteSource`
+  or any generated model struct's own signature: none of those changed at all. This is materially
+  cheaper than §7's own estimate, which treated `SqlValue` becoming generic (and that genericity
+  necessarily propagating through the descriptor traits) as the load-bearing, most expensive part of
+  the whole change.
+- **The sqlx/rusqlite encode-decode boundary** (§4 items 5–7): rusqlite's side became fully generic
+  with no downcasting needed (`DecimalColumn<D>`, `decode_decimal<D>`, `format_decimal(&dyn
+  DecimalLike)` — TEXT round-trip only ever needs `Display`/`FromStr`, never the concrete type) —
+  cheaper than §7 predicted. The sqlx side needed the downcast §7 anticipated:
+  `cratestack-sqlx::push_bind_value` matches the `SqlValue::Decimal` variant, then downcasts the
+  trait object to whichever concrete backend(s) that crate's own `decimal-*` Cargo features enabled
+  (`Any::downcast_ref`), since `sqlx::QueryBuilder::push_bind` needs a concrete `Encode`-implementing
+  type. At most one arm matches per actual value; both may be *compiled* at once.
+- **Codegen** (`cratestack-macros`): the three entry macros (`include_server_schema!`,
+  `include_embedded_schema!`, `include_client_schema!`) gained an optional trailing
+  `decimal = RustDecimal | BigDecimal` argument, required exactly when the schema declares a
+  `Decimal` field anywhere (`include/decimal_arg.rs::schema_uses_decimal` — models, mixins, custom
+  types, views, and procedure args/return types, including through `Page<T>`/`FindMany<T>`); a
+  schema with no `Decimal` field needs no argument, preserving cratestack#521's "neither" case
+  unchanged. This is the schema-authored choice §7 called a "marker … the schema owner writes once
+  per crate" — implemented as a macro argument rather than a hand-written `type` item, so there is
+  no new manual-boilerplate contract for schema owners to maintain; the macro call site *is* the
+  marker.
+
+### 13.2 One deliberate mechanism deviation from §7's literal sketch, and why
+
+§7 sketched the marker as something "referenced by name in generated code," which reads as a
+parameter threaded explicitly through each of the six codegen call sites. That is not what shipped.
+Instead, `crate::shared::decimal_backend` holds a `thread_local!`-scoped "which backend is active"
+cell, set once per macro invocation (`with_decimal_backend`, wrapping the entire body of each entry
+macro's composer) and read by the six sites via `current_decimal_type_tokens()` — an ambient/scoped
+context rather than an explicit function parameter.
+
+This is a deliberate implementation choice, not a scope cut, made for a concrete reason: `rust_type_
+tokens`/`sql_value_tokens`/and friends have on the order of 30 call sites across the crate (primary-key
+types, enum types, relation types, …), the overwhelming majority of which never touch `Decimal` at
+all. Threading an explicit parameter through every one of them — mostly unused — is exactly the
+signature-noise cost §7 itself warned Direction 2(a) would inflict on *generated* code; doing the
+analogous thing to `cratestack-macros`' own *internal* call graph would reintroduce a smaller version
+of the same cost one layer up, for no externally-visible benefit (the six sites' behavior is
+identical either way: resolve the schema's chosen concrete type, per invocation, never via a Cargo
+feature). The externally-visible contract §7 describes — model struct fields keep concrete,
+non-generic types; the schema owner names the backend once; no `cfg!`-against-the-macro's-own-
+feature-set anywhere — is unchanged. `cratestack-macros/src/shared/decimal_backend.rs`'s own module
+doc states this reasoning inline; flagged here too since it's a legitimate place to disagree with
+§7's literal wording, and the maintainer may prefer explicit parameter-threading instead — this was
+not re-litigated, just implemented the cheaper way and disclosed.
+
+### 13.3 Verification evidence
+
+- **The decisive test (cratestack#505's own repro, executed before and after):** two throwaway crates
+  in a scratch workspace, `crate-a` depending on this branch's `cratestack-pg` with
+  `default-features = false, features = ["decimal-rust-decimal"]`, `crate-b` the same with
+  `decimal-bigdecimal`. Against `origin/main` (`b0c559975e8`): `cargo check --workspace` over the
+  two-member scratch workspace fails with the exact `compile_error!` + `E0432` pair §2 documented.
+  Against this branch: the identical two-crate shape (functions returning `RustDecimal`/
+  `BigDecimal` respectively) — `cargo check -p crate-a`, `-p crate-b`, and `--workspace` all succeed.
+- **`.ci/feature-matrix.sh`**: step `[2/7]` inverted from "both selected is rejected" to "both
+  selected compiles and both backends are independently usable" (with reasoning inline in the
+  script), including a `cargo test` assertion that `both_decimal_backends_tests` actually runs. Every
+  other step (facade default/narrowed matrices, the `[1/7]`/"neither" guarantee, the `[6/7]`
+  `assert_no_rust_decimal` bar) is unchanged and still passes — run in full via `bash
+  .ci/feature-matrix.sh`.
+- **`cargo tree`, not reading code**, for the #495 acceptance bar: `cargo tree -p cratestack-pg
+  --no-default-features --features postgres,decimal-bigdecimal -e features` and the `cratestack-client`
+  equivalent (the same commands `.ci/feature-matrix.sh`'s `assert_no_rust_decimal` runs) confirm
+  `rust_decimal` is still unreachable when only `decimal-bigdecimal` is selected — unchanged by this
+  PR, verified by execution.
+- **Real round-trips against a live Postgres** (`CRATESTACK_USE_TESTCONTAINERS=1
+  CRATESTACK_REQUIRE_DB=1`, not skipped): `cratestack-pg`'s `banking_decimal`, `banking_validation`,
+  `round_trip_types`, and — under `--no-default-features --features postgres,decimal-bigdecimal` —
+  `decimal_bigdecimal_backend` (including its 40-significant-digit value, past `RustDecimal`'s
+  capacity) all pass, proving the `bind_decimal` downcast at the sqlx boundary actually binds the
+  right concrete type end-to-end, not just that it type-checks.
+- **Embedded round-trips**: `cratestack-sqlite`'s `round_trip_types` and `sqlite_e2e` (real
+  in-memory SQLite, not mocked) both pass, exercising the generic `DecimalColumn<D>`/`decode_decimal`
+  rusqlite boundary.
+- Every crate this PR touches (`cratestack-core`, `-sql`, `-sqlx`, `-rusqlite`, `-macros`, `-pg`,
+  `-sqlite`) passes `cargo test` under default features, `--no-default-features` (neither backend),
+  `--features decimal-bigdecimal` alone, and — where meaningful — both backends together.
+  `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings` (this workspace's
+  `clippy_allow` set) are clean on all of them.
+
+### 13.4 Corrections to §4/§7's own predictions, now that this is built
+
+Flagged explicitly per this task's instruction to report when reality diverges from the design
+doc's estimate — none of these made the change *harder* than §7 priced it; all three made it
+*cheaper*, which is worth recording so a future reader trusts the estimate-vs-actual gap in the
+direction it actually went:
+
+1. §4 counted `validators/emit.rs` as one of six codegen sites needing a change. It needed none —
+   making `validate_range_decimal` generic let type inference do the work.
+2. §7's cost discussion centered on `SqlValue` becoming generic and that genericity necessarily
+   reaching `ModelDescriptor`/`ReadSource`/`WriteSource`. The trait-object variant § 7 also named
+   avoided that reach entirely — those three types, and every generated model struct, are
+   byte-for-byte unchanged by this PR.
+3. The rusqlite encode/decode boundary needed no downcasting at all (unlike the sqlx boundary,
+   which does) — TEXT-affinity round-tripping only ever needs `Display`/`FromStr`, so it went fully
+   generic instead.
+
+No direction turned out to be *worse* than §7's analysis; the associated-type/marker shape held up
+as the right call.

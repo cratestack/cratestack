@@ -1,5 +1,7 @@
 use cratestack_core::Value;
 
+use super::decimal_like::DecimalLike;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum SqlValue {
     Bool(bool),
@@ -10,12 +12,15 @@ pub enum SqlValue {
     Uuid(uuid::Uuid),
     DateTime(chrono::DateTime<chrono::Utc>),
     Json(Value),
-    /// Only exists when a decimal backend is selected (cratestack#505):
-    /// `cratestack_core::Decimal` itself doesn't exist otherwise — see
-    /// `cratestack-core/src/decimal.rs`'s module doc. `NullDecimal` below
-    /// stays unconditional since it carries no `Decimal` payload.
-    #[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
-    Decimal(cratestack_core::Decimal),
+    /// Holds whichever concrete decimal type the originating schema chose
+    /// (cratestack#505 Direction 2 — `rust_decimal::Decimal`,
+    /// `bigdecimal::BigDecimal`, or any other [`DecimalLike`]
+    /// implementer), boxed rather than a fixed concrete type so two
+    /// schemas that chose different backends can share this one compiled
+    /// `SqlValue` without a Cargo-feature union collision. Unconditional —
+    /// no `#[cfg]` gate, since this variant no longer names a concrete
+    /// backend type at all.
+    Decimal(Box<dyn DecimalLike>),
     /// A `Vector(n)` field's value (see `docs/design/extensions.md`
     /// §6). Defined unconditionally — no `pgvector` dependency is
     /// needed to hold a `Vec<f32>` — but only ever constructed by

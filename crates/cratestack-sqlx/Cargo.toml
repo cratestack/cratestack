@@ -17,6 +17,13 @@ categories.workspace = true
 workspace = true
 
 [features]
+# cratestack#505 Direction 2: no longer mutually exclusive — both may be
+# selected in the same build. `query/support/values.rs`'s `bind_decimal`
+# downcasts `SqlValue::Decimal`'s boxed payload to whichever concrete
+# type(s) these features enabled at runtime, so both backends' `dep:`/
+# `sqlx-core`/`sqlx-postgres` forwards below may be active simultaneously
+# with no conflict — each just adds an `Encode`/`Type` impl this crate can
+# choose to use, it doesn't have to be the *only* one.
 default = ["decimal-rust-decimal"]
 decimal-rust-decimal = [
     "cratestack-core/decimal-rust-decimal",
@@ -33,13 +40,8 @@ decimal-rust-decimal = [
 # matching implicit feature for any optional dependency declared without
 # `dep:` syntax, which is what `sqlx-core/bigdecimal` /
 # `sqlx-postgres/bigdecimal` below select. This is what gives
-# `cratestack_core::Decimal` (== `bigdecimal::BigDecimal` under this
-# feature) real `sqlx::Type`/`Encode`/`Decode` impls against Postgres's
-# `NUMERIC` wire format — the same integration point
-# `query/support/values.rs`'s `push_bind_value` and `cratestack-macros`'
-# generated `row.try_get(...)` calls go through regardless of which
-# backend is active, since neither references a concrete backend type by
-# name.
+# `bigdecimal::BigDecimal` real `sqlx::Type`/`Encode`/`Decode` impls
+# against Postgres's `NUMERIC` wire format.
 decimal-bigdecimal = [
     "cratestack-core/decimal-bigdecimal",
     "cratestack-sql/decimal-bigdecimal",

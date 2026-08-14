@@ -56,27 +56,27 @@ and [ADR-0003](https://cratestack.dev/internals/views-adr).
   its transitive dependency tree out of the build entirely — or depend on
   [`cratestack-api`](../cratestack-api) instead, which never pulls in
   `cratestack-sqlx` at all.
-- `decimal-rust-decimal` *(default)* — `Decimal` columns use `rust_decimal`.
-  Requires *some* decimal backend feature to be selected alongside
-  `postgres` — `cratestack-sqlx`'s query-builder support code binds
-  `cratestack_core::Decimal` unconditionally — but `postgres` itself no
-  longer forces a specific one (it used to, before `decimal-bigdecimal`
-  existed for real; forcing one unconditionally would make the other
-  unreachable through this facade).
-- `decimal-bigdecimal` — arbitrary-precision `bigdecimal` backend instead
-  (heap-allocated, not `Copy` — see `cratestack-core`'s README for the
-  trait differences). Mutually exclusive with `decimal-rust-decimal`;
-  selecting both is a compile error. Selecting *neither* is allowed as of
-  cratestack#521 — the `Decimal` type is simply not exported, so only a schema
-  that actually uses a `Decimal` field fails, with rustc's own "cannot find
-  type `Decimal`". **This is a graph-wide invariant, not a per-crate one
-  (cratestack#505):** picking one backend in *your* `Cargo.toml` doesn't
-  protect you — Cargo features unify across the whole dependency graph, so
-  an unrelated dependency that deliberately picked the other backend can
-  still force the "both selected" compile error into your build, and
-  neither side can fix it alone. See `cratestack-core`'s README and
-  `crates/cratestack-core/src/decimal.rs`'s module doc for the full
-  picture. **Wire compatibility
+- `decimal-rust-decimal` *(default)* — makes `rust_decimal`-backed
+  `Decimal` columns available (`::cratestack::RustDecimal`). A schema picks
+  which concrete backend it uses per macro call, via the
+  `decimal = RustDecimal | BigDecimal` argument on `include_server_schema!`
+  (cratestack#505 Direction 2) — this feature just needs to be enabled
+  (alongside `postgres`) for any schema in the build to be able to name
+  `RustDecimal`; `postgres` itself no longer forces a specific one (it used
+  to, before `decimal-bigdecimal` existed for real).
+- `decimal-bigdecimal` — makes the arbitrary-precision `bigdecimal` backend
+  available instead (`::cratestack::BigDecimal`; heap-allocated, not
+  `Copy` — see `cratestack-core`'s README for the trait differences). As of
+  cratestack#505 Direction 2, this is **not** mutually exclusive with
+  `decimal-rust-decimal` — both may be enabled at once, and two different
+  schemas in the same build (or even the same schema's dependents) can each
+  pick the backend they asked for; see `cratestack-core`'s README and
+  `docs/design/decimal-backend-additivity.md` for the mechanism. Selecting
+  *neither* is still allowed as of cratestack#521 — the `Decimal` type is
+  simply not exported, so only a schema that actually uses a `Decimal`
+  field fails, with rustc's own "cannot find type `Decimal`" (or, for a
+  schema that omits the now-required `decimal = ...` macro argument, a
+  clear compile error naming exactly what to add). **Wire compatibility
   constraint:** ordinary values encode identically to `rust_decimal` on
   the wire, but values past `rust_decimal`'s ~28-29 significant-digit
   capacity serialize as scientific notation (e.g. `"1E-29"`), which a

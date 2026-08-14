@@ -4,7 +4,6 @@
 use cratestack_core::Value;
 use rusqlite::types::{FromSql, FromSqlResult, ValueRef};
 
-#[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
 use super::decode::decode_decimal;
 use super::decode::{decode_datetime, decode_json, decode_uuid};
 
@@ -38,12 +37,19 @@ impl FromSql for JsonColumn {
     }
 }
 
-#[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
+/// Generic over the concrete decimal type (cratestack#505 Direction 2) —
+/// unconditional, no `#[cfg]` gate, no dependency on either backend crate.
+/// Generated code (`cratestack-macros::model::row_sqlite`) instantiates
+/// this with whichever concrete type the schema's `decimal = ...` argument
+/// named, e.g. `DecimalColumn::<::cratestack::RustDecimal>`.
 #[derive(Debug, Clone)]
-pub struct DecimalColumn(pub cratestack_core::Decimal);
+pub struct DecimalColumn<D>(pub D);
 
-#[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
-impl FromSql for DecimalColumn {
+impl<D> FromSql for DecimalColumn<D>
+where
+    D: std::str::FromStr,
+    D::Err: std::fmt::Display,
+{
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         let raw = value.as_str()?;
         decode_decimal(raw).map(DecimalColumn)

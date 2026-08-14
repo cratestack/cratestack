@@ -32,7 +32,7 @@ pub(crate) fn rust_type_tokens_with_scope(
         "Float" => quote! { f64 },
         "Boolean" => quote! { bool },
         "DateTime" => quote! { ::cratestack::chrono::DateTime<::cratestack::chrono::Utc> },
-        "Decimal" => quote! { ::cratestack::Decimal },
+        "Decimal" => crate::shared::decimal_backend::current_decimal_type_tokens(),
         "Json" => quote! { ::cratestack::Json<::cratestack::Value> },
         "Bytes" => quote! { Vec<u8> },
         "Uuid" => quote! { ::cratestack::uuid::Uuid },
@@ -119,11 +119,14 @@ pub(crate) fn query_scalar_parser_tokens(
                     CoolError::BadRequest(format!("invalid value '{}' for {}: {error}", #value_expr, #field_name))
                 })
         },
-        "Decimal" => quote! {
-            (#value_expr).parse::<::cratestack::Decimal>().map_err(|error| {
-                CoolError::BadRequest(format!("invalid value '{}' for {}: {error}", #value_expr, #field_name))
-            })
-        },
+        "Decimal" => {
+            let decimal_ty = crate::shared::decimal_backend::current_decimal_type_tokens();
+            quote! {
+                (#value_expr).parse::<#decimal_ty>().map_err(|error| {
+                    CoolError::BadRequest(format!("invalid value '{}' for {}: {error}", #value_expr, #field_name))
+                })
+            }
+        }
         _ => return None,
     })
 }

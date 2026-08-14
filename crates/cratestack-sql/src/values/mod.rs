@@ -1,4 +1,5 @@
 mod conflict;
+mod decimal_like;
 mod include;
 mod input_traits;
 mod into_sql;
@@ -6,6 +7,7 @@ mod projection;
 mod sql_value;
 
 pub use conflict::ConflictTarget;
+pub use decimal_like::DecimalLike;
 pub use include::RelationInclude;
 pub use input_traits::{CreateModelInput, ModelPrimaryKey, UpdateModelInput, UpsertModelInput};
 pub use into_sql::IntoSqlValue;

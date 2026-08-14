@@ -14,7 +14,7 @@ use cratestack::{
 };
 use cratestack_rusqlite::{ModelDelegate, ddl::create_table_sql};
 
-include_embedded_schema!("tests/fixtures/sqlite_e2e.cstack");
+include_embedded_schema!("tests/fixtures/sqlite_e2e.cstack", decimal = RustDecimal);
 
 use cratestack_schema::models::{Account, Tag};
 use cratestack_schema::{ACCOUNT_MODEL, TAG_MODEL};

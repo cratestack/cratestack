@@ -9,6 +9,8 @@
 //! - [`order`]: ORDER BY / LIMIT / OFFSET helpers.
 //! - [`values`]: `push_bind_value`, `auth_value_to_sql`, the
 //!   small literal-equality helpers.
+//! - [`decimal_bind`]: the `SqlValue::Decimal`/`NullDecimal` → `push_bind`
+//!   boundary, split out of `values` (cratestack#505 Direction 2).
 //! - [`create`]: create-path auth-default + policy evaluation.
 //! - [`unique_violation`]: per-item batch write SQLSTATE 23505
 //!   classification.
@@ -18,6 +20,7 @@
 mod conditions;
 mod create;
 mod create_eval;
+mod decimal_bind;
 mod filter;
 mod filter_subkinds;
 mod order;

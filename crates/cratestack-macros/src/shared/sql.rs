@@ -121,10 +121,19 @@ pub(crate) fn sql_value_tokens(
                 None => ::cratestack::SqlValue::NullJson,
             }
         },
-        ("Decimal", TypeArity::Required) => quote! { ::cratestack::SqlValue::Decimal(#value) },
+        // `SqlValue::Decimal` holds `Box<dyn DecimalLike>` (cratestack#505
+        // Direction 2), not a fixed concrete type — `#value` is already
+        // the field's own concrete decimal type (whichever
+        // `::cratestack::RustDecimal`/`BigDecimal` the schema's
+        // `decimal = ...` argument named), so this just boxes it. No
+        // decimal-backend token needed here, unlike `shared::types`'
+        // field-type emission.
+        ("Decimal", TypeArity::Required) => {
+            quote! { ::cratestack::SqlValue::Decimal(::std::boxed::Box::new(#value)) }
+        }
         ("Decimal", TypeArity::Optional) => quote! {
             match #value {
-                Some(value) => ::cratestack::SqlValue::Decimal(value),
+                Some(value) => ::cratestack::SqlValue::Decimal(::std::boxed::Box::new(value)),
                 None => ::cratestack::SqlValue::NullDecimal,
             }
         },

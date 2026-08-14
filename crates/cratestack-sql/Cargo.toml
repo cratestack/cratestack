@@ -17,21 +17,19 @@ categories.workspace = true
 workspace = true
 
 [features]
+# cratestack#505 Direction 2: these two are no longer mutually exclusive —
+# both may be selected in the same build. `SqlValue::Decimal` holds a
+# `Box<dyn DecimalLike>` (`src/values/decimal_like.rs`), not a concrete
+# type, so nothing in this crate has to pick between the two backends;
+# each feature independently pulls in its own concrete crate so
+# `into_sql.rs`'s per-backend `impl IntoSqlValue for rust_decimal::Decimal`
+# / `for bigdecimal::BigDecimal` have something to name.
 default = ["decimal-rust-decimal"]
 decimal-rust-decimal = [
     "cratestack-core/decimal-rust-decimal",
     "cratestack-policy/decimal-rust-decimal",
     "dep:rust_decimal",
 ]
-# Mirrors `decimal-rust-decimal` above for the `bigdecimal` backend
-# (cratestack#495). `SqlValue::Decimal`/`FilterValue` etc. only ever name
-# the `cratestack_core::Decimal` alias, never a concrete backend type, so
-# no code in this crate is conditionally compiled per backend — this
-# feature exists purely to forward the choice down to `cratestack-core`
-# and to pull in `bigdecimal` itself (matched by name against the
-# `dep:rust_decimal` pull above, even though nothing here currently
-# references `bigdecimal` by name directly — kept parallel for when it
-# does, e.g. a future `bigdecimal`-specific SQL literal formatter).
 decimal-bigdecimal = [
     "cratestack-core/decimal-bigdecimal",
     "cratestack-policy/decimal-bigdecimal",

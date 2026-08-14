@@ -21,29 +21,31 @@
 
 mod client;
 mod datasource_guard;
+mod decimal_arg;
 mod embedded;
 mod extension_gate;
 mod grpc_pb;
 mod parse;
 mod reject_grpc;
+mod schema_args;
 mod server;
 
 use proc_macro::TokenStream;
-use syn::{LitStr, parse_macro_input};
+use syn::parse_macro_input;
 
-use parse::ServerSchemaArgs;
+use parse::{SchemaPathArgs, ServerSchemaArgs};
 
 pub(crate) fn include_server_schema(input: TokenStream) -> TokenStream {
     let args = parse_macro_input!(input as ServerSchemaArgs);
-    server::compose_server_schema(&args.schema_path, args.db)
+    server::compose_server_schema(&args.schema_path, args.db, args.decimal)
 }
 
 pub(crate) fn include_embedded_schema(input: TokenStream) -> TokenStream {
-    let schema_path = parse_macro_input!(input as LitStr);
-    embedded::compose_embedded_schema(&schema_path)
+    let args = parse_macro_input!(input as SchemaPathArgs);
+    embedded::compose_embedded_schema(&args.schema_path, args.decimal)
 }
 
 pub(crate) fn include_client_schema(input: TokenStream) -> TokenStream {
-    let schema_path = parse_macro_input!(input as LitStr);
-    client::compose_client_schema(&schema_path)
+    let args = parse_macro_input!(input as SchemaPathArgs);
+    client::compose_client_schema(&args.schema_path, args.decimal)
 }

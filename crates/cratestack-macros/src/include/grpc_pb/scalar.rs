@@ -98,11 +98,14 @@ pub(crate) fn domain_from_wire_expr(
                 ::cratestack::CoolError::BadRequest(format!("invalid uuid for {}: {error}", #context))
             })
         },
-        "Decimal" => quote! {
-            (#wire_expr).parse::<::cratestack::Decimal>().map_err(|error| {
-                ::cratestack::CoolError::BadRequest(format!("invalid decimal for {}: {error}", #context))
-            })
-        },
+        "Decimal" => {
+            let decimal_ty = crate::shared::decimal_backend::current_decimal_type_tokens();
+            quote! {
+                (#wire_expr).parse::<#decimal_ty>().map_err(|error| {
+                    ::cratestack::CoolError::BadRequest(format!("invalid decimal for {}: {error}", #context))
+                })
+            }
+        }
         "Json" => quote! {
             ::cratestack::serde_json::from_slice::<::cratestack::Value>(&(#wire_expr))
                 .map(::cratestack::Json)

@@ -110,11 +110,15 @@ fn sqlite_row_field_decode_expr(
             row.get::<_, Option<::cratestack::DateTimeColumn>>(#field_name)?.map(|v| v.0)
         },
         ("Decimal", TypeArity::Required) => {
-            quote! { row.get::<_, ::cratestack::DecimalColumn>(#field_name)?.0 }
+            let decimal_ty = crate::shared::decimal_backend::current_decimal_type_tokens();
+            quote! { row.get::<_, ::cratestack::DecimalColumn<#decimal_ty>>(#field_name)?.0 }
         }
-        ("Decimal", TypeArity::Optional) => quote! {
-            row.get::<_, Option<::cratestack::DecimalColumn>>(#field_name)?.map(|v| v.0)
-        },
+        ("Decimal", TypeArity::Optional) => {
+            let decimal_ty = crate::shared::decimal_backend::current_decimal_type_tokens();
+            quote! {
+                row.get::<_, Option<::cratestack::DecimalColumn<#decimal_ty>>>(#field_name)?.map(|v| v.0)
+            }
+        }
         // Decode via the plain, untagged JSON shape (cratestack#162,
         // cratestack#395) using `Value::from_plain_json` directly, rather
         // than round-tripping through `serde_json` generically. (`Value`'s

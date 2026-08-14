@@ -24,8 +24,7 @@ impl<'a> ToSql for SqlValueParam<'a> {
             SqlValue::Uuid(v) => ToSqlOutput::Owned(RV::Text(v.hyphenated().to_string())),
             SqlValue::DateTime(v) => ToSqlOutput::Owned(RV::Text(format_datetime(v))),
             SqlValue::Json(v) => ToSqlOutput::Owned(RV::Text(format_json(v))),
-            #[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
-            SqlValue::Decimal(v) => ToSqlOutput::Owned(RV::Text(format_decimal(v))),
+            SqlValue::Decimal(v) => ToSqlOutput::Owned(RV::Text(format_decimal(v.as_ref()))),
             SqlValue::NullBool
             | SqlValue::NullInt
             | SqlValue::NullFloat
@@ -66,7 +65,10 @@ fn format_json(value: &Value) -> String {
     serde_json::to_string(&value.to_plain_json()).unwrap_or_else(|_| "null".to_string())
 }
 
-#[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
-fn format_decimal(value: &cratestack_core::Decimal) -> String {
+/// Unconditional — no `#[cfg]` gate, no downcasting needed. `Display` is a
+/// supertrait of `cratestack_sql::DecimalLike`, so `dyn DecimalLike`
+/// implements it directly regardless of which concrete backend produced
+/// the value (cratestack#505 Direction 2).
+fn format_decimal(value: &dyn cratestack_sql::DecimalLike) -> String {
     value.to_string()
 }

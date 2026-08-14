@@ -18,7 +18,10 @@ use cratestack::include_embedded_schema;
 use cratestack::{Decimal, Json, RusqliteRuntime, Value};
 use cratestack_rusqlite::{ModelDelegate, ddl::create_table_sql};
 
-include_embedded_schema!("tests/fixtures/round_trip_types.cstack");
+include_embedded_schema!(
+    "tests/fixtures/round_trip_types.cstack",
+    decimal = RustDecimal
+);
 
 use cratestack_schema::models::{RoundTripEnum, RoundTripScalar};
 use cratestack_schema::{ROUND_TRIP_ENUM_MODEL, ROUND_TRIP_SCALAR_MODEL};

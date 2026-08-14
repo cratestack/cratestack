@@ -129,28 +129,34 @@ The dependency flow is roughly: **parser → core/policy/sql → macros → back
 - Tooling: `cratestack-cli`, `cratestack-lsp` (tower-lsp-server LSP for `.cstack`), `cratestack-migrate`,
   `cratestack-studio` (+ `-studio-ui` wasm app — see below).
 
-### Decimal backend selection is a graph-wide invariant, not a per-crate one (cratestack#505)
+### Decimal backend selection: additive, not mutually exclusive (cratestack#505)
 
-`cratestack-core` exposes a `Decimal` type alias backed by one of two mutually-exclusive Cargo features:
-`decimal-rust-decimal` (the default — fast, stack-allocated, capped at 28-29 significant digits) or
-`decimal-bigdecimal` (arbitrary precision, heap-allocated, opt-in). **Enabling both at once is a hard
-`compile_error!`, and because Cargo features are additive and unify globally across a dependency graph,
-this is not just a per-crate concern**: two independent dependents in the same build, each individually
-well-formed and each deliberately choosing a different backend, force this error into a combined build
-that neither one alone controls or can fix — see cratestack#505. There is currently no way around this
-other than the whole graph standardizing on one backend feature; making the backends genuinely additive
-(cratestack#505's option 1/2) is an unresolved, larger design change reserved for a maintainer decision,
-not something to pick unilaterally in a PR.
+`cratestack-core` exposes two decimal backends behind Cargo features, `decimal-rust-decimal` (the
+default — fast, stack-allocated, capped at 28-29 significant digits) and `decimal-bigdecimal`
+(arbitrary precision, heap-allocated, opt-in). **Both may be selected in the same build** (Direction 2,
+the associated-type/marker shape — see `docs/design/decimal-backend-additivity.md` §7(b)/§13): each
+backend's concrete type is exposed under its own name, `RustDecimal`/`BigDecimal`, independently of the
+other, and `cratestack-sql`'s `SqlValue::Decimal` holds a `Box<dyn DecimalLike>` rather than one fixed
+concrete type. A schema picks which concrete backend it uses via the `decimal = RustDecimal |
+BigDecimal` argument on its `include_*_schema!` macro call (`cratestack-macros/src/include/decimal_arg.rs`)
+— a schema-authored choice, not a Cargo feature — required exactly when the schema declares a `Decimal`
+field somewhere. This closes what used to be a graph-wide invariant: two independent dependents in the
+same build, each choosing a different backend, used to force a hard `compile_error!` into a combined
+build that neither one alone controlled or could fix; that no longer happens.
 
-Selecting **neither** feature is not an error (cratestack#421-era versions of this crate got this wrong,
-fixed by cratestack#505): a crate that legitimately narrows its graph with `default-features = false` and
-never touches `Decimal` builds cleanly — `Decimal` (and anything that references it unconditionally, e.g.
-`cratestack_core::validate_range_decimal`) simply doesn't exist on the public surface in that
-configuration, rather than hard-failing every backend-agnostic consumer. See `cratestack-core/src/decimal.rs`'s
-module doc for why a real `rust_decimal`-backed fallback isn't reachable here (Cargo's feature system has
-no "else" — an optional dependency can only be activated by a feature that names it, never by the absence
-of another feature — and making `rust_decimal` a mandatory dependency to work around that would leak it
-back into every `decimal-bigdecimal` consumer's graph, breaking cratestack#495's acceptance bar).
+Selecting **neither** feature is still not an error (cratestack#421-era versions of this crate got this
+wrong, fixed by cratestack#521): a crate that legitimately narrows its graph with
+`default-features = false` and never touches `Decimal` builds cleanly — `Decimal`/`RustDecimal`/
+`BigDecimal` (and anything that references a decimal type unconditionally, e.g.
+`cratestack_core::validate_range_decimal`, now generic over the unconditional `DecimalValue` bound
+instead) simply don't exist on the public surface in that configuration, rather than hard-failing every
+backend-agnostic consumer. `cratestack-core::Decimal` (the legacy single-backend alias, kept for
+hand-written code) still only exists when *exactly one* backend is selected — an ambiguous name with
+two backends active has no single correct answer, so it's absent rather than silently resolved, matching
+the "neither" treatment. See `cratestack-core/src/decimal.rs`'s module doc and
+`docs/design/decimal-backend-additivity.md` for the full mechanism, including why making `rust_decimal`
+a mandatory dependency isn't the fix (it would leak it into every `decimal-bigdecimal` consumer's graph,
+breaking cratestack#495's acceptance bar — still true, unaffected by this change).
 
 ### Transport: REST vs RPC
 

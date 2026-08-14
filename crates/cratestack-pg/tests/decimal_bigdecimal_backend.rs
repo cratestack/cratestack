@@ -34,7 +34,8 @@ use std::str::FromStr;
 
 include_server_schema!(
     "tests/fixtures/decimal_bigdecimal_backend.cstack",
-    db = Postgres
+    db = Postgres,
+    decimal = BigDecimal
 );
 
 mod support;

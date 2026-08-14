@@ -9,7 +9,11 @@ use cratestack::sqlx::{Row, query};
 use cratestack::{CoolContext, Decimal, Value};
 use std::str::FromStr;
 
-include_server_schema!("tests/fixtures/banking_decimal.cstack", db = Postgres);
+include_server_schema!(
+    "tests/fixtures/banking_decimal.cstack",
+    db = Postgres,
+    decimal = RustDecimal
+);
 
 mod support;
 

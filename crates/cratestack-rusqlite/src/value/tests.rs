@@ -33,10 +33,18 @@ fn round_trip(value: SqlValue) -> SqlValue {
         (SqlValue::Json(_), rusqlite::types::Value::Text(s)) => {
             SqlValue::Json(decode_json(&s).unwrap())
         }
-        #[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
-        (SqlValue::Decimal(_), rusqlite::types::Value::Text(s)) => {
-            SqlValue::Decimal(decode_decimal(&s).unwrap())
-        }
+        // Uses the legacy `cratestack_core::Decimal` alias (only exists
+        // when exactly one backend is selected — cratestack#505 Direction
+        // 2, see `decimal.rs`'s module doc) purely as *a* concrete type to
+        // decode into; `SqlValue::Decimal` itself no longer cares which
+        // one (`Box<dyn DecimalLike>`).
+        #[cfg(any(
+            all(feature = "decimal-rust-decimal", not(feature = "decimal-bigdecimal")),
+            all(feature = "decimal-bigdecimal", not(feature = "decimal-rust-decimal"))
+        ))]
+        (SqlValue::Decimal(_), rusqlite::types::Value::Text(s)) => SqlValue::Decimal(Box::new(
+            decode_decimal::<cratestack_core::Decimal>(&s).unwrap(),
+        )),
         (v, rusqlite::types::Value::Null) if is_null_variant(&v) => v,
         (v, other) => panic!("unexpected round-trip: input {v:?} → storage {other:?}"),
     }
@@ -140,7 +148,10 @@ fn round_trips_json() {
     assert_eq!(round_trip(v.clone()), v);
 }
 
-#[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
+#[cfg(any(
+    all(feature = "decimal-rust-decimal", not(feature = "decimal-bigdecimal")),
+    all(feature = "decimal-bigdecimal", not(feature = "decimal-rust-decimal"))
+))]
 #[test]
 // `.clone()` below (not `d` twice): pre-existing bug, unrelated to
 // cratestack#505 — `bigdecimal::BigDecimal` isn't `Copy` (unlike
@@ -155,8 +166,8 @@ fn round_trips_json() {
 fn round_trips_decimal_preserves_precision() {
     let d: cratestack_core::Decimal = "12345.67890".parse().unwrap();
     assert_eq!(
-        round_trip(SqlValue::Decimal(d.clone())),
-        SqlValue::Decimal(d)
+        round_trip(SqlValue::Decimal(Box::new(d.clone()))),
+        SqlValue::Decimal(Box::new(d))
     );
 }
 

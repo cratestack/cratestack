@@ -6,8 +6,7 @@
 //! the field but never echoes the rejected value (so PII does not
 //! leak via 422 bodies).
 
-#[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
-use crate::Decimal;
+use crate::decimal::DecimalValue;
 use crate::error::CoolError;
 
 #[cfg(test)]
@@ -102,15 +101,22 @@ pub fn validate_range_i64(
 /// forbid negative amounts at the framework layer — without this,
 /// the validator silently no-ops and out-of-range values reach the
 /// database.
-#[cfg(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal"))]
-pub fn validate_range_decimal(
+///
+/// Generic over [`DecimalValue`] (cratestack#505 Direction 2) rather than
+/// the crate's single `Decimal` alias, so this function is unconditional —
+/// no `#[cfg]` gate, no dependency on either backend feature — and works
+/// identically for `RustDecimal`, `BigDecimal`, or any other type
+/// satisfying the bound. Generated code calls this with `value` already
+/// typed as the field's own concrete decimal type, so `D` is inferred at
+/// the call site; no turbofish needed.
+pub fn validate_range_decimal<D: DecimalValue>(
     field: &'static str,
-    value: &Decimal,
+    value: &D,
     min: Option<i64>,
     max: Option<i64>,
 ) -> Result<(), CoolError> {
     if let Some(min) = min {
-        let bound = Decimal::from(min);
+        let bound = D::from(min);
         if *value < bound {
             return Err(CoolError::Validation(format!(
                 "field '{field}' is below minimum {min}",
@@ -118,7 +124,7 @@ pub fn validate_range_decimal(
         }
     }
     if let Some(max) = max {
-        let bound = Decimal::from(max);
+        let bound = D::from(max);
         if *value > bound {
             return Err(CoolError::Validation(format!(
                 "field '{field}' exceeds maximum {max}",

@@ -1,4 +1,9 @@
 use super::*;
+// Only the three `Decimal`-using tests below need this — see their own
+// comment for why the gate is `not(bigdecimal)` too, not just
+// `rust-decimal`.
+#[cfg(all(feature = "decimal-rust-decimal", not(feature = "decimal-bigdecimal")))]
+use crate::Decimal;
 
 #[test]
 fn length_rejects_below_min_and_above_max() {
@@ -31,7 +36,12 @@ fn range_i64_enforces_inclusive_bounds() {
     assert!(validate_range_i64("n", 11, None, Some(10)).is_err());
 }
 
-#[cfg(feature = "decimal-rust-decimal")]
+// This test (and the two below it) use `Decimal`, the legacy
+// single-backend alias, which only exists when exactly one decimal
+// feature is selected (cratestack#505 Direction 2 — see `decimal.rs`'s
+// module doc) — hence `not(bigdecimal)` alongside the pre-existing
+// `rust-decimal` gate, not just the latter.
+#[cfg(all(feature = "decimal-rust-decimal", not(feature = "decimal-bigdecimal")))]
 #[test]
 fn range_decimal_enforces_inclusive_bounds_after_promoting_i64_to_decimal() {
     use core::str::FromStr;
@@ -57,7 +67,7 @@ fn validation_error_does_not_echo_value() {
     );
 }
 
-#[cfg(feature = "decimal-rust-decimal")]
+#[cfg(all(feature = "decimal-rust-decimal", not(feature = "decimal-bigdecimal")))]
 #[test]
 fn decimal_alias_round_trips_through_json_as_string() {
     use std::str::FromStr;
@@ -70,7 +80,7 @@ fn decimal_alias_round_trips_through_json_as_string() {
     assert_eq!(decoded, value);
 }
 
-#[cfg(feature = "decimal-rust-decimal")]
+#[cfg(all(feature = "decimal-rust-decimal", not(feature = "decimal-bigdecimal")))]
 #[test]
 fn decimal_supports_precise_arithmetic() {
     use std::str::FromStr;
