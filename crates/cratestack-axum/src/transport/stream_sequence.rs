@@ -137,7 +137,7 @@ fn encode_error_sentinel<C: CratestackCodec>(codec: &C, error: &CratestackError)
     minicbor::Encoder::new(&mut bytes)
         .tag(minicbor::data::Tag::new(RPC_STREAM_ERROR_TAG))
         .expect("writing a CBOR tag header to a Vec<u8> is infallible");
-    let body = RpcErrorBody::from_cool(error);
+    let body = RpcErrorBody::from_cratestack(error);
     match codec.encode(&body) {
         Ok(encoded) => bytes.extend(encoded),
         Err(_) => {

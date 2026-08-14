@@ -9,7 +9,7 @@ use crate::audit::{build_audit_event, enqueue_audit_event, ensure_audit_table};
 use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
 use crate::query::support::{push_action_policy_query, push_bind_value, push_filter_query};
 use crate::{
-    FilterExpr, ModelDescriptor, SqlxRuntime, UpdateModelInput, cool_error_from_sqlx, sqlx,
+    FilterExpr, ModelDescriptor, SqlxRuntime, UpdateModelInput, cratestack_error_from_sqlx, sqlx,
 };
 
 /// Returns `(summary, emits_any_event, audit_events)` — the caller
@@ -97,7 +97,7 @@ where
         .build_query_as::<M>()
         .fetch_all(&mut **tx)
         .await
-        .map_err(cool_error_from_sqlx)?;
+        .map_err(cratestack_error_from_sqlx)?;
 
     let mut audit_events = Vec::new();
     for record in &updated {

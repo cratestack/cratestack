@@ -6,8 +6,8 @@
 //! the HTTP status line alone doesn't carry one. gRPC doesn't have this
 //! problem: `tonic::Status` already **is** the structured error, with a
 //! `tonic::Code` the server derived from the exact same `CratestackError` via
-//! `cratestack_grpc::error::cool_error_to_status` (server-side,
-//! `cool_error_to_status` -> `rpc_code` -> `tonic::Code`, the identical
+//! `cratestack_grpc::error::cratestack_error_to_status` (server-side,
+//! `cratestack_error_to_status` -> `rpc_code` -> `tonic::Code`, the identical
 //! table `cratestack_grpc::error::rpc_code_to_tonic_code` documents). So
 //! `GrpcClientError::Status` wraps the `tonic::Status` tonic itself hands
 //! back from a failed `Grpc::unary` call, unparsed — there is nothing left

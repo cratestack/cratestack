@@ -4,7 +4,7 @@
 //! call the exact same `handle_*_dispatch` fns REST/RPC already call, then
 //! use this module to turn the resulting `Response` into either the
 //! decoded domain value or the REST-style `(code, message)` pair
-//! `cratestack_grpc::cool_error_code_to_tonic_code` maps to a
+//! `cratestack_grpc::cratestack_error_code_to_tonic_code` maps to a
 //! `tonic::Status`.
 //!
 //! Lives here (not in `cratestack-grpc`) because it needs `axum::Response`,
@@ -36,7 +36,7 @@ use crate::transport::HttpTransport;
 /// screaming-snake vocabulary, e.g. `"NOT_FOUND"`), or, if buffering /
 /// decoding the response body itself fails, a synthesized `"INTERNAL_ERROR"`.
 /// Callers map `code` to a `tonic::Status` via
-/// `cratestack_grpc::cool_error_code_to_tonic_code`.
+/// `cratestack_grpc::cratestack_error_code_to_tonic_code`.
 pub async fn bridge_grpc_response<C, T>(
     response: Response,
     codec: &C,
@@ -120,7 +120,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn error_response_decodes_to_cool_error_code_and_message() {
+    async fn error_response_decodes_to_cratestack_error_code_and_message() {
         let codec = cratestack_codec_cbor::CborCodec;
         let headers = HeaderMap::new();
         let response = encode_transport_result_with_status_for::<_, Widget>(

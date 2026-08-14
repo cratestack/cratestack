@@ -5,7 +5,7 @@
 
 use chrono::{DateTime, Utc};
 use cratestack_core::{CratestackError, TransactionIsolation};
-use cratestack_sqlx::{cool_error_from_sqlx, run_in_isolated_tx_with_retries, sqlx};
+use cratestack_sqlx::{cratestack_error_from_sqlx, run_in_isolated_tx_with_retries, sqlx};
 use sqlx::Row;
 
 use crate::drain::{DrainRequest, DrainResponse, HARD_MAX};
@@ -93,7 +93,7 @@ impl OutboxClient {
             .bind(limit)
             .fetch_all(&self.pool)
             .await
-            .map_err(cool_error_from_sqlx)?,
+            .map_err(cratestack_error_from_sqlx)?,
             None => sqlx::query(
                 "SELECT id, aggregate_type, aggregate_id, event_type, payload, occurred_at, correlation_id \
                  FROM cratestack_outbox_events \
@@ -103,7 +103,7 @@ impl OutboxClient {
             .bind(limit)
             .fetch_all(&self.pool)
             .await
-            .map_err(cool_error_from_sqlx)?,
+            .map_err(cratestack_error_from_sqlx)?,
         };
 
         let events: Vec<EventEnvelope> = rows
@@ -124,7 +124,7 @@ impl OutboxClient {
             .bind(cutoff)
             .execute(&self.pool)
             .await
-            .map_err(cool_error_from_sqlx)?;
+            .map_err(cratestack_error_from_sqlx)?;
         Ok(result.rows_affected())
     }
 }
@@ -170,24 +170,30 @@ where
     .bind(row.correlation_id.as_deref())
     .execute(executor)
     .await
-    .map_err(cool_error_from_sqlx)?;
+    .map_err(cratestack_error_from_sqlx)?;
     Ok(())
 }
 
 fn envelope_from_pg_row(row: sqlx::postgres::PgRow) -> Result<EventEnvelope, CratestackError> {
     let payload: sqlx::types::Json<serde_json::Value> =
-        row.try_get("payload").map_err(cool_error_from_sqlx)?;
+        row.try_get("payload").map_err(cratestack_error_from_sqlx)?;
     Ok(EventEnvelope {
-        id: row.try_get("id").map_err(cool_error_from_sqlx)?,
+        id: row.try_get("id").map_err(cratestack_error_from_sqlx)?,
         aggregate_type: row
             .try_get("aggregate_type")
-            .map_err(cool_error_from_sqlx)?,
-        aggregate_id: row.try_get("aggregate_id").map_err(cool_error_from_sqlx)?,
-        event_type: row.try_get("event_type").map_err(cool_error_from_sqlx)?,
+            .map_err(cratestack_error_from_sqlx)?,
+        aggregate_id: row
+            .try_get("aggregate_id")
+            .map_err(cratestack_error_from_sqlx)?,
+        event_type: row
+            .try_get("event_type")
+            .map_err(cratestack_error_from_sqlx)?,
         payload: payload.0,
-        occurred_at: row.try_get("occurred_at").map_err(cool_error_from_sqlx)?,
+        occurred_at: row
+            .try_get("occurred_at")
+            .map_err(cratestack_error_from_sqlx)?,
         correlation_id: row
             .try_get("correlation_id")
-            .map_err(cool_error_from_sqlx)?,
+            .map_err(cratestack_error_from_sqlx)?,
     })
 }

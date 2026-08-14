@@ -38,7 +38,7 @@ pub(super) fn build_get_arm(package: &str, model: &Model) -> proc_macro2::TokenS
     let body = quote! {
         let id = message.into_pk().map_err(|error| {
             ::cratestack::grpc::tonic::Status::new(
-                ::cratestack::grpc::cool_error_code_to_tonic_code(error.code()),
+                ::cratestack::grpc::cratestack_error_code_to_tonic_code(error.code()),
                 error.public_message().into_owned(),
             )
         })?;
@@ -71,7 +71,7 @@ pub(super) fn build_delete_arm(package: &str, model: &Model) -> proc_macro2::Tok
     let body = quote! {
         let id = message.into_pk().map_err(|error| {
             ::cratestack::grpc::tonic::Status::new(
-                ::cratestack::grpc::cool_error_code_to_tonic_code(error.code()),
+                ::cratestack::grpc::cratestack_error_code_to_tonic_code(error.code()),
                 error.public_message().into_owned(),
             )
         })?;
@@ -108,7 +108,7 @@ pub(super) fn build_create_arm(package: &str, model: &Model) -> proc_macro2::Tok
             Ok(value) => value,
             Err(error) => {
                 return Err(::cratestack::grpc::tonic::Status::new(
-                    ::cratestack::grpc::cool_error_code_to_tonic_code(error.code()),
+                    ::cratestack::grpc::cratestack_error_code_to_tonic_code(error.code()),
                     error.public_message().into_owned(),
                 ));
             }
@@ -117,7 +117,7 @@ pub(super) fn build_create_arm(package: &str, model: &Model) -> proc_macro2::Tok
             Ok(bytes) => ::cratestack::axum::body::Bytes::from(bytes),
             Err(error) => {
                 return Err(::cratestack::grpc::tonic::Status::new(
-                    ::cratestack::grpc::cool_error_code_to_tonic_code(error.code()),
+                    ::cratestack::grpc::cratestack_error_code_to_tonic_code(error.code()),
                     error.public_message().into_owned(),
                 ));
             }
@@ -153,7 +153,7 @@ pub(super) fn build_update_arm(package: &str, model: &Model) -> proc_macro2::Tok
             Ok(value) => value,
             Err(error) => {
                 return Err(::cratestack::grpc::tonic::Status::new(
-                    ::cratestack::grpc::cool_error_code_to_tonic_code(error.code()),
+                    ::cratestack::grpc::cratestack_error_code_to_tonic_code(error.code()),
                     error.public_message().into_owned(),
                 ));
             }
@@ -162,7 +162,7 @@ pub(super) fn build_update_arm(package: &str, model: &Model) -> proc_macro2::Tok
             Ok(bytes) => ::cratestack::axum::body::Bytes::from(bytes),
             Err(error) => {
                 return Err(::cratestack::grpc::tonic::Status::new(
-                    ::cratestack::grpc::cool_error_code_to_tonic_code(error.code()),
+                    ::cratestack::grpc::cratestack_error_code_to_tonic_code(error.code()),
                     error.public_message().into_owned(),
                 ));
             }

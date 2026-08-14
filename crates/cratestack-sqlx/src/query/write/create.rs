@@ -8,7 +8,7 @@ use crate::audit::{
     RunInTxOutcome, build_audit_event, dispatch_audit_sink, enqueue_audit_event, ensure_audit_table,
 };
 use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
-use crate::{CreateModelInput, ModelDescriptor, SqlxRuntime, cool_error_from_sqlx, sqlx};
+use crate::{CreateModelInput, ModelDescriptor, SqlxRuntime, cratestack_error_from_sqlx, sqlx};
 
 use super::create_exec::create_record_with_executor;
 
@@ -122,7 +122,7 @@ where
                 .pool()
                 .begin()
                 .await
-                .map_err(cool_error_from_sqlx)?;
+                .map_err(cratestack_error_from_sqlx)?;
             if emits_event {
                 ensure_event_outbox_table(&mut *tx).await?;
             }
@@ -153,7 +153,7 @@ where
                 enqueue_audit_event(&mut *tx, &event).await?;
                 audit_event = Some(event);
             }
-            tx.commit().await.map_err(cool_error_from_sqlx)?;
+            tx.commit().await.map_err(cratestack_error_from_sqlx)?;
             record
         } else {
             create_record_with_executor(

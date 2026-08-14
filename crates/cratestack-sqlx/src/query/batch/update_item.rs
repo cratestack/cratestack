@@ -10,7 +10,7 @@ use sqlx_core::acquire::Acquire as _;
 use crate::audit::{build_audit_event, enqueue_audit_event, fetch_for_audit};
 use crate::descriptor::enqueue_event_outbox;
 use crate::query::support::{classify_unique_violation, push_action_policy_query, push_bind_value};
-use crate::{ModelDescriptor, UpdateModelInput, cool_error_from_sqlx, sqlx};
+use crate::{ModelDescriptor, UpdateModelInput, cratestack_error_from_sqlx, sqlx};
 
 use super::update::BatchUpdateItem;
 
@@ -32,7 +32,7 @@ where
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
 {
     let (id, input, if_match) = item;
-    let mut item_tx = outer.begin().await.map_err(cool_error_from_sqlx)?;
+    let mut item_tx = outer.begin().await.map_err(cratestack_error_from_sqlx)?;
     let mut audit_event: Option<AuditEvent> = None;
 
     let inner: Result<M, CratestackError> = async {
@@ -87,11 +87,14 @@ where
 
     match inner {
         Ok(record) => {
-            item_tx.commit().await.map_err(cool_error_from_sqlx)?;
+            item_tx.commit().await.map_err(cratestack_error_from_sqlx)?;
             Ok((Ok(record), audit_event))
         }
         Err(item_err) => {
-            item_tx.rollback().await.map_err(cool_error_from_sqlx)?;
+            item_tx
+                .rollback()
+                .await
+                .map_err(cratestack_error_from_sqlx)?;
             Ok((Err(item_err), None))
         }
     }

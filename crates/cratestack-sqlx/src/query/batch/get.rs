@@ -8,7 +8,7 @@ use std::hash::Hash;
 use cratestack_core::{BatchResponse, CratestackContext, CratestackError};
 
 use crate::query::support::push_action_policy_query;
-use crate::{ModelDescriptor, ModelPrimaryKey, SqlxRuntime, cool_error_from_sqlx, sqlx};
+use crate::{ModelDescriptor, ModelPrimaryKey, SqlxRuntime, cratestack_error_from_sqlx, sqlx};
 
 use super::validate::{reject_duplicate_pks, validate_batch_size};
 
@@ -63,7 +63,7 @@ impl<'a, M: 'static, PK: 'static> BatchGet<'a, M, PK> {
             .build_query_as::<M>()
             .fetch_all(self.runtime.pool())
             .await
-            .map_err(cool_error_from_sqlx)?;
+            .map_err(cratestack_error_from_sqlx)?;
 
         // Walk-and-match: pair each input PK back to its row, or
         // NotFound when the read policy / soft-delete excluded it.

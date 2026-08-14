@@ -26,7 +26,7 @@ pub fn encode_rpc_error<C>(
 where
     C: HttpTransport,
 {
-    let body = RpcErrorBody::from_cool(error);
+    let body = RpcErrorBody::from_cratestack(error);
     let status = error.status_code();
     encode_rpc_value_response(codec, headers, status, body)
 }
@@ -71,14 +71,14 @@ where
         headers,
         &body_bytes,
     ) {
-        Ok(parsed) => RpcErrorBody::from_cool_response(parsed),
+        Ok(parsed) => RpcErrorBody::from_cratestack_response(parsed),
         Err(_) => {
             // Handler emitted a non-2xx with a body that isn't the
             // framework's REST error shape (unusual — would happen if a
             // handler escaped through `into_response()` directly). Build
             // a synthetic body from the status alone.
             let cool = synthesize_error_for_status(status);
-            RpcErrorBody::from_cool(&cool)
+            RpcErrorBody::from_cratestack(&cool)
         }
     };
 

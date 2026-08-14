@@ -6,7 +6,9 @@ use cratestack_core::{BatchResponse, CratestackContext, CratestackError, ModelEv
 
 use crate::audit::{dispatch_audit_sink, ensure_audit_table};
 use crate::descriptor::ensure_event_outbox_table;
-use crate::{ModelDescriptor, SqlValue, SqlxRuntime, UpsertModelInput, cool_error_from_sqlx, sqlx};
+use crate::{
+    ModelDescriptor, SqlValue, SqlxRuntime, UpsertModelInput, cratestack_error_from_sqlx, sqlx,
+};
 
 use super::upsert_item::run_upsert_item;
 use super::validate::{reject_duplicate_sql_values, validate_batch_size};
@@ -50,7 +52,7 @@ where
             .pool()
             .begin()
             .await
-            .map_err(cool_error_from_sqlx)?;
+            .map_err(cratestack_error_from_sqlx)?;
         if emits_created || emits_updated {
             ensure_event_outbox_table(&mut *tx).await?;
         }
@@ -76,7 +78,7 @@ where
             audit_events.extend(audit_event);
         }
 
-        tx.commit().await.map_err(cool_error_from_sqlx)?;
+        tx.commit().await.map_err(cratestack_error_from_sqlx)?;
 
         if emits_created || emits_updated {
             let _ = self.runtime.drain_event_outbox().await;

@@ -1,6 +1,6 @@
 //! Typed conversion from `sqlx::Error` to `CratestackError`.
 //!
-//! The central entry point is [`cool_error_from_sqlx`], which should be used
+//! The central entry point is [`cratestack_error_from_sqlx`], which should be used
 //! instead of `CratestackError::Database(error.to_string())` at every sqlx call
 //! site.  When the underlying error is `sqlx::Error::Database`, the
 //! structured fields (`code`, `constraint`) are captured in a
@@ -32,12 +32,12 @@ use crate::sqlx;
 /// # Usage
 ///
 /// ```rust,ignore
-/// use cratestack_sqlx::cool_error_from_sqlx;
+/// use cratestack_sqlx::cratestack_error_from_sqlx;
 ///
 /// sqlx::query("INSERT …")
 ///     .execute(&pool)
 ///     .await
-///     .map_err(cool_error_from_sqlx)?;
+///     .map_err(cratestack_error_from_sqlx)?;
 /// ```
 ///
 /// Consumers can then inspect the error:
@@ -47,7 +47,7 @@ use crate::sqlx;
 ///     let constraint = err.db_constraint(); // e.g. "accounts_email_key"
 /// }
 /// ```
-pub fn cool_error_from_sqlx(error: sqlx::Error) -> CratestackError {
+pub fn cratestack_error_from_sqlx(error: sqlx::Error) -> CratestackError {
     match error {
         sqlx::Error::Database(db_err) => {
             let detail = db_err.to_string();
@@ -72,7 +72,7 @@ mod tests {
     /// so callers see a 404 instead of a 500.
     #[test]
     fn row_not_found_maps_to_not_found() {
-        let err = cool_error_from_sqlx(sqlx::Error::RowNotFound);
+        let err = cratestack_error_from_sqlx(sqlx::Error::RowNotFound);
         assert!(
             matches!(err, CratestackError::NotFound(_)),
             "RowNotFound should map to CratestackError::NotFound",
@@ -89,7 +89,7 @@ mod tests {
     /// working.
     #[test]
     fn non_database_sqlx_error_produces_legacy_variant() {
-        let err = cool_error_from_sqlx(sqlx::Error::Protocol(
+        let err = cratestack_error_from_sqlx(sqlx::Error::Protocol(
             "unexpected EOF from server".to_owned(),
         ));
         assert!(
@@ -111,7 +111,7 @@ mod tests {
     ///
     /// We can't easily construct a real `PgDatabaseError` in a unit test
     /// (it's opaque), so we verify the round-trip contract using
-    /// `DbErrorInfo` directly and confirm `cool_error_from_sqlx` maps
+    /// `DbErrorInfo` directly and confirm `cratestack_error_from_sqlx` maps
     /// the correct variant for the Database arm.
     #[test]
     fn database_typed_accessors() {

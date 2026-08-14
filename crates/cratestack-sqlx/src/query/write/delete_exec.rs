@@ -15,7 +15,7 @@
 use cratestack_core::{CratestackContext, CratestackError};
 
 use crate::query::support::{probe_current_version, push_action_policy_query};
-use crate::{ModelDescriptor, cool_error_from_sqlx, sqlx};
+use crate::{ModelDescriptor, cratestack_error_from_sqlx, sqlx};
 
 pub(super) async fn delete_returning_record<'e, E, M, PK>(
     executor: E,
@@ -78,7 +78,7 @@ where
         .build_query_as::<M>()
         .fetch_optional(executor)
         .await
-        .map_err(cool_error_from_sqlx)?;
+        .map_err(cratestack_error_from_sqlx)?;
     match outcome {
         Some(record) => Ok(record),
         None => {

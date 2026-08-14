@@ -56,7 +56,7 @@ mod tests_response_rebuffer;
 pub use cratestack_core::rpc::{
     RPC_BATCH_PATH, RPC_STREAM_ERROR_TAG, RPC_SUBSCRIBE_PATH, RPC_UNARY_PATH, RpcErrorBody,
     RpcListInput, RpcListPredicate, RpcPkInput, RpcRequest, RpcResponseFrame, RpcUpdateInput,
-    cool_error_code_to_rpc_code, rpc_code,
+    cratestack_error_code_to_rpc_code, rpc_code,
 };
 
 pub use batch::response_to_frame;

@@ -123,7 +123,7 @@ pub use pgvector;
 pub use audit::{
     AUDIT_TABLE_DDL, RunInTxOutcome, dispatch_audit_sink, primary_key_from_snapshot, snapshot_model,
 };
-pub use error::cool_error_from_sqlx;
+pub use error::cratestack_error_from_sqlx;
 pub use idempotency::{SqlxIdempotencyStore, expiry_from};
 pub use isolation::{run_in_isolated_tx, run_in_isolated_tx_with_retries};
 pub use migrations::{

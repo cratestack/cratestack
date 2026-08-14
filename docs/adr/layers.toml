@@ -139,7 +139,7 @@ cratestack-service = 2
 # constant + hand-written queries, no schema macro). Its only normal
 # workspace dependencies are `cratestack-core` (L1, `CratestackError`/
 # `TransactionIsolation`) and `cratestack-sqlx` (L2, the `sqlx` re-export,
-# `run_in_isolated_tx_with_retries`, `cool_error_from_sqlx`) — both <= 2, so
+# `run_in_isolated_tx_with_retries`, `cratestack_error_from_sqlx`) — both <= 2, so
 # L2 is a complete, exception-free assignment by the same "lowest number the
 # real graph supports" rule `cratestack-service`/`cratestack-macros` use
 # above. Unlike `cratestack-service`, `cratestack-sqlx` is an unconditional

@@ -67,7 +67,7 @@ pub(super) fn build_procedure_unary_arm(
                             Ok(value) => value,
                             Err(error) => {
                                 return Err(::cratestack::grpc::tonic::Status::new(
-                                    ::cratestack::grpc::cool_error_code_to_tonic_code(error.code()),
+                                    ::cratestack::grpc::cratestack_error_code_to_tonic_code(error.code()),
                                     error.public_message().into_owned(),
                                 ));
                             }
@@ -76,7 +76,7 @@ pub(super) fn build_procedure_unary_arm(
                             Ok(bytes) => ::cratestack::axum::body::Bytes::from(bytes),
                             Err(error) => {
                                 return Err(::cratestack::grpc::tonic::Status::new(
-                                    ::cratestack::grpc::cool_error_code_to_tonic_code(error.code()),
+                                    ::cratestack::grpc::cratestack_error_code_to_tonic_code(error.code()),
                                     error.public_message().into_owned(),
                                 ));
                             }
@@ -151,7 +151,7 @@ pub(super) fn build_procedure_stream_arm(
                             Ok(value) => value,
                             Err(error) => {
                                 return Err(::cratestack::grpc::tonic::Status::new(
-                                    ::cratestack::grpc::cool_error_code_to_tonic_code(error.code()),
+                                    ::cratestack::grpc::cratestack_error_code_to_tonic_code(error.code()),
                                     error.public_message().into_owned(),
                                 ));
                             }
@@ -160,7 +160,7 @@ pub(super) fn build_procedure_stream_arm(
                             Ok(bytes) => ::cratestack::axum::body::Bytes::from(bytes),
                             Err(error) => {
                                 return Err(::cratestack::grpc::tonic::Status::new(
-                                    ::cratestack::grpc::cool_error_code_to_tonic_code(error.code()),
+                                    ::cratestack::grpc::cratestack_error_code_to_tonic_code(error.code()),
                                     error.public_message().into_owned(),
                                 ));
                             }

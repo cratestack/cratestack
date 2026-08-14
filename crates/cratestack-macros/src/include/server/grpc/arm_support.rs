@@ -44,7 +44,7 @@ pub(super) fn status_from_bridge_error(
 ) -> proc_macro2::TokenStream {
     quote! {
         ::cratestack::grpc::tonic::Status::new(
-            ::cratestack::grpc::cool_error_code_to_tonic_code(&#code_expr),
+            ::cratestack::grpc::cratestack_error_code_to_tonic_code(&#code_expr),
             #message_expr,
         )
     }

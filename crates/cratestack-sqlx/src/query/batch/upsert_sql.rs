@@ -5,7 +5,7 @@
 use cratestack_core::{CratestackContext, CratestackError};
 
 use crate::query::support::{classify_unique_violation, push_action_policy_query, push_bind_value};
-use crate::{ModelDescriptor, SqlValue, cool_error_from_sqlx, sqlx};
+use crate::{ModelDescriptor, SqlValue, cratestack_error_from_sqlx, sqlx};
 
 pub(super) async fn select_for_update_by_pk_value<'tx, M, PK>(
     executor: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
@@ -32,7 +32,7 @@ where
         .build_query_as::<M>()
         .fetch_optional(&mut **executor)
         .await
-        .map_err(cool_error_from_sqlx)
+        .map_err(cratestack_error_from_sqlx)
 }
 
 pub(super) async fn row_passes_update_policy<M, PK>(
@@ -60,7 +60,7 @@ pub(super) async fn row_passes_update_policy<M, PK>(
         .build_query_as::<(i32,)>()
         .fetch_optional(policy_pool)
         .await
-        .map_err(cool_error_from_sqlx)?;
+        .map_err(cratestack_error_from_sqlx)?;
     Ok(row.is_some())
 }
 

@@ -131,7 +131,7 @@ where
 }
 
 fn lagged_error() -> RpcErrorBody {
-    RpcErrorBody::from_cool(&CratestackError::Unavailable(
+    RpcErrorBody::from_cratestack(&CratestackError::Unavailable(
         "subscription lagged".to_owned(),
     ))
 }

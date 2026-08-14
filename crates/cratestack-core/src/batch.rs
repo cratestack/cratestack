@@ -66,7 +66,7 @@ impl BatchItemError {
     /// Project a [`CratestackError`] into the public per-item shape, using
     /// the same `code()` / `public_message()` mapping the standard
     /// HTTP error handler uses for single-route responses.
-    pub fn from_cool(error: &CratestackError) -> Self {
+    pub fn from_cratestack(error: &CratestackError) -> Self {
         Self {
             code: error.code().to_owned(),
             message: error.public_message().into_owned(),
@@ -116,7 +116,7 @@ impl<T> BatchResponse<T> {
                     BatchItemResult {
                         index,
                         status: BatchItemStatus::Error {
-                            error: BatchItemError::from_cool(&error),
+                            error: BatchItemError::from_cratestack(&error),
                         },
                     }
                 }

@@ -30,7 +30,7 @@ impl CratestackAuthIdentity {
 
         let mut fields = BTreeMap::new();
         for (key, value) in object {
-            fields.insert(key, json_value_to_cool_value(value)?);
+            fields.insert(key, json_value_to_cratestack_value(value)?);
         }
 
         Ok(Self { fields })
@@ -39,7 +39,9 @@ impl CratestackAuthIdentity {
 
 /// Convert a `serde_json::Value` claim into a framework-native
 /// [`Value`]. Shared by the principal/identity builders.
-pub(super) fn json_value_to_cool_value(value: serde_json::Value) -> Result<Value, CratestackError> {
+pub(super) fn json_value_to_cratestack_value(
+    value: serde_json::Value,
+) -> Result<Value, CratestackError> {
     match value {
         serde_json::Value::Null => Ok(Value::Null),
         serde_json::Value::Bool(value) => Ok(Value::Bool(value)),
@@ -57,12 +59,12 @@ pub(super) fn json_value_to_cool_value(value: serde_json::Value) -> Result<Value
         serde_json::Value::String(value) => Ok(Value::String(value)),
         serde_json::Value::Array(values) => values
             .into_iter()
-            .map(json_value_to_cool_value)
+            .map(json_value_to_cratestack_value)
             .collect::<Result<Vec<_>, _>>()
             .map(Value::List),
         serde_json::Value::Object(object) => object
             .into_iter()
-            .map(|(key, value)| json_value_to_cool_value(value).map(|value| (key, value)))
+            .map(|(key, value)| json_value_to_cratestack_value(value).map(|value| (key, value)))
             .collect::<Result<BTreeMap<_, _>, _>>()
             .map(Value::Map),
     }

@@ -114,8 +114,8 @@ impl cratestack_core::AuthProvider for SignedRequestAuthProvider {
     ) -> impl core::future::Future<Output = Result<cratestack_core::CratestackContext, Self::Error>> + Send
     {
         let allow_transport_caller = self.transport_caller_mode.allows(request.method);
-        authenticate_cool_request(self.verifier.clone(), request, move |principal| {
-            principal_to_cool_context(principal, Some("caller"), allow_transport_caller)
+        authenticate_cratestack_request(self.verifier.clone(), request, move |principal| {
+            principal_to_cratestack_context(principal, Some("caller"), allow_transport_caller)
         })
     }
 }
@@ -204,7 +204,7 @@ pub enum AuthError {
     InternalEndpointForbidden,
 }
 
-pub fn auth_error_to_cool_error(error: AuthError) -> cratestack_core::CratestackError {
+pub fn auth_error_to_cratestack_error(error: AuthError) -> cratestack_core::CratestackError {
     match error {
         AuthError::MissingAuthorizationHeader
         | AuthError::MissingScheme
@@ -272,14 +272,14 @@ pub fn request_uri(path: &str, query: Option<&str>) -> Result<http::Uri, http::u
     value.parse()
 }
 
-pub fn principal_to_cool_context(
+pub fn principal_to_cratestack_context(
     principal: &RequestPrincipal,
     role: Option<&str>,
     allow_transport_caller: bool,
 ) -> Result<cratestack_core::CratestackContext, cratestack_core::CratestackError> {
     let Some(user) = principal.user.as_ref() else {
         if allow_transport_caller {
-            return Ok(service_principal_to_cool_context(principal, role));
+            return Ok(service_principal_to_cratestack_context(principal, role));
         }
         return Ok(cratestack_core::CratestackContext::anonymous());
     };
@@ -370,7 +370,7 @@ pub fn principal_to_cool_context(
     }))
 }
 
-fn service_principal_to_cool_context(
+fn service_principal_to_cratestack_context(
     principal: &RequestPrincipal,
     role: Option<&str>,
 ) -> cratestack_core::CratestackContext {
@@ -411,7 +411,7 @@ fn service_principal_to_cool_context(
     ])
 }
 
-pub async fn authenticate_cool_request<F>(
+pub async fn authenticate_cratestack_request<F>(
     verifier: SignedRequestVerifier,
     request: &cratestack_core::RequestContext<'_>,
     map_context: F,
@@ -423,19 +423,19 @@ where
             -> Result<cratestack_core::CratestackContext, cratestack_core::CratestackError>
         + Send,
 {
-    authenticate_cool_request_with(verifier, request, |principal| {
+    authenticate_cratestack_request_with(verifier, request, |principal| {
         core::future::ready(map_context(&principal))
     })
     .await
 }
 
-/// Like [`authenticate_cool_request`] but the context mapper is **async** and
+/// Like [`authenticate_cratestack_request`] but the context mapper is **async** and
 /// receives the principal by value. This lets the caller consult live state
 /// (e.g. reload a user's role from the database) and adjust the verified
 /// principal before building the `CratestackContext` — e.g. re-deriving an admin
 /// role on every request so revoking it takes effect immediately instead of
 /// waiting for the frozen `role` claim to expire.
-pub async fn authenticate_cool_request_with<F, Fut>(
+pub async fn authenticate_cratestack_request_with<F, Fut>(
     verifier: SignedRequestVerifier,
     request: &cratestack_core::RequestContext<'_>,
     map_context: F,
@@ -463,7 +463,7 @@ where
     let principal = verifier
         .authenticate(&method, &uri, &body, &authorization)
         .await
-        .map_err(auth_error_to_cool_error)?;
+        .map_err(auth_error_to_cratestack_error)?;
 
     map_context(principal).await
 }

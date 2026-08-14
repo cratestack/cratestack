@@ -10,7 +10,7 @@ use cratestack_core::{
 use crate::audit::{build_audit_event, enqueue_audit_event, ensure_audit_table};
 use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
 use crate::query::support::{push_action_policy_query, push_filter_query};
-use crate::{FilterExpr, ModelDescriptor, SqlxRuntime, cool_error_from_sqlx, sqlx};
+use crate::{FilterExpr, ModelDescriptor, SqlxRuntime, cratestack_error_from_sqlx, sqlx};
 
 /// Returns `(summary, emits_any_event, audit_events)` — see
 /// `update_many_exec::run_update_many_in_tx`'s doc comment for why the
@@ -83,7 +83,7 @@ where
         .build_query_as::<M>()
         .fetch_all(&mut **tx)
         .await
-        .map_err(cool_error_from_sqlx)?;
+        .map_err(cratestack_error_from_sqlx)?;
 
     // Fan-out one audit + one outbox entry per actually-deleted row.
     // The RETURNING row IS the audit "before" snapshot for hard

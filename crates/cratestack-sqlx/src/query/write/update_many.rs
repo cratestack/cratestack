@@ -13,7 +13,7 @@ use cratestack_core::{BatchSummary, CratestackContext, CratestackError};
 
 use crate::audit::{RunInTxOutcome, dispatch_audit_sink};
 use crate::{
-    FilterExpr, ModelDescriptor, SqlxRuntime, UpdateModelInput, cool_error_from_sqlx, sqlx,
+    FilterExpr, ModelDescriptor, SqlxRuntime, UpdateModelInput, cratestack_error_from_sqlx, sqlx,
 };
 
 use super::preview::render_update_many_preview_sql;
@@ -97,11 +97,15 @@ where
     {
         let runtime = self.runtime;
         let descriptor = self.descriptor;
-        let mut tx = runtime.pool().begin().await.map_err(cool_error_from_sqlx)?;
+        let mut tx = runtime
+            .pool()
+            .begin()
+            .await
+            .map_err(cratestack_error_from_sqlx)?;
         let (summary, emits_event, audit_events) =
             run_update_many_in_tx(&mut tx, runtime, descriptor, &self.filters, self.input, ctx)
                 .await?;
-        tx.commit().await.map_err(cool_error_from_sqlx)?;
+        tx.commit().await.map_err(cratestack_error_from_sqlx)?;
         if emits_event {
             let _ = runtime.drain_event_outbox().await;
         }

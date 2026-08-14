@@ -78,7 +78,7 @@ use std::ops::{Deref, DerefMut};
 use cratestack_core::CratestackError;
 
 use crate::descriptor::SqlxRuntime;
-use crate::error::cool_error_from_sqlx;
+use crate::error::cratestack_error_from_sqlx;
 use crate::sqlx;
 
 /// Opaque handle onto a live Postgres transaction. Obtained only via
@@ -132,12 +132,16 @@ impl SqlxRuntime {
     where
         F: AsyncFnOnce(&mut Tx) -> Result<T, CratestackError>,
     {
-        let inner = self.pool().begin().await.map_err(cool_error_from_sqlx)?;
+        let inner = self
+            .pool()
+            .begin()
+            .await
+            .map_err(cratestack_error_from_sqlx)?;
         let mut tx = Tx(inner);
 
         match body(&mut tx).await {
             Ok(value) => {
-                tx.0.commit().await.map_err(cool_error_from_sqlx)?;
+                tx.0.commit().await.map_err(cratestack_error_from_sqlx)?;
                 Ok(value)
             }
             Err(error) => {

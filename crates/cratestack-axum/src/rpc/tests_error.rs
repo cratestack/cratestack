@@ -3,11 +3,11 @@
 #![cfg(test)]
 
 use cratestack_core::CratestackError;
-use cratestack_core::rpc::{RpcErrorBody, cool_error_code_to_rpc_code, rpc_code};
+use cratestack_core::rpc::{RpcErrorBody, cratestack_error_code_to_rpc_code, rpc_code};
 
 #[test]
-fn cool_error_code_to_rpc_code_covers_every_cool_error_variant() {
-    // Mirror image of `rpc_code_maps_each_cool_error_variant` — for
+fn cratestack_error_code_to_rpc_code_covers_every_cratestack_error_variant() {
+    // Mirror image of `rpc_code_maps_each_cratestack_error_variant` — for
     // every CratestackError variant, encoding it as CratestackErrorResponse and
     // then translating its `code` must land on the same gRPC-style
     // string as the direct `rpc_code` path.
@@ -26,41 +26,44 @@ fn cool_error_code_to_rpc_code_covers_every_cool_error_variant() {
         CratestackError::Internal("x".into()),
         CratestackError::Unavailable("x".into()),
     ] {
-        let cool_code = variant.code();
+        let cratestack_code = variant.code();
         let direct = rpc_code(&variant);
-        let translated = cool_error_code_to_rpc_code(cool_code);
+        let translated = cratestack_error_code_to_rpc_code(cratestack_code);
         assert_eq!(
             direct, translated,
-            "rpc_code({:?}) = {:?} but cool_error_code_to_rpc_code({:?}) = {:?}",
-            variant, direct, cool_code, translated,
+            "rpc_code({:?}) = {:?} but cratestack_error_code_to_rpc_code({:?}) = {:?}",
+            variant, direct, cratestack_code, translated,
         );
     }
 }
 
 #[test]
-fn cool_error_code_to_rpc_code_unknown_input_falls_to_internal() {
+fn cratestack_error_code_to_rpc_code_unknown_input_falls_to_internal() {
     // A server that adds a new CratestackError variant we don't know about
     // shouldn't leak a SCREAMING string to the wire — degrade to
     // "internal" rather than passing through.
-    assert_eq!(cool_error_code_to_rpc_code("SOMETHING_NEW"), "internal");
-    assert_eq!(cool_error_code_to_rpc_code(""), "internal");
+    assert_eq!(
+        cratestack_error_code_to_rpc_code("SOMETHING_NEW"),
+        "internal"
+    );
+    assert_eq!(cratestack_error_code_to_rpc_code(""), "internal");
 }
 
 #[test]
-fn error_body_from_cool_response_translates_code_and_preserves_message() {
+fn error_body_from_cratestack_response_translates_code_and_preserves_message() {
     let response = cratestack_core::CratestackErrorResponse {
         code: "NOT_FOUND".to_owned(),
         message: "widget 42".to_owned(),
         details: None,
     };
-    let body = RpcErrorBody::from_cool_response(response);
+    let body = RpcErrorBody::from_cratestack_response(response);
     assert_eq!(body.code, "not_found");
     assert_eq!(body.message, "widget 42");
     assert!(body.details.is_none());
 }
 
 #[test]
-fn rpc_code_maps_each_cool_error_variant() {
+fn rpc_code_maps_each_cratestack_error_variant() {
     assert_eq!(
         rpc_code(&CratestackError::BadRequest("x".into())),
         "invalid_argument"
@@ -110,7 +113,7 @@ fn rpc_code_maps_each_cool_error_variant() {
 fn error_body_uses_public_message_not_operator_detail() {
     // 5xx variants must return the canned public message, never the
     // operator-only detail string carried inside the variant.
-    let body = RpcErrorBody::from_cool(&CratestackError::Internal("db ip refused".into()));
+    let body = RpcErrorBody::from_cratestack(&CratestackError::Internal("db ip refused".into()));
     assert_eq!(body.code, "internal");
     assert_eq!(body.message, "internal error");
     assert!(
@@ -122,7 +125,7 @@ fn error_body_uses_public_message_not_operator_detail() {
 
 #[test]
 fn error_body_uses_caller_supplied_message_for_4xx() {
-    let body = RpcErrorBody::from_cool(&CratestackError::NotFound("widget 42".into()));
+    let body = RpcErrorBody::from_cratestack(&CratestackError::NotFound("widget 42".into()));
     assert_eq!(body.code, "not_found");
     assert_eq!(body.message, "widget 42");
 }

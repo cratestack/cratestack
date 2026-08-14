@@ -274,7 +274,7 @@ async fn pk_default_upsert_unchanged_after_composite_refactor() {
 // SQLSTATE and constraint name before the error reached application
 // code. These hit `pairs`' real `UNIQUE(scope, key)` constraint through
 // the ordinary `.create()` / `.update()` delegates (not a hand-built
-// `CratestackError`), so they only pass once `cool_error_from_sqlx` is
+// `CratestackError`), so they only pass once `cratestack_error_from_sqlx` is
 // actually wired into `create_exec.rs` / `update_exec.rs`.
 
 #[tokio::test]

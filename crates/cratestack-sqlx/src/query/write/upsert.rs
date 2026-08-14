@@ -16,7 +16,8 @@ use cratestack_core::{CratestackContext, CratestackError};
 
 use crate::audit::{RunInTxOutcome, dispatch_audit_sink};
 use crate::{
-    ConflictTarget, ModelDescriptor, SqlxRuntime, UpsertModelInput, cool_error_from_sqlx, sqlx,
+    ConflictTarget, ModelDescriptor, SqlxRuntime, UpsertModelInput, cratestack_error_from_sqlx,
+    sqlx,
 };
 
 use super::upsert_do_nothing::UpsertRecordDoNothing;
@@ -119,7 +120,11 @@ where
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
         let runtime = self.runtime;
-        let mut tx = runtime.pool().begin().await.map_err(cool_error_from_sqlx)?;
+        let mut tx = runtime
+            .pool()
+            .begin()
+            .await
+            .map_err(cratestack_error_from_sqlx)?;
         let (record, emits_event, audit_event) = run_upsert_in_tx(
             &mut tx,
             runtime,
@@ -129,7 +134,7 @@ where
             ctx,
         )
         .await?;
-        tx.commit().await.map_err(cool_error_from_sqlx)?;
+        tx.commit().await.map_err(cratestack_error_from_sqlx)?;
         if emits_event {
             let _ = runtime.drain_event_outbox().await;
         }

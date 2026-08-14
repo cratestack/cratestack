@@ -13,7 +13,7 @@
 use cratestack_core::{CratestackContext, CratestackError};
 
 use super::push_action_policy_query;
-use crate::{ModelDescriptor, cool_error_from_sqlx, sqlx};
+use crate::{ModelDescriptor, cratestack_error_from_sqlx, sqlx};
 
 /// Read the current version of a row using the read policy. Returns
 /// `None` if the caller cannot see the row (so the outer code
@@ -48,6 +48,6 @@ where
         .build_query_as::<(i64,)>()
         .fetch_optional(policy_pool)
         .await
-        .map_err(cool_error_from_sqlx)?;
+        .map_err(cratestack_error_from_sqlx)?;
     Ok(row.map(|(v,)| v))
 }

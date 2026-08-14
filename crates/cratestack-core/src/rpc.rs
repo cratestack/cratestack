@@ -66,7 +66,7 @@ pub struct RpcErrorBody {
 }
 
 impl RpcErrorBody {
-    pub fn from_cool(error: &CratestackError) -> Self {
+    pub fn from_cratestack(error: &CratestackError) -> Self {
         Self {
             code: rpc_code(error).to_owned(),
             message: error.public_message().into_owned(),
@@ -76,18 +76,18 @@ impl RpcErrorBody {
 
     /// Translate a REST-style [`CratestackErrorResponse`] into the RPC
     /// error body. The `code` field is mapped from screaming-snake to
-    /// gRPC-style lowercase via [`cool_error_code_to_rpc_code`];
+    /// gRPC-style lowercase via [`cratestack_error_code_to_rpc_code`];
     /// `message` and `details` flow through verbatim.
-    pub fn from_cool_response(response: CratestackErrorResponse) -> Self {
+    pub fn from_cratestack_response(response: CratestackErrorResponse) -> Self {
         let CratestackErrorResponse {
             code,
             message,
             details,
         } = response;
         Self {
-            code: cool_error_code_to_rpc_code(&code).to_owned(),
+            code: cratestack_error_code_to_rpc_code(&code).to_owned(),
             message,
-            details: details.map(cool_value_to_json),
+            details: details.map(cratestack_value_to_json),
         }
     }
 }
@@ -131,7 +131,7 @@ impl RpcResponseFrame {
         Self {
             id,
             output: None,
-            error: Some(RpcErrorBody::from_cool(error)),
+            error: Some(RpcErrorBody::from_cratestack(error)),
         }
     }
 }
@@ -159,7 +159,7 @@ pub const fn rpc_code(error: &CratestackError) -> &'static str {
 /// Map a `CratestackErrorResponse.code` string (screaming-snake, REST-
 /// binding vocabulary) to the stable gRPC-style code the RPC binding
 /// emits.
-pub fn cool_error_code_to_rpc_code(code: &str) -> &'static str {
+pub fn cratestack_error_code_to_rpc_code(code: &str) -> &'static str {
     match code {
         "BAD_REQUEST"
         | "NOT_ACCEPTABLE"
@@ -177,7 +177,7 @@ pub fn cool_error_code_to_rpc_code(code: &str) -> &'static str {
     }
 }
 
-fn cool_value_to_json(value: crate::Value) -> serde_json::Value {
+fn cratestack_value_to_json(value: crate::Value) -> serde_json::Value {
     serde_json::to_value(&value).unwrap_or(serde_json::Value::Null)
 }
 

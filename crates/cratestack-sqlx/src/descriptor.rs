@@ -10,7 +10,7 @@ use cratestack_core::{
     ModelEventKind, NoopAuditSink, SubscriptionHandle,
 };
 
-use crate::error::cool_error_from_sqlx;
+use crate::error::cratestack_error_from_sqlx;
 use event_outbox::EventOutboxRow;
 
 pub use event_outbox::{enqueue_event_outbox, ensure_event_outbox_table};
@@ -123,7 +123,7 @@ impl SqlxRuntime {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(cool_error_from_sqlx)?;
+        .map_err(cratestack_error_from_sqlx)?;
 
         let mut delivered = 0usize;
         for row in rows {
@@ -139,7 +139,7 @@ impl SqlxRuntime {
                     .bind(event_id)
                     .execute(&self.pool)
                     .await
-                    .map_err(cool_error_from_sqlx)?;
+                    .map_err(cratestack_error_from_sqlx)?;
                     delivered += 1;
                 }
                 Err(error) => {
@@ -152,7 +152,7 @@ impl SqlxRuntime {
                     .bind(error.to_string())
                     .execute(&self.pool)
                     .await
-                    .map_err(cool_error_from_sqlx)?;
+                    .map_err(cratestack_error_from_sqlx)?;
                 }
             }
         }

@@ -216,7 +216,7 @@ async fn snippet_renders_owned_string_literal() {
     let (status, body) = json_get("/api/targets/sqlite/models/Post/snippet?pk=p1").await;
     assert_eq!(status, StatusCode::OK);
     let rust = body["rust"].as_str().expect("rust");
-    assert!(rust.contains("cool.post()"), "{rust}");
+    assert!(rust.contains("db.post()"), "{rust}");
     assert!(rust.contains(".find_unique(\"p1\".to_owned())"), "{rust}");
 }
 

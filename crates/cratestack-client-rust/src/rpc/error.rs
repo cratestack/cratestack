@@ -91,7 +91,7 @@ pub(crate) fn client_error_to_rpc(error: ClientError) -> RpcClientError {
             // bodies), but keep a sensible fallback rather than dropping
             // the message on the floor.
             let body = error
-                .map(cratestack_core::rpc::RpcErrorBody::from_cool_response)
+                .map(cratestack_core::rpc::RpcErrorBody::from_cratestack_response)
                 .unwrap_or_else(|| RpcErrorBody {
                     code: "internal".to_owned(),
                     message,

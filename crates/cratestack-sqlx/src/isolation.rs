@@ -20,7 +20,7 @@ use std::future::Future;
 
 use cratestack_core::{CratestackError, TransactionIsolation};
 
-use crate::error::cool_error_from_sqlx;
+use crate::error::cratestack_error_from_sqlx;
 
 const MAX_RETRIES_DEFAULT: u32 = 3;
 const PG_SERIALIZATION_FAILURE_SQLSTATE: &str = "40001";
@@ -63,12 +63,12 @@ where
     let mut attempts = 0u32;
     loop {
         attempts += 1;
-        let mut tx = pool.begin().await.map_err(cool_error_from_sqlx)?;
+        let mut tx = pool.begin().await.map_err(cratestack_error_from_sqlx)?;
         let set_stmt = format!("SET TRANSACTION ISOLATION LEVEL {}", isolation.as_sql());
         sqlx::query(&set_stmt)
             .execute(&mut *tx)
             .await
-            .map_err(cool_error_from_sqlx)?;
+            .map_err(cratestack_error_from_sqlx)?;
 
         match body(tx).await {
             Ok((value, tx)) => match tx.commit().await {
@@ -83,7 +83,7 @@ where
                     // branch we'd advertise automatic retries but still
                     // leak a transient 40001 to callers when the conflict
                     // is detected at the commit boundary.
-                    let promoted = cool_error_from_sqlx(commit_error);
+                    let promoted = cratestack_error_from_sqlx(commit_error);
                     if attempts <= max_retries && is_retriable(&promoted) {
                         tokio::task::yield_now().await;
                         continue;

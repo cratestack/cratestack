@@ -6,7 +6,7 @@
 
 use cratestack_core::{CratestackError, CratestackEventEnvelope, ModelEventKind};
 
-use crate::error::cool_error_from_sqlx;
+use crate::error::cratestack_error_from_sqlx;
 use crate::sqlx;
 
 #[derive(Debug, Clone)]
@@ -76,7 +76,7 @@ where
     )
     .execute(executor)
     .await
-    .map_err(cool_error_from_sqlx)?;
+    .map_err(cratestack_error_from_sqlx)?;
 
     Ok(())
 }
@@ -116,7 +116,7 @@ where
     .bind(payload)
     .execute(executor)
     .await
-    .map_err(cool_error_from_sqlx)?;
+    .map_err(cratestack_error_from_sqlx)?;
 
     Ok(())
 }

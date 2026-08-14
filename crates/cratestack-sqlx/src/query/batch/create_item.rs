@@ -14,7 +14,7 @@ use crate::query::support::{
     apply_create_defaults, classify_unique_violation, evaluate_create_policies, find_column_value,
     push_bind_value,
 };
-use crate::{CreateModelInput, ModelDescriptor, cool_error_from_sqlx, sqlx};
+use crate::{CreateModelInput, ModelDescriptor, cratestack_error_from_sqlx, sqlx};
 
 /// Returns `(per_item_result, audit_event)`. `audit_event` is `Some`
 /// only when the item succeeded *and* audit is enabled — a savepoint
@@ -39,7 +39,7 @@ where
     I: CreateModelInput<M>,
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
 {
-    let mut item_tx = outer.begin().await.map_err(cool_error_from_sqlx)?;
+    let mut item_tx = outer.begin().await.map_err(cratestack_error_from_sqlx)?;
     let mut audit_event: Option<AuditEvent> = None;
 
     // All per-item failures funnel through this inner closure so the
@@ -98,14 +98,17 @@ where
 
     match inner {
         Ok(record) => {
-            item_tx.commit().await.map_err(cool_error_from_sqlx)?;
+            item_tx.commit().await.map_err(cratestack_error_from_sqlx)?;
             Ok((Ok(record), audit_event))
         }
         Err(item_err) => {
             // ROLLBACK TO SAVEPOINT brings the outer tx back to its
             // pre-savepoint state. If that fails the outer tx is dead
             // and we propagate as the outer Err — no point continuing.
-            item_tx.rollback().await.map_err(cool_error_from_sqlx)?;
+            item_tx
+                .rollback()
+                .await
+                .map_err(cratestack_error_from_sqlx)?;
             Ok((Err(item_err), None))
         }
     }

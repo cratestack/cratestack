@@ -25,7 +25,7 @@ pub fn rust_find_unique(schema: &Schema, model: &str, pk_value: &str) -> Result<
     let pk_literal = pk_literal_for(&pk_field.ty.name, pk_value, info.pk_cast);
 
     Ok(format!(
-        "let row = cool.{delegate}()\n    \
+        "let row = db.{delegate}()\n    \
          .find_unique({pk_literal})\n    \
          .run(&ctx)\n    \
          .await?;\n"
@@ -79,7 +79,7 @@ mod tests {
             "#,
         );
         let snippet = rust_find_unique(&schema, "Post", "abc-123").expect("ok");
-        assert!(snippet.contains("cool.post()"), "{snippet}");
+        assert!(snippet.contains("db.post()"), "{snippet}");
         assert!(
             snippet.contains(".find_unique(\"abc-123\".to_owned())"),
             "{snippet}"

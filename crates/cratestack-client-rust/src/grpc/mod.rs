@@ -16,7 +16,7 @@
 //! - [`error`] — [`GrpcClientError`], wrapping `tonic::Status` directly:
 //!   unlike REST/RPC (which decode a JSON/CBOR error body), a gRPC error
 //!   already arrives as a structured `tonic::Status` carrying the right
-//!   `tonic::Code` (`cratestack_grpc::error::cool_error_to_status`
+//!   `tonic::Code` (`cratestack_grpc::error::cratestack_error_to_status`
 //!   already did that mapping server-side), so there is no body left to
 //!   parse — see that module's doc.
 //! - [`canonical`] — envelope-signing helpers mirroring

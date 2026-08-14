@@ -101,7 +101,7 @@ Router::new()
 
 - `cratestack-sqlx` — `AUDIT_TABLE_DDL`/`MIGRATIONS_TABLE_DDL` are the
   precedent this crate's own `OUTBOX_EVENTS_DDL` copies, and
-  `run_in_isolated_tx_with_retries`/`cool_error_from_sqlx` are what this
+  `run_in_isolated_tx_with_retries`/`cratestack_error_from_sqlx` are what this
   crate's writes run through.
 - `cratestack-service` — the sibling absorption this one's layer placement
   and `postgres`-dependency reasoning follows.

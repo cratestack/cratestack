@@ -1,11 +1,11 @@
 //! `CratestackError` / RPC-code-string -> `tonic::Status` mapping. Built on top of
-//! `cratestack_core::rpc::{rpc_code, cool_error_code_to_rpc_code}`, the
+//! `cratestack_core::rpc::{rpc_code, cratestack_error_code_to_rpc_code}`, the
 //! existing, shipped `CratestackError` -> gRPC-style-string mapping — this module
 //! adds one more hop (rpc-code-string -> `tonic::Code`) rather than
 //! re-deriving the string codes independently.
 
 use cratestack_core::CratestackError;
-use cratestack_core::rpc::{cool_error_code_to_rpc_code, rpc_code};
+use cratestack_core::rpc::{cratestack_error_code_to_rpc_code, rpc_code};
 use tonic::{Code, Status};
 
 /// Maps a gRPC-style rpc code string (`cratestack_core::rpc`'s vocabulary —
@@ -48,7 +48,7 @@ pub fn rpc_code_to_tonic_code(code: &str) -> Code {
 /// so REST, RPC, and gRPC all agree on which `CratestackError` variant maps to
 /// which stable code. The status message is `CratestackError::public_message`,
 /// the same safe-to-expose text every other binding already returns.
-pub fn cool_error_to_status(error: &CratestackError) -> Status {
+pub fn cratestack_error_to_status(error: &CratestackError) -> Status {
     let code = rpc_code_to_tonic_code(rpc_code(error));
     Status::new(code, error.public_message().into_owned())
 }
@@ -56,10 +56,10 @@ pub fn cool_error_to_status(error: &CratestackError) -> Status {
 /// Same mapping, keyed off the REST-binding's screaming-snake `code` string
 /// (`CratestackErrorResponse.code`, e.g. `"NOT_FOUND"`) rather than a `CratestackError`
 /// value directly — for callers that already have a
-/// `cool_error_code_to_rpc_code` string in hand (e.g. from a structured
+/// `cratestack_error_code_to_rpc_code` string in hand (e.g. from a structured
 /// error payload) and need the `tonic::Code` it maps to.
-pub fn cool_error_code_to_tonic_code(code: &str) -> Code {
-    rpc_code_to_tonic_code(cool_error_code_to_rpc_code(code))
+pub fn cratestack_error_code_to_tonic_code(code: &str) -> Code {
+    rpc_code_to_tonic_code(cratestack_error_code_to_rpc_code(code))
 }
 
 #[cfg(test)]
@@ -73,7 +73,7 @@ mod tests {
     /// pattern-matched generically) instead of silently falling through to
     /// `Code::Unknown` in production.
     #[test]
-    fn every_cool_error_variant_maps_to_a_specific_tonic_code() {
+    fn every_cratestack_error_variant_maps_to_a_specific_tonic_code() {
         let cases: &[(CratestackError, Code)] = &[
             (
                 CratestackError::BadRequest("x".into()),
@@ -112,7 +112,7 @@ mod tests {
         ];
 
         for (error, expected) in cases {
-            let status = cool_error_to_status(error);
+            let status = cratestack_error_to_status(error);
             assert_eq!(
                 status.code(),
                 *expected,
@@ -132,12 +132,12 @@ mod tests {
     }
 
     #[test]
-    fn cool_error_code_string_hop_agrees_with_direct_cool_error_hop() {
+    fn cratestack_error_code_string_hop_agrees_with_direct_cratestack_error_hop() {
         // NOT_FOUND (REST vocabulary) and the CratestackError::NotFound variant
         // must land on the same tonic::Code — same table, two entry points.
         assert_eq!(
-            cool_error_code_to_tonic_code("NOT_FOUND"),
-            cool_error_to_status(&CratestackError::NotFound("x".into())).code()
+            cratestack_error_code_to_tonic_code("NOT_FOUND"),
+            cratestack_error_to_status(&CratestackError::NotFound("x".into())).code()
         );
     }
 }

@@ -39,7 +39,9 @@ pub mod status_details;
 pub mod web;
 
 pub use canonical::{GRPC_CONTENT_TYPE, grpc_canonical_request_string, grpc_method_path};
-pub use error::{cool_error_code_to_tonic_code, cool_error_to_status, rpc_code_to_tonic_code};
+pub use error::{
+    cratestack_error_code_to_tonic_code, cratestack_error_to_status, rpc_code_to_tonic_code,
+};
 pub use framing::{FrameError, frame_grpc_message, strip_grpc_frame};
 pub use metadata::{headers_to_metadata, metadata_to_headers};
 pub use status_details::{

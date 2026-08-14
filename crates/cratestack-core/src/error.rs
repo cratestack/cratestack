@@ -24,12 +24,12 @@ pub struct CratestackErrorResponse {
 
 /// Structured information extracted from a driver-level database error.
 ///
-/// Produced by `cratestack-sqlx`'s [`cool_error_from_sqlx`] when the
+/// Produced by `cratestack-sqlx`'s [`cratestack_error_from_sqlx`] when the
 /// underlying `sqlx::Error` carries a typed `DatabaseError` (e.g.
 /// `PgDatabaseError`). Consumers can inspect `constraint` and `code` without
 /// substring-matching the stringified error message.
 ///
-/// [`cool_error_from_sqlx`]: cratestack_sqlx::cool_error_from_sqlx
+/// [`cratestack_error_from_sqlx`]: cratestack_sqlx::cratestack_error_from_sqlx
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub struct DbErrorInfo {
     /// The operator-visible detail string (equivalent to `error.to_string()`).
@@ -79,7 +79,7 @@ pub enum CratestackError {
     Codec(String),
     /// Database error with only a stringified detail. Preserved for
     /// back-compat; new code should prefer `DatabaseTyped` produced by
-    /// `cratestack_sqlx::cool_error_from_sqlx`.
+    /// `cratestack_sqlx::cratestack_error_from_sqlx`.
     #[error("database: {0}")]
     Database(String),
     /// Database error with structured information preserved from the driver.
@@ -210,7 +210,7 @@ impl CratestackError {
     /// known code (e.g. `"23505"` for unique_violation).
     ///
     /// Always returns `None` for the legacy `Database(String)` variant; to
-    /// get typed access, use `cratestack_sqlx::cool_error_from_sqlx` at the
+    /// get typed access, use `cratestack_sqlx::cratestack_error_from_sqlx` at the
     /// conversion site.
     pub fn db_sqlstate(&self) -> Option<&str> {
         match self {
@@ -223,7 +223,7 @@ impl CratestackError {
     /// carries constraint information (e.g. `"accounts_email_key"`).
     ///
     /// Always returns `None` for the legacy `Database(String)` variant; to
-    /// get typed access, use `cratestack_sqlx::cool_error_from_sqlx` at the
+    /// get typed access, use `cratestack_sqlx::cratestack_error_from_sqlx` at the
     /// conversion site.
     pub fn db_constraint(&self) -> Option<&str> {
         match self {
