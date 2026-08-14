@@ -36,7 +36,7 @@ use cratestack::include_server_schema;
 include_server_schema!("schema.cstack", db = Postgres);
 
 let pool = sqlx::PgPool::connect(&database_url).await?;
-let cool = cratestack_schema::Cratestack::builder(pool).build();
+let db = cratestack_schema::Cratestack::builder(pool).build();
 ```
 
 `db = Postgres` and `db = None` are currently accepted. The parser is wired so adding `MySql` / `Sqlite`-via-sqlx in a future release is non-breaking at call sites that already pass `db = Postgres`.
@@ -47,10 +47,10 @@ For `db = Postgres`, the macro emits, inside a `cratestack_schema` module:
 - `Create<Model>Input` and `Update<Model>Input` structs
 - per-model selection / include builders
 - per-model filter/order helper modules (e.g. `cratestack_schema::post::published()`)
-- the `Cratestack` runtime struct with `builder(pool)`, `bind_context(ctx)`, `bind_auth(principal)`, and per-model accessors (`cool.post()`, `cool.user()`, ...)
+- the `Cratestack` runtime struct with `builder(pool)`, `bind_context(ctx)`, `bind_auth(principal)`, and per-model accessors (`db.post()`, `db.user()`, ...)
 - `axum::model_router(cool, codec, auth_provider)` and `axum::procedure_router(...)`
 - procedure dispatch glue and `events::Subscriptions` for `@@emit` model events
-- for each `view` block: a typed struct, `<UPPER>_VIEW: ViewDescriptor<...>` const, `sqlx::FromRow<PgRow>` impl, and an accessor on `cool.views().<view_snake>()` returning `ViewDelegate` (or `ViewDelegateNoUnique` for `@@no_unique` views). `@@materialized` views also get a `refresh()` method. See [ADR-0003](https://cratestack.dev/internals/views-adr).
+- for each `view` block: a typed struct, `<UPPER>_VIEW: ViewDescriptor<...>` const, `sqlx::FromRow<PgRow>` impl, and an accessor on `db.views().<view_snake>()` returning `ViewDelegate` (or `ViewDelegateNoUnique` for `@@no_unique` views). `@@materialized` views also get a `refresh()` method. See [ADR-0003](https://cratestack.dev/internals/views-adr).
 
 ### `db = None` — procedures-only, no database
 

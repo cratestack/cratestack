@@ -26,7 +26,7 @@ use cratestack_codec_cbor::CborCodec;
 include_server_schema!("schema.cstack");
 
 let pool = sqlx::PgPool::connect(&database_url).await?;
-let cool = cratestack_schema::Cratestack::builder(pool).build();
+let db = cratestack_schema::Cratestack::builder(pool).build();
 
 let router = cratestack_schema::axum::model_router(
     cool,
