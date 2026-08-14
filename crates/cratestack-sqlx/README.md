@@ -54,7 +54,7 @@ let ctx = CratestackContext::anonymous();
 let user = db.user().find_unique(user_id.clone()).run(&ctx).await?;
 
 // find_many with filters and ordering
-let posts = cool
+let posts = db
     .post()
     .find_many()
     .where_expr(
@@ -70,7 +70,7 @@ let posts = cool
 let created = db.user().create(CreateUserInput { /* ... */ }).run(&ctx).await?;
 
 // Update (with optimistic locking via `if_match`)
-let updated = cool
+let updated = db
     .user()
     .update(user_id.clone())
     .set(UpdateUserInput { /* ... */ })

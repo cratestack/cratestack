@@ -48,7 +48,7 @@ For `db = Postgres`, the macro emits, inside a `cratestack_schema` module:
 - per-model selection / include builders
 - per-model filter/order helper modules (e.g. `cratestack_schema::post::published()`)
 - the `Cratestack` runtime struct with `builder(pool)`, `bind_context(ctx)`, `bind_auth(principal)`, and per-model accessors (`db.post()`, `db.user()`, ...)
-- `axum::model_router(cool, codec, auth_provider)` and `axum::procedure_router(...)`
+- `axum::model_router(db, codec, auth_provider)` and `axum::procedure_router(...)`
 - procedure dispatch glue and `events::Subscriptions` for `@@emit` model events
 - for each `view` block: a typed struct, `<UPPER>_VIEW: ViewDescriptor<...>` const, `sqlx::FromRow<PgRow>` impl, and an accessor on `db.views().<view_snake>()` returning `ViewDelegate` (or `ViewDelegateNoUnique` for `@@no_unique` views). `@@materialized` views also get a `refresh()` method. See [ADR-0003](https://cratestack.dev/internals/views-adr).
 

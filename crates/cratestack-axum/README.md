@@ -29,7 +29,7 @@ let pool = sqlx::PgPool::connect(&database_url).await?;
 let db = cratestack_schema::Cratestack::builder(pool).build();
 
 let router = cratestack_schema::axum::model_router(
-    cool,
+    db,
     CborCodec,
     AppAuthProvider, // implements cratestack::AuthProvider
 );

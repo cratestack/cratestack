@@ -29,7 +29,7 @@ assert_eq!(CborCodec::CONTENT_TYPE, "application/cbor");
 ### With generated routes
 
 ```rust
-let router = cratestack_schema::axum::model_router(cool, CborCodec, AppAuthProvider);
+let router = cratestack_schema::axum::model_router(db, CborCodec, AppAuthProvider);
 ```
 
 ### With the Rust client

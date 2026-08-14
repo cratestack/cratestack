@@ -29,7 +29,7 @@ assert_eq!(JsonCodec::CONTENT_TYPE, "application/json");
 ### With generated routes
 
 ```rust
-let router = cratestack_schema::axum::model_router(cool, JsonCodec, AppAuthProvider);
+let router = cratestack_schema::axum::model_router(db, JsonCodec, AppAuthProvider);
 ```
 
 ### With the Rust client
