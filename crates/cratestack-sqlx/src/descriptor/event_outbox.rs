@@ -4,7 +4,7 @@
 //! write path calls in-transaction. Split out of `descriptor.rs` to
 //! keep that file under the project's ~200-line-per-file convention.
 
-use cratestack_core::{CoolError, CoolEventEnvelope, ModelEventKind};
+use cratestack_core::{CratestackError, CratestackEventEnvelope, ModelEventKind};
 
 use crate::error::cool_error_from_sqlx;
 use crate::sqlx;
@@ -39,10 +39,10 @@ impl<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> for EventOutboxRow {
 }
 
 impl EventOutboxRow {
-    pub(crate) fn try_into_envelope(self) -> Result<CoolEventEnvelope, CoolError> {
+    pub(crate) fn try_into_envelope(self) -> Result<CratestackEventEnvelope, CratestackError> {
         let _ = self.attempts;
         let _ = &self.last_error;
-        Ok(CoolEventEnvelope {
+        Ok(CratestackEventEnvelope {
             event_id: self.event_id,
             model: self.model,
             operation: ModelEventKind::parse(&self.operation)?,
@@ -58,7 +58,7 @@ impl EventOutboxRow {
 /// route Studio writes through the same outbox the generated server
 /// uses, rather than duplicating the table DDL in a second crate where
 /// it could drift out of sync with this one.
-pub async fn ensure_event_outbox_table<'e, E>(executor: E) -> Result<(), CoolError>
+pub async fn ensure_event_outbox_table<'e, E>(executor: E) -> Result<(), CratestackError>
 where
     E: sqlx::Executor<'e, Database = sqlx::Postgres>,
 {
@@ -97,13 +97,14 @@ pub async fn enqueue_event_outbox<'e, E, T>(
     model: &str,
     operation: ModelEventKind,
     data: &T,
-) -> Result<(), CoolError>
+) -> Result<(), CratestackError>
 where
     E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     T: serde::Serialize,
 {
-    let payload = serde_json::to_value(data)
-        .map_err(|error| CoolError::Codec(format!("failed to encode event payload: {error}")))?;
+    let payload = serde_json::to_value(data).map_err(|error| {
+        CratestackError::Codec(format!("failed to encode event payload: {error}"))
+    })?;
     sqlx::query(
         "INSERT INTO cratestack_event_outbox (event_id, model, operation, occurred_at, payload) \
          VALUES ($1, $2, $3, $4, $5)",

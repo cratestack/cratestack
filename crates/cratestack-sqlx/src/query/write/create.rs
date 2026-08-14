@@ -2,7 +2,7 @@
 //! fan-out. `run()` opens its own tx only when audit/event capture is
 //! enabled; otherwise it goes straight against the pool.
 
-use cratestack_core::{AuditOperation, CoolContext, CoolError, ModelEventKind};
+use cratestack_core::{AuditOperation, CratestackContext, CratestackError, ModelEventKind};
 
 use crate::audit::{
     RunInTxOutcome, build_audit_event, dispatch_audit_sink, enqueue_audit_event, ensure_audit_table,
@@ -64,8 +64,8 @@ where
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-        ctx: &CoolContext,
-    ) -> Result<RunInTxOutcome<M>, CoolError>
+        ctx: &CratestackContext,
+    ) -> Result<RunInTxOutcome<M>, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
     {
@@ -108,7 +108,7 @@ where
         ))
     }
 
-    pub async fn run(self, ctx: &CoolContext) -> Result<M, CoolError>
+    pub async fn run(self, ctx: &CratestackContext) -> Result<M, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
     {

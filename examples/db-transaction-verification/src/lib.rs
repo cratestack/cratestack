@@ -9,7 +9,7 @@
 //! names `sqlx::Transaction`, or references any `sqlx::` path at all — the
 //! closure's `tx` parameter type is inferred, not spelled out.
 
-use cratestack::{CoolContext, CoolError};
+use cratestack::{CratestackContext, CratestackError};
 
 cratestack::include_server_schema!("schema.cstack", db = Postgres);
 
@@ -21,12 +21,12 @@ pub use cratestack_schema as schema;
 /// `sqlx` dependency in a consuming service.
 pub async fn create_widget_with_note(
     db: &schema::Cratestack,
-    ctx: &CoolContext,
+    ctx: &CratestackContext,
     widget_id: i64,
     label: String,
     note_id: i64,
     note: String,
-) -> Result<(), CoolError> {
+) -> Result<(), CratestackError> {
     db.transaction(async move |tx| {
         db.widget()
             .create(schema::CreateWidgetInput {

@@ -1,14 +1,14 @@
 //! Context-bound wrapper around [`crate::FindManyWith`] —
-//! `find_many().include(...)` resolved against a `CoolContext`.
+//! `find_many().include(...)` resolved against a `CratestackContext`.
 
-use cratestack_core::{CoolContext, CoolError};
+use cratestack_core::{CratestackContext, CratestackError};
 
 use crate::{Filter, FilterExpr, OrderClause, sqlx};
 
 #[derive(Clone)]
 pub struct ScopedFindManyWith<'a, M: 'static, PK: 'static, Rel: 'static, RelPK: 'static> {
     pub(super) request: crate::FindManyWith<'a, M, PK, Rel, RelPK>,
-    pub(super) ctx: CoolContext,
+    pub(super) ctx: CratestackContext,
 }
 
 impl<'a, M: 'static, PK: 'static, Rel: 'static, RelPK: 'static>
@@ -16,7 +16,7 @@ impl<'a, M: 'static, PK: 'static, Rel: 'static, RelPK: 'static>
 {
     pub(super) fn new(
         request: crate::FindManyWith<'a, M, PK, Rel, RelPK>,
-        ctx: CoolContext,
+        ctx: CratestackContext,
     ) -> Self {
         Self { request, ctx }
     }
@@ -65,7 +65,7 @@ impl<'a, M: 'static, PK: 'static, Rel: 'static, RelPK: 'static>
         self
     }
 
-    pub async fn run(self) -> Result<Vec<(M, Option<Rel>)>, CoolError>
+    pub async fn run(self) -> Result<Vec<(M, Option<Rel>)>, CratestackError>
     where
         M: Clone,
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
@@ -88,7 +88,7 @@ impl<'a, M: 'static, PK: 'static, Rel: 'static, RelPK: 'static>
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-    ) -> Result<Vec<(M, Option<Rel>)>, CoolError>
+    ) -> Result<Vec<(M, Option<Rel>)>, CratestackError>
     where
         M: Clone,
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,

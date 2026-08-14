@@ -4,7 +4,7 @@ use std::sync::{Arc, Once};
 use axum::body::Body;
 use axum::extract::{ConnectInfo, Request};
 use axum::response::Response;
-use cratestack_core::CoolError;
+use cratestack_core::CratestackError;
 use http::{HeaderValue, StatusCode, header};
 use sha2::{Digest, Sha256};
 use tower::{Layer, Service};
@@ -16,7 +16,7 @@ use super::store::RateLimitStore;
 pub struct RateLimitLayer {
     store: Arc<dyn RateLimitStore>,
     config: RateLimitConfig,
-    key_fn: Arc<dyn Fn(&Request) -> Result<String, CoolError> + Send + Sync>,
+    key_fn: Arc<dyn Fn(&Request) -> Result<String, CratestackError> + Send + Sync>,
     should_rate_limit_fn: Arc<dyn Fn(&Request) -> bool + Send + Sync>,
 }
 
@@ -58,7 +58,7 @@ static MISSING_IDENTITY_WARNING: Once = Once::new();
 /// for that traffic, and one caller could exhaust another's budget. Refusing
 /// the request instead makes the gap loud in staging/CI rather than a
 /// silently-reachable production bypass.
-pub(super) fn default_key_fn(req: &Request) -> Result<String, CoolError> {
+pub(super) fn default_key_fn(req: &Request) -> Result<String, CratestackError> {
     // Prefer Authorization header for authenticated requests.
     if let Some(auth_header) = req.headers().get(header::AUTHORIZATION)
         && let Ok(auth_str) = auth_header.to_str()
@@ -98,7 +98,7 @@ pub(super) fn default_key_fn(req: &Request) -> Result<String, CoolError> {
              matching request is refused until this is fixed.",
         );
     });
-    Err(CoolError::PreconditionFailed(
+    Err(CratestackError::PreconditionFailed(
         "rate limit: no verifiable caller identity (Authorization header or ConnectInfo peer) \
          is available for the default bucket key; the server must be served through \
          into_make_service_with_connect_info::<SocketAddr>() or configure an explicit key \
@@ -133,7 +133,7 @@ pub struct RateLimitService<S> {
     inner: S,
     store: Arc<dyn RateLimitStore>,
     config: RateLimitConfig,
-    key_fn: Arc<dyn Fn(&Request) -> Result<String, CoolError> + Send + Sync>,
+    key_fn: Arc<dyn Fn(&Request) -> Result<String, CratestackError> + Send + Sync>,
     should_rate_limit_fn: Arc<dyn Fn(&Request) -> bool + Send + Sync>,
 }
 

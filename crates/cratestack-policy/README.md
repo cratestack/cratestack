@@ -4,7 +4,7 @@ Canonical policy literals, predicates, and procedure-policy evaluation types.
 
 ## Overview
 
-`cratestack-policy` defines the data shapes that generated code emits for `@@allow` / `@@deny` model attributes and procedure policies. The generated SQLx code translates `ReadPredicate` variants into SQL fragments; procedure dispatch evaluates `ProcedurePredicate` variants in Rust against the `CoolContext` and the procedure arguments.
+`cratestack-policy` defines the data shapes that generated code emits for `@@allow` / `@@deny` model attributes and procedure policies. The generated SQLx code translates `ReadPredicate` variants into SQL fragments; procedure dispatch evaluates `ProcedurePredicate` variants in Rust against the `CratestackContext` and the procedure arguments.
 
 The types here are `Copy + 'static` so generated code can embed them as `const`s.
 
@@ -92,13 +92,13 @@ Procedures use a parallel type tree because the inputs differ — there is no ro
 - `ProcedurePolicyExpr::{Predicate, And, Or}`
 - `ProcedurePolicy { expr: ProcedurePolicyExpr }`
 
-The `ProcedureArgs` trait lets the evaluator look up `args.<path>` values; `authorize_procedure` runs the policy against a `CoolContext` and a `ProcedureArgs`.
+The `ProcedureArgs` trait lets the evaluator look up `args.<path>` values; `authorize_procedure` runs the policy against a `CratestackContext` and a `ProcedureArgs`.
 
 ```rust
 use cratestack_policy::{ProcedurePolicy, ProcedureArgs, authorize_procedure};
 
-fn check<A: ProcedureArgs>(ctx: &cratestack_core::CoolContext, args: &A, policy: &ProcedurePolicy)
-    -> Result<(), cratestack_core::CoolError>
+fn check<A: ProcedureArgs>(ctx: &cratestack_core::CratestackContext, args: &A, policy: &ProcedurePolicy)
+    -> Result<(), cratestack_core::CratestackError>
 {
     authorize_procedure(ctx, args, policy)
 }

@@ -141,8 +141,8 @@ tests — this crate's own tests generate their own key material.
   extend `ServiceConfig` with `issuer_url`/`jwks_url`, flagging them as
   this crate's concern (`MultiIssuerJwksVerifier`'s multi-issuer map is a
   different shape than a single-issuer config field pair could represent).
-- `cratestack-core` — `AuthProvider`, `CoolContext`, `RequestContext`,
-  `CoolError` — the trait/types [`SignedRequestAuthProvider`] implements
+- `cratestack-core` — `AuthProvider`, `CratestackContext`, `RequestContext`,
+  `CratestackError` — the trait/types [`SignedRequestAuthProvider`] implements
   against.
 
 ## License

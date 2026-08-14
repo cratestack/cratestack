@@ -33,7 +33,7 @@ pub(super) fn build_subscribe_block(arms: &[proc_macro2::TokenStream]) -> proc_m
                     rpc_dispatch_error(
                         &state,
                         &headers,
-                        ::cratestack::CoolError::NotFound(format!(
+                        ::cratestack::CratestackError::NotFound(format!(
                             "unknown subscription op `{other}`",
                         )),
                     )

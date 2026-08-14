@@ -7,10 +7,10 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::CoolError;
+use crate::error::CratestackError;
 use crate::value::Value;
 
-use super::identity::CoolAuthIdentity;
+use super::identity::CratestackAuthIdentity;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct PrincipalFacet {
@@ -26,8 +26,8 @@ pub struct PrincipalContext {
 }
 
 impl PrincipalContext {
-    pub fn from_principal<P: Serialize>(principal: P) -> Result<Self, CoolError> {
-        let auth = CoolAuthIdentity::from_principal(principal)?;
+    pub fn from_principal<P: Serialize>(principal: P) -> Result<Self, CratestackError> {
+        let auth = CratestackAuthIdentity::from_principal(principal)?;
         Ok(Self::from_auth_identity(&auth))
     }
 
@@ -40,7 +40,7 @@ impl PrincipalContext {
         }
     }
 
-    pub fn from_auth_identity(auth: &CoolAuthIdentity) -> Self {
+    pub fn from_auth_identity(auth: &CratestackAuthIdentity) -> Self {
         let mut claims = auth.fields.clone();
         let actor = take_principal_facet(&mut claims, "actor");
         let session = take_principal_facet(&mut claims, "session");
@@ -71,8 +71,8 @@ impl PrincipalContext {
         }
     }
 
-    pub fn as_auth_identity(&self) -> CoolAuthIdentity {
-        CoolAuthIdentity {
+    pub fn as_auth_identity(&self) -> CratestackAuthIdentity {
+        CratestackAuthIdentity {
             fields: self.legacy_fields(),
         }
     }

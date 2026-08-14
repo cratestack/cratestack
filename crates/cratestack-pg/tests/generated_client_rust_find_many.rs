@@ -25,7 +25,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use cratestack::{include_client_schema, include_server_schema};
 use cratestack_client_rust::{ClientConfig, CratestackClient};
-use cratestack_core::CoolCodec;
+use cratestack_core::CratestackCodec;
 use std::net::SocketAddr;
 
 include_server_schema!("tests/fixtures/find_many_procedure.cstack", db = Postgres);

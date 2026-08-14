@@ -1,7 +1,7 @@
 use cratestack_codec_cbor::CborCodec;
 #[cfg(feature = "codec-json")]
 use cratestack_codec_json::JsonCodec;
-use cratestack_core::CoolCodec;
+use cratestack_core::CratestackCodec;
 use reqwest::Method;
 use serde_json::Value as JsonValue;
 

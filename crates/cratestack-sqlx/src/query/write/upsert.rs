@@ -12,7 +12,7 @@
 //! a hot read path — callers who need raw insert/update throughput
 //! should use `.create()` / `.update()` directly.
 
-use cratestack_core::{CoolContext, CoolError};
+use cratestack_core::{CratestackContext, CratestackError};
 
 use crate::audit::{RunInTxOutcome, dispatch_audit_sink};
 use crate::{
@@ -59,7 +59,7 @@ where
     /// ([`crate::UpsertOutcome`]) rather than collapsed into a plain
     /// `M` the way `.run()` returns it today. Encoding that as a
     /// separate type also means existing `.upsert(..).run(..)` callers
-    /// keep their `Result<M, CoolError>` signature unchanged — this is
+    /// keep their `Result<M, CratestackError>` signature unchanged — this is
     /// purely additive, not a behavior change for the DO UPDATE path.
     pub fn do_nothing(self) -> UpsertRecordDoNothing<'a, M, PK, I> {
         UpsertRecordDoNothing {
@@ -113,7 +113,7 @@ where
         )
     }
 
-    pub async fn run(self, ctx: &CoolContext) -> Result<M, CoolError>
+    pub async fn run(self, ctx: &CratestackContext) -> Result<M, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
@@ -148,8 +148,8 @@ where
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-        ctx: &CoolContext,
-    ) -> Result<RunInTxOutcome<M>, CoolError>
+        ctx: &CratestackContext,
+    ) -> Result<RunInTxOutcome<M>, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,

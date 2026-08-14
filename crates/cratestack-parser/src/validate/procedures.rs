@@ -192,10 +192,10 @@ pub(super) fn validate_procedure_deprecated_attribute(
 }
 
 /// Validate `@status(202)` on procedures. Declares the REST transport's
-/// success-path (`Ok(...)`) HTTP status; `CoolError`'s own status mapping
+/// success-path (`Ok(...)`) HTTP status; `CratestackError`'s own status mapping
 /// governs the `Err` branch unconditionally and is untouched by this
 /// attribute (`crates/cratestack-axum/src/transport/encode_unary.rs`).
-/// Restricted to `200..=299`: `CoolError` already owns the 3xx/4xx/5xx
+/// Restricted to `200..=299`: `CratestackError` already owns the 3xx/4xx/5xx
 /// space, so anything outside 2xx here would create two competing sources
 /// of truth for a response's error status. The exact 2xx boundary (e.g.
 /// whether `200`/`204` should be rejected as redundant-or-nonsensical) is
@@ -287,7 +287,7 @@ pub(super) fn validate_procedure_status_attribute(
         return Err(span_error(
             format!(
                 "procedure `{}` @status({code}) is outside the allowed 2xx range 200..=299 \
-                 — non-2xx status is CoolError's error-mapping's job, not @status's",
+                 — non-2xx status is CratestackError's error-mapping's job, not @status's",
                 procedure.name,
             ),
             attr.span,

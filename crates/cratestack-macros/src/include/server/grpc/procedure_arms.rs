@@ -61,7 +61,7 @@ pub(super) fn build_procedure_unary_arm(
                     let client_ip_ctx = self.1.clone();
                     Box::pin(async move {
                         #prelude
-                        let args: ::core::result::Result<super::procedures::#module_ident::Args, ::cratestack::CoolError> =
+                        let args: ::core::result::Result<super::procedures::#module_ident::Args, ::cratestack::CratestackError> =
                             super::procedures::#module_ident::Args::try_from(message);
                         let args = match args {
                             Ok(value) => value,
@@ -145,7 +145,7 @@ pub(super) fn build_procedure_stream_arm(
                     let client_ip_ctx = self.1.clone();
                     Box::pin(async move {
                         #prelude
-                        let args: ::core::result::Result<super::procedures::#module_ident::Args, ::cratestack::CoolError> =
+                        let args: ::core::result::Result<super::procedures::#module_ident::Args, ::cratestack::CratestackError> =
                             super::procedures::#module_ident::Args::try_from(message);
                         let args = match args {
                             Ok(value) => value,

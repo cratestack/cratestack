@@ -7,7 +7,7 @@
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use cratestack_codec_cbor::CborCodec;
 use cratestack_codec_json::JsonCodec;
-use cratestack_core::CoolError;
+use cratestack_core::CratestackError;
 use futures_util::stream;
 use serde::Serialize;
 
@@ -48,7 +48,7 @@ fn json_only_router_serves_a_list_response_even_when_accept_also_lists_cbor() {
         &headers,
         &stream_capabilities(),
         StatusCode::OK,
-        Ok::<_, CoolError>(vec![Item { n: 1 }, Item { n: 2 }]),
+        Ok::<_, CratestackError>(vec![Item { n: 1 }, Item { n: 2 }]),
     );
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
@@ -67,7 +67,10 @@ fn json_only_router_serves_a_list_response_even_when_accept_also_lists_cbor() {
 async fn stream_negotiates_cbor_seq_unchanged_when_a_cbor_codec_is_present() {
     let codec = CodecSet::new(CborCodec, JsonCodec);
     let headers = headers_with_accept(CBOR_SEQUENCE_CONTENT_TYPE);
-    let items = stream::iter(vec![Ok::<_, CoolError>(Item { n: 1 }), Ok(Item { n: 2 })]);
+    let items = stream::iter(vec![
+        Ok::<_, CratestackError>(Item { n: 1 }),
+        Ok(Item { n: 2 }),
+    ]);
     let response = encode_transport_stream_result_with_status_for(
         &codec,
         &headers,
@@ -93,7 +96,7 @@ async fn stream_negotiates_cbor_seq_unchanged_when_a_cbor_codec_is_present() {
 #[tokio::test]
 async fn stream_still_406s_for_cbor_seq_on_a_json_only_router() {
     let headers = headers_with_accept(CBOR_SEQUENCE_CONTENT_TYPE);
-    let items = stream::iter(vec![Ok::<_, CoolError>(Item { n: 1 })]);
+    let items = stream::iter(vec![Ok::<_, CratestackError>(Item { n: 1 })]);
     let response = encode_transport_stream_result_with_status_for(
         &JsonCodec,
         &headers,
@@ -111,7 +114,10 @@ async fn stream_still_406s_for_cbor_seq_on_a_json_only_router() {
 #[tokio::test]
 async fn stream_falls_back_to_buffered_json_for_a_json_only_router_with_a_plain_accept() {
     let headers = headers_with_accept("application/json, application/cbor");
-    let items = stream::iter(vec![Ok::<_, CoolError>(Item { n: 1 }), Ok(Item { n: 2 })]);
+    let items = stream::iter(vec![
+        Ok::<_, CratestackError>(Item { n: 1 }),
+        Ok(Item { n: 2 }),
+    ]);
     let response = encode_transport_stream_result_with_status_for(
         &JsonCodec,
         &headers,

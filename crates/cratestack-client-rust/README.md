@@ -74,7 +74,7 @@ of transport — the canonical string is derived from the call's unframed prost-
 bytes (see `cratestack_client_rust::grpc::canonical`). Errors surface as
 `GrpcClientError`, which wraps `tonic::Status` directly rather than decoding a body (a
 gRPC error already arrives as a structured status the server derived from the same
-`CoolError` REST/RPC use).
+`CratestackError` REST/RPC use).
 
 ## Codecs
 

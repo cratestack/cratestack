@@ -13,18 +13,18 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::CoolError;
+use crate::error::CratestackError;
 use crate::value::Value;
 
-pub use identity::CoolAuthIdentity;
+pub use identity::CratestackAuthIdentity;
 pub use principal::{PrincipalContext, PrincipalFacet};
 pub use system::SystemContext;
 
 use principal::lookup_value_path_in_map;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct CoolContext {
-    pub auth: Option<CoolAuthIdentity>,
+pub struct CratestackContext {
+    pub auth: Option<CratestackAuthIdentity>,
     pub principal: Option<PrincipalContext>,
     pub extensions: BTreeMap<String, Value>,
     /// Backing flag for the `auth().isSystem()` policy builtin (issue
@@ -36,12 +36,12 @@ pub struct CoolContext {
     ///
     /// - Private, so no crate outside this module can flip it on a
     ///   context it already holds. The only public way to obtain a
-    ///   `CoolContext` with this set is [`SystemContext`], which has no
-    ///   `From`/`TryFrom<CoolContext>` and no constructor that accepts
-    ///   an existing (e.g. request-derived) `CoolContext` — see that
+    ///   `CratestackContext` with this set is [`SystemContext`], which has no
+    ///   `From`/`TryFrom<CratestackContext>` and no constructor that accepts
+    ///   an existing (e.g. request-derived) `CratestackContext` — see that
     ///   type's docs for why that upgrade path cannot exist even by
     ///   accident. Every `AuthProvider` impl in every consuming crate
-    ///   can only ever produce a `CoolContext` through the public
+    ///   can only ever produce a `CratestackContext` through the public
     ///   constructors below, all of which set this to `false`.
     /// - `#[serde(skip)]`, so the flag cannot cross a wire. On
     ///   deserialization serde leaves it at `bool::default()` (`false`)
@@ -81,31 +81,35 @@ pub struct RequestContext<'a> {
 }
 
 pub trait AuthProvider: Clone + Send + Sync + 'static {
-    type Error: Into<CoolError> + Send;
+    type Error: Into<CratestackError> + Send;
 
     fn authenticate(
         &self,
         request: &RequestContext<'_>,
-    ) -> impl ::core::future::Future<Output = Result<CoolContext, Self::Error>> + Send;
+    ) -> impl ::core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send;
 }
 
 impl<F, E> AuthProvider for F
 where
-    F: Clone + Send + Sync + 'static + for<'a> Fn(&'a http::HeaderMap) -> Result<CoolContext, E>,
-    E: Into<CoolError> + Send,
+    F: Clone
+        + Send
+        + Sync
+        + 'static
+        + for<'a> Fn(&'a http::HeaderMap) -> Result<CratestackContext, E>,
+    E: Into<CratestackError> + Send,
 {
     type Error = E;
 
     fn authenticate(
         &self,
         request: &RequestContext<'_>,
-    ) -> impl ::core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
+    ) -> impl ::core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
         let result = (self)(request.headers);
         ::core::future::ready(result)
     }
 }
 
-impl CoolContext {
+impl CratestackContext {
     pub fn anonymous() -> Self {
         Self::default()
     }
@@ -113,7 +117,7 @@ impl CoolContext {
     pub fn authenticated(fields: impl IntoIterator<Item = (String, Value)>) -> Self {
         let fields = fields.into_iter().collect::<BTreeMap<_, _>>();
         Self {
-            auth: Some(CoolAuthIdentity {
+            auth: Some(CratestackAuthIdentity {
                 fields: fields.clone(),
             }),
             principal: Some(PrincipalContext::from_claims(fields)),
@@ -130,7 +134,7 @@ impl CoolContext {
     /// context minted through [`SystemContext`]; never `true` for
     /// anything an [`AuthProvider`] produced from a request, and never
     /// `true` after a deserialization round-trip. See the field doc on
-    /// `CoolContext::system` for the structural argument, not just the
+    /// `CratestackContext::system` for the structural argument, not just the
     /// convention, behind that guarantee.
     pub fn is_system(&self) -> bool {
         self.system
@@ -151,7 +155,7 @@ impl CoolContext {
             .and_then(|principal| principal.field(name))
     }
 
-    pub fn from_principal<P: Serialize>(principal: Option<P>) -> Result<Self, CoolError> {
+    pub fn from_principal<P: Serialize>(principal: Option<P>) -> Result<Self, CratestackError> {
         let Some(principal) = principal else {
             return Ok(Self::anonymous());
         };

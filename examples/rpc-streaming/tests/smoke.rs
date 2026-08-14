@@ -2,7 +2,7 @@
 //! Accept variants. The proof point is that **streaming is a content
 //! negotiation**, not a route — the URL doesn't change.
 
-use cratestack::CoolCodec;
+use cratestack::CratestackCodec;
 use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack_codec_cbor::CborCodec;

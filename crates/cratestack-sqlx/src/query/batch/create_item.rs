@@ -3,7 +3,9 @@
 //! savepoint on Ok and rolls it back on Err so per-item failures
 //! leave no row, no audit row, no outbox entry.
 
-use cratestack_core::{AuditEvent, AuditOperation, CoolContext, CoolError, ModelEventKind};
+use cratestack_core::{
+    AuditEvent, AuditOperation, CratestackContext, CratestackError, ModelEventKind,
+};
 use sqlx_core::acquire::Acquire as _;
 
 use crate::audit::{build_audit_event, enqueue_audit_event};
@@ -29,10 +31,10 @@ pub(super) async fn run_create_item<'tx, M, PK, I>(
     policy_pool: &sqlx::PgPool,
     descriptor: &'static ModelDescriptor<M, PK>,
     input: I,
-    ctx: &CoolContext,
+    ctx: &CratestackContext,
     emits_event: bool,
     audit_enabled: bool,
-) -> Result<(Result<M, CoolError>, Option<AuditEvent>), CoolError>
+) -> Result<(Result<M, CratestackError>, Option<AuditEvent>), CratestackError>
 where
     I: CreateModelInput<M>,
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
@@ -42,7 +44,7 @@ where
 
     // All per-item failures funnel through this inner closure so the
     // savepoint commit/rollback decision is centralized below.
-    let inner: Result<M, CoolError> = async {
+    let inner: Result<M, CratestackError> = async {
         input.validate()?;
         let mut values =
             apply_create_defaults(input.sql_values(), descriptor.create_defaults, ctx)?;
@@ -55,7 +57,7 @@ where
             });
         }
         if values.is_empty() {
-            return Err(CoolError::Validation(
+            return Err(CratestackError::Validation(
                 "create input must contain at least one column".to_owned(),
             ));
         }
@@ -68,7 +70,7 @@ where
         )
         .await?
         {
-            return Err(CoolError::Forbidden(
+            return Err(CratestackError::Forbidden(
                 "create policy denied this operation".to_owned(),
             ));
         }
@@ -113,7 +115,7 @@ async fn insert_one_into_savepoint<'tx, M, PK>(
     executor: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
     descriptor: &'static ModelDescriptor<M, PK>,
     values: &[crate::SqlColumnValue],
-) -> Result<M, CoolError>
+) -> Result<M, CratestackError>
 where
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
 {

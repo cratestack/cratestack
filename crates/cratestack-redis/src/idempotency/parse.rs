@@ -1,4 +1,4 @@
-use cratestack_core::{CoolError, IdempotencyRecord, ReservationOutcome};
+use cratestack_core::{CratestackError, IdempotencyRecord, ReservationOutcome};
 use redis::Value as RedisValue;
 use uuid::Uuid;
 
@@ -8,11 +8,11 @@ pub(super) fn parse_reserve_outcome(
     value: RedisValue,
     principal: &str,
     key: &str,
-) -> Result<ReservationOutcome, CoolError> {
+) -> Result<ReservationOutcome, CratestackError> {
     let items = match value {
         RedisValue::Array(items) => items,
         other => {
-            return Err(CoolError::Internal(format!(
+            return Err(CratestackError::Internal(format!(
                 "redis idempotency: expected array from reserve script, got {other:?}"
             )));
         }
@@ -23,7 +23,7 @@ pub(super) fn parse_reserve_outcome(
         "reserved" => {
             let token_bytes = next_bytes(&mut iter, "token")?;
             let token = Uuid::from_slice(&token_bytes).map_err(|err| {
-                CoolError::Internal(format!("redis idempotency: bad token bytes: {err}"))
+                CratestackError::Internal(format!("redis idempotency: bad token bytes: {err}"))
             })?;
             Ok(ReservationOutcome::Reserved { token })
         }
@@ -32,7 +32,9 @@ pub(super) fn parse_reserve_outcome(
         "replay" => {
             let hash_bytes = next_bytes(&mut iter, "request_hash")?;
             let request_hash: [u8; 32] = hash_bytes.as_slice().try_into().map_err(|_| {
-                CoolError::Internal("redis idempotency: stored hash has wrong length".to_owned())
+                CratestackError::Internal(
+                    "redis idempotency: stored hash has wrong length".to_owned(),
+                )
             })?;
             let response_status = next_u16_decimal(&mut iter, "response_status")?;
             let response_headers = next_bytes(&mut iter, "response_headers")?;
@@ -50,7 +52,7 @@ pub(super) fn parse_reserve_outcome(
                 expires_at: system_time_from_ms(expires_ms),
             }))
         }
-        other => Err(CoolError::Internal(format!(
+        other => Err(CratestackError::Internal(format!(
             "redis idempotency: unexpected outcome tag: {other}"
         ))),
     }
@@ -59,16 +61,16 @@ pub(super) fn parse_reserve_outcome(
 pub(super) fn next_string<I: Iterator<Item = RedisValue>>(
     iter: &mut I,
     field: &str,
-) -> Result<String, CoolError> {
+) -> Result<String, CratestackError> {
     let v = iter
         .next()
-        .ok_or_else(|| CoolError::Internal(format!("redis idempotency: missing {field}")))?;
+        .ok_or_else(|| CratestackError::Internal(format!("redis idempotency: missing {field}")))?;
     match v {
         RedisValue::BulkString(b) => String::from_utf8(b).map_err(|err| {
-            CoolError::Internal(format!("redis idempotency: {field} not utf8: {err}"))
+            CratestackError::Internal(format!("redis idempotency: {field} not utf8: {err}"))
         }),
         RedisValue::SimpleString(s) => Ok(s),
-        other => Err(CoolError::Internal(format!(
+        other => Err(CratestackError::Internal(format!(
             "redis idempotency: expected string for {field}, got {other:?}"
         ))),
     }
@@ -77,15 +79,15 @@ pub(super) fn next_string<I: Iterator<Item = RedisValue>>(
 pub(super) fn next_bytes<I: Iterator<Item = RedisValue>>(
     iter: &mut I,
     field: &str,
-) -> Result<Vec<u8>, CoolError> {
+) -> Result<Vec<u8>, CratestackError> {
     let v = iter
         .next()
-        .ok_or_else(|| CoolError::Internal(format!("redis idempotency: missing {field}")))?;
+        .ok_or_else(|| CratestackError::Internal(format!("redis idempotency: missing {field}")))?;
     match v {
         RedisValue::BulkString(b) => Ok(b),
         RedisValue::SimpleString(s) => Ok(s.into_bytes()),
         RedisValue::Nil => Ok(Vec::new()),
-        other => Err(CoolError::Internal(format!(
+        other => Err(CratestackError::Internal(format!(
             "redis idempotency: expected bytes for {field}, got {other:?}"
         ))),
     }
@@ -94,16 +96,16 @@ pub(super) fn next_bytes<I: Iterator<Item = RedisValue>>(
 pub(super) fn next_i64_decimal<I: Iterator<Item = RedisValue>>(
     iter: &mut I,
     field: &str,
-) -> Result<i64, CoolError> {
+) -> Result<i64, CratestackError> {
     let v = iter
         .next()
-        .ok_or_else(|| CoolError::Internal(format!("redis idempotency: missing {field}")))?;
+        .ok_or_else(|| CratestackError::Internal(format!("redis idempotency: missing {field}")))?;
     let bytes = match v {
         RedisValue::Int(n) => return Ok(n),
         RedisValue::BulkString(b) => b,
         RedisValue::SimpleString(s) => s.into_bytes(),
         other => {
-            return Err(CoolError::Internal(format!(
+            return Err(CratestackError::Internal(format!(
                 "redis idempotency: expected number for {field}, got {other:?}"
             )));
         }
@@ -111,16 +113,18 @@ pub(super) fn next_i64_decimal<I: Iterator<Item = RedisValue>>(
     std::str::from_utf8(&bytes)
         .ok()
         .and_then(|s| s.parse::<i64>().ok())
-        .ok_or_else(|| CoolError::Internal(format!("redis idempotency: bad number for {field}")))
+        .ok_or_else(|| {
+            CratestackError::Internal(format!("redis idempotency: bad number for {field}"))
+        })
 }
 
 pub(super) fn next_u16_decimal<I: Iterator<Item = RedisValue>>(
     iter: &mut I,
     field: &str,
-) -> Result<u16, CoolError> {
+) -> Result<u16, CratestackError> {
     let n = next_i64_decimal(iter, field)?;
     u16::try_from(n).map_err(|_| {
-        CoolError::Internal(format!("redis idempotency: {field} out of u16 range: {n}"))
+        CratestackError::Internal(format!("redis idempotency: {field} out of u16 range: {n}"))
     })
 }
 

@@ -31,12 +31,12 @@ pub(super) fn build_rpc_module(
             pub auth_provider: Auth,
         }
 
-        /// Encode a `CoolError` raised inside an RPC dispatch arm using
+        /// Encode a `CratestackError` raised inside an RPC dispatch arm using
         /// the request's codec.
         fn rpc_dispatch_error<R, C, Auth>(
             state: &RpcRouterState<R, C, Auth>,
             headers: &::cratestack::axum::http::HeaderMap,
-            error: ::cratestack::CoolError,
+            error: ::cratestack::CratestackError,
         ) -> ::cratestack::axum::response::Response
         where
             C: HttpTransport,
@@ -93,7 +93,7 @@ fn build_dispatch_block(arms: &[proc_macro2::TokenStream]) -> proc_macro2::Token
     quote! {
         /// Per-op dispatch — shared by unary and batch routes.
         /// Handler-emitted error responses (any non-2xx that bubbles
-        /// out of the underlying axum handler in `CoolErrorResponse`
+        /// out of the underlying axum handler in `CratestackErrorResponse`
         /// REST shape) are post-processed into `RpcErrorBody` shape
         /// before returning, so callers always see one error
         /// vocabulary on the wire.
@@ -125,7 +125,7 @@ fn build_dispatch_block(arms: &[proc_macro2::TokenStream]) -> proc_macro2::Token
                     return ::cratestack::rpc::encode_rpc_error(
                         &post_codec,
                         &post_headers,
-                        &::cratestack::CoolError::NotFound(format!(
+                        &::cratestack::CratestackError::NotFound(format!(
                             "unknown RPC op `{other}`",
                         )),
                     );

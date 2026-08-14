@@ -21,10 +21,10 @@ pub(super) fn build_projected_block(
             fn from_value(
                 value: ::cratestack::serde_json::Value,
                 selection: Selection,
-            ) -> Result<Self, ::cratestack::CoolError> {
+            ) -> Result<Self, ::cratestack::CratestackError> {
                 match value {
                     ::cratestack::serde_json::Value::Object(fields) => Ok(Self { fields, selection }),
-                    other => Err(::cratestack::CoolError::Internal(format!(
+                    other => Err(::cratestack::CratestackError::Internal(format!(
                         "projected {} payload must be an object, got {other:?}",
                         #model_name,
                     ))),
@@ -56,10 +56,10 @@ pub(super) fn build_projected_block(
             pub(crate) fn from_value(
                 value: ::cratestack::serde_json::Value,
                 selection: IncludeSelection,
-            ) -> Result<Self, ::cratestack::CoolError> {
+            ) -> Result<Self, ::cratestack::CratestackError> {
                 match value {
                     ::cratestack::serde_json::Value::Object(fields) => Ok(Self { fields, selection }),
-                    other => Err(::cratestack::CoolError::Internal(format!(
+                    other => Err(::cratestack::CratestackError::Internal(format!(
                         "projected included {} payload must be an object, got {other:?}",
                         #model_name,
                     ))),
@@ -86,7 +86,7 @@ pub(super) fn build_projected_block(
         #[derive(Debug, Clone, Copy)]
         enum MissingFieldFallback {
             /// Required arity — missing key is a hard
-            /// `CoolError::Internal("missing field …")`.
+            /// `CratestackError::Internal("missing field …")`.
             Reject,
             /// Optional arity — missing key is treated as
             /// `Value::Null`, which serde maps to `Option::None`.
@@ -118,12 +118,12 @@ pub(super) fn build_projected_block(
             model_name: &str,
             field_name: &str,
             fallback: MissingFieldFallback,
-        ) -> Result<T, ::cratestack::CoolError>
+        ) -> Result<T, ::cratestack::CratestackError>
         where
             T: ::cratestack::serde::de::DeserializeOwned,
         {
             if !selected {
-                return Err(::cratestack::CoolError::Validation(format!(
+                return Err(::cratestack::CratestackError::Validation(format!(
                     "field '{}.{}' was not selected",
                     model_name,
                     field_name,
@@ -139,7 +139,7 @@ pub(super) fn build_projected_block(
                     ::cratestack::serde_json::Value::Array(::std::vec::Vec::new())
                 }
                 (None, MissingFieldFallback::Reject) => {
-                    return Err(::cratestack::CoolError::Internal(format!(
+                    return Err(::cratestack::CratestackError::Internal(format!(
                         "projected {} payload is missing field '{}'",
                         model_name,
                         field_name,
@@ -148,7 +148,7 @@ pub(super) fn build_projected_block(
             };
 
             ::cratestack::serde_json::from_value(value).map_err(|error| {
-                ::cratestack::CoolError::Internal(format!(
+                ::cratestack::CratestackError::Internal(format!(
                     "failed to decode projected field '{}.{}': {error}",
                     model_name,
                     field_name,

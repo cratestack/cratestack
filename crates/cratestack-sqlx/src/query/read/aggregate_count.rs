@@ -1,6 +1,6 @@
 //! `aggregate.count()` — `COUNT(*)` with filter + read policy.
 
-use cratestack_core::{CoolContext, CoolError};
+use cratestack_core::{CratestackContext, CratestackError};
 use cratestack_sql::ReadSource;
 
 use crate::query::support::{ReadPolicyKind, push_scoped_conditions};
@@ -50,7 +50,7 @@ impl<'a, M: 'static, PK: 'static> AggregateCount<'a, M, PK> {
         self
     }
 
-    fn build_query<'q>(&self, ctx: &CoolContext) -> sqlx::QueryBuilder<'q, sqlx::Postgres> {
+    fn build_query<'q>(&self, ctx: &CratestackContext) -> sqlx::QueryBuilder<'q, sqlx::Postgres> {
         let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT COUNT(*) FROM ");
         query.push(self.descriptor.table_name());
         push_scoped_conditions(
@@ -64,27 +64,27 @@ impl<'a, M: 'static, PK: 'static> AggregateCount<'a, M, PK> {
         query
     }
 
-    pub async fn run(self, ctx: &CoolContext) -> Result<i64, CoolError> {
+    pub async fn run(self, ctx: &CratestackContext) -> Result<i64, CratestackError> {
         let mut query = self.build_query(ctx);
         let value: (i64,) = query
             .build_query_as::<(i64,)>()
             .fetch_one(self.runtime.pool())
             .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+            .map_err(|error| CratestackError::Database(error.to_string()))?;
         Ok(value.0)
     }
 
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-        ctx: &CoolContext,
-    ) -> Result<i64, CoolError> {
+        ctx: &CratestackContext,
+    ) -> Result<i64, CratestackError> {
         let mut query = self.build_query(ctx);
         let value: (i64,) = query
             .build_query_as::<(i64,)>()
             .fetch_one(&mut **tx)
             .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+            .map_err(|error| CratestackError::Database(error.to_string()))?;
         Ok(value.0)
     }
 }

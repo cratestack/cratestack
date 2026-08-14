@@ -2,7 +2,9 @@
 //! the insert-vs-update branch, run the appropriate policy + audit +
 //! outbox writes, then issue the conflict-bearing INSERT.
 
-use cratestack_core::{AuditEvent, AuditOperation, CoolContext, CoolError, ModelEventKind};
+use cratestack_core::{
+    AuditEvent, AuditOperation, CratestackContext, CratestackError, ModelEventKind,
+};
 
 use crate::audit::{build_audit_event, enqueue_audit_event, ensure_audit_table};
 use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
@@ -22,8 +24,8 @@ pub(super) async fn run_upsert_in_tx<'tx, M, PK, I>(
     descriptor: &'static ModelDescriptor<M, PK>,
     input: I,
     conflict_target: ConflictTarget,
-    ctx: &CoolContext,
-) -> Result<(M, bool, Option<AuditEvent>), CoolError>
+    ctx: &CratestackContext,
+) -> Result<(M, bool, Option<AuditEvent>), CratestackError>
 where
     I: UpsertModelInput<M>,
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
@@ -45,7 +47,7 @@ where
     )
     .await?
     {
-        return Err(CoolError::Forbidden(
+        return Err(CratestackError::Forbidden(
             "create policy denied this upsert".to_owned(),
         ));
     }
@@ -71,7 +73,7 @@ where
     if !inserted
         && !row_passes_update_policy(runtime.pool(), descriptor, &conflict_columns, ctx).await?
     {
-        return Err(CoolError::Forbidden(
+        return Err(CratestackError::Forbidden(
             "update policy denied this upsert".to_owned(),
         ));
     }
@@ -131,9 +133,9 @@ where
 pub(super) fn prepare_upsert_insert<M, PK, I>(
     descriptor: &'static ModelDescriptor<M, PK>,
     input: &I,
-    ctx: &CoolContext,
+    ctx: &CratestackContext,
     conflict_target: ConflictTarget,
-) -> Result<(Vec<crate::SqlColumnValue>, Vec<(&'static str, SqlValue)>), CoolError>
+) -> Result<(Vec<crate::SqlColumnValue>, Vec<(&'static str, SqlValue)>), CratestackError>
 where
     I: UpsertModelInput<M>,
 {
@@ -150,7 +152,7 @@ where
         });
     }
     if insert_values.is_empty() {
-        return Err(CoolError::Validation(
+        return Err(CratestackError::Validation(
             "upsert input must contain at least one column".to_owned(),
         ));
     }
@@ -166,7 +168,7 @@ where
             let mut out = Vec::with_capacity(cols.len());
             for col in cols {
                 let value = find_column_value(&insert_values, col).cloned().ok_or_else(|| {
-                    CoolError::Validation(format!(
+                    CratestackError::Validation(format!(
                         "upsert on_conflict references column `{col}` which is not present in the input",
                     ))
                 })?;

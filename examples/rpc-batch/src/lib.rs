@@ -9,7 +9,9 @@
 //! which exercises the per-frame error path inside the batch envelope.
 
 use cratestack::axum::Router;
-use cratestack::{AuthProvider, CodecSet, CoolContext, CoolError, RequestContext, Value};
+use cratestack::{
+    AuthProvider, CodecSet, CratestackContext, CratestackError, RequestContext, Value,
+};
 use cratestack_codec_cbor::CborCodec;
 use cratestack_codec_json::JsonCodec;
 
@@ -24,11 +26,11 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     fn add(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::add::Args,
         _authorized: cratestack_schema::procedures::add::Authorized,
     ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::add::Output, CoolError>,
+        Output = Result<cratestack_schema::procedures::add::Output, CratestackError>,
     > + Send {
         async move {
             Ok(cratestack_schema::ScalarResult {
@@ -40,11 +42,11 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     fn multiply(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::multiply::Args,
         _authorized: cratestack_schema::procedures::multiply::Authorized,
     ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::multiply::Output, CoolError>,
+        Output = Result<cratestack_schema::procedures::multiply::Output, CratestackError>,
     > + Send {
         async move {
             Ok(cratestack_schema::ScalarResult {
@@ -56,16 +58,16 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     fn divide(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::divide::Args,
         _authorized: cratestack_schema::procedures::divide::Authorized,
     ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::divide::Output, CoolError>,
+        Output = Result<cratestack_schema::procedures::divide::Output, CratestackError>,
     > + Send {
         async move {
             if args.args.denominator == 0 {
                 // Maps to `failed_precondition` on the RPC binding.
-                return Err(CoolError::PreconditionFailed(
+                return Err(CratestackError::PreconditionFailed(
                     "denominator must not be zero".to_owned(),
                 ));
             }
@@ -80,19 +82,19 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
 pub struct HeaderAuthProvider;
 
 impl AuthProvider for HeaderAuthProvider {
-    type Error = CoolError;
+    type Error = CratestackError;
 
     fn authenticate(
         &self,
         request: &RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
+    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
         let ctx = request
             .headers
             .get("x-auth-id")
             .and_then(|value| value.to_str().ok())
             .and_then(|raw| raw.parse::<i64>().ok())
-            .map(|id| CoolContext::authenticated([("id".to_owned(), Value::Int(id))]))
-            .unwrap_or_else(CoolContext::anonymous);
+            .map(|id| CratestackContext::authenticated([("id".to_owned(), Value::Int(id))]))
+            .unwrap_or_else(CratestackContext::anonymous);
         core::future::ready(Ok(ctx))
     }
 }

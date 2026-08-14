@@ -131,7 +131,7 @@ pub(super) fn build_model_api(model: &Model, pk: &Field) -> proc_macro2::TokenSt
                     .items
                     .into_iter()
                     .map(<super::#model_ident as ::core::convert::TryFrom<pb::#model_ident>>::try_from)
-                    .collect::<::core::result::Result<::std::vec::Vec<_>, ::cratestack::CoolError>>()
+                    .collect::<::core::result::Result<::std::vec::Vec<_>, ::cratestack::CratestackError>>()
                     .map_err(::cratestack::client_rust::grpc::GrpcClientError::Codec)?;
                 let page_info = response
                     .page_info

@@ -9,9 +9,9 @@
 //! not anything in `cratestack-policy` itself.
 
 use crate::{PolicyExpr, PolicyLiteral, ReadPolicy, ReadPredicate, render::render_read_policy_sql};
-use cratestack_core::{CoolContext, Value};
+use cratestack_core::{CratestackContext, Value};
 
-fn render(allow: &[ReadPolicy], deny: &[ReadPolicy], ctx: &CoolContext) -> Option<String> {
+fn render(allow: &[ReadPolicy], deny: &[ReadPolicy], ctx: &CratestackContext) -> Option<String> {
     let mut bind_index = 1usize;
     render_read_policy_sql(allow, deny, ctx, &mut bind_index)
 }
@@ -22,7 +22,7 @@ fn render(allow: &[ReadPolicy], deny: &[ReadPolicy], ctx: &CoolContext) -> Optio
 /// caller's identity) gate visibility.
 #[test]
 fn field_is_true_and_field_ne_literal_render_column_comparisons() {
-    let ctx = CoolContext::anonymous();
+    let ctx = CratestackContext::anonymous();
     let allow_is_true = [ReadPolicy {
         expr: PolicyExpr::Predicate(ReadPredicate::FieldIsTrue {
             column: "published",
@@ -46,7 +46,7 @@ fn field_is_true_and_field_ne_literal_render_column_comparisons() {
 /// pulled from the caller's own context (e.g. row-ownership checks).
 #[test]
 fn field_ne_auth_renders_bound_column_comparison() {
-    let ctx = CoolContext::authenticated([(
+    let ctx = CratestackContext::authenticated([(
         "email".to_owned(),
         Value::String("owner@example.com".to_owned()),
     )]);
@@ -76,7 +76,7 @@ fn field_ne_auth_renders_bound_column_comparison() {
 /// with an inactive member vs. one with none).
 #[test]
 fn every_relation_quantifier_variant_renders_its_own_sql_shape() {
-    let ctx = CoolContext::anonymous();
+    let ctx = CratestackContext::anonymous();
     let policy_for = |quantifier: crate::RelationQuantifier| {
         [ReadPolicy {
             expr: PolicyExpr::Predicate(ReadPredicate::Relation {

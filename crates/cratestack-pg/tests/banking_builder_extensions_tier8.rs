@@ -7,7 +7,7 @@ mod support;
 
 use cratestack::include_server_schema;
 use cratestack::sqlx::query;
-use cratestack::{CoolContext, Value};
+use cratestack::{CratestackContext, Value};
 use support::pg;
 
 include_server_schema!(
@@ -33,8 +33,9 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     .expect("create payment_intents");
 }
 
-fn operator() -> CoolContext {
-    CoolContext::authenticated([("id".to_owned(), Value::Int(1))]).with_request_id("tier8-001")
+fn operator() -> CratestackContext {
+    CratestackContext::authenticated([("id".to_owned(), Value::Int(1))])
+        .with_request_id("tier8-001")
 }
 
 async fn seed(pool: &cratestack::sqlx::PgPool) {
@@ -146,7 +147,7 @@ async fn find_unique_select_with_filter_under_read_policy_returns_none_when_deni
     // returns None even though the row exists. This verifies the
     // projection still routes through `push_scoped_conditions` and
     // applies the read policy.
-    let anon = CoolContext::anonymous();
+    let anon = CratestackContext::anonymous();
 
     use cratestack_schema::payment_intent;
     let projection = cool

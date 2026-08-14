@@ -1,7 +1,9 @@
 use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack::include_server_schema;
-use cratestack::{AuthProvider, CoolCodec, CoolContext, CoolError, RequestContext, Value};
+use cratestack::{
+    AuthProvider, CratestackCodec, CratestackContext, CratestackError, RequestContext, Value,
+};
 use cratestack_codec_cbor::CborCodec;
 use std::sync::{
     Arc, Mutex,
@@ -19,12 +21,12 @@ use support::pg;
 struct PolicyDbAuthProvider;
 
 impl AuthProvider for PolicyDbAuthProvider {
-    type Error = cratestack::CoolError;
+    type Error = cratestack::CratestackError;
 
     fn authenticate(
         &self,
         request: &RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
+    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
         let id = request
             .headers
             .get("x-auth-id")
@@ -32,8 +34,8 @@ impl AuthProvider for PolicyDbAuthProvider {
             .and_then(|value| value.parse::<i64>().ok());
 
         core::future::ready(Ok(match id {
-            Some(id) => CoolContext::authenticated([("id".to_owned(), Value::Int(id))]),
-            None => CoolContext::anonymous(),
+            Some(id) => CratestackContext::authenticated([("id".to_owned(), Value::Int(id))]),
+            None => CratestackContext::anonymous(),
         }))
     }
 }
@@ -138,9 +140,9 @@ async fn db_backed_policy_enforcement() {
     .expect("sessions should seed");
 
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
-    let anonymous = CoolContext::anonymous();
-    let owner = CoolContext::authenticated([("id".to_owned(), Value::Int(1))]);
-    let other = CoolContext::authenticated([("id".to_owned(), Value::Int(2))]);
+    let anonymous = CratestackContext::anonymous();
+    let owner = CratestackContext::authenticated([("id".to_owned(), Value::Int(1))]);
+    let other = CratestackContext::authenticated([("id".to_owned(), Value::Int(2))]);
 
     let anonymous_posts = cool
         .post()
@@ -381,7 +383,7 @@ async fn db_backed_policy_enforcement() {
         .run(&anonymous)
         .await
         .expect_err("anonymous create should fail");
-    assert!(matches!(create_error, CoolError::Forbidden(_)));
+    assert!(matches!(create_error, CratestackError::Forbidden(_)));
 
     let updated = cool
         .post()
@@ -409,7 +411,7 @@ async fn db_backed_policy_enforcement() {
         .run(&other)
         .await
         .expect_err("non-owner update should fail");
-    assert!(matches!(update_error, CoolError::Forbidden(_)));
+    assert!(matches!(update_error, CratestackError::Forbidden(_)));
 
     let delete_error = cool
         .post()
@@ -417,7 +419,7 @@ async fn db_backed_policy_enforcement() {
         .run(&other)
         .await
         .expect_err("non-owner delete should fail");
-    assert!(matches!(delete_error, CoolError::Forbidden(_)));
+    assert!(matches!(delete_error, CratestackError::Forbidden(_)));
 
     let deleted = cool
         .post()
@@ -1077,9 +1079,9 @@ async fn db_backed_policy_enforcement() {
         .await
         .expect("missing include validation request should succeed");
     // `includeFields[author]` without a corresponding `include=author` is
-    // a `CoolError::Validation` (see `includeFields[{}] requires
+    // a `CratestackError::Validation` (see `includeFields[{}] requires
     // include={}` in `crates/cratestack-macros/src/axum/model/
-    // builders.rs`), which maps to 422, not 400 — `CoolError::BadRequest`
+    // builders.rs`), which maps to 422, not 400 — `CratestackError::BadRequest`
     // is a different variant (`crates/cratestack-core/src/error.rs`).
     assert_eq!(
         missing_include_for_include_fields_response.status(),
@@ -1293,7 +1295,7 @@ async fn db_backed_model_events_use_outbox_and_isolate_subscriber_failures() {
         let failing = Arc::clone(&failing);
         async move {
             if failing.swap(false, Ordering::SeqCst) {
-                return Err(cratestack::CoolError::Forbidden(
+                return Err(cratestack::CratestackError::Forbidden(
                     "subscriber failed once".to_owned(),
                 ));
             }
@@ -1337,7 +1339,7 @@ async fn db_backed_model_events_use_outbox_and_isolate_subscriber_failures() {
         }
     });
 
-    let owner = CoolContext::authenticated([("id".to_owned(), Value::Int(1))]);
+    let owner = CratestackContext::authenticated([("id".to_owned(), Value::Int(1))]);
 
     let created = cool
         .post()

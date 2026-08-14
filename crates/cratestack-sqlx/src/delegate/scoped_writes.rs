@@ -3,7 +3,7 @@
 //! out once `.do_nothing()` (cratestack#487) pushed this file over the
 //! 200-LoC ceiling.
 
-use cratestack_core::{CoolContext, CoolError};
+use cratestack_core::{CratestackContext, CratestackError};
 
 use crate::audit::RunInTxOutcome;
 use crate::{
@@ -13,11 +13,11 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct ScopedCreateRecord<'a, M: 'static, PK: 'static, I> {
     request: CreateRecord<'a, M, PK, I>,
-    ctx: CoolContext,
+    ctx: CratestackContext,
 }
 
 impl<'a, M: 'static, PK: 'static, I> ScopedCreateRecord<'a, M, PK, I> {
-    pub(super) fn new(request: CreateRecord<'a, M, PK, I>, ctx: CoolContext) -> Self {
+    pub(super) fn new(request: CreateRecord<'a, M, PK, I>, ctx: CratestackContext) -> Self {
         Self { request, ctx }
     }
 }
@@ -30,7 +30,7 @@ where
         self.request.preview_sql()
     }
 
-    pub async fn run(self) -> Result<M, CoolError>
+    pub async fn run(self) -> Result<M, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
     {
@@ -40,7 +40,7 @@ where
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-    ) -> Result<RunInTxOutcome<M>, CoolError>
+    ) -> Result<RunInTxOutcome<M>, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
     {
@@ -51,11 +51,11 @@ where
 #[derive(Debug, Clone)]
 pub struct ScopedUpdateRecord<'a, M: 'static, PK: 'static> {
     request: UpdateRecord<'a, M, PK>,
-    ctx: CoolContext,
+    ctx: CratestackContext,
 }
 
 impl<'a, M: 'static, PK: 'static> ScopedUpdateRecord<'a, M, PK> {
-    pub(super) fn new(request: UpdateRecord<'a, M, PK>, ctx: CoolContext) -> Self {
+    pub(super) fn new(request: UpdateRecord<'a, M, PK>, ctx: CratestackContext) -> Self {
         Self { request, ctx }
     }
 
@@ -70,7 +70,7 @@ impl<'a, M: 'static, PK: 'static> ScopedUpdateRecord<'a, M, PK> {
 #[derive(Debug, Clone)]
 pub struct ScopedUpdateRecordSet<'a, M: 'static, PK: 'static, I> {
     request: UpdateRecordSet<'a, M, PK, I>,
-    ctx: CoolContext,
+    ctx: CratestackContext,
 }
 
 impl<'a, M: 'static, PK: 'static, I> ScopedUpdateRecordSet<'a, M, PK, I>
@@ -81,7 +81,7 @@ where
         self.request.preview_sql()
     }
 
-    pub async fn run(self) -> Result<M, CoolError>
+    pub async fn run(self) -> Result<M, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
         PK: Send + Clone + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
@@ -92,7 +92,7 @@ where
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-    ) -> Result<RunInTxOutcome<M>, CoolError>
+    ) -> Result<RunInTxOutcome<M>, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
         PK: Send + Clone + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,

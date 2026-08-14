@@ -97,7 +97,7 @@ fn versioned_model_if_match_stubs_have_the_right_status_headers_and_priority_per
 
     // (file suffix, expected status, expected request "headers" matcher,
     // expected priority) — the exact contract table this generator must
-    // mirror from `parse_if_match_version` + `CoolError::status_code`.
+    // mirror from `parse_if_match_version` + `CratestackError::status_code`.
     let cases = [
         (
             "if-match-required",

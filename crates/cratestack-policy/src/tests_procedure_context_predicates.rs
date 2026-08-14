@@ -10,7 +10,7 @@ use crate::{
     ProcedureArgs, ProcedurePolicy, ProcedurePolicyExpr, ProcedurePolicyLiteral,
     ProcedurePredicate, authorize_procedure, context_has_role, context_in_tenant,
 };
-use cratestack_core::{CoolContext, Value};
+use cratestack_core::{CratestackContext, Value};
 use std::collections::BTreeMap;
 
 struct NoArgs;
@@ -28,10 +28,14 @@ fn policy(predicate: ProcedurePredicate) -> ProcedurePolicy {
 
 #[test]
 fn auth_field_eq_and_ne_literal_variants() {
-    let banned =
-        CoolContext::authenticated([("status".to_owned(), Value::String("banned".to_owned()))]);
-    let active =
-        CoolContext::authenticated([("status".to_owned(), Value::String("active".to_owned()))]);
+    let banned = CratestackContext::authenticated([(
+        "status".to_owned(),
+        Value::String("banned".to_owned()),
+    )]);
+    let active = CratestackContext::authenticated([(
+        "status".to_owned(),
+        Value::String("active".to_owned()),
+    )]);
     let eq_banned = [policy(ProcedurePredicate::AuthFieldEqLiteral {
         auth_field: "status",
         value: ProcedurePolicyLiteral::String("banned"),
@@ -50,9 +54,9 @@ fn auth_field_eq_and_ne_literal_variants() {
 #[test]
 fn has_role_predicate_matches_authorize_procedure() {
     let admin =
-        CoolContext::authenticated([("role".to_owned(), Value::String("admin".to_owned()))]);
+        CratestackContext::authenticated([("role".to_owned(), Value::String("admin".to_owned()))]);
     let member =
-        CoolContext::authenticated([("role".to_owned(), Value::String("member".to_owned()))]);
+        CratestackContext::authenticated([("role".to_owned(), Value::String("member".to_owned()))]);
     let allow = [policy(ProcedurePredicate::HasRole { role: "admin" })];
 
     assert!(authorize_procedure(&allow, &[], &NoArgs, &admin).is_ok());
@@ -61,14 +65,14 @@ fn has_role_predicate_matches_authorize_procedure() {
 
 #[test]
 fn in_tenant_predicate_matches_authorize_procedure() {
-    let tenant_a = CoolContext::authenticated([(
+    let tenant_a = CratestackContext::authenticated([(
         "tenant".to_owned(),
         Value::Map(BTreeMap::from([(
             "id".to_owned(),
             Value::String("tenant_a".to_owned()),
         )])),
     )]);
-    let tenant_b = CoolContext::authenticated([(
+    let tenant_b = CratestackContext::authenticated([(
         "tenant".to_owned(),
         Value::Map(BTreeMap::from([(
             "id".to_owned(),
@@ -86,11 +90,11 @@ fn in_tenant_predicate_matches_authorize_procedure() {
 #[test]
 fn has_role_checks_top_level_and_actor_role() {
     let top_level =
-        CoolContext::authenticated([("role".to_owned(), Value::String("admin".to_owned()))]);
+        CratestackContext::authenticated([("role".to_owned(), Value::String("admin".to_owned()))]);
     assert!(context_has_role(&top_level, "admin"));
     assert!(!context_has_role(&top_level, "member"));
 
-    let actor_role = CoolContext::authenticated([(
+    let actor_role = CratestackContext::authenticated([(
         "actor".to_owned(),
         Value::Map(BTreeMap::from([(
             "role".to_owned(),
@@ -102,7 +106,7 @@ fn has_role_checks_top_level_and_actor_role() {
 
 #[test]
 fn in_tenant_checks_structured_tenant_id() {
-    let ctx = CoolContext::authenticated([(
+    let ctx = CratestackContext::authenticated([(
         "tenant".to_owned(),
         Value::Map(BTreeMap::from([(
             "id".to_owned(),

@@ -13,7 +13,7 @@
 // `streaming_callback.rs`.
 // -----------------------------------------------------------------------------
 
-use cratestack_core::CoolError;
+use cratestack_core::CratestackError;
 use serde::de::DeserializeOwned;
 
 use crate::codec::{CBOR_SEQUENCE_CONTENT_TYPE, HttpClientCodec, media_type_matches};
@@ -43,7 +43,7 @@ impl CborSeqChunkDecoder {
     /// every complete top-level CBOR item now in it. Drains those bytes
     /// from the buffer; any trailing bytes that don't yet form a
     /// complete item stay buffered for the next call.
-    pub fn feed_chunk(&mut self, chunk: &[u8]) -> Result<Vec<Vec<u8>>, CoolError> {
+    pub fn feed_chunk(&mut self, chunk: &[u8]) -> Result<Vec<Vec<u8>>, CratestackError> {
         self.buffer.extend_from_slice(chunk);
         let mut items: Vec<Vec<u8>> = Vec::new();
         let mut consumed = 0;
@@ -57,7 +57,7 @@ impl CborSeqChunkDecoder {
                 Ok(()) => {
                     let item_len = decoder.position();
                     if item_len == 0 {
-                        return Err(CoolError::Codec(
+                        return Err(CratestackError::Codec(
                             "cbor-seq decoder made no progress".to_owned(),
                         ));
                     }
@@ -69,9 +69,9 @@ impl CborSeqChunkDecoder {
                     break;
                 }
                 Err(error) => {
-                    return Err(CoolError::Codec(
-                        format!("cbor-seq decode failed: {error}",),
-                    ));
+                    return Err(CratestackError::Codec(format!(
+                        "cbor-seq decode failed: {error}",
+                    )));
                 }
             }
         }
@@ -161,7 +161,7 @@ pub(crate) async fn pump_streamed_response_typed<C, T, E, F>(
         };
         for item_bytes in items {
             let decoded: Result<T, E> = minicbor_serde::from_slice(&item_bytes).map_err(|error| {
-                convert_error(ClientError::Codec(CoolError::Codec(format!(
+                convert_error(ClientError::Codec(CratestackError::Codec(format!(
                     "decode cbor-seq item: {error}",
                 ))))
             });
@@ -232,13 +232,13 @@ async fn pump_buffered_fallback<C, T, E, F>(
         }
         Err(error) => {
             let _ = tx
-                .send(Err(convert_error(ClientError::Codec(CoolError::Codec(
-                    format!(
+                .send(Err(convert_error(ClientError::Codec(
+                    CratestackError::Codec(format!(
                         "streaming response had Content-Type {content_type:?}, which the client \
                      couldn't decode as a sequence (needed {CBOR_SEQUENCE_CONTENT_TYPE} or a \
                      decodable buffered type): {error}",
-                    ),
-                )))))
+                    )),
+                ))))
                 .await;
         }
     }

@@ -15,7 +15,7 @@
 //! disconnect (which just drops this whole future instead, so this code
 //! never runs for that case).
 //!
-//! Payload encoding is always JSON regardless of which `CoolCodec` the
+//! Payload encoding is always JSON regardless of which `CratestackCodec` the
 //! server negotiates for its unary/batch RPC routes: SSE is a
 //! text-based wire format by construction, and JSON is already one of
 //! the two codecs this framework's RPC binding supports
@@ -29,7 +29,7 @@ use std::pin::Pin;
 use axum::body::{Body, Bytes};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::Response;
-use cratestack_core::CoolError;
+use cratestack_core::CratestackError;
 use cratestack_core::rpc::RpcErrorBody;
 use futures_util::Stream;
 use futures_util::stream::{self, StreamExt};
@@ -43,16 +43,16 @@ const SSE_CONTENT_TYPE: &str = "text/event-stream";
 /// binary subprotocol like WS does — the client states its intent via a
 /// plain `Accept` header, same as every other HTTP RPC binding. Reject
 /// anything that doesn't ask for SSE up front, before any
-/// `CoolEventBus` subscription gets registered.
-pub fn validate_subscribe_accept_header(headers: &HeaderMap) -> Result<(), CoolError> {
+/// `CratestackEventBus` subscription gets registered.
+pub fn validate_subscribe_accept_header(headers: &HeaderMap) -> Result<(), CratestackError> {
     let Some(accept) = headers.get(header::ACCEPT) else {
-        return Err(CoolError::NotAcceptable(format!(
+        return Err(CratestackError::NotAcceptable(format!(
             "subscription endpoint requires Accept: {SSE_CONTENT_TYPE}"
         )));
     };
     let accept = accept
         .to_str()
-        .map_err(|error| CoolError::BadRequest(format!("invalid Accept header: {error}")))?;
+        .map_err(|error| CratestackError::BadRequest(format!("invalid Accept header: {error}")))?;
     if accept
         .split(',')
         .map(str::trim)
@@ -60,7 +60,7 @@ pub fn validate_subscribe_accept_header(headers: &HeaderMap) -> Result<(), CoolE
     {
         Ok(())
     } else {
-        Err(CoolError::NotAcceptable(format!(
+        Err(CratestackError::NotAcceptable(format!(
             "subscription endpoint requires Accept: {SSE_CONTENT_TYPE}, got {accept}"
         )))
     }
@@ -131,7 +131,9 @@ where
 }
 
 fn lagged_error() -> RpcErrorBody {
-    RpcErrorBody::from_cool(&CoolError::Unavailable("subscription lagged".to_owned()))
+    RpcErrorBody::from_cool(&CratestackError::Unavailable(
+        "subscription lagged".to_owned(),
+    ))
 }
 
 #[derive(Serialize)]

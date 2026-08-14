@@ -33,7 +33,7 @@ use std::str::FromStr;
 
 use cratestack::include_server_schema;
 use cratestack::sqlx::query;
-use cratestack::{CoolContext, Decimal, Json, Value};
+use cratestack::{CratestackContext, Decimal, Json, Value};
 use cratestack_migrate::diff;
 use cratestack_migrate::emit::postgres;
 use cratestack_parser::parse_schema;
@@ -58,8 +58,8 @@ const COVERED_SCALAR_TYPES: &[&str] = &[
     "String", "Cuid", "Int", "Float", "Boolean", "DateTime", "Decimal", "Json", "Bytes", "Uuid",
 ];
 
-fn ctx() -> CoolContext {
-    CoolContext::authenticated([("id".to_owned(), Value::Int(1))])
+fn ctx() -> CratestackContext {
+    CratestackContext::authenticated([("id".to_owned(), Value::Int(1))])
 }
 
 async fn reset(pool: &cratestack::sqlx::PgPool) {

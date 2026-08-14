@@ -4,7 +4,7 @@ use std::time::SystemTime;
 
 use async_trait::async_trait;
 
-use crate::CoolError;
+use crate::CratestackError;
 use crate::idempotency_record::ReservationOutcome;
 
 /// Maximum body size the middleware will buffer when computing the hash. A
@@ -28,7 +28,7 @@ pub trait IdempotencyStore: Send + Sync + 'static {
         key: &str,
         request_hash: [u8; 32],
         expires_at: SystemTime,
-    ) -> Result<ReservationOutcome, CoolError>;
+    ) -> Result<ReservationOutcome, CratestackError>;
 
     /// Persist the captured response for a previously-reserved key so
     /// subsequent attempts replay it. Banks treat the IETF idempotency
@@ -51,15 +51,19 @@ pub trait IdempotencyStore: Send + Sync + 'static {
         status: u16,
         headers: &[u8],
         body: &[u8],
-    ) -> Result<(), CoolError>;
+    ) -> Result<(), CratestackError>;
 
     /// Release a reservation without recording a completion (e.g. the
     /// inner service panicked or the middleware itself errored before
     /// the response was ready). Subsequent attempts with the same key
     /// can re-reserve. As with `complete`, the `token` must match the
     /// active reservation.
-    async fn release(&self, principal: &str, key: &str, token: uuid::Uuid)
-    -> Result<(), CoolError>;
+    async fn release(
+        &self,
+        principal: &str,
+        key: &str,
+        token: uuid::Uuid,
+    ) -> Result<(), CratestackError>;
 }
 
 #[cfg(test)]

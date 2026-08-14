@@ -26,7 +26,7 @@
 //! stores and reads back a value that only exists in the new variant set.
 
 use cratestack::sqlx::query;
-use cratestack::{CoolContext, Migration, Value, apply_pending, include_server_schema};
+use cratestack::{CratestackContext, Migration, Value, apply_pending, include_server_schema};
 use cratestack_migrate::diff;
 use cratestack_migrate::emit::postgres;
 use cratestack_parser::{parse_schema, parse_schema_file};
@@ -72,8 +72,8 @@ model Principal {
 }
 "#;
 
-fn ctx() -> CoolContext {
-    CoolContext::authenticated([("id".to_owned(), Value::Int(1))])
+fn ctx() -> CratestackContext {
+    CratestackContext::authenticated([("id".to_owned(), Value::Int(1))])
 }
 
 async fn reset(pool: &cratestack::sqlx::PgPool) {

@@ -33,7 +33,7 @@ fn validate_subscribe_accept_header_accepts_wildcard() {
 fn validate_subscribe_accept_header_rejects_missing_header() {
     let headers = HeaderMap::new();
     let error = validate_subscribe_accept_header(&headers).unwrap_err();
-    assert!(matches!(error, CoolError::NotAcceptable(_)));
+    assert!(matches!(error, CratestackError::NotAcceptable(_)));
 }
 
 #[test]
@@ -41,7 +41,7 @@ fn validate_subscribe_accept_header_rejects_mismatched_type() {
     let mut headers = HeaderMap::new();
     headers.insert(header::ACCEPT, HeaderValue::from_static("application/json"));
     let error = validate_subscribe_accept_header(&headers).unwrap_err();
-    assert!(matches!(error, CoolError::NotAcceptable(_)));
+    assert!(matches!(error, CratestackError::NotAcceptable(_)));
 }
 
 #[tokio::test]

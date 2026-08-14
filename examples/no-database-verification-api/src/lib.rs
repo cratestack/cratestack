@@ -5,7 +5,7 @@
 use cratestack::axum::Router;
 use cratestack::futures::Stream;
 use cratestack::futures::stream;
-use cratestack::{AuthProvider, CoolContext, CoolError, RequestContext};
+use cratestack::{AuthProvider, CratestackContext, CratestackError, RequestContext};
 use cratestack_codec_json::JsonCodec;
 
 cratestack::include_server_schema!("schema.cstack", db = None);
@@ -19,11 +19,12 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     fn ping(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::ping::Args,
         _authorized: cratestack_schema::procedures::ping::Authorized,
-    ) -> impl core::future::Future<Output = Result<cratestack_schema::procedures::ping::Output, CoolError>>
-    + Send {
+    ) -> impl core::future::Future<
+        Output = Result<cratestack_schema::procedures::ping::Output, CratestackError>,
+    > + Send {
         async move {
             Ok(cratestack_schema::PingReply {
                 echo: args.args.message,
@@ -34,11 +35,11 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     fn submit(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::submit::Args,
         _authorized: cratestack_schema::procedures::submit::Authorized,
     ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::submit::Output, CoolError>,
+        Output = Result<cratestack_schema::procedures::submit::Output, CratestackError>,
     > + Send {
         async move {
             Ok(cratestack_schema::PingReply {
@@ -57,10 +58,10 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     fn streamed(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::streamed::Args,
         _authorized: cratestack_schema::procedures::streamed::Authorized,
-    ) -> impl Stream<Item = Result<cratestack_schema::PingReply, CoolError>> + Send {
+    ) -> impl Stream<Item = Result<cratestack_schema::PingReply, CratestackError>> + Send {
         stream::iter([Ok(cratestack_schema::PingReply {
             echo: args.args.message,
         })])
@@ -71,13 +72,13 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
 pub struct AllowAllAuth;
 
 impl AuthProvider for AllowAllAuth {
-    type Error = CoolError;
+    type Error = CratestackError;
 
     fn authenticate(
         &self,
         _request: &RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
-        core::future::ready(Ok(CoolContext::authenticated([(
+    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
+        core::future::ready(Ok(CratestackContext::authenticated([(
             "id".to_owned(),
             cratestack::Value::Int(1),
         )])))

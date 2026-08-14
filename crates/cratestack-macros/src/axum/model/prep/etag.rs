@@ -52,7 +52,7 @@ pub(super) fn etag_tokens(
                         &headers,
                         &CAPABILITIES,
                         axum::http::StatusCode::OK,
-                        Err(CoolError::PreconditionFailed("If-Match header required".to_owned())),
+                        Err(CratestackError::PreconditionFailed("If-Match header required".to_owned())),
                     );
                 }
                 Err(error) => {
@@ -87,7 +87,7 @@ pub(super) fn etag_tokens(
                         &headers,
                         &CAPABILITIES,
                         axum::http::StatusCode::OK,
-                        Err(CoolError::PreconditionFailed("If-Match header required".to_owned())),
+                        Err(CratestackError::PreconditionFailed("If-Match header required".to_owned())),
                     );
                 }
                 Err(error) => {

@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use axum::body::Body;
 use axum::extract::Request;
 use axum::response::Response;
-use cratestack_core::CoolError;
+use cratestack_core::CratestackError;
 use http::StatusCode;
 use tower::{Layer as TowerLayer, Service};
 use tracing_subscriber::Layer as TracingLayer;
@@ -140,8 +140,8 @@ impl RateLimitStore for FailingStore {
         &self,
         _key: &str,
         _config: RateLimitConfig,
-    ) -> Result<RateLimitDecision, CoolError> {
-        Err(CoolError::Internal(
+    ) -> Result<RateLimitDecision, CratestackError> {
+        Err(CratestackError::Internal(
             "redis rate limit: connection refused".to_owned(),
         ))
     }

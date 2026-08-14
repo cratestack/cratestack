@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use cratestack_core::CoolError;
+use cratestack_core::CratestackError;
 use redis::aio::ConnectionManager;
 use sha2::{Digest, Sha256};
 use tokio::sync::OnceCell;
@@ -19,7 +19,7 @@ impl RedisIdempotencyStore {
     pub fn open(
         redis_url: impl redis::IntoConnectionInfo,
         key_prefix: impl Into<String>,
-    ) -> Result<Self, CoolError> {
+    ) -> Result<Self, CratestackError> {
         let client = redis::Client::open(redis_url).map_err(redis_error)?;
         Ok(Self::from_client(client, key_prefix))
     }
@@ -37,7 +37,7 @@ impl RedisIdempotencyStore {
         redis_url: impl redis::IntoConnectionInfo,
         key_prefix: impl Into<String>,
         tls_certs: redis::TlsCertificates,
-    ) -> Result<Self, CoolError> {
+    ) -> Result<Self, CratestackError> {
         let client = redis::Client::build_with_tls(redis_url, tls_certs).map_err(redis_error)?;
         Ok(Self::from_client(client, key_prefix))
     }
@@ -74,7 +74,7 @@ impl RedisIdempotencyStore {
     /// establishing it once on first use rather than opening a new TCP
     /// connection to Redis on every call. A failed connection attempt is
     /// not cached, so the next call retries instead of failing forever.
-    pub(super) async fn connection(&self) -> Result<ConnectionManager, CoolError> {
+    pub(super) async fn connection(&self) -> Result<ConnectionManager, CratestackError> {
         let manager = self
             .conn
             .get_or_try_init(|| async { ConnectionManager::new(self.client.clone()).await })

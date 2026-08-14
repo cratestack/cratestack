@@ -1,6 +1,6 @@
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
-use cratestack_core::{CoolError, RouteTransportCapabilities};
+use cratestack_core::{CratestackError, RouteTransportCapabilities};
 use futures_util::{Stream, TryStreamExt};
 use serde::Serialize;
 
@@ -12,7 +12,7 @@ use super::media_type::select_transport_response_content_type;
 pub fn encode_transport_sequence_result<TTransport, TValue>(
     transport: &TTransport,
     headers: &HeaderMap,
-    result: Result<Vec<TValue>, CoolError>,
+    result: Result<Vec<TValue>, CratestackError>,
 ) -> Response
 where
     TTransport: HttpTransport,
@@ -36,7 +36,7 @@ pub fn encode_transport_sequence_result_with_status<TTransport, TValue>(
     transport: &TTransport,
     headers: &HeaderMap,
     success_status: StatusCode,
-    result: Result<Vec<TValue>, CoolError>,
+    result: Result<Vec<TValue>, CratestackError>,
 ) -> Response
 where
     TTransport: HttpTransport,
@@ -61,14 +61,14 @@ pub fn encode_transport_sequence_result_with_status_for<TTransport, TValue>(
     headers: &HeaderMap,
     capabilities: &RouteTransportCapabilities,
     success_status: StatusCode,
-    result: Result<Vec<TValue>, CoolError>,
+    result: Result<Vec<TValue>, CratestackError>,
 ) -> Response
 where
     TTransport: HttpTransport,
     TValue: Serialize,
 {
     if !capabilities.supports_sequence_response {
-        return fallback_error_response(CoolError::Internal(
+        return fallback_error_response(CratestackError::Internal(
             "sequence response encoding requested for a route without sequence capability"
                 .to_owned(),
         ));
@@ -116,15 +116,15 @@ pub async fn encode_transport_stream_result_with_status_for<TTransport, TValue, 
     headers: &HeaderMap,
     capabilities: &RouteTransportCapabilities,
     success_status: StatusCode,
-    result: Result<S, CoolError>,
+    result: Result<S, CratestackError>,
 ) -> Response
 where
     TTransport: HttpTransport,
     TValue: Serialize + Send + 'static,
-    S: Stream<Item = Result<TValue, CoolError>> + Send + 'static,
+    S: Stream<Item = Result<TValue, CratestackError>> + Send + 'static,
 {
     if !capabilities.supports_sequence_response {
-        return fallback_error_response(CoolError::Internal(
+        return fallback_error_response(CratestackError::Internal(
             "sequence response encoding requested for a route without sequence capability"
                 .to_owned(),
         ));
@@ -141,7 +141,7 @@ where
                     .encode_sequence_stream_response(content_type, success_status, stream)
                     .unwrap_or_else(fallback_error_response)
             } else {
-                let values: Result<Vec<TValue>, CoolError> = stream.try_collect().await;
+                let values: Result<Vec<TValue>, CratestackError> = stream.try_collect().await;
                 encode_transport_sequence_result_with_status_for(
                     transport,
                     headers,

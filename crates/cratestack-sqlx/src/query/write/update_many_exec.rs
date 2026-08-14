@@ -2,7 +2,7 @@
 //! fan-out event + audit, return a `BatchSummary { total, ok, err: 0 }`.
 
 use cratestack_core::{
-    AuditEvent, AuditOperation, BatchSummary, CoolContext, CoolError, ModelEventKind,
+    AuditEvent, AuditOperation, BatchSummary, CratestackContext, CratestackError, ModelEventKind,
 };
 
 use crate::audit::{build_audit_event, enqueue_audit_event, ensure_audit_table};
@@ -22,21 +22,21 @@ pub(super) async fn run_update_many_in_tx<'tx, M, PK, I>(
     descriptor: &'static ModelDescriptor<M, PK>,
     filters: &[FilterExpr],
     input: I,
-    ctx: &CoolContext,
-) -> Result<(BatchSummary, bool, Vec<AuditEvent>), CoolError>
+    ctx: &CratestackContext,
+) -> Result<(BatchSummary, bool, Vec<AuditEvent>), CratestackError>
 where
     I: UpdateModelInput<M>,
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
 {
     if filters.is_empty() {
-        return Err(CoolError::Validation(
+        return Err(CratestackError::Validation(
             "update_many requires at least one filter — refusing table-wide update".to_owned(),
         ));
     }
     input.validate()?;
     let values = input.sql_values();
     if values.is_empty() {
-        return Err(CoolError::Validation(
+        return Err(CratestackError::Validation(
             "update input must contain at least one changed column".to_owned(),
         ));
     }

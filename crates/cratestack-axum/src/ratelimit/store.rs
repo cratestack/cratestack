@@ -4,7 +4,7 @@ use std::sync::Mutex;
 use std::time::Instant;
 
 use async_trait::async_trait;
-use cratestack_core::CoolError;
+use cratestack_core::CratestackError;
 
 use super::config::{RateLimitConfig, RateLimitDecision};
 
@@ -37,11 +37,11 @@ impl RateLimitStore for InMemoryRateLimitStore {
         &self,
         key: &str,
         config: RateLimitConfig,
-    ) -> Result<RateLimitDecision, CoolError> {
+    ) -> Result<RateLimitDecision, CratestackError> {
         let mut buckets = self
             .buckets
             .lock()
-            .map_err(|_| CoolError::Internal("rate limit store poisoned".to_owned()))?;
+            .map_err(|_| CratestackError::Internal("rate limit store poisoned".to_owned()))?;
         let now = Instant::now();
         let bucket = buckets.entry(key.to_owned()).or_insert(Bucket {
             tokens: config.burst as f64,

@@ -27,11 +27,11 @@ pub(super) fn build_serialize_helper(
     quote! {
         fn #serialize_model_value_ident<'a>(
             db: &'a super::Cratestack,
-            ctx: &'a ::cratestack::CoolContext,
+            ctx: &'a ::cratestack::CratestackContext,
             record: &'a super::models::#model_ident,
             selection: &'a ModelSelectionQuery,
         ) -> ::core::pin::Pin<
-            Box<dyn ::core::future::Future<Output = Result<::cratestack::ProjectedValue, CoolError>> + Send + 'a>,
+            Box<dyn ::core::future::Future<Output = Result<::cratestack::ProjectedValue, CratestackError>> + Send + 'a>,
         > {
             Box::pin(async move {
                 let mut object = #project_model_value_ident(record, selection.fields.as_deref())?;
@@ -67,7 +67,7 @@ pub(super) fn build_list_builder(
             db: &'a super::Cratestack,
             query: &ModelListQuery,
             apply_paging: bool,
-        ) -> Result<::cratestack::FindMany<'a, super::models::#model_ident, #primary_key_type>, CoolError> {
+        ) -> Result<::cratestack::FindMany<'a, super::models::#model_ident, #primary_key_type>, CratestackError> {
             let descriptor = db.#accessor_ident().descriptor();
             let mut request = db.#accessor_ident().find_many();
 
@@ -79,7 +79,7 @@ pub(super) fn build_list_builder(
                 for raw_term in sort.split(',') {
                     let raw_term = raw_term.trim();
                     if raw_term.is_empty() {
-                        return Err(CoolError::BadRequest(
+                        return Err(CratestackError::BadRequest(
                             "sort must not contain empty fields".to_owned(),
                         ));
                     }
@@ -91,7 +91,7 @@ pub(super) fn build_list_builder(
 
                     request = if field_name.contains('.') {
                         let target = ::cratestack::resolve_order_target(&#order_catalog_ident, field_name)
-                            .ok_or_else(|| CoolError::Validation(format!(
+                            .ok_or_else(|| CratestackError::Validation(format!(
                                 "unsupported sort field '{}' for {}",
                                 field_name,
                                 #model_name,
@@ -111,7 +111,7 @@ pub(super) fn build_list_builder(
                         ))
                     } else {
                         if !descriptor.allowed_sorts.contains(&field_name) {
-                            return Err(CoolError::Validation(format!(
+                            return Err(CratestackError::Validation(format!(
                                 "unsupported sort field '{}' for {}",
                                 field_name,
                                 #model_name,

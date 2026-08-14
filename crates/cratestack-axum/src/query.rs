@@ -2,7 +2,7 @@
 //! extraction and the structured filter expression grammar
 //! (`?where=...`) used by macro-generated `list` endpoints.
 
-use cratestack_core::CoolError;
+use cratestack_core::CratestackError;
 use url::form_urlencoded;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -13,7 +13,9 @@ pub enum QueryExpr {
     Not(Box<QueryExpr>),
 }
 
-pub fn parse_query_pairs(raw_query: Option<&str>) -> Result<Vec<(String, String)>, CoolError> {
+pub fn parse_query_pairs(
+    raw_query: Option<&str>,
+) -> Result<Vec<(String, String)>, CratestackError> {
     let Some(raw_query) = raw_query else {
         return Ok(Vec::new());
     };
@@ -25,12 +27,12 @@ pub fn parse_query_pairs(raw_query: Option<&str>) -> Result<Vec<(String, String)
     Ok(pairs)
 }
 
-pub fn parse_filter_expression(input: &str) -> Result<QueryExpr, CoolError> {
+pub fn parse_filter_expression(input: &str) -> Result<QueryExpr, CratestackError> {
     let mut parser = FilterExpressionParser::new(input);
     let expr = parser.parse_expr()?;
     parser.skip_whitespace();
     if !parser.is_eof() {
-        return Err(CoolError::BadRequest(format!(
+        return Err(CratestackError::BadRequest(format!(
             "unexpected trailing filter expression content near '{}'",
             parser.remaining(),
         )));
@@ -48,11 +50,11 @@ impl<'a> FilterExpressionParser<'a> {
         Self { input, cursor: 0 }
     }
 
-    fn parse_expr(&mut self) -> Result<QueryExpr, CoolError> {
+    fn parse_expr(&mut self) -> Result<QueryExpr, CratestackError> {
         self.parse_or()
     }
 
-    fn parse_or(&mut self) -> Result<QueryExpr, CoolError> {
+    fn parse_or(&mut self) -> Result<QueryExpr, CratestackError> {
         let mut nodes = vec![self.parse_and()?];
         loop {
             self.skip_whitespace();
@@ -68,7 +70,7 @@ impl<'a> FilterExpressionParser<'a> {
         })
     }
 
-    fn parse_and(&mut self) -> Result<QueryExpr, CoolError> {
+    fn parse_and(&mut self) -> Result<QueryExpr, CratestackError> {
         let mut nodes = vec![self.parse_factor()?];
         loop {
             self.skip_whitespace();
@@ -84,19 +86,19 @@ impl<'a> FilterExpressionParser<'a> {
         })
     }
 
-    fn parse_factor(&mut self) -> Result<QueryExpr, CoolError> {
+    fn parse_factor(&mut self) -> Result<QueryExpr, CratestackError> {
         self.skip_whitespace();
         if self.consume_keyword("not") {
             self.skip_whitespace();
             if !self.consume('(') {
-                return Err(CoolError::BadRequest(
+                return Err(CratestackError::BadRequest(
                     "negated filter expression must use not(...)".to_owned(),
                 ));
             }
             let expr = self.parse_expr()?;
             self.skip_whitespace();
             if !self.consume(')') {
-                return Err(CoolError::BadRequest(
+                return Err(CratestackError::BadRequest(
                     "unterminated negated filter expression".to_owned(),
                 ));
             }
@@ -106,7 +108,7 @@ impl<'a> FilterExpressionParser<'a> {
             let expr = self.parse_expr()?;
             self.skip_whitespace();
             if !self.consume(')') {
-                return Err(CoolError::BadRequest(
+                return Err(CratestackError::BadRequest(
                     "unterminated grouped filter expression".to_owned(),
                 ));
             }
@@ -116,7 +118,7 @@ impl<'a> FilterExpressionParser<'a> {
         self.parse_predicate()
     }
 
-    fn parse_predicate(&mut self) -> Result<QueryExpr, CoolError> {
+    fn parse_predicate(&mut self) -> Result<QueryExpr, CratestackError> {
         let start = self.cursor;
         while let Some(ch) = self.peek() {
             if matches!(ch, ',' | '|' | ')') {
@@ -126,13 +128,13 @@ impl<'a> FilterExpressionParser<'a> {
         }
         let raw = self.input[start..self.cursor].trim();
         let (key, value) = raw.split_once('=').ok_or_else(|| {
-            CoolError::BadRequest(format!(
+            CratestackError::BadRequest(format!(
                 "invalid grouped filter '{}': expected key=value",
                 raw,
             ))
         })?;
         if key.trim().is_empty() || value.trim().is_empty() {
-            return Err(CoolError::BadRequest(format!(
+            return Err(CratestackError::BadRequest(format!(
                 "invalid grouped filter '{}': expected non-empty key and value",
                 raw,
             )));

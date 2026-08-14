@@ -8,7 +8,7 @@
 //! `run_migrations` convenience wrapper over connecting a pool and calling
 //! `apply_pending`.
 
-use cratestack_core::CoolError;
+use cratestack_core::CratestackError;
 use cratestack_sqlx::sqlx::postgres::PgPoolOptions;
 use cratestack_sqlx::{Migration, apply_pending};
 use include_dir::Dir;
@@ -66,12 +66,12 @@ pub fn migrations_from_dir(dir: &Dir<'_>) -> Vec<Migration> {
 pub async fn run_migrations(
     database_url: &str,
     migrations: &[Migration],
-) -> Result<Vec<String>, CoolError> {
+) -> Result<Vec<String>, CratestackError> {
     let pool = PgPoolOptions::new()
         .max_connections(1)
         .connect(database_url)
         .await
-        .map_err(|error| CoolError::Database(error.to_string()))?;
+        .map_err(|error| CratestackError::Database(error.to_string()))?;
     apply_pending(&pool, migrations).await
 }
 

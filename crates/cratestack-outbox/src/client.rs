@@ -4,7 +4,7 @@
 //! schema.
 
 use chrono::{DateTime, Utc};
-use cratestack_core::{CoolError, TransactionIsolation};
+use cratestack_core::{CratestackError, TransactionIsolation};
 use cratestack_sqlx::{cool_error_from_sqlx, run_in_isolated_tx_with_retries, sqlx};
 use sqlx::Row;
 
@@ -41,7 +41,7 @@ impl OutboxClient {
     /// contention is unlikely, but the retry envelope costs nothing here
     /// and keeps this path consistent with [`OutboxClient::persist_in_tx`]'s
     /// transactional posture.
-    pub async fn persist(&self, event: NewEvent) -> Result<String, CoolError> {
+    pub async fn persist(&self, event: NewEvent) -> Result<String, CratestackError> {
         let row = build_insert_row(event, Utc::now());
         let id = row.id.clone();
         run_in_isolated_tx_with_retries(
@@ -69,7 +69,7 @@ impl OutboxClient {
         &self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
         event: NewEvent,
-    ) -> Result<String, CoolError> {
+    ) -> Result<String, CratestackError> {
         let row = build_insert_row(event, Utc::now());
         let id = row.id.clone();
         insert_event_row(&mut **tx, &row).await?;
@@ -79,7 +79,7 @@ impl OutboxClient {
     /// Page through events in `id`-ascending order. UUIDv7's timestamp
     /// prefix means lexical sort order equals insertion order, so a plain
     /// `ORDER BY id ASC` cursor is enough — no separate sequence column.
-    pub async fn drain(&self, req: &DrainRequest) -> Result<DrainResponse, CoolError> {
+    pub async fn drain(&self, req: &DrainRequest) -> Result<DrainResponse, CratestackError> {
         let limit = req.max.clamp(1, HARD_MAX);
         let rows: Vec<sqlx::postgres::PgRow> = match req.after_id.as_deref() {
             Some(cursor) => sqlx::query(
@@ -109,7 +109,7 @@ impl OutboxClient {
         let events: Vec<EventEnvelope> = rows
             .into_iter()
             .map(envelope_from_pg_row)
-            .collect::<Result<Vec<_>, CoolError>>()?;
+            .collect::<Result<Vec<_>, CratestackError>>()?;
         let next_cursor = events.last().map(|event| event.id.clone());
         Ok(DrainResponse {
             events,
@@ -119,7 +119,7 @@ impl OutboxClient {
 
     /// Delete events whose `occurred_at` is older than `cutoff`. Returns
     /// the number of rows removed.
-    pub async fn gc_older_than(&self, cutoff: DateTime<Utc>) -> Result<u64, CoolError> {
+    pub async fn gc_older_than(&self, cutoff: DateTime<Utc>) -> Result<u64, CratestackError> {
         let result = sqlx::query("DELETE FROM cratestack_outbox_events WHERE occurred_at < $1")
             .bind(cutoff)
             .execute(&self.pool)
@@ -152,7 +152,7 @@ fn build_insert_row(event: NewEvent, now: DateTime<Utc>) -> InsertRow {
     }
 }
 
-async fn insert_event_row<'c, E>(executor: E, row: &InsertRow) -> Result<(), CoolError>
+async fn insert_event_row<'c, E>(executor: E, row: &InsertRow) -> Result<(), CratestackError>
 where
     E: sqlx::Executor<'c, Database = sqlx::Postgres>,
 {
@@ -174,7 +174,7 @@ where
     Ok(())
 }
 
-fn envelope_from_pg_row(row: sqlx::postgres::PgRow) -> Result<EventEnvelope, CoolError> {
+fn envelope_from_pg_row(row: sqlx::postgres::PgRow) -> Result<EventEnvelope, CratestackError> {
     let payload: sqlx::types::Json<serde_json::Value> =
         row.try_get("payload").map_err(cool_error_from_sqlx)?;
     Ok(EventEnvelope {

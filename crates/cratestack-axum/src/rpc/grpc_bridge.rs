@@ -18,7 +18,7 @@
 
 use axum::http::HeaderMap;
 use axum::response::Response;
-use cratestack_core::CoolErrorResponse;
+use cratestack_core::CratestackErrorResponse;
 use serde::de::DeserializeOwned;
 
 use super::codec_helpers::decode_rpc_body;
@@ -32,7 +32,7 @@ use crate::transport::HttpTransport;
 ///
 /// `Ok(value)` on a 2xx dispatch response, decoded straight to `T`.
 /// `Err((code, message))` otherwise — either the dispatch response's own
-/// `CoolErrorResponse` (its `code` is `cratestack_core::CoolError::code()`'s
+/// `CratestackErrorResponse` (its `code` is `cratestack_core::CratestackError::code()`'s
 /// screaming-snake vocabulary, e.g. `"NOT_FOUND"`), or, if buffering /
 /// decoding the response body itself fails, a synthesized `"INTERNAL_ERROR"`.
 /// Callers map `code` to a `tonic::Status` via
@@ -66,7 +66,7 @@ where
         decode_rpc_body::<_, T>(codec, headers, &body_bytes)
             .map_err(|error| (error.code().to_owned(), error.public_message().into_owned()))
     } else {
-        match decode_rpc_body::<_, CoolErrorResponse>(codec, headers, &body_bytes) {
+        match decode_rpc_body::<_, CratestackErrorResponse>(codec, headers, &body_bytes) {
             Ok(parsed) => Err((parsed.code, parsed.message)),
             Err(error) => Err((error.code().to_owned(), error.public_message().into_owned())),
         }
@@ -76,7 +76,7 @@ where
 #[cfg(test)]
 mod tests {
     use axum::http::StatusCode;
-    use cratestack_core::CoolError;
+    use cratestack_core::CratestackError;
     use serde::{Deserialize, Serialize};
 
     use super::*;
@@ -105,7 +105,7 @@ mod tests {
             &headers,
             &capabilities(),
             StatusCode::OK,
-            Ok::<_, CoolError>(Widget {
+            Ok::<_, CratestackError>(Widget {
                 name: "gizmo".to_owned(),
             }),
         );
@@ -128,7 +128,7 @@ mod tests {
             &headers,
             &capabilities(),
             StatusCode::OK,
-            Err(CoolError::NotFound("widget not found".to_owned())),
+            Err(CratestackError::NotFound("widget not found".to_owned())),
         );
 
         let result: Result<Widget, _> = bridge_grpc_response(response, &codec, &headers).await;

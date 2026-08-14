@@ -6,11 +6,11 @@
 //! keeps this Postgres-free, following `no_database_procedures.rs`'s
 //! precedent.
 
-use cratestack::CoolCodec;
+use cratestack::CratestackCodec;
 use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack::include_server_schema;
-use cratestack::{CoolContext, CoolError, PageInput};
+use cratestack::{CratestackContext, CratestackError, PageInput};
 use cratestack_codec_json::JsonCodec;
 use tower::ServiceExt;
 
@@ -23,10 +23,10 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     async fn list_feed(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::list_feed::Args,
         _authorized: cratestack_schema::procedures::list_feed::Authorized,
-    ) -> Result<cratestack_schema::procedures::list_feed::Output, CoolError> {
+    ) -> Result<cratestack_schema::procedures::list_feed::Output, CratestackError> {
         let (limit, offset) = args.page.resolve(50);
         Ok(cratestack_schema::FeedReply { limit, offset })
     }
@@ -36,13 +36,13 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
 struct AllowAllAuth;
 
 impl cratestack::AuthProvider for AllowAllAuth {
-    type Error = CoolError;
+    type Error = CratestackError;
 
     fn authenticate(
         &self,
         _request: &cratestack::RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
-        core::future::ready(Ok(CoolContext::authenticated([(
+    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
+        core::future::ready(Ok(CratestackContext::authenticated([(
             "id".to_owned(),
             cratestack::Value::Int(1),
         )])))

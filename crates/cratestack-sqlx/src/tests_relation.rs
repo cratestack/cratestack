@@ -4,7 +4,7 @@ use crate::{
     FieldRef, FilterExpr, OrderClause, PolicyExpr, ReadPolicy, ReadPredicate, SortDirection,
     render::{render_filter_expr_sql, render_order_clause_sql, render_read_policy_sql},
 };
-use cratestack_core::{CoolContext, Value};
+use cratestack_core::{CratestackContext, Value};
 
 #[test]
 fn relation_filters_render_explicit_quantifiers() {
@@ -92,7 +92,7 @@ fn relation_policy_preview_uses_exists_subquery() {
             }),
         }),
     }];
-    let ctx = CoolContext::authenticated([(
+    let ctx = CratestackContext::authenticated([(
         "email".to_owned(),
         Value::String("owner@example.com".to_owned()),
     )]);

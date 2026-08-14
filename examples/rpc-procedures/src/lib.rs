@@ -18,7 +18,9 @@
 //! See `docs/design/no-database-mode.md`.
 
 use cratestack::axum::Router;
-use cratestack::{AuthProvider, CodecSet, CoolContext, CoolError, RequestContext, Value};
+use cratestack::{
+    AuthProvider, CodecSet, CratestackContext, CratestackError, RequestContext, Value,
+};
 use cratestack_codec_cbor::CborCodec;
 use cratestack_codec_json::JsonCodec;
 use std::sync::Arc;
@@ -47,11 +49,11 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     fn greet(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::greet::Args,
         _authorized: cratestack_schema::procedures::greet::Authorized,
     ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::greet::Output, CoolError>,
+        Output = Result<cratestack_schema::procedures::greet::Output, CratestackError>,
     > + Send {
         async move {
             Ok(cratestack_schema::GreetReply {
@@ -63,11 +65,11 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     fn increment(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::increment::Args,
         _authorized: cratestack_schema::procedures::increment::Authorized,
     ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::increment::Output, CoolError>,
+        Output = Result<cratestack_schema::procedures::increment::Output, CratestackError>,
     > + Send {
         let counter = Arc::clone(&self.counter);
         async move {
@@ -84,19 +86,19 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
 pub struct HeaderAuthProvider;
 
 impl AuthProvider for HeaderAuthProvider {
-    type Error = CoolError;
+    type Error = CratestackError;
 
     fn authenticate(
         &self,
         request: &RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
+    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
         let ctx = request
             .headers
             .get("x-auth-id")
             .and_then(|value| value.to_str().ok())
             .and_then(|raw| raw.parse::<i64>().ok())
-            .map(|id| CoolContext::authenticated([("id".to_owned(), Value::Int(id))]))
-            .unwrap_or_else(CoolContext::anonymous);
+            .map(|id| CratestackContext::authenticated([("id".to_owned(), Value::Int(id))]))
+            .unwrap_or_else(CratestackContext::anonymous);
         core::future::ready(Ok(ctx))
     }
 }

@@ -92,7 +92,7 @@ where
     ///
     /// Rejects non-2xx responses with `ClientError::Remote` after
     /// buffering the body once, since error bodies are bounded by
-    /// `CoolErrorResponse` and small. Only successful responses leave
+    /// `CratestackErrorResponse` and small. Only successful responses leave
     /// this method unbuffered.
     pub(crate) async fn request_streamed_with_query_and_accept(
         &self,

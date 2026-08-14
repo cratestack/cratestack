@@ -87,7 +87,7 @@ Read before designing, not assumed:
   generator should match this reality — `200` on every happy-path
   response — not invent status semantics the real server doesn't have.
   Error responses, by contrast, *do* carry real, varied status codes via
-  `CoolError::status_code()` (400/401/403/404/409/422/503/500/…) — out of
+  `CratestackError::status_code()` (400/401/403/404/409/422/503/500/…) — out of
   scope for v1 (see §7), but real for a future error-stub slice to target.
 - **Model CRUD routes are a different, richer shape.** `model` blocks get
   five REST routes each (`generate_model_axum_routes` in
@@ -841,7 +841,7 @@ section covers closing that gap: mirroring
 `crates/cratestack-axum/src/headers/etag.rs::parse_if_match_version`,
 `crates/cratestack-sqlx/src/query/write/update.rs`'s
 `version = version + 1` / `WHERE version = $expected`, and
-`CoolError::status_code`'s 4xx mapping, for `update`/`delete` on a
+`CratestackError::status_code`'s 4xx mapping, for `update`/`delete` on a
 versioned model, plus an `ETag` on `get`/`update` responses.
 
 ### 10.1 The question: can `wiremock-state-extension`'s `state-matcher`
@@ -942,11 +942,11 @@ change, plus:
   advertises nothing. **`create` never gets one either** (no
   `create_etag_apply` token exists at all).
 
-Error bodies mirror `cratestack_core::CoolErrorResponse`'s exact wire
+Error bodies mirror `cratestack_core::CratestackErrorResponse`'s exact wire
 shape (`{code, message, details}`, no extra wrapper —
 `crates/cratestack-axum/src/transport/http_transport.rs` serializes
 this directly for REST), with `code`/`message` matching the real
-`CoolError` variant and text as closely as a static-per-case mock
+`CratestackError` variant and text as closely as a static-per-case mock
 reasonably can. One simplification, stated plainly rather than silently
 approximated: `parse_if_match_version` gives two different messages for
 "not quoted at all" vs "quoted but not an integer" (both `400`); this

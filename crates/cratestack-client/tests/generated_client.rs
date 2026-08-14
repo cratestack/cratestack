@@ -122,7 +122,7 @@ async fn rpc_client_widget_crud_and_streaming_procedure_round_trip() {
             }]);
         }
         if request.path == "/rpc/procedure.many_pings" && request.method == "POST" {
-            use cratestack_core::CoolCodec;
+            use cratestack_core::CratestackCodec;
             let mut body = Vec::new();
             for nonce in ["one", "two"] {
                 let item = rpc_schema::cratestack_schema::PingArgs {

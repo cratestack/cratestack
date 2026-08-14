@@ -6,7 +6,7 @@
 //! the downstream crate this was absorbed from carried a bespoke
 //! multi-format response encoder for exactly that, which was
 //! application-specific and out of scope for this framework crate. This
-//! helper emits [`cratestack_core::CoolErrorResponse`]-shaped JSON, the same
+//! helper emits [`cratestack_core::CratestackErrorResponse`]-shaped JSON, the same
 //! REST error envelope `cratestack-axum`'s own generated handlers emit, so
 //! a caller who wants CBOR/content-negotiated error bodies can layer their
 //! own conversion on top rather than this crate reimplementing one.
@@ -15,10 +15,10 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use cratestack_core::CoolErrorResponse;
+use cratestack_core::CratestackErrorResponse;
 
 pub(crate) fn error_response(status: StatusCode, code: &str, message: &str) -> Response {
-    let body = CoolErrorResponse {
+    let body = CratestackErrorResponse {
         code: code.to_string(),
         message: message.to_string(),
         details: None,

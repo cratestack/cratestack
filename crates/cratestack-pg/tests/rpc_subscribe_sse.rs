@@ -27,7 +27,7 @@ use cratestack::axum::body::Body;
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack::futures::StreamExt;
 use cratestack::include_server_schema;
-use cratestack::{AuthProvider, CoolContext, CoolError, RequestContext, Value};
+use cratestack::{AuthProvider, CratestackContext, CratestackError, RequestContext, Value};
 use cratestack_codec_cbor::CborCodec;
 use tokio::net::TcpListener;
 use tokio::time::timeout;
@@ -48,13 +48,13 @@ const READ_TIMEOUT: Duration = Duration::from_secs(5);
 struct AlwaysAuthProvider;
 
 impl AuthProvider for AlwaysAuthProvider {
-    type Error = CoolError;
+    type Error = CratestackError;
 
     fn authenticate(
         &self,
         _request: &RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
-        core::future::ready(Ok(CoolContext::authenticated([(
+    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
+        core::future::ready(Ok(CratestackContext::authenticated([(
             "id".to_owned(),
             Value::Int(1),
         )])))
@@ -68,11 +68,11 @@ impl cratestack_schema::procedures::ProcedureRegistry for RpcProcedures {
     fn ping(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::ping::Args,
         _authorized: cratestack_schema::procedures::ping::Authorized,
     ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::ping::Output, CoolError>,
+        Output = Result<cratestack_schema::procedures::ping::Output, CratestackError>,
     > + Send {
         core::future::ready(Ok(args.args))
     }
@@ -80,11 +80,11 @@ impl cratestack_schema::procedures::ProcedureRegistry for RpcProcedures {
     fn bump(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::bump::Args,
         _authorized: cratestack_schema::procedures::bump::Authorized,
     ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::bump::Output, CoolError>,
+        Output = Result<cratestack_schema::procedures::bump::Output, CratestackError>,
     > + Send {
         core::future::ready(Ok(args.args))
     }
@@ -92,11 +92,11 @@ impl cratestack_schema::procedures::ProcedureRegistry for RpcProcedures {
     fn many_pings(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::many_pings::Args,
         _authorized: cratestack_schema::procedures::many_pings::Authorized,
     ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::many_pings::Output, CoolError>,
+        Output = Result<cratestack_schema::procedures::many_pings::Output, CratestackError>,
     > + Send {
         core::future::ready(Ok(vec![args.args]))
     }
@@ -181,11 +181,11 @@ async fn subscribe_sse_receives_model_events_as_they_happen() {
     // `CreateRecord::run` already drains the outbox itself once its
     // transaction commits (`crates/cratestack-sqlx/src/query/write/
     // create.rs`) — the same mechanism `@@emit` has always used to hand
-    // events to `CoolEventBus`
+    // events to `CratestackEventBus`
     // (`crates/cratestack-sqlx/src/descriptor.rs::drain_event_outbox`) —
     // so by the time `.run()` returns, delivery has already happened;
     // no separate manual drain step is needed here.
-    let ctx = CoolContext::authenticated([("id".to_owned(), Value::Int(1))]);
+    let ctx = CratestackContext::authenticated([("id".to_owned(), Value::Int(1))]);
     db.widget()
         .bind(ctx)
         .create(cratestack_schema::CreateWidgetInput {
@@ -271,7 +271,7 @@ async fn subscribe_sse_emits_unavailable_error_and_ends_stream_on_overflow() {
     assert_eq!(response.status(), StatusCode::OK);
 
     // Past this point the subscription is live (the handler is
-    // registered on `CoolEventBus`) but nothing has polled the response
+    // registered on `CratestackEventBus`) but nothing has polled the response
     // body yet, so every `push()` below runs synchronously in this
     // task, uncontested — the 65th create is guaranteed to observe a
     // genuinely full channel, not a race against a consumer.
@@ -279,7 +279,7 @@ async fn subscribe_sse_emits_unavailable_error_and_ends_stream_on_overflow() {
     // sibling test's comment), so each iteration below both enqueues
     // *and* delivers its own event synchronously — no separate manual
     // drain step is needed.
-    let ctx = CoolContext::authenticated([("id".to_owned(), Value::Int(1))]);
+    let ctx = CratestackContext::authenticated([("id".to_owned(), Value::Int(1))]);
     const OVERFLOW_COUNT: i64 = 65; // one past SUBSCRIPTION_BUFFER_CAPACITY (64)
     for id in 0..OVERFLOW_COUNT {
         db.widget()

@@ -4,7 +4,7 @@
 //! [`super::policy_predicate`]; relation policies in
 //! [`super::policy_relation`].
 
-use cratestack_core::CoolContext;
+use cratestack_core::CratestackContext;
 
 use crate::{PolicyExpr, ReadPolicy, sqlx};
 
@@ -30,7 +30,7 @@ pub(crate) fn push_action_policy_query(
     query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
     allow_policies: &[ReadPolicy],
     deny_policies: &[ReadPolicy],
-    ctx: &CoolContext,
+    ctx: &CratestackContext,
 ) {
     query.push("(");
     if !deny_policies.is_empty() {
@@ -48,7 +48,7 @@ pub(crate) fn push_action_policy_query(
 fn push_allow_policy_query(
     query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
     policies: &[ReadPolicy],
-    ctx: &CoolContext,
+    ctx: &CratestackContext,
 ) {
     if policies.is_empty() {
         query.push("FALSE");
@@ -66,7 +66,7 @@ fn push_allow_policy_query(
 pub(crate) fn push_policy_expr_query(
     query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
     expr: PolicyExpr,
-    ctx: &CoolContext,
+    ctx: &CratestackContext,
 ) {
     match expr {
         PolicyExpr::Predicate(predicate) => push_policy_predicate(query, predicate, ctx),
@@ -79,7 +79,7 @@ fn push_grouped_policy_query(
     query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
     exprs: &[PolicyExpr],
     joiner: &str,
-    ctx: &CoolContext,
+    ctx: &CratestackContext,
 ) {
     query.push("(");
     for (index, expr) in exprs.iter().enumerate() {

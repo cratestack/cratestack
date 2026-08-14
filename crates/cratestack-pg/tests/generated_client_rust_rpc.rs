@@ -24,7 +24,7 @@ use axum::http::{HeaderMap, HeaderValue, Response, StatusCode, header};
 use axum::routing::post;
 use cratestack::include_client_schema;
 use cratestack_client_rust::{CborCodec, ClientConfig, CratestackClient};
-use cratestack_core::CoolCodec;
+use cratestack_core::CratestackCodec;
 
 include_client_schema!("tests/fixtures/transport_rpc.cstack");
 

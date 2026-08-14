@@ -46,7 +46,7 @@
 // reference `::cratestack::async_stream::stream!` without every
 // consumer adding `async-stream` to their own `Cargo.toml`. Needed
 // because the `ProcedureRegistry` trait method's `db`/`ctx` parameters
-// are borrowed (`&Cratestack`/`&CoolContext`), and — per return-position
+// are borrowed (`&Cratestack`/`&CratestackContext`), and — per return-position
 // `impl Trait` in traits' default lifetime-capture rules — the returned
 // `Stream` is only valid as long as those borrows are; wrapping the
 // call in a self-contained `async_stream::stream!` generator that owns
@@ -63,7 +63,7 @@ pub use cratestack_core::*;
 // Re-exported (renamed from the `futures-util` crate, which is what
 // actually implements it) so `@stream` procedures' generated
 // `ProcedureRegistry` trait method — `impl ::cratestack::futures::Stream<
-// Item = Result<T, CoolError>> + Send` (see
+// Item = Result<T, CratestackError>> + Send` (see
 // `cratestack-macros/src/procedure.rs`) — has somewhere to point without
 // every consumer adding its own `futures`/`futures-core`/`futures-util`
 // dependency. Mirrors how `chrono`/`uuid` are re-exported above for the
@@ -206,7 +206,7 @@ pub use cratestack_sqlx::{
 /// only add a second provider alongside `ring`, not replace it. Until that
 /// backend-selection work lands, this function fails to compile under the
 /// feature rather than silently lying about what it installed.
-pub fn install_fips_crypto_provider() -> Result<(), cratestack_core::CoolError> {
+pub fn install_fips_crypto_provider() -> Result<(), cratestack_core::CratestackError> {
     #[cfg(feature = "crypto-aws-lc-rs")]
     {
         compile_error!(
@@ -217,7 +217,7 @@ pub fn install_fips_crypto_provider() -> Result<(), cratestack_core::CoolError> 
     }
     #[cfg(not(feature = "crypto-aws-lc-rs"))]
     {
-        Err(cratestack_core::CoolError::Internal(
+        Err(cratestack_core::CratestackError::Internal(
             "cratestack was not compiled with `crypto-aws-lc-rs` feature; \
              FIPS-validated crypto provider is unavailable"
                 .to_owned(),
@@ -244,7 +244,7 @@ pub mod __private {
 
     /// `@@subscribe` SSE dispatch (`GET /rpc/subscribe/{op_id}`, design
     /// doc §3.4a, cratestack#390): the bounded-channel bridge from a
-    /// `CoolEventBus` push callback to a `Stream`, and the encoder that
+    /// `CratestackEventBus` push callback to a `Stream`, and the encoder that
     /// turns that `Stream` into a `text/event-stream` response. Not
     /// part of the public API surface for the same reason as the rest
     /// of this module.

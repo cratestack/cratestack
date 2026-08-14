@@ -1,7 +1,7 @@
 //! `find_unique` — single-row read by PK with optional `FOR UPDATE`
 //! and a List/Detail policy-slot toggle.
 
-use cratestack_core::{CoolContext, CoolError};
+use cratestack_core::{CratestackContext, CratestackError};
 use cratestack_sql::ReadSource;
 
 use crate::query::support::{ReadPolicyKind, push_scoped_conditions};
@@ -54,7 +54,7 @@ impl<'a, M: 'static, PK: 'static> FindUnique<'a, M, PK> {
         sql
     }
 
-    pub fn preview_scoped_sql(&self, ctx: &CoolContext) -> String {
+    pub fn preview_scoped_sql(&self, ctx: &CratestackContext) -> String {
         let mut sql = format!(
             "SELECT {} FROM {}",
             self.descriptor.select_projection(),
@@ -88,7 +88,7 @@ impl<'a, M: 'static, PK: 'static> FindUnique<'a, M, PK> {
         sql
     }
 
-    pub async fn run(self, ctx: &CoolContext) -> Result<Option<M>, CoolError>
+    pub async fn run(self, ctx: &CratestackContext) -> Result<Option<M>, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
@@ -115,14 +115,14 @@ impl<'a, M: 'static, PK: 'static> FindUnique<'a, M, PK> {
             .build_query_as::<M>()
             .fetch_optional(self.runtime.pool())
             .await
-            .map_err(|error| CoolError::Database(error.to_string()))
+            .map_err(|error| CratestackError::Database(error.to_string()))
     }
 
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-        ctx: &CoolContext,
-    ) -> Result<Option<M>, CoolError>
+        ctx: &CratestackContext,
+    ) -> Result<Option<M>, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
@@ -149,6 +149,6 @@ impl<'a, M: 'static, PK: 'static> FindUnique<'a, M, PK> {
             .build_query_as::<M>()
             .fetch_optional(&mut **tx)
             .await
-            .map_err(|error| CoolError::Database(error.to_string()))
+            .map_err(|error| CratestackError::Database(error.to_string()))
     }
 }

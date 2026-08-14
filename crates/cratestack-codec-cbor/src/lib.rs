@@ -1,13 +1,13 @@
-use cratestack_core::{CoolCodec, CoolError};
+use cratestack_core::{CratestackCodec, CratestackError};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Default)]
 pub struct CborCodec;
 
-impl CoolCodec for CborCodec {
+impl CratestackCodec for CborCodec {
     const CONTENT_TYPE: &'static str = "application/cbor";
 
-    fn encode<T: Serialize + ?Sized>(&self, value: &T) -> Result<Vec<u8>, CoolError> {
+    fn encode<T: Serialize + ?Sized>(&self, value: &T) -> Result<Vec<u8>, CratestackError> {
         // `minicbor-serde` reports `is_human_readable() == false` — verified
         // by encoding a probe type whose `Serialize` echoes the hint; it
         // emits `0xf4` (CBOR false). Types whose serde impl branches on that
@@ -24,18 +24,18 @@ impl CoolCodec for CborCodec {
         // `cratestack_core::Value::Null` call `serialize_none()`, which this
         // backend encodes correctly as `0xf6`.
         minicbor_serde::to_vec(value)
-            .map_err(|error| CoolError::Codec(format!("failed to encode CBOR body: {error}")))
+            .map_err(|error| CratestackError::Codec(format!("failed to encode CBOR body: {error}")))
     }
 
-    fn decode<T: for<'de> Deserialize<'de>>(&self, bytes: &[u8]) -> Result<T, CoolError> {
+    fn decode<T: for<'de> Deserialize<'de>>(&self, bytes: &[u8]) -> Result<T, CratestackError> {
         minicbor_serde::from_slice(bytes)
-            .map_err(|error| CoolError::Codec(format!("failed to decode CBOR body: {error}")))
+            .map_err(|error| CratestackError::Codec(format!("failed to decode CBOR body: {error}")))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use cratestack_core::CoolCodec;
+    use cratestack_core::CratestackCodec;
 
     use super::CborCodec;
 

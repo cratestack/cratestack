@@ -25,7 +25,7 @@ use std::time::Duration;
 
 use cratestack::include_server_schema;
 use cratestack::sqlx::{Row, query};
-use cratestack::{AuditEvent, AuditSink, CoolContext, CoolError, Value};
+use cratestack::{AuditEvent, AuditSink, CratestackContext, CratestackError, Value};
 
 include_server_schema!(
     "tests/fixtures/banking_chained_audit_tx.cstack",
@@ -53,8 +53,8 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     .expect("create audit_rotation_keys table");
 }
 
-fn operator() -> CoolContext {
-    CoolContext::authenticated([("id".to_owned(), Value::Int(1))])
+fn operator() -> CratestackContext {
+    CratestackContext::authenticated([("id".to_owned(), Value::Int(1))])
 }
 
 #[tokio::test]
@@ -135,7 +135,7 @@ struct RecordingAuditSink {
 
 #[async_trait::async_trait]
 impl AuditSink for RecordingAuditSink {
-    async fn record(&self, event: &AuditEvent) -> Result<(), CoolError> {
+    async fn record(&self, event: &AuditEvent) -> Result<(), CratestackError> {
         self.events.lock().unwrap().push(event.clone());
         Ok(())
     }

@@ -158,9 +158,9 @@ pub(super) fn render_rpc_pk_input(
         }
 
         impl #ident_tok {
-            pub(super) fn into_pk(self) -> ::core::result::Result<#pk_domain_type, ::cratestack::CoolError> {
+            pub(super) fn into_pk(self) -> ::core::result::Result<#pk_domain_type, ::cratestack::CratestackError> {
                 let raw = self.id.ok_or_else(|| {
-                    ::cratestack::CoolError::BadRequest("missing `id`".to_owned())
+                    ::cratestack::CratestackError::BadRequest("missing `id`".to_owned())
                 })?;
                 #to_domain
             }
@@ -201,13 +201,13 @@ pub(super) fn render_rpc_update_input(
         impl #ident_tok {
             pub(super) fn into_id_and_patch(
                 self,
-            ) -> ::core::result::Result<(#pk_domain_type, super::super::#update_input_ident), ::cratestack::CoolError> {
+            ) -> ::core::result::Result<(#pk_domain_type, super::super::#update_input_ident), ::cratestack::CratestackError> {
                 let raw = self.id.ok_or_else(|| {
-                    ::cratestack::CoolError::BadRequest("missing `id`".to_owned())
+                    ::cratestack::CratestackError::BadRequest("missing `id`".to_owned())
                 })?;
                 let id = #to_domain?;
                 let patch_pb = self.patch.ok_or_else(|| {
-                    ::cratestack::CoolError::BadRequest("missing `patch`".to_owned())
+                    ::cratestack::CratestackError::BadRequest("missing `patch`".to_owned())
                 })?;
                 let patch = super::super::#update_input_ident::try_from(*patch_pb)?;
                 Ok((id, patch))

@@ -8,7 +8,7 @@
 //! fetch taken ahead of the mutation, mirroring how `update.rs` splits
 //! its own before/after snapshots.
 
-use cratestack_core::{AuditOperation, CoolContext, CoolError, ModelEventKind};
+use cratestack_core::{AuditOperation, CratestackContext, CratestackError, ModelEventKind};
 
 use crate::audit::{
     RunInTxOutcome, build_audit_event, dispatch_audit_sink, enqueue_audit_event,
@@ -64,14 +64,14 @@ impl<'a, M: 'static, PK: 'static> DeleteRecord<'a, M, PK> {
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-        ctx: &CoolContext,
-    ) -> Result<RunInTxOutcome<M>, CoolError>
+        ctx: &CratestackContext,
+    ) -> Result<RunInTxOutcome<M>, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
         PK: Send + Clone + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
         if self.descriptor.version_column.is_some() && self.if_match.is_none() {
-            return Err(CoolError::PreconditionFailed(
+            return Err(CratestackError::PreconditionFailed(
                 "If-Match header required for versioned model".to_owned(),
             ));
         }
@@ -132,13 +132,13 @@ impl<'a, M: 'static, PK: 'static> DeleteRecord<'a, M, PK> {
         ))
     }
 
-    pub async fn run(self, ctx: &CoolContext) -> Result<M, CoolError>
+    pub async fn run(self, ctx: &CratestackContext) -> Result<M, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
         PK: Send + Clone + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
         if self.descriptor.version_column.is_some() && self.if_match.is_none() {
-            return Err(CoolError::PreconditionFailed(
+            return Err(CratestackError::PreconditionFailed(
                 "If-Match header required for versioned model".to_owned(),
             ));
         }

@@ -1,5 +1,5 @@
 //! Codec-bound helpers: request/response header validation and
-//! encode/decode for a single `CoolCodec`, plus the [`CodecSet`] pairing
+//! encode/decode for a single `CratestackCodec`, plus the [`CodecSet`] pairing
 //! that lets a router serve two codecs (e.g. CBOR + JSON) from the same
 //! endpoint.
 

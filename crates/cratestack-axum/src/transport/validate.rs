@@ -1,5 +1,5 @@
 use axum::http::HeaderMap;
-use cratestack_core::{CoolError, RouteTransportCapabilities};
+use cratestack_core::{CratestackError, RouteTransportCapabilities};
 use serde::Deserialize;
 
 use super::http_transport::HttpTransport;
@@ -10,7 +10,7 @@ use super::media_type::{
 pub fn validate_transport_request_headers<T>(
     transport: &T,
     headers: &HeaderMap,
-) -> Result<(), CoolError>
+) -> Result<(), CratestackError>
 where
     T: HttpTransport,
 {
@@ -29,7 +29,7 @@ where
 pub fn validate_transport_response_headers<T>(
     transport: &T,
     headers: &HeaderMap,
-) -> Result<(), CoolError>
+) -> Result<(), CratestackError>
 where
     T: HttpTransport,
 {
@@ -49,7 +49,7 @@ pub fn validate_transport_request_headers_for<T>(
     transport: &T,
     headers: &HeaderMap,
     capabilities: &RouteTransportCapabilities,
-) -> Result<(), CoolError>
+) -> Result<(), CratestackError>
 where
     T: HttpTransport,
 {
@@ -65,7 +65,7 @@ pub fn validate_transport_response_headers_for<T>(
     transport: &T,
     headers: &HeaderMap,
     capabilities: &RouteTransportCapabilities,
-) -> Result<(), CoolError>
+) -> Result<(), CratestackError>
 where
     T: HttpTransport,
 {
@@ -104,7 +104,7 @@ pub fn decode_transport_request_for<TTransport, TValue>(
     headers: &HeaderMap,
     capabilities: &RouteTransportCapabilities,
     body: &[u8],
-) -> Result<TValue, CoolError>
+) -> Result<TValue, CratestackError>
 where
     TTransport: HttpTransport,
     TValue: for<'de> Deserialize<'de>,

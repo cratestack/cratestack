@@ -3,7 +3,7 @@
 //! AND policy(...) RETURNING ...`, with version-mismatch detection via
 //! a read-policy probe.
 
-use cratestack_core::{CoolContext, CoolError};
+use cratestack_core::{CratestackContext, CratestackError};
 
 use crate::query::support::{
     classify_unique_violation, probe_current_version, push_action_policy_query, push_bind_value,
@@ -16,9 +16,9 @@ pub async fn update_record_with_executor<'e, E, M, PK, I>(
     descriptor: &'static ModelDescriptor<M, PK>,
     id: PK,
     input: I,
-    ctx: &CoolContext,
+    ctx: &CratestackContext,
     if_match: Option<i64>,
-) -> Result<M, CoolError>
+) -> Result<M, CratestackError>
 where
     E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     I: UpdateModelInput<M>,
@@ -28,7 +28,7 @@ where
     input.validate()?;
     let values = input.sql_values();
     if values.is_empty() {
-        return Err(CoolError::Validation(
+        return Err(CratestackError::Validation(
             "update input must contain at least one changed column".to_owned(),
         ));
     }
@@ -52,9 +52,9 @@ async fn update_returning_record<'e, E, M, PK>(
     descriptor: &'static ModelDescriptor<M, PK>,
     id: PK,
     values: &[crate::SqlColumnValue],
-    ctx: &CoolContext,
+    ctx: &CratestackContext,
     if_match: Option<i64>,
-) -> Result<M, CoolError>
+) -> Result<M, CratestackError>
 where
     E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
@@ -118,11 +118,11 @@ where
                         .await?
                 && current != expected
             {
-                return Err(CoolError::PreconditionFailed(format!(
+                return Err(CratestackError::PreconditionFailed(format!(
                     "version mismatch: expected {expected}, found {current}",
                 )));
             }
-            Err(CoolError::Forbidden(
+            Err(CratestackError::Forbidden(
                 "update policy denied this operation".to_owned(),
             ))
         }

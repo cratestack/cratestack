@@ -2,7 +2,7 @@
 //! lookup with type narrowing, slice-of-columns scan, and the two
 //! equality checks shared by the create-policy evaluator.
 
-use cratestack_core::{CoolContext, Value};
+use cratestack_core::{CratestackContext, Value};
 
 use crate::{Json, PolicyLiteral, SqlColumnValue, SqlValue, sqlx};
 
@@ -80,7 +80,7 @@ pub(crate) fn push_bind_value(
     };
 }
 
-pub(crate) fn auth_value_to_sql(ctx: &CoolContext, auth_field: &str) -> Option<SqlValue> {
+pub(crate) fn auth_value_to_sql(ctx: &CratestackContext, auth_field: &str) -> Option<SqlValue> {
     match ctx.auth_field(auth_field)? {
         Value::Bool(value) => Some(SqlValue::Bool(*value)),
         Value::Int(value) => Some(SqlValue::Int(*value)),

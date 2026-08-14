@@ -86,14 +86,14 @@ async fn gadget_count(pool: &cratestack::sqlx::PgPool) -> i64 {
 struct AllowAllAuth;
 
 impl cratestack::AuthProvider for AllowAllAuth {
-    type Error = cratestack::CoolError;
+    type Error = cratestack::CratestackError;
 
     fn authenticate(
         &self,
         _request: &cratestack::RequestContext<'_>,
-    ) -> impl std::future::Future<Output = Result<cratestack::CoolContext, Self::Error>> + Send
+    ) -> impl std::future::Future<Output = Result<cratestack::CratestackContext, Self::Error>> + Send
     {
-        std::future::ready(Ok(cratestack::CoolContext::authenticated([])))
+        std::future::ready(Ok(cratestack::CratestackContext::authenticated([])))
     }
 }
 

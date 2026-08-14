@@ -66,7 +66,7 @@ use uuid::Uuid;
 
 use cratestack_client_flutter::cbor;
 use cratestack_codec_cbor::CborCodec;
-use cratestack_core::{CoolCodec, Decimal};
+use cratestack_core::{CratestackCodec, Decimal};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct NestedObject {

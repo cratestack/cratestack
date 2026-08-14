@@ -87,7 +87,7 @@ pub const DEFAULT_BODY_LIMIT_BYTES: usize = 2 * 1024 * 1024;
 ///
 /// Exceeding this bound does not panic: every call site already matches
 /// on `to_bytes`'s `Result` and degrades to a synthesized
-/// `CoolError::Internal` / error frame on `Err`, which is exactly what a
+/// `CratestackError::Internal` / error frame on `Err`, which is exactly what a
 /// `LengthLimitError` produces once the body is capped instead of
 /// unbounded.
 pub const MAX_RESPONSE_REBUFFER_BYTES: usize = 4 * DEFAULT_BODY_LIMIT_BYTES;

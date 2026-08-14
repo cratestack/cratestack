@@ -30,7 +30,7 @@ use cratestack::axum::body::Body;
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack::include_server_schema;
 use cratestack::sqlx::{Row, query};
-use cratestack::{AuthProvider, CoolContext, RequestContext, SystemContext, Value};
+use cratestack::{AuthProvider, CratestackContext, RequestContext, SystemContext, Value};
 use tower::util::ServiceExt;
 
 include_server_schema!("tests/fixtures/system_principal.cstack", db = Postgres);
@@ -69,12 +69,15 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     .expect("create owner_only_notes table");
 }
 
-fn system_ctx() -> CoolContext {
+fn system_ctx() -> CratestackContext {
     SystemContext::for_service("device-reconciler").into_context()
 }
 
-fn owner_ctx(subject_id: &str) -> CoolContext {
-    CoolContext::authenticated([("subjectId".to_owned(), Value::String(subject_id.to_owned()))])
+fn owner_ctx(subject_id: &str) -> CratestackContext {
+    CratestackContext::authenticated([(
+        "subjectId".to_owned(),
+        Value::String(subject_id.to_owned()),
+    )])
 }
 
 /// The headline case: a policy that names `isSystem()` grants the
@@ -392,12 +395,12 @@ async fn system_write_is_captured_in_the_audit_trail() {
 struct SystemPrincipalAuthProvider;
 
 impl AuthProvider for SystemPrincipalAuthProvider {
-    type Error = cratestack::CoolError;
+    type Error = cratestack::CratestackError;
 
     fn authenticate(
         &self,
         request: &RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
+    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
         let subject_id = request
             .headers
             .get("x-subject-id")
@@ -406,7 +409,7 @@ impl AuthProvider for SystemPrincipalAuthProvider {
         // A plausible, real-world integration mistake: naively
         // forwarding a client-supplied "I am the system" signal into
         // the context as an ordinary claim. This must still not reach
-        // `CoolContext::is_system()` — that flag has no public setter
+        // `CratestackContext::is_system()` — that flag has no public setter
         // at all, so this claim is inert no matter what name it uses.
         // If this ever started working, it would mean the forgery
         // boundary had been broken at the type level, not just at this
@@ -424,9 +427,9 @@ impl AuthProvider for SystemPrincipalAuthProvider {
                 if let Some(claimed) = forged_system_claim {
                     fields.push(("system".to_owned(), Value::Bool(claimed)));
                 }
-                CoolContext::authenticated(fields)
+                CratestackContext::authenticated(fields)
             }
-            None => CoolContext::anonymous(),
+            None => CratestackContext::anonymous(),
         };
 
         core::future::ready(Ok(ctx))
@@ -435,7 +438,7 @@ impl AuthProvider for SystemPrincipalAuthProvider {
 
 /// THE FORGERY PROOF (design constraint #4). There is no header, no
 /// claim, and no request-controlled path that can make
-/// `CoolContext::is_system()` return `true`. This drives a *real*
+/// `CratestackContext::is_system()` return `true`. This drives a *real*
 /// generated axum router — not a hand-called function — so the whole
 /// request pipeline (`AuthProvider::authenticate` ->
 /// `enrich_context_from_headers` -> the generated handler -> the ORM)

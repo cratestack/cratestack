@@ -4,7 +4,7 @@
 //! `BatchSummary`.
 
 use cratestack_core::{
-    AuditEvent, AuditOperation, BatchSummary, CoolContext, CoolError, ModelEventKind,
+    AuditEvent, AuditOperation, BatchSummary, CratestackContext, CratestackError, ModelEventKind,
 };
 
 use crate::audit::{build_audit_event, enqueue_audit_event, ensure_audit_table};
@@ -21,13 +21,13 @@ pub(super) async fn run_delete_many_in_tx<'tx, M, PK>(
     runtime: &SqlxRuntime,
     descriptor: &'static ModelDescriptor<M, PK>,
     filters: &[FilterExpr],
-    ctx: &CoolContext,
-) -> Result<(BatchSummary, bool, Vec<AuditEvent>), CoolError>
+    ctx: &CratestackContext,
+) -> Result<(BatchSummary, bool, Vec<AuditEvent>), CratestackError>
 where
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
 {
     if filters.is_empty() {
-        return Err(CoolError::Validation(
+        return Err(CratestackError::Validation(
             "delete_many requires at least one filter — refusing table-wide delete".to_owned(),
         ));
     }

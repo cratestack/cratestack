@@ -3,7 +3,7 @@
 //! to a `TRUE`/`FALSE` SQL constant; comparison predicates emit one
 //! bind slot.
 
-use cratestack_core::CoolContext;
+use cratestack_core::CratestackContext;
 use cratestack_policy::{context_has_role, context_in_tenant};
 
 use crate::{PolicyLiteral, ReadPredicate, sqlx};
@@ -14,7 +14,7 @@ use super::values::{auth_value_to_sql, push_bind_value, value_matches_auth_liter
 pub(super) fn push_policy_predicate(
     query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
     predicate: ReadPredicate,
-    ctx: &CoolContext,
+    ctx: &CratestackContext,
 ) {
     match predicate {
         ReadPredicate::AuthNotNull => {

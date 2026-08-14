@@ -1,10 +1,10 @@
-//! Bridges a `CoolEventBus`-style push callback into a bounded,
+//! Bridges a `CratestackEventBus`-style push callback into a bounded,
 //! backpressure-aware `Stream` for the SSE encoder ([`super::sse`]). See
 //! `docs/design/rpc-transport.md` §3.4/§3.4a: "bounded per-subscription
 //! send buffer; on overflow, emit Error{unavailable} ... and end the
 //! stream."
 //!
-//! `CoolEventBus::subscribe` handlers must never block or fail the
+//! `CratestackEventBus::subscribe` handlers must never block or fail the
 //! emitting transaction just because one particular SSE client is slow
 //! to drain, so the push side here is always non-blocking (`try_send`)
 //! and infallible from the bus's point of view — overflow is signaled to
@@ -26,7 +26,7 @@ use tokio::sync::mpsc;
 /// than growing memory unboundedly.
 const SUBSCRIPTION_BUFFER_CAPACITY: usize = 64;
 
-/// Handed to one or more `CoolEventBus::subscribe` callbacks registered
+/// Handed to one or more `CratestackEventBus::subscribe` callbacks registered
 /// for the same logical subscription (e.g. one per `@@emit`ted operation
 /// on a model). Every clone shares the same underlying sender slot, so
 /// the *first* overflow observed by any of them permanently closes the
@@ -67,7 +67,7 @@ impl<T: Send + 'static> SubscriptionPush<T> {
 }
 
 /// Builds a fresh bounded channel plus the [`SubscriptionPush`] handle
-/// callers clone into every `CoolEventBus::subscribe` closure that
+/// callers clone into every `CratestackEventBus::subscribe` closure that
 /// should feed it.
 pub fn subscription_channel<T: Send + 'static>() -> (SubscriptionPush<T>, mpsc::Receiver<T>) {
     let (tx, rx) = mpsc::channel(SUBSCRIPTION_BUFFER_CAPACITY);

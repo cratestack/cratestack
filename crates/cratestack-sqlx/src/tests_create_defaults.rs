@@ -13,7 +13,7 @@
 
 use crate::query::apply_create_defaults;
 use crate::{CreateDefault, CreateDefaultType, SqlValue};
-use cratestack_core::{CoolContext, CoolError, Value};
+use cratestack_core::{CratestackContext, CratestackError, Value};
 
 fn required_string_default(column: &'static str, auth_field: &'static str) -> CreateDefault {
     CreateDefault {
@@ -47,12 +47,13 @@ fn optional_string_default(
 #[test]
 fn missing_required_auth_field_is_a_validation_error() {
     let default = required_string_default("organization_id", "organization.id");
-    let ctx = CoolContext::authenticated([("id".to_owned(), Value::String("usr_1".to_owned()))]);
+    let ctx =
+        CratestackContext::authenticated([("id".to_owned(), Value::String("usr_1".to_owned()))]);
 
     let err = apply_create_defaults(Vec::new(), &[default], &ctx)
         .expect_err("missing required auth field must fail validation");
     assert!(
-        matches!(err, CoolError::Validation(_)),
+        matches!(err, CratestackError::Validation(_)),
         "expected Validation, got {err:?}"
     );
 }
@@ -63,7 +64,7 @@ fn missing_required_auth_field_is_a_validation_error() {
 #[test]
 fn present_required_auth_field_resolves_normally() {
     let default = required_string_default("organization_id", "organization.id");
-    let ctx = CoolContext::authenticated([(
+    let ctx = CratestackContext::authenticated([(
         "organization".to_owned(),
         Value::Map(std::collections::BTreeMap::from([(
             "id".to_owned(),
@@ -85,7 +86,8 @@ fn present_required_auth_field_resolves_normally() {
 #[test]
 fn missing_optional_auth_field_still_resolves_to_null() {
     let default = optional_string_default("nickname", "nickname", true);
-    let ctx = CoolContext::authenticated([("id".to_owned(), Value::String("usr_1".to_owned()))]);
+    let ctx =
+        CratestackContext::authenticated([("id".to_owned(), Value::String("usr_1".to_owned()))]);
 
     let values = apply_create_defaults(Vec::new(), &[default], &ctx)
         .expect("missing optional auth field with nullable column should resolve to NULL");
@@ -102,15 +104,15 @@ fn missing_optional_auth_field_with_non_nullable_column_still_errors() {
     let default = optional_string_default("owner_id", "userId", false);
 
     let authenticated =
-        CoolContext::authenticated([("id".to_owned(), Value::String("usr_1".to_owned()))]);
+        CratestackContext::authenticated([("id".to_owned(), Value::String("usr_1".to_owned()))]);
     let err = apply_create_defaults(Vec::new(), &[default], &authenticated)
         .expect_err("missing auth field for non-nullable column should fail validation");
-    assert!(matches!(err, CoolError::Validation(_)));
+    assert!(matches!(err, CratestackError::Validation(_)));
 
-    let anonymous = CoolContext::anonymous();
+    let anonymous = CratestackContext::anonymous();
     let err = apply_create_defaults(Vec::new(), &[default], &anonymous)
         .expect_err("unauthenticated caller should be forbidden, not validation-failed");
-    assert!(matches!(err, CoolError::Forbidden(_)));
+    assert!(matches!(err, CratestackError::Forbidden(_)));
 }
 
 /// Regression pin: an anonymous (unauthenticated) caller hitting a
@@ -129,12 +131,12 @@ fn missing_optional_auth_field_with_non_nullable_column_still_errors() {
 #[test]
 fn missing_required_auth_field_with_anonymous_caller_is_forbidden_not_validation() {
     let default = required_string_default("owner_id", "userId");
-    let anonymous = CoolContext::anonymous();
+    let anonymous = CratestackContext::anonymous();
 
     let err = apply_create_defaults(Vec::new(), &[default], &anonymous)
         .expect_err("anonymous caller must still be forbidden");
     assert!(
-        matches!(err, CoolError::Forbidden(_)),
+        matches!(err, CratestackError::Forbidden(_)),
         "expected Forbidden, got {err:?}"
     );
 }
@@ -145,12 +147,12 @@ fn missing_required_auth_field_with_anonymous_caller_is_forbidden_not_validation
 #[test]
 fn present_auth_field_with_wrong_type_is_a_validation_error() {
     let default = required_string_default("organization_id", "organization");
-    let ctx = CoolContext::authenticated([(
+    let ctx = CratestackContext::authenticated([(
         "organization".to_owned(),
         Value::Int(1), // declared String, actual Int
     )]);
 
     let err = apply_create_defaults(Vec::new(), &[default], &ctx)
         .expect_err("type-mismatched auth field should fail validation");
-    assert!(matches!(err, CoolError::Validation(_)));
+    assert!(matches!(err, CratestackError::Validation(_)));
 }

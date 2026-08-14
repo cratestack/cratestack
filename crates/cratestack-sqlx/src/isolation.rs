@@ -18,7 +18,7 @@ use crate::sqlx;
 
 use std::future::Future;
 
-use cratestack_core::{CoolError, TransactionIsolation};
+use cratestack_core::{CratestackError, TransactionIsolation};
 
 use crate::error::cool_error_from_sqlx;
 
@@ -39,10 +39,10 @@ pub async fn run_in_isolated_tx<F, Fut, T>(
     pool: &sqlx::PgPool,
     isolation: TransactionIsolation,
     body: F,
-) -> Result<T, CoolError>
+) -> Result<T, CratestackError>
 where
     F: FnMut(sqlx::Transaction<'static, sqlx::Postgres>) -> Fut,
-    Fut: Future<Output = Result<(T, sqlx::Transaction<'static, sqlx::Postgres>), CoolError>>,
+    Fut: Future<Output = Result<(T, sqlx::Transaction<'static, sqlx::Postgres>), CratestackError>>,
 {
     run_in_isolated_tx_with_retries(pool, isolation, MAX_RETRIES_DEFAULT, body).await
 }
@@ -55,10 +55,10 @@ pub async fn run_in_isolated_tx_with_retries<F, Fut, T>(
     isolation: TransactionIsolation,
     max_retries: u32,
     mut body: F,
-) -> Result<T, CoolError>
+) -> Result<T, CratestackError>
 where
     F: FnMut(sqlx::Transaction<'static, sqlx::Postgres>) -> Fut,
-    Fut: Future<Output = Result<(T, sqlx::Transaction<'static, sqlx::Postgres>), CoolError>>,
+    Fut: Future<Output = Result<(T, sqlx::Transaction<'static, sqlx::Postgres>), CratestackError>>,
 {
     let mut attempts = 0u32;
     loop {
@@ -106,7 +106,7 @@ where
     }
 }
 
-fn is_retriable(error: &CoolError) -> bool {
+fn is_retriable(error: &CratestackError) -> bool {
     // Fast path: typed variant surfaces the SQLSTATE directly. Only treat
     // it as authoritative when the code matches a known retriable state;
     // an unrecognized SQLSTATE falls through so the substring fallback
@@ -162,7 +162,7 @@ mod tests {
 
     #[test]
     fn retriable_on_serialization_failure_sqlstate() {
-        let err = CoolError::Database(
+        let err = CratestackError::Database(
             "Database(PgDatabaseError { severity: ERROR, code: \"40001\", \
              message: \"could not serialize access due to concurrent update\" })"
                 .to_owned(),
@@ -172,7 +172,7 @@ mod tests {
 
     #[test]
     fn retriable_on_deadlock_sqlstate() {
-        let err = CoolError::Database(
+        let err = CratestackError::Database(
             "Database(PgDatabaseError { code: \"40P01\", \
              message: \"deadlock detected\" })"
                 .to_owned(),
@@ -182,7 +182,7 @@ mod tests {
 
     #[test]
     fn not_retriable_on_unique_violation() {
-        let err = CoolError::Database(
+        let err = CratestackError::Database(
             "duplicate key value violates unique constraint \"accounts_pkey\"".to_owned(),
         );
         assert!(!is_retriable(&err));
@@ -192,10 +192,10 @@ mod tests {
     fn retriable_when_serialization_failure_is_raised_at_commit_time() {
         // PG SSI can defer the 40001 to COMMIT. The sqlx error surfaced
         // by `tx.commit()` carries the same SQLSTATE; the loop now
-        // promotes that into `CoolError::Database` and feeds it through
+        // promotes that into `CratestackError::Database` and feeds it through
         // `is_retriable` so the commit-time path is no longer leaked to
         // callers despite the API advertising automatic retries.
-        let err = CoolError::Database(
+        let err = CratestackError::Database(
             "Database(PgDatabaseError { severity: ERROR, code: \"40001\", \
              message: \"could not serialize access due to read/write dependencies among transactions\" })"
                 .to_owned(),
@@ -208,7 +208,7 @@ mod tests {
     #[test]
     fn retriable_typed_serialization_failure() {
         use cratestack_core::DbErrorInfo;
-        let err = CoolError::DatabaseTyped(DbErrorInfo {
+        let err = CratestackError::DatabaseTyped(DbErrorInfo {
             detail: "could not serialize access due to concurrent update".to_owned(),
             sqlstate: Some("40001".to_owned()),
             constraint: None,
@@ -222,7 +222,7 @@ mod tests {
     #[test]
     fn retriable_typed_deadlock() {
         use cratestack_core::DbErrorInfo;
-        let err = CoolError::DatabaseTyped(DbErrorInfo {
+        let err = CratestackError::DatabaseTyped(DbErrorInfo {
             detail: "deadlock detected".to_owned(),
             sqlstate: Some("40P01".to_owned()),
             constraint: None,
@@ -236,7 +236,7 @@ mod tests {
     #[test]
     fn not_retriable_typed_unique_violation() {
         use cratestack_core::DbErrorInfo;
-        let err = CoolError::DatabaseTyped(DbErrorInfo {
+        let err = CratestackError::DatabaseTyped(DbErrorInfo {
             detail: "duplicate key value violates unique constraint \"accounts_pkey\"".to_owned(),
             sqlstate: Some("23505".to_owned()),
             constraint: Some("accounts_pkey".to_owned()),
@@ -253,7 +253,7 @@ mod tests {
         // contains a known retriable substring. The typed fast path must
         // not short-circuit — the substring fallback must run.
         use cratestack_core::DbErrorInfo;
-        let err = CoolError::DatabaseTyped(DbErrorInfo {
+        let err = CratestackError::DatabaseTyped(DbErrorInfo {
             detail: "could not serialize access due to read/write dependencies".to_owned(),
             sqlstate: Some("XX999".to_owned()),
             constraint: None,
@@ -267,7 +267,7 @@ mod tests {
     #[test]
     fn typed_variant_exposes_constraint_for_unique_violation() {
         use cratestack_core::DbErrorInfo;
-        let err = CoolError::DatabaseTyped(DbErrorInfo {
+        let err = CratestackError::DatabaseTyped(DbErrorInfo {
             detail: "duplicate key value violates unique constraint \"wallets_owner_key\""
                 .to_owned(),
             sqlstate: Some("23505".to_owned()),

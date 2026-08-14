@@ -21,7 +21,7 @@
 //! fixture's whole point is the opposite: the schema must expand
 //! *successfully* into a real `ProcedureRegistry` trait and a real
 //! `impl` of it, and the failure must come from the call site afterward.
-//! That needs `::cratestack::CoolContext`/`CoolError`/`Cratestack` to
+//! That needs `::cratestack::CratestackContext`/`CratestackError`/`Cratestack` to
 //! resolve, which requires an actual `cratestack` (facade) dependency —
 //! `cratestack-macros`'s ordinary `[dependencies]` deliberately doesn't
 //! carry one (this crate only emits code, it doesn't need the runtime
@@ -92,10 +92,10 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {{
     async fn ping(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &cratestack::CoolContext,
+        _ctx: &cratestack::CratestackContext,
         args: cratestack_schema::procedures::ping::Args,
         _authorized: cratestack_schema::procedures::ping::Authorized,
-    ) -> Result<cratestack_schema::procedures::ping::Output, cratestack::CoolError> {{
+    ) -> Result<cratestack_schema::procedures::ping::Output, cratestack::CratestackError> {{
         Ok(cratestack_schema::PingReply {{
             echo: args.args.message,
         }})
@@ -104,7 +104,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {{
 
 fn main() {{
     let db = cratestack_schema::Cratestack::builder().build();
-    let ctx = cratestack::CoolContext::anonymous();
+    let ctx = cratestack::CratestackContext::anonymous();
     let args = cratestack_schema::procedures::ping::Args {{
         args: cratestack_schema::PingArgs {{
             message: "hello".to_owned(),

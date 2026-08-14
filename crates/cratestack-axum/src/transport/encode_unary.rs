@@ -1,6 +1,6 @@
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
-use cratestack_core::{CoolError, RouteTransportCapabilities};
+use cratestack_core::{CratestackError, RouteTransportCapabilities};
 use serde::Serialize;
 
 use super::http_transport::HttpTransport;
@@ -10,7 +10,7 @@ use super::media_type::select_transport_response_content_type;
 pub fn encode_transport_result<TTransport, TValue>(
     transport: &TTransport,
     headers: &HeaderMap,
-    result: Result<TValue, CoolError>,
+    result: Result<TValue, CratestackError>,
 ) -> Response
 where
     TTransport: HttpTransport,
@@ -34,7 +34,7 @@ pub fn encode_transport_result_with_status<TTransport, TValue>(
     transport: &TTransport,
     headers: &HeaderMap,
     success_status: StatusCode,
-    result: Result<TValue, CoolError>,
+    result: Result<TValue, CratestackError>,
 ) -> Response
 where
     TTransport: HttpTransport,
@@ -59,7 +59,7 @@ pub fn encode_transport_result_with_status_for<TTransport, TValue>(
     headers: &HeaderMap,
     capabilities: &RouteTransportCapabilities,
     success_status: StatusCode,
-    result: Result<TValue, CoolError>,
+    result: Result<TValue, CratestackError>,
 ) -> Response
 where
     TTransport: HttpTransport,

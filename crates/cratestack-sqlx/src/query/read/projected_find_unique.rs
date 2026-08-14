@@ -3,7 +3,7 @@
 //! `Default::default()` values; callers gate reads on
 //! `Projection::is_selected(col)`.
 
-use cratestack_core::{CoolContext, CoolError};
+use cratestack_core::{CratestackContext, CratestackError};
 use cratestack_sql::{IntoColumnName, ReadSource};
 
 use crate::query::support::{ReadPolicyKind, push_scoped_conditions};
@@ -39,8 +39,8 @@ impl<'a, M: 'static, PK: 'static> ProjectedFindUnique<'a, M, PK> {
 
     pub async fn run(
         self,
-        ctx: &CoolContext,
-    ) -> Result<Option<cratestack_sql::Projection<M>>, CoolError>
+        ctx: &CratestackContext,
+    ) -> Result<Option<cratestack_sql::Projection<M>>, CratestackError>
     where
         M: crate::FromPartialPgRow,
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
@@ -67,15 +67,15 @@ impl<'a, M: 'static, PK: 'static> ProjectedFindUnique<'a, M, PK> {
             .build()
             .fetch_optional(self.runtime.pool())
             .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+            .map_err(|error| CratestackError::Database(error.to_string()))?;
         decode_optional(row, &self.selected)
     }
 
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-        ctx: &CoolContext,
-    ) -> Result<Option<cratestack_sql::Projection<M>>, CoolError>
+        ctx: &CratestackContext,
+    ) -> Result<Option<cratestack_sql::Projection<M>>, CratestackError>
     where
         M: crate::FromPartialPgRow,
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
@@ -102,7 +102,7 @@ impl<'a, M: 'static, PK: 'static> ProjectedFindUnique<'a, M, PK> {
             .build()
             .fetch_optional(&mut **tx)
             .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+            .map_err(|error| CratestackError::Database(error.to_string()))?;
         decode_optional(row, &self.selected)
     }
 }
@@ -110,14 +110,14 @@ impl<'a, M: 'static, PK: 'static> ProjectedFindUnique<'a, M, PK> {
 fn decode_optional<M>(
     row: Option<sqlx::postgres::PgRow>,
     selected: &[&'static str],
-) -> Result<Option<cratestack_sql::Projection<M>>, CoolError>
+) -> Result<Option<cratestack_sql::Projection<M>>, CratestackError>
 where
     M: crate::FromPartialPgRow,
 {
     match row {
         Some(row) => {
             let value = M::decode_partial_pg_row(&row, selected)
-                .map_err(|error| CoolError::Database(error.to_string()))?;
+                .map_err(|error| CratestackError::Database(error.to_string()))?;
             Ok(Some(cratestack_sql::Projection {
                 value,
                 selected: selected.to_vec(),

@@ -27,7 +27,7 @@ use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack::include_server_schema;
 use cratestack::sqlx::query;
-use cratestack::{AuthProvider, CoolContext, CoolError, RequestContext, Value};
+use cratestack::{AuthProvider, CratestackContext, CratestackError, RequestContext, Value};
 use cratestack_codec_cbor::CborCodec;
 use cratestack_codec_json::JsonCodec;
 use tower::util::ServiceExt;
@@ -77,12 +77,12 @@ async fn seed(pool: &cratestack::sqlx::PgPool) {
 struct PassThroughAuth;
 
 impl AuthProvider for PassThroughAuth {
-    type Error = CoolError;
+    type Error = CratestackError;
     fn authenticate(
         &self,
         _request: &RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
-        core::future::ready(Ok(CoolContext::authenticated([(
+    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
+        core::future::ready(Ok(CratestackContext::authenticated([(
             "id".to_owned(),
             Value::Int(1),
         )])))
@@ -99,7 +99,7 @@ impl AuthProvider for PassThroughAuth {
 ///   (`Value::Null`), not a missing key and not an empty array/object.
 async fn assert_null_include_round_trips<C>(pool: &cratestack::sqlx::PgPool, codec: C)
 where
-    C: cratestack::HttpTransport + Clone + cratestack::CoolCodec,
+    C: cratestack::HttpTransport + Clone + cratestack::CratestackCodec,
 {
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
     let router = cratestack_schema::axum::model_router(cool, codec.clone(), PassThroughAuth);

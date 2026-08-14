@@ -29,8 +29,8 @@ pub(super) fn addr(s: &str) -> SocketAddr {
     s.parse().unwrap()
 }
 
-pub(super) fn ctx() -> cratestack_core::CoolContext {
-    cratestack_core::CoolContext::anonymous()
+pub(super) fn ctx() -> cratestack_core::CratestackContext {
+    cratestack_core::CratestackContext::anonymous()
 }
 
 // --- max_hops / right-to-left chain walk -----------------------------------

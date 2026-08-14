@@ -59,7 +59,7 @@ impl Serialize for EncodableValue<'_> {
 #[cfg(test)]
 mod tests {
     use cratestack_codec_cbor::CborCodec;
-    use cratestack_core::CoolCodec;
+    use cratestack_core::CratestackCodec;
     use serde_json::json;
 
     use super::*;

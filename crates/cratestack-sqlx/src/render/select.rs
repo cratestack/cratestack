@@ -3,7 +3,7 @@
 
 use std::fmt::Write;
 
-use cratestack_core::CoolContext;
+use cratestack_core::CratestackContext;
 use cratestack_sql::ReadSource;
 
 use crate::{FilterExpr, OrderClause};
@@ -18,7 +18,7 @@ pub(crate) fn render_scoped_select_sql<M, PK>(
     order_by: &[OrderClause],
     limit: Option<i64>,
     offset: Option<i64>,
-    ctx: &CoolContext,
+    ctx: &CratestackContext,
 ) -> String {
     let mut sql = format!(
         "SELECT {} FROM {}",

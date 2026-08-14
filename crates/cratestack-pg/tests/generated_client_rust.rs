@@ -6,7 +6,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use cratestack::{include_client_schema, include_server_schema};
 use cratestack_client_rust::{ClientConfig, CratestackClient, JsonCodec};
-use cratestack_core::CoolCodec;
+use cratestack_core::CratestackCodec;
 use std::net::SocketAddr;
 
 include_server_schema!("tests/fixtures/blog.cstack", db = Postgres);

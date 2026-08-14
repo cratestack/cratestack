@@ -11,7 +11,9 @@ use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack::include_server_schema;
 use cratestack::sqlx::query;
-use cratestack::{AuthProvider, CoolCodec, CoolContext, CoolError, RequestContext, Value};
+use cratestack::{
+    AuthProvider, CratestackCodec, CratestackContext, CratestackError, RequestContext, Value,
+};
 use cratestack_codec_json::JsonCodec;
 use tower::util::ServiceExt;
 
@@ -48,19 +50,19 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     .expect("create reserve");
 }
 
-fn ctx() -> CoolContext {
-    CoolContext::authenticated([("id".to_owned(), Value::Int(1))])
+fn ctx() -> CratestackContext {
+    CratestackContext::authenticated([("id".to_owned(), Value::Int(1))])
 }
 
 #[derive(Clone)]
 struct PassThroughAuth;
 
 impl AuthProvider for PassThroughAuth {
-    type Error = CoolError;
+    type Error = CratestackError;
     fn authenticate(
         &self,
         _request: &RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
+    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
         core::future::ready(Ok(ctx()))
     }
 }

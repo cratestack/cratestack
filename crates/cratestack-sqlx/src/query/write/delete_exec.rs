@@ -12,7 +12,7 @@
 //! covered identically. See `query/write/update_exec.rs` for the
 //! sibling implementation this mirrors.
 
-use cratestack_core::{CoolContext, CoolError};
+use cratestack_core::{CratestackContext, CratestackError};
 
 use crate::query::support::{probe_current_version, push_action_policy_query};
 use crate::{ModelDescriptor, cool_error_from_sqlx, sqlx};
@@ -22,9 +22,9 @@ pub(super) async fn delete_returning_record<'e, E, M, PK>(
     policy_pool: &sqlx::PgPool,
     descriptor: &'static ModelDescriptor<M, PK>,
     id: PK,
-    ctx: &CoolContext,
+    ctx: &CratestackContext,
     if_match: Option<i64>,
-) -> Result<M, CoolError>
+) -> Result<M, CratestackError>
 where
     E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
@@ -92,11 +92,11 @@ where
                         .await?
                 && current != expected
             {
-                return Err(CoolError::PreconditionFailed(format!(
+                return Err(CratestackError::PreconditionFailed(format!(
                     "version mismatch: expected {expected}, found {current}",
                 )));
             }
-            Err(CoolError::Forbidden(
+            Err(CratestackError::Forbidden(
                 "delete policy denied this operation".to_owned(),
             ))
         }

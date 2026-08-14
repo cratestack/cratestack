@@ -134,8 +134,8 @@ fn render_patch_field_generic(
                 } else {
                     Some(value.#field_ident
                         .into_iter()
-                        .map(|raw| -> ::core::result::Result<_, ::cratestack::CoolError> { #to_domain })
-                        .collect::<::core::result::Result<Vec<_>, ::cratestack::CoolError>>()?)
+                        .map(|raw| -> ::core::result::Result<_, ::cratestack::CratestackError> { #to_domain })
+                        .collect::<::core::result::Result<Vec<_>, ::cratestack::CratestackError>>()?)
                 };
             },
         };
@@ -174,7 +174,7 @@ fn render_patch_field_generic(
             },
             try_from_wire_let: quote! {
                 let #field_ident = value.#field_ident
-                    .map(|raw| -> ::core::result::Result<_, ::cratestack::CoolError> { #to_domain })
+                    .map(|raw| -> ::core::result::Result<_, ::cratestack::CratestackError> { #to_domain })
                     .transpose()?;
             },
         }

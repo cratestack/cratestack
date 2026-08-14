@@ -35,7 +35,7 @@ pub(super) fn build_batch_block() -> proc_macro2::TokenStream {
                 return rpc_dispatch_error(
                     &state,
                     &headers,
-                    ::cratestack::CoolError::BadRequest(
+                    ::cratestack::CratestackError::BadRequest(
                         "Idempotency-Key header is not supported on /rpc/batch; \
                          use the per-frame `idem` field instead".to_owned(),
                     ),
@@ -57,7 +57,7 @@ pub(super) fn build_batch_block() -> proc_macro2::TokenStream {
                 return rpc_dispatch_error(
                     &state,
                     &headers,
-                    ::cratestack::CoolError::Validation(format!(
+                    ::cratestack::CratestackError::Validation(format!(
                         "batch size {len} exceeds maximum of {}",
                         ::cratestack::BATCH_MAX_ITEMS,
                     )),

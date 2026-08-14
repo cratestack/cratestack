@@ -6,8 +6,8 @@ use std::sync::atomic::AtomicBool;
 use crate::sqlx;
 
 use cratestack_core::{
-    AuditSink, CoolError, CoolEventBus, CoolEventEnvelope, CoolEventFuture, ModelEventKind,
-    NoopAuditSink, SubscriptionHandle,
+    AuditSink, CratestackError, CratestackEventBus, CratestackEventEnvelope, CratestackEventFuture,
+    ModelEventKind, NoopAuditSink, SubscriptionHandle,
 };
 
 use crate::error::cool_error_from_sqlx;
@@ -18,7 +18,7 @@ pub use event_outbox::{enqueue_event_outbox, ensure_event_outbox_table};
 #[derive(Clone)]
 pub struct SqlxRuntime {
     pool: sqlx::PgPool,
-    events: CoolEventBus,
+    events: CratestackEventBus,
     // Shared (not per-clone) so every handle onto the same logical
     // runtime agrees on whether `cratestack_audit` has been
     // bootstrapped. See `crate::audit::ensure_audit_table` — this is
@@ -39,7 +39,7 @@ pub struct SqlxRuntime {
 
 // `dyn AuditSink` has no `Debug` bound (matching `IdempotencyStore` /
 // `RateLimitStore`, neither of which require one either), so this can't
-// be `#[derive(Debug)]` — same reason `CoolEventBus` hand-rolls its own
+// be `#[derive(Debug)]` — same reason `CratestackEventBus` hand-rolls its own
 // `Debug` impl instead of deriving one.
 impl std::fmt::Debug for SqlxRuntime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -60,7 +60,7 @@ impl SqlxRuntime {
     pub fn new(pool: sqlx::PgPool) -> Self {
         Self {
             pool,
-            events: CoolEventBus::default(),
+            events: CratestackEventBus::default(),
             audit_table_ensured: Arc::new(AtomicBool::new(false)),
             audit_sink: Arc::new(NoopAuditSink),
         }
@@ -97,22 +97,22 @@ impl SqlxRuntime {
         handler: F,
     ) -> SubscriptionHandle
     where
-        F: Fn(CoolEventEnvelope) -> CoolEventFuture + Send + Sync + 'static,
+        F: Fn(CratestackEventEnvelope) -> CratestackEventFuture + Send + Sync + 'static,
     {
         self.events.subscribe(model, operation, handler)
     }
 
     /// An owned, cheaply-cloneable handle onto the underlying
-    /// `CoolEventBus` — needed by callers (e.g. `@@subscribe` SSE
+    /// `CratestackEventBus` — needed by callers (e.g. `@@subscribe` SSE
     /// dispatch, cratestack#390) that outlive the `&SqlxRuntime` borrow
     /// `subscribe`/`unsubscribe` would otherwise require.
     #[doc(hidden)]
-    pub fn events_bus(&self) -> CoolEventBus {
+    pub fn events_bus(&self) -> CratestackEventBus {
         self.events.clone()
     }
 
     #[doc(hidden)]
-    pub async fn drain_event_outbox(&self) -> Result<usize, CoolError> {
+    pub async fn drain_event_outbox(&self) -> Result<usize, CratestackError> {
         ensure_event_outbox_table(&self.pool).await?;
 
         let rows = sqlx::query_as::<_, EventOutboxRow>(

@@ -37,13 +37,13 @@ is explicitly marked as such.
 | Question | Recommendation |
 |---|---|
 | 1. Trigger | **Author declaration** (`@@internal("action", ...)`), not policy inference. Reintroduces PR #485's attribute design unchanged in shape (that PR's code is not on `main` — see note above); only its *effect* changes (§2, §3). |
-| 2. Surfaces | **All four, one shared source of truth.** A single `model_internal_actions(&Model) -> BTreeSet<String>` — PR #485 designed this exact function in `crates/cratestack-core/src/schema/internal_attribute.rs`, but that file does not exist on `main`; the implementation ticket reintroduces it — consulted at exactly one point per surface: REST route assembly, RPC dispatch-arm collection, gRPC arm collection, and every client's per-action stub emission. A suppressed op sent to `/rpc/batch` gets a per-frame `CoolError::NotFound` error frame at its index, in place, other frames unaffected — no new mechanism needed, since this reuses machinery that genuinely is on `main` today (§3.2). |
-| 3. Failure mode | Not a single status code — **each surface's own pre-existing "this dispatch key doesn't exist" fallback**, reused rather than reinvented, because suppression is implemented as *emitting nothing*, not as a new runtime branch. REST: 405 on a shared path, using axum's own default `MethodRouter` behavior once routes are restructured the way PR #485 restructured them (that restructuring is not on `main`; the underlying axum 405-for-unregistered-verb default is); or plain axum 404 if a model suppresses every action on a path. RPC: `CoolError::NotFound` via the unknown-op-id arm that already exists on `main` today (`rpc_module.rs:116-133`). gRPC: `Code::Unimplemented` via the unmatched-method-path arm that already exists on `main` today (`api_server.rs:64-81`) (§4). |
+| 2. Surfaces | **All four, one shared source of truth.** A single `model_internal_actions(&Model) -> BTreeSet<String>` — PR #485 designed this exact function in `crates/cratestack-core/src/schema/internal_attribute.rs`, but that file does not exist on `main`; the implementation ticket reintroduces it — consulted at exactly one point per surface: REST route assembly, RPC dispatch-arm collection, gRPC arm collection, and every client's per-action stub emission. A suppressed op sent to `/rpc/batch` gets a per-frame `CratestackError::NotFound` error frame at its index, in place, other frames unaffected — no new mechanism needed, since this reuses machinery that genuinely is on `main` today (§3.2). |
+| 3. Failure mode | Not a single status code — **each surface's own pre-existing "this dispatch key doesn't exist" fallback**, reused rather than reinvented, because suppression is implemented as *emitting nothing*, not as a new runtime branch. REST: 405 on a shared path, using axum's own default `MethodRouter` behavior once routes are restructured the way PR #485 restructured them (that restructuring is not on `main`; the underlying axum 405-for-unregistered-verb default is); or plain axum 404 if a model suppresses every action on a path. RPC: `CratestackError::NotFound` via the unknown-op-id arm that already exists on `main` today (`rpc_module.rs:116-133`). gRPC: `Code::Unimplemented` via the unmatched-method-path arm that already exists on `main` today (`api_server.rs:64-81`) (§4). |
 | 4. Client-generation consequence | **Stub absent** — a compile error for the SDK consumer. Matches the precedent already shipped for gRPC's `create` and TypeScript's `Create<M>Input` interface (`model_allows_create`, presence-gated). Extend the same shape to declaration-gated absence on all three client languages, all four surfaces (§5). |
 | 5. Migration | **Breaking**, communicated the same way every other breaking codegen change is under this framework's pre-1.0 lockstep versioning: a minor version bump with a `CHANGELOG.md` entry naming the removed method, no deprecation window. `@@internal` is opt-in per action, so nothing breaks until an author adds it (§6). |
 
 Rejected alternatives: policy-derived (inferred) suppression (§7.1);
-a single literal `CoolError` variant/status code forced uniformly
+a single literal `CratestackError` variant/status code forced uniformly
 across all four surfaces (§7.2).
 
 ## 1. Current state, re-verified against `main`
@@ -228,9 +228,9 @@ generated `create`, supply a custom one" for a model declaring
 `@@allow("create", auth().isSystem())`. That policy is *satisfiable* —
 by a `SystemContext`-derived caller — so a satisfiability-based
 inference would correctly decline to suppress it. But `SystemContext`
-has no `From`/`TryFrom<CoolContext>` and no constructor accepting a
+has no `From`/`TryFrom<CratestackContext>` and no constructor accepting a
 caller-supplied context (`crates/cratestack-core/src/context/system.rs`,
-module doc + `SystemContext::for_service`), and `CoolContext::system` is
+module doc + `SystemContext::for_service`), and `CratestackContext::system` is
 private and `#[serde(skip)]` (`crates/cratestack-core/src/context.rs:
 25-54`) — so **no request that arrives over REST, RPC, or gRPC can ever
 be authenticated as a system caller**. The policy is abstractly
@@ -270,8 +270,8 @@ per surface:
 | Surface | Where suppression would be checked | What "suppressed" means | Is this on `main` today? |
 |---|---|---|---|
 | REST | `crates/cratestack-macros/src/axum/model/routes.rs::generate_model_axum_routes` — needs the per-action `MethodRouter` restructuring PR #485 designed (`merge_method_routes`, folding surviving verbs with `.merge()` instead of one fused `.get(..).post(..)` chain). | The suppressed verb's `axum::routing::{get,post,patch,delete}(...)` call is omitted from that path's merge. If every verb on a path is suppressed, the whole `.route(path, ...)` call is omitted (`merge_method_routes` returns an empty `TokenStream` for zero survivors, per PR #485's design). | **No** — `routes.rs` on `main` still emits one fused chain (§1.1); the restructuring is PR #485-only, unmerged. |
-| RPC unary | `crates/cratestack-macros/src/transport/rpc.rs::generate_model_rpc_dispatch_arms` and `crates/cratestack-macros/src/transport/op_descriptors.rs::generate_model_op_descriptors` — both take the model and would filter their per-verb `vec![...]` push against `model_internal_actions`. | The `op_id => { ... }` match arm for that verb is never emitted, so `rpc_dispatch_inner`'s `match op_id` (`rpc_module.rs:116`) falls to its `other => ...` catch-all, which already returns `CoolError::NotFound(format!("unknown RPC op \`{other}\`"))`. The `OpDescriptor` const for that op id is also omitted, so nothing advertises the op as callable. | The catch-all arm and its `CoolError::NotFound` **are** on `main` today (§1.2) — only the filtering-by-`model_internal_actions` step is new. |
-| RPC batch | No separate change needed beyond RPC unary, above. | `rpc_batch_dispatch` (`rpc_module/batch.rs:20-114`) calls `rpc_dispatch_inner` per frame (line 88) — the exact same function unary dispatch uses, arm omission and all. A suppressed op id in a batch frame gets the same `CoolError::NotFound`, converted to an `RpcResponseFrame::err(frame.id, &error)` at that frame's index via the existing `response_to_frame` call (line 96-98). The loop `continue`s to the next frame regardless (this already happens for any per-frame error, per the file's own module doc: "Per-frame errors don't poison the batch"). Batch order and per-frame independence are preserved with zero new code. | Every mechanism cited here **is** on `main` today — this row needs zero new code once RPC unary is done. |
+| RPC unary | `crates/cratestack-macros/src/transport/rpc.rs::generate_model_rpc_dispatch_arms` and `crates/cratestack-macros/src/transport/op_descriptors.rs::generate_model_op_descriptors` — both take the model and would filter their per-verb `vec![...]` push against `model_internal_actions`. | The `op_id => { ... }` match arm for that verb is never emitted, so `rpc_dispatch_inner`'s `match op_id` (`rpc_module.rs:116`) falls to its `other => ...` catch-all, which already returns `CratestackError::NotFound(format!("unknown RPC op \`{other}\`"))`. The `OpDescriptor` const for that op id is also omitted, so nothing advertises the op as callable. | The catch-all arm and its `CratestackError::NotFound` **are** on `main` today (§1.2) — only the filtering-by-`model_internal_actions` step is new. |
+| RPC batch | No separate change needed beyond RPC unary, above. | `rpc_batch_dispatch` (`rpc_module/batch.rs:20-114`) calls `rpc_dispatch_inner` per frame (line 88) — the exact same function unary dispatch uses, arm omission and all. A suppressed op id in a batch frame gets the same `CratestackError::NotFound`, converted to an `RpcResponseFrame::err(frame.id, &error)` at that frame's index via the existing `response_to_frame` call (line 96-98). The loop `continue`s to the next frame regardless (this already happens for any per-frame error, per the file's own module doc: "Per-frame errors don't poison the batch"). Batch order and per-frame independence are preserved with zero new code. | Every mechanism cited here **is** on `main` today — this row needs zero new code once RPC unary is done. |
 | gRPC | `crates/cratestack-macros/src/include/server/grpc/service.rs::build_service` — extend the existing `if model_allows_create(model) { ... }` pattern (line 102) to all five verbs, replacing the presence check with `!model_internal_actions(model).contains("create")` (and the equivalent for list/get/update/delete, none of which are gated today). | The arm for that verb is never pushed into `arms`. An unmatched method path already falls through to `ApiServer::call`'s catch-all (`api_server.rs:64-81`), which already returns `Code::Unimplemented` — reused unchanged. | The `create`-only gate, the catch-all, and `Code::Unimplemented` **are** on `main` today (§1.3) — extending the gate to all five verbs and switching its source to `model_internal_actions` is new. |
 | Rust client (REST) | `crates/cratestack-macros/src/client/rest/model.rs::generate_generated_model_client` | The suppressed verb's `pub async fn` is not emitted in `impl #client_ident`. | **No** gating exists today (§1.4) — fully new. |
 | Rust client (RPC) | `crates/cratestack-macros/src/client/rpc/model.rs::generate_generated_rpc_model_client` | Same — suppressed verb's `pub fn` omitted. | **No** gating exists today — fully new. |
@@ -305,7 +305,7 @@ A suppressed op id sent to `/rpc/batch`:
    is invisible at decode time — the op id is just a string).
 2. For the suppressed frame, `rpc_dispatch_inner` is called exactly as
    for any other frame (`batch.rs:88`) and its `match op_id` falls to
-   the unknown-op arm, returning a `CoolError::NotFound` response.
+   the unknown-op arm, returning a `CratestackError::NotFound` response.
 3. `response_to_frame` (`batch.rs:96-98`) converts that into an
    `RpcResponseFrame::err(frame.id, &error)` — the per-frame error shape
    every other per-frame failure already uses.
@@ -361,11 +361,11 @@ a new runtime check that has to decide what to return:
     approach works, not as something already shipped), which the PR
     body describes as "an end-to-end assertion that a real generated
     router returns 405 for suppressed verbs while a control model with
-    identical policies stays routed." No `CoolError`
+    identical policies stays routed." No `CratestackError`
     variant exists for it today (`crates/cratestack-core/src/error.rs`'s
-    `CoolError` enum has no `MethodNotAllowed`/405 case), so the 405
+    `CratestackError` enum has no `MethodNotAllowed`/405 case), so the 405
     body is axum's bare plain-text response, **not** a
-    `CoolErrorResponse`-shaped JSON/CBOR body. This is a real,
+    `CratestackErrorResponse`-shaped JSON/CBOR body. This is a real,
     named gap for the follow-up ticket (§8), not glossed over here.
   - A model suppressing every verb on a path: `merge_method_routes`,
     per PR #485's design, omits the `.route(...)` call entirely for
@@ -376,10 +376,10 @@ a new runtime check that has to decide what to return:
     src/axum/` — no `.fallback(` call exists anywhere in either tree),
     so an unregistered path already falls through to axum's own default
     404 today, independent of this design — again bare, not
-    `CoolErrorResponse`-shaped.
-- **RPC (unary and batch).** `CoolError::NotFound(...)` via the
+    `CratestackErrorResponse`-shaped.
+- **RPC (unary and batch).** `CratestackError::NotFound(...)` via the
   existing unknown-op-id arm (§1.2, §3.2) — already a structured
-  `CoolErrorResponse`/`RpcErrorBody` (`code: "not_found"`), because RPC
+  `CratestackErrorResponse`/`RpcErrorBody` (`code: "not_found"`), because RPC
   routing was always string-keyed dispatch through one function, so
   "unknown op id" was already a real code path with a real error type,
   unlike REST's per-path `MethodRouter`.
@@ -401,7 +401,7 @@ existed," since both compile to the same absence.
 
 **Is this "consistent," per #514's literal wording?** Not
 bit-for-bit — REST returns 405 or 404 depending on path-sharing, RPC
-returns 404-equivalent `CoolError::NotFound`, gRPC returns
+returns 404-equivalent `CratestackError::NotFound`, gRPC returns
 `Unimplemented`. Forcing one literal status code uniformly was
 considered and rejected — see §7.2 for why. The recommendation reads
 "consistent" as *consistent semantics* (indistinguishable from
@@ -409,7 +409,7 @@ never-generated, on every surface) rather than *identical numeric
 code*, because the four surfaces do not share a status-code vocabulary
 to begin with (HTTP status codes vs. gRPC `Code` vs. RPC's own `code:
 string` field already differ for the exact same underlying condition
-on every other error in this framework — e.g. `CoolError::NotFound`
+on every other error in this framework — e.g. `CratestackError::NotFound`
 is already 404 / `not_found` / `Code::NotFound` today, three different
 literal representations of one semantic outcome, per
 `crates/cratestack-grpc/src/error.rs`'s own mapping table).
@@ -514,9 +514,9 @@ scenario #486 was filed to unblock. Declaration was chosen instead
 because it is a schema-author routing decision that cannot be recovered
 from the policy expression alone.
 
-### 7.2 Rejected: one literal `CoolError`/status code forced uniformly
+### 7.2 Rejected: one literal `CratestackError`/status code forced uniformly
 
-Considered: add a new `CoolError::Suppressed` (or reuse `NotFound`
+Considered: add a new `CratestackError::Suppressed` (or reuse `NotFound`
 everywhere including gRPC) and thread it through all four surfaces so
 every binding returns byte-identical status/code output for a
 suppressed action. Rejected because:
@@ -541,7 +541,7 @@ suppressed action. Rejected because:
   (`crates/cratestack-grpc/src/error.rs`) already establish that "one
   semantic outcome, three different literal wire representations per
   binding" is the framework's standing convention, not an exception —
-  `CoolError::NotFound` is already 404 / `"not_found"` / `Code::NotFound`
+  `CratestackError::NotFound` is already 404 / `"not_found"` / `Code::NotFound`
   under the exact same reasoning this document applies to suppression.
   Insisting on byte-identical output specifically for suppression would
   be a new, narrower consistency bar than the rest of the framework
@@ -550,7 +550,7 @@ suppressed action. Rejected because:
 ## 8. Left for the implementation ticket, not decided here
 
 - Whether REST's 405/404 responses for a suppressed action should gain
-  a `CoolErrorResponse` body (currently bare axum text) to match RPC/
+  a `CratestackErrorResponse` body (currently bare axum text) to match RPC/
   gRPC's already-structured error shape — flagged in §4, not resolved,
   since it is implementation work (new middleware or fallback handler),
   not a design question with more than one reasonable answer once §4 is

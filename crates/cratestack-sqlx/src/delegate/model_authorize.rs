@@ -4,14 +4,18 @@
 //! procedure handlers when they take a `@authorize(Model, action,
 //! args.path)` attribute.
 
-use cratestack_core::{CoolContext, CoolError};
+use cratestack_core::{CratestackContext, CratestackError};
 
 use crate::sqlx;
 
 use super::model::ModelDelegate;
 
 impl<'a, M: 'static, PK: 'static> ModelDelegate<'a, M, PK> {
-    pub async fn authorize_detail(&self, id: PK, ctx: &CoolContext) -> Result<(), CoolError>
+    pub async fn authorize_detail(
+        &self,
+        id: PK,
+        ctx: &CratestackContext,
+    ) -> Result<(), CratestackError>
     where
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
@@ -27,7 +31,11 @@ impl<'a, M: 'static, PK: 'static> ModelDelegate<'a, M, PK> {
         .await
     }
 
-    pub async fn authorize_update(&self, id: PK, ctx: &CoolContext) -> Result<(), CoolError>
+    pub async fn authorize_update(
+        &self,
+        id: PK,
+        ctx: &CratestackContext,
+    ) -> Result<(), CratestackError>
     where
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
@@ -43,7 +51,11 @@ impl<'a, M: 'static, PK: 'static> ModelDelegate<'a, M, PK> {
         .await
     }
 
-    pub async fn authorize_delete(&self, id: PK, ctx: &CoolContext) -> Result<(), CoolError>
+    pub async fn authorize_delete(
+        &self,
+        id: PK,
+        ctx: &CratestackContext,
+    ) -> Result<(), CratestackError>
     where
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {

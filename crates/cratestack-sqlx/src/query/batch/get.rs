@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::hash::Hash;
 
-use cratestack_core::{BatchResponse, CoolContext, CoolError};
+use cratestack_core::{BatchResponse, CratestackContext, CratestackError};
 
 use crate::query::support::push_action_policy_query;
 use crate::{ModelDescriptor, ModelPrimaryKey, SqlxRuntime, cool_error_from_sqlx, sqlx};
@@ -20,7 +20,7 @@ pub struct BatchGet<'a, M: 'static, PK: 'static> {
 }
 
 impl<'a, M: 'static, PK: 'static> BatchGet<'a, M, PK> {
-    pub async fn run(self, ctx: &CoolContext) -> Result<BatchResponse<M>, CoolError>
+    pub async fn run(self, ctx: &CratestackContext) -> Result<BatchResponse<M>, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + ModelPrimaryKey<PK>,
         PK: Clone
@@ -68,13 +68,13 @@ impl<'a, M: 'static, PK: 'static> BatchGet<'a, M, PK> {
         // Walk-and-match: pair each input PK back to its row, or
         // NotFound when the read policy / soft-delete excluded it.
         let mut by_pk: HashMap<PK, M> = rows.into_iter().map(|m| (m.primary_key(), m)).collect();
-        let per_item: Vec<Result<M, CoolError>> = self
+        let per_item: Vec<Result<M, CratestackError>> = self
             .ids
             .into_iter()
             .map(|id| {
                 by_pk
                     .remove(&id)
-                    .ok_or_else(|| CoolError::NotFound("no row matched".to_owned()))
+                    .ok_or_else(|| CratestackError::NotFound("no row matched".to_owned()))
             })
             .collect();
 

@@ -2,7 +2,7 @@
 //! body, re-encode a typed value.
 
 use axum::http::HeaderMap;
-use cratestack_core::CoolError;
+use cratestack_core::CratestackError;
 use serde::{Deserialize, Serialize};
 
 use crate::HttpTransport;
@@ -20,7 +20,11 @@ pub(super) const DEFAULT_CONTENT_TYPE: &str = "application/cbor";
 // CBOR, while `decode_transport_request_for` errors with
 // `UnsupportedMediaType`. Reconciling the two would change RPC behavior,
 // so the bodies are kept distinct for now.
-pub fn decode_rpc_body<C, T>(codec: &C, headers: &HeaderMap, body: &[u8]) -> Result<T, CoolError>
+pub fn decode_rpc_body<C, T>(
+    codec: &C,
+    headers: &HeaderMap,
+    body: &[u8],
+) -> Result<T, CratestackError>
 where
     C: HttpTransport,
     T: for<'de> Deserialize<'de>,
@@ -45,7 +49,7 @@ pub async fn encode_rpc_value<C, T>(
     codec: &C,
     headers: &HeaderMap,
     value: &T,
-) -> Result<Vec<u8>, CoolError>
+) -> Result<Vec<u8>, CratestackError>
 where
     C: HttpTransport,
     T: Serialize + ?Sized,
@@ -59,7 +63,7 @@ where
     let bytes = axum::body::to_bytes(body, cratestack_core::MAX_RESPONSE_REBUFFER_BYTES)
         .await
         .map_err(|error| {
-            CoolError::Internal(format!("failed to buffer encoded RPC body: {error}"))
+            CratestackError::Internal(format!("failed to buffer encoded RPC body: {error}"))
         })?;
     Ok(bytes.to_vec())
 }

@@ -31,7 +31,7 @@ include_server_schema!("tests/fixtures/rate_limit_extension.cstack", db = Postgr
 
 mod support;
 
-use cratestack::{AuthProvider, CoolContext, CoolError, RequestContext, Value};
+use cratestack::{AuthProvider, CratestackContext, CratestackError, RequestContext, Value};
 
 fn test_db() -> cratestack_schema::Cratestack {
     let pool = PgPoolOptions::new()
@@ -44,13 +44,13 @@ fn test_db() -> cratestack_schema::Cratestack {
 struct AlwaysAuthProvider;
 
 impl AuthProvider for AlwaysAuthProvider {
-    type Error = CoolError;
+    type Error = CratestackError;
 
     fn authenticate(
         &self,
         _request: &RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
-        core::future::ready(Ok(CoolContext::authenticated([(
+    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
+        core::future::ready(Ok(CratestackContext::authenticated([(
             "id".to_owned(),
             Value::Int(1),
         )])))
@@ -64,11 +64,11 @@ impl cratestack_schema::procedures::ProcedureRegistry for RpcProcedures {
     fn ping(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::ping::Args,
         _authorized: cratestack_schema::procedures::ping::Authorized,
     ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::ping::Output, CoolError>,
+        Output = Result<cratestack_schema::procedures::ping::Output, CratestackError>,
     > + Send {
         core::future::ready(Ok(args.args))
     }
@@ -76,11 +76,11 @@ impl cratestack_schema::procedures::ProcedureRegistry for RpcProcedures {
     fn create_payment(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::create_payment::Args,
         _authorized: cratestack_schema::procedures::create_payment::Authorized,
     ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::create_payment::Output, CoolError>,
+        Output = Result<cratestack_schema::procedures::create_payment::Output, CratestackError>,
     > + Send {
         core::future::ready(Ok(args.args))
     }

@@ -1,7 +1,7 @@
 //! `ModelDelegate` and its scoped (`bind(ctx)`-bound) sibling, plus
 //! the per-operation scoped builder wrappers. The unscoped delegate
 //! hands out `FindMany`/`CreateRecord`/etc. directly; the scoped
-//! delegate captures a `CoolContext` once at `bind` time and threads
+//! delegate captures a `CratestackContext` once at `bind` time and threads
 //! it into every `.run()` so call sites stay terse.
 
 mod model;

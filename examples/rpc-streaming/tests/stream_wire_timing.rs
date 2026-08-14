@@ -20,7 +20,7 @@
 
 use std::time::{Duration, Instant};
 
-use cratestack::CoolCodec;
+use cratestack::CratestackCodec;
 use cratestack::futures::StreamExt;
 use cratestack_client_rust::CborSeqChunkDecoder;
 use cratestack_codec_cbor::CborCodec;

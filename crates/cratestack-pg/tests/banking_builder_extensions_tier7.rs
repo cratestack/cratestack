@@ -15,7 +15,7 @@ mod support;
 
 use cratestack::include_server_schema;
 use cratestack::sqlx::{Row, query};
-use cratestack::{CoolContext, Value, point};
+use cratestack::{CratestackContext, Value, point};
 use support::pg;
 
 include_server_schema!(
@@ -59,8 +59,9 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     .expect("create delivery_zones");
 }
 
-fn operator() -> CoolContext {
-    CoolContext::authenticated([("id".to_owned(), Value::Int(1))]).with_request_id("tier7-001")
+fn operator() -> CratestackContext {
+    CratestackContext::authenticated([("id".to_owned(), Value::Int(1))])
+        .with_request_id("tier7-001")
 }
 
 async fn seed(pool: &cratestack::sqlx::PgPool) {

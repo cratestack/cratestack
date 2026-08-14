@@ -24,7 +24,7 @@
 use cratestack::axum::body::Body;
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack::include_server_schema;
-use cratestack::{CoolCodec, CoolContext, CoolError};
+use cratestack::{CratestackCodec, CratestackContext, CratestackError};
 use cratestack_codec_json::JsonCodec;
 use tower::ServiceExt;
 
@@ -37,11 +37,11 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     fn ping(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::ping::Args,
         _authorized: cratestack_schema::procedures::ping::Authorized,
     ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::ping::Output, CoolError>,
+        Output = Result<cratestack_schema::procedures::ping::Output, CratestackError>,
     > + Send {
         async move {
             Ok(cratestack_schema::PingReply {
@@ -55,13 +55,13 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
 struct AllowAllAuth;
 
 impl cratestack::AuthProvider for AllowAllAuth {
-    type Error = CoolError;
+    type Error = CratestackError;
 
     fn authenticate(
         &self,
         _request: &cratestack::RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
-        core::future::ready(Ok(CoolContext::authenticated([(
+    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
+        core::future::ready(Ok(CratestackContext::authenticated([(
             "id".to_owned(),
             cratestack::Value::Int(1),
         )])))

@@ -2,7 +2,7 @@
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use cratestack_core::CoolError;
+use cratestack_core::CratestackError;
 
 use super::time::{system_time_from_ms, system_time_to_ms};
 
@@ -34,5 +34,5 @@ fn system_time_from_ms_handles_negative_input() {
 fn system_time_to_ms_rejects_pre_epoch_inputs() {
     let before = UNIX_EPOCH - Duration::from_secs(1);
     let err = system_time_to_ms(before).expect_err("pre-epoch must error");
-    assert!(matches!(err, CoolError::Internal(_)));
+    assert!(matches!(err, CratestackError::Internal(_)));
 }

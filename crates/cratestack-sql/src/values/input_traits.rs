@@ -4,14 +4,14 @@ pub trait CreateModelInput<M> {
     fn sql_values(&self) -> Vec<SqlColumnValue>;
     /// Run schema-derived validators (`@length`, `@email`, `@regex`, ...) on
     /// the input. Default impl is a no-op for inputs without validators.
-    fn validate(&self) -> Result<(), cratestack_core::CoolError> {
+    fn validate(&self) -> Result<(), cratestack_core::CratestackError> {
         Ok(())
     }
 }
 
 pub trait UpdateModelInput<M> {
     fn sql_values(&self) -> Vec<SqlColumnValue>;
-    fn validate(&self) -> Result<(), cratestack_core::CoolError> {
+    fn validate(&self) -> Result<(), cratestack_core::CratestackError> {
         Ok(())
     }
 }
@@ -36,7 +36,7 @@ pub trait UpsertModelInput<M>: Send {
     /// `sql_values()`.
     fn primary_key_value(&self) -> SqlValue;
 
-    fn validate(&self) -> Result<(), cratestack_core::CoolError> {
+    fn validate(&self) -> Result<(), cratestack_core::CratestackError> {
         Ok(())
     }
 }

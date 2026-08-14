@@ -2,7 +2,7 @@
 //! `some`/`every`/`none` quantifiers, plus the reusable `EXISTS`
 //! emitter.
 
-use cratestack_core::CoolContext;
+use cratestack_core::CratestackContext;
 
 use crate::{PolicyExpr, RelationQuantifier, sqlx};
 
@@ -17,7 +17,7 @@ pub(super) fn push_relation_policy_query(
     related_table: &'static str,
     related_column: &'static str,
     expr: &'static PolicyExpr,
-    ctx: &CoolContext,
+    ctx: &CratestackContext,
 ) {
     match quantifier {
         RelationQuantifier::ToOne | RelationQuantifier::Some => {

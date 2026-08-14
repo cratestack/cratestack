@@ -135,7 +135,7 @@ fn emit_regex(field: &Field, idx: usize, pattern: &str) -> TokenStream {
                     .expect("compile-validated @regex pattern must compile")
             });
         if !#regex_ident.is_match(value) {
-            return Err(::cratestack::CoolError::Validation(format!(
+            return Err(::cratestack::CratestackError::Validation(format!(
                 "field '{}' does not match required pattern", #field_name,
             )));
         }

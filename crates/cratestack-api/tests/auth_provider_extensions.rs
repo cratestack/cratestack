@@ -14,7 +14,7 @@
 //!      whatever an mTLS/connect-info/tenant-resolution layer would do.
 //!   2. `MarkerReadingAuthProvider::authenticate` reads that marker out
 //!      of `request.extensions` and reflects it into the returned
-//!      `CoolContext` as an auth claim.
+//!      `CratestackContext` as an auth claim.
 //!   3. A procedure surfaces the claim back to the caller so the test
 //!      can assert on it through a real HTTP response, not just a unit
 //!      check of the struct.
@@ -26,10 +26,10 @@
 //! do), but the two pasted `cargo test` outputs in the PR description are
 //! the record of it.
 
-use cratestack::CoolCodec;
+use cratestack::CratestackCodec;
 use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::http::{Request, StatusCode};
-use cratestack::{CoolContext, CoolError, Value, include_server_schema};
+use cratestack::{CratestackContext, CratestackError, Value, include_server_schema};
 use cratestack_codec_json::JsonCodec;
 use tower::ServiceExt;
 
@@ -46,25 +46,25 @@ struct UpstreamTenant(String);
 
 /// Reads `UpstreamTenant` straight out of `request.extensions` — the
 /// exact capability this ticket adds — and reflects it into the
-/// returned `CoolContext` as an auth claim so the procedure below (and
+/// returned `CratestackContext` as an auth claim so the procedure below (and
 /// this test) can observe it. Falls back to a sentinel when absent so a
 /// broken plumbing path is visibly wrong rather than silently missing.
 #[derive(Clone)]
 struct MarkerReadingAuthProvider;
 
 impl cratestack::AuthProvider for MarkerReadingAuthProvider {
-    type Error = CoolError;
+    type Error = CratestackError;
 
     fn authenticate(
         &self,
         request: &cratestack::RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
+    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
         let tenant = request
             .extensions
             .get::<UpstreamTenant>()
             .map(|marker| marker.0.clone())
             .unwrap_or_else(|| "NO-EXTENSION-SEEN".to_owned());
-        core::future::ready(Ok(CoolContext::authenticated([
+        core::future::ready(Ok(CratestackContext::authenticated([
             ("id".to_owned(), Value::Int(1)),
             ("tenant_marker".to_owned(), Value::String(tenant)),
         ])))
@@ -80,11 +80,11 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     fn who_am_i(
         &self,
         _db: &cratestack_schema::Cratestack,
-        ctx: &CoolContext,
+        ctx: &CratestackContext,
         _args: cratestack_schema::procedures::who_am_i::Args,
         _authorized: cratestack_schema::procedures::who_am_i::Authorized,
     ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::who_am_i::Output, CoolError>,
+        Output = Result<cratestack_schema::procedures::who_am_i::Output, CratestackError>,
     > + Send {
         let tenant = ctx
             .auth_field("tenant_marker")
@@ -139,7 +139,7 @@ async fn no_layer_means_auth_provider_sees_no_extension() {
 /// The decisive assertion: a tower/axum layer inserts `UpstreamTenant`
 /// into the request's `http::Extensions`; `AuthProvider::authenticate`
 /// reads it off `RequestContext::extensions` and reflects it into the
-/// `CoolContext`; the procedure surfaces it; the caller observes it
+/// `CratestackContext`; the procedure surfaces it; the caller observes it
 /// through a real HTTP response driven through the actual generated
 /// router. This is the plumbing this ticket adds — see this file's
 /// module doc for how it was proven to fail when broken.

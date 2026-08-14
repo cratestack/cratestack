@@ -9,7 +9,7 @@
 mod support;
 
 use cratestack::sqlx::query;
-use cratestack::{CoolError, TransactionIsolation, run_in_isolated_tx};
+use cratestack::{CratestackError, TransactionIsolation, run_in_isolated_tx};
 use support::pg;
 
 async fn reset(pool: &cratestack::sqlx::PgPool) {
@@ -29,7 +29,7 @@ async fn reset(pool: &cratestack::sqlx::PgPool) {
 
 async fn increment_balance_with_serialization(
     pool: cratestack::sqlx::PgPool,
-) -> Result<(), CoolError> {
+) -> Result<(), CratestackError> {
     run_in_isolated_tx(
         &pool,
         TransactionIsolation::Serializable,
@@ -39,7 +39,7 @@ async fn increment_balance_with_serialization(
                 cratestack::sqlx::query_as("SELECT amount FROM balance_under_test WHERE id = 1")
                     .fetch_one(&mut *tx)
                     .await
-                    .map_err(|e| CoolError::Database(e.to_string()))?;
+                    .map_err(|e| CratestackError::Database(e.to_string()))?;
             // Force a small await so the two concurrent tasks actually
             // interleave their reads before either commits.
             tokio::task::yield_now().await;
@@ -49,7 +49,7 @@ async fn increment_balance_with_serialization(
                 .bind(new_amount)
                 .execute(&mut *tx)
                 .await
-                .map_err(|e| CoolError::Database(e.to_string()))?;
+                .map_err(|e| CratestackError::Database(e.to_string()))?;
             Ok(((), tx))
         },
     )
@@ -116,7 +116,7 @@ async fn write_skew_anomaly_surfaces_at_commit_time_and_is_retried_to_success() 
     async fn withdraw_if_combined_balance_allows(
         pool: cratestack::sqlx::PgPool,
         target: i64,
-    ) -> Result<(), CoolError> {
+    ) -> Result<(), CratestackError> {
         run_in_isolated_tx(
             &pool,
             TransactionIsolation::Serializable,
@@ -126,7 +126,7 @@ async fn write_skew_anomaly_surfaces_at_commit_time_and_is_retried_to_success() 
                 )
                 .fetch_one(&mut *tx)
                 .await
-                .map_err(|e| CoolError::Database(e.to_string()))?;
+                .map_err(|e| CratestackError::Database(e.to_string()))?;
                 // Yield so the two tasks both observe the pre-write
                 // snapshot before either writes. This is what makes the
                 // anomaly visible — both see total >= 100 and decide
@@ -140,7 +140,7 @@ async fn write_skew_anomaly_surfaces_at_commit_time_and_is_retried_to_success() 
                     .bind(target)
                     .execute(&mut *tx)
                     .await
-                    .map_err(|e| CoolError::Database(e.to_string()))?;
+                    .map_err(|e| CratestackError::Database(e.to_string()))?;
                 }
                 Ok(((), tx))
             },
@@ -187,7 +187,7 @@ async fn read_committed_can_lose_an_update_when_no_retry_is_configured() {
     reset(pool).await;
 
     // Run sequentially first to confirm the row math works; then race two.
-    async fn loose_increment(pool: cratestack::sqlx::PgPool) -> Result<(), CoolError> {
+    async fn loose_increment(pool: cratestack::sqlx::PgPool) -> Result<(), CratestackError> {
         run_in_isolated_tx(
             &pool,
             TransactionIsolation::ReadCommitted,
@@ -197,14 +197,14 @@ async fn read_committed_can_lose_an_update_when_no_retry_is_configured() {
                 )
                 .fetch_one(&mut *tx)
                 .await
-                .map_err(|e| CoolError::Database(e.to_string()))?;
+                .map_err(|e| CratestackError::Database(e.to_string()))?;
                 tokio::task::yield_now().await;
                 let new_amount = row.0 + 1;
                 cratestack::sqlx::query("UPDATE balance_under_test SET amount = $1 WHERE id = 1")
                     .bind(new_amount)
                     .execute(&mut *tx)
                     .await
-                    .map_err(|e| CoolError::Database(e.to_string()))?;
+                    .map_err(|e| CratestackError::Database(e.to_string()))?;
                 Ok(((), tx))
             },
         )

@@ -1,4 +1,4 @@
-use crate::{CoolError, Page, SelectionQuery};
+use crate::{CratestackError, Page, SelectionQuery};
 use serde_json::Value as JsonValue;
 
 pub trait ProjectionDecoder {
@@ -6,23 +6,23 @@ pub trait ProjectionDecoder {
 
     fn selection_query(&self) -> SelectionQuery;
 
-    fn decode_one(&self, value: JsonValue) -> Result<Self::Output, CoolError>;
+    fn decode_one(&self, value: JsonValue) -> Result<Self::Output, CratestackError>;
 
-    fn decode_many(&self, value: JsonValue) -> Result<Vec<Self::Output>, CoolError> {
+    fn decode_many(&self, value: JsonValue) -> Result<Vec<Self::Output>, CratestackError> {
         match value {
             JsonValue::Array(values) => values
                 .into_iter()
                 .map(|value| self.decode_one(value))
                 .collect(),
-            other => Err(CoolError::Internal(format!(
+            other => Err(CratestackError::Internal(format!(
                 "projected list payload must be an array, got {other:?}"
             ))),
         }
     }
 
-    fn decode_page(&self, value: JsonValue) -> Result<Page<Self::Output>, CoolError> {
+    fn decode_page(&self, value: JsonValue) -> Result<Page<Self::Output>, CratestackError> {
         let page = serde_json::from_value::<Page<JsonValue>>(value).map_err(|error| {
-            CoolError::Codec(format!("failed to decode projected page payload: {error}"))
+            CratestackError::Codec(format!("failed to decode projected page payload: {error}"))
         })?;
         let items = page
             .items
@@ -40,7 +40,7 @@ impl ProjectionDecoder for SelectionQuery {
         self.clone()
     }
 
-    fn decode_one(&self, value: JsonValue) -> Result<Self::Output, CoolError> {
+    fn decode_one(&self, value: JsonValue) -> Result<Self::Output, CratestackError> {
         Ok(value)
     }
 }

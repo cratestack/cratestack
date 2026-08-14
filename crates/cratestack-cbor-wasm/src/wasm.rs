@@ -9,11 +9,11 @@
 //! linear memory in an unspecified state for every *subsequent* call too,
 //! not just the failing one, so malformed input must produce a catchable
 //! rejected-promise-shaped `Result::Err`, never a trap. `JsError`
-//! implements `From<E: std::error::Error>`, and `CoolError` (thiserror)
+//! implements `From<E: std::error::Error>`, and `CratestackError` (thiserror)
 //! qualifies, so `?` converts codec errors into a real JS `Error` object
 //! (readable `.message`, `instanceof Error`) instead of a bare string.
 use cratestack_codec_cbor::CborCodec;
-use cratestack_core::CoolCodec;
+use cratestack_core::CratestackCodec;
 use wasm_bindgen::prelude::*;
 
 use crate::json_bridge::EncodableValue;

@@ -1,4 +1,4 @@
-//! Generate the body of `validate(&self) -> Result<(), CoolError>` for
+//! Generate the body of `validate(&self) -> Result<(), CratestackError>` for
 //! the given input fields, based on `@length`, `@range`, `@regex`,
 //! `@email`, `@uri`, `@iso4217` attributes.
 
@@ -22,7 +22,7 @@ pub(super) enum FieldValidator {
     Iso4217,
 }
 
-/// Generate the body of `validate(&self) -> Result<(), CoolError>` for
+/// Generate the body of `validate(&self) -> Result<(), CratestackError>` for
 /// the given input fields. Returns `None` if no field declares a
 /// validator (the trait's default impl is fine).
 pub(crate) fn generate_input_validate_body(

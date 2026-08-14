@@ -8,11 +8,12 @@ use std::pin::Pin;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::CoolError;
+use crate::error::CratestackError;
 
-pub use bus::{CoolEventBus, SubscriptionGuard, SubscriptionHandle};
+pub use bus::{CratestackEventBus, SubscriptionGuard, SubscriptionHandle};
 
-pub type CoolEventFuture = Pin<Box<dyn Future<Output = Result<(), CoolError>> + Send + 'static>>;
+pub type CratestackEventFuture =
+    Pin<Box<dyn Future<Output = Result<(), CratestackError>> + Send + 'static>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ModelEventKind {
@@ -30,12 +31,12 @@ impl ModelEventKind {
         }
     }
 
-    pub fn parse(value: &str) -> Result<Self, CoolError> {
+    pub fn parse(value: &str) -> Result<Self, CratestackError> {
         match value {
             "created" => Ok(Self::Created),
             "updated" => Ok(Self::Updated),
             "deleted" => Ok(Self::Deleted),
-            other => Err(CoolError::Validation(format!(
+            other => Err(CratestackError::Validation(format!(
                 "unsupported model event operation `{other}`"
             ))),
         }
@@ -43,7 +44,7 @@ impl ModelEventKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct CoolEventEnvelope {
+pub struct CratestackEventEnvelope {
     pub event_id: uuid::Uuid,
     pub model: String,
     pub operation: ModelEventKind,
@@ -60,20 +61,20 @@ pub struct ModelEvent<T> {
     pub data: T,
 }
 
-impl<T> TryFrom<CoolEventEnvelope> for ModelEvent<T>
+impl<T> TryFrom<CratestackEventEnvelope> for ModelEvent<T>
 where
     T: serde::de::DeserializeOwned,
 {
-    type Error = CoolError;
+    type Error = CratestackError;
 
-    fn try_from(value: CoolEventEnvelope) -> Result<Self, Self::Error> {
+    fn try_from(value: CratestackEventEnvelope) -> Result<Self, Self::Error> {
         Ok(Self {
             event_id: value.event_id,
             model: value.model,
             operation: value.operation,
             occurred_at: value.occurred_at,
             data: serde_json::from_value(value.data).map_err(|error| {
-                CoolError::Codec(format!("failed to decode event payload: {error}"))
+                CratestackError::Codec(format!("failed to decode event payload: {error}"))
             })?,
         })
     }

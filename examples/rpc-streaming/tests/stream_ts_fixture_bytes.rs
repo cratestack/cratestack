@@ -16,7 +16,7 @@
 //! between the Rust-side pin and the TypeScript-side fixture fails loudly
 //! here instead of only showing up as a confusing TS-side test failure.
 
-use cratestack::CoolCodec;
+use cratestack::CratestackCodec;
 use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack_codec_cbor::CborCodec;

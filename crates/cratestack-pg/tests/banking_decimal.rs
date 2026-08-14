@@ -6,7 +6,7 @@
 
 use cratestack::include_server_schema;
 use cratestack::sqlx::{Row, query};
-use cratestack::{CoolContext, Decimal, Value};
+use cratestack::{CratestackContext, Decimal, Value};
 use std::str::FromStr;
 
 include_server_schema!("tests/fixtures/banking_decimal.cstack", db = Postgres);
@@ -34,8 +34,8 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     .expect("create wallet");
 }
 
-fn ctx() -> CoolContext {
-    CoolContext::authenticated([("id".to_owned(), Value::Int(1))])
+fn ctx() -> CratestackContext {
+    CratestackContext::authenticated([("id".to_owned(), Value::Int(1))])
 }
 
 #[tokio::test]

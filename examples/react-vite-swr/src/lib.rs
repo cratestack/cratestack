@@ -17,7 +17,7 @@
 
 use cratestack::axum::Router;
 use cratestack::sqlx::PgPool;
-use cratestack::{AuthProvider, CoolContext, CoolError, RequestContext, Value};
+use cratestack::{AuthProvider, CratestackContext, CratestackError, RequestContext, Value};
 use cratestack_codec_json::JsonCodec;
 use tower_http::cors::CorsLayer;
 
@@ -38,11 +38,14 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     fn estimate_focus_minutes(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::estimate_focus_minutes::Args,
         _authorized: cratestack_schema::procedures::estimate_focus_minutes::Authorized,
     ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::estimate_focus_minutes::Output, CoolError>,
+        Output = Result<
+            cratestack_schema::procedures::estimate_focus_minutes::Output,
+            CratestackError,
+        >,
     > + Send {
         async move {
             let total_minutes = args.args.taskCount * args.args.minutesPerTask;
@@ -60,19 +63,19 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
 pub struct HeaderAuthProvider;
 
 impl AuthProvider for HeaderAuthProvider {
-    type Error = CoolError;
+    type Error = CratestackError;
 
     fn authenticate(
         &self,
         request: &RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
+    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
         let ctx = request
             .headers
             .get("x-auth-id")
             .and_then(|value| value.to_str().ok())
             .and_then(|raw| raw.parse::<i64>().ok())
-            .map(|id| CoolContext::authenticated([("id".to_owned(), Value::Int(id))]))
-            .unwrap_or_else(CoolContext::anonymous);
+            .map(|id| CratestackContext::authenticated([("id".to_owned(), Value::Int(id))]))
+            .unwrap_or_else(CratestackContext::anonymous);
         core::future::ready(Ok(ctx))
     }
 }

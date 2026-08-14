@@ -5,7 +5,7 @@
 
 use std::fmt::Write;
 
-use cratestack_core::CoolContext;
+use cratestack_core::CratestackContext;
 
 use crate::{PolicyExpr, ReadPolicy, RelationQuantifier};
 
@@ -22,7 +22,7 @@ use super::policy_predicate::render_policy_predicate;
 pub(crate) fn render_read_policy_sql(
     allow_policies: &[ReadPolicy],
     deny_policies: &[ReadPolicy],
-    ctx: &CoolContext,
+    ctx: &CratestackContext,
     bind_index: &mut usize,
 ) -> Option<String> {
     if allow_policies.is_empty() {
@@ -40,7 +40,7 @@ pub(crate) fn render_read_policy_sql(
 
 fn render_allow_policy_sql(
     policies: &[ReadPolicy],
-    ctx: &CoolContext,
+    ctx: &CratestackContext,
     bind_index: &mut usize,
 ) -> Option<String> {
     if policies.is_empty() {
@@ -60,7 +60,7 @@ fn render_allow_policy_sql(
 
 pub(crate) fn render_policy_expr_sql(
     expr: PolicyExpr,
-    ctx: &CoolContext,
+    ctx: &CratestackContext,
     sql: &mut String,
     bind_index: &mut usize,
 ) {
@@ -81,7 +81,7 @@ pub(super) fn render_relation_policy_sql(
     related_table: &'static str,
     related_column: &'static str,
     expr: &'static PolicyExpr,
-    ctx: &CoolContext,
+    ctx: &CratestackContext,
     sql: &mut String,
     bind_index: &mut usize,
 ) {
@@ -119,7 +119,7 @@ pub(super) fn render_relation_policy_sql(
 fn render_grouped_policy_sql(
     exprs: &[PolicyExpr],
     joiner: &str,
-    ctx: &CoolContext,
+    ctx: &CratestackContext,
     sql: &mut String,
     bind_index: &mut usize,
 ) {

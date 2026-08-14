@@ -65,7 +65,7 @@ pub(crate) fn generate_model_subscribe_dispatch_arm(
             let _ctx = match state.auth_provider.authenticate(&request).await {
                 Ok(ctx) => ::cratestack::enrich_context_from_headers(ctx, &headers, client_ip_ctx.trusted_proxy.as_ref(), client_ip_ctx.peer),
                 Err(error) => {
-                    let error: ::cratestack::CoolError = error.into();
+                    let error: ::cratestack::CratestackError = error.into();
                     return rpc_dispatch_error(&state, &headers, error);
                 }
             };

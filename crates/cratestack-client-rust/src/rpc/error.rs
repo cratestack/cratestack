@@ -1,4 +1,4 @@
-use cratestack_core::{CoolError, rpc::RpcErrorBody};
+use cratestack_core::{CratestackError, rpc::RpcErrorBody};
 use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
 
@@ -8,7 +8,7 @@ use crate::runtime::wire::RuntimeResponseWire;
 
 /// Error variant produced by the RPC client when a remote call fails with
 /// an `RpcErrorBody` payload. Distinct from the REST `ClientError::Remote`
-/// (which carries the `CoolErrorResponse` shape) so library users can
+/// (which carries the `CratestackErrorResponse` shape) so library users can
 /// switch on the gRPC-style `code` string directly.
 #[derive(Debug, Clone)]
 pub struct RpcRemoteError {
@@ -33,14 +33,14 @@ impl std::error::Error for RpcRemoteError {}
 /// Top-level error returned by the RPC client. Mirrors `ClientError`
 /// (the REST error type) but reports server-side failures as
 /// `RpcRemoteError { code, message, details }` rather than the
-/// REST-shaped `CoolErrorResponse`.
+/// REST-shaped `CratestackErrorResponse`.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum RpcClientError {
     #[error("transport error: {0}")]
     Transport(#[source] TransportError),
     #[error("codec error: {0}")]
-    Codec(#[from] CoolError),
+    Codec(#[from] CratestackError),
     #[error("invalid response: {0}")]
     InvalidResponse(String),
     #[error("bad input: {0}")]

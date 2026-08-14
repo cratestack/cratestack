@@ -1,6 +1,6 @@
 use axum::http::StatusCode;
 use axum::response::Response;
-use cratestack_core::{CoolCodec, CoolError, CoolErrorResponse};
+use cratestack_core::{CratestackCodec, CratestackError, CratestackErrorResponse};
 use futures_util::Stream;
 use serde::{Deserialize, Serialize};
 
@@ -25,8 +25,8 @@ impl<Primary, Secondary> CodecSet<Primary, Secondary> {
 
 impl<Primary, Secondary> HttpTransport for CodecSet<Primary, Secondary>
 where
-    Primary: CoolCodec,
-    Secondary: CoolCodec,
+    Primary: CratestackCodec,
+    Secondary: CratestackCodec,
 {
     fn can_encode(&self, content_type: &str) -> bool {
         if content_type == CBOR_SEQUENCE_CONTENT_TYPE {
@@ -37,7 +37,7 @@ where
         }
     }
 
-    fn decode_request<T>(&self, content_type: &str, body: &[u8]) -> Result<T, CoolError>
+    fn decode_request<T>(&self, content_type: &str, body: &[u8]) -> Result<T, CratestackError>
     where
         T: for<'de> Deserialize<'de>,
     {
@@ -46,7 +46,7 @@ where
         } else if content_type == Secondary::CONTENT_TYPE {
             self.secondary.decode(body)
         } else {
-            Err(CoolError::UnsupportedMediaType(format!(
+            Err(CratestackError::UnsupportedMediaType(format!(
                 "unsupported request Content-Type {content_type}"
             )))
         }
@@ -57,7 +57,7 @@ where
         content_type: &str,
         status: StatusCode,
         value: &T,
-    ) -> Result<Response, CoolError>
+    ) -> Result<Response, CratestackError>
     where
         T: Serialize + ?Sized,
     {
@@ -66,7 +66,7 @@ where
         } else if content_type == Secondary::CONTENT_TYPE {
             encode_codec_response(&self.secondary, status, value)
         } else {
-            Err(CoolError::NotAcceptable(format!(
+            Err(CratestackError::NotAcceptable(format!(
                 "no encoder configured for response Content-Type {content_type}"
             )))
         }
@@ -77,7 +77,7 @@ where
         content_type: &str,
         status: StatusCode,
         values: &[T],
-    ) -> Result<Response, CoolError>
+    ) -> Result<Response, CratestackError>
     where
         T: Serialize,
     {
@@ -87,14 +87,14 @@ where
             } else if Secondary::CONTENT_TYPE == CborCodecMarker::CONTENT_TYPE {
                 encode_cbor_sequence_response(&self.secondary, status, values)
             } else {
-                Err(CoolError::NotAcceptable(
+                Err(CratestackError::NotAcceptable(
                     "router does not have a CBOR codec for cbor-seq responses".to_owned(),
                 ))
             }
         } else if content_type == Primary::CONTENT_TYPE || content_type == Secondary::CONTENT_TYPE {
             self.encode_response(content_type, status, values)
         } else {
-            Err(CoolError::NotAcceptable(format!(
+            Err(CratestackError::NotAcceptable(format!(
                 "no encoder configured for response Content-Type {content_type}"
             )))
         }
@@ -104,22 +104,22 @@ where
         &self,
         content_type: &str,
         status: StatusCode,
-        value: &CoolErrorResponse,
-    ) -> Result<Response, CoolError> {
+        value: &CratestackErrorResponse,
+    ) -> Result<Response, CratestackError> {
         if content_type == CBOR_SEQUENCE_CONTENT_TYPE {
             if Primary::CONTENT_TYPE == CborCodecMarker::CONTENT_TYPE {
                 encode_cbor_sequence_response(&self.primary, status, std::slice::from_ref(value))
             } else if Secondary::CONTENT_TYPE == CborCodecMarker::CONTENT_TYPE {
                 encode_cbor_sequence_response(&self.secondary, status, std::slice::from_ref(value))
             } else {
-                Err(CoolError::NotAcceptable(
+                Err(CratestackError::NotAcceptable(
                     "router does not have a CBOR codec for cbor-seq responses".to_owned(),
                 ))
             }
         } else if content_type == Primary::CONTENT_TYPE || content_type == Secondary::CONTENT_TYPE {
             self.encode_response(content_type, status, value)
         } else {
-            Err(CoolError::NotAcceptable(format!(
+            Err(CratestackError::NotAcceptable(format!(
                 "no encoder configured for response Content-Type {content_type}"
             )))
         }
@@ -130,13 +130,13 @@ where
         content_type: &str,
         status: StatusCode,
         values: S,
-    ) -> Result<Response, CoolError>
+    ) -> Result<Response, CratestackError>
     where
         T: Serialize + Send + 'static,
-        S: Stream<Item = Result<T, CoolError>> + Send + 'static,
+        S: Stream<Item = Result<T, CratestackError>> + Send + 'static,
     {
         if content_type != CBOR_SEQUENCE_CONTENT_TYPE {
-            return Err(CoolError::NotAcceptable(format!(
+            return Err(CratestackError::NotAcceptable(format!(
                 "incremental sequence streaming requires {CBOR_SEQUENCE_CONTENT_TYPE}, got \
                  response Content-Type {content_type}"
             )));
@@ -146,7 +146,7 @@ where
         } else if Secondary::CONTENT_TYPE == CborCodecMarker::CONTENT_TYPE {
             encode_cbor_sequence_stream_response(self.secondary.clone(), status, values)
         } else {
-            Err(CoolError::NotAcceptable(
+            Err(CratestackError::NotAcceptable(
                 "router does not have a CBOR codec for cbor-seq responses".to_owned(),
             ))
         }

@@ -27,7 +27,7 @@ mod redact;
 mod schema;
 mod sink;
 
-use cratestack_core::{AuditActor, AuditEvent, AuditOperation, CoolContext, CoolError};
+use cratestack_core::{AuditActor, AuditEvent, AuditOperation, CratestackContext, CratestackError};
 
 use crate::ModelDescriptor;
 use crate::sqlx;
@@ -43,12 +43,12 @@ pub use sink::dispatch_audit_sink;
 pub(crate) async fn enqueue_audit_event<'e, E>(
     executor: E,
     event: &AuditEvent,
-) -> Result<(), CoolError>
+) -> Result<(), CratestackError>
 where
     E: sqlx::Executor<'e, Database = sqlx::Postgres>,
 {
     let actor = serde_json::to_value(&event.actor)
-        .map_err(|error| CoolError::Codec(format!("encode audit actor: {error}")))?;
+        .map_err(|error| CratestackError::Codec(format!("encode audit actor: {error}")))?;
     sqlx::query(
         "INSERT INTO cratestack_audit (\
             event_id, schema_name, model, operation, primary_key, actor, \
@@ -69,13 +69,13 @@ where
     .execute(executor)
     .await
     .map(|_| ())
-    .map_err(|error| CoolError::Database(error.to_string()))
+    .map_err(|error| CratestackError::Database(error.to_string()))
 }
 
-/// Derive an [`AuditActor`] from the [`CoolContext`] active at
+/// Derive an [`AuditActor`] from the [`CratestackContext`] active at
 /// mutation time. Banks generally want the principal's id, primary
 /// claims, and source IP if the transport recorded one.
-pub(crate) fn actor_from_context(ctx: &CoolContext) -> AuditActor {
+pub(crate) fn actor_from_context(ctx: &CratestackContext) -> AuditActor {
     AuditActor {
         id: ctx.principal_actor_id().map(|s| s.to_owned()),
         claims: ctx.audit_claims_snapshot(),
@@ -92,7 +92,7 @@ pub(crate) fn build_audit_event<M, PK>(
     operation: AuditOperation,
     before: Option<serde_json::Value>,
     after: Option<serde_json::Value>,
-    ctx: &CoolContext,
+    ctx: &CratestackContext,
 ) -> AuditEvent {
     let primary_key = after
         .as_ref()
@@ -141,7 +141,7 @@ pub(crate) async fn fetch_for_audit<'e, E, M, PK>(
     executor: E,
     descriptor: &'static ModelDescriptor<M, PK>,
     id: PK,
-) -> Result<Option<M>, CoolError>
+) -> Result<Option<M>, CratestackError>
 where
     E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
@@ -160,7 +160,7 @@ where
         .build_query_as::<M>()
         .fetch_optional(executor)
         .await
-        .map_err(|error| CoolError::Database(error.to_string()))
+        .map_err(|error| CratestackError::Database(error.to_string()))
 }
 
 #[cfg(test)]

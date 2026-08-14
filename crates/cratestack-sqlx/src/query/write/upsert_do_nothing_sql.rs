@@ -4,7 +4,7 @@
 //! (real or no-op-self-assignment). See the comment in `upsert_sql.rs`
 //! for why these two stay separate mechanisms.
 
-use cratestack_core::CoolError;
+use cratestack_core::CratestackError;
 
 use crate::query::support::{classify_unique_violation, push_bind_value};
 use crate::{ConflictTarget, ModelDescriptor, SqlColumnValue, sqlx};
@@ -24,7 +24,7 @@ pub(super) async fn upsert_returning_record_do_nothing<'e, E, M, PK>(
     descriptor: &'static ModelDescriptor<M, PK>,
     insert_values: &[SqlColumnValue],
     conflict_target: ConflictTarget,
-) -> Result<Option<M>, CoolError>
+) -> Result<Option<M>, CratestackError>
 where
     E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,

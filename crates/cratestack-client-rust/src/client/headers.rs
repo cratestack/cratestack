@@ -110,7 +110,7 @@ where
             })
             // Not `.map_err(ClientError::from)` — see the comment on
             // `CratestackClient::state` in `client/core.rs`: the blanket
-            // `From<CoolError>` targets `ClientError::Codec`, which would
+            // `From<CratestackError>` targets `ClientError::Codec`, which would
             // misreport a local state-store failure as a remote/codec error.
             .map_err(|error| ClientError::State(error.to_string()))
     }

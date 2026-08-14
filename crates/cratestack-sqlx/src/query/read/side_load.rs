@@ -11,9 +11,9 @@ pub(super) async fn run_side_load<'tx, M, Rel, RelPK>(
     runtime: &SqlxRuntime,
     parents: &[M],
     relation: cratestack_sql::RelationInclude<M, Rel, RelPK>,
-    ctx: &cratestack_core::CoolContext,
+    ctx: &cratestack_core::CratestackContext,
     tx: Option<&mut sqlx::Transaction<'tx, sqlx::Postgres>>,
-) -> Result<Vec<(M, Option<Rel>)>, cratestack_core::CoolError>
+) -> Result<Vec<(M, Option<Rel>)>, cratestack_core::CratestackError>
 where
     M: 'static + Clone,
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,

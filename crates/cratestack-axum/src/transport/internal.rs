@@ -1,7 +1,7 @@
 use axum::body::Body;
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::Response;
-use cratestack_core::{CoolCodec, CoolError};
+use cratestack_core::{CratestackCodec, CratestackError};
 use serde::Serialize;
 
 use super::CBOR_SEQUENCE_CONTENT_TYPE;
@@ -11,13 +11,13 @@ pub(crate) fn encode_cbor_sequence_response<C, T>(
     codec: &C,
     status: StatusCode,
     values: &[T],
-) -> Result<Response, CoolError>
+) -> Result<Response, CratestackError>
 where
-    C: CoolCodec,
+    C: CratestackCodec,
     T: Serialize,
 {
     if C::CONTENT_TYPE != CborCodecMarker::CONTENT_TYPE {
-        return Err(CoolError::NotAcceptable(
+        return Err(CratestackError::NotAcceptable(
             "cbor-seq requires a CBOR codec".to_owned(),
         ));
     }
@@ -33,7 +33,7 @@ pub(crate) fn encode_bytes_response(
     status: StatusCode,
     content_type: &'static str,
     bytes: Vec<u8>,
-) -> Result<Response, CoolError> {
+) -> Result<Response, CratestackError> {
     let mut response = Response::new(Body::from(bytes));
     *response.status_mut() = status;
     response
@@ -42,7 +42,7 @@ pub(crate) fn encode_bytes_response(
     Ok(response)
 }
 
-pub(crate) fn fallback_error_response(error: CoolError) -> Response {
+pub(crate) fn fallback_error_response(error: CratestackError) -> Response {
     let mut response = Response::new(Body::from(error.public_message().into_owned()));
     *response.status_mut() = error.status_code();
     response.headers_mut().insert(

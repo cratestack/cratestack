@@ -39,7 +39,7 @@ pub(crate) fn generate_relation_query_guard(
         return Ok(quote! {
             if let Some(rest) = key.strip_prefix(#relation_prefix) {
                 let (operator, nested_key) = rest.split_once('.').ok_or_else(|| {
-                    CoolError::BadRequest(format!(
+                    CratestackError::BadRequest(format!(
                         "to-many relation filter '{}.{}' must use one of some, every, or none before the target field",
                         #model_name,
                         #relation_field_name,
@@ -67,7 +67,7 @@ pub(crate) fn generate_relation_query_guard(
                         #related_column,
                         #target_filter_builder_ident(nested_key, value)?,
                     )),
-                    _ => Err(CoolError::BadRequest(format!(
+                    _ => Err(CratestackError::BadRequest(format!(
                         "unsupported to-many relation operator '{}' for {}.{}; expected some, every, or none",
                         operator,
                         #model_name,

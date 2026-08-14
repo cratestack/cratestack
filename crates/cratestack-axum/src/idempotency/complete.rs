@@ -8,7 +8,7 @@
 
 use axum::body::Body;
 use axum::response::Response;
-use cratestack_core::CoolError;
+use cratestack_core::CratestackError;
 use http::StatusCode;
 
 use super::headers::encode_headers;
@@ -29,7 +29,7 @@ pub(super) async fn buffer_and_persist_response(
             // Drop the reservation so retries can attempt again — but
             // only if our token still holds.
             let _ = store.release(principal, key, token).await;
-            let mut error_response = error_response(CoolError::Internal(
+            let mut error_response = error_response(CratestackError::Internal(
                 "response body exceeded idempotency buffer".to_owned(),
             ));
             *error_response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;

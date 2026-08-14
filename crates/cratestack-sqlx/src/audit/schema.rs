@@ -2,7 +2,7 @@
 
 use std::sync::atomic::Ordering;
 
-use cratestack_core::CoolError;
+use cratestack_core::CratestackError;
 
 use crate::SqlxRuntime;
 use crate::sqlx;
@@ -50,7 +50,7 @@ CREATE INDEX IF NOT EXISTS cratestack_audit_undelivered_idx
 /// same caller-managed transaction is already holding. Skipping the
 /// DDL entirely after the first successful run avoids taking that
 /// lock at all on every subsequent call.
-pub(crate) async fn ensure_audit_table(runtime: &SqlxRuntime) -> Result<(), CoolError> {
+pub(crate) async fn ensure_audit_table(runtime: &SqlxRuntime) -> Result<(), CratestackError> {
     if runtime.audit_table_ensured().load(Ordering::Acquire) {
         return Ok(());
     }
@@ -63,7 +63,7 @@ pub(crate) async fn ensure_audit_table(runtime: &SqlxRuntime) -> Result<(), Cool
     sqlx::raw_sql(AUDIT_TABLE_DDL)
         .execute(runtime.pool())
         .await
-        .map_err(|error| CoolError::Database(error.to_string()))?;
+        .map_err(|error| CratestackError::Database(error.to_string()))?;
 
     runtime.audit_table_ensured().store(true, Ordering::Release);
     Ok(())

@@ -3,7 +3,7 @@
 //! call site since PG's `SUM(int)` returns i64, `AVG(int)` returns
 //! f64/Decimal, etc.
 
-use cratestack_core::{CoolContext, CoolError};
+use cratestack_core::{CratestackContext, CratestackError};
 use cratestack_sql::{IntoColumnName, ReadSource};
 
 use crate::query::support::{ReadPolicyKind, push_scoped_conditions};
@@ -61,7 +61,7 @@ impl<'a, M: 'static, PK: 'static> AggregateColumn<'a, M, PK> {
         self
     }
 
-    fn build_query<'q>(&self, ctx: &CoolContext) -> sqlx::QueryBuilder<'q, sqlx::Postgres> {
+    fn build_query<'q>(&self, ctx: &CratestackContext) -> sqlx::QueryBuilder<'q, sqlx::Postgres> {
         let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT ");
         query
             .push(self.op.function_name())
@@ -80,7 +80,7 @@ impl<'a, M: 'static, PK: 'static> AggregateColumn<'a, M, PK> {
         query
     }
 
-    pub async fn run<T>(self, ctx: &CoolContext) -> Result<Option<T>, CoolError>
+    pub async fn run<T>(self, ctx: &CratestackContext) -> Result<Option<T>, CratestackError>
     where
         T: Send + Unpin + for<'r> sqlx::Decode<'r, sqlx::Postgres> + sqlx::Type<sqlx::Postgres>,
     {
@@ -89,15 +89,15 @@ impl<'a, M: 'static, PK: 'static> AggregateColumn<'a, M, PK> {
             .build_query_as::<(Option<T>,)>()
             .fetch_one(self.runtime.pool())
             .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+            .map_err(|error| CratestackError::Database(error.to_string()))?;
         Ok(value.0)
     }
 
     pub async fn run_in_tx<'tx, T>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-        ctx: &CoolContext,
-    ) -> Result<Option<T>, CoolError>
+        ctx: &CratestackContext,
+    ) -> Result<Option<T>, CratestackError>
     where
         T: Send + Unpin + for<'r> sqlx::Decode<'r, sqlx::Postgres> + sqlx::Type<sqlx::Postgres>,
     {
@@ -106,7 +106,7 @@ impl<'a, M: 'static, PK: 'static> AggregateColumn<'a, M, PK> {
             .build_query_as::<(Option<T>,)>()
             .fetch_one(&mut **tx)
             .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+            .map_err(|error| CratestackError::Database(error.to_string()))?;
         Ok(value.0)
     }
 }

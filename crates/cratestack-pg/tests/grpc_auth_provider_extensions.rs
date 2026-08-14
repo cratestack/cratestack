@@ -17,7 +17,7 @@
 #![cfg(feature = "grpc")]
 
 use cratestack::sqlx::postgres::PgPoolOptions;
-use cratestack::{CodecSet, CoolContext, CoolError, Value, include_server_schema};
+use cratestack::{CodecSet, CratestackContext, CratestackError, Value, include_server_schema};
 use cratestack_codec_cbor::CborCodec;
 use cratestack_codec_json::JsonCodec;
 use cratestack_grpc::{frame_grpc_message, strip_grpc_frame};
@@ -37,24 +37,24 @@ fn test_db() -> cratestack_schema::Cratestack {
 struct UpstreamTenant(String);
 
 /// Reads `UpstreamTenant` off `RequestContext::extensions` and reflects
-/// it into the returned `CoolContext` as an auth claim — same shape as
+/// it into the returned `CratestackContext` as an auth claim — same shape as
 /// the REST/RPC tests, proving the capability is transport-agnostic.
 #[derive(Clone)]
 struct MarkerReadingAuthProvider;
 
 impl cratestack::AuthProvider for MarkerReadingAuthProvider {
-    type Error = CoolError;
+    type Error = CratestackError;
 
     fn authenticate(
         &self,
         request: &cratestack::RequestContext<'_>,
-    ) -> impl std::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
+    ) -> impl std::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
         let tenant = request
             .extensions
             .get::<UpstreamTenant>()
             .map(|marker| marker.0.clone())
             .unwrap_or_else(|| "NO-EXTENSION-SEEN".to_owned());
-        std::future::ready(Ok(CoolContext::authenticated([
+        std::future::ready(Ok(CratestackContext::authenticated([
             ("id".to_owned(), Value::Int(1)),
             ("tenant_marker".to_owned(), Value::String(tenant)),
         ])))
@@ -68,11 +68,11 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     fn echo_widget_name(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::echo_widget_name::Args,
         _authorized: cratestack_schema::procedures::echo_widget_name::Authorized,
     ) -> impl std::future::Future<
-        Output = Result<cratestack_schema::procedures::echo_widget_name::Output, CoolError>,
+        Output = Result<cratestack_schema::procedures::echo_widget_name::Output, CratestackError>,
     > + Send {
         async move { Ok(format!("echo: {}", args.name)) }
     }
@@ -80,11 +80,14 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     fn widget_name_samples(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         _args: cratestack_schema::procedures::widget_name_samples::Args,
         _authorized: cratestack_schema::procedures::widget_name_samples::Authorized,
     ) -> impl std::future::Future<
-        Output = Result<cratestack_schema::procedures::widget_name_samples::Output, CoolError>,
+        Output = Result<
+            cratestack_schema::procedures::widget_name_samples::Output,
+            CratestackError,
+        >,
     > + Send {
         async move { Ok(vec!["alpha".to_owned(), "beta".to_owned()]) }
     }
@@ -96,11 +99,11 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     fn who_am_i(
         &self,
         _db: &cratestack_schema::Cratestack,
-        ctx: &CoolContext,
+        ctx: &CratestackContext,
         _args: cratestack_schema::procedures::who_am_i::Args,
         _authorized: cratestack_schema::procedures::who_am_i::Authorized,
     ) -> impl std::future::Future<
-        Output = Result<cratestack_schema::procedures::who_am_i::Output, CoolError>,
+        Output = Result<cratestack_schema::procedures::who_am_i::Output, CratestackError>,
     > + Send {
         let tenant = ctx
             .auth_field("tenant_marker")

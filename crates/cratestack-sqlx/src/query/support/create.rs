@@ -1,7 +1,7 @@
 //! Create-path support: auth-default filling + input-policy
 //! evaluation (sync predicates + async EXISTS for relation references).
 
-use cratestack_core::{CoolContext, CoolError, Value};
+use cratestack_core::{CratestackContext, CratestackError, Value};
 use cratestack_policy::{context_has_role, context_in_tenant};
 
 use crate::{
@@ -18,8 +18,8 @@ pub(crate) async fn evaluate_create_policies(
     allow_policies: &[ReadPolicy],
     deny_policies: &[ReadPolicy],
     values: &[SqlColumnValue],
-    ctx: &CoolContext,
-) -> Result<bool, CoolError> {
+    ctx: &CratestackContext,
+) -> Result<bool, CratestackError> {
     if allow_policies.is_empty() {
         return Ok(false);
     }
@@ -42,8 +42,8 @@ pub(crate) async fn evaluate_create_policies(
 pub(crate) fn apply_create_defaults(
     mut values: Vec<SqlColumnValue>,
     defaults: &[CreateDefault],
-    ctx: &CoolContext,
-) -> Result<Vec<SqlColumnValue>, CoolError> {
+    ctx: &CratestackContext,
+) -> Result<Vec<SqlColumnValue>, CratestackError> {
     for default in defaults {
         if find_column_value(&values, default.column).is_some() {
             continue;
@@ -90,32 +90,32 @@ pub(crate) fn apply_create_defaults(
 /// 6. **Auth field absent, model field non-nullable**: Error.
 fn resolve_default_value(
     default: &CreateDefault,
-    ctx: &CoolContext,
-) -> Result<SqlValue, CoolError> {
+    ctx: &CratestackContext,
+) -> Result<SqlValue, CratestackError> {
     match ctx.auth_field(default.auth_field) {
         // Auth field is present — extract and validate type
         Some(Value::Bool(value)) => match default.ty {
             CreateDefaultType::Bool => Ok(SqlValue::Bool(*value)),
-            _ => Err(CoolError::Validation(format!(
+            _ => Err(CratestackError::Validation(format!(
                 "auth field `{}` has incompatible type for create default on `{}`",
                 default.auth_field, default.column
             ))),
         },
         Some(Value::Int(value)) => match default.ty {
             CreateDefaultType::Int => Ok(SqlValue::Int(*value)),
-            _ => Err(CoolError::Validation(format!(
+            _ => Err(CratestackError::Validation(format!(
                 "auth field `{}` has incompatible type for create default on `{}`",
                 default.auth_field, default.column
             ))),
         },
         Some(Value::String(value)) => match default.ty {
             CreateDefaultType::String => Ok(SqlValue::String(value.clone())),
-            _ => Err(CoolError::Validation(format!(
+            _ => Err(CratestackError::Validation(format!(
                 "auth field `{}` has incompatible type for create default on `{}`",
                 default.auth_field, default.column
             ))),
         },
-        Some(_) => Err(CoolError::Validation(format!(
+        Some(_) => Err(CratestackError::Validation(format!(
             "auth field `{}` has incompatible type for create default on `{}`",
             default.auth_field, default.column
         ))),
@@ -125,14 +125,14 @@ fn resolve_default_value(
             // Cannot apply defaults to unauthenticated contexts — checked
             // ahead of `auth_field_required` deliberately, see the
             // doc comment above.
-            Err(CoolError::Forbidden(
+            Err(CratestackError::Forbidden(
                 "create policy denied this operation".to_owned(),
             ))
         }
         None if default.auth_field_required => {
             // Authenticated, but the required auth field is missing —
             // always an error, regardless of model field nullability.
-            Err(CoolError::Validation(format!(
+            Err(CratestackError::Validation(format!(
                 "missing required auth field `{}` for create default on `{}`",
                 default.auth_field, default.column
             )))
@@ -147,7 +147,7 @@ fn resolve_default_value(
         }
         None => {
             // Auth field is absent, model field is non-nullable
-            Err(CoolError::Validation(format!(
+            Err(CratestackError::Validation(format!(
                 "missing auth field `{}` required for create default on `{}`",
                 default.auth_field, default.column
             )))
@@ -158,7 +158,7 @@ fn resolve_default_value(
 pub(crate) fn evaluate_input_predicate(
     predicate: ReadPredicate,
     values: &[SqlColumnValue],
-    ctx: &CoolContext,
+    ctx: &CratestackContext,
 ) -> bool {
     match predicate {
         ReadPredicate::AuthNotNull => ctx.is_authenticated(),

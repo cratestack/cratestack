@@ -74,7 +74,7 @@ pub(super) fn build_selected_scalar_accessors(
             };
             quote! {
                 #[allow(non_snake_case)]
-                pub fn #method_ident(&self) -> Result<#field_type, ::cratestack::CoolError> {
+                pub fn #method_ident(&self) -> Result<#field_type, ::cratestack::CratestackError> {
                     decode_projected_field::<#field_type>(
                         &self.fields,
                         self.allows_field(#field_name),

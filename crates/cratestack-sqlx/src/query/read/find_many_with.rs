@@ -3,7 +3,7 @@
 //! `FindMany`; only `run` / `run_in_tx` differ to fan out into the
 //! side-load step.
 
-use cratestack_core::{CoolContext, CoolError};
+use cratestack_core::{CratestackContext, CratestackError};
 
 use crate::{FilterExpr, OrderClause, sqlx};
 
@@ -73,7 +73,10 @@ impl<'a, M: 'static, PK: 'static, Rel: 'static, RelPK: 'static>
         self
     }
 
-    pub async fn run(self, ctx: &CoolContext) -> Result<Vec<(M, Option<Rel>)>, CoolError>
+    pub async fn run(
+        self,
+        ctx: &CratestackContext,
+    ) -> Result<Vec<(M, Option<Rel>)>, CratestackError>
     where
         M: Clone,
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
@@ -106,8 +109,8 @@ impl<'a, M: 'static, PK: 'static, Rel: 'static, RelPK: 'static>
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-        ctx: &CoolContext,
-    ) -> Result<Vec<(M, Option<Rel>)>, CoolError>
+        ctx: &CratestackContext,
+    ) -> Result<Vec<(M, Option<Rel>)>, CratestackError>
     where
         M: Clone,
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,

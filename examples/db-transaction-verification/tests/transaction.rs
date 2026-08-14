@@ -78,8 +78,8 @@ async fn create_tables(pool: &cratestack::sqlx::PgPool) {
     .expect("create widget_notes");
 }
 
-fn operator() -> cratestack::CoolContext {
-    cratestack::CoolContext::authenticated([("id".to_owned(), cratestack::Value::Int(1))])
+fn operator() -> cratestack::CratestackContext {
+    cratestack::CratestackContext::authenticated([("id".to_owned(), cratestack::Value::Int(1))])
 }
 
 #[tokio::test]

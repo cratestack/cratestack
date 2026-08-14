@@ -264,7 +264,7 @@ describe("real server fixtures (examples/rpc-streaming, via the actual Rust enco
     expect(frames[2]!.kind).toBe("error");
     if (frames[2]!.kind === "error") {
       expect(frames[2]!.error.code).toBe("internal");
-      // `CoolError::Internal`'s `public_message()` deliberately redacts
+      // `CratestackError::Internal`'s `public_message()` deliberately redacts
       // the real message to a generic "internal error" (see
       // `cratestack-core/src/error.rs`) — this is the server correctly
       // NOT leaking internal error text to clients, not a scanner bug.

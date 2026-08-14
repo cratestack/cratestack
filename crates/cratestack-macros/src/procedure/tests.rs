@@ -83,10 +83,10 @@ fn non_stream_list_procedure_trait_method_is_unchanged() {
         fn ticks(
             &self,
             db: &super::Cratestack,
-            ctx: &::cratestack::CoolContext,
+            ctx: &::cratestack::CratestackContext,
             args: ticks::Args,
             _authorized: ticks::Authorized,
-        ) -> impl ::core::future::Future<Output = Result<ticks::Output, ::cratestack::CoolError>> + Send;
+        ) -> impl ::core::future::Future<Output = Result<ticks::Output, ::cratestack::CratestackError>> + Send;
     }
     .to_string();
 
@@ -109,10 +109,10 @@ fn stream_marked_list_procedure_generates_stream_shaped_trait_method() {
         fn ticks(
             &self,
             db: &super::Cratestack,
-            ctx: &::cratestack::CoolContext,
+            ctx: &::cratestack::CratestackContext,
             args: ticks::Args,
             _authorized: ticks::Authorized,
-        ) -> impl ::cratestack::futures::Stream<Item = Result<ticks::Item, ::cratestack::CoolError>> + Send;
+        ) -> impl ::cratestack::futures::Stream<Item = Result<ticks::Item, ::cratestack::CratestackError>> + Send;
     }
     .to_string();
 

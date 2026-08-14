@@ -23,7 +23,7 @@ which remain infallible by design — opting out of the default is the
 caller's explicit choice), but it no longer describes the *default*
 function's stored type or behavior. cratestack#542 changed
 `default_principal_fingerprint`/`default_key_fn`'s internal signature to
-`Arc<dyn Fn(&Request) -> Result<String, CoolError> + Send + Sync>` and its
+`Arc<dyn Fn(&Request) -> Result<String, CratestackError> + Send + Sync>` and its
 behavior when neither an `Authorization` header nor a
 `ConnectInfo<SocketAddr>` peer is present from silently falling back to a
 shared bucket to refusing the request with `412 Precondition Failed` (see
@@ -31,7 +31,7 @@ shared bucket to refusing the request with `412 Precondition Failed` (see
 touch the decision in §4–§6 — the key-derivation function itself, fallible
 or not, was already out of scope for `.cstack` and stays there — but a
 reader relying on §3's type for the *default* path specifically should read
-`Result<String, CoolError>`, not `String`, and should know unverifiable
+`Result<String, CratestackError>`, not `String`, and should know unverifiable
 callers are now refused rather than pooled.
 Scope: whether `@@idempotent`/`@@rate_limit(...)`-style `.cstack` attributes should
 join `@@audit`/`@@soft_delete`/`@@paged`, or whether `IdempotencyLayer`/`RateLimitLayer`

@@ -42,7 +42,9 @@ use std::time::{Duration, Instant};
 
 use cratestack::axum::Router;
 use cratestack::futures::Stream;
-use cratestack::{AuthProvider, CodecSet, CoolContext, CoolError, RequestContext, Value};
+use cratestack::{
+    AuthProvider, CodecSet, CratestackContext, CratestackError, RequestContext, Value,
+};
 use cratestack_codec_cbor::CborCodec;
 use cratestack_codec_json::JsonCodec;
 
@@ -79,10 +81,10 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     fn ticks(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::ticks::Args,
         _authorized: cratestack_schema::procedures::ticks::Authorized,
-    ) -> impl Stream<Item = Result<cratestack_schema::Tick, CoolError>> + Send {
+    ) -> impl Stream<Item = Result<cratestack_schema::Tick, CratestackError>> + Send {
         let produced = self.produced.clone();
         let produced_at = self.produced_at.clone();
         async_stream::stream! {
@@ -113,10 +115,10 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     fn flaky_ticks(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::flaky_ticks::Args,
         _authorized: cratestack_schema::procedures::flaky_ticks::Authorized,
-    ) -> impl Stream<Item = Result<cratestack_schema::Tick, CoolError>> + Send {
+    ) -> impl Stream<Item = Result<cratestack_schema::Tick, CratestackError>> + Send {
         async_stream::stream! {
             let count = args.args.count.max(0);
             for index in 0..count {
@@ -125,7 +127,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
                     value: args.args.start + index,
                 });
             }
-            yield Err(CoolError::Internal("flakyTicks always fails after its successful items".to_owned()));
+            yield Err(CratestackError::Internal("flakyTicks always fails after its successful items".to_owned()));
         }
     }
 }
@@ -134,19 +136,19 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
 pub struct HeaderAuthProvider;
 
 impl AuthProvider for HeaderAuthProvider {
-    type Error = CoolError;
+    type Error = CratestackError;
 
     fn authenticate(
         &self,
         request: &RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
+    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
         let ctx = request
             .headers
             .get("x-auth-id")
             .and_then(|value| value.to_str().ok())
             .and_then(|raw| raw.parse::<i64>().ok())
-            .map(|id| CoolContext::authenticated([("id".to_owned(), Value::Int(id))]))
-            .unwrap_or_else(CoolContext::anonymous);
+            .map(|id| CratestackContext::authenticated([("id".to_owned(), Value::Int(id))]))
+            .unwrap_or_else(CratestackContext::anonymous);
         core::future::ready(Ok(ctx))
     }
 }

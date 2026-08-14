@@ -54,7 +54,7 @@ same way, and this section's incremental-delivery guarantee is scoped to
 
 Subscriptions now ship over SSE (`@@subscribe`, §3.4a, cratestack#390):
 `GET /rpc/subscribe/{op_id}` streams `ModelEvent<T>` items over the
-existing `CoolEventBus`, reusing the `@stream` encoder's `Stream ->
+existing `CratestackEventBus`, reusing the `@stream` encoder's `Stream ->
 axum::body::Body::from_stream` shape with SSE framing instead of
 cbor-seq. Delivery rides the same outbox-drain mechanism `@@emit` has
 always used (`crates/cratestack-sqlx/src/descriptor.rs::
@@ -66,7 +66,7 @@ encoder (`crates/cratestack-axum/src/rpc/sse.rs`) turns into a terminal
 `Error{code:"unavailable"}` SSE event, ending the stream — the client
 decides whether to resubscribe (fire-and-forget, no cursors, matching
 §3.4). Cleanup on disconnect or overflow uses a new
-`cratestack_core::SubscriptionGuard`/`CoolEventBus::unsubscribe`, so a
+`cratestack_core::SubscriptionGuard`/`CratestackEventBus::unsubscribe`, so a
 long-running server doesn't accumulate one permanently-registered
 handler per historical connection. The WS binding (§3.4) remains the
 only HTTP-surface gap, still gated on a concrete bidirectional/
@@ -217,7 +217,7 @@ The frame is wrapped here because the wire carries N requests.
   by design — it is how RPC frameworks rot.
 - **Frame count capped at `BATCH_MAX_ITEMS`** (cratestack#413), checked
   before the per-frame dispatch loop runs — an oversized batch is rejected
-  in full (`CoolError::Validation`, same message shape as
+  in full (`CratestackError::Validation`, same message shape as
   `cratestack-sqlx`'s and `cratestack-rusqlite`'s own batch-size guards)
   with zero frames dispatched, not truncated to the first 1000. Every
   other batch surface in the framework already enforced this ceiling;
@@ -299,7 +299,7 @@ future, `model.User.list @stream`).
 - All six frame variants from §2.3 are used.
 - Subscriptions: `Request { op: "model.User.subscribe", in: { filter } }`
   → server emits `StreamItem { next: ModelEvent<User> }` over the
-  `CoolEventBus` until the client sends `Cancel { id }` or the connection
+  `CratestackEventBus` until the client sends `Cancel { id }` or the connection
   drops.
 - Subscriptions are **fire-and-forget**. No cursors, no replay buffer. A
   client that misses events while disconnected has missed them. Server-to-
@@ -360,7 +360,7 @@ attribute, mirroring `@@audit`/`@@soft_delete`; requires `@@emit(...)`
 on the same model and `transport rpc` on the schema — enforced at parse
 time) emits the `OpKind::Subscription` `model.<X>.subscribe` op
 descriptor, and `GET /rpc/subscribe/{op_id}` dispatches it — header-
-based auth via the existing `AuthProvider`, then one `CoolEventBus`
+based auth via the existing `AuthProvider`, then one `CratestackEventBus`
 registration per `@@emit`ted operation, bridged through a bounded
 channel into the SSE encoder. §3.4's WS design stays written down as-is
 for whenever a real bidirectional or high-multiplexing need
@@ -473,8 +473,8 @@ What shipped, concretely:
   `crates/cratestack-axum/src/rpc/sse.rs` is the encoder). Auth is
   header-based via the existing `AuthProvider`, matching every other
   HTTP RPC binding — no upgrade-time HMAC.
-- **Bus integration.** `CoolEventBus::subscribe` now returns a
-  `SubscriptionHandle`, removable via the new `CoolEventBus::
+- **Bus integration.** `CratestackEventBus::subscribe` now returns a
+  `SubscriptionHandle`, removable via the new `CratestackEventBus::
   unsubscribe`; `cratestack_core::SubscriptionGuard` unsubscribes every
   tracked handle on drop, whichever way the SSE stream ends (overflow or
   client disconnect). Per-client fan-out and the bounded send buffer

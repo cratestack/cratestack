@@ -1,5 +1,5 @@
 use cratestack::include_server_schema;
-use cratestack::{CoolContext, CoolError, Value};
+use cratestack::{CratestackContext, CratestackError, Value};
 
 include_server_schema!("tests/fixtures/recursive_policy.cstack", db = Postgres);
 
@@ -118,7 +118,7 @@ async fn db_backed_recursive_relation_policies_cover_quantifiers_and_create_chec
     .expect("tasks should seed");
 
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
-    let owner = CoolContext::authenticated([
+    let owner = CratestackContext::authenticated([
         ("id".to_owned(), Value::Int(1)),
         (
             "email".to_owned(),
@@ -126,7 +126,7 @@ async fn db_backed_recursive_relation_policies_cover_quantifiers_and_create_chec
         ),
         ("orgSlug".to_owned(), Value::String("alpha".to_owned())),
     ]);
-    let other = CoolContext::authenticated([
+    let other = CratestackContext::authenticated([
         ("id".to_owned(), Value::Int(2)),
         (
             "email".to_owned(),
@@ -182,7 +182,7 @@ async fn db_backed_recursive_relation_policies_cover_quantifiers_and_create_chec
         .run(&other)
         .await
         .expect_err("cross-org update should fail");
-    assert!(matches!(denied_update, CoolError::Forbidden(_)));
+    assert!(matches!(denied_update, CratestackError::Forbidden(_)));
 
     let denied_delete = cool
         .task()
@@ -190,7 +190,7 @@ async fn db_backed_recursive_relation_policies_cover_quantifiers_and_create_chec
         .run(&owner)
         .await
         .expect_err("every quantifier should block delete when a member is inactive");
-    assert!(matches!(denied_delete, CoolError::Forbidden(_)));
+    assert!(matches!(denied_delete, CratestackError::Forbidden(_)));
 
     let deleted = cool
         .task()
@@ -220,7 +220,7 @@ async fn db_backed_recursive_relation_policies_cover_quantifiers_and_create_chec
         .run(&owner)
         .await
         .expect_err("blocked membership should deny create");
-    assert!(matches!(blocked_create, CoolError::Forbidden(_)));
+    assert!(matches!(blocked_create, CratestackError::Forbidden(_)));
 
     let wrong_org_create = cool
         .task()
@@ -231,5 +231,5 @@ async fn db_backed_recursive_relation_policies_cover_quantifiers_and_create_chec
         .run(&owner)
         .await
         .expect_err("org mismatch should deny create");
-    assert!(matches!(wrong_org_create, CoolError::Forbidden(_)));
+    assert!(matches!(wrong_org_create, CratestackError::Forbidden(_)));
 }

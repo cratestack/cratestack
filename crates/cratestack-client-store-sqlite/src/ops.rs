@@ -1,12 +1,12 @@
 //! Load and save operations for the SQLite state store.
 
 use chrono::{DateTime, Utc};
-use cratestack_core::{CoolError, PersistedClientState, RequestJournalEntry};
+use cratestack_core::{CratestackError, PersistedClientState, RequestJournalEntry};
 use rusqlite::{Connection, params};
 
 use crate::bootstrap::sqlite_error;
 
-pub(crate) fn load_state(connection: &Connection) -> Result<PersistedClientState, CoolError> {
+pub(crate) fn load_state(connection: &Connection) -> Result<PersistedClientState, CratestackError> {
     let (schema_version, state_version) = connection
         .query_row(
             "SELECT schema_version, state_version FROM state_meta WHERE singleton = 1",
@@ -53,7 +53,7 @@ pub(crate) fn load_state(connection: &Connection) -> Result<PersistedClientState
 pub(crate) fn save_state(
     connection: &mut Connection,
     state: &PersistedClientState,
-) -> Result<(), CoolError> {
+) -> Result<(), CratestackError> {
     let transaction = connection.transaction().map_err(sqlite_error)?;
     transaction
         .execute("DELETE FROM request_journal", [])

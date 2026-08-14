@@ -1,7 +1,7 @@
 //! `update_many().where_(...).set(...)` wrappers — predicate-driven
-//! bulk UPDATE bound to a `CoolContext`.
+//! bulk UPDATE bound to a `CratestackContext`.
 
-use cratestack_core::{CoolContext, CoolError};
+use cratestack_core::{CratestackContext, CratestackError};
 
 use crate::audit::RunInTxOutcome;
 use crate::{Filter, FilterExpr, UpdateMany, UpdateManySet, UpdateModelInput, sqlx};
@@ -9,11 +9,11 @@ use crate::{Filter, FilterExpr, UpdateMany, UpdateManySet, UpdateModelInput, sql
 #[derive(Debug, Clone)]
 pub struct ScopedUpdateMany<'a, M: 'static, PK: 'static> {
     request: UpdateMany<'a, M, PK>,
-    ctx: CoolContext,
+    ctx: CratestackContext,
 }
 
 impl<'a, M: 'static, PK: 'static> ScopedUpdateMany<'a, M, PK> {
-    pub(super) fn new(request: UpdateMany<'a, M, PK>, ctx: CoolContext) -> Self {
+    pub(super) fn new(request: UpdateMany<'a, M, PK>, ctx: CratestackContext) -> Self {
         Self { request, ctx }
     }
 
@@ -52,7 +52,7 @@ impl<'a, M: 'static, PK: 'static> ScopedUpdateMany<'a, M, PK> {
 #[derive(Debug, Clone)]
 pub struct ScopedUpdateManySet<'a, M: 'static, PK: 'static, I> {
     request: UpdateManySet<'a, M, PK, I>,
-    ctx: CoolContext,
+    ctx: CratestackContext,
 }
 
 impl<'a, M: 'static, PK: 'static, I> ScopedUpdateManySet<'a, M, PK, I>
@@ -63,7 +63,7 @@ where
         self.request.preview_sql()
     }
 
-    pub async fn run(self) -> Result<cratestack_core::BatchSummary, CoolError>
+    pub async fn run(self) -> Result<cratestack_core::BatchSummary, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
     {
@@ -73,7 +73,7 @@ where
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-    ) -> Result<RunInTxOutcome<cratestack_core::BatchSummary>, CoolError>
+    ) -> Result<RunInTxOutcome<cratestack_core::BatchSummary>, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
     {

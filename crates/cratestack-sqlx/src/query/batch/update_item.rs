@@ -2,7 +2,9 @@
 //! probe, UPDATE ... RETURNING with policy + If-Match, event/audit
 //! fan-out. Per-item failures rollback the savepoint.
 
-use cratestack_core::{AuditEvent, AuditOperation, CoolContext, CoolError, ModelEventKind};
+use cratestack_core::{
+    AuditEvent, AuditOperation, CratestackContext, CratestackError, ModelEventKind,
+};
 use sqlx_core::acquire::Acquire as _;
 
 use crate::audit::{build_audit_event, enqueue_audit_event, fetch_for_audit};
@@ -20,10 +22,10 @@ pub(super) async fn run_update_item<'tx, M, PK, I>(
     outer: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
     descriptor: &'static ModelDescriptor<M, PK>,
     item: BatchUpdateItem<PK, I>,
-    ctx: &CoolContext,
+    ctx: &CratestackContext,
     emits_event: bool,
     audit_enabled: bool,
-) -> Result<(Result<M, CoolError>, Option<AuditEvent>), CoolError>
+) -> Result<(Result<M, CratestackError>, Option<AuditEvent>), CratestackError>
 where
     I: UpdateModelInput<M>,
     PK: Clone + Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
@@ -33,16 +35,16 @@ where
     let mut item_tx = outer.begin().await.map_err(cool_error_from_sqlx)?;
     let mut audit_event: Option<AuditEvent> = None;
 
-    let inner: Result<M, CoolError> = async {
+    let inner: Result<M, CratestackError> = async {
         if descriptor.version_column.is_some() && if_match.is_none() {
-            return Err(CoolError::PreconditionFailed(
+            return Err(CratestackError::PreconditionFailed(
                 "If-Match required for versioned model".to_owned(),
             ));
         }
         input.validate()?;
         let values = input.sql_values();
         if values.is_empty() {
-            return Err(CoolError::Validation(
+            return Err(CratestackError::Validation(
                 "update input must contain at least one changed column".to_owned(),
             ));
         }
@@ -100,9 +102,9 @@ async fn update_one_in_savepoint<'tx, M, PK>(
     descriptor: &'static ModelDescriptor<M, PK>,
     id: PK,
     values: &[crate::SqlColumnValue],
-    ctx: &CoolContext,
+    ctx: &CratestackContext,
     if_match: Option<i64>,
-) -> Result<M, CoolError>
+) -> Result<M, CratestackError>
 where
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
     PK: Clone + Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
@@ -159,11 +161,11 @@ where
             // PreconditionFailed when there is. Either way the caller's
             // recovery is the same: refetch & retry.
             if if_match.is_some() {
-                Err(CoolError::PreconditionFailed(
+                Err(CratestackError::PreconditionFailed(
                     "version mismatch or row missing".to_owned(),
                 ))
             } else {
-                Err(CoolError::Forbidden(
+                Err(CratestackError::Forbidden(
                     "update policy denied or row missing".to_owned(),
                 ))
             }

@@ -21,7 +21,7 @@ use axum::routing::get;
 use axum::{Router, body::Bytes};
 use cratestack_client_rust::{ClientConfig, CratestackClient, TypedResponse};
 use cratestack_codec_cbor::CborCodec;
-use cratestack_core::CoolCodec;
+use cratestack_core::CratestackCodec;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -73,7 +73,7 @@ async fn handle_patch(State(state): State<AppState>, headers: HeaderMap, body: B
         .and_then(|value| value.to_str().ok());
 
     if if_match != Some(expected_etag.as_str()) {
-        let error = cratestack_core::CoolErrorResponse {
+        let error = cratestack_core::CratestackErrorResponse {
             code: "PRECONDITION_FAILED".to_owned(),
             message: "stale or missing If-Match".to_owned(),
             details: None,

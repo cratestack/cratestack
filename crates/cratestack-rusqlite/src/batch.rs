@@ -9,7 +9,7 @@
 //! Error vocabulary: per-item failures surface as
 //! `BatchItemError { code: "DATABASE_ERROR", ... }` (or `"CONFLICT"` for
 //! unique-constraint violations on create / upsert), matching the codes
-//! the server side projects from `CoolError`. This keeps cross-platform
+//! the server side projects from `CratestackError`. This keeps cross-platform
 //! clients on a single error-code table whether the response came from
 //! sqlx or rusqlite.
 

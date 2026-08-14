@@ -12,7 +12,7 @@
 //! `banking_*.rs` tests share.
 
 use cratestack::include_server_schema;
-use cratestack::{CoolContext, Value};
+use cratestack::{CratestackContext, Value};
 
 include_server_schema!(
     "tests/fixtures/banking_transaction_combinator.cstack",
@@ -46,8 +46,8 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     .expect("create transaction_notes");
 }
 
-fn operator() -> CoolContext {
-    CoolContext::authenticated([("id".to_owned(), Value::Int(1))])
+fn operator() -> CratestackContext {
+    CratestackContext::authenticated([("id".to_owned(), Value::Int(1))])
 }
 
 #[tokio::test]

@@ -18,9 +18,9 @@
 //! nested `ToOne`/`Every` relations).
 
 use crate::{PolicyExpr, PolicyLiteral, ReadPolicy, ReadPredicate, render::render_read_policy_sql};
-use cratestack_core::{CoolContext, Value};
+use cratestack_core::{CratestackContext, Value};
 
-fn render(allow: &[ReadPolicy], deny: &[ReadPolicy], ctx: &CoolContext) -> Option<String> {
+fn render(allow: &[ReadPolicy], deny: &[ReadPolicy], ctx: &CratestackContext) -> Option<String> {
     let mut bind_index = 1usize;
     render_read_policy_sql(allow, deny, ctx, &mut bind_index)
 }
@@ -31,13 +31,13 @@ fn render(allow: &[ReadPolicy], deny: &[ReadPolicy], ctx: &CoolContext) -> Optio
 /// in-process.
 #[test]
 fn empty_allow_list_default_denies_with_sql_false() {
-    let ctx = CoolContext::anonymous();
+    let ctx = CratestackContext::anonymous();
     let sql = render(&[], &[], &ctx).expect("empty allow should still render a clause");
     assert_eq!(sql, "(FALSE)");
 
     // Also true for an authenticated caller — default-deny is
     // unconditional, not merely "unauthenticated is denied".
-    let authenticated = CoolContext::authenticated([]);
+    let authenticated = CratestackContext::authenticated([]);
     let sql = render(&[], &[], &authenticated).expect("empty allow should still render a clause");
     assert_eq!(sql, "(FALSE)");
 }
@@ -46,7 +46,7 @@ fn empty_allow_list_default_denies_with_sql_false() {
 /// `NOT (deny) AND (allow)`, not just OR'd together.
 #[test]
 fn deny_beats_allow_precedence() {
-    let ctx = CoolContext::authenticated([]);
+    let ctx = CratestackContext::authenticated([]);
     let allow = [ReadPolicy {
         expr: PolicyExpr::Predicate(ReadPredicate::AuthNotNull),
     }];
@@ -60,8 +60,8 @@ fn deny_beats_allow_precedence() {
 
 #[test]
 fn auth_not_null_and_auth_is_null_collapse_to_sql_booleans() {
-    let authenticated = CoolContext::authenticated([]);
-    let anonymous = CoolContext::anonymous();
+    let authenticated = CratestackContext::authenticated([]);
+    let anonymous = CratestackContext::anonymous();
     let allow_not_null = [ReadPolicy {
         expr: PolicyExpr::Predicate(ReadPredicate::AuthNotNull),
     }];
@@ -84,16 +84,16 @@ fn auth_not_null_and_auth_is_null_collapse_to_sql_booleans() {
 #[test]
 fn has_role_and_in_tenant_collapse_to_sql_booleans() {
     let admin =
-        CoolContext::authenticated([("role".to_owned(), Value::String("admin".to_owned()))]);
+        CratestackContext::authenticated([("role".to_owned(), Value::String("admin".to_owned()))]);
     let member =
-        CoolContext::authenticated([("role".to_owned(), Value::String("member".to_owned()))]);
+        CratestackContext::authenticated([("role".to_owned(), Value::String("member".to_owned()))]);
     let allow_role = [ReadPolicy {
         expr: PolicyExpr::Predicate(ReadPredicate::HasRole { role: "admin" }),
     }];
     assert_eq!(render(&allow_role, &[], &admin).unwrap(), "(TRUE)");
     assert_eq!(render(&allow_role, &[], &member).unwrap(), "(FALSE)");
 
-    let tenant_a = CoolContext::authenticated([(
+    let tenant_a = CratestackContext::authenticated([(
         "tenant".to_owned(),
         Value::Map(std::collections::BTreeMap::from([(
             "id".to_owned(),
@@ -111,10 +111,14 @@ fn has_role_and_in_tenant_collapse_to_sql_booleans() {
 
 #[test]
 fn auth_field_eq_and_ne_literal_collapse_to_sql_booleans() {
-    let banned =
-        CoolContext::authenticated([("status".to_owned(), Value::String("banned".to_owned()))]);
-    let active =
-        CoolContext::authenticated([("status".to_owned(), Value::String("active".to_owned()))]);
+    let banned = CratestackContext::authenticated([(
+        "status".to_owned(),
+        Value::String("banned".to_owned()),
+    )]);
+    let active = CratestackContext::authenticated([(
+        "status".to_owned(),
+        Value::String("active".to_owned()),
+    )]);
     let allow_eq = [ReadPolicy {
         expr: PolicyExpr::Predicate(ReadPredicate::AuthFieldEqLiteral {
             auth_field: "status",

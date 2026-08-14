@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use cratestack_core::{CoolError, RateLimitDecision};
+use cratestack_core::{CratestackError, RateLimitDecision};
 use redis::Value as RedisValue;
 
 use super::parse::parse_consume_outcome;
@@ -39,13 +39,13 @@ fn parse_accepts_redis_int_in_payload() {
 fn parse_rejects_unknown_tag() {
     let value = RedisValue::Array(vec![bulk("weird"), bulk("1")]);
     let err = parse_consume_outcome(value).expect_err("must reject");
-    assert!(matches!(err, CoolError::Internal(_)));
+    assert!(matches!(err, CratestackError::Internal(_)));
 }
 
 #[test]
 fn parse_rejects_non_array_root() {
     let err = parse_consume_outcome(bulk("allowed")).expect_err("must reject");
-    assert!(matches!(err, CoolError::Internal(_)));
+    assert!(matches!(err, CratestackError::Internal(_)));
 }
 
 #[test]
@@ -54,7 +54,7 @@ fn parse_rejects_negative_remaining() {
     // send a negative value. Refuse to silently coerce.
     let value = RedisValue::Array(vec![bulk("allowed"), bulk("-1")]);
     let err = parse_consume_outcome(value).expect_err("must reject");
-    assert!(matches!(err, CoolError::Internal(_)));
+    assert!(matches!(err, CratestackError::Internal(_)));
 }
 
 #[test]
@@ -62,7 +62,7 @@ fn parse_rejects_truncated_array() {
     let value = RedisValue::Array(vec![bulk("allowed")]);
     let err = parse_consume_outcome(value).expect_err("must reject");
     match err {
-        CoolError::Internal(msg) => assert!(msg.contains("missing"), "msg: {msg}"),
+        CratestackError::Internal(msg) => assert!(msg.contains("missing"), "msg: {msg}"),
         other => panic!("expected Internal, got {other:?}"),
     }
 }

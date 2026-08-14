@@ -4,7 +4,7 @@ JSON codec for CrateStack HTTP transport.
 
 ## Overview
 
-`cratestack-codec-json` exposes `JsonCodec`, a zero-state implementation of the `CoolCodec` trait built on `serde_json`. It is the right choice for human-readable interop and browser clients that do not negotiate CBOR.
+`cratestack-codec-json` exposes `JsonCodec`, a zero-state implementation of the `CratestackCodec` trait built on `serde_json`. It is the right choice for human-readable interop and browser clients that do not negotiate CBOR.
 
 ## Installation
 
@@ -17,7 +17,7 @@ cratestack-codec-json = "0.7"
 
 ```rust
 use cratestack_codec_json::JsonCodec;
-use cratestack_core::CoolCodec;
+use cratestack_core::CratestackCodec;
 
 let codec = JsonCodec;
 let bytes = codec.encode(&("cool", "stack"))?;

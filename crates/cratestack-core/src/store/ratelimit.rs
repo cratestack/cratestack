@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 
-use crate::CoolError;
+use crate::CratestackError;
 
 /// Configuration for a single bucket: capacity (max burst) and refill rate
 /// in tokens per second. Banks running high-frequency back-office traffic
@@ -51,7 +51,7 @@ pub trait RateLimitStore: Send + Sync + 'static {
         &self,
         key: &str,
         config: RateLimitConfig,
-    ) -> Result<RateLimitDecision, CoolError>;
+    ) -> Result<RateLimitDecision, CratestackError>;
 }
 
 #[cfg(test)]

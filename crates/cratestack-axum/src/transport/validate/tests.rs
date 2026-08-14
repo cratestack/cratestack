@@ -8,7 +8,7 @@
 
 use axum::http::{HeaderMap, HeaderValue, header};
 use cratestack_codec_json::JsonCodec;
-use cratestack_core::CoolError;
+use cratestack_core::CratestackError;
 
 use super::*;
 
@@ -58,7 +58,7 @@ fn json_only_router_preflight_rejects_an_accept_naming_only_cbor() {
     let headers = headers_with_accept_and_json_content_type("application/cbor");
     let error = validate_transport_request_headers_for(&JsonCodec, &headers, &write_capabilities())
         .expect_err("router has no CBOR encoder — must fail before any handler side effect runs");
-    assert!(matches!(error, CoolError::NotAcceptable(_)));
+    assert!(matches!(error, CratestackError::NotAcceptable(_)));
 }
 
 #[test]
@@ -78,5 +78,5 @@ fn response_headers_preflight_uses_the_same_codec_aware_check() {
     let error =
         validate_transport_response_headers_for(&JsonCodec, &headers, &write_capabilities())
             .expect_err("GET-style preflight must be equally honest about the router's encoders");
-    assert!(matches!(error, CoolError::NotAcceptable(_)));
+    assert!(matches!(error, CratestackError::NotAcceptable(_)));
 }

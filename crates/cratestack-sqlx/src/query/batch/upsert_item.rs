@@ -4,7 +4,9 @@
 //! the right event/audit kind, and persist via
 //! `INSERT ... ON CONFLICT DO UPDATE ... RETURNING`.
 
-use cratestack_core::{AuditEvent, AuditOperation, CoolContext, CoolError, ModelEventKind};
+use cratestack_core::{
+    AuditEvent, AuditOperation, CratestackContext, CratestackError, ModelEventKind,
+};
 use sqlx_core::acquire::Acquire as _;
 
 use crate::audit::{build_audit_event, enqueue_audit_event};
@@ -26,11 +28,11 @@ pub(super) async fn run_upsert_item<'tx, M, PK, I>(
     policy_pool: &sqlx::PgPool,
     descriptor: &'static ModelDescriptor<M, PK>,
     input: I,
-    ctx: &CoolContext,
+    ctx: &CratestackContext,
     emits_created: bool,
     emits_updated: bool,
     audit_enabled: bool,
-) -> Result<(Result<M, CoolError>, Option<AuditEvent>), CoolError>
+) -> Result<(Result<M, CratestackError>, Option<AuditEvent>), CratestackError>
 where
     I: UpsertModelInput<M>,
     PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
@@ -39,7 +41,7 @@ where
     let mut item_tx = outer.begin().await.map_err(cool_error_from_sqlx)?;
     let mut audit_event: Option<AuditEvent> = None;
 
-    let inner: Result<M, CoolError> = async {
+    let inner: Result<M, CratestackError> = async {
         input.validate()?;
         let mut insert_values =
             apply_create_defaults(input.sql_values(), descriptor.create_defaults, ctx)?;
@@ -52,7 +54,7 @@ where
             });
         }
         if insert_values.is_empty() {
-            return Err(CoolError::Validation(
+            return Err(CratestackError::Validation(
                 "upsert input must contain at least one column".to_owned(),
             ));
         }
@@ -65,7 +67,7 @@ where
         )
         .await?
         {
-            return Err(CoolError::Forbidden(
+            return Err(CratestackError::Forbidden(
                 "create policy denied this upsert".to_owned(),
             ));
         }
@@ -78,7 +80,7 @@ where
         let inserted = before_record.is_none();
 
         if !inserted && !row_passes_update_policy(policy_pool, descriptor, &pk_value, ctx).await? {
-            return Err(CoolError::Forbidden(
+            return Err(CratestackError::Forbidden(
                 "update policy denied this upsert".to_owned(),
             ));
         }

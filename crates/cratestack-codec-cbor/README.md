@@ -4,7 +4,7 @@ CBOR codec for CrateStack HTTP transport.
 
 ## Overview
 
-`cratestack-codec-cbor` is a single-type crate exposing `CborCodec`, a zero-state implementation of the `CoolCodec` trait built on `minicbor-serde`.
+`cratestack-codec-cbor` is a single-type crate exposing `CborCodec`, a zero-state implementation of the `CratestackCodec` trait built on `minicbor-serde`.
 
 ## Installation
 
@@ -17,7 +17,7 @@ cratestack-codec-cbor = "0.7"
 
 ```rust
 use cratestack_codec_cbor::CborCodec;
-use cratestack_core::CoolCodec;
+use cratestack_core::CratestackCodec;
 
 let codec = CborCodec;
 let bytes = codec.encode(&("cool", "stack"))?;

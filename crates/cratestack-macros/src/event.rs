@@ -65,17 +65,17 @@ pub(crate) fn generate_event_module(models: &[Model]) -> Result<proc_macro2::Tok
                 /// audit-table equivalent, which did need a new method
                 /// because the events themselves have to come back from
                 /// `run_in_tx`.
-                pub async fn drain(&self) -> Result<usize, ::cratestack::CoolError> {
+                pub async fn drain(&self) -> Result<usize, ::cratestack::CratestackError> {
                     self.runtime.drain_event_outbox().await
                 }
 
                 /// Internal-only: an owned handle onto the underlying
-                /// `CoolEventBus`, for generated code (`@@subscribe` SSE
+                /// `CratestackEventBus`, for generated code (`@@subscribe` SSE
                 /// dispatch, cratestack#390) that needs to build a
                 /// `SubscriptionGuard` outliving this borrowed
                 /// `Subscriptions<'a>`. Not part of the public API.
                 #[doc(hidden)]
-                pub fn __event_bus(&self) -> ::cratestack::CoolEventBus {
+                pub fn __event_bus(&self) -> ::cratestack::CratestackEventBus {
                     self.runtime.events_bus()
                 }
 
@@ -141,7 +141,7 @@ fn generate_model_event_methods(model: &Model) -> Result<proc_macro2::TokenStrea
                 pub fn #method_ident<F, Fut>(&self, handler: F) -> ::cratestack::SubscriptionHandle
                 where
                     F: Fn(#alias_ident) -> Fut + Send + Sync + 'static,
-                    Fut: ::core::future::Future<Output = Result<(), ::cratestack::CoolError>>
+                    Fut: ::core::future::Future<Output = Result<(), ::cratestack::CratestackError>>
                         + Send
                         + 'static,
                 {
@@ -149,7 +149,7 @@ fn generate_model_event_methods(model: &Model) -> Result<proc_macro2::TokenStrea
                     self.runtime.subscribe(#model_name, #kind_tokens, move |event| {
                         let handler = ::std::sync::Arc::clone(&handler);
                         ::std::boxed::Box::pin(async move {
-                            let typed = <::cratestack::ModelEvent<super::models::#model_ident> as ::core::convert::TryFrom<::cratestack::CoolEventEnvelope>>::try_from(event)?;
+                            let typed = <::cratestack::ModelEvent<super::models::#model_ident> as ::core::convert::TryFrom<::cratestack::CratestackEventEnvelope>>::try_from(event)?;
                             (handler)(typed).await
                         })
                     })

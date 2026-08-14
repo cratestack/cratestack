@@ -1,7 +1,7 @@
 //! Wire-shape demos for `POST /rpc/batch`. Each test sends a multi-frame
 //! request and asserts on the response envelope.
 
-use cratestack::CoolCodec;
+use cratestack::CratestackCodec;
 use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack::rpc::{RpcRequest, RpcResponseFrame};

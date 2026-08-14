@@ -1,7 +1,7 @@
 //! `ScopedFindMany` + the `select` / `include` exits to projected and
 //! side-load variants.
 
-use cratestack_core::{CoolContext, CoolError};
+use cratestack_core::{CratestackContext, CratestackError};
 
 use crate::{Filter, FilterExpr, FindMany, OrderClause, sqlx};
 
@@ -11,11 +11,11 @@ use super::scoped_find_many_with::ScopedFindManyWith;
 #[derive(Clone)]
 pub struct ScopedFindMany<'a, M: 'static, PK: 'static> {
     pub(super) request: FindMany<'a, M, PK>,
-    pub(super) ctx: CoolContext,
+    pub(super) ctx: CratestackContext,
 }
 
 impl<'a, M: 'static, PK: 'static> ScopedFindMany<'a, M, PK> {
-    pub(super) fn new(request: FindMany<'a, M, PK>, ctx: CoolContext) -> Self {
+    pub(super) fn new(request: FindMany<'a, M, PK>, ctx: CratestackContext) -> Self {
         Self { request, ctx }
     }
 
@@ -71,7 +71,7 @@ impl<'a, M: 'static, PK: 'static> ScopedFindMany<'a, M, PK> {
         self.request.preview_scoped_sql(&self.ctx)
     }
 
-    pub async fn run(self) -> Result<Vec<M>, CoolError>
+    pub async fn run(self) -> Result<Vec<M>, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
     {
@@ -81,7 +81,7 @@ impl<'a, M: 'static, PK: 'static> ScopedFindMany<'a, M, PK> {
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-    ) -> Result<Vec<M>, CoolError>
+    ) -> Result<Vec<M>, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
     {

@@ -13,7 +13,7 @@
 use std::collections::BTreeMap;
 
 use cratestack_client_rust::CborCodec;
-use cratestack_core::CoolCodec;
+use cratestack_core::CratestackCodec;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 

@@ -1,10 +1,10 @@
 //! `ModelDelegate` — the per-model entry point handed out by the
 //! generated `Cratestack::<model>()` accessor. Hosts the unbound (no
-//! `CoolContext`) builders for every CRUD/aggregate primitive. Batch
+//! `CratestackContext`) builders for every CRUD/aggregate primitive. Batch
 //! and authorize methods live in [`super::model_batch`] and
 //! [`super::model_authorize`] respectively.
 
-use cratestack_core::CoolContext;
+use cratestack_core::CratestackContext;
 
 use crate::{
     Aggregate, CreateRecord, DeleteMany, DeleteRecord, FindMany, FindUnique, ModelDescriptor,
@@ -31,7 +31,7 @@ impl<'a, M: 'static, PK: 'static> ModelDelegate<'a, M, PK> {
         self.descriptor
     }
 
-    pub fn bind(self, ctx: CoolContext) -> ScopedModelDelegate<'a, M, PK> {
+    pub fn bind(self, ctx: CratestackContext) -> ScopedModelDelegate<'a, M, PK> {
         ScopedModelDelegate::new(self, ctx)
     }
 

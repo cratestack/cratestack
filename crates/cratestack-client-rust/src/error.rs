@@ -1,4 +1,4 @@
-use cratestack_core::{CoolError, CoolErrorResponse};
+use cratestack_core::{CratestackError, CratestackErrorResponse};
 use reqwest::StatusCode;
 
 pub type HeaderPair<'a> = (&'a str, &'a str);
@@ -52,7 +52,7 @@ pub enum ClientError {
     #[error("transport error: {0}")]
     Transport(#[source] TransportError),
     #[error("codec error: {0}")]
-    Codec(#[from] CoolError),
+    Codec(#[from] CratestackError),
     #[error("state error: {0}")]
     State(String),
     #[error("invalid response: {0}")]
@@ -62,7 +62,7 @@ pub enum ClientError {
     #[error("remote call failed with status {status}: {message}")]
     Remote {
         status: StatusCode,
-        error: Option<CoolErrorResponse>,
+        error: Option<CratestackErrorResponse>,
         message: String,
     },
 }

@@ -24,7 +24,7 @@ use axum::body::{Body, Bytes};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::Response;
 use cratestack_core::rpc::{RPC_STREAM_ERROR_TAG, RpcErrorBody};
-use cratestack_core::{CoolCodec, CoolError};
+use cratestack_core::{CratestackCodec, CratestackError};
 use futures_util::Stream;
 use futures_util::stream::{self, StreamExt};
 use serde::Serialize;
@@ -40,14 +40,14 @@ pub(crate) fn encode_cbor_sequence_stream_response<C, T, S>(
     codec: C,
     status: StatusCode,
     items: S,
-) -> Result<Response, CoolError>
+) -> Result<Response, CratestackError>
 where
-    C: CoolCodec + Send + 'static,
+    C: CratestackCodec + Send + 'static,
     T: Serialize + Send + 'static,
-    S: Stream<Item = Result<T, CoolError>> + Send + 'static,
+    S: Stream<Item = Result<T, CratestackError>> + Send + 'static,
 {
     if C::CONTENT_TYPE != CborCodecMarker::CONTENT_TYPE {
-        return Err(CoolError::NotAcceptable(
+        return Err(CratestackError::NotAcceptable(
             "cbor-seq requires a CBOR codec".to_owned(),
         ));
     }
@@ -69,7 +69,7 @@ where
     Ok(response)
 }
 
-/// Adapts a `Stream<Item = Result<T, CoolError>>` into
+/// Adapts a `Stream<Item = Result<T, CratestackError>>` into
 /// `Stream<Item = Result<Bytes, Infallible>>`: encode each successful
 /// item, or — on the first `Err` (from the domain stream OR a codec
 /// encode failure) — emit the tag-48900 error sentinel and stop, never
@@ -87,9 +87,9 @@ fn encode_items_stream<C, T, S>(
     items: S,
 ) -> impl Stream<Item = Result<Bytes, std::convert::Infallible>> + Send
 where
-    C: CoolCodec + Send + 'static,
+    C: CratestackCodec + Send + 'static,
     T: Serialize + Send + 'static,
-    S: Stream<Item = Result<T, CoolError>> + Send + 'static,
+    S: Stream<Item = Result<T, CratestackError>> + Send + 'static,
 {
     struct State<C, S> {
         codec: C,
@@ -132,7 +132,7 @@ where
 /// `Infallible`, so this can't fail); the map payload reuses the same
 /// codec every ordinary item goes through, so `RpcErrorBody`'s field
 /// encoding stays consistent with the rest of the wire format.
-fn encode_error_sentinel<C: CoolCodec>(codec: &C, error: &CoolError) -> Vec<u8> {
+fn encode_error_sentinel<C: CratestackCodec>(codec: &C, error: &CratestackError) -> Vec<u8> {
     let mut bytes = Vec::new();
     minicbor::Encoder::new(&mut bytes)
         .tag(minicbor::data::Tag::new(RPC_STREAM_ERROR_TAG))

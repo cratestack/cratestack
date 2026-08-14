@@ -20,7 +20,7 @@ mod support;
 
 use cratestack::include_server_schema;
 use cratestack::sqlx::{Row, query};
-use cratestack::{CoolContext, UpsertOutcome, Value};
+use cratestack::{CratestackContext, UpsertOutcome, Value};
 use support::pg;
 
 include_server_schema!("tests/fixtures/upsert_do_nothing.cstack", db = Postgres);
@@ -56,8 +56,9 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     .expect("create idempotent_markers");
 }
 
-fn operator() -> CoolContext {
-    CoolContext::authenticated([("id".to_owned(), Value::Int(1))]).with_request_id("issue-487")
+fn operator() -> CratestackContext {
+    CratestackContext::authenticated([("id".to_owned(), Value::Int(1))])
+        .with_request_id("issue-487")
 }
 
 fn completed_claim(id: &str) -> cratestack_schema::CreateCashInClaimInput {

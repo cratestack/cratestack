@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime};
 use axum::body::Body;
 use axum::extract::Request;
 use axum::response::Response;
-use cratestack_core::CoolError;
+use cratestack_core::CratestackError;
 use http::header;
 use tower::Service;
 
@@ -25,7 +25,7 @@ pub struct IdempotencyService<S> {
     pub(super) store: Arc<dyn IdempotencyStore>,
     pub(super) ttl: Duration,
     pub(super) principal_fingerprint:
-        Arc<dyn Fn(&Request) -> Result<String, CoolError> + Send + Sync>,
+        Arc<dyn Fn(&Request) -> Result<String, CratestackError> + Send + Sync>,
 }
 
 impl<S> Service<Request> for IdempotencyService<S>
@@ -92,7 +92,7 @@ where
             let bytes = match axum::body::to_bytes(body, MAX_BODY_BYTES).await {
                 Ok(b) => b,
                 Err(_) => {
-                    return Ok(error_response(CoolError::BadRequest(
+                    return Ok(error_response(CratestackError::BadRequest(
                         "request body exceeds idempotency buffer limit".to_owned(),
                     )));
                 }
@@ -119,7 +119,7 @@ where
                     return Ok(replay_response(&record));
                 }
                 ReservationOutcome::Conflict => {
-                    return Ok(error_response(CoolError::Validation(
+                    return Ok(error_response(CratestackError::Validation(
                         "idempotency_key_conflict: key reused with a different request body"
                             .to_owned(),
                     )));
@@ -144,7 +144,7 @@ where
                     // reclaimed (TTL ran out) doesn't drop the new
                     // owner's row.
                     let _ = store.release(&principal, &key, token).await;
-                    return Ok(error_response(CoolError::Internal(
+                    return Ok(error_response(CratestackError::Internal(
                         "handler returned an unrecoverable error".to_owned(),
                     )));
                 }

@@ -5,7 +5,7 @@
 
 use std::time::SystemTime;
 
-use cratestack_core::{CoolError, IdempotencyRecord, ReservationOutcome};
+use cratestack_core::{CratestackError, IdempotencyRecord, ReservationOutcome};
 
 use crate::sqlx;
 
@@ -41,7 +41,7 @@ pub(super) async fn reserve_or_fetch(
     key: &str,
     request_hash: [u8; 32],
     expires_at: SystemTime,
-) -> Result<ReservationOutcome, CoolError> {
+) -> Result<ReservationOutcome, CratestackError> {
     let expires_at: chrono::DateTime<chrono::Utc> = expires_at.into();
     // Fresh reservation token: if our INSERT or expired-row UPDATE
     // wins, this token identifies our reservation. A handler that
@@ -76,7 +76,7 @@ pub(super) async fn reserve_or_fetch(
     .bind(expires_at)
     .fetch_optional(pool)
     .await
-    .map_err(|error| CoolError::Database(error.to_string()))?;
+    .map_err(|error| CratestackError::Database(error.to_string()))?;
 
     if let Some((_, token, _, _, _, _, _, _)) = row {
         // Fresh insert OR expired row we just reclaimed; either way
@@ -96,7 +96,7 @@ pub(super) async fn reserve_or_fetch(
     .bind(key)
     .fetch_optional(pool)
     .await
-    .map_err(|error| CoolError::Database(error.to_string()))?;
+    .map_err(|error| CratestackError::Database(error.to_string()))?;
 
     let Some((stored_hash, status, headers, body, created_at, existing_expires_at)) = existing
     else {
@@ -109,7 +109,7 @@ pub(super) async fn reserve_or_fetch(
     let stored: [u8; 32] = stored_hash
         .as_slice()
         .try_into()
-        .map_err(|_| CoolError::Internal("corrupt idempotency hash length".to_owned()))?;
+        .map_err(|_| CratestackError::Internal("corrupt idempotency hash length".to_owned()))?;
     if stored != request_hash {
         return Ok(ReservationOutcome::Conflict);
     }
@@ -140,7 +140,7 @@ pub(super) async fn complete(
     status: u16,
     headers: &[u8],
     body: &[u8],
-) -> Result<(), CoolError> {
+) -> Result<(), CratestackError> {
     // Only completes the row we reserved. `reservation_id = $token`
     // is the proof; `response_body IS NULL` keeps us from
     // double-writing. A handler that ran past TTL finds its token
@@ -164,7 +164,7 @@ pub(super) async fn complete(
     .execute(pool)
     .await
     .map(|_| ())
-    .map_err(|error| CoolError::Database(error.to_string()))
+    .map_err(|error| CratestackError::Database(error.to_string()))
 }
 
 pub(super) async fn release(
@@ -172,7 +172,7 @@ pub(super) async fn release(
     principal: &str,
     key: &str,
     token: uuid::Uuid,
-) -> Result<(), CoolError> {
+) -> Result<(), CratestackError> {
     // Only drop our own pending row — never delete a completed one,
     // and never delete a row whose reservation has been rotated.
     sqlx::query(
@@ -188,5 +188,5 @@ pub(super) async fn release(
     .execute(pool)
     .await
     .map(|_| ())
-    .map_err(|error| CoolError::Database(error.to_string()))
+    .map_err(|error| CratestackError::Database(error.to_string()))
 }

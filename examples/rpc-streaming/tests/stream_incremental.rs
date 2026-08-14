@@ -31,8 +31,10 @@ async fn ticks_stream_yields_first_item_well_before_the_stream_completes() {
     // `ticks` declares `@allow(auth() != null)` — an anonymous context
     // would (correctly, post-cratestack#512) be denied by `authorize_with_db`
     // below, so this test authenticates rather than proving the wrong thing.
-    let ctx =
-        cratestack::CoolContext::authenticated([("id".to_owned(), cratestack::Value::Int(1))]);
+    let ctx = cratestack::CratestackContext::authenticated([(
+        "id".to_owned(),
+        cratestack::Value::Int(1),
+    )]);
     let args = schema::procedures::ticks::Args {
         args: schema::TickerArgs {
             start: 0,

@@ -15,7 +15,7 @@
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use cratestack::CoolContext;
+use cratestack::CratestackContext;
 use cratestack::include_server_schema;
 use cratestack::sqlx::postgres::PgPoolOptions;
 use tower::ServiceExt;
@@ -26,13 +26,13 @@ include_server_schema!("tests/fixtures/schema_fingerprint.cstack", db = Postgres
 struct AllowAllAuth;
 
 impl cratestack::AuthProvider for AllowAllAuth {
-    type Error = cratestack::CoolError;
+    type Error = cratestack::CratestackError;
 
     fn authenticate(
         &self,
         _request: &cratestack::RequestContext<'_>,
-    ) -> impl std::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
-        std::future::ready(Ok(CoolContext::authenticated([])))
+    ) -> impl std::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
+        std::future::ready(Ok(CratestackContext::authenticated([])))
     }
 }
 

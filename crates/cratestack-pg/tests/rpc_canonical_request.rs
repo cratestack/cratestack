@@ -23,7 +23,7 @@ use std::sync::{Arc, Mutex};
 use cratestack::axum::body::Body;
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack::include_server_schema;
-use cratestack::{AuthProvider, CoolCodec, CoolContext, RequestContext, Value};
+use cratestack::{AuthProvider, CratestackCodec, CratestackContext, RequestContext, Value};
 use cratestack_codec_cbor::CborCodec;
 use tower::util::ServiceExt;
 
@@ -51,12 +51,12 @@ struct RecordingAuthProvider {
 }
 
 impl AuthProvider for RecordingAuthProvider {
-    type Error = cratestack::CoolError;
+    type Error = cratestack::CratestackError;
 
     fn authenticate(
         &self,
         request: &RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
+    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
         self.captured
             .lock()
             .expect("capture lock")
@@ -69,7 +69,7 @@ impl AuthProvider for RecordingAuthProvider {
         // Authenticated so the Widget `auth() != null` policy and the
         // procedure `@allow(auth() != null)` pass and we exercise the
         // full dispatch path.
-        core::future::ready(Ok(CoolContext::authenticated([(
+        core::future::ready(Ok(CratestackContext::authenticated([(
             "id".to_owned(),
             Value::Int(1),
         )])))
@@ -83,11 +83,11 @@ impl cratestack_schema::procedures::ProcedureRegistry for RpcProcedures {
     fn ping(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::ping::Args,
         _authorized: cratestack_schema::procedures::ping::Authorized,
     ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::ping::Output, cratestack::CoolError>,
+        Output = Result<cratestack_schema::procedures::ping::Output, cratestack::CratestackError>,
     > + Send {
         core::future::ready(Ok(args.args))
     }
@@ -95,11 +95,11 @@ impl cratestack_schema::procedures::ProcedureRegistry for RpcProcedures {
     fn bump(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::bump::Args,
         _authorized: cratestack_schema::procedures::bump::Authorized,
     ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::bump::Output, cratestack::CoolError>,
+        Output = Result<cratestack_schema::procedures::bump::Output, cratestack::CratestackError>,
     > + Send {
         core::future::ready(Ok(args.args))
     }
@@ -107,11 +107,14 @@ impl cratestack_schema::procedures::ProcedureRegistry for RpcProcedures {
     fn many_pings(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::many_pings::Args,
         _authorized: cratestack_schema::procedures::many_pings::Authorized,
     ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::many_pings::Output, cratestack::CoolError>,
+        Output = Result<
+            cratestack_schema::procedures::many_pings::Output,
+            cratestack::CratestackError,
+        >,
     > + Send {
         core::future::ready(Ok(vec![args.args]))
     }
