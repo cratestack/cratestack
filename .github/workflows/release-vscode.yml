@@ -132,35 +132,41 @@ jobs:
         working-directory: packages/cratestack-vscode
         run: |
           set -euo pipefail
-          # `basename`, NOT `find -printf '%f'`. `-printf` is a GNU
-          # extension and two of this matrix's five legs run on
-          # `macos-latest`, whose BSD `find` does not have it — that fix
-          # would have worked on the three Linux/Windows legs and failed
-          # on macOS, reproducing exactly the partial-release shape this
-          # is fixing.
+          # A bash glob, not `find`. Two constraints had to hold at once
+          # and each ruled out an obvious answer:
           #
-          # The bug: `find -print` emits `./name.vsix`, and prefixing that
-          # produced `packages/cratestack-vscode/./name.vsix`, which
-          # `actions/upload-artifact@v4` rejects outright:
+          #   * `find -printf '%f'` is a GNU extension, and two of this
+          #     matrix's five legs run on `macos-latest` with BSD find. It
+          #     would pass on three legs and fail on two — reproducing the
+          #     partial-release shape this whole fix exists to stop.
+          #   * `find ... | head -n1` SIGPIPEs under `set -euo pipefail`
+          #     once enough files match: head exits after one line, find
+          #     dies writing to the closed pipe, and pipefail fails the
+          #     step. Measured: 2 matches passed, 20k matches failed with
+          #     exit 141 on three runs of three. Data-dependent, so it
+          #     would have looked fine until some day it didn't.
           #
-          #   Invalid pattern '...packages/cratestack-vscode/./cratestack-vscode-linux-x64-0.7.16.vsix'.
+          # The glob has neither problem, and yields a bare filename
+          # directly — which is the actual point. `find -print` emitted
+          # `./name.vsix`, and prefixing that produced
+          # `packages/cratestack-vscode/./name.vsix`, which
+          # `actions/upload-artifact@v4` rejects:
+          #
+          #   Invalid pattern '...vscode/./cratestack-vscode-linux-x64-0.7.16.vsix'.
           #   Relative pathing '.' and '..' is not allowed.
           #
-          # Every leg failed on this for v0.7.15 and v0.7.16, so the vsix
-          # has never been attached to a release. Packaging itself always
-          # worked (2.01 MB, 11 files) — which is why this looked solved
-          # after #584 repaired the `--` separator. #584 fixed packaging
-          # and uncovered this.
-          # Guard BEFORE `basename`, not after: `basename ""` returns an
-          # empty string on GNU but `.` on some BSD implementations, and a
-          # path of `packages/cratestack-vscode/.` would be a directory
-          # upload rather than an error.
-          found=$(find . -maxdepth 1 -name '*.vsix' -print | head -n1)
-          if [ -z "$found" ]; then
+          # Every leg failed on that for v0.7.15 and v0.7.16, so the vsix
+          # has never been attached to a release. Packaging always worked
+          # (2.01 MB, 11 files) — which is why this looked solved after
+          # #584 repaired the `--` separator. #584 fixed packaging and
+          # uncovered this.
+          shopt -s nullglob
+          vsix_files=(*.vsix)
+          if [ ${#vsix_files[@]} -eq 0 ]; then
             echo "::error::vsce produced no .vsix in packages/cratestack-vscode" >&2
             exit 1
           fi
-          file=$(basename "$found")
+          file="${vsix_files[0]}"
           echo "path=packages/cratestack-vscode/$file" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
