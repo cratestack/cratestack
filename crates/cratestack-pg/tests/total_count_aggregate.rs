@@ -59,12 +59,12 @@ fn router(pool: cratestack::sqlx::PgPool) -> cratestack::axum::Router {
 }
 
 async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
-    cratestack::sqlx::query("DROP TABLE IF EXISTS items")
+    cratestack::sqlx::query("DROP TABLE IF EXISTS total_count_items")
         .execute(pool)
         .await
-        .expect("drop items table");
+        .expect("drop total_count_items table");
     cratestack::sqlx::query(
-        "CREATE TABLE items (
+        "CREATE TABLE total_count_items (
             id BIGINT PRIMARY KEY,
             label TEXT NOT NULL,
             owner_id BIGINT NOT NULL,
@@ -73,13 +73,13 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     )
     .execute(pool)
     .await
-    .expect("create items table");
+    .expect("create total_count_items table");
 }
 
 async fn seed_item(pool: &cratestack::sqlx::PgPool, id: i64, owner_id: i64, deleted: bool) {
     let deleted_expr = if deleted { "NOW()" } else { "NULL" };
     cratestack::sqlx::query(&format!(
-        "INSERT INTO items (id, label, owner_id, deleted_at) \
+        "INSERT INTO total_count_items (id, label, owner_id, deleted_at) \
          VALUES ({id}, 'item-{id}', {owner_id}, {deleted_expr})"
     ))
     .execute(pool)
@@ -97,7 +97,7 @@ async fn total_count_reflects_policy_scoped_rows_not_the_whole_table() {
     reset_schema(pool).await;
 
     // 7 rows admitted (owner 1), 5 rows not admitted (owner 2). A count
-    // that fell back to `SELECT COUNT(*) FROM items` with no policy
+    // that fell back to `SELECT COUNT(*) FROM total_count_items` with no policy
     // scoping would report 12, not 7 — the exact divergence #570's
     // acceptance criteria call a data-leak-shaped bug.
     for id in 1..=7 {
@@ -109,7 +109,7 @@ async fn total_count_reflects_policy_scoped_rows_not_the_whole_table() {
 
     let response = router(pool.clone())
         .oneshot(
-            Request::get("/items?limit=3")
+            Request::get("/total_count_items?limit=3")
                 .header("x-auth-id", "1")
                 .header("accept", JsonCodec::CONTENT_TYPE)
                 .body(Body::empty())
@@ -122,7 +122,7 @@ async fn total_count_reflects_policy_scoped_rows_not_the_whole_table() {
     let body = to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("body should read");
-    let page: cratestack::Page<cratestack_schema::Item> =
+    let page: cratestack::Page<cratestack_schema::TotalCountItem> =
         JsonCodec.decode(&body).expect("page should decode");
 
     assert_eq!(
@@ -165,7 +165,7 @@ async fn total_count_excludes_soft_deleted_rows_for_the_admitted_owner() {
 
     let response = router(pool.clone())
         .oneshot(
-            Request::get("/items?limit=10")
+            Request::get("/total_count_items?limit=10")
                 .header("x-auth-id", "1")
                 .header("accept", JsonCodec::CONTENT_TYPE)
                 .body(Body::empty())
@@ -178,7 +178,7 @@ async fn total_count_excludes_soft_deleted_rows_for_the_admitted_owner() {
     let body = to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("body should read");
-    let page: cratestack::Page<cratestack_schema::Item> =
+    let page: cratestack::Page<cratestack_schema::TotalCountItem> =
         JsonCodec.decode(&body).expect("page should decode");
 
     assert_eq!(page.items.len(), 3);
@@ -196,14 +196,14 @@ async fn total_count_query_is_a_count_aggregate_not_a_row_materializing_select()
     let pool = PgPoolOptions::new()
         .connect_lazy("postgres://cratestack:cratestack@localhost/cratestack")
         .expect("lazy pool should parse");
-    let cool = cratestack_schema::Cratestack::builder(pool).build();
+    let db = cratestack_schema::Cratestack::builder(pool).build();
     let ctx = CratestackContext::authenticated([("id".to_owned(), Value::Int(1))]);
 
-    let count_request = cratestack::AggregateCount::from(cool.item().find_many());
+    let count_request = cratestack::AggregateCount::from(db.total_count_item().find_many());
     let sql = count_request.preview_scoped_sql(&ctx);
 
     assert!(
-        sql.starts_with("SELECT COUNT(*) FROM items"),
+        sql.starts_with("SELECT COUNT(*) FROM total_count_items"),
         "count path must be an aggregate, not a row-selecting query: {sql}",
     );
     assert!(
@@ -244,7 +244,7 @@ async fn list_route_issues_a_count_aggregate_against_real_postgres() {
 
     let (response, events) = tracing_capture::capture_events(
         router(pool.clone()).oneshot(
-            Request::get("/items?limit=2")
+            Request::get("/total_count_items?limit=2")
                 .header("x-auth-id", "1")
                 .header("accept", JsonCodec::CONTENT_TYPE)
                 .body(Body::empty())
@@ -257,7 +257,7 @@ async fn list_route_issues_a_count_aggregate_against_real_postgres() {
 
     let items_sql_events: Vec<String> = events
         .into_iter()
-        .filter(|line| line.contains("FROM items"))
+        .filter(|line| line.contains("FROM total_count_items"))
         .collect();
 
     let count_events: Vec<&String> = items_sql_events
@@ -267,7 +267,7 @@ async fn list_route_issues_a_count_aggregate_against_real_postgres() {
     assert_eq!(
         count_events.len(),
         1,
-        "expected exactly one COUNT(*) aggregate statement against items, got: {items_sql_events:#?}",
+        "expected exactly one COUNT(*) aggregate statement against total_count_items, got: {items_sql_events:#?}",
     );
     assert!(
         !count_events[0].contains("\\\"label\\\""),
@@ -275,9 +275,9 @@ async fn list_route_issues_a_count_aggregate_against_real_postgres() {
         count_events[0],
     );
 
-    // Every remaining (non-count) statement touching `items` must be
+    // Every remaining (non-count) statement touching `total_count_items` must be
     // the bounded page query — proves the old unbounded
-    // "SELECT <cols> FROM items WHERE ..." materializing query (no
+    // "SELECT <cols> FROM total_count_items WHERE ..." materializing query (no
     // LIMIT) is gone, not just that a COUNT happens to also run.
     let non_count_events: Vec<&String> = items_sql_events
         .iter()
@@ -290,7 +290,7 @@ async fn list_route_issues_a_count_aggregate_against_real_postgres() {
     for statement in &non_count_events {
         assert!(
             statement.contains("LIMIT"),
-            "every non-count SELECT against items in this request must be the bounded page \
+            "every non-count SELECT against total_count_items in this request must be the bounded page \
              query, not an unbounded materializing one: {statement}",
         );
     }
