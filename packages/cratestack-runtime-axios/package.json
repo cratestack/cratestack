@@ -1,6 +1,6 @@
 {
   "name": "@cratestack/runtime-axios",
-  "version": "0.7.16",
+  "version": "0.8.0",
   "description": "A typeof-fetch-compatible transport for CrateStack's generated TypeScript RPC client, backed by axios.",
   "license": "MIT",
   "repository": {

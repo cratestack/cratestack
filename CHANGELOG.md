@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.8.0 (2026-08-14)
+
+<!-- TODO: edit this section from the seed below -->
+<!-- seeded from v0.7.17..HEAD at 0abfb231c6b83bb0a17a7e7320195c50f72b92b4 -->
+
+This is an auto-generated seed. Please rewrite into narrative prose describing
+the changes in this release, grouped by concern. Refer to existing entries in
+this file for the house prose style. Do not commit with this placeholder text.
+
+### Changes
+
+#### Features
+
+- make decimal-rust-decimal and decimal-bigdecimal additive (cratestack#505 Direction 2) (#609)
+
+#### Documentation
+
+- backport the 0.7.17 entry to main (#612)
+
+#### Refactoring
+
+- finish the Cool*->Cratestack* rename for identifiers and the Studio snippet (#613)
+- rename Cool* public types to Cratestack* (#608)
+
 ## 0.7.17 (2026-08-14)
 
 A maintenance release cut from the 0.7.x line, before the breaking changes now on `main` for
