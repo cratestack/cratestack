@@ -1,6 +1,6 @@
 {
   "name": "@cratestack/api",
-  "version": "0.7.16",
+  "version": "0.7.17",
   "description": "Compat umbrella over the split @cratestack/{ts-types,link-*,runtime-*,validator-*,adapter-*} family for CrateStack's generated TypeScript RPC client — batching, logging, and more.",
   "license": "MIT",
   "repository": {
@@ -62,15 +62,15 @@
     "lint": "biome check ."
   },
   "dependencies": {
-    "@cratestack/ts-types": "0.7.16",
-    "@cratestack/link-batch": "0.7.16",
-    "@cratestack/link-logger": "0.7.16",
-    "@cratestack/runtime-fetch": "0.7.16",
-    "@cratestack/runtime-axios": "0.7.16",
-    "@cratestack/validator-zod": "0.7.16",
-    "@cratestack/validator-yup": "0.7.16",
-    "@cratestack/adapter-tanstack-query": "0.7.16",
-    "@cratestack/adapter-rtk": "0.7.16"
+    "@cratestack/ts-types": "0.7.17",
+    "@cratestack/link-batch": "0.7.17",
+    "@cratestack/link-logger": "0.7.17",
+    "@cratestack/runtime-fetch": "0.7.17",
+    "@cratestack/runtime-axios": "0.7.17",
+    "@cratestack/validator-zod": "0.7.17",
+    "@cratestack/validator-yup": "0.7.17",
+    "@cratestack/adapter-tanstack-query": "0.7.17",
+    "@cratestack/adapter-rtk": "0.7.17"
   },
   "devDependencies": {
     "@reduxjs/toolkit": "^2.0.0",
