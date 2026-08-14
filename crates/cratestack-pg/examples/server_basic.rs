@@ -25,7 +25,7 @@
 use cratestack::axum::Router;
 use cratestack::include_server_schema;
 use cratestack::sqlx::PgPool;
-use cratestack::{AuthProvider, CoolContext, CoolError, RequestContext, Value};
+use cratestack::{AuthProvider, CratestackContext, CratestackError, RequestContext, Value};
 use cratestack_codec_json::JsonCodec;
 use std::net::SocketAddr;
 
@@ -35,12 +35,12 @@ include_server_schema!("examples/server_basic.cstack", db = Postgres);
 struct HeaderAuthProvider;
 
 impl AuthProvider for HeaderAuthProvider {
-    type Error = CoolError;
+    type Error = CratestackError;
 
     fn authenticate(
         &self,
         request: &RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
+    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
         let mut fields = Vec::new();
         if let Some(id) = request
             .headers
@@ -50,7 +50,9 @@ impl AuthProvider for HeaderAuthProvider {
             match id.parse::<i64>() {
                 Ok(id) => fields.push(("id".to_owned(), Value::Int(id))),
                 Err(error) => {
-                    return core::future::ready(Err(CoolError::BadRequest(error.to_string())));
+                    return core::future::ready(Err(CratestackError::BadRequest(
+                        error.to_string(),
+                    )));
                 }
             }
         }
@@ -58,9 +60,9 @@ impl AuthProvider for HeaderAuthProvider {
             fields.push(("role".to_owned(), Value::String(role.to_owned())));
         }
         core::future::ready(Ok(if fields.is_empty() {
-            CoolContext::anonymous()
+            CratestackContext::anonymous()
         } else {
-            CoolContext::authenticated(fields)
+            CratestackContext::authenticated(fields)
         }))
     }
 }

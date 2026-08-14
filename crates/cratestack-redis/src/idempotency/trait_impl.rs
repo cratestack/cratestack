@@ -1,7 +1,7 @@
 use std::time::SystemTime;
 
 use async_trait::async_trait;
-use cratestack_core::{CoolError, IdempotencyStore, ReservationOutcome};
+use cratestack_core::{CratestackError, IdempotencyStore, ReservationOutcome};
 use redis::Value as RedisValue;
 use uuid::Uuid;
 
@@ -19,7 +19,7 @@ impl IdempotencyStore for RedisIdempotencyStore {
         key: &str,
         request_hash: [u8; 32],
         expires_at: SystemTime,
-    ) -> Result<ReservationOutcome, CoolError> {
+    ) -> Result<ReservationOutcome, CratestackError> {
         let mut conn = self.connection().await?;
         let hashkey = self.hash_key(principal, key);
         let new_token = Uuid::new_v4();
@@ -49,7 +49,7 @@ impl IdempotencyStore for RedisIdempotencyStore {
         status: u16,
         headers: &[u8],
         body: &[u8],
-    ) -> Result<(), CoolError> {
+    ) -> Result<(), CratestackError> {
         let mut conn = self.connection().await?;
         let hashkey = self.hash_key(principal, key);
         // The Lua script reads `expires_at` straight off the hash so we
@@ -72,13 +72,18 @@ impl IdempotencyStore for RedisIdempotencyStore {
             // an error, otherwise the inner service sees a spurious
             // failure for a successful request.
             Some("ok") | Some("token_mismatch") => Ok(()),
-            other => Err(CoolError::Internal(format!(
+            other => Err(CratestackError::Internal(format!(
                 "redis idempotency: unexpected complete result: {other:?}"
             ))),
         }
     }
 
-    async fn release(&self, principal: &str, key: &str, token: Uuid) -> Result<(), CoolError> {
+    async fn release(
+        &self,
+        principal: &str,
+        key: &str,
+        token: Uuid,
+    ) -> Result<(), CratestackError> {
         let mut conn = self.connection().await?;
         let hashkey = self.hash_key(principal, key);
         let _: RedisValue = RELEASE_SCRIPT

@@ -23,7 +23,7 @@ break for existing callers.
 `crates/cratestack-redis/src/idempotency/store.rs` called:
 
 ```rust
-pub(super) async fn connection(&self) -> Result<redis::aio::MultiplexedConnection, CoolError> {
+pub(super) async fn connection(&self) -> Result<redis::aio::MultiplexedConnection, CratestackError> {
     self.client.get_multiplexed_async_connection().await.map_err(redis_error)
 }
 ```
@@ -40,7 +40,7 @@ Found by a downstream consumer (`lightbridge-authz`) debugging intermittent
 500s under `just it-tests`: a controlled repro showed direct calls to the
 generated handler succeeding reliably, while the same call through the full
 router with `RateLimitLayer` attached failed intermittently under
-concurrent load, tracing to `CoolError::Internal` responses from this exact
+concurrent load, tracing to `CratestackError::Internal` responses from this exact
 path.
 
 ## 2. Why not just cache the `MultiplexedConnection`

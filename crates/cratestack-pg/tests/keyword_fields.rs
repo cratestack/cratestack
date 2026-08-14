@@ -28,7 +28,7 @@
 //! pluralization: `keyword_fields`).
 
 use cratestack::sqlx::query;
-use cratestack::{CoolContext, Value, include_client_schema, include_server_schema};
+use cratestack::{CratestackContext, Value, include_client_schema, include_server_schema};
 
 include_server_schema!("tests/fixtures/keyword_fields.cstack", db = Postgres);
 
@@ -67,8 +67,8 @@ fn keyword_fields_struct_compiles_and_constructs() {
     let _filter = field.eq("needle".to_owned());
 }
 
-fn operator() -> CoolContext {
-    CoolContext::authenticated([("id".to_owned(), Value::Int(1))])
+fn operator() -> CratestackContext {
+    CratestackContext::authenticated([("id".to_owned(), Value::Int(1))])
 }
 
 async fn reset_schema(pool: &cratestack::sqlx::PgPool) {

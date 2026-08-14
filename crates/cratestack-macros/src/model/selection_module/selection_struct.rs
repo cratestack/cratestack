@@ -41,20 +41,20 @@ pub(super) fn build_selection_block(
             pub fn decode_one(
                 &self,
                 value: ::cratestack::serde_json::Value,
-            ) -> Result<Projected, ::cratestack::CoolError> {
+            ) -> Result<Projected, ::cratestack::CratestackError> {
                 Projected::from_value(value, self.clone())
             }
 
             pub fn decode_many(
                 &self,
                 value: ::cratestack::serde_json::Value,
-            ) -> Result<Vec<Projected>, ::cratestack::CoolError> {
+            ) -> Result<Vec<Projected>, ::cratestack::CratestackError> {
                 match value {
                     ::cratestack::serde_json::Value::Array(values) => values
                         .into_iter()
                         .map(|value| self.decode_one(value))
                         .collect(),
-                    other => Err(::cratestack::CoolError::Internal(format!(
+                    other => Err(::cratestack::CratestackError::Internal(format!(
                         "projected {} list payload must be an array, got {other:?}",
                         #model_name,
                     ))),
@@ -64,9 +64,9 @@ pub(super) fn build_selection_block(
             pub fn decode_page(
                 &self,
                 value: ::cratestack::serde_json::Value,
-            ) -> Result<::cratestack::Page<Projected>, ::cratestack::CoolError> {
+            ) -> Result<::cratestack::Page<Projected>, ::cratestack::CratestackError> {
                 let page = ::cratestack::serde_json::from_value::<::cratestack::Page<::cratestack::serde_json::Value>>(value)
-                    .map_err(|error| ::cratestack::CoolError::Codec(format!(
+                    .map_err(|error| ::cratestack::CratestackError::Codec(format!(
                         "failed to decode projected {} page payload: {error}",
                         #model_name,
                     )))?;
@@ -89,21 +89,21 @@ pub(super) fn build_selection_block(
             fn decode_one(
                 &self,
                 value: ::cratestack::serde_json::Value,
-            ) -> Result<Self::Output, ::cratestack::CoolError> {
+            ) -> Result<Self::Output, ::cratestack::CratestackError> {
                 Selection::decode_one(self, value)
             }
 
             fn decode_many(
                 &self,
                 value: ::cratestack::serde_json::Value,
-            ) -> Result<Vec<Self::Output>, ::cratestack::CoolError> {
+            ) -> Result<Vec<Self::Output>, ::cratestack::CratestackError> {
                 Selection::decode_many(self, value)
             }
 
             fn decode_page(
                 &self,
                 value: ::cratestack::serde_json::Value,
-            ) -> Result<::cratestack::Page<Self::Output>, ::cratestack::CoolError> {
+            ) -> Result<::cratestack::Page<Self::Output>, ::cratestack::CratestackError> {
                 Selection::decode_page(self, value)
             }
         }

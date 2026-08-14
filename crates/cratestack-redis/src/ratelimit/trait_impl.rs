@@ -1,7 +1,7 @@
 use std::time::SystemTime;
 
 use async_trait::async_trait;
-use cratestack_core::{CoolError, RateLimitConfig, RateLimitDecision, RateLimitStore};
+use cratestack_core::{CratestackError, RateLimitConfig, RateLimitDecision, RateLimitStore};
 use redis::Value as RedisValue;
 
 use super::parse::parse_consume_outcome;
@@ -16,7 +16,7 @@ impl RateLimitStore for RedisRateLimitStore {
         &self,
         key: &str,
         config: RateLimitConfig,
-    ) -> Result<RateLimitDecision, CoolError> {
+    ) -> Result<RateLimitDecision, CratestackError> {
         let mut conn = self.connection().await?;
         let now_ms = system_time_to_ms(SystemTime::now())?;
         let bucket_key = self.bucket_key(key);

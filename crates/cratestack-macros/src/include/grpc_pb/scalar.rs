@@ -81,7 +81,7 @@ pub(crate) fn wire_from_domain_expr(
     }
 }
 
-/// Wire inner value expression -> `Result<DomainInner, ::cratestack::CoolError>`.
+/// Wire inner value expression -> `Result<DomainInner, ::cratestack::CratestackError>`.
 /// `owner`/`field` name the message/field this conversion belongs to, for
 /// error messages.
 pub(crate) fn domain_from_wire_expr(
@@ -95,14 +95,14 @@ pub(crate) fn domain_from_wire_expr(
         "String" | "Cuid" | "Int" | "Float" | "Boolean" | "Bytes" => quote! { Ok(#wire_expr) },
         "Uuid" => quote! {
             (#wire_expr).parse::<::cratestack::uuid::Uuid>().map_err(|error| {
-                ::cratestack::CoolError::BadRequest(format!("invalid uuid for {}: {error}", #context))
+                ::cratestack::CratestackError::BadRequest(format!("invalid uuid for {}: {error}", #context))
             })
         },
         "Decimal" => {
             let decimal_ty = crate::shared::decimal_backend::current_decimal_type_tokens();
             quote! {
                 (#wire_expr).parse::<#decimal_ty>().map_err(|error| {
-                    ::cratestack::CoolError::BadRequest(format!("invalid decimal for {}: {error}", #context))
+                    ::cratestack::CratestackError::BadRequest(format!("invalid decimal for {}: {error}", #context))
                 })
             }
         }
@@ -110,7 +110,7 @@ pub(crate) fn domain_from_wire_expr(
             ::cratestack::serde_json::from_slice::<::cratestack::Value>(&(#wire_expr))
                 .map(::cratestack::Json)
                 .map_err(|error| {
-                    ::cratestack::CoolError::BadRequest(format!("invalid json for {}: {error}", #context))
+                    ::cratestack::CratestackError::BadRequest(format!("invalid json for {}: {error}", #context))
                 })
         },
         "DateTime" => quote! {
@@ -118,7 +118,7 @@ pub(crate) fn domain_from_wire_expr(
                 (#wire_expr).seconds,
                 u32::try_from((#wire_expr).nanos).unwrap_or_default(),
             )
-            .ok_or_else(|| ::cratestack::CoolError::BadRequest(format!("invalid timestamp for {}", #context)))
+            .ok_or_else(|| ::cratestack::CratestackError::BadRequest(format!("invalid timestamp for {}", #context)))
         },
         other => unreachable!("domain_from_wire_expr called with non-scalar name `{other}`"),
     }

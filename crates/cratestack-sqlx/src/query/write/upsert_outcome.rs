@@ -45,7 +45,7 @@ pub enum UpsertOutcome<M> {
     /// insert branch lost a concurrent-insert race and had to read the
     /// winning row back), and *that* row was deleted before the
     /// fallback read could complete, the call surfaces
-    /// `CoolError::Conflict` instead of ever constructing an
+    /// `CratestackError::Conflict` instead of ever constructing an
     /// `Existing` from data that might not be current — see
     /// `upsert_do_nothing_exec` for that narrower race.
     Existing(M),

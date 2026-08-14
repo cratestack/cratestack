@@ -1,7 +1,7 @@
 //! Per-frame conversion for the batch path.
 
 use axum::http::HeaderMap;
-use cratestack_core::CoolError;
+use cratestack_core::CratestackError;
 use cratestack_core::rpc::{RpcErrorBody, RpcResponseFrame};
 
 use crate::HttpTransport;
@@ -43,7 +43,7 @@ where
         Err(error) => {
             return RpcResponseFrame::err(
                 id,
-                &CoolError::Internal(format!("buffer batch frame body: {error}")),
+                &CratestackError::Internal(format!("buffer batch frame body: {error}")),
             );
         }
     };

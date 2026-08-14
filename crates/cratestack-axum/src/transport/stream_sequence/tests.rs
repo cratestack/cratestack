@@ -44,7 +44,7 @@ async fn mid_stream_error_becomes_the_final_tagged_item() {
     let items = stream::iter(vec![
         Ok(tick(0)),
         Ok(tick(1)),
-        Err(CoolError::Internal("boom".to_owned())),
+        Err(CratestackError::Internal("boom".to_owned())),
     ]);
     let response = encode_cbor_sequence_stream_response(CborCodec, StatusCode::OK, items).unwrap();
     // Status is still 200 — the failure is in-band, not a status code.
@@ -71,7 +71,7 @@ async fn nothing_after_the_error_item_even_if_source_would_yield_more() {
     // encoder must never poll it again after the `Err`.
     let items = stream::iter(vec![
         Ok(tick(0)),
-        Err(CoolError::Internal("boom".to_owned())),
+        Err(CratestackError::Internal("boom".to_owned())),
         Ok(tick(2)),
     ]);
     let response = encode_cbor_sequence_stream_response(CborCodec, StatusCode::OK, items).unwrap();
@@ -85,7 +85,7 @@ async fn nothing_after_the_error_item_even_if_source_would_yield_more() {
 
 #[tokio::test]
 async fn empty_stream_produces_an_empty_body() {
-    let items: stream::Iter<std::vec::IntoIter<Result<serde_json::Value, CoolError>>> =
+    let items: stream::Iter<std::vec::IntoIter<Result<serde_json::Value, CratestackError>>> =
         stream::iter(vec![]);
     let response = encode_cbor_sequence_stream_response(CborCodec, StatusCode::OK, items).unwrap();
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
@@ -107,7 +107,7 @@ fn error_sentinel_tag_header_matches_rfc_8949_two_byte_form() {
     // Tag 48900 = 0xBF04, in [0x100, 0xffff] -> 2-byte argument form:
     // major type 6 (0xC0) | additional info 25 (0x19) = 0xD9, then the
     // tag number big-endian.
-    let sentinel = encode_error_sentinel(&CborCodec, &CoolError::Internal("x".to_owned()));
+    let sentinel = encode_error_sentinel(&CborCodec, &CratestackError::Internal("x".to_owned()));
     assert_eq!(&sentinel[..3], &[0xD9, 0xBF, 0x04]);
 }
 

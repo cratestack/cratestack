@@ -12,7 +12,7 @@
 use crate::{
     ProcedureArgs, ProcedurePolicy, ProcedurePolicyExpr, ProcedurePredicate, authorize_procedure,
 };
-use cratestack_core::{CoolContext, CoolError, Value};
+use cratestack_core::{CratestackContext, CratestackError, Value};
 
 struct NoArgs;
 impl ProcedureArgs for NoArgs {
@@ -40,7 +40,7 @@ fn literal_policy(value: bool) -> ProcedurePolicy {
 /// is behaviourally equivalent for the case that matters.
 #[test]
 fn literal_true_allows_unauthenticated_callers() {
-    let unauthenticated = CoolContext::anonymous();
+    let unauthenticated = CratestackContext::anonymous();
     assert!(!unauthenticated.is_authenticated());
     let result = authorize_procedure(&[literal_policy(true)], &[], &NoArgs, &unauthenticated);
     assert!(result.is_ok(), "expected @allow(true) to allow: {result:?}");
@@ -50,7 +50,7 @@ fn literal_true_allows_unauthenticated_callers() {
 /// unconditional, not merely "unauthenticated is fine too".
 #[test]
 fn literal_true_allows_authenticated_callers() {
-    let authenticated = CoolContext::authenticated([]);
+    let authenticated = CratestackContext::authenticated([]);
     let result = authorize_procedure(&[literal_policy(true)], &[], &NoArgs, &authenticated);
     assert!(result.is_ok(), "expected @allow(true) to allow: {result:?}");
 }
@@ -60,14 +60,14 @@ fn literal_true_allows_authenticated_callers() {
 /// accept.
 #[test]
 fn literal_true_in_deny_refuses_unconditionally() {
-    let ctx = CoolContext::authenticated([]);
+    let ctx = CratestackContext::authenticated([]);
     let result = authorize_procedure(
         &[literal_policy(true)],
         &[literal_policy(true)],
         &NoArgs,
         &ctx,
     );
-    assert!(matches!(result, Err(CoolError::Forbidden(_))));
+    assert!(matches!(result, Err(CratestackError::Forbidden(_))));
 }
 
 /// `@allow(false)` never matches, so with no other `@allow` clause the
@@ -75,9 +75,9 @@ fn literal_true_in_deny_refuses_unconditionally() {
 /// `ALLOW_POLICIES` list, reached a different way.
 #[test]
 fn literal_false_never_allows() {
-    let ctx = CoolContext::authenticated([]);
+    let ctx = CratestackContext::authenticated([]);
     let result = authorize_procedure(&[literal_policy(false)], &[], &NoArgs, &ctx);
-    assert!(matches!(result, Err(CoolError::Forbidden(_))));
+    assert!(matches!(result, Err(CratestackError::Forbidden(_))));
 }
 
 /// An empty `allow_policies` list must deny unconditionally — the
@@ -88,13 +88,13 @@ fn literal_false_never_allows() {
 /// must not silently permit that degenerate case.
 #[test]
 fn empty_allow_policies_default_denies() {
-    let ctx = CoolContext::authenticated([]);
+    let ctx = CratestackContext::authenticated([]);
     let result = authorize_procedure(&[], &[], &NoArgs, &ctx);
-    assert!(matches!(result, Err(CoolError::Forbidden(_))));
+    assert!(matches!(result, Err(CratestackError::Forbidden(_))));
 
-    let anonymous = CoolContext::anonymous();
+    let anonymous = CratestackContext::anonymous();
     let result = authorize_procedure(&[], &[], &NoArgs, &anonymous);
-    assert!(matches!(result, Err(CoolError::Forbidden(_))));
+    assert!(matches!(result, Err(CratestackError::Forbidden(_))));
 }
 
 /// Deny-beats-allow precedence using non-trivial (non-literal)
@@ -105,21 +105,21 @@ fn empty_allow_policies_default_denies() {
 #[test]
 fn deny_beats_allow_precedence_with_real_predicates() {
     let admin =
-        CoolContext::authenticated([("role".to_owned(), Value::String("admin".to_owned()))]);
+        CratestackContext::authenticated([("role".to_owned(), Value::String("admin".to_owned()))]);
     let allow = [policy(ProcedurePredicate::HasRole { role: "admin" })];
     let deny = [policy(ProcedurePredicate::AuthNotNull)];
 
     let result = authorize_procedure(&allow, &deny, &NoArgs, &admin);
     assert!(
-        matches!(result, Err(CoolError::Forbidden(_))),
+        matches!(result, Err(CratestackError::Forbidden(_))),
         "deny should veto even though the allow clause matches: {result:?}"
     );
 }
 
 #[test]
 fn auth_not_null_and_auth_is_null_variants() {
-    let authenticated = CoolContext::authenticated([]);
-    let anonymous = CoolContext::anonymous();
+    let authenticated = CratestackContext::authenticated([]);
+    let anonymous = CratestackContext::anonymous();
 
     assert!(
         authorize_procedure(

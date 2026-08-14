@@ -3,7 +3,7 @@
 
 use axum::body::Body;
 use axum::response::Response;
-use cratestack_core::CoolError;
+use cratestack_core::CratestackError;
 use http::{StatusCode, header};
 
 use super::headers::decode_headers;
@@ -46,7 +46,7 @@ pub(super) fn in_flight_response() -> Response {
     response
 }
 
-pub(super) fn error_response(error: CoolError) -> Response {
+pub(super) fn error_response(error: CratestackError) -> Response {
     let status = error.status_code();
     let mut response = Response::new(Body::from(error.public_message().into_owned()));
     *response.status_mut() = status;

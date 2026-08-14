@@ -29,7 +29,7 @@ pub(super) fn build_list_arm(package: &str, model: &Model) -> proc_macro2::Token
     // REST/RPC, and its response shape still depends on the model's own
     // `@@paged` attribute: paged models genuinely return `Page<Model>`,
     // unpaged ones return a bare `Vec<Model>`. Getting this wrong is a
-    // silent codec decode failure (`CoolError::Codec`), not a type error —
+    // silent codec decode failure (`CratestackError::Codec`), not a type error —
     // there is no compile-time signal, only a wrong assumption about what
     // bytes the codec decodes. Branch on it explicitly rather than
     // guessing one shape.

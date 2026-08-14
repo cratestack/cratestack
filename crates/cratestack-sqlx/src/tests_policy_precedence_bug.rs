@@ -32,7 +32,7 @@
 //! no call site has to know about the precedence hazard. This test
 //! guards that contract and must stay green.
 
-use cratestack_core::{CoolContext, Value};
+use cratestack_core::{CratestackContext, Value};
 
 use crate::query::push_action_policy_query;
 use crate::{PolicyExpr, ReadPolicy, ReadPredicate, sqlx};
@@ -58,7 +58,8 @@ fn two_allow_clauses_no_deny() -> [ReadPolicy; 2] {
 
 #[test]
 fn allow_disjunction_is_parenthesized_so_row_filter_cannot_be_bypassed() {
-    let ctx = CoolContext::authenticated([("id".to_owned(), Value::String("usr_4".to_owned()))]);
+    let ctx =
+        CratestackContext::authenticated([("id".to_owned(), Value::String("usr_4".to_owned()))]);
     let allow = two_allow_clauses_no_deny();
 
     let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT 1 FROM engine_posts WHERE ");

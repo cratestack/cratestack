@@ -4,7 +4,7 @@
 
 use std::fmt::Write;
 
-use cratestack_core::CoolContext;
+use cratestack_core::CratestackContext;
 use cratestack_policy::{context_has_role, context_in_tenant};
 
 use crate::ReadPredicate;
@@ -14,7 +14,7 @@ use super::policy::render_relation_policy_sql;
 
 pub(super) fn render_policy_predicate(
     predicate: ReadPredicate,
-    ctx: &CoolContext,
+    ctx: &CratestackContext,
     sql: &mut String,
     bind_index: &mut usize,
 ) {

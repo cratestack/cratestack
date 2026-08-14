@@ -23,7 +23,7 @@ use cratestack_client_flutter::{
     FlutterRuntimeEnvelope, FlutterRuntimeTransportConfig, FlutterStateStoreConfig,
 };
 use cratestack_codec_cbor::CborCodec;
-use cratestack_core::CoolCodec;
+use cratestack_core::CratestackCodec;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -447,7 +447,7 @@ async fn handle_stream(
 async fn handle_error(_state: State<AppState>) -> Response<Body> {
     let codec = CborCodec;
     let body = codec
-        .encode(&cratestack_core::CoolErrorResponse {
+        .encode(&cratestack_core::CratestackErrorResponse {
             code: "INTERNAL_ERROR".to_owned(),
             message: "synthetic upstream failure".to_owned(),
             details: None,

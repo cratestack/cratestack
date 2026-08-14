@@ -17,16 +17,16 @@ pub(super) fn build_selection_include_accessor(
             #[allow(non_snake_case)]
             pub fn #include_field_ident(
                 &self,
-            ) -> Result<Vec<super::super::#target_module_ident::selection::ProjectedInclude>, ::cratestack::CoolError> {
+            ) -> Result<Vec<super::super::#target_module_ident::selection::ProjectedInclude>, ::cratestack::CratestackError> {
                 let selection = self.selection.includes.#include_field_ident.as_ref().ok_or_else(|| {
-                    ::cratestack::CoolError::Validation(format!(
+                    ::cratestack::CratestackError::Validation(format!(
                         "include '{}' was not selected for {}",
                         #include_name,
                         #model_name,
                     ))
                 })?;
                 let value = self.fields.get(#include_name).cloned().ok_or_else(|| {
-                    ::cratestack::CoolError::Internal(format!(
+                    ::cratestack::CratestackError::Internal(format!(
                         "projected {} payload is missing include '{}'",
                         #model_name,
                         #include_name,
@@ -42,7 +42,7 @@ pub(super) fn build_selection_include_accessor(
                             )
                         })
                         .collect(),
-                    other => Err(::cratestack::CoolError::Internal(format!(
+                    other => Err(::cratestack::CratestackError::Internal(format!(
                         "projected include '{}.{}' must be an array, got {other:?}",
                         #model_name,
                         #include_name,
@@ -56,16 +56,16 @@ pub(super) fn build_selection_include_accessor(
         #[allow(non_snake_case)]
         pub fn #include_field_ident(
             &self,
-        ) -> Result<Option<super::super::#target_module_ident::selection::ProjectedInclude>, ::cratestack::CoolError> {
+        ) -> Result<Option<super::super::#target_module_ident::selection::ProjectedInclude>, ::cratestack::CratestackError> {
             let selection = self.selection.includes.#include_field_ident.as_ref().ok_or_else(|| {
-                ::cratestack::CoolError::Validation(format!(
+                ::cratestack::CratestackError::Validation(format!(
                     "include '{}' was not selected for {}",
                     #include_name,
                     #model_name,
                 ))
             })?;
             let value = self.fields.get(#include_name).cloned().ok_or_else(|| {
-                ::cratestack::CoolError::Internal(format!(
+                ::cratestack::CratestackError::Internal(format!(
                     "projected {} payload is missing include '{}'",
                     #model_name,
                     #include_name,

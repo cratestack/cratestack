@@ -4,7 +4,7 @@
 //! action policy slot. [`authorize_record_action`] runs a one-shot
 //! `SELECT 1 WHERE policy(...)` for mutation preflight.
 
-use cratestack_core::{CoolContext, CoolError};
+use cratestack_core::{CratestackContext, CratestackError};
 
 use cratestack_sql::ReadSource;
 
@@ -37,7 +37,7 @@ pub(crate) fn push_scoped_conditions<'a, M, PK, Id>(
     descriptor: &dyn ReadSource<M, PK>,
     filters: &[FilterExpr],
     primary_key: Option<(&'static str, Id)>,
-    ctx: &CoolContext,
+    ctx: &CratestackContext,
     policy_kind: ReadPolicyKind,
 ) where
     Id: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres> + 'a,
@@ -93,9 +93,9 @@ pub(crate) async fn authorize_record_action<M, PK>(
     id: PK,
     allow_policies: &[ReadPolicy],
     deny_policies: &[ReadPolicy],
-    ctx: &CoolContext,
+    ctx: &CratestackContext,
     action_name: &str,
-) -> Result<(), CoolError>
+) -> Result<(), CratestackError>
 where
     PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
 {
@@ -114,13 +114,13 @@ where
         .build_query_scalar::<i32>()
         .fetch_optional(runtime.pool())
         .await
-        .map_err(|error| CoolError::Database(error.to_string()))?
+        .map_err(|error| CratestackError::Database(error.to_string()))?
         .is_some();
 
     if authorized {
         Ok(())
     } else {
-        Err(CoolError::Forbidden(format!(
+        Err(CratestackError::Forbidden(format!(
             "{action_name} policy denied this operation"
         )))
     }

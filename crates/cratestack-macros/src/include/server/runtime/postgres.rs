@@ -40,7 +40,7 @@ pub(super) fn build_runtime_block(
         #[derive(Clone)]
         pub struct BoundCratestack<'a> {
             inner: &'a Cratestack,
-            ctx: ::cratestack::CoolContext,
+            ctx: ::cratestack::CratestackContext,
         }
 
         pub struct CratestackBuilder {
@@ -54,7 +54,7 @@ pub(super) fn build_runtime_block(
                 }
             }
 
-            pub fn bind_context(&self, ctx: ::cratestack::CoolContext) -> BoundCratestack<'_> {
+            pub fn bind_context(&self, ctx: ::cratestack::CratestackContext) -> BoundCratestack<'_> {
                 BoundCratestack { inner: self, ctx }
             }
 
@@ -84,9 +84,9 @@ pub(super) fn build_runtime_block(
             pub async fn transaction<F, T>(
                 &self,
                 body: F,
-            ) -> Result<T, ::cratestack::CoolError>
+            ) -> Result<T, ::cratestack::CratestackError>
             where
-                F: AsyncFnOnce(&mut ::cratestack::Tx) -> Result<T, ::cratestack::CoolError>,
+                F: AsyncFnOnce(&mut ::cratestack::Tx) -> Result<T, ::cratestack::CratestackError>,
             {
                 self.runtime.transaction(body).await
             }
@@ -127,8 +127,8 @@ pub(super) fn build_runtime_block(
             pub fn bind_auth<P: ::cratestack::serde::Serialize>(
                 &self,
                 principal: Option<P>,
-            ) -> Result<BoundCratestack<'_>, ::cratestack::CoolError> {
-                let ctx = ::cratestack::CoolContext::from_principal(principal)?;
+            ) -> Result<BoundCratestack<'_>, ::cratestack::CratestackError> {
+                let ctx = ::cratestack::CratestackContext::from_principal(principal)?;
                 Ok(self.bind_context(ctx))
             }
 
@@ -144,7 +144,7 @@ pub(super) fn build_runtime_block(
         }
 
         impl<'a> BoundCratestack<'a> {
-            pub fn context(&self) -> &::cratestack::CoolContext {
+            pub fn context(&self) -> &::cratestack::CratestackContext {
                 &self.ctx
             }
 

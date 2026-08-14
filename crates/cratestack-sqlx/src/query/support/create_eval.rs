@@ -3,7 +3,7 @@
 //! input values + `ctx`; the relation variant fires an `EXISTS` probe
 //! to verify the FK target satisfies the related model's policy.
 
-use cratestack_core::{CoolContext, CoolError};
+use cratestack_core::{CratestackContext, CratestackError};
 
 use crate::{PolicyExpr, ReadPredicate, RelationQuantifier, SqlColumnValue, SqlValue, sqlx};
 
@@ -14,8 +14,9 @@ pub(super) fn evaluate_create_policy_expr<'a>(
     pool: &'a sqlx::PgPool,
     expr: PolicyExpr,
     values: &'a [SqlColumnValue],
-    ctx: &'a CoolContext,
-) -> core::pin::Pin<Box<dyn core::future::Future<Output = Result<bool, CoolError>> + Send + 'a>> {
+    ctx: &'a CratestackContext,
+) -> core::pin::Pin<Box<dyn core::future::Future<Output = Result<bool, CratestackError>> + Send + 'a>>
+{
     Box::pin(async move {
         match expr {
             PolicyExpr::Predicate(predicate) => {
@@ -45,8 +46,9 @@ fn evaluate_create_predicate<'a>(
     pool: &'a sqlx::PgPool,
     predicate: ReadPredicate,
     values: &'a [SqlColumnValue],
-    ctx: &'a CoolContext,
-) -> core::pin::Pin<Box<dyn core::future::Future<Output = Result<bool, CoolError>> + Send + 'a>> {
+    ctx: &'a CratestackContext,
+) -> core::pin::Pin<Box<dyn core::future::Future<Output = Result<bool, CratestackError>> + Send + 'a>>
+{
     Box::pin(async move {
         match predicate {
             ReadPredicate::Relation {
@@ -76,7 +78,7 @@ fn evaluate_create_predicate<'a>(
                     .build_query_as::<(bool,)>()
                     .fetch_one(pool)
                     .await
-                    .map_err(|error| CoolError::Database(error.to_string()))?;
+                    .map_err(|error| CratestackError::Database(error.to_string()))?;
                 Ok(result.0)
             }
             _ => Ok(super::create::evaluate_input_predicate(
@@ -93,7 +95,7 @@ fn push_relation_exists(
     related_column: &'static str,
     parent_value: &SqlValue,
     expr: PolicyExpr,
-    ctx: &CoolContext,
+    ctx: &CratestackContext,
 ) {
     let (prefix, suffix) = match quantifier {
         RelationQuantifier::ToOne | RelationQuantifier::Some => ("EXISTS (SELECT 1 FROM ", ")"),

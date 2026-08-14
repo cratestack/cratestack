@@ -173,7 +173,7 @@ pub(super) fn build_get_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStrea
                     #get_etag_capture
                     #serialize_model_value_ident(&state.db, &ctx, &record, &query.selection).await
                 }
-                Ok(None) => Err(CoolError::NotFound(format!("{} not found", #model_name))),
+                Ok(None) => Err(CratestackError::NotFound(format!("{} not found", #model_name))),
                 Err(error) => Err(error),
             };
 

@@ -3,7 +3,7 @@
 //! change is reviewable as a SQL diff").
 
 use crate::sqlx;
-use cratestack_core::CoolError;
+use cratestack_core::CratestackError;
 use sha2::{Digest, Sha256};
 
 pub const MIGRATIONS_TABLE_DDL: &str = r#"
@@ -52,14 +52,14 @@ pub struct MigrationState {
     pub status: MigrationStatus,
 }
 
-pub async fn ensure_migrations_table(pool: &sqlx::PgPool) -> Result<(), CoolError> {
+pub async fn ensure_migrations_table(pool: &sqlx::PgPool) -> Result<(), CratestackError> {
     // `raw_sql` sends the whole DDL block as one round-trip over PG's
     // simple-query protocol, which understands `;`-separated statements
     // (and dollar-quoting) natively — no client-side splitting needed.
     sqlx::raw_sql(MIGRATIONS_TABLE_DDL)
         .execute(pool)
         .await
-        .map_err(|error| CoolError::Database(error.to_string()))?;
+        .map_err(|error| CratestackError::Database(error.to_string()))?;
     Ok(())
 }
 
@@ -69,14 +69,14 @@ pub async fn ensure_migrations_table(pool: &sqlx::PgPool) -> Result<(), CoolErro
 pub async fn status(
     pool: &sqlx::PgPool,
     migrations: &[Migration],
-) -> Result<Vec<MigrationState>, CoolError> {
+) -> Result<Vec<MigrationState>, CratestackError> {
     ensure_migrations_table(pool).await?;
     let rows = sqlx::query_as::<_, (String, Vec<u8>)>(
         "SELECT id, checksum FROM cratestack_migrations ORDER BY id",
     )
     .fetch_all(pool)
     .await
-    .map_err(|error| CoolError::Database(error.to_string()))?;
+    .map_err(|error| CratestackError::Database(error.to_string()))?;
 
     let mut applied: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
     for (id, checksum) in rows {
@@ -112,11 +112,11 @@ pub async fn status(
 pub async fn apply_pending(
     pool: &sqlx::PgPool,
     migrations: &[Migration],
-) -> Result<Vec<String>, CoolError> {
+) -> Result<Vec<String>, CratestackError> {
     let states = status(pool, migrations).await?;
     for (state, migration) in states.iter().zip(migrations) {
         if state.status == MigrationStatus::ChecksumMismatch {
-            return Err(CoolError::Internal(format!(
+            return Err(CratestackError::Internal(format!(
                 "migration `{}` is recorded as applied but its SQL has changed; \
                  resolve drift before continuing",
                 migration.id
@@ -132,7 +132,7 @@ pub async fn apply_pending(
         let mut tx = pool
             .begin()
             .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+            .map_err(|error| CratestackError::Database(error.to_string()))?;
         // `raw_sql` sends the whole `up` script as one batch over PG's
         // simple-query protocol inside this transaction, so a mid-script
         // failure can't leave partial state (and dollar-quoted PL/pgSQL
@@ -141,7 +141,7 @@ pub async fn apply_pending(
         sqlx::raw_sql(&migration.up)
             .execute(&mut *tx)
             .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+            .map_err(|error| CratestackError::Database(error.to_string()))?;
         sqlx::query(
             "INSERT INTO cratestack_migrations (id, description, checksum) VALUES ($1, $2, $3)",
         )
@@ -150,10 +150,10 @@ pub async fn apply_pending(
         .bind(migration.checksum().as_slice())
         .execute(&mut *tx)
         .await
-        .map_err(|error| CoolError::Database(error.to_string()))?;
+        .map_err(|error| CratestackError::Database(error.to_string()))?;
         tx.commit()
             .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+            .map_err(|error| CratestackError::Database(error.to_string()))?;
         applied.push(migration.id.clone());
     }
 

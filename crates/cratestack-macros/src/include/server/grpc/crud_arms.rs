@@ -102,7 +102,7 @@ pub(super) fn build_create_arm(package: &str, model: &Model) -> proc_macro2::Tok
     let svc_ident = ident(&format!("Grpc{}CreateSvc", model.name));
     let status = status_from_bridge_error(quote! { code }, quote! { message });
     let body = quote! {
-        let domain: ::core::result::Result<super::#request_ty, ::cratestack::CoolError> =
+        let domain: ::core::result::Result<super::#request_ty, ::cratestack::CratestackError> =
             super::#request_ty::try_from(message);
         let domain = match domain {
             Ok(value) => value,

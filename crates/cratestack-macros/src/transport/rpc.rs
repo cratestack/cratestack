@@ -94,7 +94,7 @@ pub(crate) fn generate_model_rpc_dispatch_arms(model: &Model) -> Vec<proc_macro2
                         rpc_dispatch_error(
                             &state,
                             &headers,
-                            ::cratestack::CoolError::Internal(format!(
+                            ::cratestack::CratestackError::Internal(format!(
                                 "model `{}` has no primary key; RPC dispatch impossible",
                                 #m,
                             )),

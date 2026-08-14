@@ -2,7 +2,7 @@
 //! pagination / `FOR UPDATE`. The `preview_*_sql` previews live in
 //! [`super::find_many_preview`] to keep this file under budget.
 
-use cratestack_core::{CoolContext, CoolError};
+use cratestack_core::{CratestackContext, CratestackError};
 use cratestack_sql::ReadSource;
 
 use crate::query::support::{ReadPolicyKind, push_order_and_paging, push_scoped_conditions};
@@ -78,11 +78,11 @@ impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
         super::find_many_preview::preview_sql(self)
     }
 
-    pub fn preview_scoped_sql(&self, ctx: &CoolContext) -> String {
+    pub fn preview_scoped_sql(&self, ctx: &CratestackContext) -> String {
         super::find_many_preview::preview_scoped_sql(self, ctx)
     }
 
-    pub async fn run(self, ctx: &CoolContext) -> Result<Vec<M>, CoolError>
+    pub async fn run(self, ctx: &CratestackContext) -> Result<Vec<M>, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
     {
@@ -110,7 +110,7 @@ impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
             .build_query_as::<M>()
             .fetch_all(self.runtime.pool())
             .await
-            .map_err(|error| CoolError::Database(error.to_string()))
+            .map_err(|error| CratestackError::Database(error.to_string()))
     }
 
     /// Run inside a caller-supplied transaction. Required when pairing
@@ -118,8 +118,8 @@ impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-        ctx: &CoolContext,
-    ) -> Result<Vec<M>, CoolError>
+        ctx: &CratestackContext,
+    ) -> Result<Vec<M>, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
     {
@@ -147,7 +147,7 @@ impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
             .build_query_as::<M>()
             .fetch_all(&mut **tx)
             .await
-            .map_err(|error| CoolError::Database(error.to_string()))
+            .map_err(|error| CratestackError::Database(error.to_string()))
     }
 
     pub(super) fn effective_order_by(&self) -> Vec<OrderClause> {

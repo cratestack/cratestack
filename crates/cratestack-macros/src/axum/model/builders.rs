@@ -30,7 +30,7 @@ pub(super) fn build_query_helpers(
         fn #filter_expr_builder_ident(
             key: &str,
             value: &str,
-        ) -> Result<::cratestack::FilterExpr, CoolError> {
+        ) -> Result<::cratestack::FilterExpr, CratestackError> {
             #(#relation_filter_guards)*
             let (field_name, operator) = key
                 .split_once("__")
@@ -39,7 +39,7 @@ pub(super) fn build_query_helpers(
 
             match (field_name, operator) {
                 #(#query_filter_arms)*
-                _ => Err(CoolError::BadRequest(format!(
+                _ => Err(CratestackError::BadRequest(format!(
                     "unsupported query filter '{}' for {}",
                     key,
                     #model_name,
@@ -49,20 +49,20 @@ pub(super) fn build_query_helpers(
 
         fn #query_expr_builder_ident(
             expr: &::cratestack::QueryExpr,
-        ) -> Result<::cratestack::FilterExpr, CoolError> {
+        ) -> Result<::cratestack::FilterExpr, CratestackError> {
             match expr {
                 ::cratestack::QueryExpr::Predicate { key, value } => #filter_expr_builder_ident(key, value),
                 ::cratestack::QueryExpr::All(filters) => Ok(::cratestack::FilterExpr::all(
                     filters
                         .iter()
                         .map(#query_expr_builder_ident)
-                        .collect::<Result<Vec<_>, CoolError>>()?,
+                        .collect::<Result<Vec<_>, CratestackError>>()?,
                 )),
                 ::cratestack::QueryExpr::Any(filters) => Ok(::cratestack::FilterExpr::any(
                     filters
                         .iter()
                         .map(#query_expr_builder_ident)
-                        .collect::<Result<Vec<_>, CoolError>>()?,
+                        .collect::<Result<Vec<_>, CratestackError>>()?,
                 )),
                 ::cratestack::QueryExpr::Not(filter) => {
                     Ok(#query_expr_builder_ident(filter)?.not())
@@ -89,11 +89,11 @@ pub(super) fn build_validate_helpers(
         fn #validate_selection_ident(
             selection: &ModelSelectionQuery,
             descriptor: &::cratestack::ModelDescriptor<super::models::#model_ident, #primary_key_type>,
-        ) -> Result<(), CoolError> {
+        ) -> Result<(), CratestackError> {
             if let Some(fields) = &selection.fields {
                 for field in fields {
                     if !descriptor.allowed_fields.contains(&field.as_str()) {
-                        return Err(CoolError::Validation(format!(
+                        return Err(CratestackError::Validation(format!(
                             "unsupported fields selection '{}' for {}",
                             field,
                             #model_name,
@@ -108,7 +108,7 @@ pub(super) fn build_validate_helpers(
 
             for (include, fields) in &selection.include_fields {
                 if !selection.includes.iter().any(|selected| selected == include) {
-                    return Err(CoolError::Validation(format!(
+                    return Err(CratestackError::Validation(format!(
                         "includeFields[{}] requires include={} for {}",
                         include,
                         include,
@@ -125,13 +125,13 @@ pub(super) fn build_validate_helpers(
         fn #validate_include_path_ident(
             include: &str,
             descriptor: &::cratestack::ModelDescriptor<super::models::#model_ident, #primary_key_type>,
-        ) -> Result<(), CoolError> {
+        ) -> Result<(), CratestackError> {
             let (direct, rest) = include
                 .split_once('.')
                 .map(|(direct, rest)| (direct, Some(rest)))
                 .unwrap_or((include, None));
             if !descriptor.allowed_includes.contains(&direct) {
-                return Err(CoolError::Validation(format!(
+                return Err(CratestackError::Validation(format!(
                     "unsupported include selection '{}' for {}",
                     include,
                     #model_name,
@@ -148,13 +148,13 @@ pub(super) fn build_validate_helpers(
             include: &str,
             fields: &[String],
             descriptor: &::cratestack::ModelDescriptor<super::models::#model_ident, #primary_key_type>,
-        ) -> Result<(), CoolError> {
+        ) -> Result<(), CratestackError> {
             let (direct, rest) = include
                 .split_once('.')
                 .map(|(direct, rest)| (direct, Some(rest)))
                 .unwrap_or((include, None));
             if !descriptor.allowed_includes.contains(&direct) {
-                return Err(CoolError::Validation(format!(
+                return Err(CratestackError::Validation(format!(
                     "unsupported includeFields selection '{}' for {}",
                     include,
                     #model_name,

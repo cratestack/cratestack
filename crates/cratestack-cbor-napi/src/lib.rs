@@ -39,19 +39,19 @@
 mod json_value;
 
 use cratestack_codec_cbor::CborCodec;
-use cratestack_core::{CoolCodec, CoolError};
+use cratestack_core::{CratestackCodec, CratestackError};
 use serde_json::Value;
 
 use json_value::CborValue;
 
 /// Encodes a JSON value to CBOR bytes via `CborCodec`. No napi types in
 /// the signature — see the module docs for why that matters for testing.
-fn encode_value(value: &Value) -> Result<Vec<u8>, CoolError> {
+fn encode_value(value: &Value) -> Result<Vec<u8>, CratestackError> {
     CborCodec.encode(&CborValue(value))
 }
 
 /// Decodes CBOR bytes to a JSON value via `CborCodec`.
-fn decode_bytes(bytes: &[u8]) -> Result<Value, CoolError> {
+fn decode_bytes(bytes: &[u8]) -> Result<Value, CratestackError> {
     CborCodec.decode(bytes)
 }
 
@@ -63,9 +63,9 @@ mod addon {
 
     use crate::{decode_bytes, encode_value};
     use cratestack_codec_cbor::CborCodec;
-    use cratestack_core::{CoolCodec, CoolError};
+    use cratestack_core::{CratestackCodec, CratestackError};
 
-    fn to_napi_error(error: CoolError) -> napi::Error {
+    fn to_napi_error(error: CratestackError) -> napi::Error {
         napi::Error::new(napi::Status::GenericFailure, error.to_string())
     }
 

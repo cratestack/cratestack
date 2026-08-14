@@ -14,11 +14,11 @@
 
 use std::net::SocketAddr;
 
-use cratestack::CoolCodec;
+use cratestack::CratestackCodec;
 use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::extract::ConnectInfo;
 use cratestack::axum::http::{Request, StatusCode};
-use cratestack::{CoolContext, CoolError, TrustedProxyConfig, include_server_schema};
+use cratestack::{CratestackContext, CratestackError, TrustedProxyConfig, include_server_schema};
 use cratestack_codec_json::JsonCodec;
 use tower::ServiceExt;
 
@@ -30,13 +30,13 @@ include_server_schema!("tests/fixtures/trusted_proxy_client_ip.cstack", db = Non
 struct AllowAllAuth;
 
 impl cratestack::AuthProvider for AllowAllAuth {
-    type Error = CoolError;
+    type Error = CratestackError;
 
     fn authenticate(
         &self,
         _request: &cratestack::RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
-        core::future::ready(Ok(CoolContext::authenticated([(
+    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
+        core::future::ready(Ok(CratestackContext::authenticated([(
             "id".to_owned(),
             cratestack::Value::Int(1),
         )])))
@@ -52,11 +52,11 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     fn who_am_i(
         &self,
         _db: &cratestack_schema::Cratestack,
-        ctx: &CoolContext,
+        ctx: &CratestackContext,
         _args: cratestack_schema::procedures::who_am_i::Args,
         _authorized: cratestack_schema::procedures::who_am_i::Authorized,
     ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::who_am_i::Output, CoolError>,
+        Output = Result<cratestack_schema::procedures::who_am_i::Output, CratestackError>,
     > + Send {
         let client_ip = ctx.client_ip().unwrap_or("none").to_owned();
         async move { Ok(client_ip) }

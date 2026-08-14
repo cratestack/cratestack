@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 
 use cratestack_codec_cbor::CborCodec;
 use cratestack_codec_json::JsonCodec;
-use cratestack_core::CoolCodec;
+use cratestack_core::CratestackCodec;
 use serde::Deserialize;
 use uuid::Uuid;
 

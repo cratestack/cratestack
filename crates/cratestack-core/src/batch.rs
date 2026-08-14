@@ -4,7 +4,7 @@
 //! response is always `200 OK` carrying a [`BatchResponse<T>`];
 //! whole-batch infrastructure failures (bad request shape, size cap
 //! exceeded, DB connection lost) still flow through the outer
-//! `Result<_, CoolError>` and map to their usual status codes via
+//! `Result<_, CratestackError>` and map to their usual status codes via
 //! the standard handler.
 //!
 //! Per-item failures (validation, policy denial, not-found, stale
@@ -17,7 +17,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::CoolError;
+use crate::error::CratestackError;
 
 #[cfg(test)]
 mod tests;
@@ -42,7 +42,7 @@ pub struct BatchItemResult<T> {
 /// { "status": "error", "error": { "code": "POLICY_DENIED", "message": "…" } }
 /// ```
 ///
-/// The `code` field maps 1:1 to [`CoolError::code`], so consumers
+/// The `code` field maps 1:1 to [`CratestackError::code`], so consumers
 /// can share error-code constants across single and batch routes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "lowercase")]
@@ -52,7 +52,7 @@ pub enum BatchItemStatus<T> {
 }
 
 /// Public, safe-to-expose shape of a per-item failure. Mirrors
-/// [`crate::CoolErrorResponse`] without the optional `details` field
+/// [`crate::CratestackErrorResponse`] without the optional `details` field
 /// — batch callers asking for per-item detail can repeat the
 /// operation singly against the failed item to get the full error
 /// envelope.
@@ -63,10 +63,10 @@ pub struct BatchItemError {
 }
 
 impl BatchItemError {
-    /// Project a [`CoolError`] into the public per-item shape, using
+    /// Project a [`CratestackError`] into the public per-item shape, using
     /// the same `code()` / `public_message()` mapping the standard
     /// HTTP error handler uses for single-route responses.
-    pub fn from_cool(error: &CoolError) -> Self {
+    pub fn from_cool(error: &CratestackError) -> Self {
         Self {
             code: error.code().to_owned(),
             message: error.public_message().into_owned(),
@@ -94,9 +94,9 @@ pub struct BatchResponse<T> {
 
 impl<T> BatchResponse<T> {
     /// Build a [`BatchResponse`] from an in-order
-    /// `Vec<Result<T, CoolError>>`. The `index` of each result
+    /// `Vec<Result<T, CratestackError>>`. The `index` of each result
     /// matches its position in the input.
-    pub fn from_results(per_item: Vec<Result<T, CoolError>>) -> Self {
+    pub fn from_results(per_item: Vec<Result<T, CratestackError>>) -> Self {
         let total = per_item.len();
         let mut ok = 0usize;
         let mut err = 0usize;
@@ -139,7 +139,7 @@ pub struct BatchRequest<I> {
 
 /// Default upper bound on items in a single batch request. Server
 /// backends enforce this before any SQL runs and surface
-/// [`CoolError::Validation`] on the outer `Result` when exceeded.
+/// [`CratestackError::Validation`] on the outer `Result` when exceeded.
 /// The cap is identical for all five batch operations; deviating
 /// per-op would invite footguns where `batch_get` accepts a list
 /// that `batch_create` of the same length rejects.

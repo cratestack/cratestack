@@ -15,7 +15,7 @@ mod support;
 
 use cratestack::include_server_schema;
 use cratestack::sqlx::{Row, query};
-use cratestack::{BatchItemStatus, CoolContext, Value};
+use cratestack::{BatchItemStatus, CratestackContext, Value};
 use support::pg;
 
 include_server_schema!("tests/fixtures/banking_batches.cstack", db = Postgres);
@@ -52,8 +52,8 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     .expect("create unique_pairs");
 }
 
-fn operator() -> CoolContext {
-    CoolContext::authenticated([("id".to_owned(), Value::Int(1))])
+fn operator() -> CratestackContext {
+    CratestackContext::authenticated([("id".to_owned(), Value::Int(1))])
         .with_request_id("batch-trace-id-001")
 }
 
@@ -431,9 +431,9 @@ async fn batch_duplicate_pk_rejects_before_any_audit_or_outbox_write() {
 // from its PK (mirrors `Pair` in builder_extensions_tier2.cstack). Each
 // per-item batch write (`batch_create`/`batch_update`/`batch_upsert`) runs
 // its terminal INSERT/UPDATE/UPSERT through `classify_unique_violation`,
-// which must map SQLSTATE 23505 to `CoolError::Conflict` — matching the
+// which must map SQLSTATE 23505 to `CratestackError::Conflict` — matching the
 // single-row `.create()`/`.update()` paths' semantics — instead of losing
-// it as an opaque `CoolError::Database` string.
+// it as an opaque `CratestackError::Database` string.
 
 #[tokio::test]
 async fn batch_create_unique_constraint_violation_maps_to_conflict() {

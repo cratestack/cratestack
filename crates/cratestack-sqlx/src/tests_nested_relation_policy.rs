@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use crate::{PolicyExpr, ReadPolicy, ReadPredicate, render::render_read_policy_sql};
-use cratestack_core::CoolContext;
+use cratestack_core::CratestackContext;
 
 #[test]
 fn nested_relation_policy_preview_uses_recursive_exists_and_quantifiers() {
@@ -25,7 +25,7 @@ fn nested_relation_policy_preview_uses_recursive_exists_and_quantifiers() {
             }),
         }),
     }];
-    let ctx = CoolContext::anonymous();
+    let ctx = CratestackContext::anonymous();
 
     let mut bind_index = 1usize;
     let sql = render_read_policy_sql(&policy, &[], &ctx, &mut bind_index)

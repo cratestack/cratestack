@@ -2,7 +2,7 @@
 //! [`super::create_item::run_create_item`] (one savepoint per input),
 //! commits, drains the outbox.
 
-use cratestack_core::{BatchResponse, CoolContext, CoolError, ModelEventKind};
+use cratestack_core::{BatchResponse, CratestackContext, CratestackError, ModelEventKind};
 
 use crate::audit::{dispatch_audit_sink, ensure_audit_table};
 use crate::descriptor::ensure_event_outbox_table;
@@ -22,7 +22,7 @@ impl<'a, M: 'static, PK: 'static, I> BatchCreate<'a, M, PK, I>
 where
     I: CreateModelInput<M> + Send,
 {
-    pub async fn run(self, ctx: &CoolContext) -> Result<BatchResponse<M>, CoolError>
+    pub async fn run(self, ctx: &CratestackContext) -> Result<BatchResponse<M>, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
     {
@@ -30,7 +30,7 @@ where
         // No PK dedup — `CreateModelInput` doesn't expose the PK
         // generically (and server-generated PKs make duplicates
         // impossible). Client-supplied PK collisions trip the DB
-        // uniqueness constraint and surface as `CoolError::Database`.
+        // uniqueness constraint and surface as `CratestackError::Database`.
         // The right primitive for idempotent client-PK ingestion is
         // `.batch_upsert(...)`.
         if self.inputs.is_empty() {
@@ -53,7 +53,7 @@ where
             ensure_audit_table(self.runtime).await?;
         }
 
-        let mut per_item: Vec<Result<M, CoolError>> = Vec::with_capacity(self.inputs.len());
+        let mut per_item: Vec<Result<M, CratestackError>> = Vec::with_capacity(self.inputs.len());
         let mut audit_events = Vec::new();
         for input in self.inputs {
             let (outcome, audit_event) = run_create_item(

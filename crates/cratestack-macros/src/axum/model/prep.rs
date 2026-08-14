@@ -108,7 +108,7 @@ pub(super) fn build_prep(model: &Model) -> Result<ModelHandlerPrep, String> {
                     &headers,
                     &CAPABILITIES,
                     axum::http::StatusCode::OK,
-                    Err(CoolError::Forbidden("create policy denied this operation".to_owned())),
+                    Err(CratestackError::Forbidden("create policy denied this operation".to_owned())),
                 );
             }
         }
@@ -122,7 +122,7 @@ pub(super) fn build_prep(model: &Model) -> Result<ModelHandlerPrep, String> {
                 &headers,
                 &CAPABILITIES,
                 axum::http::StatusCode::OK,
-                Err(CoolError::Validation("update input must contain at least one changed column".to_owned())),
+                Err(CratestackError::Validation("update input must contain at least one changed column".to_owned())),
             );
         }
     };

@@ -37,18 +37,18 @@ fn test_db() -> cratestack_schema::Cratestack {
 struct AllowAllAuth;
 
 impl cratestack::AuthProvider for AllowAllAuth {
-    type Error = cratestack::CoolError;
+    type Error = cratestack::CratestackError;
 
     fn authenticate(
         &self,
         _request: &cratestack::RequestContext<'_>,
-    ) -> impl std::future::Future<Output = Result<cratestack::CoolContext, Self::Error>> + Send
+    ) -> impl std::future::Future<Output = Result<cratestack::CratestackContext, Self::Error>> + Send
     {
         // Deliberately does NOT set `client_ip` itself — that's exactly
         // what `enrich_context_from_headers` (called after `authenticate`
         // inside every generated dispatch fn, `client_ip_ctx` in hand) is
         // responsible for.
-        std::future::ready(Ok(cratestack::CoolContext::authenticated([])))
+        std::future::ready(Ok(cratestack::CratestackContext::authenticated([])))
     }
 }
 
@@ -59,13 +59,13 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     fn echo_widget_name(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &cratestack::CoolContext,
+        _ctx: &cratestack::CratestackContext,
         args: cratestack_schema::procedures::echo_widget_name::Args,
         _authorized: cratestack_schema::procedures::echo_widget_name::Authorized,
     ) -> impl std::future::Future<
         Output = Result<
             cratestack_schema::procedures::echo_widget_name::Output,
-            cratestack::CoolError,
+            cratestack::CratestackError,
         >,
     > + Send {
         async move { Ok(format!("echo: {}", args.name)) }
@@ -74,13 +74,13 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     fn widget_name_samples(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &cratestack::CoolContext,
+        _ctx: &cratestack::CratestackContext,
         _args: cratestack_schema::procedures::widget_name_samples::Args,
         _authorized: cratestack_schema::procedures::widget_name_samples::Authorized,
     ) -> impl std::future::Future<
         Output = Result<
             cratestack_schema::procedures::widget_name_samples::Output,
-            cratestack::CoolError,
+            cratestack::CratestackError,
         >,
     > + Send {
         async move { Ok(vec!["alpha".to_owned(), "beta".to_owned()]) }
@@ -91,11 +91,14 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     fn who_am_i(
         &self,
         _db: &cratestack_schema::Cratestack,
-        ctx: &cratestack::CoolContext,
+        ctx: &cratestack::CratestackContext,
         _args: cratestack_schema::procedures::who_am_i::Args,
         _authorized: cratestack_schema::procedures::who_am_i::Authorized,
     ) -> impl std::future::Future<
-        Output = Result<cratestack_schema::procedures::who_am_i::Output, cratestack::CoolError>,
+        Output = Result<
+            cratestack_schema::procedures::who_am_i::Output,
+            cratestack::CratestackError,
+        >,
     > + Send {
         let client_ip = ctx.client_ip().unwrap_or("none").to_owned();
         async move { Ok(client_ip) }

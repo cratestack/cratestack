@@ -4,7 +4,7 @@ use super::*;
 
 #[test]
 fn auth_field_prefers_exact_key_before_dotted_lookup() {
-    let ctx = CoolContext::authenticated([
+    let ctx = CratestackContext::authenticated([
         ("tenant.slug".to_owned(), Value::String("exact".to_owned())),
         (
             "tenant".to_owned(),
@@ -23,7 +23,7 @@ fn auth_field_prefers_exact_key_before_dotted_lookup() {
 
 #[test]
 fn auth_field_resolves_nested_map_paths() {
-    let ctx = CoolContext::from_principal(Some(serde_json::json!({
+    let ctx = CratestackContext::from_principal(Some(serde_json::json!({
         "tenant": {
             "slug": "acme",
             "owner": { "id": 7 }
@@ -41,7 +41,7 @@ fn auth_field_resolves_nested_map_paths() {
 
 #[test]
 fn from_principal_promotes_actor_session_and_tenant_facets() {
-    let ctx = CoolContext::from_principal(Some(serde_json::json!({
+    let ctx = CratestackContext::from_principal(Some(serde_json::json!({
         "actor": { "id": "usr_1" },
         "session": { "id": "sess_1" },
         "tenant": { "id": "org_1" },
@@ -79,12 +79,12 @@ fn from_principal_promotes_actor_session_and_tenant_facets() {
 
 #[test]
 fn request_id_round_trip_through_extensions() {
-    let ctx = CoolContext::anonymous().with_request_id("trace-123");
+    let ctx = CratestackContext::anonymous().with_request_id("trace-123");
     assert_eq!(ctx.request_id(), Some("trace-123"));
 }
 
 #[test]
 fn client_ip_round_trip_through_extensions() {
-    let ctx = CoolContext::anonymous().with_client_ip("192.0.2.43");
+    let ctx = CratestackContext::anonymous().with_client_ip("192.0.2.43");
     assert_eq!(ctx.client_ip(), Some("192.0.2.43"));
 }

@@ -183,7 +183,7 @@ pub enum DataError {
     /// `cratestack_event_outbox` via `cratestack_sqlx`'s shared
     /// primitives.
     #[error("event outbox write failed: {0}")]
-    EventOutbox(#[from] cratestack_core::CoolError),
+    EventOutbox(#[from] cratestack_core::CratestackError),
     #[error("sqlite error: {0}")]
     Sqlite(#[from] rusqlite::Error),
     #[error("upstream API error: {0}")]

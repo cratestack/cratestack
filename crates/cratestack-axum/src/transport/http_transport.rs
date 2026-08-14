@@ -1,6 +1,6 @@
 use axum::http::StatusCode;
 use axum::response::Response;
-use cratestack_core::{CoolCodec, CoolError, CoolErrorResponse};
+use cratestack_core::{CratestackCodec, CratestackError, CratestackErrorResponse};
 use futures_util::Stream;
 use serde::{Deserialize, Serialize};
 
@@ -47,7 +47,7 @@ pub trait HttpTransport: Clone + Send + Sync + 'static {
         true
     }
 
-    fn decode_request<T>(&self, content_type: &str, body: &[u8]) -> Result<T, CoolError>
+    fn decode_request<T>(&self, content_type: &str, body: &[u8]) -> Result<T, CratestackError>
     where
         T: for<'de> Deserialize<'de>;
 
@@ -56,7 +56,7 @@ pub trait HttpTransport: Clone + Send + Sync + 'static {
         content_type: &str,
         status: StatusCode,
         value: &T,
-    ) -> Result<Response, CoolError>
+    ) -> Result<Response, CratestackError>
     where
         T: Serialize + ?Sized;
 
@@ -65,7 +65,7 @@ pub trait HttpTransport: Clone + Send + Sync + 'static {
         content_type: &str,
         status: StatusCode,
         values: &[T],
-    ) -> Result<Response, CoolError>
+    ) -> Result<Response, CratestackError>
     where
         T: Serialize;
 
@@ -73,8 +73,8 @@ pub trait HttpTransport: Clone + Send + Sync + 'static {
         &self,
         content_type: &str,
         status: StatusCode,
-        value: &CoolErrorResponse,
-    ) -> Result<Response, CoolError>;
+        value: &CratestackErrorResponse,
+    ) -> Result<Response, CratestackError>;
 
     /// Genuinely incremental counterpart to [`Self::encode_sequence_response`]
     /// for `@stream` procedures (cratestack#283): `values` is encoded and
@@ -90,15 +90,15 @@ pub trait HttpTransport: Clone + Send + Sync + 'static {
         content_type: &str,
         status: StatusCode,
         values: S,
-    ) -> Result<Response, CoolError>
+    ) -> Result<Response, CratestackError>
     where
         T: Serialize + Send + 'static,
-        S: Stream<Item = Result<T, CoolError>> + Send + 'static;
+        S: Stream<Item = Result<T, CratestackError>> + Send + 'static;
 }
 
 impl<C> HttpTransport for C
 where
-    C: CoolCodec,
+    C: CratestackCodec,
 {
     fn can_encode(&self, content_type: &str) -> bool {
         media_type_matches(content_type, C::CONTENT_TYPE)
@@ -106,14 +106,14 @@ where
                 && C::CONTENT_TYPE == CborCodecMarker::CONTENT_TYPE)
     }
 
-    fn decode_request<T>(&self, content_type: &str, body: &[u8]) -> Result<T, CoolError>
+    fn decode_request<T>(&self, content_type: &str, body: &[u8]) -> Result<T, CratestackError>
     where
         T: for<'de> Deserialize<'de>,
     {
         if media_type_matches(content_type, C::CONTENT_TYPE) {
             crate::codec::decode_codec_request(self, body)
         } else {
-            Err(CoolError::UnsupportedMediaType(format!(
+            Err(CratestackError::UnsupportedMediaType(format!(
                 "unsupported request Content-Type {content_type}"
             )))
         }
@@ -124,14 +124,14 @@ where
         content_type: &str,
         status: StatusCode,
         value: &T,
-    ) -> Result<Response, CoolError>
+    ) -> Result<Response, CratestackError>
     where
         T: Serialize + ?Sized,
     {
         if media_type_matches(content_type, C::CONTENT_TYPE) {
             encode_codec_response(self, status, value)
         } else {
-            Err(CoolError::NotAcceptable(format!(
+            Err(CratestackError::NotAcceptable(format!(
                 "no encoder configured for response Content-Type {content_type}"
             )))
         }
@@ -142,7 +142,7 @@ where
         content_type: &str,
         status: StatusCode,
         values: &[T],
-    ) -> Result<Response, CoolError>
+    ) -> Result<Response, CratestackError>
     where
         T: Serialize,
     {
@@ -157,8 +157,8 @@ where
         &self,
         content_type: &str,
         status: StatusCode,
-        value: &CoolErrorResponse,
-    ) -> Result<Response, CoolError> {
+        value: &CratestackErrorResponse,
+    ) -> Result<Response, CratestackError> {
         if content_type == CBOR_SEQUENCE_CONTENT_TYPE {
             encode_cbor_sequence_response(self, status, std::slice::from_ref(value))
         } else {
@@ -171,15 +171,15 @@ where
         content_type: &str,
         status: StatusCode,
         values: S,
-    ) -> Result<Response, CoolError>
+    ) -> Result<Response, CratestackError>
     where
         T: Serialize + Send + 'static,
-        S: Stream<Item = Result<T, CoolError>> + Send + 'static,
+        S: Stream<Item = Result<T, CratestackError>> + Send + 'static,
     {
         if content_type == CBOR_SEQUENCE_CONTENT_TYPE {
             encode_cbor_sequence_stream_response(self.clone(), status, values)
         } else {
-            Err(CoolError::NotAcceptable(format!(
+            Err(CratestackError::NotAcceptable(format!(
                 "incremental sequence streaming requires {CBOR_SEQUENCE_CONTENT_TYPE}, got \
                  response Content-Type {content_type}"
             )))

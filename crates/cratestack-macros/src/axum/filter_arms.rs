@@ -86,7 +86,7 @@ pub(super) fn generate_query_filter_arm(
         arms.push(quote! {
             (#field_name, "isNull") => {
                 let parsed = value.parse::<bool>().map_err(|error| {
-                    CoolError::BadRequest(format!("invalid value '{}' for {}__isNull: {error}", value, #field_name))
+                    CratestackError::BadRequest(format!("invalid value '{}' for {}__isNull: {error}", value, #field_name))
                 })?;
                 Ok(if parsed {
                     ::cratestack::FilterExpr::from(super::#field_module_ident::#field_fn().is_null())

@@ -1,4 +1,4 @@
-//! `CoolError` — the framework's error type, its 4xx/5xx HTTP mapping,
+//! `CratestackError` — the framework's error type, its 4xx/5xx HTTP mapping,
 //! and the public response envelope clients see on failure.
 //!
 //! 4xx variants carry caller-visible messages; 5xx variants keep the
@@ -16,7 +16,7 @@ use crate::value::Value;
 mod tests;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct CoolErrorResponse {
+pub struct CratestackErrorResponse {
     pub code: String,
     pub message: String,
     pub details: Option<Value>,
@@ -44,7 +44,7 @@ pub struct DbErrorInfo {
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
-pub enum CoolError {
+pub enum CratestackError {
     /// 4xx — `String` is the public message returned to the client.
     #[error("bad request: {0}")]
     BadRequest(String),
@@ -63,7 +63,7 @@ pub enum CoolError {
     /// Conflict (409) with structured database information preserved from
     /// the driver — e.g. a unique-constraint violation. Prefer this over
     /// `Conflict(String)` when the conflict originates from a database
-    /// error so [`CoolError::db_sqlstate`] / [`CoolError::db_constraint`]
+    /// error so [`CratestackError::db_sqlstate`] / [`CratestackError::db_constraint`]
     /// keep working for callers that inspect the typed fields regardless of
     /// whether the error surfaced as a 500 (`DatabaseTyped`) or a 409
     /// (`ConflictTyped`).
@@ -84,7 +84,7 @@ pub enum CoolError {
     Database(String),
     /// Database error with structured information preserved from the driver.
     ///
-    /// Use [`CoolError::db_sqlstate`] and [`CoolError::db_constraint`] to
+    /// Use [`CratestackError::db_sqlstate`] and [`CratestackError::db_constraint`] to
     /// access the typed fields without matching on this variant directly.
     #[error("database: {}", .0.detail)]
     DatabaseTyped(DbErrorInfo),
@@ -106,7 +106,7 @@ pub enum CoolError {
     Unavailable(String),
 }
 
-impl CoolError {
+impl CratestackError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::BadRequest(_) => "BAD_REQUEST",
@@ -232,10 +232,10 @@ impl CoolError {
         }
     }
 
-    pub fn into_response(self) -> CoolErrorResponse {
+    pub fn into_response(self) -> CratestackErrorResponse {
         let code = self.code().to_owned();
         let message = self.public_message().into_owned();
-        CoolErrorResponse {
+        CratestackErrorResponse {
             code,
             message,
             details: None,
@@ -243,11 +243,11 @@ impl CoolError {
     }
 }
 
-pub fn parse_cuid(value: &str) -> Result<String, CoolError> {
+pub fn parse_cuid(value: &str) -> Result<String, CratestackError> {
     if is_valid_cuid(value) {
         Ok(value.to_owned())
     } else {
-        Err(CoolError::BadRequest(format!(
+        Err(CratestackError::BadRequest(format!(
             "invalid cuid '{}': expected a lowercase alphanumeric id (2-32 chars)",
             value,
         )))

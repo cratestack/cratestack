@@ -2,7 +2,7 @@
 //! returns `Vec<Projection<M>>`. Same partial-decode contract as
 //! [`super::projected_find_unique`].
 
-use cratestack_core::{CoolContext, CoolError};
+use cratestack_core::{CratestackContext, CratestackError};
 use cratestack_sql::{IntoColumnName, ReadSource};
 
 use crate::query::support::{ReadPolicyKind, push_order_and_paging, push_scoped_conditions};
@@ -68,7 +68,7 @@ impl<'a, M: 'static, PK: 'static> ProjectedFindMany<'a, M, PK> {
         self
     }
 
-    fn build_query<'q>(&self, ctx: &CoolContext) -> sqlx::QueryBuilder<'q, sqlx::Postgres> {
+    fn build_query<'q>(&self, ctx: &CratestackContext) -> sqlx::QueryBuilder<'q, sqlx::Postgres> {
         let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT ");
         query
             .push(self.descriptor.select_projection_subset(&self.selected))
@@ -91,8 +91,8 @@ impl<'a, M: 'static, PK: 'static> ProjectedFindMany<'a, M, PK> {
 
     pub async fn run(
         self,
-        ctx: &CoolContext,
-    ) -> Result<Vec<cratestack_sql::Projection<M>>, CoolError>
+        ctx: &CratestackContext,
+    ) -> Result<Vec<cratestack_sql::Projection<M>>, CratestackError>
     where
         M: crate::FromPartialPgRow,
     {
@@ -101,15 +101,15 @@ impl<'a, M: 'static, PK: 'static> ProjectedFindMany<'a, M, PK> {
             .build()
             .fetch_all(self.runtime.pool())
             .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+            .map_err(|error| CratestackError::Database(error.to_string()))?;
         decode_many::<M>(rows, &self.selected)
     }
 
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-        ctx: &CoolContext,
-    ) -> Result<Vec<cratestack_sql::Projection<M>>, CoolError>
+        ctx: &CratestackContext,
+    ) -> Result<Vec<cratestack_sql::Projection<M>>, CratestackError>
     where
         M: crate::FromPartialPgRow,
     {
@@ -118,7 +118,7 @@ impl<'a, M: 'static, PK: 'static> ProjectedFindMany<'a, M, PK> {
             .build()
             .fetch_all(&mut **tx)
             .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+            .map_err(|error| CratestackError::Database(error.to_string()))?;
         decode_many::<M>(rows, &self.selected)
     }
 }
@@ -126,7 +126,7 @@ impl<'a, M: 'static, PK: 'static> ProjectedFindMany<'a, M, PK> {
 fn decode_many<M>(
     rows: Vec<sqlx::postgres::PgRow>,
     selected: &[&'static str],
-) -> Result<Vec<cratestack_sql::Projection<M>>, CoolError>
+) -> Result<Vec<cratestack_sql::Projection<M>>, CratestackError>
 where
     M: crate::FromPartialPgRow,
 {
@@ -137,7 +137,7 @@ where
                     value,
                     selected: selected.to_vec(),
                 })
-                .map_err(|error| CoolError::Database(error.to_string()))
+                .map_err(|error| CratestackError::Database(error.to_string()))
         })
         .collect()
 }

@@ -10,7 +10,8 @@ use std::sync::{Arc, Mutex};
 use cratestack::include_server_schema;
 use cratestack::sqlx::{Row, query};
 use cratestack::{
-    AuditEvent, AuditSink, BatchItemStatus, CoolContext, CoolError, UpsertOutcome, Value,
+    AuditEvent, AuditSink, BatchItemStatus, CratestackContext, CratestackError, UpsertOutcome,
+    Value,
 };
 
 include_server_schema!("tests/fixtures/banking_audit.cstack", db = Postgres);
@@ -29,7 +30,7 @@ struct RecordingAuditSink {
 
 #[async_trait::async_trait]
 impl AuditSink for RecordingAuditSink {
-    async fn record(&self, event: &AuditEvent) -> Result<(), CoolError> {
+    async fn record(&self, event: &AuditEvent) -> Result<(), CratestackError> {
         self.events.lock().unwrap().push(event.clone());
         Ok(())
     }
@@ -53,8 +54,8 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     .expect("create account table");
 }
 
-fn operator() -> CoolContext {
-    CoolContext::authenticated([
+fn operator() -> CratestackContext {
+    CratestackContext::authenticated([
         ("id".to_owned(), Value::String("operator-7".to_owned())),
         ("role".to_owned(), Value::String("admin".to_owned())),
     ])

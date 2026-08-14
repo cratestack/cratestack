@@ -28,8 +28,8 @@ pub(super) fn if_match_digits() -> String {
         .to_owned()
 }
 
-/// A `CoolErrorResponse`-shaped body (`cratestack_core::
-/// CoolErrorResponse`; `crates/cratestack-axum/src/transport/
+/// A `CratestackErrorResponse`-shaped body (`cratestack_core::
+/// CratestackErrorResponse`; `crates/cratestack-axum/src/transport/
 /// http_transport.rs` serializes exactly this shape for a REST JSON
 /// error, no extra wrapper) — `message` may itself contain Handlebars
 /// expressions (the "stale" case's message does), so every stub built

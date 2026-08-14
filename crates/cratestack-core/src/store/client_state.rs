@@ -3,7 +3,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::CoolError;
+use crate::CratestackError;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RequestJournalEntry {
@@ -39,10 +39,10 @@ impl Default for PersistedClientState {
 }
 
 pub trait ClientStateStore: Send + Sync {
-    fn load(&self) -> Result<PersistedClientState, CoolError>;
-    fn save(&self, state: &PersistedClientState) -> Result<(), CoolError>;
+    fn load(&self) -> Result<PersistedClientState, CratestackError>;
+    fn save(&self, state: &PersistedClientState) -> Result<(), CratestackError>;
 
-    fn append_request_journal(&self, entry: &RequestJournalEntry) -> Result<(), CoolError> {
+    fn append_request_journal(&self, entry: &RequestJournalEntry) -> Result<(), CratestackError> {
         let mut state = self.load()?;
         state.request_journal.push(entry.clone());
         state.state_version = state.state_version.saturating_add(1);
@@ -56,18 +56,19 @@ pub struct InMemoryStateStore {
 }
 
 impl ClientStateStore for InMemoryStateStore {
-    fn load(&self) -> Result<PersistedClientState, CoolError> {
+    fn load(&self) -> Result<PersistedClientState, CratestackError> {
         self.state
             .lock()
-            .map_err(|error| CoolError::Internal(format!("failed to lock state store: {error}")))
+            .map_err(|error| {
+                CratestackError::Internal(format!("failed to lock state store: {error}"))
+            })
             .map(|state| state.clone())
     }
 
-    fn save(&self, state: &PersistedClientState) -> Result<(), CoolError> {
-        let mut guard = self
-            .state
-            .lock()
-            .map_err(|error| CoolError::Internal(format!("failed to lock state store: {error}")))?;
+    fn save(&self, state: &PersistedClientState) -> Result<(), CratestackError> {
+        let mut guard = self.state.lock().map_err(|error| {
+            CratestackError::Internal(format!("failed to lock state store: {error}"))
+        })?;
         *guard = state.clone();
         Ok(())
     }
@@ -89,10 +90,10 @@ impl JsonFileStateStore {
 }
 
 impl ClientStateStore for JsonFileStateStore {
-    fn load(&self) -> Result<PersistedClientState, CoolError> {
+    fn load(&self) -> Result<PersistedClientState, CratestackError> {
         match std::fs::read(&self.path) {
             Ok(bytes) => serde_json::from_slice(&bytes).map_err(|error| {
-                CoolError::Internal(format!(
+                CratestackError::Internal(format!(
                     "failed to decode state file {}: {error}",
                     self.path.display()
                 ))
@@ -100,30 +101,30 @@ impl ClientStateStore for JsonFileStateStore {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 Ok(PersistedClientState::default())
             }
-            Err(error) => Err(CoolError::Internal(format!(
+            Err(error) => Err(CratestackError::Internal(format!(
                 "failed to read state file {}: {error}",
                 self.path.display()
             ))),
         }
     }
 
-    fn save(&self, state: &PersistedClientState) -> Result<(), CoolError> {
+    fn save(&self, state: &PersistedClientState) -> Result<(), CratestackError> {
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent).map_err(|error| {
-                CoolError::Internal(format!(
+                CratestackError::Internal(format!(
                     "failed to create state directory {}: {error}",
                     parent.display()
                 ))
             })?;
         }
         let bytes = serde_json::to_vec_pretty(state).map_err(|error| {
-            CoolError::Internal(format!(
+            CratestackError::Internal(format!(
                 "failed to encode state file {}: {error}",
                 self.path.display()
             ))
         })?;
         std::fs::write(&self.path, bytes).map_err(|error| {
-            CoolError::Internal(format!(
+            CratestackError::Internal(format!(
                 "failed to write state file {}: {error}",
                 self.path.display()
             ))

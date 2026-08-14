@@ -10,7 +10,7 @@
 //! what was expected, the mutation reports `412` instead of folding
 //! that case into the generic `403`.
 
-use cratestack_core::{CoolContext, CoolError};
+use cratestack_core::{CratestackContext, CratestackError};
 
 use super::push_action_policy_query;
 use crate::{ModelDescriptor, cool_error_from_sqlx, sqlx};
@@ -23,8 +23,8 @@ pub(crate) async fn probe_current_version<M, PK>(
     descriptor: &'static ModelDescriptor<M, PK>,
     id: PK,
     version_col: &'static str,
-    ctx: &CoolContext,
-) -> Result<Option<i64>, CoolError>
+    ctx: &CratestackContext,
+) -> Result<Option<i64>, CratestackError>
 where
     PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
 {

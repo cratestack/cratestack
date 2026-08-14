@@ -106,12 +106,12 @@ impl TransportCallerMode {
 }
 
 impl cratestack_core::AuthProvider for SignedRequestAuthProvider {
-    type Error = cratestack_core::CoolError;
+    type Error = cratestack_core::CratestackError;
 
     fn authenticate(
         &self,
         request: &cratestack_core::RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<cratestack_core::CoolContext, Self::Error>> + Send
+    ) -> impl core::future::Future<Output = Result<cratestack_core::CratestackContext, Self::Error>> + Send
     {
         let allow_transport_caller = self.transport_caller_mode.allows(request.method);
         authenticate_cool_request(self.verifier.clone(), request, move |principal| {
@@ -204,7 +204,7 @@ pub enum AuthError {
     InternalEndpointForbidden,
 }
 
-pub fn auth_error_to_cool_error(error: AuthError) -> cratestack_core::CoolError {
+pub fn auth_error_to_cool_error(error: AuthError) -> cratestack_core::CratestackError {
     match error {
         AuthError::MissingAuthorizationHeader
         | AuthError::MissingScheme
@@ -234,14 +234,16 @@ pub fn auth_error_to_cool_error(error: AuthError) -> cratestack_core::CoolError 
         | AuthError::IdTokenExpired
         | AuthError::IdTokenBindingMismatch
         | AuthError::UntrustedIssuer(_) => {
-            cratestack_core::CoolError::Unauthorized(error.to_string())
+            cratestack_core::CratestackError::Unauthorized(error.to_string())
         }
         AuthError::InternalEndpointForbidden => {
-            cratestack_core::CoolError::Forbidden(error.to_string())
+            cratestack_core::CratestackError::Forbidden(error.to_string())
         }
         AuthError::NonceStoreUnavailable(_)
         | AuthError::IdTokenJwksUnavailable(_)
-        | AuthError::DeviceKeyLookup(_) => cratestack_core::CoolError::Internal(error.to_string()),
+        | AuthError::DeviceKeyLookup(_) => {
+            cratestack_core::CratestackError::Internal(error.to_string())
+        }
         AuthError::RequestBodyRead(_)
         | AuthError::IdTokenEncoding(_)
         | AuthError::UnsupportedGrantType
@@ -250,7 +252,7 @@ pub fn auth_error_to_cool_error(error: AuthError) -> cratestack_core::CoolError 
         | AuthError::MissingChallengePayload
         | AuthError::InvalidNonceStoreConfiguration(_)
         | AuthError::MissingSigningKeyEnv(_) => {
-            cratestack_core::CoolError::BadRequest(error.to_string())
+            cratestack_core::CratestackError::BadRequest(error.to_string())
         }
     }
 }
@@ -274,12 +276,12 @@ pub fn principal_to_cool_context(
     principal: &RequestPrincipal,
     role: Option<&str>,
     allow_transport_caller: bool,
-) -> Result<cratestack_core::CoolContext, cratestack_core::CoolError> {
+) -> Result<cratestack_core::CratestackContext, cratestack_core::CratestackError> {
     let Some(user) = principal.user.as_ref() else {
         if allow_transport_caller {
             return Ok(service_principal_to_cool_context(principal, role));
         }
-        return Ok(cratestack_core::CoolContext::anonymous());
+        return Ok(cratestack_core::CratestackContext::anonymous());
     };
 
     #[derive(Serialize)]
@@ -313,7 +315,7 @@ pub fn principal_to_cool_context(
 
     #[derive(Serialize)]
     #[serde(rename_all = "camelCase")]
-    struct CoolPrincipal {
+    struct CratestackPrincipal {
         actor: ActorPrincipal,
         session: SessionPrincipal,
         id: String,
@@ -333,7 +335,7 @@ pub fn principal_to_cool_context(
         .get("kycDossierId")
         .and_then(|value| value.as_str().map(str::to_owned));
 
-    cratestack_core::CoolContext::from_principal(Some(CoolPrincipal {
+    cratestack_core::CratestackContext::from_principal(Some(CratestackPrincipal {
         actor: ActorPrincipal {
             id: user.user_id.clone(),
             enrollment_status: user.enrollment_status.clone(),
@@ -371,9 +373,9 @@ pub fn principal_to_cool_context(
 fn service_principal_to_cool_context(
     principal: &RequestPrincipal,
     role: Option<&str>,
-) -> cratestack_core::CoolContext {
+) -> cratestack_core::CratestackContext {
     let caller_id = format!("svc:{}", principal.transport.key_id);
-    cratestack_core::CoolContext::authenticated([
+    cratestack_core::CratestackContext::authenticated([
         (
             "id".to_owned(),
             cratestack_core::Value::String(caller_id.clone()),
@@ -413,11 +415,12 @@ pub async fn authenticate_cool_request<F>(
     verifier: SignedRequestVerifier,
     request: &cratestack_core::RequestContext<'_>,
     map_context: F,
-) -> Result<cratestack_core::CoolContext, cratestack_core::CoolError>
+) -> Result<cratestack_core::CratestackContext, cratestack_core::CratestackError>
 where
     F: FnOnce(
             &RequestPrincipal,
-        ) -> Result<cratestack_core::CoolContext, cratestack_core::CoolError>
+        )
+            -> Result<cratestack_core::CratestackContext, cratestack_core::CratestackError>
         + Send,
 {
     authenticate_cool_request_with(verifier, request, |principal| {
@@ -429,18 +432,18 @@ where
 /// Like [`authenticate_cool_request`] but the context mapper is **async** and
 /// receives the principal by value. This lets the caller consult live state
 /// (e.g. reload a user's role from the database) and adjust the verified
-/// principal before building the `CoolContext` — e.g. re-deriving an admin
+/// principal before building the `CratestackContext` — e.g. re-deriving an admin
 /// role on every request so revoking it takes effect immediately instead of
 /// waiting for the frozen `role` claim to expire.
 pub async fn authenticate_cool_request_with<F, Fut>(
     verifier: SignedRequestVerifier,
     request: &cratestack_core::RequestContext<'_>,
     map_context: F,
-) -> Result<cratestack_core::CoolContext, cratestack_core::CoolError>
+) -> Result<cratestack_core::CratestackContext, cratestack_core::CratestackError>
 where
     F: FnOnce(RequestPrincipal) -> Fut + Send,
     Fut: core::future::Future<
-            Output = Result<cratestack_core::CoolContext, cratestack_core::CoolError>,
+            Output = Result<cratestack_core::CratestackContext, cratestack_core::CratestackError>,
         > + Send,
 {
     let authorization = authorization_header(request.headers);
@@ -450,13 +453,13 @@ where
     let body = request.body.to_vec();
 
     let Some(authorization) = authorization else {
-        return Ok(cratestack_core::CoolContext::anonymous());
+        return Ok(cratestack_core::CratestackContext::anonymous());
     };
 
     let uri = request_uri(&path, query.as_deref())
-        .map_err(|error| cratestack_core::CoolError::BadRequest(error.to_string()))?;
+        .map_err(|error| cratestack_core::CratestackError::BadRequest(error.to_string()))?;
     let method = http::Method::from_bytes(method.as_bytes())
-        .map_err(|error| cratestack_core::CoolError::BadRequest(error.to_string()))?;
+        .map_err(|error| cratestack_core::CratestackError::BadRequest(error.to_string()))?;
     let principal = verifier
         .authenticate(&method, &uri, &body, &authorization)
         .await

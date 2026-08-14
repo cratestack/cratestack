@@ -1,7 +1,7 @@
 //! Single-row + predicate-driven bulk DELETE wrappers bound to a
-//! `CoolContext`.
+//! `CratestackContext`.
 
-use cratestack_core::{CoolContext, CoolError};
+use cratestack_core::{CratestackContext, CratestackError};
 
 use crate::audit::RunInTxOutcome;
 use crate::{DeleteMany, DeleteRecord, Filter, FilterExpr, sqlx};
@@ -9,11 +9,11 @@ use crate::{DeleteMany, DeleteRecord, Filter, FilterExpr, sqlx};
 #[derive(Debug, Clone)]
 pub struct ScopedDeleteRecord<'a, M: 'static, PK: 'static> {
     request: DeleteRecord<'a, M, PK>,
-    ctx: CoolContext,
+    ctx: CratestackContext,
 }
 
 impl<'a, M: 'static, PK: 'static> ScopedDeleteRecord<'a, M, PK> {
-    pub(super) fn new(request: DeleteRecord<'a, M, PK>, ctx: CoolContext) -> Self {
+    pub(super) fn new(request: DeleteRecord<'a, M, PK>, ctx: CratestackContext) -> Self {
         Self { request, ctx }
     }
 
@@ -28,7 +28,7 @@ impl<'a, M: 'static, PK: 'static> ScopedDeleteRecord<'a, M, PK> {
         self
     }
 
-    pub async fn run(self) -> Result<M, CoolError>
+    pub async fn run(self) -> Result<M, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
         PK: Send + Clone + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
@@ -39,7 +39,7 @@ impl<'a, M: 'static, PK: 'static> ScopedDeleteRecord<'a, M, PK> {
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-    ) -> Result<RunInTxOutcome<M>, CoolError>
+    ) -> Result<RunInTxOutcome<M>, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
         PK: Send + Clone + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
@@ -51,11 +51,11 @@ impl<'a, M: 'static, PK: 'static> ScopedDeleteRecord<'a, M, PK> {
 #[derive(Debug, Clone)]
 pub struct ScopedDeleteMany<'a, M: 'static, PK: 'static> {
     request: DeleteMany<'a, M, PK>,
-    ctx: CoolContext,
+    ctx: CratestackContext,
 }
 
 impl<'a, M: 'static, PK: 'static> ScopedDeleteMany<'a, M, PK> {
-    pub(super) fn new(request: DeleteMany<'a, M, PK>, ctx: CoolContext) -> Self {
+    pub(super) fn new(request: DeleteMany<'a, M, PK>, ctx: CratestackContext) -> Self {
         Self { request, ctx }
     }
 
@@ -87,7 +87,7 @@ impl<'a, M: 'static, PK: 'static> ScopedDeleteMany<'a, M, PK> {
         self.request.preview_sql()
     }
 
-    pub async fn run(self) -> Result<cratestack_core::BatchSummary, CoolError>
+    pub async fn run(self) -> Result<cratestack_core::BatchSummary, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
     {
@@ -97,7 +97,7 @@ impl<'a, M: 'static, PK: 'static> ScopedDeleteMany<'a, M, PK> {
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-    ) -> Result<RunInTxOutcome<cratestack_core::BatchSummary>, CoolError>
+    ) -> Result<RunInTxOutcome<cratestack_core::BatchSummary>, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
     {

@@ -5,7 +5,7 @@ use std::sync::{Arc, Once};
 use std::time::Duration;
 
 use axum::extract::{ConnectInfo, Request};
-use cratestack_core::CoolError;
+use cratestack_core::CratestackError;
 use http::header;
 use sha2::{Digest, Sha256};
 use tower::Layer;
@@ -19,7 +19,7 @@ pub struct IdempotencyLayer {
     pub(super) store: Arc<dyn IdempotencyStore>,
     pub(super) ttl: Duration,
     pub(super) principal_fingerprint:
-        Arc<dyn Fn(&Request) -> Result<String, CoolError> + Send + Sync>,
+        Arc<dyn Fn(&Request) -> Result<String, CratestackError> + Send + Sync>,
 }
 
 impl IdempotencyLayer {
@@ -69,7 +69,7 @@ static MISSING_IDENTITY_WARNING: Once = Once::new();
 /// staging/CI instead of silently reachable in production, per the
 /// ticket's Expected Behavior: "construction requires an explicit
 /// fingerprint function so the collision cannot be reached by accident."
-pub(super) fn default_principal_fingerprint(req: &Request) -> Result<String, CoolError> {
+pub(super) fn default_principal_fingerprint(req: &Request) -> Result<String, CratestackError> {
     // Prefer Authorization header for authenticated requests.
     if let Some(auth_header) = req.headers().get(header::AUTHORIZATION)
         && let Ok(auth_str) = auth_header.to_str()
@@ -109,7 +109,7 @@ pub(super) fn default_principal_fingerprint(req: &Request) -> Result<String, Coo
              process; every matching request is refused until this is fixed.",
         );
     });
-    Err(CoolError::PreconditionFailed(
+    Err(CratestackError::PreconditionFailed(
         "idempotency: no verifiable caller identity (Authorization header or ConnectInfo peer) \
          is available for the default namespace fingerprint; the server must be served through \
          into_make_service_with_connect_info::<SocketAddr>() or configure an explicit \

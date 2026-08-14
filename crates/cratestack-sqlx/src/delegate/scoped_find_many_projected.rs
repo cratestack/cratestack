@@ -1,17 +1,20 @@
 //! Context-bound wrapper around [`crate::ProjectedFindMany`].
 
-use cratestack_core::{CoolContext, CoolError};
+use cratestack_core::{CratestackContext, CratestackError};
 
 use crate::{Filter, FilterExpr, OrderClause, sqlx};
 
 #[derive(Clone)]
 pub struct ScopedProjectedFindMany<'a, M: 'static, PK: 'static> {
     pub(super) request: crate::ProjectedFindMany<'a, M, PK>,
-    pub(super) ctx: CoolContext,
+    pub(super) ctx: CratestackContext,
 }
 
 impl<'a, M: 'static, PK: 'static> ScopedProjectedFindMany<'a, M, PK> {
-    pub(super) fn new(request: crate::ProjectedFindMany<'a, M, PK>, ctx: CoolContext) -> Self {
+    pub(super) fn new(
+        request: crate::ProjectedFindMany<'a, M, PK>,
+        ctx: CratestackContext,
+    ) -> Self {
         Self { request, ctx }
     }
 
@@ -58,7 +61,7 @@ impl<'a, M: 'static, PK: 'static> ScopedProjectedFindMany<'a, M, PK> {
         self
     }
 
-    pub async fn run(self) -> Result<Vec<cratestack_sql::Projection<M>>, CoolError>
+    pub async fn run(self) -> Result<Vec<cratestack_sql::Projection<M>>, CratestackError>
     where
         M: crate::FromPartialPgRow,
     {
@@ -68,7 +71,7 @@ impl<'a, M: 'static, PK: 'static> ScopedProjectedFindMany<'a, M, PK> {
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-    ) -> Result<Vec<cratestack_sql::Projection<M>>, CoolError>
+    ) -> Result<Vec<cratestack_sql::Projection<M>>, CratestackError>
     where
         M: crate::FromPartialPgRow,
     {

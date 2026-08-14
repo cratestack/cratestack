@@ -3,7 +3,9 @@ use cratestack::axum::http::{Request, StatusCode};
 use cratestack::include_server_schema;
 use cratestack::sqlx::postgres::PgPoolOptions;
 use cratestack::tracing::Subscriber;
-use cratestack::{AuthProvider, CodecSet, CoolCodec, CoolContext, RequestContext, Value};
+use cratestack::{
+    AuthProvider, CodecSet, CratestackCodec, CratestackContext, RequestContext, Value,
+};
 use cratestack_codec_cbor::CborCodec;
 use cratestack_codec_json::JsonCodec;
 use tower::util::ServiceExt;
@@ -80,12 +82,13 @@ mod advanced_policy_schema {
     struct AdvancedPolicyRouteAuthProvider;
 
     impl AuthProvider for AdvancedPolicyRouteAuthProvider {
-        type Error = cratestack::CoolError;
+        type Error = cratestack::CratestackError;
 
         fn authenticate(
             &self,
             request: &RequestContext<'_>,
-        ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
+        ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send
+        {
             let mut fields = Vec::new();
 
             if let Some(id) = request
@@ -96,7 +99,7 @@ mod advanced_policy_schema {
                 let id = match id.parse::<i64>() {
                     Ok(id) => id,
                     Err(error) => {
-                        return core::future::ready(Err(cratestack::CoolError::BadRequest(
+                        return core::future::ready(Err(cratestack::CratestackError::BadRequest(
                             error.to_string(),
                         )));
                     }
@@ -121,9 +124,9 @@ mod advanced_policy_schema {
             }
 
             core::future::ready(Ok(if fields.is_empty() {
-                CoolContext::anonymous()
+                CratestackContext::anonymous()
             } else {
-                CoolContext::authenticated(fields)
+                CratestackContext::authenticated(fields)
             }))
         }
     }
@@ -132,13 +135,13 @@ mod advanced_policy_schema {
         fn approve_post(
             &self,
             _db: &cratestack_schema::Cratestack,
-            _ctx: &CoolContext,
+            _ctx: &CratestackContext,
             args: cratestack_schema::procedures::approve_post::Args,
             _authorized: cratestack_schema::procedures::approve_post::Authorized,
         ) -> impl core::future::Future<
             Output = Result<
                 cratestack_schema::procedures::approve_post::Output,
-                cratestack::CoolError,
+                cratestack::CratestackError,
             >,
         > + Send {
             let invocations = std::sync::Arc::clone(&self.invocations);
@@ -156,10 +159,10 @@ mod advanced_policy_schema {
         async fn review_post(
             &self,
             _db: &cratestack_schema::Cratestack,
-            _ctx: &CoolContext,
+            _ctx: &CratestackContext,
             args: cratestack_schema::procedures::review_post::Args,
             _authorized: cratestack_schema::procedures::review_post::Authorized,
-        ) -> Result<cratestack_schema::procedures::review_post::Output, cratestack::CoolError>
+        ) -> Result<cratestack_schema::procedures::review_post::Output, cratestack::CratestackError>
         {
             Ok(cratestack_schema::AdvancedPost {
                 id: args.args.postId,
@@ -196,7 +199,7 @@ mod advanced_policy_schema {
     #[tokio::test]
     async fn advanced_read_policy_renders_and_relation_auth_checks() {
         let db = advanced_test_db();
-        let ctx = CoolContext::authenticated([
+        let ctx = CratestackContext::authenticated([
             ("id".to_owned(), Value::Int(42)),
             ("role".to_owned(), Value::String("admin".to_owned())),
             (
@@ -227,7 +230,7 @@ mod advanced_policy_schema {
                     publishNow: true,
                 },
             },
-            &CoolContext::authenticated([
+            &CratestackContext::authenticated([
                 ("id".to_owned(), Value::Int(1)),
                 ("role".to_owned(), Value::String("admin".to_owned())),
             ]),
@@ -241,7 +244,7 @@ mod advanced_policy_schema {
                     publishNow: false,
                 },
             },
-            &CoolContext::authenticated([
+            &CratestackContext::authenticated([
                 ("id".to_owned(), Value::Int(1)),
                 ("role".to_owned(), Value::String("admin".to_owned())),
             ]),
@@ -255,14 +258,14 @@ mod advanced_policy_schema {
                     publishNow: true,
                 },
             },
-            &CoolContext::authenticated([
+            &CratestackContext::authenticated([
                 ("id".to_owned(), Value::Int(1)),
                 ("role".to_owned(), Value::String("admin".to_owned())),
             ]),
         );
         assert!(matches!(
             deny_override,
-            Err(cratestack::CoolError::Forbidden(_))
+            Err(cratestack::CratestackError::Forbidden(_))
         ));
 
         let invoked = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -274,19 +277,19 @@ mod advanced_policy_schema {
                     publishNow: true,
                 },
             },
-            &CoolContext::authenticated([
+            &CratestackContext::authenticated([
                 ("id".to_owned(), Value::Int(1)),
                 ("role".to_owned(), Value::String("admin".to_owned())),
             ]),
             move || async move {
                 invoked_flag.store(true, std::sync::atomic::Ordering::SeqCst);
-                Ok::<_, cratestack::CoolError>(())
+                Ok::<_, cratestack::CratestackError>(())
             },
         )
         .await;
         assert!(matches!(
             invoke_result,
-            Err(cratestack::CoolError::Forbidden(_))
+            Err(cratestack::CratestackError::Forbidden(_))
         ));
         assert!(!invoked.load(std::sync::atomic::Ordering::SeqCst));
 
@@ -300,7 +303,7 @@ mod advanced_policy_schema {
                     mirrorEmail: "owner@example.com".to_owned(),
                 },
             },
-            &CoolContext::anonymous(),
+            &CratestackContext::anonymous(),
         );
         assert!(anonymous_dry_run.is_ok());
 
@@ -314,7 +317,7 @@ mod advanced_policy_schema {
                     mirrorEmail: "owner@example.com".to_owned(),
                 },
             },
-            &CoolContext::authenticated([
+            &CratestackContext::authenticated([
                 ("id".to_owned(), Value::Int(1)),
                 ("role".to_owned(), Value::String("admin".to_owned())),
                 (
@@ -335,7 +338,7 @@ mod advanced_policy_schema {
                     mirrorEmail: "other@example.com".to_owned(),
                 },
             },
-            &CoolContext::authenticated([
+            &CratestackContext::authenticated([
                 ("id".to_owned(), Value::Int(1)),
                 ("role".to_owned(), Value::String("admin".to_owned())),
                 (
@@ -346,7 +349,7 @@ mod advanced_policy_schema {
         );
         assert!(matches!(
             mismatched_input_fields,
-            Err(cratestack::CoolError::Forbidden(_))
+            Err(cratestack::CratestackError::Forbidden(_))
         ));
 
         let mismatched_auth = cratestack_schema::procedures::review_post::authorize(
@@ -359,7 +362,7 @@ mod advanced_policy_schema {
                     mirrorEmail: "owner@example.com".to_owned(),
                 },
             },
-            &CoolContext::authenticated([
+            &CratestackContext::authenticated([
                 ("id".to_owned(), Value::Int(1)),
                 ("role".to_owned(), Value::String("admin".to_owned())),
                 (
@@ -370,7 +373,7 @@ mod advanced_policy_schema {
         );
         assert!(matches!(
             mismatched_auth,
-            Err(cratestack::CoolError::Forbidden(_))
+            Err(cratestack::CratestackError::Forbidden(_))
         ));
     }
 
@@ -541,7 +544,7 @@ mod auth_engine_schema {
                     postId: "post_1".to_owned(),
                 },
             },
-            &CoolContext::authenticated([
+            &CratestackContext::authenticated([
                 ("role".to_owned(), Value::String("admin".to_owned())),
                 ("tenant".to_owned(), tenant_scope("tenant_1")),
             ]),
@@ -554,14 +557,14 @@ mod auth_engine_schema {
                     postId: "post_1".to_owned(),
                 },
             },
-            &CoolContext::authenticated([
+            &CratestackContext::authenticated([
                 ("role".to_owned(), Value::String("member".to_owned())),
                 ("tenant".to_owned(), tenant_scope("tenant_1")),
             ]),
         );
         assert!(matches!(
             denied_role,
-            Err(cratestack::CoolError::Forbidden(_))
+            Err(cratestack::CratestackError::Forbidden(_))
         ));
 
         let denied_tenant = cratestack_schema::procedures::admin_pulse::authorize(
@@ -570,14 +573,14 @@ mod auth_engine_schema {
                     postId: "post_1".to_owned(),
                 },
             },
-            &CoolContext::authenticated([
+            &CratestackContext::authenticated([
                 ("role".to_owned(), Value::String("admin".to_owned())),
                 ("tenant".to_owned(), tenant_scope("tenant_2")),
             ]),
         );
         assert!(matches!(
             denied_tenant,
-            Err(cratestack::CoolError::Forbidden(_))
+            Err(cratestack::CratestackError::Forbidden(_))
         ));
     }
 }
@@ -589,10 +592,10 @@ impl cratestack_schema::procedures::ProcedureRegistry for TestProcedures {
     async fn get_feed(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::get_feed::Args,
         _authorized: cratestack_schema::procedures::get_feed::Authorized,
-    ) -> Result<cratestack_schema::procedures::get_feed::Output, cratestack::CoolError> {
+    ) -> Result<cratestack_schema::procedures::get_feed::Output, cratestack::CratestackError> {
         Ok(vec![cratestack_schema::Post {
             id: args.limit.unwrap_or(1),
             title: "Feed".to_owned(),
@@ -605,10 +608,11 @@ impl cratestack_schema::procedures::ProcedureRegistry for TestProcedures {
     async fn get_feed_page(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::get_feed_page::Args,
         _authorized: cratestack_schema::procedures::get_feed_page::Authorized,
-    ) -> Result<cratestack_schema::procedures::get_feed_page::Output, cratestack::CoolError> {
+    ) -> Result<cratestack_schema::procedures::get_feed_page::Output, cratestack::CratestackError>
+    {
         let limit = args.limit.unwrap_or(1);
         let offset = args.offset.unwrap_or(0);
         Ok(cratestack::Page::new(
@@ -632,11 +636,14 @@ impl cratestack_schema::procedures::ProcedureRegistry for TestProcedures {
     fn publish_post(
         &self,
         _db: &cratestack_schema::Cratestack,
-        ctx: &CoolContext,
+        ctx: &CratestackContext,
         args: cratestack_schema::procedures::publish_post::Args,
         _authorized: cratestack_schema::procedures::publish_post::Authorized,
     ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::publish_post::Output, cratestack::CoolError>,
+        Output = Result<
+            cratestack_schema::procedures::publish_post::Output,
+            cratestack::CratestackError,
+        >,
     > + Send {
         let author_id = match ctx.auth_field("id") {
             Some(Value::Int(id)) => *id,
@@ -826,27 +833,27 @@ impl cratestack::tracing::field::Visit for TraceFieldVisitor {
 
 fn resolve_test_context(
     headers: &cratestack::axum::http::HeaderMap,
-) -> Result<CoolContext, cratestack::CoolError> {
+) -> Result<CratestackContext, cratestack::CratestackError> {
     let mut fields = Vec::new();
     if let Some(role) = headers.get("x-role") {
         let role = role
             .to_str()
-            .map_err(|error| cratestack::CoolError::BadRequest(error.to_string()))?;
+            .map_err(|error| cratestack::CratestackError::BadRequest(error.to_string()))?;
         fields.push(("role".to_owned(), Value::String(role.to_owned())));
     }
     if let Some(id) = headers.get("x-auth-id") {
         let id = id
             .to_str()
-            .map_err(|error| cratestack::CoolError::BadRequest(error.to_string()))?
+            .map_err(|error| cratestack::CratestackError::BadRequest(error.to_string()))?
             .parse::<i64>()
-            .map_err(|error| cratestack::CoolError::BadRequest(error.to_string()))?;
+            .map_err(|error| cratestack::CratestackError::BadRequest(error.to_string()))?;
         fields.push(("id".to_owned(), Value::Int(id)));
     }
 
     if fields.is_empty() {
-        Ok(CoolContext::anonymous())
+        Ok(CratestackContext::anonymous())
     } else {
-        Ok(CoolContext::authenticated(fields))
+        Ok(CratestackContext::authenticated(fields))
     }
 }
 
@@ -854,12 +861,12 @@ fn resolve_test_context(
 struct TestAuthProvider;
 
 impl AuthProvider for TestAuthProvider {
-    type Error = cratestack::CoolError;
+    type Error = cratestack::CratestackError;
 
     fn authenticate(
         &self,
         request: &RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
+    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
         core::future::ready(resolve_test_context(request.headers))
     }
 }
@@ -1319,7 +1326,7 @@ async fn read_policies_scope_find_many_for_anonymous_context() {
         .connect_lazy("postgres://cratestack:cratestack@localhost/cratestack")
         .expect("lazy pool should parse");
     let cool = cratestack_schema::Cratestack::builder(pool).build();
-    let ctx = CoolContext::anonymous();
+    let ctx = CratestackContext::anonymous();
 
     let sql = cool
         .post()
@@ -1344,7 +1351,7 @@ async fn read_policies_scope_find_many_for_authenticated_context() {
         .connect_lazy("postgres://cratestack:cratestack@localhost/cratestack")
         .expect("lazy pool should parse");
     let cool = cratestack_schema::Cratestack::builder(pool).build();
-    let ctx = CoolContext::authenticated([("id".to_owned(), Value::Int(42))]);
+    let ctx = CratestackContext::authenticated([("id".to_owned(), Value::Int(42))]);
 
     let sql = cool.post().find_many().preview_scoped_sql(&ctx);
 
@@ -1369,7 +1376,7 @@ async fn read_policies_default_deny_without_matching_context() {
         .connect_lazy("postgres://cratestack:cratestack@localhost/cratestack")
         .expect("lazy pool should parse");
     let cool = cratestack_schema::Cratestack::builder(pool).build();
-    let ctx = CoolContext::anonymous();
+    let ctx = CratestackContext::anonymous();
 
     let sql = cool.user().find_many().preview_scoped_sql(&ctx);
 
@@ -1388,7 +1395,7 @@ async fn read_policies_scope_find_unique() {
         .connect_lazy("postgres://cratestack:cratestack@localhost/cratestack")
         .expect("lazy pool should parse");
     let cool = cratestack_schema::Cratestack::builder(pool).build();
-    let ctx = CoolContext::authenticated([("id".to_owned(), Value::Int(9))]);
+    let ctx = CratestackContext::authenticated([("id".to_owned(), Value::Int(9))]);
 
     let sql = cool.post().find_unique(7_i64).preview_scoped_sql(&ctx);
 
@@ -1548,11 +1555,12 @@ fn generated_field_modules_are_available() {
 
 #[tokio::test]
 async fn procedure_policy_allows_admin_invocation() {
-    let ctx = CoolContext::authenticated([("role".to_owned(), Value::String("admin".to_owned()))]);
+    let ctx =
+        CratestackContext::authenticated([("role".to_owned(), Value::String("admin".to_owned()))]);
     let input = cratestack_schema::PublishPostInput { postId: 8 };
 
     let value = cratestack_schema::procedures::publish_post::invoke(&input, &ctx, || async {
-        Ok::<_, cratestack::CoolError>(input.postId)
+        Ok::<_, cratestack::CratestackError>(input.postId)
     })
     .await
     .expect("admin invocation should be allowed");
@@ -1562,21 +1570,22 @@ async fn procedure_policy_allows_admin_invocation() {
 
 #[tokio::test]
 async fn procedure_policy_denies_non_admin_invocation() {
-    let ctx = CoolContext::authenticated([("role".to_owned(), Value::String("member".to_owned()))]);
+    let ctx =
+        CratestackContext::authenticated([("role".to_owned(), Value::String("member".to_owned()))]);
     let input = cratestack_schema::PublishPostInput { postId: 8 };
 
     let error = cratestack_schema::procedures::publish_post::invoke(&input, &ctx, || async {
-        Ok::<_, cratestack::CoolError>(input.postId)
+        Ok::<_, cratestack::CratestackError>(input.postId)
     })
     .await
     .expect_err("non-admin invocation should be denied");
 
-    assert!(matches!(error, cratestack::CoolError::Forbidden(_)));
+    assert!(matches!(error, cratestack::CratestackError::Forbidden(_)));
 }
 
 #[tokio::test]
 async fn procedure_policy_allows_authenticated_feed_invocation() {
-    let ctx = CoolContext::authenticated([("id".to_owned(), Value::Int(1))]);
+    let ctx = CratestackContext::authenticated([("id".to_owned(), Value::Int(1))]);
 
     cratestack_schema::procedures::get_feed::authorize(&(), &ctx)
         .expect("authenticated feed access should be allowed");
@@ -1584,12 +1593,12 @@ async fn procedure_policy_allows_authenticated_feed_invocation() {
 
 #[tokio::test]
 async fn procedure_policy_denies_anonymous_feed_invocation() {
-    let ctx = CoolContext::anonymous();
+    let ctx = CratestackContext::anonymous();
 
     let error = cratestack_schema::procedures::get_feed::authorize(&(), &ctx)
         .expect_err("anonymous feed access should be denied");
 
-    assert!(matches!(error, cratestack::CoolError::Forbidden(_)));
+    assert!(matches!(error, cratestack::CratestackError::Forbidden(_)));
 }
 
 #[tokio::test]
@@ -1817,8 +1826,8 @@ mod custom_fields_schema {
         fn resolve_image_thumbnail_url(
             &self,
             source: &cratestack_schema::Image,
-            _ctx: &CoolContext,
-        ) -> impl core::future::Future<Output = Result<String, cratestack::CoolError>> + Send
+            _ctx: &CratestackContext,
+        ) -> impl core::future::Future<Output = Result<String, cratestack::CratestackError>> + Send
         {
             let storage_key = source.storageKey.clone();
             async move { Ok(format!("https://imgproxy.example/{storage_key}")) }
@@ -1845,7 +1854,7 @@ mod custom_fields_schema {
         };
 
         let resolved = resolver
-            .resolve_image_thumbnail_url(&image, &CoolContext::anonymous())
+            .resolve_image_thumbnail_url(&image, &CratestackContext::anonymous())
             .await
             .expect("custom field should resolve");
 
@@ -2525,20 +2534,22 @@ mod transport_rpc_schema {
         async fn ping(
             &self,
             _db: &cratestack_schema::Cratestack,
-            _ctx: &CoolContext,
+            _ctx: &CratestackContext,
             args: cratestack_schema::procedures::ping::Args,
             _authorized: cratestack_schema::procedures::ping::Authorized,
-        ) -> Result<cratestack_schema::procedures::ping::Output, cratestack::CoolError> {
+        ) -> Result<cratestack_schema::procedures::ping::Output, cratestack::CratestackError>
+        {
             Ok(args.args)
         }
 
         async fn bump(
             &self,
             _db: &cratestack_schema::Cratestack,
-            _ctx: &CoolContext,
+            _ctx: &CratestackContext,
             args: cratestack_schema::procedures::bump::Args,
             _authorized: cratestack_schema::procedures::bump::Authorized,
-        ) -> Result<cratestack_schema::procedures::bump::Output, cratestack::CoolError> {
+        ) -> Result<cratestack_schema::procedures::bump::Output, cratestack::CratestackError>
+        {
             Ok(cratestack_schema::PingArgs {
                 nonce: format!("{}!", args.args.nonce),
             })
@@ -2547,10 +2558,10 @@ mod transport_rpc_schema {
         async fn many_pings(
             &self,
             _db: &cratestack_schema::Cratestack,
-            _ctx: &CoolContext,
+            _ctx: &CratestackContext,
             args: cratestack_schema::procedures::many_pings::Args,
             _authorized: cratestack_schema::procedures::many_pings::Authorized,
-        ) -> Result<cratestack_schema::procedures::many_pings::Output, cratestack::CoolError>
+        ) -> Result<cratestack_schema::procedures::many_pings::Output, cratestack::CratestackError>
         {
             let base = args.args.nonce;
             Ok(vec![
@@ -2575,19 +2586,20 @@ mod transport_rpc_schema {
     struct RpcTestAuthProvider;
 
     impl AuthProvider for RpcTestAuthProvider {
-        type Error = cratestack::CoolError;
+        type Error = cratestack::CratestackError;
 
         fn authenticate(
             &self,
             request: &RequestContext<'_>,
-        ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
+        ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send
+        {
             let ctx = request
                 .headers
                 .get("x-auth-id")
                 .and_then(|value| value.to_str().ok())
                 .and_then(|raw| raw.parse::<i64>().ok())
-                .map(|id| CoolContext::authenticated([("id".to_owned(), Value::Int(id))]))
-                .unwrap_or_else(CoolContext::anonymous);
+                .map(|id| CratestackContext::authenticated([("id".to_owned(), Value::Int(id))]))
+                .unwrap_or_else(CratestackContext::anonymous);
             core::future::ready(Ok(ctx))
         }
     }
@@ -2928,7 +2940,7 @@ mod transport_rpc_schema {
         // Decode failure inside the dispatcher (the early `return
         // rpc_dispatch_error(...)` path inside the get arm). Body must
         // be RpcErrorBody-shaped with `invalid_argument` code, not the
-        // legacy CoolErrorResponse `BAD_REQUEST` / `VALIDATION_ERROR`.
+        // legacy CratestackErrorResponse `BAD_REQUEST` / `VALIDATION_ERROR`.
         let router = rpc_test_router(CborCodec);
         let body = cbor(&serde_json::json!({"id": "not-a-number"}));
         let response = router
@@ -2970,7 +2982,7 @@ mod transport_rpc_schema {
     async fn rpc_unary_handler_error_is_post_processed_to_rpc_error_body() {
         // The mutation `bump` is gated by `@allow(auth() != null)`.
         // Send anonymous (no x-auth-id header) — the handler emits a
-        // CoolError::Forbidden, encoded as CoolErrorResponse with code
+        // CratestackError::Forbidden, encoded as CratestackErrorResponse with code
         // `FORBIDDEN`. The dispatcher's post-processor must translate
         // that to RpcErrorBody { code: "permission_denied", ... }.
         let router = rpc_test_router(CborCodec);

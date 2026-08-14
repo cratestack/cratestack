@@ -17,7 +17,7 @@ use async_trait::async_trait;
 use axum::body::{Body, Bytes};
 use axum::extract::Request;
 use axum::response::Response;
-use cratestack_core::CoolError;
+use cratestack_core::CratestackError;
 use futures_util::stream;
 use http::StatusCode;
 use tower::{Layer, Service};
@@ -46,7 +46,7 @@ impl IdempotencyStore for InMemoryIdempotencyStore {
         key: &str,
         request_hash: [u8; 32],
         _expires_at: SystemTime,
-    ) -> Result<ReservationOutcome, CoolError> {
+    ) -> Result<ReservationOutcome, CratestackError> {
         let mut entries = self.entries.lock().unwrap();
         let map_key = (principal.to_owned(), key.to_owned());
         match entries.get(&map_key) {
@@ -78,7 +78,7 @@ impl IdempotencyStore for InMemoryIdempotencyStore {
         status: u16,
         headers: &[u8],
         body: &[u8],
-    ) -> Result<(), CoolError> {
+    ) -> Result<(), CratestackError> {
         let mut entries = self.entries.lock().unwrap();
         if let Some(entry) = entries.get_mut(&(principal.to_owned(), key.to_owned()))
             && entry.token == token
@@ -102,7 +102,7 @@ impl IdempotencyStore for InMemoryIdempotencyStore {
         principal: &str,
         key: &str,
         token: uuid::Uuid,
-    ) -> Result<(), CoolError> {
+    ) -> Result<(), CratestackError> {
         let mut entries = self.entries.lock().unwrap();
         let map_key = (principal.to_owned(), key.to_owned());
         if entries

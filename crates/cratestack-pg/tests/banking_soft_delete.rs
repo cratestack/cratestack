@@ -7,7 +7,7 @@
 
 use cratestack::include_server_schema;
 use cratestack::sqlx::{Row, query};
-use cratestack::{CoolContext, Value};
+use cratestack::{CratestackContext, Value};
 
 include_server_schema!("tests/fixtures/banking_soft_delete.cstack", db = Postgres);
 
@@ -33,8 +33,8 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     .expect("create customer");
 }
 
-fn ctx() -> CoolContext {
-    CoolContext::authenticated([("id".to_owned(), Value::Int(1))])
+fn ctx() -> CratestackContext {
+    CratestackContext::authenticated([("id".to_owned(), Value::Int(1))])
 }
 
 #[tokio::test]

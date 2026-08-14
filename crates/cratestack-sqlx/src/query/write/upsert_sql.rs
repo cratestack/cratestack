@@ -2,7 +2,7 @@
 //! policy probe, and the final `INSERT ... ON CONFLICT DO UPDATE
 //! ... RETURNING`.
 
-use cratestack_core::{CoolContext, CoolError};
+use cratestack_core::{CratestackContext, CratestackError};
 
 use crate::query::support::{classify_unique_violation, push_action_policy_query, push_bind_value};
 use crate::{
@@ -17,7 +17,7 @@ pub(super) async fn select_for_update_by_conflict_target<'e, E, M, PK>(
     executor: E,
     descriptor: &'static ModelDescriptor<M, PK>,
     conflict: &[(&'static str, SqlValue)],
-) -> Result<Option<M>, CoolError>
+) -> Result<Option<M>, CratestackError>
 where
     E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
@@ -55,8 +55,8 @@ pub(super) async fn row_passes_update_policy<M, PK>(
     policy_pool: &sqlx::PgPool,
     descriptor: &'static ModelDescriptor<M, PK>,
     conflict: &[(&'static str, SqlValue)],
-    ctx: &CoolContext,
-) -> Result<bool, CoolError> {
+    ctx: &CratestackContext,
+) -> Result<bool, CratestackError> {
     let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT 1 FROM ");
     query.push(descriptor.table_name);
     query.push(" WHERE ");
@@ -93,7 +93,7 @@ pub(super) async fn upsert_returning_record<'e, E, M, PK>(
     descriptor: &'static ModelDescriptor<M, PK>,
     insert_values: &[SqlColumnValue],
     conflict_target: ConflictTarget,
-) -> Result<M, CoolError>
+) -> Result<M, CratestackError>
 where
     E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,

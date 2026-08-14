@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
 
-use crate::error::CoolError;
+use crate::error::CratestackError;
 
 /// Resolves signing keys by kid (key id). Banks running multi-tenant
 /// or rotating keysets implement this so the envelope code never has
@@ -17,7 +17,7 @@ use crate::error::CoolError;
 pub trait KeyProvider: Send + Sync + 'static {
     /// Return the raw key bytes for the given `kid`. For HMAC this is
     /// the symmetric secret. Error if the key is unknown.
-    async fn resolve_signing_key(&self, kid: &str) -> Result<Vec<u8>, CoolError>;
+    async fn resolve_signing_key(&self, kid: &str) -> Result<Vec<u8>, CratestackError>;
 }
 
 /// In-memory [`KeyProvider`] for tests and single-tenant deployments.
@@ -41,11 +41,11 @@ impl StaticKeyProvider {
 
 #[async_trait::async_trait]
 impl KeyProvider for StaticKeyProvider {
-    async fn resolve_signing_key(&self, kid: &str) -> Result<Vec<u8>, CoolError> {
+    async fn resolve_signing_key(&self, kid: &str) -> Result<Vec<u8>, CratestackError> {
         self.keys
             .get(kid)
             .cloned()
-            .ok_or_else(|| CoolError::Unauthorized("unknown signing key".to_owned()))
+            .ok_or_else(|| CratestackError::Unauthorized("unknown signing key".to_owned()))
     }
 }
 
@@ -63,7 +63,7 @@ pub trait NonceStore: Send + Sync + 'static {
         &self,
         nonce: &str,
         expires_at: chrono::DateTime<chrono::Utc>,
-    ) -> Result<bool, CoolError>;
+    ) -> Result<bool, CratestackError>;
 }
 
 /// In-memory nonce store. One mutex; the working set is bounded by
@@ -87,11 +87,11 @@ impl NonceStore for InMemoryNonceStore {
         &self,
         nonce: &str,
         expires_at: chrono::DateTime<chrono::Utc>,
-    ) -> Result<bool, CoolError> {
+    ) -> Result<bool, CratestackError> {
         let mut seen = self
             .seen
             .write()
-            .map_err(|_| CoolError::Internal("nonce store poisoned".to_owned()))?;
+            .map_err(|_| CratestackError::Internal("nonce store poisoned".to_owned()))?;
         let now = chrono::Utc::now();
         seen.retain(|_, exp| *exp > now);
         if seen.contains_key(nonce) {

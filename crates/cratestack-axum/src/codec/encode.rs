@@ -1,14 +1,14 @@
 use axum::body::Body;
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::Response;
-use cratestack_core::{CoolCodec, CoolError};
+use cratestack_core::{CratestackCodec, CratestackError};
 use serde::{Deserialize, Serialize};
 
 use crate::transport::fallback_error_response;
 
-pub fn decode_codec_request<C, T>(codec: &C, body: &[u8]) -> Result<T, CoolError>
+pub fn decode_codec_request<C, T>(codec: &C, body: &[u8]) -> Result<T, CratestackError>
 where
-    C: CoolCodec,
+    C: CratestackCodec,
     T: for<'de> Deserialize<'de>,
 {
     codec.decode(body)
@@ -18,9 +18,9 @@ pub fn encode_codec_response<C, T>(
     codec: &C,
     status: StatusCode,
     value: &T,
-) -> Result<Response, CoolError>
+) -> Result<Response, CratestackError>
 where
-    C: CoolCodec,
+    C: CratestackCodec,
     T: Serialize + ?Sized,
 {
     let bytes = codec.encode(value)?;
@@ -33,9 +33,9 @@ where
     Ok(response)
 }
 
-pub fn encode_codec_result<C, T>(codec: &C, result: Result<T, CoolError>) -> Response
+pub fn encode_codec_result<C, T>(codec: &C, result: Result<T, CratestackError>) -> Response
 where
-    C: CoolCodec,
+    C: CratestackCodec,
     T: Serialize,
 {
     encode_codec_result_with_status(codec, StatusCode::OK, result)
@@ -44,10 +44,10 @@ where
 pub fn encode_codec_result_with_status<C, T>(
     codec: &C,
     success_status: StatusCode,
-    result: Result<T, CoolError>,
+    result: Result<T, CratestackError>,
 ) -> Response
 where
-    C: CoolCodec,
+    C: CratestackCodec,
     T: Serialize,
 {
     match result {

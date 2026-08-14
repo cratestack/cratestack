@@ -9,7 +9,7 @@
 use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack::include_server_schema;
-use cratestack::{AuthProvider, CoolCodec, CoolContext, RequestContext, Value};
+use cratestack::{AuthProvider, CratestackCodec, CratestackContext, RequestContext, Value};
 use cratestack_codec_json::JsonCodec;
 use tower::util::ServiceExt;
 
@@ -23,13 +23,13 @@ use support::pg;
 struct AlwaysAuthProvider;
 
 impl AuthProvider for AlwaysAuthProvider {
-    type Error = cratestack::CoolError;
+    type Error = cratestack::CratestackError;
 
     fn authenticate(
         &self,
         _request: &RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
-        core::future::ready(Ok(CoolContext::authenticated([(
+    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
+        core::future::ready(Ok(CratestackContext::authenticated([(
             "id".to_owned(),
             Value::Int(1),
         )])))
@@ -78,7 +78,7 @@ async fn list_route_rejects_limit_above_max_list_limit() {
     let body = to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("body should read");
-    let error: cratestack::CoolErrorResponse = JsonCodec
+    let error: cratestack::CratestackErrorResponse = JsonCodec
         .decode(&body)
         .expect("error envelope should decode");
     assert_eq!(error.code, "BAD_REQUEST");

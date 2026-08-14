@@ -20,7 +20,7 @@ mod versioned_schema {
 }
 
 use cratestack_client_rust::{CborCodec, ClientConfig, CratestackClient};
-use cratestack_core::CoolCodec;
+use cratestack_core::CratestackCodec;
 use versioned_schema::cratestack_schema::{Ledger, UpdateLedgerInput};
 
 #[tokio::test]

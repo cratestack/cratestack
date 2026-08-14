@@ -1,11 +1,11 @@
 //! `cratestack-core` — backend-agnostic primitives shared by every
 //! crate in the framework: schema IR, audit + envelope primitives,
-//! the `CoolError` / `CoolContext` / `Value` types, batch envelopes,
+//! the `CratestackError` / `CratestackContext` / `Value` types, batch envelopes,
 //! RPC wire shapes, and field-level validators.
 //!
 //! The public surface is intentionally flat at the crate root: every
 //! type re-exports from a focused submodule below, so callers can
-//! keep writing `cratestack_core::CoolError` while the implementation
+//! keep writing `cratestack_core::CratestackError` while the implementation
 //! lives in `cratestack_core::error`. New code can opt into the
 //! submodule paths directly.
 
@@ -35,7 +35,7 @@ pub mod validators;
 pub mod value;
 
 /// Body bytes carried through the transport layer.
-pub type CoolBody = bytes::Bytes;
+pub type CratestackBody = bytes::Bytes;
 
 // Backwards-compatible re-exports so external crates keep using
 // `cratestack_core::Type` rather than `cratestack_core::module::Type`.
@@ -48,10 +48,10 @@ pub use batch::{
     BATCH_MAX_ITEMS, BatchItemError, BatchItemResult, BatchItemStatus, BatchRequest, BatchResponse,
     BatchSummary, find_duplicate_position,
 };
-pub use codec::{CoolCodec, CoolEnvelope, NoEnvelope};
+pub use codec::{CratestackCodec, CratestackEnvelope, NoEnvelope};
 pub use context::{
-    AuthProvider, CoolAuthIdentity, CoolContext, PrincipalContext, PrincipalFacet, RequestContext,
-    SystemContext,
+    AuthProvider, CratestackAuthIdentity, CratestackContext, PrincipalContext, PrincipalFacet,
+    RequestContext, SystemContext,
 };
 // `Decimal` only exists when EXACTLY ONE decimal backend feature is
 // active; `RustDecimal`/`BigDecimal` each only exist under their own
@@ -69,9 +69,9 @@ pub use decimal::RustDecimal;
 pub use envelope::{
     HmacEnvelope, InMemoryNonceStore, KeyProvider, NonceStore, SealedEnvelope, StaticKeyProvider,
 };
-pub use error::{CoolError, CoolErrorResponse, DbErrorInfo, parse_cuid};
+pub use error::{CratestackError, CratestackErrorResponse, DbErrorInfo, parse_cuid};
 pub use events::{
-    CoolEventBus, CoolEventEnvelope, CoolEventFuture, ModelEvent, ModelEventKind,
+    CratestackEventBus, CratestackEventEnvelope, CratestackEventFuture, ModelEvent, ModelEventKind,
     SubscriptionGuard, SubscriptionHandle, event_topic, parse_emit_attribute,
 };
 pub use find_many::FieldFilterInput;

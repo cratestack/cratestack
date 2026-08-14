@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 
 use cratestack::include_server_schema;
 use cratestack::sqlx::query;
-use cratestack::{CoolContext, Json, Value};
+use cratestack::{CratestackContext, Json, Value};
 use support::pg;
 
 include_server_schema!(
@@ -48,8 +48,9 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     .expect("create model_runs");
 }
 
-fn operator() -> CoolContext {
-    CoolContext::authenticated([("id".to_owned(), Value::Int(1))]).with_request_id("tier5-001")
+fn operator() -> CratestackContext {
+    CratestackContext::authenticated([("id".to_owned(), Value::Int(1))])
+        .with_request_id("tier5-001")
 }
 
 async fn seed(pool: &cratestack::sqlx::PgPool) {

@@ -16,7 +16,7 @@ mod support;
 
 use cratestack::include_server_schema;
 use cratestack::sqlx::{Row, query};
-use cratestack::{ConflictTarget, CoolContext, Value};
+use cratestack::{ConflictTarget, CratestackContext, Value};
 use support::pg;
 
 include_server_schema!(
@@ -47,8 +47,9 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     .expect("create pairs");
 }
 
-fn operator() -> CoolContext {
-    CoolContext::authenticated([("id".to_owned(), Value::Int(1))]).with_request_id("tier2-001")
+fn operator() -> CratestackContext {
+    CratestackContext::authenticated([("id".to_owned(), Value::Int(1))])
+        .with_request_id("tier2-001")
 }
 
 // ───── #8 as_detail() / as_list() ────────────────────────────────────────────
@@ -72,7 +73,7 @@ async fn find_unique_default_routes_through_detail_policy() {
     // Schema says: @@allow("detail", auth() == null) — anonymous detail
     // lookups are allowed. The bug fix routes find_unique through the
     // detail slot by default so this returns Some(article).
-    let anon = CoolContext::anonymous();
+    let anon = CratestackContext::anonymous();
     let found = cool
         .article()
         .bind(anon)
@@ -99,7 +100,7 @@ async fn find_unique_as_list_falls_back_to_list_policy() {
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
     // List policy is `auth() != null` — anonymous as_list() lookup
     // must return None (no row matches the policy clause).
-    let anon = CoolContext::anonymous();
+    let anon = CratestackContext::anonymous();
     let denied = cool
         .article()
         .bind(anon)
@@ -111,7 +112,7 @@ async fn find_unique_as_list_falls_back_to_list_policy() {
     assert!(denied.is_none(), "as_list() must apply list policy");
 
     // The same row IS visible under the detail policy.
-    let anon2 = CoolContext::anonymous();
+    let anon2 = CratestackContext::anonymous();
     let allowed = cool
         .article()
         .bind(anon2)
@@ -269,11 +270,11 @@ async fn pk_default_upsert_unchanged_after_composite_refactor() {
 // ───── #267 regression: SQLSTATE/constraint must survive create/update ──────
 //
 // Every generated write query used to collapse `sqlx::Error` into
-// `CoolError::Database(error.to_string())`, discarding the driver's
+// `CratestackError::Database(error.to_string())`, discarding the driver's
 // SQLSTATE and constraint name before the error reached application
 // code. These hit `pairs`' real `UNIQUE(scope, key)` constraint through
 // the ordinary `.create()` / `.update()` delegates (not a hand-built
-// `CoolError`), so they only pass once `cool_error_from_sqlx` is
+// `CratestackError`), so they only pass once `cool_error_from_sqlx` is
 // actually wired into `create_exec.rs` / `update_exec.rs`.
 
 #[tokio::test]

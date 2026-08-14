@@ -38,7 +38,7 @@
 
 use cratestack::include_server_schema;
 use cratestack::sqlx::PgPool;
-use cratestack::{AuthProvider, CoolContext, CoolError, RequestContext, Value};
+use cratestack::{AuthProvider, CratestackContext, CratestackError, RequestContext, Value};
 use cratestack_codec_cbor::CborCodec;
 
 include_server_schema!("schemas/widgets.cstack", db = Postgres);
@@ -55,11 +55,11 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     fn echo_widget_name(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::echo_widget_name::Args,
         _authorized: cratestack_schema::procedures::echo_widget_name::Authorized,
     ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::echo_widget_name::Output, CoolError>,
+        Output = Result<cratestack_schema::procedures::echo_widget_name::Output, CratestackError>,
     > + Send {
         async move { Ok(format!("echo: {}", args.name)) }
     }
@@ -67,11 +67,14 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     fn widget_name_samples(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         _args: cratestack_schema::procedures::widget_name_samples::Args,
         _authorized: cratestack_schema::procedures::widget_name_samples::Authorized,
     ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::widget_name_samples::Output, CoolError>,
+        Output = Result<
+            cratestack_schema::procedures::widget_name_samples::Output,
+            CratestackError,
+        >,
     > + Send {
         async move {
             Ok(vec![
@@ -91,20 +94,20 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
 struct HeaderAuthProvider;
 
 impl AuthProvider for HeaderAuthProvider {
-    type Error = CoolError;
+    type Error = CratestackError;
 
     fn authenticate(
         &self,
         request: &RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
+    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
         let id = request
             .headers
             .get("x-auth-id")
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.parse::<i64>().ok());
         core::future::ready(Ok(match id {
-            Some(id) => CoolContext::authenticated([("id".to_owned(), Value::Int(id))]),
-            None => CoolContext::anonymous(),
+            Some(id) => CratestackContext::authenticated([("id".to_owned(), Value::Int(id))]),
+            None => CratestackContext::anonymous(),
         }))
     }
 }

@@ -8,7 +8,7 @@ use cratestack_client_flutter::{
     FlutterRuntimeEnvelope, FlutterRuntimeTransportConfig, FlutterStateStoreConfig,
 };
 use cratestack_codec_cbor::CborCodec;
-use cratestack_core::CoolCodec;
+use cratestack_core::CratestackCodec;
 use serde::{Deserialize, Serialize};
 use url::Url;
 

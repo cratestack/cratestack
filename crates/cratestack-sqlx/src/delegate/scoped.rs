@@ -1,8 +1,8 @@
 //! `ScopedModelDelegate` — context-bound view of a `ModelDelegate`.
 //! Every method here returns a scoped builder that thread its captured
-//! `CoolContext` through to the underlying unbound builder's `.run()`.
+//! `CratestackContext` through to the underlying unbound builder's `.run()`.
 
-use cratestack_core::CoolContext;
+use cratestack_core::CratestackContext;
 
 use crate::{BatchUpdateItem, ModelDescriptor};
 
@@ -21,11 +21,11 @@ use super::scoped_writes::{ScopedCreateRecord, ScopedUpdateRecord};
 #[derive(Debug, Clone)]
 pub struct ScopedModelDelegate<'a, M: 'static, PK: 'static> {
     pub(super) delegate: ModelDelegate<'a, M, PK>,
-    pub(super) ctx: CoolContext,
+    pub(super) ctx: CratestackContext,
 }
 
 impl<'a, M: 'static, PK: 'static> ScopedModelDelegate<'a, M, PK> {
-    pub(super) fn new(delegate: ModelDelegate<'a, M, PK>, ctx: CoolContext) -> Self {
+    pub(super) fn new(delegate: ModelDelegate<'a, M, PK>, ctx: CratestackContext) -> Self {
         Self { delegate, ctx }
     }
 
@@ -33,7 +33,7 @@ impl<'a, M: 'static, PK: 'static> ScopedModelDelegate<'a, M, PK> {
         self.delegate.descriptor()
     }
 
-    pub fn context(&self) -> &CoolContext {
+    pub fn context(&self) -> &CratestackContext {
         &self.ctx
     }
 

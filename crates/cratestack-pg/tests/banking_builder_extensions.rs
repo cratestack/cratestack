@@ -17,7 +17,7 @@ mod support;
 
 use cratestack::include_server_schema;
 use cratestack::sqlx::{Row, query};
-use cratestack::{CoolContext, Value};
+use cratestack::{CratestackContext, Value};
 use support::pg;
 
 include_server_schema!("tests/fixtures/banking_batches.cstack", db = Postgres);
@@ -40,8 +40,8 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     .expect("create batch_rows");
 }
 
-fn operator() -> CoolContext {
-    CoolContext::authenticated([("id".to_owned(), Value::Int(1))])
+fn operator() -> CratestackContext {
+    CratestackContext::authenticated([("id".to_owned(), Value::Int(1))])
         .with_request_id("builder-ext-001")
 }
 

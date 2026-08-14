@@ -1,17 +1,17 @@
 use cratestack_codec_cbor::CborCodec;
 #[cfg(feature = "codec-json")]
 use cratestack_codec_json::JsonCodec;
-use cratestack_core::{CoolCodec, CoolError};
+use cratestack_core::{CratestackCodec, CratestackError};
 use serde::de::DeserializeOwned;
 
 pub(crate) const CBOR_SEQUENCE_CONTENT_TYPE: &str = "application/cbor-seq";
 
-pub trait HttpClientCodec: CoolCodec {
+pub trait HttpClientCodec: CratestackCodec {
     fn accept_header_value(&self) -> &'static str;
 
     fn sequence_accept_header_value(&self) -> &'static str;
 
-    fn decode_response<T>(&self, content_type: &str, body: &[u8]) -> Result<T, CoolError>
+    fn decode_response<T>(&self, content_type: &str, body: &[u8]) -> Result<T, CratestackError>
     where
         T: DeserializeOwned;
 
@@ -19,7 +19,7 @@ pub trait HttpClientCodec: CoolCodec {
         &self,
         content_type: &str,
         body: &[u8],
-    ) -> Result<Vec<T>, CoolError>
+    ) -> Result<Vec<T>, CratestackError>
     where
         T: DeserializeOwned;
 }
@@ -52,7 +52,7 @@ impl HttpClientCodec for CborCodec {
         }
     }
 
-    fn decode_response<T>(&self, content_type: &str, body: &[u8]) -> Result<T, CoolError>
+    fn decode_response<T>(&self, content_type: &str, body: &[u8]) -> Result<T, CratestackError>
     where
         T: DeserializeOwned,
     {
@@ -63,7 +63,7 @@ impl HttpClientCodec for CborCodec {
             if media_type_matches(content_type, JsonCodec::CONTENT_TYPE) {
                 return JsonCodec.decode(body);
             }
-            Err(CoolError::Codec(format!(
+            Err(CratestackError::Codec(format!(
                 "unsupported response Content-Type {content_type}"
             )))
         }
@@ -73,7 +73,7 @@ impl HttpClientCodec for CborCodec {
         &self,
         content_type: &str,
         body: &[u8],
-    ) -> Result<Vec<T>, CoolError>
+    ) -> Result<Vec<T>, CratestackError>
     where
         T: DeserializeOwned,
     {
@@ -86,7 +86,7 @@ impl HttpClientCodec for CborCodec {
             if media_type_matches(content_type, JsonCodec::CONTENT_TYPE) {
                 return JsonCodec.decode(body);
             }
-            Err(CoolError::Codec(format!(
+            Err(CratestackError::Codec(format!(
                 "unsupported response Content-Type {content_type}"
             )))
         }
@@ -103,7 +103,7 @@ impl HttpClientCodec for JsonCodec {
         "application/cbor-seq, application/json, application/cbor"
     }
 
-    fn decode_response<T>(&self, content_type: &str, body: &[u8]) -> Result<T, CoolError>
+    fn decode_response<T>(&self, content_type: &str, body: &[u8]) -> Result<T, CratestackError>
     where
         T: DeserializeOwned,
     {
@@ -112,7 +112,7 @@ impl HttpClientCodec for JsonCodec {
         } else if media_type_matches(content_type, CborCodec::CONTENT_TYPE) {
             CborCodec.decode(body)
         } else {
-            Err(CoolError::Codec(format!(
+            Err(CratestackError::Codec(format!(
                 "unsupported response Content-Type {content_type}"
             )))
         }
@@ -122,7 +122,7 @@ impl HttpClientCodec for JsonCodec {
         &self,
         content_type: &str,
         body: &[u8],
-    ) -> Result<Vec<T>, CoolError>
+    ) -> Result<Vec<T>, CratestackError>
     where
         T: DeserializeOwned,
     {
@@ -133,7 +133,7 @@ impl HttpClientCodec for JsonCodec {
         } else if media_type_matches(content_type, CborCodec::CONTENT_TYPE) {
             CborCodec.decode(body)
         } else {
-            Err(CoolError::Codec(format!(
+            Err(CratestackError::Codec(format!(
                 "unsupported response Content-Type {content_type}"
             )))
         }
@@ -144,7 +144,7 @@ pub(crate) fn media_type_matches(candidate: &str, expected: &str) -> bool {
     candidate.split(';').next().unwrap_or(candidate).trim() == expected
 }
 
-pub(crate) fn decode_cbor_sequence<T>(bytes: &[u8]) -> Result<Vec<T>, CoolError>
+pub(crate) fn decode_cbor_sequence<T>(bytes: &[u8]) -> Result<Vec<T>, CratestackError>
 where
     T: DeserializeOwned,
 {
@@ -153,11 +153,11 @@ where
     while offset < bytes.len() {
         let mut deserializer = minicbor_serde::Deserializer::new(&bytes[offset..]);
         values.push(T::deserialize(&mut deserializer).map_err(|error| {
-            CoolError::Codec(format!("failed to decode CBOR sequence body: {error}"))
+            CratestackError::Codec(format!("failed to decode CBOR sequence body: {error}"))
         })?);
         let consumed = deserializer.decoder().position();
         if consumed == 0 {
-            return Err(CoolError::Codec(
+            return Err(CratestackError::Codec(
                 "failed to decode CBOR sequence body: decoder made no progress".to_owned(),
             ));
         }

@@ -69,7 +69,7 @@
 //! tower-service scaffold `build_service` returns lives in `api_server` —
 //! both split out to stay under this repo's 200-LoC convention.
 //! `arm_support` holds the pieces (the auth/header prelude, the
-//! `CoolError` -> `tonic::Status` mapping) both the CRUD and procedure arm
+//! `CratestackError` -> `tonic::Status` mapping) both the CRUD and procedure arm
 //! builders share.
 
 use cratestack_core::{Field, Model, Schema, TypeArity};

@@ -13,7 +13,7 @@
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use cratestack::CoolCodec;
+use cratestack::CratestackCodec;
 use cratestack_codec_cbor::CborCodec;
 use rpc_streaming_example::{Procedures, build_router_with, schema};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

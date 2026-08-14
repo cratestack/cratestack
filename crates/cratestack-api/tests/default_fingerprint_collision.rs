@@ -18,18 +18,18 @@
 //! # What's actually under test
 //!
 //! The layer sits *outside* the schema's own auth resolution — it reads
-//! the raw HTTP `Authorization` header directly, before `CoolContext` auth
+//! the raw HTTP `Authorization` header directly, before `CratestackContext` auth
 //! ever runs. So a schema whose `AuthProvider` accepts every request
 //! regardless of headers (as below) is exactly the right fixture: it
 //! isolates the layer's own identity derivation from the schema's,
 //! confirming the refusal below is the layer's decision, not the schema's.
 
-use cratestack::CoolCodec;
+use cratestack::CratestackCodec;
 use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::extract::ConnectInfo;
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack::include_server_schema;
-use cratestack::{CoolContext, CoolError};
+use cratestack::{CratestackContext, CratestackError};
 use cratestack_axum::idempotency::{IdempotencyLayer, IdempotencyStore, ReservationOutcome};
 use cratestack_axum::ratelimit::{InMemoryRateLimitStore, RateLimitConfig, RateLimitLayer};
 use cratestack_codec_json::JsonCodec;
@@ -47,11 +47,11 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     fn ping(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::ping::Args,
         _authorized: cratestack_schema::procedures::ping::Authorized,
     ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::ping::Output, CoolError>,
+        Output = Result<cratestack_schema::procedures::ping::Output, CratestackError>,
     > + Send {
         async move {
             Ok(cratestack_schema::PingReply {
@@ -68,13 +68,13 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
 struct AllowAllAuth;
 
 impl cratestack::AuthProvider for AllowAllAuth {
-    type Error = CoolError;
+    type Error = CratestackError;
 
     fn authenticate(
         &self,
         _request: &cratestack::RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
-        core::future::ready(Ok(CoolContext::authenticated([(
+    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
+        core::future::ready(Ok(CratestackContext::authenticated([(
             "id".to_owned(),
             cratestack::Value::Int(1),
         )])))
@@ -213,7 +213,7 @@ impl IdempotencyStore for InMemoryIdempotencyStore {
         key: &str,
         request_hash: [u8; 32],
         _expires_at: SystemTime,
-    ) -> Result<ReservationOutcome, CoolError> {
+    ) -> Result<ReservationOutcome, CratestackError> {
         let mut entries = self.entries.lock().unwrap();
         let map_key = (principal.to_owned(), key.to_owned());
         match entries.get(&map_key) {
@@ -245,7 +245,7 @@ impl IdempotencyStore for InMemoryIdempotencyStore {
         status: u16,
         headers: &[u8],
         body: &[u8],
-    ) -> Result<(), CoolError> {
+    ) -> Result<(), CratestackError> {
         let mut entries = self.entries.lock().unwrap();
         if let Some(entry) = entries.get_mut(&(principal.to_owned(), key.to_owned()))
             && entry.token == token
@@ -269,7 +269,7 @@ impl IdempotencyStore for InMemoryIdempotencyStore {
         principal: &str,
         key: &str,
         token: uuid::Uuid,
-    ) -> Result<(), CoolError> {
+    ) -> Result<(), CratestackError> {
         let mut entries = self.entries.lock().unwrap();
         let map_key = (principal.to_owned(), key.to_owned());
         if entries

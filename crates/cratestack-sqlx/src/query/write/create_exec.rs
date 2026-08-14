@@ -3,7 +3,7 @@
 //! auth-defaults, seeds `@version`, evaluates create policies, then
 //! runs `INSERT ... RETURNING`.
 
-use cratestack_core::{CoolContext, CoolError};
+use cratestack_core::{CratestackContext, CratestackError};
 
 use crate::query::support::{
     apply_create_defaults, classify_unique_violation, evaluate_create_policies, find_column_value,
@@ -16,8 +16,8 @@ pub async fn create_record_with_executor<'e, E, M, PK, I>(
     policy_pool: &sqlx::PgPool,
     descriptor: &'static ModelDescriptor<M, PK>,
     input: I,
-    ctx: &CoolContext,
-) -> Result<M, CoolError>
+    ctx: &CratestackContext,
+) -> Result<M, CratestackError>
 where
     E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     I: CreateModelInput<M>,
@@ -39,7 +39,7 @@ where
         });
     }
     if values.is_empty() {
-        return Err(CoolError::Validation(
+        return Err(CratestackError::Validation(
             "create input must contain at least one column".to_owned(),
         ));
     }
@@ -52,7 +52,7 @@ where
     )
     .await?
     {
-        return Err(CoolError::Forbidden(
+        return Err(CratestackError::Forbidden(
             "create policy denied this operation".to_owned(),
         ));
     }
@@ -64,7 +64,7 @@ async fn insert_returning_record<'e, E, M, PK>(
     executor: E,
     descriptor: &'static ModelDescriptor<M, PK>,
     values: &[crate::SqlColumnValue],
-) -> Result<M, CoolError>
+) -> Result<M, CratestackError>
 where
     E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,

@@ -37,7 +37,7 @@ fn validate_impl_tokens(fields: &[&Field], partial: bool) -> proc_macro2::TokenS
         return quote! {};
     };
     quote! {
-        fn validate(&self) -> ::std::result::Result<(), ::cratestack::CoolError> {
+        fn validate(&self) -> ::std::result::Result<(), ::cratestack::CratestackError> {
             #body
         }
     }
@@ -171,7 +171,7 @@ pub(crate) fn generate_upsert_input_struct(
                 #pk_value
             }
 
-            fn validate(&self) -> ::std::result::Result<(), ::cratestack::CoolError> {
+            fn validate(&self) -> ::std::result::Result<(), ::cratestack::CratestackError> {
                 <Self as ::cratestack::CreateModelInput<super::models::#model_ident>>::validate(self)
             }
         }

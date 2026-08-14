@@ -17,7 +17,7 @@
 //! the `@id` column, which is why `@@materialized` + `@@no_unique`
 //! is a parse-time error.
 
-use cratestack_core::CoolError;
+use cratestack_core::CratestackError;
 use cratestack_sql::ViewDescriptor;
 
 use crate::{FindMany, FindUnique, SqlxRuntime, sqlx};
@@ -87,9 +87,9 @@ impl<'a, V: 'static, PK: 'static> ViewDelegate<'a, V, PK> {
     /// so the wire contract is uniform. (At codegen time the macro
     /// can also choose to omit the method entirely on non-materialized
     /// descriptors; the runtime gate is the safety net.)
-    pub async fn refresh(&self) -> Result<(), CoolError> {
+    pub async fn refresh(&self) -> Result<(), CratestackError> {
         if !self.descriptor.is_materialized {
-            return Err(CoolError::Forbidden(format!(
+            return Err(CratestackError::Forbidden(format!(
                 "view `{}` is not `@@materialized`; refresh() is only valid on materialized views",
                 self.descriptor.view_name
             )));
@@ -101,7 +101,7 @@ impl<'a, V: 'static, PK: 'static> ViewDelegate<'a, V, PK> {
         sqlx::query(&sql)
             .execute(self.runtime.pool())
             .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+            .map_err(|error| CratestackError::Database(error.to_string()))?;
         Ok(())
     }
 }

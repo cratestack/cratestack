@@ -1,6 +1,6 @@
 //! Procedure-policy evaluation entrypoints and helpers.
 
-use cratestack_core::{CoolContext, CoolError, Value};
+use cratestack_core::{CratestackContext, CratestackError, Value};
 
 use crate::procedure_types::{
     ProcedureArgs, ProcedurePolicy, ProcedurePolicyExpr, ProcedurePolicyLiteral, ProcedurePredicate,
@@ -10,10 +10,10 @@ pub fn authorize_procedure<A: ProcedureArgs + ?Sized>(
     allow_policies: &[ProcedurePolicy],
     deny_policies: &[ProcedurePolicy],
     args: &A,
-    ctx: &CoolContext,
-) -> Result<(), CoolError> {
+    ctx: &CratestackContext,
+) -> Result<(), CratestackError> {
     if allow_policies.is_empty() {
-        return Err(CoolError::Forbidden(
+        return Err(CratestackError::Forbidden(
             "procedure policy denied this operation".to_owned(),
         ));
     }
@@ -22,7 +22,7 @@ pub fn authorize_procedure<A: ProcedureArgs + ?Sized>(
         .iter()
         .any(|policy| procedure_policy_expr_matches(policy.expr, args, ctx))
     {
-        return Err(CoolError::Forbidden(
+        return Err(CratestackError::Forbidden(
             "procedure policy denied this operation".to_owned(),
         ));
     }
@@ -33,19 +33,19 @@ pub fn authorize_procedure<A: ProcedureArgs + ?Sized>(
     {
         Ok(())
     } else {
-        Err(CoolError::Forbidden(
+        Err(CratestackError::Forbidden(
             "procedure policy denied this operation".to_owned(),
         ))
     }
 }
 
-pub fn context_has_role(ctx: &CoolContext, role: &str) -> bool {
+pub fn context_has_role(ctx: &CratestackContext, role: &str) -> bool {
     ctx.auth_field("role")
         .or_else(|| ctx.auth_field("actor.role"))
         .is_some_and(|value| matches!(value, Value::String(candidate) if candidate == role))
 }
 
-pub fn context_in_tenant(ctx: &CoolContext, tenant_id: &str) -> bool {
+pub fn context_in_tenant(ctx: &CratestackContext, tenant_id: &str) -> bool {
     ctx.auth_field("tenant.id")
         .is_some_and(|value| matches!(value, Value::String(candidate) if candidate == tenant_id))
 }
@@ -53,7 +53,7 @@ pub fn context_in_tenant(ctx: &CoolContext, tenant_id: &str) -> bool {
 fn procedure_policy_expr_matches<A: ProcedureArgs + ?Sized>(
     expr: ProcedurePolicyExpr,
     args: &A,
-    ctx: &CoolContext,
+    ctx: &CratestackContext,
 ) -> bool {
     match expr {
         ProcedurePolicyExpr::Predicate(predicate) => {
@@ -73,7 +73,7 @@ fn procedure_policy_expr_matches<A: ProcedureArgs + ?Sized>(
 fn procedure_predicate_matches<A: ProcedureArgs + ?Sized>(
     predicate: ProcedurePredicate,
     args: &A,
-    ctx: &CoolContext,
+    ctx: &CratestackContext,
 ) -> bool {
     match predicate {
         ProcedurePredicate::Literal(value) => value,

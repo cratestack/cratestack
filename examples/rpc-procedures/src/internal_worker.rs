@@ -13,7 +13,7 @@
 //! enforcement to an HTTP request — no separate, weaker "internal" path
 //! exists to reach for by accident.
 
-use cratestack::{CoolContext, CoolError, SystemContext};
+use cratestack::{CratestackContext, CratestackError, SystemContext};
 
 use crate::schema::procedures::ProcedureRegistry;
 use crate::{Procedures, schema};
@@ -22,15 +22,15 @@ use crate::{Procedures, schema};
 /// to the system principal (`auth().isSystem()`, cratestack#486) rather
 /// than any end user. `increment` declares `@allow(auth() != null)`, not a
 /// system-specific clause — `SystemContext` is always authenticated
-/// (`CoolContext::is_authenticated() == true`), so it satisfies that
+/// (`CratestackContext::is_authenticated() == true`), so it satisfies that
 /// predicate exactly the way any other authenticated caller's context
 /// would, without the job needing to fake a user identity.
 pub async fn run_nightly_increment_job(
     procedures: &Procedures,
     db: &schema::Cratestack,
     by: i64,
-) -> Result<schema::CounterValue, CoolError> {
-    let ctx: CoolContext = SystemContext::for_service("nightly-increment-job").into_context();
+) -> Result<schema::CounterValue, CratestackError> {
+    let ctx: CratestackContext = SystemContext::for_service("nightly-increment-job").into_context();
     let args = schema::procedures::increment::Args {
         args: schema::CounterDelta { by },
     };

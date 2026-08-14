@@ -7,7 +7,7 @@
 //! - `POST /rpc/{op_id}` — unary calls. Body is the codec-encoded *input*
 //!   (no frame wrapper); response body is the codec-encoded *output* on
 //!   success, or an [`RpcErrorBody`] on error with HTTP status mapped via
-//!   [`CoolError::status_code`].
+//!   [`CratestackError::status_code`].
 //! - `POST /rpc/batch` — sequence of `RpcRequest` frames in, sequence of
 //!   `RpcResponseFrame` frames out in the same order. Per-frame errors
 //!   don't poison the batch.

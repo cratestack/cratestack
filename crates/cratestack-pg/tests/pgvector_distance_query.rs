@@ -37,7 +37,7 @@ mod support;
 
 use cratestack::include_server_schema;
 use cratestack::sqlx::query;
-use cratestack::{CoolContext, Value, VectorMetric};
+use cratestack::{CratestackContext, Value, VectorMetric};
 use support::pg;
 
 include_server_schema!(
@@ -47,8 +47,8 @@ include_server_schema!(
 
 use cratestack_schema::document;
 
-fn ctx() -> CoolContext {
-    CoolContext::authenticated([("id".to_owned(), Value::Int(1))])
+fn ctx() -> CratestackContext {
+    CratestackContext::authenticated([("id".to_owned(), Value::Int(1))])
 }
 
 async fn reset_schema(pool: &cratestack::sqlx::PgPool) {

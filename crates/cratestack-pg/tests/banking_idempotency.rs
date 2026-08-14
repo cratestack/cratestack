@@ -12,7 +12,9 @@ use cratestack::axum::extract::ConnectInfo;
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack::include_server_schema;
 use cratestack::sqlx::query;
-use cratestack::{AuthProvider, CoolCodec, CoolContext, CoolError, RequestContext, Value};
+use cratestack::{
+    AuthProvider, CratestackCodec, CratestackContext, CratestackError, RequestContext, Value,
+};
 use cratestack_axum::idempotency::IdempotencyLayer;
 use cratestack_codec_json::JsonCodec;
 use std::sync::Arc;
@@ -60,12 +62,12 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
 struct StaticAuth;
 
 impl AuthProvider for StaticAuth {
-    type Error = CoolError;
+    type Error = CratestackError;
     fn authenticate(
         &self,
         _request: &RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
-        core::future::ready(Ok(CoolContext::authenticated([(
+    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
+        core::future::ready(Ok(CratestackContext::authenticated([(
             "id".to_owned(),
             Value::Int(1),
         )])))

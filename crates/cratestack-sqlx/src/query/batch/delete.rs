@@ -5,7 +5,9 @@
 use std::collections::HashMap;
 use std::hash::Hash;
 
-use cratestack_core::{AuditOperation, BatchResponse, CoolContext, CoolError, ModelEventKind};
+use cratestack_core::{
+    AuditOperation, BatchResponse, CratestackContext, CratestackError, ModelEventKind,
+};
 
 use crate::audit::{
     build_audit_event, dispatch_audit_sink, enqueue_audit_event, ensure_audit_table,
@@ -24,7 +26,7 @@ pub struct BatchDelete<'a, M: 'static, PK: 'static> {
 }
 
 impl<'a, M: 'static, PK: 'static> BatchDelete<'a, M, PK> {
-    pub async fn run(self, ctx: &CoolContext) -> Result<BatchResponse<M>, CoolError>
+    pub async fn run(self, ctx: &CratestackContext) -> Result<BatchResponse<M>, CratestackError>
     where
         for<'r> M: Send
             + Unpin
@@ -137,13 +139,13 @@ impl<'a, M: 'static, PK: 'static> BatchDelete<'a, M, PK> {
         // failed the WHERE (tombstoned, policy denied, never existed).
         // All three collapse to NotFound on the wire.
         let mut by_pk: HashMap<PK, M> = deleted.into_iter().map(|m| (m.primary_key(), m)).collect();
-        let per_item: Vec<Result<M, CoolError>> = self
+        let per_item: Vec<Result<M, CratestackError>> = self
             .ids
             .into_iter()
             .map(|id| {
                 by_pk
                     .remove(&id)
-                    .ok_or_else(|| CoolError::NotFound("no row matched".to_owned()))
+                    .ok_or_else(|| CratestackError::NotFound("no row matched".to_owned()))
             })
             .collect();
 

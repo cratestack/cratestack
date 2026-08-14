@@ -159,7 +159,7 @@ owns transactions, decodes `PgRow`, and drains the event outbox.
 `wasm32-unknown-unknown`. `cratestack-redis` implements the two operational
 store traits against Redis.
 
-The wire codecs sit here for the same reason: `CoolCodec` is a trait in
+The wire codecs sit here for the same reason: `CratestackCodec` is a trait in
 `cratestack-core::codec` (L1), and `cratestack-codec-cbor` /
 `cratestack-codec-json` are two implementations of it (L2). The client
 state stores (`cratestack-client-store-sqlite`, `-store-redis`) are the

@@ -2,7 +2,7 @@
 
 Server-integration runtime for CrateStack `transport grpc` schemas — the
 gRPC sibling of `cratestack-axum`. Holds the primitives macro-generated code
-calls into: `CoolError` -> `tonic::Status` mapping, `tonic::metadata::MetadataMap`
+calls into: `CratestackError` -> `tonic::Status` mapping, `tonic::metadata::MetadataMap`
 <-> `http::HeaderMap` conversion (so the existing header-driven `AuthProvider`
 ports unchanged), and unframed-body envelope canonicalization for request
 signing.

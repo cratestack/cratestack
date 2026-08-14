@@ -16,7 +16,7 @@
 //!   `sqlx::Transaction` (or even `Tx` — the type is inferred), it's not a
 //!   breaking change to `run_in_tx`, and the transaction still round-trips
 //!   through the real `sqlx` machinery underneath.
-//! - The closure is bound by `AsyncFnOnce(&mut Tx) -> Result<T, CoolError>`
+//! - The closure is bound by `AsyncFnOnce(&mut Tx) -> Result<T, CratestackError>`
 //!   (the native async-closure traits stabilized in Rust 1.85; this
 //!   workspace pins 1.95) rather than the `FnMut(...) -> Fut` shape
 //!   `run_in_isolated_tx` uses. That older shape requires the body to hand
@@ -75,7 +75,7 @@
 
 use std::ops::{Deref, DerefMut};
 
-use cratestack_core::CoolError;
+use cratestack_core::CratestackError;
 
 use crate::descriptor::SqlxRuntime;
 use crate::error::cool_error_from_sqlx;
@@ -128,9 +128,9 @@ impl SqlxRuntime {
     /// `@@emit` outbox on its own** — see the module doc comment's
     /// "Composing through here does not close the `AuditSink`/outbox gap"
     /// section (cratestack#534) for why that can't be made automatic here.
-    pub async fn transaction<F, T>(&self, body: F) -> Result<T, CoolError>
+    pub async fn transaction<F, T>(&self, body: F) -> Result<T, CratestackError>
     where
-        F: AsyncFnOnce(&mut Tx) -> Result<T, CoolError>,
+        F: AsyncFnOnce(&mut Tx) -> Result<T, CratestackError>,
     {
         let inner = self.pool().begin().await.map_err(cool_error_from_sqlx)?;
         let mut tx = Tx(inner);

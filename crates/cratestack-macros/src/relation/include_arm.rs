@@ -51,7 +51,7 @@ pub(crate) fn generate_relation_include_arm(
         return Ok(quote! {
             #include_name => {
                 let child_selection = selection.selection_for_include(#include_name).ok_or_else(|| {
-                    CoolError::Internal(format!(
+                    CratestackError::Internal(format!(
                         "validated selection for '{}.{}' is missing child selection",
                         #model_name,
                         #include_name,
@@ -88,7 +88,7 @@ pub(crate) fn generate_relation_include_arm(
         Ok(quote! {
             #include_name => {
                 let child_selection = selection.selection_for_include(#include_name).ok_or_else(|| {
-                    CoolError::Internal(format!(
+                    CratestackError::Internal(format!(
                         "validated selection for '{}.{}' is missing child selection",
                         #model_name,
                         #include_name,
@@ -118,7 +118,7 @@ pub(crate) fn generate_relation_include_arm(
         Ok(quote! {
             #include_name => {
                 let child_selection = selection.selection_for_include(#include_name).ok_or_else(|| {
-                    CoolError::Internal(format!(
+                    CratestackError::Internal(format!(
                         "validated selection for '{}.{}' is missing child selection",
                         #model_name,
                         #include_name,

@@ -6,7 +6,7 @@
 //! `*_with_response` methods) lives in `tests/typed_response.rs`.
 
 use cratestack_codec_cbor::CborCodec;
-use cratestack_core::CoolCodec;
+use cratestack_core::CratestackCodec;
 use serde::{Deserialize, Serialize};
 
 use super::{decode_typed_response, decode_typed_response_with_metadata};
@@ -88,7 +88,7 @@ fn decode_typed_response_still_returns_only_the_value() {
 /// function doesn't change error classification.
 #[test]
 fn decode_typed_response_with_metadata_maps_error_status_like_the_plain_path() {
-    let error_body = cratestack_core::CoolErrorResponse {
+    let error_body = cratestack_core::CratestackErrorResponse {
         code: "PRECONDITION_FAILED".to_owned(),
         message: "stale If-Match".to_owned(),
         details: None,

@@ -2,10 +2,10 @@
 //! (REST) and `crate::rpc::RpcClientError` (RPC).
 //!
 //! REST and RPC both decode a *body* on a non-2xx response
-//! (`CoolErrorResponse` / `RpcErrorBody`) to recover a stable error code —
+//! (`CratestackErrorResponse` / `RpcErrorBody`) to recover a stable error code —
 //! the HTTP status line alone doesn't carry one. gRPC doesn't have this
 //! problem: `tonic::Status` already **is** the structured error, with a
-//! `tonic::Code` the server derived from the exact same `CoolError` via
+//! `tonic::Code` the server derived from the exact same `CratestackError` via
 //! `cratestack_grpc::error::cool_error_to_status` (server-side,
 //! `cool_error_to_status` -> `rpc_code` -> `tonic::Code`, the identical
 //! table `cratestack_grpc::error::rpc_code_to_tonic_code` documents). So
@@ -19,7 +19,7 @@ pub enum GrpcClientError {
     /// The call reached the server and it returned a gRPC error status.
     /// `status.code()` is one of `cratestack_grpc::error::
     /// rpc_code_to_tonic_code`'s table entries; `status.message()` is the
-    /// same `CoolError::public_message` text every other binding surfaces.
+    /// same `CratestackError::public_message` text every other binding surfaces.
     #[error("gRPC call failed: {0}")]
     Status(#[from] tonic::Status),
     /// Transport-level failure — connecting, or the inner `GrpcService`
@@ -30,10 +30,10 @@ pub enum GrpcClientError {
     Transport(#[source] tonic::codegen::StdError),
     /// A response decoded off the wire but failed to convert into the
     /// domain type (`TryFrom<pb::Model> for Model`, the same
-    /// `CoolError`-returning conversion `grpc_pb::message::render_message`
+    /// `CratestackError`-returning conversion `grpc_pb::message::render_message`
     /// generates for every binding).
     #[error("codec error: {0}")]
-    Codec(#[from] cratestack_core::CoolError),
+    Codec(#[from] cratestack_core::CratestackError),
     /// A `RequestAuthorizer` rejected building headers for this call —
     /// same variant shape as `crate::error::ClientError::BadInput`.
     #[error("bad input: {0}")]

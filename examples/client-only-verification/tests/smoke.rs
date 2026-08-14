@@ -6,7 +6,7 @@
 //! suite doesn't reach for `axum` either, not even as a dev-dependency.
 
 use client_only_verification::{build_client, schema};
-use cratestack::CoolCodec;
+use cratestack::CratestackCodec;
 use cratestack::client_rust::CborCodec;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;

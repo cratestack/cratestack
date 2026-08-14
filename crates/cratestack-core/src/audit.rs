@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::CoolError;
+use crate::error::CratestackError;
 use crate::value::Value;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -104,11 +104,11 @@ pub struct AuditEvent {
 /// the in-flight HTTP response for that already-successful, possibly
 /// non-idempotent mutation is lost — a client retrying on a dropped
 /// connection can resubmit a write that already happened. Return
-/// `Err(CoolError)` for any failure instead; it is logged and
+/// `Err(CratestackError)` for any failure instead; it is logged and
 /// swallowed by design (sinks are best-effort), which panicking is not.
 #[async_trait::async_trait]
 pub trait AuditSink: Send + Sync + 'static {
-    async fn record(&self, event: &AuditEvent) -> Result<(), CoolError>;
+    async fn record(&self, event: &AuditEvent) -> Result<(), CratestackError>;
 }
 
 /// Default sink that does nothing. The in-database audit table is
@@ -119,13 +119,13 @@ pub struct NoopAuditSink;
 
 #[async_trait::async_trait]
 impl AuditSink for NoopAuditSink {
-    async fn record(&self, _event: &AuditEvent) -> Result<(), CoolError> {
+    async fn record(&self, _event: &AuditEvent) -> Result<(), CratestackError> {
         Ok(())
     }
 }
 
 /// Fan an audit event out to multiple sinks. Errors from any
-/// individual sink are aggregated into [`CoolError::Internal`] so a
+/// individual sink are aggregated into [`CratestackError::Internal`] so a
 /// single failing downstream does not silently swallow problems with
 /// the others.
 pub struct MulticastAuditSink {
@@ -140,7 +140,7 @@ impl MulticastAuditSink {
 
 #[async_trait::async_trait]
 impl AuditSink for MulticastAuditSink {
-    async fn record(&self, event: &AuditEvent) -> Result<(), CoolError> {
+    async fn record(&self, event: &AuditEvent) -> Result<(), CratestackError> {
         let mut errors = Vec::new();
         for sink in &self.sinks {
             if let Err(error) = sink.record(event).await {
@@ -150,7 +150,7 @@ impl AuditSink for MulticastAuditSink {
         if errors.is_empty() {
             Ok(())
         } else {
-            Err(CoolError::Internal(format!(
+            Err(CratestackError::Internal(format!(
                 "{} audit sink(s) failed: {}",
                 errors.len(),
                 errors
@@ -176,12 +176,12 @@ pub enum TransactionIsolation {
 }
 
 impl TransactionIsolation {
-    pub fn parse(value: &str) -> Result<Self, CoolError> {
+    pub fn parse(value: &str) -> Result<Self, CratestackError> {
         match value.trim().to_ascii_lowercase().as_str() {
             "read_committed" | "read committed" => Ok(Self::ReadCommitted),
             "repeatable_read" | "repeatable read" => Ok(Self::RepeatableRead),
             "serializable" => Ok(Self::Serializable),
-            other => Err(CoolError::Validation(format!(
+            other => Err(CratestackError::Validation(format!(
                 "unknown transaction isolation level '{other}'; expected one of \
                  'read_committed', 'repeatable_read', 'serializable'",
             ))),

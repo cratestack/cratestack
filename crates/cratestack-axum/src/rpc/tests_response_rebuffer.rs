@@ -12,7 +12,7 @@ use axum::body::Body;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
 use cratestack_codec_cbor::CborCodec;
-use cratestack_core::{CoolCodec, MAX_RESPONSE_REBUFFER_BYTES};
+use cratestack_core::{CratestackCodec, MAX_RESPONSE_REBUFFER_BYTES};
 
 use super::{bridge_grpc_response, convert_handler_error_response, response_to_frame};
 use crate::rpc::codec_helpers::encode_rpc_value;

@@ -9,11 +9,11 @@
 //! Server-only helpers (codec-aware encoding, axum response
 //! post-processing, batch frame assembly) stay in
 //! `cratestack-axum::rpc`. This module owns only the wire shapes and
-//! the [`CoolError`] → gRPC-style code mapping.
+//! the [`CratestackError`] → gRPC-style code mapping.
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{CoolError, CoolErrorResponse};
+use crate::error::{CratestackError, CratestackErrorResponse};
 
 /// Mount path for unary RPC calls. The trailing segment is the
 /// percent-decoded op id, e.g. `POST /rpc/model.User.list`.
@@ -51,7 +51,7 @@ pub const RPC_SUBSCRIBE_PATH: &str = "/rpc/subscribe/{op_id}";
 pub const RPC_STREAM_ERROR_TAG: u64 = 48900;
 
 /// Wire shape of a single error returned by an RPC call. Maps from
-/// [`CoolError`] via [`rpc_code`] + [`CoolError::public_message`].
+/// [`CratestackError`] via [`rpc_code`] + [`CratestackError::public_message`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcErrorBody {
     /// Stable gRPC-style code: `not_found`, `invalid_argument`,
@@ -66,7 +66,7 @@ pub struct RpcErrorBody {
 }
 
 impl RpcErrorBody {
-    pub fn from_cool(error: &CoolError) -> Self {
+    pub fn from_cool(error: &CratestackError) -> Self {
         Self {
             code: rpc_code(error).to_owned(),
             message: error.public_message().into_owned(),
@@ -74,12 +74,12 @@ impl RpcErrorBody {
         }
     }
 
-    /// Translate a REST-style [`CoolErrorResponse`] into the RPC
+    /// Translate a REST-style [`CratestackErrorResponse`] into the RPC
     /// error body. The `code` field is mapped from screaming-snake to
     /// gRPC-style lowercase via [`cool_error_code_to_rpc_code`];
     /// `message` and `details` flow through verbatim.
-    pub fn from_cool_response(response: CoolErrorResponse) -> Self {
-        let CoolErrorResponse {
+    pub fn from_cool_response(response: CratestackErrorResponse) -> Self {
+        let CratestackErrorResponse {
             code,
             message,
             details,
@@ -127,7 +127,7 @@ impl RpcResponseFrame {
         }
     }
 
-    pub fn err(id: u64, error: &CoolError) -> Self {
+    pub fn err(id: u64, error: &CratestackError) -> Self {
         Self {
             id,
             output: None,
@@ -136,25 +136,27 @@ impl RpcResponseFrame {
     }
 }
 
-/// Map a [`CoolError`] to its stable RPC code (gRPC-style snake_case).
-pub const fn rpc_code(error: &CoolError) -> &'static str {
+/// Map a [`CratestackError`] to its stable RPC code (gRPC-style snake_case).
+pub const fn rpc_code(error: &CratestackError) -> &'static str {
     match error {
-        CoolError::BadRequest(_)
-        | CoolError::NotAcceptable(_)
-        | CoolError::UnsupportedMediaType(_)
-        | CoolError::Codec(_)
-        | CoolError::Validation(_) => "invalid_argument",
-        CoolError::Unauthorized(_) => "unauthenticated",
-        CoolError::Forbidden(_) => "permission_denied",
-        CoolError::NotFound(_) => "not_found",
-        CoolError::Conflict(_) | CoolError::ConflictTyped(_) => "conflict",
-        CoolError::PreconditionFailed(_) => "failed_precondition",
-        CoolError::Database(_) | CoolError::DatabaseTyped(_) | CoolError::Internal(_) => "internal",
-        CoolError::Unavailable(_) => "unavailable",
+        CratestackError::BadRequest(_)
+        | CratestackError::NotAcceptable(_)
+        | CratestackError::UnsupportedMediaType(_)
+        | CratestackError::Codec(_)
+        | CratestackError::Validation(_) => "invalid_argument",
+        CratestackError::Unauthorized(_) => "unauthenticated",
+        CratestackError::Forbidden(_) => "permission_denied",
+        CratestackError::NotFound(_) => "not_found",
+        CratestackError::Conflict(_) | CratestackError::ConflictTyped(_) => "conflict",
+        CratestackError::PreconditionFailed(_) => "failed_precondition",
+        CratestackError::Database(_)
+        | CratestackError::DatabaseTyped(_)
+        | CratestackError::Internal(_) => "internal",
+        CratestackError::Unavailable(_) => "unavailable",
     }
 }
 
-/// Map a `CoolErrorResponse.code` string (screaming-snake, REST-
+/// Map a `CratestackErrorResponse.code` string (screaming-snake, REST-
 /// binding vocabulary) to the stable gRPC-style code the RPC binding
 /// emits.
 pub fn cool_error_code_to_rpc_code(code: &str) -> &'static str {

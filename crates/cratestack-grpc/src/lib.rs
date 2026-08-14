@@ -1,7 +1,7 @@
 //! CrateStack gRPC server runtime — the `cratestack-axum` sibling for
 //! `transport grpc` schemas (`docs/design/protobuf.md` §7.2). Holds the
 //! primitives macro-generated code calls into via `::cratestack::grpc::...`:
-//! `CoolError` -> `tonic::Status` mapping ([`error`]), `tonic::metadata::MetadataMap`
+//! `CratestackError` -> `tonic::Status` mapping ([`error`]), `tonic::metadata::MetadataMap`
 //! <-> `http::HeaderMap` conversion ([`metadata`]) so the existing
 //! header-driven `AuthProvider` ports unchanged, gRPC wire-frame handling
 //! ([`framing`]), unframed-body envelope canonicalization ([`canonical`]),

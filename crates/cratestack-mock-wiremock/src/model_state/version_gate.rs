@@ -3,7 +3,7 @@
 //! that mirror the real server's `If-Match` contract exactly
 //! (`crates/cratestack-axum/src/headers/etag.rs::parse_if_match_version`,
 //! `crates/cratestack-sqlx/src/query/write/update.rs`,
-//! `CoolError::status_code`) — see `docs/design/wiremock-stubs.md`'s
+//! `CratestackError::status_code`) — see `docs/design/wiremock-stubs.md`'s
 //! "If-Match / optimistic locking" section for the `wiremock-state-
 //! extension` capability investigation this is built on. A model with
 //! no `@version` field is completely unaffected: [`gated_mappings`] is

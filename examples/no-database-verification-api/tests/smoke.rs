@@ -3,7 +3,7 @@
 //! `README.md` for the `cargo tree` half of the proof (dependency-graph
 //! absence).
 
-use cratestack::CoolCodec;
+use cratestack::CratestackCodec;
 use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack_codec_json::JsonCodec;

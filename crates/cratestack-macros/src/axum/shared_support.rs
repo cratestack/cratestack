@@ -6,18 +6,18 @@ use quote::quote;
 
 pub(crate) fn generate_axum_shared_support() -> proc_macro2::TokenStream {
     quote! {
-        fn parse_model_list_query(raw_query: Option<&str>) -> Result<ModelListQuery, CoolError> {
+        fn parse_model_list_query(raw_query: Option<&str>) -> Result<ModelListQuery, CratestackError> {
             let mut query = ModelListQuery::default();
             for (key, value) in ::cratestack::parse_query_pairs(raw_query)? {
                 match key.as_str() {
                     "limit" => {
                         query.limit = Some(value.parse::<i64>().map_err(|error| {
-                            CoolError::BadRequest(format!("invalid value '{}' for limit: {error}", value))
+                            CratestackError::BadRequest(format!("invalid value '{}' for limit: {error}", value))
                         })?);
                     }
                     "offset" => {
                         query.offset = Some(value.parse::<i64>().map_err(|error| {
-                            CoolError::BadRequest(format!("invalid value '{}' for offset: {error}", value))
+                            CratestackError::BadRequest(format!("invalid value '{}' for offset: {error}", value))
                         })?);
                     }
                     "fields" => {
@@ -30,7 +30,7 @@ pub(crate) fn generate_axum_shared_support() -> proc_macro2::TokenStream {
                         let include = parse_include_fields_parameter_name(&key)?;
                         let fields = parse_csv_query_parameter(&key, &value)?;
                         if query.selection.include_fields.insert(include.to_owned(), fields).is_some() {
-                            return Err(CoolError::BadRequest(format!(
+                            return Err(CratestackError::BadRequest(format!(
                                 "{} must not be provided more than once",
                                 key,
                             )));
@@ -41,7 +41,7 @@ pub(crate) fn generate_axum_shared_support() -> proc_macro2::TokenStream {
                     }
                     "orderBy" => {
                         if query.sort.is_some() {
-                            return Err(CoolError::BadRequest(
+                            return Err(CratestackError::BadRequest(
                                 "sort and orderBy cannot both be provided".to_owned(),
                             ));
                         }
@@ -59,7 +59,7 @@ pub(crate) fn generate_axum_shared_support() -> proc_macro2::TokenStream {
             Ok(query)
         }
 
-        fn parse_model_fetch_query(raw_query: Option<&str>) -> Result<ModelFetchQuery, CoolError> {
+        fn parse_model_fetch_query(raw_query: Option<&str>) -> Result<ModelFetchQuery, CratestackError> {
             let mut query = ModelFetchQuery::default();
             for (key, value) in ::cratestack::parse_query_pairs(raw_query)? {
                 match key.as_str() {
@@ -73,14 +73,14 @@ pub(crate) fn generate_axum_shared_support() -> proc_macro2::TokenStream {
                         let include = parse_include_fields_parameter_name(&key)?;
                         let fields = parse_csv_query_parameter(&key, &value)?;
                         if query.selection.include_fields.insert(include.to_owned(), fields).is_some() {
-                            return Err(CoolError::BadRequest(format!(
+                            return Err(CratestackError::BadRequest(format!(
                                 "{} must not be provided more than once",
                                 key,
                             )));
                         }
                     }
                     unexpected => {
-                        return Err(CoolError::BadRequest(format!(
+                        return Err(CratestackError::BadRequest(format!(
                             "unsupported query parameter '{}' for fetch route",
                             unexpected,
                         )));
@@ -90,14 +90,14 @@ pub(crate) fn generate_axum_shared_support() -> proc_macro2::TokenStream {
             Ok(query)
         }
 
-        fn parse_csv_query_parameter(parameter: &str, value: &str) -> Result<Vec<String>, CoolError> {
+        fn parse_csv_query_parameter(parameter: &str, value: &str) -> Result<Vec<String>, CratestackError> {
             let selections = value
                 .split(',')
                 .map(str::trim)
                 .map(str::to_owned)
                 .collect::<Vec<_>>();
             if selections.is_empty() || selections.iter().any(|selection| selection.is_empty()) {
-                return Err(CoolError::BadRequest(format!(
+                return Err(CratestackError::BadRequest(format!(
                     "{} must not contain empty selections",
                     parameter,
                 )));
@@ -105,35 +105,35 @@ pub(crate) fn generate_axum_shared_support() -> proc_macro2::TokenStream {
             Ok(selections)
         }
 
-        fn parse_include_fields_parameter_name(parameter: &str) -> Result<&str, CoolError> {
+        fn parse_include_fields_parameter_name(parameter: &str) -> Result<&str, CratestackError> {
             let include = parameter
                 .strip_prefix("includeFields[")
                 .and_then(|value| value.strip_suffix(']'))
                 .ok_or_else(|| {
-                    CoolError::BadRequest(format!(
+                    CratestackError::BadRequest(format!(
                         "invalid includeFields parameter '{}': expected includeFields[relation]",
                         parameter,
                     ))
                 })?;
             if include.trim().is_empty() {
-                return Err(CoolError::BadRequest(
+                return Err(CratestackError::BadRequest(
                     "includeFields[relation] must target a relation name".to_owned(),
                 ));
             }
             Ok(include)
         }
 
-        fn parse_or_group(value: &str) -> Result<Vec<::cratestack::QueryExpr>, CoolError> {
+        fn parse_or_group(value: &str) -> Result<Vec<::cratestack::QueryExpr>, CratestackError> {
             let mut filters = Vec::new();
             for raw_filter in value.split('|') {
                 let raw_filter = raw_filter.trim();
                 if raw_filter.is_empty() {
-                    return Err(CoolError::BadRequest(
+                    return Err(CratestackError::BadRequest(
                         "or groups must not contain empty filters".to_owned(),
                     ));
                 }
                 let (key, value) = raw_filter.split_once('=').ok_or_else(|| {
-                    CoolError::BadRequest(format!(
+                    CratestackError::BadRequest(format!(
                         "invalid or filter '{}': expected key=value",
                         raw_filter,
                     ))
@@ -144,7 +144,7 @@ pub(crate) fn generate_axum_shared_support() -> proc_macro2::TokenStream {
                 });
             }
             if filters.is_empty() {
-                return Err(CoolError::BadRequest(
+                return Err(CratestackError::BadRequest(
                     "or groups must include at least one filter".to_owned(),
                 ));
             }

@@ -16,7 +16,7 @@ use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack::include_server_schema;
 use cratestack::rpc::{RPC_BATCH_PATH, RpcRequest, RpcResponseFrame};
-use cratestack::{BATCH_MAX_ITEMS, CoolCodec, CoolContext, CoolError};
+use cratestack::{BATCH_MAX_ITEMS, CratestackCodec, CratestackContext, CratestackError};
 use cratestack_codec_cbor::CborCodec;
 use tower::ServiceExt;
 
@@ -29,11 +29,11 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     fn ping(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::ping::Args,
         _authorized: cratestack_schema::procedures::ping::Authorized,
     ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::ping::Output, CoolError>,
+        Output = Result<cratestack_schema::procedures::ping::Output, CratestackError>,
     > + Send {
         async move {
             Ok(cratestack_schema::PingReply {
@@ -52,14 +52,14 @@ struct SpyAuthProvider {
 }
 
 impl cratestack::AuthProvider for SpyAuthProvider {
-    type Error = CoolError;
+    type Error = CratestackError;
 
     fn authenticate(
         &self,
         _request: &cratestack::RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
+    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        core::future::ready(Ok(CoolContext::authenticated([(
+        core::future::ready(Ok(CratestackContext::authenticated([(
             "id".to_owned(),
             cratestack::Value::Int(1),
         )])))
@@ -116,9 +116,9 @@ async fn over_limit_batch_is_rejected_before_any_frame_dispatches() {
     let (status, body) = post_batch(router, frames).await;
 
     // Validation errors on the RPC dispatch path map to 422 — see
-    // `CoolError::status_code`. Matches `cratestack-sqlx`'s /
+    // `CratestackError::status_code`. Matches `cratestack-sqlx`'s /
     // `cratestack-rusqlite`'s own batch-size guard, which also raises
-    // `CoolError::Validation`.
+    // `CratestackError::Validation`.
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 
     let error: cratestack::rpc::RpcErrorBody =

@@ -20,7 +20,7 @@ pub enum ReadPredicate {
     AuthNotNull,
     AuthIsNull,
     /// Lowered from `auth().isSystem()` (issue #486 / ADR 0038 blocker
-    /// B1). Satisfied only by a `CoolContext` minted through
+    /// B1). Satisfied only by a `CratestackContext` minted through
     /// `cratestack_core::SystemContext`.
     ///
     /// This is a predicate a schema author writes down, not a bypass:

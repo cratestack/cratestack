@@ -24,7 +24,7 @@ use cratestack_client_rust::{
     RuntimeTransportConfig,
 };
 use cratestack_codec_cbor::CborCodec;
-use cratestack_core::CoolCodec;
+use cratestack_core::CratestackCodec;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use url::Url;
@@ -115,10 +115,10 @@ async fn handle_stream(
 }
 
 async fn handle_error(_state: State<AppState>) -> Response<Body> {
-    // Emit a CBOR-encoded CoolErrorResponse with a 5xx status.
+    // Emit a CBOR-encoded CratestackErrorResponse with a 5xx status.
     let codec = CborCodec;
     let body = codec
-        .encode(&cratestack_core::CoolErrorResponse {
+        .encode(&cratestack_core::CratestackErrorResponse {
             code: "INTERNAL_ERROR".to_owned(),
             message: "synthetic upstream failure".to_owned(),
             details: None,

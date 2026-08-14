@@ -4,7 +4,7 @@
 // `rpc::batch::{BatchBuilder, BatchResults}`, which consume them.
 // -----------------------------------------------------------------------------
 
-use cratestack_core::CoolError;
+use cratestack_core::CratestackError;
 
 use crate::codec::HttpClientCodec;
 use crate::rpc::batch::BatchBuilder;
@@ -53,7 +53,7 @@ fn strip_json_null_entries(value: &mut serde_json::Value) {
 pub struct BatchableCall<C, O> {
     rpc: RpcClient<C>,
     op_id: String,
-    input_value: Result<serde_json::Value, CoolError>,
+    input_value: Result<serde_json::Value, CratestackError>,
     /// `fn() -> O` instead of `O` so `BatchableCall` is `Send` + `Sync`
     /// regardless of whether `O` is — the marker is variance-only.
     _output: std::marker::PhantomData<fn() -> O>,
@@ -87,7 +87,7 @@ where
                 strip_json_null_entries(&mut value);
                 value
             })
-            .map_err(|error| CoolError::Codec(format!("encode batch input: {error}")));
+            .map_err(|error| CratestackError::Codec(format!("encode batch input: {error}")));
         Self {
             rpc,
             op_id: op_id.into(),
@@ -168,7 +168,7 @@ impl<O> std::fmt::Debug for BatchHandle<O> {
 mod null_strip_tests {
     use super::strip_json_null_entries;
     use cratestack_codec_cbor::CborCodec;
-    use cratestack_core::CoolCodec;
+    use cratestack_core::CratestackCodec;
     use serde::{Deserialize, Serialize};
 
     #[derive(Serialize, Deserialize, PartialEq, Debug)]

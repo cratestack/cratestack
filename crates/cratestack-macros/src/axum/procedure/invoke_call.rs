@@ -1,7 +1,7 @@
 //! Bridges the `ProcedureRegistry` trait method's return shape — a
 //! `Future` for ordinary procedures, a `Stream` for `@stream`-marked ones
 //! (see `crate::procedure::generate_procedure_registry_method`) — into
-//! the `Result<Output, CoolError>` shape `invoke_with_db`'s closure
+//! the `Result<Output, CratestackError>` shape `invoke_with_db`'s closure
 //! needs to return.
 //!
 //! For ordinary procedures `Output` is the plain return type and this is

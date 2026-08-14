@@ -5,7 +5,7 @@
 
 use cratestack::include_server_schema;
 use cratestack::sqlx::{PgPool, query};
-use cratestack::{CoolContext, Value};
+use cratestack::{CratestackContext, Value};
 
 include_server_schema!("tests/fixtures/views_integration.cstack", db = Postgres);
 
@@ -50,8 +50,8 @@ async fn seed_customers(pool: &PgPool) {
         .expect("seed");
 }
 
-fn authenticated() -> CoolContext {
-    CoolContext::authenticated([("id".to_owned(), Value::String("user-7".to_owned()))])
+fn authenticated() -> CratestackContext {
+    CratestackContext::authenticated([("id".to_owned(), Value::String("user-7".to_owned()))])
 }
 
 #[tokio::test]
@@ -132,7 +132,7 @@ async fn view_allow_read_blocks_anonymous_callers() {
     seed_customers(pool).await;
 
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
-    let anonymous = CoolContext::anonymous();
+    let anonymous = CratestackContext::anonymous();
 
     let rows = cool
         .views()

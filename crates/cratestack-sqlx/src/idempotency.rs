@@ -14,7 +14,7 @@ mod operations;
 use std::time::SystemTime;
 
 use async_trait::async_trait;
-use cratestack_core::{CoolError, IdempotencyStore, ReservationOutcome};
+use cratestack_core::{CratestackError, IdempotencyStore, ReservationOutcome};
 use cratestack_sql::IDEMPOTENCY_TABLE_DDL;
 
 use crate::sqlx;
@@ -31,25 +31,25 @@ impl SqlxIdempotencyStore {
 
     /// Ensure the table exists. Banks typically run this via their own
     /// migration tooling; exposed here for convenience.
-    pub async fn ensure_schema(&self) -> Result<(), CoolError> {
+    pub async fn ensure_schema(&self) -> Result<(), CratestackError> {
         // Multi-statement DDL (table + index) — `raw_sql` sends it as one
         // batch over PG's simple-query protocol instead of splitting on
         // `;` client-side, which would corrupt any dollar-quoted body.
         sqlx::raw_sql(IDEMPOTENCY_TABLE_DDL)
             .execute(&self.pool)
             .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+            .map_err(|error| CratestackError::Database(error.to_string()))?;
         Ok(())
     }
 
     /// Delete expired rows. Run periodically — the request path does
     /// not auto-GC, although `reserve_or_fetch` does take over any
     /// single expired row it tries to claim.
-    pub async fn garbage_collect(&self) -> Result<u64, CoolError> {
+    pub async fn garbage_collect(&self) -> Result<u64, CratestackError> {
         let result = sqlx::query("DELETE FROM cratestack_idempotency WHERE expires_at < NOW()")
             .execute(&self.pool)
             .await
-            .map_err(|error| CoolError::Database(error.to_string()))?;
+            .map_err(|error| CratestackError::Database(error.to_string()))?;
         Ok(result.rows_affected())
     }
 }
@@ -62,7 +62,7 @@ impl IdempotencyStore for SqlxIdempotencyStore {
         key: &str,
         request_hash: [u8; 32],
         expires_at: SystemTime,
-    ) -> Result<ReservationOutcome, CoolError> {
+    ) -> Result<ReservationOutcome, CratestackError> {
         operations::reserve_or_fetch(&self.pool, principal, key, request_hash, expires_at).await
     }
 
@@ -74,7 +74,7 @@ impl IdempotencyStore for SqlxIdempotencyStore {
         status: u16,
         headers: &[u8],
         body: &[u8],
-    ) -> Result<(), CoolError> {
+    ) -> Result<(), CratestackError> {
         operations::complete(&self.pool, principal, key, token, status, headers, body).await
     }
 
@@ -83,7 +83,7 @@ impl IdempotencyStore for SqlxIdempotencyStore {
         principal: &str,
         key: &str,
         token: uuid::Uuid,
-    ) -> Result<(), CoolError> {
+    ) -> Result<(), CratestackError> {
         operations::release(&self.pool, principal, key, token).await
     }
 }

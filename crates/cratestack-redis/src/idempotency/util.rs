@@ -1,4 +1,4 @@
-use cratestack_core::CoolError;
+use cratestack_core::CratestackError;
 
 pub(super) fn nibble_hex(nibble: u8) -> char {
     match nibble {
@@ -8,6 +8,6 @@ pub(super) fn nibble_hex(nibble: u8) -> char {
     }
 }
 
-pub(super) fn redis_error(error: redis::RedisError) -> CoolError {
-    CoolError::Internal(format!("redis idempotency: {error}"))
+pub(super) fn redis_error(error: redis::RedisError) -> CratestackError {
+    CratestackError::Internal(format!("redis idempotency: {error}"))
 }

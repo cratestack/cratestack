@@ -9,7 +9,7 @@
 //!   * Requires at least one filter — predicate-less bulk updates
 //!     should be raw SQL so the intent is obvious at review.
 
-use cratestack_core::{BatchSummary, CoolContext, CoolError};
+use cratestack_core::{BatchSummary, CratestackContext, CratestackError};
 
 use crate::audit::{RunInTxOutcome, dispatch_audit_sink};
 use crate::{
@@ -91,7 +91,7 @@ where
     /// Returns `BatchSummary { total, ok, err }` where
     /// `total = ok = rows actually updated` and `err = 0`.
     /// Statement-level failures surface as the outer `Err`.
-    pub async fn run(self, ctx: &CoolContext) -> Result<BatchSummary, CoolError>
+    pub async fn run(self, ctx: &CratestackContext) -> Result<BatchSummary, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
     {
@@ -117,8 +117,8 @@ where
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-        ctx: &CoolContext,
-    ) -> Result<RunInTxOutcome<BatchSummary>, CoolError>
+        ctx: &CratestackContext,
+    ) -> Result<RunInTxOutcome<BatchSummary>, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
     {

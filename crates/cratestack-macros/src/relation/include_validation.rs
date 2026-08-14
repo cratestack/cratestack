@@ -72,7 +72,7 @@ pub(crate) fn generate_relation_include_fields_validation_arm(
             for field in fields {
                 match field.as_str() {
                     #(#allowed_fields)|* => {}
-                    _ => return Err(CoolError::Validation(format!(
+                    _ => return Err(CratestackError::Validation(format!(
                         "unsupported includeFields[{}] selection '{}' for {}.{}",
                         include,
                         field,

@@ -14,7 +14,7 @@
 
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use cratestack_codec_json::JsonCodec;
-use cratestack_core::{CoolError, RouteTransportCapabilities};
+use cratestack_core::{CratestackError, RouteTransportCapabilities};
 use serde::Serialize;
 
 use super::*;
@@ -60,7 +60,7 @@ fn json_only_router_serves_200_json_even_when_accept_also_lists_cbor() {
         &headers,
         &capabilities(),
         StatusCode::OK,
-        Ok::<_, CoolError>(Widget { name: "gizmo" }),
+        Ok::<_, CratestackError>(Widget { name: "gizmo" }),
     );
 
     assert_eq!(
@@ -89,7 +89,7 @@ fn json_only_router_still_406s_for_a_genuinely_unsatisfiable_accept() {
         &headers,
         &capabilities(),
         StatusCode::OK,
-        Ok::<_, CoolError>(Widget { name: "gizmo" }),
+        Ok::<_, CratestackError>(Widget { name: "gizmo" }),
     );
 
     assert_eq!(response.status(), StatusCode::NOT_ACCEPTABLE);

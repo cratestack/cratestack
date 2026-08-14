@@ -82,7 +82,7 @@ where
         if self.filters.is_empty() {
             // Mirror the sqlx safety stance: reject predicate-less bulk
             // updates loud and early. There's no equivalent of
-            // `CoolError::Validation` here, so we surface a sqlite error
+            // `CratestackError::Validation` here, so we surface a sqlite error
             // — an empty WHERE would let a typo wipe the table.
             return Err(RusqliteError::Validation(
                 "update_many requires at least one filter".to_owned(),

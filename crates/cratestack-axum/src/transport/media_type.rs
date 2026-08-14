@@ -1,20 +1,20 @@
 use std::cmp::Reverse;
 
 use axum::http::{HeaderMap, header};
-use cratestack_core::{CoolError, RouteTransportCapabilities};
+use cratestack_core::{CratestackError, RouteTransportCapabilities};
 
 use super::http_transport::HttpTransport;
 
 pub(crate) fn validate_transport_accept_header(
     headers: &HeaderMap,
     supported: &[&'static str],
-) -> Result<(), CoolError> {
+) -> Result<(), CratestackError> {
     let Some(accept) = headers.get(header::ACCEPT) else {
         return Ok(());
     };
     let accept = accept
         .to_str()
-        .map_err(|error| CoolError::BadRequest(format!("invalid Accept header: {error}")))?;
+        .map_err(|error| CratestackError::BadRequest(format!("invalid Accept header: {error}")))?;
 
     if supported
         .iter()
@@ -22,7 +22,7 @@ pub(crate) fn validate_transport_accept_header(
     {
         Ok(())
     } else {
-        Err(CoolError::NotAcceptable(format!(
+        Err(CratestackError::NotAcceptable(format!(
             "router only serves {} responses",
             supported.join(", "),
         )))
@@ -32,30 +32,30 @@ pub(crate) fn validate_transport_accept_header(
 pub(crate) fn validate_transport_content_type_header(
     headers: &HeaderMap,
     supported: &[&'static str],
-) -> Result<(), CoolError> {
+) -> Result<(), CratestackError> {
     request_content_type(headers, supported).map(|_| ())
 }
 
 pub(crate) fn request_content_type(
     headers: &HeaderMap,
     supported: &[&'static str],
-) -> Result<&'static str, CoolError> {
+) -> Result<&'static str, CratestackError> {
     let Some(content_type) = headers.get(header::CONTENT_TYPE) else {
-        return Err(CoolError::UnsupportedMediaType(format!(
+        return Err(CratestackError::UnsupportedMediaType(format!(
             "expected Content-Type one of {}",
             supported.join(", "),
         )));
     };
-    let content_type = content_type
-        .to_str()
-        .map_err(|error| CoolError::BadRequest(format!("invalid Content-Type header: {error}")))?;
+    let content_type = content_type.to_str().map_err(|error| {
+        CratestackError::BadRequest(format!("invalid Content-Type header: {error}"))
+    })?;
 
     supported
         .iter()
         .copied()
         .find(|expected| media_type_matches(content_type, expected))
         .ok_or_else(|| {
-            CoolError::UnsupportedMediaType(format!(
+            CratestackError::UnsupportedMediaType(format!(
                 "expected Content-Type one of {}, got {}",
                 supported.join(", "),
                 content_type,
@@ -82,7 +82,7 @@ pub(crate) fn select_transport_response_content_type<T>(
     transport: &T,
     headers: &HeaderMap,
     capabilities: &RouteTransportCapabilities,
-) -> Result<&'static str, CoolError>
+) -> Result<&'static str, CratestackError>
 where
     T: HttpTransport,
 {
@@ -127,7 +127,7 @@ pub(crate) fn select_response_content_type(
     headers: &HeaderMap,
     encodable: &[&'static str],
     default: &'static str,
-) -> Result<&'static str, CoolError> {
+) -> Result<&'static str, CratestackError> {
     let Some(accept) = headers.get(header::ACCEPT) else {
         if encodable.contains(&default) {
             return Ok(default);
@@ -139,7 +139,7 @@ pub(crate) fn select_response_content_type(
     };
     let accept = accept
         .to_str()
-        .map_err(|error| CoolError::BadRequest(format!("invalid Accept header: {error}")))?;
+        .map_err(|error| CratestackError::BadRequest(format!("invalid Accept header: {error}")))?;
 
     let entries = parse_accept_header(accept);
 
@@ -240,11 +240,11 @@ fn best_match_rank(accept: &[AcceptEntry<'_>], content_type: &'static str) -> Op
         .max()
 }
 
-fn not_acceptable_response(encodable: &[&'static str]) -> CoolError {
+fn not_acceptable_response(encodable: &[&'static str]) -> CratestackError {
     if encodable.is_empty() {
-        CoolError::NotAcceptable("router has no response encoder configured".to_owned())
+        CratestackError::NotAcceptable("router has no response encoder configured".to_owned())
     } else {
-        CoolError::NotAcceptable(format!(
+        CratestackError::NotAcceptable(format!(
             "router only serves {} responses",
             encodable.join(", "),
         ))

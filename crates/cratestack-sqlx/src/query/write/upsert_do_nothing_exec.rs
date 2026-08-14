@@ -7,7 +7,9 @@
 //! a concurrent transaction won the race. See `UpsertOutcome`'s doc
 //! comment for the full race-semantics writeup this implements.
 
-use cratestack_core::{AuditEvent, AuditOperation, CoolContext, CoolError, ModelEventKind};
+use cratestack_core::{
+    AuditEvent, AuditOperation, CratestackContext, CratestackError, ModelEventKind,
+};
 
 use crate::audit::{build_audit_event, enqueue_audit_event, ensure_audit_table};
 use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
@@ -29,8 +31,8 @@ pub(super) async fn run_upsert_do_nothing_in_tx<'tx, M, PK, I>(
     descriptor: &'static ModelDescriptor<M, PK>,
     input: I,
     conflict_target: ConflictTarget,
-    ctx: &CoolContext,
-) -> Result<(UpsertOutcome<M>, bool, Option<AuditEvent>), CoolError>
+    ctx: &CratestackContext,
+) -> Result<(UpsertOutcome<M>, bool, Option<AuditEvent>), CratestackError>
 where
     I: UpsertModelInput<M>,
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
@@ -53,7 +55,7 @@ where
     )
     .await?
     {
-        return Err(CoolError::Forbidden(
+        return Err(CratestackError::Forbidden(
             "create policy denied this upsert".to_owned(),
         ));
     }
@@ -126,13 +128,13 @@ where
             // this SELECT — a second, narrower race on top of the
             // first — we do not invent a result: there is no row to
             // report as `Existing` and no insert succeeded either, so
-            // this surfaces `CoolError::Conflict` and leaves retrying
+            // this surfaces `CratestackError::Conflict` and leaves retrying
             // to the caller.
             let existing =
                 select_for_update_by_conflict_target(&mut **tx, descriptor, &conflict_columns)
                     .await?
                     .ok_or_else(|| {
-                        CoolError::Conflict(format!(
+                        CratestackError::Conflict(format!(
                             "upsert do_nothing on `{}` lost a conflict race and the \
                          conflicting row was deleted before it could be read back; retry the call",
                             descriptor.table_name,
@@ -157,10 +159,10 @@ async fn authorize_existing_row<M, PK>(
     runtime: &SqlxRuntime,
     descriptor: &'static ModelDescriptor<M, PK>,
     conflict_columns: &[(&'static str, SqlValue)],
-    ctx: &CoolContext,
-) -> Result<(), CoolError> {
+    ctx: &CratestackContext,
+) -> Result<(), CratestackError> {
     if !row_passes_update_policy(runtime.pool(), descriptor, conflict_columns, ctx).await? {
-        return Err(CoolError::Forbidden(
+        return Err(CratestackError::Forbidden(
             "update policy denied this upsert".to_owned(),
         ));
     }

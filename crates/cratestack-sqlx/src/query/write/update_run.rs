@@ -3,7 +3,7 @@
 //! transaction when audit or event capture is needed; otherwise runs
 //! straight against the pool.
 
-use cratestack_core::{AuditOperation, CoolContext, CoolError, ModelEventKind};
+use cratestack_core::{AuditOperation, CratestackContext, CratestackError, ModelEventKind};
 
 use crate::audit::{
     build_audit_event, dispatch_audit_sink, enqueue_audit_event, ensure_audit_table,
@@ -21,15 +21,15 @@ pub(super) async fn run_update<'a, M, PK, I>(
     id: PK,
     input: I,
     if_match: Option<i64>,
-    ctx: &CoolContext,
-) -> Result<M, CoolError>
+    ctx: &CratestackContext,
+) -> Result<M, CratestackError>
 where
     I: UpdateModelInput<M>,
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
     PK: Send + Clone + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
 {
     if descriptor.version_column.is_some() && if_match.is_none() {
-        return Err(CoolError::PreconditionFailed(
+        return Err(CratestackError::PreconditionFailed(
             "If-Match header required for versioned model".to_owned(),
         ));
     }

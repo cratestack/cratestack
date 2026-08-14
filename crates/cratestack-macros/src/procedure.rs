@@ -145,8 +145,8 @@ pub(crate) fn generate_client_procedure_module(
 /// level regardless (`crate::transport::op_descriptors`, unchanged by
 /// `@stream` — see cratestack#282), but what the trait *implementer*
 /// returns differs: a bare `@stream` attribute swaps the default buffered
-/// `impl Future<Output = Result<Vec<T>, CoolError>>` for a
-/// `impl Stream<Item = Result<T, CoolError>>`, so items can be produced
+/// `impl Future<Output = Result<Vec<T>, CratestackError>>` for a
+/// `impl Stream<Item = Result<T, CratestackError>>`, so items can be produced
 /// incrementally instead of collected up front. Non-`@stream` procedures —
 /// which is every procedure today — must keep generating byte-identical
 /// tokens to before; see `procedure::tests` for the regression guard.
@@ -185,10 +185,10 @@ pub(crate) fn generate_procedure_registry_method(
             fn #method_ident(
                 &self,
                 db: &super::Cratestack,
-                ctx: &::cratestack::CoolContext,
+                ctx: &::cratestack::CratestackContext,
                 args: #module_ident::Args,
                 _authorized: #module_ident::Authorized,
-            ) -> impl ::cratestack::futures::Stream<Item = Result<#module_ident::Item, ::cratestack::CoolError>> + Send;
+            ) -> impl ::cratestack::futures::Stream<Item = Result<#module_ident::Item, ::cratestack::CratestackError>> + Send;
         });
     }
 
@@ -196,9 +196,9 @@ pub(crate) fn generate_procedure_registry_method(
         fn #method_ident(
             &self,
             db: &super::Cratestack,
-            ctx: &::cratestack::CoolContext,
+            ctx: &::cratestack::CratestackContext,
             args: #module_ident::Args,
             _authorized: #module_ident::Authorized,
-        ) -> impl ::core::future::Future<Output = Result<#module_ident::Output, ::cratestack::CoolError>> + Send;
+        ) -> impl ::core::future::Future<Output = Result<#module_ident::Output, ::cratestack::CratestackError>> + Send;
     })
 }

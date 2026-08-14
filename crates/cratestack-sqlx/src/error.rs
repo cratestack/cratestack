@@ -1,32 +1,32 @@
-//! Typed conversion from `sqlx::Error` to `CoolError`.
+//! Typed conversion from `sqlx::Error` to `CratestackError`.
 //!
 //! The central entry point is [`cool_error_from_sqlx`], which should be used
-//! instead of `CoolError::Database(error.to_string())` at every sqlx call
+//! instead of `CratestackError::Database(error.to_string())` at every sqlx call
 //! site.  When the underlying error is `sqlx::Error::Database`, the
 //! structured fields (`code`, `constraint`) are captured in a
 //! [`DbErrorInfo`][cratestack_core::DbErrorInfo] and stored in the
-//! [`CoolError::DatabaseTyped`] variant so consumers can call
-//! [`CoolError::db_sqlstate`] / [`CoolError::db_constraint`] instead of
+//! [`CratestackError::DatabaseTyped`] variant so consumers can call
+//! [`CratestackError::db_sqlstate`] / [`CratestackError::db_constraint`] instead of
 //! substring-matching the stringified detail.
 //!
-//! `sqlx::Error::RowNotFound` is mapped to `CoolError::NotFound` so a missing
+//! `sqlx::Error::RowNotFound` is mapped to `CratestackError::NotFound` so a missing
 //! row surfaces as a 404 rather than a 500. Callers that want a custom
 //! not-found message should construct it themselves before calling this
 //! helper.
 
-use cratestack_core::{CoolError, DbErrorInfo};
+use cratestack_core::{CratestackError, DbErrorInfo};
 
 use crate::sqlx;
 
-/// Convert a `sqlx::Error` to `CoolError`, preserving structured database
+/// Convert a `sqlx::Error` to `CratestackError`, preserving structured database
 /// error information when available.
 ///
 /// # When a typed variant is produced
 ///
 /// If `error` is `sqlx::Error::Database(db_err)`, this function produces
-/// `CoolError::DatabaseTyped` with the SQLSTATE code and constraint name
+/// `CratestackError::DatabaseTyped` with the SQLSTATE code and constraint name
 /// extracted from the driver error.  All other `sqlx::Error` kinds (pool
-/// timeouts, decode errors, etc.) fall back to `CoolError::Database` with the
+/// timeouts, decode errors, etc.) fall back to `CratestackError::Database` with the
 /// stringified message, identical to the legacy `error.to_string()` path.
 ///
 /// # Usage
@@ -47,20 +47,20 @@ use crate::sqlx;
 ///     let constraint = err.db_constraint(); // e.g. "accounts_email_key"
 /// }
 /// ```
-pub fn cool_error_from_sqlx(error: sqlx::Error) -> CoolError {
+pub fn cool_error_from_sqlx(error: sqlx::Error) -> CratestackError {
     match error {
         sqlx::Error::Database(db_err) => {
             let detail = db_err.to_string();
             let sqlstate = db_err.code().map(|c| c.into_owned());
             let constraint = db_err.constraint().map(ToOwned::to_owned);
-            CoolError::DatabaseTyped(DbErrorInfo {
+            CratestackError::DatabaseTyped(DbErrorInfo {
                 detail,
                 sqlstate,
                 constraint,
             })
         }
-        sqlx::Error::RowNotFound => CoolError::NotFound("not found".to_owned()),
-        other => CoolError::Database(other.to_string()),
+        sqlx::Error::RowNotFound => CratestackError::NotFound("not found".to_owned()),
+        other => CratestackError::Database(other.to_string()),
     }
 }
 
@@ -74,8 +74,8 @@ mod tests {
     fn row_not_found_maps_to_not_found() {
         let err = cool_error_from_sqlx(sqlx::Error::RowNotFound);
         assert!(
-            matches!(err, CoolError::NotFound(_)),
-            "RowNotFound should map to CoolError::NotFound",
+            matches!(err, CratestackError::NotFound(_)),
+            "RowNotFound should map to CratestackError::NotFound",
         );
         assert_eq!(err.status_code().as_u16(), 404);
         // Typed accessors are not applicable to NotFound.
@@ -93,8 +93,8 @@ mod tests {
             "unexpected EOF from server".to_owned(),
         ));
         assert!(
-            matches!(err, CoolError::Database(_)),
-            "Protocol error should fall back to CoolError::Database",
+            matches!(err, CratestackError::Database(_)),
+            "Protocol error should fall back to CratestackError::Database",
         );
         assert!(
             err.detail().is_some(),
@@ -121,7 +121,7 @@ mod tests {
             sqlstate: Some("23505".to_owned()),
             constraint: Some("accounts_email_key".to_owned()),
         };
-        let err = CoolError::DatabaseTyped(info);
+        let err = CratestackError::DatabaseTyped(info);
 
         assert_eq!(err.db_sqlstate(), Some("23505"));
         assert_eq!(err.db_constraint(), Some("accounts_email_key"));
@@ -144,7 +144,7 @@ mod tests {
             sqlstate: Some("40001".to_owned()),
             constraint: None,
         };
-        let err = CoolError::DatabaseTyped(info);
+        let err = CratestackError::DatabaseTyped(info);
         let detail = err.detail().unwrap_or_default();
         assert!(
             detail.contains("40001") || detail.contains("serialize"),
@@ -156,7 +156,7 @@ mod tests {
     /// consistent with the `Database(String)` behaviour.
     #[test]
     fn database_typed_empty_detail_returns_none() {
-        let err = CoolError::DatabaseTyped(DbErrorInfo::default());
+        let err = CratestackError::DatabaseTyped(DbErrorInfo::default());
         assert_eq!(err.detail(), None);
     }
 
@@ -168,7 +168,7 @@ mod tests {
             sqlstate: Some("23505".to_owned()),
             constraint: None,
         };
-        let response = CoolError::DatabaseTyped(info).into_response();
+        let response = CratestackError::DatabaseTyped(info).into_response();
         assert_eq!(response.code, "DATABASE_ERROR");
         assert_eq!(response.message, "internal error");
         assert!(!response.message.contains("secrets"));

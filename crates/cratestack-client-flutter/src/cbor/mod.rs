@@ -60,7 +60,7 @@ use serde_json::Value;
 
 use cratestack_client_rust::RuntimeErrorCode;
 use cratestack_codec_cbor::CborCodec;
-use cratestack_core::{CoolCodec, CoolError};
+use cratestack_core::{CratestackCodec, CratestackError};
 
 use crate::types::FlutterRuntimeError;
 use json_value::EncodableValue;
@@ -89,12 +89,12 @@ fn to_flutter_error(code: RuntimeErrorCode, error: impl ToString) -> FlutterRunt
 /// (see the tests below) independent of whether frb-generated glue is
 /// present, which it deliberately is not in this checkout (cratestack#563
 /// decision: glue is generated in CI, not committed).
-pub(crate) fn encode_value(value: &Value) -> Result<Vec<u8>, CoolError> {
+pub(crate) fn encode_value(value: &Value) -> Result<Vec<u8>, CratestackError> {
     CborCodec.encode(&EncodableValue(value))
 }
 
 /// Decodes CBOR bytes to a JSON value via `CborCodec`.
-pub(crate) fn decode_bytes(bytes: &[u8]) -> Result<Value, CoolError> {
+pub(crate) fn decode_bytes(bytes: &[u8]) -> Result<Value, CratestackError> {
     CborCodec.decode(bytes)
 }
 

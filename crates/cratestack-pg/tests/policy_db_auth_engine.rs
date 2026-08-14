@@ -1,7 +1,9 @@
 use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack::include_server_schema;
-use cratestack::{AuthProvider, CoolCodec, CoolContext, CoolError, RequestContext, Value};
+use cratestack::{
+    AuthProvider, CratestackCodec, CratestackContext, CratestackError, RequestContext, Value,
+};
 use cratestack_codec_cbor::CborCodec;
 use std::collections::BTreeMap;
 use tower::util::ServiceExt;
@@ -33,12 +35,12 @@ fn tenant_scope(id: &str) -> Value {
 }
 
 impl AuthProvider for AuthEngineAuthProvider {
-    type Error = cratestack::CoolError;
+    type Error = cratestack::CratestackError;
 
     fn authenticate(
         &self,
         request: &RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
+    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
         let mut fields = Vec::new();
 
         if let Some(value) = request
@@ -88,9 +90,9 @@ impl AuthProvider for AuthEngineAuthProvider {
         }
 
         core::future::ready(Ok(if fields.is_empty() {
-            CoolContext::anonymous()
+            CratestackContext::anonymous()
         } else {
-            CoolContext::authenticated(fields)
+            CratestackContext::authenticated(fields)
         }))
     }
 }
@@ -99,10 +101,11 @@ impl cratestack_schema::procedures::ProcedureRegistry for AuthEngineProcedures {
     async fn inspect_post(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::inspect_post::Args,
         _authorized: cratestack_schema::procedures::inspect_post::Authorized,
-    ) -> Result<cratestack_schema::procedures::inspect_post::Output, cratestack::CoolError> {
+    ) -> Result<cratestack_schema::procedures::inspect_post::Output, cratestack::CratestackError>
+    {
         Ok(cratestack_schema::EnginePost {
             id: args.args.postId,
             title: "Visible".to_owned(),
@@ -114,10 +117,11 @@ impl cratestack_schema::procedures::ProcedureRegistry for AuthEngineProcedures {
     async fn admin_pulse(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::admin_pulse::Args,
         _authorized: cratestack_schema::procedures::admin_pulse::Authorized,
-    ) -> Result<cratestack_schema::procedures::admin_pulse::Output, cratestack::CoolError> {
+    ) -> Result<cratestack_schema::procedures::admin_pulse::Output, cratestack::CratestackError>
+    {
         Ok(cratestack_schema::EnginePost {
             id: args.args.postId,
             title: "Admin Pulse".to_owned(),
@@ -193,7 +197,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for AuthEngineProcedures {
 // in tenant-scoping columns that bypass policy predicates (since `NULL != X`
 // returns NULL in SQL, not true). This is now fixed in cratestack-sqlx's
 // `resolve_default_value()` — it checks `CreateDefault::auth_field_required`
-// and fails with `CoolError::Validation` when a required auth field is missing.
+// and fails with `CratestackError::Validation` when a required auth field is missing.
 async fn db_backed_auth_engine_supports_all_deny_and_auth_defaults() {
     let Some(test_pg) = pg::connect_or_skip().await else {
         return;
@@ -253,7 +257,7 @@ async fn db_backed_auth_engine_supports_all_deny_and_auth_defaults() {
 
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
 
-    let owner = CoolContext::authenticated([
+    let owner = CratestackContext::authenticated([
         ("id".to_owned(), Value::String("usr_1".to_owned())),
         ("userId".to_owned(), Value::String("usr_1".to_owned())),
         ("organization".to_owned(), organization_scope("org_1")),
@@ -264,7 +268,7 @@ async fn db_backed_auth_engine_supports_all_deny_and_auth_defaults() {
             Value::String("member".to_owned()),
         ),
     ]);
-    let org_admin = CoolContext::authenticated([
+    let org_admin = CratestackContext::authenticated([
         ("id".to_owned(), Value::String("usr_2".to_owned())),
         ("userId".to_owned(), Value::String("usr_2".to_owned())),
         ("organization".to_owned(), organization_scope("org_1")),
@@ -275,7 +279,7 @@ async fn db_backed_auth_engine_supports_all_deny_and_auth_defaults() {
             Value::String("admin".to_owned()),
         ),
     ]);
-    let other_org_admin = CoolContext::authenticated([
+    let other_org_admin = CratestackContext::authenticated([
         ("id".to_owned(), Value::String("usr_4".to_owned())),
         ("userId".to_owned(), Value::String("usr_4".to_owned())),
         ("organization".to_owned(), organization_scope("org_2")),
@@ -286,7 +290,7 @@ async fn db_backed_auth_engine_supports_all_deny_and_auth_defaults() {
             Value::String("admin".to_owned()),
         ),
     ]);
-    let anonymous = CoolContext::anonymous();
+    let anonymous = CratestackContext::anonymous();
 
     let owner_post = cool
         .engine_post()
@@ -362,7 +366,7 @@ async fn db_backed_auth_engine_supports_all_deny_and_auth_defaults() {
     )
     .await
     .expect_err("non-owner should fail db-backed procedure auth");
-    assert!(matches!(hidden_post_error, CoolError::Forbidden(_)));
+    assert!(matches!(hidden_post_error, CratestackError::Forbidden(_)));
 
     cratestack_schema::procedures::admin_pulse::authorize(
         &cratestack_schema::procedures::admin_pulse::Args {
@@ -383,7 +387,7 @@ async fn db_backed_auth_engine_supports_all_deny_and_auth_defaults() {
         &other_org_admin,
     )
     .expect_err("wrong-tenant admin should fail built-in procedure auth");
-    assert!(matches!(wrong_tenant_pulse, CoolError::Forbidden(_)));
+    assert!(matches!(wrong_tenant_pulse, CratestackError::Forbidden(_)));
 
     let denied_create = cool
         .engine_post()
@@ -395,7 +399,7 @@ async fn db_backed_auth_engine_supports_all_deny_and_auth_defaults() {
         .run(&owner)
         .await
         .expect_err("mismatched author create should fail");
-    assert!(matches!(denied_create, CoolError::Forbidden(_)));
+    assert!(matches!(denied_create, CratestackError::Forbidden(_)));
 
     let created_todo = cool
         .todo()
@@ -441,7 +445,7 @@ async fn db_backed_auth_engine_supports_all_deny_and_auth_defaults() {
         .run(&other_org_admin)
         .await
         .expect_err("other org admin update should fail");
-    assert!(matches!(other_org_update, CoolError::Forbidden(_)));
+    assert!(matches!(other_org_update, CratestackError::Forbidden(_)));
 
     let anonymous_note_create = cool
         .scoped_note()
@@ -451,7 +455,10 @@ async fn db_backed_auth_engine_supports_all_deny_and_auth_defaults() {
         .run(&anonymous)
         .await
         .expect_err("anonymous scoped note create should fail cleanly");
-    assert!(matches!(anonymous_note_create, CoolError::Forbidden(_)));
+    assert!(matches!(
+        anonymous_note_create,
+        CratestackError::Forbidden(_)
+    ));
 
     let created_note = cool
         .scoped_note()
@@ -469,7 +476,7 @@ async fn db_backed_auth_engine_supports_all_deny_and_auth_defaults() {
             ownerId: "usr_1".to_owned(),
             title: "Missing org".to_owned(),
         })
-        .run(&CoolContext::authenticated([
+        .run(&CratestackContext::authenticated([
             ("id".to_owned(), Value::String("usr_1".to_owned())),
             ("userId".to_owned(), Value::String("usr_1".to_owned())),
             (
@@ -479,20 +486,20 @@ async fn db_backed_auth_engine_supports_all_deny_and_auth_defaults() {
         ]))
         .await
         .expect_err("missing nested organization auth field should fail validation");
-    assert!(matches!(missing_org_error, CoolError::Validation(_)));
+    assert!(matches!(missing_org_error, CratestackError::Validation(_)));
 
     let wrong_type_error = cool
         .scoped_note()
         .create(cratestack_schema::CreateScopedNoteInput {
             body: "Wrong type".to_owned(),
         })
-        .run(&CoolContext::authenticated([
+        .run(&CratestackContext::authenticated([
             ("id".to_owned(), Value::String("usr_1".to_owned())),
             ("userId".to_owned(), Value::Int(1)),
         ]))
         .await
         .expect_err("wrong auth default type should fail validation");
-    assert!(matches!(wrong_type_error, CoolError::Validation(_)));
+    assert!(matches!(wrong_type_error, CratestackError::Validation(_)));
 
     let codec = CborCodec;
     let router = cratestack_schema::axum::model_router(
@@ -571,7 +578,7 @@ async fn db_backed_auth_engine_supports_all_deny_and_auth_defaults() {
     // `userId` is required in the `auth SessionUser` block, and
     // `ScopedNote.ownerId @default(auth().userId)` is a non-nullable
     // column — a caller missing it fails `resolve_default_value` with
-    // `CoolError::Validation`, which `cratestack-core`'s `IntoResponse`
+    // `CratestackError::Validation`, which `cratestack-core`'s `IntoResponse`
     // maps to 422 (see `error.rs`), not 400. This assertion could not
     // be checked against real behavior before this PR un-ignored the
     // test (see `banking_validation.rs` for the same Validation -> 422
@@ -663,7 +670,7 @@ async fn db_backed_auth_engine_supports_all_deny_and_auth_defaults() {
     let forbidden_body = to_bytes(forbidden_delete.into_body(), usize::MAX)
         .await
         .expect("forbidden delete body should read");
-    let forbidden_error: cratestack::CoolErrorResponse = codec
+    let forbidden_error: cratestack::CratestackErrorResponse = codec
         .decode(&forbidden_body)
         .expect("forbidden delete should decode");
     assert_eq!(forbidden_error.code, "FORBIDDEN");

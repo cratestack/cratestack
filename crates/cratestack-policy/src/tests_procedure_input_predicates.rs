@@ -9,7 +9,7 @@ use crate::{
     ProcedureArgs, ProcedurePolicy, ProcedurePolicyExpr, ProcedurePolicyLiteral,
     ProcedurePredicate, authorize_procedure,
 };
-use cratestack_core::{CoolContext, Value};
+use cratestack_core::{CratestackContext, Value};
 use std::collections::BTreeMap;
 
 struct MapArgs(BTreeMap<&'static str, Value>);
@@ -28,7 +28,7 @@ fn policy(predicate: ProcedurePredicate) -> ProcedurePolicy {
 
 #[test]
 fn input_field_is_true_variant() {
-    let ctx = CoolContext::authenticated([]);
+    let ctx = CratestackContext::authenticated([]);
     let allow = [policy(ProcedurePredicate::InputFieldIsTrue {
         field: "publish",
     })];
@@ -46,7 +46,7 @@ fn input_field_is_true_variant() {
 
 #[test]
 fn input_field_eq_and_ne_literal_variants() {
-    let ctx = CoolContext::authenticated([]);
+    let ctx = CratestackContext::authenticated([]);
     let eq_two = [policy(ProcedurePredicate::InputFieldEqLiteral {
         field: "postId",
         value: ProcedurePolicyLiteral::Int(2),
@@ -67,7 +67,7 @@ fn input_field_eq_and_ne_literal_variants() {
 
 #[test]
 fn input_field_eq_and_ne_auth_variants() {
-    let owner_ctx = CoolContext::authenticated([(
+    let owner_ctx = CratestackContext::authenticated([(
         "email".to_owned(),
         Value::String("owner@example.com".to_owned()),
     )]);
@@ -95,13 +95,13 @@ fn input_field_eq_and_ne_auth_variants() {
     assert!(authorize_procedure(&ne_auth, &[], &mismatched, &owner_ctx).is_ok());
 
     // Missing the auth field entirely must not vacuously match.
-    let anonymous = CoolContext::anonymous();
+    let anonymous = CratestackContext::anonymous();
     assert!(authorize_procedure(&eq_auth, &[], &matching, &anonymous).is_err());
 }
 
 #[test]
 fn input_field_eq_and_ne_input_variants() {
-    let ctx = CoolContext::authenticated([]);
+    let ctx = CratestackContext::authenticated([]);
     let eq_input = [policy(ProcedurePredicate::InputFieldEqInput {
         field: "ownerEmail",
         other_field: "mirrorEmail",

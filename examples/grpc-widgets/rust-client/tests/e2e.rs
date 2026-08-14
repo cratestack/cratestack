@@ -133,7 +133,7 @@ async fn full_crud_lifecycle_against_a_real_grpc_server() {
 
     // --- get-after-delete: typed `GrpcClientError::Status` carrying
     // `tonic::Code::NotFound` (`cratestack_grpc::error::rpc_code_to_tonic_code`'s
-    // table — `CoolError::NotFound` -> `not_found` -> `Code::NotFound`),
+    // table — `CratestackError::NotFound` -> `not_found` -> `Code::NotFound`),
     // matching the TS client's `CratestackGrpcError` check in
     // `ts-client-e2e.mjs`.
     let after_delete = client.widgets().get(&id).await;

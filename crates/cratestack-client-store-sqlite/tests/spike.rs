@@ -10,7 +10,7 @@ use axum::{Router, body::Bytes};
 use cratestack_client_rust::{ClientConfig, ClientError, CratestackClient};
 use cratestack_client_store_sqlite::SqliteStateStore;
 use cratestack_codec_cbor::CborCodec;
-use cratestack_core::{ClientStateStore, CoolCodec, CoolErrorResponse};
+use cratestack_core::{ClientStateStore, CratestackCodec, CratestackErrorResponse};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -145,7 +145,7 @@ async fn handle_create_post(
     }
 
     let _input: CreatePostInput = state.codec.decode(&body).expect("request should decode");
-    let error = CoolErrorResponse {
+    let error = CratestackErrorResponse {
         code: "FORBIDDEN".to_owned(),
         message: "forbidden: create requires authentication".to_owned(),
         details: None,

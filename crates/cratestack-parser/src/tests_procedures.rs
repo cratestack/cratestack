@@ -309,7 +309,7 @@ procedure upper(args: Ping): Ping
 }
 
 /// cratestack#407: anything outside `200..=299` is a schema-compile-time
-/// error, not a runtime surprise — `CoolError` already owns the
+/// error, not a runtime surprise — `CratestackError` already owns the
 /// 3xx/4xx/5xx space.
 #[test]
 fn rejects_status_outside_2xx_range() {

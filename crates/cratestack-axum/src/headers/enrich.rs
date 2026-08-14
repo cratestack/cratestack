@@ -8,7 +8,7 @@ use crate::trusted_proxy::TrustedProxyConfig;
 use super::forwarded::{parse_client_ip, parse_hop_ip};
 use super::traceparent::parse_traceparent;
 
-/// Enrich a `CoolContext` with the request id (from `traceparent`) and the
+/// Enrich a `CratestackContext` with the request id (from `traceparent`) and the
 /// client IP recorded on audit events. Malformed `traceparent` headers are
 /// silently ignored here — the auth/header-validation layer is the right
 /// place to reject them, not the enrichment seam.
@@ -35,11 +35,11 @@ use super::traceparent::parse_traceparent;
 /// are never trusted, and nothing is guessed. `client_ip` is simply absent
 /// from the audit record.
 pub fn enrich_context_from_headers(
-    ctx: cratestack_core::CoolContext,
+    ctx: cratestack_core::CratestackContext,
     headers: &HeaderMap,
     trusted_proxy: Option<&TrustedProxyConfig>,
     peer: Option<SocketAddr>,
-) -> cratestack_core::CoolContext {
+) -> cratestack_core::CratestackContext {
     let mut ctx = ctx;
     if let Ok(Some(trace_id)) = parse_traceparent(headers) {
         ctx = ctx.with_request_id(trace_id);

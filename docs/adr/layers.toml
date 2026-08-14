@@ -79,7 +79,7 @@ cratestack-proto = 1
 # surface (`require_signed_request`, `jwks_router`, the `FromRequestParts`
 # impls) is gated behind this crate's own default-on `axum` Cargo feature —
 # not a `cratestack-axum` dependency — because the underlying types it needs
-# (`AuthProvider`, `CoolContext`, `RequestContext`, `CoolError`) live in
+# (`AuthProvider`, `CratestackContext`, `RequestContext`, `CratestackError`) live in
 # `cratestack-core`, and the header/method/URI types it needs unconditionally
 # come from the plain `http` crate (which `cratestack-axum` itself only
 # re-exports), not from `cratestack-axum`. Its only normal in-workspace
@@ -117,7 +117,7 @@ cratestack-client-store-redis = 2
 # `cratestack-macros`/`cratestack-proto` used above: assign the lowest
 # number its REAL graph supports, not a role invented to fit the prose.
 # Its only normal workspace dependencies are `cratestack-core` (L1,
-# `CoolError`) and, behind its optional `postgres` feature,
+# `CratestackError`) and, behind its optional `postgres` feature,
 # `cratestack-sqlx` (L2, `Migration`/`apply_pending`/`PgPool`) — both <= 2.
 # L2 is a complete, exception-free assignment: nothing in the workspace
 # depends on `cratestack-service` (it is a leaf, consumed directly by
@@ -137,7 +137,7 @@ cratestack-service = 2
 # `cratestack-sqlx`, the same posture `cratestack-sqlx` itself takes for its
 # own internal `cratestack_audit`/`cratestack_migrations` tables (bare DDL
 # constant + hand-written queries, no schema macro). Its only normal
-# workspace dependencies are `cratestack-core` (L1, `CoolError`/
+# workspace dependencies are `cratestack-core` (L1, `CratestackError`/
 # `TransactionIsolation`) and `cratestack-sqlx` (L2, the `sqlx` re-export,
 # `run_in_isolated_tx_with_retries`, `cool_error_from_sqlx`) — both <= 2, so
 # L2 is a complete, exception-free assignment by the same "lowest number the

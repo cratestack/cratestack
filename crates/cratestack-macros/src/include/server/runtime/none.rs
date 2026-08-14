@@ -33,7 +33,7 @@ pub(super) fn build_runtime_block() -> proc_macro2::TokenStream {
 
         #[derive(Clone)]
         pub struct BoundCratestack {
-            ctx: ::cratestack::CoolContext,
+            ctx: ::cratestack::CratestackContext,
         }
 
         pub struct CratestackBuilder;
@@ -43,21 +43,21 @@ pub(super) fn build_runtime_block() -> proc_macro2::TokenStream {
                 CratestackBuilder
             }
 
-            pub fn bind_context(&self, ctx: ::cratestack::CoolContext) -> BoundCratestack {
+            pub fn bind_context(&self, ctx: ::cratestack::CratestackContext) -> BoundCratestack {
                 BoundCratestack { ctx }
             }
 
             pub fn bind_auth<P: ::cratestack::serde::Serialize>(
                 &self,
                 principal: Option<P>,
-            ) -> Result<BoundCratestack, ::cratestack::CoolError> {
-                let ctx = ::cratestack::CoolContext::from_principal(principal)?;
+            ) -> Result<BoundCratestack, ::cratestack::CratestackError> {
+                let ctx = ::cratestack::CratestackContext::from_principal(principal)?;
                 Ok(self.bind_context(ctx))
             }
         }
 
         impl BoundCratestack {
-            pub fn context(&self) -> &::cratestack::CoolContext {
+            pub fn context(&self) -> &::cratestack::CratestackContext {
                 &self.ctx
             }
         }

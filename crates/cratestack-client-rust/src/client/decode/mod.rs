@@ -1,4 +1,4 @@
-use cratestack_core::CoolErrorResponse;
+use cratestack_core::CratestackErrorResponse;
 use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
 
@@ -62,7 +62,7 @@ where
         })
     } else {
         let error = codec
-            .decode_response::<CoolErrorResponse>(content_type, &response.body)
+            .decode_response::<CratestackErrorResponse>(content_type, &response.body)
             .ok();
         let message = error
             .as_ref()
@@ -80,7 +80,7 @@ where
 }
 
 /// Build a `ClientError::Remote` from a non-2xx response, decoding the
-/// body as a `CoolErrorResponse` if possible. Used by the streaming
+/// body as a `CratestackErrorResponse` if possible. Used by the streaming
 /// path which has a separate buffer-on-error step (success path
 /// streams, error path is bounded and fits in memory).
 pub(crate) fn remote_error_from_response<C>(
@@ -97,7 +97,7 @@ where
         .map(|header| header.value.as_str())
         .unwrap_or("");
     let error = codec
-        .decode_response::<CoolErrorResponse>(content_type, &response.body)
+        .decode_response::<CratestackErrorResponse>(content_type, &response.body)
         .ok();
     let message = error
         .as_ref()
@@ -134,7 +134,7 @@ where
             .map_err(ClientError::from)
     } else {
         let error = if media_type_matches(content_type, CBOR_SEQUENCE_CONTENT_TYPE) {
-            decode_cbor_sequence::<CoolErrorResponse>(&response.body)
+            decode_cbor_sequence::<CratestackErrorResponse>(&response.body)
                 .ok()
                 .and_then(|mut values| {
                     if values.len() == 1 {
@@ -145,7 +145,7 @@ where
                 })
         } else {
             codec
-                .decode_response::<CoolErrorResponse>(content_type, &response.body)
+                .decode_response::<CratestackErrorResponse>(content_type, &response.body)
                 .ok()
         };
         let message = error

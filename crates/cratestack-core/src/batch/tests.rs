@@ -15,9 +15,9 @@ fn find_duplicate_position_returns_first_collision() {
 fn batch_response_summary_counts_ok_and_err() {
     let response: BatchResponse<i64> = BatchResponse::from_results(vec![
         Ok(10),
-        Err(CoolError::NotFound("missing".to_owned())),
+        Err(CratestackError::NotFound("missing".to_owned())),
         Ok(20),
-        Err(CoolError::Forbidden("nope".to_owned())),
+        Err(CratestackError::Forbidden("nope".to_owned())),
     ]);
     assert_eq!(response.summary.total, 4);
     assert_eq!(response.summary.ok, 2);
@@ -25,7 +25,7 @@ fn batch_response_summary_counts_ok_and_err() {
     // Index preservation is the whole contract.
     assert_eq!(response.results[0].index, 0);
     assert_eq!(response.results[3].index, 3);
-    // Error projection rides CoolError::code().
+    // Error projection rides CratestackError::code().
     match &response.results[1].status {
         BatchItemStatus::Error { error } => assert_eq!(error.code, "NOT_FOUND"),
         BatchItemStatus::Ok { .. } => panic!("expected per-item error"),

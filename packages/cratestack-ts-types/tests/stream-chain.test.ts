@@ -276,7 +276,7 @@ describe("RpcStreamLink chain against a real application/cbor-seq stream", () =>
     ]);
     expect(thrown).toBeInstanceOf(FakeStreamError);
     expect((thrown as InstanceType<typeof FakeStreamError>).body.code).toBe("internal");
-    // `CoolError::Internal`'s `public_message()` deliberately redacts the
+    // `CratestackError::Internal`'s `public_message()` deliberately redacts the
     // real message to a generic "internal error" server-side — this
     // asserts the client sees exactly that redacted text, not a leak.
     expect((thrown as InstanceType<typeof FakeStreamError>).body.message).toBe("internal error");

@@ -10,7 +10,7 @@ mod support;
 
 use cratestack::include_server_schema;
 use cratestack::sqlx::query;
-use cratestack::{CoolContext, RelationInclude, Value};
+use cratestack::{CratestackContext, RelationInclude, Value};
 use support::pg;
 
 include_server_schema!(
@@ -39,8 +39,9 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     .expect("create deliveries");
 }
 
-fn operator() -> CoolContext {
-    CoolContext::authenticated([("id".to_owned(), Value::Int(1))]).with_request_id("tier6-001")
+fn operator() -> CratestackContext {
+    CratestackContext::authenticated([("id".to_owned(), Value::Int(1))])
+        .with_request_id("tier6-001")
 }
 
 async fn seed(pool: &cratestack::sqlx::PgPool) {

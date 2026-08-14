@@ -27,7 +27,7 @@
 // batches — `/rpc/batch` is unary by construction.
 // -----------------------------------------------------------------------------
 
-use cratestack_core::CoolError;
+use cratestack_core::CratestackError;
 
 use crate::codec::HttpClientCodec;
 use crate::rpc::batch_call::BatchHandle;
@@ -48,7 +48,7 @@ pub struct BatchBuilder<C> {
     /// Frames whose input failed to encode pre-send — recorded by id
     /// so [`BatchResults::take`] can surface the error per-handle
     /// instead of poisoning the whole batch.
-    encode_errors: std::collections::HashMap<u64, CoolError>,
+    encode_errors: std::collections::HashMap<u64, CratestackError>,
     next_id: u64,
 }
 
@@ -93,7 +93,7 @@ where
         id
     }
 
-    pub(crate) fn push_failed_frame(&mut self, error: CoolError) -> u64 {
+    pub(crate) fn push_failed_frame(&mut self, error: CratestackError) -> u64 {
         let id = self.next_id();
         self.encode_errors.insert(id, error);
         id
@@ -126,7 +126,7 @@ where
 /// exactly once.
 pub struct BatchResults {
     frames: std::collections::HashMap<u64, cratestack_core::rpc::RpcResponseFrame>,
-    encode_errors: std::collections::HashMap<u64, CoolError>,
+    encode_errors: std::collections::HashMap<u64, CratestackError>,
 }
 
 impl BatchResults {
@@ -159,7 +159,7 @@ impl BatchResults {
         })?;
         match (frame.output, frame.error) {
             (Some(output), None) => serde_json::from_value::<O>(output).map_err(|error| {
-                RpcClientError::Codec(CoolError::Codec(format!(
+                RpcClientError::Codec(CratestackError::Codec(format!(
                     "decode batch output for id {}: {error}",
                     handle.id,
                 )))

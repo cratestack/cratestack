@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::CoolError;
+use crate::error::CratestackError;
 
 pub use keys::{InMemoryNonceStore, KeyProvider, NonceStore, StaticKeyProvider};
 
@@ -61,10 +61,10 @@ impl<K: KeyProvider> HmacEnvelope<K> {
         self
     }
 
-    async fn compute_mac(&self, key: &[u8], input: &[u8]) -> Result<Vec<u8>, CoolError> {
+    async fn compute_mac(&self, key: &[u8], input: &[u8]) -> Result<Vec<u8>, CratestackError> {
         use hmac::{Hmac, Mac};
         let mut mac = <Hmac<sha2::Sha256> as Mac>::new_from_slice(key)
-            .map_err(|_| CoolError::Internal("HMAC key length error".to_owned()))?;
+            .map_err(|_| CratestackError::Internal("HMAC key length error".to_owned()))?;
         mac.update(input);
         Ok(mac.finalize().into_bytes().to_vec())
     }
@@ -72,7 +72,10 @@ impl<K: KeyProvider> HmacEnvelope<K> {
     /// Seal a request body. The returned bytes are a CBOR-encoded
     /// [`SealedEnvelope`] payload — the sender wraps these in their
     /// codec of choice on the way out.
-    pub async fn seal(&self, payload: serde_json::Value) -> Result<SealedEnvelope, CoolError> {
+    pub async fn seal(
+        &self,
+        payload: serde_json::Value,
+    ) -> Result<SealedEnvelope, CratestackError> {
         let key = self.keys.resolve_signing_key(&self.signing_kid).await?;
         let ts = chrono::Utc::now().timestamp();
         let nonce = uuid::Uuid::new_v4().to_string();
@@ -95,9 +98,12 @@ impl<K: KeyProvider> HmacEnvelope<K> {
     /// time MAC compare; clock-skew window enforced; envelope kid is
     /// resolved through the configured provider so callers can rotate
     /// keys without changing the recipient.
-    pub async fn open(&self, envelope: &SealedEnvelope) -> Result<serde_json::Value, CoolError> {
+    pub async fn open(
+        &self,
+        envelope: &SealedEnvelope,
+    ) -> Result<serde_json::Value, CratestackError> {
         if envelope.alg != "HS256" {
-            return Err(CoolError::Unauthorized(format!(
+            return Err(CratestackError::Unauthorized(format!(
                 "unsupported envelope algorithm '{}'",
                 envelope.alg,
             )));
@@ -105,7 +111,7 @@ impl<K: KeyProvider> HmacEnvelope<K> {
         let now = chrono::Utc::now().timestamp();
         let drift = (now - envelope.ts).abs();
         if drift > self.clock_skew_secs {
-            return Err(CoolError::Unauthorized(
+            return Err(CratestackError::Unauthorized(
                 "envelope timestamp outside accepted skew window".to_owned(),
             ));
         }
@@ -115,15 +121,15 @@ impl<K: KeyProvider> HmacEnvelope<K> {
         use base64::Engine;
         let actual = base64::engine::general_purpose::STANDARD
             .decode(&envelope.mac_b64)
-            .map_err(|_| CoolError::Unauthorized("envelope MAC is not base64".to_owned()))?;
+            .map_err(|_| CratestackError::Unauthorized("envelope MAC is not base64".to_owned()))?;
         if actual.len() != expected.len() {
-            return Err(CoolError::Unauthorized(
+            return Err(CratestackError::Unauthorized(
                 "envelope MAC has wrong length".to_owned(),
             ));
         }
         use subtle::ConstantTimeEq;
         if !bool::from(actual.as_slice().ct_eq(expected.as_slice())) {
-            return Err(CoolError::Unauthorized(
+            return Err(CratestackError::Unauthorized(
                 "envelope MAC verification failed".to_owned(),
             ));
         }
@@ -132,10 +138,12 @@ impl<K: KeyProvider> HmacEnvelope<K> {
                 envelope.ts + self.clock_skew_secs,
                 0,
             )
-            .ok_or_else(|| CoolError::Unauthorized("envelope timestamp out of range".to_owned()))?;
+            .ok_or_else(|| {
+                CratestackError::Unauthorized("envelope timestamp out of range".to_owned())
+            })?;
             let recorded = nonces.record_if_unseen(&envelope.nonce, expires_at).await?;
             if !recorded {
-                return Err(CoolError::Unauthorized(
+                return Err(CratestackError::Unauthorized(
                     "envelope nonce replay detected".to_owned(),
                 ));
             }
@@ -155,7 +163,7 @@ pub struct SealedEnvelope {
 }
 
 impl SealedEnvelope {
-    pub(crate) fn signing_input(&self) -> Result<Vec<u8>, CoolError> {
+    pub(crate) fn signing_input(&self) -> Result<Vec<u8>, CratestackError> {
         let mut buf = Vec::with_capacity(256);
         buf.extend_from_slice(self.kid.as_bytes());
         buf.push(0);
@@ -170,7 +178,7 @@ impl SealedEnvelope {
         // `serde_json::Value` — adequate for HMAC integrity (the
         // verifier reconstructs the same bytes the sender signed).
         let body_bytes = serde_json::to_vec(&self.body)
-            .map_err(|error| CoolError::Codec(format!("encode envelope body: {error}")))?;
+            .map_err(|error| CratestackError::Codec(format!("encode envelope body: {error}")))?;
         buf.extend_from_slice(&body_bytes);
         Ok(buf)
     }

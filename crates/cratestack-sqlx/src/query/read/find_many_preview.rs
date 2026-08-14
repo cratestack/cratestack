@@ -2,7 +2,7 @@
 //! string-builders never bind values — they exist for the studio's
 //! "show me the SQL that'll run" pane.
 
-use cratestack_core::CoolContext;
+use cratestack_core::CratestackContext;
 
 use crate::render::{render_filter_expr_sql, render_order_clause_sql, render_scoped_select_sql};
 
@@ -57,7 +57,10 @@ pub(super) fn preview_sql<M, PK>(find: &FindMany<'_, M, PK>) -> String {
     sql
 }
 
-pub(super) fn preview_scoped_sql<M, PK>(find: &FindMany<'_, M, PK>, ctx: &CoolContext) -> String {
+pub(super) fn preview_scoped_sql<M, PK>(
+    find: &FindMany<'_, M, PK>,
+    ctx: &CratestackContext,
+) -> String {
     let order_by = find.effective_order_by();
     render_scoped_select_sql(
         find.descriptor,

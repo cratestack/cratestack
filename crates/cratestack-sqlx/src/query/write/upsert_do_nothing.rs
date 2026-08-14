@@ -3,7 +3,7 @@
 //! see that method's doc comment for why this is a distinct type
 //! rather than a flag on `UpsertRecord` itself.
 
-use cratestack_core::{CoolContext, CoolError};
+use cratestack_core::{CratestackContext, CratestackError};
 
 use crate::audit::{RunInTxOutcome, dispatch_audit_sink};
 use crate::{
@@ -62,7 +62,7 @@ where
         )
     }
 
-    pub async fn run(self, ctx: &CoolContext) -> Result<UpsertOutcome<M>, CoolError>
+    pub async fn run(self, ctx: &CratestackContext) -> Result<UpsertOutcome<M>, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
@@ -98,8 +98,8 @@ where
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-        ctx: &CoolContext,
-    ) -> Result<RunInTxOutcome<UpsertOutcome<M>>, CoolError>
+        ctx: &CratestackContext,
+    ) -> Result<RunInTxOutcome<UpsertOutcome<M>>, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,

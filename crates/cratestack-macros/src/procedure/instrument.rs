@@ -58,7 +58,7 @@ pub(super) fn authorized_type_tokens() -> proc_macro2::TokenStream {
         ///   crate that chooses to write `unsafe` itself.
         ///
         /// `Debug` is derived (not `Clone`/`PartialEq`/...) purely so
-        /// `Result<Authorized, CoolError>` satisfies `expect`/`expect_err`
+        /// `Result<Authorized, CratestackError>` satisfies `expect`/`expect_err`
         /// in tests that assert on `authorize_with_db`'s result without
         /// caring about the success value — it does not add any way to
         /// construct one.
@@ -71,8 +71,8 @@ pub(super) fn authorize_fn_tokens() -> proc_macro2::TokenStream {
     quote! {
         pub fn authorize<A: ::cratestack::ProcedureArgs + ?Sized>(
             args: &A,
-            ctx: &::cratestack::CoolContext,
-        ) -> Result<(), ::cratestack::CoolError> {
+            ctx: &::cratestack::CratestackContext,
+        ) -> Result<(), ::cratestack::CratestackError> {
             let started = ::std::time::Instant::now();
             let result = ::cratestack::authorize_procedure(ALLOW_POLICIES, DENY_POLICIES, args, ctx);
             match &result {
@@ -106,8 +106,8 @@ pub(super) fn authorize_with_db_fn_tokens(
         pub async fn authorize_with_db(
             db: &super::super::Cratestack,
             args: &Args,
-            ctx: &::cratestack::CoolContext,
-        ) -> Result<Authorized, ::cratestack::CoolError> {
+            ctx: &::cratestack::CratestackContext,
+        ) -> Result<Authorized, ::cratestack::CratestackError> {
             let started = ::std::time::Instant::now();
             ::cratestack::authorize_procedure(ALLOW_POLICIES, DENY_POLICIES, args, ctx)?;
             #(#model_authorizers)*
@@ -128,13 +128,13 @@ pub(super) fn invoke_fn_tokens() -> proc_macro2::TokenStream {
     quote! {
         pub async fn invoke<A, F, Fut, T>(
             args: &A,
-            ctx: &::cratestack::CoolContext,
+            ctx: &::cratestack::CratestackContext,
             f: F,
-        ) -> Result<T, ::cratestack::CoolError>
+        ) -> Result<T, ::cratestack::CratestackError>
         where
             A: ::cratestack::ProcedureArgs + ?Sized,
             F: FnOnce() -> Fut,
-            Fut: ::core::future::Future<Output = Result<T, ::cratestack::CoolError>>,
+            Fut: ::core::future::Future<Output = Result<T, ::cratestack::CratestackError>>,
         {
             let span = ::cratestack::tracing::info_span!(
                 "cratestack_procedure_invoke",
@@ -200,12 +200,12 @@ pub(super) fn invoke_with_db_fn_tokens() -> proc_macro2::TokenStream {
         pub async fn invoke_with_db<F, Fut, T>(
             db: &super::super::Cratestack,
             args: &Args,
-            ctx: &::cratestack::CoolContext,
+            ctx: &::cratestack::CratestackContext,
             f: F,
-        ) -> Result<T, ::cratestack::CoolError>
+        ) -> Result<T, ::cratestack::CratestackError>
         where
             F: FnOnce(Authorized) -> Fut,
-            Fut: ::core::future::Future<Output = Result<T, ::cratestack::CoolError>>,
+            Fut: ::core::future::Future<Output = Result<T, ::cratestack::CratestackError>>,
         {
             let span = ::cratestack::tracing::info_span!(
                 "cratestack_procedure_invoke_with_db",

@@ -93,22 +93,22 @@ pub(crate) fn query_scalar_parser_tokens(
         "Cuid" => quote! { ::cratestack::parse_cuid(#value_expr) },
         "Int" => quote! {
             (#value_expr).parse::<i64>().map_err(|error| {
-                CoolError::BadRequest(format!("invalid value '{}' for {}: {error}", #value_expr, #field_name))
+                CratestackError::BadRequest(format!("invalid value '{}' for {}: {error}", #value_expr, #field_name))
             })
         },
         "Float" => quote! {
             (#value_expr).parse::<f64>().map_err(|error| {
-                CoolError::BadRequest(format!("invalid value '{}' for {}: {error}", #value_expr, #field_name))
+                CratestackError::BadRequest(format!("invalid value '{}' for {}: {error}", #value_expr, #field_name))
             })
         },
         "Boolean" => quote! {
             (#value_expr).parse::<bool>().map_err(|error| {
-                CoolError::BadRequest(format!("invalid value '{}' for {}: {error}", #value_expr, #field_name))
+                CratestackError::BadRequest(format!("invalid value '{}' for {}: {error}", #value_expr, #field_name))
             })
         },
         "Uuid" => quote! {
             (#value_expr).parse::<::cratestack::uuid::Uuid>().map_err(|error| {
-                CoolError::BadRequest(format!("invalid value '{}' for {}: {error}", #value_expr, #field_name))
+                CratestackError::BadRequest(format!("invalid value '{}' for {}: {error}", #value_expr, #field_name))
             })
         },
         "DateTime" => quote! {
@@ -116,14 +116,14 @@ pub(crate) fn query_scalar_parser_tokens(
                 .parse::<::cratestack::chrono::DateTime<::cratestack::chrono::FixedOffset>>()
                 .map(|value| value.with_timezone(&::cratestack::chrono::Utc))
                 .map_err(|error| {
-                    CoolError::BadRequest(format!("invalid value '{}' for {}: {error}", #value_expr, #field_name))
+                    CratestackError::BadRequest(format!("invalid value '{}' for {}: {error}", #value_expr, #field_name))
                 })
         },
         "Decimal" => {
             let decimal_ty = crate::shared::decimal_backend::current_decimal_type_tokens();
             quote! {
                 (#value_expr).parse::<#decimal_ty>().map_err(|error| {
-                    CoolError::BadRequest(format!("invalid value '{}' for {}: {error}", #value_expr, #field_name))
+                    CratestackError::BadRequest(format!("invalid value '{}' for {}: {error}", #value_expr, #field_name))
                 })
             }
         }
@@ -142,10 +142,10 @@ pub(crate) fn query_scalar_list_parser_tokens(
             .split(',')
             .map(str::trim)
             .filter(|raw_value| !raw_value.is_empty())
-            .map(|raw_value| -> Result<_, CoolError> { #scalar_parser })
-            .collect::<Result<Vec<_>, CoolError>>()?;
+            .map(|raw_value| -> Result<_, CratestackError> { #scalar_parser })
+            .collect::<Result<Vec<_>, CratestackError>>()?;
         if parsed.is_empty() {
-            return Err(CoolError::BadRequest(format!(
+            return Err(CratestackError::BadRequest(format!(
                 "{}__in requires at least one value",
                 #field_name,
             )));

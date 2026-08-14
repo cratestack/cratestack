@@ -7,15 +7,15 @@
 //! context*. That is enforced structurally, not by convention:
 //!
 //! - [`SystemContext`] is the only public way to produce a
-//!   [`CoolContext`] whose private `system` flag is set.
-//! - It has no `From<CoolContext>`, no `TryFrom<CoolContext>`, and no
-//!   constructor that accepts a caller-supplied `CoolContext`. There is
+//!   [`CratestackContext`] whose private `system` flag is set.
+//! - It has no `From<CratestackContext>`, no `TryFrom<CratestackContext>`, and no
+//!   constructor that accepts a caller-supplied `CratestackContext`. There is
 //!   therefore no function anywhere — in this crate or any downstream
 //!   one — that turns an inbound request's context into a system one.
 //!   An `AuthProvider::authenticate` implementation, which is the only
-//!   place a `CoolContext` is ever built from a request, has no way to
+//!   place a `CratestackContext` is ever built from a request, has no way to
 //!   reach this type at all.
-//! - It is not `Deserialize`, and `CoolContext::system` is
+//! - It is not `Deserialize`, and `CratestackContext::system` is
 //!   `#[serde(skip)]`, so the marker cannot arrive over a wire (RPC
 //!   envelope, cached principal, client-state-store round trip, ...).
 //!
@@ -36,22 +36,22 @@ use std::collections::BTreeMap;
 
 use crate::value::Value;
 
-use super::{CoolAuthIdentity, CoolContext, PrincipalContext};
+use super::{CratestackAuthIdentity, CratestackContext, PrincipalContext};
 
 /// A context representing trusted in-process/server code (a procedure,
 /// a worker, a reconciliation job) rather than an end user.
 ///
-/// Deliberately a distinct type from [`CoolContext`] so that "this call
+/// Deliberately a distinct type from [`CratestackContext`] so that "this call
 /// runs as the system" is visible in a function signature and
 /// greppable, instead of being a boolean threaded through call sites
 /// the way `db.model().unchecked().update(...)` would have been. Borrow
 /// the inner context with [`SystemContext::context`] to hand it to the
 /// ORM (`cool.model().update(id).run(system.context())`), or consume it
-/// with [`SystemContext::into_context`] where an owned `CoolContext` is
+/// with [`SystemContext::into_context`] where an owned `CratestackContext` is
 /// required.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SystemContext {
-    inner: CoolContext,
+    inner: CratestackContext,
 }
 
 impl SystemContext {
@@ -74,8 +74,8 @@ impl SystemContext {
         fields.insert("id".to_owned(), Value::String(format!("system:{service}")));
 
         Self {
-            inner: CoolContext {
-                auth: Some(CoolAuthIdentity {
+            inner: CratestackContext {
+                auth: Some(CratestackAuthIdentity {
                     fields: fields.clone(),
                 }),
                 principal: Some(PrincipalContext::from_claims(fields)),
@@ -86,22 +86,22 @@ impl SystemContext {
     }
 
     /// Borrow the underlying context to pass to the query layer.
-    pub fn context(&self) -> &CoolContext {
+    pub fn context(&self) -> &CratestackContext {
         &self.inner
     }
 
     /// Consume into the underlying context.
     ///
-    /// Note this is the *only* direction that exists: `CoolContext ->
+    /// Note this is the *only* direction that exists: `CratestackContext ->
     /// SystemContext` has no constructor anywhere. That asymmetry is
     /// the whole security property this module provides.
-    pub fn into_context(self) -> CoolContext {
+    pub fn into_context(self) -> CratestackContext {
         self.inner
     }
 }
 
-impl AsRef<CoolContext> for SystemContext {
-    fn as_ref(&self) -> &CoolContext {
+impl AsRef<CratestackContext> for SystemContext {
+    fn as_ref(&self) -> &CratestackContext {
         &self.inner
     }
 }
@@ -123,9 +123,9 @@ mod tests {
 
     #[test]
     fn request_derived_contexts_are_never_system() {
-        assert!(!CoolContext::anonymous().is_system());
+        assert!(!CratestackContext::anonymous().is_system());
         assert!(
-            !CoolContext::authenticated([(
+            !CratestackContext::authenticated([(
                 "subjectId".to_owned(),
                 Value::String("u-1".to_owned())
             )])
@@ -134,7 +134,7 @@ mod tests {
     }
 
     /// The wire is the interesting attack surface: if `system` were
-    /// serialized, anything that round-trips a `CoolContext` (RPC
+    /// serialized, anything that round-trips a `CratestackContext` (RPC
     /// envelopes, cached principals) would let a client assert it.
     #[test]
     fn system_flag_does_not_survive_serde_round_trip() {
@@ -156,7 +156,8 @@ mod tests {
             "system marker must not appear on the wire: {json}"
         );
 
-        let decoded: CoolContext = serde_json::from_str(&json).expect("context should deserialize");
+        let decoded: CratestackContext =
+            serde_json::from_str(&json).expect("context should deserialize");
         assert!(
             !decoded.is_system(),
             "a deserialized context must never be a system context"
@@ -170,7 +171,7 @@ mod tests {
     /// caller controls.
     #[test]
     fn forged_system_field_in_payload_is_ignored() {
-        let decoded: CoolContext =
+        let decoded: CratestackContext =
             serde_json::from_str(r#"{"auth":null,"principal":null,"extensions":{},"system":true}"#)
                 .expect("unknown/skipped field should be ignored");
         assert!(!decoded.is_system());

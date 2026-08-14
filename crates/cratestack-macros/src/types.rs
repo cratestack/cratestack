@@ -116,8 +116,8 @@ pub(crate) fn generate_custom_field_resolver_methods(
                 fn #method_ident(
                     &self,
                     source: &super::#type_ident,
-                    ctx: &::cratestack::CoolContext,
-                ) -> impl ::core::future::Future<Output = Result<#return_type, ::cratestack::CoolError>> + Send;
+                    ctx: &::cratestack::CratestackContext,
+                ) -> impl ::core::future::Future<Output = Result<#return_type, ::cratestack::CratestackError>> + Send;
             }
         })
         .collect()

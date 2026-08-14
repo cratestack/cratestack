@@ -12,11 +12,11 @@
 //! not a dependency of this crate at all, under any feature. See
 //! `Cargo.toml` and `src/lib.rs`'s doc comment.
 
-use cratestack::CoolCodec;
+use cratestack::CratestackCodec;
 use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack::include_server_schema;
-use cratestack::{CoolContext, CoolError, SystemContext};
+use cratestack::{CratestackContext, CratestackError, SystemContext};
 use cratestack_codec_json::JsonCodec;
 use tower::ServiceExt;
 
@@ -29,11 +29,11 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     fn ping(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::ping::Args,
         _authorized: cratestack_schema::procedures::ping::Authorized,
     ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::ping::Output, CoolError>,
+        Output = Result<cratestack_schema::procedures::ping::Output, CratestackError>,
     > + Send {
         async move {
             Ok(cratestack_schema::PingReply {
@@ -46,18 +46,18 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
 /// The fixture's `ping` procedure declares `@allow(auth() != null)`, so this
 /// test's auth provider always returns an authenticated context — what it
 /// authenticates has nothing to do with a database (there isn't one under
-/// `db = None`), it's purely a `CoolContext` predicate.
+/// `db = None`), it's purely a `CratestackContext` predicate.
 #[derive(Clone)]
 struct AllowAllAuth;
 
 impl cratestack::AuthProvider for AllowAllAuth {
-    type Error = CoolError;
+    type Error = CratestackError;
 
     fn authenticate(
         &self,
         _request: &cratestack::RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
-        core::future::ready(Ok(CoolContext::authenticated([(
+    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
+        core::future::ready(Ok(CratestackContext::authenticated([(
             "id".to_owned(),
             cratestack::Value::Int(1),
         )])))
@@ -86,7 +86,7 @@ fn no_database_schema_declares_zero_models_and_one_procedure() {
 }
 
 /// cratestack#512: this test used to call
-/// `ProcedureRegistry::ping(&procedures, &db, &CoolContext::anonymous(),
+/// `ProcedureRegistry::ping(&procedures, &db, &CratestackContext::anonymous(),
 /// args)` directly — the exact silent-bypass shape that ticket describes.
 /// It "passed" with an *anonymous* context despite `ping` declaring
 /// `@allow(auth() != null)`, because that direct call never ran policy at
@@ -100,7 +100,7 @@ fn no_database_schema_declares_zero_models_and_one_procedure() {
 async fn no_database_schema_procedure_handler_still_dispatches() {
     let db = cratestack_schema::Cratestack::builder().build();
     let procedures = Procedures;
-    let ctx = CoolContext::authenticated([("id".to_owned(), cratestack::Value::Int(1))]);
+    let ctx = CratestackContext::authenticated([("id".to_owned(), cratestack::Value::Int(1))]);
     let args = cratestack_schema::procedures::ping::Args {
         args: cratestack_schema::PingArgs {
             message: "hello".to_owned(),
@@ -131,7 +131,7 @@ async fn no_database_schema_procedure_handler_still_dispatches() {
 }
 
 /// The other half of the cratestack#512 regression: the exact context the
-/// old direct call used (`CoolContext::anonymous()`) must now be denied —
+/// old direct call used (`CratestackContext::anonymous()`) must now be denied —
 /// `ping` declares `@allow(auth() != null)`, so this was always a policy
 /// violation the old call shape silently let through.
 #[tokio::test]
@@ -147,13 +147,13 @@ async fn no_database_schema_procedure_denies_anonymous_caller() {
     let error = cratestack_schema::procedures::ping::invoke_with_db(
         &db,
         &args,
-        &CoolContext::anonymous(),
+        &CratestackContext::anonymous(),
         |authorized| async move {
             let procedures = Procedures;
             cratestack_schema::procedures::ProcedureRegistry::ping(
                 &procedures,
                 &db,
-                &CoolContext::anonymous(),
+                &CratestackContext::anonymous(),
                 call_args,
                 authorized,
             )
@@ -162,7 +162,7 @@ async fn no_database_schema_procedure_denies_anonymous_caller() {
     )
     .await
     .expect_err("anonymous caller must be denied by @allow(auth() != null)");
-    assert!(matches!(error, CoolError::Forbidden(_)));
+    assert!(matches!(error, CratestackError::Forbidden(_)));
 }
 
 /// cratestack#512's other required coverage: a legitimate internal caller

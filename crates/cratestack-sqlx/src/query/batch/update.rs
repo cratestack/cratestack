@@ -4,7 +4,7 @@
 
 use std::hash::Hash;
 
-use cratestack_core::{BatchResponse, CoolContext, CoolError, ModelEventKind};
+use cratestack_core::{BatchResponse, CratestackContext, CratestackError, ModelEventKind};
 
 use crate::audit::{dispatch_audit_sink, ensure_audit_table};
 use crate::descriptor::ensure_event_outbox_table;
@@ -27,7 +27,7 @@ impl<'a, M: 'static, PK: 'static, I> BatchUpdate<'a, M, PK, I>
 where
     I: UpdateModelInput<M> + Send,
 {
-    pub async fn run(self, ctx: &CoolContext) -> Result<BatchResponse<M>, CoolError>
+    pub async fn run(self, ctx: &CratestackContext) -> Result<BatchResponse<M>, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
         PK: Clone
@@ -60,7 +60,7 @@ where
             ensure_audit_table(self.runtime).await?;
         }
 
-        let mut per_item: Vec<Result<M, CoolError>> = Vec::with_capacity(self.items.len());
+        let mut per_item: Vec<Result<M, CratestackError>> = Vec::with_capacity(self.items.len());
         let mut audit_events = Vec::new();
         for item in self.items {
             let (outcome, audit_event) = run_update_item(

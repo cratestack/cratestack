@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use cratestack_core::{CoolError, ReservationOutcome};
+use cratestack_core::{CratestackError, ReservationOutcome};
 use redis::Value as RedisValue;
 
 use super::parse::parse_reserve_outcome;
@@ -24,7 +24,7 @@ fn parse_reserved_rejects_wrong_length_token() {
     // which we surface as Internal rather than panicking.
     let value = RedisValue::Array(vec![bulk("reserved"), raw_bulk([0u8; 8])]);
     let err = parse_reserve_outcome(value, "p", "k").expect_err("must reject short token");
-    assert!(matches!(err, CoolError::Internal(_)));
+    assert!(matches!(err, CratestackError::Internal(_)));
 }
 
 #[test]
@@ -107,7 +107,7 @@ fn parse_replay_rejects_hash_with_wrong_length() {
     ]);
     let err = parse_reserve_outcome(value, "p", "k").expect_err("must reject");
     match err {
-        CoolError::Internal(msg) => assert!(msg.contains("wrong length"), "msg: {msg}"),
+        CratestackError::Internal(msg) => assert!(msg.contains("wrong length"), "msg: {msg}"),
         other => panic!("expected Internal, got {other:?}"),
     }
 }
@@ -127,7 +127,7 @@ fn parse_replay_rejects_out_of_range_status() {
         bulk("0"),
     ]);
     let err = parse_reserve_outcome(value, "p", "k").expect_err("must reject");
-    assert!(matches!(err, CoolError::Internal(_)));
+    assert!(matches!(err, CratestackError::Internal(_)));
 }
 
 #[test]
@@ -142,14 +142,14 @@ fn parse_replay_rejects_non_numeric_status() {
         bulk("0"),
     ]);
     let err = parse_reserve_outcome(value, "p", "k").expect_err("must reject");
-    assert!(matches!(err, CoolError::Internal(_)));
+    assert!(matches!(err, CratestackError::Internal(_)));
 }
 
 #[test]
 fn parse_rejects_unknown_tag() {
     let value = RedisValue::Array(vec![bulk("weird")]);
     let err = parse_reserve_outcome(value, "p", "k").expect_err("must reject");
-    assert!(matches!(err, CoolError::Internal(_)));
+    assert!(matches!(err, CratestackError::Internal(_)));
 }
 
 #[test]
@@ -159,7 +159,7 @@ fn parse_rejects_non_array_root() {
     // else is corruption — refuse rather than guess.
     let err =
         parse_reserve_outcome(bulk("reserved"), "p", "k").expect_err("non-array root must error");
-    assert!(matches!(err, CoolError::Internal(_)));
+    assert!(matches!(err, CratestackError::Internal(_)));
 }
 
 #[test]
@@ -170,7 +170,7 @@ fn parse_replay_with_truncated_array_errors() {
     let value = RedisValue::Array(vec![bulk("replay"), raw_bulk([0u8; 32])]);
     let err = parse_reserve_outcome(value, "p", "k").expect_err("must reject");
     match err {
-        CoolError::Internal(msg) => assert!(msg.contains("missing"), "msg: {msg}"),
+        CratestackError::Internal(msg) => assert!(msg.contains("missing"), "msg: {msg}"),
         other => panic!("expected Internal, got {other:?}"),
     }
 }

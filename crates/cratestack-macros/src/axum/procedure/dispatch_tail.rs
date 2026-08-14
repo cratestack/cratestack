@@ -4,14 +4,14 @@
 //! [`procedure_dispatch_tail_tokens`]:
 //!
 //! - Ordinary procedures, and non-`@stream` `T[]` ones: **unchanged**.
-//!   `result: Result<Output, CoolError>` is fully resolved — nothing has
+//!   `result: Result<Output, CratestackError>` is fully resolved — nothing has
 //!   been sent to the client yet — so it's logged as `Ok`/`Err` and
 //!   handed to the already-computed buffered `result_encoder` fragment.
 //!   This branch's tokens are untouched by cratestack#283; see
 //!   `crate::axum::procedure::tests` for the byte-identical regression
 //!   guard this ticket's acceptance criteria require.
 //! - `@stream` procedures: `result` is
-//!   `Result<impl Stream<Item = Result<Item, CoolError>>, CoolError>`
+//!   `Result<impl Stream<Item = Result<Item, CratestackError>>, CratestackError>`
 //!   (see `super::invoke_call`) — nothing has been *produced* yet, only
 //!   handed off, so logging "completed" against it the way the buffered
 //!   branch does would be a lie about what actually happened. This

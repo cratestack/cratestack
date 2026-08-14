@@ -6,13 +6,13 @@ Core types, traits, and error handling shared across the CrateStack workspace.
 
 `cratestack-core` provides the foundational types that the rest of the workspace depends on:
 
-- **Error handling**: `CoolError` with HTTP status mapping and operator vs. public message split
-- **Auth context**: `CoolContext`, `PrincipalContext`, `CoolAuthIdentity`, `AuthProvider`
+- **Error handling**: `CratestackError` with HTTP status mapping and operator vs. public message split
+- **Auth context**: `CratestackContext`, `PrincipalContext`, `CratestackAuthIdentity`, `AuthProvider`
 - **Schema AST**: `Schema`, `Model`, `Field`, `Procedure`, `MixinDecl`, `TypeDecl`, `EnumDecl`
 - **Audit**: `AuditEvent`, `AuditOperation`, `AuditActor`, `AuditSink`, `NoopAuditSink`, `MulticastAuditSink`
 - **Signed envelope**: `HmacEnvelope` (HS256), `KeyProvider`, `StaticKeyProvider`, `NonceStore`, `InMemoryNonceStore`
-- **Codec/envelope traits**: `CoolCodec`, `CoolEnvelope`, `NoEnvelope`
-- **Event bus**: `CoolEventBus`, `ModelEvent<T>`, `ModelEventKind`, `CoolEventEnvelope`
+- **Codec/envelope traits**: `CratestackCodec`, `CratestackEnvelope`, `NoEnvelope`
+- **Event bus**: `CratestackEventBus`, `ModelEvent<T>`, `ModelEventKind`, `CratestackEventEnvelope`
 - **Transaction isolation**: `TransactionIsolation`
 - **Decimal scalar**: `Decimal` (compile-time backend)
 - **Validators**: `validate_length`, `validate_range_i64`, `validate_range_decimal`, `validate_email`, `validate_uri`, `validate_iso4217`
@@ -30,36 +30,36 @@ Either or both of `decimal-rust-decimal` (`Copy`, fixed 96-bit precision) and `d
 
 ## Error Handling
 
-`CoolError` returns a safe public message to clients while keeping operator-only detail for tracing.
+`CratestackError` returns a safe public message to clients while keeping operator-only detail for tracing.
 
 ```rust
-use cratestack_core::CoolError;
+use cratestack_core::CratestackError;
 use http::StatusCode;
 
-let err = CoolError::BadRequest("missing query parameter".to_owned());
+let err = CratestackError::BadRequest("missing query parameter".to_owned());
 assert_eq!(err.status_code(), StatusCode::BAD_REQUEST);
 assert_eq!(err.public_message(), "missing query parameter");
 
 // 5xx variants return a fixed canned public message; the inner string flows to `detail` only.
-let err = CoolError::Database("connection refused".to_owned());
+let err = CratestackError::Database("connection refused".to_owned());
 assert_eq!(err.public_message(), "internal error");
 assert_eq!(err.detail(), Some("connection refused"));
 ```
 
-Variants: `BadRequest`, `NotAcceptable`, `Unauthorized`, `UnsupportedMediaType`, `Forbidden`, `NotFound`, `Conflict`, `ConflictTyped`, `Validation`, `PreconditionFailed`, `Codec`, `Database`, `DatabaseTyped`, `Internal`, `Unavailable`. The codec/database/internal variants are 5xx-mapped; `Unavailable` is 503. `CoolError` is `#[non_exhaustive]`, so downstream matches must include a wildcard arm.
+Variants: `BadRequest`, `NotAcceptable`, `Unauthorized`, `UnsupportedMediaType`, `Forbidden`, `NotFound`, `Conflict`, `ConflictTyped`, `Validation`, `PreconditionFailed`, `Codec`, `Database`, `DatabaseTyped`, `Internal`, `Unavailable`. The codec/database/internal variants are 5xx-mapped; `Unavailable` is 503. `CratestackError` is `#[non_exhaustive]`, so downstream matches must include a wildcard arm.
 
 `DatabaseTyped` carries a `DbErrorInfo { detail, sqlstate, constraint }` and is produced by `cratestack_sqlx::cool_error_from_sqlx` at sqlx call sites. Use `err.db_sqlstate()` and `err.db_constraint()` to inspect the typed fields instead of substring-matching the stringified detail.
 
 ## Auth Context
 
-`CoolContext` carries the authenticated principal and arbitrary host-provided extensions.
+`CratestackContext` carries the authenticated principal and arbitrary host-provided extensions.
 
 ```rust
-use cratestack_core::{CoolContext, Value};
+use cratestack_core::{CratestackContext, Value};
 
-let ctx = CoolContext::anonymous();
+let ctx = CratestackContext::anonymous();
 
-let ctx = CoolContext::from_principal(Some(serde_json::json!({
+let ctx = CratestackContext::from_principal(Some(serde_json::json!({
     "id": "usr_123",
     "role": "admin",
     "tenant": { "id": "org_456" }
@@ -74,26 +74,26 @@ assert_eq!(ctx.tenant_id(), Some("org_456"));
 Host applications implement `AuthProvider` to resolve auth from HTTP requests:
 
 ```rust
-use cratestack_core::{AuthProvider, CoolContext, CoolError, RequestContext};
+use cratestack_core::{AuthProvider, CratestackContext, CratestackError, RequestContext};
 
 #[derive(Clone)]
 struct MyAuthProvider;
 
 impl AuthProvider for MyAuthProvider {
-    type Error = CoolError;
+    type Error = CratestackError;
 
-    async fn authenticate(&self, request: &RequestContext<'_>) -> Result<CoolContext, Self::Error> {
+    async fn authenticate(&self, request: &RequestContext<'_>) -> Result<CratestackContext, Self::Error> {
         let token = request.headers
             .get("authorization")
             .and_then(|v| v.to_str().ok())
-            .ok_or_else(|| CoolError::Unauthorized("missing token".to_owned()))?;
-        // Validate and project into CoolContext...
-        Ok(CoolContext::anonymous())
+            .ok_or_else(|| CratestackError::Unauthorized("missing token".to_owned()))?;
+        // Validate and project into CratestackContext...
+        Ok(CratestackContext::anonymous())
     }
 }
 ```
 
-`AuthProvider` is also implemented blanket for any `Fn(&HeaderMap) -> Result<CoolContext, E>` closure.
+`AuthProvider` is also implemented blanket for any `Fn(&HeaderMap) -> Result<CratestackContext, E>` closure.
 
 ## Audit Events
 
@@ -161,7 +161,7 @@ Accepts `read_committed` / `read committed`, `repeatable_read` / `repeatable rea
 
 ## Signed Envelope (HMAC-SHA-256)
 
-`HmacEnvelope<K: KeyProvider>` implements `CoolEnvelope` for HS256-signed messages. Production multi-replica deployments back the `NonceStore` with Redis so replay rejection holds cluster-wide.
+`HmacEnvelope<K: KeyProvider>` implements `CratestackEnvelope` for HS256-signed messages. Production multi-replica deployments back the `NonceStore` with Redis so replay rejection holds cluster-wide.
 
 ## See Also
 

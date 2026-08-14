@@ -4,7 +4,7 @@
 //!
 //! Reading these tests is how you learn the example.
 
-use cratestack::CoolCodec;
+use cratestack::CratestackCodec;
 use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack_codec_cbor::CborCodec;
@@ -101,7 +101,7 @@ async fn unauthenticated_call_is_denied_with_lowercase_grpc_code() {
     let app = build_router();
 
     // `@allow(auth() != null)` on the procedure denies anonymous callers.
-    // The RPC binding translates the underlying `CoolError::Forbidden` to
+    // The RPC binding translates the underlying `CratestackError::Forbidden` to
     // `RpcErrorBody { code: "permission_denied", ... }` on the wire —
     // gRPC-style lowercase, not the REST binding's SCREAMING_CASE.
     let body = serde_json::json!({ "args": { "name": "stranger" } });

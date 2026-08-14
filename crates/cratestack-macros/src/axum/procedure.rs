@@ -111,17 +111,17 @@ pub(crate) fn generate_procedure_axum_handler(
             if let Err(error) = ::cratestack::validate_transport_request_headers_for(&state.codec, &headers, &CAPABILITIES) {
                 ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = canonical_route, cratestack_procedure = #procedure_name, cratestack_operation = "procedure", cratestack_error = error.code(),
                     cratestack_detail = error.detail().unwrap_or(""), "cratestack procedure preflight failed");
-                let result: Result<super::procedures::#module_ident::Output, ::cratestack::CoolError> = Err(error);
+                let result: Result<super::procedures::#module_ident::Output, ::cratestack::CratestackError> = Err(error);
                 return #result_encoder;
             }
             let request = request_context(canonical.method, canonical.path, canonical.query, &headers, canonical.body, &client_ip_ctx.extensions);
             let ctx = match state.auth_provider.authenticate(&request).await {
                 Ok(ctx) => ::cratestack::enrich_context_from_headers(ctx, &headers, client_ip_ctx.trusted_proxy.as_ref(), client_ip_ctx.peer),
                 Err(error) => {
-                    let error: ::cratestack::CoolError = error.into();
+                    let error: ::cratestack::CratestackError = error.into();
                     ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = canonical_route, cratestack_procedure = #procedure_name, cratestack_operation = "procedure", cratestack_error = error.code(),
                     cratestack_detail = error.detail().unwrap_or(""), "cratestack procedure auth failed");
-                    let result: Result<super::procedures::#module_ident::Output, ::cratestack::CoolError> = Err(error);
+                    let result: Result<super::procedures::#module_ident::Output, ::cratestack::CratestackError> = Err(error);
                     return #result_encoder;
                 }
             };
@@ -130,7 +130,7 @@ pub(crate) fn generate_procedure_axum_handler(
                 Err(error) => {
                     ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = canonical_route, cratestack_procedure = #procedure_name, cratestack_operation = "procedure", cratestack_error = error.code(),
                     cratestack_detail = error.detail().unwrap_or(""), "cratestack procedure decode failed");
-                    let result: Result<super::procedures::#module_ident::Output, ::cratestack::CoolError> = Err(error);
+                    let result: Result<super::procedures::#module_ident::Output, ::cratestack::CratestackError> = Err(error);
                     return #result_encoder;
                 }
             };

@@ -2,7 +2,7 @@
 
 // Randomized property tests for outcome parsing and decimal helpers.
 
-use cratestack_core::{CoolError, RateLimitDecision};
+use cratestack_core::{CratestackError, RateLimitDecision};
 use redis::Value as RedisValue;
 
 use super::parse::{next_u32_decimal, parse_consume_outcome};
@@ -57,7 +57,7 @@ fn randomized_parse_rejects_out_of_u32_range_remaining() {
         let err = parse_consume_outcome(value).expect_err(&format!(
             "seed={seed:#x} iter={iteration} oversized={oversized}: must reject",
         ));
-        assert!(matches!(err, CoolError::Internal(_)));
+        assert!(matches!(err, CratestackError::Internal(_)));
     }
 }
 

@@ -2,7 +2,7 @@
 
 use std::net::SocketAddr;
 
-use cratestack_core::CoolError;
+use cratestack_core::CratestackError;
 
 /// Configuration read from `{prefix}_*` environment variables.
 ///
@@ -47,7 +47,7 @@ impl ServiceConfig {
         prefix: &str,
         service_name: impl Into<String>,
         default_port: u16,
-    ) -> Result<Self, CoolError> {
+    ) -> Result<Self, CratestackError> {
         Self::from_env_with(prefix, service_name, default_port, |name: &str| {
             std::env::var(name)
         })
@@ -65,7 +65,7 @@ impl ServiceConfig {
         service_name: impl Into<String>,
         default_port: u16,
         lookup_env: impl Fn(&str) -> Result<String, std::env::VarError>,
-    ) -> Result<Self, CoolError> {
+    ) -> Result<Self, CratestackError> {
         let var = |suffix: &str| format!("{prefix}_{suffix}");
         let lookup = |suffix: &str| lookup_env(&var(suffix)).ok();
 
@@ -77,8 +77,9 @@ impl ServiceConfig {
             lookup("PUBLIC_BASE_URL").unwrap_or_else(|| format!("http://127.0.0.1:{port}"));
 
         #[cfg(feature = "postgres")]
-        let database_url = lookup("DATABASE_URL")
-            .ok_or_else(|| CoolError::Internal(format!("{} is required", var("DATABASE_URL"))))?;
+        let database_url = lookup("DATABASE_URL").ok_or_else(|| {
+            CratestackError::Internal(format!("{} is required", var("DATABASE_URL")))
+        })?;
 
         Ok(Self {
             service_name: service_name.into(),
@@ -108,14 +109,14 @@ impl ServiceConfig {
         is_production_env(&self.env_prefix)
     }
 
-    /// Fails with a descriptive [`CoolError::Internal`] when
+    /// Fails with a descriptive [`CratestackError::Internal`] when
     /// `{prefix}_REDIS_URL` was not configured. Use this from a component
     /// that has an unconditional dependency on Redis (e.g. a Redis-backed
     /// idempotency store) while `redis_url` itself stays optional on
     /// [`ServiceConfig`] for components that don't.
-    pub fn require_redis_url(&self, component: &str) -> Result<&str, CoolError> {
+    pub fn require_redis_url(&self, component: &str) -> Result<&str, CratestackError> {
         self.redis_url.as_deref().ok_or_else(|| {
-            CoolError::Internal(format!(
+            CratestackError::Internal(format!(
                 "{component} requires {}_REDIS_URL to be configured",
                 self.env_prefix
             ))
@@ -127,13 +128,13 @@ impl ServiceConfig {
     /// attempts happen on first use, e.g. inside
     /// [`crate::health::readiness`]) plus a clone of this config.
     #[cfg(feature = "postgres")]
-    pub async fn state(&self) -> Result<crate::ServiceState, CoolError> {
+    pub async fn state(&self) -> Result<crate::ServiceState, CratestackError> {
         use cratestack_sqlx::sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
         let options: PgConnectOptions = self
             .database_url
             .parse()
-            .map_err(|error| CoolError::Internal(format!("invalid database url: {error}")))?;
+            .map_err(|error| CratestackError::Internal(format!("invalid database url: {error}")))?;
         let pool = PgPoolOptions::new()
             .max_connections(5)
             .connect_lazy_with(options);
@@ -218,7 +219,10 @@ mod tests {
         let error = ServiceConfig::from_env_with("VENDOR", "vendor-service", 8084, &lookup)
             .expect_err("no VENDOR_DATABASE_URL was provided");
 
-        assert!(matches!(error, cratestack_core::CoolError::Internal(_)));
+        assert!(matches!(
+            error,
+            cratestack_core::CratestackError::Internal(_)
+        ));
         assert!(error.to_string().contains("VENDOR_DATABASE_URL"));
     }
 

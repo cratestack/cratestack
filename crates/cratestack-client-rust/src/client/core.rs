@@ -115,7 +115,7 @@ where
 
     pub fn state(&self) -> Result<PersistedClientState, ClientError> {
         // Not `.map_err(ClientError::from)`: `ClientError`'s only
-        // `From<CoolError>` impl targets `ClientError::Codec` (for genuine
+        // `From<CratestackError>` impl targets `ClientError::Codec` (for genuine
         // wire-codec failures), which would misclassify a purely local
         // state-store failure as a remote/codec error — see #475's review
         // findings and `error.rs`'s `state_store_error_maps_to_client_error_state`.
@@ -127,7 +127,7 @@ where
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use cratestack_core::CoolError;
+    use cratestack_core::CratestackError;
 
     use super::*;
 
@@ -138,23 +138,23 @@ pub(crate) mod tests {
     pub(crate) struct FailingStateStore;
 
     impl ClientStateStore for FailingStateStore {
-        fn load(&self) -> Result<PersistedClientState, CoolError> {
-            Err(CoolError::Internal(
+        fn load(&self) -> Result<PersistedClientState, CratestackError> {
+            Err(CratestackError::Internal(
                 "simulated state store failure".to_owned(),
             ))
         }
 
-        fn save(&self, _state: &PersistedClientState) -> Result<(), CoolError> {
-            Err(CoolError::Internal(
+        fn save(&self, _state: &PersistedClientState) -> Result<(), CratestackError> {
+            Err(CratestackError::Internal(
                 "simulated state store failure".to_owned(),
             ))
         }
     }
 
-    /// Regression test for #475's review findings: a `CoolError` raised by
+    /// Regression test for #475's review findings: a `CratestackError` raised by
     /// the state store must surface as `ClientError::State`, not get
     /// silently reclassified as `ClientError::Codec` via the blanket
-    /// `From<CoolError>` impl (which is meant for genuine wire-codec
+    /// `From<CratestackError>` impl (which is meant for genuine wire-codec
     /// failures, not local storage failures). Fails against the code that
     /// used `.map_err(ClientError::from)` here.
     #[test]

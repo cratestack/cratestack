@@ -1,17 +1,17 @@
 //! `ScopedFindUnique` + the projected exit `ScopedProjectedFindUnique`.
 
-use cratestack_core::{CoolContext, CoolError};
+use cratestack_core::{CratestackContext, CratestackError};
 
 use crate::{FindUnique, sqlx};
 
 #[derive(Clone)]
 pub struct ScopedFindUnique<'a, M: 'static, PK: 'static> {
     pub(super) request: FindUnique<'a, M, PK>,
-    pub(super) ctx: CoolContext,
+    pub(super) ctx: CratestackContext,
 }
 
 impl<'a, M: 'static, PK: 'static> ScopedFindUnique<'a, M, PK> {
-    pub(super) fn new(request: FindUnique<'a, M, PK>, ctx: CoolContext) -> Self {
+    pub(super) fn new(request: FindUnique<'a, M, PK>, ctx: CratestackContext) -> Self {
         Self { request, ctx }
     }
 
@@ -41,7 +41,7 @@ impl<'a, M: 'static, PK: 'static> ScopedFindUnique<'a, M, PK> {
         self.request.preview_scoped_sql(&self.ctx)
     }
 
-    pub async fn run(self) -> Result<Option<M>, CoolError>
+    pub async fn run(self) -> Result<Option<M>, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
@@ -52,7 +52,7 @@ impl<'a, M: 'static, PK: 'static> ScopedFindUnique<'a, M, PK> {
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-    ) -> Result<Option<M>, CoolError>
+    ) -> Result<Option<M>, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
@@ -76,7 +76,7 @@ impl<'a, M: 'static, PK: 'static> ScopedFindUnique<'a, M, PK> {
 #[derive(Clone)]
 pub struct ScopedProjectedFindUnique<'a, M: 'static, PK: 'static> {
     request: crate::ProjectedFindUnique<'a, M, PK>,
-    ctx: CoolContext,
+    ctx: CratestackContext,
 }
 
 impl<'a, M: 'static, PK: 'static> ScopedProjectedFindUnique<'a, M, PK> {
@@ -95,7 +95,7 @@ impl<'a, M: 'static, PK: 'static> ScopedProjectedFindUnique<'a, M, PK> {
         self
     }
 
-    pub async fn run(self) -> Result<Option<cratestack_sql::Projection<M>>, CoolError>
+    pub async fn run(self) -> Result<Option<cratestack_sql::Projection<M>>, CratestackError>
     where
         M: crate::FromPartialPgRow,
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
@@ -106,7 +106,7 @@ impl<'a, M: 'static, PK: 'static> ScopedProjectedFindUnique<'a, M, PK> {
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-    ) -> Result<Option<cratestack_sql::Projection<M>>, CoolError>
+    ) -> Result<Option<cratestack_sql::Projection<M>>, CratestackError>
     where
         M: crate::FromPartialPgRow,
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,

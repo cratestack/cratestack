@@ -38,10 +38,10 @@ use cratestack::axum::body::Body;
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack::include_server_schema;
 use cratestack::sqlx::{Row, query};
-use cratestack::{AuthProvider, CoolContext, CoolError, RequestContext, Value};
+use cratestack::{AuthProvider, CratestackContext, CratestackError, RequestContext, Value};
 use cratestack_codec_cbor::CborCodec;
 use cratestack_codec_json::JsonCodec;
-use cratestack_core::CoolCodec;
+use cratestack_core::CratestackCodec;
 use support::pg;
 use tower::util::ServiceExt;
 
@@ -66,19 +66,20 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     .expect("create items");
 }
 
-fn ctx() -> CoolContext {
-    CoolContext::authenticated([("id".to_owned(), Value::Int(1))]).with_request_id("issue-567")
+fn ctx() -> CratestackContext {
+    CratestackContext::authenticated([("id".to_owned(), Value::Int(1))])
+        .with_request_id("issue-567")
 }
 
 #[derive(Clone)]
 struct PassThroughAuth;
 
 impl AuthProvider for PassThroughAuth {
-    type Error = CoolError;
+    type Error = CratestackError;
     fn authenticate(
         &self,
         _request: &RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
+    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
         core::future::ready(Ok(ctx()))
     }
 }
@@ -259,7 +260,7 @@ async fn omitting_a_non_nullable_field_still_means_untouched() {
 // ───── #4 CBOR carries the same three-state semantics as JSON ───────────
 //
 // Both codecs go through the exact same generated `Deserialize` impl on
-// `UpdatePatchClearTargetInput` (`CoolCodec::decode<T>` is generic over `T`, and the
+// `UpdatePatchClearTargetInput` (`CratestackCodec::decode<T>` is generic over `T`, and the
 // derive-emitted `deserialize_with` lives on the struct itself, not in
 // either codec) — this test proves that concretely for CBOR rather than
 // relying on that being obvious from reading the code. `decode_rpc_body`/

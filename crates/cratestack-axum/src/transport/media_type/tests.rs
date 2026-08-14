@@ -47,7 +47,7 @@ fn json_only_router_rejects_an_accept_naming_only_cbor() {
         .expect_err("router has no CBOR encoder, must 406");
     assert!(matches!(
         error,
-        cratestack_core::CoolError::NotAcceptable(_)
+        cratestack_core::CratestackError::NotAcceptable(_)
     ));
     let message = error.public_message();
     assert!(
@@ -108,7 +108,7 @@ fn unsatisfiable_accept_against_a_two_codec_router_still_406s() {
         .expect_err("neither codec speaks text/plain");
     assert!(matches!(
         error,
-        cratestack_core::CoolError::NotAcceptable(_)
+        cratestack_core::CratestackError::NotAcceptable(_)
     ));
 }
 
@@ -213,7 +213,7 @@ fn client_accepting_neither_offered_type_gets_406() {
         .expect_err("router offers only application/* types, must 406");
     assert!(matches!(
         error,
-        cratestack_core::CoolError::NotAcceptable(_)
+        cratestack_core::CratestackError::NotAcceptable(_)
     ));
 }
 

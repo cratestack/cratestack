@@ -1,4 +1,4 @@
-//! [`CoolEventBus`] itself: the in-process pub/sub registry
+//! [`CratestackEventBus`] itself: the in-process pub/sub registry
 //! `emit`/`subscribe` operate on, plus [`SubscriptionHandle`] /
 //! [`SubscriptionGuard`] for removing a registered handler again —
 //! needed once a subscription's lifecycle is shorter than the process's
@@ -8,13 +8,13 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
-use super::{CoolEventEnvelope, CoolEventFuture, ModelEventKind, event_topic};
-use crate::error::CoolError;
+use super::{CratestackEventEnvelope, CratestackEventFuture, ModelEventKind, event_topic};
+use crate::error::CratestackError;
 
-type EventHandler = Arc<dyn Fn(CoolEventEnvelope) -> CoolEventFuture + Send + Sync>;
+type EventHandler = Arc<dyn Fn(CratestackEventEnvelope) -> CratestackEventFuture + Send + Sync>;
 
-/// Opaque token returned by [`CoolEventBus::subscribe`], needed to later
-/// remove that exact handler via [`CoolEventBus::unsubscribe`]. Fields
+/// Opaque token returned by [`CratestackEventBus::subscribe`], needed to later
+/// remove that exact handler via [`CratestackEventBus::unsubscribe`]. Fields
 /// are private — the only way to obtain one is `subscribe`, and the only
 /// thing it's good for is passing back to `unsubscribe`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,25 +24,25 @@ pub struct SubscriptionHandle {
 }
 
 #[derive(Clone, Default)]
-pub struct CoolEventBus {
+pub struct CratestackEventBus {
     handlers: Arc<RwLock<BTreeMap<String, Vec<(u64, EventHandler)>>>>,
     next_id: Arc<AtomicU64>,
 }
 
-impl std::fmt::Debug for CoolEventBus {
+impl std::fmt::Debug for CratestackEventBus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let handler_count = self
             .handlers
             .read()
             .map(|handlers| handlers.values().map(Vec::len).sum::<usize>())
             .unwrap_or_default();
-        f.debug_struct("CoolEventBus")
+        f.debug_struct("CratestackEventBus")
             .field("handler_count", &handler_count)
             .finish()
     }
 }
 
-impl CoolEventBus {
+impl CratestackEventBus {
     pub fn subscribe<F>(
         &self,
         model: &'static str,
@@ -50,7 +50,7 @@ impl CoolEventBus {
         handler: F,
     ) -> SubscriptionHandle
     where
-        F: Fn(CoolEventEnvelope) -> CoolEventFuture + Send + Sync + 'static,
+        F: Fn(CratestackEventEnvelope) -> CratestackEventFuture + Send + Sync + 'static,
     {
         let topic = event_topic(model, operation);
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
@@ -67,7 +67,7 @@ impl CoolEventBus {
 
     /// Removes the handler registered by a prior [`Self::subscribe`]
     /// call. A no-op if the handle's topic/id pair is no longer present
-    /// (already removed, or from a different `CoolEventBus` instance) —
+    /// (already removed, or from a different `CratestackEventBus` instance) —
     /// callers don't need to track whether they've already unsubscribed.
     pub fn unsubscribe(&self, handle: SubscriptionHandle) {
         let mut handlers = self
@@ -79,7 +79,7 @@ impl CoolEventBus {
         }
     }
 
-    pub async fn emit(&self, envelope: CoolEventEnvelope) -> Result<(), CoolError> {
+    pub async fn emit(&self, envelope: CratestackEventEnvelope) -> Result<(), CratestackError> {
         let handlers: Vec<EventHandler> = self
             .handlers
             .read()
@@ -96,7 +96,7 @@ impl CoolEventBus {
     }
 }
 
-/// RAII cleanup for one or more [`CoolEventBus`] subscriptions that all
+/// RAII cleanup for one or more [`CratestackEventBus`] subscriptions that all
 /// share one lifecycle — e.g. the per-operation handlers a single
 /// `GET /rpc/subscribe/{op_id}` connection registers for the duration of
 /// its SSE stream (`docs/design/rpc-transport.md` §3.4a, cratestack#390).
@@ -111,12 +111,12 @@ impl CoolEventBus {
 /// not a hypothetical one.
 #[derive(Default)]
 pub struct SubscriptionGuard {
-    bus: Option<CoolEventBus>,
+    bus: Option<CratestackEventBus>,
     handles: Vec<SubscriptionHandle>,
 }
 
 impl SubscriptionGuard {
-    pub fn new(bus: CoolEventBus) -> Self {
+    pub fn new(bus: CratestackEventBus) -> Self {
         Self {
             bus: Some(bus),
             handles: Vec::new(),
@@ -147,8 +147,8 @@ mod tests {
     use super::*;
     use crate::events::ModelEvent;
 
-    fn envelope(model: &str, operation: ModelEventKind) -> CoolEventEnvelope {
-        CoolEventEnvelope {
+    fn envelope(model: &str, operation: ModelEventKind) -> CratestackEventEnvelope {
+        CratestackEventEnvelope {
             event_id: uuid::Uuid::new_v4(),
             model: model.to_owned(),
             operation,
@@ -159,7 +159,7 @@ mod tests {
 
     #[tokio::test]
     async fn unsubscribe_stops_further_delivery() {
-        let bus = CoolEventBus::default();
+        let bus = CratestackEventBus::default();
         let received = Arc::new(Mutex::new(0u32));
         let received_clone = Arc::clone(&received);
         let handle = bus.subscribe("Widget", ModelEventKind::Created, move |_event| {
@@ -189,7 +189,7 @@ mod tests {
 
     #[tokio::test]
     async fn unsubscribe_does_not_affect_other_handlers_on_the_same_topic() {
-        let bus = CoolEventBus::default();
+        let bus = CratestackEventBus::default();
         let count_a = Arc::new(Mutex::new(0u32));
         let count_b = Arc::new(Mutex::new(0u32));
 
@@ -225,7 +225,7 @@ mod tests {
 
     #[tokio::test]
     async fn unsubscribe_is_a_no_op_for_an_unknown_handle() {
-        let bus = CoolEventBus::default();
+        let bus = CratestackEventBus::default();
         // Never subscribed anywhere; must not panic.
         bus.unsubscribe(SubscriptionHandle {
             topic: "Widget.created".to_owned(),
@@ -235,7 +235,7 @@ mod tests {
 
     #[tokio::test]
     async fn subscription_guard_unsubscribes_every_tracked_handle_on_drop() {
-        let bus = CoolEventBus::default();
+        let bus = CratestackEventBus::default();
         let received = Arc::new(Mutex::new(0u32));
 
         let mut guard = SubscriptionGuard::new(bus.clone());

@@ -130,8 +130,8 @@ trybuild = "1"
 # cratestack#512: the `ProcedureRegistry` witness compile-fail fixture
 # (`tests/ui_procedure_registry_witness.rs`) needs a *fully expanding*
 # `include_server_schema!` — the generated `ProcedureRegistry` trait and
-# its impl reference `::cratestack::*` runtime paths (`CoolContext`,
-# `CoolError`, `Cratestack`, ...) that this crate's own `[dependencies]`
+# its impl reference `::cratestack::*` runtime paths (`CratestackContext`,
+# `CratestackError`, `Cratestack`, ...) that this crate's own `[dependencies]`
 # deliberately never provide (`cratestack-macros` only emits code; it
 # doesn't need the runtime types to do that — see every other fixture in
 # `tests/ui.rs`/`tests/ui_semantic.rs`, none of which reach real codegen

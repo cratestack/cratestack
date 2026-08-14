@@ -6,7 +6,7 @@
 //! callers can't accidentally truncate a table at the typed-builder
 //! level.
 
-use cratestack_core::{BatchSummary, CoolContext, CoolError};
+use cratestack_core::{BatchSummary, CratestackContext, CratestackError};
 
 use crate::audit::{RunInTxOutcome, dispatch_audit_sink};
 use crate::{FilterExpr, ModelDescriptor, SqlxRuntime, cool_error_from_sqlx, sqlx};
@@ -67,7 +67,7 @@ impl<'a, M: 'static, PK: 'static> DeleteMany<'a, M, PK> {
         sql
     }
 
-    pub async fn run(self, ctx: &CoolContext) -> Result<BatchSummary, CoolError>
+    pub async fn run(self, ctx: &CratestackContext) -> Result<BatchSummary, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
     {
@@ -91,8 +91,8 @@ impl<'a, M: 'static, PK: 'static> DeleteMany<'a, M, PK> {
     pub async fn run_in_tx<'tx>(
         self,
         tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-        ctx: &CoolContext,
-    ) -> Result<RunInTxOutcome<BatchSummary>, CoolError>
+        ctx: &CratestackContext,
+    ) -> Result<RunInTxOutcome<BatchSummary>, CratestackError>
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
     {

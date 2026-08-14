@@ -67,12 +67,12 @@ pub(in super::super) fn build_projection_helpers(
             object: ::std::collections::BTreeMap<String, ::cratestack::ProjectedValue>,
             fields: &[String],
             context: &str,
-        ) -> Result<::std::collections::BTreeMap<String, ::cratestack::ProjectedValue>, CoolError> {
+        ) -> Result<::std::collections::BTreeMap<String, ::cratestack::ProjectedValue>, CratestackError> {
             let mut object = object;
             let mut projected = ::std::collections::BTreeMap::new();
             for field in fields {
                 let value = object.remove(field).ok_or_else(|| {
-                    CoolError::Internal(format!(
+                    CratestackError::Internal(format!(
                         "serialized relation '{}' is missing field '{}'",
                         context,
                         field,
@@ -87,7 +87,7 @@ pub(in super::super) fn build_projection_helpers(
             value: ::cratestack::ProjectedValue,
             fields: Option<&[String]>,
             context: &str,
-        ) -> Result<::cratestack::ProjectedValue, CoolError> {
+        ) -> Result<::cratestack::ProjectedValue, CratestackError> {
             let Some(fields) = fields else {
                 return Ok(value);
             };
@@ -104,7 +104,7 @@ pub(in super::super) fn build_projection_helpers(
                     }
                     Ok(::cratestack::ProjectedValue::Array(projected))
                 }
-                ::cratestack::ProjectedValue::Leaf(_) => Err(CoolError::Internal(format!(
+                ::cratestack::ProjectedValue::Leaf(_) => Err(CratestackError::Internal(format!(
                     "included relation '{}' must serialize to an object, array, or null",
                     context,
                 ))),
@@ -114,7 +114,7 @@ pub(in super::super) fn build_projection_helpers(
         fn #project_model_value_ident(
             record: &super::models::#model_ident,
             fields: Option<&[String]>,
-        ) -> Result<::std::collections::BTreeMap<String, ::cratestack::ProjectedValue>, CoolError> {
+        ) -> Result<::std::collections::BTreeMap<String, ::cratestack::ProjectedValue>, CratestackError> {
             let mut object = ::std::collections::BTreeMap::new();
             #(#field_inserts)*
 

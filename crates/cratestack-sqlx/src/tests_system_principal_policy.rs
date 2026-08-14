@@ -22,9 +22,9 @@
 //! constraint #1 explicitly rejects.
 
 use crate::{PolicyExpr, ReadPolicy, ReadPredicate, render::render_read_policy_sql};
-use cratestack_core::{CoolContext, SystemContext, Value};
+use cratestack_core::{CratestackContext, SystemContext, Value};
 
-fn render(allow: &[ReadPolicy], ctx: &CoolContext) -> String {
+fn render(allow: &[ReadPolicy], ctx: &CratestackContext) -> String {
     let mut bind_index = 1usize;
     render_read_policy_sql(allow, &[], ctx, &mut bind_index).expect("policy should render")
 }
@@ -33,12 +33,15 @@ fn allow(expr: PolicyExpr) -> [ReadPolicy; 1] {
     [ReadPolicy { expr }]
 }
 
-fn system_ctx() -> CoolContext {
+fn system_ctx() -> CratestackContext {
     SystemContext::for_service("device-reconciler").into_context()
 }
 
-fn user_ctx(subject_id: &str) -> CoolContext {
-    CoolContext::authenticated([("subjectId".to_owned(), Value::String(subject_id.to_owned()))])
+fn user_ctx(subject_id: &str) -> CratestackContext {
+    CratestackContext::authenticated([(
+        "subjectId".to_owned(),
+        Value::String(subject_id.to_owned()),
+    )])
 }
 
 /// The shape a downstream schema would actually write:
@@ -73,7 +76,7 @@ fn is_system_denies_a_request_derived_caller() {
     assert_eq!(sql, "((FALSE OR subject_id = $1))");
 
     // Anonymous callers get neither arm.
-    let sql = render(&allow(owner_or_system()), &CoolContext::anonymous());
+    let sql = render(&allow(owner_or_system()), &CratestackContext::anonymous());
     assert_eq!(sql, "((FALSE OR FALSE))");
 }
 
@@ -149,7 +152,7 @@ mod create_path {
         assert!(!evaluate(
             ReadPredicate::AuthIsSystem,
             &[],
-            &CoolContext::anonymous()
+            &CratestackContext::anonymous()
         ));
     }
 

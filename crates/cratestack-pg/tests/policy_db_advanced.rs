@@ -1,7 +1,7 @@
 use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack::include_server_schema;
-use cratestack::{AuthProvider, CoolCodec, CoolContext, RequestContext, Value};
+use cratestack::{AuthProvider, CratestackCodec, CratestackContext, RequestContext, Value};
 use cratestack_codec_cbor::CborCodec;
 use tower::util::ServiceExt;
 
@@ -15,19 +15,19 @@ use support::pg;
 struct AdvancedPolicyAuthProvider;
 
 impl AuthProvider for AdvancedPolicyAuthProvider {
-    type Error = cratestack::CoolError;
+    type Error = cratestack::CratestackError;
 
     fn authenticate(
         &self,
         request: &RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
+    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
         let mut fields = Vec::new();
 
         if let Some(id) = request.headers.get("x-auth-id") {
             let id = match id.to_str() {
                 Ok(id) => id,
                 Err(error) => {
-                    return core::future::ready(Err(cratestack::CoolError::BadRequest(
+                    return core::future::ready(Err(cratestack::CratestackError::BadRequest(
                         error.to_string(),
                     )));
                 }
@@ -35,7 +35,7 @@ impl AuthProvider for AdvancedPolicyAuthProvider {
             let id = match id.parse::<i64>() {
                 Ok(id) => id,
                 Err(error) => {
-                    return core::future::ready(Err(cratestack::CoolError::BadRequest(
+                    return core::future::ready(Err(cratestack::CratestackError::BadRequest(
                         error.to_string(),
                     )));
                 }
@@ -47,7 +47,7 @@ impl AuthProvider for AdvancedPolicyAuthProvider {
             let role = match role.to_str() {
                 Ok(role) => role,
                 Err(error) => {
-                    return core::future::ready(Err(cratestack::CoolError::BadRequest(
+                    return core::future::ready(Err(cratestack::CratestackError::BadRequest(
                         error.to_string(),
                     )));
                 }
@@ -59,7 +59,7 @@ impl AuthProvider for AdvancedPolicyAuthProvider {
             let email = match email.to_str() {
                 Ok(email) => email,
                 Err(error) => {
-                    return core::future::ready(Err(cratestack::CoolError::BadRequest(
+                    return core::future::ready(Err(cratestack::CratestackError::BadRequest(
                         error.to_string(),
                     )));
                 }
@@ -68,9 +68,9 @@ impl AuthProvider for AdvancedPolicyAuthProvider {
         }
 
         core::future::ready(Ok(if fields.is_empty() {
-            CoolContext::anonymous()
+            CratestackContext::anonymous()
         } else {
-            CoolContext::authenticated(fields)
+            CratestackContext::authenticated(fields)
         }))
     }
 }
@@ -129,7 +129,7 @@ async fn db_backed_advanced_policy_enforcement() {
 
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
 
-    let owner_admin = CoolContext::authenticated([
+    let owner_admin = CratestackContext::authenticated([
         ("id".to_owned(), Value::Int(1)),
         ("role".to_owned(), Value::String("admin".to_owned())),
         (
@@ -137,7 +137,7 @@ async fn db_backed_advanced_policy_enforcement() {
             Value::String("owner@example.com".to_owned()),
         ),
     ]);
-    let owner_member = CoolContext::authenticated([
+    let owner_member = CratestackContext::authenticated([
         ("id".to_owned(), Value::Int(1)),
         ("role".to_owned(), Value::String("member".to_owned())),
         (
@@ -145,7 +145,7 @@ async fn db_backed_advanced_policy_enforcement() {
             Value::String("owner@example.com".to_owned()),
         ),
     ]);
-    let other_admin = CoolContext::authenticated([
+    let other_admin = CratestackContext::authenticated([
         ("id".to_owned(), Value::Int(2)),
         ("role".to_owned(), Value::String("admin".to_owned())),
         (
@@ -153,7 +153,7 @@ async fn db_backed_advanced_policy_enforcement() {
             Value::String("other@example.com".to_owned()),
         ),
     ]);
-    let anonymous = CoolContext::anonymous();
+    let anonymous = CratestackContext::anonymous();
 
     let updated = cool
         .advanced_post()
@@ -234,7 +234,7 @@ async fn db_backed_advanced_policy_enforcement() {
         .expect_err("owner member update should fail");
     assert!(matches!(
         owner_member_error,
-        cratestack::CoolError::Forbidden(_)
+        cratestack::CratestackError::Forbidden(_)
     ));
 
     let other_admin_error = cool
@@ -250,7 +250,7 @@ async fn db_backed_advanced_policy_enforcement() {
         .expect_err("non-owner admin update should fail");
     assert!(matches!(
         other_admin_error,
-        cratestack::CoolError::Forbidden(_)
+        cratestack::CratestackError::Forbidden(_)
     ));
 
     let anonymous_error = cool
@@ -266,7 +266,7 @@ async fn db_backed_advanced_policy_enforcement() {
         .expect_err("anonymous update should fail");
     assert!(matches!(
         anonymous_error,
-        cratestack::CoolError::Forbidden(_)
+        cratestack::CratestackError::Forbidden(_)
     ));
 
     let router = cratestack_schema::axum::model_router(cool, CborCodec, AdvancedPolicyAuthProvider);
@@ -313,7 +313,7 @@ async fn db_backed_advanced_policy_enforcement() {
     let denied_body = to_bytes(denied.into_body(), usize::MAX)
         .await
         .expect("response body should decode");
-    let denied_error: cratestack::CoolErrorResponse = codec
+    let denied_error: cratestack::CratestackErrorResponse = codec
         .decode(&denied_body)
         .expect("forbidden error should decode");
     assert_eq!(denied_error.code, "FORBIDDEN");

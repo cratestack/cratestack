@@ -78,7 +78,7 @@ pub(crate) fn render_message(
         }
 
         impl ::core::convert::TryFrom<#ident_tok> for #domain_path {
-            type Error = ::cratestack::CoolError;
+            type Error = ::cratestack::CratestackError;
 
             fn try_from(value: #ident_tok) -> ::core::result::Result<Self, Self::Error> {
                 #(#try_from_wire_lets)*
@@ -100,7 +100,7 @@ pub(crate) struct FieldPlan {
 
 fn missing_field_error(owner: &str, field: &str) -> proc_macro2::TokenStream {
     quote! {
-        ::cratestack::CoolError::BadRequest(format!("missing required field {}.{}", #owner, #field))
+        ::cratestack::CratestackError::BadRequest(format!("missing required field {}.{}", #owner, #field))
     }
 }
 
@@ -164,7 +164,7 @@ pub(crate) fn render_field(
                     },
                     try_from_wire_let: quote! {
                         let #field_ident = value.#field_ident
-                            .map(|raw| -> ::core::result::Result<_, ::cratestack::CoolError> { #domain_conv })
+                            .map(|raw| -> ::core::result::Result<_, ::cratestack::CratestackError> { #domain_conv })
                             .transpose()?;
                     },
                 }
@@ -183,8 +183,8 @@ pub(crate) fn render_field(
                     try_from_wire_let: quote! {
                         let #field_ident = value.#field_ident
                             .into_iter()
-                            .map(|raw| -> ::core::result::Result<_, ::cratestack::CoolError> { #domain_conv })
-                            .collect::<::core::result::Result<Vec<_>, ::cratestack::CoolError>>()?;
+                            .map(|raw| -> ::core::result::Result<_, ::cratestack::CratestackError> { #domain_conv })
+                            .collect::<::core::result::Result<Vec<_>, ::cratestack::CratestackError>>()?;
                     },
                 }
             }
@@ -243,7 +243,7 @@ pub(crate) fn render_field(
                     let #field_ident = value.#field_ident
                         .into_iter()
                         .map(<#domain_enum_path as ::core::convert::TryFrom<i32>>::try_from)
-                        .collect::<::core::result::Result<Vec<_>, ::cratestack::CoolError>>()?;
+                        .collect::<::core::result::Result<Vec<_>, ::cratestack::CratestackError>>()?;
                 },
             },
         };
@@ -297,7 +297,7 @@ pub(crate) fn render_field(
                 let #field_ident = value.#field_ident
                     .into_iter()
                     .map(#domain_message_path::try_from)
-                    .collect::<::core::result::Result<Vec<_>, ::cratestack::CoolError>>()?;
+                    .collect::<::core::result::Result<Vec<_>, ::cratestack::CratestackError>>()?;
             },
         },
     }

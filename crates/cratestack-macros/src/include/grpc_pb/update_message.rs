@@ -116,7 +116,7 @@ pub(crate) fn render_update_message(
         }
 
         impl ::core::convert::TryFrom<#ident_tok> for #domain_path {
-            type Error = ::cratestack::CoolError;
+            type Error = ::cratestack::CratestackError;
 
             fn try_from(value: #ident_tok) -> ::core::result::Result<Self, Self::Error> {
                 #(#try_from_wire_lets)*

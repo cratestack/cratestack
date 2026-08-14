@@ -419,15 +419,15 @@ pub mod queries {
         pub async fn run(
             db: &super::super::Cratestack,
             args: Args,
-            ctx: &::cratestack::CoolContext,
-        ) -> Result<Row, ::cratestack::CoolError> {
+            ctx: &::cratestack::CratestackContext,
+        ) -> Result<Row, ::cratestack::CratestackError> {
             ::cratestack::authorize_procedure(ALLOW_POLICIES, DENY_POLICIES, &args, ctx)?;
             sqlx::query_as::<_, Row>(SQL)
                 .bind(&args.user_id)
                 .bind(args.cutoff)
                 .fetch_one(db.pool())
                 .await
-                .map_err(::cratestack::CoolError::from)
+                .map_err(::cratestack::CratestackError::from)
         }
     }
 }

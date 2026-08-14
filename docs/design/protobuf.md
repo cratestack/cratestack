@@ -302,10 +302,10 @@ work, for two independent reasons.
 **The codec trait is serde-generic and cannot carry field numbers.**
 
 ```rust
-pub trait CoolCodec: Clone + Send + Sync + 'static {
+pub trait CratestackCodec: Clone + Send + Sync + 'static {
     const CONTENT_TYPE: &'static str;
-    fn encode<T: Serialize + ?Sized>(&self, value: &T) -> Result<Vec<u8>, CoolError>;
-    fn decode<T: for<'de> Deserialize<'de>>(&self, bytes: &[u8]) -> Result<T, CoolError>;
+    fn encode<T: Serialize + ?Sized>(&self, value: &T) -> Result<Vec<u8>, CratestackError>;
+    fn decode<T: for<'de> Deserialize<'de>>(&self, bytes: &[u8]) -> Result<T, CratestackError>;
 }
 ```
 
@@ -316,10 +316,10 @@ that is not protobuf support, it is a binary format that resembles it.
 
 Making it work means tightening the bound to a trait the generated types
 implement (`WireValue: Serialize + DeserializeOwned + pb_encode/pb_decode`),
-which changes `CoolCodec`, `HttpTransport`, `CodecSet`, and every call site
+which changes `CratestackCodec`, `HttpTransport`, `CodecSet`, and every call site
 in `cratestack-axum` and `cratestack-macros`. The blast radius is bounded and
 countable — roughly ten framework envelope types need hand-written impls
-(`CoolErrorResponse`, `RpcErrorBody`, `RpcRequest`, `RpcResponseFrame`,
+(`CratestackErrorResponse`, `RpcErrorBody`, `RpcRequest`, `RpcResponseFrame`,
 `RpcListInput`, `RpcPkInput<T>`, `RpcUpdateInput<PK, Patch>`, `Page<T>`,
 `PageInfo`, plus slice-of-T for sequence responses) — but it is a core-trait
 change made to serve a binding nobody has asked for by name.
@@ -333,7 +333,7 @@ that round-trips a `serde_json::Value` without loss. Supporting protobuf on
 opaque `bytes` per frame, which is a wire break on the existing RPC binding.
 
 Under `transport grpc` neither problem exists: generated tonic services work
-with concrete prost types and never pass through `CoolCodec` at all, and
+with concrete prost types and never pass through `CratestackCodec` at all, and
 gRPC has no batch envelope to re-shape.
 
 This is deferral with a stated reason, not a feature hidden behind a flag.
