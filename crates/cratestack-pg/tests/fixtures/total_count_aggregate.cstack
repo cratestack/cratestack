@@ -1,0 +1,25 @@
+// Fixture for cratestack#570: a `@@paged` model whose `@@allow("read",
+// ...)` policy admits only a subset of rows, combined with
+// `@@soft_delete` — so `total_count` has two independent reasons to
+// diverge from a naive `COUNT(*)` over the whole table (row-level
+// policy scoping, and the soft-delete tombstone column). The test
+// seeds admitted != total for both.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Item {
+  id Int @id
+  label String
+  ownerId Int
+
+  @@paged
+  @@soft_delete
+  @@allow("read", ownerId == auth().id)
+}

@@ -4,6 +4,20 @@
 
 use quote::quote;
 
+/// `total_count` for a `@@paged` model's list route.
+///
+/// Reuses `#list_builder_ident` — the same builder function that
+/// assembles the page query's `WHERE`/policy scoping — with paging
+/// disabled, then converts the resulting `FindMany` into an
+/// `AggregateCount` via `From` (cratestack-sqlx's
+/// `query/read/aggregate_count.rs`) so the count issues `SELECT
+/// COUNT(*) ...` instead of materialising every matching row just to
+/// call `.len()` on it (cratestack#570). The `From` conversion moves
+/// the already-built `filters` vector over verbatim rather than
+/// re-deriving it, which is what keeps the count's `WHERE` clause and
+/// policy scope byte-identical to the page query's — a divergence
+/// there would let a caller learn the size of a result set policy
+/// doesn't let them read.
 pub(super) fn total_count_tokens(
     paged: bool,
     list_builder_ident: &syn::Ident,
@@ -20,8 +34,8 @@ pub(super) fn total_count_tokens(
                     return ::cratestack::encode_transport_result_with_status_for::<_, #list_response_type>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error));
                 }
             };
-            match count_request.run(&ctx).await {
-                Ok(records) => records.len() as i64,
+            match ::cratestack::AggregateCount::from(count_request).run(&ctx).await {
+                Ok(count) => count,
                 Err(error) => {
                     return ::cratestack::encode_transport_result_with_status_for::<_, #list_response_type>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error));
                 }
