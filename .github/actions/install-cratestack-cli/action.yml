@@ -45,20 +45,84 @@ runs:
 
         repo="https://github.com/cratestack/cratestack"
 
+        # --- 0. Retry helper (cratestack#578) --------------------------------
+        # Every `curl` fetch in this script goes through here so that a
+        # transient network blip (curl exit 52 "empty reply", 56 "recv
+        # failure" — the two actually observed failing unrelated PRs on
+        # 2026-08-12/13) gets retried, while a genuine failure (404 on a
+        # missing asset, a 5xx from the origin) fails immediately.
+        #
+        # Those two are deliberately NOT handled the same way:
+        #
+        #   - `--retry-all-errors` is required to cover 52/56 at all.
+        #     Verified locally (curl 8.18.0) that plain `--retry` — with no
+        #     `--retry-all-errors` — does NOT retry a connection-reset/
+        #     empty-reply failure: curl's own manual scopes the *default*
+        #     retry set to timeouts, FTP 4xx, and HTTP
+        #     408/429/500/502/503/504/522/524 only. 52/56 aren't timeouts,
+        #     they're "the peer went away", which is exactly the class
+        #     `--retry-all-errors` exists for.
+        #
+        #   - `-f`/`--fail` is deliberately NOT combined with
+        #     `--retry-all-errors` here. curl's own manual for
+        #     --retry-all-errors says combining it with --fail makes curl
+        #     retry on *all* HTTP error status codes, not just the narrow
+        #     transient set — confirmed locally: `curl -f --retry-all-errors`
+        #     against a plain 404 retried it 5 times before giving up,
+        #     burning the whole retry budget on a request that will never
+        #     succeed (this is AC2's trap — a missing release asset must
+        #     fail on the first try, not the sixth). So this helper drops
+        #     `-f` and checks the HTTP status itself, once, after curl
+        #     returns: --retry-all-errors still retries the connection-level
+        #     failures (confirmed it does, with or without -f), but a 4xx/5xx
+        #     response — which isn't a curl-level error without -f — reaches
+        #     the check below on the very first attempt and fails loud.
+        #
+        # Checksum verification (step 4) is untouched by any of this: it
+        # only ever runs after a file has already passed the HTTP-status
+        # check below, so a retry can never substitute a partial file for
+        # a verified one.
+        fetch_with_retry() {
+          local url="$1" out="$2" label="$3"
+          shift 3
+          local http_code curl_status
+          # `x=$(cmd) && st=0 || st=$?`, not a bare `x=$(cmd); st=$?`: under
+          # `set -e`, a failing command-substitution assignment aborts the
+          # script on the spot, before the next line (the `$?` capture)
+          # ever runs — confirmed locally. Wrapping it in this and/or list
+          # is the idiom that lets `set -e` see the list as "handled" while
+          # still landing the real exit code in $curl_status.
+          http_code=$(curl -sS -L \
+            --retry 6 --retry-all-errors --retry-delay 2 --retry-max-time 60 \
+            -o "$out" -w '%{http_code}' "$@" "$url") && curl_status=0 || curl_status=$?
+          if [ "$curl_status" -ne 0 ]; then
+            echo "::error::download of ${label} failed after retries (curl exit ${curl_status})" >&2
+            exit "$curl_status"
+          fi
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+            echo "::error::download of ${label} returned HTTP ${http_code} (not retried — this indicates a real failure such as a missing release asset, not a transient network error)" >&2
+            exit 1
+          fi
+        }
+
         # --- 1. Resolve version --------------------------------------------
         version="$INPUT_VERSION"
         if [ "$version" = "latest" ] || [ -z "$version" ]; then
-          # Capture the full response into a variable FIRST, then parse it
-          # with jq — piping curl straight into `grep -m1` raced curl's own
-          # write against grep's early exit under `pipefail` (grep found
-          # its match and closed the pipe before curl finished writing the
-          # rest of the network-paced response, so curl got SIGPIPE'd —
-          # `curl: (23) Failure writing output to destination`). Worked
-          # locally every time (small/fast loopback-ish response) but
-          # failed reliably on real CI runners. Buffering the whole
-          # response first removes the live-pipe race entirely.
-          response=$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" \
-            https://api.github.com/repos/cratestack/cratestack/releases/latest)
+          # Capture the full response into a file FIRST, then parse it with
+          # jq — piping curl straight into `grep -m1` raced curl's own write
+          # against grep's early exit under `pipefail` (grep found its match
+          # and closed the pipe before curl finished writing the rest of the
+          # network-paced response, so curl got SIGPIPE'd — `curl: (23)
+          # Failure writing output to destination`). Worked locally every
+          # time (small/fast loopback-ish response) but failed reliably on
+          # real CI runners. Buffering the whole response first removes the
+          # live-pipe race entirely.
+          response_file=$(mktemp)
+          fetch_with_retry \
+            "https://api.github.com/repos/cratestack/cratestack/releases/latest" \
+            "$response_file" "GitHub releases API" \
+            -H "Authorization: Bearer ${GH_TOKEN}"
+          response=$(cat "$response_file")
           tag=$(echo "$response" | jq -r '.tag_name // empty')
           if [ -z "$tag" ]; then
             echo "::error::could not resolve the latest cratestack release via the GitHub API" >&2
@@ -93,8 +157,8 @@ runs:
 
         workdir=$(mktemp -d)
         echo "Downloading ${asset} ..."
-        curl -fsSL -o "${workdir}/${asset}" "${asset_url}"
-        curl -fsSL -o "${workdir}/${asset}.sha256" "${asset_url}.sha256"
+        fetch_with_retry "${asset_url}" "${workdir}/${asset}" "${asset}"
+        fetch_with_retry "${asset_url}.sha256" "${workdir}/${asset}.sha256" "${asset}.sha256"
 
         # --- 4. Verify checksum ----------------------------------------------
         cd "$workdir"
