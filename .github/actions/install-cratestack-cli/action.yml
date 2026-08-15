@@ -49,10 +49,25 @@ runs:
         # Every `curl` fetch in this script goes through here so that a
         # transient network blip (curl exit 52 "empty reply", 56 "recv
         # failure" — the two actually observed failing unrelated PRs on
-        # 2026-08-12/13) gets retried, while a genuine failure (404 on a
-        # missing asset, a 5xx from the origin) fails immediately.
+        # 2026-08-12/13) gets retried, while a permanent failure (404 on a
+        # missing asset) fails immediately rather than burning the budget.
         #
-        # Those two are deliberately NOT handled the same way:
+        # Three distinct behaviours, measured rather than assumed (see the
+        # exit/attempt counts below — each was reproduced against a local
+        # fixture server that counts hits):
+        #
+        #   connection-level (52/56)  retried 6x, then exit 52/56   [7 attempts]
+        #   HTTP 5xx                  retried 6x, then exit 1       [7 attempts]
+        #   HTTP 404                  NOT retried, exit 1           [1 attempt]
+        #
+        # The 5xx row is deliberate, not an oversight: curl's *default*
+        # transient set already includes 500/502/503/504 and it retries
+        # them with or without `-f`, so a 5xx from the release CDN — which
+        # genuinely is usually transient — gets the same treatment as a
+        # dropped connection, and still fails loud once the budget is
+        # spent. Only a 4xx is treated as permanent.
+        #
+        # The two curl behaviours this relies on are NOT handled the same way:
         #
         #   - `--retry-all-errors` is required to cover 52/56 at all.
         #     Verified locally (curl 8.18.0) that plain `--retry` — with no
@@ -74,9 +89,11 @@ runs:
         #     fail on the first try, not the sixth). So this helper drops
         #     `-f` and checks the HTTP status itself, once, after curl
         #     returns: --retry-all-errors still retries the connection-level
-        #     failures (confirmed it does, with or without -f), but a 4xx/5xx
-        #     response — which isn't a curl-level error without -f — reaches
-        #     the check below on the very first attempt and fails loud.
+        #     failures (confirmed it does, with or without -f), but a 404 —
+        #     which isn't a curl-level error without -f, and isn't in curl's
+        #     transient set either — reaches the check below on the very
+        #     first attempt and fails loud. A 5xx still gets retried first
+        #     (see the table above), then reaches the same check.
         #
         # Checksum verification (step 4) is untouched by any of this: it
         # only ever runs after a file has already passed the HTTP-status
