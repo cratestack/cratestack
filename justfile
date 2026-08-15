@@ -85,31 +85,42 @@ _fmt extra='':
 	# (including the two Flutter crates below) and fail on a missing
 	# module.
 	#
-	# `cratestack-client-flutter` (cratestack#563) is excluded from THIS
-	# recipe only when its generated glue is absent — not unconditionally
-	# like `embedded_flutter_native`, and not from `check`/`lint`/test
-	# recipes below at all. Verified directly: rustfmt's own module
-	# resolution does not evaluate `#[cfg(...)]` (its AST walk tries to
-	# locate every `mod x;` declaration's file regardless of the cfg
-	# gating it sits behind — a real, confirmed rustfmt limitation, not
-	# a workaround), so `cargo fmt -p cratestack-client-flutter` fails
-	# with "failed to resolve mod `frb_generated`" whenever
-	# `src/frb_generated.rs` doesn't exist, even though `mod
-	# frb_generated;` in `src/lib.rs` is behind the `frb-glue` feature
-	# (off by default) and `cargo build`/`cargo check`/`cargo clippy`/
-	# `cargo test -p cratestack-client-flutter` all succeed with no
-	# generated file present (verified — see this crate's own Cargo.toml
-	# comments). Once `just frb-generate crates/cratestack-client-flutter`
-	# has produced that file (locally, or in a workflow step that runs
-	# before this one), this crate's own source is formatted normally
-	# again — the exclusion tracks the file's actual presence rather than
-	# being a permanent carve-out.
-	skip_client_flutter="cratestack-client-flutter"
-	if [ -f crates/cratestack-client-flutter/src/frb_generated.rs ]; then
-	  skip_client_flutter=""
+	# `cratestack-client-flutter` (cratestack#563) needs a placeholder,
+	# NOT an exclusion. rustfmt's module resolution does not evaluate
+	# `#[cfg(...)]`: its AST walk tries to locate every `mod x;`
+	# declaration's file regardless of the cfg gating it sits behind (a
+	# real, confirmed rustfmt limitation, not a workaround). So `cargo fmt
+	# -p cratestack-client-flutter` fails with "failed to resolve mod
+	# `frb_generated`" whenever `src/frb_generated.rs` is missing, even
+	# though that `mod` is behind the default-off `frb-glue` feature and
+	# `cargo build`/`check`/`clippy`/`test -p cratestack-client-flutter`
+	# all succeed without it.
+	#
+	# Skipping the package when the file is absent looks like it "tracks
+	# the file's presence", but the generated glue is gitignored — so it
+	# is absent on EVERY fresh checkout, which is exactly the state CI's
+	# `rustfmt` job runs in (`just fmt-check` immediately after
+	# `actions/checkout`, with no generation step before it). That makes
+	# the skip permanent in CI in practice: measured 58 packages formatted
+	# instead of 59, with nothing reporting the gap. This crate WAS
+	# formatted before frb was wired in, so that would be a silent
+	# coverage regression introduced by this ticket.
+	#
+	# Writing a one-line placeholder just long enough for rustfmt's module
+	# resolution keeps the real sources covered. Verified both directions:
+	# with the placeholder, `cargo fmt -p cratestack-client-flutter
+	# --check` exits 0 on the real tree, and exits 1 reporting a diff when
+	# a deliberately misformatted function is added. The placeholder is
+	# only ever created when the real generated file is absent, and is
+	# removed again via `trap` so an interrupted run cannot leave a stub
+	# that a later `--features frb-glue` build would try to compile.
+	frb_glue=crates/cratestack-client-flutter/src/frb_generated.rs
+	if [ ! -f "$frb_glue" ]; then
+	  printf '// Placeholder so rustfmt can resolve `mod frb_generated;`.\n' > "$frb_glue"
+	  trap 'rm -f "'"$frb_glue"'"' EXIT
 	fi
 	pkgs=$(cargo metadata --no-deps --format-version 1 \
-	  | SKIP_CLIENT_FLUTTER="$skip_client_flutter" python3 -c "import json,os,sys;skip={'embedded_flutter_native'} | ({os.environ['SKIP_CLIENT_FLUTTER']} if os.environ.get('SKIP_CLIENT_FLUTTER') else set());print(' '.join(x['name'] for x in json.load(sys.stdin)['packages'] if x['name'] not in skip))")
+	  | python3 -c "import json,sys;print(' '.join(x['name'] for x in json.load(sys.stdin)['packages'] if x['name'] != 'embedded_flutter_native'))")
 	args=()
 	for p in $pkgs; do args+=(-p "$p"); done
 	if [ ${#args[@]} -eq 0 ]; then
