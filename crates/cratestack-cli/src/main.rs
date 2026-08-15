@@ -163,6 +163,7 @@ mod tests {
                 full_selection,
                 swr,
                 refine,
+                tanstack,
             } => {
                 assert_eq!(schema, PathBuf::from("schema.cstack"));
                 assert_eq!(out, PathBuf::from("out"));
@@ -178,6 +179,10 @@ mod tests {
                 assert!(
                     !refine,
                     "--refine must default to off (issue #571: opt-in, additive)"
+                );
+                assert!(
+                    !tanstack,
+                    "--tanstack must default to off (issue #617: opt-in, additive)"
                 );
             }
             _ => panic!("expected generate-typescript command"),
@@ -202,6 +207,30 @@ mod tests {
         match cli.command {
             Command::GenerateTypeScript { swr, .. } => {
                 assert!(swr);
+            }
+            _ => panic!("expected generate-typescript command"),
+        }
+    }
+
+    #[test]
+    fn generate_typescript_clap_accepts_tanstack_flag() {
+        // Issue #617: `--tanstack` additionally emits `src/react-query.ts`
+        // (TanStack Query hooks), the `./react-query.js` re-export, and the
+        // `@tanstack/react-query` peer/dev dependency — all three were
+        // unconditional before this flag existed.
+        let cli = Cli::parse_from([
+            "cratestack",
+            "generate-typescript",
+            "--schema",
+            "schema.cstack",
+            "--out",
+            "out",
+            "--tanstack",
+        ]);
+
+        match cli.command {
+            Command::GenerateTypeScript { tanstack, .. } => {
+                assert!(tanstack);
             }
             _ => panic!("expected generate-typescript command"),
         }

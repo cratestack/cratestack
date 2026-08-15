@@ -29,6 +29,7 @@ fn config_with_lock(pb_lock: PbLock) -> TypeScriptGeneratorConfig {
         swr: false,
         full_selection: false,
         refine: false,
+        tanstack: false,
         pb_lock: Some(pb_lock),
         // gRPC-Web is out of scope for the schema-fingerprint header (issue
         // #178) — this crate's TypeScriptGeneratorConfig::schema_sha256 doc
@@ -56,11 +57,14 @@ fn generates_the_expected_file_set_for_a_grpc_schema() {
     let package = generate_package(&widgets_schema(), &config_with_lock(widgets_lock()))
         .expect("grpc schema should generate");
 
-    // Same 4 common files as every transport, plus 4 gRPC-Web-specific
-    // ones (runtime/client/react-query/index) — no queries.ts (REST-only)
-    // and no procedure surface (gRPC never routes procedures, ticket
-    // #171).
-    assert_eq!(package.files.len(), 8, "{:#?}", package.files);
+    // Same 4 common files as every transport, plus 3 gRPC-Web-specific
+    // ones (runtime/client/index) — no queries.ts (REST-only), no
+    // procedure surface (gRPC never routes procedures, ticket #171), and
+    // — issue #617 — no react-query.ts either, since `config_with_lock`
+    // leaves `tanstack: false` (see
+    // `tanstack_flag_emits_react_query_hooks_for_grpc_too` below for the
+    // `--tanstack` case).
+    assert_eq!(package.files.len(), 7, "{:#?}", package.files);
     for expected in [
         "package.json",
         "tsconfig.json",
@@ -68,11 +72,48 @@ fn generates_the_expected_file_set_for_a_grpc_schema() {
         "src/models.ts",
         "src/runtime.ts",
         "src/client.ts",
-        "src/react-query.ts",
         "src/index.ts",
     ] {
         package_file(&package, expected);
     }
+    assert!(
+        package
+            .files
+            .iter()
+            .all(|file| file.file_name != "src/react-query.ts"),
+        "react-query.ts must not be emitted for a gRPC-Web schema without --tanstack:\n{:#?}",
+        package.files
+    );
+}
+
+/// Issue #617: unlike `--refine` (rejected outright for `transport grpc` —
+/// see `refine_is_rejected_for_grpc_which_has_no_provider_to_bind_to` in
+/// `tests/refine_generator.rs`), `--tanstack` composes with EVERY
+/// transport including gRPC-Web. `grpc-web-react-query.ts.j2` already
+/// existed and rendered unconditionally before this issue; `--tanstack`
+/// only gates it, it doesn't add support that wasn't there.
+#[test]
+fn tanstack_flag_emits_react_query_hooks_for_grpc_too() {
+    let mut config = config_with_lock(widgets_lock());
+    config.tanstack = true;
+    let package =
+        generate_package(&widgets_schema(), &config).expect("grpc schema should generate");
+
+    let react_query = package_file(&package, "src/react-query.ts");
+    assert!(react_query.contains("useQuery"));
+    assert!(react_query.contains("useMutation"));
+
+    let index = package_file(&package, "src/index.ts");
+    assert!(
+        index.contains("export * from \"./react-query.js\";"),
+        "gRPC-Web src/index.ts should re-export react-query.ts under --tanstack:\n{index}"
+    );
+
+    let package_json = package_file(&package, "package.json");
+    assert!(
+        package_json.contains("\"@tanstack/react-query\": \"^5.0.0\""),
+        "gRPC-Web package.json should declare @tanstack/react-query under --tanstack:\n{package_json}"
+    );
 }
 
 #[test]
@@ -160,8 +201,12 @@ fn method_paths_use_the_locked_package_and_op_id_derived_method_name() {
 
 #[test]
 fn no_procedure_surface_is_generated_for_grpc() {
-    let package = generate_package(&widgets_schema(), &config_with_lock(widgets_lock()))
-        .expect("should generate");
+    // `--tanstack` on, to exercise `src/react-query.ts`'s content too (see
+    // `tanstack_flag_emits_react_query_hooks_for_grpc_too` for why it's not
+    // in the default file set post-#617).
+    let mut config = config_with_lock(widgets_lock());
+    config.tanstack = true;
+    let package = generate_package(&widgets_schema(), &config).expect("should generate");
     let client = package_file(&package, "src/client.ts");
     let react_query = package_file(&package, "src/react-query.ts");
 

@@ -641,6 +641,7 @@ fn generate_for_with_full_config(
             swr: false,
             full_selection,
             refine: false,
+            tanstack: false,
             pb_lock: None,
             schema_sha256: schema_sha256.to_owned(),
         },

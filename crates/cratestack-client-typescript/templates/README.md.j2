@@ -1,6 +1,6 @@
 # {{ package_name }}
 
-Generated CrateStack TypeScript client with a fetch transport and TanStack Query hooks.
+Generated CrateStack TypeScript client with a fetch transport{% if tanstack %} and TanStack Query hooks{% endif %}.
 
 ```ts
 import { {{ client_class_name }} } from "{{ package_name }}";
@@ -87,6 +87,7 @@ const result = await client.procedures.{{ procedures[0].method_name }}(args, {
 ```
 {% endif %}
 
+{% if tanstack %}
 ## TanStack Query
 
 {% if models %}
@@ -122,6 +123,7 @@ function {{ models[0].name }}List({ client }: { client: {{ client_class_name }} 
 ```
 {% endif %}
 
+{% endif %}
 ## React Native
 
 React Native app runtimes provide `fetch`; pass the mobile API origin and keep auth token lookup in your app layer.

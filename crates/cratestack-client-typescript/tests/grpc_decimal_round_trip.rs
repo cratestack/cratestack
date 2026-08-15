@@ -107,6 +107,7 @@ fn grpc_decimal_round_trips_through_encode_decode_message() {
             swr: false,
             full_selection: false,
             refine: false,
+            tanstack: false,
             pb_lock: Some(lock),
             schema_sha256: "unused-for-grpc-web".to_owned(),
         },

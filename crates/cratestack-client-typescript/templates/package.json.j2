@@ -36,30 +36,10 @@
     "build": "tsc -p tsconfig.json"
   },
   "peerDependencies": {
-{% if refine %}
-    "@cratestack/refine": "{{ refine_version_requirement }}",
-    "@refinedev/core": "^5.0.0",
-{% endif %}
-{% if swr %}
-    "react": "^18.0.0 || ^19.0.0",
-    "swr": "^2.2.0",
-{% endif %}
-    "@tanstack/react-query": "^5.0.0"
-  },
+{% for dep in peer_dependencies %}    "{{ dep.name }}": "{{ dep.version }}"{% if not loop.last %},{% endif %}{{ "\n" }}{% endfor %}  },
   "dependencies": {
     "decimal.js": "^10.6.0"
   },
   "devDependencies": {
-{% if refine %}
-    "@cratestack/refine": "{{ refine_version_requirement }}",
-    "@refinedev/core": "^5.0.0",
-{% endif %}
-{% if swr %}
-    "@types/react": "^18.0.0 || ^19.0.0",
-    "react": "^18.0.0 || ^19.0.0",
-    "swr": "^2.2.0",
-{% endif %}
-    "@tanstack/react-query": "^5.0.0",
-    "typescript": "^7.0.2"
-  }
+{% for dep in dev_dependencies %}    "{{ dep.name }}": "{{ dep.version }}"{% if not loop.last %},{% endif %}{{ "\n" }}{% endfor %}  }
 }

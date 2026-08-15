@@ -18,13 +18,11 @@
     "build": "tsc -p tsconfig.json"
   },
   "peerDependencies": {
-    "@tanstack/react-query": "^5.0.0"
   },
   "dependencies": {
     "decimal.js": "^10.6.0"
   },
   "devDependencies": {
-    "@tanstack/react-query": "^5.0.0",
     "typescript": "^7.0.2"
   }
 }

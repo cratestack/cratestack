@@ -61,6 +61,26 @@ fn generate_ts_with_swr_and_refine(
     swr: bool,
     refine: bool,
 ) -> anyhow::Result<()> {
+    generate_ts_with_swr_refine_and_tanstack(schema, out, check, swr, refine, false)
+}
+
+fn generate_ts_with_tanstack(
+    schema: PathBuf,
+    out: PathBuf,
+    check: bool,
+    tanstack: bool,
+) -> anyhow::Result<()> {
+    generate_ts_with_swr_refine_and_tanstack(schema, out, check, false, false, tanstack)
+}
+
+fn generate_ts_with_swr_refine_and_tanstack(
+    schema: PathBuf,
+    out: PathBuf,
+    check: bool,
+    swr: bool,
+    refine: bool,
+    tanstack: bool,
+) -> anyhow::Result<()> {
     handle_generate_typescript(
         schema,
         out,
@@ -71,6 +91,7 @@ fn generate_ts_with_swr_and_refine(
         false,
         swr,
         refine,
+        tanstack,
     )
 }
 
@@ -221,6 +242,65 @@ fn typescript_check_flags_extra_swr_files_as_real_drift_when_swr_is_removed() {
     assert!(
         message.contains("unexpected: src/swr/models/account.ts"),
         "swr's per-model file should be reported unexpected:\n{message}"
+    );
+}
+
+// Issue #617: `--check` must be `--tanstack`-aware too, same reasoning as
+// the `--swr` pair above — `src/react-query.ts` is additive, not a
+// replacement, so turning the flag on/off against previously-generated
+// output must show up as real `missing`/`unexpected` drift, not be
+// swallowed just because the rest of the file set still matches.
+
+#[test]
+fn typescript_tanstack_check_passes_when_output_matches_schema() {
+    let dir = TempDir::new().expect("tempdir");
+    let schema = write_schema(&dir, INITIAL_SCHEMA);
+    let out = dir.path().join("client");
+
+    generate_ts_with_tanstack(schema.clone(), out.clone(), false, true)
+        .expect("initial --tanstack generate");
+    generate_ts_with_tanstack(schema, out, true, true)
+        .expect("check --tanstack should pass against its own unmodified output");
+}
+
+#[test]
+fn typescript_check_flags_missing_react_query_as_real_drift_when_tanstack_is_added() {
+    let dir = TempDir::new().expect("tempdir");
+    let schema = write_schema(&dir, INITIAL_SCHEMA);
+    let out = dir.path().join("client");
+
+    generate_ts_with_tanstack(schema.clone(), out.clone(), false, false)
+        .expect("initial generate without --tanstack");
+
+    let error = generate_ts_with_tanstack(schema, out, true, true)
+        .expect_err("check --tanstack against non-tanstack output should report drift");
+    let message = error.to_string();
+    assert!(
+        message.contains("missing: src/react-query.ts"),
+        "react-query.ts should be reported missing:\n{message}"
+    );
+    assert!(
+        !message.contains("unexpected: src/models.ts"),
+        "the default layout's src/models.ts is unaffected by --tanstack and must not be \
+         reported as drift:\n{message}"
+    );
+}
+
+#[test]
+fn typescript_check_flags_extra_react_query_as_real_drift_when_tanstack_is_removed() {
+    let dir = TempDir::new().expect("tempdir");
+    let schema = write_schema(&dir, INITIAL_SCHEMA);
+    let out = dir.path().join("client");
+
+    generate_ts_with_tanstack(schema.clone(), out.clone(), false, true)
+        .expect("initial generate with --tanstack");
+
+    let error = generate_ts_with_tanstack(schema, out, true, false)
+        .expect_err("check without --tanstack against tanstack output should report drift");
+    let message = error.to_string();
+    assert!(
+        message.contains("unexpected: src/react-query.ts"),
+        "react-query.ts should be reported unexpected:\n{message}"
     );
 }
 

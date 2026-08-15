@@ -1,6 +1,6 @@
 # tiny-rpc-client
 
-Generated CrateStack TypeScript client with a fetch transport and TanStack Query hooks.
+Generated CrateStack TypeScript client with a fetch transport.
 
 ```ts
 import { TinyRpcClientClient } from "tiny-rpc-client";
@@ -77,39 +77,6 @@ await client.widgets.delete(updated.id, { headers });
 const result = await client.procedures.echoName(args, {
   headers,
 });
-```
-
-## TanStack Query
-
-```tsx
-import {
-  TinyRpcClientClient,
-  useWidgetListQuery,
-  useCreateWidgetMutation,
-} from "tiny-rpc-client";
-
-function WidgetList({ client }: { client: TinyRpcClientClient }) {
-  const list = useWidgetListQuery(client, {
-    query: {
-      fields: ["id"],
-      limit: 20,
-    },
-    queryOptions: {
-      staleTime: 30_000,
-    },
-  });
-
-  const create = useCreateWidgetMutation(client);
-
-  if (list.isPending) {
-    return null;
-  }
-  if (list.isError) {
-    return <ErrorState error={list.error} />;
-  }
-
-  return <ListView data={list.data} onCreate={(input) => create.mutate(input)} />;
-}
 ```
 
 ## React Native

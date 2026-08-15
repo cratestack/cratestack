@@ -1,6 +1,6 @@
 # react-vite-swr-client
 
-Generated CrateStack TypeScript client with a fetch transport and TanStack Query hooks.
+Generated CrateStack TypeScript client with a fetch transport.
 
 ```ts
 import { ReactViteSwrClientClient } from "react-vite-swr-client";
@@ -78,39 +78,6 @@ await client.boards.delete(updated.id, { headers });
 const result = await client.procedures.estimateFocusMinutes(args, {
   headers,
 });
-```
-
-## TanStack Query
-
-```tsx
-import {
-  ReactViteSwrClientClient,
-  useBoardListQuery,
-  useCreateBoardMutation,
-} from "react-vite-swr-client";
-
-function BoardList({ client }: { client: ReactViteSwrClientClient }) {
-  const list = useBoardListQuery(client, {
-    query: {
-      fields: ["id"],
-      limit: 20,
-    },
-    queryOptions: {
-      staleTime: 30_000,
-    },
-  });
-
-  const create = useCreateBoardMutation(client);
-
-  if (list.isPending) {
-    return null;
-  }
-  if (list.isError) {
-    return <ErrorState error={list.error} />;
-  }
-
-  return <ListView data={list.data} onCreate={(input) => create.mutate(input)} />;
-}
 ```
 
 ## React Native

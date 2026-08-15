@@ -2,6 +2,21 @@ use std::path::PathBuf;
 
 use cratestack_proto::PbLock;
 
+/// Whether a schema with no `--tanstack`/`tanstack: ...` given at all emits
+/// `src/react-query.ts`. **Reserved for @stephane-segning (issue #617's
+/// Risks section)**: hard-break to `false` in the next release, or a
+/// deprecation window where this stays `true` (with a warning) for one more
+/// release first. Currently `false`, matching the issue's stated Expected
+/// Behavior. This is the one place to change to flip
+/// [`TypeScriptGeneratorConfig::default`]'s `tanstack` value — see that
+/// field's doc comment for why the CLI's own `--tanstack` flag needs a
+/// separate, larger change (not just this constant) if the decision goes
+/// the other way: a plain presence/absence `bool` flag can represent
+/// "off unless passed", but representing "on unless explicitly turned off"
+/// needs an additional negation flag, which this constant alone can't
+/// provide.
+pub const DEFAULT_TANSTACK: bool = false;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeScriptGeneratorConfig {
     pub package_name: String,
@@ -49,6 +64,24 @@ pub struct TypeScriptGeneratorConfig {
     /// default layout's client class, which is always emitted regardless
     /// of `swr`.
     pub refine: bool,
+    /// Issue #617: additionally emit `src/react-query.ts` — TanStack Query
+    /// (`useQuery`/`useMutation`) hooks over the default layout's client
+    /// class — and re-export it from `src/index.ts`, and declare
+    /// `@tanstack/react-query` as a peer + dev dependency in
+    /// `package.json`. Before this flag existed, all three were emitted
+    /// unconditionally for every schema and every transport (REST, RPC,
+    /// gRPC-Web alike); `--tanstack` finishes the convergence `--swr`
+    /// (#589) and `--refine` (#571) already went through, where every
+    /// framework-specific binding is an additive opt-in and the core typed
+    /// client stays framework-free.
+    ///
+    /// Purely additive with respect to every OTHER emitted file, which stays
+    /// byte-identical regardless of this flag's value — that part is not in
+    /// question. What IS a reserved maintainer decision (issue #617's Risks
+    /// section, not implementation discretion) is which way this defaults
+    /// when unset: see [`DEFAULT_TANSTACK`], the single place that decision
+    /// lives.
+    pub tanstack: bool,
     /// Hex-encoded SHA-256 of the schema file's raw bytes (issue #178) —
     /// computed once by the CLI (`cli_support::hash_schema_source`, the
     /// same computation `cratestack-macros` does for `include_*_schema!`)
@@ -72,6 +105,7 @@ impl Default for TypeScriptGeneratorConfig {
             swr: false,
             full_selection: false,
             refine: false,
+            tanstack: DEFAULT_TANSTACK,
             pb_lock: None,
             schema_sha256: String::new(),
         }

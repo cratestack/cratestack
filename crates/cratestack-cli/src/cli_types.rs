@@ -112,6 +112,23 @@ pub(crate) enum Command {
         /// regardless of `--swr`.
         #[arg(long)]
         refine: bool,
+        /// Also emit `src/react-query.ts` (issue #617): TanStack Query
+        /// (`useQuery`/`useMutation`) hooks over the default layout's
+        /// client class, re-exported from `src/index.ts`, plus the
+        /// `@tanstack/react-query` peer + dev dependency in
+        /// `package.json`. Before this flag existed, all three were
+        /// emitted unconditionally, for every schema and transport (REST,
+        /// RPC, gRPC-Web alike) — `--tanstack` finishes the convergence
+        /// `--swr` (#589) and `--refine` (#571) already went through.
+        ///
+        /// Purely additive: every other emitted file is byte-identical
+        /// with and without it. Unlike `--refine`, this composes with
+        /// EVERY transport including gRPC-Web — `--tanstack` gates the
+        /// same `src/react-query.ts` that used to be unconditional there
+        /// too, it doesn't add support for a transport that lacked it
+        /// before. Composes freely with `--swr`/`--refine`.
+        #[arg(long)]
+        tanstack: bool,
     },
     /// Emit a `.proto` file describing the schema's messages/enums
     /// (no `service` block — that needs `transport grpc`, ticket #170)

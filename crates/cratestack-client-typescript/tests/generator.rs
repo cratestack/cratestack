@@ -15,11 +15,16 @@ fn generates_fetch_client_and_tanstack_hooks_for_blog_schema() {
             swr: false,
             full_selection: false,
             refine: false,
+            // Issue #617: this test is specifically about the TanStack
+            // Query hooks (its name says so), which are gated behind
+            // `--tanstack` now — every other test in this file uses
+            // `TypeScriptGeneratorConfig::default()` (tanstack off).
+            tanstack: true,
             pb_lock: None,
             schema_sha256: "blogschemasha256testvalue0000000000000000000000000000000000".to_owned(),
         },
     )
-    .expect("default template should render");
+    .expect("--tanstack template should render");
 
     assert_eq!(package.files.len(), 9);
 

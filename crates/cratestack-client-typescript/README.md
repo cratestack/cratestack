@@ -54,7 +54,6 @@ src/
   models.ts
   client.ts
   queries.ts
-  react-query.ts
 ```
 
 Generated content covers:
@@ -63,17 +62,18 @@ Generated content covers:
 - enum types
 - a framework-neutral fetch client
 - selection / include builders for projection
-- TanStack Query hooks for React and React Native consumers
 - projection helpers for the generated route query params — for RPC transport, a typed
   `CratestackRpcListQuery`/`toRpcListInput` builder (the RPC counterpart of REST's
   `CratestackFetchQuery`) in `src/queries.ts`
 
+`src/react-query.ts` (TanStack Query hooks for React and React Native consumers) is NOT
+in this default list — see `--tanstack` below (issue #617).
+
 For a `transport grpc` schema, the layout instead emits a gRPC-Web client:
-`src/runtime.ts` (protobuf encode/decode helpers), `src/client.ts`, `src/react-query.ts`,
-and `src/index.ts` — model CRUD only, no `queries.ts` (protobuf fields are typed, not
-query-string-shaped) and no procedure surface (procedures aren't wired into the
-generated gRPC service). This is selected automatically by the schema's declared
-transport, not a CLI flag.
+`src/runtime.ts` (protobuf encode/decode helpers), `src/client.ts`, and `src/index.ts` —
+model CRUD only, no `queries.ts` (protobuf fields are typed, not query-string-shaped) and
+no procedure surface (procedures aren't wired into the generated gRPC service). This is
+selected automatically by the schema's declared transport, not a CLI flag.
 
 ## `--swr` (`TypeScriptGeneratorConfig::swr`)
 
@@ -139,6 +139,34 @@ cratestack generate-typescript \
   --schema schemas/catalog.cstack \
   --out packages/catalog-client \
   --refine
+```
+
+## `--tanstack` (`TypeScriptGeneratorConfig::tanstack`)
+
+Adds one file, `src/react-query.ts` — TanStack Query (`useQuery`/`useMutation`) hooks
+over the default layout's client class — re-exports it from `src/index.ts`, and adds
+`@tanstack/react-query` to `package.json`'s peer/dev dependencies.
+
+Before issue #617, all three were emitted unconditionally: every generated client, for
+every transport (REST, RPC, gRPC-Web alike) and regardless of any other flag, carried a
+hard `@tanstack/react-query` dependency whether or not the consumer used React. `--tanstack`
+finishes the convergence `--swr` (#589) and `--refine` (#571) already went through, where
+every framework-specific binding is an additive opt-in and the core typed client stays
+framework-free.
+
+Additive by construction: with the flag off, every emitted file is byte-identical except
+`package.json` (peer/dev dependency) and `src/index.ts` (re-export) — `tests/snapshot.rs`
+pins the flag-off default, and `tests/generator_grpc.rs`/`tests/swr_generator.rs` cover the
+on/off file-set difference for gRPC-Web and REST/RPC respectively. Unlike `--refine`, this
+composes with EVERY transport including gRPC-Web: `--tanstack` gates the same
+`src/react-query.ts` that used to be unconditional there too, it doesn't add support for a
+transport that lacked it before. Composes freely with `--swr`/`--refine`.
+
+```bash
+cratestack generate-typescript \
+  --schema schemas/catalog.cstack \
+  --out packages/catalog-client \
+  --tanstack
 ```
 
 ## See Also

@@ -10,6 +10,7 @@ use crate::find_many_views::{
 };
 use crate::grpc::GrpcContext;
 use crate::naming::{occupied_type_names, package_class_stem, to_pascal_case};
+use crate::package_deps::{DependencyEntry, dev_dependencies_for, peer_dependencies_for};
 use crate::procedure_views::{ProcedureView, build_procedure};
 use crate::refine::{RefineResourceView, build_refine_resources, refine_resource_map_type};
 use crate::types::{
@@ -77,6 +78,22 @@ pub(crate) struct TemplateContext {
     /// a wholly separate file set (`crate::swr::generate`), not gated by
     /// this field.
     swr: bool,
+    /// Issue #617 (`--tanstack`). Mirrors `TypeScriptGeneratorConfig::tanstack`,
+    /// and is read by the three `*-index.ts.j2` templates (gates the
+    /// `./react-query.js` re-export) — `package.json.j2` reads
+    /// `peer_dependencies`/`dev_dependencies` instead (see those fields'
+    /// doc comments for why). `src/react-query.ts` itself is gated by spec
+    /// selection (`crate::templates::specs`), not by this field.
+    tanstack: bool,
+    /// `package.json.j2`'s `peerDependencies` entries, joined by a
+    /// `{% for %}` loop in the template rather than nested `{% if %}`
+    /// blocks — see `crate::package_deps`'s module doc for why issue #617
+    /// forced that change. Empty when `refine`/`swr`/`tanstack` are all
+    /// off, which renders a valid empty `"peerDependencies": {}`.
+    peer_dependencies: Vec<DependencyEntry>,
+    /// Same shape and rationale as `peer_dependencies`, for
+    /// `devDependencies` — see `crate::package_deps::dev_dependencies_for`.
+    dev_dependencies: Vec<DependencyEntry>,
 }
 
 pub(crate) fn build_template_context(
@@ -208,6 +225,12 @@ pub(crate) fn build_template_context(
 
     let grpc = crate::grpc::build_grpc_context(schema, config.pb_lock.as_ref())?;
 
+    let refine_version_requirement = if config.refine {
+        format!("^{}", env!("CARGO_PKG_VERSION"))
+    } else {
+        String::new()
+    };
+
     Ok(TemplateContext {
         package_name: config.package_name.clone(),
         client_class_name,
@@ -222,11 +245,7 @@ pub(crate) fn build_template_context(
         decimal_shapes,
         grpc,
         refine: config.refine,
-        refine_version_requirement: if config.refine {
-            format!("^{}", env!("CARGO_PKG_VERSION"))
-        } else {
-            String::new()
-        },
+        refine_version_requirement: refine_version_requirement.clone(),
         // Built only when the flag is on: a default run has no template
         // that reads this, and walking every model to fill a list nothing
         // renders would be wasted work on the hot path.
@@ -241,5 +260,8 @@ pub(crate) fn build_template_context(
             String::new()
         },
         swr: config.swr,
+        tanstack: config.tanstack,
+        peer_dependencies: peer_dependencies_for(config, &refine_version_requirement),
+        dev_dependencies: dev_dependencies_for(config, &refine_version_requirement),
     })
 }

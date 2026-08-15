@@ -7,4 +7,3 @@ export * from "./cbor-seq.js";
 export * from "./queries.js";
 export * from "./models.js";
 export * from "./client.js";
-export * from "./react-query.js";

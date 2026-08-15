@@ -139,6 +139,25 @@ Flags:
     --out packages/catalog-client \
     --refine
   ```
+- `--tanstack` — additionally emit `src/react-query.ts`, TanStack Query
+  (`useQuery`/`useMutation`) hooks over the default layout's client class,
+  re-exported from `src/index.ts`, and add
+  `@tanstack/react-query` to the generated `package.json`'s peer/dev
+  dependencies. Before this flag existed (issue #617), all three were
+  emitted unconditionally, for every schema and every transport (REST,
+  RPC, gRPC-Web alike). Purely additive — every other emitted file is
+  byte-identical with and without it. Unlike `--refine`, this composes
+  with EVERY transport including gRPC-Web: `--tanstack` gates the same
+  `src/react-query.ts` that used to be unconditional there too, it
+  doesn't add support for a transport that lacked it before. Composes
+  freely with `--swr`/`--refine`.
+
+  ```bash
+  cratestack generate-typescript \
+    --schema schemas/catalog.cstack \
+    --out packages/catalog-client \
+    --tanstack
+  ```
 
 ### `--check` — drift detection (CI guard)
 

@@ -20,7 +20,10 @@ fn default_layout_output_is_unaffected_by_swr_existing() {
     let package = generate_for("tiny_rest", false);
     assert!(file_named(&package, "src/models.ts").is_some());
     assert!(file_named(&package, "src/client.ts").is_some());
-    assert!(file_named(&package, "src/react-query.ts").is_some());
+    // Issue #617: `src/react-query.ts` is gated behind `--tanstack` now,
+    // off by default like `swr` here — `generate_for`'s `..Default::default()`
+    // leaves it unset.
+    assert!(file_named(&package, "src/react-query.ts").is_none());
     assert!(file_named(&package, "src/swr/models/shared.ts").is_none());
     assert!(file_named(&package, "src/swr/procedures.ts").is_none());
 }
@@ -43,7 +46,6 @@ fn swr_rest_file_set_is_additive_to_the_default_layout() {
             "src/index.ts",
             "src/models.ts",
             "src/queries.ts",
-            "src/react-query.ts",
             "src/runtime.ts",
             "src/swr/index.ts",
             "src/swr/models/shared.ts",
@@ -57,7 +59,8 @@ fn swr_rest_file_set_is_additive_to_the_default_layout() {
             "tsconfig.json",
         ],
         "--swr's REST file set changed unexpectedly (the default layout must \
-         stay present alongside src/swr/**)"
+         stay present alongside src/swr/**; src/react-query.ts is absent here \
+         because --tanstack, issue #617, is off in this fixture)"
     );
 }
 
@@ -82,7 +85,6 @@ fn swr_rpc_file_set_is_additive_to_the_default_layout() {
             "src/links.ts",
             "src/models.ts",
             "src/queries.ts",
-            "src/react-query.ts",
             "src/runtime.ts",
             "src/stream-terminal.ts",
             "src/swr/cbor-item.ts",
@@ -101,7 +103,8 @@ fn swr_rpc_file_set_is_additive_to_the_default_layout() {
             "tsconfig.json",
         ],
         "--swr's RPC file set changed unexpectedly (the default layout must \
-         stay present alongside src/swr/**)"
+         stay present alongside src/swr/**; src/react-query.ts is absent here \
+         because --tanstack, issue #617, is off in this fixture)"
     );
 }
 
@@ -643,7 +646,10 @@ fn swr_rejects_colliding_model_file_names() {
 /// guaranteed unique too).
 #[test]
 fn default_layout_disambiguates_colliding_query_keys() {
-    let package = generate_for("swr_key_collision", false);
+    // `src/react-query.ts` needs `--tanstack` (issue #617) now — this test
+    // is about ITS content, not `--swr`'s, so `generate_for` (swr-only)
+    // isn't the right helper here.
+    let package = generate_for_tanstack("swr_key_collision");
     let react_query = file(&package, "src/react-query.ts");
 
     // No more literal duplicate property name.
@@ -682,6 +688,25 @@ fn generate_for(fixture_stem: &str, swr: bool) -> GeneratedTypeScriptPackage {
         &TypeScriptGeneratorConfig {
             package_name: "swr-fixture-client".to_owned(),
             swr,
+            ..TypeScriptGeneratorConfig::default()
+        },
+    )
+    .expect("generation should succeed for this fixture/flag combination")
+}
+
+/// Like `generate_for`, but turns on `--tanstack` (swr off) instead of
+/// `--swr` — for the one test in this file that's actually about
+/// `src/react-query.ts`'s own content (query-key disambiguation), not
+/// about `--swr`'s file set.
+fn generate_for_tanstack(fixture_stem: &str) -> GeneratedTypeScriptPackage {
+    let fixture_path = format!("tests/fixtures/{fixture_stem}.cstack");
+    let schema = cratestack_parser::parse_schema_file(&fixture_path)
+        .unwrap_or_else(|error| panic!("fixture {fixture_path:?} should parse: {error}"));
+    generate_package(
+        &schema,
+        &TypeScriptGeneratorConfig {
+            package_name: "swr-fixture-client".to_owned(),
+            tanstack: true,
             ..TypeScriptGeneratorConfig::default()
         },
     )
