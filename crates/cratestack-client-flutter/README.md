@@ -164,35 +164,39 @@ This is **complementary** to `execute_streamed` / `rpc_call_streamed`, not a rep
 
 ## CBOR codec (`cratestack_cbor`, cratestack#563)
 
-The [`cbor`](src/cbor/mod.rs) module wraps `cratestack-codec-cbor`'s `CborCodec` for `flutter_rust_bridge` — the source
-this crate's frb glue is generated from for the `cratestack_cbor` pub.dev package (publishing infrastructure is a
-separate, follow-up PR; this crate only carries the binding and its tests). It composes with `FlutterCborSeqDecoder`
-above rather than overlapping: that type finds item *boundaries* in a streamed body, `cbor::decode_json` decodes the
-bytes of each item once found.
+The [`cbor`](src/cbor/mod.rs) module wraps `cratestack-codec-cbor`'s `CborCodec` for `flutter_rust_bridge`. Unlike the
+rest of this README's examples (which assume a separate native shim crate that depends on
+`cratestack-client-flutter`), the CBOR bridge is wired directly into *this* crate — `encode_json`/`decode_json` in
+`src/cbor/mod.rs` carry real `#[frb(sync)]` annotations, `Cargo.toml` declares `crate-type = ["cdylib", "rlib"]`, and
+`flutter_rust_bridge.yaml` at the crate root points `flutter_rust_bridge_codegen` at `crate::cbor` directly. This is
+the crate `flutter_rust_bridge_codegen` runs against to produce the `cratestack_cbor` pub.dev package (publishing
+infrastructure is a separate, follow-up PR; this crate only carries the binding, its tests, and the CI verification
+below). It composes with `FlutterCborSeqDecoder` above rather than overlapping: that type finds item *boundaries* in a
+streamed body, `cbor::decode_json` decodes the bytes of each item once found.
+
+The frb annotations and generated glue are feature-gated behind `frb-glue` (off by default — see `Cargo.toml`'s and
+`src/lib.rs`'s comments), so a plain `cargo build`/`cargo test -p cratestack-client-flutter` never needs
+`flutter_rust_bridge_codegen` to have run. Regenerate and exercise the real bridge with:
+
+```bash
+just frb-generate crates/cratestack-client-flutter        # writes src/frb_generated.rs + dart/lib/src/rust/ (gitignored)
+cargo build -p cratestack-client-flutter --features frb-glue
+```
+
+or run the whole thing — generate, compile, `dart pub get`, and a real Dart round trip against the compiled cdylib —
+in one step with `just frb-verify-client-flutter` (also CI's `flutter (cratestack-client-flutter frb bridge)` job).
+The Dart harness lives at [`dart/verify_round_trip.dart`](dart/verify_round_trip.dart) — a hand-written, committed
+script (the generated `dart/lib/src/rust/` it imports is not), so a Rust-side rename or signature change that would
+silently break the Dart-facing API surface fails that script's `dart run` with a real Dart analyzer error, not just a
+`flutter_rust_bridge_codegen generate` exit code.
 
 The boundary type crossing the frb FFI edge is JSON text (`String`), not a native Dart value — flutter_rust_bridge has
 no dynamic "any JSON value" wire type the way napi or wasm-bindgen do, so a Dart caller runs `jsonEncode`/`jsonDecode`
-(both in `dart:convert`) on its side:
-
-```rust
-// In your native crate (the one running flutter_rust_bridge_codegen) — see
-// benches/cbor_bridge/README.md for a complete, runnable example.
-use flutter_rust_bridge::frb;
-
-// #[frb(sync)] matters: the async-default binding measured SLOWER than
-// pure-Dart package:cbor in this crate's own benchmark (see below) — the
-// per-call async isolate/port dispatch dwarfs the actual codec cost for a
-// small payload. Always mark these `sync`.
-#[frb(sync)]
-pub fn cbor_encode_json(json: String) -> Result<Vec<u8>, String> {
-    cratestack_client_flutter::cbor::encode_json(json).map_err(|e| e.message)
-}
-
-#[frb(sync)]
-pub fn cbor_decode_json(bytes: Vec<u8>) -> Result<String, String> {
-    cratestack_client_flutter::cbor::decode_json(bytes).map_err(|e| e.message)
-}
-```
+(both in `dart:convert`) on its side. The generated Dart signatures are synchronous (`Uint8List encodeJson(...)`, not
+`Future<Uint8List> encodeJson(...)`) — confirmed by inspecting `dart/lib/src/rust/cbor.dart` after running
+`flutter_rust_bridge_codegen generate` — which is the whole point of `#[frb(sync)]`: `benches/cbor_bridge/README.md`
+measured the async-default binding at 0.5x pure-Dart `package:cbor` (i.e. **slower**), purely from per-call async
+isolate/port dispatch overhead dwarfing the actual codec cost for a small payload.
 
 `Decimal` round-trips as a plain JSON string, matching the Dart client generator's existing `Decimal` -> `String`
 convention (`crates/cratestack-client-dart/src/wire_encode.rs`). `Uuid` does **not** byte-match a native

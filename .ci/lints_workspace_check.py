@@ -63,6 +63,14 @@ EXEMPT_MANUAL_OVERRIDE = {
     # `unsafe_code = "forbid"`. Same category as the three above, and the
     # reason this crate previously could not be built at all — see #600.
     "examples/embedded-flutter/native",
+    # cratestack#563: `crates/cratestack-client-flutter` gained its own
+    # flutter_rust_bridge glue (the CBOR bridge, absorbed into this crate
+    # rather than a new `cratestack-cbor-frb` — maintainer decision). Same
+    # FFI-boundary reasoning as the entry above, but the generated `mod
+    # frb_generated;` is feature-gated (`frb-glue`, off by default) rather
+    # than unconditional — see `src/lib.rs` — so this override is only
+    # exercised by a `--features frb-glue` build, never a default one.
+    "crates/cratestack-client-flutter",
 }
 
 

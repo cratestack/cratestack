@@ -13,10 +13,57 @@ readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 
-[lints]
-workspace = true
+[lints.rust]
+# `flutter_rust_bridge_codegen`'s generated `src/frb_generated.rs`
+# (gitignored, produced by `just frb-generate crates/cratestack-client-flutter`
+# — cratestack#563 decision: glue is generated in CI/locally, never
+# committed) crosses a raw Dart<->Rust FFI boundary and uses `unsafe` to do
+# it, same category as `cratestack-cbor-napi` and
+# `examples/embedded-flutter/native`. Unlike those two, the generated
+# module is feature-gated (`#[cfg(feature = "frb-glue")] mod
+# frb_generated;` in `src/lib.rs`) so it never enters a default build —
+# but Cargo lints apply to the whole manifest regardless of feature
+# selection, so the crate still needs this override to let a `--features
+# frb-glue` build (the one CI's drift check exercises) compile at all.
+#
+# Deliberately NOT `[lints]\nworkspace = true` (cratestack#523): Cargo
+# rejects mixing workspace-inherited lints with a per-package override in
+# the same manifest. Registered in `EXEMPT_MANUAL_OVERRIDE` in
+# `.ci/lints_workspace_check.py`.
+unsafe_code = "allow"
+# `flutter_rust_bridge_macros`@2.12.0's `#[frb(...)]` attribute checks an
+# internal `cfg(frb_expand)` as part of its two-pass expansion; that cfg is
+# never declared via `--check-cfg`, so `#[cfg_attr(feature = "frb-glue",
+# flutter_rust_bridge::frb(sync))]` (used on `src/cbor/mod.rs`'s bridged
+# functions instead of a bare `#[frb(sync)]`, so the attribute itself
+# disappears under this crate's default, non-`frb-glue` features) trips
+# `unexpected_cfgs` under `--features frb-glue`. Verified this is
+# `flutter_rust_bridge`'s own internal cfg, not anything this crate
+# introduces — allowed rather than worked around.
+unexpected_cfgs = "allow"
+
+[lib]
+# `rlib` (default target for every other consumer of this crate) plus
+# `cdylib` — flutter_rust_bridge's generated Dart bindings load this
+# crate as a native dynamic library. `cdylib` builds cleanly with zero
+# exported symbols even without the `frb-glue` feature (the C-ABI exports
+# only exist inside the feature-gated `frb_generated` module), so adding
+# it here doesn't change what a default `cargo build`/`cargo test`
+# produces from every other member's point of view.
+crate-type = ["cdylib", "rlib"]
 
 [features]
+# `flutter_rust_bridge_codegen`'s generated glue crosses the Dart<->Rust
+# FFI boundary and is deliberately not committed (cratestack#563 decision
+# — see the `unsafe_code` override comment above). Gating `mod
+# frb_generated;` behind this feature (off by default) means a fresh
+# checkout's `cargo build`/`cargo test -p cratestack-client-flutter` never
+# needs the generated file to exist — only `--features frb-glue` does
+# (what `just frb-generate` + a follow-up `cargo build --features
+# frb-glue` exercise). This is what keeps this crate a normal workspace
+# member instead of joining `embedded_flutter_native` on the
+# `--exclude` lists.
+frb-glue = ["dep:flutter_rust_bridge"]
 # The Flutter bridge surface exposes `FlutterRuntimeCodec::Json` as a
 # selectable transport, so the JSON codec has to be linked in or
 # `RuntimeHandle::new` rejects the Json variant at runtime. Keep it
@@ -56,6 +103,13 @@ cratestack-codec-cbor.workspace = true
 cratestack-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+# Optional + feature-gated (`frb-glue`, above): pins the same version as
+# `examples/embedded-flutter/native`'s own `flutter_rust_bridge` dependency
+# so the two frb-bridged crates in this workspace never drift onto
+# different codegen-compatible versions. Only pulled into the build graph
+# when `frb-glue` is enabled, i.e. never for a default `cargo build`/
+# `cargo test -p cratestack-client-flutter`.
+flutter_rust_bridge = { version = "=2.12.0", optional = true }
 
 [dev-dependencies]
 async-stream = "0.3"

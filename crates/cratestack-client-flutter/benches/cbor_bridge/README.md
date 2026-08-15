@@ -21,81 +21,31 @@ rationale, which this crate now shares).
 
 ## Reproducing
 
-This crate (`cratestack-client-flutter`) is a library — it deliberately does
-not itself depend on `flutter_rust_bridge` or carry `mod frb_generated;` (see
-`src/cbor/mod.rs`'s module docs), so running this benchmark means creating a
-small native crate that wraps `cbor::encode_json`/`cbor::decode_json` with
-`#[frb(sync)]`, exactly the pattern the published `cratestack_cbor` package's
-own native crate will use (out of scope for this PR — see the ticket).
+As of this crate's `frb-glue` feature (cratestack#563), `cratestack-client-flutter`
+carries the `#[frb(sync)]`-annotated `encode_json`/`decode_json` directly (see
+`src/cbor/mod.rs`) and a committed `flutter_rust_bridge.yaml` + `dart/` harness
+at the crate root — no separate scratch/native shim crate is needed anymore
+(an earlier version of this README described one; that gap is what
+cratestack#563's frb-wiring slice closed). Reproducing the benchmark means
+generating this crate's own glue and adding this file to its own `dart/`:
 
 ```bash
-mkdir -p /tmp/cratestack-cbor-bench/src/api && cd /tmp/cratestack-cbor-bench
+# From the repo root.
+just frb-generate crates/cratestack-client-flutter   # writes src/frb_generated.rs + dart/lib/src/rust/ (gitignored)
+cargo build -p cratestack-client-flutter --features frb-glue --release
+cd crates/cratestack-client-flutter/dart && dart pub get
 
-cat > Cargo.toml <<'EOF'
-[package]
-name = "cratestack_cbor_bench_native"
-version = "0.1.0"
-edition = "2021"
-
-[lib]
-crate-type = ["cdylib", "rlib"]
-name = "cratestack_cbor_bench_native"
-
-[dependencies]
-flutter_rust_bridge = "=2.12.0"
-# Point this at your checkout of cratestack.
-cratestack-client-flutter = { path = "<repo>/crates/cratestack-client-flutter", default-features = false }
-EOF
-
-cat > src/lib.rs <<'EOF'
-mod frb_generated;
-pub mod api;
-EOF
-
-cat > src/api/mod.rs <<'EOF'
-use flutter_rust_bridge::frb;
-
-// #[frb(sync)] matters — see "Sync vs async matters a lot" below. The
-// naive async-default binding measured SLOWER than pure-Dart package:cbor.
-#[frb(sync)]
-pub fn cbor_encode_json(json: String) -> Result<Vec<u8>, String> {
-    cratestack_client_flutter::cbor::encode_json(json).map_err(|e| e.message)
-}
-
-#[frb(sync)]
-pub fn cbor_decode_json(bytes: Vec<u8>) -> Result<String, String> {
-    cratestack_client_flutter::cbor::decode_json(bytes).map_err(|e| e.message)
-}
-EOF
-
-cat > flutter_rust_bridge.yaml <<'EOF'
-rust_input: crate::api
-rust_root: ./
-dart_output: dart_out/
-EOF
-
-mkdir -p dart_out
-cat > dart_out/pubspec.yaml <<'EOF'
-name: cratestack_cbor_bench
-environment:
-  sdk: ^3.5.0
-dependencies:
-  flutter_rust_bridge: 2.12.0
-  ffi: ^2.1.0
-  cbor: ^6.5.1
-EOF
-
-(cd dart_out && dart pub get)
-flutter_rust_bridge_codegen generate   # or: just frb-generate /tmp/cratestack-cbor-bench
-cargo build --release
-
-cp bench.dart dart_out/bench.dart      # this file, from this directory
-(cd dart_out && dart run bench.dart)
+cp ../benches/cbor_bridge/bench.dart .   # this file, from this directory
+dart run bench.dart                       # or: dart compile exe bench.dart -o bench_exe && ./bench_exe
 ```
 
-`bench.dart` in this directory is the actual benchmark source — copy it in
-as shown above (it is hand-written, not generated, so it's committed here
-even though the surrounding native/Dart scaffold above is not).
+`dart pub get` is a no-op the second time (this crate's `dart/pubspec.yaml`,
+used by `dart/verify_round_trip.dart`, already carries the same
+`flutter_rust_bridge`/dependencies this benchmark needs). `bench.dart` in
+this directory is the actual benchmark source — copy it into `dart/` as
+shown above (it is hand-written, not generated, so it's committed here
+even though `dart/lib/src/rust/` — the generated bindings it imports via
+`package:cratestack_cbor_frb_verification/src/rust/...` — is not).
 
 ## Sync vs async matters a lot
 

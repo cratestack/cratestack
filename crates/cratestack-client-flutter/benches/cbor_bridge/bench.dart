@@ -1,16 +1,19 @@
 // Real, executable benchmark: cratestack_cbor (flutter_rust_bridge over
 // cratestack-codec-cbor, via #[frb(sync)]) vs pure-Dart package:cbor, on
 // two realistic payloads. See README.md in this directory for the
-// reproduction steps (a small native crate + generated Dart bindings are
-// required — neither is committed, matching cratestack#563's "glue is
-// generated, not committed" decision) and the numbers this produced.
+// reproduction steps (cratestack#563: the frb glue this benchmark loads is
+// generated from `crates/cratestack-client-flutter` directly — the crate
+// itself carries the `#[frb(sync)]` annotations now, no separate native
+// shim crate needed) and the numbers this produced.
 //
 // Run with `dart run bench.dart` (JIT) or compile first for an AOT
 // measurement: `dart compile exe bench.dart -o bench_exe && ./bench_exe`.
+// Run from `../../dart/` (copy this file there first, see README.md).
 //
-// Set CRATESTACK_CBOR_NATIVE_LIB to the built cdylib path if it isn't at
-// the default `../target/release/libcratestack_cbor_bench_native.so`
-// relative to this file (see README.md's reproduction steps).
+// Set CRATESTACK_CLIENT_FLUTTER_NATIVE_LIB to the built cdylib path if it
+// isn't at the default `../../../target/release/libcratestack_client_flutter.so`
+// relative to `../../dart/` (see `../../dart/verify_round_trip.dart`, which
+// uses the same env var and default).
 
 import 'dart:convert';
 import 'dart:io';
@@ -18,8 +21,8 @@ import 'dart:io';
 import 'package:cbor/cbor.dart' as pure_dart_cbor;
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-import 'api.dart';
-import 'frb_generated.dart';
+import 'package:cratestack_cbor_frb_verification/src/rust/cbor.dart' as bridge;
+import 'package:cratestack_cbor_frb_verification/src/rust/frb_generated.dart';
 
 /// A single model response: the scalar matrix a generated client actually
 /// carries (see ../../tests/cbor_bridge.rs), already JSON-shaped the way
@@ -87,13 +90,13 @@ void runScenario(String label, Object payload, int warmup, int iterations) {
   pureDartSw.stop();
 
   for (var i = 0; i < warmup; i++) {
-    final encoded = cborEncodeJson(json: jsonText);
-    cborDecodeJson(bytes: encoded);
+    final encoded = bridge.encodeJson(json: jsonText);
+    bridge.decodeJson(bytes: encoded);
   }
   final bridgeSw = Stopwatch()..start();
   for (var i = 0; i < iterations; i++) {
-    final encoded = cborEncodeJson(json: jsonText);
-    cborDecodeJson(bytes: encoded);
+    final encoded = bridge.encodeJson(json: jsonText);
+    bridge.decodeJson(bytes: encoded);
   }
   bridgeSw.stop();
 
@@ -113,8 +116,8 @@ void runScenario(String label, Object payload, int warmup, int iterations) {
 }
 
 Future<void> main() async {
-  final libPath = Platform.environment['CRATESTACK_CBOR_NATIVE_LIB'] ??
-      '../target/release/libcratestack_cbor_bench_native.so';
+  final libPath = Platform.environment['CRATESTACK_CLIENT_FLUTTER_NATIVE_LIB'] ??
+      '../../../target/release/libcratestack_client_flutter.so';
   await RustLib.init(externalLibrary: ExternalLibrary.open(libPath));
 
   runScenario('single model, 11 scalar fields', singleModelPayload(), 500, 50000);

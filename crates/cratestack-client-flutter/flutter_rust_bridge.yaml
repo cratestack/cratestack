@@ -1,0 +1,26 @@
+# Configuration consumed by `flutter_rust_bridge_codegen generate` (run via
+# `just frb-generate crates/cratestack-client-flutter`, cratestack#563).
+#
+# Scans `rust_input` for `pub fn`s to bridge — currently just the `cbor`
+# module's `encode_json`/`decode_json` (both `#[frb(sync)]`, see
+# `src/cbor/mod.rs`'s module doc for why sync is mandatory, not optional).
+# `rust_output` is gated behind the `frb-glue` Cargo feature in
+# `src/lib.rs` (`#[cfg(feature = "frb-glue")] mod frb_generated;`) so a
+# fresh checkout's default build never needs it to exist; `dart_output` is
+# consumed by the `dart/` verification harness in this crate (not the
+# eventual published `packages/cratestack_cbor` — that's out of scope for
+# this slice).
+#
+# Neither generated tree is committed (`dart/lib/src/rust/` and
+# `src/frb_generated.rs` are both gitignored).
+
+rust_input: crate::cbor
+rust_root: ./
+rust_output: src/frb_generated.rs
+# Enables the `frb-glue` feature while parsing so the `#[cfg_attr(feature =
+# "frb-glue", flutter_rust_bridge::frb(sync))]` annotations in `src/cbor/mod.rs`
+# are actually visible to the codegen scan (they're stripped by `cfg` under
+# the crate's default features, same as any other build).
+rust_features:
+  - frb-glue
+dart_output: dart/lib/src/rust/

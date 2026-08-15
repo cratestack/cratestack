@@ -1,0 +1,13 @@
+# flutter_rust_bridge glue (cratestack#563 decision: generated in CI and
+# locally via `just frb-generate crates/cratestack-client-flutter`, never
+# committed — see `flutter_rust_bridge.yaml` and `src/lib.rs`'s
+# `frb-glue`-gated `mod frb_generated;`).
+/src/frb_generated.rs
+/src/frb_generated.io.rs
+/src/frb_generated.web.rs
+/dart/lib/src/rust/
+
+# Dart tooling state for the `dart/` verification harness.
+/dart/.dart_tool/
+/dart/.packages
+/dart/pubspec.lock

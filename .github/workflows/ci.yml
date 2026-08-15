@@ -560,6 +560,50 @@ jobs:
       - name: Generate + flutter analyze (default + riverpod presets, REST + RPC)
         run: just verify-dart
 
+  # ---- flutter_rust_bridge glue verification (cratestack#563) -----------
+  # Blocking. Closes a gap the ticket itself found: before this job,
+  # `grep -rn "frb-generate|flutter_rust_bridge_codegen|frb_generated"
+  # .github/` matched nothing anywhere in this repo — so nothing in CI
+  # ever proved `flutter_rust_bridge_codegen generate` still succeeds
+  # against either frb-bridged crate, for `crates/cratestack-client-flutter`
+  # (this job) or for the pre-existing `examples/embedded-flutter/native`
+  # (still uncovered — see this PR's description).
+  #
+  # `just frb-verify-client-flutter` does four things, in order: (1)
+  # regenerates the glue via the real `flutter_rust_bridge_codegen`
+  # (pinned =2.12.0, matching `crates/cratestack-client-flutter/Cargo.toml`),
+  # (2) compiles the crate against it (`--features frb-glue` — the
+  # generated `mod frb_generated;` is feature-gated, off by default, so
+  # this is the one path that actually exercises it), (3) `dart pub get` +
+  # `dart run` on the committed `dart/verify_round_trip.dart` harness,
+  # which calls the generated `encodeJson`/`decodeJson` against the
+  # compiled cdylib and asserts a real round trip plus byte-identical
+  # output against the same cross-binding fixture
+  # `cratestack-cbor-napi`/`src/cbor/mod.rs`'s own test suites assert. A
+  # Rust-side rename or signature change that would silently break the
+  # Dart-facing API surface fails this job, not just step (1) succeeding —
+  # this is what makes it a genuine drift check rather than "codegen
+  # exited 0".
+  #
+  # Nothing generated here is committed (cratestack#563 decision), so
+  # unlike `dart-verify`'s `--check` discipline there is no textual diff
+  # to assert zero on; the compile + real Dart execution IS the check.
+  frb-verify-client-flutter:
+    name: flutter (cratestack-client-flutter frb bridge)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - uses: dart-lang/setup-dart@v1
+      - name: Install flutter_rust_bridge_codegen (pinned =2.12.0)
+        run: cargo install --locked flutter_rust_bridge_codegen --version 2.12.0
+      - name: Regenerate glue, compile, and round-trip from Dart
+        run: just frb-verify-client-flutter
+
   # ---- TypeScript client verification (issue #419) --------------------------
   # Blocking. Proves the default TypeScript client layout typechecks for
   # both REST and RPC transports. While the `react-vite-swr-example` job

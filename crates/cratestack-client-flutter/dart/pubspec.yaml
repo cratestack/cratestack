@@ -1,0 +1,26 @@
+name: cratestack_cbor_frb_verification
+description: >-
+  Pure-Dart harness that calls the flutter_rust_bridge glue generated from
+  crates/cratestack-client-flutter (cratestack#563). Not a published
+  package and not the eventual packages/cratestack_cbor pub.dev package
+  (that's a later PR) — this exists only to prove, in CI and locally, that
+  `just frb-generate crates/cratestack-client-flutter` produces Dart
+  bindings that actually load and round-trip against the native library,
+  not just bindings that were generated and never executed.
+publish_to: none
+version: 0.0.0
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  # Keep in lock-step with ../Cargo.toml's `flutter_rust_bridge` pin and
+  # examples/embedded-flutter's own pubspec.yaml.
+  flutter_rust_bridge: 2.12.0
+  ffi: ^2.1.0
+  # Only used by `../benches/cbor_bridge/bench.dart` (copied into this
+  # directory when reproducing the benchmark — see that directory's
+  # README.md), not by `verify_round_trip.dart`. Kept here rather than in
+  # a separate pubspec so the benchmark and the CI verification harness
+  # share one `dart pub get`.
+  cbor: ^6.5.1

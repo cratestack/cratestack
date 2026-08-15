@@ -65,9 +65,36 @@ use cratestack_core::{CratestackCodec, CratestackError};
 use crate::types::FlutterRuntimeError;
 use json_value::EncodableValue;
 
+// `#[frb(sync)]` is applied unconditionally to `encode_json`/`decode_json`
+// below, not just in the frb-generated glue. When `flutter_rust_bridge_codegen`
+// runs against this crate (the `frb-glue` feature, `flutter_rust_bridge.yaml`),
+// `#[frb]` is a passthrough attribute macro (verified against
+// `flutter_rust_bridge_macros` 2.12.0's source: for any keyword other than
+// `external`/`ui_state` it re-emits the item unchanged plus an encoded doc
+// comment codegen reads) — so it compiles to a no-op here regardless of
+// whether `flutter_rust_bridge` is even a dependency of this build, and the
+// `#[cfg_attr]` below only pulls the crate in when `frb-glue` is enabled.
+// `sync` matters, not just "some annotation": `benches/cbor_bridge/README.md`
+// measured frb's *default* async dispatch at 0.5x pure-Dart `package:cbor` —
+// a regression, not just underperformance — purely from per-call async port
+// overhead. `#[frb(sync)]` is what the same benchmark's ~3-4.4x numbers
+// actually used.
+
 /// `"application/cbor"`, mirrored from `CborCodec::CONTENT_TYPE` — exposed
 /// as a function (matching the napi/wasm siblings) so the value has one
 /// source of truth instead of being copy-pasted into generated Dart.
+///
+/// `#[frb(ignore)]`: `&'static str` has no frb-compatible return
+/// representation (verified directly — without this, `flutter_rust_bridge_codegen`
+/// logs `Output type of \`content_type\` is a reference, thus currently set
+/// to unit type` and generates a `Future<void> contentType()` stub that
+/// silently discards the actual string, which is worse than not bridging
+/// it at all). Skipped from the Dart surface for this slice; napi/wasm can
+/// return it directly because their FFI boundaries support owned string
+/// values without frb's static-type-per-call-signature constraint (see
+/// `src/cbor/mod.rs`'s module doc for the same constraint's effect on
+/// `encode_json`/`decode_json`'s `String`-typed boundary).
+#[cfg_attr(feature = "frb-glue", flutter_rust_bridge::frb(ignore))]
 pub fn content_type() -> &'static str {
     CborCodec::CONTENT_TYPE
 }
@@ -101,6 +128,7 @@ pub(crate) fn decode_bytes(bytes: &[u8]) -> Result<Value, CratestackError> {
 /// flutter_rust_bridge entry point: JSON text -> CBOR bytes. See the
 /// module doc comment for why the boundary type is `String`, not a
 /// native dynamic value.
+#[cfg_attr(feature = "frb-glue", flutter_rust_bridge::frb(sync))]
 pub fn encode_json(json: String) -> Result<Vec<u8>, FlutterRuntimeError> {
     let value: Value = serde_json::from_str(&json)
         .map_err(|error| to_flutter_error(RuntimeErrorCode::BadInput, error))?;
@@ -110,6 +138,7 @@ pub fn encode_json(json: String) -> Result<Vec<u8>, FlutterRuntimeError> {
 /// flutter_rust_bridge entry point: CBOR bytes -> JSON text. Malformed
 /// input returns a catchable `Err`, matching the napi/wasm siblings'
 /// "never a panic on bad input" contract.
+#[cfg_attr(feature = "frb-glue", flutter_rust_bridge::frb(sync))]
 pub fn decode_json(bytes: Vec<u8>) -> Result<String, FlutterRuntimeError> {
     let value =
         decode_bytes(&bytes).map_err(|error| to_flutter_error(RuntimeErrorCode::Codec, error))?;
