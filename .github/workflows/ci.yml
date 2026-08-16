@@ -637,7 +637,24 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: just,wasm-pack
-      - uses: dart-lang/setup-dart@v1
+      # The Flutter SDK, NOT `dart-lang/setup-dart` — cratestack_cbor stopped
+      # being resolvable by a standalone Dart SDK the moment it became a
+      # Flutter plugin. Declaring `flutter.plugin.platforms` in its pubspec
+      # obliges `environment.flutter` (pub's own publish validator rejects
+      # the former without the latter), and that constraint is unsatisfiable
+      # without Flutter:
+      #
+      #   Because cratestack_cbor requires the Flutter SDK, version solving failed.
+      #
+      # This is easy to miss locally: the Flutter SDK bundles its own `dart`,
+      # so on a developer machine `dart pub get` resolves the constraint from
+      # the ambient Flutter install and everything looks fine. Only a
+      # genuinely standalone Dart SDK — which is exactly what setup-dart
+      # installs — reproduces it. Matches the `cratestack-cbor-example` job
+      # below, which already uses flutter-action for the same reason.
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
       - name: Install flutter_rust_bridge_codegen (pinned =2.12.0)
         run: cargo install --locked flutter_rust_bridge_codegen --version 2.12.0
       # Same reason as js-cbor-wasm's identical step: wasm-pack downloads

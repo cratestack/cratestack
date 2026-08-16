@@ -36,6 +36,21 @@ The frb version pin is exact on both sides. A mismatch between the installed
 `flutter_rust_bridge_codegen` and the `flutter_rust_bridge = "=2.12.0"` dependency produces glue
 that does not compile.
 
+**The full Flutter SDK is required — a standalone Dart SDK is not enough.** Since this became a
+Flutter plugin, its pubspec declares `flutter.plugin.platforms`, which obliges an
+`environment.flutter` constraint (pub's publish validator rejects the former without the latter).
+A standalone Dart SDK cannot satisfy it:
+
+```
+Because cratestack_cbor requires the Flutter SDK, version solving failed.
+```
+
+This is easy to miss locally, and it reached CI once for exactly that reason: the Flutter SDK
+**bundles its own `dart`**, so on a developer machine `dart pub get` quietly resolves the constraint
+from the ambient Flutter install and everything looks fine. Only a genuinely standalone Dart SDK
+reproduces it — which is what `dart-lang/setup-dart` installs, and why both CI jobs for this package
+use `subosito/flutter-action` instead.
+
 ## First run after cloning
 
 **The vendored artifacts are build output and are not in git.** A fresh clone has no `.so` and no
