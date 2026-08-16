@@ -69,6 +69,15 @@ This is a **single-platform spike** (cratestack#563), not the full package:
 
 ## Regenerating the vendored artifacts
 
+> **Working on this package rather than using it?** Read
+> [docs/tooling/cratestack-cbor-development.md](https://github.com/cratestack/cratestack/blob/main/docs/tooling/cratestack-cbor-development.md)
+> first. It covers the toolchain pins, the first-run steps, and four
+> failure modes that each *look like success* — a missing `.pubignore`
+> silently publishing a package without its binaries, a web test that
+> passes against the native backend, a bridged function that is 2x slower
+> than pure Dart because it is async, and rustfmt reformatting generated
+> glue.
+
 Both artifacts are build outputs from crates in this repo and are
 regenerated, not hand-written. From the repository root:
 
