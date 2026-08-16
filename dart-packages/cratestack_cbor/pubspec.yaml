@@ -1,0 +1,37 @@
+name: cratestack_cbor
+description: >-
+  Native CBOR codec for CrateStack Dart/Flutter clients: one uniform API
+  backed by flutter_rust_bridge (vendored prebuilt native library) on
+  native platforms and the existing cratestack-cbor-wasm wasm-bindgen
+  artifact (vendored, loaded via dart:js_interop) on the web. Mirrors
+  @cratestack/cbor's conditional-export umbrella shape for JavaScript.
+version: 0.8.0
+homepage: https://cratestack.dev
+repository: https://github.com/cratestack/cratestack
+issue_tracker: https://github.com/cratestack/cratestack/issues
+topics:
+  - cbor
+  - codec
+  - rpc
+# NOT published in this PR (cratestack#563 slice: package structure +
+# both backends proven by real execution; publishing is a separate,
+# maintainer-gated step — see this package's README).
+publish_to: none
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  # Pinned exact, matching crates/cratestack-client-flutter/Cargo.toml's
+  # `flutter_rust_bridge = "=2.12.0"` — the generated `lib/src/native/rust/`
+  # glue in this package was produced by that exact codegen version and is
+  # not forward/backward compatible across releases.
+  flutter_rust_bridge: 2.12.0
+  # Web backend only (dart:js_interop-based loader in lib/src/web/) — see
+  # lib/src/web/web_cbor_codec.dart for why a real dependency, not just an
+  # ambient dart:html/dart:js_interop import, is needed (DOM element types).
+  web: ^1.1.0
+
+dev_dependencies:
+  lints: ^5.0.0
+  test: ^1.25.0

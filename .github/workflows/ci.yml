@@ -604,6 +604,63 @@ jobs:
       - name: Regenerate glue, compile, and round-trip from Dart
         run: just frb-verify-client-flutter
 
+  # ---- dart-packages/cratestack_cbor package (cratestack#563) ------------
+  # Blocking. Proves BOTH backends of the `cratestack_cbor` Dart package
+  # actually work against freshly-regenerated vendored artifacts, not just
+  # that codegen/wasm-pack exit 0 — same "regenerate, compile, execute for
+  # real" discipline as `frb-verify-client-flutter` above, extended to a
+  # second frb-bridged artifact plus a genuinely new surface: dart:js_interop
+  # driving a vendored wasm-bindgen bundle in a REAL headless Chrome (`dart
+  # test -p chrome`), not merely compiled.
+  #
+  # `cbor-vendor-native` regenerates the flutter_rust_bridge Dart glue and a
+  # release build of the native library (Linux x86_64 only — a deliberate
+  # one-platform spike, see the package's README); `cbor-vendor-web` runs
+  # `wasm-pack build --target web` against the EXISTING
+  # crates/cratestack-cbor-wasm crate (no new codec binding — the same Rust
+  # crate already bound to npm as @cratestack/cbor-web). `cbor-verify-package`
+  # then runs `dart test` (native, `@TestOn('vm')`) and `dart test -p chrome`
+  # (web, `@TestOn('browser')`) against the real published-package public API,
+  # both asserting the same shared hex fixtures the napi/wasm/frb Rust test
+  # suites already assert — proving byte-identical CBOR across backends, not
+  # just internal self-consistency.
+  cratestack-cbor-package:
+    name: flutter (cratestack_cbor package — native + web)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      # wasm32-unknown-unknown is installed by rustup from
+      # rust-toolchain.toml's `targets` for the pinned channel (same
+      # mechanism the `js-cbor-wasm` job relies on).
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,wasm-pack
+      - uses: dart-lang/setup-dart@v1
+      - name: Install flutter_rust_bridge_codegen (pinned =2.12.0)
+        run: cargo install --locked flutter_rust_bridge_codegen --version 2.12.0
+      # Same reason as js-cbor-wasm's identical step: wasm-pack downloads
+      # its own binaryen (hardcoded version) mid-build unless a `wasm-opt`
+      # is already on PATH, and that unpinned fetch has failed a real
+      # release run before.
+      - name: Install binaryen (wasm-opt), pinned
+        run: |
+          set -euo pipefail
+          curl -fsSL -o binaryen.tar.gz \
+            "https://github.com/WebAssembly/binaryen/releases/download/version_130/binaryen-version_130-x86_64-linux.tar.gz"
+          tar -xzf binaryen.tar.gz
+          echo "$PWD/binaryen-version_130/bin" >> "$GITHUB_PATH"
+          rm binaryen.tar.gz
+      - name: Vendor native artifacts (flutter_rust_bridge glue + release library)
+        run: just cbor-vendor-native
+      - name: Vendor web artifact (wasm-pack --target web)
+        run: just cbor-vendor-web
+      - name: Verify both backends (dart test + dart test -p chrome)
+        env:
+          CHROME_EXECUTABLE: /usr/bin/google-chrome
+        run: just cbor-verify-package
+
   # ---- TypeScript client verification (issue #419) --------------------------
   # Blocking. Proves the default TypeScript client layout typechecks for
   # both REST and RPC transports. While the `react-vite-swr-example` job
