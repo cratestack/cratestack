@@ -982,6 +982,132 @@ cbor-verify-package:
 	echo ""
 	echo "✓ cratestack_cbor: both backends round-trip against the vendored artifacts"
 
+# Real Flutter-app proof for cratestack_cbor (cratestack#563 "Flutter app
+# integration" slice) — builds dart-packages/cratestack_cbor/example for
+# Linux desktop AND web (RELEASE builds, not `flutter run`'s dev server),
+# then actually RUNS both and asserts the same shared-fixture CBOR hex the
+# package's own `dart test`/`dart test -p chrome` suites assert
+# (`test/shared_fixtures.dart`). This is the check `dart test` cannot
+# provide on its own: a build that merely compiles proves nothing about
+# whether the built app can find its own vendored artifacts at runtime —
+# see docs/tooling/cratestack-cbor-development.md.
+#
+# - Linux: `flutter build linux`, then the built binary is run headless
+#   (`xvfb-run` — Flutter's GTK embedder needs a display even with nothing
+#   to interact with) and its STDOUT is grepped for the app's
+#   `CRATESTACK_CBOR_EXAMPLE_RESULT: OK <hex>` marker
+#   (`example/lib/main.dart`). Also asserts the vendored `.so` actually
+#   landed inside the built bundle's `lib/` — see `linux/CMakeLists.txt`.
+# - Web: `flutter build web` (release), served with a plain static file
+#   server (deliberately NOT `flutter run -d chrome`'s dev server — that
+#   has a `packages/...` URL route a release deploy does not have, see
+#   `lib/src/web/web_cbor_codec.dart`), then driven with a real headless
+#   Chrome via the DevTools Protocol
+#   (`example/tool/verify_web_console.dart` — plain `dart:io`, no extra
+#   package) to capture the same marker from the browser console. Also
+#   asserts the vendored `.wasm` landed inside `build/web/assets/`.
+#
+# Does NOT regenerate the vendored artifacts itself — run
+# `just cbor-vendor-native cbor-vendor-web` first (or rely on what's
+# already vendored from a prior step, as CI does).
+#
+# Requires: Flutter SDK (3.44.1 pinned — see the package README), the
+# Linux desktop toolchain (GTK3 dev headers, ninja, cmake — see this
+# repo's CLAUDE.md), `xvfb-run`, Python 3 (for the static file server), and
+# Chrome/Chromium (`CHROME_EXECUTABLE`, defaults to `google-chrome`).
+cbor-example-verify:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if ! command -v flutter >/dev/null; then
+	  echo "flutter not found on PATH — install the Flutter SDK: https://docs.flutter.dev/get-started/install" >&2
+	  exit 1
+	fi
+	if ! command -v xvfb-run >/dev/null; then
+	  echo "xvfb-run not found — install it (e.g. apt-get install -y xvfb)" >&2
+	  exit 1
+	fi
+	example=dart-packages/cratestack_cbor/example
+	expected_hex="a36a6372617465737461636b8264636f6f6c65737461636b616e182a626f6bf5"
+	marker="CRATESTACK_CBOR_EXAMPLE_RESULT:"
+
+	# `flutter clean` before anything else: Flutter's incremental-build file
+	# store lives in `.dart_tool/flutter_build/`, OUTSIDE `build/`. If
+	# `build/` is ever removed independently (a plain `rm -rf build`, as a
+	# local rerun of this recipe might do) while that cache survives,
+	# Flutter's build system trusts its stale "up to date" record and SKIPS
+	# regenerating `build/native_assets/linux/` — an empty directory the
+	# generated `linux/CMakeLists.txt` unconditionally installs — so the
+	# build fails with a CMake "file INSTALL cannot find ... native_assets/
+	# linux" error that has nothing to do with this package. Found the hard
+	# way in this PR's own verification; `flutter clean` removes both
+	# `build/` and the stale cache together, so there is nothing to
+	# desynchronize. CI runners start clean anyway, so this only matters
+	# for local reruns, but it costs nothing to always do it.
+	echo "=== flutter clean: $example ==="
+	(cd "$example" && flutter clean)
+
+	echo "=== flutter pub get: $example ==="
+	(cd "$example" && flutter pub get)
+
+	echo "=== flutter analyze: $example ==="
+	(cd "$example" && flutter analyze --fatal-warnings --no-fatal-infos)
+
+	echo "=== flutter build linux (release): $example ==="
+	(cd "$example" && flutter build linux)
+	bin="$example/build/linux/x64/release/bundle/cratestack_cbor_example"
+	lib="$example/build/linux/x64/release/bundle/lib/libcratestack_client_flutter.so"
+	if [ ! -f "$lib" ]; then
+	  echo "FAIL: vendored library not found inside the built bundle at $lib — the Linux plugin scaffolding (linux/CMakeLists.txt) did not bundle it." >&2
+	  exit 1
+	fi
+	echo "✓ vendored library present in the built bundle: $lib"
+
+	echo "=== running the built Linux binary (headless via xvfb-run) ==="
+	linux_log="$(mktemp)"
+	timeout 15 xvfb-run -a "$bin" > "$linux_log" 2>&1 || true
+	if ! grep -q "$marker OK $expected_hex" "$linux_log"; then
+	  echo "FAIL: built Linux binary did not print the expected round-trip marker. Captured output:" >&2
+	  cat "$linux_log" >&2
+	  rm -f "$linux_log"
+	  exit 1
+	fi
+	echo "✓ Linux binary round-tripped CBOR: $(grep "$marker" "$linux_log")"
+	rm -f "$linux_log"
+
+	echo "=== flutter build web (release): $example ==="
+	(cd "$example" && flutter build web)
+	wasm="$example/build/web/assets/packages/cratestack_cbor/lib/src/web/wasm-pkg/cratestack_cbor_wasm_bg.wasm"
+	if [ ! -f "$wasm" ]; then
+	  echo "FAIL: vendored wasm artifact not found inside the built web bundle at $wasm — the flutter: assets: declaration did not bundle it." >&2
+	  exit 1
+	fi
+	echo "✓ vendored wasm artifact present in the built bundle: $wasm"
+
+	echo "=== serving build/web and driving it with headless Chrome ==="
+	port=8934
+	(cd "$example/build/web" && python3 -m http.server "$port" >/dev/null 2>&1) &
+	server_pid=$!
+	trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+	ready=0
+	for _ in $(seq 1 50); do
+	  if curl -sf "http://127.0.0.1:$port/index.html" >/dev/null 2>&1; then
+	    ready=1
+	    break
+	  fi
+	  sleep 0.2
+	done
+	if [ "$ready" -ne 1 ]; then
+	  echo "FAIL: static file server for build/web never became ready on port $port" >&2
+	  exit 1
+	fi
+	(cd "$example" && dart run tool/verify_web_console.dart \
+	  --url "http://127.0.0.1:$port/index.html" \
+	  --expect-hex "$expected_hex")
+	kill "$server_pid" 2>/dev/null || true
+
+	echo ""
+	echo "✓ cratestack_cbor example: real flutter build linux + flutter build web both round-trip CBOR in a running app"
+
 # Bundle the Studio UI for publishing: source tarball (for `studio
 # eject --with-ui`) and the Trunk-built wasm/JS dist (embedded into
 # the served binary so `cratestack studio run` ships a real admin app

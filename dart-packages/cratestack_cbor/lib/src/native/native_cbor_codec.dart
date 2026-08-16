@@ -75,6 +75,25 @@ Future<CratestackCborCodec> createCborCodec() async {
 /// platform. Exposed (not private) so verification harnesses can call it
 /// directly to prove which file would be loaded, without also paying the
 /// cost of `CratestackCborRustLib.init`.
+///
+/// Tries two genuinely different strategies, in order, because no single
+/// one covers both a real Flutter app and `dart test`/`dart run`
+/// (cratestack#563 "Flutter app integration" slice):
+///
+/// 1. **Built Flutter app bundle.** `flutter build linux` bundles this
+///    package's vendored library into `<bundle>/lib/`, next to the app
+///    executable — see `linux/CMakeLists.txt` for the CMake half of this
+///    contract (Flutter's `<plugin>_bundled_libraries` FFI-plugin
+///    convention). A compiled Flutter AOT binary has no `.dart_tool/` and
+///    no package source tree, so strategy 2 cannot resolve anything there
+///    — this MUST be tried first, and is the only strategy proven against
+///    a real `flutter build linux` + running the built binary.
+/// 2. **Dev/test mode.** `dart test`, `dart run`, or anything else that
+///    still has this package's source tree reachable (a pub cache
+///    checkout, or — as in this repo — a `path:` dependency), resolved via
+///    `Isolate.resolvePackageUri`. This is how the package's own `dart
+///    test` suite exercised the native backend before any Flutter plugin
+///    scaffolding existed, and still does (no Flutter SDK involved).
 Future<String> resolveVendoredLibraryPath() async {
   final override = Platform.environment[_libraryOverrideEnvVar];
   if (override != null && override.isNotEmpty) {
@@ -92,38 +111,61 @@ Future<String> resolveVendoredLibraryPath() async {
     );
   }
 
+  final attempts = <String>[];
+
+  final executableDir = File(Platform.resolvedExecutable).parent;
+  final bundledLibrary = File(
+    '${executableDir.path}/lib/libcratestack_client_flutter.so',
+  );
+  if (bundledLibrary.existsSync()) {
+    return bundledLibrary.path;
+  }
+  attempts.add(
+    'built Flutter app bundle at ${bundledLibrary.path} (relative to '
+    'Platform.resolvedExecutable — not found)',
+  );
+
   final packageUri = await Isolate.resolvePackageUri(
     Uri.parse('package:cratestack_cbor/cratestack_cbor.dart'),
   );
-  if (packageUri == null) {
-    throw StateError(
-      'cratestack_cbor: could not resolve the package root via '
-      'Isolate.resolvePackageUri — is .dart_tool/package_config.json '
-      'present (did you run `dart pub get`)?',
+  if (packageUri != null) {
+    // packageUri is .../cratestack_cbor/lib/cratestack_cbor.dart. Per RFC
+    // 3986 URI merging, resolving a SINGLE ".." against it already drops
+    // both the file name and the `lib/` segment, landing on the package
+    // root (sibling of `blobs/`) directly — verified empirically, not just
+    // by spec-reading: a naive double `resolve('..')` here overshot by one
+    // level (see this PR's verification transcript).
+    final packageRoot = packageUri.resolve('..');
+    final libraryUri = packageRoot.resolve(
+      'blobs/linux-x64/libcratestack_client_flutter.so',
+    );
+    final libraryFile = File.fromUri(libraryUri);
+    if (libraryFile.existsSync()) {
+      return libraryFile.path;
+    }
+    attempts.add(
+      'vendored package source tree at ${libraryFile.path} (resolved via '
+      'Isolate.resolvePackageUri — not found)',
+    );
+  } else {
+    attempts.add(
+      'Isolate.resolvePackageUri("package:cratestack_cbor/'
+      'cratestack_cbor.dart") returned null (expected inside a compiled '
+      'Flutter app; only meaningful under dart test/dart run)',
     );
   }
-  // packageUri is .../cratestack_cbor/lib/cratestack_cbor.dart. Per
-  // RFC 3986 URI merging, resolving a SINGLE ".." against it already
-  // drops both the file name and the `lib/` segment, landing on the
-  // package root (sibling of `blobs/`) directly — verified empirically,
-  // not just by spec-reading: a naive double `resolve('..')` here
-  // overshot by one level (see this PR's verification transcript).
-  final packageRoot = packageUri.resolve('..');
-  final libraryUri = packageRoot.resolve(
-    'blobs/linux-x64/libcratestack_client_flutter.so',
+
+  throw StateError(
+    'cratestack_cbor: could not locate the vendored native library. '
+    'Tried:\n'
+    '${attempts.map((a) => '  - $a').join('\n')}\n'
+    'If you are working in the cratestack repo, this is expected on a '
+    'fresh clone — the vendored artifacts are build output and are not '
+    'committed (see this package\'s README). Run:\n'
+    '    just cbor-vendor-native\n'
+    'If you installed this package from pub.dev (or built a Flutter app '
+    'depending on it), the archive/build should have shipped this file; '
+    'the installation may be corrupt. Set $_libraryOverrideEnvVar to point '
+    'at a specific library to work around this.',
   );
-  final libraryFile = File.fromUri(libraryUri);
-  if (!libraryFile.existsSync()) {
-    throw StateError(
-      'cratestack_cbor: vendored native library not found at '
-      '${libraryFile.path}.\n'
-      'If you are working in the cratestack repo, this is expected on a '
-      'fresh clone — the vendored artifacts are build output and are not '
-      'committed (see this package\'s README). Run:\n'
-      '    just cbor-vendor-native\n'
-      'If you installed this package from pub.dev, the archive should have '
-      'shipped this file; the installation may be corrupt.',
-    );
-  }
-  return libraryFile.path;
 }

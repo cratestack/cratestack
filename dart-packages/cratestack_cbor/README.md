@@ -47,16 +47,6 @@ This is a **single-platform spike** (cratestack#563), not the full package:
   throws a clear `UnsupportedError` on every other platform (macOS, Windows,
   Android, iOS, Linux arm64) rather than silently failing. The full ~12-slice
   matrix is deliberate follow-up work, not an oversight.
-- **Web asset bundling:** the vendored `.js`/`.wasm` pair is loaded from this
-  package's own `packages/cratestack_cbor/src/web/wasm-pkg/...` URL — the
-  standard Dart convention for files shipped under a package's `lib/`
-  directory. This is **verified working** for `flutter run -d chrome`'s dev
-  server and `dart test -p chrome`'s browser test runner (both serve that
-  convention). It is **not verified** for a production `flutter build web`
-  release bundle, which needs the consuming app to ensure these two files
-  land in the final `build/web/` output (typically via a `flutter:
-  assets:` entry) — proper Flutter-web asset-bundling wiring is follow-up
-  work.
 - **Not published to pub.dev.** `pubspec.yaml` declares `publish_to: none`
   deliberately. Publishing is a separate, maintainer-gated step (verified
   publisher `cratestack.dev`, GitHub Actions OIDC — see cratestack#563's
@@ -66,6 +56,49 @@ This is a **single-platform spike** (cratestack#563), not the full package:
   `cbor: ^6.5.1` — flipping that seam before this package is published would
   break `dart pub get` for every generated client (pub.dev returns 404 for
   an unpublished package name).
+
+## Flutter app integration — proven, not just `dart test`
+
+`dart test`/`dart test -p chrome` prove the codec works as a Dart *library*.
+They do not prove it works inside a real Flutter *app*: a compiled app has no
+package source tree for `Isolate.resolvePackageUri` to find, and a release
+web bundle has no dev server to serve the `packages/...` URL convention from.
+This package closes that gap for **Linux desktop and web**:
+
+- **Linux desktop:** `linux/CMakeLists.txt` makes this package a Flutter FFI
+  plugin (`pubspec.yaml`'s `flutter: plugin: platforms: linux: ffiPlugin:
+  true`) that hands the vendored `blobs/linux-x64/libcratestack_client_flutter.so`
+  to Flutter's own `<plugin>_bundled_libraries` mechanism — the same one
+  `flutter create -t plugin_ffi` scaffolds, **not** the `cargokit` pattern
+  most flutter_rust_bridge plugins use (that builds Rust from source at
+  consumer build time; the maintainer decision on cratestack#563 rejected
+  imposing a Rust toolchain on every consuming Flutter developer). A real
+  `flutter build linux` copies the library into the built bundle's `lib/`,
+  next to the app executable; `lib/src/native/native_cbor_codec.dart`
+  resolves it there first (falling back to the dev-mode
+  `Isolate.resolvePackageUri` path only for `dart test`/`dart run`).
+  Deliberately **no** `flutter: sdk: flutter` dependency on this package —
+  verified empirically that Flutter's plugin tooling honors the `flutter:`
+  pubspec key without it, so plain `dart pub get`/`dart test` (no Flutter SDK
+  at all) keep working exactly as before.
+- **Web:** `pubspec.yaml`'s `flutter: assets:` vendors the `.js`/`.wasm` pair
+  as real Flutter assets, so a release `flutter build web` copies them into
+  `build/web/assets/packages/cratestack_cbor/...`. `web_cbor_codec.dart` tries
+  the dev-server `packages/...` URL first (unchanged, still what `dart test
+  -p chrome`/`flutter run -d chrome` use), then falls back to the release
+  `assets/packages/.../lib/...` URL — the two conventions coexist, neither
+  subsumes the other.
+
+`dart-packages/cratestack_cbor/example/` is a minimal Flutter app proving
+both, with real builds: see that directory's README and `just
+cbor-example-verify` (also wired into CI as `cratestack-cbor-example`). It
+builds the example for Linux and web in **release** mode, actually runs the
+Linux binary headless, and actually serves and loads the web release bundle
+in a real headless Chrome — not `flutter run`'s dev server, which resolves
+assets differently and would prove nothing about a release deploy.
+
+Android and iOS remain out of scope for this slice (deliberately — see the
+platform matrix note above).
 
 ## Regenerating the vendored artifacts
 

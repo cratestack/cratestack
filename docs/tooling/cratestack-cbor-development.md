@@ -17,6 +17,10 @@ codec — both backends compile the same Rust.
 > **Status:** Linux x86_64 + web only. Every other platform throws a clear `UnsupportedError`. This
 > is a deliberate one-platform spike to validate the vendoring shape before replicating it across
 > the ~12-slice matrix. **Do not publish in this state.**
+>
+> Proven for both `dart test` (as a Dart library) AND a real Flutter app (`flutter build linux` +
+> `flutter build web`, release, not the dev server) — see "Verifying inside a real Flutter app"
+> below and `dart-packages/cratestack_cbor/example/`.
 
 ## Prerequisites
 
@@ -133,6 +137,41 @@ one-line placeholder, and restores the glue (via `trap`, so an interrupted run c
 placeholder standing in for real glue). You should not need to think about it — but if you see
 rustfmt complaining about `frb_generated.rs`, that mechanism is what broke.
 
+### 5. `dart test` proves the library; it does not prove the Flutter app
+
+Everything above is proven under `dart test`/`dart test -p chrome`. Neither exercises the mechanism a
+real Flutter app actually uses:
+
+- **Native:** `dart test` loads the vendored `.so` via `Isolate.resolvePackageUri` — that call needs
+  this package's *source tree* on disk (a path dependency, or a pub cache checkout), which a compiled
+  Flutter app does not have. A real app instead needs Flutter's own plugin-bundling mechanism
+  (`dart-packages/cratestack_cbor/linux/CMakeLists.txt`, an FFI plugin per
+  `pubspec.yaml`'s `flutter: plugin: platforms: linux: ffiPlugin: true`) to copy the `.so` into the
+  built bundle, and `lib/src/native/native_cbor_codec.dart` tries that location first, falling back to
+  the `dart test`-only path second.
+- **Web:** `dart test -p chrome` and `flutter run -d chrome` both serve this package through a dev
+  server with a special `packages/cratestack_cbor/...` URL route. A release `flutter build web` bundle
+  has no such route — it needs the `.js`/`.wasm` declared as real Flutter assets
+  (`pubspec.yaml`'s `flutter: assets:`), which land at a *different* URL,
+  `assets/packages/cratestack_cbor/lib/src/web/wasm-pkg/...` (note: this keeps the `lib/` segment the
+  dev-server convention strips — verified against a real release build output, not assumed by
+  symmetry). `web_cbor_codec.dart` tries both, in that order.
+
+Both are proven by `dart-packages/cratestack_cbor/example/` — a real Flutter app depending on this
+package via a `path:` dependency — and `just cbor-example-verify`, which does real
+`flutter build linux`/`flutter build web` builds, actually **runs** the built Linux binary (headless,
+via `xvfb-run`) and actually **serves and loads** the built web bundle in a real headless Chrome, and
+asserts both print the same CBOR-hex round-trip result as the shared fixtures. See that command's own
+comments in the repo's `justfile`.
+
+One more gotcha specific to iterating on the example locally: Flutter's incremental-build cache
+(`.dart_tool/flutter_build/`) lives *outside* `build/`. If you ever `rm -rf build` by hand without also
+clearing that cache, Flutter's build system trusts its stale "up to date" record and skips regenerating
+`build/native_assets/linux/` — an empty directory `linux/CMakeLists.txt` unconditionally installs — so
+the next `flutter build linux` fails with a CMake `file INSTALL cannot find ... native_assets/linux`
+error that has nothing to do with this package. `flutter clean` (which `just cbor-example-verify`
+always runs first) removes both together, so there is nothing to desynchronize.
+
 ## Verifying a change
 
 ```bash
@@ -164,14 +203,27 @@ Then `just cbor-vendor-native` / `just cbor-vendor-web` to restore. If a suite s
 artifact corrupted, it is not exercising that backend.
 
 The same applies to the CI drift check: renaming a bridged Rust function must make
-`just frb-verify-client-flutter` fail with `Method not found: 'encodeJson'` from the Dart side.
+`just frb-verify-client-flutter` fail with `Method not found: 'encodeJson'` from the Dart side. The
+same discipline applies to the example app — see "Verifying inside a real Flutter app" above and
+`just cbor-example-verify`'s own break-it proof.
 
 ## CI
 
-`.github/workflows/ci.yml`'s `flutter (cratestack_cbor package — native + web)` job installs the
-pinned toolchain, runs both vendor recipes, then `just cbor-verify-package`. It builds the artifacts
-fresh every run rather than trusting anything committed — which is the only option now that nothing
-is committed.
+Two jobs in `.github/workflows/ci.yml`:
+
+- **`flutter (cratestack_cbor package — native + web)`** installs the pinned toolchain, runs both
+  vendor recipes, then `just cbor-verify-package` (the `dart test`/`dart test -p chrome` library-level
+  proof above).
+- **`flutter (cratestack_cbor example — linux + web, real builds)`** additionally installs the Linux
+  desktop toolchain (GTK3 dev headers, cmake, ninja) and `xvfb`, vendors the same artifacts, then runs
+  `just cbor-example-verify` — the real `flutter build linux`/`flutter build web` proof. This is the
+  single most expensive job in the workflow (a full Linux desktop compile plus a full dart2js web
+  compile, on top of the Rust/wasm builds the package job already does); see that job's comments in
+  `ci.yml` for the CI-cost tradeoff and why it currently runs unscoped (this workflow has no path
+  filtering anywhere yet — this job doesn't invent one unilaterally).
+
+Both build the artifacts fresh every run rather than trusting anything committed — which is the only
+option now that nothing is committed.
 
 **Known gap:** there is no byte-level staleness check between a fresh build and any reference.
 Rust/wasm builds are not reproducible here (embedded paths, timestamps), so the
@@ -183,7 +235,7 @@ reproducible builds and belongs with the publish work.
 
 ```
 dart-packages/cratestack_cbor/
-├── .gitignore              # blobs/, wasm-pkg/, native/rust/ — build output
+├── .gitignore              # blobs/, wasm-pkg/, native/rust/ — build output; !example/pubspec.lock
 ├── .pubignore              # MUST stay tracked; see gotcha 1
 ├── lib/
 │   ├── cratestack_cbor.dart          # conditional export: picks a backend
@@ -195,6 +247,14 @@ dart-packages/cratestack_cbor/
 │       ├── web/wasm-pkg/             # GENERATED wasm build (gitignored)
 │       └── unsupported_cbor_codec.dart
 ├── blobs/linux-x64/        # GENERATED native library (gitignored)
+├── linux/
+│   └── CMakeLists.txt      # Flutter FFI-plugin build file — bundles the vendored .so
+├── example/                 # real Flutter app proving both backends — see its own README
+│   ├── lib/main.dart
+│   ├── linux/               # committed (unlike examples/flutter-riverpod, embedded-flutter) —
+│   │                         # this example's whole point is `flutter build`, so CI needs it
+│   ├── web/
+│   └── tool/verify_web_console.dart   # headless-Chrome DevTools Protocol driver
 └── test/
     ├── shared_fixtures.dart          # the cross-language fixture set
     ├── native_cbor_codec_test.dart   # @TestOn('vm')
@@ -211,15 +271,13 @@ npm umbrella).
 In the order they should land:
 
 1. **Platform matrix** — the remaining ~11 slices (Android ABIs, iOS device+sim, macOS arm64/x64,
-   Linux arm64, Windows x64) plus the Flutter plugin platform scaffolding that consumes prebuilt
-   binaries instead of invoking cargokit. This is the bulk of the remaining work.
-2. **Flutter Web asset bundling for release builds.** The web loader resolves its `.js`/`.wasm` via
-   the `packages/cratestack_cbor/...` URL convention, verified working under `dart test -p chrome`
-   and `flutter run -d chrome`'s dev server. A release `flutter build web` needs those assets to
-   land in `build/web/`; that path is **unverified**.
-3. **pub.dev publish via GitHub Actions OIDC**, version-locked to the workspace version like the npm
+   Linux arm64, Windows x64). The Flutter plugin scaffolding pattern itself is now proven for Linux
+   (`linux/CMakeLists.txt`, consuming a prebuilt binary — no cargokit); replicating it per platform
+   (`macos/`, `windows/`, `android/`, `ios/` — each with their own bundling convention) is the
+   remaining work, plus actually building the binaries for each.
+2. **pub.dev publish via GitHub Actions OIDC**, version-locked to the workspace version like the npm
    packages.
-4. **The generator seam.** `crates/cratestack-client-dart/templates/pubspec.yaml.j2` still emits
+3. **The generator seam.** `crates/cratestack-client-dart/templates/pubspec.yaml.j2` still emits
    `cbor: ^6.5.1`. It must stay that way until `cratestack_cbor` is actually on pub.dev — the
    template emits real dependencies, so naming an unpublished package breaks `dart pub get` for
    every generated client, including the committed `examples/flutter-riverpod/client` and its drift
@@ -233,3 +291,5 @@ In the order they should land:
   numbers, and why the JSON-text boundary caps them.
 - `dart-packages/cratestack_cbor/README.md` — the consumer-facing package README that ships to
   pub.dev.
+- `dart-packages/cratestack_cbor/example/README.md` — the example app's own README: how to run it,
+  and why it lives under `example/` rather than the repo-root `examples/`.

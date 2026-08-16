@@ -661,6 +661,88 @@ jobs:
           CHROME_EXECUTABLE: /usr/bin/google-chrome
         run: just cbor-verify-package
 
+  # ---- cratestack_cbor Flutter app integration (cratestack#563) ----------
+  # Blocking, but the single most expensive job in this workflow — see the
+  # "CI cost" note below before copying this pattern elsewhere.
+  #
+  # `cratestack-cbor-package` above proves both backends work under `dart
+  # test` — but that was never the actual question this ticket's remaining
+  # slice needed answered: `dart test` loads the vendored `.so` directly
+  # via `Isolate.resolvePackageUri` + `DynamicLibrary.open`, and the web
+  # loader resolves its `.js`/`.wasm` through a dev-server-only URL
+  # convention. Neither proves a REAL Flutter app can find these artifacts
+  # at runtime after a release build — that needs actual Flutter plugin
+  # platform scaffolding (`dart-packages/cratestack_cbor/linux/
+  # CMakeLists.txt`) and real Flutter asset bundling (`pubspec.yaml`'s
+  # `flutter: assets:`), and the only way to prove either works is to
+  # really build and really run the result. `just cbor-example-verify`
+  # does exactly that against `dart-packages/cratestack_cbor/example/`:
+  # `flutter build linux` + running the built binary headless (`xvfb-run`),
+  # and `flutter build web` (release, NOT `flutter run -d chrome`'s dev
+  # server) + serving `build/web/` with a plain static file server and
+  # driving it with a real headless Chrome via the DevTools Protocol. Both
+  # assert the same shared-fixture CBOR hex `cratestack-cbor-package`
+  # already asserts under `dart test`.
+  #
+  # CI cost: this is the heaviest job in the workflow — a full Linux
+  # desktop CMake/ninja compile AND a full dart2js web compile, on top of
+  # everything `cratestack-cbor-package` already does (frb codegen + a
+  # release Rust build + a wasm-pack build). It runs on every PR today,
+  # consistent with this workflow's existing convention of no path
+  # filtering anywhere (`grep -n paths: .github/workflows/ci.yml` — zero
+  # hits) rather than inventing one unilaterally here. If CI spend becomes
+  # a concern, scoping this job to changes under `dart-packages/
+  # cratestack_cbor/**`, `crates/cratestack-client-flutter/**`, and
+  # `crates/cratestack-cbor-wasm/**` via `paths:` (or `dorny/paths-filter`)
+  # would be the natural next step — flagged here for a maintainer
+  # decision rather than added unilaterally, since it would be the first
+  # path-filtered job in this workflow.
+  cratestack-cbor-example:
+    name: flutter (cratestack_cbor example — linux + web, real builds)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,wasm-pack
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Install flutter_rust_bridge_codegen (pinned =2.12.0)
+        run: cargo install --locked flutter_rust_bridge_codegen --version 2.12.0
+      # Same reason as cratestack-cbor-package's identical step: wasm-pack
+      # downloads its own binaryen (hardcoded version) mid-build unless a
+      # `wasm-opt` is already on PATH.
+      - name: Install binaryen (wasm-opt), pinned
+        run: |
+          set -euo pipefail
+          curl -fsSL -o binaryen.tar.gz \
+            "https://github.com/WebAssembly/binaryen/releases/download/version_130/binaryen-version_130-x86_64-linux.tar.gz"
+          tar -xzf binaryen.tar.gz
+          echo "$PWD/binaryen-version_130/bin" >> "$GITHUB_PATH"
+          rm binaryen.tar.gz
+      # `subosito/flutter-action` gives us the Flutter SDK, but a
+      # `flutter build linux` also needs the Linux desktop toolchain
+      # itself (CMake, Ninja, a C++ compiler, GTK3 dev headers — see this
+      # repo's CLAUDE.md's Linux prerequisite note) plus `xvfb` for
+      # `just cbor-example-verify`'s headless run of the built binary.
+      # None of this is in the default ubuntu-latest image.
+      - name: Install Linux desktop + xvfb toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev xvfb
+      - name: Vendor native artifacts (flutter_rust_bridge glue + release library)
+        run: just cbor-vendor-native
+      - name: Vendor web artifact (wasm-pack --target web)
+        run: just cbor-vendor-web
+      - name: flutter build linux + flutter build web, real run + real browser
+        env:
+          CHROME_EXECUTABLE: /usr/bin/google-chrome
+        run: just cbor-example-verify
+
   # ---- TypeScript client verification (issue #419) --------------------------
   # Blocking. Proves the default TypeScript client layout typechecks for
   # both REST and RPC transports. While the `react-vite-swr-example` job

@@ -20,6 +20,14 @@ publish_to: none
 
 environment:
   sdk: ^3.5.0
+  # Required once `flutter:` below declares `plugin.platforms` (added this
+  # slice, cratestack#563's "Flutter app integration" work) — `dart pub
+  # publish --dry-run` validates this explicitly: the plugin.platforms key
+  # needs Flutter SDK >=1.10.0, and pub can't confirm that without this
+  # constraint. Unrelated to (and does not imply) a `flutter: sdk: flutter`
+  # entry in `dependencies:` below — see that section's comment for why
+  # this package deliberately has none.
+  flutter: ">=1.10.0"
 
 dependencies:
   # Pinned exact, matching crates/cratestack-client-flutter/Cargo.toml's
@@ -35,3 +43,47 @@ dependencies:
 dev_dependencies:
   lints: ^5.0.0
   test: ^1.25.0
+
+# Declared even though this package has no Flutter-framework Dart code of
+# its own (no widgets, no `package:flutter` import) — cratestack#563's
+# "Flutter app integration" slice. Two things live here:
+#
+# 1. `plugin.platforms.linux.ffiPlugin: true` registers this as a Flutter
+#    FFI plugin for Linux, following the same shape `flutter create -t
+#    plugin_ffi` generates (see linux/CMakeLists.txt). Flutter's plugin
+#    tooling scans every dependency's pubspec for this key regardless of
+#    whether the package also depends on the `flutter` SDK — a real
+#    `flutter build linux` picks this up purely from this section (see
+#    docs/tooling/cratestack-cbor-development.md for the verification
+#    transcript). This is what makes the vendored `.so`
+#    (`blobs/linux-x64/libcratestack_client_flutter.so`) land inside a
+#    built app's `bundle/lib/`, instead of relying on the
+#    `Isolate.resolvePackageUri` dev-mode path (`dart test`/`dart run`)
+#    that already worked before this slice — see
+#    `lib/src/native/native_cbor_codec.dart` for both strategies.
+# 2. `assets` vendors the wasm-web artifact
+#    (`lib/src/web/wasm-pkg/cratestack_cbor_wasm{,_bg}.{js,wasm}`) so a
+#    release `flutter build web` actually copies them into
+#    `build/web/assets/packages/cratestack_cbor/...` — unlike the
+#    `dart.library.io` case, plain `dart test -p chrome`/`flutter run -d
+#    chrome` already found these via the dev server's `packages/...` URL
+#    convention (see `lib/src/web/web_cbor_codec.dart`), but a release
+#    bundle has no such dev server and needs them declared as real assets.
+#
+# No `flutter: sdk: flutter` dependency is declared above deliberately:
+# this package must keep working under plain `dart pub get`/`dart test`
+# with no Flutter SDK present at all (native backend via
+# `Isolate.resolvePackageUri`, web backend via `dart test -p chrome`) —
+# see docs/tooling/cratestack-cbor-development.md. Adding that dependency
+# is not required for the `flutter:` key below to be honored by the
+# Flutter tool (verified empirically, not assumed — see this PR's
+# verification transcript), and it would otherwise impose the Flutter SDK
+# on non-Flutter Dart consumers for no benefit.
+flutter:
+  plugin:
+    platforms:
+      linux:
+        ffiPlugin: true
+  assets:
+    - lib/src/web/wasm-pkg/cratestack_cbor_wasm.js
+    - lib/src/web/wasm-pkg/cratestack_cbor_wasm_bg.wasm

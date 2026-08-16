@@ -108,30 +108,61 @@ String _jsErrorMessage(Object error) => error.toString();
 
 bool _initialized = false;
 
+/// Candidate base URLs (relative to [Uri.base]) the vendored `.js`/`.wasm`
+/// pair might be served from, tried in order — cratestack#563's "Flutter
+/// Web asset bundling" slice. Two genuinely different serving conventions
+/// exist and neither subsumes the other:
+///
+/// - `packages/cratestack_cbor/...` — the plain "package: URL" convention
+///   `dart test -p chrome` and `flutter run -d chrome`'s DWDS dev server
+///   serve directly from the package's `lib/` source tree. No `flutter:
+///   assets:` declaration is involved; this worked before this slice.
+/// - `assets/packages/cratestack_cbor/...` — where a RELEASE `flutter
+///   build web` actually places package assets declared in `pubspec.yaml`
+///   (see this package's `flutter: assets:` section) inside
+///   `build/web/assets/`. The dev server has no such `assets/` prefix, and
+///   a release bundle has no special `/packages/` route — each convention
+///   only exists in its own context, so both must be tried. Note this one
+///   keeps the FULL path declared in `pubspec.yaml`'s `assets:` entries —
+///   including the `lib/` segment the `packages/...` dev-server convention
+///   strips — verified against a real `flutter build web` release output,
+///   not assumed by symmetry with the dev-server URL above.
+const _wasmPkgBaseUrlCandidates = [
+  'packages/cratestack_cbor/src/web/wasm-pkg/',
+  'assets/packages/cratestack_cbor/lib/src/web/wasm-pkg/',
+];
+
 /// Loads the vendored wasm module (once — safe to call more than once) and
 /// returns the uniform codec. See [CratestackCborCodec] for the API
 /// surface.
 Future<CratestackCborCodec> createCborCodec() async {
   if (!_initialized) {
-    final baseUrl = Uri.base.resolve(
-      'packages/cratestack_cbor/src/web/wasm-pkg/',
-    );
-    await _installModuleBridge(
-      baseUrl.resolve('cratestack_cbor_wasm.js').toString(),
-    );
-    final error = _bridgeError;
-    if (error != null) {
+    final failures = <String>[];
+    Uri? loadedFrom;
+    for (final candidate in _wasmPkgBaseUrlCandidates) {
+      final baseUrl = Uri.base.resolve(candidate);
+      await _installModuleBridge(
+        baseUrl.resolve('cratestack_cbor_wasm.js').toString(),
+      );
+      final error = _bridgeError;
+      if (error == null) {
+        loadedFrom = baseUrl;
+        break;
+      }
+      failures.add('$baseUrl: ${error.toDart}');
+    }
+    if (loadedFrom == null) {
       throw StateError(
-        'cratestack_cbor: failed to load the vendored wasm module from '
-        '$baseUrl: ${error.toDart}. If this package is not served under '
-        'the default packages/cratestack_cbor/... URL (e.g. a production '
-        '`flutter build web` release bundle without an asset mapping for '
-        'it), see this package\'s README for how to point at a copy you '
-        'host yourself.',
+        'cratestack_cbor: failed to load the vendored wasm module. Tried:\n'
+        '${failures.map((f) => '  - $f').join('\n')}\n'
+        'If this package is served from neither the dev-server '
+        'packages/cratestack_cbor/... URL nor a release flutter build '
+        'web\'s assets/packages/cratestack_cbor/... path, see this '
+        'package\'s README for how to point at a copy you host yourself.',
       );
     }
     await _init(
-      baseUrl.resolve('cratestack_cbor_wasm_bg.wasm').toString(),
+      loadedFrom.resolve('cratestack_cbor_wasm_bg.wasm').toString(),
     ).toDart;
     _initialized = true;
   }
@@ -142,8 +173,7 @@ Future<void> _installModuleBridge(String moduleUrl) {
   final completer = Completer<void>();
   final script = web.document.createElement('script') as web.HTMLScriptElement;
   script.type = 'module';
-  script.text =
-      '''
+  script.text = '''
     try {
       const mod = await import("$moduleUrl");
       window.$_bridgeGlobal = { init: mod.default, ...mod };

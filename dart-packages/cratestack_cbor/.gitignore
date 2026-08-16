@@ -1,6 +1,11 @@
 .dart_tool/
 .packages
 pubspec.lock
+# The example app (cratestack#563) is an application target, not a
+# library — commit its lockfile for reproducibility, same convention as
+# examples/flutter-riverpod/app/pubspec.lock. This negates the broad
+# `pubspec.lock` rule above, which otherwise applies recursively.
+!example/pubspec.lock
 
 # Build outputs, vendored into the PUBLISHED archive but never into VCS
 # (CLAUDE.md: "Don't commit generated build output"; cratestack#563:
