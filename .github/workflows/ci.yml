@@ -760,6 +760,94 @@ jobs:
           CHROME_EXECUTABLE: /usr/bin/google-chrome
         run: just cbor-example-verify
 
+  # ---- cratestack_cbor Android platform (cratestack#563 platform-matrix
+  # slice) ------------------------------------------------------------------
+  # Blocking, but deliberately scoped to a real `flutter build apk` PLUS a
+  # jniLibs-contents assertion, NOT an emulator run. See "CI cost" below.
+  #
+  # `cratestack-cbor-example` above proves Linux+web work under a real
+  # `flutter build`; this job is the Android analogue for the platform this
+  # ticket actually adds — `cargo ndk` cross-compiles
+  # crates/cratestack-client-flutter's cdylib for arm64-v8a (every real
+  # device), x86_64 (the emulator), and armeabi-v7a (cheap to include, see
+  # `just cbor-vendor-android`'s own comment), `android/build.gradle`
+  # packages them into the APK via the standard `jniLibs.srcDirs`
+  # mechanism (no CMake/NDK invocation at consumer build time — same
+  # "vendor, don't build" constraint as Linux), and `just
+  # cbor-example-verify-android` asserts `libcratestack_client_flutter.so`
+  # actually landed under `lib/<abi>/` inside the built APK for every ABI —
+  # a build that merely COMPILES proves nothing about whether the Android
+  # plugin scaffolding actually bundled the library (the exact failure mode
+  # this ticket exists to catch, mirroring `cbor-example-verify`'s Linux
+  # bundle-path assertion).
+  #
+  # CI cost / what's deliberately NOT here: an NDK cross-compile (3 ABIs)
+  # plus a full Gradle `assembleRelease` is real cost on top of everything
+  # `cratestack-cbor-package` already pays, but it is bounded — no emulator
+  # boots here. Booting and driving an Android emulator (KVM/nested
+  # virtualization availability on hosted runners, boot time, occasional
+  # hangs) is substantially heavier again and flaky in ways a cross-compile
+  # + Gradle build is not, so THAT stays a local/manual gate:
+  # `just cbor-example-verify-android-emulator` (see that recipe's own
+  # comment in the justfile). Recorded as a deliberate recommendation, not
+  # a silent omission — an APK that installs but crashes on
+  # `DynamicLibrary.open` is exactly the failure mode this ticket names as
+  # what "it built fine" hides, and this job cannot catch that; only the
+  # local emulator recipe can. If CI-hosted emulator runs (e.g.
+  # `reactivecircus/android-emulator-runner`) become worth the cost, that is
+  # a maintainer call, not something to add unilaterally here.
+  #
+  # Path filtering: this job — like `cratestack-cbor-package` and
+  # `cratestack-cbor-example` before it — runs unscoped on every PR,
+  # consistent with this workflow's existing convention of no path
+  # filtering anywhere. It only adds to the same open "should
+  # dart-packages/cratestack_cbor/**-touching jobs be path-filtered"
+  # question those two jobs already flagged; not decided here.
+  cratestack-cbor-android:
+    name: flutter (cratestack_cbor android — APK build + jniLibs proof)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Install flutter_rust_bridge_codegen (pinned =2.12.0)
+        run: cargo install --locked flutter_rust_bridge_codegen --version 2.12.0
+      # Pinned exact — matches the version this repo's own vendoring was
+      # verified against (see docs/tooling/cratestack-cbor-development.md).
+      - name: Install cargo-ndk (pinned =4.1.2)
+        run: cargo install --locked cargo-ndk --version 4.1.2
+      - name: Install Android rustup targets
+        run: rustup target add aarch64-linux-android x86_64-linux-android armv7-linux-androideabi
+      # GitHub's ubuntu-latest runner image ships an Android SDK
+      # (`$ANDROID_HOME`) with several NDK versions already installed, but
+      # not reliably the exact one this repo pins (28.2.13676358 — matches
+      # Flutter's own default `ndkVersion`, see android/build.gradle's
+      # comment and docs/tooling/cratestack-cbor-development.md). Installing
+      # it explicitly makes the build deterministic regardless of what the
+      # runner image happens to preinstall.
+      - name: Install Android NDK 28.2.13676358
+        run: |
+          set -euo pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;28.2.13676358" >/dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
+      # frb glue is platform-independent (codegen introspects Rust source,
+      # not a target triple) — cbor-vendor-native produces it as a side
+      # effect of building the Linux host library, and cbor-vendor-android
+      # reuses it rather than regenerating it a second time.
+      - name: Vendor native artifacts (flutter_rust_bridge glue + Linux release library)
+        run: just cbor-vendor-native
+      - name: Vendor Android artifacts (cargo ndk cross-compile, 3 ABIs)
+        run: just cbor-vendor-android
+      - name: flutter build apk + assert vendored library present per ABI
+        run: just cbor-example-verify-android
+
   # ---- TypeScript client verification (issue #419) --------------------------
   # Blocking. Proves the default TypeScript client layout typechecks for
   # both REST and RPC transports. While the `react-vite-swr-example` job

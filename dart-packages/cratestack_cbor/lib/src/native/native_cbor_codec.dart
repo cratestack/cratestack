@@ -6,11 +6,11 @@
 // `dart:io`/`dart:isolate`/`dart:ffi` imports) is never even parsed for a
 // web compile target.
 //
-// This slice vendors Linux x86_64 ONLY (`blobs/linux-x64/`) — a deliberate
-// one-platform spike proving the vendoring pattern before replicating it
-// across the ~12 slices the full matrix needs (macOS/Windows/Android/iOS).
-// Any other platform throws a clear, actionable [UnsupportedError] rather
-// than silently failing to find a library.
+// This slice vendors Linux x86_64 (`blobs/linux-x64/`) and Android
+// arm64-v8a/x86_64/armeabi-v7a (`blobs/android/<abi>/`) — the remaining
+// platforms (macOS/Windows/iOS/Linux arm64) are still follow-up work. Any
+// other platform throws a clear, actionable [UnsupportedError] rather than
+// silently failing to find a library.
 import 'dart:ffi' show Abi;
 import 'dart:io';
 import 'dart:isolate';
@@ -76,9 +76,20 @@ Future<CratestackCborCodec> createCborCodec() async {
 /// directly to prove which file would be loaded, without also paying the
 /// cost of `CratestackCborRustLib.init`.
 ///
-/// Tries two genuinely different strategies, in order, because no single
-/// one covers both a real Flutter app and `dart test`/`dart run`
-/// (cratestack#563 "Flutter app integration" slice):
+/// Android uses a genuinely different resolution mechanism from
+/// desktop/dev-mode Linux (see below) — its dynamic linker resolves a
+/// bundled library by bare SONAME from the app's own native library
+/// directory, which the Android Gradle Plugin populates at install time
+/// from `android/build.gradle`'s `jniLibs.srcDirs` (the per-ABI vendored
+/// libraries at `blobs/android/<abi>/`, see `just cbor-vendor-android`).
+/// There is no path to compute and no dev-mode fallback to try — `dart
+/// test` does not run on an Android target at all, so this is the only
+/// strategy Android ever needs.
+///
+/// For every other supported platform (Linux, currently), tries two
+/// genuinely different strategies, in order, because no single one covers
+/// both a real Flutter app and `dart test`/`dart run` (cratestack#563
+/// "Flutter app integration" slice):
 ///
 /// 1. **Built Flutter app bundle.** `flutter build linux` bundles this
 ///    package's vendored library into `<bundle>/lib/`, next to the app
@@ -100,13 +111,32 @@ Future<String> resolveVendoredLibraryPath() async {
     return override;
   }
 
+  if (Platform.isAndroid) {
+    if (Abi.current() != Abi.androidArm64 &&
+        Abi.current() != Abi.androidX64 &&
+        Abi.current() != Abi.androidArm) {
+      throw UnsupportedError(
+        'cratestack_cbor only vendors prebuilt Android native libraries '
+        'for arm64-v8a, x86_64, and armeabi-v7a in this release '
+        '(${Abi.current()} detected). Set $_libraryOverrideEnvVar to '
+        'point at a self-built library to work around this in the '
+        'meantime.',
+      );
+    }
+    // No path to compute — see the doc comment above. Android's dynamic
+    // linker finds this by SONAME inside the APK's extracted native
+    // library directory, which android/build.gradle's jniLibs.srcDirs
+    // populated from blobs/android/<abi>/ at build time.
+    return 'libcratestack_client_flutter.so';
+  }
+
   if (Abi.current() != Abi.linuxX64) {
     throw UnsupportedError(
       'cratestack_cbor only vendors a prebuilt native library for Linux '
-      'x86_64 in this release (${Abi.current()} detected). This is a '
-      'deliberate single-platform spike (cratestack#563) — the full '
-      'platform matrix (macOS, Windows, Android, iOS, Linux arm64) is '
-      'follow-up work. Set $_libraryOverrideEnvVar to point at a '
+      'x86_64 and Android (arm64-v8a, x86_64, armeabi-v7a) in this '
+      'release (${Abi.current()} detected). The remaining platform matrix '
+      '(macOS, Windows, iOS, Linux arm64) is follow-up work '
+      '(cratestack#563). Set $_libraryOverrideEnvVar to point at a '
       'self-built library to work around this in the meantime.',
     );
   }

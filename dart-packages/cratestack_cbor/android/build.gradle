@@ -1,0 +1,77 @@
+// cratestack_cbor's Android plugin build file (cratestack#563).
+//
+// Deliberately NOT the cargokit shape most flutter_rust_bridge plugins use,
+// and deliberately NOT the `externalNativeBuild { cmake { ... } }` block
+// `flutter create -t plugin_ffi --platforms android` scaffolds by default
+// (that path compiles the plugin's own C/C++ sources with the NDK at
+// CONSUMER build time) — the maintainer decision recorded on cratestack#563
+// rejected imposing a Rust toolchain on every consuming Flutter developer's
+// machine and CI, same as `linux/CMakeLists.txt`. This plugin has no C/C++
+// (or Rust) sources of its own to compile here; its only job is packaging
+// the ALREADY-VENDORED prebuilt per-ABI libraries
+// (`../blobs/android/<abi>/libcratestack_client_flutter.so`, produced by
+// `just cbor-vendor-android` — see this package's README) into the APK via
+// the Android Gradle Plugin's standard `jniLibs.srcDirs` mechanism — the
+// same mechanism plugins that ship prebuilt native code (e.g.
+// `sqlite3_flutter_libs`) use, no CMake/NDK invocation required.
+//
+// AGP/compileSdk/minSdk below are pinned to match what `flutter create`
+// itself scaffolds for this repo's pinned Flutter version (3.44.1) — see
+// dart-packages/cratestack_cbor/example/android/settings.gradle.kts and
+// docs/tooling/cratestack-cbor-development.md.
+group = "dev.cratestack.cratestack_cbor"
+version = "1.0"
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath("com.android.tools.build:gradle:9.0.1")
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: "com.android.library"
+
+android {
+    namespace = "dev.cratestack.cratestack_cbor"
+
+    // Bumping the plugin compileSdk version requires all clients of this
+    // plugin to bump the version in their app. Matches the compileSdk this
+    // repo's pinned Flutter (3.44.1) defaults consuming apps to.
+    compileSdk = 36
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    defaultConfig {
+        // Matches Flutter's own default minSdk for consuming apps (see
+        // FlutterExtension.kt in the Flutter SDK) and the `-P 24` platform
+        // level `just cbor-vendor-android` passes to `cargo ndk` — keeping
+        // both in lockstep avoids linking against symbols newer than what
+        // the vendored `.so` was actually built against.
+        minSdk = 24
+    }
+
+    // No externalNativeBuild / cmake block — see the file header. The
+    // vendored per-ABI libraries already sit in Android's own
+    // jniLibs-source-set layout (`<srcDir>/<abi>/*.so`), which is exactly
+    // what `cargo ndk -o` produces, so no restructuring/copying step is
+    // needed between vendoring and this declaration.
+    sourceSets {
+        main {
+            jniLibs.srcDirs += ['../blobs/android']
+        }
+    }
+}

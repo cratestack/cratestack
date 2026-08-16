@@ -955,6 +955,89 @@ cbor-vendor-web:
 	  ! -name '*.js' ! -name '*.wasm' -exec rm -rf {} +
 	echo "✓ vendored $(du -sh "$out_dir" | cut -f1) wasm-bindgen build at $out_dir"
 
+# Regenerates the package's vendored ANDROID artifact: a `cargo ndk`
+# cross-compile of crates/cratestack-client-flutter's cdylib for every
+# Android ABI this package claims (cratestack#563 platform-matrix slice).
+# Deliberately does NOT regenerate the flutter_rust_bridge Dart glue itself
+# — that glue is platform-independent (frb codegen introspects Rust source,
+# not a target triple) and `cbor-vendor-native` already produces it as a
+# side effect of building the Linux host library. Run `cbor-vendor-native`
+# at least once before this recipe on a fresh checkout.
+#
+# ABIs: arm64-v8a (every real device) and x86_64 (the emulator) are the
+# floor — without both, nobody can actually test this on either a device or
+# the emulator. armeabi-v7a is included too: cross-compiling it is cheap
+# (~14s incremental, measured; the three ABIs together take well under a
+# minute from a warm cargo cache) so there's no reason to leave 32-bit ARM
+# devices unsupported. Not included: iOS/macOS/Windows (out of scope for
+# this slice — see docs/tooling/cratestack-cbor-development.md).
+#
+# Platform level 24 matches Flutter's own default `minSdk` for consuming
+# apps (see android/build.gradle's comment) — keeping `cargo ndk -P` and
+# the plugin's `minSdk` in lockstep avoids linking against libc symbols
+# newer than what a consumer's `minSdk` guarantees.
+#
+# Requires: `cargo-ndk` (`cargo install cargo-ndk`), the three
+# `*-linux-android*`/`*-linux-androideabi` rustup targets, `ANDROID_HOME`
+# and `ANDROID_NDK_HOME` set (this repo pins Flutter's own default NDK,
+# 28.2.13676358 — see docs/tooling/cratestack-cbor-development.md), and
+# that NDK's own `llvm-strip` (used instead of the host `strip`, which does
+# not reliably understand cross-arch ELF `--strip-unneeded` for AArch64).
+cbor-vendor-android:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if ! command -v cargo-ndk >/dev/null; then
+	  echo "cargo-ndk not found. Run: cargo install cargo-ndk" >&2
+	  exit 1
+	fi
+	if [ -z "${ANDROID_HOME:-}" ]; then
+	  echo "ANDROID_HOME is not set. Point it at your Android SDK (e.g. ~/Android/Sdk)." >&2
+	  exit 1
+	fi
+	if [ -z "${ANDROID_NDK_HOME:-}" ]; then
+	  echo "ANDROID_NDK_HOME is not set. Point it at an installed NDK under \$ANDROID_HOME/ndk/<version> (e.g. 28.2.13676358, matching Flutter's own default)." >&2
+	  exit 1
+	fi
+	if [ ! -d "$ANDROID_NDK_HOME" ]; then
+	  echo "ANDROID_NDK_HOME ($ANDROID_NDK_HOME) does not exist." >&2
+	  exit 1
+	fi
+	missing_targets=""
+	for t in aarch64-linux-android x86_64-linux-android armv7-linux-androideabi; do
+	  if ! rustup target list --installed | grep -qx "$t"; then
+	    missing_targets="$missing_targets $t"
+	  fi
+	done
+	if [ -n "$missing_targets" ]; then
+	  echo "Missing rustup target(s):$missing_targets" >&2
+	  echo "Run: rustup target add$missing_targets" >&2
+	  exit 1
+	fi
+	pkg=dart-packages/cratestack_cbor
+	if [ ! -f "$pkg/lib/src/native/rust/frb_generated.dart" ]; then
+	  echo "flutter_rust_bridge Dart glue not found at $pkg/lib/src/native/rust/." >&2
+	  echo "Run: just cbor-vendor-native (it produces the platform-independent glue this recipe reuses)" >&2
+	  exit 1
+	fi
+	out_dir="$pkg/blobs/android"
+	rm -rf "$out_dir"
+	mkdir -p "$out_dir"
+	echo "=== cargo ndk build --release --features frb-glue: cratestack-client-flutter (arm64-v8a, x86_64, armeabi-v7a) ==="
+	cargo ndk -t arm64-v8a -t x86_64 -t armeabi-v7a -o "$out_dir" -P 24 \
+	  build -p cratestack-client-flutter --features frb-glue --release
+	strip_tool="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
+	if [ ! -x "$strip_tool" ]; then
+	  echo "llvm-strip not found at $strip_tool — is ANDROID_NDK_HOME pointed at a Linux-hosted NDK?" >&2
+	  exit 1
+	fi
+	for abi in arm64-v8a x86_64 armeabi-v7a; do
+	  "$strip_tool" --strip-unneeded "$out_dir/$abi/libcratestack_client_flutter.so"
+	done
+	echo "✓ vendored Android libraries at $out_dir:"
+	for abi in arm64-v8a x86_64 armeabi-v7a; do
+	  echo "    $abi: $(du -h "$out_dir/$abi/libcratestack_client_flutter.so" | cut -f1)"
+	done
+
 # Verifies BOTH cratestack_cbor backends against the vendored artifacts
 # `cbor-vendor-native`/`cbor-vendor-web` produce — the CI-facing recipe
 # (cratestack#563), mirroring `frb-verify-client-flutter`'s "regenerate,
@@ -1107,6 +1190,163 @@ cbor-example-verify:
 
 	echo ""
 	echo "✓ cratestack_cbor example: real flutter build linux + flutter build web both round-trip CBOR in a running app"
+
+# Real APK-build proof for cratestack_cbor's Android platform (cratestack#563
+# platform-matrix slice). Deliberately does NOT drive an emulator — see the
+# "CI cost" note below and docs/tooling/cratestack-cbor-development.md for
+# why the emulator run is a separate, local-only recipe
+# (`cbor-example-verify-android-emulator`).
+#
+# `flutter build apk` compiling is necessary but not sufficient: a plugin
+# that silently ships no native library still builds fine (that's exactly
+# what this ticket exists to catch, per its own acceptance bar), so this
+# recipe additionally unzips the built APK and asserts
+# `libcratestack_client_flutter.so` is present under `lib/<abi>/` for every
+# ABI `cbor-vendor-android` vendors (arm64-v8a, x86_64, armeabi-v7a) —
+# mirroring `cbor-example-verify`'s "assert the vendored library is inside
+# the built bundle" check for Linux.
+#
+# CI cost: an NDK cross-compile (`cbor-vendor-android`, 3 ABIs) plus a full
+# Gradle `assembleRelease` is real cost on top of what `cratestack-cbor-
+# example` (Linux+web) already pays, but it is bounded and finishes in well
+# under the emulator alternative — see the emulator recipe's own comment
+# for why THAT stays local/manual rather than also running here.
+#
+# Does NOT regenerate the vendored artifacts itself — run
+# `just cbor-vendor-native cbor-vendor-android` first (or rely on what's
+# already vendored, as CI does).
+#
+# Requires: Flutter SDK with the Android toolchain configured
+# (`flutter doctor` reporting "Android toolchain" as OK — SDK, a
+# build-tools/platform matching this repo's pinned compileSdk, and
+# accepted licenses).
+cbor-example-verify-android:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if ! command -v flutter >/dev/null; then
+	  echo "flutter not found on PATH — install the Flutter SDK: https://docs.flutter.dev/get-started/install" >&2
+	  exit 1
+	fi
+	example=dart-packages/cratestack_cbor/example
+
+	echo "=== flutter clean: $example ==="
+	(cd "$example" && flutter clean)
+
+	echo "=== flutter pub get: $example ==="
+	(cd "$example" && flutter pub get)
+
+	echo "=== flutter analyze: $example ==="
+	(cd "$example" && flutter analyze --fatal-warnings --no-fatal-infos)
+
+	echo "=== flutter build apk (release): $example ==="
+	(cd "$example" && flutter build apk)
+	apk="$example/build/app/outputs/flutter-apk/app-release.apk"
+	if [ ! -f "$apk" ]; then
+	  echo "FAIL: expected APK not found at $apk" >&2
+	  exit 1
+	fi
+
+	# Captured into a variable rather than piped straight into `grep -q`:
+	# under `pipefail`, `unzip -l ... | grep -q pattern` can spuriously
+	# report pipeline failure even on a MATCH, because `-q` exits as soon
+	# as it finds one, which can send `unzip` a SIGPIPE before it finishes
+	# writing — and pipefail then reports that non-zero `unzip` exit as the
+	# pipeline's status. Capturing first sidesteps the whole class of bug.
+	listing="$(unzip -l "$apk")"
+	missing=0
+	for abi in arm64-v8a x86_64 armeabi-v7a; do
+	  if [[ "$listing" == *"lib/$abi/libcratestack_client_flutter.so"* ]]; then
+	    echo "✓ vendored library present in the built APK: lib/$abi/libcratestack_client_flutter.so"
+	  else
+	    echo "FAIL: vendored library not found inside the built APK for ABI $abi (lib/$abi/libcratestack_client_flutter.so) — the Android plugin scaffolding (android/build.gradle's jniLibs.srcDirs) did not bundle it." >&2
+	    missing=1
+	  fi
+	done
+	if [ "$missing" -ne 0 ]; then
+	  exit 1
+	fi
+
+	echo ""
+	echo "✓ cratestack_cbor example: real flutter build apk, vendored library present for every claimed ABI"
+
+# Real ON-DEVICE proof for cratestack_cbor's Android platform: installs the
+# release APK built by `cbor-example-verify-android` on a connected
+# device/emulator, launches the example app, and asserts it prints the SAME
+# CBOR-hex round-trip marker Linux/web print (`test/shared_fixtures.dart`) —
+# the one thing an APK build cannot prove on its own (a build that merely
+# COMPILES proves nothing about whether the installed app can actually
+# `dlopen` its own bundled library at runtime; see cratestack#563's own
+# acceptance bar and the "an APK that installs but crashes on
+# DynamicLibrary.open" failure mode it names explicitly).
+#
+# Deliberately LOCAL/MANUAL ONLY — not wired into CI. Running an Android
+# emulator in CI is substantially heavier than the (already expensive)
+# `cratestack-cbor-example` Linux+web job, and flaky in ways an NDK
+# cross-compile + Gradle build is not (boot time, KVM/nested-virtualization
+# availability on hosted runners, occasional hangs). The APK-build proof
+# above (`cbor-example-verify-android`) is what runs in CI; this recipe is
+# the local trust-but-verify companion for a human to run before relying on
+# a change, same spirit as `just cbor-vendor-android`'s own "run this
+# yourself" posture. See docs/tooling/cratestack-cbor-development.md for
+# the full CI-cost writeup.
+#
+# Requires: `adb` on PATH, `ANDROID_HOME`/`ANDROID_SDK_ROOT` set, and either
+# a running emulator or a connected device already visible to `adb devices`
+# (`flutter emulators --launch <id>` starts one — see `flutter emulators`
+# for the list). Does NOT launch an emulator itself: which one to boot (or
+# whether to use a physical device) is a human decision, not something this
+# recipe should silently pick.
+cbor-example-verify-android-emulator:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if ! command -v adb >/dev/null; then
+	  echo "adb not found on PATH — add \$ANDROID_HOME/platform-tools to PATH" >&2
+	  exit 1
+	fi
+	if ! adb devices | grep -qE '\bdevice$'; then
+	  echo "No Android device/emulator visible to 'adb devices'. Start one first, e.g.:" >&2
+	  echo "    flutter emulators --launch <id>   # see: flutter emulators" >&2
+	  exit 1
+	fi
+	example=dart-packages/cratestack_cbor/example
+	apk="$example/build/app/outputs/flutter-apk/app-release.apk"
+	if [ ! -f "$apk" ]; then
+	  echo "$apk not found — run 'just cbor-example-verify-android' first to build it." >&2
+	  exit 1
+	fi
+	appId="dev.cratestack.examples.cratestack_cbor_example"
+	expected_hex="a36a6372617465737461636b8264636f6f6c65737461636b616e182a626f6bf5"
+	marker="CRATESTACK_CBOR_EXAMPLE_RESULT:"
+
+	echo "=== installing $apk ==="
+	adb install -r "$apk"
+	adb shell am force-stop "$appId" || true
+	adb logcat -c
+	echo "=== launching $appId ==="
+	adb shell am start -n "$appId/$appId.MainActivity"
+
+	echo "=== waiting for the round-trip marker in logcat ==="
+	found=""
+	for _ in $(seq 1 60); do
+	  found="$(adb logcat -d | grep "$marker" || true)"
+	  if [ -n "$found" ]; then
+	    break
+	  fi
+	  sleep 1
+	done
+	if [ -z "$found" ]; then
+	  echo "FAIL: never saw '$marker' in logcat within the timeout." >&2
+	  exit 1
+	fi
+	echo "$found"
+	if ! echo "$found" | grep -q "$marker OK $expected_hex"; then
+	  echo "FAIL: app did not report the expected round-trip marker. Captured:" >&2
+	  echo "$found" >&2
+	  exit 1
+	fi
+
+	echo ""
+	echo "✓ cratestack_cbor example: real flutter build apk, installed and run on a real Android device/emulator, round-tripped CBOR"
 
 # Bundle the Studio UI for publishing: source tarball (for `studio
 # eject --with-ui`) and the Trunk-built wasm/JS dist (embedded into

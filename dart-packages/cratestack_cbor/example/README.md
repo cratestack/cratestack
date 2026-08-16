@@ -15,10 +15,10 @@ web bundle has no interactive console to read, so verification greps for
 it (`../README.md` and this repo's `just cbor-example-verify`) instead of
 trying to screenshot a GUI.
 
-Supported platforms: **Linux desktop and web only**, matching the parent
-package's current platform support. Android and iOS platform folders were
-deliberately not generated here — out of scope for cratestack#563's
-current slice (see the parent package's README).
+Supported platforms: **Linux desktop, Android, and web**, matching the
+parent package's current platform support. iOS, macOS, and Windows platform
+folders were deliberately not generated here — out of scope for
+cratestack#563's current slice (see the parent package's README).
 
 ## Why this lives under `example/` inside the package
 
@@ -34,26 +34,47 @@ better fit.
 ## Running it yourself
 
 From `dart-packages/cratestack_cbor/` (the parent package), vendor the
-native + web artifacts first — see that package's README:
+artifacts for the platform(s) you want first — see that package's README:
 
 ```bash
-just cbor-vendor-native
+just cbor-vendor-native   # Linux + the flutter_rust_bridge Dart glue (needed by Android too)
 just cbor-vendor-web
+just cbor-vendor-android  # only if you're going to build for Android
 cd example
 flutter pub get
-flutter run -d linux   # or: flutter run -d chrome
+flutter run -d linux   # or: flutter run -d chrome / flutter run -d <android-device-id>
 ```
 
 ## Real-build verification (not `flutter run`)
 
 ```bash
-just cbor-example-verify   # from the repo root
+just cbor-example-verify           # Linux desktop + web, from the repo root
+just cbor-example-verify-android   # Android APK build + per-ABI presence proof
 ```
 
-builds this example for Linux desktop and web in RELEASE mode, actually
-runs the Linux binary (headless, via `xvfb-run`) and actually serves and
-loads the web release bundle in a real headless Chrome
-(`tool/verify_web_console.dart`), and asserts both print the same
-CBOR-hex round-trip result the parent package's own test suite asserts.
-See that `just` recipe's own comments in the repo's `justfile` for why
-each step exists.
+`cbor-example-verify` builds this example for Linux desktop and web in
+RELEASE mode, actually runs the Linux binary (headless, via `xvfb-run`) and
+actually serves and loads the web release bundle in a real headless Chrome
+(`tool/verify_web_console.dart`), and asserts both print the same CBOR-hex
+round-trip result the parent package's own test suite asserts.
+
+`cbor-example-verify-android` builds a real release APK
+(`flutter build apk`) and asserts `libcratestack_client_flutter.so` actually
+landed inside it for every claimed ABI (arm64-v8a, x86_64, armeabi-v7a) — a
+build that merely compiles proves nothing about whether the Android plugin
+scaffolding (`../android/build.gradle`) actually bundled the library. This
+is what CI runs.
+
+For the decisive on-device proof — the app actually round-tripping CBOR at
+runtime, not just the library being present in the APK — there is a
+**local/manual-only** companion (deliberately not wired into CI; booting an
+Android emulator on a hosted runner is substantially heavier and flakier
+than everything else this package's CI already does):
+
+```bash
+flutter emulators --launch <id>            # start a device/emulator first
+just cbor-example-verify-android-emulator  # install + run it, assert the round-trip marker
+```
+
+See each `just` recipe's own comments in the repo's `justfile` for why
+every step exists.

@@ -18,8 +18,10 @@ final json = codec.decodeJson(bytes);
 
 | Platform | Backend | Artifact |
 | --- | --- | --- |
-| Native (`dart.library.io`) | [flutter_rust_bridge](https://pub.dev/packages/flutter_rust_bridge) `=2.12.0` over `crates/cratestack-client-flutter`'s `cbor` module | A **vendored prebuilt native library** — `blobs/linux-x64/libcratestack_client_flutter.so` in this release. No Rust toolchain, no network fetch, at consumer build time. |
+| Native (`dart.library.io`) | [flutter_rust_bridge](https://pub.dev/packages/flutter_rust_bridge) `=2.12.0` over `crates/cratestack-client-flutter`'s `cbor` module | A **vendored prebuilt native library** — `blobs/linux-x64/libcratestack_client_flutter.so` (Linux) or `blobs/android/<abi>/libcratestack_client_flutter.so` (Android: arm64-v8a, x86_64, armeabi-v7a) in this release. No Rust toolchain, no network fetch, at consumer build time. |
 | Web (`dart.library.js_interop`) | The **existing** [`cratestack-cbor-wasm`](../../crates/cratestack-cbor-wasm) wasm-bindgen artifact (already shipped to npm as [`@cratestack/cbor-web`](../../packages/cratestack-cbor-web)) | A **vendored** `wasm-pack --target web` build — `lib/src/web/wasm-pkg/` — loaded at runtime via `dart:js_interop`. No new codec binding; this reuses the exact same Rust wasm-bindgen crate the JS package already binds. |
+
+Linux and Android share the same flutter_rust_bridge Dart glue (`lib/src/native/rust/`, platform-independent — frb codegen introspects Rust source, not a target triple) but vendor genuinely different resolution mechanisms: Linux resolves the vendored library by an executable-relative path, Android resolves it by bare SONAME from the app's own native library directory (populated by `android/build.gradle`'s `jniLibs.srcDirs`) — see `lib/src/native/native_cbor_codec.dart`.
 
 Both backends round-trip byte-identical CBOR to `cratestack-codec-cbor`'s
 `CborCodec` for the same input — see `test/shared_fixtures.dart`, which both
@@ -41,12 +43,13 @@ never branch on platform** — one uniform `CratestackCborCodec` interface, see
 
 ## Scope of this release — read before depending on this in production
 
-This is a **single-platform spike** (cratestack#563), not the full package:
+This is a **partial platform matrix** (cratestack#563), not the full package:
 
-- **Native platform matrix:** Linux x86_64 only. `resolveVendoredLibraryPath()`
-  throws a clear `UnsupportedError` on every other platform (macOS, Windows,
-  Android, iOS, Linux arm64) rather than silently failing. The full ~12-slice
-  matrix is deliberate follow-up work, not an oversight.
+- **Native platform matrix:** Linux x86_64 and Android (arm64-v8a, x86_64,
+  armeabi-v7a) only. `resolveVendoredLibraryPath()` throws a clear
+  `UnsupportedError` on every other platform (macOS, Windows, iOS, Linux
+  arm64) rather than silently failing. The remaining matrix is deliberate
+  follow-up work, not an oversight.
 - **Not published to pub.dev.** `pubspec.yaml` declares `publish_to: none`
   deliberately. Publishing is a separate, maintainer-gated step (verified
   publisher `cratestack.dev`, GitHub Actions OIDC — see cratestack#563's
@@ -61,9 +64,10 @@ This is a **single-platform spike** (cratestack#563), not the full package:
 
 `dart test`/`dart test -p chrome` prove the codec works as a Dart *library*.
 They do not prove it works inside a real Flutter *app*: a compiled app has no
-package source tree for `Isolate.resolvePackageUri` to find, and a release
-web bundle has no dev server to serve the `packages/...` URL convention from.
-This package closes that gap for **Linux desktop and web**:
+package source tree for `Isolate.resolvePackageUri` to find, a release web
+bundle has no dev server to serve the `packages/...` URL convention from, and
+Android has no `dart test` story at all. This package closes that gap for
+**Linux desktop, Android, and web**:
 
 - **Linux desktop:** `linux/CMakeLists.txt` makes this package a Flutter FFI
   plugin (`pubspec.yaml`'s `flutter: plugin: platforms: linux: ffiPlugin:
@@ -81,6 +85,19 @@ This package closes that gap for **Linux desktop and web**:
   verified empirically that Flutter's plugin tooling honors the `flutter:`
   pubspec key without it, so plain `dart pub get`/`dart test` (no Flutter SDK
   at all) keep working exactly as before.
+- **Android:** `android/build.gradle` makes this package an Android FFI
+  plugin (`pubspec.yaml`'s `flutter: plugin: platforms: android: ffiPlugin:
+  true`) that packages the vendored per-ABI libraries
+  (`blobs/android/<abi>/libcratestack_client_flutter.so`) into the APK via
+  the standard `jniLibs.srcDirs` source-set mechanism — again, no
+  cargokit/CMake/NDK invocation at consumer build time, same constraint as
+  Linux. This is a genuinely different resolution mechanism from Linux, not
+  a relocated copy of it: Android's dynamic linker finds a bundled library
+  by bare SONAME from the app's own native library directory, so
+  `native_cbor_codec.dart`'s Android branch computes no path at all — it
+  just opens `libcratestack_client_flutter.so` directly. See
+  `docs/tooling/cratestack-cbor-development.md`'s gotcha 6 for why an APK
+  that *compiles* does not by itself prove the library shipped.
 - **Web:** `pubspec.yaml`'s `flutter: assets:` vendors the `.js`/`.wasm` pair
   as real Flutter assets, so a release `flutter build web` copies them into
   `build/web/assets/packages/cratestack_cbor/...`. `web_cbor_codec.dart` tries
@@ -89,16 +106,24 @@ This package closes that gap for **Linux desktop and web**:
   `assets/packages/.../lib/...` URL — the two conventions coexist, neither
   subsumes the other.
 
-`dart-packages/cratestack_cbor/example/` is a minimal Flutter app proving
-both, with real builds: see that directory's README and `just
-cbor-example-verify` (also wired into CI as `cratestack-cbor-example`). It
-builds the example for Linux and web in **release** mode, actually runs the
-Linux binary headless, and actually serves and loads the web release bundle
-in a real headless Chrome — not `flutter run`'s dev server, which resolves
-assets differently and would prove nothing about a release deploy.
+`dart-packages/cratestack_cbor/example/` is a minimal Flutter app proving all
+three, with real builds: see that directory's README, `just
+cbor-example-verify` (Linux+web, wired into CI as `cratestack-cbor-example`),
+and `just cbor-example-verify-android` (Android APK build + per-ABI presence
+proof, wired into CI as `cratestack-cbor-android`). Linux and web build in
+**release** mode, actually run the Linux binary headless, and actually serve
+and load the web release bundle in a real headless Chrome — not `flutter
+run`'s dev server, which resolves assets differently and would prove nothing
+about a release deploy. Android additionally has a **local/manual**
+companion, `just cbor-example-verify-android-emulator`, that installs the
+built APK on a real Android emulator and asserts the app actually round-trips
+CBOR at runtime — deliberately not wired into CI, since booting an emulator
+on a hosted runner is substantially heavier and flakier than everything else
+this package's CI already does; see that recipe's own comment in the
+`justfile` for the full reasoning.
 
-Android and iOS remain out of scope for this slice (deliberately — see the
-platform matrix note above).
+iOS, macOS, Windows, and Linux arm64 remain out of scope for this slice
+(deliberately — see the platform matrix note above).
 
 ## Regenerating the vendored artifacts
 
@@ -111,19 +136,20 @@ platform matrix note above).
 > than pure Dart because it is async, and rustfmt reformatting generated
 > glue.
 
-Both artifacts are build outputs from crates in this repo and are
+All three artifacts are build outputs from crates in this repo and are
 regenerated, not hand-written. From the repository root:
 
 ```bash
 just cbor-vendor-native   # flutter_rust_bridge glue + blobs/linux-x64/*.so
 just cbor-vendor-web      # wasm-pack --target web build -> lib/src/web/wasm-pkg/
+just cbor-vendor-android  # cargo ndk cross-compile -> blobs/android/<abi>/*.so (reuses cbor-vendor-native's glue — run that first)
 ```
 
 See the `justfile` for what each does.
 
 **None of the vendored output is `git`-tracked** — not the Dart glue at
-`lib/src/native/rust/`, the native library at `blobs/linux-x64/`, nor the
-wasm build at `lib/src/web/wasm-pkg/`. This matches `CLAUDE.md`'s "don't
+`lib/src/native/rust/`, the native libraries at `blobs/linux-x64/` and
+`blobs/android/<abi>/`, nor the wasm build at `lib/src/web/wasm-pkg/`. This matches `CLAUDE.md`'s "don't
 commit generated build output", cratestack#563's own "frb glue is generated
 in CI, not committed" decision (which gitignores the byte-identical
 `frb_generated.*` files in `crates/cratestack-client-flutter`), and the two
@@ -144,21 +170,35 @@ ticket exists to vendor.
 *instead of* `.gitignore` there. This package's `.pubignore` is
 intentionally empty of exclusions, so the gitignored build outputs are
 still packed. **Verified, not assumed** — `dart pub publish --dry-run` with
-all three directories gitignored and untracked still lists them:
+all four vendored artifact directories gitignored and untracked still lists
+them all:
 
 ```
+├── blobs
+│   ├── android
+│   │   ├── arm64-v8a
+│   │   │   └── libcratestack_client_flutter.so (904 KB)
+│   │   ├── armeabi-v7a
+│   │   │   └── libcratestack_client_flutter.so (492 KB)
+│   │   └── x86_64
+│   │       └── libcratestack_client_flutter.so (946 KB)
+│   └── linux-x64
 │       └── libcratestack_client_flutter.so (903 KB)
-│           │   ├── cratestack_cbor_wasm.js (21 KB)
-│           │   └── cratestack_cbor_wasm_bg.wasm (121 KB)
+...
+│           ├── cratestack_cbor_wasm.js (21 KB)
+│           └── cratestack_cbor_wasm_bg.wasm (121 KB)
 ```
 
-Archive size is identical either way (502 KB), and `git ls-files` reports
-zero of them tracked. So the published package vendors its binaries exactly
-as decided, while the repository stays free of build output.
+Total compressed archive size is ~1 MB with all four native libraries plus
+the wasm pair vendored — still a small fraction of pub.dev's 100 MB gzip
+recommendation (see cratestack#563's thread for the original size-budget
+analysis) — and `git ls-files` reports zero of them tracked. So the
+published package vendors its binaries exactly as decided, while the
+repository stays free of build output.
 
-Regenerate them with the two `just` recipes above; treat them as build
-outputs to keep in sync with the source crates, never as source to
-hand-edit. **`.pubignore` must stay tracked** — without it in a fresh
+Regenerate them with the `just` recipes above; treat them as build outputs
+to keep in sync with the source crates, never as source to hand-edit.
+**`.pubignore` must stay tracked** — without it in a fresh
 checkout, publishing silently reverts to dropping these files.
 
 ## Verifying both backends

@@ -14,13 +14,14 @@ This mirrors `packages/cratestack-cbor` (`@cratestack/cbor`), which already does
 selection behind one import path for JavaScript. There is deliberately **no third binding** of the
 codec — both backends compile the same Rust.
 
-> **Status:** Linux x86_64 + web only. Every other platform throws a clear `UnsupportedError`. This
-> is a deliberate one-platform spike to validate the vendoring shape before replicating it across
-> the ~12-slice matrix. **Do not publish in this state.**
+> **Status:** Linux x86_64, Android (arm64-v8a, x86_64, armeabi-v7a), and web. Every other platform
+> throws a clear `UnsupportedError`. The remaining matrix (iOS device+simulator, macOS arm64/x64,
+> Linux arm64, Windows x64) is still follow-up work. **Do not publish in this state.**
 >
-> Proven for both `dart test` (as a Dart library) AND a real Flutter app (`flutter build linux` +
-> `flutter build web`, release, not the dev server) — see "Verifying inside a real Flutter app"
-> below and `dart-packages/cratestack_cbor/example/`.
+> Proven for both `dart test` (as a Dart library) AND a real Flutter app — `flutter build linux` +
+> `flutter build web` (release, not the dev server), and a real `flutter build apk` installed and run
+> on a real Android emulator — see "Verifying inside a real Flutter app" below and
+> `dart-packages/cratestack_cbor/example/`.
 
 ## Prerequisites
 
@@ -30,6 +31,10 @@ dart                         3.12.1
 flutter_rust_bridge_codegen  2.12.0     # must match the =2.12.0 pin exactly
 wasm-pack                               # for the web artifact
 google-chrome / chromium                # required to run the web tests for real
+cargo-ndk                    4.1.2      # for the Android artifact — cargo install cargo-ndk
+Android SDK + NDK 28.2.13676358         # matches Flutter's own default ndkVersion; ANDROID_HOME and
+                                         # ANDROID_NDK_HOME must be set explicitly (not assumed by
+                                         # flutter/adb being on PATH)
 ```
 
 The frb version pin is exact on both sides. A mismatch between the installed
@@ -59,7 +64,16 @@ wasm bundle, so tests fail until you build them:
 ```bash
 just cbor-vendor-native   # frb glue + blobs/linux-x64/*.so
 just cbor-vendor-web      # wasm-pack --target web -> lib/src/web/wasm-pkg/
-just cbor-verify-package  # runs both backends
+just cbor-vendor-android  # cargo ndk cross-compile -> blobs/android/<abi>/*.so (needs cbor-vendor-native's glue first)
+just cbor-verify-package  # runs the Linux+web backends (dart test / dart test -p chrome)
+```
+
+Android has no `dart test` story of its own (see gotcha 6 below) — verify it with a real
+`flutter build apk`:
+
+```bash
+just cbor-example-verify-android            # builds the APK, asserts the .so is inside for every ABI
+just cbor-example-verify-android-emulator   # installs + runs it on a connected device/emulator (local only)
 ```
 
 If you skip this, the failure tells you so explicitly rather than leaving you guessing:
@@ -187,6 +201,41 @@ the next `flutter build linux` fails with a CMake `file INSTALL cannot find ... 
 error that has nothing to do with this package. `flutter clean` (which `just cbor-example-verify`
 always runs first) removes both together, so there is nothing to desynchronize.
 
+### 6. Android needs a genuinely different resolution mechanism, and a build that ships no library still succeeds
+
+Android is not "Linux with a different `.so` extension" — two things are actually different, not
+just relocated:
+
+- **No path to compute.** Linux resolves its vendored library by an executable-relative path
+  (`linux/CMakeLists.txt`'s bundling contract). Android's dynamic linker instead resolves a bundled
+  library by bare **SONAME** from the app's own native library directory, populated at install time
+  from `android/build.gradle`'s `jniLibs.srcDirs` — so `native_cbor_codec.dart`'s Android branch just
+  calls `DynamicLibrary.open('libcratestack_client_flutter.so')` with no path logic at all. There is
+  also no dev-mode fallback to try: `dart test` does not run on an Android target, so the Flutter-app
+  path is the *only* path Android ever exercises — unlike Linux, which has two.
+- **A build that ships no library still compiles and reports success.** `flutter build apk` does not
+  fail if `android/build.gradle`'s `jniLibs.srcDirs` finds nothing to package — Gradle just quietly
+  emits an APK with no native library inside. Verified directly in this repo's own PR: with
+  `blobs/android/` deleted, `flutter build apk` still printed `✓ Built ... app-release.apk (43.5MB)`.
+  This is why `just cbor-example-verify-android` unzips the built APK and asserts
+  `lib/<abi>/libcratestack_client_flutter.so` is actually present for every claimed ABI, the same
+  "assert it's inside the built bundle" discipline `cbor-example-verify` already applies to Linux —
+  and why that assertion, not "the build exited 0", is the real CI gate.
+
+Two implementation gotchas worth recording separately, since both were found the hard way while
+building this check:
+
+- **`unzip -l "$apk" | grep -q pattern` under `set -o pipefail` can report failure ON A MATCH.**
+  `grep -q` exits as soon as it finds its first match, which can deliver `unzip` a SIGPIPE before it
+  finishes writing; under `pipefail` that non-zero `unzip` exit status propagates as the *pipeline's*
+  status even though `grep` itself matched successfully. `just cbor-example-verify-android` captures
+  the listing into a variable first and does a plain bash `[[ "$listing" == *pattern* ]]` membership
+  test instead, which has no subprocess/pipe in the check at all.
+- **The host `strip` does not reliably handle cross-arch AArch64 ELF.** `just cbor-vendor-android`
+  uses the Android NDK's own `llvm-strip` (`$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/
+  bin/llvm-strip`) rather than the host `strip` binary Linux vendoring uses — GNU `strip`'s
+  `--strip-unneeded` does not list an AArch64 Android target among its supported output formats.
+
 ## Verifying a change
 
 ```bash
@@ -222,9 +271,32 @@ The same applies to the CI drift check: renaming a bridged Rust function must ma
 same discipline applies to the example app — see "Verifying inside a real Flutter app" above and
 `just cbor-example-verify`'s own break-it proof.
 
+Android has two independent break-it proofs, because presence and validity are checked by two
+different recipes (see gotcha 6):
+
+```bash
+# presence: delete the vendored ABI directory entirely -> build still succeeds, presence check must fail
+mv dart-packages/cratestack_cbor/blobs/android /tmp/blobs-android-backup
+just cbor-example-verify-android
+# expect: "✓ Built ... app-release.apk" followed by
+#         "FAIL: vendored library not found inside the built APK for ABI arm64-v8a ..."
+mv /tmp/blobs-android-backup dart-packages/cratestack_cbor/blobs/android
+
+# validity: corrupt one ABI's .so -> the APK still builds AND still "has" the file (unzip -l sees an
+# entry), so only running the app on that ABI catches it — install + run on a matching device/emulator:
+printf 'NOT-AN-ELF' > dart-packages/cratestack_cbor/blobs/android/x86_64/libcratestack_client_flutter.so
+just cbor-example-verify-android
+just cbor-example-verify-android-emulator
+# expect (on an x86_64 emulator): CRATESTACK_CBOR_EXAMPLE_RESULT: FAILED ... dlopen failed: "/data/app/
+# ~~.../base.apk!/lib/x86_64/libcratestack_client_flutter.so" has bad ELF magic: 4e4f542d — note the
+# failure names the path INSIDE the installed APK, not a build-tree path, which is what proves this is
+# the real plugin mechanism rather than some dev-mode fallback answering instead
+just cbor-vendor-android   # restore
+```
+
 ## CI
 
-Two jobs in `.github/workflows/ci.yml`:
+Three jobs in `.github/workflows/ci.yml`:
 
 - **`flutter (cratestack_cbor package — native + web)`** installs the pinned toolchain, runs both
   vendor recipes, then `just cbor-verify-package` (the `dart test`/`dart test -p chrome` library-level
@@ -236,9 +308,20 @@ Two jobs in `.github/workflows/ci.yml`:
   compile, on top of the Rust/wasm builds the package job already does); see that job's comments in
   `ci.yml` for the CI-cost tradeoff and why it currently runs unscoped (this workflow has no path
   filtering anywhere yet — this job doesn't invent one unilaterally).
+- **`flutter (cratestack_cbor android — APK build + jniLibs proof)`** installs `cargo-ndk` (pinned
+  `=4.1.2`), the three Android rustup targets, and NDK 28.2.13676358 (matching Flutter's own default —
+  GitHub's runner image ships an SDK but not reliably that exact NDK version), then vendors and runs
+  `just cbor-example-verify-android` — a real `flutter build apk` plus the "is the library actually
+  inside the APK per ABI" assertion (gotcha 6). **Deliberately does not boot an emulator** — see that
+  job's own comment in `ci.yml` for the full reasoning, summarized: an NDK cross-compile + Gradle build
+  is bounded cost, but a hosted-runner emulator (KVM availability, boot time, flakiness) is
+  substantially heavier again, so the on-device round-trip proof
+  (`just cbor-example-verify-android-emulator`) stays a **local/manual** gate. This means CI proves the
+  library is *present*, and a human running the emulator recipe is what proves it is *valid and
+  loadable* — the two break-it proofs in the previous section are deliberately split the same way.
 
-Both build the artifacts fresh every run rather than trusting anything committed — which is the only
-option now that nothing is committed.
+All three build the artifacts fresh every run rather than trusting anything committed — which is the
+only option now that nothing is committed.
 
 **Known gap:** there is no byte-level staleness check between a fresh build and any reference.
 Rust/wasm builds are not reproducible here (embedded paths, timestamps), so the
@@ -261,18 +344,29 @@ dart-packages/cratestack_cbor/
 │       ├── web/web_cbor_codec.dart
 │       ├── web/wasm-pkg/             # GENERATED wasm build (gitignored)
 │       └── unsupported_cbor_codec.dart
-├── blobs/linux-x64/        # GENERATED native library (gitignored)
+├── blobs/
+│   ├── linux-x64/           # GENERATED native library (gitignored)
+│   └── android/<abi>/       # GENERATED native libraries, one per ABI (gitignored) —
+│                             # arm64-v8a, x86_64, armeabi-v7a; matches cargo-ndk's own -o layout,
+│                             # which is also exactly Android's jniLibs.srcDirs source-set layout
 ├── linux/
 │   └── CMakeLists.txt      # Flutter FFI-plugin build file — bundles the vendored .so
-├── example/                 # real Flutter app proving both backends — see its own README
+├── android/
+│   ├── build.gradle        # Flutter FFI-plugin build file — packages blobs/android/<abi>/*.so via jniLibs
+│   └── src/main/AndroidManifest.xml
+├── example/                 # real Flutter app proving all three backends — see its own README
 │   ├── lib/main.dart
 │   ├── linux/               # committed (unlike examples/flutter-riverpod, embedded-flutter) —
 │   │                         # this example's whole point is `flutter build`, so CI needs it
+│   ├── android/              # committed for the same reason (build.gradle.kts, AndroidManifest.xml,
+│   │                         # etc. — NOT .gradle/, local.properties, gradlew*, gradle-wrapper.jar:
+│   │                         # Flutter regenerates those from its own SDK cache, same convention
+│   │                         # `flutter create` itself uses)
 │   ├── web/
 │   └── tool/verify_web_console.dart   # headless-Chrome DevTools Protocol driver
 └── test/
     ├── shared_fixtures.dart          # the cross-language fixture set
-    ├── native_cbor_codec_test.dart   # @TestOn('vm')
+    ├── native_cbor_codec_test.dart   # @TestOn('vm') — Linux only; Android has no `dart test` story
     └── web_cbor_codec_test.dart      # @TestOn('browser')
 ```
 
@@ -285,11 +379,14 @@ npm umbrella).
 
 In the order they should land:
 
-1. **Platform matrix** — the remaining ~11 slices (Android ABIs, iOS device+sim, macOS arm64/x64,
-   Linux arm64, Windows x64). The Flutter plugin scaffolding pattern itself is now proven for Linux
-   (`linux/CMakeLists.txt`, consuming a prebuilt binary — no cargokit); replicating it per platform
-   (`macos/`, `windows/`, `android/`, `ios/` — each with their own bundling convention) is the
-   remaining work, plus actually building the binaries for each.
+1. **Platform matrix** — Linux x64, web, and Android (arm64-v8a, x86_64, armeabi-v7a) are done. The
+   remaining slices: iOS device+simulator, macOS arm64/x64, Linux arm64, Windows x64. The Flutter
+   plugin scaffolding pattern is now proven twice, for two genuinely different bundling mechanisms —
+   Linux's executable-relative bundle path (`linux/CMakeLists.txt`) and Android's SONAME-resolved
+   jniLibs (`android/build.gradle`) — so `macos/`, `windows/`, `ios/` are the remaining scaffolding
+   work, plus actually building the binaries for each. Note iOS/macOS use an xcframework convention
+   different from both of the two already proven here, and none of the three can be verified on a
+   Linux dev machine (no Xcode, no MSVC) the way Android could be.
 2. **pub.dev publish via GitHub Actions OIDC**, version-locked to the workspace version like the npm
    packages.
 3. **The generator seam.** `crates/cratestack-client-dart/templates/pubspec.yaml.j2` still emits
