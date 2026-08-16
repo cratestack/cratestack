@@ -253,6 +253,15 @@ add it to all of them.
 Given how many of the failure modes here look like passes, a green run is weak evidence on its own.
 The cheap discriminator is to break the artifact and confirm the suite notices:
 
+> **When you do this, make sure the thing you broke is the thing that gets run.** A corrupt-artifact
+> check only means something if the build under test was produced *after* the corruption. This bit
+> for real: `cbor-example-verify-android-emulator` used to install whatever APK was already on disk,
+> so corrupting a vendored `.so` and running it reported a cheerful round-trip from the **stale**
+> pre-corruption APK — a green that actively misleads. The tell was the clock: the run finished 18
+> seconds after the previous one, far too fast to have rebuilt anything. That recipe now rebuilds
+> unconditionally. If you add another verification recipe, make it own its build rather than trusting
+> a caller to have run one first.
+
 ```bash
 # web: corrupt the wasm -> must fail with a WebAssembly magic-word error
 printf 'BROKEN' > dart-packages/cratestack_cbor/lib/src/web/wasm-pkg/cratestack_cbor_wasm_bg.wasm

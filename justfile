@@ -1310,8 +1310,23 @@ cbor-example-verify-android-emulator:
 	fi
 	example=dart-packages/cratestack_cbor/example
 	apk="$example/build/app/outputs/flutter-apk/app-release.apk"
+	# Build FIRST, every time — do not install whatever APK happens to be
+	# lying around. An earlier version of this recipe required the caller to
+	# have run `cbor-example-verify-android` beforehand and merely errored if
+	# the APK was missing. That is a false-green generator: corrupt a vendored
+	# `.so`, run this recipe, and it installs the STALE pre-corruption APK and
+	# reports a happy round-trip. Reproduced exactly that way — the run
+	# finished 18 seconds after the previous one, far too fast to have rebuilt
+	# anything, and passed against a library that had been overwritten with
+	# `NOT-AN-ELF`.
+	#
+	# That matters more here than for most recipes, because this one exists
+	# specifically to be the trustworthy on-device check. A verification step
+	# that can validate an artifact other than the one on disk is worse than
+	# no verification, since it produces confident wrong answers.
+	just cbor-example-verify-android
 	if [ ! -f "$apk" ]; then
-	  echo "$apk not found — run 'just cbor-example-verify-android' first to build it." >&2
+	  echo "$apk missing even after cbor-example-verify-android — that recipe should have built it." >&2
 	  exit 1
 	fi
 	appId="dev.cratestack.examples.cratestack_cbor_example"
