@@ -921,6 +921,20 @@ cbor-vendor-native:
 	  --rust-features frb-glue \
 	  --dart-output "../../$pkg/lib/src/native/rust" \
 	  --dart-entrypoint-class-name CratestackCborRustLib)
+	# frb codegen's Dart output is not `dart format`-clean (unlike the Rust
+	# side, this one is safe and cheap to fix here rather than working
+	# around: `dart format` is idempotent, touches only the freshly
+	# generated files under lib/src/native/rust/ — never anything this repo
+	# tracks — and formatting has no effect on behavior, only on `pana`'s
+	# "code has no ... formatting issues" score (verified: `pana` flagged
+	# exactly frb_generated.dart/frb_generated.io.dart before this line
+	# existed). Best-effort: skip quietly if `dart` isn't on PATH yet,
+	# same tolerance `cbor-vendor-web`'s wasm-pack step gives other
+	# optional tooling — a later `just cbor-verify-package`/publish step
+	# needs `dart` anyway and will fail loudly there if it's truly absent.
+	if command -v dart >/dev/null; then
+	  dart format "$pkg/lib/src/native/rust" >/dev/null
+	fi
 	echo "=== cargo build --release --features frb-glue: cratestack-client-flutter ==="
 	cargo build -p cratestack-client-flutter --features frb-glue --release
 	target_dir="$(cargo metadata --no-deps --format-version=1 | python3 -c "import json,sys;print(json.load(sys.stdin)['target_directory'])")"
@@ -1495,6 +1509,27 @@ bump NEW:
 	# meant to fix (confirmed the hard way — this recipe's own first version
 	# broke `prepare-release.yml`'s "Bump workspace version" step in CI).
 	CRATESTACK_CLI_SKIP_DOWNLOAD=1 pnpm install --no-frozen-lockfile
+	# Same lockstep treatment for dart-packages/cratestack_cbor (cratestack#563
+	# pub.dev publish slice) — this recipe used to touch only `packages/`
+	# (npm) and Cargo.toml, leaving `dart-packages/cratestack_cbor/pubspec.yaml`
+	# at whatever version it last carried. That is exactly the drift class
+	# the `packages/*/package.json` comment above warns about, just for a
+	# third registry: the pub.dev publish workflow version-locks to the
+	# workspace version the same way the npm packages do (see
+	# docs/tooling/dart-publishing.md), so an un-bumped pubspec.yaml would
+	# make `publish-pubdev-cbor` in release-cli.yml try to republish an
+	# already-live version on the next tag and hard-fail (pub.dev has no
+	# skip-if-already-published path, unlike `publish-crates`).
+	#
+	# `pubspec.yaml`'s version key is unquoted YAML (`version: 0.8.0`, not
+	# `"version": "0.8.0"`), so this is a separate substitution from the
+	# npm one above, not a shared regex. Glob is one level deep
+	# (`dart-packages/*/pubspec.yaml`) so it can't reach
+	# `dart-packages/cratestack_cbor/example/pubspec.yaml` — that's an
+	# application target with its own independent `1.0.0+1` build-number
+	# scheme (see its own pubspec's comment), not a published package, and
+	# must NOT move in lockstep with the workspace version.
+	perl -i -pe "s/^version: \Q$current\E\$/version: {{NEW}}/" dart-packages/*/pubspec.yaml
 	# Refresh Cargo.lock so all entries pick up the new version.
 	# Exclude the Flutter crate (uncommitted frb_generated glue → E0583).
 	cargo check --workspace --exclude embedded_flutter_native --quiet
@@ -1888,9 +1923,16 @@ release VERSION mode='real':
 	# prepare-release.yml already carries the identical glob fix (#581) with
 	# the same reasoning; it was never backported here, so the documented
 	# local fallback in RELEASE.md kept the bug the CI path had shed.
-	if ! git diff --quiet -- '**/Cargo.toml' Cargo.lock ':(glob)packages/*/package.json'; then
+	#
+	# `':(glob)dart-packages/*/pubspec.yaml'` for the same reason, one
+	# registry later (cratestack#563): `just bump` above now rewrites
+	# `dart-packages/cratestack_cbor/pubspec.yaml` in the working tree, and
+	# missing it here would silently drop that bump from the release
+	# commit — same failure shape as the `packages/*/package.json` bug this
+	# comment already describes.
+	if ! git diff --quiet -- '**/Cargo.toml' Cargo.lock ':(glob)packages/*/package.json' ':(glob)dart-packages/*/pubspec.yaml'; then
 	  git add ':(glob)**/Cargo.toml' Cargo.lock pnpm-lock.yaml \
-	    ':(glob)packages/*/package.json'
+	    ':(glob)packages/*/package.json' ':(glob)dart-packages/*/pubspec.yaml'
 	  git commit -m "chore: bump workspace to v{{VERSION}}"
 	fi
 	just release-publish {{mode}}

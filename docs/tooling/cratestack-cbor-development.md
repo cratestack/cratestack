@@ -15,8 +15,12 @@ selection behind one import path for JavaScript. There is deliberately **no thir
 codec — both backends compile the same Rust.
 
 > **Status:** Linux x86_64, Android (arm64-v8a, x86_64, armeabi-v7a), and web. Every other platform
-> throws a clear `UnsupportedError`. The remaining matrix (iOS device+simulator, macOS arm64/x64,
-> Linux arm64, Windows x64) is still follow-up work. **Do not publish in this state.**
+> throws a clear `UnsupportedError`. iOS, macOS, Windows, and Linux arm64 are a deliberate maintainer
+> hold, not in-progress work — see cratestack#563's issue thread. **This is the intended platform
+> scope for the first pub.dev publish**, not a partial state to wait out. Publishing infrastructure
+> (CI workflow, version-locking, archive-verification gate) now exists — see
+> `docs/tooling/dart-publishing.md` for what's left: a one-time manual first publish only a
+> maintainer can perform, since pub.dev cannot automate the first version of a brand-new package.
 >
 > Proven for both `dart test` (as a Dart library) AND a real Flutter app — `flutter build linux` +
 > `flutter build web` (release, not the dev server), and a real `flutter build apk` installed and run
@@ -397,17 +401,28 @@ In the order they should land:
    different from both of the two already proven here, and none of the three can be verified on a
    Linux dev machine (no Xcode, no MSVC) the way Android could be.
 2. **pub.dev publish via GitHub Actions OIDC**, version-locked to the workspace version like the npm
-   packages.
+   packages — the CI workflow (`publish-pubdev-cbor` in `release-cli.yml`) and version-lockstep
+   (`just bump` now rewrites this package's `pubspec.yaml` too) both exist as of cratestack#563's
+   publish slice; see `docs/tooling/dart-publishing.md`. **What does not exist yet is the first real
+   publish** — pub.dev cannot automate a brand-new package's first version (verified against
+   dart.dev's own docs), so `cratestack_cbor` 0.8.0 is still unpublished until a maintainer runs the
+   manual bootstrap that document describes and enables Automated publishing on pub.dev's Admin tab.
+   Until then `publish-pubdev-cbor` fails on every tag push by design (same "hard cutover, not a
+   soft-skip" as the npm jobs) rather than quietly no-op'ing.
 3. **The generator seam.** `crates/cratestack-client-dart/templates/pubspec.yaml.j2` still emits
    `cbor: ^6.5.1`. It must stay that way until `cratestack_cbor` is actually on pub.dev — the
    template emits real dependencies, so naming an unpublished package breaks `dart pub get` for
    every generated client, including the committed `examples/flutter-riverpod/client` and its drift
-   check. **Publish strictly precedes the seam.**
+   check. **Publish strictly precedes the seam** — still blocked on (2) above.
 
 ## See also
 
-- `docs/tooling/npm-publishing.md` — the npm/crates.io release pipeline this will eventually sit
-  alongside, and the source of the "verify the tarball before publishing" habit in gotcha 1.
+- `docs/tooling/dart-publishing.md` — the pub.dev publish workflow, version-locking, the one-time
+  manual first-publish a maintainer must perform, and proof that the archive-verification gate is
+  load-bearing (not decorative): with the vendored `.so` files deleted, `dart pub publish --dry-run`
+  reports the exact same single warning as a fully-vendored package.
+- `docs/tooling/npm-publishing.md` — the npm/crates.io release pipeline this sits alongside, and the
+  source of the "verify the tarball before publishing" habit in gotcha 1.
 - `crates/cratestack-client-flutter/benches/cbor_bridge/README.md` — the benchmark, its real
   numbers, and why the JSON-text boundary caps them.
 - `dart-packages/cratestack_cbor/README.md` — the consumer-facing package README that ships to

@@ -1,11 +1,13 @@
 # Builds and publishes prebuilt `cratestack-cli` binaries to a GitHub
 # Release, so consumers can install without a Rust toolchain (see #131).
-# Also publishes every workspace crate to crates.io and every npm package
-# this repo ships, with npm provenance attached: @cratestack/cli (the
-# binary-fetching npm wrapper), the @cratestack/api family (10 hand-written
-# packages shipping their own compiled dist/), the @cratestack/cbor
-# family (cbor, cbor-node — a real napi-rs multi-platform native addon,
-# cbor-web), and @cratestack/refine.
+# Also publishes every workspace crate to crates.io, every npm package this
+# repo ships (with npm provenance attached: @cratestack/cli — the
+# binary-fetching npm wrapper, the @cratestack/api family — 10 hand-written
+# packages shipping their own compiled dist/, the @cratestack/cbor family —
+# cbor, cbor-node (a real napi-rs multi-platform native addon), cbor-web,
+# and @cratestack/refine), and the `cratestack_cbor` pub.dev package (a real
+# flutter_rust_bridge/wasm-bindgen Flutter plugin vendoring prebuilt
+# binaries for every platform it claims — see the publish-pubdev-cbor job).
 #
 # Triggers on a `vX.Y.Z` tag push. The normal way to produce one is the
 # "Prepare Release" workflow (bump versions → open a PR → merging it
@@ -13,8 +15,10 @@
 # available as a local/manual fallback that produces the same tag push.
 # This workflow also accepts a manual `workflow_dispatch` against an
 # EXISTING tag, for re-running a failed release — that dispatch path only
-# rebuilds/re-attaches binaries, it never touches crates.io or npm (see
-# the publish-crates/publish-npm* jobs' own comments for why).
+# rebuilds/re-attaches binaries, it never touches crates.io, npm, or pub.dev
+# (see the publish-crates/publish-npm*/publish-pubdev-cbor jobs' own
+# comments for why — none of these three registries support a delete+retry
+# the way a GitHub Release does).
 #
 # Artifact naming follows the cargo-binstall convention declared in
 # crates/cratestack-cli/Cargo.toml's [package.metadata.binstall] — the
@@ -718,3 +722,167 @@ jobs:
         run: npm install -g npm@^11
       - name: Publish @cratestack/refine
         run: .github/scripts/npm-publish.sh packages/cratestack-refine --access public --provenance
+
+  # ---- cratestack_cbor (pub.dev, cratestack#563) --------------------------
+  # The third registry this workflow publishes to, after crates.io and npm.
+  # `dart-packages/cratestack_cbor` vendors prebuilt native/wasm binaries
+  # INSIDE the pub.dev archive rather than fetching or building them at
+  # consumer install time (maintainer decision — see
+  # docs/tooling/cratestack-cbor-development.md and
+  # docs/tooling/dart-publishing.md) — the pub.dev analogue of what
+  # `build-cbor-node`/`publish-npm-cbor-node` already do for npm, except
+  # pub.dev has no per-platform optionalDependencies mechanism, so every
+  # platform's binary ships in the ONE archive instead of one subpackage
+  # per platform.
+  #
+  # Auth is pub.dev's own GitHub Actions OIDC ("Automated publishing" —
+  # https://dart.dev/tools/pub/automated-publishing), configured on the
+  # package's Admin tab (repository `cratestack/cratestack`, tag pattern
+  # `v{{version}}`) — no token, no secret, same shape as npm's Trusted
+  # Publishing above. `id-token: write` (job-scoped) is what that OIDC
+  # exchange uses; `dart pub publish` detects it automatically when run
+  # inside GitHub Actions with that permission, no separate login step.
+  #
+  # **This job cannot bootstrap the package.** pub.dev's own docs are
+  # explicit: "Today, you can only automate publishing of existing
+  # packages. To create a new package, you must publish the first version
+  # using `dart pub publish`." `cratestack_cbor` 0.8.0's first publish is
+  # therefore a one-time manual step by a maintainer (see
+  # docs/tooling/dart-publishing.md) — this job only works from the
+  # release AFTER that, once Automated publishing is enabled on pub.dev.
+  # Same tag-push-only gate as every other publish-* job here: a pub.dev
+  # publish has no delete, only limited retraction, so a throwaway test
+  # tag must never reach it.
+  #
+  # Same Flutter-not-Dart-SDK reasoning as `cratestack-cbor-package`/
+  # `cratestack-cbor-example`/`cratestack-cbor-android` in ci.yml: this
+  # package's pubspec declares `flutter.plugin.platforms`, which obliges
+  # `environment.flutter` and makes it unresolvable by a standalone Dart
+  # SDK. Every toolchain-install step below mirrors those three ci.yml
+  # jobs exactly (same pins, same reasoning) because this job vendors all
+  # three artifact sets those jobs vendor separately — see each ci.yml
+  # job's own comments for the individual "why" of each step; not
+  # repeated here.
+  publish-pubdev-cbor:
+    name: publish pub.dev package (cratestack_cbor)
+    if: github.event_name == 'push'
+    needs: [prepare]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-pubdev-cbor
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,wasm-pack
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Install flutter_rust_bridge_codegen (pinned =2.12.0)
+        run: cargo install --locked flutter_rust_bridge_codegen --version 2.12.0
+      # wasm-pack downloads its own binaryen (hardcoded version) mid-build
+      # unless a `wasm-opt` is already on PATH — see ci.yml's identical step
+      # for the incident that made this pinned rather than left to chance.
+      - name: Install binaryen (wasm-opt), pinned
+        run: |
+          set -euo pipefail
+          curl -fsSL -o binaryen.tar.gz \
+            "https://github.com/WebAssembly/binaryen/releases/download/version_130/binaryen-version_130-x86_64-linux.tar.gz"
+          tar -xzf binaryen.tar.gz
+          echo "$PWD/binaryen-version_130/bin" >> "$GITHUB_PATH"
+          rm binaryen.tar.gz
+      - name: Install cargo-ndk (pinned =4.1.2)
+        run: cargo install --locked cargo-ndk --version 4.1.2
+      - name: Install Android rustup targets
+        run: rustup target add aarch64-linux-android x86_64-linux-android armv7-linux-androideabi
+      - name: Resolve Android NDK
+        run: |
+          set -euo pipefail
+          pinned="${ANDROID_HOME}/ndk/28.2.13676358"
+          if [ -d "$pinned" ]; then
+            ndk="$pinned"
+          elif [ -n "${ANDROID_NDK_LATEST_HOME:-}" ] && [ -d "${ANDROID_NDK_LATEST_HOME}" ]; then
+            ndk="${ANDROID_NDK_LATEST_HOME}"
+          else
+            ndk="$(find "${ANDROID_HOME}/ndk" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -V | tail -1)"
+          fi
+          if [ -z "${ndk:-}" ] || [ ! -d "$ndk" ]; then
+            echo "::error::no Android NDK found. ANDROID_HOME=${ANDROID_HOME:-unset}, ANDROID_NDK_LATEST_HOME=${ANDROID_NDK_LATEST_HOME:-unset}" >&2
+            ls -la "${ANDROID_HOME:-/nonexistent}" || true
+            ls -la "${ANDROID_HOME:-/nonexistent}/ndk" || true
+            exit 1
+          fi
+          echo "Using Android NDK: ${ndk}"
+          echo "ANDROID_NDK_HOME=${ndk}" >> "$GITHUB_ENV"
+      # THE STEP THIS JOB EXISTS FOR: all three artifact sets are gitignored
+      # build output, never committed (see dart-packages/cratestack_cbor/
+      # .gitignore) — a fresh checkout has none of them. Skipping any one of
+      # these three would still let `dart pub publish` succeed (see the
+      # verification step below for proof that pub.dev's own validator
+      # gives no warning for a missing native library), so all three run
+      # unconditionally, every release, with no "already vendored, skip"
+      # shortcut.
+      - name: Vendor native artifacts (flutter_rust_bridge glue + Linux release library)
+        run: just cbor-vendor-native
+      - name: Vendor web artifact (wasm-pack --target web)
+        run: just cbor-vendor-web
+      - name: Vendor Android artifacts (cargo ndk cross-compile, 3 ABIs)
+        run: just cbor-vendor-android
+      # THE GATE (cratestack#563's explicit requirement): prove the archive
+      # actually contains what was just vendored, BEFORE publishing, rather
+      # than trusting the vendor steps above to have worked. This is not
+      # decorative — verified by hand (see docs/tooling/dart-publishing.md's
+      # "can it fail" experiment): `dart pub publish --dry-run` against this
+      # package with `blobs/` deleted reports the exact same single warning
+      # as a fully-vendored package and NO indication anything is missing —
+      # the native library is loaded via a hardcoded runtime path string,
+      # not a declared Flutter asset, so pub's own analyzer-backed validator
+      # never sees it. Counting the archive listing itself is therefore the
+      # only real check.
+      - name: Verify the archive actually contains the vendored artifacts
+        working-directory: dart-packages/cratestack_cbor
+        run: |
+          set -euo pipefail
+          dart pub get
+          # `dart pub publish --dry-run` exits non-zero even for a fully
+          # vendored, genuinely publishable package — it always reports one
+          # benign warning about the intentionally-exact `flutter_rust_bridge`
+          # pin (required because the vendored glue is codegen-version-
+          # specific; see docs/tooling/cratestack-cbor-development.md gotcha
+          # 3). So the exit code can't distinguish "fine" from "broken" —
+          # capture the output regardless of status and inspect its CONTENT.
+          set +e
+          dry_run_output="$(dart pub publish --dry-run 2>&1)"
+          set -e
+          echo "$dry_run_output"
+
+          # Exactly 4 vendored native libraries are expected: linux-x64,
+          # android/arm64-v8a, android/x86_64, android/armeabi-v7a.
+          so_count=$(grep -c 'libcratestack_client_flutter\.so' <<<"$dry_run_output" || true)
+          # Exactly 2 vendored web artifacts: cratestack_cbor_wasm.js and
+          # cratestack_cbor_wasm_bg.wasm.
+          wasm_count=$(grep -c 'cratestack_cbor_wasm' <<<"$dry_run_output" || true)
+
+          fail=0
+          if [ "$so_count" -ne 4 ]; then
+            echo "::error::expected 4 vendored libcratestack_client_flutter.so entries in the pub.dev archive (linux-x64 + arm64-v8a + x86_64 + armeabi-v7a), found $so_count. cbor-vendor-native/cbor-vendor-android did not populate the archive — DO NOT PUBLISH." >&2
+            fail=1
+          fi
+          if [ "$wasm_count" -ne 2 ]; then
+            echo "::error::expected 2 vendored cratestack_cbor_wasm entries in the pub.dev archive (.js + _bg.wasm), found $wasm_count. cbor-vendor-web did not populate the archive — DO NOT PUBLISH." >&2
+            fail=1
+          fi
+          if [ "$fail" -ne 0 ]; then
+            exit 1
+          fi
+          echo "✓ archive contains all vendored artifacts: 4 native libraries + 2 wasm files"
+      - name: Publish cratestack_cbor to pub.dev
+        working-directory: dart-packages/cratestack_cbor
+        run: dart pub publish --force

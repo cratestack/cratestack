@@ -1,10 +1,12 @@
 name: cratestack_cbor
+# Kept under pub.dev's recommended 60-180 char range (pana flags longer
+# descriptions as truncated in search results) — see README.md and
+# docs/tooling/dart-publishing.md for the full picture this necessarily
+# compresses.
 description: >-
-  Native CBOR codec for CrateStack Dart/Flutter clients: one uniform API
-  backed by flutter_rust_bridge (vendored prebuilt native library) on
-  native platforms and the existing cratestack-cbor-wasm wasm-bindgen
-  artifact (vendored, loaded via dart:js_interop) on the web. Mirrors
-  @cratestack/cbor's conditional-export umbrella shape for JavaScript.
+  Native CBOR codec for CrateStack Dart/Flutter: flutter_rust_bridge
+  (native, vendored) and wasm-bindgen (web, vendored), mirroring
+  @cratestack/cbor conditional exports for JS.
 version: 0.8.0
 homepage: https://cratestack.dev
 repository: https://github.com/cratestack/cratestack
@@ -13,10 +15,6 @@ topics:
   - cbor
   - codec
   - rpc
-# NOT published in this PR (cratestack#563 slice: package structure +
-# both backends proven by real execution; publishing is a separate,
-# maintainer-gated step — see this package's README).
-publish_to: none
 
 environment:
   sdk: ^3.5.0

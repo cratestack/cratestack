@@ -263,8 +263,17 @@ jobs:
           # `/`, so this is exactly one level deep and can't reach into a
           # package's own `node_modules/`. `just bump`'s own perl invocation
           # uses the identical glob — the two must stay in agreement.
+          #
+          # `':(glob)dart-packages/*/pubspec.yaml'` for the identical reason,
+          # one registry later (cratestack#563): `just bump` also rewrites
+          # `dart-packages/cratestack_cbor/pubspec.yaml` now, version-locking
+          # the pub.dev package to the workspace version the same way the
+          # npm packages already are. Missing it here would silently drop
+          # that bump from the release commit — same failure shape this
+          # comment already describes for `packages/*/package.json`, just a
+          # third registry away from being noticed.
           git add CHANGELOG.md ':(glob)**/Cargo.toml' ':(glob)**/Cargo.lock' pnpm-lock.yaml \
-            ':(glob)packages/*/package.json'
+            ':(glob)packages/*/package.json' ':(glob)dart-packages/*/pubspec.yaml'
           git commit -m "chore: bump workspace to v${version} and seed CHANGELOG section"
           git push origin "$branch"
 
@@ -296,7 +305,7 @@ jobs:
 
           This PR changes:
 
-          - Bumps the workspace version to \`${version}\` across every crate's \`Cargo.toml\`, \`Cargo.lock\`, and every \`packages/*/package.json\` (\`@cratestack/cli\`; the split \`@cratestack/api\` family: \`api\`, \`ts-types\`, \`link-batch\`, \`link-logger\`, \`runtime-fetch\`, \`runtime-axios\`, \`validator-zod\`, \`validator-yup\`, \`adapter-tanstack-query\`, \`adapter-rtk\`; the \`@cratestack/cbor\` family: \`cbor\`, \`cbor-node\`, \`cbor-web\`; \`@cratestack/refine\`; and the \`cratestack-vscode\` extension), refreshing \`pnpm-lock.yaml\` to match. The list is a glob, not an enumeration — a new package under \`packages/\` is picked up automatically.
+          - Bumps the workspace version to \`${version}\` across every crate's \`Cargo.toml\`, \`Cargo.lock\`, every \`packages/*/package.json\` (\`@cratestack/cli\`; the split \`@cratestack/api\` family: \`api\`, \`ts-types\`, \`link-batch\`, \`link-logger\`, \`runtime-fetch\`, \`runtime-axios\`, \`validator-zod\`, \`validator-yup\`, \`adapter-tanstack-query\`, \`adapter-rtk\`; the \`@cratestack/cbor\` family: \`cbor\`, \`cbor-node\`, \`cbor-web\`; \`@cratestack/refine\`; and the \`cratestack-vscode\` extension), and \`dart-packages/cratestack_cbor/pubspec.yaml\` (the \`cratestack_cbor\` pub.dev package), refreshing \`pnpm-lock.yaml\` to match. Both package lists are globs, not enumerations — a new package under \`packages/\` or \`dart-packages/\` is picked up automatically.
 
           It solves:
 

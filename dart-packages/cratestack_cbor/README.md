@@ -50,10 +50,15 @@ This is a **partial platform matrix** (cratestack#563), not the full package:
   `UnsupportedError` on every other platform (macOS, Windows, iOS, Linux
   arm64) rather than silently failing. The remaining matrix is deliberate
   follow-up work, not an oversight.
-- **Not published to pub.dev.** `pubspec.yaml` declares `publish_to: none`
-  deliberately. Publishing is a separate, maintainer-gated step (verified
-  publisher `cratestack.dev`, GitHub Actions OIDC — see cratestack#563's
-  issue thread).
+- **Not published to pub.dev yet.** The publish workflow (GitHub Actions
+  OIDC, verified publisher `cratestack.dev`) and version-locking to the
+  workspace version both exist — see
+  `docs/tooling/dart-publishing.md` — but pub.dev cannot automate a brand
+  new package's *first* publish (only subsequent versions). Until a
+  maintainer performs that one-time manual `dart pub publish` and enables
+  Automated publishing on pub.dev's Admin tab, this package stays
+  unpublished and `publish-pubdev-cbor` in `release-cli.yml` fails on every
+  tag push by design, rather than silently skipping.
 - **The Dart generator does not use this package yet.**
   `crates/cratestack-client-dart/templates/pubspec.yaml.j2` still emits
   `cbor: ^6.5.1` — flipping that seam before this package is published would
