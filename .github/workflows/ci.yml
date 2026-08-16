@@ -832,11 +832,47 @@ jobs:
       # comment and docs/tooling/cratestack-cbor-development.md). Installing
       # it explicitly makes the build deterministic regardless of what the
       # runner image happens to preinstall.
-      - name: Install Android NDK 28.2.13676358
+      # Use an NDK the runner already ships rather than downloading one. The
+      # previous version of this step ran:
+      #
+      #   yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install … >/dev/null
+      #
+      # and failed on the runner with its output discarded, so the reason was
+      # invisible. Two independent defects in one line:
+      #
+      #  1. `yes | cmd` under `set -o pipefail` is a SIGPIPE trap. sdkmanager
+      #     stops reading once its prompts are answered, `yes` is killed with
+      #     SIGPIPE (exit 141), and pipefail propagates that — the step fails
+      #     even when the install succeeded. Verified directly:
+      #     `bash -c 'set -euo pipefail; yes | true'` exits 141. This is the
+      #     same trap as the `| head -n1` bug fixed in cratestack#578.
+      #  2. `>/dev/null` discarded the diagnostic that would have said whether
+      #     `cmdline-tools/latest` even exists at that path on this image.
+      #
+      # GitHub's ubuntu images ship several NDKs and set ANDROID_NDK_LATEST_HOME,
+      # so the download was unnecessary work as well as a failure source. Prefer
+      # the pinned version when present, fall back to the newest preinstalled,
+      # and fail loudly with a directory listing if there is genuinely none —
+      # never silently.
+      - name: Resolve Android NDK
         run: |
           set -euo pipefail
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;28.2.13676358" >/dev/null
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
+          pinned="${ANDROID_HOME}/ndk/28.2.13676358"
+          if [ -d "$pinned" ]; then
+            ndk="$pinned"
+          elif [ -n "${ANDROID_NDK_LATEST_HOME:-}" ] && [ -d "${ANDROID_NDK_LATEST_HOME}" ]; then
+            ndk="${ANDROID_NDK_LATEST_HOME}"
+          else
+            ndk="$(find "${ANDROID_HOME}/ndk" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -V | tail -1)"
+          fi
+          if [ -z "${ndk:-}" ] || [ ! -d "$ndk" ]; then
+            echo "::error::no Android NDK found. ANDROID_HOME=${ANDROID_HOME:-unset}, ANDROID_NDK_LATEST_HOME=${ANDROID_NDK_LATEST_HOME:-unset}" >&2
+            ls -la "${ANDROID_HOME:-/nonexistent}" || true
+            ls -la "${ANDROID_HOME:-/nonexistent}/ndk" || true
+            exit 1
+          fi
+          echo "Using Android NDK: ${ndk}"
+          echo "ANDROID_NDK_HOME=${ndk}" >> "$GITHUB_ENV"
       # frb glue is platform-independent (codegen introspects Rust source,
       # not a target triple) — cbor-vendor-native produces it as a side
       # effect of building the Linux host library, and cbor-vendor-android
