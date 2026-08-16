@@ -810,15 +810,29 @@ jobs:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      # wasm-pack is needed even though this job never builds for the web —
+      # see the "Vendor web artifact" step below for why.
       - uses: taiki-e/install-action@v2
         with:
-          tool: just
+          tool: just,wasm-pack
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
       - name: Install flutter_rust_bridge_codegen (pinned =2.12.0)
         run: cargo install --locked flutter_rust_bridge_codegen --version 2.12.0
+      # Same reason as the cbor-package and js-cbor-wasm jobs: wasm-pack
+      # downloads its own binaryen (hardcoded version) mid-build unless a
+      # `wasm-opt` is already on PATH, and that unpinned fetch has failed a
+      # real release run before.
+      - name: Install binaryen (wasm-opt), pinned
+        run: |
+          set -euo pipefail
+          curl -fsSL -o binaryen.tar.gz \
+            "https://github.com/WebAssembly/binaryen/releases/download/version_130/binaryen-version_130-x86_64-linux.tar.gz"
+          tar -xzf binaryen.tar.gz
+          echo "$PWD/binaryen-version_130/bin" >> "$GITHUB_PATH"
+          rm binaryen.tar.gz
       # Pinned exact — matches the version this repo's own vendoring was
       # verified against (see docs/tooling/cratestack-cbor-development.md).
       - name: Install cargo-ndk (pinned =4.1.2)
@@ -881,6 +895,29 @@ jobs:
         run: just cbor-vendor-native
       - name: Vendor Android artifacts (cargo ndk cross-compile, 3 ABIs)
         run: just cbor-vendor-android
+      # An ANDROID job has to build the WEB artifact. That reads as a mistake
+      # and is not: `pubspec.yaml` declares the wasm pair under `flutter:
+      # assets:`, which is how the web backend loads it at runtime, and
+      # Flutter has no per-platform asset conditionals. So the asset list
+      # applies to every build of any app depending on this package, and a
+      # missing file fails the Android build outright:
+      #
+      #   Target aot_android_asset_bundle failed: Exception: Failed to bundle
+      #   asset files.
+      #
+      # This did not reproduce locally because a developer who has run the
+      # full bootstrap already has the wasm on disk. Only a job that vendors
+      # a strict subset hits it.
+      #
+      # KNOWN CONSEQUENCE, not yet addressed: the same declaration means the
+      # built APK ships ~145 KB of wasm it can never execute (verified:
+      # `assets/flutter_assets/packages/cratestack_cbor/.../cratestack_cbor_wasm_bg.wasm`
+      # is inside app-release.apk). Every Android/iOS/desktop consumer carries
+      # that dead weight. Fixing it properly is a package-structure decision
+      # (e.g. splitting the web backend into its own package) and is left to
+      # the maintainer rather than decided here — see cratestack#563.
+      - name: Vendor web artifact (required by the pubspec asset list, see above)
+        run: just cbor-vendor-web
       - name: flutter build apk + assert vendored library present per ABI
         run: just cbor-example-verify-android
 
