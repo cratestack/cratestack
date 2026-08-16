@@ -110,15 +110,31 @@ _fmt extra='':
 	# resolution keeps the real sources covered. Verified both directions:
 	# with the placeholder, `cargo fmt -p cratestack-client-flutter
 	# --check` exits 0 on the real tree, and exits 1 reporting a diff when
-	# a deliberately misformatted function is added. The placeholder is
-	# only ever created when the real generated file is absent, and is
-	# removed again via `trap` so an interrupted run cannot leave a stub
-	# that a later `--features frb-glue` build would try to compile.
+	# a deliberately misformatted function is added.
+	#
+	# The placeholder is used whether or not the real glue exists, and that
+	# is the point: generated frb output is NOT rustfmt-clean (14k lines,
+	# ~30 diffs), so formatting it is both wrong and noisy. An earlier
+	# version of this only substituted when the file was absent, which
+	# looked right but meant that any developer who ran `just frb-generate`
+	# or `just cbor-vendor-native` then hit `just fmt-check` failing on
+	# generated code they did not write and must not edit. CI's rustfmt job
+	# never caught it because it runs on a fresh checkout where the glue is
+	# absent — a local-only breakage.
+	#
+	# So: stash any real glue aside, format against a placeholder, restore.
+	# `trap` covers interruption, so a run killed mid-flight cannot leave
+	# the placeholder in place of real glue that a later `--features
+	# frb-glue` build would then try to compile.
 	frb_glue=crates/cratestack-client-flutter/src/frb_generated.rs
-	if [ ! -f "$frb_glue" ]; then
-	  printf '// Placeholder so rustfmt can resolve `mod frb_generated;`.\n' > "$frb_glue"
+	frb_stash="${frb_glue}.fmt-stash"
+	if [ -f "$frb_glue" ]; then
+	  mv "$frb_glue" "$frb_stash"
+	  trap 'mv -f "'"$frb_stash"'" "'"$frb_glue"'"' EXIT
+	else
 	  trap 'rm -f "'"$frb_glue"'"' EXIT
 	fi
+	printf '// Placeholder so rustfmt can resolve `mod frb_generated;`.\n' > "$frb_glue"
 	pkgs=$(cargo metadata --no-deps --format-version 1 \
 	  | python3 -c "import json,sys;print(' '.join(x['name'] for x in json.load(sys.stdin)['packages'] if x['name'] != 'embedded_flutter_native'))")
 	args=()
