@@ -1,0 +1,3 @@
+# Intentionally empty: pub consults .gitignore only when no .pubignore
+# exists here. These build outputs are gitignored (repo convention) but
+# MUST ship in the published archive (cratestack#563 vendoring decision).

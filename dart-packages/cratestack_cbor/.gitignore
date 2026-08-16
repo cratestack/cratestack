@@ -1,4 +1,11 @@
-# Dart tooling state.
 .dart_tool/
 .packages
 pubspec.lock
+
+# Build outputs, vendored into the PUBLISHED archive but never into VCS
+# (CLAUDE.md: "Don't commit generated build output"; cratestack#563:
+# frb glue is "generated in CI, not committed"). `.pubignore` above keeps
+# `dart pub publish` shipping them anyway — see this package's README.
+blobs/
+lib/src/web/wasm-pkg/
+lib/src/native/rust/

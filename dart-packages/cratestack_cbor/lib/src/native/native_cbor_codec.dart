@@ -116,7 +116,13 @@ Future<String> resolveVendoredLibraryPath() async {
   if (!libraryFile.existsSync()) {
     throw StateError(
       'cratestack_cbor: vendored native library not found at '
-      '${libraryFile.path}. The package installation may be corrupt.',
+      '${libraryFile.path}.\n'
+      'If you are working in the cratestack repo, this is expected on a '
+      'fresh clone — the vendored artifacts are build output and are not '
+      'committed (see this package\'s README). Run:\n'
+      '    just cbor-vendor-native\n'
+      'If you installed this package from pub.dev, the archive should have '
+      'shipped this file; the installation may be corrupt.',
     );
   }
   return libraryFile.path;

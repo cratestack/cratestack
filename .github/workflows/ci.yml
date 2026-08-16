@@ -652,31 +652,11 @@ jobs:
           tar -xzf binaryen.tar.gz
           echo "$PWD/binaryen-version_130/bin" >> "$GITHUB_PATH"
           rm binaryen.tar.gz
-      # The COMMITTED artifacts are what ships: the pub.dev package vendors
-      # its binaries (cratestack#563 decision), so a consumer runs exactly
-      # these bytes. Verify them BEFORE re-vendoring — otherwise the two
-      # vendor steps below overwrite them with fresh local builds and the
-      # only thing ever tested is the build mechanism, leaving the shipped
-      # artifact unverified. A stale or corrupt committed blob would then
-      # sail through green, which for a vendoring distribution model is
-      # precisely backwards.
-      - name: Verify the COMMITTED vendored artifacts (this is what ships)
-        env:
-          CHROME_EXECUTABLE: /usr/bin/google-chrome
-        run: just cbor-verify-package
       - name: Vendor native artifacts (flutter_rust_bridge glue + release library)
         run: just cbor-vendor-native
       - name: Vendor web artifact (wasm-pack --target web)
         run: just cbor-vendor-web
-      # Second pass, against freshly regenerated artifacts. This proves the
-      # vendor recipes still work against current Rust source — a different
-      # claim from the one above, and both are worth making. Note this is
-      # NOT a byte-level drift check: Rust/wasm builds are not reproducible
-      # here (embedded paths, timestamps), so `git diff --exit-code` on the
-      # blobs would fail spuriously. Behavioural equivalence is what is
-      # asserted; a true staleness check needs reproducible builds and is
-      # left for the publish slice.
-      - name: Verify freshly re-vendored artifacts (proves the recipes still work)
+      - name: Verify both backends (dart test + dart test -p chrome)
         env:
           CHROME_EXECUTABLE: /usr/bin/google-chrome
         run: just cbor-verify-package

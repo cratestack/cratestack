@@ -79,36 +79,45 @@ just cbor-vendor-web      # wasm-pack --target web build -> lib/src/web/wasm-pkg
 
 See the `justfile` for what each does.
 
-Unlike `crates/cratestack-client-flutter`'s own internal frb verification
-harness (whose generated glue is gitignored — cratestack#563's "generated in
-CI, not committed" decision), **everything this package vendors is
-`git`-tracked**: the Dart glue at `lib/src/native/rust/`, the native library
-at `blobs/linux-x64/`, and the wasm build at `lib/src/web/wasm-pkg/`. Two
-reasons, one about the audience and one about pub's actual publish mechanics:
+**None of the vendored output is `git`-tracked** — not the Dart glue at
+`lib/src/native/rust/`, the native library at `blobs/linux-x64/`, nor the
+wasm build at `lib/src/web/wasm-pkg/`. This matches `CLAUDE.md`'s "don't
+commit generated build output", cratestack#563's own "frb glue is generated
+in CI, not committed" decision (which gitignores the byte-identical
+`frb_generated.*` files in `crates/cratestack-client-flutter`), and the two
+sibling npm packages: `@cratestack/cbor-node`'s compiled `.node` addon and
+`@cratestack/cbor-web`'s `wasm-pkg/` are both gitignored, with the release
+workflow building them immediately before publishing.
 
-- A pub.dev consumer has no Rust toolchain or `flutter_rust_bridge_codegen`
-  to regenerate the Dart glue themselves, unlike this monorepo's own CI.
-- **`dart pub publish` works differently from `npm publish`, and this is
-  load-bearing, not a stylistic choice.** `@cratestack/cbor-node`'s compiled
-  `.node` addon and `@cratestack/cbor-web`'s `wasm-pkg/` build output are
-  both *gitignored* in this repo — npm's publish step (`napi build` /
-  `wasm:build`, run as a `prepublishOnly`/`prebuild` lifecycle hook) rebuilds
-  them fresh right before `npm publish` regardless of git tracking, since
-  `npm pack` decides what ships via the package's `files` field, not via
-  git. Per [pub.dev's publishing docs](https://dart.dev/tools/pub/publishing),
-  `pub` instead uses `git ls-files` to decide what to publish when the
-  package directory is inside a Git working tree — **files ignored by
-  `.gitignore` are silently excluded from the published tarball**, with no
-  `files`-field equivalent to opt them back in. Gitignoring these three
-  directories the way their npm counterparts are gitignored would make a
-  real `dart pub publish` ship a package missing the very artifacts this
-  ticket exists to vendor, with no error — `pub publish` doesn't warn about
-  excluded files, it just omits them.
+There is a real trap here, and `.pubignore` is what disarms it. Per
+[pub.dev's publishing docs](https://dart.dev/tools/pub/publishing), `pub`
+uses `git ls-files` to decide what to publish when the package directory
+sits inside a Git working tree — so files excluded by `.gitignore` are
+**silently omitted from the published tarball**, with no `files`-field
+equivalent to opt them back in and no warning. Gitignoring these
+directories naively would ship a package missing the very artifacts this
+ticket exists to vendor.
 
-All three are therefore committed deliberately, verified regenerable
-byte-for-byte via the two `just` recipes above, and should be treated as
-build outputs to *keep in sync* with the source crates, not source to
-hand-edit.
+`.pubignore` resolves it: when present in a directory, `pub` consults it
+*instead of* `.gitignore` there. This package's `.pubignore` is
+intentionally empty of exclusions, so the gitignored build outputs are
+still packed. **Verified, not assumed** — `dart pub publish --dry-run` with
+all three directories gitignored and untracked still lists them:
+
+```
+│       └── libcratestack_client_flutter.so (903 KB)
+│           │   ├── cratestack_cbor_wasm.js (21 KB)
+│           │   └── cratestack_cbor_wasm_bg.wasm (121 KB)
+```
+
+Archive size is identical either way (502 KB), and `git ls-files` reports
+zero of them tracked. So the published package vendors its binaries exactly
+as decided, while the repository stays free of build output.
+
+Regenerate them with the two `just` recipes above; treat them as build
+outputs to keep in sync with the source crates, never as source to
+hand-edit. **`.pubignore` must stay tracked** — without it in a fresh
+checkout, publishing silently reverts to dropping these files.
 
 ## Verifying both backends
 
