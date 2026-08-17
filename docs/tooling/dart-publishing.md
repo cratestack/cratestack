@@ -68,10 +68,21 @@ in `release-cli.yml` **cannot** publish `cratestack_cbor` for the first time, th
    cd dart-packages/cratestack_cbor
    just cbor-vendor-native
    just cbor-vendor-web
-   just cbor-vendor-android      # needs ANDROID_HOME/ANDROID_NDK_HOME — see the dev doc
+   just cbor-vendor-android      # finds the Android SDK/NDK itself; see below if it can't
    dart pub publish --dry-run    # READ THE OUTPUT — see "Verify before publishing" below
    dart pub publish              # real, interactive; irreversible
    ```
+
+   `cbor-vendor-android` locates the SDK itself — `$ANDROID_HOME`, then `$ANDROID_SDK_ROOT`, then
+   `~/Android/Sdk`, then `~/Library/Android/sdk` — and picks the newest NDK under `<sdk>/ndk/`. It
+   prints which it chose. If it cannot find either, it says so with the paths it tried; export
+   `ANDROID_HOME` (and optionally `ANDROID_NDK_HOME`) and re-run.
+
+   > This step used to demand both variables and abort with `ANDROID_HOME is not set`. That fired
+   > during a real first-publish run, *after* the native and web artifacts had already been vendored
+   > — the worst moment for a stop, and in the middle of an irreversible sequence. The variables were
+   > mentioned in the docs, but as a trailing pointer to another file, which is not where anyone is
+   > looking when a command stops mid-flow.
 
    `dart pub publish` (no `--force`) prompts for confirmation and requires an interactive `dart pub
    login` (or an already-authenticated pub credentials file) — this cannot be scripted or delegated,

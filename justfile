@@ -1004,16 +1004,49 @@ cbor-vendor-android:
 	  echo "cargo-ndk not found. Run: cargo install cargo-ndk" >&2
 	  exit 1
 	fi
+	# Locate the SDK and NDK rather than demanding the caller export them.
+	# Requiring `ANDROID_HOME` outright blocked a real first-publish run: a
+	# maintainer following docs/tooling/dart-publishing.md's manual sequence
+	# got `ANDROID_HOME is not set` partway through, after the native and web
+	# artifacts had already been vendored. The doc did mention the variables,
+	# but in a trailing comment pointing at a different document — which is
+	# not where you are looking when a recipe stops mid-flow.
+	#
+	# Anyone who can build this package at all has a working Flutter Android
+	# setup (`flutter doctor` finds the SDK without these variables), so the
+	# information is on disk; the recipe just was not looking. Same shape as
+	# the CI NDK resolution: prefer an explicit value, fall back to the
+	# standard locations, fail loudly with the real paths tried if there is
+	# genuinely nothing.
 	if [ -z "${ANDROID_HOME:-}" ]; then
-	  echo "ANDROID_HOME is not set. Point it at your Android SDK (e.g. ~/Android/Sdk)." >&2
+	  for candidate in "${ANDROID_SDK_ROOT:-}" "$HOME/Android/Sdk" "$HOME/Library/Android/sdk"; do
+	    if [ -n "$candidate" ] && [ -d "$candidate" ]; then
+	      ANDROID_HOME="$candidate"
+	      export ANDROID_HOME
+	      echo "ANDROID_HOME not set; using detected Android SDK: $ANDROID_HOME"
+	      break
+	    fi
+	  done
+	fi
+	if [ -z "${ANDROID_HOME:-}" ]; then
+	  echo "No Android SDK found. Set ANDROID_HOME, or install the SDK to one of:" >&2
+	  echo "    \$ANDROID_SDK_ROOT, ~/Android/Sdk (Linux), ~/Library/Android/sdk (macOS)" >&2
 	  exit 1
 	fi
+	# Any reasonably recent NDK works — verified by building and running this
+	# package's Android artifacts end to end on a device with both
+	# 28.2.13676358 and 30.0.14904198 (cratestack#563), so picking the newest
+	# installed is safe rather than a guess.
 	if [ -z "${ANDROID_NDK_HOME:-}" ]; then
-	  echo "ANDROID_NDK_HOME is not set. Point it at an installed NDK under \$ANDROID_HOME/ndk/<version> (e.g. 28.2.13676358, matching Flutter's own default)." >&2
-	  exit 1
+	  ANDROID_NDK_HOME="$(find "${ANDROID_HOME}/ndk" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -V | tail -1)"
+	  if [ -n "$ANDROID_NDK_HOME" ]; then
+	    export ANDROID_NDK_HOME
+	    echo "ANDROID_NDK_HOME not set; using newest installed NDK: $ANDROID_NDK_HOME"
+	  fi
 	fi
-	if [ ! -d "$ANDROID_NDK_HOME" ]; then
-	  echo "ANDROID_NDK_HOME ($ANDROID_NDK_HOME) does not exist." >&2
+	if [ -z "${ANDROID_NDK_HOME:-}" ] || [ ! -d "$ANDROID_NDK_HOME" ]; then
+	  echo "No Android NDK found under ${ANDROID_HOME}/ndk (ANDROID_NDK_HOME=${ANDROID_NDK_HOME:-unset})." >&2
+	  echo "Install one via Android Studio's SDK Manager, or set ANDROID_NDK_HOME explicitly." >&2
 	  exit 1
 	fi
 	missing_targets=""
