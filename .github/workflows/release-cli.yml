@@ -34,6 +34,11 @@ on:
       tag:
         description: "Existing tag to (re)build and attach binaries to, e.g. v0.4.13"
         required: true
+      verify_pubdev_credentials:
+        description: "Verify pub.dev OIDC auth against the tag's ALREADY-PUBLISHED version. Publishes nothing."
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -763,6 +768,143 @@ jobs:
   # three artifact sets those jobs vendor separately — see each ci.yml
   # job's own comments for the individual "why" of each step; not
   # repeated here.
+  # Proves the pub.dev OIDC credential path works WITHOUT publishing anything.
+  #
+  # Why this exists: every fix to the publish path so far has been unverifiable
+  # until a real tag met a real registry, and four consecutive releases each
+  # surfaced a different defect that way. The last one — v0.8.2 — printed
+  # "Authentication failed!", published nothing, and exited 0. This job closes
+  # that loop cheaply: run it on demand, learn whether authentication works,
+  # spend no version number finding out.
+  #
+  # The trick is to attempt a publish of a version pub.dev ALREADY HAS. The two
+  # outcomes are unambiguous and neither one publishes:
+  #
+  #   "already exists" / "version ... has already been published"
+  #        -> authentication SUCCEEDED. pub.dev accepted the credential and
+  #           rejected on version. This is the pass condition.
+  #   "Authentication failed" / "Invalid JWT" / an OAuth consent URL
+  #        -> the credential path is still broken.
+  #
+  # SAFETY: this refuses to run unless the version in pubspec.yaml is already
+  # live on pub.dev. Without that gate the job would be a publish button on a
+  # workflow_dispatch trigger, which is exactly what `if: github.event_name ==
+  # 'push'` on the real publish job exists to prevent.
+  verify-pubdev-credentials:
+    name: verify pub.dev OIDC credentials (publishes nothing)
+    if: github.event_name == 'workflow_dispatch' && inputs.verify_pubdev_credentials
+    needs: [prepare]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      # THE SAFETY GATE. Everything else in this job is a diagnostic; this is
+      # the part that makes running it safe. If the version is not already on
+      # pub.dev, the publish attempt below would really publish it.
+      - name: Refuse to run unless this version is already published
+        run: |
+          set -euo pipefail
+          want="$(grep -m1 '^version:' dart-packages/cratestack_cbor/pubspec.yaml | awk '{print $2}')"
+          live="$(curl -fsSL https://pub.dev/api/packages/cratestack_cbor \
+                  | python3 -c 'import json,sys; print(" ".join(v["version"] for v in json.load(sys.stdin)["versions"]))')"
+          echo "pubspec version: ${want}"
+          echo "live on pub.dev: ${live}"
+          case " ${live} " in
+            *" ${want} "*)
+              echo "✓ ${want} is already published — a publish attempt cannot create anything new" ;;
+            *)
+              echo "::error::cratestack_cbor ${want} is NOT yet on pub.dev. This job would really publish it, which is not what it is for. Run it against a tag whose version is already live (e.g. v0.8.2)." >&2
+              exit 1 ;;
+          esac
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-pubdev-cbor
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,wasm-pack
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Install flutter_rust_bridge_codegen (pinned =2.12.0)
+        run: cargo install --locked flutter_rust_bridge_codegen --version 2.12.0
+      - name: Install binaryen (wasm-opt), pinned
+        run: |
+          set -euo pipefail
+          curl -fsSL -o binaryen.tar.gz \
+            "https://github.com/WebAssembly/binaryen/releases/download/version_130/binaryen-version_130-x86_64-linux.tar.gz"
+          tar -xzf binaryen.tar.gz
+          echo "$PWD/binaryen-version_130/bin" >> "$GITHUB_PATH"
+          rm binaryen.tar.gz
+      - name: Install cargo-ndk (pinned =4.1.2)
+        run: cargo install --locked cargo-ndk --version 4.1.2
+      - name: Install Android rustup targets
+        run: rustup target add aarch64-linux-android x86_64-linux-android armv7-linux-androideabi
+      - name: Resolve Android NDK
+        run: |
+          set -euo pipefail
+          pinned="${ANDROID_HOME}/ndk/28.2.13676358"
+          if [ -d "$pinned" ]; then ndk="$pinned"
+          elif [ -n "${ANDROID_NDK_LATEST_HOME:-}" ] && [ -d "${ANDROID_NDK_LATEST_HOME}" ]; then ndk="${ANDROID_NDK_LATEST_HOME}"
+          else ndk="$(find "${ANDROID_HOME}/ndk" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -V | tail -1)"; fi
+          if [ -z "${ndk:-}" ] || [ ! -d "$ndk" ]; then
+            echo "::error::no Android NDK found under ${ANDROID_HOME}/ndk" >&2; exit 1
+          fi
+          echo "ANDROID_NDK_HOME=${ndk}" >> "$GITHUB_ENV"
+      # The archive must be VALID to reach the authentication step at all — pub
+      # validates the package before it uploads, so a half-vendored tree would
+      # fail earlier and tell us nothing about credentials.
+      - name: Vendor artifacts (so the archive is valid enough to reach auth)
+        run: |
+          just cbor-vendor-native
+          just cbor-vendor-web
+          just cbor-vendor-android
+      # Adjacent to the attempt, exactly as in the real publish job: the token
+      # is short-lived, and a 9-minute gap is what produced "Invalid JWT token:
+      # invalid timestamps" on v0.8.2. Keeping it here means this job tests the
+      # real ordering, not a more forgiving one.
+      - uses: dart-lang/setup-dart@v1
+      - name: Attempt publish and classify the outcome
+        working-directory: dart-packages/cratestack_cbor
+        env:
+          FLUTTER_DART: ${{ env.FLUTTER_ROOT }}/bin/dart
+        run: |
+          set -euo pipefail
+          dart_bin="${FLUTTER_DART}"
+          [ -x "$dart_bin" ] || dart_bin="$(command -v dart)"
+          echo "using: $dart_bin"
+          set +e
+          out="$(timeout 600 "$dart_bin" pub publish --force 2>&1)"
+          status=$?
+          set -e
+          echo "$out"
+          echo "--- exit status: $status ---"
+
+          # Order matters: check for auth failure FIRST. `dart pub publish`
+          # exits 0 even when authentication fails (observed on v0.8.2), so the
+          # status tells us nothing and the output is the only signal.
+          if grep -qiE "authentication failed|invalid jwt|pub needs your authorization|accounts\.google\.com" <<<"$out"; then
+            echo "::error::CREDENTIALS BROKEN — pub.dev did not accept the OIDC token. This is the same failure as v0.8.1/v0.8.2; the release pipeline cannot publish. See the output above for which stage failed." >&2
+            exit 1
+          fi
+          if grep -qiE "already exists|has already been published|version already" <<<"$out"; then
+            echo "✓ CREDENTIALS OK — pub.dev authenticated the OIDC token and rejected only on version. The release pipeline can publish."
+            exit 0
+          fi
+          if [ "$status" -eq 124 ]; then
+            echo "::error::timed out after 10 minutes — almost certainly blocked on an interactive OAuth prompt, i.e. credentials broken." >&2
+            exit 1
+          fi
+          # Anything else is unclassified. Do NOT report success: an unrecognised
+          # outcome is exactly how v0.8.2 passed while publishing nothing.
+          echo "::error::UNCLASSIFIED outcome (exit ${status}). Neither an auth failure nor an already-published rejection was recognised in the output. Read it above rather than assuming this is fine." >&2
+          exit 1
+
   publish-pubdev-cbor:
     name: publish pub.dev package (cratestack_cbor)
     if: github.event_name == 'push'
