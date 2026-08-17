@@ -788,6 +788,29 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: just,wasm-pack
+      # `dart-lang/setup-dart` is what makes OIDC publishing work, and its
+      # absence is why v0.8.1 never reached pub.dev. Per
+      # https://dart.dev/tools/pub/automated-publishing: "The token is created
+      # and configured in the dart-lang/setup-dart step." Nothing else does
+      # it — not `permissions: id-token: write` on its own, which only grants
+      # the *ability* to mint a token, and not flutter-action, which knows
+      # nothing about pub.dev credentials.
+      #
+      # Without it `dart pub publish --force` finds no credential and falls
+      # back to interactive OAuth, printing a Google consent URL and waiting
+      # for a browser. That is exactly what v0.8.1 did, twice, for 24 minutes
+      # each time — and it looked like a pub.dev configuration problem, which
+      # sent the investigation to the Admin tab rather than to this file.
+      #
+      # It is ADDITIVE to flutter-action, not a replacement: this package
+      # declares `environment.flutter`, so `dart pub publish` needs a Flutter
+      # SDK present or version solving fails outright (cratestack#633).
+      # Dart's own reusable publish workflow
+      # (dart-lang/setup-dart/.github/workflows/publish.yml) does the same
+      # thing — setup-dart first, then a Flutter install, then publish — so
+      # this ordering is the upstream-blessed combination rather than a
+      # local guess.
+      - uses: dart-lang/setup-dart@v1
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -932,7 +955,7 @@ jobs:
           if ! timeout 600 dart pub publish --force; then
             status=$?
             if [ "$status" -eq 124 ]; then
-              echo "::error::dart pub publish timed out after 10 minutes. It almost certainly fell back to interactive OAuth, which means pub.dev did not accept the OIDC credential — check that Automated publishing is enabled for cratestack_cbor (pub.dev -> Admin), with repository '${{ github.repository }}' and a tag pattern matching '${{ github.ref_name }}'." >&2
+              echo "::error::dart pub publish timed out after 10 minutes — it fell back to interactive OAuth, meaning no OIDC credential was configured. Check IN THIS ORDER: (1) the 'dart-lang/setup-dart' step above is still present — it is what creates and configures the token, and its absence caused exactly this on v0.8.1; (2) 'permissions: id-token: write' on this job; (3) pub.dev -> cratestack_cbor -> Admin -> Automated publishing, repository '${{ github.repository }}', tag pattern matching '${{ github.ref_name }}'. The first is a workflow bug and the third is a pub.dev setting; the symptom is identical, so do not assume it is (3)." >&2
             fi
             exit "$status"
           fi
