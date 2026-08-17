@@ -115,19 +115,35 @@ pub(crate) struct ProceduresFileContext {
     pub(crate) provider_prefix: String,
     pub(crate) imports: Vec<String>,
     /// `part 'procedures.g.dart';` — see `ModelFileContext::part_file_name`.
-    /// Always `"procedures.g.dart"` (never gated on `!procedures.is_empty()`
-    /// like the `default` preset's own `{% if procedures %}`-free
-    /// `ProceduresApi` class isn't either — an empty `part` file is a
-    /// harmless no-op `build_runner` output).
+    /// The *value* is always `"procedures.g.dart"`, but unlike
+    /// `ModelFileContext::part_file_name` (every model file carries at
+    /// least the `get`/`list` `@riverpod` providers, so it's unconditional
+    /// there), `rest_procedures.dart.j2`/`rpc_procedures.dart.j2` only
+    /// emit the directive itself when `procedures` is non-empty.
+    ///
+    /// cratestack#628: this field's doc used to claim an unconditional
+    /// directive was safe because "an empty `part` file is a harmless
+    /// no-op `build_runner` output" — that was never verified and is
+    /// false. `riverpod_generator` writes *no* `.g.dart` file at all for a
+    /// source file with zero `@riverpod` declarations (confirmed
+    /// empirically by running `build_runner` over a zero-procedure
+    /// schema), so an unconditional `part 'procedures.g.dart';` dangles:
+    /// `flutter analyze --fatal-warnings` fails with
+    /// `uri_has_not_been_generated`, not a no-op. Gated on
+    /// `procedures | length > 0` — the same condition
+    /// `procedure_providers.dart.j2`'s `@riverpod` loop runs under, since
+    /// that loop is the only source of `@riverpod` declarations in this
+    /// file.
     pub(crate) part_file_name: String,
     /// `part 'procedures.mapper.dart';` — see
     /// `ModelFileContext::mapper_part_file_name`'s doc. The *value* is
-    /// always `"procedures.mapper.dart"`, but unlike `part_file_name`
-    /// above, `rest_procedures.dart.j2`/`rpc_procedures.dart.j2` only
-    /// emit the directive itself when `data_classes` is non-empty — see
-    /// those templates' own comment for why an unconditional directive
-    /// here would be a real `flutter analyze` failure on a schema with
-    /// zero procedures.
+    /// always `"procedures.mapper.dart"`; like `part_file_name` above,
+    /// `rest_procedures.dart.j2`/`rpc_procedures.dart.j2` only emit the
+    /// directive itself when its own condition holds — here,
+    /// `data_classes` is non-empty (issue #325) rather than
+    /// `procedures | length > 0` — see those templates' own comment for
+    /// why an unconditional directive here would be a real
+    /// `flutter analyze` failure on a schema with zero procedures.
     pub(crate) mapper_part_file_name: String,
     pub(crate) enum_types: Vec<EnumView>,
     pub(crate) data_classes: Vec<DataClassView>,

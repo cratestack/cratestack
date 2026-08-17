@@ -2,7 +2,22 @@
 {{ import }}
 {% endfor %}
 
+{# cratestack#628: gated on `procedures | length > 0` — `riverpod_generator`
+   writes no `.g.dart` file at all for a source file with zero `@riverpod`
+   declarations (confirmed empirically), so an unconditional `part`
+   directive here dangles into a real `uri_has_not_been_generated`
+   `flutter analyze` error on a schema with zero procedures (the only
+   source of `@riverpod` declarations in this file — see
+   `procedure_providers.dart.j2`'s loop below). Kept as a template-only
+   comment (not rendered into generated output) so a schema WITH
+   procedures — the only case this comment would otherwise land inside —
+   stays byte-identical to before this gate was added. See
+   `ProceduresFileContext::part_file_name`'s doc for the fuller story,
+   including why this precedent already existed one condition down for
+   `mapper_part_file_name` (issue #325). #}
+{% if procedures | length > 0 %}
 part '{{ part_file_name }}';
+{% endif %}
 {% if data_classes | length > 0 %}
 // issue #325: gated (unlike `part_file_name` above) because
 // `dart_mappable_builder`, unlike `riverpod_generator`, skips writing a

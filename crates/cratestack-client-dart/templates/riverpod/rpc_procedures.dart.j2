@@ -2,7 +2,12 @@
 {{ import }}
 {% endfor %}
 
+{# cratestack#628: gated on `procedures | length > 0` — see
+   `rest_procedures.dart.j2`'s identical guard for why, including why this
+   is a template-only comment rather than a rendered Dart one. #}
+{% if procedures | length > 0 %}
 part '{{ part_file_name }}';
+{% endif %}
 {% if data_classes | length > 0 %}
 // issue #325: gated (unlike `part_file_name` above) — see
 // `rest_procedures.dart.j2`'s identical guard for why.

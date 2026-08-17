@@ -138,7 +138,24 @@ pub(crate) fn build_procedures_file(
 
     let mut imports: BTreeSet<String> = BTreeSet::new();
     imports.insert("import 'package:flutter_riverpod/flutter_riverpod.dart';".to_owned());
-    imports.insert("import 'package:riverpod_annotation/riverpod_annotation.dart';".to_owned());
+    // cratestack#628: `riverpod_annotation` is only used by the `@riverpod`
+    // providers `procedure_providers.dart.j2` emits (one per procedure,
+    // both the query-function and mutation-controller shapes) — a schema
+    // with zero procedures renders that loop zero times, so the
+    // unconditional import was a confirmed `unused_import`
+    // `flutter analyze --fatal-warnings` failure. Gated on `procedures`
+    // (the built view list, index-parallel with `schema.procedures`)
+    // rather than `data_classes` below: the two happen to track together
+    // today (every procedure always produces at least its own `<Procedure>Args`
+    // data class, and `partition_types`'s `Owner::Procedures` seed set is
+    // exactly `schema.procedures`, so zero procedures also means zero
+    // procedure-owned nested `type`s reach this locus — see
+    // `partition::partition_types`), but `riverpod_annotation` specifically
+    // is about `@riverpod` declarations, which only ever come from
+    // procedures, never from a data class alone.
+    if !procedures.is_empty() {
+        imports.insert("import 'package:riverpod_annotation/riverpod_annotation.dart';".to_owned());
+    }
     // issue #325: only when this file actually declares a
     // `@MappableClass()` — a schema with zero procedures and no
     // procedure-owned nested `type`s has zero `data_classes` here, and an
@@ -149,7 +166,21 @@ pub(crate) fn build_procedures_file(
     if !data_classes.is_empty() {
         imports.insert("import 'package:dart_mappable/dart_mappable.dart';".to_owned());
     }
-    imports.insert("import 'runtime.dart';".to_owned());
+    // cratestack#628: `runtime.dart` supplies `CratestackCallOptions`/
+    // `CratestackRpcCallOptions` (used by `ProceduresApi`'s per-procedure
+    // methods, gated on `procedures`) and `CratestackValueMap` (used by
+    // every data class's `fromWire`/`toWire` in
+    // `enums_and_data_classes.dart.j2`, gated on `data_classes`) — an
+    // unconditional import was a confirmed `unused_import` failure on a
+    // schema with neither. Checked as an `or` of both, not just
+    // `procedures`, so this stays correct even if a future change makes a
+    // data class reachable from `Owner::Procedures` without any procedure
+    // existing — today that combination can't happen (see the
+    // `riverpod_annotation` gate's comment above for why), but the
+    // predicate shouldn't assume it never will.
+    if !procedures.is_empty() || !data_classes.is_empty() {
+        imports.insert("import 'runtime.dart';".to_owned());
+    }
     imports.insert("import 'client.dart';".to_owned());
     // `shared_types.dart` also carries `Page`/`PageInfo`/`PageInput` (see
     // `build_shared_types`'s doc) — a procedure returning/accepting

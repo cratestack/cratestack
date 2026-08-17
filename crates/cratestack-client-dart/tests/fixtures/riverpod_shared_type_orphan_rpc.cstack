@@ -1,0 +1,29 @@
+// RPC-transport counterpart to `riverpod_shared_type_orphan.cstack`, for
+// cratestack#628's acceptance criterion that the zero-procedure
+// `procedures.dart` import/part-directive gates be verified under both
+// `transport rest` (the default, exercised by the sibling fixture) and
+// `transport rpc` — `rest_procedures.dart.j2`/`rpc_procedures.dart.j2`
+// are two separate templates carrying the fix independently (unlike
+// `build_procedures.rs`'s import computation, which is transport-agnostic
+// and shared by both), so the AC asks for this to be exercised literally
+// rather than argued from the code.
+//
+// Same shape as the REST fixture: zero procedures, and `Coordinates` is a
+// `type` block referenced by nothing (no model field can ever be typed
+// with a `type` block — parser-enforced), so it's an orphan that
+// `partition::Owner::owner_by_name` defaults to `Owner::Shared` rather
+// than `Owner::Procedures`. That keeps `procedures.dart`'s own
+// `data_classes` empty too, giving a true zero-procedure,
+// zero-data-class `procedures.dart` under `transport rpc`.
+
+transport rpc
+
+model Widget {
+  id Int @id
+  name String
+}
+
+type Coordinates {
+  lat Float
+  lng Float
+}
