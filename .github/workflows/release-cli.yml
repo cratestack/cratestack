@@ -768,6 +768,12 @@ jobs:
     if: github.event_name == 'push'
     needs: [prepare]
     runs-on: ubuntu-latest
+    # No job in this workflow set a timeout, so GitHub's 6-hour default
+    # applied. On v0.8.1 that meant a publish blocked on an interactive OAuth
+    # prompt would have held a runner all afternoon while reporting nothing.
+    # This job's real work (toolchain + three vendor builds + publish) runs in
+    # well under 20 minutes; anything past that is stuck, not slow.
+    timeout-minutes: 30
     permissions:
       contents: read
       id-token: write
@@ -883,6 +889,50 @@ jobs:
             exit 1
           fi
           echo "✓ archive contains all vendored artifacts: 4 native libraries + 2 wasm files"
+      # Assert OIDC is actually usable BEFORE publishing. `--force` skips the
+      # confirmation prompt, not authentication: if pub cannot authenticate
+      # via OIDC it falls back to interactive OAuth, prints a Google consent
+      # URL, and waits for a browser that will never come.
+      #
+      # That is not hypothetical — it happened on the v0.8.1 release. The job
+      # sat for 24 minutes printing:
+      #
+      #   Pub needs your authorization to upload packages on your behalf.
+      #   In a web browser, go to https://accounts.google.com/o/oauth2/auth?…
+      #   Waiting for your authorization...
+      #
+      # and, with no `timeout-minutes` set, would have held a runner for
+      # GitHub's 6-hour default before anyone learned anything. The cause was
+      # pub.dev-side (automated publishing not active for the package), which
+      # this job cannot fix — but it can refuse to hang while finding out.
+      - name: Assert the OIDC token endpoint is available
+        run: |
+          set -euo pipefail
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
+            echo "::error::OIDC token endpoint unavailable — the job is missing 'permissions: id-token: write'. dart pub publish would fall back to interactive OAuth and hang." >&2
+            exit 1
+          fi
+          echo "✓ OIDC token endpoint present"
       - name: Publish cratestack_cbor to pub.dev
         working-directory: dart-packages/cratestack_cbor
-        run: dart pub publish --force
+        # Wrapped in `timeout`, NOT redirected from /dev/null. Worth being
+        # precise about why, because the obvious fix does not work here: pub's
+        # OAuth fallback does not read stdin. It starts a local HTTP server and
+        # waits for a browser redirect — the v0.8.1 log shows
+        # `redirect_uri=http://localhost:46305` — so closing stdin changes
+        # nothing; it would still block on a socket that nothing will ever
+        # connect to.
+        #
+        # A hard timeout is what actually bounds it. 10 minutes is generous:
+        # the upload itself took 3.3s in the successful manual publish, and
+        # everything slow (toolchain, vendoring) has already happened in
+        # earlier steps.
+        run: |
+          set -euo pipefail
+          if ! timeout 600 dart pub publish --force; then
+            status=$?
+            if [ "$status" -eq 124 ]; then
+              echo "::error::dart pub publish timed out after 10 minutes. It almost certainly fell back to interactive OAuth, which means pub.dev did not accept the OIDC credential — check that Automated publishing is enabled for cratestack_cbor (pub.dev -> Admin), with repository '${{ github.repository }}' and a tag pattern matching '${{ github.ref_name }}'." >&2
+            fi
+            exit "$status"
+          fi
