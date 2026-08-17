@@ -1564,8 +1564,29 @@ bump NEW:
 	# must NOT move in lockstep with the workspace version.
 	perl -i -pe "s/^version: \Q$current\E\$/version: {{NEW}}/" dart-packages/*/pubspec.yaml
 	# Refresh Cargo.lock so all entries pick up the new version.
-	# Exclude the Flutter crate (uncommitted frb_generated glue → E0583).
-	cargo check --workspace --exclude embedded_flutter_native --quiet
+	#
+	# `cargo metadata`, NOT `cargo check`. Refreshing the lock does not
+	# require compiling anything, and compiling here made `just release`
+	# impossible on a machine without the GTK/WebKit dev packages: `cargo
+	# check --workspace` builds the `tauri-*-shell-example` crates' build
+	# scripts, which hard-fail on missing `javascriptcoregtk-4.1` /
+	# `libsoup-3.0`. That aborted a real `PUSH=1 just release 0.8.1` at exit
+	# 101, AFTER every version literal had already been rewritten — leaving a
+	# 21-file dirty tree, no commit, and no tag.
+	#
+	# The other recipes that build the workspace carry `--exclude
+	# tauri-web-shell-example --exclude tauri-native-shell-example` for
+	# exactly this reason; adding them here would work too, but not
+	# compiling at all is strictly better: the very next step of `just
+	# release` is `release-check`, which compiles the workspace properly.
+	# There is nothing this check was catching that survives that.
+	#
+	# Verified equivalent for the stated purpose: with the workspace version
+	# edited to a sentinel, `cargo metadata --format-version=1` took the
+	# lock from 0 to 34 entries at the new version and exited 0, while
+	# `cargo check` exits 101 on this class of machine. Build scripts never
+	# run, so no system library is consulted.
+	cargo metadata --format-version=1 --quiet > /dev/null
 	# cratestack-studio-ui is its own separate `[workspace]` (excluded from
 	# the root one so contributors aren't forced onto the wasm32 toolchain),
 	# so it has its own Cargo.lock that the check above never touches. Left
