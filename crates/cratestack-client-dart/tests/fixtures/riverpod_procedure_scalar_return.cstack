@@ -1,0 +1,17 @@
+// Regression fixture for issue #630, the decisive case: a procedure whose
+// bare *return* type is a scalar needing an import. `Uint8List`/`Decimal`
+// appear only in the generated `Future<...>` signatures — no data class,
+// no field, anywhere in the schema, carries either type. An
+// implementation that scans procedure args and procedure-owned `type`
+// fields (the obvious reading of #630) still fails this fixture; only one
+// that also scans `procedure.return_type` passes it.
+//
+// `Keep` exists so the schema has a model; it uses neither scalar.
+
+model Keep {
+  id Int @id
+  name String
+}
+
+procedure fetchBlob(): Bytes
+procedure fetchTotal(): Decimal

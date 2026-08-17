@@ -1,0 +1,30 @@
+// Regression fixture for issue #630: `build_procedures.rs` computed no
+// scalar imports at all, so every `Uint8List`/`Decimal` it spelled was an
+// `undefined_class` failure. Covers the two *data-class* sources that
+// reach `procedures.dart`:
+//
+//   - `storeEnvelope`'s `token`/`fee` args -> the `StoreEnvelopeArgs`
+//     data class;
+//   - `Envelope`, a procedure-owned nested `type`, via its own fields.
+//
+// The third source — a procedure's bare *return* type, which belongs to
+// no data class — is deliberately NOT exercised here; it has its own
+// fixture (`riverpod_procedure_scalar_return.cstack`) so that an
+// implementation scanning only fields cannot pass it by riding along on
+// this one.
+//
+// `Keep` exists so the schema has a model without itself using either
+// scalar: the imports under test must be driven by the procedure surface
+// alone.
+
+model Keep {
+  id Int @id
+  name String
+}
+
+type Envelope {
+  payload Bytes
+  label String
+}
+
+procedure storeEnvelope(envelope: Envelope, token: Bytes, fee: Decimal): Boolean

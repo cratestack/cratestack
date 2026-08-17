@@ -457,3 +457,146 @@ fn procedures_api_has_no_client_field_when_schema_has_zero_procedures_under_rive
         "client.dart's accessor should match the client-less constructor:\n{client}"
     );
 }
+
+/// Regression test for issue #630 at the per-model locus — cratestack#625
+/// added a per-model scalar-import check for `Bytes` alone, so a `Decimal`
+/// field in the same position still generated `undefined_class`.
+///
+/// Uses the existing `decimal_scalar.cstack` (cratestack#498) rather than a
+/// new fixture: it already models this exactly, and the reason the gap
+/// survived #498 is that every test pointed at it ran the `default` preset
+/// only (`tests/generator.rs`, `tests/decimal_round_trip.rs`), whose
+/// monolithic `models.dart.j2` hardcodes the import. This is that fixture's
+/// missing riverpod half.
+#[test]
+fn riverpod_decimal_model_file_imports_package_decimal() {
+    let package = generate("decimal_scalar", "decimal_client", DartPreset::Riverpod);
+
+    let invoice = package_file(&package, "lib/src/models/invoice.dart");
+    assert!(
+        invoice.contains("final Decimal amountXaf;"),
+        "invoice.dart should type amountXaf as Decimal:\n{invoice}"
+    );
+    assert!(
+        invoice.contains("import 'package:decimal/decimal.dart';"),
+        "invoice.dart references Decimal so it must import package:decimal/decimal.dart, or \
+         `flutter analyze --fatal-warnings` fails with undefined_class:\n{invoice}"
+    );
+}
+
+/// Regression test for issue #630 at the `procedures.dart` locus, reached
+/// through a procedure-owned nested `type`'s own field (`QuoteResult.price`).
+#[test]
+fn riverpod_decimal_procedure_owned_type_imports_package_decimal() {
+    let package = generate("decimal_scalar", "decimal_client", DartPreset::Riverpod);
+
+    let procedures = package_file(&package, "lib/src/procedures.dart");
+    assert!(
+        procedures.contains("final Decimal price;"),
+        "QuoteResult.price should be typed Decimal in procedures.dart:\n{procedures}"
+    );
+    assert!(
+        procedures.contains("import 'package:decimal/decimal.dart';"),
+        "procedures.dart references Decimal so it must import \
+         package:decimal/decimal.dart:\n{procedures}"
+    );
+}
+
+/// Regression test for issue #630 — `build_procedures.rs` computed no
+/// scalar imports whatsoever, so both `Bytes`/`Uint8List` and
+/// `Decimal` were undefined in `procedures.dart`. Covers the two
+/// data-class-backed sources: a procedure's own args, and a
+/// procedure-owned nested `type`'s fields.
+#[test]
+fn riverpod_procedure_arg_and_owned_type_scalars_are_imported() {
+    let package = generate(
+        "riverpod_procedure_scalar_imports",
+        "proc_scalar_client",
+        DartPreset::Riverpod,
+    );
+
+    let procedures = package_file(&package, "lib/src/procedures.dart");
+    assert!(
+        procedures.contains("final Uint8List payload;"),
+        "Envelope.payload (a procedure-owned type field) should be Uint8List:\n{procedures}"
+    );
+    assert!(
+        procedures.contains("final Uint8List token;"),
+        "storeEnvelope's token arg should be Uint8List in StoreEnvelopeArgs:\n{procedures}"
+    );
+    assert!(
+        procedures.contains("final Decimal fee;"),
+        "storeEnvelope's fee arg should be Decimal in StoreEnvelopeArgs:\n{procedures}"
+    );
+    assert!(
+        procedures.contains("import 'dart:typed_data';"),
+        "procedures.dart references Uint8List so it must import dart:typed_data:\n{procedures}"
+    );
+    assert!(
+        procedures.contains("import 'package:decimal/decimal.dart';"),
+        "procedures.dart references Decimal so it must import \
+         package:decimal/decimal.dart:\n{procedures}"
+    );
+}
+
+/// Regression test for issue #630's decisive case: a procedure whose bare
+/// *return* type is an import-needing scalar. `Uint8List`/`Decimal` appear
+/// only in the generated `Future<...>` signatures — no field and no data
+/// class in this schema carries either type — so an implementation that
+/// scans procedure args and procedure-owned `type` fields (the obvious
+/// reading of the ticket) still fails here. Only one that also scans
+/// `procedure.return_type` passes.
+#[test]
+fn riverpod_procedure_scalar_return_types_are_imported() {
+    let package = generate(
+        "riverpod_procedure_scalar_return",
+        "proc_ret_client",
+        DartPreset::Riverpod,
+    );
+
+    let procedures = package_file(&package, "lib/src/procedures.dart");
+    assert!(
+        procedures.contains("Future<Uint8List> fetchBlob("),
+        "fetchBlob should return Future<Uint8List>:\n{procedures}"
+    );
+    assert!(
+        procedures.contains("Future<Decimal> fetchTotal("),
+        "fetchTotal should return Future<Decimal>:\n{procedures}"
+    );
+    assert!(
+        procedures.contains("import 'dart:typed_data';"),
+        "a bare Bytes return type still needs dart:typed_data — it appears only in a \
+         Future<...> signature, never in a data class:\n{procedures}"
+    );
+    assert!(
+        procedures.contains("import 'package:decimal/decimal.dart';"),
+        "a bare Decimal return type still needs package:decimal/decimal.dart:\n{procedures}"
+    );
+}
+
+/// The other half of issue #630: these imports must stay *computed*, not
+/// hardcoded. An import Dart never uses is itself a hard
+/// `flutter analyze --fatal-warnings` failure (`unused_import`), so a fix
+/// that simply always emits both lines trades one analyze error for
+/// another. `page_input_procedure.cstack` has a procedure surface and a
+/// nested `type` but uses neither scalar anywhere.
+#[test]
+fn riverpod_scalar_imports_are_omitted_when_the_schema_uses_neither_scalar() {
+    let package = generate(
+        "page_input_procedure",
+        "no_scalar_client",
+        DartPreset::Riverpod,
+    );
+
+    let procedures = package_file(&package, "lib/src/procedures.dart");
+    assert!(
+        !procedures.contains("import 'dart:typed_data';"),
+        "no Bytes field anywhere, so procedures.dart must not import dart:typed_data \
+         (unused_import is also fatal):\n{procedures}"
+    );
+    assert!(
+        !procedures.contains("import 'package:decimal/decimal.dart';"),
+        "no Decimal field anywhere, so procedures.dart must not import \
+         package:decimal/decimal.dart:\n{procedures}"
+    );
+}

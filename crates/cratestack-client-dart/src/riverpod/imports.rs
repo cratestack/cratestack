@@ -5,8 +5,9 @@
 use std::collections::BTreeSet;
 
 use cratestack_core::route_naming;
-use cratestack_core::{Field, Model, TypeDecl};
+use cratestack_core::{Field, Model, TypeDecl, TypeRef};
 
+use crate::dart_types::dart_scalar_import;
 use crate::riverpod::partition::referenced_name;
 
 /// `lib/src/models/<file_stem>.dart` — the snake_case convention
@@ -75,6 +76,42 @@ pub(crate) fn owned_type_decl_model_refs<'a>(
         .into_iter()
         .flat_map(|type_decl| direct_model_refs(type_decl.fields.iter(), model_names))
         .collect()
+}
+
+/// Imports required by the scalar types a locus's own emitted code spells
+/// out — `dart:typed_data` for `Bytes`/`Uint8List`,
+/// `package:decimal/decimal.dart` for `Decimal` (see
+/// `dart_types::dart_scalar_import`, which owns the mapping itself).
+///
+/// The single computation point for the *same* concern
+/// `owned_type_decl_model_refs` above covers for model references, and it
+/// exists for the same reason: cratestack#625 fixed `Bytes` for
+/// `build_model` alone by hand, leaving `Decimal` unhandled at that locus
+/// and both scalars unhandled in `build_procedures` (cratestack#630). Pass
+/// every `TypeRef` the locus actually renders — including procedure
+/// *return* types, which appear in a `Future<...>` signature without ever
+/// belonging to a data class, and were the case a fields-only scan missed.
+///
+/// Recurses into `generic_args` so a wrapped scalar (`Page<Decimal>`) is
+/// reached; arity (`Decimal[]`, `Bytes?`) needs no special handling since
+/// it never changes `TypeRef::name`.
+pub(crate) fn scalar_type_imports<'a>(
+    type_refs: impl IntoIterator<Item = &'a TypeRef>,
+) -> BTreeSet<String> {
+    fn collect(type_ref: &TypeRef, out: &mut BTreeSet<String>) {
+        if let Some(line) = dart_scalar_import(&type_ref.name) {
+            out.insert(line.to_owned());
+        }
+        for arg in &type_ref.generic_args {
+            collect(arg, out);
+        }
+    }
+
+    let mut imports = BTreeSet::new();
+    for type_ref in type_refs {
+        collect(type_ref, &mut imports);
+    }
+    imports
 }
 
 /// Renders a sorted, deduplicated set of Dart `import` statements.

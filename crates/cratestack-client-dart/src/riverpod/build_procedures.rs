@@ -15,7 +15,9 @@ use crate::builders_model::build_procedure;
 use crate::dart_types::dart_type;
 use crate::idents::to_pascal_case;
 use crate::naming::{enum_name_set, model_name_set, occupied_type_names, procedure_wrapper_name};
-use crate::riverpod::imports::{model_file_path, owned_type_decl_model_refs, render_import_lines};
+use crate::riverpod::imports::{
+    model_file_path, owned_type_decl_model_refs, render_import_lines, scalar_type_imports,
+};
 use crate::riverpod::partition::{Owner, TypePartition, referenced_name};
 use crate::riverpod::provider_naming::reserve_operation_symbol;
 use crate::riverpod::views::{ProcedureOperationView, ProceduresFileContext};
@@ -193,10 +195,41 @@ pub(crate) fn build_procedures_file(
     // `model` (the same shape issue #137 fixed for `build_model.rs`/
     // `build_shared_types.rs`, both of which call this same helper) had
     // its import silently dropped.
-    referenced_models.extend(owned_type_decl_model_refs(owned_type_decls, &model_names));
+    referenced_models.extend(owned_type_decl_model_refs(
+        owned_type_decls.iter().copied(),
+        &model_names,
+    ));
     for other in referenced_models {
         imports.insert(format!("import 'models/{}';", model_file_path(&other)));
     }
+    // cratestack#630: this file spells `Uint8List`/`Decimal` directly
+    // wherever a procedure surface uses `Bytes`/`Decimal`, but computed no
+    // scalar imports at all — unlike `build_model.rs` (which had the same
+    // gap for `Decimal`) and unlike `shared_types.dart.j2`, which hardcodes
+    // both lines. Three sources, all of which this file renders:
+    //
+    // - each procedure's args, emitted as its `<Procedure>Args` data class;
+    // - each procedure's **return type**, which appears only in a
+    //   `Future<...>` signature and belongs to no data class at all — a
+    //   fields-only scan misses `procedure fetchBlob(): Bytes` entirely;
+    // - the procedure-owned nested `type` decls emitted above.
+    imports.extend(scalar_type_imports(
+        schema
+            .procedures
+            .iter()
+            .flat_map(|procedure| {
+                procedure
+                    .args
+                    .iter()
+                    .map(|arg| &arg.ty)
+                    .chain(std::iter::once(&procedure.return_type))
+            })
+            .chain(
+                owned_type_decls
+                    .iter()
+                    .flat_map(|type_decl| type_decl.fields.iter().map(|field| &field.ty)),
+            ),
+    ));
 
     ProceduresFileContext {
         client_class_name: client_class_name.to_owned(),

@@ -22,7 +22,7 @@ use crate::idents::to_camel_case;
 use crate::naming::{is_generated_on_create, is_primary_key, model_name_set, scalar_model_fields};
 use crate::riverpod::imports::{
     model_file_path, model_file_stem, model_relation_targets, owned_type_decl_model_refs,
-    render_import_lines,
+    render_import_lines, scalar_type_imports,
 };
 use crate::riverpod::partition::{Owner, TypePartition};
 use crate::riverpod::provider_naming::reserve_operation_symbol;
@@ -179,28 +179,31 @@ pub(crate) fn build_model_file(
     imports.insert("import 'package:dart_mappable/dart_mappable.dart';".to_owned());
     imports.insert("import '../runtime.dart';".to_owned());
     imports.insert("import '../client.dart';".to_owned());
-    // cratestack#625: `dart_types.rs:43` maps a `Bytes` field to
-    // `Uint8List`, which lives in `dart:typed_data` — the `default`
-    // preset's monolithic `models.dart.j2:1` and this preset's own
-    // `shared_types.dart.j2:5` both hardcode the import unconditionally
-    // (a single shared file always has *some* model somewhere), but a
-    // per-model file only needs it when *this* model's own fields or one
-    // of its owned nested `type`s (built into `owned_type_decls` below)
-    // actually has a `Bytes` field — otherwise it's a real `unused_import`
-    // `flutter analyze --fatal-warnings` failure, per this module's "only
-    // import what's used" rule.
-    let references_bytes = model
-        .fields
-        .iter()
-        .chain(
+    // cratestack#625/#630: a `Bytes` field maps to `Uint8List`
+    // (`dart:typed_data`) and a `Decimal` field to `Decimal`
+    // (`package:decimal/decimal.dart`) — neither is in scope by default,
+    // so spelling one without its import is an `undefined_class` failure.
+    // The `default` preset's monolithic `models.dart.j2:1` and this
+    // preset's own `shared_types.dart.j2:5-7` hardcode both lines (a
+    // single shared file always has *some* model somewhere), but a
+    // per-model file only needs a line when *this* model's own fields or
+    // one of its owned nested `type`s actually uses that scalar —
+    // otherwise it's a real `unused_import` `flutter analyze
+    // --fatal-warnings` failure, per this module's "only import what's
+    // used" rule. #625 hand-rolled this for `Bytes` only and missed
+    // `Decimal`; `scalar_type_imports` is now the one place that decides.
+    // The model's own fields cover every data class this file emits —
+    // `<Model>`, `Create<Model>Input`, `Update<Model>Input` and
+    // `Projected<Model>` are all projections of them, and `<Model>Where`
+    // spells the shared `DecimalFilter`/`BytesFilter` rather than the
+    // scalar itself.
+    imports.extend(scalar_type_imports(
+        model.fields.iter().map(|field| &field.ty).chain(
             owned_type_decls
                 .iter()
-                .flat_map(|type_decl| type_decl.fields.iter()),
-        )
-        .any(|field| field.ty.name == "Bytes");
-    if references_bytes {
-        imports.insert("import 'dart:typed_data';".to_owned());
-    }
+                .flat_map(|type_decl| type_decl.fields.iter().map(|field| &field.ty)),
+        ),
+    ));
     if is_rest {
         imports.insert("import '../queries.dart';".to_owned());
     }

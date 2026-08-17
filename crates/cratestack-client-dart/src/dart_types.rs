@@ -75,3 +75,35 @@ pub(crate) fn dart_type(type_ref: &TypeRef, force_nullable: bool) -> String {
         }
     }
 }
+
+/// The Dart `import` line a schema scalar's mapped type needs, if any —
+/// `None` for every scalar `dart_type` above maps to a `dart:core` name
+/// (`String`/`int`/`double`/`bool`/`DateTime`/`Object?`) or to a
+/// generator-declared class that lives in this package already.
+///
+/// **This lives next to `dart_type`'s `match` deliberately.** Two of that
+/// match's arms name a class that is *not* in scope by default, and a
+/// generated file that spells such a class without importing it is a hard
+/// `undefined_class` `flutter analyze` failure. That coupling has now
+/// produced the same bug twice — cratestack#625 (`Bytes` in a per-model
+/// file), then cratestack#630 (`Decimal` in a per-model file, plus both
+/// scalars in `procedures.dart`) — each time because the import
+/// requirement was re-derived by hand at one call site while another was
+/// left behind. Adding an arm to `dart_type` means revisiting this
+/// function directly below it, rather than remembering that some other
+/// module keeps a parallel list.
+///
+/// The `riverpod` preset computes its imports per file and must call this
+/// (via `riverpod::imports::scalar_type_imports`); the `default` preset's
+/// monolithic `models.dart.j2`/`apis.dart.j2` hardcode both lines
+/// unconditionally, which is sound only because those single files always
+/// carry every model and procedure in the schema.
+pub(crate) fn dart_scalar_import(type_name: &str) -> Option<&'static str> {
+    match type_name {
+        // `Uint8List` — `dart_type`'s `"Bytes"` arm above.
+        "Bytes" => Some("import 'dart:typed_data';"),
+        // `Decimal` — `dart_type`'s `"Decimal"` arm above (cratestack#498).
+        "Decimal" => Some("import 'package:decimal/decimal.dart';"),
+        _ => None,
+    }
+}
