@@ -37,7 +37,7 @@ class ProceduresApi {
 {% endfor %}
 }
 {% else %}
-// cratestack#3: a schema with zero procedures still gets a `ProceduresApi`
+// cratestack#627: a schema with zero procedures still gets a `ProceduresApi`
 // (the `default` preset's own `apis.dart.j2` always renders one too —
 // see `ProceduresFileContext::procedures`'s doc) but with no `_client`
 // field: nothing in an empty class would ever read it, and an unread

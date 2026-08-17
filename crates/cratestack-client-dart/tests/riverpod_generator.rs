@@ -412,7 +412,7 @@ fn riverpod_procedure_only_type_field_referencing_a_model_imports_that_model() {
     );
 }
 
-/// Regression test for issue #3 (unfiled at authoring time) — every
+/// Regression test for issue #627 — every
 /// `templates/*apis.dart.j2`/`templates/riverpod/*_procedures.dart.j2`
 /// unconditionally declared `class ProceduresApi { const
 /// ProceduresApi(this._client); final ClientT _client; ... }`, so a

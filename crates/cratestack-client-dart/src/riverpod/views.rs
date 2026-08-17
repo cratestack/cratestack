@@ -136,7 +136,7 @@ pub(crate) struct ProceduresFileContext {
     /// rather than folding `ProcedureOperationView` into `ProcedureView`
     /// so `crate::builders_model::build_procedure` (shared with the
     /// `default` preset) never needs to know about riverpod-only naming.
-    /// cratestack#3 (unfiled at authoring time): `rest_procedures.dart.j2`/
+    /// cratestack#627: `rest_procedures.dart.j2`/
     /// `rpc_procedures.dart.j2` gate `ProceduresApi`'s `final _client`
     /// field and constructor param on `procedures | length > 0` directly
     /// — a schema with zero procedures never reads `_client` anywhere (the
@@ -193,7 +193,7 @@ pub(crate) struct ClientFileContext {
     pub(crate) base_path_literal: String,
     pub(crate) imports: Vec<String>,
     pub(crate) model_accessors: Vec<ModelAccessorView>,
-    /// cratestack#3 (unfiled at authoring time): whether the schema
+    /// cratestack#627: whether the schema
     /// declares at least one `procedure`. `rest_client.dart.j2`/
     /// `rpc_client.dart.j2` need this to decide whether
     /// `ProceduresApi.new` still takes a client argument — see

@@ -188,7 +188,7 @@ class ProceduresApi {
 {% endfor %}
 }
 {% else %}
-// cratestack#3: a schema with zero procedures still gets a `ProceduresApi`
+// cratestack#627: a schema with zero procedures still gets a `ProceduresApi`
 // but with no `_client` field — nothing would ever read it, and an unread
 // private field is a real `unused_field` `flutter analyze
 // --fatal-warnings` failure.
