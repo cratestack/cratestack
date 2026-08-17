@@ -657,3 +657,148 @@ fn riverpod_scalar_imports_are_omitted_when_the_schema_uses_neither_scalar() {
          package:decimal/decimal.dart:\n{procedures}"
     );
 }
+
+/// Regression test for cratestack#628 — a schema with zero top-level
+/// procedures and zero procedure-owned nested `type`s (so
+/// `ProceduresFileContext::data_classes` is also empty — see
+/// `build_procedures.rs`'s `Owner::Procedures` seed-set comment) used to
+/// still unconditionally import `riverpod_annotation`/`runtime.dart` and
+/// declare `part 'procedures.g.dart';` in `lib/src/procedures.dart`. All
+/// three are real `flutter analyze --fatal-warnings` failures on such a
+/// schema: the first two are `unused_import` (neither symbol they provide
+/// is referenced anywhere in the file — `@riverpod`/`Ref` only come from
+/// `procedure_providers.dart.j2`'s per-procedure loop,
+/// `CratestackCallOptions`/`CratestackValueMap` only from
+/// `ProceduresApi`'s per-procedure methods and data classes' own
+/// `fromWire`/`toWire`), and the third is `uri_has_not_been_generated`:
+/// `riverpod_generator` writes no `.g.dart` file at all for a source with
+/// zero `@riverpod` declarations (confirmed empirically via
+/// `build_runner`, not just inferred), so the `part` directive dangles.
+/// `riverpod_shared_type_orphan.cstack` is the existing zero-procedure
+/// fixture (`Coordinates` is an orphan `type`, so it lands in
+/// `shared_types.dart`, not `procedures.dart` — see that fixture's own
+/// header comment).
+#[test]
+fn riverpod_zero_procedures_procedures_dart_omits_unused_imports_and_part_directive_under_rest() {
+    let package = generate(
+        "riverpod_shared_type_orphan",
+        "zero_proc_client",
+        DartPreset::Riverpod,
+    );
+
+    let procedures = package_file(&package, "lib/src/procedures.dart");
+    assert!(
+        !procedures.contains("import 'package:riverpod_annotation/riverpod_annotation.dart';"),
+        "zero procedures means zero @riverpod declarations, so procedures.dart must not \
+         import riverpod_annotation (unused_import is fatal):\n{procedures}"
+    );
+    assert!(
+        !procedures.contains("import 'runtime.dart';"),
+        "zero procedures and zero data classes means nothing in procedures.dart references \
+         CratestackCallOptions/CratestackValueMap, so it must not import runtime.dart:\n{procedures}"
+    );
+    assert!(
+        !procedures.contains("part 'procedures.g.dart';"),
+        "riverpod_generator writes no .g.dart file for zero @riverpod declarations, so an \
+         unconditional part directive here would dangle into uri_has_not_been_generated:\n{procedures}"
+    );
+}
+
+/// RPC-transport counterpart to the REST test above — cratestack#628's
+/// acceptance criterion asks for the fix to be verified under both
+/// transports, and `rest_procedures.dart.j2`/`rpc_procedures.dart.j2` are
+/// two independently-maintained templates (unlike the shared, transport-
+/// agnostic `build_procedures.rs` import computation), so this is not
+/// just an architectural argument — it is exercised literally against
+/// `riverpod_shared_type_orphan_rpc.cstack`, the RPC-transport sibling of
+/// the REST fixture above.
+#[test]
+fn riverpod_zero_procedures_procedures_dart_omits_unused_imports_and_part_directive_under_rpc() {
+    let package = generate(
+        "riverpod_shared_type_orphan_rpc",
+        "zero_proc_rpc_client",
+        DartPreset::Riverpod,
+    );
+
+    let procedures = package_file(&package, "lib/src/procedures.dart");
+    assert!(
+        !procedures.contains("import 'package:riverpod_annotation/riverpod_annotation.dart';"),
+        "zero procedures means zero @riverpod declarations, so procedures.dart must not \
+         import riverpod_annotation (unused_import is fatal) under transport rpc either:\n{procedures}"
+    );
+    assert!(
+        !procedures.contains("import 'runtime.dart';"),
+        "zero procedures and zero data classes means nothing in procedures.dart references \
+         CratestackRpcCallOptions/CratestackValueMap, so it must not import runtime.dart under \
+         transport rpc either:\n{procedures}"
+    );
+    assert!(
+        !procedures.contains("part 'procedures.g.dart';"),
+        "riverpod_generator writes no .g.dart file for zero @riverpod declarations, so an \
+         unconditional part directive here would dangle into uri_has_not_been_generated under \
+         transport rpc too:\n{procedures}"
+    );
+}
+
+/// Over-emission guard for cratestack#628's fix, the counterpart to the
+/// two zero-procedure tests above: a schema that genuinely declares
+/// procedures must keep all three gated pieces (`riverpod_annotation`,
+/// `runtime.dart`, `part 'procedures.g.dart';`) — a fix that simply
+/// deletes them unconditionally would "pass" the zero-procedure tests
+/// above while breaking every non-trivial schema instead.
+/// `riverpod_shared_ownership.cstack` already declares a `search`
+/// procedure and is reused by several other tests in this file.
+#[test]
+fn riverpod_procedures_dart_keeps_gated_pieces_when_schema_has_procedures() {
+    let package = generate(
+        "riverpod_shared_ownership",
+        "shared_ownership_client",
+        DartPreset::Riverpod,
+    );
+
+    let procedures = package_file(&package, "lib/src/procedures.dart");
+    assert!(
+        procedures.contains("import 'package:riverpod_annotation/riverpod_annotation.dart';"),
+        "a schema with procedures declares @riverpod providers, so procedures.dart must still \
+         import riverpod_annotation:\n{procedures}"
+    );
+    assert!(
+        procedures.contains("import 'runtime.dart';"),
+        "a schema with procedures still needs CratestackCallOptions/CratestackValueMap from \
+         runtime.dart:\n{procedures}"
+    );
+    assert!(
+        procedures.contains("part 'procedures.g.dart';"),
+        "a schema with procedures still has @riverpod declarations, so riverpod_generator \
+         still writes procedures.g.dart and the part directive must stay:\n{procedures}"
+    );
+}
+
+/// RPC-transport counterpart to the over-emission guard above, exercised
+/// against `riverpod_procedure_scalar_rpc.cstack` (an existing
+/// `transport rpc` fixture that declares a `storeEnvelope` procedure).
+#[test]
+fn riverpod_procedures_dart_keeps_gated_pieces_when_schema_has_procedures_under_rpc() {
+    let package = generate(
+        "riverpod_procedure_scalar_rpc",
+        "proc_scalar_rpc_client",
+        DartPreset::Riverpod,
+    );
+
+    let procedures = package_file(&package, "lib/src/procedures.dart");
+    assert!(
+        procedures.contains("import 'package:riverpod_annotation/riverpod_annotation.dart';"),
+        "a schema with procedures declares @riverpod providers, so procedures.dart must still \
+         import riverpod_annotation under transport rpc too:\n{procedures}"
+    );
+    assert!(
+        procedures.contains("import 'runtime.dart';"),
+        "a schema with procedures still needs CratestackRpcCallOptions/CratestackValueMap from \
+         runtime.dart under transport rpc too:\n{procedures}"
+    );
+    assert!(
+        procedures.contains("part 'procedures.g.dart';"),
+        "a schema with procedures still has @riverpod declarations, so the part directive must \
+         stay under transport rpc too:\n{procedures}"
+    );
+}
