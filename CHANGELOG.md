@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.8.3 (2026-08-17)
+
+<!-- TODO: edit this section from the seed below -->
+<!-- seeded from v0.8.2..HEAD at 1ef573081af2075ffe390bbc564feaf9b5e49255 -->
+
+This is an auto-generated seed. Please rewrite into narrative prose describing
+the changes in this release, grouped by concern. Refer to existing entries in
+this file for the house prose style. Do not commit with this placeholder text.
+
+### Changes
+
+#### Fixes
+
+- gate riverpod procedures.dart imports and part directive on use (#632)
+- pub.dev publish reported success while publishing nothing (#638)
+
 ## 0.8.0 (2026-08-14)
 
 Two breaking changes, both requiring a deliberate edit on upgrade. Read the migration section
