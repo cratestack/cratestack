@@ -237,6 +237,36 @@ the low single-digit megabytes. A total under a few hundred KB with the `blobs/`
 absent from the tree means vendoring didn't run (or ran against the wrong directory) — **do not
 publish**, same instruction the development doc's own dry-run section gives.
 
+### `--dry-run` is necessary but not sufficient: pub.dev validates again server-side
+
+A clean `--dry-run` does **not** mean the upload will be accepted. pub.dev runs its own validators
+after the archive is uploaded, and rejects there with a different set of rules. This is not
+hypothetical — the real first-publish attempt of `cratestack_cbor` 0.8.0 passed `--dry-run` locally,
+authorized, uploaded, and was then refused:
+
+```
+Uploading... (3.6s)
+Message from server: pubspec.yaml allows Flutter SDK version prior to 1.20.0, which does not
+support having no `ios/` folder. Please consider increasing the Flutter SDK requirement to
+^1.20.0 or higher (environment.sdk.flutter) or create an `ios/` folder.
+```
+
+The cause was `environment.flutter: ">=1.10.0"` — enough for pub's *local* check of
+`plugin.platforms`, but this package deliberately ships no `ios/` folder, and Flutter only permits
+omitting platform folders from 1.20 onward. Fixed by raising the constraint (see the pubspec's own
+comment for why the number looks low next to `sdk: ^3.5.0`).
+
+Two things worth carrying forward:
+
+- **A server-side rejection is not a partial publish.** Nothing was created; `pub.dev/api/packages/
+  cratestack_cbor` still returned 404 afterwards, and the same version number could be retried. That
+  is the good case — but do check, rather than assume, before changing the version to work around a
+  failure.
+- **The archive-contents gate in CI cannot catch this class either.** It verifies what is *in* the
+  tarball; these are metadata rules enforced after upload. The only way to discover them is to
+  attempt a publish, which is precisely why the first one is manual and done by a human reading the
+  output.
+
 ## Known characteristic, not a defect: the wasm pair ships on every platform
 
 `pubspec.yaml` declares the web wasm pair (`cratestack_cbor_wasm.js`, `cratestack_cbor_wasm_bg.wasm`,

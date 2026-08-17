@@ -18,14 +18,28 @@ topics:
 
 environment:
   sdk: ^3.5.0
-  # Required once `flutter:` below declares `plugin.platforms` (added this
-  # slice, cratestack#563's "Flutter app integration" work) — `dart pub
-  # publish --dry-run` validates this explicitly: the plugin.platforms key
-  # needs Flutter SDK >=1.10.0, and pub can't confirm that without this
+  # Required once `flutter:` below declares `plugin.platforms`
+  # (cratestack#563) — pub validates that key against a declared Flutter
   # constraint. Unrelated to (and does not imply) a `flutter: sdk: flutter`
   # entry in `dependencies:` below — see that section's comment for why
   # this package deliberately has none.
-  flutter: ">=1.10.0"
+  #
+  # >=1.20.0, NOT the >=1.10.0 that `plugin.platforms` alone needs. This
+  # package supports Linux, web and Android but deliberately ships no `ios/`
+  # folder, and Flutter only allows a plugin to omit platform folders from
+  # 1.20 onward. pub.dev enforces that SERVER-SIDE and rejects the upload:
+  #
+  #   pubspec.yaml allows Flutter SDK version prior to 1.20.0, which does not
+  #   support having no `ios/` folder.
+  #
+  # `dart pub publish --dry-run` does NOT catch this — it passed cleanly on a
+  # pubspec the server then refused. See docs/tooling/dart-publishing.md.
+  #
+  # The number looks implausibly low next to `sdk: ^3.5.0`, and that is fine:
+  # the Dart constraint is the real floor (nothing shipping Dart 3.5 is on
+  # Flutter 1.x), and pub resolves against both. This line exists to clear
+  # the no-`ios/`-folder rule, not to describe the minimum usable Flutter.
+  flutter: ">=1.20.0"
 
 dependencies:
   # Pinned exact, matching crates/cratestack-client-flutter/Cargo.toml's
