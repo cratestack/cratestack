@@ -1,0 +1,28 @@
+// RPC-transport counterpart to `riverpod_procedure_scalar_imports.cstack`,
+// for issue #630's acceptance criterion that the fix be reproduced and
+// verified under both `transport rest` (the default, exercised by the
+// sibling fixture) and `transport rpc`. `build_procedures_file` computes
+// its scalar imports transport-agnostically (it never branches on
+// `is_rest`), so this fixture is architecturally low-risk — but the AC
+// asks for it to be exercised literally, not just argued from the code,
+// so this pins it as a real regression guard rather than leaving the RPC
+// direction unexercised.
+//
+// Same shape as `riverpod_procedure_scalar_imports.cstack`: `Keep` gives
+// the schema a model that itself uses neither scalar, `Envelope` is a
+// procedure-owned nested `type` reached via its own fields, and
+// `storeEnvelope`'s `token`/`fee` args reach `StoreEnvelopeArgs`.
+
+transport rpc
+
+model Keep {
+  id Int @id
+  name String
+}
+
+type Envelope {
+  payload Bytes
+  label String
+}
+
+procedure storeEnvelope(envelope: Envelope, token: Bytes, fee: Decimal): Boolean

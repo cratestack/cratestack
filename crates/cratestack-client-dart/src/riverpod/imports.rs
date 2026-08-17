@@ -92,9 +92,14 @@ pub(crate) fn owned_type_decl_model_refs<'a>(
 /// *return* types, which appear in a `Future<...>` signature without ever
 /// belonging to a data class, and were the case a fields-only scan missed.
 ///
-/// Recurses into `generic_args` so a wrapped scalar (`Page<Decimal>`) is
-/// reached; arity (`Decimal[]`, `Bytes?`) needs no special handling since
-/// it never changes `TypeRef::name`.
+/// Recurses into `generic_args` defensively rather than because it is
+/// currently load-bearing: the parser today restricts built-in generic
+/// items (`Page<T>`, `FindMany<T>`) to a declared `model` or `type` as
+/// their argument, so no generic argument can presently *be* `Bytes` or
+/// `Decimal` — a schema spelling `Page<Decimal>` fails to parse with
+/// "built-in `Page<T>` only supports declared model or type items;
+/// `Decimal` is unsupported". Arity (`Decimal[]`, `Bytes?`) needs no
+/// special handling since it never changes `TypeRef::name`.
 pub(crate) fn scalar_type_imports<'a>(
     type_refs: impl IntoIterator<Item = &'a TypeRef>,
 ) -> BTreeSet<String> {

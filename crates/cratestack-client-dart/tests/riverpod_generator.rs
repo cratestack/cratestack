@@ -539,6 +539,63 @@ fn riverpod_procedure_arg_and_owned_type_scalars_are_imported() {
     );
 }
 
+/// Issue #630's acceptance criteria call for the fix to be reproduced and
+/// verified under both `transport rest` and `transport rpc` — the sibling
+/// test above only exercises the (default) REST transport.
+/// `build_procedures_file` computes `scalar_type_imports` once, before any
+/// REST/RPC branching, so this is architecturally low-risk, but the AC
+/// should be exercised literally rather than argued from the code.
+#[test]
+fn riverpod_procedure_scalars_are_imported_under_rpc_transport() {
+    let package = generate(
+        "riverpod_procedure_scalar_rpc",
+        "proc_scalar_rpc_client",
+        DartPreset::Riverpod,
+    );
+
+    let procedures = package_file(&package, "lib/src/procedures.dart");
+    assert!(
+        procedures.contains("import 'dart:typed_data';"),
+        "procedures.dart references Uint8List so it must import dart:typed_data even under \
+         transport rpc:\n{procedures}"
+    );
+    assert!(
+        procedures.contains("import 'package:decimal/decimal.dart';"),
+        "procedures.dart references Decimal so it must import package:decimal/decimal.dart \
+         even under transport rpc:\n{procedures}"
+    );
+}
+
+/// Over-emission guard for the per-model locus, the counterpart to
+/// `riverpod_scalar_imports_are_omitted_when_the_schema_uses_neither_scalar`
+/// below (which covers `procedures.dart` only). An unused import is a
+/// `flutter analyze --fatal-warnings` failure just like a missing one, and
+/// `build_model.rs`'s per-model computation is a separate code path from
+/// `build_procedures.rs`'s, so it needs its own regression guard. Reuses
+/// `riverpod_procedure_scalar_imports.cstack`'s `Keep` model, which the
+/// fixture already documents as existing "so the schema has a model
+/// without itself using either scalar".
+#[test]
+fn riverpod_model_file_omits_scalar_imports_when_the_model_uses_neither_scalar() {
+    let package = generate(
+        "riverpod_procedure_scalar_imports",
+        "proc_scalar_client",
+        DartPreset::Riverpod,
+    );
+
+    let keep = package_file(&package, "lib/src/models/keep.dart");
+    assert!(
+        !keep.contains("import 'dart:typed_data';"),
+        "Keep has no Bytes field, so keep.dart must not import dart:typed_data \
+         (unused_import is also fatal):\n{keep}"
+    );
+    assert!(
+        !keep.contains("import 'package:decimal/decimal.dart';"),
+        "Keep has no Decimal field, so keep.dart must not import \
+         package:decimal/decimal.dart:\n{keep}"
+    );
+}
+
 /// Regression test for issue #630's decisive case: a procedure whose bare
 /// *return* type is an import-needing scalar. `Uint8List`/`Decimal` appear
 /// only in the generated `Future<...>` signatures — no field and no data
