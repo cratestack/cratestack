@@ -11,7 +11,7 @@ use cratestack_core::Schema;
 
 use crate::builders::{build_data_class, build_enum_view};
 use crate::naming::{enum_name_set, model_name_set};
-use crate::riverpod::imports::{direct_model_refs, model_file_path, render_import_lines};
+use crate::riverpod::imports::{model_file_path, owned_type_decl_model_refs, render_import_lines};
 use crate::riverpod::partition::{Owner, TypePartition};
 use crate::riverpod::views::SharedTypesFileContext;
 use crate::views::DataClassKind;
@@ -24,7 +24,7 @@ pub(crate) fn build_shared_types_file(
     let enum_names = enum_name_set(&schema.enums);
 
     let mut data_classes = Vec::new();
-    let mut referenced_models = BTreeSet::new();
+    let mut owned_type_decls = Vec::new();
     for ty in &schema.types {
         if *partition.type_owner(&ty.name) != Owner::Shared {
             continue;
@@ -36,8 +36,9 @@ pub(crate) fn build_shared_types_file(
             DataClassKind::Plain,
             &enum_names,
         ));
-        referenced_models.extend(direct_model_refs(ty.fields.iter(), &model_names));
+        owned_type_decls.push(ty);
     }
+    let referenced_models = owned_type_decl_model_refs(owned_type_decls, &model_names);
 
     let enum_types = schema
         .enums

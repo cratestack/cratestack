@@ -31,7 +31,11 @@ class {{ client_class_name }} {
 {% for accessor in model_accessors %}
   {{ accessor.api_class_name }} get {{ accessor.accessor }} => {{ accessor.api_class_name }}(this);
 {% endfor %}
+{% if procedures | length > 0 %}
   ProceduresApi get procedures => ProceduresApi(this);
+{% else %}
+  ProceduresApi get procedures => const ProceduresApi();
+{% endif %}
 }
 
 final {{ provider_prefix }}AdapterProvider = Provider<CratestackClientAdapter>((ref) {
@@ -162,6 +166,7 @@ class {{ model.api_class_name }} {
 }
 
 {% endfor %}
+{% if procedures | length > 0 %}
 class ProceduresApi {
   const ProceduresApi(this._client);
 
@@ -182,3 +187,12 @@ class ProceduresApi {
 
 {% endfor %}
 }
+{% else %}
+// cratestack#3: a schema with zero procedures still gets a `ProceduresApi`
+// but with no `_client` field — nothing would ever read it, and an unread
+// private field is a real `unused_field` `flutter analyze
+// --fatal-warnings` failure.
+class ProceduresApi {
+  const ProceduresApi();
+}
+{% endif %}

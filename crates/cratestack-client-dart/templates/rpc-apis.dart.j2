@@ -13,7 +13,11 @@ class {{ client_class_name }} {
 {% for accessor in model_accessors %}
   {{ accessor.api_class_name }} get {{ accessor.accessor }} => {{ accessor.api_class_name }}(this);
 {% endfor %}
+{% if procedures | length > 0 %}
   ProceduresApi get procedures => ProceduresApi(this);
+{% else %}
+  ProceduresApi get procedures => const ProceduresApi();
+{% endif %}
 }
 
 final {{ provider_prefix }}AdapterProvider = Provider<CratestackRpcAdapter>((ref) {
@@ -98,6 +102,7 @@ class {{ model.api_class_name }} {
 }
 
 {% endfor %}
+{% if procedures | length > 0 %}
 class ProceduresApi {
   const ProceduresApi(this._client);
 
@@ -117,3 +122,9 @@ class ProceduresApi {
 
 {% endfor %}
 }
+{% else %}
+// cratestack#3: see `rest-apis.dart.j2`'s identical guard for why.
+class ProceduresApi {
+  const ProceduresApi();
+}
+{% endif %}

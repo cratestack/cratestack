@@ -21,7 +21,7 @@ use crate::find_many_views::{
 use crate::idents::to_camel_case;
 use crate::naming::{is_generated_on_create, is_primary_key, model_name_set, scalar_model_fields};
 use crate::riverpod::imports::{
-    direct_model_refs, model_file_path, model_file_stem, model_relation_targets,
+    model_file_path, model_file_stem, model_relation_targets, owned_type_decl_model_refs,
     render_import_lines,
 };
 use crate::riverpod::partition::{Owner, TypePartition};
@@ -179,6 +179,28 @@ pub(crate) fn build_model_file(
     imports.insert("import 'package:dart_mappable/dart_mappable.dart';".to_owned());
     imports.insert("import '../runtime.dart';".to_owned());
     imports.insert("import '../client.dart';".to_owned());
+    // cratestack#625: `dart_types.rs:43` maps a `Bytes` field to
+    // `Uint8List`, which lives in `dart:typed_data` — the `default`
+    // preset's monolithic `models.dart.j2:1` and this preset's own
+    // `shared_types.dart.j2:5` both hardcode the import unconditionally
+    // (a single shared file always has *some* model somewhere), but a
+    // per-model file only needs it when *this* model's own fields or one
+    // of its owned nested `type`s (built into `owned_type_decls` below)
+    // actually has a `Bytes` field — otherwise it's a real `unused_import`
+    // `flutter analyze --fatal-warnings` failure, per this module's "only
+    // import what's used" rule.
+    let references_bytes = model
+        .fields
+        .iter()
+        .chain(
+            owned_type_decls
+                .iter()
+                .flat_map(|type_decl| type_decl.fields.iter()),
+        )
+        .any(|field| field.ty.name == "Bytes");
+    if references_bytes {
+        imports.insert("import 'dart:typed_data';".to_owned());
+    }
     if is_rest {
         imports.insert("import '../queries.dart';".to_owned());
     }
@@ -213,9 +235,10 @@ pub(crate) fn build_model_file(
     }
 
     let mut related_models = model_relation_targets(model, &model_names);
-    for type_decl in &owned_type_decls {
-        related_models.extend(direct_model_refs(type_decl.fields.iter(), &model_names));
-    }
+    related_models.extend(owned_type_decl_model_refs(
+        owned_type_decls.iter().copied(),
+        &model_names,
+    ));
     for other in related_models {
         imports.insert(format!("import '{}';", model_file_path(&other)));
     }

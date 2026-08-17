@@ -29,7 +29,11 @@ class {{ client_class_name }} {
 {% for accessor in model_accessors %}
   {{ accessor.api_class_name }} get {{ accessor.accessor }} => {{ accessor.api_class_name }}(this);
 {% endfor %}
+{% if has_procedures %}
   ProceduresApi get procedures => ProceduresApi(this);
+{% else %}
+  ProceduresApi get procedures => const ProceduresApi();
+{% endif %}
 }
 
 final {{ provider_prefix }}AdapterProvider = Provider<CratestackClientAdapter>((ref) {

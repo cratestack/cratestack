@@ -15,7 +15,7 @@ use crate::builders_model::build_procedure;
 use crate::dart_types::dart_type;
 use crate::idents::to_pascal_case;
 use crate::naming::{enum_name_set, model_name_set, occupied_type_names, procedure_wrapper_name};
-use crate::riverpod::imports::{model_file_path, render_import_lines};
+use crate::riverpod::imports::{model_file_path, owned_type_decl_model_refs, render_import_lines};
 use crate::riverpod::partition::{Owner, TypePartition, referenced_name};
 use crate::riverpod::provider_naming::reserve_operation_symbol;
 use crate::riverpod::views::{ProcedureOperationView, ProceduresFileContext};
@@ -113,6 +113,7 @@ pub(crate) fn build_procedures_file(
     }
 
     let locus = Owner::Procedures;
+    let mut owned_type_decls = Vec::new();
     for name in partition.owned_names(&locus) {
         if let Some(type_decl) = schema.types.iter().find(|ty| ty.name == name) {
             let fields = type_decl.fields.iter().collect::<Vec<_>>();
@@ -122,6 +123,7 @@ pub(crate) fn build_procedures_file(
                 DataClassKind::Plain,
                 &enum_names,
             ));
+            owned_type_decls.push(type_decl);
         }
     }
 
@@ -184,6 +186,14 @@ pub(crate) fn build_procedures_file(
             referenced_models.insert(name);
         }
     }
+    // cratestack#626: the scan above only reaches models named directly by
+    // a procedure's own args/return type — it never looks at the *fields*
+    // of the procedure-owned nested `type` declarations emitted above
+    // (`owned_type_decls`), so a procedure-only `type` whose field names a
+    // `model` (the same shape issue #137 fixed for `build_model.rs`/
+    // `build_shared_types.rs`, both of which call this same helper) had
+    // its import silently dropped.
+    referenced_models.extend(owned_type_decl_model_refs(owned_type_decls, &model_names));
     for other in referenced_models {
         imports.insert(format!("import 'models/{}';", model_file_path(&other)));
     }

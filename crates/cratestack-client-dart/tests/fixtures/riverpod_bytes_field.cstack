@@ -1,0 +1,14 @@
+// Regression fixture for issue #625: a riverpod per-model file with a
+// `Bytes` field. `dart_types.rs:43` maps `Bytes` to `Uint8List`, which
+// lives in `dart:typed_data` — `build_model.rs`'s per-model import
+// computation never inspected field types for `Bytes`, so the generated
+// model file referenced `Uint8List` with no import for it. The `default`
+// preset's monolithic `models.dart.j2:1` and this preset's own
+// `shared_types.dart.j2:5` both hardcode the import unconditionally, so
+// neither of those is affected — only the per-model template was missing
+// it.
+
+model Document {
+  id Int @id
+  payload Bytes
+}

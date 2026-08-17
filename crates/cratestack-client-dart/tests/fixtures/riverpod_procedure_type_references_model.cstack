@@ -1,0 +1,23 @@
+// Regression fixture for issue #626: a procedure-only `type` whose own
+// field references a `model` — the same shape issue #137 fixed (see
+// `../cratestack-pg/tests/fixtures/type_references_model.cstack`), but
+// reached only through a procedure rather than through any model's own
+// fields, so `ApiKeySecret` is owned by `Owner::Procedures` (not
+// `Owner::Shared`). `build_procedures.rs`'s own `referenced_models` scan
+// only looked at procedure args/return types, never at the fields of the
+// procedure-owned nested `type` declarations it emits alongside them, so
+// `procedures.dart` referenced `SomeModel` with no import for it —
+// `build_model.rs`/`build_shared_types.rs` both already called
+// `direct_model_refs` for this same case; `build_procedures.rs` didn't.
+
+model SomeModel {
+  id Int @id
+  name String
+}
+
+type ApiKeySecret {
+  model SomeModel
+  secret String
+}
+
+procedure getSecret(): ApiKeySecret

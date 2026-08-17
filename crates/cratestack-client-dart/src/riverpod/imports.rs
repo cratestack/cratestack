@@ -5,7 +5,7 @@
 use std::collections::BTreeSet;
 
 use cratestack_core::route_naming;
-use cratestack_core::{Field, Model};
+use cratestack_core::{Field, Model, TypeDecl};
 
 use crate::riverpod::partition::referenced_name;
 
@@ -50,6 +50,30 @@ pub(crate) fn direct_model_refs<'a>(
     fields
         .map(|field| referenced_name(&field.ty))
         .filter(|name| model_names.contains(name.as_str()))
+        .collect()
+}
+
+/// Model names referenced anywhere across a set of "owned" nested `type`
+/// declarations — the single computation point every per-locus builder
+/// (`build_model`, `build_shared_types`, `build_procedures`) calls for its
+/// own `partition.owned_names(&locus)` type decls, instead of each
+/// hand-rolling the same `direct_model_refs` scan over `type_decl.fields`.
+///
+/// This exists because issue #626 was exactly that duplication going
+/// wrong: `build_model.rs`/`build_shared_types.rs` both called
+/// `direct_model_refs` per owned type decl (the fix for issue #137), but
+/// `build_procedures.rs` never did, so a procedure-only `type` referencing
+/// a `model` silently dropped the model's import in `procedures.dart`. A
+/// third builder hand-rolling this scan again would risk the same
+/// omission a third time — routing every locus through one function makes
+/// that harder, not just less likely.
+pub(crate) fn owned_type_decl_model_refs<'a>(
+    type_decls: impl IntoIterator<Item = &'a TypeDecl>,
+    model_names: &BTreeSet<&str>,
+) -> BTreeSet<String> {
+    type_decls
+        .into_iter()
+        .flat_map(|type_decl| direct_model_refs(type_decl.fields.iter(), model_names))
         .collect()
 }
 

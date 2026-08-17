@@ -354,3 +354,106 @@ fn find_many_procedure_argument_imports_post_find_many_under_riverpod_preset() {
     assert!(procedures.contains("final PostFindMany query;"));
     assert!(procedures.contains("query: PostFindMany.fromWire("));
 }
+
+/// Regression test for issue #625 — `build_model.rs`'s per-model import
+/// computation never inspected field types for `Bytes`, so a riverpod
+/// per-model file referenced `Uint8List` (`dart_types.rs:43`'s mapping)
+/// with no `dart:typed_data` import for it. The `default` preset's
+/// monolithic `models.dart.j2:1` and this preset's own
+/// `shared_types.dart.j2:5` both hardcode the import unconditionally, so
+/// neither is affected — only the per-model template was missing it.
+#[test]
+fn riverpod_bytes_field_model_file_imports_dart_typed_data() {
+    let package = generate("riverpod_bytes_field", "bytes_client", DartPreset::Riverpod);
+
+    let document = package_file(&package, "lib/src/models/document.dart");
+    assert!(
+        document.contains("Uint8List"),
+        "document.dart should reference Uint8List for the Bytes field:\n{document}"
+    );
+    assert!(
+        document.contains("import 'dart:typed_data';"),
+        "document.dart references Uint8List so it must import dart:typed_data, or \
+         `flutter analyze --fatal-warnings` fails with undefined_class:\n{document}"
+    );
+}
+
+/// Regression test for issue #626 — a partial fix for issue #137:
+/// `build_model.rs`/`build_shared_types.rs` both call
+/// `direct_model_refs`/`owned_type_decl_model_refs` for their own owned
+/// nested `type` declarations, but `build_procedures.rs` never scanned
+/// the fields of the procedure-owned `type`s it emits into
+/// `procedures.dart`, only procedure args/return types directly — so a
+/// procedure-only `type` whose own field names a `model` had that
+/// model's import silently dropped.
+#[test]
+fn riverpod_procedure_only_type_field_referencing_a_model_imports_that_model() {
+    let package = generate(
+        "riverpod_procedure_type_references_model",
+        "proc_type_client",
+        DartPreset::Riverpod,
+    );
+
+    let procedures = package_file(&package, "lib/src/procedures.dart");
+    assert!(
+        procedures.contains("class ApiKeySecret with ApiKeySecretMappable {"),
+        "ApiKeySecret is reached only via the getSecret procedure, so it belongs in \
+         procedures.dart:\n{procedures}"
+    );
+    assert!(
+        procedures.contains("final SomeModel model;"),
+        "ApiKeySecret.model should be typed SomeModel:\n{procedures}"
+    );
+    assert!(
+        procedures.contains("import 'models/some_model.dart';"),
+        "procedures.dart references SomeModel (a procedure-only type field naming a model) so \
+         it must import models/some_model.dart, or `flutter analyze --fatal-warnings` fails \
+         with undefined_class:\n{procedures}"
+    );
+}
+
+/// Regression test for issue #3 (unfiled at authoring time) — every
+/// `templates/*apis.dart.j2`/`templates/riverpod/*_procedures.dart.j2`
+/// unconditionally declared `class ProceduresApi { const
+/// ProceduresApi(this._client); final ClientT _client; ... }`, so a
+/// schema with zero procedures left `_client` with no reader (the `{%
+/// for procedure in procedures %}` loop that's its only reader never
+/// runs) — a real `unused_field` `flutter analyze --fatal-warnings`
+/// failure. `riverpod_shared_type_orphan.cstack` is an existing fixture
+/// that already declares zero procedures.
+#[test]
+fn procedures_api_has_no_client_field_when_schema_has_zero_procedures_under_default_preset() {
+    let package = generate(
+        "riverpod_shared_type_orphan",
+        "zero_proc_client",
+        DartPreset::Default,
+    );
+
+    let apis = package_file(&package, "lib/src/apis.dart");
+    assert!(
+        apis.contains("class ProceduresApi {\n  const ProceduresApi();\n}"),
+        "a schema with zero procedures should emit a client-less ProceduresApi:\n{apis}"
+    );
+}
+
+#[test]
+fn procedures_api_has_no_client_field_when_schema_has_zero_procedures_under_riverpod_preset() {
+    let package = generate(
+        "riverpod_shared_type_orphan",
+        "zero_proc_client",
+        DartPreset::Riverpod,
+    );
+
+    let procedures = package_file(&package, "lib/src/procedures.dart");
+    assert!(
+        procedures.contains("class ProceduresApi {\n  const ProceduresApi();\n}"),
+        "a schema with zero procedures should emit a client-less ProceduresApi in \
+         procedures.dart too:\n{procedures}"
+    );
+
+    let client = package_file(&package, "lib/src/client.dart");
+    assert!(
+        client.contains("ProceduresApi get procedures => const ProceduresApi();"),
+        "client.dart's accessor should match the client-less constructor:\n{client}"
+    );
+}

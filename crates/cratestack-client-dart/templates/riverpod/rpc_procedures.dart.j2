@@ -10,6 +10,7 @@ part '{{ mapper_part_file_name }}';
 {% endif %}
 
 {% include "riverpod/enums_and_data_classes.dart.j2" %}
+{% if procedures | length > 0 %}
 class ProceduresApi {
   const ProceduresApi(this._client);
 
@@ -29,6 +30,12 @@ class ProceduresApi {
 
 {% endfor %}
 }
+{% else %}
+// cratestack#3: see `rest_procedures.dart.j2`'s identical guard for why.
+class ProceduresApi {
+  const ProceduresApi();
+}
+{% endif %}
 
 final {{ provider_prefix }}ProceduresApiProvider = Provider<ProceduresApi>((ref) {
   return ref.watch({{ provider_prefix }}ClientProvider).procedures;

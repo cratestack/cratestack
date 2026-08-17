@@ -15,6 +15,7 @@ part '{{ mapper_part_file_name }}';
 {% endif %}
 
 {% include "riverpod/enums_and_data_classes.dart.j2" %}
+{% if procedures | length > 0 %}
 class ProceduresApi {
   const ProceduresApi(this._client);
 
@@ -35,6 +36,17 @@ class ProceduresApi {
 
 {% endfor %}
 }
+{% else %}
+// cratestack#3: a schema with zero procedures still gets a `ProceduresApi`
+// (the `default` preset's own `apis.dart.j2` always renders one too —
+// see `ProceduresFileContext::procedures`'s doc) but with no `_client`
+// field: nothing in an empty class would ever read it, and an unread
+// private field is a real `unused_field` `flutter analyze
+// --fatal-warnings` failure.
+class ProceduresApi {
+  const ProceduresApi();
+}
+{% endif %}
 
 final {{ provider_prefix }}ProceduresApiProvider = Provider<ProceduresApi>((ref) {
   return ref.watch({{ provider_prefix }}ClientProvider).procedures;
