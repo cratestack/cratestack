@@ -810,7 +810,6 @@ jobs:
       # thing — setup-dart first, then a Flutter install, then publish — so
       # this ordering is the upstream-blessed combination rather than a
       # local guess.
-      - uses: dart-lang/setup-dart@v1
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -936,8 +935,33 @@ jobs:
             exit 1
           fi
           echo "✓ OIDC token endpoint present"
+      # setup-dart sits HERE, immediately before the publish, not up with the
+      # other toolchain steps. It mints the GitHub OIDC token, and that token
+      # is short-lived. On v0.8.2 it ran 9 minutes before the publish — three
+      # Rust builds and an Android cross-compile in between — and pub.dev
+      # rejected the expired credential:
+      #
+      #   Invalid token for https://pub.dev deleted.
+      #   Invalid JWT token: invalid timestamps.
+      #   Authentication failed!
+      #
+      # Dart's own reusable publish workflow runs setup-dart immediately
+      # before `dart pub publish` for this reason; there is nothing slow
+      # between them. Keep it adjacent — moving it back up with the other
+      # `uses:` steps reintroduces the expiry window.
+      - uses: dart-lang/setup-dart@v1
       - name: Publish cratestack_cbor to pub.dev
         working-directory: dart-packages/cratestack_cbor
+        env:
+          # Publish with FLUTTER'S dart, explicitly, not whatever `dart`
+          # resolves to on PATH. setup-dart now runs after flutter-action and
+          # prepends its own standalone SDK; this package declares
+          # `environment.flutter`, so a standalone `dart pub publish` fails
+          # version solving outright (cratestack#633). The credential
+          # setup-dart writes is shared via the pub config directory, so
+          # Flutter's dart picks it up regardless of which binary is first on
+          # PATH.
+          FLUTTER_DART: ${{ env.FLUTTER_ROOT }}/bin/dart
         # Wrapped in `timeout`, NOT redirected from /dev/null. Worth being
         # precise about why, because the obvious fix does not work here: pub's
         # OAuth fallback does not read stdin. It starts a local HTTP server and
@@ -945,17 +969,44 @@ jobs:
         # `redirect_uri=http://localhost:46305` — so closing stdin changes
         # nothing; it would still block on a socket that nothing will ever
         # connect to.
-        #
-        # A hard timeout is what actually bounds it. 10 minutes is generous:
-        # the upload itself took 3.3s in the successful manual publish, and
-        # everything slow (toolchain, vendoring) has already happened in
-        # earlier steps.
         run: |
           set -euo pipefail
-          if ! timeout 600 dart pub publish --force; then
+          dart_bin="${FLUTTER_DART}"
+          [ -x "$dart_bin" ] || dart_bin="$(command -v dart)"
+          echo "publishing with: $dart_bin ($("$dart_bin" --version 2>&1))"
+          if ! timeout 600 "$dart_bin" pub publish --force; then
             status=$?
             if [ "$status" -eq 124 ]; then
-              echo "::error::dart pub publish timed out after 10 minutes — it fell back to interactive OAuth, meaning no OIDC credential was configured. Check IN THIS ORDER: (1) the 'dart-lang/setup-dart' step above is still present — it is what creates and configures the token, and its absence caused exactly this on v0.8.1; (2) 'permissions: id-token: write' on this job; (3) pub.dev -> cratestack_cbor -> Admin -> Automated publishing, repository '${{ github.repository }}', tag pattern matching '${{ github.ref_name }}'. The first is a workflow bug and the third is a pub.dev setting; the symptom is identical, so do not assume it is (3)." >&2
+              echo "::error::dart pub publish timed out after 10 minutes — it fell back to interactive OAuth, meaning no OIDC credential was configured. Check IN THIS ORDER: (1) the 'dart-lang/setup-dart' step immediately above is still present and still adjacent to this step; (2) 'permissions: id-token: write' on this job; (3) pub.dev -> cratestack_cbor -> Admin -> Automated publishing, repository '${{ github.repository }}', tag pattern matching '${{ github.ref_name }}'." >&2
             fi
             exit "$status"
           fi
+      # `dart pub publish` EXITS 0 ON AUTHENTICATION FAILURE. That is not a
+      # theory: on v0.8.2 the step printed "Authentication failed!", published
+      # nothing, exited 0, and this job reported success — a green release
+      # where pub.dev never received the package. Every other channel had
+      # already published irreversibly by then.
+      #
+      # So the exit code cannot be trusted, exactly like the archive gate
+      # above cannot trust `--dry-run`'s exit code. Ask pub.dev what it
+      # actually has. This check is cause-independent: expired token, rejected
+      # credential, silent upload failure — all of them land here.
+      - name: Verify pub.dev actually received the version
+        run: |
+          set -euo pipefail
+          want="$(grep -m1 '^version:' dart-packages/cratestack_cbor/pubspec.yaml | awk '{print $2}')"
+          echo "expecting cratestack_cbor ${want} on pub.dev"
+          # pub.dev states uploads "may take up-to 10 minutes" to appear, so
+          # poll rather than asserting once.
+          for attempt in $(seq 1 20); do
+            got="$(curl -fsSL "https://pub.dev/api/packages/cratestack_cbor" 2>/dev/null \
+                   | python3 -c 'import json,sys; print(json.load(sys.stdin)["latest"]["version"])' 2>/dev/null || true)"
+            if [ "$got" = "$want" ]; then
+              echo "✓ pub.dev serves cratestack_cbor ${got}"
+              exit 0
+            fi
+            echo "  attempt ${attempt}/20: pub.dev latest is '${got:-unknown}', waiting..."
+            sleep 30
+          done
+          echo "::error::pub.dev does not serve cratestack_cbor ${want} after 10 minutes. The publish step exited 0, but that proves nothing — dart pub publish exits 0 even when authentication fails (observed on v0.8.2). Read the publish step's output for 'Authentication failed!' or 'Invalid JWT token'." >&2
+          exit 1
