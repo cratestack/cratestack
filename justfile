@@ -1984,8 +1984,29 @@ release VERSION mode='real':
 	# missing it here would silently drop that bump from the release
 	# commit — same failure shape as the `packages/*/package.json` bug this
 	# comment already describes.
-	if ! git diff --quiet -- '**/Cargo.toml' Cargo.lock ':(glob)packages/*/package.json' ':(glob)dart-packages/*/pubspec.yaml'; then
-	  git add ':(glob)**/Cargo.toml' Cargo.lock pnpm-lock.yaml \
+	# `':(glob)**/Cargo.lock'`, NOT a bare `Cargo.lock`. The bare form stages
+	# only the ROOT lockfile, while `bump` refreshes five more: the four
+	# standalone verification workspaces under `examples/` and
+	# `crates/cratestack-studio-ui`, each its own `[workspace]` root with its
+	# own lock. Those refreshes happened in the working tree and were then
+	# never committed.
+	#
+	# That is not theoretical — it is what v0.8.1 shipped. The release
+	# committed the workspace at 0.8.1 while all five standalone lockfiles
+	# still recorded 0.8.0, turning `main` red on `facade disjointness`,
+	# whose whole job is `cargo metadata --locked` in exactly those
+	# directories:
+	#
+	#   error: cannot update the lock file .../examples/no-database-verification/Cargo.lock
+	#          because --locked was passed to prevent this
+	#
+	# Precisely the failure shape this comment block already describes for
+	# `packages/*/package.json` (#581) and `dart-packages/*/pubspec.yaml` —
+	# a third instance of "bump rewrote it, release never staged it". The
+	# glob form ends the pattern rather than adding a fourth hand-listed
+	# path: a future standalone workspace is covered automatically.
+	if ! git diff --quiet -- '**/Cargo.toml' ':(glob)**/Cargo.lock' ':(glob)packages/*/package.json' ':(glob)dart-packages/*/pubspec.yaml'; then
+	  git add ':(glob)**/Cargo.toml' ':(glob)**/Cargo.lock' pnpm-lock.yaml \
 	    ':(glob)packages/*/package.json' ':(glob)dart-packages/*/pubspec.yaml'
 	  git commit -m "chore: bump workspace to v{{VERSION}}"
 	fi
