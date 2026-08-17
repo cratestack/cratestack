@@ -2,19 +2,92 @@
 
 ## 0.8.3 (2026-08-17)
 
-<!-- TODO: edit this section from the seed below -->
-<!-- seeded from v0.8.2..HEAD at 1ef573081af2075ffe390bbc564feaf9b5e49255 -->
+Two fixes, both to things that reported success while doing nothing.
 
-This is an auto-generated seed. Please rewrite into narrative prose describing
-the changes in this release, grouped by concern. Refer to existing entries in
-this file for the house prose style. Do not commit with this placeholder text.
+### The pub.dev publish could report success without publishing
 
-### Changes
+`dart pub publish` exits 0 even when authentication fails. On 0.8.2 the release job printed
+`Authentication failed!`, uploaded nothing, exited 0, and the run went green — every other channel
+had already published irreversibly by then. A green release meant nothing about whether pub.dev
+had received the package.
 
-#### Fixes
+The publish step now asks pub.dev what it actually serves, polling for the documented ten-minute
+indexing window, and fails the release if the version never appears. This is deliberately
+cause-independent: an expired token, a rejected credential and a silent upload failure all land in
+the same check.
 
-- gate riverpod procedures.dart imports and part directive on use (#632)
-- pub.dev publish reported success while publishing nothing (#638)
+The underlying credential failure is fixed too. `dart-lang/setup-dart` now sits immediately before
+the publish rather than nine minutes earlier, because the OIDC token it mints is short-lived and
+pub.dev was rejecting it as `Invalid JWT token: invalid timestamps` after the intervening Rust and
+Android builds. Publishing invokes `$FLUTTER_ROOT/bin/dart` explicitly, since this package declares
+`environment.flutter` and a standalone Dart SDK fails version solving outright.
+
+### Riverpod clients emitted imports and a `part` directive for procedures they did not have
+
+The generated `procedures.dart` import and its matching `part` directive were emitted
+unconditionally, so a schema with no procedures produced a client referencing a file that was never
+written. Both are now gated on actual use.
+
+## 0.8.2 (2026-08-17)
+
+Release-pipeline fixes only. No changes to the framework, the generators or any published API.
+
+Three defects, each of which stopped a real release partway through:
+
+- **`just release` staged only the root `Cargo.lock`**, leaving the five standalone workspace
+  lockfiles — the four `examples/` verification workspaces and `crates/cratestack-studio-ui` — at
+  the previous version. That turned `main` red on `facade disjointness`, whose job is
+  `cargo metadata --locked` in exactly those directories. It now stages every lockfile via a glob,
+  so a future standalone workspace is covered without another hand-listed path.
+- **The pub.dev publish could hang indefinitely.** With no OIDC credential configured,
+  `dart pub publish` falls back to interactive OAuth and waits on a browser redirect that never
+  comes; no job in the release workflow set `timeout-minutes`, so it held a runner for GitHub's
+  six-hour default. Bounded now, with a diagnostic naming the likely causes.
+- **`dart-lang/setup-dart` was missing entirely** from the pub.dev job. It is the step that creates
+  and configures the OIDC token — `permissions: id-token: write` only grants the ability to mint
+  one. Without it, authentication could never succeed.
+
+## 0.8.1 (2026-08-16)
+
+The `cratestack_cbor` pub.dev package, plus generator and release fixes.
+
+### New: `cratestack_cbor` on pub.dev
+
+A native CBOR codec for Dart and Flutter, exposing one `CratestackCborCodec` API over two backends
+chosen by conditional export: flutter_rust_bridge over a vendored prebuilt library natively, and
+the existing `cratestack-cbor-wasm` artifact loaded via `dart:js_interop` on the web. It mirrors
+`@cratestack/cbor`'s umbrella shape for JavaScript rather than introducing a third binding of the
+same codec.
+
+Supported platforms are **Linux desktop, web, and Android** (arm64-v8a, x86_64, armeabi-v7a), each
+proven by a real build and a real run rather than a compile check — including an APK installed and
+executed on an emulator. iOS, macOS and Windows are deliberately unsupported for now and throw a
+clear `UnsupportedError`.
+
+Measured speedup over pure-Dart `package:cbor` is **~3x**. `#[frb(sync)]` is mandatory to get it:
+flutter_rust_bridge's default async dispatch measured *slower* than pure Dart.
+
+### Breaking: TanStack Query emission is now opt-in
+
+`generate-typescript` no longer emits `src/react-query.ts` unless `--tanstack` is passed, matching
+how `--swr` and `--refine` already behave. TanStack was the only framework binding emitted
+unconditionally, and because `src/index.ts` re-exported it, a Vue, Svelte or plain-Node consumer had
+no supported way to avoid resolving `@tanstack/react-query` — the hooks are value imports, not types.
+
+**Upgrading:** add `--tanstack` to keep the hooks. The break is loud (a module-resolution or type
+error), never silent. Note that regeneration does not delete files it no longer produces, so remove
+the stale `src/react-query.ts` by hand.
+
+### Fixes
+
+- Paged list routes computed `total_count` by re-running the filtered query with paging disabled and
+  calling `.len()` on the decoded rows — transferring and decoding every matching row on every list
+  request. It is now a real `COUNT(*)` aggregate built from the same `FindMany`, so the count's
+  `WHERE` and policy scope are identical to the page query by construction.
+- `install-cratestack-cli` retries transient network failures (`curl` 52/56) instead of failing
+  unrelated PRs, while a genuine 404 still fails on the first attempt rather than burning the retry
+  budget.
+- Three Dart generator import defects, and `Bytes`/`Decimal` imports missing at some riverpod loci.
 
 ## 0.8.0 (2026-08-14)
 
