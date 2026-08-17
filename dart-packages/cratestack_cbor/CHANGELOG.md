@@ -1,3 +1,25 @@
+## 0.8.3
+
+- No functional changes. Version kept in lockstep with the CrateStack
+  workspace, which every published CrateStack artifact shares.
+- First version published by the automated release pipeline rather than by
+  hand (cratestack#563).
+
+## 0.8.2
+
+Package metadata only — the codec, the platform support and the vendored
+artifacts are unchanged from 0.8.0.
+
+- Declares `environment.flutter: ">=1.20.0"`. This package deliberately ships
+  no `ios/` folder, and Flutter only permits a plugin to omit platform folders
+  from 1.20 onward — pub.dev rejects the upload otherwise. The Dart constraint
+  (`sdk: ^3.5.0`) remains the real floor.
+- Removes the `publish_to: none` guard that kept earlier revisions from being
+  published by accident.
+- Shortens the package description to pub.dev's 180-character recommendation.
+
+(0.8.1 was never published to pub.dev.)
+
 ## 0.8.0
 
 - Initial package structure (cratestack#563). One uniform `CratestackCborCodec`
@@ -8,7 +30,6 @@
     Linux arm64) is follow-up work.
   - Web: the existing `cratestack-cbor-wasm` wasm-bindgen artifact,
     vendored and loaded via `dart:js_interop`.
-- Not yet published to pub.dev — see README.md.
 - Flutter app integration, proven by real builds (cratestack#563):
   - Linux: a Flutter FFI plugin (`linux/CMakeLists.txt`) bundles the
     vendored `.so` into a real `flutter build linux` app, instead of the
