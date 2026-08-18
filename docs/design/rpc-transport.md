@@ -397,10 +397,23 @@ the service directly.
 `canonical_request_string` in `cratestack-core` is unchanged — only the
 method / path / body components fed into it differ per binding (see below).
 
-- HTTP unary and batch: the canonical request *is the actual rpc request*.
-  Method `POST`, path `/rpc/<op_id>` (the concrete URL the client hit), no
-  query, and the raw rpc frame bytes as the body. The frame body carries the
+- HTTP unary: the canonical request *is the actual rpc request*. Method
+  `POST`, path `/rpc/<op_id>` (the concrete URL the client hit), no query,
+  and the raw rpc frame bytes as the body. The frame body carries the
   primary key / patch / args, so signing it binds them.
+- HTTP batch: the canonical request is the *envelope*, not any individual
+  frame. A batch client signs exactly one request — `POST /rpc/batch`, no
+  query, the raw untouched body (the whole encoded frame sequence) — once,
+  covering every queued op at once. `rpc_batch_dispatch` authenticates that
+  one envelope exactly once and threads the resulting `CratestackContext`
+  through every per-frame dispatch via `CachedAuthProvider`, rather than
+  each frame's dispatch independently re-deriving (and re-verifying) a
+  fabricated `/rpc/<op_id>` + single-frame identity that was never what
+  the client signed. (Earlier text in this section described batch
+  signing identically to unary; that never matched the implementation and
+  broke any `AuthProvider` whose verdict is bound to the real request
+  bytes or to a single-use nonce — see `crates/cratestack-macros/src/
+  include/server/rpc_module/batch.rs`'s module doc for the mechanism.)
 - WS: the upgrade request is signed once via the existing
   `canonical_request_string` over the upgrade HTTP request. Frames inside
   the channel are not individually signed.
@@ -408,8 +421,9 @@ method / path / body components fed into it differ per binding (see below).
 No new signing primitives are introduced.
 
 **Canonical request under `transport rpc` is the concrete rpc request, not
-the REST shape.** On RPC dispatch the canonical fed into *both* signature
-verification (`request_context`) and the `cratestack_route` tracing field is:
+the REST shape.** On unary RPC dispatch the canonical fed into *both*
+signature verification (`request_context`) and the `cratestack_route`
+tracing field is:
 
 - **method** = `POST`
 - **path** = `/rpc/<op_id>` — the real URL, e.g. `/rpc/procedure.<name>`,
@@ -421,6 +435,16 @@ verification (`request_context`) and the `cratestack_route` tracing field is:
   *before* any re-decoding. This is what binds the id / patch / args to the
   signature, so e.g. `model.<M>.get` with a different `id` is a different
   signed request.
+
+On a batch dispatch, `rpc_batch_dispatch` still builds this same per-op
+`CanonicalRequest` for every frame and still passes it to each frame's
+dispatch function — that's what the `cratestack_route` tracing field
+uses, and it stays useful for per-op observability inside a batch. The
+difference is *only* what backs `AuthProvider::authenticate`: on unary
+dispatch it's this per-op canonical; on batch dispatch it's the
+envelope-level `CachedAuthProvider` described above, which ignores the
+per-op canonical it's handed and returns the one envelope verdict
+instead.
 
 This matches the rpc client byte-for-byte — it signs `path =
 format!("/rpc/{op_id}")`, method `POST`, with the same frame body

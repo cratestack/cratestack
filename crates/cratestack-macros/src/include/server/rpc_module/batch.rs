@@ -9,9 +9,37 @@
 //! (`crates/cratestack-sqlx/src/query/batch/validate.rs`,
 //! `crates/cratestack-rusqlite/src/batch/support.rs`) — and checked
 //! *before* the per-frame dispatch loop below, since each frame re-enters
-//! the exact same `authenticate()` + policy + dispatch path unary calls
-//! use (`rpc_dispatch_inner`); an unbounded frame count multiplies that
-//! full per-request cost by however many frames a single body can hold.
+//! the same policy + dispatch path unary calls use (`rpc_dispatch_inner`);
+//! an unbounded frame count multiplies that full per-request cost by
+//! however many frames a single body can hold.
+//!
+//! ## Authenticate the envelope once, not once per frame
+//!
+//! `rpc_dispatch_inner`'s per-op dispatch functions each independently
+//! call `AuthProvider::authenticate` against a `CanonicalRequest` built
+//! from `/rpc/<op_id>` and that op's own (here: re-encoded) frame body —
+//! the identity that's actually correct for the real unary route those
+//! functions were written for. Re-entering them once per batch frame
+//! reused that unary-shaped identity unchanged, but the request a batch
+//! client actually signs is the *whole* `POST /rpc/batch` call — one
+//! method/path/body/signature covering every queued frame at once, per
+//! `docs/design/rpc-transport.md` §5. Handing every frame's dispatch a
+//! fabricated `/rpc/<op_id>` + single-frame body to authenticate against
+//! is simply the wrong request for any `AuthProvider` whose verdict is
+//! bound to the bytes it's given (a body-hash-bound request-signing
+//! scheme, for instance) — and, independently, calling `authenticate()`
+//! N times for one client-issued request breaks any provider that treats
+//! a successful authentication as consuming a single-use nonce.
+//!
+//! So this handler authenticates the real envelope — `POST`,
+//! `RPC_BATCH_PATH`, the untouched raw `body` this handler received —
+//! exactly once, and hands every frame's dispatch a
+//! [`::cratestack::CachedAuthProvider`] that already holds that one
+//! verdict instead of re-deriving (and re-verifying) it per frame. The
+//! per-op dispatch functions are untouched: `rpc_dispatch_inner` is
+//! generic over its `Auth` parameter independently of the router's own,
+//! so this only changes which concrete `AuthProvider` batch dispatch
+//! hands them for the lifetime of one HTTP request.
 
 use quote::quote;
 
@@ -51,7 +79,10 @@ pub(super) fn build_batch_block() -> proc_macro2::TokenStream {
             // Reject an oversized batch before dispatching a single frame —
             // see this file's module doc. Message mirrors
             // `cratestack-sqlx`'s `validate_batch_size` wording so all
-            // batch surfaces speak the same shape.
+            // batch surfaces speak the same shape. Cheap and
+            // signature-independent, so it still runs (and still rejects,
+            // with zero `authenticate()` calls) before the envelope is
+            // authenticated below.
             if frames.len() > ::cratestack::BATCH_MAX_ITEMS {
                 let len = frames.len();
                 return rpc_dispatch_error(
@@ -63,6 +94,28 @@ pub(super) fn build_batch_block() -> proc_macro2::TokenStream {
                     )),
                 );
             }
+
+            // Authenticate the real envelope exactly once — the actual
+            // `POST /rpc/batch` request the client signed, untouched raw
+            // body included — before dispatching a single frame. See this
+            // file's module doc for why every frame must share this one
+            // verdict rather than each re-deriving its own.
+            let batch_request = request_context(
+                "POST",
+                ::cratestack::rpc::RPC_BATCH_PATH,
+                None,
+                &headers,
+                body.as_ref(),
+                &client_ip_ctx.extensions,
+            );
+            let batch_ctx = match state.auth_provider.authenticate(&batch_request).await {
+                Ok(ctx) => ctx,
+                Err(error) => {
+                    let error: ::cratestack::CratestackError = error.into();
+                    return rpc_dispatch_error(&state, &headers, error);
+                }
+            };
+            let cached_auth = ::cratestack::CachedAuthProvider::new(batch_ctx);
 
             let mut responses: Vec<::cratestack::rpc::RpcResponseFrame> =
                 Vec::with_capacity(frames.len());
@@ -81,8 +134,17 @@ pub(super) fn build_batch_block() -> proc_macro2::TokenStream {
                 };
 
                 // Per-frame state clone — we can't `move` the original
-                // because the loop owns it.
-                let frame_state = state.clone();
+                // because the loop owns it. `auth_provider` is the
+                // envelope-level `cached_auth` (see above), NOT
+                // `state.auth_provider` — every frame shares the one
+                // real verdict instead of each independently
+                // re-authenticating a fabricated per-op identity.
+                let frame_state = RpcRouterState {
+                    db: state.db.clone(),
+                    registry: state.registry.clone(),
+                    codec: state.codec.clone(),
+                    auth_provider: cached_auth.clone(),
+                };
                 let frame_headers = headers.clone();
                 let frame_client_ip_ctx = client_ip_ctx.clone();
                 let response = rpc_dispatch_inner(

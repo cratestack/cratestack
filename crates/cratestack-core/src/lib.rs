@@ -50,8 +50,8 @@ pub use batch::{
 };
 pub use codec::{CratestackCodec, CratestackEnvelope, NoEnvelope};
 pub use context::{
-    AuthProvider, CratestackAuthIdentity, CratestackContext, PrincipalContext, PrincipalFacet,
-    RequestContext, SystemContext,
+    AuthProvider, CachedAuthProvider, CratestackAuthIdentity, CratestackContext, PrincipalContext,
+    PrincipalFacet, RequestContext, SystemContext,
 };
 // `Decimal` only exists when EXACTLY ONE decimal backend feature is
 // active; `RustDecimal`/`BigDecimal` each only exist under their own

@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+### `/rpc/batch` authenticates the envelope once, not once per frame
+
+A correctly-signed batch request to `POST /rpc/batch` could be rejected even though the identical
+signing implementation was accepted on the unary `POST /rpc/{op_id}` route. `rpc_batch_dispatch`
+re-entered the same per-op dispatch functions unary calls use, and each of those independently
+calls `AuthProvider::authenticate` — but against a *fabricated* per-op identity (`/rpc/<op_id>`
+plus that one frame's re-encoded input), never the real `POST /rpc/batch` request with its raw,
+untouched body that a batch client actually sends and signs. For any `AuthProvider` whose verdict
+is bound to the real request bytes (a body-hash-bound request-signing scheme, say), the fabricated
+identity can never match. Independently, re-running `authenticate()` once per frame is also
+incompatible with a provider that treats a successful authentication as consuming a single-use
+nonce, since one client-issued nonce would be claimed once per frame instead of once per request.
+
+`rpc_batch_dispatch` now authenticates the real envelope — method, `RPC_BATCH_PATH`, and the raw
+body it received — exactly once, and threads the resulting `CratestackContext` through every
+frame's dispatch via a new `CachedAuthProvider` instead of letting each frame re-derive (and
+re-verify) its own. The per-op dispatch functions themselves are unchanged; `rpc_dispatch_inner`
+is generic over its `Auth` parameter independently of the router's own, so only the concrete
+provider batch dispatch hands them for the lifetime of one HTTP request changes. See
+`docs/design/rpc-transport.md` §5 and `crates/cratestack-macros/src/include/server/rpc_module/
+batch.rs`'s module doc for the full mechanism.
+
 ## 0.8.3 (2026-08-17)
 
 Two fixes, both to things that reported success while doing nothing.

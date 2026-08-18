@@ -1,13 +1,20 @@
 //! cratestack#413 — `/rpc/batch` frame cap. Proves an over-limit batch is
 //! rejected *before* dispatching a single frame — the compounding case the
 //! ticket is actually about (an unbounded frame count multiplying the full
-//! `authenticate()` + policy + dispatch cost `rpc_dispatch_inner` pays for
-//! unary calls, once per frame). Runs against `cratestack-api`
-//! (`db = None`), matching `docs/design/request-response-size-bounds.md`'s
-//! test plan: rejection happens at the frame-count check inside
-//! `rpc_batch_dispatch` itself, before any `authenticate()` call, so no
-//! database is needed to prove it — and none of this crate's dependency
-//! graph has one to begin with.
+//! policy + dispatch cost `rpc_dispatch_inner` pays for unary calls, once
+//! per frame). Runs against `cratestack-api` (`db = None`), matching
+//! `docs/design/request-response-size-bounds.md`'s test plan: rejection
+//! happens at the frame-count check inside `rpc_batch_dispatch` itself,
+//! before the envelope is even authenticated, so no database is needed to
+//! prove it — and none of this crate's dependency graph has one to begin
+//! with.
+//!
+//! Also covers a second regression: `authenticate()` must run exactly
+//! *once* per batch request, against the real envelope, not once per
+//! frame against a fabricated per-op identity — see
+//! `rpc_module/batch.rs`'s module doc for why re-authenticating per frame
+//! broke any `AuthProvider` bound to the real request bytes or to a
+//! single-use nonce.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -159,8 +166,16 @@ async fn under_limit_batch_dispatches_every_frame_normally() {
     }
 
     // The frame cap must not have collateral effects on a legitimately
-    // small batch — every frame's `authenticate()` still ran.
-    assert_eq!(auth.calls.load(Ordering::SeqCst), 3);
+    // small batch — the batch still dispatches. `authenticate()` itself
+    // now runs exactly once for the whole envelope, not once per frame:
+    // every frame shares that one verdict via `CachedAuthProvider`
+    // instead of each re-deriving (and re-verifying) its own against a
+    // fabricated per-op identity — see `rpc_module/batch.rs`'s module
+    // doc. Re-authenticating per frame is what produced the reported
+    // `signature content hash mismatch` on `/rpc/batch` for any
+    // `AuthProvider` bound to the real request bytes, and would also
+    // double-claim a single-use nonce on the 2nd+ frame.
+    assert_eq!(auth.calls.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]
@@ -174,5 +189,7 @@ async fn batch_at_exactly_the_ceiling_is_accepted() {
     assert_eq!(status, StatusCode::OK);
     let responses: Vec<RpcResponseFrame> = CborCodec.decode(&body).expect("batch should decode");
     assert_eq!(responses.len(), BATCH_MAX_ITEMS);
-    assert_eq!(auth.calls.load(Ordering::SeqCst), BATCH_MAX_ITEMS);
+    // One envelope, one `authenticate()` call — see the comment on
+    // `under_limit_batch_dispatches_every_frame_normally` above.
+    assert_eq!(auth.calls.load(Ordering::SeqCst), 1);
 }
