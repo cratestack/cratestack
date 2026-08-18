@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.4 (2026-08-18)
 
 ### `/rpc/batch` authenticates the envelope once, not once per frame
 
