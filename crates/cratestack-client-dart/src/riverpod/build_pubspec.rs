@@ -17,10 +17,24 @@ use serde::Serialize;
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct PubspecFileContext {
     pub(crate) package_name: String,
+    /// `config.native_cbor` (issue #563) — see
+    /// `crate::views::TemplateContext::native_cbor`'s doc comment; this
+    /// preset needs its own copy because it needs its own `pubspec.yaml`
+    /// (see this module's doc), not because the flag's meaning differs.
+    pub(crate) native_cbor: bool,
+    /// See `crate::views::TemplateContext::cratestack_cbor_version_requirement`.
+    pub(crate) cratestack_cbor_version_requirement: String,
 }
 
 pub(crate) fn build_pubspec_file(config: &DartGeneratorConfig) -> PubspecFileContext {
+    let cratestack_cbor_version_requirement = if config.native_cbor {
+        format!("^{}", env!("CARGO_PKG_VERSION"))
+    } else {
+        String::new()
+    };
     PubspecFileContext {
         package_name: config.library_name.clone(),
+        native_cbor: config.native_cbor,
+        cratestack_cbor_version_requirement,
     }
 }

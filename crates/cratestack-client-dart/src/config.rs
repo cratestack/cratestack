@@ -2,6 +2,18 @@ use std::path::PathBuf;
 
 use cratestack_proto::PbLock;
 
+/// Whether a schema with no `--native-cbor`/`native_cbor: ...` given at all
+/// uses `package:cbor` (pure Dart) or `cratestack_cbor` (native, via
+/// flutter_rust_bridge/wasm — cratestack#563). The single place to flip
+/// this decision later — see [`DartGeneratorConfig::native_cbor`]'s doc
+/// comment for why it stays `false` today: `cratestack_cbor` only supports
+/// Linux x86_64, Android and web (see
+/// `dart-packages/cratestack_cbor/lib/src/native/native_cbor_codec.dart`'s
+/// `Abi.current()` checks), so defaulting to it would crash every
+/// generated Flutter client on iOS — the most common Flutter target —
+/// along with macOS, Windows and Linux arm64.
+pub const DEFAULT_NATIVE_CBOR: bool = false;
+
 /// Selects the generated package's file layout. See issue #301 — the
 /// `riverpod` preset is a strict superset of `default`'s content,
 /// repartitioned into one file per model (types + `XApi` client +
@@ -45,6 +57,46 @@ pub struct DartGeneratorConfig {
     /// pass, matching the TypeScript client's scope — the gRPC transport
     /// doesn't send it yet (tracked, not attempted).
     pub schema_sha256: String,
+    /// Issue #563's opt-in seam: use the published `cratestack_cbor`
+    /// package (flutter_rust_bridge natively, wasm-bindgen on web) instead
+    /// of pure-Dart `package:cbor` for the generated runtime's CBOR
+    /// codec — see `templates/rest-runtime.dart.j2` and
+    /// `templates/rpc_runtime/{types,dio_cbor,dio_json}.dart.j2`.
+    ///
+    /// Deliberately opt-in, not the default (`DEFAULT_NATIVE_CBOR` is
+    /// `false`) — this reverses this issue's original in-thread maintainer
+    /// note ("the generator will use the package. Not opt-in"), on a
+    /// concrete, verified platform-support gap that note didn't account
+    /// for: `cratestack_cbor` only ships prebuilt binaries for Linux
+    /// x86_64, Android and web today (`createCborCodec()` throws
+    /// `UnsupportedError` everywhere else — see
+    /// `dart-packages/cratestack_cbor/lib/src/native/native_cbor_codec.dart`).
+    /// Defaulting to it would make every generated Flutter client crash at
+    /// runtime on iOS — the most common Flutter target — plus macOS,
+    /// Windows and Linux arm64. `package:cbor` is pure Dart and works
+    /// everywhere, so it stays the default until the platform matrix is
+    /// complete enough to reconsider (a maintainer decision, not something
+    /// to flip unilaterally here — see `DEFAULT_NATIVE_CBOR`'s doc).
+    ///
+    /// Purely additive with respect to every other emitted file: `false`
+    /// leaves output byte-identical to before this flag existed (pinned by
+    /// `tests/native_cbor_generator.rs`'s dedicated regression test, on
+    /// top of the pre-existing `tests/snapshot.rs` pins that never pass
+    /// this field at all and so exercise `Default::default()`).
+    ///
+    /// `cratestack_cbor`'s codec is async (`Future<CratestackCborCodec>
+    /// createCborCodec()`, `Uint8List encodeJson(String json)`, `String
+    /// decodeJson(List<int> bytes)`) where `package:cbor/simple.dart`'s is
+    /// synchronous and operates on a dynamic Dart value directly rather
+    /// than JSON text — the runtime templates bridge the two via
+    /// `jsonEncode`/`jsonDecode` around a lazily-initialized, cached codec
+    /// future, not a synchronous shim. See `wire_encode.rs`/`wire_decode.rs`
+    /// for why this is a safe bridge: every generated `toWire()`/`fromWire`
+    /// already routes fields through JSON-plain values (ISO-8601 strings
+    /// for `DateTime`, `List<int>` for `Bytes`, decimal string text) rather
+    /// than any CBOR-specific Dart type, so the body a runtime adapter
+    /// encodes/decodes was already JSON-safe before this flag existed.
+    pub native_cbor: bool,
 }
 
 impl Default for DartGeneratorConfig {
@@ -56,6 +108,7 @@ impl Default for DartGeneratorConfig {
             preset: DartPreset::Default,
             pb_lock: None,
             schema_sha256: String::new(),
+            native_cbor: DEFAULT_NATIVE_CBOR,
         }
     }
 }

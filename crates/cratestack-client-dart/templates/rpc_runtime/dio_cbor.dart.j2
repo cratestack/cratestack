@@ -12,9 +12,16 @@ class CratestackRpcCborDioAdapter implements CratestackRpcAdapter {
     CratestackRpcCallOptions? options,
   }) async {
     try {
+{% if native_cbor %}
+      final encodedInput = await _encodeBody(input);
+      final response = await _dio.post<List<int>>(
+        '/rpc/${Uri.encodeComponent(opId)}',
+        data: encodedInput,
+{% else %}
       final response = await _dio.post<List<int>>(
         '/rpc/${Uri.encodeComponent(opId)}',
         data: _encodeBody(input),
+{% endif %}
         options: Options(
           contentType: 'application/cbor',
           responseType: ResponseType.bytes,
@@ -28,9 +35,17 @@ class CratestackRpcCborDioAdapter implements CratestackRpcAdapter {
           },
         ),
       );
+{% if native_cbor %}
+      return await _decodeBody(response);
+{% else %}
       return _decodeBody(response);
+{% endif %}
     } on DioException catch (error) {
+{% if native_cbor %}
+      throw await _exceptionFromDio(error);
+{% else %}
       throw _exceptionFromDio(error);
+{% endif %}
     }
   }
 
@@ -42,9 +57,16 @@ class CratestackRpcCborDioAdapter implements CratestackRpcAdapter {
     try {
       final wire =
           requests.map((r) => r.toWire()).toList(growable: false);
+{% if native_cbor %}
+      final encodedWire = await _encodeBody(wire);
+      final response = await _dio.post<List<int>>(
+        '/rpc/batch',
+        data: encodedWire,
+{% else %}
       final response = await _dio.post<List<int>>(
         '/rpc/batch',
         data: _encodeBody(wire),
+{% endif %}
         options: Options(
           contentType: 'application/cbor',
           responseType: ResponseType.bytes,
@@ -56,13 +78,21 @@ class CratestackRpcCborDioAdapter implements CratestackRpcAdapter {
           },
         ),
       );
+{% if native_cbor %}
+      final decoded = await _decodeBody(response);
+{% else %}
       final decoded = _decodeBody(response);
+{% endif %}
       final frames = decoded as List<dynamic>;
       return frames
           .map((frame) => RpcResponseFrame.fromWire(frame))
           .toList(growable: false);
     } on DioException catch (error) {
+{% if native_cbor %}
+      throw await _exceptionFromDio(error);
+{% else %}
       throw _exceptionFromDio(error);
+{% endif %}
     }
   }
 
@@ -76,9 +106,16 @@ class CratestackRpcCborDioAdapter implements CratestackRpcAdapter {
     //       buffer the body and decode it as a single CBOR array,
     //       which matches the REST runtime's `post_list` behaviour.
     try {
+{% if native_cbor %}
+      final encodedInput = await _encodeBody(input);
+      final response = await _dio.post<List<int>>(
+        '/rpc/${Uri.encodeComponent(opId)}',
+        data: encodedInput,
+{% else %}
       final response = await _dio.post<List<int>>(
         '/rpc/${Uri.encodeComponent(opId)}',
         data: _encodeBody(input),
+{% endif %}
         options: Options(
           contentType: 'application/cbor',
           responseType: ResponseType.bytes,
@@ -90,15 +127,58 @@ class CratestackRpcCborDioAdapter implements CratestackRpcAdapter {
           },
         ),
       );
+{% if native_cbor %}
+      final decoded = await _decodeBody(response);
+{% else %}
       final decoded = _decodeBody(response);
+{% endif %}
       final items = decoded as List<dynamic>;
       for (final item in items) {
         yield item;
       }
     } on DioException catch (error) {
+{% if native_cbor %}
+      throw await _exceptionFromDio(error);
+{% else %}
       throw _exceptionFromDio(error);
+{% endif %}
     }
   }
+{% if native_cbor %}
+
+  Future<Object?> _decodeBody(Response<List<int>> response) async {
+    final bytes = response.data;
+    if (bytes == null || bytes.isEmpty) {
+      return null;
+    }
+    final contentType = response.headers.value(Headers.contentTypeHeader) ?? '';
+    if (_isCborContentType(contentType)) {
+      final codec = await _cratestackCborCodec();
+      return jsonDecode(codec.decodeJson(bytes));
+    }
+    if (_isJsonContentType(contentType)) {
+      return jsonDecode(utf8.decode(bytes));
+    }
+    throw FormatException(
+      'Unsupported response Content-Type $contentType for CratestackRpcCborDioAdapter',
+    );
+  }
+}
+
+Future<Object?> _encodeBody(Object? body) async {
+  if (body == null) {
+    return null;
+  }
+  if (body is Uint8List) {
+    return body;
+  }
+  if (body is List<int>) {
+    return Uint8List.fromList(body);
+  }
+  final codec = await _cratestackCborCodec();
+  return codec.encodeJson(jsonEncode(body));
+}
+{% else %}
 
   Object? _decodeBody(Response<List<int>> response) {
     final bytes = response.data;
@@ -130,6 +210,7 @@ Object? _encodeBody(Object? body) {
   }
   return Uint8List.fromList(cbor.cbor.encode(body));
 }
+{% endif %}
 
 bool _isCborContentType(String contentType) {
   return contentType.split(';').first.trim() == 'application/cbor';
@@ -138,6 +219,40 @@ bool _isCborContentType(String contentType) {
 bool _isJsonContentType(String contentType) {
   return contentType.split(';').first.trim() == Headers.jsonContentType;
 }
+{% if native_cbor %}
+
+Future<CratestackRpcException> _exceptionFromDio(DioException error) async {
+  final response = error.response;
+  final status = response?.statusCode ?? 0;
+  Object? data = response?.data;
+
+  // Surface the body if Dio handed it back as bytes (CBOR adapter
+  // path); otherwise let RpcErrorBody.fromWire handle the JSON shape.
+  if (data is List<int>) {
+    final contentType =
+        response?.headers.value(Headers.contentTypeHeader) ?? '';
+    if (_isCborContentType(contentType)) {
+      try {
+        final codec = await _cratestackCborCodec();
+        data = jsonDecode(codec.decodeJson(data));
+      } catch (_) {
+        data = null;
+      }
+    } else if (_isJsonContentType(contentType)) {
+      try {
+        data = jsonDecode(utf8.decode(data));
+      } catch (_) {
+        data = null;
+      }
+    }
+  }
+
+  return CratestackRpcException(
+    status: status,
+    body: RpcErrorBody.fromWire(data ?? {'code': 'internal', 'message': error.message ?? ''}),
+  );
+}
+{% else %}
 
 CratestackRpcException _exceptionFromDio(DioException error) {
   final response = error.response;
@@ -169,3 +284,4 @@ CratestackRpcException _exceptionFromDio(DioException error) {
     body: RpcErrorBody.fromWire(data ?? {'code': 'internal', 'message': error.message ?? ''}),
   );
 }
+{% endif %}

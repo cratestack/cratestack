@@ -28,7 +28,11 @@ class CratestackRpcDioAdapter implements CratestackRpcAdapter {
       );
       return response.data;
     } on DioException catch (error) {
+{% if native_cbor %}
+      throw await _exceptionFromDio(error);
+{% else %}
       throw _exceptionFromDio(error);
+{% endif %}
     }
   }
 
@@ -56,7 +60,11 @@ class CratestackRpcDioAdapter implements CratestackRpcAdapter {
           .map((frame) => RpcResponseFrame.fromWire(frame))
           .toList(growable: false);
     } on DioException catch (error) {
+{% if native_cbor %}
+      throw await _exceptionFromDio(error);
+{% else %}
       throw _exceptionFromDio(error);
+{% endif %}
     }
   }
 
@@ -89,7 +97,11 @@ class CratestackRpcDioAdapter implements CratestackRpcAdapter {
         yield item;
       }
     } on DioException catch (error) {
+{% if native_cbor %}
+      throw await _exceptionFromDio(error);
+{% else %}
       throw _exceptionFromDio(error);
+{% endif %}
     }
   }
 }

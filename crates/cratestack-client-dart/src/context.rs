@@ -184,6 +184,17 @@ pub(crate) fn build_template_context(
 
     let grpc = crate::grpc::build_grpc_context(schema, config.pb_lock.as_ref())?;
 
+    // Issue #563: only computed when the flag is actually set — mirrors
+    // `cratestack-client-typescript::context::build_template_context`'s
+    // `refine_version_requirement`, same lockstep-with-the-crate-version
+    // reasoning (see `TemplateContext::cratestack_cbor_version_requirement`'s
+    // doc comment).
+    let cratestack_cbor_version_requirement = if config.native_cbor {
+        format!("^{}", env!("CARGO_PKG_VERSION"))
+    } else {
+        String::new()
+    };
+
     Ok(TemplateContext {
         package_name: config.library_name.clone(),
         client_class_name,
@@ -202,5 +213,7 @@ pub(crate) fn build_template_context(
         sample_model,
         grpc,
         is_riverpod_preset: config.preset == DartPreset::Riverpod,
+        native_cbor: config.native_cbor,
+        cratestack_cbor_version_requirement,
     })
 }

@@ -25,6 +25,7 @@ fn generates_runtime_based_and_riverpod_client_for_blog_schema() {
             preset: DartPreset::Default,
             pb_lock: None,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
+            native_cbor: false,
         },
     )
     .expect("default template should render");
@@ -278,6 +279,7 @@ procedure searchOrders(args: SearchOrdersArgs): SearchOrdersArgs
             preset: DartPreset::Default,
             pb_lock: None,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
+            native_cbor: false,
         },
     )
     .expect("order template should render");
@@ -306,6 +308,7 @@ fn generates_real_dart_enums_for_schema_enum_fields_and_procedures() {
             preset: DartPreset::Default,
             pb_lock: None,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
+            native_cbor: false,
         },
     )
     .expect("enum template should render");
@@ -394,6 +397,7 @@ fn prefers_template_override_directory_when_provided() {
             preset: DartPreset::Default,
             pb_lock: None,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
+            native_cbor: false,
         },
     )
     .expect("override template should render");
@@ -434,6 +438,7 @@ fn decimal_scalar_maps_to_a_real_decimal_type() {
             preset: DartPreset::Default,
             pb_lock: None,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
+            native_cbor: false,
         },
     )
     .expect("default template should render");

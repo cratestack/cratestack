@@ -160,6 +160,7 @@ fn decimal_round_trips_through_the_generated_dart_client() {
             preset: DartPreset::Default,
             pb_lock: None,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
+            native_cbor: false,
         },
     )
     .expect("default template should render");

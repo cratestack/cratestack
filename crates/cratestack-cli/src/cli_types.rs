@@ -56,6 +56,24 @@ pub(crate) enum Command {
         /// itself fails.
         #[arg(long)]
         run_build_runner: bool,
+        /// Also emit `pubspec.yaml`/runtime dependencies on the published
+        /// `cratestack_cbor` package (flutter_rust_bridge natively,
+        /// wasm-bindgen on web — issue #563) instead of pure-Dart
+        /// `package:cbor`.
+        ///
+        /// Opt-in, not the default: `cratestack_cbor` only ships prebuilt
+        /// binaries for Linux x86_64, Android and web today —
+        /// `createCborCodec()` throws `UnsupportedError` on iOS, macOS,
+        /// Windows and Linux arm64 (see
+        /// `dart-packages/cratestack_cbor/lib/src/native/native_cbor_codec.dart`).
+        /// Defaulting to it would crash every generated Flutter client on
+        /// iOS, the most common Flutter target. `package:cbor` is pure
+        /// Dart and works everywhere, so it stays the default.
+        ///
+        /// Purely additive: every other emitted file is byte-identical
+        /// with and without it.
+        #[arg(long)]
+        native_cbor: bool,
     },
     #[command(name = "generate-typescript", alias = "generate-ts")]
     GenerateTypeScript {

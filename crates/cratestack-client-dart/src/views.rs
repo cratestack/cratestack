@@ -36,6 +36,25 @@ pub(crate) struct TemplateContext {
     /// every `DartPreset::Default` render, which is exactly what keeps
     /// the default preset's output byte-identical (`tests/snapshot.rs`).
     pub(crate) is_riverpod_preset: bool,
+    /// `config.native_cbor` (issue #563) — gates whether the generated
+    /// runtime imports `package:cbor` (sync, pure Dart) or
+    /// `cratestack_cbor` (async, native) and whether `pubspec.yaml`
+    /// depends on `cbor` or `cratestack_cbor`. `false` for every render
+    /// that doesn't pass it explicitly, which is what keeps the default
+    /// output byte-identical — see `DartGeneratorConfig::native_cbor`'s
+    /// doc comment for the full rationale.
+    pub(crate) native_cbor: bool,
+    /// `cratestack_cbor: {{ cratestack_cbor_version_requirement }}` in
+    /// `pubspec.yaml` when `native_cbor` is set — `^{CARGO_PKG_VERSION}`
+    /// of this crate, matching how `cratestack_cbor`'s own
+    /// `dart-packages/cratestack_cbor/pubspec.yaml` version is bumped in
+    /// lockstep with the Cargo workspace version by `just bump` (see the
+    /// justfile's `':(glob)dart-packages/*/pubspec.yaml'` rewrite), the
+    /// same lockstep convention `cratestack-client-typescript`'s
+    /// `refine_version_requirement` already uses for `@cratestack/refine`.
+    /// Empty string when `native_cbor` is `false` (unused by the template
+    /// in that case).
+    pub(crate) cratestack_cbor_version_requirement: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

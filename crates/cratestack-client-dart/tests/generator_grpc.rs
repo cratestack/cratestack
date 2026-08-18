@@ -34,6 +34,7 @@ fn config_with_lock(pb_lock: PbLock) -> DartGeneratorConfig {
         // own scope note — this value only needs to make the struct
         // literal compile; grpc-runtime.dart.j2 never reads it.
         schema_sha256: "unused-for-grpc".to_owned(),
+        native_cbor: false,
     }
 }
 
