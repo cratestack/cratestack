@@ -16,15 +16,18 @@
 //! and so already exercise `Default::default()`.
 //!
 //! Structural coverage only (source-level assertions) — the real-compiler
-//! proof (`dart pub get` + `flutter analyze` + a functional HTTP round trip
-//! through the real `cratestack_cbor` codec, both REST and RPC, both happy
-//! path and the async exception-decode path) was run by hand against a
-//! generated package as part of landing this issue; see the PR description
-//! for the transcript. This crate has no existing `tests/*_tsc.rs`-style
-//! "shell out to the real toolchain" pattern for Dart (unlike
-//! `cratestack-client-typescript`) — `just verify-dart` is this crate's
-//! equivalent gate, and it runs against fixtures on disk rather than as a
-//! `cargo test`.
+//! proof (`flutter pub get` + `flutter analyze` + a functional HTTP round
+//! trip through the real `cratestack_cbor` codec, both REST and RPC, both
+//! happy path and the async exception-decode path) originally ran only
+//! once by hand against a generated package while landing this issue
+//! (cratestack#647); `just verify-dart` now re-runs that proof on every CI
+//! run, from the `native_cbor_echo{,_rpc}.cstack` and
+//! `native_cbor_echo_{rest,rpc}_test.dart` fixtures — see that recipe's own
+//! comment. This crate has no existing `tests/*_tsc.rs`-style "shell out to
+//! the real toolchain" `cargo test` pattern for Dart (unlike
+//! `cratestack-client-typescript`); `just verify-dart` is this crate's
+//! equivalent gate, wired into the `dart-verify` CI job, and it runs
+//! against fixtures on disk rather than as a `cargo test`.
 
 use cratestack_client_dart::{
     DartGeneratorConfig, DartPreset, GeneratedDartPackage, generate_package,

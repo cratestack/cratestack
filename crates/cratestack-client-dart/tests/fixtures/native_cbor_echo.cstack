@@ -1,0 +1,34 @@
+// Fixture for the cratestack#647 verification gap closure: a single echo
+// procedure, mirroring `status_override.cstack`'s shape, used to drive a
+// REAL request/response round trip through a `--native-cbor`-generated
+// REST client's actual `cratestack_cbor` codec (not just `flutter analyze`
+// typechecking it). No `@status` override here (unlike
+// `status_override.cstack`) so the identical procedure also compiles under
+// `transport rpc` in `native_cbor_echo_rpc.cstack` — `@status` is rejected
+// at schema-compile time under RPC transport, and this fixture is meant to
+// be the same shape on both transports.
+//
+// The `Widget` model below (unused by the round-trip test itself, same
+// minimal shape as `tiny_rest.cstack`) exists only so `flutter analyze`
+// stays meaningful here: a REST schema with zero models makes the
+// generated `lib/src/apis.dart`'s unconditional `import 'queries.dart';`
+// (and `queries.dart`'s own `import 'models.dart';`) genuinely unused,
+// which trips `flutter analyze --fatal-warnings` — a pre-existing,
+// `--native-cbor`-unrelated generator gap, not something this fixture is
+// trying to paper over (`status_override.cstack` sidesteps it by simply
+// never running `flutter analyze`, only `flutter test`; this fixture
+// instead gets a real analyze pass by not hitting the gap at all).
+model Widget {
+  id Int @id
+  name String
+}
+
+procedure echo(args: EchoArgs): EchoReply
+
+type EchoArgs {
+  message String
+}
+
+type EchoReply {
+  echo String
+}
