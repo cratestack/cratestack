@@ -1,0 +1,20 @@
+// RPC transport twin of `native_cbor_echo.cstack` — same procedure, same
+// types, `transport rpc` added. See that file's comment for why the two
+// are kept in lockstep (cratestack#647 verification gap closure).
+
+transport rpc
+
+model Widget {
+  id Int @id
+  name String
+}
+
+procedure echo(args: EchoArgs): EchoReply
+
+type EchoArgs {
+  message String
+}
+
+type EchoReply {
+  echo String
+}

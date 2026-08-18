@@ -504,6 +504,51 @@ verify-dart:
 	  (cd "$pkg" && flutter analyze --fatal-warnings --no-fatal-infos)
 	}
 
+	# cratestack#647 gap closure helpers, used by the `--native-cbor` block
+	# further down. `--native-cbor`'s pubspec swaps `package:cbor` for
+	# `cratestack_cbor` (see `pubspec.yaml.j2`), so a package generated
+	# with the flag has no `cbor` dependency at all — but the round-trip
+	# test files deliberately still import plain `package:cbor` themselves
+	# to decode/encode independently of the codec under test (see
+	# `native_cbor_echo_rest_test.dart`'s module doc for why that
+	# independence is the point). This adds it back as a dev-only,
+	# verification-only dependency, never part of the generator's own
+	# output.
+	add_cbor_dev_dependency_for_verification() {
+	  local pkg="$1"
+	  sed -i '/^dev_dependencies:/a\  cbor: ^6.5.1' "$pkg/pubspec.yaml"
+	}
+
+	# `cratestack_cbor`'s native backend resolves its vendored `.so` two
+	# ways (see `native_cbor_codec.dart::resolveVendoredLibraryPath`): a
+	# built Flutter app bundle (not applicable here — nothing under this
+	# recipe does `flutter build`), or `Isolate.resolvePackageUri` in
+	# dev/test mode. The second one is proven against the package's own
+	# `dart test` suite, but NOT against `flutter test`'s `flutter_tester`
+	# engine — verified empirically: it throws `Unsupported operation:
+	# Isolate.resolvePackageUriSync` there, and plain `dart test` isn't a
+	# usable substitute for a package that itself depends on `sdk: flutter`
+	# (see `decimal_round_trip.rs`'s module doc for the same VM front-end
+	# crash on a different fixture). The package exposes exactly this
+	# escape hatch for verification harnesses:
+	# `CRATESTACK_CBOR_NATIVE_LIB`, an env var that skips both resolution
+	# strategies. This resolves it to the exact library `flutter pub get`
+	# already fetched from pub.dev for this package, via
+	# `.dart_tool/package_config.json` (the same "ask the tool that
+	# already knows" discipline `cbor-vendor-native`'s `cargo metadata`
+	# parse uses), rather than hardcoding a pub-cache path or a version
+	# number that would drift from `cratestack_cbor_version_requirement`.
+	# One physical line, like `cbor-vendor-native`'s own `python3 -c`
+	# invocation: `just` recipe bodies are collected per-LINE by leading
+	# indentation, with no understanding of the shell quoting inside them
+	# — an unindented line inside a multi-line Python string here would
+	# read to `just` itself as a new (invalid) top-level justfile item,
+	# not as part of this recipe's shell script.
+	native_cbor_vendored_lib_for() {
+	  local pkg="$1"
+	  python3 -c "import json,sys; config = json.load(open('$pkg/.dart_tool/package_config.json')); entries = [e for e in config['packages'] if e['name'] == 'cratestack_cbor']; sys.exit('cratestack_cbor not found in $pkg/.dart_tool/package_config.json — was flutter pub get run?') if not entries else print(entries[0]['rootUri'].removeprefix('file://') + '/blobs/linux-x64/libcratestack_client_flutter.so')"
+	}
+
 	# riverpod-preset-only: deliberately does NOT call `verify_pkg` (which
 	# runs `flutter analyze` first) — `flutter analyze` on a freshly
 	# generated riverpod package, before `build_runner` has run, reports
@@ -610,6 +655,97 @@ verify-dart:
 	cp "$status_test" "$status_riverpod_pkg/test/status_202_test.dart"
 	echo "=== flutter test (real HTTP round trip, @status(202) proof): $status_riverpod_pkg ==="
 	(cd "$status_riverpod_pkg" && flutter test test/status_202_test.dart)
+
+	# cratestack#647 gap closure: `--native-cbor` was proven to compile and
+	# round-trip exactly ONCE, by hand, during that PR — nothing re-ran it
+	# (see `native_cbor_generator.rs`'s module doc, which only asserts on
+	# generated TEXT, not that the result is valid, running Dart). This
+	# block closes that: real `flutter pub get` (resolves the published
+	# `cratestack_cbor` package from pub.dev), real `flutter analyze`, and a
+	# real request/response round trip through the actual native codec on
+	# this runner's Linux x86_64 host — both REST and RPC default-preset
+	# packages, from `native_cbor_echo{,_rpc}.cstack` and their sibling
+	# `native_cbor_echo_{rest,rpc}_test.dart` fixtures (see those files'
+	# own module comments for what each proves, including the async
+	# `_exceptionFromDio` 4xx-decode rework on the RPC side). The riverpod
+	# preset is covered too, but analyze-only: `lib/src/runtime.dart` (the
+	# only file `--native-cbor` touches) is reused byte-for-byte from the
+	# default preset's own generation for both presets (see
+	# `native_cbor_generator.rs`'s riverpod test), so the REST/RPC round
+	# trips above already exercise the codec logic itself; riverpod only
+	# needs its own pubspec/analyze proof that its differently-shaped
+	# `pubspec.yaml`/`apis.dart` still resolves and typechecks against it.
+	native_cbor_rest_schema="crates/cratestack-client-dart/tests/fixtures/native_cbor_echo.cstack"
+	native_cbor_rpc_schema="crates/cratestack-client-dart/tests/fixtures/native_cbor_echo_rpc.cstack"
+	native_cbor_rest_test="crates/cratestack-client-dart/tests/fixtures/native_cbor_echo_rest_test.dart"
+	native_cbor_rpc_test="crates/cratestack-client-dart/tests/fixtures/native_cbor_echo_rpc_test.dart"
+
+	native_cbor_rest_pkg="$out/native-cbor/default/rest"
+	native_cbor_rest_library="native_cbor_echo_rest_verify"
+	echo "=== generate-dart --native-cbor: native_cbor_echo -> $native_cbor_rest_pkg ==="
+	cargo run --quiet -p cratestack-cli -- generate-dart \
+	  --schema "$native_cbor_rest_schema" \
+	  --out "$native_cbor_rest_pkg" \
+	  --library-name "$native_cbor_rest_library" \
+	  --native-cbor
+	add_cbor_dev_dependency_for_verification "$native_cbor_rest_pkg"
+	verify_pkg "$native_cbor_rest_pkg"
+	mkdir -p "$native_cbor_rest_pkg/test"
+	cp "$native_cbor_rest_test" "$native_cbor_rest_pkg/test/native_cbor_echo_rest_test.dart"
+	echo "=== flutter test (real HTTP round trip through the real cratestack_cbor codec): $native_cbor_rest_pkg ==="
+	CRATESTACK_CBOR_NATIVE_LIB="$(native_cbor_vendored_lib_for "$native_cbor_rest_pkg")" \
+	  bash -c "cd '$native_cbor_rest_pkg' && flutter test test/native_cbor_echo_rest_test.dart"
+
+	native_cbor_rpc_pkg="$out/native-cbor/default/rpc"
+	native_cbor_rpc_library="native_cbor_echo_rpc_verify"
+	echo "=== generate-dart --native-cbor: native_cbor_echo_rpc -> $native_cbor_rpc_pkg ==="
+	cargo run --quiet -p cratestack-cli -- generate-dart \
+	  --schema "$native_cbor_rpc_schema" \
+	  --out "$native_cbor_rpc_pkg" \
+	  --library-name "$native_cbor_rpc_library" \
+	  --native-cbor
+	add_cbor_dev_dependency_for_verification "$native_cbor_rpc_pkg"
+	verify_pkg "$native_cbor_rpc_pkg"
+	mkdir -p "$native_cbor_rpc_pkg/test"
+	cp "$native_cbor_rpc_test" "$native_cbor_rpc_pkg/test/native_cbor_echo_rpc_test.dart"
+	echo "=== flutter test (real HTTP round trip + async 4xx decode through the real cratestack_cbor codec): $native_cbor_rpc_pkg ==="
+	CRATESTACK_CBOR_NATIVE_LIB="$(native_cbor_vendored_lib_for "$native_cbor_rpc_pkg")" \
+	  bash -c "cd '$native_cbor_rpc_pkg' && flutter test test/native_cbor_echo_rpc_test.dart"
+
+	# Riverpod preset, analyze-only (see the block comment above for why a
+	# second functional round trip isn't needed here). Deliberately NOT
+	# `verify_riverpod_pkg` above: that helper's own `--run-build-runner`
+	# regeneration step omits `--native-cbor`, which would silently
+	# overwrite this package's native-cbor pubspec/runtime with the
+	# default ones before analyzing them — exactly the kind of drift this
+	# whole gap-closure exists to catch, so it gets its own inline copy
+	# with `--native-cbor` threaded through every generation call instead
+	# of forwarding to a helper not written to carry it.
+	for fixture_pair in "$native_cbor_rest_schema:rest" "$native_cbor_rpc_schema:rpc"; do
+	  schema="${fixture_pair%%:*}"
+	  transport="${fixture_pair##*:}"
+	  pkg="$out/native-cbor/riverpod/$transport"
+	  library_name="native_cbor_echo_${transport}_riverpod_verify"
+	  echo "=== generate-dart --preset riverpod --native-cbor: $transport -> $pkg ==="
+	  cargo run --quiet -p cratestack-cli -- generate-dart \
+	    --schema "$schema" \
+	    --out "$pkg" \
+	    --library-name "$library_name" \
+	    --preset riverpod \
+	    --native-cbor
+	  echo "=== flutter pub get: $pkg ==="
+	  (cd "$pkg" && flutter pub get)
+	  echo "=== generate-dart --preset riverpod --native-cbor --run-build-runner: $pkg ==="
+	  cargo run --quiet -p cratestack-cli -- generate-dart \
+	    --schema "$schema" \
+	    --out "$pkg" \
+	    --library-name "$library_name" \
+	    --preset riverpod \
+	    --native-cbor \
+	    --run-build-runner
+	  echo "=== flutter analyze (post build_runner): $pkg ==="
+	  (cd "$pkg" && flutter analyze --fatal-warnings --no-fatal-infos)
+	done
 
 # Verify the TypeScript client generator's OUTPUT actually typechecks,
 # not just that its generated text matches a Rust-side snapshot (issue #419).

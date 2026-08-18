@@ -543,6 +543,25 @@ jobs:
   # nested type, and a relation cycle across mutually-importing model
   # files) — still one job, the preset matrix lives inside `just
   # verify-dart` itself.
+  #
+  # cratestack#647 gap closure: `--native-cbor` (opt-in dependency on the
+  # published `cratestack_cbor` package instead of pure-Dart `package:cbor`)
+  # shipped with its real-compiler proof run ONCE BY HAND, never re-run —
+  # `native_cbor_generator.rs`'s own tests are source-text assertions only.
+  # `just verify-dart` now also generates REST and RPC packages with the
+  # flag from `native_cbor_echo{,_rpc}.cstack`, resolves `cratestack_cbor`
+  # from pub.dev for real, runs `flutter analyze`, and — via
+  # `native_cbor_echo_{rest,rpc}_test.dart` — a real request/response round
+  # trip through the actual native codec (flutter_rust_bridge, Linux x86_64
+  # — this runner's host, one of the three platforms `cratestack_cbor`
+  # supports), including the async 4xx CBOR error-decode path on RPC. The
+  # riverpod preset is covered analyze-only (see the justfile recipe's own
+  # comment for why a second functional round trip there is redundant).
+  # Folded into this existing job rather than a new one: it already has the
+  # Flutter SDK and pub.dev network access this needs, and this workflow
+  # has no `paths:` filtering anywhere (see `cbor-example-verify`'s own
+  # comment on that below) — introducing it is an open maintainer question,
+  # not decided here, and this addition doesn't change that either way.
   dart-verify:
     name: dart (generated packages)
     runs-on: ubuntu-latest
@@ -557,7 +576,7 @@ jobs:
         with:
           channel: stable
           cache: true
-      - name: Generate + flutter analyze (default + riverpod presets, REST + RPC)
+      - name: Generate + flutter analyze/test (default + riverpod presets, REST + RPC, incl. --native-cbor)
         run: just verify-dart
 
   # ---- flutter_rust_bridge glue verification (cratestack#563) -----------
