@@ -109,6 +109,65 @@ where
     }
 }
 
+/// An [`AuthProvider`] that always returns a single, already-established
+/// [`CratestackContext`], ignoring whatever [`RequestContext`] it is asked
+/// to authenticate.
+///
+/// ## Why this exists
+///
+/// `POST /rpc/batch` dispatches every queued frame through the exact same
+/// per-op handlers `POST /rpc/<op_id>` uses, each of which independently
+/// calls `AuthProvider::authenticate` — see the generated
+/// `rpc_batch_dispatch` (`docs/design/rpc-transport.md` §3.2/§5). For a
+/// stateless `AuthProvider` (a static API key, a bearer JWT) that
+/// redundancy is harmless: every frame's `authenticate()` call reaches the
+/// same verdict. It is **not** harmless for an `AuthProvider` whose
+/// verdict is bound to the specific request it is given — most notably a
+/// request-signing scheme that hashes the request body and/or consumes a
+/// single-use nonce per verified request (`docs/design/rpc-transport.md`
+/// §5's "canonical request signing"). Such a provider has exactly one
+/// real canonical identity to check a batch against: the actual
+/// `POST /rpc/batch` request the client signed (its real path and its
+/// real, untouched body — the concatenation of every frame, not any one
+/// frame's re-encoded `input`). Calling `authenticate()` again per frame,
+/// against a synthesized `/rpc/<op_id>` + re-encoded-single-frame
+/// identity that was never what the client signed, both fails signature/
+/// content-hash verification and — for a provider that also claims a
+/// nonce as a side effect of a successful verification — claims the
+/// client's one nonce N times for one HTTP request, rejecting the 2nd+
+/// frame as replayed even if the identity mismatch were somehow papered
+/// over.
+///
+/// The fix is structural, not per-provider: authenticate the real batch
+/// envelope exactly once, then thread that one resulting
+/// `CratestackContext` through every per-frame dispatch via this wrapper
+/// instead of re-deriving (and re-verifying) identity per frame. This
+/// preserves the per-op dispatch functions unchanged — batch and unary
+/// both call the exact same generated `_dispatch` functions — the only
+/// difference is which `AuthProvider` implementation the batch loop hands
+/// them for the duration of that one HTTP request.
+#[derive(Clone)]
+pub struct CachedAuthProvider(CratestackContext);
+
+impl CachedAuthProvider {
+    /// Wrap an already-authenticated context so every `authenticate()`
+    /// call against this provider returns it unconditionally.
+    pub fn new(context: CratestackContext) -> Self {
+        Self(context)
+    }
+}
+
+impl AuthProvider for CachedAuthProvider {
+    type Error = CratestackError;
+
+    fn authenticate(
+        &self,
+        _request: &RequestContext<'_>,
+    ) -> impl ::core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
+        ::core::future::ready(Ok(self.0.clone()))
+    }
+}
+
 impl CratestackContext {
     pub fn anonymous() -> Self {
         Self::default()
