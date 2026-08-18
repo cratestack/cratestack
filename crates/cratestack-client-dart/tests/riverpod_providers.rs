@@ -30,6 +30,7 @@ fn generate(fixture: &str, library_name: &str, preset: DartPreset) -> GeneratedD
             preset,
             pb_lock: None,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
+            native_cbor: false,
         },
     )
     .unwrap_or_else(|error| panic!("{fixture} should generate under {preset:?}: {error}"))

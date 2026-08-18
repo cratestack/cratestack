@@ -16,6 +16,7 @@ mod wire_decode;
 mod wire_encode;
 
 pub use config::{
-    DartGeneratorConfig, DartGeneratorError, DartPreset, GeneratedDartFile, GeneratedDartPackage,
+    DEFAULT_NATIVE_CBOR, DartGeneratorConfig, DartGeneratorError, DartPreset, GeneratedDartFile,
+    GeneratedDartPackage,
 };
 pub use generator::generate_package;

@@ -12,10 +12,25 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+{% if native_cbor %}
+import 'package:cratestack_cbor/cratestack_cbor.dart' as cratestack_cbor;
+{% else %}
 import 'package:cbor/simple.dart' as cbor;
+{% endif %}
 import 'package:dio/dio.dart';
 
 import 'constants.dart';
+{% if native_cbor %}
+
+// cratestack#563 --native-cbor: see `rest-runtime.dart.j2`'s identical
+// comment — one cached codec `Future`, shared by every adapter in this
+// file (`CratestackRpcCborDioAdapter` in `dio_cbor.dart.j2`).
+Future<cratestack_cbor.CratestackCborCodec>? _cratestackCborCodecFuture;
+
+Future<cratestack_cbor.CratestackCborCodec> _cratestackCborCodec() {
+  return _cratestackCborCodecFuture ??= cratestack_cbor.createCborCodec();
+}
+{% endif %}
 
 typedef CratestackValueMap = Map<String, Object?>;
 

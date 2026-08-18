@@ -25,6 +25,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             check,
             preset,
             run_build_runner,
+            native_cbor,
         } => handle_generate_dart(
             schema,
             out,
@@ -34,6 +35,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             check,
             preset,
             run_build_runner,
+            native_cbor,
         )?,
         Command::GenerateTypeScript {
             schema,
@@ -133,6 +135,7 @@ fn handle_generate_dart(
     check: bool,
     preset: DartPresetArg,
     run_build_runner: bool,
+    native_cbor: bool,
 ) -> Result<()> {
     let parsed = parse_schema_or_render(&schema)?;
     let pb_lock = read_pb_lock_if_present(&schema)?;
@@ -146,6 +149,7 @@ fn handle_generate_dart(
             preset: preset.into(),
             pb_lock,
             schema_sha256,
+            native_cbor,
         },
     )?;
     let files = into_generated_files(package.files);
