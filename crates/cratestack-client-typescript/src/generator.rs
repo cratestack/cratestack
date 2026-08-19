@@ -1,4 +1,4 @@
-use cratestack_core::{Schema, TransportStyle};
+use cratestack_core::Schema;
 
 use crate::config::{
     GeneratedTypeScriptFile, GeneratedTypeScriptPackage, TypeScriptGeneratorConfig,
@@ -24,33 +24,6 @@ pub fn generate_package(
             ::cratestack_core::composite_id::composite_id_unsupported_message(&model.name),
         ));
     }
-    // Issue #571: reject a schema `--refine` cannot produce a
-    // type-checking file for, before rendering anything — structural (see
-    // `RefineRequiresRestOrRpc`'s doc comment), so failing here is
-    // strictly better than emitting a `refine.ts` that breaks `tsc` in
-    // the consumer's package. REST and RPC both work — `@cratestack/refine`
-    // ships a provider for each (`ResourceMap`/`RpcResourceMap`); only
-    // gRPC-Web has no provider to bind to. Unlike before issue #591, this
-    // no longer checks `--swr` at all: the default layout `refine.ts`
-    // binds against is always emitted regardless of `--swr`, so the two
-    // flags compose freely.
-    if config.refine && schema.transport == TransportStyle::Grpc {
-        return Err(TypeScriptGeneratorError::RefineRequiresRestOrRpc);
-    }
-    // Same reasoning, for `--swr`: reject a `transport grpc` schema before
-    // rendering anything, rather than after the (unconditional, see
-    // below) default layout has already rendered — a `transport grpc`
-    // schema without a `pb_lock` would otherwise surface the unrelated
-    // `MissingPbLock` first and mask the real, structural reason `--swr`
-    // itself can't proceed (see `SwrUnsupportedForGrpc`'s doc comment).
-    // `crate::swr::generate` repeats this check on its own path too (it's
-    // callable directly, not only through here), so this is belt-and-
-    // suspenders for the combined pipeline's error precedence, not the
-    // only place it's enforced.
-    if config.swr && schema.transport == TransportStyle::Grpc {
-        return Err(TypeScriptGeneratorError::SwrUnsupportedForGrpc);
-    }
-
     // The default layout is unconditional (issue #591: `--swr` used to
     // pick a *replacing* preset via `--preset swr`; it is now an additive
     // flag instead — see `crate::swr`'s module doc for the full
@@ -81,7 +54,7 @@ fn generate_default_package(
         .iter()
         .map(|spec| {
             let OutputPath::Fixed(output_path) = spec.output_path else {
-                unreachable!("default/REST/RPC/GRPC template specs are always OutputPath::Fixed");
+                unreachable!("default/REST/RPC template specs are always OutputPath::Fixed");
             };
             let template = environment
                 .get_template(spec.template_name)

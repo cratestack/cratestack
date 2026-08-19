@@ -133,14 +133,10 @@ const RPC: &[TemplateSpec] = &[
     },
 ];
 
-/// `transport` is REST or RPC only by the time this is called —
-/// `swr::generate` rejects `Grpc` before reaching here (see its own doc
-/// comment for why: out of scope for issue #304).
 pub(crate) fn swr_template_specs_for(transport: TransportStyle) -> Vec<TemplateSpec> {
     let mode = match transport {
         TransportStyle::Rest => REST,
         TransportStyle::Rpc => RPC,
-        TransportStyle::Grpc => &[],
     };
     let mut specs = Vec::with_capacity(COMMON.len() + mode.len());
     specs.extend_from_slice(COMMON);

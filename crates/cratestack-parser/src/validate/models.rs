@@ -12,7 +12,7 @@ use crate::validate::fields::{
 };
 use crate::validate::model_attributes::{validate_model_attributes, validate_model_version_field};
 use crate::validate::model_relation::validate_field_relation;
-use crate::validate::pb::validate_pb_field_attribute;
+use crate::validate::removed_attributes::validate_removed_field_attributes;
 use crate::validate::reserved_idents::validate_reserved_identifier;
 use crate::validate::route_collisions::validate_model_route_collisions;
 use crate::validate::snake_case_collisions::{
@@ -126,7 +126,7 @@ pub(super) fn validate_models(
             validate_validator_attributes(&model.name, field)?;
             validate_field_policy_attributes(&model.name, field)?;
             validate_default_dbgenerated_no_args(&model.name, field)?;
-            validate_pb_field_attribute("model", &model.name, field)?;
+            validate_removed_field_attributes("model", &model.name, field)?;
             validate_field_list_arity_support(
                 schema_has_datasource,
                 &model.name,

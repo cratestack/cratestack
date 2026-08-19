@@ -1,12 +1,11 @@
 //! Shared Cargo-feature enforcement for `.cstack` `extension <name> { }`
 //! declarations (cratestack#161) — the *one* place every extension
 //! registers itself against this mechanism, reused unmodified by all three
-//! entry macros. Split out of `parse.rs`/co-located with `reject_grpc.rs` /
+//! entry macros. Split out of `parse.rs`/co-located with
 //! `datasource_guard.rs` per the repo's 200-LoC file convention; the shape
-//! deliberately mirrors those two exactly, since they already solve the
-//! identical problem ("is this schema-declared capability actually
-//! available in the crate compiling it") for `transport grpc` and
-//! `db = Postgres`.
+//! deliberately mirrors that module, since it already solves the identical
+//! problem ("is this schema-declared capability actually available in the
+//! crate compiling it") for `db = Postgres`.
 //!
 //! `cratestack-parser` (cratestack#153) already turns `extension pgvector
 //! { }` into `Schema.declared_extensions: BTreeSet<ExtensionKind>` — a
@@ -26,8 +25,8 @@
 //! only. A proc-macro expands *inside the `rustc` process compiling the
 //! invoking crate*, which never receives those variables; reading them here
 //! would just always see nothing. What actually works, and what
-//! `reject_grpc.rs`'s `grpc` guard and `datasource_guard.rs`'s `postgres`
-//! guard already do: `cratestack-macros` declares the same-named Cargo
+//! `datasource_guard.rs`'s `postgres` guard already does: `cratestack-macros`
+//! declares the same-named Cargo
 //! feature itself (`rate_limit`, `pgvector`), and a facade crate
 //! (`cratestack-pg`, `cratestack-sqlite`) forwards its own feature of the
 //! same name down via `rate_limit = ["cratestack-macros/rate_limit"]` /
@@ -84,8 +83,8 @@ fn feature_enabled(kind: ExtensionKind) -> bool {
 /// feature is off, in `declared_extensions`' stable (`BTreeSet`) order —
 /// the condition every guard below branches on. Kept separate from the
 /// guards themselves (which return `proc_macro::TokenStream` and panic
-/// outside a real proc-macro invocation — see `reject_grpc.rs`'s tests for
-/// the same constraint) so it stays directly unit-testable.
+/// outside a real proc-macro invocation — see `datasource_guard.rs`'s tests
+/// for the same constraint) so it stays directly unit-testable.
 fn first_missing_extension(schema: &Schema) -> Option<ExtensionKind> {
     schema
         .declared_extensions
@@ -117,10 +116,8 @@ pub(super) fn guard_server_declared_extensions(
 /// `include_client_schema!` only. Same policy as the server guard today —
 /// nothing about `rate_limit`/`pgvector` currently differs for the client
 /// role; a future extension whose client-side story diverges gets its own
-/// guard here rather than a branch threaded into this one, mirroring why
-/// `reject_grpc.rs` keeps `guard_server_grpc_transport` and
-/// `guard_client_grpc_transport` as two functions instead of one shared by
-/// both.
+/// guard here rather than a branch threaded into this one shared by both
+/// roles.
 pub(super) fn guard_client_declared_extensions(
     schema_path: &LitStr,
     schema: &Schema,

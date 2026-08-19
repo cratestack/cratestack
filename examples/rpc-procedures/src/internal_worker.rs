@@ -8,7 +8,7 @@
 //! `crates/cratestack-macros/tests/ui_procedure_registry_witness.rs` for
 //! the compile-fail proof against this exact schema shape. The function
 //! below is the real, sanctioned replacement: it goes through
-//! `invoke_with_db`, the same entry point the generated RPC/REST/gRPC
+//! `invoke_with_db`, the same entry point the generated RPC/REST
 //! dispatch handlers use, so a background job gets identical policy
 //! enforcement to an HTTP request — no separate, weaker "internal" path
 //! exists to reach for by accident.

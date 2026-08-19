@@ -111,8 +111,7 @@ pub(crate) enum Command {
         ///
         /// Purely additive: the default layout at `src/` is always
         /// emitted regardless of this flag; `--swr` adds the `src/swr/`
-        /// subtree alongside it rather than replacing it. Does not
-        /// support `transport grpc` schemas yet.
+        /// subtree alongside it rather than replacing it.
         #[arg(long)]
         swr: bool,
         /// Also emit `src/refine.ts` (issue #571): the
@@ -122,10 +121,9 @@ pub(crate) enum Command {
         /// generated client encodes only in its TypeScript types.
         ///
         /// Purely additive: every other emitted file is byte-identical
-        /// with and without it. REST and RPC schemas only — the manifest
-        /// is typed `ResourceMap` for REST and `RpcResourceMap` for RPC;
-        /// gRPC-Web has no `@cratestack/refine` provider to bind to.
-        /// Composes freely with `--swr`: the manifest binds to the
+        /// with and without it. The manifest is typed `ResourceMap` for
+        /// REST and `RpcResourceMap` for RPC. Composes freely with
+        /// `--swr`: the manifest binds to the
         /// default layout's client class, which is always emitted
         /// regardless of `--swr`.
         #[arg(long)]
@@ -135,39 +133,18 @@ pub(crate) enum Command {
         /// client class, re-exported from `src/index.ts`, plus the
         /// `@tanstack/react-query` peer + dev dependency in
         /// `package.json`. Before this flag existed, all three were
-        /// emitted unconditionally, for every schema and transport (REST,
-        /// RPC, gRPC-Web alike) — `--tanstack` finishes the convergence
-        /// `--swr` (#589) and `--refine` (#571) already went through.
+        /// emitted unconditionally, for every schema and transport —
+        /// `--tanstack` finishes the convergence `--swr` (#589) and
+        /// `--refine` (#571) already went through.
         ///
         /// Purely additive: every other emitted file is byte-identical
         /// with and without it. Unlike `--refine`, this composes with
-        /// EVERY transport including gRPC-Web — `--tanstack` gates the
-        /// same `src/react-query.ts` that used to be unconditional there
-        /// too, it doesn't add support for a transport that lacked it
-        /// before. Composes freely with `--swr`/`--refine`.
+        /// EVERY transport — `--tanstack` gates the same
+        /// `src/react-query.ts` that used to be unconditional there too,
+        /// it doesn't add support for a transport that lacked it before.
+        /// Composes freely with `--swr`/`--refine`.
         #[arg(long)]
         tanstack: bool,
-    },
-    /// Emit a `.proto` file describing the schema's messages/enums
-    /// (no `service` block — that needs `transport grpc`, ticket #170)
-    /// plus its sibling field-number lockfile. See
-    /// `docs/design/protobuf.md` §4.6 for why `--package` is required on
-    /// first run and locked thereafter.
-    #[command(name = "generate-proto")]
-    GenerateProto {
-        #[arg(long)]
-        schema: PathBuf,
-        #[arg(long)]
-        out: PathBuf,
-        /// Protobuf package name. Required on first run (no existing
-        /// `<schema>.pb.lock`); on later runs, must match what's already
-        /// locked or be omitted.
-        #[arg(long)]
-        package: Option<String>,
-        /// Drift-detection mode: rebuild the lock and `.proto` text in
-        /// memory and compare against what's on disk instead of writing.
-        #[arg(long)]
-        check: bool,
     },
     /// Emit WireMock stub mappings (one per procedure, five per model —
     /// `list`/`get`/`create`/`update`/`delete`) derived from the

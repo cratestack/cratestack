@@ -5,8 +5,8 @@
 //! The guard functions themselves (`guard_server_declared_extensions` and
 //! friends) return `proc_macro::TokenStream` and call
 //! `syn::Error::to_compile_error()`, which panics outside a real
-//! proc-macro invocation context — same constraint `reject_grpc.rs`'s and
-//! `datasource_guard.rs`'s tests document for their own guards. So these
+//! proc-macro invocation context — same constraint `datasource_guard.rs`'s
+//! tests document for its own guards. So these
 //! tests exercise the pure predicates the guards are built from
 //! (`first_missing_extension`, `required_feature`, `feature_enabled`)
 //! directly; the guards' actual compile-time behavior (including both
@@ -117,12 +117,10 @@ fn required_feature_names_every_extension_kind() {
 // The `cfg!(feature = "...")` branch inside `feature_enabled` for each
 // extension is exercised by CI running this crate's test suite twice
 // more — with `--features rate_limit` and with `--features pgvector` —
-// per this ticket's verification checklist; same precedent
-// `reject_grpc.rs`'s tests document for its own `cfg!(feature =
-// "grpc")` check. These two tests only run under the matching feature,
-// confirming `feature_enabled` flips to `true` (and so
-// `first_missing_extension` no longer reports it) rather than being
-// hardcoded `false`.
+// per this ticket's verification checklist. These two tests only run
+// under the matching feature, confirming `feature_enabled` flips to
+// `true` (and so `first_missing_extension` no longer reports it) rather
+// than being hardcoded `false`.
 #[test]
 #[cfg(feature = "rate_limit")]
 fn rate_limit_feature_enabled_is_reflected() {

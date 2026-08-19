@@ -1,10 +1,10 @@
 // Behavioral tests for `--preset riverpod` (issue #301) — file-tree
 // shape, the ownership rule exercised end to end through
-// `riverpod_shared_ownership.cstack`, the gRPC-unsupported error, and the
-// regression guard that the `default` preset stays byte-identical.
+// `riverpod_shared_ownership.cstack`, and the regression guard that the
+// `default` preset stays byte-identical.
 
 use cratestack_client_dart::{
-    DartGeneratorConfig, DartGeneratorError, DartPreset, GeneratedDartPackage, generate_package,
+    DartGeneratorConfig, DartPreset, GeneratedDartPackage, generate_package,
 };
 
 const TEST_SCHEMA_SHA256: &str = "13914fdc4b27216d09632c23cec2aa5ea971843166fec36df790de94f2fccccb";
@@ -20,7 +20,6 @@ fn generate(fixture: &str, library_name: &str, preset: DartPreset) -> GeneratedD
             base_path: "/api".to_owned(),
             template_dir: None,
             preset,
-            pb_lock: None,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
             native_cbor: false,
         },
@@ -63,7 +62,6 @@ fn omitting_preset_matches_explicit_default_preset() {
         base_path: "/api".to_owned(),
         template_dir: None,
         preset: DartPreset::default(),
-        pb_lock: None,
         schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
         native_cbor: false,
     };
@@ -75,27 +73,6 @@ fn omitting_preset_matches_explicit_default_preset() {
     let a = generate_package(&schema, &config_default_value).expect("should render");
     let b = generate_package(&schema, &config_explicit_default).expect("should render");
     assert_eq!(a, b);
-}
-
-#[test]
-fn riverpod_preset_is_rejected_for_grpc_transport() {
-    let schema =
-        cratestack_parser::parse_schema_file("../../examples/grpc-widgets/schemas/widgets.cstack")
-            .expect("widgets fixture should parse");
-
-    let error = generate_package(
-        &schema,
-        &DartGeneratorConfig {
-            preset: DartPreset::Riverpod,
-            ..DartGeneratorConfig::default()
-        },
-    )
-    .expect_err("riverpod preset should refuse a transport grpc schema");
-
-    assert!(matches!(
-        error,
-        DartGeneratorError::RiverpodPresetGrpcUnsupported
-    ));
 }
 
 #[test]

@@ -229,7 +229,6 @@ fn generate(fixture_stem: &str, preset: DartPreset, native_cbor: bool) -> Genera
             base_path: "/api".to_owned(),
             template_dir: None,
             preset,
-            pb_lock: None,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
             native_cbor,
         },

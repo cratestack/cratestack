@@ -59,8 +59,7 @@ pub(crate) struct ModelFileContext {
 /// one model's five `@riverpod` operation providers — always all five,
 /// mirroring `model_api`'s own unconditional list/get/create/update/
 /// delete surface (this generator's REST/RPC paths never gate `create`
-/// on `@@allow`; only the gRPC path does — see
-/// `crate::naming::model_allows_create`'s doc).
+/// on `@@allow`).
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ModelOperationsView {
     /// `@riverpod Future<Model> {get_function_name}(Ref ref, K id)`.

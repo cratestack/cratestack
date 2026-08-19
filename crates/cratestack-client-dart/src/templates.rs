@@ -120,70 +120,10 @@ const RPC_TEMPLATE_SPECS: &[TemplateSpec] = &[
     },
 ];
 
-// gRPC-specific templates (ticket #210). Model CRUD only (see
-// `crate::grpc`'s module doc): no `queries.dart` (no URL-query shaping —
-// protobuf fields are typed, not query-string-shaped), no procedure
-// surface (ticket #171 never wired procedures into the generated tonic
-// service), and no `example/main.dart`/`test/*_test.dart` — those two
-// COMMON templates hard-code `CratestackFetchQuery`/`*Selection` usage
-// that only `rest-queries.dart.j2` (REST-only) defines, so reusing them
-// here would emit a package that fails `dart analyze`. `constants.dart`
-// is dropped too: its `*FieldNames`/`*IncludeNames` selection constants
-// exist to build REST/RPC selection queries, which gRPC has no equivalent
-// of. `pubspec.yaml`/`README.md` get gRPC-specific variants rather than
-// the shared ones: the shared `pubspec.yaml.j2` pulls in `dio`/`cbor`/
-// `flutter_riverpod`, none of which a `package:grpc`-based client needs.
-const GRPC_TEMPLATE_SPECS: &[TemplateSpec] = &[
-    TemplateSpec {
-        template_name: "grpc-pubspec.yaml.j2",
-        output_path: "pubspec.yaml",
-        default_source: include_str!("../templates/grpc-pubspec.yaml.j2"),
-    },
-    TemplateSpec {
-        template_name: "grpc-readme.md.j2",
-        output_path: "README.md",
-        default_source: include_str!("../templates/grpc-readme.md.j2"),
-    },
-    TemplateSpec {
-        template_name: "CHANGELOG.md.j2",
-        output_path: "CHANGELOG.md",
-        default_source: include_str!("../templates/CHANGELOG.md.j2"),
-    },
-    TemplateSpec {
-        template_name: "analysis_options.yaml.j2",
-        output_path: "analysis_options.yaml",
-        default_source: include_str!("../templates/analysis_options.yaml.j2"),
-    },
-    TemplateSpec {
-        template_name: "models.dart.j2",
-        output_path: "lib/src/models.dart",
-        default_source: include_str!("../templates/models.dart.j2"),
-    },
-    TemplateSpec {
-        template_name: "grpc-library.dart.j2",
-        output_path: "lib/{{ package_name }}.dart",
-        default_source: include_str!("../templates/grpc-library.dart.j2"),
-    },
-    TemplateSpec {
-        template_name: "grpc-runtime.dart.j2",
-        output_path: "lib/src/runtime.dart",
-        default_source: include_str!("../templates/grpc-runtime.dart.j2"),
-    },
-    TemplateSpec {
-        template_name: "grpc-apis.dart.j2",
-        output_path: "lib/src/apis.dart",
-        default_source: include_str!("../templates/grpc-apis.dart.j2"),
-    },
-];
-
 pub(crate) fn template_specs_for(transport: TransportStyle) -> Vec<TemplateSpec> {
     let (common, mode_specs) = match transport {
         TransportStyle::Rest => (COMMON_TEMPLATE_SPECS, REST_TEMPLATE_SPECS),
         TransportStyle::Rpc => (COMMON_TEMPLATE_SPECS, RPC_TEMPLATE_SPECS),
-        // gRPC ships its own self-contained file set (see
-        // `GRPC_TEMPLATE_SPECS`'s doc) rather than layering onto
-        // `COMMON_TEMPLATE_SPECS`.
-        TransportStyle::Grpc => (&[][..], GRPC_TEMPLATE_SPECS),
     };
     let mut specs = Vec::with_capacity(common.len() + mode_specs.len());
     specs.extend_from_slice(common);

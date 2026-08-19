@@ -3,8 +3,6 @@ mod client;
 mod codec;
 mod config;
 mod error;
-#[cfg(feature = "grpc")]
-pub mod grpc;
 mod rpc;
 mod runtime;
 mod state;

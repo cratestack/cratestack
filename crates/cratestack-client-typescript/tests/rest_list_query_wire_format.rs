@@ -275,7 +275,6 @@ fn generate_for(
             full_selection: false,
             refine: false,
             tanstack: false,
-            pb_lock: None,
             schema_sha256: String::new(),
         },
     )

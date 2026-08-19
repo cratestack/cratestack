@@ -99,9 +99,7 @@ pub enum CratestackError {
     /// (`docs/design/rpc-transport.md` §3.4/§3.4a: "bounded
     /// per-subscription send buffer; on overflow, emit
     /// `Error{code:"unavailable"}`") — the first caller of the RPC
-    /// binding's already-reserved `"unavailable"` code
-    /// (`cratestack-grpc`'s own doc comment already anticipated this:
-    /// "the two the RPC binding never emits today").
+    /// binding's already-reserved `"unavailable"` code.
     #[error("unavailable: {0}")]
     Unavailable(String),
 }

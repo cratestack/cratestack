@@ -109,45 +109,19 @@ pub(crate) const RPC_TEMPLATE_SPECS: &[TemplateSpec] = &[
     },
 ];
 
-// gRPC-Web-specific templates. Used when `schema.transport == Grpc`.
-// Model CRUD only (ticket #172 — see `crate::grpc`'s module doc): no
-// `queries.ts` (no URL-query shaping — protobuf fields are typed, not
-// query-string-shaped) and no procedure surface (ticket #171 never wired
-// procedures into the generated tonic service, so there is nothing to
-// bind a method to).
-pub(crate) const GRPC_TEMPLATE_SPECS: &[TemplateSpec] = &[
-    TemplateSpec {
-        template_name: "grpc-web-runtime.ts.j2",
-        output_path: OutputPath::Fixed("src/runtime.ts"),
-        default_source: include_str!("../../templates/src/grpc-web-runtime.ts.j2"),
-    },
-    TemplateSpec {
-        template_name: "grpc-web-client.ts.j2",
-        output_path: OutputPath::Fixed("src/client.ts"),
-        default_source: include_str!("../../templates/src/grpc-web-client.ts.j2"),
-    },
-    TemplateSpec {
-        template_name: "grpc-web-index.ts.j2",
-        output_path: OutputPath::Fixed("src/index.ts"),
-        default_source: include_str!("../../templates/src/grpc-web-index.ts.j2"),
-    },
-];
-
 // Issue #617's `--tanstack` opt-in: one extra file, appended to whichever
 // mode's spec list only when `TypeScriptGeneratorConfig::tanstack` is set.
 // Unlike `REFINE_TEMPLATE_SPECS` below (one template whose *content*
 // branches on transport via the rendering context), TanStack Query has
-// three separately hand-written source templates — `rest-react-query.ts.j2`,
-// `rpc-react-query.ts.j2`, `grpc-web-react-query.ts.j2` — because the
-// generated hooks call different runtime APIs per transport
-// (`CratestackFetchQuery` helpers vs `CratestackRpcRuntime` vs the gRPC-Web
-// client), so `template_specs_for` below picks the transport-appropriate
-// one of these three rather than a single const. All three used to live
-// unconditionally inside `REST_TEMPLATE_SPECS`/`RPC_TEMPLATE_SPECS`/
-// `GRPC_TEMPLATE_SPECS` above — moved out here, mirroring how
-// `REFINE_TEMPLATE_SPECS` was kept out of the unconditional lists, so
-// `react-query.ts` no longer appears in a default run
-// (`tests/snapshot.rs` pins that).
+// two separately hand-written source templates — `rest-react-query.ts.j2`,
+// `rpc-react-query.ts.j2` — because the generated hooks call different
+// runtime APIs per transport (`CratestackFetchQuery` helpers vs
+// `CratestackRpcRuntime`), so `template_specs_for` below picks the
+// transport-appropriate one of these rather than a single const. Both used
+// to live unconditionally inside `REST_TEMPLATE_SPECS`/`RPC_TEMPLATE_SPECS`
+// above — moved out here, mirroring how `REFINE_TEMPLATE_SPECS` was kept
+// out of the unconditional lists, so `react-query.ts` no longer appears in
+// a default run (`tests/snapshot.rs` pins that).
 const REST_TANSTACK_TEMPLATE_SPECS: &[TemplateSpec] = &[TemplateSpec {
     template_name: "rest-react-query.ts.j2",
     output_path: OutputPath::Fixed("src/react-query.ts"),
@@ -158,18 +132,12 @@ const RPC_TANSTACK_TEMPLATE_SPECS: &[TemplateSpec] = &[TemplateSpec {
     output_path: OutputPath::Fixed("src/react-query.ts"),
     default_source: include_str!("../../templates/src/rpc-react-query.ts.j2"),
 }];
-const GRPC_TANSTACK_TEMPLATE_SPECS: &[TemplateSpec] = &[TemplateSpec {
-    template_name: "grpc-web-react-query.ts.j2",
-    output_path: OutputPath::Fixed("src/react-query.ts"),
-    default_source: include_str!("../../templates/src/grpc-web-react-query.ts.j2"),
-}];
 
 // Issue #571's `--refine` opt-in: one extra file, appended to the REST or
 // RPC spec list only when `TypeScriptGeneratorConfig::refine` is set (the
 // template itself picks `ResourceMap` vs `RpcResourceMap` per transport —
 // see `crate::context::build_template_context`'s `refine_resource_map_type`
-// and `crate::refine`'s module doc; `crate::generator` rejects `--refine`
-// before this function is ever reached for `transport grpc`). Kept out of
+// and `crate::refine`'s module doc). Kept out of
 // `COMMON_TEMPLATE_SPECS`/`REST_TEMPLATE_SPECS`/`RPC_TEMPLATE_SPECS`
 // deliberately — those are unconditional, and `refine.ts` must not appear
 // in a default run (`tests/snapshot.rs` pins that output byte-for-byte).
@@ -191,15 +159,13 @@ pub(crate) const REFINE_TEMPLATE_SPECS: &[TemplateSpec] = &[TemplateSpec {
 /// `list` input.
 ///
 /// `tanstack` (issue #617) appends one extra spec, transport-resolved from
-/// `REST_TANSTACK_TEMPLATE_SPECS`/`RPC_TANSTACK_TEMPLATE_SPECS`/
-/// `GRPC_TANSTACK_TEMPLATE_SPECS` above. Unlike `refine`, this composes
-/// with EVERY transport including gRPC-Web — `--tanstack` gates the same
-/// `src/react-query.ts` that used to be unconditional for all three, it
-/// does not add support for a transport that lacked it before.
+/// `REST_TANSTACK_TEMPLATE_SPECS`/`RPC_TANSTACK_TEMPLATE_SPECS` above.
+/// Unlike `refine`, this composes with EVERY transport — `--tanstack` gates
+/// the same `src/react-query.ts` that used to be unconditional, it does
+/// not add support for a transport that lacked it before.
 ///
-/// `refine` (issue #571) appends one extra spec for REST or RPC schemas
-/// (never gRPC-Web — `crate::generator` rejects that combination before
-/// reaching here). It is a parameter rather than folded into `mode_specs`
+/// `refine` (issue #571) appends one extra spec for REST or RPC schemas.
+/// It is a parameter rather than folded into `mode_specs`
 /// because it is additive to an otherwise unchanged run — `refine: false`
 /// returns exactly the list this function returned before the flag
 /// existed. `tanstack` follows the same additive-parameter shape.
@@ -211,13 +177,11 @@ pub(crate) fn template_specs_for(
     let mode_specs = match transport {
         TransportStyle::Rest => REST_TEMPLATE_SPECS,
         TransportStyle::Rpc => RPC_TEMPLATE_SPECS,
-        TransportStyle::Grpc => GRPC_TEMPLATE_SPECS,
     };
     let tanstack_specs: &[TemplateSpec] = if tanstack {
         match transport {
             TransportStyle::Rest => REST_TANSTACK_TEMPLATE_SPECS,
             TransportStyle::Rpc => RPC_TANSTACK_TEMPLATE_SPECS,
-            TransportStyle::Grpc => GRPC_TANSTACK_TEMPLATE_SPECS,
         }
     } else {
         &[]

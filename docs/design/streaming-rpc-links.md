@@ -245,7 +245,7 @@ number that doesn't hold up at the margin that matters.
 
 ## 6. Out of scope (confirmed unchanged by this spike)
 
-- REST and gRPC-Web streaming parity — RPC-only, per #182's own original scope.
+- REST streaming parity — RPC-only, per #182's own original scope.
 - The `@@subscribe` transport question (SSE vs. WS) — that's #183, a sibling ticket under the same
   epic (#207), answering a different question (which wire protocol) than this one (which client
   contract).

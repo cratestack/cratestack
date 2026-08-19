@@ -8,7 +8,7 @@ use crate::validate::fields::{
     CustomFieldSupport, validate_custom_field_attribute, validate_default_dbgenerated_no_args,
     validate_field_reserved_identifier,
 };
-use crate::validate::pb::validate_pb_field_attribute;
+use crate::validate::removed_attributes::validate_removed_field_attributes;
 use crate::validate::reserved_idents::validate_reserved_identifier;
 use crate::validate::snake_case_collisions::validate_field_column_collisions;
 use crate::validate::type_names::validate_type_ref;
@@ -81,7 +81,7 @@ pub(super) fn validate_mixins(
                 },
             )?;
             validate_default_dbgenerated_no_args(&mixin.name, field)?;
-            validate_pb_field_attribute("mixin", &mixin.name, field)?;
+            validate_removed_field_attributes("mixin", &mixin.name, field)?;
         }
     }
     Ok(())
@@ -126,7 +126,7 @@ pub(super) fn validate_types(
                     ..Default::default()
                 },
             )?;
-            validate_pb_field_attribute("type", &ty.name, field)?;
+            validate_removed_field_attributes("type", &ty.name, field)?;
         }
     }
     Ok(())
@@ -200,6 +200,7 @@ pub(super) fn validate_auth(
                     ..Default::default()
                 },
             )?;
+            validate_removed_field_attributes("auth block", &auth.name, field)?;
         }
     }
     Ok(())

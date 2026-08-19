@@ -7,7 +7,7 @@ pub(super) fn parse_transport_directive(line: &Line<'_>) -> Result<TransportStyl
     let rest = line.trimmed.strip_prefix("transport").unwrap_or("").trim();
     if rest.is_empty() {
         return Err(SchemaError::new(
-            "expected transport style after `transport` (one of: rest, rpc, grpc)",
+            "expected transport style after `transport` (one of: rest, rpc)",
             line.start..line.start + line.raw.len(),
             line.number,
         ));
@@ -15,9 +15,21 @@ pub(super) fn parse_transport_directive(line: &Line<'_>) -> Result<TransportStyl
     match rest {
         "rest" => Ok(TransportStyle::Rest),
         "rpc" => Ok(TransportStyle::Rpc),
-        "grpc" => Ok(TransportStyle::Grpc),
+        // `grpc` is called out by name rather than falling into the generic
+        // arm below: it was a supported transport through v0.8, so a schema
+        // still declaring it is a migrating consumer, not a typo, and the
+        // generic "unknown transport style" text would send them looking for
+        // a spelling mistake. Mirrors the `@pb` treatment in
+        // `validate::removed_attributes`.
+        "grpc" => Err(SchemaError::new(
+            "`transport grpc` is no longer supported: protobuf/gRPC support was removed in \
+             v0.9 (see docs/adr/0017-remove-grpc-protobuf.md). Migrate the schema to \
+             `transport rest` or `transport rpc` and regenerate its clients",
+            line.start..line.start + line.raw.len(),
+            line.number,
+        )),
         other => Err(SchemaError::new(
-            format!("unknown transport style `{other}` (expected one of: rest, rpc, grpc)"),
+            format!("unknown transport style `{other}` (expected one of: rest, rpc)"),
             line.start..line.start + line.raw.len(),
             line.number,
         )),

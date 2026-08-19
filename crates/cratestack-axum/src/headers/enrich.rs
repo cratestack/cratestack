@@ -55,9 +55,7 @@ pub fn enrich_context_from_headers(
 /// peer ever arrived. That combination is always a misconfiguration: the
 /// consumer applied the `Extension` but never wired
 /// `into_make_service_with_connect_info::<SocketAddr>()` (or applied it to
-/// a *different* router than the one actually serving traffic — the gRPC
-/// `into_router()` and REST/RPC `router()` are separate router instances,
-/// see decision 6 in `docs/design/trusted-proxy-client-ip.md`), so
+/// a *different* router than the one actually serving traffic), so
 /// `Forwarded`/`X-Forwarded-For` can never be honored no matter how the
 /// allowlist is configured — `client_ip` silently degrades to `None` on
 /// every single request. `Once`, not per-request: this is a boot-time
@@ -92,10 +90,8 @@ fn resolve_client_ip(
                 "a TrustedProxyConfig is applied to this router but no ConnectInfo<SocketAddr> \
                  peer was available on this request — Forwarded/X-Forwarded-For can never be \
                  honored until the router is served via \
-                 into_make_service_with_connect_info::<SocketAddr>() (every router the app \
-                 serves, including a separate gRPC into_router() for `transport grpc` \
-                 schemas). client_ip is silently None on every request until this is fixed. \
-                 Logged once per process."
+                 into_make_service_with_connect_info::<SocketAddr>(). client_ip is silently \
+                 None on every request until this is fixed. Logged once per process."
             );
         });
     }

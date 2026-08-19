@@ -58,35 +58,6 @@ decimal-bigdecimal = [
     "cratestack-codec-cbor/decimal-bigdecimal",
     "cratestack-codec-json?/decimal-bigdecimal",
 ]
-# Native Rust gRPC client runtime (ticket #209) — `crate::grpc::
-# CratestackGrpcClient`, the tonic-based counterpart to `CratestackClient`
-# (REST) and `RpcClient` (RPC). Off by default: pulls in `tonic` (and
-# transitively `prost`, `h2`, `tower`) for every consumer otherwise,
-# whether or not they use gRPC. Forwarded from `cratestack-pg`'s own
-# `grpc` feature, same wiring as `cratestack-macros/grpc`.
-#
-# Uses `tonic`'s workspace-pinned *default* features (`router`,
-# `transport`, `codegen`, `prost`) rather than trimming to just
-# `channel`+`codegen`+`prost`: Cargo's workspace-dependency inheritance
-# does not allow a member to set `default-features = false` against a root
-# `workspace.dependencies` entry that itself didn't declare
-# `default-features` explicitly (verified — `cargo check` hard-errors with
-# "cannot override workspace's default-features" when attempted), and
-# `cratestack-grpc` (the server runtime) already pulls in the same default
-# features unconditionally, so this doesn't add new weight to the
-# workspace's dependency graph overall — only to this one crate's own
-# graph when `grpc` is enabled. Revisit (a non-inherited, locally-versioned
-# `tonic` entry instead of `.workspace = true`) if that ever becomes a
-# real problem in practice.
-#
-# `prost` itself is also a direct dependency here (not just reachable
-# through `tonic`): `CratestackGrpcClient::unary`'s own `where Req: prost::
-# Message` bound needs to name the trait, which requires `prost` resolvable
-# as a literal crate name in *this* crate's graph — the same requirement
-# `cratestack-grpc`'s module doc documents for `prost_derive`'s hardcoded
-# `::prost::` paths, except here it's an ordinary trait-bound reference, not
-# a derive-macro expansion, so a ordinary (non-derive) dependency suffices.
-grpc = ["dep:tonic", "dep:prost"]
 
 [dependencies]
 async-trait.workspace = true
@@ -105,7 +76,6 @@ cratestack-core.workspace = true
 futures-util.workspace = true
 minicbor.workspace = true
 minicbor-serde.workspace = true
-prost = { workspace = true, optional = true }
 reqwest.workspace = true
 # #440: `reqwest`'s `rustls-no-provider` feature (see the workspace
 # `Cargo.toml`'s `reqwest` entry) ships no crypto provider — `CratestackClient::new`
@@ -118,7 +88,6 @@ serde_json.workspace = true
 serde_urlencoded.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["sync"] }
-tonic = { workspace = true, optional = true }
 url.workspace = true
 
 [dev-dependencies]

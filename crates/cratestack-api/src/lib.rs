@@ -20,18 +20,9 @@
 //! of unrelated "cannot find `sqlx`/`SqlxRuntime` in `cratestack`" errors —
 //! see this crate's `README.md` for the exact reproduction and transcript.
 //!
-//! For the same reason, this crate also does not depend on `cratestack-grpc`
-//! or `prost`. `transport grpc` codegen is entirely model-driven — CRUD
-//! routes generated per `model` block — and procedures are not (yet) wired
-//! into the generated gRPC service at all (see
-//! `crates/cratestack-macros/src/include/server/grpc/mod.rs`). Since
-//! `db = None` schemas can never declare a model, a `transport grpc` schema
-//! paired with `db = None` could only ever produce a gRPC service with zero
-//! methods — there is nothing useful gRPC adds here, so the dependency
-//! (`tonic`/`prost` and everything they pull in) is left out entirely
-//! rather than kept around unused. `transport rpc` and REST (the default)
-//! both work fully under `db = None` — see `docs/design/rpc-transport.md`
-//! and `docs/design/no-database-mode.md`.
+//! `transport rpc` and REST (the default) both work fully under
+//! `db = None` — see `docs/design/rpc-transport.md` and
+//! `docs/design/no-database-mode.md`.
 //!
 //! `cratestack-pg` (with `default-features = false` to drop its `postgres`
 //! feature) also supports `db = None` and continues to work — this crate
@@ -147,10 +138,8 @@ pub mod __private {
     /// reference these directly. Public helpers live at
     /// `cratestack::rpc::*`.
     ///
-    /// `bridge_grpc_response` is deliberately **not** re-exported here —
-    /// it's `transport grpc`-only, and this crate doesn't support gRPC (see
-    /// this module's parent doc comment). `SqlxRuntime` is likewise absent
-    /// — it's the `db = Postgres` runtime handle, which this crate cannot
-    /// offer without `cratestack-sqlx`.
+    /// `SqlxRuntime` is deliberately **not** re-exported here — it's the
+    /// `db = Postgres` runtime handle, which this crate cannot offer
+    /// without `cratestack-sqlx`.
     pub use cratestack_axum::rpc::{decode_rpc_body, encode_rpc_value, response_to_frame};
 }

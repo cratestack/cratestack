@@ -72,16 +72,18 @@ pub(super) fn build_axum_module(c: &ServerCollected, db: ServerDb) -> proc_macro
             /// `_dispatch` fn takes one of these so signature verification and
             /// tracing share a single source of truth that matches the client
             /// byte-for-byte.
-            // `pub(super)` (not private): the gRPC service module
-            // (`super::grpc`, a sibling of this `axum` module, emitted only
-            // for `transport grpc` schemas under the `grpc` Cargo feature —
-            // see `crates/cratestack-macros/src/include/server/grpc/`)
-            // constructs `CanonicalRequest` and calls the `_dispatch` fns
-            // below directly, so gRPC method bodies delegate to the exact
-            // same dispatch functions REST/RPC already call — "no second
-            // dispatch path" (ticket #171 AC). `pub(super)` keeps them
-            // unreachable from outside the generated `cratestack_schema`
-            // module entirely (schema authors never see these).
+            // `pub(super)` (not private): up through v0.8 a sibling gRPC
+            // service module (`super::grpc`, emitted only for `transport
+            // grpc` schemas) constructed `CanonicalRequest` and called the
+            // `_dispatch` fns below directly, so gRPC method bodies
+            // delegated to the exact same dispatch functions REST/RPC
+            // already call — "no second dispatch path" (ticket #171 AC).
+            // gRPC support was removed in v0.9, so that caller is gone, but
+            // the visibility is left as-is rather than tightened to
+            // private: nothing else in this module needs it narrower, and
+            // `pub(super)` still keeps `CanonicalRequest` unreachable from
+            // outside the generated `cratestack_schema` module entirely
+            // (schema authors never see it).
             pub(super) struct CanonicalRequest<'a> {
                 pub(super) method: &'a str,
                 pub(super) path: &'a str,

@@ -2,6 +2,47 @@
 
 ## Unreleased
 
+### Protobuf/gRPC support removed — breaking (ADR 0017)
+
+`transport grpc` — the third transport a `.cstack` schema could declare, generating
+`.proto` messages with a field-number lockfile, a tonic service, and Rust/Dart/
+TypeScript(gRPC-Web) clients — is gone. The maintainer decided on 2026-08-13 to drop the
+surface entirely rather than continue investing in it: it competed directly with REST and
+RPC, the two transports every other part of the framework (policy, idempotency, rate
+limiting, audit, the RPC batch envelope) is designed and tested against, while requiring
+its own router construction, its own client codegen per language, and its own
+presence-based route-suppression logic that turned out not to even solve its own
+motivating case (see `docs/design/route-suppression.md` spike's §1, and its 2026-08-18
+re-scoping to REST/RPC/clients only — the file itself was not deleted, only narrowed).
+
+Removed: the `cratestack-grpc` and `cratestack-proto` crates; the `grpc` Cargo feature
+from `cratestack-pg`, `cratestack-client-rust`, and `cratestack-macros`; three codegen
+directories inside `cratestack-macros` (`include/server/grpc/`, `include/grpc_pb/`,
+`include/client/grpc/`); the grpc-specific client generator modules in
+`cratestack-client-dart` and `cratestack-client-typescript`, and the grpc-specific
+runtime module (`src/grpc/`, the hand-written `tonic` client SDK) in
+`cratestack-client-rust`; the `transport grpc` schema keyword; the `@pb(N)`
+field-number attribute; the `generate-proto` CLI subcommand; `examples/grpc-widgets/`;
+and `docs/design/protobuf.md` (the feature's design document, 566 lines) and
+`docs/design/grpc-codegen-deduplication.md` (an unimplemented proposal for the removed
+surface, now moot).
+
+Also removed, all breaking for consumers of the published crates: the
+`cratestack_axum::bridge_grpc_response` re-export (`cratestack-axum/src/rpc/mod.rs`);
+the `TransportStyle::Grpc` enum variant in `cratestack-core` (breaking for any
+exhaustive `match` over `TransportStyle`); and the `cratestack_client_rust::grpc` module
+(feature-gated on `grpc`, off by default).
+
+A schema that declares `transport grpc` or uses `@pb(N)` no longer parses. There is no
+compatibility shim and no deprecation window, matching this framework's pre-1.0 lockstep
+versioning — the same reasoning `docs/design/route-suppression.md` §5 applies to a
+smaller-scoped removal. REST and RPC are unaffected: nothing in this change touches
+either transport's grammar, dispatch, or generated clients. See
+`docs/adr/0017-remove-grpc-protobuf.md` for the full decision record, including what it
+supersedes and the alternatives considered (feature-flagging it off by default; a
+deprecation cycle; narrowing scope instead of removing it — all rejected on the same
+"fixed cost, not variable cost" ground).
+
 ### Typestate builders on every generated struct-shaped type — Rust and Dart, TypeScript excluded
 
 Every struct-shaped type `include_*_schema!` emits now gets a companion builder alongside it: a

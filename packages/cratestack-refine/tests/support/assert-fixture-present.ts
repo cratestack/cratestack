@@ -14,10 +14,10 @@ import { fileURLToPath } from "node:url";
  *  and this message — it does NOT print a green "0 tests" the way a
  *  missing-import `describe.skip`/`it.skip` fallback would. That
  *  distinction is the entire point: cratestack-studio's Postgres tests
- *  and every cratestack-pg gRPC test both silently reported `ok` under
- *  exactly that failure shape for an extended period before being
- *  caught. A test suite that can pass with zero real assertions is
- *  worse than one that fails loudly and tells you why. */
+ *  silently reported `ok` under exactly that failure shape for an
+ *  extended period before being caught. A test suite that can pass with
+ *  zero real assertions is worse than one that fails loudly and tells
+ *  you why. */
 /** One fixture this check looks for — REST (`refine-fixture`) and RPC
  *  (`refine-rpc-fixture`) are both generated-and-gitignored (cratestack#577)
  *  and both required, since the test suite drives a real generated client

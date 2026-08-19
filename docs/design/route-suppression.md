@@ -1,17 +1,27 @@
-# Route suppression across REST, RPC, gRPC and generated clients — spike
+# Route suppression across REST, RPC and generated clients — spike
 
 Status: **proposed** (2026-08-12) — awaiting accountable-owner sign-off
 (@stephane-segning) per issue #514's acceptance criteria. **Not
 implemented. No implementation may merge under #514** — a follow-up
 ticket carries that once this is accepted or rejected.
 
+> **Scope note (2026-08-18).** This spike originally covered a fourth
+> surface, gRPC (`include/server/grpc/service.rs`), and cited its
+> existing `model_allows_create` presence-gate as the one live precedent
+> for declaration-gated absence (§5). `transport grpc` and that gate were
+> removed in v0.9 — see `docs/adr/0017-remove-grpc-protobuf.md`. This
+> document has been narrowed to the three surfaces that remain (REST,
+> RPC, generated clients); the argument and structure for those three are
+> otherwise unchanged from the original spike. Where the gRPC precedent
+> was load-bearing for a specific claim, that is flagged in place rather
+> than silently dropped.
+
 Scope: a design for suppressing generated routes/dispatch-arms/client
 stubs for a model action the schema author has marked unreachable from
-the wire, across all four generation surfaces —
+the wire, across all three generation surfaces —
 `crates/cratestack-macros/src/axum/model/routes.rs` (REST),
 `crates/cratestack-macros/src/transport/rpc.rs` +
-`include/server/rpc_module.rs` (RPC unary + batch),
-`include/server/grpc/service.rs` (gRPC), and
+`include/server/rpc_module.rs` (RPC unary + batch), and
 `crates/cratestack-macros/src/client/{rest,rpc}/model.rs` +
 `cratestack-client-{dart,typescript}` (generated clients).
 
@@ -37,24 +47,28 @@ is explicitly marked as such.
 | Question | Recommendation |
 |---|---|
 | 1. Trigger | **Author declaration** (`@@internal("action", ...)`), not policy inference. Reintroduces PR #485's attribute design unchanged in shape (that PR's code is not on `main` — see note above); only its *effect* changes (§2, §3). |
-| 2. Surfaces | **All four, one shared source of truth.** A single `model_internal_actions(&Model) -> BTreeSet<String>` — PR #485 designed this exact function in `crates/cratestack-core/src/schema/internal_attribute.rs`, but that file does not exist on `main`; the implementation ticket reintroduces it — consulted at exactly one point per surface: REST route assembly, RPC dispatch-arm collection, gRPC arm collection, and every client's per-action stub emission. A suppressed op sent to `/rpc/batch` gets a per-frame `CratestackError::NotFound` error frame at its index, in place, other frames unaffected — no new mechanism needed, since this reuses machinery that genuinely is on `main` today (§3.2). |
-| 3. Failure mode | Not a single status code — **each surface's own pre-existing "this dispatch key doesn't exist" fallback**, reused rather than reinvented, because suppression is implemented as *emitting nothing*, not as a new runtime branch. REST: 405 on a shared path, using axum's own default `MethodRouter` behavior once routes are restructured the way PR #485 restructured them (that restructuring is not on `main`; the underlying axum 405-for-unregistered-verb default is); or plain axum 404 if a model suppresses every action on a path. RPC: `CratestackError::NotFound` via the unknown-op-id arm that already exists on `main` today (`rpc_module.rs:116-133`). gRPC: `Code::Unimplemented` via the unmatched-method-path arm that already exists on `main` today (`api_server.rs:64-81`) (§4). |
-| 4. Client-generation consequence | **Stub absent** — a compile error for the SDK consumer. Matches the precedent already shipped for gRPC's `create` and TypeScript's `Create<M>Input` interface (`model_allows_create`, presence-gated). Extend the same shape to declaration-gated absence on all three client languages, all four surfaces (§5). |
+| 2. Surfaces | **All three, one shared source of truth.** A single `model_internal_actions(&Model) -> BTreeSet<String>` — PR #485 designed this exact function in `crates/cratestack-core/src/schema/internal_attribute.rs`, but that file does not exist on `main`; the implementation ticket reintroduces it — consulted at exactly one point per surface: REST route assembly, RPC dispatch-arm collection, and every client's per-action stub emission. A suppressed op sent to `/rpc/batch` gets a per-frame `CratestackError::NotFound` error frame at its index, in place, other frames unaffected — no new mechanism needed, since this reuses machinery that genuinely is on `main` today (§3.2). |
+| 3. Failure mode | Not a single status code — **each surface's own pre-existing "this dispatch key doesn't exist" fallback**, reused rather than reinvented, because suppression is implemented as *emitting nothing*, not as a new runtime branch. REST: 405 on a shared path, using axum's own default `MethodRouter` behavior once routes are restructured the way PR #485 restructured them (that restructuring is not on `main`; the underlying axum 405-for-unregistered-verb default is); or plain axum 404 if a model suppresses every action on a path. RPC: `CratestackError::NotFound` via the unknown-op-id arm that already exists on `main` today (`rpc_module.rs:116-133`) (§4). |
+| 4. Client-generation consequence | **Stub absent** — a compile error for the SDK consumer. One live precedent survives: the TypeScript REST/RPC client generator already gates its `create` stub and `Create<M>Input` interface on `model_allows_create` (`cratestack-client-typescript/src/types.rs:118`, used at `context.rs:136`, `views.rs:136`, `swr/context.rs:183`) — gRPC's copies of the same check were removed with `transport grpc` in v0.9 (see the scope note above), but this one was never gRPC-specific. Declaration-gated absence, applied to all three client languages, all three surfaces (§5). |
 | 5. Migration | **Breaking**, communicated the same way every other breaking codegen change is under this framework's pre-1.0 lockstep versioning: a minor version bump with a `CHANGELOG.md` entry naming the removed method, no deprecation window. `@@internal` is opt-in per action, so nothing breaks until an author adds it (§6). |
 
 Rejected alternatives: policy-derived (inferred) suppression (§7.1);
 a single literal `CratestackError` variant/status code forced uniformly
-across all four surfaces (§7.2).
+across all three surfaces (§7.2).
 
 ## 1. Current state, re-verified against `main`
 
 The issue's core claim — REST model routes are unconditional — still
-holds, and turns out to understate the problem: **REST and RPC are
-fully unconditional; gRPC and its Dart/TypeScript clients already have
-a *partial*, presence-based suppression that the #486 workflow cannot
-actually rely on** (§1.4). This section cites the exact call sites so
-the rest of the document can reason about one shared mechanism instead
-of four different ones.
+holds: **REST and RPC are fully unconditional. TypeScript's client
+generator is the one exception** — it gates its `create` stub on
+`model_allows_create`, the same partial, presence-based suppression
+gRPC's now-removed copy had (§1.4). (An earlier revision of this
+section also cited gRPC and its Dart/TypeScript-gRPC copies as having
+this same mechanism — those gRPC-specific copies were removed with
+`transport grpc` in v0.9, see the scope note above, but the TypeScript
+REST/RPC copy was never part of gRPC and survives.) This section cites
+the exact call sites so the rest of the document can reason about one
+shared mechanism instead of the ones that exist today.
 
 ### 1.1 REST — fully unconditional
 
@@ -92,67 +106,59 @@ unconditionally. `/rpc/batch` (`rpc_module/batch.rs`) re-enters the
 exact same `rpc_dispatch_inner` per frame (line 88), so it inherits
 whatever the unary path does with no separate logic.
 
-### 1.3 gRPC — partial, presence-gated, `create` only
+> **§1.3 removed (2026-08-18).** This section documented gRPC's
+> `build_service`/`model_allows_create` presence-gate on `create` — one
+> of two existing exceptions to "fully unconditional" anywhere in the
+> pre-v0.9 graph, and a fact that partly motivated §5's original
+> "matches an existing precedent" argument. `transport grpc` was removed
+> in v0.9 (see the scope note above), taking that gate and its
+> `Code::Unimplemented` fallback with it. The other exception —
+> TypeScript's own REST/RPC copy of `model_allows_create` — was never
+> gRPC-specific and survives; see §1.4 and §5. (This section's number is
+> retired rather than reused: §1.4 below keeps its original label
+> instead of renumbering down, so a removed section and a live one never
+> share a number.)
 
-`build_service` (`crates/cratestack-macros/src/include/server/grpc/
-service.rs:99-107`) is the **one existing exception**: it gates the
-`create` arm — and only `create` — behind `model_allows_create(model)`
-(imported from `crate::include::grpc_pb::fields::model_allows_create`,
-service.rs:78,102). `list`/`get`/`update`/`delete` arms are pushed
-unconditionally in the same loop. An unmatched gRPC method path already
-falls through to the catch-all `_ =>` arm in `ApiServer::call`
-(`crates/cratestack-macros/src/include/server/grpc/api_server.rs:64-81`),
-which returns `Code::Unimplemented` — this is gRPC's own existing
-"method not part of this service" signal, distinct from `Code::NotFound`
-and already shipping today for the unrelated case of a client hitting a
-stale/wrong method path.
-
-**`model_allows_create` is presence-based, not value-based**
-(`crates/cratestack-macros/src/include/grpc_pb/fields.rs:67-73`): it
-returns `true` whenever *any* `@@allow("create", ...)` or
-`@@allow("all", ...)` attribute exists on the model, regardless of what
-the policy expression evaluates to. `@@allow("create", auth().isSystem())`
-— the exact shape the #486/#488 "disable the generated `create`, supply
-a custom one" workflow needs — makes `model_allows_create` return `true`,
-because the attribute is present. gRPC (and the clients below) still
-emit the public `create` method and `Create<M>Input` message for that
-model today. **The existing partial mechanism does not solve the
-motivating problem** — see §1.4.
-
-### 1.4 Clients — mixed, and the mix doesn't cover the motivating case
+### 1.4 Clients — mixed, and the mix still doesn't cover the motivating case
 
 - **Rust** (`crates/cratestack-macros/src/client/rest/model.rs`,
   `client/rpc/model.rs`): fully unconditional `create`/`update` methods
   on both REST and RPC client generation, no attribute or policy
   consulted at all.
-- **Rust gRPC client** (`crates/cratestack-macros/src/include/client/
-  grpc/model_api.rs:65`): gated on `model_allows_create`, same
-  presence-only semantics as §1.3.
-- **Dart / TypeScript gRPC** (`crates/cratestack-client-{dart,
-  typescript}/src/grpc/{methods,crud_messages}.rs`): each crate
-  reimplements its own `model_allows_create` (`cratestack-client-dart/
-  src/naming.rs`, `cratestack-client-typescript/src/types.rs:124`) —
-  three independent copies of the same presence-check logic across
-  Rust-gRPC, Dart-gRPC, TS-gRPC, plus `cratestack-proto`'s own copy
-  (`crates/cratestack-proto/src/emit/mirror.rs:67`) and the REST-mode
-  TypeScript interface generator (`cratestack-client-typescript/src/
-  context.rs:91`, `views.rs:136`) — five reimplementations of one
-  presence predicate, exactly the "reimplemented four times" fan-out
-  PR #485's own body flagged.
-- **Dart / TypeScript REST/RPC** (non-gRPC): no `model_allows_create`
-  check found anywhere in `cratestack-client-dart`'s or
-  `cratestack-client-typescript`'s REST-path builders
-  (`builders_model.rs`, `views.rs` REST branch) — unconditional, same
-  as Rust REST/RPC.
+- **Dart REST/RPC**: no `model_allows_create`-shaped check found
+  anywhere in `cratestack-client-dart`'s REST-path builders
+  (`builders_model.rs`) — unconditional, same as Rust REST/RPC.
+- **TypeScript REST/RPC — the one surviving exception.**
+  `model_allows_create` (`cratestack-client-typescript/src/
+  types.rs:118`) gates the `Create<M>Input` interface
+  (`context.rs:136`, `swr/context.rs:183`) and, via the `allows_create`
+  flag it sets on `ModelApiView` (`views.rs:136`), also gates the
+  generated `create` method/hook itself in every REST/RPC client
+  template (`rest-client.ts.j2`, `rpc-client.ts.j2`,
+  `rpc-react-query.ts.j2`, `rest-react-query.ts.j2`, `keys-rest.ts.j2`,
+  `keys-rpc.ts.j2`). Same presence-only semantics as gRPC's now-removed
+  copy: it returns `true` whenever *any* `@@allow("create", ...)` /
+  `@@allow("all", ...)` attribute exists, regardless of what the policy
+  expression evaluates to — so it does not fire for
+  `auth().isSystem()`-gated `create`, the #486/#488 motivating case.
 
-Net: **zero of the four surfaces correctly suppress the #486 workflow's
-motivating case today.** REST, RPC, and Rust/Dart/TS's REST-mode
-clients have no suppression mechanism whatsoever. gRPC and its own
-clients have a mechanism, but it keys off "does a create policy exist"
+(An earlier revision of this section also listed three gRPC-specific
+client copies of `model_allows_create` — Rust-gRPC, Dart-gRPC,
+TS-gRPC — plus `cratestack-proto`'s own copy, as four of "five
+reimplementations of one presence predicate" that motivated §3.1's
+"one registry, not N independent checks" argument. All four were
+removed along with `transport grpc`/`cratestack-proto` in v0.9. The
+TypeScript REST-mode generator's own copy above is the fifth, and it
+remains — the argument for one shared registry does not depend on the
+exact count — see §3.1.)
+
+Net: **REST, RPC, Rust's client, and Dart's client suppress nothing
+today; TypeScript's client generator is the one partial exception.**
+Like gRPC's now-removed copy, it keys off "does a create policy exist"
 rather than "should this be reachable from the wire," so it does not
-fire for `auth().isSystem()`-gated actions — the one case #486 was
-filed to unblock. This is not a hypothetical gap; it is the
-already-shipped state of `main` as of the commit this document cites.
+solve the #486 motivating case either. This is not a hypothetical gap;
+it is the already-shipped state of `main` as of the commit this
+document cites.
 
 ## 2. Question 1 — trigger: declaration, not inference
 
@@ -164,7 +170,7 @@ internal_attribute.rs` (`parse_internal_attribute`/
 `cratestack-parser/src/validate/model_attributes.rs`, all confirmed
 absent from `main` today (see the note under Tracking, above) — this
 design proposes reintroducing that same shape verbatim. Only its
-*blast radius* changes here — from REST-only to all four surfaces
+*blast radius* changes here — from REST-only to all three surfaces
 (§3).
 
 ### 2.1 Why not inference
@@ -193,10 +199,12 @@ grep: every real `.cstack` fixture in this repo that uses a bare
 `@@allow(..., true)` literal lives in `cratestack-parser`'s own
 parser-only tests (which never evaluate the expression, only capture it
 as a raw string — `Attribute { raw: String }`,
-`crates/cratestack-core/src/schema/model.rs:134-137`) or in
-`cratestack-proto`/`grpc_pb` fixtures that only check attribute
-*presence* (§1.3) — never in an example schema exercised through
-`cratestack-macros`'s real policy-compilation path. So even the
+`crates/cratestack-core/src/schema/model.rs:134-137`) — never in an
+example schema exercised through `cratestack-macros`'s real
+policy-compilation path. (An earlier revision of this sentence also
+cited `cratestack-proto`/`grpc_pb` fixtures that checked attribute
+*presence* only; both were removed with `transport grpc` in v0.9 — see
+the scope note above — and are no longer part of this evidence.) So even the
 "decidable" half of the inference proposal would first require adding
 literal-boolean-term support to the model policy grammar — a
 non-trivial grammar change, not a pure codegen change, before inference
@@ -232,7 +240,7 @@ has no `From`/`TryFrom<CratestackContext>` and no constructor accepting a
 caller-supplied context (`crates/cratestack-core/src/context/system.rs`,
 module doc + `SystemContext::for_service`), and `CratestackContext::system` is
 private and `#[serde(skip)]` (`crates/cratestack-core/src/context.rs:
-25-54`) — so **no request that arrives over REST, RPC, or gRPC can ever
+25-54`) — so **no request that arrives over REST or RPC can ever
 be authenticated as a system caller**. The policy is abstractly
 satisfiable but concretely unreachable from the wire — a fact that
 lives in `cratestack-core`'s deserialization behavior, a different crate
@@ -259,7 +267,7 @@ future policy edit would make it satisfiable" is a *routing* decision, a
 schema author's call, not a fact deducible from the policy's current
 shape.
 
-## 3. Question 2 — all four surfaces, or none
+## 3. Question 2 — all three surfaces, or none
 
 One shared predicate, `model_internal_actions(&Model) -> BTreeSet<String>`
 — PR #485 designed this function in `crates/cratestack-core/src/schema/
@@ -272,30 +280,37 @@ per surface:
 | REST | `crates/cratestack-macros/src/axum/model/routes.rs::generate_model_axum_routes` — needs the per-action `MethodRouter` restructuring PR #485 designed (`merge_method_routes`, folding surviving verbs with `.merge()` instead of one fused `.get(..).post(..)` chain). | The suppressed verb's `axum::routing::{get,post,patch,delete}(...)` call is omitted from that path's merge. If every verb on a path is suppressed, the whole `.route(path, ...)` call is omitted (`merge_method_routes` returns an empty `TokenStream` for zero survivors, per PR #485's design). | **No** — `routes.rs` on `main` still emits one fused chain (§1.1); the restructuring is PR #485-only, unmerged. |
 | RPC unary | `crates/cratestack-macros/src/transport/rpc.rs::generate_model_rpc_dispatch_arms` and `crates/cratestack-macros/src/transport/op_descriptors.rs::generate_model_op_descriptors` — both take the model and would filter their per-verb `vec![...]` push against `model_internal_actions`. | The `op_id => { ... }` match arm for that verb is never emitted, so `rpc_dispatch_inner`'s `match op_id` (`rpc_module.rs:116`) falls to its `other => ...` catch-all, which already returns `CratestackError::NotFound(format!("unknown RPC op \`{other}\`"))`. The `OpDescriptor` const for that op id is also omitted, so nothing advertises the op as callable. | The catch-all arm and its `CratestackError::NotFound` **are** on `main` today (§1.2) — only the filtering-by-`model_internal_actions` step is new. |
 | RPC batch | No separate change needed beyond RPC unary, above. | `rpc_batch_dispatch` (`rpc_module/batch.rs:20-114`) calls `rpc_dispatch_inner` per frame (line 88) — the exact same function unary dispatch uses, arm omission and all. A suppressed op id in a batch frame gets the same `CratestackError::NotFound`, converted to an `RpcResponseFrame::err(frame.id, &error)` at that frame's index via the existing `response_to_frame` call (line 96-98). The loop `continue`s to the next frame regardless (this already happens for any per-frame error, per the file's own module doc: "Per-frame errors don't poison the batch"). Batch order and per-frame independence are preserved with zero new code. | Every mechanism cited here **is** on `main` today — this row needs zero new code once RPC unary is done. |
-| gRPC | `crates/cratestack-macros/src/include/server/grpc/service.rs::build_service` — extend the existing `if model_allows_create(model) { ... }` pattern (line 102) to all five verbs, replacing the presence check with `!model_internal_actions(model).contains("create")` (and the equivalent for list/get/update/delete, none of which are gated today). | The arm for that verb is never pushed into `arms`. An unmatched method path already falls through to `ApiServer::call`'s catch-all (`api_server.rs:64-81`), which already returns `Code::Unimplemented` — reused unchanged. | The `create`-only gate, the catch-all, and `Code::Unimplemented` **are** on `main` today (§1.3) — extending the gate to all five verbs and switching its source to `model_internal_actions` is new. |
 | Rust client (REST) | `crates/cratestack-macros/src/client/rest/model.rs::generate_generated_model_client` | The suppressed verb's `pub async fn` is not emitted in `impl #client_ident`. | **No** gating exists today (§1.4) — fully new. |
 | Rust client (RPC) | `crates/cratestack-macros/src/client/rpc/model.rs::generate_generated_rpc_model_client` | Same — suppressed verb's `pub fn` omitted. | **No** gating exists today — fully new. |
-| Rust client (gRPC) | `crates/cratestack-macros/src/include/client/grpc/model_api.rs:65` | Extend the condition source from `model_allows_create` to `model_internal_actions`, extend to the other four verbs, which are unconditional today. | `create`'s presence gate **is** on `main` today — extending it is new. |
-| Dart client | `crates/cratestack-client-dart/src/builders_model.rs` (REST), `src/grpc/methods.rs` + `crud_messages.rs` (gRPC, `create` already gated on its own `model_allows_create` copy) | Gate stub emission on the schema-level `model_internal_actions` equivalent (these are separate crates from `cratestack-macros`; they parse `.cstack` independently via `cratestack-parser`, so they'd call `cratestack_core::model_internal_actions` directly, the same public fn `cratestack-macros` would use). | gRPC's `create` gate **is** on `main` today (§1.4); REST gating and the other four verbs are fully new. |
-| TypeScript client | `crates/cratestack-client-typescript/src/context.rs`, `views.rs`, `grpc/methods.rs` + `crud_messages.rs` | Same pattern as Dart. | Same split as Dart — gRPC `create` gate exists, everything else is new. |
+| Dart client | `crates/cratestack-client-dart/src/builders_model.rs` (REST) | Gate stub emission on the schema-level `model_internal_actions` equivalent (this is a separate crate from `cratestack-macros`; it parses `.cstack` independently via `cratestack-parser`, so it would call `cratestack_core::model_internal_actions` directly, the same public fn `cratestack-macros` would use). | **No** gating exists today (§1.4) — fully new. |
+| TypeScript client | `crates/cratestack-client-typescript/src/context.rs`, `views.rs`, `swr/context.rs` | Same pattern as Dart, but replacing the existing narrower `model_allows_create` condition (§1.4) with `model_internal_actions`, extended from `create`-only to all five verbs. | `create`'s presence gate **is** on `main` today (§1.4) — extending it to all five verbs and switching its source to `model_internal_actions` is new. |
+
+(A "gRPC" row and the "Rust client (gRPC)" row, and the gRPC halves of
+the Dart/TypeScript client rows, were struck 2026-08-18 along with
+`transport grpc` — see the scope note above.)
 
 This closes exactly the gap #485 was closed for: a schema saying
 `@@internal("update")` now suppresses `model.<M>.update` identically on
-REST, RPC unary, RPC batch, gRPC, and all three client languages — not
+REST, RPC unary, RPC batch, and all three client languages — not
 REST alone.
 
-### 3.1 One registry, not four independent checks
+### 3.1 One registry, not N independent checks
 
-All four surfaces read the *same* `BTreeSet<String>` per model, computed
-once by `cratestack_core::model_internal_actions`. This matters beyond
-tidiness: PR #485's body flagged that `model_allows_create`-shaped
-presence checks are "already reimplemented four times by convention" —
-confirmed in §1.4 to now be five. Routing every surface through one
-public, core-crate function (rather than each surface's own raw-string
-scan of `attribute.raw`) is what makes "all four, or none" actually
-checkable in review and in a future test — a PR that adds a fifth
-independent copy is a PR that visibly didn't reuse the existing helper,
-not a silent gap.
+All three surfaces read the *same* `BTreeSet<String>` per model,
+computed once by `cratestack_core::model_internal_actions`. This matters
+beyond tidiness: PR #485's body flagged that `model_allows_create`-
+shaped presence checks were "already reimplemented four times by
+convention" at the time it was written, and an earlier revision of §1.4
+confirmed that to be five by the time this spike was written — four of
+those five copies (three gRPC client copies plus `cratestack-proto`'s
+own) were removed along with `transport grpc` in v0.9, leaving one
+(TypeScript's REST/RPC copy, §1.4) live today, but the argument does not
+depend on the exact number.
+Routing every surface through one public, core-crate function (rather
+than each surface's own raw-string scan of `attribute.raw`) is what
+makes "all three, or none" actually checkable in review and in a future
+test — a PR that adds an independent copy instead of reusing the shared
+helper is a PR that visibly didn't reuse it, not a silent gap.
 
 ### 3.2 Batch semantics, stated explicitly (per #514's requirement)
 
@@ -383,15 +398,13 @@ a new runtime check that has to decide what to return:
   routing was always string-keyed dispatch through one function, so
   "unknown op id" was already a real code path with a real error type,
   unlike REST's per-path `MethodRouter`.
-- **gRPC.** `Code::Unimplemented` via the existing unmatched-method-path
-  catch-all (§1.3) — gRPC's own idiomatic "this method is not part of
-  this service" signal, distinct from `Code::NotFound` (which gRPC
-  reserves for "this specific resource id was not found," a
-  data-level, not schema-level, condition). Reusing it here keeps gRPC
-  speaking its own idiom rather than importing REST's/RPC's choice.
+
+(A "gRPC" bullet reusing `Code::Unimplemented` via `ApiServer::call`'s
+catch-all was struck 2026-08-18 along with `transport grpc` — see the
+scope note above.)
 
 **Does this satisfy "must not leak whether the model exists"?** Yes,
-for the same reason in all three cases: a suppressed action is
+for the same reason in both remaining cases: a suppressed action is
 indistinguishable, from the caller's side of the wire, from an action
 that was simply never generated for that model — because that is
 literally what suppression *is* under this design. There is no new
@@ -401,42 +414,42 @@ existed," since both compile to the same absence.
 
 **Is this "consistent," per #514's literal wording?** Not
 bit-for-bit — REST returns 405 or 404 depending on path-sharing, RPC
-returns 404-equivalent `CratestackError::NotFound`, gRPC returns
-`Unimplemented`. Forcing one literal status code uniformly was
-considered and rejected — see §7.2 for why. The recommendation reads
-"consistent" as *consistent semantics* (indistinguishable from
-never-generated, on every surface) rather than *identical numeric
-code*, because the four surfaces do not share a status-code vocabulary
-to begin with (HTTP status codes vs. gRPC `Code` vs. RPC's own `code:
-string` field already differ for the exact same underlying condition
-on every other error in this framework — e.g. `CratestackError::NotFound`
-is already 404 / `not_found` / `Code::NotFound` today, three different
-literal representations of one semantic outcome, per
-`crates/cratestack-grpc/src/error.rs`'s own mapping table).
+returns 404-equivalent `CratestackError::NotFound`. Forcing one literal
+status code uniformly was considered and rejected — see §7.2 for why.
+The recommendation reads "consistent" as *consistent semantics*
+(indistinguishable from never-generated, on every surface) rather than
+*identical numeric code*, because REST and RPC do not share a
+status-code vocabulary to begin with (HTTP status codes vs. RPC's own
+`code: string` field already differ for the exact same underlying
+condition on every other error in this framework — e.g.
+`CratestackError::NotFound` is already 404 / `not_found` today, two
+different literal representations of one semantic outcome).
 
 ## 5. Question 4 — client-generation consequence: stub absent
 
-**Decision: absent, matching the shape already shipped for gRPC's
-`create` in Dart/TypeScript.** A suppressed action gets no generated
+**Decision: absent.** A suppressed action gets no generated
 method at all — calling it is a compile error in Rust/Dart/TypeScript,
 not a runtime `403`.
 
+> **Precedent note (2026-08-18).** This recommendation originally led
+> with a "precedent already exists" argument citing gRPC's Dart/
+> TypeScript-gRPC client copies of `model_allows_create`-gated
+> `create`/`Create<M>Input` generation. Those gRPC-specific copies were
+> removed along with `transport grpc` in v0.9 (see the scope note
+> above). A live precedent for "absent, not deprecated" does still
+> remain, though, and it was never gRPC-specific: the TypeScript
+> REST/RPC client generator (`cratestack-client-typescript/src/
+> types.rs:118`, used at `context.rs:136`, `views.rs:136`,
+> `swr/context.rs:183`; see §1.4) omits both the `create` method/hook
+> and the `Create<M>Input` interface on the same `model_allows_create`
+> predicate. It only covers one action (`create`) on one client
+> language, gated by presence rather than by declaration, so it does
+> not by itself establish the full shape this recommendation proposes.
+> The recommendation is unchanged, but it now rests primarily on the two
+> arguments below, with this narrower precedent as secondary support.
+
 Why, argued rather than asserted:
 
-- **Precedent already exists and already works this way.**
-  `crates/cratestack-client-dart/src/grpc/crud_messages.rs:65` and
-  `crates/cratestack-client-typescript/src/grpc/crud_messages.rs:63`
-  both gate `Create<M>Input` message generation on `model_allows_create`
-  with an explicit comment explaining *why* absence was chosen over a
-  stub: "Collecting it unconditionally here would look up a lock entry
-  that was never assigned for a create-disabled model." The same
-  reasoning generalizes: a present-but-deprecated stub for a suppressed
-  action would still need *something* to call (an input type, a
-  response type) that downstream generators (`.pb.lock` field
-  allocation, TS interface generation) may never have allocated for
-  that action, since those generators already skip work for an
-  unreachable action. Making the stub present reintroduces exactly the
-  work the presence-gate was added to skip.
 - **A compile error is discoverable at the right time.** The issue's own
   framing of the current bug — "callers discover it is dead only at
   runtime, via `403`" — is precisely the failure mode a present-but-
@@ -517,7 +530,7 @@ from the policy expression alone.
 ### 7.2 Rejected: one literal `CratestackError`/status code forced uniformly
 
 Considered: add a new `CratestackError::Suppressed` (or reuse `NotFound`
-everywhere including gRPC) and thread it through all four surfaces so
+everywhere) and thread it through all three surfaces so
 every binding returns byte-identical status/code output for a
 suppressed action. Rejected because:
 
@@ -530,28 +543,24 @@ suppressed action. Rejected because:
   implementation cost with no caller-visible benefit, since a 405 on a
   known path and a 404 on an unknown one are already both "this
   operation is not available here" from a caller's perspective.
-- Forcing gRPC to return `Code::NotFound` instead of its own
-  already-shipped `Code::Unimplemented` fallback would make suppressed
-  actions behave *differently* from every other "unknown gRPC method"
-  case in this codebase, for no benefit — `Unimplemented` already
-  doesn't leak model existence, and gRPC clients/tooling already
-  understand it as "this service doesn't expose this method," which is
-  exactly what suppression means.
-- The framework's own existing error-mapping tables
-  (`crates/cratestack-grpc/src/error.rs`) already establish that "one
-  semantic outcome, three different literal wire representations per
-  binding" is the framework's standing convention, not an exception —
-  `CratestackError::NotFound` is already 404 / `"not_found"` / `Code::NotFound`
-  under the exact same reasoning this document applies to suppression.
-  Insisting on byte-identical output specifically for suppression would
-  be a new, narrower consistency bar than the rest of the framework
-  holds itself to.
+- The framework's own existing error-mapping conventions already
+  establish that "one semantic outcome, more than one literal wire
+  representation per binding" is the framework's standing convention,
+  not an exception — `CratestackError::NotFound` is already 404 /
+  `"not_found"` under the exact same reasoning this document applies to
+  suppression. Insisting on byte-identical output specifically for
+  suppression would be a new, narrower consistency bar than the rest of
+  the framework holds itself to.
+
+(A third bullet arguing gRPC's `Code::Unimplemented` shouldn't be forced
+to `Code::NotFound` was struck 2026-08-18 along with `transport grpc` —
+see the scope note above.)
 
 ## 8. Left for the implementation ticket, not decided here
 
 - Whether REST's 405/404 responses for a suppressed action should gain
-  a `CratestackErrorResponse` body (currently bare axum text) to match RPC/
-  gRPC's already-structured error shape — flagged in §4, not resolved,
+  a `CratestackErrorResponse` body (currently bare axum text) to match
+  RPC's already-structured error shape — flagged in §4, not resolved,
   since it is implementation work (new middleware or fallback handler),
   not a design question with more than one reasonable answer once §4 is
   accepted.

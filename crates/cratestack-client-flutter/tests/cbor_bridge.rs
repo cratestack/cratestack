@@ -75,11 +75,11 @@ struct NestedObject {
 }
 
 /// One field per scalar kind a generated CrateStack client model carries
-/// that this generic bridge decodes into its native Rust type
-/// (`docs/design/protobuf.md` §4.1's mapping, minus `Bytes`/`Json` — this
-/// bridge, like its napi/wasm siblings, does not attempt a compact wire
-/// form for those — and minus `Uuid`, whose own comparison needs a native
-/// `Uuid`-typed struct rather than a `String` field; see the module docs).
+/// that this generic bridge decodes into its native Rust type, minus
+/// `Bytes`/`Json` — this bridge, like its napi/wasm siblings, does not
+/// attempt a compact wire form for those — and minus `Uuid`, whose own
+/// comparison needs a native `Uuid`-typed struct rather than a `String`
+/// field; see the module docs).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct ScalarMatrix {
     text: String,
@@ -165,7 +165,7 @@ fn decimal_scalar_round_trips_as_a_json_string_and_matches_direct_codec_bytes() 
         json_value["amount"],
         json!(fixture.amount.to_string()),
         "Decimal must serialize to a plain JSON string over this bridge, matching Dart's \
-         String representation (see crates/cratestack-client-dart/src/grpc/wire.rs)"
+         String representation (see crates/cratestack-client-dart/src/wire_encode.rs)"
     );
 
     let json_text = serde_json::to_string(&fixture).unwrap();

@@ -38,7 +38,7 @@ pkg-fmt = "zip"
 # `cratestack-core`'s dependency edge has `default-features = false` at the
 # workspace root — every direct consumer must explicitly re-select a
 # backend, or `cratestack-core` fails to compile at all (cratestack#495).
-# Also forwards to `cratestack-sqlx`, `cratestack-parser`, `cratestack-proto`,
+# Also forwards to `cratestack-sqlx`, `cratestack-parser`,
 # `cratestack-migrate`, `cratestack-studio`, `cratestack-mock-wiremock`,
 # `cratestack-client-dart`, and `cratestack-client-typescript` — this
 # crate's other direct `cratestack-core`-consuming dependencies. The last
@@ -55,7 +55,6 @@ decimal-rust-decimal = [
     "cratestack-core/decimal-rust-decimal",
     "cratestack-sqlx/decimal-rust-decimal",
     "cratestack-parser/decimal-rust-decimal",
-    "cratestack-proto/decimal-rust-decimal",
     "cratestack-migrate/decimal-rust-decimal",
     "cratestack-studio/decimal-rust-decimal",
     "cratestack-mock-wiremock/decimal-rust-decimal",
@@ -66,7 +65,6 @@ decimal-bigdecimal = [
     "cratestack-core/decimal-bigdecimal",
     "cratestack-sqlx/decimal-bigdecimal",
     "cratestack-parser/decimal-bigdecimal",
-    "cratestack-proto/decimal-bigdecimal",
     "cratestack-migrate/decimal-bigdecimal",
     "cratestack-studio/decimal-bigdecimal",
     "cratestack-mock-wiremock/decimal-bigdecimal",
@@ -92,7 +90,6 @@ cratestack-migrate = { workspace = true, features = ["postgres-introspect"] }
 # `cratestack-client-dart`/`-typescript`.
 cratestack-mock-wiremock = { workspace = true, default-features = false }
 cratestack-parser.workspace = true
-cratestack-proto.workspace = true
 # `cratestack-cli`'s first dependency on the runtime migrations-table
 # shape (issue #205): `migrate baseline` seeds a synthetic row via
 # `cratestack_sqlx::{Migration, apply_pending}` so the authoring side

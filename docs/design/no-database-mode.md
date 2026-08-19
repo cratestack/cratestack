@@ -183,13 +183,9 @@ ever references sqlx-backed symbols, a facade that structurally never has
 exactly this crate's scope, not a limitation to work around. A schema
 compiled with `include_server_schema!(schema, db = Postgres)` under
 `cratestack-api` fails to compile with a single clear `compile_error!`
-(`cratestack-macros`' `guard_server_postgres_backend`, mirroring the
-existing `guard_server_grpc_transport`/`cfg!(feature = "grpc")` mechanism)
-instead of a wall of unrelated "cannot find `sqlx`/`SqlxRuntime` in
-`cratestack`" resolution errors. `cratestack-api` also omits
-`cratestack-grpc`/`prost`: `transport grpc` codegen is entirely
-model-driven, so it could only ever produce a zero-method service under
-`db = None` — there is nothing for gRPC to add here.
+(`cratestack-macros`' `guard_server_postgres_backend`) instead of a wall of
+unrelated "cannot find `sqlx`/`SqlxRuntime` in `cratestack`" resolution
+errors.
 
 **Both entry points are supported and neither is deprecated:**
 

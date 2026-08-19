@@ -192,10 +192,6 @@ above is missing, or was applied to a different router than the one handling thi
 `tracing::warn!` fires once per process — that combination always means `client_ip` is
 silently `None` on every request.
 
-**`transport grpc` schemas need the same `.layer(...)` on their own router** — `into_router()`
-builds a second, separately served `axum::Router` that is not covered by protecting `router()`
-alone.
-
 See [`docs/design/trusted-proxy-client-ip.md`](../../docs/design/trusted-proxy-client-ip.md)
 for the full design and decision record.
 

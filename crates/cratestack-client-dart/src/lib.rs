@@ -6,7 +6,6 @@ mod dart_types;
 mod field_view;
 mod find_many_views;
 mod generator;
-mod grpc;
 mod idents;
 mod naming;
 mod riverpod;

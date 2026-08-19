@@ -24,10 +24,6 @@ pub(crate) struct TemplateContext {
     pub(crate) query_procedures: Vec<ProcedureView>,
     pub(crate) mutation_procedures: Vec<ProcedureView>,
     pub(crate) sample_model: Option<SampleModelView>,
-    /// Only set for `transport grpc` schemas — see `crate::grpc`'s module
-    /// doc. `None` for REST/RPC, where the REST/RPC-specific templates
-    /// never reference `grpc.*` in the first place.
-    pub(crate) grpc: Option<crate::grpc::GrpcContext>,
     /// `config.preset == DartPreset::Riverpod` (issue #303). `README.md.j2`
     /// is one of the files `crate::riverpod::generate_package` reuses
     /// verbatim from `generate_default_package` (see that module's doc),

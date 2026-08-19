@@ -154,37 +154,6 @@ fn the_flag_declares_the_dependency_and_re_exports_the_module() {
     );
 }
 
-#[test]
-fn refine_is_rejected_for_grpc_which_has_no_provider_to_bind_to() {
-    // The gRPC-Web client speaks typed protobuf with no URL-query shaping
-    // at all, and `@cratestack/refine` ships no provider for that shape —
-    // an emitted refine.ts would have nothing to `tsc` against, so the
-    // generator refuses instead. (REST and RPC are both supported — see
-    // `refine_supports_rpc_schemas_with_the_same_per_resource_facts_as_rest`
-    // below.)
-    let grpc_schema = REFINE_SCHEMA.replace("datasource db {", "transport grpc\n\ndatasource db {");
-    let error = try_generate(&grpc_schema, true, false)
-        .expect_err("--refine on a gRPC-Web schema should be rejected");
-    assert!(
-        matches!(error, TypeScriptGeneratorError::RefineRequiresRestOrRpc),
-        "expected RefineRequiresRestOrRpc, got: {error}"
-    );
-    // The same schema without the flag fails too (this fixture has no
-    // `.pb.lock`, which `transport grpc` needs regardless of `--refine` —
-    // see `generator_grpc.rs`), but for its own reason, not this one: the
-    // rejection above is scoped to the flag, not baked into a schema that
-    // categorically cannot generate.
-    let error_without_flag = try_generate(&grpc_schema, false, false)
-        .expect_err("this fixture has no .pb.lock, so a plain grpc generation fails too");
-    assert!(
-        !matches!(
-            error_without_flag,
-            TypeScriptGeneratorError::RefineRequiresRestOrRpc
-        ),
-        "without --refine, the failure must not be the refine-specific one: {error_without_flag}"
-    );
-}
-
 /// Issue #591: `--preset swr` used to make `--refine` outright reject the
 /// combination (`RefineUnsupportedPreset`) because the swr layout
 /// *replaced* the default one, leaving no client class for a

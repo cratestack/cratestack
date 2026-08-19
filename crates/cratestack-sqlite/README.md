@@ -68,8 +68,8 @@ and [ADR-0003](https://cratestack.dev/internals/views-adr).
   cratestack#498 (**breaking** — see each package's migration note) that
   parses both notations, so pairing this backend with a generated client
   is safe regardless of magnitude — see `cratestack-core`'s README for
-  the full picture and the two scope notes (gRPC-preset clients, the
-  TypeScript `swr` preset) that still apply.
+  the full picture and the TypeScript `swr` preset scope note that still
+  applies.
 - `codec-json` *(default)* — forwards the JSON codec to the generated
   client runtime, alongside CBOR. On `wasm32` the client runtime isn't
   linked (no `reqwest`), so this feature has no effect there.

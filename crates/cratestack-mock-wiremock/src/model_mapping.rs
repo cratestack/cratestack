@@ -46,16 +46,12 @@ pub(crate) fn build_model_mappings(
 ) -> Result<Vec<(String, Value)>, WireMockGeneratorError> {
     match schema.transport {
         TransportStyle::Rest => build_stateful_rest_mappings(schema, config, model, model_names),
-        TransportStyle::Rpc | TransportStyle::Grpc => {
-            build_static_rpc_mappings(schema, config, model, model_names)
-        }
+        TransportStyle::Rpc => build_static_rpc_mappings(schema, config, model, model_names),
     }
 }
 
 /// The pre-stateful v1 shape, kept for `transport rpc` (see the module
-/// doc). `TransportStyle::Grpc` also lands here, same as before this
-/// change — unreachable in practice since `generate_package` rejects
-/// `Grpc` schemas before any model is processed.
+/// doc).
 fn build_static_rpc_mappings(
     schema: &Schema,
     config: &WireMockGeneratorConfig,

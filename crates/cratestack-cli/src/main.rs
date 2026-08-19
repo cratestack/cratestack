@@ -3,7 +3,6 @@ mod cli_handlers;
 mod cli_support;
 mod cli_types;
 mod drift;
-mod generate_proto;
 mod migrate;
 mod schema_diff;
 
@@ -279,56 +278,6 @@ mod tests {
                 assert!(full_selection);
             }
             _ => panic!("expected generate-typescript command"),
-        }
-    }
-
-    #[test]
-    fn generate_proto_clap_defaults() {
-        let cli = Cli::parse_from([
-            "cratestack",
-            "generate-proto",
-            "--schema",
-            "schema.cstack",
-            "--out",
-            "api.proto",
-        ]);
-
-        match cli.command {
-            Command::GenerateProto {
-                schema,
-                out,
-                package,
-                check,
-            } => {
-                assert_eq!(schema, PathBuf::from("schema.cstack"));
-                assert_eq!(out, PathBuf::from("api.proto"));
-                assert_eq!(package, None);
-                assert!(!check);
-            }
-            _ => panic!("expected generate-proto command"),
-        }
-    }
-
-    #[test]
-    fn generate_proto_clap_accepts_package_and_check() {
-        let cli = Cli::parse_from([
-            "cratestack",
-            "generate-proto",
-            "--schema",
-            "schema.cstack",
-            "--out",
-            "api.proto",
-            "--package",
-            "shop_api",
-            "--check",
-        ]);
-
-        match cli.command {
-            Command::GenerateProto { package, check, .. } => {
-                assert_eq!(package, Some("shop_api".to_owned()));
-                assert!(check);
-            }
-            _ => panic!("expected generate-proto command"),
         }
     }
 

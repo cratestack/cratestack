@@ -20,7 +20,6 @@ fn generates_fetch_client_and_tanstack_hooks_for_blog_schema() {
             // `--tanstack` now — every other test in this file uses
             // `TypeScriptGeneratorConfig::default()` (tanstack off).
             tanstack: true,
-            pb_lock: None,
             schema_sha256: "blogschemasha256testvalue0000000000000000000000000000000000".to_owned(),
         },
     )

@@ -129,46 +129,6 @@ decimal-bigdecimal = [
 # the client's codec, so they keep working over CBOR when this feature
 # is off.
 codec-json = ["cratestack-client-rust/codec-json"]
-# Real `transport grpc` Rust codegen — a `Grpc` schema otherwise fails
-# `include_server_schema!` with a `compile_error!` pointing here (see
-# `crates/cratestack-macros/src/include/reject_grpc.rs`). Off by default:
-# pulls in `tonic`/`prost` (and `tonic`'s own `axum` dependency — verified
-# workspace-aligned with this crate's own `axum`, `docs/design/protobuf.md`
-# §7.2's first acceptance criterion) for every consumer otherwise, whether
-# or not they use gRPC.
-#
-# `dep:prost` (not just `dep:cratestack-grpc`) is required here, not a
-# belt-and-suspenders addition: `prost-derive`'s `#[derive(Message)]`
-# expansion hardcodes bare `::prost::...` paths in the code it generates
-# (verified against `prost-derive`'s own source — there is no `#[prost(crate
-# = "...")]` escape hatch, unlike e.g. serde's `#[serde(crate = "...")]`).
-# That means every crate whose generated `pb::` mirror structs derive
-# `Message` — i.e. every consumer enabling this feature — needs `prost`
-# resolvable as a literal top-level crate name in *their own* crate graph,
-# which only a direct (even if unused-by-name) Cargo dependency provides;
-# `::cratestack::grpc::prost::...` re-exports a *module path* to the same
-# crate for everything this crate's own code references by path, but
-# cannot satisfy `prost-derive`'s hardcoded `::prost::` — Rust's extern
-# prelude is per-crate, not transitive through a re-exporting dependency.
-#
-# `cratestack-client-rust/grpc` (ticket #209): forwards the native Rust
-# gRPC *client* runtime (`::cratestack::client_rust::grpc::
-# CratestackGrpcClient`) that `include_client_schema!`'s `transport grpc`
-# codegen references. Both server and client gRPC codegen share this one
-# Cargo feature (same reasoning `cratestack-macros/grpc` already applies
-# to both `include_server_schema!` and `include_client_schema!` — see
-# `cratestack-macros/src/include/reject_grpc.rs`'s module doc): a crate
-# using this facade purely as a gRPC client still needs the client-runtime
-# half, not the server (`cratestack-grpc`/`dep:prost` for the tonic
-# service) half, but there is currently no split finer than "the `grpc`
-# feature is on or off" — narrowing that is future work if the unified
-# cost (tonic pulled in either way) ever becomes a problem in practice.
-grpc = [
-    "cratestack-macros/grpc",
-    "dep:cratestack-grpc",
-    "dep:prost",
-    "cratestack-client-rust/grpc",
-]
 # NOT YET FUNCTIONAL — enabling this feature is a hard compile_error!, not a
 # working FIPS mode. It exists only as a reserved name so a future PR can
 # wire it up without a breaking rename. `aws-lc-rs` is not a dependency of
@@ -184,8 +144,8 @@ crypto-aws-lc-rs = []
 # Forwards `cratestack-macros`'s own `rate_limit` feature (cratestack#161's
 # Cargo-feature enforcement mechanism, `crates/cratestack-macros/src/include/
 # extension_gate.rs`) — this is what turns off the `compile_error!` a schema
-# declaring `extension rate_limit { }` otherwise hits. Off by default, same
-# non-default posture as `grpc` above: enabling it only unlocks the
+# declaring `extension rate_limit { }` otherwise hits. Off by default:
+# enabling it only unlocks the
 # `@no_rate_limit` procedure attribute and the `rate_limited_by_default`
 # field it threads onto the generated `OpDescriptor` (docs/design/
 # extensions.md §5) — participation-only, never a numeric limit. Does *not*
@@ -210,10 +170,8 @@ chrono.workspace = true
 cratestack-axum.workspace = true
 cratestack-client-rust.workspace = true
 cratestack-core.workspace = true
-cratestack-grpc = { workspace = true, optional = true }
 cratestack-macros.workspace = true
 futures-util.workspace = true
-prost = { workspace = true, optional = true }
 cratestack-parser.workspace = true
 cratestack-policy.workspace = true
 cratestack-sql.workspace = true

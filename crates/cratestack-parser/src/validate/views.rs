@@ -21,6 +21,7 @@ use cratestack_core::{Schema, View};
 use crate::diagnostics::{SchemaError, span_error};
 use crate::validate::builder_setter_collisions::validate_no_build_setter_collision;
 use crate::validate::fields::validate_field_reserved_identifier;
+use crate::validate::removed_attributes::validate_removed_field_attributes;
 use crate::validate::reserved_idents::validate_reserved_identifier;
 use crate::validate::snake_case_collisions::validate_field_column_collisions;
 
@@ -57,6 +58,7 @@ fn validate_view(view: &View, model_names: &BTreeSet<&str>) -> Result<(), Schema
 
     for field in &view.fields {
         validate_field_reserved_identifier(field, "view", &view.name)?;
+        validate_removed_field_attributes("view", &view.name, field)?;
     }
 
     // Rule 2: every source resolves to a model.

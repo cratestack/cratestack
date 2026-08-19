@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use cratestack_core::{Schema, TransportStyle};
+use cratestack_core::Schema;
 
 use crate::config::{GeneratedWireMockFile, GeneratedWireMockPackage, WireMockGeneratorConfig};
 use crate::error::WireMockGeneratorError;
@@ -11,16 +11,11 @@ use crate::model_mapping::build_model_mappings;
 /// in `schema` (`mappings/<procedureName>.json`) and five per `model`
 /// (`mappings/model.<ModelName>.<list|get|create|update|delete>.json`).
 /// See the crate docs and `docs/design/wiremock-stubs.md` for scope and
-/// rationale; `transport grpc` schemas are rejected outright
-/// ([`WireMockGeneratorError::UnsupportedTransport`]) — neither
-/// procedures nor models get a stub for one.
+/// rationale.
 pub fn generate_package(
     schema: &Schema,
     config: &WireMockGeneratorConfig,
 ) -> Result<GeneratedWireMockPackage, WireMockGeneratorError> {
-    if schema.transport == TransportStyle::Grpc {
-        return Err(WireMockGeneratorError::UnsupportedTransport);
-    }
     // Same guard, same shared message, as `generate-typescript`/
     // `generate-dart` (cratestack#590) — schema-wide and up front,
     // before any file is generated, matching those two generators'

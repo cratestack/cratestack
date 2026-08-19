@@ -5,10 +5,9 @@
 //! server's own constant and `tracing::warn!`s on a mismatch — nothing
 //! more. It never rejects a request: a missing header (a client not yet
 //! regenerated) is not itself a warning, and a present-but-different value
-//! only ever produces a log line, never an error response. See
-//! `docs/design/protobuf.md`-adjacent context: this grew out of the
-//! protobuf/gRPC work but applies to every transport (`rest`/`rpc`/`grpc`
-//! alike), since nothing about schema drift is protobuf-specific.
+//! only ever produces a log line, never an error response. Applies to
+//! every transport (`rest`/`rpc` alike), since nothing about schema drift
+//! is transport-specific.
 //!
 //! Deliberately a plain [`axum::middleware::from_fn_with_state`] function,
 //! not a hand-rolled `tower::Layer`/`Service` pair like

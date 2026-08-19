@@ -4,7 +4,6 @@ mod decimal;
 mod error;
 mod find_many_views;
 mod generator;
-mod grpc;
 mod naming;
 mod package_deps;
 mod procedure_views;

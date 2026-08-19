@@ -324,11 +324,7 @@ async fn trusted_peer_without_a_header_falls_back_to_peer_address() {
 /// HTTP/1.1 request over an actual TCP socket via `reqwest` (a real HTTP
 /// client, not a hand-rolled raw-socket request), so the peer address
 /// `ConnectInfo` carries is whatever the OS's TCP handshake produced — not
-/// a value this test chose. REST/RPC is the transport exercised here (this
-/// crate has no gRPC dependency); the same wiring is proven for gRPC
-/// separately by `cratestack-pg`'s `trusted_proxy_client_ip_grpc.rs` tests
-/// reaching `ClientIpContext::from_extensions` off a real
-/// `http::Request::extensions()`.
+/// a value this test chose. REST/RPC is the transport exercised here.
 ///
 /// An earlier version of this test hand-rolled the HTTP/1.1 request over a
 /// raw `tokio::net::TcpStream`, writing the request then calling

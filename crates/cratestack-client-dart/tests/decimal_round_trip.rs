@@ -158,7 +158,6 @@ fn decimal_round_trips_through_the_generated_dart_client() {
             base_path: "/api".to_owned(),
             template_dir: None,
             preset: DartPreset::Default,
-            pb_lock: None,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
             native_cbor: false,
         },

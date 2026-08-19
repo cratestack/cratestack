@@ -135,11 +135,13 @@ jobs:
             exit 1
           fi
       - name: axum absent unconditionally (client-only-verification)
-        # `cratestack-client` has no `grpc` Cargo feature (the one thing
-        # that could ever pull `tonic` -> `axum` in transitively — see
-        # `crates/cratestack-client/src/lib.rs`'s module doc), so its
-        # default feature set is its only state to prove absence for, same
-        # as `no-database-verification-api` above. `tower`/`hyper`/
+        # `cratestack-client` re-exports only `include_client_schema!` plus
+        # the generated Rust client runtime (see
+        # `crates/cratestack-client/src/lib.rs`'s module doc) and has no
+        # feature that could ever pull `axum` in transitively (the gRPC
+        # surface that once could, via `tonic`, was removed in v0.9 — see
+        # ADR 0017), so its default feature set is its only state to prove
+        # absence for, same as `no-database-verification-api` above. `tower`/`hyper`/
         # `tower-http` are deliberately NOT asserted absent here — they
         # arrive via `reqwest` (the HTTP client transport
         # `cratestack-client-rust` builds on), not via `cratestack-axum`,

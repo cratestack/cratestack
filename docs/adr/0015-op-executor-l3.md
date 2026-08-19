@@ -55,14 +55,20 @@ cost of the empty layer is now itemisable without it. Verified against `origin/m
    `crates/cratestack-sqlx/src/query/support/policy.rs` and so is not replayed
    against streamed `ModelEvent<T>` items (`rpc-transport.md` §3.4a, restated as a
    scope limit in §6.5). A subscriber authenticates but gets no per-row filtering.
-4. **Cross-cutting protections attach to router *instances*, and there are two.**
-   `transport grpc` builds a second `axum::Router` via
-   `crates/cratestack-macros/src/include/server/grpc/service.rs:187`;
-   `trusted-proxy-client-ip.md` decision 6 records that a consumer who layers
-   protection onto `router()`'s output leaves gRPC as exposed as before. Commit
-   `08fbb7e` (#416/#459) is the concrete instance: a spoofable-header fix applied
+4. **Cross-cutting protections attach to router *instances*, and — at the time this
+   ADR was written — there were two.** `transport grpc` built a second `axum::Router`
+   via `crates/cratestack-macros/src/include/server/grpc/service.rs:187`;
+   `trusted-proxy-client-ip.md` decision 6 recorded that a consumer who layered
+   protection onto `router()`'s output left gRPC as exposed as before. Commit
+   `08fbb7e` (#416/#459) was the concrete instance: a spoofable-header fix applied
    inside `IdempotencyLayer` and `RateLimitLayer`, i.e. once per Layer, and
-   therefore only on the routers the consumer remembered to layer.
+   therefore only on the routers the consumer remembered to layer. **Superseded
+   2026-08-18:** `transport grpc` and its second router were removed entirely (ADR
+   0017), so this specific instance of the risk no longer exists — there is exactly
+   one router again. The general risk this fact illustrated (a second router
+   instance being missed by a `.layer(...)` fix) is still real in principle for any
+   future binding that builds its own router rather than reusing `router()`; this
+   ADR does not know of a live instance of it today.
 
 Two corrections this ADR's argument depends on, both verified, and both now folded
 back into [layering.md](../design/layering.md) so the two documents agree:
@@ -104,11 +110,27 @@ decision (policy, idempotency, rate limit) from an input that is **not an
 `http::Request`**. WebSocket is one such path; it is no longer the only qualifying
 one, and it is no longer required.
 
-The corollary matters as much as the rule: **gRPC does not qualify.**
+The corollary matters as much as the rule, and this ADR must be honest about what
+happened to its own supporting example. **Original text (as of this ADR's proposal,
+2026-08-08):** "The corollary matters as much as the rule: **gRPC does not qualify.**
 `grpc::into_router()` returns an `axum::Router` whose handlers call the same seven
 generated dispatch functions (`trusted-proxy-client-ip.md` decision 6, confirmed
 against `include/server/grpc/service.rs`). Two router instances is a wiring problem,
-not a layering one, and building L3 to solve it would be solving the wrong problem.
+not a layering one, and building L3 to solve it would be solving the wrong problem."
+
+**Note added 2026-08-18, prior to this ADR's acceptance or rejection:** `transport
+grpc` was removed in v0.9 (ADR 0017), and with it the only surface in this codebase
+that ever exercised the corollary above — no other binding, past or currently
+planned, builds a second router instance whose handlers reuse the same generated
+dispatch functions. A substitute example was sought and not found: REST and RPC
+both dispatch through the *same* `router()` call already, so neither one is a
+plausible "looks like it might need L3 but doesn't" case the way gRPC's separate
+`into_router()` was — there is no live ambiguity for the corollary to resolve today.
+Rather than invent a hypothetical binding to stand in for gRPC, this section is left
+as a historical record of the argument's original shape. The rule itself — L3 gets
+built when a dispatch path's input is not an `http::Request` — does not depend on
+this corollary and is unaffected; only the illustration that a superficially
+plausible counterexample turns out not to qualify has lost its example.
 
 When L3 is built it will be **a function over an already-chosen set of
 collaborators, never a registry** — per ADR 0012, a type-keyed runtime lookup would
@@ -130,15 +152,21 @@ each with a cheap answer:
   already met and this ADR should be reopened before it is merged.
 - *Is the eventual OpExecutor getting more expensive by waiting?* Settled by
   measuring: `860c08b` (gRPC) touched 121 files, +11,221/−58; `c0a76d1` (SSE #390)
-  touched 34 files across seven crates. If a fourth binding is planned inside two
-  cycles, the delay argument inverts and L3 should be built first.
+  touched 34 files across seven crates. (`860c08b`'s binding, `transport grpc`, was
+  itself removed by ADR 0017 in v0.9 — the commit stats are unaffected, cited here
+  only as a historical upper bound on how expensive adding a new transport binding
+  can get, not as evidence gRPC still exists.) If a fourth binding is planned inside
+  two cycles, the delay argument inverts and L3 should be built first.
 
 ## Consequences
 
 ### Positive
 
-- No abstraction designed against one imagined caller. All three current dispatch
-  paths — REST, RPC-over-HTTP, gRPC-over-axum — take an `http::Request`. An
+- No abstraction designed against one imagined caller. Both current dispatch
+  paths — REST and RPC-over-HTTP — take an `http::Request`. (A third,
+  gRPC-over-axum, existed when this ADR was proposed and was removed in v0.9 —
+  ADR 0017; it took an `http::Request` too, so its removal does not change the
+  count of *distinct* input shapes, only the count of bindings sharing one.) An
   executor factored today would be validated against exactly one input shape while
   claiming to be neutral across N, which is the failure mode the §6.5 gate exists
   to prevent.

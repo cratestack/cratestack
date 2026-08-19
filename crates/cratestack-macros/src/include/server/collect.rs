@@ -84,17 +84,21 @@ pub(super) fn collect_server_schema(
     let enum_name_set = crate::shared::enum_name_set(&schema.enums);
     let auth = schema.auth.as_ref();
     let auth_required_default = schema.auth.is_some();
+    // `transport` is `Rest` or `Rpc` — mutually exclusive, so this single
+    // boolean is enough to pick between the RPC op-registry surface and
+    // the REST route-descriptor surface below; exactly one of
+    // `ROUTE_TRANSPORTS`/`OPS` ends up non-empty for a given schema. (Up
+    // through v0.8 there was a third `TransportStyle::Grpc` variant, and a
+    // third `is_grpc` boolean gated here so `Grpc` fell into neither the
+    // RPC nor the REST branch — gRPC's own service methods were the active
+    // binding in that case, built separately and spliced in by
+    // `compose_server_schema`. gRPC support was removed in v0.9; with only
+    // two `TransportStyle` variants left, `is_rpc` alone is exhaustive —
+    // reintroducing a third transport without a matching third branch here
+    // would silently fall through into the REST branch instead of failing
+    // to compile, so treat that as the hazard to guard against if this
+    // ever grows a variant again.)
     let is_rpc = matches!(schema.transport, cratestack_core::TransportStyle::Rpc);
-    // `transport grpc` gets neither the RPC op-registry surface nor the
-    // REST route-descriptor surface: gRPC's own service methods (built
-    // separately in `super::grpc`, spliced in by `compose_server_schema`)
-    // are the active binding, and `ROUTE_TRANSPORTS`/`OPS` staying empty is
-    // the honest signal that neither REST nor RPC introspection describes
-    // this schema. Without this, `TransportStyle::Grpc` would silently
-    // fall through the `else` branch below into the REST branch (`is_rpc`
-    // is `false` for `Grpc` too) — see `reject_grpc.rs`'s module doc for
-    // why that's the specific failure mode this guards against.
-    let is_grpc = matches!(schema.transport, cratestack_core::TransportStyle::Grpc);
 
     let mixin_names = schema.mixins.iter().map(|m| schema_lit(&m.name)).collect();
     let model_names = schema.models.iter().map(|m| schema_lit(&m.name)).collect();
@@ -130,9 +134,7 @@ pub(super) fn collect_server_schema(
     // Both `OPS` and `ROUTE_TRANSPORTS` consts are always emitted (for uniform
     // introspection), but the schema's `transport` directive picks which slice
     // is non-empty.
-    let (op_descriptor_entries, route_transport_entries) = if is_grpc {
-        (Vec::new(), Vec::new())
-    } else if is_rpc {
+    let (op_descriptor_entries, route_transport_entries) = if is_rpc {
         let mut ops = Vec::new();
         for procedure in &schema.procedures {
             ops.push(generate_procedure_op_descriptor(

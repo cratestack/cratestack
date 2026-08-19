@@ -109,8 +109,7 @@ Flags:
   regardless of this flag, `--swr` adds `src/swr/` alongside it rather
   than replacing it (issue #591 — this used to be the mutually-exclusive
   `--preset <default|swr>`; running the generator twice into two
-  directories for both layouts is no longer necessary). Does not support
-  `transport grpc` schemas yet.
+  directories for both layouts is no longer necessary).
 
   ```bash
   cratestack generate-typescript \
@@ -125,13 +124,11 @@ Flags:
   generated model API. Purely additive — every other emitted file is
   byte-identical with and without it — and it also adds
   `@cratestack/refine`/`@refinedev/core` to the generated `package.json`'s
-  peer/dev dependencies. REST and RPC schemas only: the emitted manifest is
-  typed `ResourceMap` for REST and `RpcResourceMap` for RPC, matching
-  whichever `@cratestack/refine` provider that transport ships. gRPC-Web
-  has no provider to bind to (typed protobuf, no URL-query shaping), so it
-  stays unsupported. Composes freely with `--swr`: the manifest binds to
-  the default layout's client class, which is always emitted regardless
-  of `--swr`.
+  peer/dev dependencies. The emitted manifest is typed `ResourceMap` for
+  REST and `RpcResourceMap` for RPC, matching whichever `@cratestack/refine`
+  provider that transport ships. Composes freely with `--swr`: the manifest
+  binds to the default layout's client class, which is always emitted
+  regardless of `--swr`.
 
   ```bash
   cratestack generate-typescript \
@@ -144,13 +141,12 @@ Flags:
   re-exported from `src/index.ts`, and add
   `@tanstack/react-query` to the generated `package.json`'s peer/dev
   dependencies. Before this flag existed (issue #617), all three were
-  emitted unconditionally, for every schema and every transport (REST,
-  RPC, gRPC-Web alike). Purely additive — every other emitted file is
-  byte-identical with and without it. Unlike `--refine`, this composes
-  with EVERY transport including gRPC-Web: `--tanstack` gates the same
-  `src/react-query.ts` that used to be unconditional there too, it
-  doesn't add support for a transport that lacked it before. Composes
-  freely with `--swr`/`--refine`.
+  emitted unconditionally, for every schema and every transport. Purely
+  additive — every other emitted file is byte-identical with and without
+  it. Unlike `--refine`, this composes with EVERY transport: `--tanstack`
+  gates the same `src/react-query.ts` that used to be unconditional there
+  too, it doesn't add support for a transport that lacked it before.
+  Composes freely with `--swr`/`--refine`.
 
   ```bash
   cratestack generate-typescript \
@@ -179,30 +175,6 @@ cratestack generate-typescript \
 Use this in CI to catch a schema change that nobody regenerated the client for,
 or a hand-edit to committed generated code.
 
-### `generate-proto` — `.proto` file + field-number lockfile
-
-```bash
-cratestack generate-proto \
-  --schema schemas/catalog.cstack \
-  --out schemas/catalog.proto \
-  --package catalog.v1
-```
-
-Emits a `.proto` file describing the schema's messages/enums (no `service`
-block — that needs a `transport grpc` schema) plus its sibling field-number
-lockfile (`<schema>.pb.lock`) so wire numbers don't silently renumber across
-schema edits.
-
-Flags:
-
-- `--schema <PATH>` (required)
-- `--out <PATH>` (required)
-- `--package <NAME>` — protobuf package name. Required on first run (no
-  existing `.pb.lock`); on later runs, must match what's already locked or
-  be omitted.
-- `--check` (drift-detection mode: rebuild the lock and `.proto` text in
-  memory and compare against what's on disk instead of writing)
-
 ### `generate-wiremock` — WireMock stub mappings
 
 ```bash
@@ -230,7 +202,7 @@ Flags:
   `generate-typescript`; must agree with whatever prefix the deployed
   server (and any generated client tested against this mock) use.
 - `--check` (drift-detection mode, same semantics as `generate-dart`/
-  `generate-typescript`/`generate-proto` above)
+  `generate-typescript` above)
 
 ### `studio` — admin and testing surface
 
@@ -383,7 +355,6 @@ fn main() {
 - `cratestack-client-typescript` — TypeScript package structure
 - `cratestack-studio` — Studio server + `eject` scaffold implementation
 - `cratestack-migrate` — schema diff / migration generator behind `migrate diff`
-- `cratestack-proto` — `.proto` generator behind `generate-proto`
 
 ## License
 

@@ -56,8 +56,8 @@ export async function createCborCodec(): Promise<CratestackRpcCodec> {
       // The cast is TypeScript 5.7+ typed-array generics noise, not a
       // real type mismatch: `Uint8Array` satisfies `BufferSource`
       // (part of the `BodyInit` union) at runtime and per the DOM spec —
-      // see the same pattern in
-      // crates/cratestack-client-typescript/templates/src/grpc-web-runtime.ts.j2.
+      // see the same `BodyInit` usage in
+      // crates/cratestack-client-typescript/templates/src/rest-runtime.ts.j2.
       return encode(value) as BodyInit;
     },
     decode(bytes: Uint8Array): unknown {

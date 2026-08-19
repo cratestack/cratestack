@@ -31,11 +31,9 @@
 //! have different `list()` shapes and so need different
 //! `@cratestack/refine` providers to bind to.
 //!
-//! Scope is REST/RPC only, enforced in `crate::generator` rather than
-//! here — see `TypeScriptGeneratorError::RefineRequiresRestOrRpc` for why
-//! gRPC-Web cannot work. Composes freely with `--swr`: the emitted
-//! manifest binds to the default layout's client class (`client.widgets`),
-//! which is always emitted regardless of `--swr`.
+//! Composes freely with `--swr`: the emitted manifest binds to the default
+//! layout's client class (`client.widgets`), which is always emitted
+//! regardless of `--swr`.
 
 use cratestack_core::{Model, Schema, TransportStyle};
 use serde::Serialize;
@@ -95,14 +93,10 @@ fn build_refine_resource(model: &Model) -> RefineResourceView {
 /// is typed to return for this schema's transport — see this module's doc
 /// for why REST and RPC need different provider types even though
 /// [`RefineResourceView`]'s facts are identical either way. Called from
-/// `crate::context::build_template_context` only when `refine` is on;
-/// `transport grpc` never reaches here in practice (`crate::generator`
-/// rejects `--refine` on a gRPC-Web schema first), so it falls back to the
-/// REST name rather than panicking on a path a regressed upstream guard
-/// could still reach.
+/// `crate::context::build_template_context` only when `refine` is on.
 pub(crate) fn refine_resource_map_type(transport: TransportStyle) -> &'static str {
     match transport {
         TransportStyle::Rpc => "RpcResourceMap",
-        TransportStyle::Rest | TransportStyle::Grpc => "ResourceMap",
+        TransportStyle::Rest => "ResourceMap",
     }
 }

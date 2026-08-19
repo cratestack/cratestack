@@ -34,13 +34,7 @@ pub(crate) fn ts_type(type_ref: &TypeRef, enum_names: &BTreeSet<&str>) -> String
         // depends on which backend built the server (`rust_decimal` never
         // emits scientific notation, `bigdecimal` does past a magnitude
         // threshold) — a bare `string` field type forced every consumer
-        // to know that and hand-roll parsing. `grpc/wire.rs` is
-        // deliberately unchanged (`GrpcWireKind::String`, proto3 `string`
-        // — out of #498's scope), so the generated gRPC-preset client
-        // still produces `Decimal`-typed interface fields (they're the
-        // same `models.ts` interfaces) but decodes/encodes them as raw
-        // strings at the wire boundary — a real, tracked gap (see this
-        // ticket's PR description), not an oversight.
+        // to know that and hand-roll parsing.
         "Decimal" => "Decimal".to_owned(),
         "Int" | "Float" => "number".to_owned(),
         "Boolean" => "boolean".to_owned(),

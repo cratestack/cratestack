@@ -81,9 +81,9 @@ impl AuthProvider for HeaderAuthProvider {
 }
 
 /// Creates the two tables if they don't already exist — the same
-/// `CREATE TABLE IF NOT EXISTS` pattern `grpc-widgets` and every
-/// PG-backed test in this workspace uses (no `cratestack-migrate` step
-/// wired into any example yet). Safe to call on every startup.
+/// `CREATE TABLE IF NOT EXISTS` pattern every PG-backed test in this
+/// workspace uses (no `cratestack-migrate` step wired into any example
+/// yet). Safe to call on every startup.
 pub async fn ensure_schema(pool: &PgPool) -> Result<(), cratestack::sqlx::Error> {
     cratestack::sqlx::query(
         "CREATE TABLE IF NOT EXISTS boards (id BIGINT PRIMARY KEY, name TEXT NOT NULL)",

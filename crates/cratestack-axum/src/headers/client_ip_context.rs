@@ -17,7 +17,7 @@ use crate::trusted_proxy::TrustedProxyConfig;
 /// extensions plumbing, request_context — see `cratestack_core::
 /// RequestContext::extensions`'s doc) is threaded through exactly this
 /// struct rather than as a brand-new parameter: `ClientIpContext` is
-/// already the one extractor every REST/RPC/gRPC dispatch fn in the
+/// already the one extractor every REST/RPC dispatch fn in the
 /// generated code accepts, so reusing it means every transport picks the
 /// new field up for free instead of needing its own separate threading
 /// (and its own separate chance to be forgotten).
@@ -78,11 +78,11 @@ pub struct ClientIpContext {
 }
 
 impl ClientIpContext {
-    /// Build directly from a raw `http::Extensions` map — the seam the
-    /// gRPC transport (`into_router()`, a tonic `Service` rather than an
-    /// axum handler) uses, since it never runs axum's own extractor
-    /// machinery. REST/RPC handlers get this for free via the
-    /// `FromRequestParts` impl below instead.
+    /// Build directly from a raw `http::Extensions` map — the shared
+    /// construction path used both by non-axum test harnesses that build
+    /// requests by hand and by the `FromRequestParts` impl below, which
+    /// delegates here rather than duplicating the field-by-field
+    /// extraction logic.
     pub fn from_extensions(extensions: &http::Extensions) -> Self {
         Self {
             trusted_proxy: extensions.get::<TrustedProxyConfig>().cloned(),

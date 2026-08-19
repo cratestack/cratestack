@@ -36,13 +36,12 @@ default = ["decimal-rust-decimal"]
 # observe *its own* features via `cfg!`, not the invoking crate's
 # (cratestack#505 §5), so routing the choice through a Cargo feature here
 # would silently reintroduce the exact bug this crate exists to fix. Also
-# forwards to `cratestack-policy`, `cratestack-parser`, and
-# `cratestack-proto` — this crate's other direct `cratestack-core`-
-# consuming dependencies (each with the same `default-features = false`
-# treatment — see root `Cargo.toml`). None of the four actually need a
-# concrete `Decimal`/`RustDecimal`/`BigDecimal` type to compile against
-# post-cratestack#505 (all four only ever match the schema type name
-# `"Decimal"` as a string); this toggle is kept for `cratestack-core`
+# forwards to `cratestack-policy` and `cratestack-parser` — this crate's
+# other direct `cratestack-core`-consuming dependencies (each with the same
+# `default-features = false` treatment — see root `Cargo.toml`). Neither
+# actually needs a concrete `Decimal`/`RustDecimal`/`BigDecimal` type to
+# compile against post-cratestack#505 (both only ever match the schema type
+# name `"Decimal"` as a string); this toggle is kept for `cratestack-core`
 # itself to build cleanly end-to-end and for parity with every other
 # `cratestack-core`-consuming crate in the workspace, not because any
 # code here names the concrete type.
@@ -50,37 +49,26 @@ decimal-rust-decimal = [
     "cratestack-core/decimal-rust-decimal",
     "cratestack-policy/decimal-rust-decimal",
     "cratestack-parser/decimal-rust-decimal",
-    "cratestack-proto/decimal-rust-decimal",
 ]
 decimal-bigdecimal = [
     "cratestack-core/decimal-bigdecimal",
     "cratestack-policy/decimal-bigdecimal",
     "cratestack-parser/decimal-bigdecimal",
-    "cratestack-proto/decimal-bigdecimal",
 ]
-# Gates `transport grpc` Rust codegen under `include_server_schema!` — see
-# `crates/cratestack-macros/src/include/reject_grpc.rs`. Checked at macro-
-# expansion time via `cfg!(feature = "grpc")` against this crate's *own*
-# compiled feature set (proc-macros can't read a consumer's
-# `CARGO_FEATURE_*` env vars — those describe the crate being expanded
-# *into*, not this one). Forwarded from `cratestack-pg`'s own `grpc`
-# feature; see `docs/design/extensions.md` §2 for the mechanism this
-# mirrors. Off by default — a plain `cargo check --workspace` never touches
-# this path.
-grpc = []
 # Marks whether the facade crate being compiled into has `cratestack-sqlx`
 # available at all — see
 # `crates/cratestack-macros/src/include/datasource_guard.rs`'s
 # `guard_server_postgres_backend` (cratestack#347). Same `cfg!(feature =
-# "postgres")`-against-this-crate's-own-feature-set mechanism as `grpc`
-# above. Forwarded from `cratestack-pg`'s own (default-on) `postgres`
-# feature; `cratestack-api` never forwards it, so `db = Postgres` under that
-# facade fails this guard with a clear `compile_error!` instead of a wall of
-# unrelated "cannot find `sqlx`/`SqlxRuntime` in `cratestack`" errors.
+# "postgres")`-against-this-crate's-own-feature-set mechanism as
+# `rate_limit`/`pgvector` below. Forwarded from `cratestack-pg`'s own
+# (default-on) `postgres` feature; `cratestack-api` never forwards it, so
+# `db = Postgres` under that facade fails this guard with a clear
+# `compile_error!` instead of a wall of unrelated "cannot find
+# `sqlx`/`SqlxRuntime` in `cratestack`" errors.
 postgres = []
 # Gates codegen for the `rate_limit` extension, declared in `.cstack` via
 # `extension rate_limit { }` (cratestack#153/#161). Same `cfg!(feature =
-# "rate_limit")`-against-this-crate's-own-feature-set mechanism as `grpc`/
+# "rate_limit")`-against-this-crate's-own-feature-set mechanism as
 # `postgres` above — see `crates/cratestack-macros/src/include/extension_gate.rs`
 # and `docs/design/extensions.md` §2. Forwarded from the `cratestack-pg`/
 # `cratestack-sqlite` facades' own `rate_limit` feature (cratestack#154):
@@ -106,13 +94,6 @@ pgvector = []
 cratestack-core.workspace = true
 cratestack-parser.workspace = true
 cratestack-policy.workspace = true
-# Not gated behind the `grpc` feature: unlike `tonic`/`prost` (pulled in by
-# `cratestack-grpc`, only when a consumer opts in), `cratestack-proto` is
-# lightweight (toml/serde/thiserror on top of `cratestack-core` — no
-# protobuf runtime deps) and this crate needs its lock-reading/comparison
-# logic (`PbLock`, `lock_would_change`) unconditionally to decide whether
-# the `grpc` feature guard itself should even run.
-cratestack-proto.workspace = true
 proc-macro2.workspace = true
 quote.workspace = true
 sha2.workspace = true

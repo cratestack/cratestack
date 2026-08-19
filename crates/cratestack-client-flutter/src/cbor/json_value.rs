@@ -2,10 +2,9 @@
 //!
 //! Duplicated (not shared) from `cratestack-cbor-napi`'s `json_value.rs`
 //! and `cratestack-cbor-wasm`'s `json_bridge.rs` — the "small pure
-//! mapping table gets reimplemented per crate" convention
-//! `cratestack-client-dart::grpc::wire` already documents for itself,
-//! rather than introducing a shared dependency edge between three
-//! otherwise-independent platform-binding crates for ~20 lines of logic.
+//! mapping table gets reimplemented per crate" convention, rather than
+//! introducing a shared dependency edge between three otherwise-independent
+//! platform-binding crates for ~20 lines of logic.
 //!
 //! `cratestack-codec-cbor`'s `CborCodec` (which this crate wraps
 //! unchanged — see `super`'s module docs) is generic over any

@@ -3,8 +3,8 @@
 //! just exercised in isolation (`cratestack-axum::schema_fingerprint`'s
 //! own unit tests already cover the middleware itself).
 //!
-//! Uses `connect_lazy` (no live Postgres needed, same technique as
-//! `tests/transport_grpc.rs`) and requests a path that matches no route —
+//! Uses `connect_lazy` (no live Postgres needed, same technique as other
+//! tests in this crate) and requests a path that matches no route —
 //! `axum`'s `.layer()` wraps the whole router including its 404
 //! fallback, so the schema-fingerprint middleware still runs, but nothing
 //! ever touches the (unreachable-in-this-test) database. The assertion

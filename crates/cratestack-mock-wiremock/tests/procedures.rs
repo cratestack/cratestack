@@ -354,28 +354,6 @@ procedure getA(): A
     );
 }
 
-#[test]
-fn grpc_transport_is_rejected_up_front() {
-    let schema = schema(&format!(
-        "transport grpc
-
-{NO_DATASOURCE}
-type Greeting {{
-  message String
-}}
-
-procedure hello(): Greeting
-"
-    ));
-
-    let error = generate_package(&schema, &WireMockGeneratorConfig::default())
-        .expect_err("grpc transport is out of scope for v1");
-    assert!(matches!(
-        error,
-        WireMockGeneratorError::UnsupportedTransport
-    ));
-}
-
 /// A schema with no procedures still emits no *procedure* files — but
 /// (since model CRUD stub generation landed) it isn't `files.is_empty()`
 /// overall anymore if it declares a model. See `models.rs`'s

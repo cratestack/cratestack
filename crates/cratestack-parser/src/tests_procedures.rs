@@ -448,27 +448,6 @@ mutation procedure submit(args: Ping): Ping
     );
 }
 
-/// cratestack#407 follow-up: `transport grpc` is unaffected by the
-/// `transport rpc` rejection above — gRPC's own status model never
-/// reads the HTTP status `@status` controls, so the combination is
-/// inert there, not silently wrong, and stays accepted.
-#[test]
-fn accepts_status_attribute_under_transport_grpc() {
-    parse_schema(
-        r#"
-transport grpc
-
-type Ping {
-  nonce String
-}
-
-mutation procedure submit(args: Ping): Ping
-  @status(202)
-"#,
-    )
-    .expect("@status under `transport grpc` should still parse");
-}
-
 /// cratestack#154: at most one `@no_rate_limit` per procedure.
 #[test]
 fn rejects_duplicate_no_rate_limit_attribute() {

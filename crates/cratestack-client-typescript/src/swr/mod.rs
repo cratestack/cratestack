@@ -59,7 +59,7 @@ mod views;
 
 use std::collections::HashMap;
 
-use cratestack_core::{Schema, TransportStyle};
+use cratestack_core::Schema;
 
 use crate::config::{GeneratedTypeScriptFile, TypeScriptGeneratorConfig};
 use crate::error::TypeScriptGeneratorError;
@@ -70,10 +70,6 @@ pub(crate) fn generate(
     schema: &Schema,
     config: &TypeScriptGeneratorConfig,
 ) -> Result<Vec<GeneratedTypeScriptFile>, TypeScriptGeneratorError> {
-    if schema.transport == TransportStyle::Grpc {
-        return Err(TypeScriptGeneratorError::SwrUnsupportedForGrpc);
-    }
-
     let specs = templates::swr_template_specs_for(schema.transport);
     let environment = build_environment(config.template_dir.as_deref(), &specs)?;
     let ownership = ownership::compute_type_ownership(schema);
