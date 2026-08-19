@@ -7,6 +7,7 @@ mod authorizer;
 mod instrument;
 #[cfg(test)]
 mod tests;
+mod type_tokens;
 mod types;
 
 use std::collections::BTreeSet;

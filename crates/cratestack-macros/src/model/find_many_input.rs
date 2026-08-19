@@ -10,6 +10,7 @@ use std::collections::BTreeSet;
 use cratestack_core::Model;
 use quote::quote;
 
+use crate::builder::{BuilderField, generate_builder};
 use crate::shared::{generated_doc_attr, ident, is_primary_key, rust_type_tokens, to_snake_case};
 
 use super::find_many_order_by::generate_order_by_types;
@@ -42,6 +43,20 @@ pub(crate) fn generate_find_many_types(
         model.name
     ));
 
+    // Both fields optional (`Option<_>` / `Option<Vec<_>>`), so a
+    // non-generic builder — same as `{Model}Where`. `ident("where")`
+    // raw-escapes to `r#where`, matching the struct field and giving the
+    // setter itself the name `r#where`.
+    let find_many_builder_fields = vec![
+        BuilderField::new(ident("where"), quote! { Option<#where_ident> }, false),
+        BuilderField::new(
+            ident("order_by"),
+            quote! { Option<Vec<#order_by_ident>> },
+            false,
+        ),
+    ];
+    let builder = generate_builder(&find_many_ident, &find_many_builder_fields);
+
     quote! {
         #where_types
         #order_by_types
@@ -53,6 +68,8 @@ pub(crate) fn generate_find_many_types(
             pub r#where: Option<#where_ident>,
             pub order_by: Option<Vec<#order_by_ident>>,
         }
+
+        #builder
     }
 }
 

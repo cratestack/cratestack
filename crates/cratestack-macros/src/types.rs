@@ -8,6 +8,7 @@ use std::collections::BTreeSet;
 use cratestack_core::TypeDecl;
 use quote::quote;
 
+use crate::builder::{generate_builder, scoped_builder_fields};
 use crate::shared::{
     doc_attrs, field_definition, ident, is_custom_field, rust_type_tokens_with_scope, schema_lit,
     to_snake_case, value_tokens,
@@ -30,6 +31,7 @@ pub(crate) fn generate_type_struct(
         .fields
         .iter()
         .map(|field| field_definition(field, false, true));
+    let builder = generate_builder(&type_ident, &scoped_builder_fields(&ty.fields, false, true));
     let arg_matches = ty.fields.iter().map(|field| {
         let field_name = &field.name;
         let field_ident = ident(&field.name);
@@ -45,6 +47,8 @@ pub(crate) fn generate_type_struct(
         pub struct #type_ident {
             #(#fields)*
         }
+
+        #builder
 
         impl ::cratestack::ProcedureArgs for #type_ident {
             fn procedure_arg_value(&self, field: &str) -> Option<::cratestack::Value> {
@@ -64,6 +68,7 @@ pub(crate) fn generate_client_type_struct(ty: &TypeDecl) -> proc_macro2::TokenSt
         .fields
         .iter()
         .map(|field| field_definition(field, false, true));
+    let builder = generate_builder(&type_ident, &scoped_builder_fields(&ty.fields, false, true));
 
     quote! {
         #docs
@@ -71,6 +76,8 @@ pub(crate) fn generate_client_type_struct(ty: &TypeDecl) -> proc_macro2::TokenSt
         pub struct #type_ident {
             #(#fields)*
         }
+
+        #builder
     }
 }
 

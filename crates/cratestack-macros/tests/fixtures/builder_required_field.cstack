@@ -1,0 +1,22 @@
+// Fixture for the typestate-builder compile-fail proof
+// (tests/ui_builder_required_field.rs): a `db = None` schema so the
+// generated code needs only `cratestack-api`'s runtime surface (same
+// facade `tests/fixtures/procedure_registry_witness.cstack` already
+// relies on — see that file's comment and `Cargo.toml`'s
+// `[dev-dependencies]` entry for why `db = Postgres` isn't usable here).
+// `Widget` mixes a required `Int`, a required `String`, and an optional
+// `String?` so `WidgetBuilder` has real Set/Unset slots to omit: `id` and
+// `name` are required and gate `build()`, `note` is not.
+
+datasource db {
+  provider = "none"
+}
+
+type Widget {
+  id Int
+  name String
+  note String?
+}
+
+procedure echoWidget(args: Widget): Widget
+  @allow(auth() != null)

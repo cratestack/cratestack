@@ -1,0 +1,16 @@
+error[E0599]: no method named `build` found for struct `WidgetBuilder<Set>` in the current scope
+ --> tests/ui/generated/builder_required_field_missing.rs
+  |
+  |   cratestack::include_server_schema!("/tmp/cratestack-macros-ui-builder-required-field/builder_required_field.cstack", db = None);
+  |   ------------------------------------------------------------------------------------------------------------------------------- method `build` not found for this struct
+...
+  |       let _ = cratestack_schema::Widget::builder()
+  |  _____________-
+  | |         .id(1)
+  | |         .build();
+  | |         -^^^^^ method not found in `WidgetBuilder<Set>`
+  | |_________|
+  |
+  |
+  = note: the method was found for
+          - `WidgetBuilder<Set, Set>`

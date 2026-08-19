@@ -1,13 +1,53 @@
-//! Argument struct + return-type token generation shared between
-//! the server `pub mod <procedure>` (for `authorize` / `invoke`) and
-//! the lighter client-side module.
+//! Argument struct generation shared between the server `pub mod
+//! <procedure>` (for `authorize` / `invoke`) and the lighter client-side
+//! module. Return-type / element-type token resolution lives in the
+//! sibling `type_tokens.rs` (split per the repo's 200-LoC file
+//! convention) and is re-exported here for `procedure.rs`.
 
 use std::collections::BTreeSet;
 
-use cratestack_core::{Procedure, TypeArity, TypeDecl, TypeRef};
+use cratestack_core::{Procedure, TypeArity, TypeDecl};
 use quote::quote;
 
+use crate::builder::{BuilderField, generate_builder};
 use crate::shared::{doc_attrs, ident, value_tokens};
+
+use super::type_tokens::procedure_type_tokens;
+
+pub(crate) use super::type_tokens::procedure_client_output_item_tokens;
+pub(super) use super::type_tokens::{procedure_output_tokens, procedure_stream_item_tokens};
+
+/// `Args` field specs for a procedure's argument list, on both the server
+/// and client sides — they emit the identical field set, so one builder
+/// spec covers both `generate_procedure_args_struct` and
+/// `generate_client_procedure_args_struct`.
+///
+/// Unlike [`crate::builder::model_builder_fields`], required-ness can't be
+/// read off `arg.ty.arity` alone: [`procedure_type_tokens`] returns early
+/// for `Page<T>`/`FindMany<T>` *before* applying arity, so those two
+/// shapes are never `Option<_>`-typed regardless of what the schema
+/// declared — matching that early return here keeps this in sync with the
+/// type tokens actually emitted.
+fn procedure_arg_builder_fields(
+    procedure: &Procedure,
+    types: &[TypeDecl],
+    enum_names: &BTreeSet<&str>,
+) -> Vec<BuilderField> {
+    procedure
+        .args
+        .iter()
+        .map(|arg| {
+            let field_ty = procedure_type_tokens(&arg.ty, types, enum_names);
+            let required = arg.ty.is_page()
+                || arg.ty.is_find_many()
+                || matches!(arg.ty.arity, TypeArity::Required);
+            let into = required && matches!(arg.ty.name.as_str(), "String" | "Cuid");
+            BuilderField::new(ident(&arg.name), field_ty, required)
+                .with_into(into)
+                .with_docs(doc_attrs(&arg.docs))
+        })
+        .collect()
+}
 
 pub(super) fn generate_procedure_args_struct(
     procedure: &Procedure,
@@ -24,6 +64,10 @@ pub(super) fn generate_procedure_args_struct(
             pub #field_ident: #field_type,
         }
     });
+    let builder = generate_builder(
+        &args_ident,
+        &procedure_arg_builder_fields(procedure, types, enum_names),
+    );
     let value_matches = procedure.args.iter().map(|arg| {
         let field_ident = ident(&arg.name);
         let field_name = &arg.name;
@@ -60,6 +104,8 @@ pub(super) fn generate_procedure_args_struct(
             #(#definitions)*
         }
 
+        #builder
+
         impl ::cratestack::ProcedureArgs for #args_ident {
             fn procedure_arg_value(&self, field: &str) -> Option<::cratestack::Value> {
                 match field {
@@ -86,6 +132,10 @@ pub(super) fn generate_client_procedure_args_struct(
             pub #field_ident: #field_type,
         }
     });
+    let builder = generate_builder(
+        &args_ident,
+        &procedure_arg_builder_fields(procedure, types, enum_names),
+    );
 
     let default_derive = if procedure.args.is_empty() {
         quote! { , Default }
@@ -99,115 +149,7 @@ pub(super) fn generate_client_procedure_args_struct(
         pub struct #args_ident {
             #(#definitions)*
         }
+
+        #builder
     }
-}
-
-pub(super) fn procedure_output_tokens(
-    type_ref: &TypeRef,
-    types: &[TypeDecl],
-    enum_names: &BTreeSet<&str>,
-) -> proc_macro2::TokenStream {
-    procedure_type_tokens(type_ref, types, enum_names)
-}
-
-pub(crate) fn procedure_client_output_item_tokens(type_ref: &TypeRef) -> proc_macro2::TokenStream {
-    match type_ref.name.as_str() {
-        "String" => quote! { String },
-        "Cuid" => quote! { String },
-        "Int" => quote! { i64 },
-        "Float" => quote! { f64 },
-        "Boolean" => quote! { bool },
-        "DateTime" => quote! { ::cratestack::chrono::DateTime<::cratestack::chrono::Utc> },
-        "Decimal" => crate::shared::decimal_backend::current_decimal_type_tokens(),
-        "Json" => quote! { ::cratestack::Json<::cratestack::Value> },
-        "Bytes" => quote! { Vec<u8> },
-        "Uuid" => quote! { ::cratestack::uuid::Uuid },
-        other => {
-            let model_ident = ident(other);
-            quote! { super::#model_ident }
-        }
-    }
-}
-
-fn procedure_type_tokens(
-    type_ref: &TypeRef,
-    types: &[TypeDecl],
-    enum_names: &BTreeSet<&str>,
-) -> proc_macro2::TokenStream {
-    if type_ref.is_page() {
-        let item = type_ref
-            .page_item()
-            .expect("validated Page<T> should include an item type");
-        let item_type = procedure_type_tokens(item, types, enum_names);
-        return quote! { ::cratestack::Page<#item_type> };
-    }
-
-    if type_ref.is_find_many() {
-        let item = type_ref
-            .find_many_item()
-            .expect("validated FindMany<T> should include an item type");
-        // Unlike `Page<T>`, `FindMany<T>`'s item is always a declared
-        // model (parser-enforced), never a builtin scalar — so this maps
-        // straight to that model's own generated `<Model>FindManyInput`
-        // (`crates/cratestack-macros/src/model/find_many_input.rs`)
-        // rather than recursing through the generic scalar/model
-        // resolution `procedure_item_type_tokens` does for `Page<T>`.
-        let find_many_ident = ident(&format!("{}FindManyInput", item.name));
-        return quote! { super::super::#find_many_ident };
-    }
-
-    let inner = procedure_item_type_tokens(type_ref, types, enum_names);
-
-    match type_ref.arity {
-        TypeArity::Required => inner,
-        TypeArity::Optional => quote! { Option<#inner> },
-        TypeArity::List => quote! { Vec<#inner> },
-    }
-}
-
-/// Scalar/model mapping for one element of `type_ref`, ignoring arity and
-/// the `Page<T>` wrapper entirely — i.e. what a `Vec<T>`'s `T` is. Shared
-/// by [`procedure_type_tokens`] (which wraps it per `type_ref.arity`) and
-/// [`procedure_stream_item_tokens`] (which never wraps it: a `@stream`
-/// procedure's `Stream<Item = Result<T, _>>` wants the element type
-/// directly, not `Vec<T>`).
-fn procedure_item_type_tokens(
-    type_ref: &TypeRef,
-    types: &[TypeDecl],
-    enum_names: &BTreeSet<&str>,
-) -> proc_macro2::TokenStream {
-    match type_ref.name.as_str() {
-        "String" => quote! { String },
-        "Cuid" => quote! { String },
-        "Int" => quote! { i64 },
-        "Float" => quote! { f64 },
-        "Boolean" => quote! { bool },
-        "DateTime" => quote! { ::cratestack::chrono::DateTime<::cratestack::chrono::Utc> },
-        "Decimal" => crate::shared::decimal_backend::current_decimal_type_tokens(),
-        "Json" => quote! { ::cratestack::Json<::cratestack::Value> },
-        "Bytes" => quote! { Vec<u8> },
-        "Uuid" => quote! { ::cratestack::uuid::Uuid },
-        "PageInput" => quote! { ::cratestack::PageInput },
-        other => {
-            let item_ident = ident(other);
-            if types.iter().any(|ty| ty.name == other) || enum_names.contains(other) {
-                quote! { super::super::types::#item_ident }
-            } else {
-                quote! { super::super::#item_ident }
-            }
-        }
-    }
-}
-
-/// Item type tokens for a `@stream`-marked procedure's stream-shaped
-/// `ProcedureRegistry` trait method. Callers must only invoke this once
-/// `cratestack-parser` has confirmed `type_ref.arity == TypeArity::List`
-/// (`@stream` on anything else is a semantic-check error, not something
-/// this function needs to defend against).
-pub(super) fn procedure_stream_item_tokens(
-    type_ref: &TypeRef,
-    types: &[TypeDecl],
-    enum_names: &BTreeSet<&str>,
-) -> proc_macro2::TokenStream {
-    procedure_item_type_tokens(type_ref, types, enum_names)
 }

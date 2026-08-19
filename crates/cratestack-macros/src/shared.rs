@@ -22,7 +22,7 @@ pub(crate) use attrs::{
 pub(crate) use procedure_attrs::is_stream_procedure;
 pub(crate) use sql::{create_sql_value, sql_value_tokens, update_sql_value};
 pub(crate) use types::{
-    field_definition, query_scalar_list_parser_tokens, query_scalar_parser_tokens,
+    field_definition, field_type, query_scalar_list_parser_tokens, query_scalar_parser_tokens,
     rust_type_tokens, rust_type_tokens_with_scope,
 };
 pub(crate) use value::value_tokens;

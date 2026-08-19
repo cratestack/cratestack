@@ -1,0 +1,35 @@
+// Builder-pattern coverage fixture (typestate builders on every
+// struct-shaped generated type, see `cratestack-core/src/builder.rs` and
+// `cratestack-macros/src/builder.rs`). `BuilderWidget` deliberately mixes
+// a required `String`, a required `Int`, and a nullable `String?` so the
+// same model exercises:
+//   * `CreateBuilderWidgetInput`'s builder — a mix of required + optional
+//     setters, required ones gating `build()`.
+//   * `UpdateBuilderWidgetInput`'s builder — every field optional (patch
+//     wrapping), with `note`'s setter taking `Option<String>` so
+//     `.note(Some(v))` sets and `.note(None)` clears (cratestack#567).
+//   * `BuilderWidgetWhere` / `BuilderWidgetFindManyInput` — both
+//     all-optional, non-generic builders.
+//   * the `BuilderWidget` model struct's own builder (all fields
+//     required except `note`).
+//   * `BuilderWidgetSummary`'s view struct builder.
+
+datasource db {
+  provider = "sqlite"
+  url = env("DATABASE_URL")
+}
+
+model BuilderWidget {
+  id Int @id
+  name String
+  priority Int
+  note String?
+}
+
+view BuilderWidgetSummary from BuilderWidget {
+  id Int @id @from(BuilderWidget.id)
+  name String @from(BuilderWidget.name)
+  note String? @from(BuilderWidget.note)
+
+  @@embedded_sql("SELECT id, name, note FROM builder_widgets")
+}
