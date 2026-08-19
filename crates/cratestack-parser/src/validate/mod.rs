@@ -1,3 +1,5 @@
+mod builder_collisions;
+mod builder_setter_collisions;
 mod composite_attributes;
 mod fields;
 mod index_attribute;
@@ -23,6 +25,7 @@ use cratestack_core::Schema;
 
 use crate::diagnostics::{SchemaError, span_error};
 
+use self::builder_collisions::validate_builder_name_collisions;
 use self::mixins_types::{validate_auth, validate_enums, validate_mixins, validate_types};
 use self::models::validate_models;
 use self::procedure_idents::validate_procedure_idents;
@@ -58,6 +61,7 @@ pub(crate) fn validate_schema(
     // normalization. This must come after collect_type_names (which catches
     // raw-name duplicates) but before kind-specific validation.
     validate_type_declaration_collisions(schema)?;
+    validate_builder_name_collisions(schema)?;
 
     let mut procedure_names = BTreeSet::new();
     for procedure in &schema.procedures {

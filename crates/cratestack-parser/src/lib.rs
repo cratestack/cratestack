@@ -8,6 +8,9 @@ mod validate;
 #[cfg(test)]
 mod tests_basic;
 #[cfg(test)]
+mod tests_builder_collisions;
+mod tests_builder_collisions_derived;
+#[cfg(test)]
 mod tests_docs;
 #[cfg(test)]
 mod tests_enums;
