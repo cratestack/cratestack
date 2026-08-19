@@ -3,13 +3,13 @@
 # This is the checked-in input to the layer-direction check (ADR 0014,
 # `.ci/layer-direction-check.sh`, `just verify-layering`). It encodes ADR
 # 0011 §2's assignment table, with one correction applied on top (see the
-# `cratestack-macros` / `cratestack-proto` comment below) and is the thing
+# `cratestack-macros` comment below) and is the thing
 # that must be updated — in the same PR — whenever a crate is added under
 # `crates/`. An unassigned crate fails the check; see ADR 0014's "unassigned
 # crate" rule.
 #
-# Scope: only packages whose manifest lives under `crates/` (35 as of this
-# writing, 34 of them workspace members — `cratestack-studio-ui` is excluded
+# Scope: only packages whose manifest lives under `crates/` (33 as of this
+# writing, 32 of them workspace members — `cratestack-studio-ui` is excluded
 # from the workspace and not covered here; cratestack#490's `cratestack-client`
 # is included). `examples/*` and
 # app-shaped workspace members are consumers of the layered architecture,
@@ -59,7 +59,7 @@ cratestack-sql = 1
 # low for pg -> macros". That claim does not survive verification against
 # the real graph. cratestack-macros's actual normal workspace dependencies
 # (`crates/cratestack-macros/Cargo.toml`) are exactly: cratestack-core,
-# cratestack-parser, cratestack-policy, cratestack-proto — all L0/L1. L1
+# cratestack-parser, cratestack-policy — all L0/L1. L1
 # satisfies `dep.layer <= self.layer` with no exception: every L2-L5 crate
 # that depends on macros (cratestack-pg, cratestack-api, cratestack-sqlite,
 # all L5) sees 1 <= 5, and macros's own dependencies are all <= 1. No L2
@@ -68,10 +68,6 @@ cratestack-sql = 1
 # by macros never appearing on the wrong side of an L2 edge — not by a
 # bespoke predicate. See this PR's description for the verification command.
 cratestack-macros = 1
-# cratestack-proto depends only on cratestack-core (L0), so it is L1 too —
-# same reasoning as cratestack-macros above, and the same real-graph check
-# applies: nothing at L2 depends on cratestack-proto.
-cratestack-proto = 1
 # `cratestack-auth` (new, "absorb the auth kit into the framework"): SigV4-
 # style Ed25519 signed-request auth, SD-JWT id-token issuance/verification,
 # multi-issuer JWKS resolution, per-service signing identities, and
@@ -84,8 +80,8 @@ cratestack-proto = 1
 # come from the plain `http` crate (which `cratestack-axum` itself only
 # re-exports), not from `cratestack-axum`. Its only normal in-workspace
 # dependency, under EITHER feature state, is `cratestack-core` (L0) — same
-# "lowest layer the real graph supports" rule `cratestack-macros`/
-# `cratestack-proto` use above, verified via `cargo tree -p cratestack-auth
+# "lowest layer the real graph supports" rule `cratestack-macros`
+# uses above, verified via `cargo tree -p cratestack-auth
 # -e normal` (with and without `--no-default-features`): both report exactly
 # one cratestack-* line, `cratestack-core`. L1 satisfies `dep.layer <=
 # self.layer` with no exception, and nothing in the workspace depends on
@@ -114,7 +110,7 @@ cratestack-client-store-redis = 2
 # binding, nor a rename-plus-re-exports facade (`layering.md` §2's L5 rule,
 # "a facade that grows a function has stopped being a facade", rules out
 # putting this logic in `cratestack-pg` directly). Same reasoning
-# `cratestack-macros`/`cratestack-proto` used above: assign the lowest
+# `cratestack-macros` used above: assign the lowest
 # number its REAL graph supports, not a role invented to fit the prose.
 # Its only normal workspace dependencies are `cratestack-core` (L1,
 # `CratestackError`) and, behind its optional `postgres` feature,
@@ -156,7 +152,6 @@ cratestack-outbox = 2
 
 # --- L4: Bindings --------------------------------------------------------
 cratestack-axum = 4
-cratestack-grpc = 4
 cratestack-client-rust = 4
 cratestack-client-dart = 4
 cratestack-client-typescript = 4

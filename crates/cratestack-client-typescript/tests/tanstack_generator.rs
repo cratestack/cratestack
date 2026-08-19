@@ -11,11 +11,7 @@
 //! `tests/swr_paged_model_tsc.rs`/`tests/node_dist_esm.rs` for this crate's
 //! established "real compiler" pattern (best-effort, skips when
 //! `node`/`npm`/`npx` aren't on `PATH`, since no Rust CI job here
-//! provisions Node). gRPC-Web coverage lives in
-//! `tests/generator_grpc.rs::tanstack_flag_emits_react_query_hooks_for_grpc_too`
-//! rather than duplicated here, since gRPC-Web needs its own `pb_lock`
-//! fixture plumbing that this file's `TypeScriptGeneratorConfig::default()`
-//! REST/RPC fixtures don't carry.
+//! provisions Node).
 
 use cratestack_client_typescript::{
     GeneratedTypeScriptPackage, TypeScriptGeneratorConfig, generate_package,

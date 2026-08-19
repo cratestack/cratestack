@@ -20,7 +20,7 @@ pub(crate) use specs::template_specs_for;
 /// one template to exactly one file, unconditionally — physically unable
 /// to emit a file per model. `PerModel` is the fan-out point the `swr`
 /// preset's per-model template uses; every other spec (the entire
-/// default/REST/RPC/GRPC surface in `specs.rs`) stays `Fixed`, so their
+/// default/REST/RPC surface in `specs.rs`) stays `Fixed`, so their
 /// rendering is byte-for-byte what it was before this enum existed.
 ///
 /// `PerModel` carries a filename suffix (issue #305): a model's plain,

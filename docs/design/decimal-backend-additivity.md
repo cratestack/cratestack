@@ -164,7 +164,6 @@ own comment: "this crate's own proc-macro implementation never constructs a
 - `cratestack-macros::model::row_sqlite.rs:112-116` — row decode via `DecimalColumn`
 - `cratestack-macros::procedure::types.rs:121,186` — procedure arg/return types
 - `cratestack-macros::validators::emit.rs:79` — `@range` bound promotion
-- `cratestack-macros::include::grpc_pb::scalar.rs:70,101-102` — gRPC wire (de)serialization
 
 Every one of these is a `quote!`-time string match on `"Decimal"` (the *schema* type name, plain
 text from `.cstack` source) that unconditionally emits the literal path `::cratestack::Decimal`.
@@ -173,7 +172,7 @@ only ever one `Decimal` path in scope today. This is the detail that makes Direc
 these sites would all need a second axis (which concrete type to name) that doesn't exist yet.
 
 **Not in the blast radius, despite matching the grep:** `cratestack-client-dart`,
-`cratestack-client-typescript`, `cratestack-proto`, `cratestack-migrate`, `cratestack-parser`,
+`cratestack-client-typescript`, `cratestack-migrate`, `cratestack-parser`,
 `cratestack-studio`. These match `"Decimal"` as a schema type-name string (routing to a
 Dart/TypeScript client type, a `NUMERIC` DDL keyword, a parser validation rule, a JSON-shaped studio
 form field) and never reference `cratestack_core::Decimal` the Rust type at all — their behavior is

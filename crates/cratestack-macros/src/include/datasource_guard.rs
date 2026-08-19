@@ -3,7 +3,7 @@
 //! "..." }` and against whether the facade crate being compiled into
 //! actually has `cratestack-sqlx` available at all. Split out of `parse.rs`
 //! (which stays focused on entry-macro argument parsing + the shared schema
-//! loader) per the repo's 200-LoC file convention, mirroring `reject_grpc.rs`.
+//! loader) per the repo's 200-LoC file convention.
 //!
 //! Before cratestack#327, `args.db` was parsed and then discarded
 //! (`let _ = args.db;` in `include.rs`) — nothing cross-checked it against
@@ -29,8 +29,9 @@
 //! `ModelDelegate` in `cratestack`" errors — technically correct, but
 //! nothing in that output says *why*, or what to do about it. This guard
 //! catches the same condition earlier and says so directly, the same way
-//! [`reject_grpc::guard_server_grpc_transport`](super::reject_grpc::guard_server_grpc_transport)
-//! already does for `transport grpc` under a `grpc`-feature-less facade.
+//! [`extension_gate`](super::extension_gate) already does for a declared
+//! `extension` under a facade that never forwarded its matching Cargo
+//! feature.
 
 use proc_macro::TokenStream;
 use syn::LitStr;
@@ -98,8 +99,8 @@ pub(super) fn guard_server_postgres_backend(
     // own compiled feature set, forwarded from `cratestack-pg`'s `postgres`
     // feature (`postgres = ["dep:cratestack-sqlx", "cratestack-macros/postgres"]`)
     // — not the consumer crate's `CARGO_FEATURE_*` env vars, which a
-    // proc-macro cannot see. Mirrors `reject_grpc::guard_server_grpc_transport`'s
-    // `cfg!(feature = "grpc")` check exactly. `cratestack-pg` has `postgres`
+    // proc-macro cannot see. Mirrors `extension_gate`'s `feature_enabled`
+    // check exactly. `cratestack-pg` has `postgres`
     // default-on, so every existing `db = Postgres` consumer sees zero
     // change; `cratestack-api` never enables it, so this always fires there.
     if cfg!(feature = "postgres") {
@@ -136,7 +137,7 @@ fn schema_datasource_provider(schema: &cratestack_core::Schema) -> Option<&str> 
 mod tests {
     use super::{ServerDb, schema_datasource_provider};
 
-    // Same constraint as `reject_grpc.rs`'s tests: `guard_server_datasource_provider`
+    // Same constraint as `extension_gate.rs`'s tests: `guard_server_datasource_provider`
     // returns `proc_macro::TokenStream` and calls `syn::Error::to_compile_error()`,
     // which panics outside an active proc-macro invocation context. So the pure
     // `schema_datasource_provider` predicate is exercised directly here, and the

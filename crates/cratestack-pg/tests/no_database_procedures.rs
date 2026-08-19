@@ -12,9 +12,8 @@
 //!
 //! The negative half of the datasource/macro-argument cross-check (a
 //! mismatch failing to compile) is still demonstrated manually per the
-//! PR description, following the same precedent as `reject_grpc.rs`'s
-//! composite-PK guard: a `proc_macro::TokenStream` compile-error path
-//! can't be exercised from a plain `cargo test` run.
+//! PR description: a `proc_macro::TokenStream` compile-error path can't
+//! be exercised from a plain `cargo test` run.
 
 use cratestack::CratestackCodec;
 use cratestack::axum::body::{Body, to_bytes};

@@ -182,8 +182,6 @@ pub(crate) fn build_template_context(
         }
     });
 
-    let grpc = crate::grpc::build_grpc_context(schema, config.pb_lock.as_ref())?;
-
     // Issue #563: only computed when the flag is actually set — mirrors
     // `cratestack-client-typescript::context::build_template_context`'s
     // `refine_version_requirement`, same lockstep-with-the-crate-version
@@ -211,7 +209,6 @@ pub(crate) fn build_template_context(
         query_procedures,
         mutation_procedures,
         sample_model,
-        grpc,
         is_riverpod_preset: config.preset == DartPreset::Riverpod,
         native_cbor: config.native_cbor,
         cratestack_cbor_version_requirement,

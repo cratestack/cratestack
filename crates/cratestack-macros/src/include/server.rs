@@ -5,7 +5,6 @@
 mod axum_dtos;
 mod axum_module;
 mod collect;
-mod grpc;
 mod rpc_module;
 mod runtime;
 
@@ -38,9 +37,6 @@ pub(super) fn compose_server_schema(
     if let Err(error) = super::datasource_guard::guard_server_postgres_backend(schema_path, db) {
         return error;
     }
-    if let Err(error) = super::reject_grpc::guard_server_grpc_transport(schema_path, &schema) {
-        return error;
-    }
     if let Err(error) =
         super::extension_gate::guard_server_declared_extensions(schema_path, &schema)
     {
@@ -52,20 +48,14 @@ pub(super) fn compose_server_schema(
     };
 
     // Wraps the rest of composition — `collect_server_schema` (which
-    // reaches every one of the six `Decimal`-emitting codegen sites) and
-    // the gRPC module build both need the schema's chosen decimal backend
-    // in scope (cratestack#505 Direction 2; see `include::embedded`'s
-    // matching comment).
+    // reaches every one of the six `Decimal`-emitting codegen sites) needs
+    // the schema's chosen decimal backend in scope (cratestack#505
+    // Direction 2; see `include::embedded`'s matching comment).
     with_decimal_backend(decimal_backend, move || {
         let resolved_literal = resolved.display().to_string();
 
         let collected = match collect_server_schema(&schema, schema_path) {
             Ok(collected) => collected,
-            Err(error) => return error,
-        };
-
-        let grpc_module = match grpc::build_grpc_module(&schema, &resolved, schema_path) {
-            Ok(tokens) => tokens,
             Err(error) => return error,
         };
 
@@ -248,8 +238,6 @@ pub(super) fn compose_server_schema(
                 #axum_module
 
                 #runtime_block
-
-                #grpc_module
             }
         };
 

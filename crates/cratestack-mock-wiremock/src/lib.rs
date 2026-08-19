@@ -37,9 +37,7 @@
 //!   path) and RPC doesn't (the id lives in the request body, and this
 //!   templating stack has no string-concatenation helper to build a
 //!   unique key from it; see `crate::model_mapping::rpc`'s module doc).
-//! - Not covered (tracked as follow-ups in the design doc):
-//!   `transport grpc` schemas
-//!   ([`WireMockGeneratorError::UnsupportedTransport`]), `FindMany<T>`
+//! - Not covered (tracked as follow-ups in the design doc): `FindMany<T>`
 //!   return types ([`WireMockGeneratorError::UnsupportedReturnType`]),
 //!   error-case stubs, request-body assertion, and any emulation of the
 //!   auth chokepoint every procedure/model route sits behind.

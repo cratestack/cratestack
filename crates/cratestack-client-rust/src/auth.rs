@@ -16,9 +16,8 @@ pub struct AuthorizationRequest {
 /// can't do without `block_on` (panics/deadlocks depending on the runtime)
 /// or a pre-fetch-and-stash workaround that reintroduces the expiry race
 /// the cache existed to avoid. `#[async_trait]` (rather than a bare
-/// `async fn` in the trait) keeps `Arc<dyn RequestAuthorizer>` — both
-/// `CratestackClient::with_request_authorizer` and
-/// `CratestackGrpcClient::with_request_authorizer` store the authorizer as
+/// `async fn` in the trait) keeps `Arc<dyn RequestAuthorizer>` —
+/// `CratestackClient::with_request_authorizer` stores the authorizer as
 /// a trait object — dyn-compatible; native AFIT would drop that. Same
 /// convention other dyn-dispatched async hook traits already use elsewhere
 /// in the workspace (e.g. `cratestack_core::audit::AuditSink`).

@@ -41,7 +41,6 @@ pub enum TransportStyle {
     #[default]
     Rest,
     Rpc,
-    Grpc,
 }
 
 impl TransportStyle {
@@ -49,7 +48,6 @@ impl TransportStyle {
         match self {
             TransportStyle::Rest => "rest",
             TransportStyle::Rpc => "rpc",
-            TransportStyle::Grpc => "grpc",
         }
     }
 }

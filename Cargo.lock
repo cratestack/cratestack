@@ -565,7 +565,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-util",
- "tonic 0.14.6",
+ "tonic",
  "tower-service",
  "url",
  "winapi",
@@ -577,9 +577,9 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85a885520bf6249ab931a764ffdb87b0ceef48e6e7d807cfdb21b751e086e1ad"
 dependencies = [
- "prost 0.14.4",
- "prost-types 0.14.4",
- "tonic 0.14.6",
+ "prost",
+ "prost-types",
+ "tonic",
  "tonic-prost",
  "ureq",
 ]
@@ -593,7 +593,7 @@ dependencies = [
  "base64 0.22.1",
  "bollard-buildkit-proto",
  "bytes",
- "prost 0.14.4",
+ "prost",
  "serde",
  "serde_json",
  "serde_repr",
@@ -1251,7 +1251,6 @@ dependencies = [
  "cratestack-migrate",
  "cratestack-mock-wiremock",
  "cratestack-parser",
- "cratestack-proto",
  "cratestack-sqlx",
  "cratestack-studio",
  "serde",
@@ -1289,7 +1288,6 @@ version = "0.8.4"
 dependencies = [
  "cratestack-core",
  "cratestack-parser",
- "cratestack-proto",
  "minijinja",
  "serde",
  "thiserror 2.0.18",
@@ -1329,7 +1327,6 @@ dependencies = [
  "futures-util",
  "minicbor",
  "minicbor-serde",
- "prost 0.13.5",
  "reqwest",
  "rustls",
  "serde",
@@ -1337,7 +1334,6 @@ dependencies = [
  "serde_urlencoded",
  "thiserror 2.0.18",
  "tokio",
- "tonic 0.13.1",
  "url",
 ]
 
@@ -1373,7 +1369,6 @@ dependencies = [
  "cratestack-axum",
  "cratestack-core",
  "cratestack-parser",
- "cratestack-proto",
  "minijinja",
  "serde",
  "serde_json",
@@ -1424,25 +1419,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cratestack-grpc"
-version = "0.8.4"
-dependencies = [
- "axum",
- "base64 0.22.1",
- "cratestack-core",
- "http",
- "prost 0.13.5",
- "prost-types 0.13.5",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tonic 0.13.1",
- "tonic-web",
- "tower",
- "tower-http",
-]
-
-[[package]]
 name = "cratestack-lsp"
 version = "0.8.4"
 dependencies = [
@@ -1460,7 +1436,6 @@ dependencies = [
  "cratestack-core",
  "cratestack-parser",
  "cratestack-policy",
- "cratestack-proto",
  "proc-macro2",
  "quote",
  "serde",
@@ -1540,7 +1515,6 @@ dependencies = [
  "cratestack-codec-cbor",
  "cratestack-codec-json",
  "cratestack-core",
- "cratestack-grpc",
  "cratestack-macros",
  "cratestack-migrate",
  "cratestack-parser",
@@ -1549,7 +1523,6 @@ dependencies = [
  "cratestack-sqlx",
  "futures-util",
  "minicbor-serde",
- "prost 0.13.5",
  "regex",
  "reqwest",
  "rustls",
@@ -1571,18 +1544,6 @@ version = "0.8.4"
 dependencies = [
  "cratestack-core",
  "serde",
-]
-
-[[package]]
-name = "cratestack-proto"
-version = "0.8.4"
-dependencies = [
- "cratestack-core",
- "cratestack-parser",
- "serde",
- "tempfile",
- "thiserror 2.0.18",
- "toml 0.9.12+spec-1.1.0",
 ]
 
 [[package]]
@@ -3066,28 +3027,6 @@ dependencies = [
  "glib-sys",
  "libc",
  "system-deps",
-]
-
-[[package]]
-name = "grpc-widgets-example"
-version = "0.1.0"
-dependencies = [
- "cratestack-codec-cbor",
- "cratestack-pg",
- "prost 0.13.5",
- "serde",
- "tokio",
-]
-
-[[package]]
-name = "grpc-widgets-rust-client-example"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "cratestack-pg",
- "prost 0.13.5",
- "serde",
- "tokio",
 ]
 
 [[package]]
@@ -5116,35 +5055,12 @@ dependencies = [
 
 [[package]]
 name = "prost"
-version = "0.13.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2796faa41db3ec313a31f7624d9286acf277b52de526150b7e69f3debf891ee5"
-dependencies = [
- "bytes",
- "prost-derive 0.13.5",
-]
-
-[[package]]
-name = "prost"
 version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "528ac67416ff8646872a3c02cad9cc4ee5dc9f9540c9b10771855c95cb2e5ae1"
 dependencies = [
  "bytes",
- "prost-derive 0.14.4",
-]
-
-[[package]]
-name = "prost-derive"
-version = "0.13.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
-dependencies = [
- "anyhow",
- "itertools",
- "proc-macro2",
- "quote",
- "syn 2.0.117",
+ "prost-derive",
 ]
 
 [[package]]
@@ -5162,20 +5078,11 @@ dependencies = [
 
 [[package]]
 name = "prost-types"
-version = "0.13.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52c2c1bf36ddb1a1c396b3601a3cec27c2462e45f07c386894ec3ccf5332bd16"
-dependencies = [
- "prost 0.13.5",
-]
-
-[[package]]
-name = "prost-types"
 version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f94967dc7688f3054c7fac87473ffae4cc4c3904800e2d9f5b857246d8963b0a"
 dependencies = [
- "prost 0.14.4",
+ "prost",
 ]
 
 [[package]]
@@ -7502,35 +7409,6 @@ checksum = "756daf9b1013ebe47a8776667b466417e2d4c5679d441c26230efd9ef78692db"
 
 [[package]]
 name = "tonic"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e581ba15a835f4d9ea06c55ab1bd4dce26fc53752c69a04aac00703bfb49ba9"
-dependencies = [
- "async-trait",
- "axum",
- "base64 0.22.1",
- "bytes",
- "h2",
- "http",
- "http-body",
- "http-body-util",
- "hyper",
- "hyper-timeout",
- "hyper-util",
- "percent-encoding",
- "pin-project",
- "prost 0.13.5",
- "socket2 0.5.10",
- "tokio",
- "tokio-stream",
- "tower",
- "tower-layer",
- "tower-service",
- "tracing",
-]
-
-[[package]]
-name = "tonic"
 version = "0.14.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac2a5518c70fa84342385732db33fb3f44bc4cc748936eb5833d2df34d6445ef"
@@ -7565,26 +7443,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "50849f68853be452acf590cde0b146665b8d507b3b8af17261df47e02c209ea0"
 dependencies = [
  "bytes",
- "prost 0.14.4",
- "tonic 0.14.6",
-]
-
-[[package]]
-name = "tonic-web"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "774cad0f35370f81b6c59e3a1f5d0c3188bdb4a2a1b8b7f0921c860bfbd3aec6"
-dependencies = [
- "base64 0.22.1",
- "bytes",
- "http",
- "http-body",
- "pin-project",
- "tokio-stream",
- "tonic 0.13.1",
- "tower-layer",
- "tower-service",
- "tracing",
+ "prost",
+ "tonic",
 ]
 
 [[package]]

@@ -26,9 +26,9 @@ no-database example, `examples/react-vite-refine`.
 ## 1. The problem
 
 CrateStack is schema-first: a `.cstack` file defines models and procedures,
-and `cratestack generate-dart`/`generate-typescript`/`generate-proto`
-derive a client (or `.proto` description) from it that cannot drift from
-the schema without a rebuild. Nothing generates a **mock server**. Anyone
+and `cratestack generate-dart`/`generate-typescript` derive a client from
+it that cannot drift from the schema without a rebuild. Nothing generates
+a **mock server**. Anyone
 testing a client (mobile app, web frontend, another backend service)
 against a CrateStack-generated API today either runs the real server (a
 real database, real downstream dependencies) or hand-writes stub fixtures
@@ -99,8 +99,7 @@ Read before designing, not assumed:
   construction — see `docs/design/no-database-mode.md`). Covered as of
   v2 (§8), motivated by `packages/cratestack-refine`, a model-CRUD-only
   consumer with no procedures of its own.
-- **Nothing adjacent already does this.** `cratestack generate-proto`
-  emits a `.proto` *description*, not a mock; no OpenAPI emitter or
+- **Nothing adjacent already does this.** No OpenAPI emitter or
   test-harness generator exists in this repo today (verified by reading
   every generator crate under `crates/` and every `cratestack generate-*`
   subcommand in `crates/cratestack-cli/src/cli_types.rs`). This is new
@@ -321,11 +320,6 @@ for consumers, not something `generate_package` enforces.
 
 ## 7. Explicitly out of scope (tracked, not forgotten)
 
-- **`transport grpc` schemas.** Rejected up front
-  (`WireMockGeneratorError::UnsupportedTransport`) — WireMock stubs a
-  JSON/HTTP wire shape, not protobuf-over-HTTP/2; grpc needs a different
-  mock target (a gRPC mock server, or `grpcurl`-style fixtures), not an
-  extension of this crate.
 - **Error-case stubs, request-body matching, auth emulation.** See §4.
   Also applies to model CRUD (§8): a `list` route's `field__operator=`
   filters, `sort`/`orderBy`, `limit`/`offset`, and `fields`/`include`

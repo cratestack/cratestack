@@ -43,7 +43,6 @@ What the current slice covers, across those three shapes:
 * mixin declarations and model `@use(...)` expansion
 * **SQL views** (`view <Name> from <Model>, ...`) — read-only, SQL-defined projections over one or more models on both backends; server-side `@@materialized` with `refresh()` via `REFRESH MATERIALIZED VIEW CONCURRENTLY`; same `@@allow("read", …)` policy machinery models use ([ADR-0003](https://cratestack.dev/internals/views-adr))
 * **`datasource { provider = "none" }`** (`db = None`) — a procedures-only server with no database at all: no `model` blocks allowed, and the generated `Cratestack`/router are genuinely `PgPool`-free rather than carrying an always-`None` pool (see [`docs/design/no-database-mode.md`](docs/design/no-database-mode.md))
-* **`transport grpc`** — a `.cstack` schema can declare `transport grpc` instead of REST/RPC, generating `.proto` messages (with a field-number lockfile), a tonic service, and Rust/Dart/TypeScript(gRPC-Web) clients; covers model CRUD (#171) and `procedure`s, unary or server-streaming (#208) (see [`docs/design/protobuf.md`](docs/design/protobuf.md)). **Planned for removal in v0.9** — don't build new integrations against it.
 
 ## Support Matrix
 
@@ -51,7 +50,6 @@ What the current slice covers, across those three shapes:
 | --- | --- | --- |
 | `datasource` | Supported | `provider` accepts `postgresql` (server), `sqlite` (embedded — native and `wasm32`), or `none` (procedures-only server, no database) |
 | `datasource { provider = "none" }` (`db = None`) | Supported | Server-only; the schema can never declare a `model`. Generates a genuinely `PgPool`-free `Cratestack`/router, with `ModelRouterState` and the event module omitted entirely rather than compiled in as dead code. See [`docs/design/no-database-mode.md`](docs/design/no-database-mode.md). |
-| `transport grpc` | Supported — **planned for removal in v0.9** | Mutually exclusive with REST/RPC transport. Generates `.proto` messages/enums (field-number lockfile), a tonic service, and gRPC clients (Rust, Dart native, TypeScript gRPC-Web). Covers model CRUD and `procedure`s (unary or server-streaming). See [`docs/design/protobuf.md`](docs/design/protobuf.md). |
 | `auth` | Supported | Single auth block |
 | `mixin` | Supported | Reusable field sets for models |
 | `model` | Supported | Includes relation and policy attributes in current slice |
@@ -74,8 +72,6 @@ The Rust workspace contains these main packages:
 * `cratestack-parser`: `.cstack` parser and semantic checker
 * `cratestack-policy`: canonical policy literals, predicates, and procedure-policy evaluation types
 * `cratestack-macros`: compile-time schema and client generation
-* `cratestack-proto`: `.proto` message/enum generator plus the field-number lockfile (`generate-proto`)
-* `cratestack-grpc`: server-side tonic service integration for `transport grpc` schemas
 * `cratestack-sql`: dialect-agnostic SQL primitives shared by both backends
 * `cratestack-sqlx`: SQLx-backed Postgres runtime and query/delegate primitives
 * `cratestack-rusqlite`: embedded SQLite backend (sync, no tokio, no policies; native and `wasm32-unknown-unknown` via `sqlite-wasm-rs`)
@@ -440,7 +436,6 @@ Practically, this means:
 
 CrateStack is not yet the right fit for:
 
-* new integrations built against `transport grpc` — it is supported today (model CRUD plus unary/server-streaming procedures) but is planned for removal in v0.9; don't build on it
 * production-stable exact typed non-Rust client generation across arbitrary projection shapes
 * full ZenStack-style policy and exposure parity
 * runtime custom-field resolution beyond the current generated trait metadata

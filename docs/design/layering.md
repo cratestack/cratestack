@@ -18,10 +18,12 @@ Tracking: this document is the source of truth for the ADRs listed in §8.
 
 > **Merge-order note.** Everything below is measured against `origin/main`
 > at `08fbb7e`. That commit includes #464 (`cfde4e0`), #465 (`6f14f1e`) and
-> #459, and the two design documents this paper cites most heavily —
-> [`grpc-codegen-deduplication.md`](grpc-codegen-deduplication.md) and
+> #459, and the design document this paper cites most heavily —
 > [`trusted-proxy-client-ip.md`](trusted-proxy-client-ip.md) — landed in
-> `0da6e00`. A branch cut before those will not contain them, and on such a
+> `0da6e00`. (A second document this note originally cited alongside it,
+> `grpc-codegen-deduplication.md`, was deleted by ADR 0017's gRPC/protobuf
+> removal — see that ADR's amendment trail on the layer tables below.) A
+> branch cut before those will not contain them, and on such a
 > branch `cratestack-redis` still lists `cratestack-axum` under
 > `[dependencies]` — i.e. §1's back-edge is still live. Rebase onto
 > `origin/main` before reading the verification claims as current.
@@ -75,7 +77,7 @@ But the deeper problem is not the missing check. It is that the rule was
 stated as a chain of five crate names, and the workspace now has thirty
 members across thirty-one crate directories.
 "parser → core/policy/sql → macros → runtimes" does not tell you where
-`cratestack-grpc` goes, or `cratestack-proto`, or the client-state stores,
+`cratestack-outbox` goes, or `cratestack-service`, or the client-state stores,
 or whether `cratestack-axum` may depend on `cratestack-sql` (it does, as
 of #465 — see §5.5). A rule you cannot apply to a new crate without asking
 the maintainer is not an architecture; it is a habit.
@@ -95,9 +97,9 @@ flattering.
 | **L1** | Contracts | `cratestack-sql`, `cratestack-core::{store,audit,codec}`, `cratestack-policy`, `cratestack-auth` | 2,799 / — / 822 / 4,438 |
 | **L2** | Adapters | `cratestack-sqlx`, `cratestack-rusqlite`, `cratestack-redis`, `cratestack-codec-{cbor,json}`, `cratestack-client-store-{sqlite,redis}`, `cratestack-outbox`, `cratestack-service` | 10,907 / 4,828 / 2,167 / 59 / 37 / 305 / 245 / 644 / 845 |
 | **L3** | Execution | *(nothing — see §5.1)* | 0 |
-| **L4** | Bindings | `cratestack-axum`, `cratestack-grpc`, `cratestack-client-{rust,dart,typescript,flutter}` | 5,212 / 752 / 3,269 / 4,537 / 3,525 / 553 |
+| **L4** | Bindings | `cratestack-axum`, `cratestack-client-{rust,dart,typescript,flutter}` | 5,212 / 3,269 / 4,537 / 3,525 / 553 |
 | **L5** | Facades | `cratestack-pg`, `cratestack-api`, `cratestack-sqlite`, `cratestack-client` | 246 / 156 / 75 / 150 |
-| **⊥** | Compiler | `cratestack-macros` (+ `cratestack-proto`) | 18,172 / 3,013 |
+| **⊥** | Compiler | `cratestack-macros` | 18,172 |
 
 (LoC counted over each crate's `src/` including its in-crate `tests_*.rs`
 files, which is where this workspace keeps most unit tests.)
@@ -184,7 +186,7 @@ model does not ask for these to be unified.
 policy enforcement, idempotency reservation and replay, rate-limit
 admission, audit *fan-out*, event publication — expressed once, against
 `(op_id, principal, idempotency key, request bytes)`, with no knowledge of
-whether the caller arrived over REST, RPC, gRPC, SSE, or a future
+whether the caller arrived over REST, RPC, SSE, or a future
 WebSocket.
 
 **Must not be here:** anything transport-shaped (`http::HeaderMap`,
@@ -206,9 +208,8 @@ lines of code. §5.1 describes what its absence costs today.
 
 **Belongs here:** one wire protocol's worth of encode/decode/route/status
 mapping. `cratestack-axum` owns REST routes, the RPC dispatcher, cbor-seq
-and SSE encoders, header extraction, and the two `tower::Layer`s.
-`cratestack-grpc` owns the tonic surface. The four client-generator crates
-own the outbound half in four languages.
+and SSE encoders, header extraction, and the two `tower::Layer`s. The four
+client-generator crates own the outbound half in four languages.
 
 **Must not be here:** a rule about *whether* an operation may run. A
 binding decides how a decision is expressed on the wire (which status
@@ -234,7 +235,7 @@ runs at `rustc` time and *emits into* L2 through L5: `model/` and `view/`
 emit descriptors and row codecs that L2 consumes, `axum/` and `transport/`
 emit handlers that live at L4, `client/` emits the generated Rust client,
 and `include/{server,embedded,client}.rs` compose the whole module. It
-depends downward on `cratestack-{core,parser,policy,proto}` and on nothing
+depends downward on `cratestack-{core,parser,policy}` and on nothing
 above L1 — correct, since a compiler must not link its own output.
 
 That "nothing above L1" is a real constraint that a plain integer
@@ -242,13 +243,12 @@ comparison cannot express, because L5 depends on ⊥ and ⊥ must not depend on
 L2. ⊥ needs a *rule*, not a number; ADR 0014 records this as an open
 question rather than inventing an answer.
 
-`cratestack-proto` sits alongside it for the same reason (lockfile
-ownership + `.proto` text emission). `cratestack-cli`, `cratestack-lsp`,
+`cratestack-cli`, `cratestack-lsp`,
 `cratestack-migrate` and `cratestack-studio` are tools, not layers; they
 consume L0/L1 and are consumed only by each other.
 
 **The compiler is parameterised upward by L5.** `cratestack-pg`'s
-`postgres`, `grpc`, `rate_limit` and `pgvector` features each forward to a
+`postgres`, `rate_limit` and `pgvector` features each forward to a
 same-named feature on `cratestack-macros`, which the macro reads via
 `cfg!(feature = "...")` against *its own* compiled feature set — the
 mechanism `extensions.md` §2 documents at length after the
@@ -283,20 +283,18 @@ cratestack-core         ->  (none)
 cratestack-parser       ->  core
 cratestack-policy       ->  core
 cratestack-sql          ->  core, policy                     (L1 -> L1)
-cratestack-macros       ->  core, parser, policy, proto
-cratestack-proto        ->  core
+cratestack-macros       ->  core, parser, policy
 cratestack-sqlx         ->  core, policy, sql
 cratestack-rusqlite     ->  core, sql
 cratestack-redis        ->  core
 cratestack-axum         ->  core, sql
-cratestack-grpc         ->  core
 cratestack-client-rust  ->  core, codec-cbor, codec-json
-cratestack-client-dart  ->  core, proto
-cratestack-client-ts    ->  core, proto
+cratestack-client-dart  ->  core
+cratestack-client-ts    ->  core
 cratestack-client-flutter -> client-rust                     (L4 -> L4)
 cratestack-client-store-sqlite -> client-rust                (L2 -> L4 !)
 cratestack-client-store-redis  -> client-rust                (L2 -> L4 !)
-cratestack-pg           ->  core, parser, policy, sql, macros, sqlx, axum, grpc, client-rust
+cratestack-pg           ->  core, parser, policy, sql, macros, sqlx, axum, client-rust
 cratestack-api          ->  core, parser, policy, sql, macros, axum, client-rust
 cratestack-sqlite       ->  core, parser, policy, sql, macros, rusqlite,
                             client-rust  [target: cfg(not(target_arch = "wasm32"))]
@@ -500,15 +498,6 @@ consequences other documents have had to work around:
   outbox-sourced event" (restated as a scope limit in §6.5). That is not a
   policy gap; it is a layering gap. Policy lives at L2, and SSE does not go
   through L2.
-- `trusted-proxy-client-ip.md` decision 6 records that `transport grpc`
-  builds a *second* `axum::Router` via `into_router()`
-  (`macros/src/include/server/grpc/service.rs:187`), so a consumer who
-  layers protection onto `router()`'s output leaves gRPC exactly as
-  exposed as before. Cross-cutting concerns applied as `tower::Layer`s
-  attach to router instances, and there are now two. Commit `08fbb7e`
-  (#416/#459) is the concrete instance: a spoofable-header fix applied
-  inside `IdempotencyLayer` and `RateLimitLayer` — once per `Layer`, and
-  therefore only on the routers the consumer remembered to layer.
 - `idempotency-rate-limit-declarative-surface.md` §4.2 has had
   `@no_idempotency` codegen deferred *since it was written*, explicitly
   "gated on `OpExecutor`" — the ticket sketch in its §6 says so in its
@@ -579,8 +568,8 @@ submodules this role emits. It is not proposed here — it is a
 ### 5.4 There is no shared client IR
 
 `cratestack-client-dart` and `cratestack-client-typescript` have identical
-dependency sets (`cratestack-core`, `cratestack-proto`, `minijinja`,
-`serde`, `thiserror`) and thirteen identically-named source files, six of
+dependency sets (`cratestack-core`, `minijinja`,
+`serde`, `thiserror`) and seven identically-named source files, six of
 which are parallel re-derivations of the same facts from
 `cratestack_core::schema`: `naming.rs` (144 / 204 lines), `views.rs`
 (162 / 241), `find_many_views.rs` (175 / 141), `context.rs` (206 / 183),
@@ -593,14 +582,16 @@ In layer terms: L4's outbound half has no L1. There is a contract — the
 generated client surface — and it is written down twice, in Rust, in two
 crates that cannot see each other.
 
-`grpc-codegen-deduplication.md` Decision 3 (a proposal, not yet a decision)
-already sketches the first slice of the fix — a `cratestack-client-grpc-shared`
-crate for `GrpcMessageView`/`GrpcWireKind`/the collector fns — and
-recommends it on precisely the precedent this document formalises:
-`cratestack-sql` shared by `cratestack-sqlx`/`cratestack-rusqlite`. This
-document does not reopen that; it names the general shape the proposal is
-an instance of. Note that §5.6 and ADR 0013 argue the *same* precedent must
-not be extended to runtimes; the distinguishing test is in ADR 0013.
+`grpc-codegen-deduplication.md` Decision 3 (a proposal, not yet a decision,
+for a crate shared between `cratestack-client-{rust,dart,typescript}` and
+the now-removed `cratestack-grpc` client generator) sketched the first
+slice of a fix along precisely the precedent this document formalises:
+`cratestack-sql` shared by `cratestack-sqlx`/`cratestack-rusqlite`. That
+proposal document was deleted along with `transport grpc` itself (ADR
+0017); the dart/typescript duplication described above is unaffected by
+the removal and remains open. Note that §5.6 and ADR 0013 argue the *same*
+precedent must not be extended to runtimes; the distinguishing test is in
+ADR 0013.
 
 ### 5.5 Two small L1 purity breaches, both from #465
 
@@ -759,9 +750,10 @@ Deliberately left open, each to its own ADR (§8) or existing document:
   architectural decision, and this paper does not schedule it.
 - **The composer-scaffold consolidation** (§5.3) — a `cratestack-macros`
   refactor ticket, sized and scoped in its own PR.
-- **Shared client IR** (§5.4) — already proposed by
-  `grpc-codegen-deduplication.md` Decision 3. This paper adds vocabulary
-  to that argument and takes nothing away from it.
+- **Shared client IR** (§5.4) — a fix was once sketched by
+  `grpc-codegen-deduplication.md` Decision 3, deleted along with
+  `transport grpc` (ADR 0017); the dart/typescript duplication itself is
+  still open and unscoped by any surviving proposal.
 - **Splitting `cratestack-core`.** It is the one crate that genuinely
   spans layers: `schema` is L0, `store`/`audit`/`codec` are L1, and
   `context`/`envelope`/`error`/`page`/`events`/`rpc`/`transport` and the

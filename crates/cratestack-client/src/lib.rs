@@ -74,28 +74,6 @@
 //!   modules (`FieldModuleKind::Client`, `crates/cratestack-macros/src/
 //!   relation/root.rs`).
 //!
-//! **gRPC is deliberately out of scope for this facade — default features
-//! only, not "every feature combination".** `cratestack-client-rust`'s own
-//! `grpc` feature (`CratestackGrpcClient`, ticket #209's Rust codegen path)
-//! pulls in `tonic`, which — through its default `router`/`transport`
-//! features — pulls in `axum` transitively, defeating the entire point of
-//! this crate for the one consumer who opts into it. This crate has no
-//! `grpc` Cargo feature to forward that choice through, and never turns on
-//! `cratestack-client-rust/grpc` or `cratestack-macros/grpc`, so a
-//! `transport grpc` schema fails to compile here with `cratestack-macros`'s
-//! existing "enable the feature" `compile_error!`
-//! (`crates/cratestack-macros/src/include/reject_grpc.rs`). A consumer that
-//! genuinely needs a native gRPC client has two options, neither of which
-//! this facade tries to paper over: depend on `cratestack-client-rust`
-//! directly with `features = ["grpc"]` (accepting `tonic`/`axum` into that
-//! one crate's own graph, deliberately, with eyes open), or use
-//! `cratestack-pg`/`cratestack-api` with their own `grpc` feature if the
-//! consumer is a server that also happens to embed a client. The
-//! `facade-disjointness` CI job's `cargo tree` checks below therefore run
-//! against this crate's **default** feature set — that is the entire
-//! surface there is to prove absence for, since no feature combination this
-//! crate can express ever adds `axum` to the graph.
-//!
 //! Schema macros emit `::cratestack::*` paths, so consumers rename this
 //! crate via Cargo's `package =` field:
 //!

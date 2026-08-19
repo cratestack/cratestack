@@ -205,8 +205,10 @@ Any one of these is sufficient grounds to revisit:
 
 1. A funded, concrete third database backend — at which point the honest
    question is not "widen L1" but "how much of the 85% is worth extracting
-   *now that a second consumer exists*", which is exactly the shape
-   `grpc-codegen-deduplication.md` Decision 3 argues for its own case.
+   *now that a second consumer exists*". `grpc-codegen-deduplication.md`
+   Decision 3 once argued this same shape for its own (now-removed, see
+   ADR 0017) case; the shape of the argument outlives that specific
+   instance.
 2. Two adapters independently needing the same non-placeholder `Dialect`
    method. That is the trait's own stated trigger.
 3. A demand to run generated model CRUD against a store that is not SQL —

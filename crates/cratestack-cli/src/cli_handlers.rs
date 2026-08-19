@@ -60,12 +60,6 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             refine,
             tanstack,
         )?,
-        Command::GenerateProto {
-            schema,
-            out,
-            package,
-            check,
-        } => crate::generate_proto::handle_generate_proto(schema, out, package, check)?,
         Command::GenerateWiremock {
             schema,
             out,
@@ -138,7 +132,6 @@ fn handle_generate_dart(
     native_cbor: bool,
 ) -> Result<()> {
     let parsed = parse_schema_or_render(&schema)?;
-    let pb_lock = read_pb_lock_if_present(&schema)?;
     let schema_sha256 = hash_schema_source(&schema)?;
     let package = cratestack_client_dart::generate_package(
         &parsed,
@@ -147,7 +140,6 @@ fn handle_generate_dart(
             base_path,
             template_dir,
             preset: preset.into(),
-            pb_lock,
             schema_sha256,
             native_cbor,
         },
@@ -186,7 +178,6 @@ fn handle_generate_typescript(
     tanstack: bool,
 ) -> Result<()> {
     let parsed = parse_schema_or_render(&schema)?;
-    let pb_lock = read_pb_lock_if_present(&schema)?;
     let schema_sha256 = hash_schema_source(&schema)?;
     let package = cratestack_client_typescript::generate_package(
         &parsed,
@@ -198,7 +189,6 @@ fn handle_generate_typescript(
             full_selection,
             refine,
             tanstack,
-            pb_lock,
             schema_sha256,
         },
     )?;
@@ -233,28 +223,6 @@ fn handle_generate_wiremock(
     write_generated_files(&out, files)?;
     println!("generated WireMock stub mappings: {}", out.display());
     Ok(())
-}
-
-/// `transport grpc` schemas need the schema's `<schema>.pb.lock` to
-/// generate a gRPC client — TypeScript's gRPC-Web client (ticket #172) and
-/// Dart's native `package:grpc` client (ticket #210) alike — for the real
-/// field numbers (`docs/design/protobuf.md` §3.3), the same derived path
-/// `cratestack generate-proto` itself uses
-/// (`crate::generate_proto::handle_generate_proto`). REST/RPC schemas
-/// don't have (or need) one, so a missing file here is not an error at
-/// this layer — `cratestack_client_typescript::generate_package`/
-/// `cratestack_client_dart::generate_package` are what turn "no lock" into
-/// a hard error, and only for `transport grpc` schemas.
-fn read_pb_lock_if_present(schema: &std::path::Path) -> Result<Option<cratestack_proto::PbLock>> {
-    let lock_path = schema.with_extension("pb.lock");
-    if !lock_path.exists() {
-        return Ok(None);
-    }
-    let source = std::fs::read_to_string(&lock_path)
-        .with_context(|| format!("failed to read '{}'", lock_path.display()))?;
-    let lock = cratestack_proto::PbLock::from_toml(&source)
-        .with_context(|| format!("failed to parse '{}'", lock_path.display()))?;
-    Ok(Some(lock))
 }
 
 fn handle_diff_schemas(old: PathBuf, new: PathBuf, json: bool) -> Result<()> {

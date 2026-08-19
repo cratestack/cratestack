@@ -24,9 +24,7 @@ mod datasource_guard;
 mod decimal_arg;
 mod embedded;
 mod extension_gate;
-mod grpc_pb;
 mod parse;
-mod reject_grpc;
 mod schema_args;
 mod server;
 

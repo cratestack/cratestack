@@ -451,25 +451,6 @@ fn swr_index_reexports_every_model_and_procedures() {
     assert!(index.contains("export * from \"./procedures.js\";"));
 }
 
-#[test]
-fn swr_rejects_grpc_transport() {
-    let schema =
-        cratestack_parser::parse_schema_file("../../examples/grpc-widgets/schemas/widgets.cstack")
-            .expect("grpc fixture should parse");
-    let error = generate_package(
-        &schema,
-        &TypeScriptGeneratorConfig {
-            swr: true,
-            ..TypeScriptGeneratorConfig::default()
-        },
-    )
-    .expect_err("--swr must reject transport grpc");
-    assert!(matches!(
-        error,
-        cratestack_client_typescript::TypeScriptGeneratorError::SwrUnsupportedForGrpc
-    ));
-}
-
 /// Acceptance test for the ownership rule (issue #304's self-review ask:
 /// does this actually exercise the shared-vs-owned split, or could it
 /// pass by accident on a trivial fixture?). `swr_shared_types.cstack`

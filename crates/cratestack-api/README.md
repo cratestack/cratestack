@@ -101,13 +101,6 @@ demonstrated manually instead.
 
 - **`db = Postgres`** — fails to compile; see above. This crate is
   `db = None`-only, by design, not by an accidentally-missing feature.
-- **`transport grpc`** — `cratestack-grpc`/`prost` are not dependencies of
-  this crate, so a `transport grpc` schema can't be compiled through
-  `cratestack-api` at all, regardless of what the gRPC codegen itself
-  supports (model CRUD and `procedure`s, unary or server-streaming, are
-  both wired in — see `cratestack-grpc`'s README). `transport rpc` and REST
-  (the default) both work fully. `transport grpc` is also planned for
-  removal repo-wide in v0.9, so this gap isn't going to be closed.
 - **Database migrations** — there's no database to migrate.
 
 ## Features
@@ -131,7 +124,7 @@ demonstrated manually instead.
   cratestack#498 (**breaking** — see each package's migration note) that
   parses both notations, so pairing this backend with a generated client
   is safe regardless of magnitude — see `cratestack-core`'s README for
-  the full picture and the two scope notes (gRPC-preset clients, the
-  TypeScript `swr` preset) that still apply.
+  the full picture and the TypeScript `swr` preset scope note that still
+  applies.
 - `codec-json` *(default)* — forwards the JSON codec to the generated
   client runtime, alongside CBOR.

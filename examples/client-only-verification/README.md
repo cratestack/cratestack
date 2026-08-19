@@ -15,10 +15,16 @@ requires stepping outside that shared graph entirely.
 
 Unlike that crate, there's no Cargo feature to toggle here for a "present"
 half of the proof: this crate only ever builds `cratestack-client` with its
-default features, and `cratestack-client` has no `grpc` feature (the one
-thing that could ever pull `axum` in transitively, via `tonic`) to enable in
-the first place — see `crates/cratestack-client/src/lib.rs`'s module doc for
-why.
+default features, and `cratestack-client` has no feature that could ever
+pull `axum` in transitively — `crates/cratestack-client/Cargo.toml`'s
+`[features]` table only has `decimal-rust-decimal`/`decimal-bigdecimal`/
+`codec-json` plus the two extension-declaration gates, none of which touch
+`cratestack-axum`.
+(`cratestack-client` never forwarded a `grpc` feature of its own, precisely
+to avoid `cratestack-client-rust`'s former `grpc` feature pulling `tonic` —
+and through it, `axum` — into this crate's graph; now that gRPC/protobuf
+support has been removed entirely, `cratestack-client-rust` has no `grpc`
+feature left to avoid either, see `docs/adr/0017-remove-grpc-protobuf.md`.)
 
 ## The schema
 

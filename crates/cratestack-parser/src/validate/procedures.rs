@@ -223,9 +223,6 @@ pub(super) fn validate_procedure_deprecated_attribute(
 /// schema-compile time instead of extended to RPC: whether RPC should
 /// honour a declared status is a real design question left to the
 /// maintainer, not something to decide by extending scope silently.
-/// gRPC (`TransportStyle::Grpc`) is left unrestricted — tonic's gRPC
-/// status model never reads the inner HTTP status this attribute
-/// controls, so the combination is inert there, not silently wrong.
 pub(super) fn validate_procedure_status_attribute(
     procedure: &cratestack_core::Procedure,
     schema: &cratestack_core::Schema,

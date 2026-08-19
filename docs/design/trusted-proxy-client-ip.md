@@ -20,8 +20,11 @@
    `cratestack-axum::headers::forwarded::parse_client_ip`'s `select_hop` and covered by
    a regression test (`hop_count_walks_right_to_left_not_left_to_right`) that is
    verified to fail under a left-to-right implementation.
-5. **gRPC (`transport grpc` / `into_router()`) is in scope**, not deferred. Covered by
-   `crates/cratestack-pg/tests/trusted_proxy_client_ip_grpc.rs`.
+5. ~~**gRPC (`transport grpc` / `into_router()`) is in scope**, not deferred. Covered by
+   `crates/cratestack-pg/tests/trusted_proxy_client_ip_grpc.rs`.~~ (Superseded
+   2026-08-18: `transport grpc` and the test file above were removed along with all
+   protobuf/gRPC support — see `docs/adr/0017-remove-grpc-protobuf.md`. The REST/RPC
+   decisions above (1–4) are unaffected and remain in force.)
 
 ### Post-review remediation (confirmed security bypass, fixed before merge)
 
@@ -83,9 +86,13 @@ single hand-written `cratestack_axum::ClientIpContext` type with its own infalli
 `FromRequestParts` impl (reads `Parts::extensions` directly, via the same seam axum's
 own `Extensions` extractor uses) — same non-breaking property, same "one combined
 extractor" shape the sketch intended, adjusted for what the pinned axum version actually
-supports. The gRPC path (`ApiServer::call`, a raw tonic `Service` rather than an axum
+supports. ~~The gRPC path (`ApiServer::call`, a raw tonic `Service` rather than an axum
 handler) builds the same type via `ClientIpContext::from_extensions(&http::Extensions)`
-instead, since it never runs axum's extractor machinery at all.
+instead, since it never runs axum's extractor machinery at all.~~ (Struck 2026-08-18:
+the gRPC path and `ApiServer` were removed along with all protobuf/gRPC support — see
+`docs/adr/0017-remove-grpc-protobuf.md`. `ClientIpContext::from_extensions` remains as
+the shared construction path used by the `FromRequestParts` impl above and by non-axum
+test harnesses that build requests by hand.)
 
 ### Decisions needed (historical — see "Decisions recorded" above)
 
@@ -150,7 +157,10 @@ instead, since it never runs axum's extractor machinery at all.
 | **Matches precedent** | Consistent with `RateLimitLayer`/`IdempotencyLayer`'s "app wires deployment-tier config at startup via `.layer(...)`" pattern — real, confirmed in `crates/cratestack-axum/src/ratelimit/` and `.../idempotency/`. The stronger claim in the original draft — that `docs/design/idempotency-rate-limit-declarative-surface.md` forbids Option B outright — overstates the doc: its actual axis is `.cstack`-declarative-vs-imperative, and it names `db = Postgres` (a macro-invocation parameter, structurally what B proposes) as a legitimate example of config living outside `.cstack`. Don't cite it as a hard "non-goal" B violates; it doesn't say that | Not itself forbidden by the doc, but still costs every consumer a mechanical bootstrap edit for a feature most deployments won't tune away from the default |
 | **Connect-info footgun** | A consumer can forget the layer/extension: fails safe, `client_ip: None` | Identical footgun, mislabeled as A-only in the original draft: B still needs `ConnectInfo<SocketAddr>` extraction, which still depends on `into_make_service_with_connect_info` being wired correctly. B's "forces a decision at compile time" only covers the config *value*, not the connect-info wiring, which is the part most likely to be forgotten in practice |
 | **Plumbing depth** | One combined extractor added at the 7 real call sites (not 8 — see below) → inline resolution in `enrich_context_from_headers` | Inline at the same 7 call sites, via state instead of an extension |
-| **gRPC scope** | Silent on `into_router()`'s separate `axum::Router` — needs explicit follow-up either way | Same gap — threading through `router()` does nothing for the independently-built gRPC router |
+
+*(A "gRPC scope" row comparing `into_router()`'s separate `axum::Router` under both options
+was struck 2026-08-18 — `transport grpc` no longer exists; see
+`docs/adr/0017-remove-grpc-protobuf.md`.)*
 
 Both require: extending `parse_client_ip` with hop-count awareness (per the precise,
 right-to-left semantics in decision 5), and adding `ConnectInfo<SocketAddr>` extraction
@@ -177,15 +187,27 @@ Within "outside `router()`," prefer **A' over the original A**: a plain
 second `Extension<ResolvedClientIp>` round-trip. Same non-breaking property, same
 consumer-facing `.layer(...)` idiom, smaller and more auditable diff.
 
-Before this goes to implementation, the design doc must additionally: (a) pin down the
+Before this goes to implementation, the design doc must additionally: pin down the
 hop-count algorithm as right-to-left, not left-to-right (decision 5) — otherwise the
-feature doesn't actually close the spoofing gap for multi-hop chains; and (b) explicitly
-scope whether the separate gRPC `axum::Router` (`into_router()`) is in or out of scope for
-this change (decision 6) — silently dropping it means the acceptance criterion "Forwarded
-headers ignored from untrusted peers, falling back to socket peer address" is not actually
-met workspace-wide for `transport grpc` schemas.
+feature doesn't actually close the spoofing gap for multi-hop chains.
+
+*(This paragraph originally had a second clause (b) scoping whether the separate gRPC
+`axum::Router` from `into_router()` was in or out of scope (decision 6). Struck
+2026-08-18 — `transport grpc` no longer exists; see
+`docs/adr/0017-remove-grpc-protobuf.md`.)*
 
 ### Implementation sketch (for the follow-up PR, not this comment)
+
+> **Amended 2026-08-18 (ADR 0017).** This sketch is still live guidance for the
+> follow-up PR, but it was written while `transport grpc` existed and its gRPC
+> clauses are now dead: there is no second `into_router()` instance to layer, and
+> `crates/cratestack-macros/src/include/server/grpc/service.rs` no longer exists.
+> Read every "and the gRPC router" / "both `router()` and `into_router()`"
+> qualifier below as applying to `router()` alone. Decision 6's router-instance
+> gap, which several steps below defer to, is moot for the same reason — nothing
+> in this sketch is blocked on it any more. The non-gRPC substance (hop-count
+> algorithm, module layout, the seven dispatch call sites, the CHANGELOG
+> migration note) is unaffected.
 
 1. **New module**, mirroring `crates/cratestack-axum/src/ratelimit/` and `.../idempotency/`
    (confirmed real precedent — both are multi-file, all comfortably under the 200-line
@@ -282,12 +304,14 @@ What changed from the original draft, and why:
    table's "Breaking: No" for Option A was true only of `router()`'s signature, not of the
    feature's full blast radius; called this out explicitly so it isn't read as "Option A has
    no breaking surface."
-5. **Added the gRPC router-instance gap (decision 6).** `into_router()` in
+5. ~~**Added the gRPC router-instance gap (decision 6).** `into_router()` in
    `crates/cratestack-macros/src/include/server/grpc/service.rs` builds a second, separately
    served `axum::Router` for `transport grpc` schemas. Both options as originally scoped
    would leave that router's requests exactly as exposed as before the fix, silently missing
    one of the issue's acceptance criteria for that transport. Neither the original options
-   table nor the migration note mentioned this; both now do.
+   table nor the migration note mentioned this; both now do.~~ (Struck 2026-08-18: `transport
+   grpc` was removed — see `docs/adr/0017-remove-grpc-protobuf.md`. This reviewer note no
+   longer describes anything reachable in the codebase.)
 6. **Pinned down the hop-count algorithm's direction (decision 5).** The original draft's
    phrasing ("walking up to max_hops... entries instead of always taking the first") is
    ambiguous enough to be implemented left-to-right, which would not actually fix the

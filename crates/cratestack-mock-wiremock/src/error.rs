@@ -7,18 +7,6 @@ use thiserror::Error;
 /// out of scope today and why.
 #[derive(Debug, Error)]
 pub enum WireMockGeneratorError {
-    /// `schema.transport == TransportStyle::Grpc`. gRPC's wire shape
-    /// (protobuf, HTTP/2, `.proto`-typed messages) doesn't map onto a
-    /// WireMock JSON/HTTP stub the way `rest`/`rpc` do; a `grpc` schema
-    /// needs a different mock target entirely (see the design doc's "Is
-    /// WireMock the right target at all" discussion).
-    #[error(
-        "schema declares `transport grpc`, which cratestack-mock-wiremock does not support — \
-         WireMock stubs a JSON/HTTP wire shape, not protobuf-over-HTTP/2; see \
-         docs/design/wiremock-stubs.md"
-    )]
-    UnsupportedTransport,
-
     /// A type reference reachable from either a procedure's return type
     /// or a model's own field graph resolves to a schema construct v1
     /// doesn't know how to synthesize an example value for. In practice

@@ -1,4 +1,4 @@
-use cratestack_core::{Field, Schema, TransportStyle};
+use cratestack_core::{Field, Schema};
 use serde::Serialize;
 
 use crate::config::TypeScriptGeneratorConfig;
@@ -8,7 +8,6 @@ use crate::find_many_views::{
     build_find_many_interface, build_order_by_clause_interface, build_sort_field_view,
     build_where_interface,
 };
-use crate::grpc::GrpcContext;
 use crate::naming::{occupied_type_names, package_class_stem, to_pascal_case};
 use crate::package_deps::{DependencyEntry, dev_dependencies_for, peer_dependencies_for};
 use crate::procedure_views::{ProcedureView, build_procedure};
@@ -42,10 +41,6 @@ pub(crate) struct TemplateContext {
     /// call site looks a name up in (`crate::decimal`'s module doc has the
     /// full rationale; cratestack#499 review remediation).
     decimal_shapes: Vec<DecimalShapeView>,
-    /// Only set for `transport grpc` schemas — see `crate::grpc`'s module
-    /// doc. `None` for REST/RPC, where the REST/RPC-specific templates
-    /// never reference `grpc.*` in the first place.
-    grpc: Option<GrpcContext>,
     /// Issue #571 (`--refine`). Mirrors
     /// `TypeScriptGeneratorConfig::refine`, and is read by the two
     /// *unconditional* templates that also change under the flag —
@@ -196,34 +191,21 @@ pub(crate) fn build_template_context(
         .map(build_model_api)
         .collect::<Vec<_>>();
     disambiguate_model_api_keys(&mut models);
-    // `transport grpc` never routes procedures at all — ticket #171 didn't
-    // wire them into the generated tonic service (see `crate::grpc`'s
-    // module doc) — so a gRPC-Web client exposing `.procedures.foo()`
-    // would only ever hit `Unimplemented`. Empty rather than generated but
-    // dead.
-    let (procedures, query_procedures, mutation_procedures) =
-        if schema.transport == TransportStyle::Grpc {
-            (Vec::new(), Vec::new(), Vec::new())
-        } else {
-            let procedures = schema
-                .procedures
-                .iter()
-                .map(|procedure| build_procedure(procedure, &occupied_type_names, &enum_names))
-                .collect::<Vec<_>>();
-            let query_procedures = procedures
-                .iter()
-                .filter(|procedure| procedure.kind == "query")
-                .cloned()
-                .collect();
-            let mutation_procedures = procedures
-                .iter()
-                .filter(|procedure| procedure.kind == "mutation")
-                .cloned()
-                .collect();
-            (procedures, query_procedures, mutation_procedures)
-        };
-
-    let grpc = crate::grpc::build_grpc_context(schema, config.pb_lock.as_ref())?;
+    let procedures = schema
+        .procedures
+        .iter()
+        .map(|procedure| build_procedure(procedure, &occupied_type_names, &enum_names))
+        .collect::<Vec<_>>();
+    let query_procedures = procedures
+        .iter()
+        .filter(|procedure| procedure.kind == "query")
+        .cloned()
+        .collect();
+    let mutation_procedures = procedures
+        .iter()
+        .filter(|procedure| procedure.kind == "mutation")
+        .cloned()
+        .collect();
 
     let refine_version_requirement = if config.refine {
         format!("^{}", env!("CARGO_PKG_VERSION"))
@@ -243,7 +225,6 @@ pub(crate) fn build_template_context(
         query_procedures,
         mutation_procedures,
         decimal_shapes,
-        grpc,
         refine: config.refine,
         refine_version_requirement: refine_version_requirement.clone(),
         // Built only when the flag is on: a default run has no template

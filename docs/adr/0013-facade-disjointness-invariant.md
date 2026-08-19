@@ -203,3 +203,15 @@ crate" — which two shipped examples contradict.
 **D. Enforce direction and disjointness in CI.** Not rejected — out of scope. It is one
 decision per ADR, and this is not that decision; the same missing tooling covers the
 whole dependency rule, so it belongs to ADR 0014, not here.
+
+**Cross-reference note (added by ADR 0017's implementation, 2026-08-18).** This ADR's
+Context (the "just abstract the other 85%" pressure) and Alternative C both cite
+`grpc-codegen-deduplication.md` Decision 3 as an example of the same "second consumer
+justifies extraction" argument applied to *client* codegen rather than runtimes — the
+distinction this ADR's Decision turns on. That design document, and the `transport grpc`
+feature it was written for, were deleted in their entirety by ADR 0017 (dropping
+protobuf/gRPC support). The citations are left as historical record of the argument this
+ADR responded to; the Decision itself does not depend on that document continuing to
+exist, and is unchanged. `cratestack-grpc`/`cratestack-proto` were never facades or
+database adapters under this ADR's own vocabulary, so their removal does not touch the
+backend-disjointness invariant this ADR states.

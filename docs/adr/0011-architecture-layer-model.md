@@ -182,6 +182,19 @@ predicate, rather than the `compiler` role ADR 0014 originally proposed. See ADR
 Amendment section for the full argument. This ADR's own table and prose are unchanged; only
 the checker's encoding of the same fact is simpler than either document originally assumed.
 
+**Cross-reference note (added by ADR 0017's implementation, 2026-08-18).**
+`cratestack-grpc` and `cratestack-proto` — named in this ADR's Context (the "does not tell
+you where X belongs" argument), decision 2's table (`L4` and `⊥` rows), and the Deferred
+section's `grpc-codegen-deduplication.md` citation — were deleted in their entirety by ADR
+0017 (dropping protobuf/gRPC support). This ADR's table and prose are historical: they
+describe the crate graph as it stood on 2026-08-08 and are left unchanged rather than edited
+to match the current graph, per this repo's convention of amending rather than rewriting
+accepted decision records. `docs/adr/layers.toml` (the live, checked input to the layer
+checker) has been updated to remove both crates' entries; that file, not this table, is the
+current source of truth for crate-to-layer assignment. See ADR 0017 for the removal decision
+and `docs/design/layering.md`'s own 2026-08-18 updates for the current-state description this
+ADR's Context section once provided.
+
 ## Alternatives considered
 
 **Keep CLAUDE.md's one-line flow and fix violations as found.** Strongest case: it costs

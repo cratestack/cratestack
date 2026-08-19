@@ -62,10 +62,10 @@ pub const DEFAULT_BODY_LIMIT_BYTES: usize = 2 * 1024 * 1024;
 
 /// Bound used at every `axum::body::to_bytes(body, N)` call site that
 /// re-buffers a `Response` produced in-process (RPC batch per-frame
-/// re-encoding, handler-error re-shaping, the gRPC bridge, and the
-/// per-frame codec round-trip helper — see
-/// `crates/cratestack-axum/src/rpc/{batch,error_encode,grpc_bridge,
-/// codec_helpers}.rs`). None of these four sites face an untrusted
+/// re-encoding, handler-error re-shaping, and the per-frame codec
+/// round-trip helper — see
+/// `crates/cratestack-axum/src/rpc/{batch,error_encode,
+/// codec_helpers}.rs`). None of these three sites face an untrusted
 /// upstream/proxied body; all buffer a response cratestack itself
 /// produced, so this is a safety valve against a pathological in-process
 /// response (e.g. a handler bug or a legitimately huge result set),

@@ -1,4 +1,4 @@
-//! cratestack#413 — the four `to_bytes(..., MAX_RESPONSE_REBUFFER_BYTES)`
+//! cratestack#413 — the three `to_bytes(..., MAX_RESPONSE_REBUFFER_BYTES)`
 //! response-rebuffer sites degrade to a clean error instead of an
 //! unbounded allocation. Each site already matched on `to_bytes`'s
 //! `Result` before this change (see each function's own `Err(error) =>`
@@ -14,7 +14,7 @@ use axum::response::Response;
 use cratestack_codec_cbor::CborCodec;
 use cratestack_core::{CratestackCodec, MAX_RESPONSE_REBUFFER_BYTES};
 
-use super::{bridge_grpc_response, convert_handler_error_response, response_to_frame};
+use super::{convert_handler_error_response, response_to_frame};
 use crate::rpc::codec_helpers::encode_rpc_value;
 
 fn oversized_body() -> Body {
@@ -51,20 +51,6 @@ async fn convert_handler_error_response_degrades_cleanly_over_the_bound() {
     // Buffering failed, so this synthesizes an internal error rather than
     // propagating the handler's original 400.
     assert_eq!(converted.status(), StatusCode::INTERNAL_SERVER_ERROR);
-}
-
-#[tokio::test]
-async fn bridge_grpc_response_degrades_cleanly_over_the_bound() {
-    let response = Response::builder()
-        .status(StatusCode::OK)
-        .body(oversized_body())
-        .unwrap();
-
-    let result: Result<serde_json::Value, _> =
-        bridge_grpc_response(response, &CborCodec, &HeaderMap::new()).await;
-
-    let (code, _message) = result.expect_err("oversized body must not succeed silently");
-    assert_eq!(code, "INTERNAL_ERROR");
 }
 
 #[tokio::test]

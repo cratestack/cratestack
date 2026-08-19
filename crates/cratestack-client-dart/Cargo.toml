@@ -30,18 +30,15 @@ default = ["decimal-rust-decimal"]
 # decimal-bigdecimal` under `cargo test`/`cargo check --all-targets`.
 decimal-rust-decimal = [
     "cratestack-core/decimal-rust-decimal",
-    "cratestack-proto/decimal-rust-decimal",
     "cratestack-parser/decimal-rust-decimal",
 ]
 decimal-bigdecimal = [
     "cratestack-core/decimal-bigdecimal",
-    "cratestack-proto/decimal-bigdecimal",
     "cratestack-parser/decimal-bigdecimal",
 ]
 
 [dependencies]
 cratestack-core.workspace = true
-cratestack-proto.workspace = true
 minijinja.workspace = true
 serde.workspace = true
 thiserror.workspace = true

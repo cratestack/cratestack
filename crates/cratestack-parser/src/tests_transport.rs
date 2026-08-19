@@ -6,12 +6,9 @@ use cratestack_core::{Schema, TransportStyle};
 /// A minimal serialized `Schema` (JSON, but the shape is format-agnostic —
 /// this exercises `#[serde(default)]`, not JSON specifically) with no
 /// `"transport"` key at all: what every `Schema` serialized before the
-/// `transport` field existed looked like, and — the case this test is
-/// actually pinning — what every `Schema` serialized before ticket #170
-/// added the `Grpc` variant looked like too. `TransportStyle::Grpc` being
-/// additive to an already-`#[serde(default)]` field means old data must
-/// keep deserializing unchanged; this is the regression that would fire if
-/// that ever stopped being true.
+/// `transport` field existed looked like. `transport` being
+/// `#[serde(default)]` means old data must keep deserializing unchanged;
+/// this is the regression that would fire if that ever stopped being true.
 const SCHEMA_JSON_WITHOUT_TRANSPORT_KEY: &str = r#"{
   "datasource": null,
   "auth": null,
@@ -32,9 +29,8 @@ const SCHEMA_JSON_WITHOUT_TRANSPORT_KEY: &str = r#"{
   "procedures": []
 }"#;
 
-/// Same, but from after the `transport` field existed and before `Grpc` was
-/// added — i.e. every `Schema` a `transport rpc` schema serialized to on
-/// disk prior to this ticket.
+/// Same, but from after the `transport` field existed — i.e. every `Schema`
+/// a `transport rpc` schema has serialized to on disk.
 const SCHEMA_JSON_WITH_RPC_TRANSPORT: &str = r#"{
   "datasource": null,
   "auth": null,
@@ -50,7 +46,7 @@ const SCHEMA_JSON_WITH_RPC_TRANSPORT: &str = r#"{
 #[test]
 fn schema_without_a_transport_key_still_deserializes_and_defaults_to_rest() {
     let schema: Schema = serde_json::from_str(SCHEMA_JSON_WITHOUT_TRANSPORT_KEY)
-        .expect("pre-`transport`-field Schema JSON must still deserialize after adding `Grpc`");
+        .expect("pre-`transport`-field Schema JSON must still deserialize");
     assert_eq!(schema.transport, TransportStyle::Rest);
     assert_eq!(schema.models.len(), 1);
     assert_eq!(schema.models[0].name, "Widget");
@@ -58,9 +54,8 @@ fn schema_without_a_transport_key_still_deserializes_and_defaults_to_rest() {
 
 #[test]
 fn schema_with_rpc_transport_key_still_deserializes_unchanged() {
-    let schema: Schema = serde_json::from_str(SCHEMA_JSON_WITH_RPC_TRANSPORT).expect(
-        "pre-`Grpc`-variant Schema JSON with `\"transport\":\"rpc\"` must still deserialize",
-    );
+    let schema: Schema = serde_json::from_str(SCHEMA_JSON_WITH_RPC_TRANSPORT)
+        .expect("Schema JSON with `\"transport\":\"rpc\"` must still deserialize");
     assert_eq!(schema.transport, TransportStyle::Rpc);
 }
 
@@ -107,37 +102,64 @@ model Widget {
     assert_eq!(schema.transport, TransportStyle::Rest);
 }
 
+/// gRPC support was removed (v0.9 breaking change): `transport grpc` must
+/// no longer parse at all. This is the decisive regression guard — it
+/// fails the moment `"grpc"` is re-added to
+/// `parse_transport_directive`'s match arms.
 #[test]
-fn transport_directive_selects_grpc() {
-    let schema = parse_schema(
-        r#"
-transport grpc
-
-model Widget {
-  id Int @id
-}
-"#,
-    )
-    .expect("schema with `transport grpc` should parse");
-    assert_eq!(schema.transport, TransportStyle::Grpc);
-}
-
-#[test]
-fn transport_directive_rejects_grpc_duplicate() {
+fn transport_directive_rejects_grpc() {
     let err = parse_schema(
         r#"
 transport grpc
-transport rest
 
 model Widget {
   id Int @id
 }
 "#,
     )
-    .expect_err("duplicate transport directive should be rejected even with grpc involved");
+    .expect_err("`transport grpc` should no longer parse");
+    let message = err.to_string();
     assert!(
-        err.to_string().contains("duplicate"),
-        "error should mention duplicate, got: {err}",
+        message.contains("no longer supported"),
+        "error should say the transport was removed, not merely that it is \
+         unrecognised, got: {message}",
+    );
+    assert!(
+        message.contains("removed in v0.9"),
+        "error should name the release that removed it, got: {message}",
+    );
+    assert!(
+        message.contains("transport rest") && message.contains("transport rpc"),
+        "error should point at the surviving transports as the migration \
+         target, got: {message}",
+    );
+}
+
+/// The removal message is reserved for `grpc` specifically — an actual typo
+/// or an unimplemented transport must still get the generic
+/// unknown-style error, not a misleading "was removed in v0.9" claim about
+/// something that never existed.
+#[test]
+fn transport_directive_rejects_grpc_distinctly_from_a_typo() {
+    let typo = parse_schema(
+        r#"
+transport graphql
+
+model Widget {
+  id Int @id
+}
+"#,
+    )
+    .expect_err("`transport graphql` should not parse")
+    .to_string();
+
+    assert!(
+        typo.contains("unknown transport style `graphql`"),
+        "got: {typo}",
+    );
+    assert!(
+        !typo.contains("removed in v0.9"),
+        "a transport that never existed must not be described as removed, got: {typo}",
     );
 }
 

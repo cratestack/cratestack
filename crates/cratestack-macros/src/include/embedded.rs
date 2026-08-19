@@ -28,9 +28,6 @@ pub(super) fn compose_embedded_schema(
         Ok(parsed) => parsed,
         Err(error) => return error,
     };
-    if let Err(error) = super::reject_grpc::guard_embedded_grpc_transport(schema_path, &schema) {
-        return error;
-    }
     if let Err(error) =
         super::extension_gate::guard_embedded_declared_extensions(schema_path, &schema)
     {
@@ -49,7 +46,7 @@ pub(super) fn compose_embedded_schema(
     // than a shared Cargo feature (cratestack#505 Direction 2).
     with_decimal_backend(decimal_backend, move || {
         // `@@paged` gates a generated `list` **route**'s response envelope on
-        // REST/RPC/gRPC (`Page<Model>` vs. a bare `Vec<Model>` — see
+        // REST/RPC (`Page<Model>` vs. a bare `Vec<Model>` — see
         // docs/design/idempotency-rate-limit-declarative-surface.md). The
         // embedded composer generates no routes, so there is no per-model
         // wire contract to fix in advance the way there is for those

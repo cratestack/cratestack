@@ -16,7 +16,7 @@
 #      #421's "one shared `default-features = false` dependency edge" fix
 #      to every crate in the transitive closure between a facade and
 #      `cratestack-core` — `cratestack-sql`, `cratestack-policy`,
-#      `cratestack-parser`, `cratestack-proto`, `cratestack-macros`,
+#      `cratestack-parser`, `cratestack-macros`,
 #      `cratestack-axum`, `cratestack-codec-cbor`, `cratestack-codec-json`
 #      all gained the same `default-features = false` + explicit-forward
 #      treatment `cratestack-core`/`cratestack-sqlx`/`cratestack-rusqlite`/
@@ -335,14 +335,12 @@ for pkg in \
   cratestack-client-typescript \
   cratestack-codec-cbor \
   cratestack-codec-json \
-  cratestack-grpc \
   cratestack-lsp \
   cratestack-macros \
   cratestack-migrate \
   cratestack-mock-wiremock \
   cratestack-parser \
   cratestack-policy \
-  cratestack-proto \
   cratestack-redis \
   cratestack-studio \
   ; do

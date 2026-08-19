@@ -40,7 +40,7 @@ pub(super) fn authorized_type_tokens() -> proc_macro2::TokenStream {
         /// has no `pub`, so a value can only be built from code inside
         /// this module — exactly where `authorize_with_db`/`invoke_with_db`
         /// live, and nowhere else in the generated crate (not the `axum`/
-        /// `rpc`/`grpc` dispatch modules, not a `ProcedureRegistry`
+        /// `rpc` dispatch modules, not a `ProcedureRegistry`
         /// implementor's own code, not any other procedure's module).
         ///
         /// Two honest limits on what this proves, so it isn't mistaken for
@@ -179,7 +179,7 @@ pub(super) fn invoke_with_db_fn_tokens() -> proc_macro2::TokenStream {
         ///
         /// This is also the sanctioned way to invoke a procedure from
         /// non-HTTP code (a cron job, background worker, or admin tool):
-        /// the generated axum/RPC/gRPC handlers call this same function,
+        /// the generated axum/RPC handlers call this same function,
         /// nothing more privileged is available to them.
         ///
         /// ```ignore

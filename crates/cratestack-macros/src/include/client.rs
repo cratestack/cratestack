@@ -1,10 +1,6 @@
 //! `include_client_schema!` composer — emits the HTTP client surface:
 //! model/input/procedure stubs for talking to a server over the wire.
-//! No DB at all. For a `transport grpc` schema (ticket #209), also emits a
-//! native `tonic`-based gRPC client under `cratestack_schema::grpc` — see
-//! [`grpc`]'s module doc.
-
-mod grpc;
+//! No DB at all.
 
 use std::collections::BTreeSet;
 
@@ -34,9 +30,6 @@ pub(super) fn compose_client_schema(
         Ok(parsed) => parsed,
         Err(error) => return error,
     };
-    if let Err(error) = super::reject_grpc::guard_client_grpc_transport(schema_path, &schema) {
-        return error;
-    }
     if let Err(error) =
         super::extension_gate::guard_client_declared_extensions(schema_path, &schema)
     {
@@ -47,15 +40,10 @@ pub(super) fn compose_client_schema(
         Err(error) => return error,
     };
 
-    // Wraps the rest of composition, including the gRPC module build
-    // below (its scalar mapper also names a concrete `Decimal` type) —
-    // see `include::embedded`'s matching comment for why this needs to
-    // scope this widely (cratestack#505 Direction 2).
+    // Wraps the rest of composition — see `include::embedded`'s matching
+    // comment for why this needs to scope this widely (cratestack#505
+    // Direction 2).
     with_decimal_backend(decimal_backend, move || {
-        let grpc_module = match grpc::build_client_grpc_module(&schema, &resolved, schema_path) {
-            Ok(tokens) => tokens,
-            Err(error) => return error,
-        };
         let resolved_literal = resolved.display().to_string();
 
         let model_names = schema.models.iter().map(|model| schema_lit(&model.name));
@@ -196,8 +184,6 @@ pub(super) fn compose_client_schema(
 
                     #(#procedure_modules)*
                 }
-
-                #grpc_module
             }
         };
 

@@ -55,20 +55,6 @@ declarations matter.
 - **`include_server_schema!` / `include_embedded_schema!`** — not
   re-exported, deliberately. A consumer reaching for either gets a plain
   Rust name-resolution error at the call site.
-- **`transport grpc`** — this crate has no `grpc` Cargo feature, so a
-  `transport grpc` schema fails to compile with `cratestack-macros`'s
-  existing "enable the feature" `compile_error!`
-  (`crates/cratestack-macros/src/include/reject_grpc.rs`).
-  `cratestack-client-rust`'s own `grpc` feature pulls in `tonic`, which
-  pulls in `axum` transitively — enabling it here would defeat the entire
-  point of this facade for the one consumer who opts in. A consumer that
-  genuinely needs a native gRPC client should depend on
-  [`cratestack-client-rust`](../cratestack-client-rust) directly with
-  `features = ["grpc"]` (accepting `tonic`/`axum` into that one crate's own
-  graph, deliberately), or use `cratestack-pg`/`cratestack-api` with their
-  own `grpc` feature if the consumer is a server that also embeds a client.
-  `cratestack generate-proto` can still emit the schema's `.proto` contract
-  for use with a non-CrateStack gRPC client either way.
 - **`extension rate_limit { }` / `extension pgvector { }`** — same as
   `cratestack-api`: neither Cargo feature is forwarded here, so a schema
   declaring either extension fails the same
@@ -130,8 +116,8 @@ CI's `facade-disjointness` job (`.github/workflows/ci.yml`) re-runs the
   cratestack#498 (**breaking** — see each package's migration note) that
   parses both notations, so pairing this backend with a generated client
   is safe regardless of magnitude — see `cratestack-core`'s README for
-  the full picture and the two scope notes (gRPC-preset clients, the
-  TypeScript `swr` preset) that still apply.
+  the full picture and the TypeScript `swr` preset scope note that still
+  applies.
 - `codec-json` *(default)* — forwards the JSON codec to the generated
   client runtime, alongside CBOR.
 - `pgvector` — enable when the schema declares `extension pgvector { }`.
@@ -151,5 +137,3 @@ gate that would otherwise reject the schema:
 ```toml
 cratestack = { package = "cratestack-client", version = "0.7", features = ["pgvector"] }
 ```
-
-There is no `grpc` feature — see "What this crate does not support" above.

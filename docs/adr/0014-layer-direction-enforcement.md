@@ -249,6 +249,26 @@ hatch, and it is per-edge and self-expiring by construction (see above).
   `cratestack-core`) back on the table — both of which `layering.md` §7 deliberately leaves
   open, and neither of which this ADR decides.
 
+**Cross-reference note (added by ADR 0017's implementation, 2026-08-18).**
+`cratestack-proto` — the second half of nearly every "`cratestack-macros`/`cratestack-proto`"
+pairing in this ADR's Context and Decision, including the L1-placement argument this ADR
+derives for it (both crates' only normal workspace dependencies verified to be L0/L1, so `dep.layer
+≤ self.layer` holds with no bespoke predicate) — was deleted in its entirety by ADR 0017
+(dropping protobuf/gRPC support), along with `cratestack-grpc`. `docs/adr/layers.toml`, the
+live checker input this ADR's Decision made the source of truth, has had both crates' entries
+removed; `cratestack-macros`'s own layer number (`1`) is unchanged, but its entry's
+*reasoning comment* did need editing — `crates/cratestack-macros/Cargo.toml` had
+`cratestack-proto.workspace = true` under `[dependencies]` (verified at HEAD), so
+`cratestack-proto` was a real dependency of macros, not merely a sibling crate placed by
+the same argument. `layers.toml`'s comment enumerating macros's "actual normal workspace
+dependencies" dropped `cratestack-proto` from that list as part of this same edit, since
+the dependency itself no longer exists. macros's L1 placement still holds under the
+remaining dependency set (`cratestack-core`, `cratestack-parser`, `cratestack-policy`,
+all L0/L1). This ADR's worked example for the ⊥/compiler question is left as historical
+record of the reasoning rather than rewritten; the reasoning pattern (verify real
+`[dependencies]`, place at the lowest layer the graph supports) is unaffected by one of its
+two worked examples no longer existing.
+
 ## Alternatives considered
 
 **Status quo — vigilance, with the table documented and nothing enforcing it.**

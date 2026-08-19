@@ -43,7 +43,7 @@ Most workflows are encoded in the `justfile` (`just --list`). The important ones
 - **Version bump:** `just bump 0.x.y` rewrites every `Cargo.toml` version literal and refreshes the lock.
 - **Release:** `just release 0.x.y` (bump → validate → publish in topo order → tag; `PUSH=1` to push).
   Do not hand-maintain publish order — it is topo-sorted from `cargo metadata` at recipe time.
-- **CLI:** `cargo run -p cratestack-cli -- <check|generate-dart|generate-typescript|generate-proto|generate-wiremock|studio|migrate|init|run|eject|diff|print-ir>`
+- **CLI:** `cargo run -p cratestack-cli -- <check|generate-dart|generate-typescript|generate-wiremock|studio|migrate|init|run|eject|diff|print-ir>`
 - **Regenerate committed example clients:** `just regen-examples` — rewrites the two committed generated
   clients (`examples/flutter-riverpod/client` via `generate-dart --preset riverpod`, and
   `examples/react-vite-swr/client` via `generate-typescript --swr`) in place. Takes an `*args=''`
@@ -94,9 +94,7 @@ a fourth (`cratestack-client`) was added by cratestack#490:
   the handful of type re-exports client codegen references. `cratestack-axum` — and therefore
   `axum`/`tower`/`hyper`/`tower-http` — is structurally absent from its dependency graph under its
   default features (proved by `examples/client-only-verification`'s `cargo tree`, re-run by CI's
-  `facade-disjointness` job). Has no `grpc` Cargo feature: `cratestack-client-rust`'s own `grpc`
-  feature pulls `tonic`, which pulls `axum` transitively, so a gRPC-client consumer should depend on
-  `cratestack-client-rust` directly with `features = ["grpc"]` instead.
+  `facade-disjointness` job).
 
 **Hard rule (enforced by convention, watch for regressions):** the macro split must stay strictly
 disjoint. `include_server_schema!(db = Postgres)` emits sqlx-only code; `include_server_schema!(db = None)`

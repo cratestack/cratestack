@@ -70,15 +70,6 @@ Generated content covers:
 - model and procedure API facades
 - a runtime bridge boundary the host app implements
 
-For a `transport grpc` schema, the generator instead emits a native `package:grpc`-based
-Dart client (ticket #210): its own `pubspec.yaml`/`README.md` (no `dio`/`cbor`/
-`flutter_riverpod` — a `package:grpc` client doesn't need them), `lib/<library_name>.dart`,
-`lib/src/runtime.dart`, `lib/src/models.dart`, and `lib/src/apis.dart` — model CRUD only,
-no `queries.dart` (protobuf fields are typed, not query-string-shaped), no procedure
-surface, and no `example/main.dart`/`test/*_test.dart` (those hard-code REST/RPC-only
-selection-query usage). This is selected automatically by the schema's declared
-transport, not a CLI flag.
-
 ## Presets
 
 `--preset` (`DartPreset` in `src/config.rs`) picks the output layout for REST/RPC
@@ -90,7 +81,7 @@ schemas — a strict superset of the same content, never a redesign of what's ge
   via `dart_mappable`, plus an `XApi` client), a shared file for cross-model types,
   procedures in their own file, and the package-wide DI providers
   (`xAdapterProvider`/`xClientProvider`) in `lib/src/client.dart`. List responses use
-  `fast_immutable_collections`' `IList`. Not supported for `transport grpc` schemas.
+  `fast_immutable_collections`' `IList`.
 
 ```bash
 cratestack generate-dart \

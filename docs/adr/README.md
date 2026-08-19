@@ -42,5 +42,6 @@ not a promise about content.
 | [0014](0014-layer-direction-enforcement.md) | Layer direction enforcement | Accepted |
 | [0015](0015-op-executor-l3.md) | OpExecutor as the L3 execution layer | Proposed |
 | [0016](0016-store-spi-scope.md) | Store SPI scope | Proposed |
+| [0017](0017-remove-grpc-protobuf.md) | Remove gRPC/protobuf support | Accepted |
 
 Context for 0011–0016: [docs/design/layering.md](../design/layering.md).

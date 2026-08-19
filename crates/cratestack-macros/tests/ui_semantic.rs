@@ -11,8 +11,8 @@
 //! policy/`), which is wired into model/view descriptor generation for the
 //! server and embedded composers only — `include_client_schema!` never reads
 //! `@@allow`/`@@deny` content at all (it's a pure HTTP-stub client with no
-//! policy enforcement of its own, see `include/client/grpc/client_struct.rs`'s
-//! doc comment). `include_server_schema!(db = Postgres)` is *also* not
+//! policy enforcement of its own — the server enforces policy, this client
+//! just calls it). `include_server_schema!(db = Postgres)` is *also* not
 //! usable for this in this crate's own trybuild sandbox: that composer
 //! checks `guard_server_postgres_backend`'s "compiled without the
 //! `postgres` feature" gate (see `ui.rs`'s extension-gating tests, which

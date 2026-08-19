@@ -54,9 +54,6 @@ pub(crate) fn generate_package(
     schema: &Schema,
     config: &DartGeneratorConfig,
 ) -> Result<GeneratedDartPackage, DartGeneratorError> {
-    if schema.transport == TransportStyle::Grpc {
-        return Err(DartGeneratorError::RiverpodPresetGrpcUnsupported);
-    }
     let is_rest = schema.transport == TransportStyle::Rest;
 
     let base_package = generate_default_package(schema, config)?;
