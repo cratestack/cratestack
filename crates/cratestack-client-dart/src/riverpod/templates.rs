@@ -30,6 +30,10 @@ pub(crate) const RPC_PACKAGE_TEST: &str = "riverpod/rpc_package_test.dart.j2";
 /// directly, mirroring `crate::templates_fragments`.
 const TEMPLATE_SOURCES: &[(&str, &str)] = &[
     (
+        "model_builder_class.dart.j2",
+        include_str!("../../templates/model_builder_class.dart.j2"),
+    ),
+    (
         "riverpod/enums_and_data_classes.dart.j2",
         include_str!("../../templates/riverpod/enums_and_data_classes.dart.j2"),
     ),

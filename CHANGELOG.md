@@ -43,6 +43,52 @@ supersedes and the alternatives considered (feature-flagging it off by default; 
 deprecation cycle; narrowing scope instead of removing it — all rejected on the same
 "fixed cost, not variable cost" ground).
 
+### Typestate builders on every generated struct-shaped type — Rust and Dart, TypeScript excluded
+
+Every struct-shaped type `include_*_schema!` emits now gets a companion builder alongside it: a
+model struct, `Create{Model}Input`, `Update{Model}Input`, `{Model}Where`, `{Model}OrderByClause`,
+`{Model}FindManyInput`, `view` structs, `type` structs, and per-procedure `Args` all do. Rust reaches
+it as `{Type}::builder()`, on both the server and generated client; Dart reaches it as
+`{Type}Builder()`. TypeScript is deliberately not covered by this change.
+
+In Rust the builder is a typestate: each required field claims one type parameter, starting at a
+`cratestack_core::builder::Unset` marker and flipping to `Set` the moment its setter is called, and
+`build()` is only defined on the builder instantiation where every required field's parameter is
+`Set`. Forgetting a field is therefore a compile error ("no method named `build` found for struct
+`...Builder<Set, Unset>`"), not a `Result` the caller has to remember to check. `Option<T>` and
+`Vec<T>` fields — the two shapes whose `Default` already means "the caller said nothing" — get no
+type parameter at all, so an all-optional type like `{Model}Where` ends up with a plain, non-generic
+builder. The value holder behind the setters is an anonymous tuple rather than a named
+`{Type}BuilderFields` struct, specifically so it claims no identifier of its own in the generated
+module — one fewer name a schema could ever collide with. On an update input, a setter's parameter
+type is the field's type with one `Option` layer peeled off, so the outer `Option` becomes "did the
+caller touch this field": `.title("x")` sets the column, `.email(None)` clears a nullable one, and a
+field nobody called the setter for stays absent from the wire, exactly like today's struct-literal
+update inputs.
+
+Dart's builder is additive only — every existing named constructor and `fromWire` is unchanged, and
+nothing is deprecated. Dart has no typestate to borrow, so the required-field check moves to runtime:
+`build()` throws a `StateError` naming both the class and the specific field that was never set,
+rather than constructing a struct with a bogus default.
+
+**Breaking:** a schema that declares a `type`, `model`, `view`, or `enum` named `{X}Builder`, where
+`X` is any name a `model`, `type`, or `view` declaration in that schema causes to be generated — for
+a `model M` that means `M`, `Create{M}Input`, `Update{M}Input`, `{M}Where`, `{M}OrderByClause`, and
+`{M}FindManyInput`, not just `M` itself — is now rejected at parse time and must rename the
+colliding declaration. Likewise, a field set (a model's fields, a `type`'s fields, a `view`'s fields,
+or a procedure's args) that declares both a `build` field and a `set_build`/`setBuild` field is
+rejected: the Rust builder renames a field literally named `build` to a `set_build` setter so the
+terminal `build()` method stays callable, and the same collision exists in the Dart setter names.
+Both were previously silent — the schema parsed, and the generated code either failed to compile with
+an error pointing at macro-expansion output instead of the schema, or (the Dart setter case) quietly
+emitted two identically-named setters.
+
+Dart consumers of a model named `Widget` should note that the newly-emitted `class WidgetBuilder` is
+ambiguous against Flutter's own `WidgetBuilder` typedef if both are imported unprefixed — resolve
+with `import '...' as prefix`. This is one more instance of an existing hazard rather than a new one:
+`model Widget` already emitted `class Widget`, which collides with Flutter's own `Widget` the same
+way, and callers of generated Dart clients already need to manage that.
+
 ## 0.8.4 (2026-08-18)
 
 ### `/rpc/batch` authenticates the envelope once, not once per frame

@@ -4,6 +4,10 @@
 
 pub(super) const FRAGMENT_TEMPLATES: &[(&str, &str)] = &[
     (
+        "model_builder_class.dart.j2",
+        include_str!("../templates/model_builder_class.dart.j2"),
+    ),
+    (
         "readme/setup.md.j2",
         include_str!("../templates/readme/setup.md.j2"),
     ),

@@ -7,6 +7,7 @@ use std::collections::BTreeSet;
 use cratestack_core::{Field, Model, TypeArity};
 use quote::quote;
 
+use crate::builder::{generate_builder, model_builder_fields};
 use crate::shared::{
     doc_attrs, ident, is_primary_key, is_server_only_field, rust_type_tokens,
     rust_type_tokens_with_scope, scalar_model_fields,
@@ -25,6 +26,10 @@ pub(crate) fn generate_model_struct_only(
     let fields = scalar_fields
         .iter()
         .map(|field| struct_field_definition(field, false, enum_names));
+    let builder = generate_builder(
+        &model_ident,
+        &model_builder_fields(scalar_fields.iter().copied(), false, enum_names),
+    );
 
     // `Default` is required so `.find_unique(id).select(...).run(ctx)`
     // can return a `Projection<T>` where non-selected fields hold
@@ -41,6 +46,8 @@ pub(crate) fn generate_model_struct_only(
         pub struct #model_ident {
             #(#fields)*
         }
+
+        #builder
     }
 }
 
@@ -78,6 +85,10 @@ pub(crate) fn generate_client_model_struct(
     let fields = scalar_fields
         .iter()
         .map(|field| struct_field_definition(field, false, enum_names));
+    let builder = generate_builder(
+        &model_ident,
+        &model_builder_fields(scalar_fields.iter().copied(), false, enum_names),
+    );
 
     quote! {
         #docs
@@ -85,16 +96,20 @@ pub(crate) fn generate_client_model_struct(
         pub struct #model_ident {
             #(#fields)*
         }
+
+        #builder
     }
 }
 
-pub(crate) fn struct_field_definition(
+/// The exact type tokens [`struct_field_definition`] puts on the field.
+/// Extracted so the typestate builder emitter can take a setter argument
+/// of precisely the field's own type without re-deriving it (and drifting
+/// from it) — see [`crate::builder`].
+pub(crate) fn struct_field_type(
     field: &Field,
     wrap_for_patch: bool,
     enum_names: &BTreeSet<&str>,
 ) -> proc_macro2::TokenStream {
-    let field_ident = ident(&field.name);
-    let docs = doc_attrs(&field.docs);
     let base_type = if enum_names.contains(field.ty.name.as_str()) {
         let enum_ident = ident(&field.ty.name);
         match field.ty.arity {
@@ -105,11 +120,21 @@ pub(crate) fn struct_field_definition(
     } else {
         rust_type_tokens_with_scope(&field.ty, true)
     };
-    let field_type = if wrap_for_patch {
+    if wrap_for_patch {
         quote! { Option<#base_type> }
     } else {
         base_type
-    };
+    }
+}
+
+pub(crate) fn struct_field_definition(
+    field: &Field,
+    wrap_for_patch: bool,
+    enum_names: &BTreeSet<&str>,
+) -> proc_macro2::TokenStream {
+    let field_ident = ident(&field.name);
+    let docs = doc_attrs(&field.docs);
+    let field_type = struct_field_type(field, wrap_for_patch, enum_names);
     // `@server_only` fields stay readable inside server code (SQLx populates
     // them via FromRow, which doesn't go through serde) but are masked from
     // both outbound JSON and inbound deserialization. The default value is

@@ -15,6 +15,7 @@ use std::collections::BTreeSet;
 use cratestack_core::Model;
 use quote::quote;
 
+use crate::builder::{BuilderField, generate_builder};
 use crate::shared::{generated_doc_attr, ident, scalar_model_fields, to_snake_case};
 
 pub(crate) fn generate_order_by_types(
@@ -49,6 +50,21 @@ pub(crate) fn generate_order_by_types(
         model.name
     ));
 
+    // Both fields are required — a sort key without a field or a
+    // direction isn't a sort key. `#[derive(Copy)]` on the struct doesn't
+    // affect the typestate builder: the builder holds `Option<T>`s in a
+    // private holder, moved (not copied) between states like every other
+    // generated struct's builder.
+    let order_by_builder_fields = vec![
+        BuilderField::new(ident("field"), quote! { #sort_field_ident }, true),
+        BuilderField::new(
+            ident("direction"),
+            quote! { ::cratestack::SortDirection },
+            true,
+        ),
+    ];
+    let builder = generate_builder(&order_by_ident, &order_by_builder_fields);
+
     quote! {
         #sort_field_docs
         #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -64,6 +80,8 @@ pub(crate) fn generate_order_by_types(
             pub field: #sort_field_ident,
             pub direction: ::cratestack::SortDirection,
         }
+
+        #builder
 
         impl #order_by_ident {
             pub fn to_order_clause(&self) -> ::cratestack::OrderClause {

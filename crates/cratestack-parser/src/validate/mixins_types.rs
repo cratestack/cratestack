@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cratestack_core::Schema;
 
 use crate::diagnostics::{SchemaError, span_error};
+use crate::validate::builder_setter_collisions::validate_no_build_setter_collision;
 use crate::validate::fields::{
     CustomFieldSupport, validate_custom_field_attribute, validate_default_dbgenerated_no_args,
     validate_field_reserved_identifier,
@@ -95,6 +96,13 @@ pub(super) fn validate_types(
     for ty in &schema.types {
         validate_reserved_identifier(&ty.name, ty.name_span, &format!("type `{}`", ty.name))?;
         validate_field_column_collisions(&ty.fields, "type", &ty.name)?;
+        validate_no_build_setter_collision(
+            ty.fields
+                .iter()
+                .map(|field| (field.name.as_str(), field.span)),
+            "type",
+            &ty.name,
+        )?;
 
         let mut fields = BTreeSet::new();
         for field in &ty.fields {

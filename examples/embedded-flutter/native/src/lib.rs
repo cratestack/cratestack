@@ -42,15 +42,17 @@ mod tests {
         );
         let now = Utc::now();
         let created = model
-            .create(schema::cratestack_schema::CreateNoteInput {
-                id: Uuid::new_v4(),
-                title: "Flutter!".into(),
-                body: "first note from Dart".into(),
-                pinned: false,
-                completed: false,
-                createdAt: now,
-                updatedAt: now,
-            })
+            .create(
+                schema::cratestack_schema::CreateNoteInput::builder()
+                    .id(Uuid::new_v4())
+                    .title("Flutter!")
+                    .body("first note from Dart")
+                    .pinned(false)
+                    .completed(false)
+                    .createdAt(now)
+                    .updatedAt(now)
+                    .build(),
+            )
             .run()
             .unwrap();
         let view = notes::note_to_view(created);

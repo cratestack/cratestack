@@ -108,15 +108,17 @@ pub fn add_note(input: NewNote) -> Result<NoteView, String> {
     let runtime = runtime()?;
     let now = Utc::now();
     note_delegate(runtime)
-        .create(schema::cratestack_schema::CreateNoteInput {
-            id: Uuid::new_v4(),
-            title: input.title,
-            body: input.body,
-            pinned: input.pinned,
-            completed: false,
-            createdAt: now,
-            updatedAt: now,
-        })
+        .create(
+            schema::cratestack_schema::CreateNoteInput::builder()
+                .id(Uuid::new_v4())
+                .title(input.title)
+                .body(input.body)
+                .pinned(input.pinned)
+                .completed(false)
+                .createdAt(now)
+                .updatedAt(now)
+                .build(),
+        )
         .run()
         .map(note_to_view)
         .map_err(map_err)
@@ -142,11 +144,12 @@ pub fn mark_done(id: String) -> Result<NoteView, String> {
     let uuid = Uuid::parse_str(&id).map_err(|error| format!("bad uuid: {error}"))?;
     note_delegate(runtime)
         .update(uuid)
-        .set(schema::cratestack_schema::UpdateNoteInput {
-            completed: Some(true),
-            updatedAt: Some(Utc::now()),
-            ..Default::default()
-        })
+        .set(
+            schema::cratestack_schema::UpdateNoteInput::builder()
+                .completed(true)
+                .updatedAt(Utc::now())
+                .build(),
+        )
         .run()
         .map(note_to_view)
         .map_err(map_err)

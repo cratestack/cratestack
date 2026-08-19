@@ -10,6 +10,7 @@ use std::collections::BTreeSet;
 use cratestack_core::{Field, Model, TypeArity};
 use quote::quote;
 
+use crate::builder::{BuilderField, generate_builder};
 use crate::shared::{
     generated_doc_attr, ident, rust_type_tokens, scalar_model_fields, to_snake_case,
 };
@@ -83,6 +84,15 @@ pub(crate) fn generate_where_struct(
         .iter()
         .map(|field| build_field_push(field, &module_ident));
 
+    // Every field is `Option<FieldFilterInput<_>>` — every operator on a
+    // `Where` is optional, so the builder is non-generic (no required
+    // slots to gate `build()` on).
+    let where_builder_fields = fields
+        .iter()
+        .map(|field| BuilderField::new(ident(&field.name), scalar_where_field_type(field), false))
+        .collect::<Vec<_>>();
+    let builder = generate_builder(&where_ident, &where_builder_fields);
+
     quote! {
         #docs
         #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -90,6 +100,8 @@ pub(crate) fn generate_where_struct(
         pub struct #where_ident {
             #(#field_defs)*
         }
+
+        #builder
 
         impl #where_ident {
             pub fn to_filters(&self) -> Vec<::cratestack::FilterExpr> {
@@ -99,6 +111,16 @@ pub(crate) fn generate_where_struct(
             }
         }
     }
+}
+
+/// The exact type tokens [`generate_where_struct`]'s field definitions
+/// use — extracted so the builder's setter argument type can never drift
+/// from the field it fills (mirrors
+/// [`crate::model::struct_only::struct_field_type`]'s role for model
+/// structs).
+fn scalar_where_field_type(field: &Field) -> proc_macro2::TokenStream {
+    let scalar_type = scalar_type_tokens(field);
+    quote! { Option<::cratestack::FieldFilterInput<#scalar_type>> }
 }
 
 fn build_field_push(field: &Field, module_ident: &syn::Ident) -> proc_macro2::TokenStream {

@@ -72,15 +72,10 @@ pub(crate) struct DataClassView {
     pub(crate) fields: Vec<FieldView>,
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub(crate) struct FieldView {
-    pub(crate) identifier: String,
-    pub(crate) wire_name: String,
-    pub(crate) dart_type: String,
-    pub(crate) required: bool,
-    pub(crate) from_wire_expr: String,
-    pub(crate) to_wire_expr: String,
-}
+// `FieldView` lives in `crate::field_view` (split out per the repo's
+// 200-LoC file convention) and is re-exported here so every existing
+// `use crate::views::{..., FieldView}` call site keeps working unchanged.
+pub(crate) use crate::field_view::FieldView;
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct SelectionGroupView {
