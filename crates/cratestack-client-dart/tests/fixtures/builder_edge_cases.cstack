@@ -1,0 +1,37 @@
+// Regression fixture for the generated Dart fluent-builder pattern's own
+// edge cases (code-review findings on the builder-pattern-objects branch):
+//
+// - A field literally named `builder` used to collide with the class's own
+//   static `{T}.builder()` factory (Dart puts static and instance members
+//   in one shared namespace) — round 1 "fixed" this by renaming the
+//   factory to `newBuilder`, but that fallback was itself unguarded: a
+//   schema with BOTH a `builder` field AND a `newBuilder` field reproduced
+//   the identical `conflicting_static_and_instance` error. The maintainer
+//   decision (not to guard the fallback further, but to delete the static
+//   factory entirely — see `cratestack-client-dart/CHANGELOG` /
+//   `crates/cratestack-client-dart/src/field_view.rs`) means there is no
+//   longer any static factory to collide with either field name. This
+//   fixture proves both field names coexist cleanly as ordinary
+//   fields/setters now that the entry point is only
+//   `{T}Builder().builder(x).newBuilder(y).build()`.
+// - A field literally named `build` collides with the builder's terminal
+//   `build()` method — `FieldView::new` renames its *setter* to
+//   `setBuild`, unrelated to the (now-removed) factory-name collision
+//   above; both land on the same model here so the two shims are proven
+//   not to interfere.
+// - A required `Json` field's Dart type (`Object?`) is already nullable,
+//   so the generated `build()` method must not emit a same-type `as
+//   Object?` cast — `dart analyze --fatal-warnings` flags that as
+//   `unnecessary_cast`.
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model Gadget {
+  id Int @id
+  builder String
+  newBuilder String
+  build String
+  meta Json
+}

@@ -79,4 +79,6 @@ class {{ data_class.name }} with {{ data_class.name }}Mappable {
   }
 }
 
+{% include "model_builder_class.dart.j2" %}
+
 {% endfor %}

@@ -51,6 +51,14 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
   Future<void> _addTask() async {
     final title = _titleController.text.trim();
     if (title.isEmpty) return;
+    // Deliberately the named constructor, not `CreateTaskInputBuilder()`.
+    // Every field here is required, and Dart already checks `required`
+    // named arguments at compile time — the builder's `build()` can only
+    // check at runtime, so on a create input the constructor is the
+    // *stronger* of the two. (Rust is the opposite way round: there the
+    // builder's typestate is the compile-time check and the struct literal
+    // is what a new field silently breaks.) See `_toggleDone` below for the
+    // shape where the Dart builder does earn its place.
     await ref.read(taskCreateControllerProvider.notifier).create(
           CreateTaskInput(
             id: DateTime.now().millisecondsSinceEpoch,
@@ -70,9 +78,13 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
     // header comment. Fine for this demo's scale; a larger app might
     // want a per-row wrapper, same tradeoff `TaskRow.tsx` notes for the
     // TypeScript sibling's per-row hook binding.
+    // The builder pays off here: an update input is all-optional, so the
+    // named constructor offers no compile-time guarantee to give up, and
+    // `.done(..)` reads as "patch exactly this field" where a constructor
+    // call with one argument reads as "every other field is null".
     await ref.read(taskUpdateControllerProvider.notifier).save(
           task.id!,
-          UpdateTaskInput(done: !(task.done ?? false)),
+          UpdateTaskInputBuilder().done(!(task.done ?? false)).build(),
         );
     ref.invalidate(taskListProvider());
   }

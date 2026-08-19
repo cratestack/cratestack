@@ -580,7 +580,7 @@ verify-dart:
 	  (cd "$pkg" && flutter test)
 	}
 
-	fixtures=(ci_rest ci_rpc)
+	fixtures=(ci_rest ci_rpc builder_edge_cases)
 	for fixture in "${fixtures[@]}"; do
 	  pkg="$out/default/$fixture"
 	  echo "=== generate-dart --preset default: $fixture -> $pkg ==="

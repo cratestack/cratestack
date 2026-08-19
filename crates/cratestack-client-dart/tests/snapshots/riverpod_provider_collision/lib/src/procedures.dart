@@ -56,6 +56,23 @@ required this.name,
   }
 }
 
+class WidgetCreateArgsBuilder {
+  String? _name;
+  bool _nameSet = false;
+
+  WidgetCreateArgsBuilder name(String value) {
+    _name = value;
+    _nameSet = true;
+    return this;
+  }
+
+  WidgetCreateArgs build() {
+    return WidgetCreateArgs(
+      name: _nameSet ? (_name as String) : (throw StateError('WidgetCreateArgs.name is required but was not set')),
+    );
+  }
+}
+
 class ProceduresApi {
   const ProceduresApi(this._client);
 

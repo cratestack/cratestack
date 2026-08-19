@@ -169,26 +169,29 @@ mod addon {
             Some(local) if local.updatedAt > incoming_updated => local,
             Some(_) => model
                 .update(uuid)
-                .set(notes_schema::cratestack_schema::UpdateNoteInput {
-                    title: Some(note.title),
-                    body: Some(note.body),
-                    pinned: Some(note.pinned),
-                    completed: Some(note.completed),
-                    updatedAt: Some(incoming_updated),
-                    ..Default::default()
-                })
+                .set(
+                    notes_schema::cratestack_schema::UpdateNoteInput::builder()
+                        .title(note.title)
+                        .body(note.body)
+                        .pinned(note.pinned)
+                        .completed(note.completed)
+                        .updatedAt(incoming_updated)
+                        .build(),
+                )
                 .run()
                 .map_err(|error| napi::Error::from_reason(error.to_string()))?,
             None => model
-                .create(notes_schema::cratestack_schema::CreateNoteInput {
-                    id: uuid,
-                    title: note.title,
-                    body: note.body,
-                    pinned: note.pinned,
-                    completed: note.completed,
-                    createdAt: created,
-                    updatedAt: incoming_updated,
-                })
+                .create(
+                    notes_schema::cratestack_schema::CreateNoteInput::builder()
+                        .id(uuid)
+                        .title(note.title)
+                        .body(note.body)
+                        .pinned(note.pinned)
+                        .completed(note.completed)
+                        .createdAt(created)
+                        .updatedAt(incoming_updated)
+                        .build(),
+                )
                 .run()
                 .map_err(|error| napi::Error::from_reason(error.to_string()))?,
         };

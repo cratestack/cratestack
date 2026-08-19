@@ -27,15 +27,17 @@ fn create_then_find() {
     let now = Utc::now();
     let id = Uuid::new_v4();
     let created = notes
-        .create(cratestack_schema::CreateNoteInput {
-            id,
-            title: "Test".into(),
-            body: "Hello".into(),
-            pinned: true,
-            completed: false,
-            createdAt: now,
-            updatedAt: now,
-        })
+        .create(
+            cratestack_schema::CreateNoteInput::builder()
+                .id(id)
+                .title("Test")
+                .body("Hello")
+                .pinned(true)
+                .completed(false)
+                .createdAt(now)
+                .updatedAt(now)
+                .build(),
+        )
         .run()
         .expect("create should succeed");
     assert_eq!(created.title, "Test");

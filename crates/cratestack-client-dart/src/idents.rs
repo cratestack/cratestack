@@ -53,45 +53,15 @@ pub(crate) fn to_camel_case(value: &str) -> String {
     first.to_lowercase().collect::<String>() + chars.as_str()
 }
 
+/// Delegates to `cratestack_core::pascal_case::to_pascal_case` — see that
+/// module doc for why this used to be its own `split_words`-based
+/// implementation here and no longer is (cratestack-parser's
+/// `builder_collisions` check needs the identical transform to predict
+/// this crate's generated names at schema-parse time; two copies of the
+/// same algorithm is exactly what drifted apart for `to_snake_case`
+/// pre-#345).
 pub(crate) fn to_pascal_case(value: &str) -> String {
-    split_words(value)
-        .into_iter()
-        .map(|word| {
-            let mut chars = word.chars();
-            let Some(first) = chars.next() else {
-                return String::new();
-            };
-            first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase()
-        })
-        .collect::<String>()
-}
-
-fn split_words(value: &str) -> Vec<String> {
-    let mut words = Vec::new();
-    let mut current = String::new();
-
-    for ch in value.chars() {
-        if ch == '_' || ch == '-' || ch == ' ' {
-            if !current.is_empty() {
-                words.push(current.clone());
-                current.clear();
-            }
-            continue;
-        }
-
-        if ch.is_ascii_uppercase() && !current.is_empty() {
-            words.push(current.clone());
-            current.clear();
-        }
-
-        current.push(ch);
-    }
-
-    if !current.is_empty() {
-        words.push(current);
-    }
-
-    words
+    cratestack_core::pascal_case::to_pascal_case(value)
 }
 
 pub(crate) fn pluralize(value: &str) -> String {

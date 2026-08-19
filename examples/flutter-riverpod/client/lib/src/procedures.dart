@@ -55,6 +55,23 @@ required this.args,
   }
 }
 
+class EstimateFocusMinutesArgsBuilder {
+  FocusEstimateArgs? _args;
+  bool _argsSet = false;
+
+  EstimateFocusMinutesArgsBuilder args(FocusEstimateArgs value) {
+    _args = value;
+    _argsSet = true;
+    return this;
+  }
+
+  EstimateFocusMinutesArgs build() {
+    return EstimateFocusMinutesArgs(
+      args: _argsSet ? (_args as FocusEstimateArgs) : (throw StateError('EstimateFocusMinutesArgs.args is required but was not set')),
+    );
+  }
+}
+
 // issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
 // alongside `riverpod_generator` in the same `build_runner` pass) gives
 // this class real `operator ==`/`hashCode`/`copyWith` — every generated
@@ -100,6 +117,32 @@ required this.minutesPerTask,
   }
 }
 
+class FocusEstimateArgsBuilder {
+  int? _taskCount;
+  bool _taskCountSet = false;
+  int? _minutesPerTask;
+  bool _minutesPerTaskSet = false;
+
+  FocusEstimateArgsBuilder taskCount(int value) {
+    _taskCount = value;
+    _taskCountSet = true;
+    return this;
+  }
+
+  FocusEstimateArgsBuilder minutesPerTask(int value) {
+    _minutesPerTask = value;
+    _minutesPerTaskSet = true;
+    return this;
+  }
+
+  FocusEstimateArgs build() {
+    return FocusEstimateArgs(
+      taskCount: _taskCountSet ? (_taskCount as int) : (throw StateError('FocusEstimateArgs.taskCount is required but was not set')),
+      minutesPerTask: _minutesPerTaskSet ? (_minutesPerTask as int) : (throw StateError('FocusEstimateArgs.minutesPerTask is required but was not set')),
+    );
+  }
+}
+
 // issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
 // alongside `riverpod_generator` in the same `build_runner` pass) gives
 // this class real `operator ==`/`hashCode`/`copyWith` — every generated
@@ -138,6 +181,23 @@ required this.totalMinutes,
     return <String, Object?>{
       'totalMinutes': totalMinutes,
     };
+  }
+}
+
+class FocusEstimateResultBuilder {
+  int? _totalMinutes;
+  bool _totalMinutesSet = false;
+
+  FocusEstimateResultBuilder totalMinutes(int value) {
+    _totalMinutes = value;
+    _totalMinutesSet = true;
+    return this;
+  }
+
+  FocusEstimateResult build() {
+    return FocusEstimateResult(
+      totalMinutes: _totalMinutesSet ? (_totalMinutes as int) : (throw StateError('FocusEstimateResult.totalMinutes is required but was not set')),
+    );
   }
 }
 

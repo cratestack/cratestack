@@ -92,6 +92,49 @@ this.board,
   }
 }
 
+class TaskBuilder {
+  int? _id;
+  String? _title;
+  bool? _done;
+  int? _boardId;
+  Board? _board;
+
+  TaskBuilder id(int? value) {
+    _id = value;
+    return this;
+  }
+
+  TaskBuilder title(String? value) {
+    _title = value;
+    return this;
+  }
+
+  TaskBuilder done(bool? value) {
+    _done = value;
+    return this;
+  }
+
+  TaskBuilder boardId(int? value) {
+    _boardId = value;
+    return this;
+  }
+
+  TaskBuilder board(Board? value) {
+    _board = value;
+    return this;
+  }
+
+  Task build() {
+    return Task(
+      id: _id,
+      title: _title,
+      done: _done,
+      boardId: _boardId,
+      board: _board,
+    );
+  }
+}
+
 // issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
 // alongside `riverpod_generator` in the same `build_runner` pass) gives
 // this class real `operator ==`/`hashCode`/`copyWith` — every generated
@@ -145,6 +188,50 @@ required this.boardId,
   }
 }
 
+class CreateTaskInputBuilder {
+  int? _id;
+  bool _idSet = false;
+  String? _title;
+  bool _titleSet = false;
+  bool? _done;
+  bool _doneSet = false;
+  int? _boardId;
+  bool _boardIdSet = false;
+
+  CreateTaskInputBuilder id(int value) {
+    _id = value;
+    _idSet = true;
+    return this;
+  }
+
+  CreateTaskInputBuilder title(String value) {
+    _title = value;
+    _titleSet = true;
+    return this;
+  }
+
+  CreateTaskInputBuilder done(bool value) {
+    _done = value;
+    _doneSet = true;
+    return this;
+  }
+
+  CreateTaskInputBuilder boardId(int value) {
+    _boardId = value;
+    _boardIdSet = true;
+    return this;
+  }
+
+  CreateTaskInput build() {
+    return CreateTaskInput(
+      id: _idSet ? (_id as int) : (throw StateError('CreateTaskInput.id is required but was not set')),
+      title: _titleSet ? (_title as String) : (throw StateError('CreateTaskInput.title is required but was not set')),
+      done: _doneSet ? (_done as bool) : (throw StateError('CreateTaskInput.done is required but was not set')),
+      boardId: _boardIdSet ? (_boardId as int) : (throw StateError('CreateTaskInput.boardId is required but was not set')),
+    );
+  }
+}
+
 // issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
 // alongside `riverpod_generator` in the same `build_runner` pass) gives
 // this class real `operator ==`/`hashCode`/`copyWith` — every generated
@@ -191,6 +278,35 @@ this.boardId,
       'done': done,
       'boardId': boardId,
     };
+  }
+}
+
+class UpdateTaskInputBuilder {
+  String? _title;
+  bool? _done;
+  int? _boardId;
+
+  UpdateTaskInputBuilder title(String? value) {
+    _title = value;
+    return this;
+  }
+
+  UpdateTaskInputBuilder done(bool? value) {
+    _done = value;
+    return this;
+  }
+
+  UpdateTaskInputBuilder boardId(int? value) {
+    _boardId = value;
+    return this;
+  }
+
+  UpdateTaskInput build() {
+    return UpdateTaskInput(
+      title: _title,
+      done: _done,
+      boardId: _boardId,
+    );
   }
 }
 
@@ -247,6 +363,42 @@ this.boardId,
   }
 }
 
+class TaskWhereBuilder {
+  NumberFilter? _id;
+  StringFilter? _title;
+  BooleanFilter? _done;
+  NumberFilter? _boardId;
+
+  TaskWhereBuilder id(NumberFilter? value) {
+    _id = value;
+    return this;
+  }
+
+  TaskWhereBuilder title(StringFilter? value) {
+    _title = value;
+    return this;
+  }
+
+  TaskWhereBuilder done(BooleanFilter? value) {
+    _done = value;
+    return this;
+  }
+
+  TaskWhereBuilder boardId(NumberFilter? value) {
+    _boardId = value;
+    return this;
+  }
+
+  TaskWhere build() {
+    return TaskWhere(
+      id: _id,
+      title: _title,
+      done: _done,
+      boardId: _boardId,
+    );
+  }
+}
+
 // issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
 // alongside `riverpod_generator` in the same `build_runner` pass) gives
 // this class real `operator ==`/`hashCode`/`copyWith` — every generated
@@ -292,6 +444,32 @@ required this.direction,
   }
 }
 
+class TaskOrderByClauseBuilder {
+  TaskSortField? _field;
+  bool _fieldSet = false;
+  SortDirection? _direction;
+  bool _directionSet = false;
+
+  TaskOrderByClauseBuilder field(TaskSortField value) {
+    _field = value;
+    _fieldSet = true;
+    return this;
+  }
+
+  TaskOrderByClauseBuilder direction(SortDirection value) {
+    _direction = value;
+    _directionSet = true;
+    return this;
+  }
+
+  TaskOrderByClause build() {
+    return TaskOrderByClause(
+      field: _fieldSet ? (_field as TaskSortField) : (throw StateError('TaskOrderByClause.field is required but was not set')),
+      direction: _directionSet ? (_direction as SortDirection) : (throw StateError('TaskOrderByClause.direction is required but was not set')),
+    );
+  }
+}
+
 // issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
 // alongside `riverpod_generator` in the same `build_runner` pass) gives
 // this class real `operator ==`/`hashCode`/`copyWith` — every generated
@@ -334,6 +512,28 @@ this.orderBy,
       'where': where?.toWire(),
       'orderBy': orderBy?.map((item) => item.toWire()).toList(growable: false),
     };
+  }
+}
+
+class TaskFindManyBuilder {
+  TaskWhere? _where;
+  List<TaskOrderByClause>? _orderBy;
+
+  TaskFindManyBuilder where(TaskWhere? value) {
+    _where = value;
+    return this;
+  }
+
+  TaskFindManyBuilder orderBy(List<TaskOrderByClause>? value) {
+    _orderBy = value;
+    return this;
+  }
+
+  TaskFindMany build() {
+    return TaskFindMany(
+      where: _where,
+      orderBy: _orderBy,
+    );
   }
 }
 
