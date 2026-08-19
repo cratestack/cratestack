@@ -63,6 +63,22 @@ pub(crate) fn rust_type_tokens_with_scope(
     }
 }
 
+/// The exact type tokens [`field_definition`] puts on the field —
+/// extracted so [`crate::builder`] can type a setter argument from the
+/// same source rather than re-deriving it.
+pub(crate) fn field_type(
+    field: &Field,
+    wrap_for_patch: bool,
+    custom_in_super: bool,
+) -> proc_macro2::TokenStream {
+    let base_type = rust_type_tokens_with_scope(&field.ty, custom_in_super);
+    if wrap_for_patch {
+        quote! { Option<#base_type> }
+    } else {
+        base_type
+    }
+}
+
 pub(crate) fn field_definition(
     field: &Field,
     wrap_for_patch: bool,
@@ -70,12 +86,7 @@ pub(crate) fn field_definition(
 ) -> proc_macro2::TokenStream {
     let field_ident = ident(&field.name);
     let docs = doc_attrs(&field.docs);
-    let base_type = rust_type_tokens_with_scope(&field.ty, custom_in_super);
-    let field_type = if wrap_for_patch {
-        quote! { Option<#base_type> }
-    } else {
-        base_type
-    };
+    let field_type = field_type(field, wrap_for_patch, custom_in_super);
 
     quote! {
         #docs

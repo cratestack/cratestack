@@ -19,6 +19,7 @@ use std::collections::BTreeSet;
 use cratestack_core::{Schema, View};
 
 use crate::diagnostics::{SchemaError, span_error};
+use crate::validate::builder_setter_collisions::validate_no_build_setter_collision;
 use crate::validate::fields::validate_field_reserved_identifier;
 use crate::validate::reserved_idents::validate_reserved_identifier;
 use crate::validate::snake_case_collisions::validate_field_column_collisions;
@@ -46,6 +47,13 @@ pub(super) fn validate_views(schema: &Schema) -> Result<(), SchemaError> {
 fn validate_view(view: &View, model_names: &BTreeSet<&str>) -> Result<(), SchemaError> {
     validate_reserved_identifier(&view.name, view.name_span, &format!("view `{}`", view.name))?;
     validate_field_column_collisions(&view.fields, "view", &view.name)?;
+    validate_no_build_setter_collision(
+        view.fields
+            .iter()
+            .map(|field| (field.name.as_str(), field.span)),
+        "view",
+        &view.name,
+    )?;
 
     for field in &view.fields {
         validate_field_reserved_identifier(field, "view", &view.name)?;

@@ -434,6 +434,35 @@ this.weight,
   }
 }
 
+class WidgetBuilder {
+  int? _id;
+  String? _name;
+  int? _weight;
+
+  WidgetBuilder id(int? value) {
+    _id = value;
+    return this;
+  }
+
+  WidgetBuilder name(String? value) {
+    _name = value;
+    return this;
+  }
+
+  WidgetBuilder weight(int? value) {
+    _weight = value;
+    return this;
+  }
+
+  Widget build() {
+    return Widget(
+      id: _id,
+      name: _name,
+      weight: _weight,
+    );
+  }
+}
+
 class CreateWidgetInput {
   const CreateWidgetInput({
 required this.id,
@@ -462,6 +491,39 @@ this.weight,
   }
 }
 
+class CreateWidgetInputBuilder {
+  int? _id;
+  bool _idSet = false;
+  String? _name;
+  bool _nameSet = false;
+  int? _weight;
+
+  CreateWidgetInputBuilder id(int value) {
+    _id = value;
+    _idSet = true;
+    return this;
+  }
+
+  CreateWidgetInputBuilder name(String value) {
+    _name = value;
+    _nameSet = true;
+    return this;
+  }
+
+  CreateWidgetInputBuilder weight(int? value) {
+    _weight = value;
+    return this;
+  }
+
+  CreateWidgetInput build() {
+    return CreateWidgetInput(
+      id: _idSet ? (_id as int) : (throw StateError('CreateWidgetInput.id is required but was not set')),
+      name: _nameSet ? (_name as String) : (throw StateError('CreateWidgetInput.name is required but was not set')),
+      weight: _weight,
+    );
+  }
+}
+
 class UpdateWidgetInput {
   const UpdateWidgetInput({
 this.name,
@@ -483,6 +545,28 @@ this.weight,
       'name': name,
       'weight': weight,
     };
+  }
+}
+
+class UpdateWidgetInputBuilder {
+  String? _name;
+  int? _weight;
+
+  UpdateWidgetInputBuilder name(String? value) {
+    _name = value;
+    return this;
+  }
+
+  UpdateWidgetInputBuilder weight(int? value) {
+    _weight = value;
+    return this;
+  }
+
+  UpdateWidgetInput build() {
+    return UpdateWidgetInput(
+      name: _name,
+      weight: _weight,
+    );
   }
 }
 
@@ -514,6 +598,35 @@ this.weight,
   }
 }
 
+class WidgetWhereBuilder {
+  NumberFilter? _id;
+  StringFilter? _name;
+  NumberFilter? _weight;
+
+  WidgetWhereBuilder id(NumberFilter? value) {
+    _id = value;
+    return this;
+  }
+
+  WidgetWhereBuilder name(StringFilter? value) {
+    _name = value;
+    return this;
+  }
+
+  WidgetWhereBuilder weight(NumberFilter? value) {
+    _weight = value;
+    return this;
+  }
+
+  WidgetWhere build() {
+    return WidgetWhere(
+      id: _id,
+      name: _name,
+      weight: _weight,
+    );
+  }
+}
+
 class WidgetOrderByClause {
   const WidgetOrderByClause({
 required this.field,
@@ -535,6 +648,32 @@ required this.direction,
       'field': field.toWire(),
       'direction': direction.toWire(),
     };
+  }
+}
+
+class WidgetOrderByClauseBuilder {
+  WidgetSortField? _field;
+  bool _fieldSet = false;
+  SortDirection? _direction;
+  bool _directionSet = false;
+
+  WidgetOrderByClauseBuilder field(WidgetSortField value) {
+    _field = value;
+    _fieldSet = true;
+    return this;
+  }
+
+  WidgetOrderByClauseBuilder direction(SortDirection value) {
+    _direction = value;
+    _directionSet = true;
+    return this;
+  }
+
+  WidgetOrderByClause build() {
+    return WidgetOrderByClause(
+      field: _fieldSet ? (_field as WidgetSortField) : (throw StateError('WidgetOrderByClause.field is required but was not set')),
+      direction: _directionSet ? (_direction as SortDirection) : (throw StateError('WidgetOrderByClause.direction is required but was not set')),
+    );
   }
 }
 
@@ -562,6 +701,28 @@ this.orderBy,
   }
 }
 
+class WidgetFindManyBuilder {
+  WidgetWhere? _where;
+  List<WidgetOrderByClause>? _orderBy;
+
+  WidgetFindManyBuilder where(WidgetWhere? value) {
+    _where = value;
+    return this;
+  }
+
+  WidgetFindManyBuilder orderBy(List<WidgetOrderByClause>? value) {
+    _orderBy = value;
+    return this;
+  }
+
+  WidgetFindMany build() {
+    return WidgetFindMany(
+      where: _where,
+      orderBy: _orderBy,
+    );
+  }
+}
+
 class EchoNameArgs {
   const EchoNameArgs({
 required this.name,
@@ -579,6 +740,23 @@ required this.name,
     return <String, Object?>{
       'name': name,
     };
+  }
+}
+
+class EchoNameArgsBuilder {
+  String? _name;
+  bool _nameSet = false;
+
+  EchoNameArgsBuilder name(String value) {
+    _name = value;
+    _nameSet = true;
+    return this;
+  }
+
+  EchoNameArgs build() {
+    return EchoNameArgs(
+      name: _nameSet ? (_name as String) : (throw StateError('EchoNameArgs.name is required but was not set')),
+    );
   }
 }
 

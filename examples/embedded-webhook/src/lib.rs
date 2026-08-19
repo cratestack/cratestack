@@ -97,13 +97,15 @@ async fn create_webhook(
     let row = tokio::task::spawn_blocking(move || {
         let events = ModelDelegate::new(&runtime, &cratestack_schema::WEBHOOK_EVENT_MODEL);
         events
-            .create(CreateWebhookEventInput {
-                id: Uuid::new_v4(),
-                source: input.source,
-                payload,
-                receivedAt: Utc::now(),
-                status: "pending".into(),
-            })
+            .create(
+                CreateWebhookEventInput::builder()
+                    .id(Uuid::new_v4())
+                    .source(input.source)
+                    .payload(payload)
+                    .receivedAt(Utc::now())
+                    .status("pending")
+                    .build(),
+            )
             .run()
     })
     .await??;
@@ -154,10 +156,11 @@ async fn mark_processed(
         let events = ModelDelegate::new(&runtime, &cratestack_schema::WEBHOOK_EVENT_MODEL);
         events
             .update(id)
-            .set(cratestack_schema::UpdateWebhookEventInput {
-                status: Some("processed".into()),
-                ..Default::default()
-            })
+            .set(
+                cratestack_schema::UpdateWebhookEventInput::builder()
+                    .status("processed")
+                    .build(),
+            )
             .run()
     })
     .await??;

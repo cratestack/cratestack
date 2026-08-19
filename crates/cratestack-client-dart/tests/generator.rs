@@ -494,6 +494,92 @@ fn decimal_scalar_maps_to_a_real_decimal_type() {
     );
 }
 
+/// Text-level proof (fast — no `flutter analyze` needed for this half; see
+/// `tests/fixtures/builder_edge_cases.cstack`'s module doc and
+/// `just verify-dart`'s `builder_edge_cases` fixture entry for the real
+/// analyzer-backed proof) that the generated fluent-builder template
+/// no longer has a static `{Class}.builder()` factory at all (maintainer
+/// decision: delete the entry point rather than keep guarding its
+/// fallback rename — round 1's `newBuilder` rename was itself unguarded,
+/// so a schema with BOTH a `builder` field and a `newBuilder` field
+/// reproduced the identical `conflicting_static_and_instance` collision).
+/// A required `Json` field's `build()` must still skip the same-type
+/// `as Object?` cast that `dart analyze --fatal-warnings` flags as
+/// `unnecessary_cast`.
+#[test]
+fn builder_has_no_static_factory_and_avoids_json_cast_collision() {
+    let schema = cratestack_parser::parse_schema_file("tests/fixtures/builder_edge_cases.cstack")
+        .expect("builder edge-case fixture should parse");
+
+    let package = generate_package(
+        &schema,
+        &DartGeneratorConfig {
+            library_name: "builder_edge_cases_client".to_owned(),
+            base_path: "/api".to_owned(),
+            template_dir: None,
+            preset: DartPreset::Default,
+            pb_lock: None,
+            schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
+            native_cbor: false,
+        },
+    )
+    .expect("builder edge-case template should render");
+
+    let models = package_file(&package, "lib/src/models.dart");
+
+    // No static factory survives on any data class — neither the
+    // un-renamed `builder()` spelling nor round 1's `newBuilder()`
+    // fallback. Fields literally named `builder`/`newBuilder` are just
+    // ordinary fields/setters now; users construct `{T}Builder()` directly.
+    assert!(
+        !models.contains("static GadgetBuilder builder() => GadgetBuilder();"),
+        "the static factory must be deleted entirely, not merely renamed, got:\n{models}"
+    );
+    assert!(
+        !models.contains("static GadgetBuilder newBuilder() => GadgetBuilder();"),
+        "the round-1 `newBuilder` fallback factory must also be gone, got:\n{models}"
+    );
+    assert!(
+        !models.contains(".builder()"),
+        "no generated class should retain a static `.builder()` factory call, got:\n{models}"
+    );
+
+    // The `builder` and `newBuilder` fields both survive as ordinary
+    // fluent setters, proving the defect class (both names colliding with
+    // a static factory) is structurally impossible now.
+    assert!(
+        models.contains("final String builder;") && models.contains("final String newBuilder;"),
+        "expected `builder` and `newBuilder` to remain as ordinary Gadget fields, got:\n{models}"
+    );
+    assert!(
+        models.contains("CreateGadgetInputBuilder builder(String value) {")
+            && models.contains("CreateGadgetInputBuilder newBuilder(String value) {"),
+        "expected both `builder` and `newBuilder` to get ordinary fluent setters on the \
+         generated builder, got:\n{models}"
+    );
+
+    // A field literally named `build` still gets its `setBuild` setter
+    // shim, independent of the (now-removed) `builder` factory.
+    assert!(
+        models.contains("CreateGadgetInputBuilder setBuild(String value) {"),
+        "expected the `build` field's setter to stay renamed to `setBuild`, got:\n{models}"
+    );
+
+    // The required `Json` field (`meta`, Dart type `Object?`) must not get
+    // a same-type `as Object?` cast in `build()`.
+    assert!(
+        models.contains(
+            "meta: _metaSet ? _meta : (throw StateError('CreateGadgetInput.meta is required but was not set')),"
+        ),
+        "expected no same-type `as Object?` cast on a required Json field's build(), got:\n{models}"
+    );
+    assert!(
+        !models.contains("_meta as Object?"),
+        "a same-type `as Object?` cast on a required Json field trips `unnecessary_cast` under \
+         `dart analyze --fatal-warnings`"
+    );
+}
+
 fn package_file<'a>(
     package: &'a cratestack_client_dart::GeneratedDartPackage,
     name: &str,

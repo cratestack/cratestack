@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 use cratestack_core::Schema;
 
 use crate::diagnostics::{SchemaError, span_error};
+use crate::validate::builder_setter_collisions::validate_no_build_setter_collision;
 use crate::validate::fields::{
     CustomFieldSupport, validate_custom_field_attribute, validate_default_dbgenerated_no_args,
     validate_field_list_arity_support, validate_field_policy_attributes,
@@ -49,6 +50,14 @@ pub(super) fn validate_models(
             &format!("model `{}`", model.name),
         )?;
         validate_field_column_collisions(&model.fields, "model", &model.name)?;
+        validate_no_build_setter_collision(
+            model
+                .fields
+                .iter()
+                .map(|field| (field.name.as_str(), field.span)),
+            "model",
+            &model.name,
+        )?;
 
         let mut fields = BTreeMap::new();
         let mut has_primary_key = false;

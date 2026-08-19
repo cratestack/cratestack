@@ -156,15 +156,17 @@ fn route(runtime: &RusqliteRuntime, request: OperationRequest) -> OperationRespo
             };
             let now = Utc::now();
             match notes
-                .create(schema::cratestack_schema::CreateNoteInput {
-                    id: Uuid::new_v4(),
-                    title: input.title,
-                    body: input.body,
-                    pinned: input.pinned,
-                    completed: false,
-                    createdAt: now,
-                    updatedAt: now,
-                })
+                .create(
+                    schema::cratestack_schema::CreateNoteInput::builder()
+                        .id(Uuid::new_v4())
+                        .title(input.title)
+                        .body(input.body)
+                        .pinned(input.pinned)
+                        .completed(false)
+                        .createdAt(now)
+                        .updatedAt(now)
+                        .build(),
+                )
                 .run()
             {
                 Ok(row) => OperationResponse::ok(&row).unwrap_or_else(|error| {

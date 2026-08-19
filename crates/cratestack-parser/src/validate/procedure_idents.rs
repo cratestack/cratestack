@@ -9,6 +9,7 @@
 use cratestack_core::Procedure;
 
 use crate::diagnostics::SchemaError;
+use crate::validate::builder_setter_collisions::validate_no_build_setter_collision;
 use crate::validate::reserved_idents::validate_reserved_identifier;
 
 pub(super) fn validate_procedure_idents(procedure: &Procedure) -> Result<(), SchemaError> {
@@ -27,5 +28,16 @@ pub(super) fn validate_procedure_idents(procedure: &Procedure) -> Result<(), Sch
             ),
         )?;
     }
+    // Procedure `Args` are struct-shaped and builder-backed too (see
+    // `cratestack-macros/src/procedure/types.rs`) — same `build`/
+    // `set_build` collision as any other builder-backed field set.
+    validate_no_build_setter_collision(
+        procedure
+            .args
+            .iter()
+            .map(|arg| (arg.name.as_str(), arg.name_span)),
+        "procedure",
+        &procedure.name,
+    )?;
     Ok(())
 }

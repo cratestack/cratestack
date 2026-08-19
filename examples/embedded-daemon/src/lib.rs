@@ -43,13 +43,15 @@ pub fn persist_event(
 ) -> Result<FileEvent, RusqliteError> {
     let events = ModelDelegate::new(runtime, &cratestack_schema::FILE_EVENT_MODEL);
     events
-        .create(CreateFileEventInput {
-            id: Uuid::new_v4(),
-            path: event.path.to_string_lossy().into_owned(),
-            kind: event.kind,
-            observedAt: event.observed_at,
-            bursts: event.bursts,
-        })
+        .create(
+            CreateFileEventInput::builder()
+                .id(Uuid::new_v4())
+                .path(event.path.to_string_lossy().into_owned())
+                .kind(event.kind)
+                .observedAt(event.observed_at)
+                .bursts(event.bursts)
+                .build(),
+        )
         .run()
 }
 

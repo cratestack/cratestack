@@ -55,6 +55,23 @@ required this.name,
   }
 }
 
+class EchoNameArgsBuilder {
+  String? _name;
+  bool _nameSet = false;
+
+  EchoNameArgsBuilder name(String value) {
+    _name = value;
+    _nameSet = true;
+    return this;
+  }
+
+  EchoNameArgs build() {
+    return EchoNameArgs(
+      name: _nameSet ? (_name as String) : (throw StateError('EchoNameArgs.name is required but was not set')),
+    );
+  }
+}
+
 class ProceduresApi {
   const ProceduresApi(this._client);
 

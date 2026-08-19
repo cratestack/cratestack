@@ -75,6 +75,28 @@ this.name,
   }
 }
 
+class WidgetBuilder {
+  int? _id;
+  String? _name;
+
+  WidgetBuilder id(int? value) {
+    _id = value;
+    return this;
+  }
+
+  WidgetBuilder name(String? value) {
+    _name = value;
+    return this;
+  }
+
+  Widget build() {
+    return Widget(
+      id: _id,
+      name: _name,
+    );
+  }
+}
+
 // issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
 // alongside `riverpod_generator` in the same `build_runner` pass) gives
 // this class real `operator ==`/`hashCode`/`copyWith` — every generated
@@ -120,6 +142,32 @@ required this.name,
   }
 }
 
+class CreateWidgetInputBuilder {
+  int? _id;
+  bool _idSet = false;
+  String? _name;
+  bool _nameSet = false;
+
+  CreateWidgetInputBuilder id(int value) {
+    _id = value;
+    _idSet = true;
+    return this;
+  }
+
+  CreateWidgetInputBuilder name(String value) {
+    _name = value;
+    _nameSet = true;
+    return this;
+  }
+
+  CreateWidgetInput build() {
+    return CreateWidgetInput(
+      id: _idSet ? (_id as int) : (throw StateError('CreateWidgetInput.id is required but was not set')),
+      name: _nameSet ? (_name as String) : (throw StateError('CreateWidgetInput.name is required but was not set')),
+    );
+  }
+}
+
 // issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
 // alongside `riverpod_generator` in the same `build_runner` pass) gives
 // this class real `operator ==`/`hashCode`/`copyWith` — every generated
@@ -158,6 +206,21 @@ this.name,
     return <String, Object?>{
       'name': name,
     };
+  }
+}
+
+class UpdateWidgetInputBuilder {
+  String? _name;
+
+  UpdateWidgetInputBuilder name(String? value) {
+    _name = value;
+    return this;
+  }
+
+  UpdateWidgetInput build() {
+    return UpdateWidgetInput(
+      name: _name,
+    );
   }
 }
 
@@ -206,6 +269,28 @@ this.name,
   }
 }
 
+class WidgetWhereBuilder {
+  NumberFilter? _id;
+  StringFilter? _name;
+
+  WidgetWhereBuilder id(NumberFilter? value) {
+    _id = value;
+    return this;
+  }
+
+  WidgetWhereBuilder name(StringFilter? value) {
+    _name = value;
+    return this;
+  }
+
+  WidgetWhere build() {
+    return WidgetWhere(
+      id: _id,
+      name: _name,
+    );
+  }
+}
+
 // issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
 // alongside `riverpod_generator` in the same `build_runner` pass) gives
 // this class real `operator ==`/`hashCode`/`copyWith` — every generated
@@ -251,6 +336,32 @@ required this.direction,
   }
 }
 
+class WidgetOrderByClauseBuilder {
+  WidgetSortField? _field;
+  bool _fieldSet = false;
+  SortDirection? _direction;
+  bool _directionSet = false;
+
+  WidgetOrderByClauseBuilder field(WidgetSortField value) {
+    _field = value;
+    _fieldSet = true;
+    return this;
+  }
+
+  WidgetOrderByClauseBuilder direction(SortDirection value) {
+    _direction = value;
+    _directionSet = true;
+    return this;
+  }
+
+  WidgetOrderByClause build() {
+    return WidgetOrderByClause(
+      field: _fieldSet ? (_field as WidgetSortField) : (throw StateError('WidgetOrderByClause.field is required but was not set')),
+      direction: _directionSet ? (_direction as SortDirection) : (throw StateError('WidgetOrderByClause.direction is required but was not set')),
+    );
+  }
+}
+
 // issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
 // alongside `riverpod_generator` in the same `build_runner` pass) gives
 // this class real `operator ==`/`hashCode`/`copyWith` — every generated
@@ -293,6 +404,28 @@ this.orderBy,
       'where': where?.toWire(),
       'orderBy': orderBy?.map((item) => item.toWire()).toList(growable: false),
     };
+  }
+}
+
+class WidgetFindManyBuilder {
+  WidgetWhere? _where;
+  List<WidgetOrderByClause>? _orderBy;
+
+  WidgetFindManyBuilder where(WidgetWhere? value) {
+    _where = value;
+    return this;
+  }
+
+  WidgetFindManyBuilder orderBy(List<WidgetOrderByClause>? value) {
+    _orderBy = value;
+    return this;
+  }
+
+  WidgetFindMany build() {
+    return WidgetFindMany(
+      where: _where,
+      orderBy: _orderBy,
+    );
   }
 }
 

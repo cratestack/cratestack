@@ -11,6 +11,7 @@ use std::collections::BTreeSet;
 use cratestack_core::View;
 use quote::quote;
 
+use crate::builder::{generate_builder, model_builder_fields};
 use crate::model::struct_only::struct_field_definition;
 use crate::shared::{doc_attrs, ident};
 
@@ -24,6 +25,10 @@ pub(crate) fn generate_view_struct_only(
         .fields
         .iter()
         .map(|field| struct_field_definition(field, false, enum_names));
+    let builder = generate_builder(
+        &view_ident,
+        &model_builder_fields(&view.fields, false, enum_names),
+    );
 
     // `Default` matches the model-side rationale (`Projection<T>` needs
     // it for non-selected fields). `serde::{Serialize, Deserialize}`
@@ -35,5 +40,7 @@ pub(crate) fn generate_view_struct_only(
         pub struct #view_ident {
             #(#fields)*
         }
+
+        #builder
     }
 }

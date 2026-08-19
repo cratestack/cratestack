@@ -7,6 +7,7 @@ use std::collections::BTreeSet;
 use cratestack_core::{Field, Model};
 use quote::quote;
 
+use crate::builder::{generate_builder, model_builder_fields};
 use crate::shared::{
     create_sql_value, generated_doc_attr, ident, is_generated_on_create, is_primary_key,
     is_readonly_field, is_server_only_field, is_version_field, scalar_model_fields,
@@ -59,6 +60,10 @@ pub(crate) fn generate_create_input_struct(
         .map(|field| create_sql_value(field, enum_names));
     let model_ident = ident(&model.name);
     let validate_impl = validate_impl_tokens(&fields, false);
+    let builder = generate_builder(
+        &input_ident,
+        &model_builder_fields(fields.iter().copied(), false, enum_names),
+    );
 
     quote! {
         #docs
@@ -66,6 +71,8 @@ pub(crate) fn generate_create_input_struct(
         pub struct #input_ident {
             #(#definitions)*
         }
+
+        #builder
 
         impl ::cratestack::CreateModelInput<super::models::#model_ident> for #input_ident {
             fn sql_values(&self) -> Vec<::cratestack::SqlColumnValue> {
@@ -87,6 +94,10 @@ pub(crate) fn generate_client_create_input_struct(
     let definitions = fields
         .iter()
         .map(|field| struct_field_definition(field, false, enum_names));
+    let builder = generate_builder(
+        &input_ident,
+        &model_builder_fields(fields.iter().copied(), false, enum_names),
+    );
 
     quote! {
         #docs
@@ -94,6 +105,8 @@ pub(crate) fn generate_client_create_input_struct(
         pub struct #input_ident {
             #(#definitions)*
         }
+
+        #builder
     }
 }
 
@@ -113,6 +126,10 @@ pub(crate) fn generate_update_input_struct(
         .map(|field| update_sql_value(field, enum_names));
     let model_ident = ident(&model.name);
     let validate_impl = validate_impl_tokens(&fields, true);
+    let builder = generate_builder(
+        &input_ident,
+        &model_builder_fields(fields.iter().copied(), true, enum_names),
+    );
 
     quote! {
         #docs
@@ -120,6 +137,8 @@ pub(crate) fn generate_update_input_struct(
         pub struct #input_ident {
             #(#definitions)*
         }
+
+        #builder
 
         impl ::cratestack::UpdateModelInput<super::models::#model_ident> for #input_ident {
             fn sql_values(&self) -> Vec<::cratestack::SqlColumnValue> {
@@ -189,6 +208,10 @@ pub(crate) fn generate_client_update_input_struct(
     let definitions = fields
         .iter()
         .map(|field| struct_field_definition(field, true, enum_names));
+    let builder = generate_builder(
+        &input_ident,
+        &model_builder_fields(fields.iter().copied(), true, enum_names),
+    );
 
     quote! {
         #docs
@@ -196,5 +219,7 @@ pub(crate) fn generate_client_update_input_struct(
         pub struct #input_ident {
             #(#definitions)*
         }
+
+        #builder
     }
 }

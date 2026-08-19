@@ -11,6 +11,7 @@
 
 pub mod audit;
 pub mod batch;
+pub mod builder;
 pub mod codec;
 pub mod composite_id;
 pub mod context;
@@ -23,6 +24,7 @@ pub mod idempotency_record;
 pub mod json;
 pub mod limits;
 pub mod page;
+pub mod pascal_case;
 pub mod patch;
 pub mod projection;
 pub mod route_naming;

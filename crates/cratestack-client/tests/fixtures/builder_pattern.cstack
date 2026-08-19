@@ -1,0 +1,31 @@
+// Builder-pattern coverage fixture for the query-side generated types
+// `include_client_schema!` emits but `include_embedded_schema!` does not
+// (`{Model}Where` / `{Model}FindManyInput` — see
+// `crates/cratestack-macros/src/include/client.rs` vs.
+// `crates/cratestack-macros/src/include/embedded.rs`, neither of which
+// wires `generate_find_many_types` for the embedded path). Both are
+// all-optional structs, so their generated builders are non-generic
+// (every setter returns `Self`, no typestate slot to gate `build()` on)
+// — see `crates/cratestack-macros/src/model/find_many_where.rs` and
+// `find_many_input.rs`.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model BuilderWidget {
+  id Int @id
+  name String
+  priority Int
+  note String?
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}

@@ -155,15 +155,17 @@ fn add(
     let notes = ModelDelegate::new(runtime, &cratestack_schema::NOTE_MODEL);
     let now = Utc::now();
     let created = notes
-        .create(cratestack_schema::CreateNoteInput {
-            id: Uuid::new_v4(),
-            title,
-            body,
-            pinned,
-            completed: false,
-            createdAt: now,
-            updatedAt: now,
-        })
+        .create(
+            cratestack_schema::CreateNoteInput::builder()
+                .id(Uuid::new_v4())
+                .title(title)
+                .body(body)
+                .pinned(pinned)
+                .completed(false)
+                .createdAt(now)
+                .updatedAt(now)
+                .build(),
+        )
         .run()?;
     println!("{}  {}", created.id, created.title);
     Ok(())
@@ -215,11 +217,12 @@ fn done(runtime: &RusqliteRuntime, id: Uuid) -> Result<(), Box<dyn std::error::E
     let notes = ModelDelegate::new(runtime, &cratestack_schema::NOTE_MODEL);
     let updated = notes
         .update(id)
-        .set(cratestack_schema::UpdateNoteInput {
-            completed: Some(true),
-            updatedAt: Some(Utc::now()),
-            ..Default::default()
-        })
+        .set(
+            cratestack_schema::UpdateNoteInput::builder()
+                .completed(true)
+                .updatedAt(Utc::now())
+                .build(),
+        )
         .run()?;
     println!("done: {} — {}", updated.id, updated.title);
     Ok(())
@@ -254,11 +257,10 @@ fn bulk_done(runtime: &RusqliteRuntime, ids: Vec<Uuid>) -> Result<(), Box<dyn st
         .map(|id| {
             (
                 id,
-                cratestack_schema::UpdateNoteInput {
-                    completed: Some(true),
-                    updatedAt: Some(now),
-                    ..Default::default()
-                },
+                cratestack_schema::UpdateNoteInput::builder()
+                    .completed(true)
+                    .updatedAt(now)
+                    .build(),
             )
         })
         .collect();
@@ -295,14 +297,16 @@ fn import(runtime: &RusqliteRuntime, path: PathBuf) -> Result<(), Box<dyn std::e
     let now = Utc::now();
     let inputs: Vec<_> = rows
         .into_iter()
-        .map(|r| cratestack_schema::CreateNoteInput {
-            id: r.id,
-            title: r.title,
-            body: r.body,
-            pinned: r.pinned,
-            completed: r.completed,
-            createdAt: now,
-            updatedAt: now,
+        .map(|r| {
+            cratestack_schema::CreateNoteInput::builder()
+                .id(r.id)
+                .title(r.title)
+                .body(r.body)
+                .pinned(r.pinned)
+                .completed(r.completed)
+                .createdAt(now)
+                .updatedAt(now)
+                .build()
         })
         .collect();
     let notes = ModelDelegate::new(runtime, &cratestack_schema::NOTE_MODEL);

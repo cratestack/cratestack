@@ -37,11 +37,13 @@ pub async fn create_widget_with_note(
             .await?;
 
         db.widget_note()
-            .create(schema::CreateWidgetNoteInput {
-                id: note_id,
-                widgetId: widget_id,
-                note,
-            })
+            .create(
+                schema::CreateWidgetNoteInput::builder()
+                    .id(note_id)
+                    .widgetId(widget_id)
+                    .note(note)
+                    .build(),
+            )
             .run_in_tx(tx, ctx)
             .await?;
 

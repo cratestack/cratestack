@@ -28,18 +28,16 @@ pub(crate) fn build_data_class(
     kind: DataClassKind,
     enum_names: &BTreeSet<&str>,
 ) -> DataClassView {
-    DataClassView {
-        name: name.to_owned(),
-        has_fields: !fields.is_empty(),
-        fields: fields
-            .iter()
-            .map(|field| FieldView {
-                identifier: dart_identifier(&field.name),
-                wire_name: field.name.clone(),
-                dart_type: dart_field_type(field, kind),
-                required: matches!(kind, DataClassKind::Plain)
+    let fields: Vec<FieldView> = fields
+        .iter()
+        .map(|field| {
+            FieldView::new(
+                dart_identifier(&field.name),
+                field.name.clone(),
+                dart_field_type(field, kind),
+                matches!(kind, DataClassKind::Plain)
                     && matches!(field.ty.arity, TypeArity::Required | TypeArity::List),
-                from_wire_expr: decode_value_expr(
+                decode_value_expr(
                     &format!("value['{}']", field.name),
                     &field.ty,
                     enum_names,
@@ -47,13 +45,18 @@ pub(crate) fn build_data_class(
                     name,
                     &field.name,
                 ),
-                to_wire_expr: encode_value_expr(
+                encode_value_expr(
                     &dart_identifier(&field.name),
                     &field.ty,
                     enum_names,
                     matches!(kind, DataClassKind::Patch | DataClassKind::ProjectionModel),
                 ),
-            })
-            .collect(),
+            )
+        })
+        .collect();
+    DataClassView {
+        name: name.to_owned(),
+        has_fields: !fields.is_empty(),
+        fields,
     }
 }

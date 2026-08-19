@@ -126,15 +126,17 @@ fn list_notes(state: State<'_, AppState>, only_open: bool) -> Result<Vec<JsNote>
 fn add_note(state: State<'_, AppState>, input: NewNote) -> Result<JsNote, String> {
     let now = Utc::now();
     note_delegate(&state.runtime)
-        .create(notes_schema::cratestack_schema::CreateNoteInput {
-            id: Uuid::new_v4(),
-            title: input.title,
-            body: input.body,
-            pinned: input.pinned,
-            completed: false,
-            createdAt: now,
-            updatedAt: now,
-        })
+        .create(
+            notes_schema::cratestack_schema::CreateNoteInput::builder()
+                .id(Uuid::new_v4())
+                .title(input.title)
+                .body(input.body)
+                .pinned(input.pinned)
+                .completed(false)
+                .createdAt(now)
+                .updatedAt(now)
+                .build(),
+        )
         .run()
         .map(JsNote::from)
         .map_err(|error| error.to_string())
@@ -145,11 +147,12 @@ fn mark_done(state: State<'_, AppState>, id: String) -> Result<JsNote, String> {
     let uuid = Uuid::parse_str(&id).map_err(|error| format!("bad uuid: {error}"))?;
     note_delegate(&state.runtime)
         .update(uuid)
-        .set(notes_schema::cratestack_schema::UpdateNoteInput {
-            completed: Some(true),
-            updatedAt: Some(Utc::now()),
-            ..Default::default()
-        })
+        .set(
+            notes_schema::cratestack_schema::UpdateNoteInput::builder()
+                .completed(true)
+                .updatedAt(Utc::now())
+                .build(),
+        )
         .run()
         .map(JsNote::from)
         .map_err(|error| error.to_string())

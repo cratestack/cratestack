@@ -142,15 +142,17 @@ mod wasm {
         with_runtime(|runtime| {
             let notes = ModelDelegate::new(runtime, &cratestack_schema::NOTE_MODEL);
             notes
-                .create(cratestack_schema::CreateNoteInput {
-                    id,
-                    title: parsed.title,
-                    body: parsed.body,
-                    pinned: parsed.pinned,
-                    completed: false,
-                    createdAt: now,
-                    updatedAt: now,
-                })
+                .create(
+                    cratestack_schema::CreateNoteInput::builder()
+                        .id(id)
+                        .title(parsed.title)
+                        .body(parsed.body)
+                        .pinned(parsed.pinned)
+                        .completed(false)
+                        .createdAt(now)
+                        .updatedAt(now)
+                        .build(),
+                )
                 .run()
         })
         .and_then(|note| {
@@ -187,11 +189,12 @@ mod wasm {
             let notes = ModelDelegate::new(runtime, &cratestack_schema::NOTE_MODEL);
             notes
                 .update(uuid)
-                .set(cratestack_schema::UpdateNoteInput {
-                    completed: Some(true),
-                    updatedAt: Some(Utc::now()),
-                    ..Default::default()
-                })
+                .set(
+                    cratestack_schema::UpdateNoteInput::builder()
+                        .completed(true)
+                        .updatedAt(Utc::now())
+                        .build(),
+                )
                 .run()
         })
         .and_then(|note| {
@@ -247,25 +250,28 @@ mod wasm {
                 }
                 Some(_) => notes
                     .update(uuid)
-                    .set(cratestack_schema::UpdateNoteInput {
-                        title: Some(remote.title.clone()),
-                        body: Some(remote.body.clone()),
-                        pinned: Some(remote.pinned),
-                        completed: Some(remote.completed),
-                        updatedAt: Some(remote_updated),
-                        ..Default::default()
-                    })
+                    .set(
+                        cratestack_schema::UpdateNoteInput::builder()
+                            .title(remote.title.clone())
+                            .body(remote.body.clone())
+                            .pinned(remote.pinned)
+                            .completed(remote.completed)
+                            .updatedAt(remote_updated)
+                            .build(),
+                    )
                     .run(),
                 None => notes
-                    .create(cratestack_schema::CreateNoteInput {
-                        id: uuid,
-                        title: remote.title,
-                        body: remote.body,
-                        pinned: remote.pinned,
-                        completed: remote.completed,
-                        createdAt: created,
-                        updatedAt: remote_updated,
-                    })
+                    .create(
+                        cratestack_schema::CreateNoteInput::builder()
+                            .id(uuid)
+                            .title(remote.title)
+                            .body(remote.body)
+                            .pinned(remote.pinned)
+                            .completed(remote.completed)
+                            .createdAt(created)
+                            .updatedAt(remote_updated)
+                            .build(),
+                    )
                     .run(),
             }
         })

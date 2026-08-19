@@ -75,6 +75,28 @@ this.name,
   }
 }
 
+class BoardBuilder {
+  int? _id;
+  String? _name;
+
+  BoardBuilder id(int? value) {
+    _id = value;
+    return this;
+  }
+
+  BoardBuilder name(String? value) {
+    _name = value;
+    return this;
+  }
+
+  Board build() {
+    return Board(
+      id: _id,
+      name: _name,
+    );
+  }
+}
+
 // issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
 // alongside `riverpod_generator` in the same `build_runner` pass) gives
 // this class real `operator ==`/`hashCode`/`copyWith` — every generated
@@ -120,6 +142,32 @@ required this.name,
   }
 }
 
+class CreateBoardInputBuilder {
+  int? _id;
+  bool _idSet = false;
+  String? _name;
+  bool _nameSet = false;
+
+  CreateBoardInputBuilder id(int value) {
+    _id = value;
+    _idSet = true;
+    return this;
+  }
+
+  CreateBoardInputBuilder name(String value) {
+    _name = value;
+    _nameSet = true;
+    return this;
+  }
+
+  CreateBoardInput build() {
+    return CreateBoardInput(
+      id: _idSet ? (_id as int) : (throw StateError('CreateBoardInput.id is required but was not set')),
+      name: _nameSet ? (_name as String) : (throw StateError('CreateBoardInput.name is required but was not set')),
+    );
+  }
+}
+
 // issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
 // alongside `riverpod_generator` in the same `build_runner` pass) gives
 // this class real `operator ==`/`hashCode`/`copyWith` — every generated
@@ -158,6 +206,21 @@ this.name,
     return <String, Object?>{
       'name': name,
     };
+  }
+}
+
+class UpdateBoardInputBuilder {
+  String? _name;
+
+  UpdateBoardInputBuilder name(String? value) {
+    _name = value;
+    return this;
+  }
+
+  UpdateBoardInput build() {
+    return UpdateBoardInput(
+      name: _name,
+    );
   }
 }
 
@@ -206,6 +269,28 @@ this.name,
   }
 }
 
+class BoardWhereBuilder {
+  NumberFilter? _id;
+  StringFilter? _name;
+
+  BoardWhereBuilder id(NumberFilter? value) {
+    _id = value;
+    return this;
+  }
+
+  BoardWhereBuilder name(StringFilter? value) {
+    _name = value;
+    return this;
+  }
+
+  BoardWhere build() {
+    return BoardWhere(
+      id: _id,
+      name: _name,
+    );
+  }
+}
+
 // issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
 // alongside `riverpod_generator` in the same `build_runner` pass) gives
 // this class real `operator ==`/`hashCode`/`copyWith` — every generated
@@ -251,6 +336,32 @@ required this.direction,
   }
 }
 
+class BoardOrderByClauseBuilder {
+  BoardSortField? _field;
+  bool _fieldSet = false;
+  SortDirection? _direction;
+  bool _directionSet = false;
+
+  BoardOrderByClauseBuilder field(BoardSortField value) {
+    _field = value;
+    _fieldSet = true;
+    return this;
+  }
+
+  BoardOrderByClauseBuilder direction(SortDirection value) {
+    _direction = value;
+    _directionSet = true;
+    return this;
+  }
+
+  BoardOrderByClause build() {
+    return BoardOrderByClause(
+      field: _fieldSet ? (_field as BoardSortField) : (throw StateError('BoardOrderByClause.field is required but was not set')),
+      direction: _directionSet ? (_direction as SortDirection) : (throw StateError('BoardOrderByClause.direction is required but was not set')),
+    );
+  }
+}
+
 // issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
 // alongside `riverpod_generator` in the same `build_runner` pass) gives
 // this class real `operator ==`/`hashCode`/`copyWith` — every generated
@@ -293,6 +404,28 @@ this.orderBy,
       'where': where?.toWire(),
       'orderBy': orderBy?.map((item) => item.toWire()).toList(growable: false),
     };
+  }
+}
+
+class BoardFindManyBuilder {
+  BoardWhere? _where;
+  List<BoardOrderByClause>? _orderBy;
+
+  BoardFindManyBuilder where(BoardWhere? value) {
+    _where = value;
+    return this;
+  }
+
+  BoardFindManyBuilder orderBy(List<BoardOrderByClause>? value) {
+    _orderBy = value;
+    return this;
+  }
+
+  BoardFindMany build() {
+    return BoardFindMany(
+      where: _where,
+      orderBy: _orderBy,
+    );
   }
 }
 
