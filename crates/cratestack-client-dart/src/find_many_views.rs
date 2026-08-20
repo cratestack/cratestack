@@ -69,6 +69,8 @@ pub(crate) fn build_where_data_class(
                 field.name.clone(),
                 format!("{filter_type}?"),
                 false,
+                false,
+                false,
                 format!(
                     "value['{wire}'] == null ? null : {filter_type}.fromWire(cratestackAsValueMap(value['{wire}']))",
                     wire = field.name
@@ -114,6 +116,8 @@ pub(crate) fn build_order_by_clause_data_class(model: &Model) -> DataClassView {
             "field".to_owned(),
             sort_field_name.clone(),
             true,
+            false,
+            false,
             format!(
                 "{sort_field_name}.fromWire(cratestackRequireWireValue('{order_by_name}', 'field', value['field']))"
             ),
@@ -124,6 +128,8 @@ pub(crate) fn build_order_by_clause_data_class(model: &Model) -> DataClassView {
             "direction".to_owned(),
             "SortDirection".to_owned(),
             true,
+            false,
+            false,
             format!(
                 "SortDirection.fromWire(cratestackRequireWireValue('{order_by_name}', 'direction', value['direction']))"
             ),
@@ -152,16 +158,27 @@ pub(crate) fn build_find_many_data_class(model: &Model, has_where: bool) -> Data
             "where".to_owned(),
             format!("{where_name}?"),
             false,
+            false,
+            false,
             format!(
                 "value['where'] == null ? null : {where_name}.fromWire(cratestackAsValueMap(value['where']))"
             ),
             "where?.toWire()".to_owned(),
         ));
     }
+    // `is_list: false` here is deliberate, not an oversight: `orderBy` is a
+    // framework-synthesized `FindMany` collection field, not a schema-
+    // declared scalar list field — issue #661's default-empty-list /
+    // `add{Field}` builder behavior is scoped to real `Field`s with
+    // `TypeArity::List` (what `crate::builders::build_data_class` passes
+    // through from the schema), not to every `List<...>` -shaped Dart type
+    // this crate happens to emit.
     fields.push(FieldView::new(
         "orderBy".to_owned(),
         "orderBy".to_owned(),
         format!("List<{order_by_name}>?"),
+        false,
+        false,
         false,
         format!(
             "value['orderBy'] == null ? null : cratestackAsValueList(value['orderBy']).map((item) => {order_by_name}.fromWire(cratestackAsValueMap(item))).toList(growable: false)"

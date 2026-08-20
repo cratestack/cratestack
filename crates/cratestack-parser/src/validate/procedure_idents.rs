@@ -6,10 +6,12 @@
 //! convention; see [`super::reserved_idents::validate_reserved_identifier`]
 //! for the shared check itself.
 
-use cratestack_core::Procedure;
+use cratestack_core::{Procedure, TypeArity};
 
 use crate::diagnostics::SchemaError;
-use crate::validate::builder_setter_collisions::validate_no_build_setter_collision;
+use crate::validate::builder_setter_collisions::{
+    validate_no_add_setter_collision, validate_no_build_setter_collision,
+};
 use crate::validate::reserved_idents::validate_reserved_identifier;
 
 pub(super) fn validate_procedure_idents(procedure: &Procedure) -> Result<(), SchemaError> {
@@ -36,6 +38,17 @@ pub(super) fn validate_procedure_idents(procedure: &Procedure) -> Result<(), Sch
             .args
             .iter()
             .map(|arg| (arg.name.as_str(), arg.name_span)),
+        "procedure",
+        &procedure.name,
+    )?;
+    validate_no_add_setter_collision(
+        procedure.args.iter().map(|arg| {
+            (
+                arg.name.as_str(),
+                arg.name_span,
+                matches!(arg.ty.arity, TypeArity::List),
+            )
+        }),
         "procedure",
         &procedure.name,
     )?;

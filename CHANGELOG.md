@@ -89,6 +89,52 @@ with `import '...' as prefix`. This is one more instance of an existing hazard r
 `model Widget` already emitted `class Widget`, which collides with Flutter's own `Widget` the same
 way, and callers of generated Dart clients already need to manage that.
 
+### Builder list fields: `[]` default and an append setter, matched across Rust and Dart (#661)
+
+Two follow-on fixes to the typestate/fluent builders added above, both scoped to list-arity
+(`Field[]`) fields.
+
+**Breaking (Dart):** an unset list field no longer makes `build()` throw. Dart previously marked
+list fields "required" the same as scalars, so e.g. `PostStatusFilterBuilder().build()` threw
+`StateError: PostStatusFilterBuilder.statuses is required but was not set` if `.statuses(...)` was
+never called. It now builds with `statuses: []`, matching Rust, where an unset list field has always
+defaulted to `Vec::new()` (`crates/cratestack-macros/src/builder/fields.rs::is_required` already
+returned `false` for `TypeArity::List`). The generated constructor itself is unchanged — this only
+affects the builder's own required-field bookkeeping.
+
+**Added:** a `.add_{field}(item)` (Rust) / `.add{Field}(item)` (Dart) append setter next to every
+list field's existing bulk setter. The bulk setter is unchanged and still replaces the whole list;
+append pushes one element onto whatever is already there (allocating an empty list on first use).
+The name is derived mechanically from the field name with no singularization (`children` stays
+`add_children`/`addChildren`) — a schema field that would collide with the setter this generates
+(e.g. a list field `tags` alongside a field literally named `add_tags`/`addTags`) is now rejected at
+parse time with a message naming both fields, the same treatment as the existing `build`/`set_build`
+collision check.
+
+Covers every builder that carries a list field: model structs, `Create{Model}Input`,
+`Update{Model}Input` (where `.add_{field}` on an untouched patch field implies "touched", same as
+the bulk setter), `type` blocks, and per-procedure `Args` (Rust and Dart both — an earlier draft of
+this change only wired the append setter into Dart's procedure-args builder).
+
+One deliberate exclusion: a *relation*-valued list on a model class gets no append setter. Rust
+builds model builders from `scalar_model_fields`, which drops relation fields outright, so a Dart
+`addPosts` there would have no counterpart — reintroducing the very divergence this change removes.
+The exclusion is scoped to the model class specifically, not to "any field naming a model": a `type`
+block's fields go through `scoped_builder_fields`, which does not filter relations, so a model-typed
+list inside a `type` keeps its append setter on both sides. The relation field's *bulk* setter is
+untouched — Dart's model class genuinely carries relation fields (it is what included relations
+decode into) and its builder mirrors its own constructor.
+
+Note the practical reach of all of the above: a scalar list field is rejected outright on a
+database-backed model (there is no SQL bind representation for one yet), so list builders apply to
+`type` blocks, procedure arguments, and models in schemas consumed only via
+`include_client_schema!`.
+
+Also fixed in passing, surfaced by the same scalar-list-field builder work: a generated `{Model}Where`
+struct no longer offers `.contains()`/`.starts_with()` on a `String[]`/`Cuid[]` field — those two
+`FieldRef` methods were never implemented for `Vec<String>`, so a schema with a filterable scalar
+list field failed to compile. `.equals()`/ordering ops are unaffected.
+
 ## 0.8.4 (2026-08-18)
 
 ### `/rpc/batch` authenticates the envelope once, not once per frame

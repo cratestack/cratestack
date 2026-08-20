@@ -579,6 +579,17 @@ verify-dart:
 	    --out "$pkg" \
 	    --library-name "dart_verify_${fixture}"
 	  verify_pkg "$pkg"
+	  # issue #661: a real, running proof (beside `cratestack-client-dart`'s
+	  # own text-level `tests/generator.rs` assertions) that the generated
+	  # `Gadget.tags` list-field builder appends in order, defaults to `[]`
+	  # when unset instead of throwing, and marks an `UpdateGadgetInput`
+	  # field touched on append — see the copied file's own module doc.
+	  if [ "$fixture" = "builder_edge_cases" ]; then
+	    mkdir -p "$pkg/test"
+	    cp "crates/cratestack-client-dart/tests/fixtures/builder_edge_cases_list_test.dart" "$pkg/test/builder_edge_cases_list_test.dart"
+	    echo "=== flutter test (list-field builder proof): $pkg ==="
+	    (cd "$pkg" && flutter test test/builder_edge_cases_list_test.dart)
+	  fi
 	done
 
 	riverpod_fixtures=(ci_rest ci_rpc riverpod_shared_ownership riverpod_provider_collision)

@@ -7,6 +7,7 @@ mod validate;
 
 #[cfg(test)]
 mod tests_basic;
+mod tests_builder_add_setter_collisions;
 #[cfg(test)]
 mod tests_builder_collisions;
 mod tests_builder_collisions_derived;

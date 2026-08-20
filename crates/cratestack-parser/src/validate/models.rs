@@ -1,10 +1,12 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
-use cratestack_core::Schema;
+use cratestack_core::{Schema, TypeArity};
 
 use crate::diagnostics::{SchemaError, span_error};
-use crate::validate::builder_setter_collisions::validate_no_build_setter_collision;
+use crate::validate::builder_setter_collisions::{
+    validate_no_add_setter_collision, validate_no_build_setter_collision,
+};
 use crate::validate::fields::{
     CustomFieldSupport, validate_custom_field_attribute, validate_default_dbgenerated_no_args,
     validate_field_list_arity_support, validate_field_policy_attributes,
@@ -55,6 +57,17 @@ pub(super) fn validate_models(
                 .fields
                 .iter()
                 .map(|field| (field.name.as_str(), field.span)),
+            "model",
+            &model.name,
+        )?;
+        validate_no_add_setter_collision(
+            model.fields.iter().map(|field| {
+                (
+                    field.name.as_str(),
+                    field.span,
+                    matches!(field.ty.arity, TypeArity::List),
+                )
+            }),
             "model",
             &model.name,
         )?;

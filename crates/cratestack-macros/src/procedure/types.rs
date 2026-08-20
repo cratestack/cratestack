@@ -27,7 +27,14 @@ pub(super) use super::type_tokens::{procedure_output_tokens, procedure_stream_it
 /// for `Page<T>`/`FindMany<T>` *before* applying arity, so those two
 /// shapes are never `Option<_>`-typed regardless of what the schema
 /// declared — matching that early return here keeps this in sync with the
-/// type tokens actually emitted.
+/// type tokens actually emitted. The same early return means a `List`-arity
+/// `Page<T>`/`FindMany<T>` arg (were a schema to declare one) is never
+/// actually `Vec<_>`-typed either, so [`is_list_arg`] excludes both shapes
+/// from getting an append setter for the identical reason.
+fn is_list_arg(ty: &cratestack_core::TypeRef) -> bool {
+    matches!(ty.arity, TypeArity::List) && !ty.is_page() && !ty.is_find_many()
+}
+
 fn procedure_arg_builder_fields(
     procedure: &Procedure,
     types: &[TypeDecl],
@@ -42,9 +49,24 @@ fn procedure_arg_builder_fields(
                 || arg.ty.is_find_many()
                 || matches!(arg.ty.arity, TypeArity::Required);
             let into = required && matches!(arg.ty.name.as_str(), "String" | "Cuid");
-            BuilderField::new(ident(&arg.name), field_ty, required)
+            let spec = BuilderField::new(ident(&arg.name), field_ty, required)
                 .with_into(into)
-                .with_docs(doc_attrs(&arg.docs))
+                .with_docs(doc_attrs(&arg.docs));
+            if is_list_arg(&arg.ty) {
+                // Mirrors `builder/fields.rs::list_elem_ty` /
+                // `takes_into_elem`: the element type is what this same
+                // `arg.ty` would type as at `Required` arity, and `impl
+                // Into<Elem>` follows the identical String/Cuid-only rule
+                // as the scalar setters (`takes_into` above).
+                let mut scalar = arg.ty.clone();
+                scalar.arity = TypeArity::Required;
+                let elem_ty = procedure_type_tokens(&scalar, types, enum_names);
+                let elem_into = matches!(arg.ty.name.as_str(), "String" | "Cuid");
+                let append_ident = ident(&format!("add_{}", arg.name));
+                spec.with_list(elem_ty, elem_into, append_ident)
+            } else {
+                spec
+            }
         })
         .collect()
 }

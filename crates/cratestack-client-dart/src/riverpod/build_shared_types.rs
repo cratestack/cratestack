@@ -35,6 +35,7 @@ pub(crate) fn build_shared_types_file(
             &fields,
             DataClassKind::Plain,
             &enum_names,
+            &model_names,
         ));
         owned_type_decls.push(ty);
     }

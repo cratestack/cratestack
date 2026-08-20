@@ -1,17 +1,21 @@
-//! Plain model `struct` emission (server + client variants) plus the
-//! shared `struct_field_definition` field-token builder used by every
-//! struct + input emitter.
+//! Plain model `struct` emission (server + client variants). The shared
+//! `struct_field_definition` field-token builder used by every struct +
+//! input emitter lives in `struct_only/field_definition.rs`, split out
+//! per the repo's 200-LoC file convention; re-exported here so
+//! `crate::model::struct_only::{struct_field_type, struct_field_definition}`
+//! call sites don't need to know about the split.
 
 use std::collections::BTreeSet;
 
-use cratestack_core::{Field, Model, TypeArity};
+use cratestack_core::Model;
 use quote::quote;
 
 use crate::builder::{generate_builder, model_builder_fields};
-use crate::shared::{
-    doc_attrs, ident, is_primary_key, is_server_only_field, rust_type_tokens,
-    rust_type_tokens_with_scope, scalar_model_fields,
-};
+use crate::shared::{doc_attrs, ident, is_primary_key, rust_type_tokens, scalar_model_fields};
+
+mod field_definition;
+
+pub(crate) use field_definition::{struct_field_definition, struct_field_type};
 
 /// Emit just the model `struct` (with serde derives) — no backend-specific
 /// `FromRow` impls. Used by every composer.
@@ -98,91 +102,5 @@ pub(crate) fn generate_client_model_struct(
         }
 
         #builder
-    }
-}
-
-/// The exact type tokens [`struct_field_definition`] puts on the field.
-/// Extracted so the typestate builder emitter can take a setter argument
-/// of precisely the field's own type without re-deriving it (and drifting
-/// from it) — see [`crate::builder`].
-pub(crate) fn struct_field_type(
-    field: &Field,
-    wrap_for_patch: bool,
-    enum_names: &BTreeSet<&str>,
-) -> proc_macro2::TokenStream {
-    let base_type = if enum_names.contains(field.ty.name.as_str()) {
-        let enum_ident = ident(&field.ty.name);
-        match field.ty.arity {
-            TypeArity::Required => quote! { super::types::#enum_ident },
-            TypeArity::Optional => quote! { Option<super::types::#enum_ident> },
-            TypeArity::List => quote! { Vec<super::types::#enum_ident> },
-        }
-    } else {
-        rust_type_tokens_with_scope(&field.ty, true)
-    };
-    if wrap_for_patch {
-        quote! { Option<#base_type> }
-    } else {
-        base_type
-    }
-}
-
-pub(crate) fn struct_field_definition(
-    field: &Field,
-    wrap_for_patch: bool,
-    enum_names: &BTreeSet<&str>,
-) -> proc_macro2::TokenStream {
-    let field_ident = ident(&field.name);
-    let docs = doc_attrs(&field.docs);
-    let field_type = struct_field_type(field, wrap_for_patch, enum_names);
-    // `@server_only` fields stay readable inside server code (SQLx populates
-    // them via FromRow, which doesn't go through serde) but are masked from
-    // both outbound JSON and inbound deserialization. The default value is
-    // used if a client somehow sends one — banks shouldn't rely on that;
-    // it's a defence-in-depth seam.
-    let serde_attr = if is_server_only_field(field) {
-        quote! { #[serde(skip_serializing, default)] }
-    } else if wrap_for_patch && matches!(field.ty.arity, TypeArity::Optional) {
-        // A nullable column on an update input is `Option<Option<T>>`:
-        // outer = "did this patch touch the field at all", inner = "the
-        // new value, or NULL to clear". serde-derive's blanket
-        // `Option<T>: Deserialize` only ever peels the outer layer — an
-        // absent key AND an explicit JSON/CBOR `null` both collapse to
-        // outer `None`, so "clear this column" was unreachable over the
-        // wire and silently no-op'd (cratestack#567).
-        // `deserialize_double_option` recurses into the inner `Option`
-        // instead; `default` is required alongside it because a custom
-        // `deserialize_with` opts the field out of serde-derive's own
-        // implicit "missing `Option<T>` field defaults to `None`".
-        // `skip_serializing_if` is the matching fix for the *outbound*
-        // side: every generated client builds a full input struct with
-        // `..Default::default()` and serializes the whole thing, so
-        // without this an untouched field would serialize as `null` —
-        // indistinguishable from (and, after the deserialize fix, wrongly
-        // interpreted as) an explicit clear. See `cratestack_core::patch`
-        // for the full write-up.
-        quote! {
-            #[serde(
-                default,
-                deserialize_with = "::cratestack::deserialize_double_option",
-                skip_serializing_if = "::std::option::Option::is_none"
-            )]
-        }
-    } else if matches!(field.ty.arity, TypeArity::Optional) && !wrap_for_patch {
-        // Generated model structs declare Optional fields as `Option<T>`,
-        // but the wire projection strips `null` map entries before the
-        // codec sees them (CBOR/minicbor-serde encodes `Value::Null` as an
-        // empty array, which would corrupt round-trips). `#[serde(default)]`
-        // lets the client struct accept "missing field" as `None`,
-        // restoring the round-trip without changing the wire format.
-        quote! { #[serde(default)] }
-    } else {
-        quote! {}
-    };
-
-    quote! {
-        #docs
-        #serde_attr
-        pub #field_ident: #field_type,
     }
 }

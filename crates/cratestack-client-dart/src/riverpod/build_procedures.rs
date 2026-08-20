@@ -111,6 +111,7 @@ pub(crate) fn build_procedures_file(
             &field_refs,
             DataClassKind::Plain,
             &enum_names,
+            &model_names,
         ));
     }
 
@@ -124,6 +125,7 @@ pub(crate) fn build_procedures_file(
                 &fields,
                 DataClassKind::Plain,
                 &enum_names,
+                &model_names,
             ));
             owned_type_decls.push(type_decl);
         }

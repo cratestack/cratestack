@@ -43,6 +43,7 @@ pub(crate) fn build_template_context(
             &fields,
             DataClassKind::Plain,
             &enum_names,
+            &model_names,
         ));
     }
 
@@ -54,6 +55,7 @@ pub(crate) fn build_template_context(
             &model_fields,
             DataClassKind::ProjectionModel,
             &enum_names,
+            &model_names,
         ));
 
         let create_name = format!("Create{}Input", model.name);
@@ -67,6 +69,7 @@ pub(crate) fn build_template_context(
             &create_fields,
             DataClassKind::Plain,
             &enum_names,
+            &model_names,
         ));
 
         let update_name = format!("Update{}Input", model.name);
@@ -80,6 +83,7 @@ pub(crate) fn build_template_context(
             &update_fields,
             DataClassKind::Patch,
             &enum_names,
+            &model_names,
         ));
 
         // `<Model>Where`/`<Model>SortField`/`<Model>OrderByClause`/
@@ -115,6 +119,7 @@ pub(crate) fn build_template_context(
             &field_refs,
             DataClassKind::Plain,
             &enum_names,
+            &model_names,
         ));
     }
 

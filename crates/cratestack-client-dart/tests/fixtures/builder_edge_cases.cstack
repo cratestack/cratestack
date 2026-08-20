@@ -23,15 +23,21 @@
 //   so the generated `build()` method must not emit a same-type `as
 //   Object?` cast — `dart analyze --fatal-warnings` flags that as
 //   `unnecessary_cast`.
-datasource db {
-  provider = "postgresql"
-  url = env("DATABASE_URL")
-}
-
+// - issue #661: `tags String[]` is a scalar list field, mechanically
+//   distinct from an optional/required scalar — it must build as `[]`
+//   when unset (Dart no longer throws `StateError` the way it used to)
+//   and it gets an `addTags(String)` append setter beside the existing
+//   bulk `tags(List<String>)` setter, which keeps replacing. This fixture
+//   is `generate-dart`-only (never `include_server_schema!`/
+//   `include_embedded_schema!`, see the single grep hit for its name), so
+//   it deliberately carries no `datasource` block — a database-backed
+//   model has no SQL bind representation for a list-valued scalar field
+//   and would reject `tags String[]` at parse time.
 model Gadget {
   id Int @id
   builder String
   newBuilder String
   build String
   meta Json
+  tags String[]
 }

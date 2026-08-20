@@ -12,6 +12,24 @@
 //! module doc): `include_client_schema!` needs no live database, and
 //! nothing here even spins up the mock HTTP server — every assertion is a
 //! plain struct comparison.
+//!
+//! `BuilderWidget.tags` (`String[]`) additionally covers the
+//! `Create`/`Update{Model}Input` half of the list-arity append setter
+//! (cratestack#661) that `crates/cratestack-sqlite/tests/builder_pattern.rs`
+//! *can't* — a `datasource`-bound model (sqlite's fixture) rejects a
+//! scalar list field outright (no SQL bind representation), so the
+//! `Update{Model}Input` "append implies touched" / "untouched stays off
+//! the wire" shapes can only be exercised on a schema reachable solely
+//! through `include_client_schema!`, which is exactly this fixture — see
+//! its own doc comment for the full explanation.
+//!
+//! `tagWidgets`'s `Args.tags` covers the third, previously-missing half:
+//! `procedure_arg_builder_fields` is its own code path (not
+//! `model_builder_fields`/`scoped_builder_fields`), and used to skip
+//! `.with_list(..)` entirely — Dart's equivalent `TagWidgetsArgsBuilder`
+//! got `.addTags(..)` for free (it goes through the ordinary
+//! `build_data_class`) while the Rust `Args::builder()` had no
+//! `.add_tags(..)` at all.
 
 mod builder_schema {
     cratestack::include_client_schema!("tests/fixtures/builder_pattern.cstack");
