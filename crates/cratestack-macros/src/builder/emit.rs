@@ -94,6 +94,42 @@ pub(super) fn build_impl(
     }
 }
 
+/// Emit the append setter for a list field, `None` for every other field.
+/// Always returns `Self` — list fields claim no typestate slot (see
+/// `builder/fields.rs::is_required`), so appending never changes the
+/// builder's type, only what a subsequent `build()` sees in that slot.
+pub(super) fn append_setter(
+    index: usize,
+    field: &BuilderField,
+) -> Option<proc_macro2::TokenStream> {
+    let elem_ty = field.elem_ty.as_ref()?;
+    let append_ident = field.append_ident.as_ref()?;
+    let tuple_slot = tuple_index(index);
+    let field_ident = &field.ident;
+    let (arg_ty, value_expr) = if field.elem_into {
+        (
+            quote! { impl ::core::convert::Into<#elem_ty> },
+            quote! { ::core::convert::Into::into(value) },
+        )
+    } else {
+        (quote! { #elem_ty }, quote! { value })
+    };
+    let append = field.append_stmt(&tuple_slot, value_expr);
+    let docs = format!(
+        "Append one item to `{field_ident}`, allocating the list on first use. Preserves \
+         whatever is already there — the bulk `.{field_ident}(..)` setter still replaces the \
+         whole list."
+    );
+
+    Some(quote! {
+        #[doc = #docs]
+        pub fn #append_ident(mut self, value: #arg_ty) -> Self {
+            #append
+            self
+        }
+    })
+}
+
 /// A schema field literally named `build` would collide with the terminal
 /// method (both land as inherent methods on the same builder type, and the
 /// all-`Set` state matches both impls). Prefix that one case rather than

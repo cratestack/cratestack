@@ -19,6 +19,25 @@ use crate::shared::{doc_attrs, field_type, ident};
 
 use super::BuilderField;
 
+/// The element type of a list-arity field's append setter, `None` for
+/// every other field. Computed by calling the *same* `field_ty` function
+/// that already typed [`BuilderField::ty`], on a clone of the field with
+/// its arity forced to `Required` — arity is the only input that turns a
+/// scalar type into `Vec<T>` in either type-token function, so this can
+/// never drift from the field's own list type the way a hand-rolled
+/// "strip the `Vec<>`" step could.
+fn list_elem_ty(
+    field: &Field,
+    field_ty: impl Fn(&Field, bool) -> proc_macro2::TokenStream,
+) -> Option<proc_macro2::TokenStream> {
+    if !matches!(field.ty.arity, TypeArity::List) {
+        return None;
+    }
+    let mut scalar = field.clone();
+    scalar.ty.arity = TypeArity::Required;
+    Some(field_ty(&scalar, false))
+}
+
 /// A field must be filled unless its emitted type is `Option<T>` or
 /// `Vec<T>` — see [`super`]'s "what counts as optional".
 ///
@@ -44,6 +63,14 @@ fn takes_into(field: &Field) -> bool {
         && matches!(field.ty.name.as_str(), "String" | "Cuid")
 }
 
+/// Same rule as [`takes_into`], applied to a list field's *element* type
+/// instead of the field's own type — `.add_tags("rust")` should work
+/// without an explicit `.to_owned()` exactly when `.tags(vec!["rust".into()])`
+/// would.
+fn takes_into_elem(field: &Field) -> bool {
+    matches!(field.ty.arity, TypeArity::List) && matches!(field.ty.name.as_str(), "String" | "Cuid")
+}
+
 /// Shared assembly: `field_ty(field, wrap_for_patch)` types the struct
 /// field, and on a patch struct `field_ty(field, false)` types the setter
 /// — the same type the un-patched struct would have carried.
@@ -62,8 +89,15 @@ fn build_spec(
     } else {
         spec
     };
-    spec.with_into(takes_into(field))
-        .with_docs(doc_attrs(&field.docs))
+    let spec = spec.with_into(takes_into(field));
+    let spec = match list_elem_ty(field, &field_ty) {
+        Some(elem_ty) => {
+            let append_ident = ident(&format!("add_{}", field.name));
+            spec.with_list(elem_ty, takes_into_elem(field), append_ident)
+        }
+        None => spec,
+    };
+    spec.with_docs(doc_attrs(&field.docs))
 }
 
 pub(crate) fn model_builder_fields<'a>(

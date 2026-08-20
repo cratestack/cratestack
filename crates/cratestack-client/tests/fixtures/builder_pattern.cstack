@@ -8,11 +8,30 @@
 // (every setter returns `Self`, no typestate slot to gate `build()` on)
 // — see `crates/cratestack-macros/src/model/find_many_where.rs` and
 // `find_many_input.rs`.
-
-datasource db {
-  provider = "postgresql"
-  url = env("DATABASE_URL")
-}
+//
+// No `datasource` block, deliberately: `tags String[]` is a scalar list
+// field on `BuilderWidget`, and `cratestack-parser`'s
+// `validate_field_list_arity_support` rejects list-valued scalar/enum
+// model fields on any schema that declares one (there is no SQL bind
+// representation for a list column) — see
+// `crates/cratestack-sqlite/tests/fixtures/builder_pattern.cstack`'s own
+// comment for the embedded-schema side of that split. A schema reachable
+// only through `include_client_schema!` never binds SQL values, so the
+// restriction doesn't apply here; this is the sanctioned way to exercise
+// a model-level list field's `Create`/`Update{Model}Input` builder (append
+// setter + patch "touched" semantics), which the sqlite fixture's
+// datasource can't host — see `cratestack-parser`'s own passing precedent,
+// `crates/cratestack-client-dart/tests/fixtures/enums.cstack`'s
+// `model User { roles Role[] }`.
+//
+// `tagWidgets`'s `tags: String[]` argument additionally covers the
+// procedure-`Args` half of the list-arity append setter (cratestack#661):
+// `procedure_arg_builder_fields`
+// (`crates/cratestack-macros/src/procedure/types.rs`) is a separate code
+// path from `model_builder_fields`/`scoped_builder_fields` — it doesn't go
+// through `builder/fields.rs::build_spec`, the only place `.with_list(..)`
+// used to be called, so a Rust `Args::builder()` got no `.add_tags(..)`
+// setter even though Dart's equivalent `TagWidgetsArgsBuilder` did.
 
 auth Operator {
   id Int
@@ -23,9 +42,13 @@ model BuilderWidget {
   name String
   priority Int
   note String?
+  tags String[]
 
   @@allow("read", auth() != null)
   @@allow("create", auth() != null)
   @@allow("update", auth() != null)
   @@allow("delete", auth() != null)
 }
+
+procedure tagWidgets(tags: String[]): Int
+  @allow(auth() != null)

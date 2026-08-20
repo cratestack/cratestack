@@ -13,6 +13,22 @@
 //   * the `BuilderWidget` model struct's own builder (all fields
 //     required except `note`).
 //   * `BuilderWidgetSummary`'s view struct builder.
+//
+// `BuilderWidgetTags` (a `type` block, not a `model` field) covers the
+// list-arity append setter (`.add_tags(item)` alongside the bulk
+// `.tags(vec)` one — cratestack#661): `type` blocks aren't
+// `datasource`-bound the way a `model` field is, so they're the one shape
+// in this schema that can legally carry a scalar `String[]` field —
+// `cratestack-parser`'s `validate_field_list_arity_support` rejects a
+// list-valued scalar/enum *model* field on any schema with a `datasource`
+// (no SQL bind representation for a list column), which `BuilderWidget`
+// itself has. `scoped_builder_fields` (the `type`-block builder path) is
+// always called with `wrap_for_patch = false` (see
+// `crates/cratestack-macros/src/types.rs`), so it only exercises the
+// non-patch append/bulk/unset shapes; the patch ("touched") shape is
+// covered separately in `crates/cratestack-client/tests/builder_pattern.rs`,
+// whose datasource-free fixture can put `tags String[]` directly on a
+// model and get a real `Update{Model}Input`.
 
 datasource db {
   provider = "sqlite"
@@ -32,4 +48,8 @@ view BuilderWidgetSummary from BuilderWidget {
   note String? @from(BuilderWidget.note)
 
   @@embedded_sql("SELECT id, name, note FROM builder_widgets")
+}
+
+type BuilderWidgetTags {
+  tags String[]
 }

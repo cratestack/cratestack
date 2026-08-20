@@ -47,89 +47,14 @@
 
 mod emit;
 mod fields;
+mod spec;
 mod state;
 
 use quote::{format_ident, quote};
 
 pub(crate) use fields::{model_builder_fields, scoped_builder_fields};
+pub(crate) use spec::BuilderField;
 pub(crate) use state::StateParams;
-
-/// One field of the struct being built.
-pub(crate) struct BuilderField {
-    /// Field identifier, already raw-escaped by [`crate::shared::ident`].
-    pub(crate) ident: syn::Ident,
-    /// The field's emitted type, verbatim — the same tokens the struct
-    /// definition uses.
-    pub(crate) ty: proc_macro2::TokenStream,
-    /// What the setter accepts. Same as [`Self::ty`] everywhere except
-    /// update inputs, where it is `ty` with one `Option` layer peeled:
-    /// on a patch struct the outer `Option` *is* "did the caller touch
-    /// this field", which calling the setter answers by itself. So
-    /// `.name("Ops")` sets a non-nullable column and `.email(None)`
-    /// clears a nullable one — instead of both needing an extra `Some(..)`
-    /// that could only ever be written one way.
-    pub(crate) setter_ty: proc_macro2::TokenStream,
-    /// Whether the stored value needs that peeled `Option` put back.
-    patch: bool,
-    /// `false` only for `Option<T>` / `Vec<T>` fields; see the module doc.
-    pub(crate) required: bool,
-    /// Take `impl Into<T>` instead of `T`. Set for plain `String` fields
-    /// so `.name("Ops")` works; deliberately *not* set for numeric types,
-    /// where the extra inference variable turns unannotated integer
-    /// literals into fallback-dependent guesswork.
-    pub(crate) into: bool,
-    /// Doc attributes carried over from the schema, so the setter reads
-    /// the same as the field.
-    pub(crate) docs: proc_macro2::TokenStream,
-}
-
-impl BuilderField {
-    pub(crate) fn new(
-        ident: syn::Ident,
-        ty: proc_macro2::TokenStream,
-        required: bool,
-    ) -> BuilderField {
-        BuilderField {
-            ident,
-            setter_ty: ty.clone(),
-            ty,
-            patch: false,
-            required,
-            into: false,
-            docs: quote! {},
-        }
-    }
-
-    /// Mark this as an update-input field: `setter_ty` is the type
-    /// *before* patch-wrapping, and the setter puts the outer `Option`
-    /// back on the way in.
-    pub(crate) fn with_patch(mut self, setter_ty: proc_macro2::TokenStream) -> BuilderField {
-        self.setter_ty = setter_ty;
-        self.patch = true;
-        self
-    }
-
-    pub(crate) fn with_into(mut self, into: bool) -> BuilderField {
-        self.into = into;
-        self
-    }
-
-    /// The expression a setter stores into the holder: one `Some` for the
-    /// holder's own "was this setter called" layer, plus a second one for
-    /// a patch field's peeled `Option`.
-    pub(crate) fn store_expr(&self, value: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
-        if self.patch {
-            quote! { ::core::option::Option::Some(::core::option::Option::Some(#value)) }
-        } else {
-            quote! { ::core::option::Option::Some(#value) }
-        }
-    }
-
-    pub(crate) fn with_docs(mut self, docs: proc_macro2::TokenStream) -> BuilderField {
-        self.docs = docs;
-        self
-    }
-}
 
 /// Emit `impl {Target} { fn builder() }`, the `{Target}Builder` typestate
 /// struct, its private field holder, every setter, and the `build()` impl
@@ -163,6 +88,13 @@ pub(crate) fn generate_builder(
         .iter()
         .enumerate()
         .map(|(index, field)| emit::setter(index, field, &builder_ident, &state));
+    // List fields get a second, append setter alongside the bulk one —
+    // `emit::append_setter` returns `None` for every non-list field, so
+    // this just filters itself down to the fields that have one.
+    let append_setters = fields
+        .iter()
+        .enumerate()
+        .filter_map(|(index, field)| emit::append_setter(index, field));
     let build_impl = emit::build_impl(target, &builder_ident, &state, fields);
 
     let builder_docs = format!(
@@ -189,6 +121,7 @@ pub(crate) fn generate_builder(
 
         impl #impl_generics #self_ty {
             #(#setters)*
+            #(#append_setters)*
         }
 
         #build_impl

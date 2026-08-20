@@ -40,9 +40,16 @@ fn supports_ordering_ops(field: &Field) -> bool {
 
 /// `contains`/`startsWith` — `String`/`Cuid` only (the only two types
 /// `FieldRef::contains`/`starts_with` are actually implemented for; a
-/// `Uuid` field's `FieldRef<M, uuid::Uuid>` has no such impl).
+/// `Uuid` field's `FieldRef<M, uuid::Uuid>` has no such impl), and only at
+/// `Required`/`Optional` arity: those two impls are scoped to
+/// `FieldRef<M, String>` / `FieldRef<M, Option<String>>` specifically, so
+/// a scalar `String[]`/`Cuid[]` field's `FieldRef<M, Vec<String>>` has
+/// neither method — a pre-existing gap independent of this ticket's
+/// builder work, surfaced by it once a schema-authored scalar list field
+/// existed to compile against (`Where`-clause filtering on a list column
+/// has no obvious `contains`/`startsWith` semantics to begin with).
 fn supports_string_ops(field: &Field) -> bool {
-    matches!(field.ty.name.as_str(), "String" | "Cuid")
+    matches!(field.ty.name.as_str(), "String" | "Cuid") && field.ty.arity != TypeArity::List
 }
 
 fn scalar_type_tokens(field: &Field) -> proc_macro2::TokenStream {

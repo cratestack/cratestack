@@ -74,6 +74,7 @@ pub(crate) fn build_model_file(
         &model_fields,
         DataClassKind::ProjectionModel,
         &enum_names,
+        &model_names,
     )];
 
     let create_fields = scalar_fields
@@ -86,6 +87,7 @@ pub(crate) fn build_model_file(
         &create_fields,
         DataClassKind::Plain,
         &enum_names,
+        &model_names,
     ));
 
     let update_fields = scalar_fields
@@ -98,6 +100,7 @@ pub(crate) fn build_model_file(
         &update_fields,
         DataClassKind::Patch,
         &enum_names,
+        &model_names,
     ));
 
     let locus = Owner::Model(model.name.clone());
@@ -111,6 +114,7 @@ pub(crate) fn build_model_file(
                 &fields,
                 DataClassKind::Plain,
                 &enum_names,
+                &model_names,
             ));
         }
     }

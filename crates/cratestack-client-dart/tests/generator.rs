@@ -574,6 +574,113 @@ fn builder_has_no_static_factory_and_avoids_json_cast_collision() {
     );
 }
 
+/// Text-level proof (fast — the real running proof, including `flutter
+/// analyze`, lives in `just verify-dart`'s `builder_edge_cases` fixture
+/// entry, which now also runs `tests/fixtures/builder_edge_cases_list_test
+/// .dart` against the generated package) of issue #661's Dart half:
+///
+/// 1. `Gadget.tags`/`CreateGadgetInput.tags`/`UpdateGadgetInput.tags`'s
+///    generated **constructors** are untouched by the fix — `required
+///    this.tags` still appears verbatim on `CreateGadgetInput`, proving
+///    `FieldView.required` (shared with the constructor template) was not
+///    the flag that changed.
+/// 2. The **builder** for a list field no longer tracks a `_tagsSet` flag
+///    at all (list fields never throw, so there is nothing to track) and
+///    `build()` defaults an unset list to `<String>[]` rather than
+///    throwing `StateError`.
+/// 3. A fluent `addTags(String)` append setter exists beside the bulk
+///    `tags(List<String>)` setter, which still replaces.
+/// 4. `UpdateGadgetInput`'s builder gets the same `addTags` setter, and its
+///    `build()` still passes the backing field straight through (`tags:
+///    _tags,`) — an untouched field stays `null`, not `[]`, preserving the
+///    existing "never touched" wire representation every other Patch field
+///    already relies on.
+#[test]
+fn list_field_builder_defaults_to_empty_list_and_gains_an_append_setter() {
+    let schema = cratestack_parser::parse_schema_file("tests/fixtures/builder_edge_cases.cstack")
+        .expect("builder edge-case fixture should parse");
+
+    let package = generate_package(
+        &schema,
+        &DartGeneratorConfig {
+            library_name: "builder_edge_cases_client".to_owned(),
+            base_path: "/api".to_owned(),
+            template_dir: None,
+            preset: DartPreset::Default,
+            schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
+            native_cbor: false,
+        },
+    )
+    .expect("builder edge-case template should render");
+
+    let models = package_file(&package, "lib/src/models.dart");
+
+    // (1) Constructors are byte-identical to what a `Required`/`List`-gated
+    // `required` flag always produced — the fix must not touch this.
+    assert!(
+        models.contains("final List<String> tags;") && models.contains("required this.tags,"),
+        "CreateGadgetInput's constructor must keep requiring `tags` \
+         (unaffected by the builder-only fix), got:\n{models}"
+    );
+    assert!(
+        models.contains("final List<String>? tags;"),
+        "Gadget/UpdateGadgetInput's constructor `tags` field must stay \
+         nullable/optional, unaffected by the fix, got:\n{models}"
+    );
+
+    // (2) No Set-tracking for a list field, and no throw in build().
+    assert!(
+        !models.contains("_tagsSet"),
+        "a list field must never gain `_tagsSet` tracking — it's not \
+         builder-required — got:\n{models}"
+    );
+    assert!(
+        !models.contains("CreateGadgetInput.tags is required but was not set"),
+        "CreateGadgetInput.tags must never throw for being unset, got:\n{models}"
+    );
+    assert!(
+        models.contains("tags: _tags ?? <String>[],"),
+        "CreateGadgetInput.build() must default an unset `tags` to `[]`, \
+         got:\n{models}"
+    );
+
+    // (3) The append setter exists beside the still-replacing bulk setter.
+    assert!(
+        models.contains("CreateGadgetInputBuilder tags(List<String> value) {\n    _tags = value;\n    return this;\n  }"),
+        "the bulk `tags(...)` setter must still exist and still replace, got:\n{models}"
+    );
+    assert!(
+        models.contains("CreateGadgetInputBuilder addTags(String value) {\n    (_tags = <String>[...?_tags]).add(value);\n    return this;\n  }"),
+        "expected a fluent `addTags(String)` append setter that allocates \
+         the list on first use, got:\n{models}"
+    );
+
+    // (4) Update input: append setter exists too, and an untouched field
+    // still passes straight through as `null`, never defaulted to `[]`.
+    assert!(
+        models.contains("UpdateGadgetInputBuilder addTags(String value) {\n    (_tags = <String>[...?_tags]).add(value);\n    return this;\n  }"),
+        "UpdateGadgetInput's builder must also get `addTags`, got:\n{models}"
+    );
+    assert!(
+        models.contains("UpdateGadgetInput build() {\n    return UpdateGadgetInput(\n      builder: _builder,\n      newBuilder: _newBuilder,\n      build: _build,\n      meta: _meta,\n      tags: _tags,\n    );"),
+        "an untouched UpdateGadgetInput.tags must stay `null` (the existing \
+         untouched-field representation), not default to `[]`, got:\n{models}"
+    );
+
+    // (5) `Gadget` itself (the model/`ProjectionModel`-kind builder, not
+    // just the `Plain`-kind Create input) also defaults an unset `tags` to
+    // `[]` — `Gadget.tags`'s `dart_type` is nullable (`List<String>?`, same
+    // as `UpdateGadgetInput`'s) for an unrelated reason — every
+    // `ProjectionModel` field is forced nullable to represent "not
+    // selected" — so `list_needs_default` must not infer "stay null" from
+    // nullability alone the way it used to.
+    assert!(
+        models.contains("tags: _tags ?? <String>[]"),
+        "Gadget's model-class builder must also default an unset `tags` to \
+         `[]`, not `null`, got:\n{models}"
+    );
+}
+
 fn package_file<'a>(
     package: &'a cratestack_client_dart::GeneratedDartPackage,
     name: &str,
