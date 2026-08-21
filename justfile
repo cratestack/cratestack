@@ -467,10 +467,10 @@ test-ci-ignored-report *args='':
 # `sdk: flutter`, and `cratestack_annotations` deliberately has no
 # dependencies at all.
 #
-# `cratestack_builder` currently carries a `dependency_overrides` entry
-# pointing at its in-repo sibling, because `cratestack_annotations` is not on
-# pub.dev yet. That override is also what stops it publishing by accident:
-# `dart pub publish` refuses a package that has one.
+# Both resolve from pub.dev: `cratestack_annotations` 0.8.5 is published, so
+# `cratestack_builder` depends on it by version like any other consumer would.
+# It briefly carried a `dependency_overrides` pointing at the in-repo sibling
+# while the annotation package was unpublished; that is gone.
 verify-dart-packages:
 	#!/usr/bin/env bash
 	set -euo pipefail
