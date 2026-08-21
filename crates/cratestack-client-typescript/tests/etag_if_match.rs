@@ -185,7 +185,9 @@ fn swr_preset_get_with_response_exists_and_revives_decimals() {
     );
 
     assert!(
-        model_file.contains("import type { CratestackRuntime, CratestackResponseEnvelope } from \"../runtime.js\";"),
+        model_file.contains(
+            "import type { CratestackRuntime, CratestackResponseEnvelope } from \"../runtime.js\";"
+        ),
         "swr's per-model file must import CratestackResponseEnvelope:\n{model_file}"
     );
 }
@@ -518,8 +520,9 @@ fn run_etag_stub_server(listener: std::net::TcpListener) -> CapturedRequests {
         )
     });
 
-    let (patch_request_line, patch_if_match) =
-        handle_one_request(&listener, |request_line, headers| {
+    let (patch_request_line, patch_if_match) = handle_one_request(
+        &listener,
+        |request_line, headers| {
             let if_match = if_match_header(&headers);
             let body = r#"{"id":4,"label":"gl-4","balance":5,"amount":"12.34","version":8}"#;
             (
@@ -530,7 +533,8 @@ fn run_etag_stub_server(listener: std::net::TcpListener) -> CapturedRequests {
                     body
                 ),
             )
-        });
+        },
+    );
 
     let (delete_request_line, delete_if_match) =
         handle_one_request(&listener, |request_line, headers| {
