@@ -18,8 +18,17 @@
 //! None`, where `Cratestack` is just a unit struct — see
 //! `include/server/runtime/none.rs`), so nothing ever needs a witness
 //! from the `db`-less pair to call one.
+//!
+//! `invoke_with_db_fn_tokens` itself lives in the `invoke_with_db`
+//! submodule, not here — its generated doc comment (cratestack#611) is
+//! long enough that keeping it inline would push this file past the
+//! crate's ~200-LoC file ceiling.
 
 use quote::quote;
+
+mod invoke_with_db;
+
+pub(super) use invoke_with_db::invoke_with_db_fn_tokens;
 
 /// See the module doc's cratestack#512 note. Spliced into every
 /// generated `pub mod <procedure>` alongside the four lifecycle
@@ -158,77 +167,6 @@ pub(super) fn invoke_fn_tokens() -> proc_macro2::TokenStream {
                     target: "cratestack",
                     cratestack_procedure = NAME,
                     cratestack_operation = "invoke",
-                    cratestack_error = error.code(),
-                    cratestack_duration_ms = started.elapsed().as_millis() as u64,
-                    "cratestack procedure failed",
-                ),
-            }
-            result
-        }
-    }
-}
-
-pub(super) fn invoke_with_db_fn_tokens() -> proc_macro2::TokenStream {
-    quote! {
-        /// Runs `@allow`/`@deny` (and any `@authorize` model checks) via
-        /// [`authorize_with_db`], then calls `f` with the resulting
-        /// [`Authorized`] witness. `f` is the only place that witness can
-        /// go: into the [`super::procedures::ProcedureRegistry`] method
-        /// call this procedure's generated dispatch handler makes — see
-        /// cratestack#512.
-        ///
-        /// This is also the sanctioned way to invoke a procedure from
-        /// non-HTTP code (a cron job, background worker, or admin tool):
-        /// the generated axum/RPC handlers call this same function,
-        /// nothing more privileged is available to them.
-        ///
-        /// ```ignore
-        /// // Internal caller shape — a background worker running as the
-        /// // system principal (`auth().isSystem()`, cratestack#486).
-        /// let ctx = SystemContext::for_service("nightly-reconciler").into_context();
-        /// let args = procedures::reconcile_accounts::Args { .. };
-        /// let result = procedures::reconcile_accounts::invoke_with_db(
-        ///     &db,
-        ///     &args,
-        ///     &ctx,
-        ///     |authorized| async move {
-        ///         registry.reconcile_accounts(&db, &ctx, args, authorized).await
-        ///     },
-        /// )
-        /// .await;
-        /// ```
-        pub async fn invoke_with_db<F, Fut, T>(
-            db: &super::super::Cratestack,
-            args: &Args,
-            ctx: &::cratestack::CratestackContext,
-            f: F,
-        ) -> Result<T, ::cratestack::CratestackError>
-        where
-            F: FnOnce(Authorized) -> Fut,
-            Fut: ::core::future::Future<Output = Result<T, ::cratestack::CratestackError>>,
-        {
-            let span = ::cratestack::tracing::info_span!(
-                "cratestack_procedure_invoke_with_db",
-                cratestack_procedure = NAME,
-                cratestack_operation = "invoke_with_db",
-                cratestack_authenticated = ctx.is_authenticated(),
-            );
-            let _guard = span.enter();
-            let started = ::std::time::Instant::now();
-            let authorized = authorize_with_db(db, args, ctx).await?;
-            let result = f(authorized).await;
-            match &result {
-                Ok(_) => ::cratestack::tracing::info!(
-                    target: "cratestack",
-                    cratestack_procedure = NAME,
-                    cratestack_operation = "invoke_with_db",
-                    cratestack_duration_ms = started.elapsed().as_millis() as u64,
-                    "cratestack procedure completed",
-                ),
-                Err(error) => ::cratestack::tracing::warn!(
-                    target: "cratestack",
-                    cratestack_procedure = NAME,
-                    cratestack_operation = "invoke_with_db",
                     cratestack_error = error.code(),
                     cratestack_duration_ms = started.elapsed().as_millis() as u64,
                     "cratestack procedure failed",

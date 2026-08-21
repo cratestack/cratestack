@@ -2,6 +2,26 @@
 
 ## 0.8.5 (2026-08-21)
 
+### Fixed: `invoke_with_db`'s generated doc example no longer collides with `cargo test -- --ignored` (#611)
+
+`invoke_with_db`'s generated doc comment (added by cratestack#512) carried an
+intentionally non-compiling illustrative example fenced `` ```ignore ``. A plain
+`cargo test` correctly skips it (reported `ignored`), but `cargo test -- --ignored` — a
+common convention for gating expensive "live"/slow suites behind `#[ignore]`, independent
+of anything doctest-related — reuses that exact same bucket to force-compile every
+`` ```ignore `` doctest too. Every downstream schema with at least one procedure got one
+guaranteed, uncontrollable failure per procedure the moment its own CI ran `-- --ignored`
+anywhere in the same crate that hosts `include_server_schema!`.
+
+The example is now fenced `` ```text `` instead: a language rustdoc never recognizes as
+Rust, so it is never scheduled as a doctest candidate under any flag combination, while
+still rendering as a fenced, syntax-highlighted example in `cargo doc` output — the
+documentation value cratestack#512 added is unchanged. An unfenced, indented pseudocode
+block (the shape originally suggested in cratestack#611) was evaluated and rejected: an
+indented block is still a CommonMark code block, so rustdoc still schedules it as a
+doctest and it would have failed to compile under a *plain* `cargo test` too — strictly
+worse than the bug it was meant to fix, not a fix at all.
+
 ### Protobuf/gRPC support removed — breaking (ADR 0017)
 
 `transport grpc` — the third transport a `.cstack` schema could declare, generating
