@@ -966,6 +966,268 @@ jobs:
       - name: flutter build apk + assert vendored library present per ABI
         run: just cbor-example-verify-android
 
+  # ---- cratestack_cbor Windows platform (cratestack#563 platform-matrix
+  # slice) ------------------------------------------------------------------
+  # Blocking, but this is the FIRST run of this job — this repo's own dev
+  # toolchain is Linux-only (see CLAUDE.md's Linux prerequisite note), so
+  # none of `cargo build --target x86_64-pc-windows-msvc`, `flutter build
+  # windows`, or "does `just` actually resolve `bash` on `windows-latest`"
+  # could be exercised before this landed. Treat a first red run here as
+  # expected troubleshooting, not a surprise.
+  #
+  # NOT `just cbor-vendor-native`: that recipe hardcodes a
+  # `x86_64-unknown-linux-gnu` build as half of what it does (glue, then the
+  # Linux library), which cannot link on a Windows host. This job instead
+  # calls `cbor-vendor-glue` directly, then `cbor-vendor-lib windows-x64` —
+  # the same two-recipe composition `cbor-vendor-native` itself is built
+  # from, just paired with the Windows half instead of the Linux one.
+  #
+  # `cbor-vendor-glue` IS REQUIRED here, and running it is NOT optional —
+  # verified directly, not assumed: `crates/cratestack-client-flutter/
+  # .gitignore` excludes `src/frb_generated.rs` from git (confirmed via
+  # `git check-ignore -v` and `git ls-files`), and that file backs an
+  # unconditional `mod frb_generated;` (gated `#[cfg(feature =
+  # "frb-glue")]`, but this job builds with exactly that feature). A fresh
+  # checkout does not have it, so `cbor-vendor-lib windows-x64`'s `cargo
+  # build --features frb-glue` fails outright without it — confirmed
+  # against a real E0583 on a sibling macOS CI spike hitting the identical
+  # gap, not platform-specific to that OS. (The DART half of the glue,
+  # `dart-packages/cratestack_cbor/lib/src/native/rust/`, is ALSO
+  # gitignored and ALSO not present on a fresh checkout — both halves come
+  # out of the one `flutter_rust_bridge_codegen generate` invocation
+  # `cbor-vendor-glue` wraps, so there was never a way to get the Rust half
+  # here without also regenerating the Dart half.)
+  #
+  # TENSION, flagged rather than resolved here — a maintainer decision, not
+  # picked unilaterally: `cbor-vendor-glue`'s own doc comment states "the
+  # frb codegen half. Linux-only, run once" and frames `cbor-vendor-native`
+  # as what keeps three OSes from each "regenerating and overwriting the
+  # same committed glue with potentially divergent codegen output." That
+  # framing does not hold once a second/third platform each need the RUST
+  # half of that same glue to build their own native library — as this job
+  # and the (still-pending) macOS job both do. In CI nothing is actually
+  # git-committed (both halves are gitignored, verified above), so running
+  # `cbor-vendor-glue` redundantly per-OS is harmless *today* — each job's
+  # own regenerated copy only has to agree with what that same job's own
+  # subsequent build/test steps use, not with any other job's copy. But it
+  # does mean "run once" is aspirational, not actually achievable as
+  # currently phrased, the moment more than one platform builds the native
+  # library. Options, not chosen here:
+  #   (a) keep regenerating per-OS everywhere (what this job does) and add
+  #       a determinism gate — e.g. a `git diff --exit-code` style check
+  #       comparing the Dart glue this job regenerates against what the
+  #       Linux job (`cratestack-cbor-package`) regenerates, to at least
+  #       catch codegen output actually diverging by OS, which today
+  #       nothing asserts;
+  #   (b) split `cbor-vendor-glue` further into a Rust-only half (needed by
+  #       every platform-library job) and a Dart-only half (needed once,
+  #       by whichever job's output actually gets used/committed/shipped);
+  #   (c) commit `frb_generated.rs` (and/or the Dart glue) for real, ending
+  #       the "generated in CI, not committed" decision this ticket
+  #       inherited rather than reopening it here.
+  # Not resolved in this slice — flagged for a maintainer call.
+  #
+  # Also vendors the web artifact for the same reason `cratestack-cbor-
+  # android` does (see that job's own comment): `pubspec.yaml`'s `flutter:
+  # assets:` declaration is unconditional, and Flutter has no per-platform
+  # asset conditionals, so a missing wasm pair fails a Windows build too.
+  #
+  # UNVERIFIED FROM THIS (Linux) DEV MACHINE, flagged rather than assumed —
+  # first real test is this job actually running on `windows-latest`:
+  #   - Whether `cbor-vendor-glue` itself runs cleanly here at all: its
+  #     `#!/usr/bin/env bash` shebang recipe body (i) needs `bash` (see
+  #     below), (ii) shells out to `flutter_rust_bridge_codegen` (a
+  #     prebuilt-per-platform Rust binary — presumed to have a Windows
+  #     build since `cargo install` is what fetches/builds it, but not
+  #     independently confirmed here), and (iii) best-effort formats the
+  #     freshly generated Dart output with `dart format` if `dart` is on
+  #     PATH — `dart` should be, from `subosito/flutter-action` earlier in
+  #     this job, but that ordering has not been exercised on Windows
+  #     either.
+  #   - `bash` resolving at all: this job's `just <recipe>` steps below
+  #     have no bash-specific syntax in the YAML `run:` block itself (a
+  #     single command, executed fine under the runner's default `pwsh`),
+  #     but `just` then shells into `bash` internally for every recipe body
+  #     per this justfile's global `set shell := ["bash", ...]` — so `bash`
+  #     resolving via Git for Windows' bundled MSYS environment (which
+  #     `windows-latest` is documented to preinstall on PATH) is a hard
+  #     dependency for this entire job succeeding at all, not just one
+  #     step. Steps below with actual bash syntax in their own `run:` block
+  #     (the binaryen install) set `shell: bash` explicitly, mirroring this
+  #     repo's own existing Windows jobs (`install-cratestack-cli-smoke-
+  #     test`, `release-cli.yml`'s `build` job).
+  #   - `cbor-vendor-lib windows-x64`'s own `cargo metadata` parse
+  #     deliberately avoids `python3` (grep/sed instead — see that
+  #     recipe's comment): a standard Windows Python install typically
+  #     provides `python`/`py`, not a bare `python3` shim — also
+  #     unconfirmed from this Linux dev machine.
+  cratestack-cbor-windows:
+    name: flutter (cratestack_cbor windows — real build, DLL + round-trip proof)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      # wasm32-unknown-unknown is installed by rustup from
+      # rust-toolchain.toml's `targets` for the pinned channel — same
+      # mechanism every other cbor job relies on, cross-platform.
+      # x86_64-pc-windows-msvc needs no extra `targets:` entry: it is
+      # already the default host triple on this runner.
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,wasm-pack
+      # The Flutter SDK — same reason as every other cbor job (see
+      # cratestack-cbor-package's comment): cratestack_cbor's
+      # `flutter.plugin.platforms` pubspec key requires the real Flutter
+      # SDK to resolve at all, not a standalone Dart SDK.
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Install flutter_rust_bridge_codegen (pinned =2.12.0)
+        run: cargo install --locked flutter_rust_bridge_codegen --version 2.12.0
+      # Same reason as every other cbor job's identical step: wasm-pack
+      # downloads its own binaryen (hardcoded version) mid-build unless a
+      # `wasm-opt` is already on PATH. Windows asset name and archive
+      # layout differ from Linux's (`.../bin/wasm-opt.exe`, not
+      # `.../bin/wasm-opt`) — verified the asset exists and inspected its
+      # contents directly (`tar -tzf`) rather than assuming the naming
+      # convention carries over; adding its `bin/` directory to
+      # `$GITHUB_PATH` is expected to let cross-platform tooling that
+      # searches PATH for `wasm-opt` find `wasm-opt.exe` the normal Windows
+      # way (PATHEXT-aware resolution), but that specific resolution step
+      # is unverified from this Linux dev machine.
+      - name: Install binaryen (wasm-opt), pinned
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL -o binaryen.tar.gz \
+            "https://github.com/WebAssembly/binaryen/releases/download/version_130/binaryen-version_130-x86_64-windows.tar.gz"
+          tar -xzf binaryen.tar.gz
+          echo "$PWD/binaryen-version_130/bin" >> "$GITHUB_PATH"
+          rm binaryen.tar.gz
+      # NOT `just cbor-vendor-native` — see the job header comment for why
+      # (it hardcodes a Linux-target build that cannot link here).
+      - name: Vendor flutter_rust_bridge glue (platform-independent codegen)
+        run: just cbor-vendor-glue
+      - name: Vendor Windows native artifact (release build + copy)
+        run: just cbor-vendor-lib windows-x64
+      - name: Vendor web artifact (required by the pubspec asset list — see job header comment)
+        run: just cbor-vendor-web
+      - name: flutter build windows + assert vendored DLL present + round-trip
+        run: just cbor-example-verify-windows
+
+  # ---- cratestack_cbor macOS platform (cratestack#563 platform-matrix slice) ----
+  # Mirrors `cratestack-cbor-windows` in every structural respect (same job
+  # shape, same "real build + assert the artifact is actually bundled +
+  # round-trip" bar), but the underlying MECHANISM this job proves is a
+  # third, genuinely different one — see `macos/cratestack_cbor.podspec`'s
+  # header comment and `lib/src/native/native_cbor_codec.dart`'s macOS doc
+  # comment for the full explanation (CocoaPods LINKS the vendored
+  # xcframework rather than merely copying it, which is what lets the Dart
+  # side resolve it with a fixed relative string and no path computation at
+  # all).
+  #
+  # This job's steps and their exact commands were VERIFIED end to end on a
+  # real `macos-latest` runner before this job existed in this file — see
+  # `spike/cbor-macos-xcframework` (`.github/workflows/spike-cbor-macos.yml`,
+  # cratestack#563), a throwaway spike branch kept around for reference.
+  # That spike answered four questions a Linux dev machine cannot (no
+  # Xcode, no `lipo`/`xcodebuild`, no `*-apple-darwin` cross-compile): which
+  # scaffold `flutter create --platforms=macos` produces for a plugin with
+  # no prior `macos/` (CocoaPods, not Swift Package Manager), whether
+  # CocoaPods embeds+codesigns a VENDORED xcframework the same way it does
+  # one it compiled itself (yes), whether the fixed relative
+  # `DynamicLibrary.open` string actually resolves at runtime against a
+  # vendored (not self-built) framework (yes — because CocoaPods LINKS it,
+  # confirmed via `otool -L`), and the actual `lipo`/`xcodebuild
+  # -create-xcframework` invocation shape (now `just cbor-vendor-macos`).
+  # This job itself, however, is the first time that sequence runs wired
+  # into `ci.yml` rather than a throwaway workflow_dispatch-only branch —
+  # everything downstream of "does the spike's shape reproduce as a real
+  # justfile recipe" is this job's own first real execution.
+  #
+  # Also vendors the web artifact for the same reason `cratestack-cbor-
+  # windows`/`cratestack-cbor-android` do (see those jobs' own comments):
+  # `pubspec.yaml`'s `flutter: assets:` declaration is unconditional, and
+  # Flutter has no per-platform asset conditionals, so a missing wasm pair
+  # fails a macOS build too.
+  #
+  # UNVERIFIED FROM THIS (Linux) DEV MACHINE, flagged rather than assumed:
+  #   - The pinned binaryen release asset name below
+  #     (`binaryen-version_130-arm64-macos.tar.gz`) is a BEST-EFFORT guess
+  #     at binaryen's actual macOS release-asset naming convention,
+  #     extrapolated from the Linux/Windows jobs' own
+  #     `binaryen-version_130-x86_64-{linux,windows}.tar.gz` pattern — it
+  #     was NOT fetched and inspected the way the Windows job's own comment
+  #     says its `.exe`-suffixed asset was (this dev machine has no way to
+  #     download from a macOS-restricted mirror or verify GitHub's actual
+  #     release asset list without network access to confirm). `arm64`,
+  #     not `x86_64`, because GitHub's `macos-latest` label currently
+  #     resolves to an Apple Silicon runner — also not independently
+  #     re-confirmed here, just the documented current default. If this
+  #     step 404s, that is the first thing to check.
+  #   - Whether `just cbor-vendor-web` (wasm-pack + the above binaryen)
+  #     works on a macOS runner AT ALL is unverified — the spike
+  #     deliberately faked the wasm assets with placeholders specifically
+  #     to avoid this unrelated, already-understood Android-slice trap
+  #     masking the macOS-specific findings it existed to answer (see that
+  #     spike's own file header). This job is the first real test of the
+  #     actual wasm-pack build on macOS.
+  #   - `bash` resolving for every `just <recipe>` step's internal shell
+  #     (this justfile's global `set shell := ["bash", ...]`): macOS
+  #     runners ship a real `/bin/bash` (unlike Windows' Git-for-Windows
+  #     MSYS dependency), so this is expected to be a non-issue, but it
+  #     was not independently re-verified here either.
+  cratestack-cbor-macos:
+    name: flutter (cratestack_cbor macos — real build, xcframework + round-trip proof)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+      # rust-toolchain.toml pins the channel; add BOTH Darwin targets to
+      # that pinned toolchain (not to whatever `stable` resolves to
+      # separately) — `just cbor-vendor-macos` builds arm64 then x86_64 in
+      # turn via two `cbor-vendor-lib` calls, both against this same
+      # toolchain.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,wasm-pack
+      # The Flutter SDK — same reason as every other cbor job (see
+      # cratestack-cbor-package's comment): cratestack_cbor's
+      # `flutter.plugin.platforms` pubspec key requires the real Flutter
+      # SDK to resolve at all, not a standalone Dart SDK.
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Install flutter_rust_bridge_codegen (pinned =2.12.0)
+        run: cargo install --locked flutter_rust_bridge_codegen --version 2.12.0
+      # Same reason as every other cbor job's identical step — see the job
+      # header comment above for what is and is not verified about this
+      # specific asset name on macOS.
+      - name: Install binaryen (wasm-opt), pinned
+        run: |
+          set -euo pipefail
+          curl -fsSL -o binaryen.tar.gz \
+            "https://github.com/WebAssembly/binaryen/releases/download/version_130/binaryen-version_130-arm64-macos.tar.gz"
+          tar -xzf binaryen.tar.gz
+          echo "$PWD/binaryen-version_130/bin" >> "$GITHUB_PATH"
+          rm binaryen.tar.gz
+      # NOT `just cbor-vendor-native` — see the job header comment for why
+      # (it hardcodes a Linux-target build that cannot link here).
+      - name: Vendor flutter_rust_bridge glue (platform-independent codegen)
+        run: just cbor-vendor-glue
+      - name: Vendor macOS native artifact (both Darwin arches, lipo, xcframework)
+        run: just cbor-vendor-macos
+      - name: Vendor web artifact (required by the pubspec asset list — see job header comment)
+        run: just cbor-vendor-web
+      - name: flutter build macos + assert vendored xcframework present (universal) + round-trip
+        run: just cbor-example-verify-macos
+
   # ---- TypeScript client verification (issue #419) --------------------------
   # Blocking. Proves the default TypeScript client layout typechecks for
   # both REST and RPC transports. While the `react-vite-swr-example` job

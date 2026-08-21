@@ -14,18 +14,22 @@ This mirrors `packages/cratestack-cbor` (`@cratestack/cbor`), which already does
 selection behind one import path for JavaScript. There is deliberately **no third binding** of the
 codec — both backends compile the same Rust.
 
-> **Status:** Linux x86_64, Android (arm64-v8a, x86_64, armeabi-v7a), and web. Every other platform
-> throws a clear `UnsupportedError`. iOS, macOS, Windows, and Linux arm64 are a deliberate maintainer
-> hold, not in-progress work — see cratestack#563's issue thread. **This is the intended platform
-> scope for the first pub.dev publish**, not a partial state to wait out. Publishing infrastructure
-> (CI workflow, version-locking, archive-verification gate) now exists — see
-> `docs/tooling/dart-publishing.md` for what's left: a one-time manual first publish only a
-> maintainer can perform, since pub.dev cannot automate the first version of a brand-new package.
+> **Status:** Linux x86_64, Android (arm64-v8a, x86_64, armeabi-v7a), Windows x86_64, macOS (arm64 +
+> x86_64, universal), and web. Every other platform throws a clear `UnsupportedError`. iOS and Linux
+> arm64 are a deliberate maintainer hold, not in-progress work — see cratestack#563's issue thread.
+> **This is the intended platform scope for the first pub.dev publish**, not a partial state to wait
+> out. Publishing infrastructure (CI workflow, version-locking, archive-verification gate) now
+> exists — see `docs/tooling/dart-publishing.md` for what's left: a one-time manual first publish
+> only a maintainer can perform, since pub.dev cannot automate the first version of a brand-new
+> package.
 >
 > Proven for both `dart test` (as a Dart library) AND a real Flutter app — `flutter build linux` +
-> `flutter build web` (release, not the dev server), and a real `flutter build apk` installed and run
-> on a real Android emulator — see "Verifying inside a real Flutter app" below and
-> `dart-packages/cratestack_cbor/example/`.
+> `flutter build web` (release, not the dev server), a real `flutter build apk` installed and run
+> on a real Android emulator, a real `flutter build windows`, and a real `flutter build macos` — see
+> "Verifying inside a real Flutter app" below and `dart-packages/cratestack_cbor/example/`. **The
+> Windows and macOS slices are unverified by this repo's own toolchain** (Linux-only — see the Linux
+> prerequisite note in this repo's `CLAUDE.md`); `cratestack-cbor-windows`/`cratestack-cbor-macos` in
+> `.github/workflows/ci.yml` are their first real execution.
 
 ## Prerequisites
 
@@ -309,7 +313,7 @@ just cbor-vendor-android   # restore
 
 ## CI
 
-Three jobs in `.github/workflows/ci.yml`:
+Five jobs in `.github/workflows/ci.yml`:
 
 - **`flutter (cratestack_cbor package — native + web)`** installs the pinned toolchain, runs both
   vendor recipes, then `just cbor-verify-package` (the `dart test`/`dart test -p chrome` library-level
@@ -332,8 +336,32 @@ Three jobs in `.github/workflows/ci.yml`:
   (`just cbor-example-verify-android-emulator`) stays a **local/manual** gate. This means CI proves the
   library is *present*, and a human running the emulator recipe is what proves it is *valid and
   loadable* — the two break-it proofs in the previous section are deliberately split the same way.
+- **`flutter (cratestack_cbor windows — real build, DLL + round-trip proof)`** runs on
+  `windows-latest`, installs `flutter_rust_bridge_codegen` (pinned `=2.12.0`) and pinned `binaryen`,
+  then `just cbor-vendor-glue` + `just cbor-vendor-lib windows-x64` + `just cbor-vendor-web` (the wasm
+  pair must be vendored here too — `pubspec.yaml`'s `flutter: assets:` is unconditional and Flutter has
+  no per-platform asset conditionals) followed by `just cbor-example-verify-windows` — a real
+  `flutter build windows`, an assertion the vendored `.dll` landed beside the built `.exe`, and a
+  round-trip proof from the running executable's captured stdout. This is this repo's own toolchain's
+  first-ever real execution of anything Windows-targeted (Linux-only dev machine — see this repo's
+  `CLAUDE.md`), so this job doubles as the first genuine verification of the Windows slice, not just a
+  regression gate.
+- **`flutter (cratestack_cbor macos — real build, xcframework + round-trip proof)`** runs on
+  `macos-latest`, mirroring the Windows job's shape but proving a genuinely different mechanism (see
+  `macos/cratestack_cbor.podspec`'s header comment): installs both `aarch64-apple-darwin` and
+  `x86_64-apple-darwin` rustup targets, `flutter_rust_bridge_codegen` (pinned `=2.12.0`) and pinned
+  `binaryen`, then `just cbor-vendor-glue` + `just cbor-vendor-macos` (builds both Darwin arches,
+  `lipo`s them into one universal binary, assembles a versioned `.framework`, then an `.xcframework` —
+  see that recipe's own comment) + `just cbor-vendor-web`, followed by `just cbor-example-verify-macos`
+  — a real `flutter build macos`, an assertion the vendored xcframework landed inside the built `.app`'s
+  `Contents/Frameworks/`, a `lipo -info` check that both arches are actually present in the embedded
+  binary, and a round-trip proof from the running app's captured stdout. Also this repo's toolchain's
+  first-ever real execution of anything macOS-targeted; the exact command sequence was validated once
+  already, on a throwaway spike branch (`spike/cbor-macos-xcframework`,
+  `.github/workflows/spike-cbor-macos.yml`) kept around for reference, before being turned into the real
+  `just cbor-vendor-macos`/`cbor-example-verify-macos` recipes this job actually runs.
 
-All three build the artifacts fresh every run rather than trusting anything committed — which is the
+All five build the artifacts fresh every run rather than trusting anything committed — which is the
 only option now that nothing is committed.
 
 **Known gap:** there is no byte-level staleness check between a fresh build and any reference.
@@ -346,7 +374,8 @@ reproducible builds and belongs with the publish work.
 
 ```
 dart-packages/cratestack_cbor/
-├── .gitignore              # blobs/, wasm-pkg/, native/rust/ — build output; !example/pubspec.lock
+├── .gitignore              # blobs/, macos/Frameworks/, wasm-pkg/, native/rust/ — build output;
+│                             # !example/pubspec.lock
 ├── .pubignore              # MUST stay tracked; see gotcha 1
 ├── lib/
 │   ├── cratestack_cbor.dart          # conditional export: picks a backend
@@ -359,18 +388,34 @@ dart-packages/cratestack_cbor/
 │       └── unsupported_cbor_codec.dart
 ├── blobs/
 │   ├── linux-x64/           # GENERATED native library (gitignored)
+│   ├── windows-x64/         # GENERATED native library (gitignored)
+│   ├── macos-arm64/         # GENERATED per-arch native library (gitignored) — intermediate input
+│   ├── macos-x64/           # to `just cbor-vendor-macos`'s xcframework assembly, not itself shipped
 │   └── android/<abi>/       # GENERATED native libraries, one per ABI (gitignored) —
 │                             # arm64-v8a, x86_64, armeabi-v7a; matches cargo-ndk's own -o layout,
 │                             # which is also exactly Android's jniLibs.srcDirs source-set layout
 ├── linux/
 │   └── CMakeLists.txt      # Flutter FFI-plugin build file — bundles the vendored .so
+├── windows/
+│   └── CMakeLists.txt      # Flutter FFI-plugin build file — bundles the vendored .dll
+├── macos/
+│   ├── cratestack_cbor.podspec   # Flutter FFI-plugin build file — CocoaPods vendored_frameworks
+│   └── Frameworks/               # GENERATED universal xcframework (gitignored, NOT under blobs/ —
+│                                   # see the podspec's own header comment for why)
 ├── android/
 │   ├── build.gradle        # Flutter FFI-plugin build file — packages blobs/android/<abi>/*.so via jniLibs
 │   └── src/main/AndroidManifest.xml
-├── example/                 # real Flutter app proving all three backends — see its own README
+├── example/                 # real Flutter app proving all five backends — see its own README
 │   ├── lib/main.dart
 │   ├── linux/               # committed (unlike examples/flutter-riverpod, embedded-flutter) —
 │   │                         # this example's whole point is `flutter build`, so CI needs it
+│   ├── windows/              # committed for the same reason
+│   ├── macos/                # committed for the same reason — Xcode project scaffolding only
+│   │                         # (`flutter create --platforms=macos`); NO committed Podfile, because
+│   │                         # generating one needs Xcode, which this repo's own toolchain does not
+│   │                         # have (see docs/tooling/cratestack-cbor-development.md's own notes on
+│   │                         # this) — `flutter pub get`/`flutter build macos` on a real macOS host
+│   │                         # generates it fresh from a Flutter SDK template
 │   ├── android/              # committed for the same reason (build.gradle.kts, AndroidManifest.xml,
 │   │                         # etc. — NOT .gradle/, local.properties, gradlew*, gradle-wrapper.jar:
 │   │                         # Flutter regenerates those from its own SDK cache, same convention
@@ -379,7 +424,8 @@ dart-packages/cratestack_cbor/
 │   └── tool/verify_web_console.dart   # headless-Chrome DevTools Protocol driver
 └── test/
     ├── shared_fixtures.dart          # the cross-language fixture set
-    ├── native_cbor_codec_test.dart   # @TestOn('vm') — Linux only; Android has no `dart test` story
+    ├── native_cbor_codec_test.dart   # @TestOn('vm') — Linux only; Android/macOS have no
+    │                                   # `dart test` story
     └── web_cbor_codec_test.dart      # @TestOn('browser')
 ```
 
@@ -392,14 +438,21 @@ npm umbrella).
 
 In the order they should land:
 
-1. **Platform matrix** — Linux x64, web, and Android (arm64-v8a, x86_64, armeabi-v7a) are done. The
-   remaining slices: iOS device+simulator, macOS arm64/x64, Linux arm64, Windows x64. The Flutter
-   plugin scaffolding pattern is now proven twice, for two genuinely different bundling mechanisms —
-   Linux's executable-relative bundle path (`linux/CMakeLists.txt`) and Android's SONAME-resolved
-   jniLibs (`android/build.gradle`) — so `macos/`, `windows/`, `ios/` are the remaining scaffolding
-   work, plus actually building the binaries for each. Note iOS/macOS use an xcframework convention
-   different from both of the two already proven here, and none of the three can be verified on a
-   Linux dev machine (no Xcode, no MSVC) the way Android could be.
+1. **Platform matrix** — Linux x64, web, Android (arm64-v8a, x86_64, armeabi-v7a), Windows x64, and
+   macOS (arm64 + x86_64, universal) are done (the Windows and macOS slices' real `flutter build`
+   runs are both unverified by this repo's own Linux-only toolchain — their first real execution is
+   `cratestack-cbor-windows`/`cratestack-cbor-macos` in `.github/workflows/ci.yml`, on
+   `windows-latest`/`macos-latest`). The remaining slice: iOS device+simulator, Linux arm64. The
+   Flutter plugin scaffolding pattern is now proven for four genuinely different bundling mechanisms —
+   Linux's and Windows' executable-relative bundle paths (`linux/CMakeLists.txt`,
+   `windows/CMakeLists.txt` — same `<plugin>_bundled_libraries` contract, two different install
+   destinations), Android's SONAME-resolved jniLibs (`android/build.gradle`), and macOS's CocoaPods
+   `vendored_frameworks` (`macos/cratestack_cbor.podspec` — a *linked*, not merely copied, xcframework,
+   which is what lets the Dart side resolve it with a fixed relative string and no path computation at
+   all; see that podspec's and `native_cbor_codec.dart`'s own comments) — so `ios/` is the remaining
+   scaffolding work, plus actually building the binaries. Note iOS uses the same xcframework convention
+   macOS just proved here (verified on a real `macos-latest` runner — see `spike/cbor-macos-xcframework`
+   — even though this repo's own dev machine cannot verify either, having no Xcode).
 2. **pub.dev publish via GitHub Actions OIDC**, version-locked to the workspace version like the npm
    packages — the CI workflow (`publish-pubdev-cbor` in `release-cli.yml`) and version-lockstep
    (`just bump` now rewrites this package's `pubspec.yaml` too) both exist as of cratestack#563's
