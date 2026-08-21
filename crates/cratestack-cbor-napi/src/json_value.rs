@@ -2,26 +2,25 @@
 //!
 //! `cratestack-codec-cbor`'s `CborCodec` (which this crate wraps unchanged
 //! — see the crate root docs) is generic over any `T: Serialize`. Feeding
-//! it a `serde_json::Value` directly works for every JSON shape *except*
-//! `null`: `Value::Null`'s `Serialize` impl calls `serializer.serialize_unit()`,
+//! it a `serde_json::Value` directly used to mishandle `null`:
+//! `Value::Null`'s `Serialize` impl calls `serializer.serialize_unit()`,
 //! and `minicbor-serde`'s default `Serializer` renders a Rust unit `()` as
-//! the CBOR empty-array marker (`0x80`), not the CBOR null marker (`0xf6`)
-//! — the exact non-RFC-8949 quirk `CborCodec::encode`'s own doc comment
-//! warns about. `CborCodec`'s own test suite only proves `Option::None`
-//! round-trips correctly because `Option::None`'s `Serialize` impl calls
-//! `serialize_none()`, a different serde method `minicbor-serde` maps to
-//! CBOR null unconditionally.
+//! the CBOR empty-array marker (`0x80`), not the CBOR null marker (`0xf6`).
+//! `CborCodec::encode` now closes that gap itself (cratestack#657: it
+//! enables `minicbor_serde::Serializer::serialize_unit_as_null`), so a bare
+//! `serde_json::Value::Null` fed straight to `CborCodec::encode` already
+//! produces `0xf6` without this wrapper.
 //!
-//! A napi `encode` entry point takes arbitrary JS values with no `Option`
+//! `CborValue` predates that fix and is kept as explicit, self-documenting
+//! JS/Rust boundary translation rather than load-bearing correctness: a
+//! napi `encode` entry point takes arbitrary JS values with no `Option`
 //! wrapper to reach for — JS has exactly one "no value" concept (`null`),
-//! surfacing as `serde_json::Value::Null` — so without this shim, every
-//! JSON `null` in a payload (top-level or nested inside an object/array)
-//! would silently round-trip as `[]` once decoded back. `CborValue`
-//! re-routes `Value::Null` through `serialize_none` instead, recursively,
-//! so it matches `CborCodec`'s own `Option::None` behavior byte-for-byte —
-//! without touching `cratestack-codec-cbor` or `minicbor-serde` themselves.
-//! This is JS/Rust boundary translation, not new CBOR wire-format logic:
-//! every branch below just picks which existing serde method to call.
+//! surfacing as `serde_json::Value::Null` — and re-routing it through
+//! `serialize_none` recursively matches `CborCodec`'s own `Option::None`
+//! behavior byte-for-byte without depending on readers knowing
+//! `CborCodec::encode`'s internals. This is JS/Rust boundary translation,
+//! not new CBOR wire-format logic: every branch below just picks which
+//! existing serde method to call.
 
 use serde::ser::{SerializeMap, SerializeSeq};
 use serde::{Serialize, Serializer};

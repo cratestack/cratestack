@@ -5,18 +5,24 @@
 //! `encode(value: unknown)` in TypeScript has no `Option<T>` to route
 //! through — any JS `null` deserializes into a plain `serde_json::Value::
 //! Null`, and `serde_json::Value`'s own `Serialize` impl reports that
-//! variant via `serializer.serialize_unit()`. `minicbor-serde` encodes
-//! `serialize_unit()` as the CBOR empty-array marker (`0x80`), NOT the
-//! null marker (`0xf6`) — exactly the wire-compatibility footgun
-//! `cratestack-codec-cbor`'s own doc comments warn about (see its
-//! `optional_none_round_trips_as_cbor_null` test). The macro-emitted Rust
-//! server/client code never hits this because it only ever serializes
-//! concrete typed structs, where `None` naturally goes through
-//! `serializer.serialize_none()` (the CBOR-null path) instead.
+//! variant via `serializer.serialize_unit()`. Historically `minicbor-serde`
+//! encoded `serialize_unit()` as the CBOR empty-array marker (`0x80`), NOT
+//! the null marker (`0xf6`) — the wire-compatibility footgun that also hit
+//! `POST /rpc/batch`'s opaque `serde_json::Value` frames (cratestack#657).
+//! That gap is now closed one layer down, in
+//! `cratestack_codec_cbor::CborCodec::encode` itself (it enables
+//! `minicbor_serde::Serializer::serialize_unit_as_null`), so `EncodableValue`
+//! no longer changes what bytes a top-level `Value::Null` produces through
+//! `CborCodec` — see `naive_serde_json_value_now_encodes_correctly_via_the_codec_directly`
+//! below. It's kept anyway as an explicit, self-documenting guarantee for
+//! this bridge that doesn't depend on reading `CborCodec`'s internals to
+//! confirm: `Value::Null` maps through `serialize_none()` at every position
+//! in the tree, not just the top level, independently of whatever the
+//! underlying codec does with bare `serialize_unit()`.
 //!
 //! This module is a thin, deliberately non-wasm-bindgen wrapper so it
 //! stays unit-testable on the host toolchain (no wasm32 target, no JS
-//! engine) — see the tests below for the exact byte assertion.
+//! engine) — see the tests below for the exact byte assertions.
 use serde::ser::{Serialize, SerializeMap, SerializeSeq, Serializer};
 use serde_json::Value;
 
@@ -107,15 +113,18 @@ mod tests {
     }
 
     #[test]
-    fn naive_serde_json_value_serialize_would_have_produced_the_empty_array_marker() {
-        // Documents *why* EncodableValue exists: serializing
-        // serde_json::Value::Null directly (its own derive-free hand
-        // impl calls serialize_unit()) hits minicbor-serde's non-RFC-8949
-        // "unit = empty array" encoding instead of CBOR null.
+    fn naive_serde_json_value_now_encodes_correctly_via_the_codec_directly() {
+        // cratestack#657 fixed the root cause one layer down:
+        // `CborCodec::encode` now enables `serialize_unit_as_null`, so even
+        // a raw `serde_json::Value::Null` — no `EncodableValue` wrapper
+        // involved — encodes as CBOR null. This used to assert the old,
+        // buggy `0x80` byte to document *why* `EncodableValue` was needed;
+        // now that the codec handles it directly, `EncodableValue` is
+        // redundant-but-harmless defense in depth (see the module doc)
+        // rather than load-bearing for this specific case.
         let bytes = CborCodec
             .encode(&Value::Null)
             .expect("encode should succeed");
-        assert_eq!(bytes, vec![0x80]);
-        assert_ne!(bytes, vec![0xf6]);
+        assert_eq!(bytes, vec![0xf6]);
     }
 }
