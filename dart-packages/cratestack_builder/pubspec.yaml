@@ -39,10 +39,3 @@ dev_dependencies:
   lints: ^6.0.0
   test: ^1.25.0
 
-# TEMPORARY — remove before publishing. `cratestack_annotations` 0.8.4 is not
-# on pub.dev yet, so this resolves the sibling in-repo. `dart pub publish`
-# rejects a package with dependency_overrides, which is the failure mode we
-# want: it cannot ship by accident.
-dependency_overrides:
-  cratestack_annotations:
-    path: ../cratestack_annotations

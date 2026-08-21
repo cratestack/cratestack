@@ -1,4 +1,4 @@
-# pub.dev publishing setup (`cratestack_cbor`)
+# pub.dev publishing setup (`cratestack_cbor`, `cratestack_annotations`, `cratestack_builder`)
 
 `dart-packages/cratestack_cbor` (cratestack#563) is the third registry `.github/workflows/release-cli.yml`
 publishes to on every `vX.Y.Z` tag push, alongside crates.io and npm — see
@@ -306,6 +306,52 @@ sequenced strictly after the first real publish.
 - **`pana`** (pub.dev's own scoring tool), if run, scores the package as it exists in this branch, not
   as pub.dev will score it after the package is live with real download/dependency history — some
   pana checks (e.g. popularity-derived signals) only stabilize post-publish.
+
+## The two builder packages (`cratestack_annotations`, `cratestack_builder`)
+
+Added by cratestack#668 phase 1, published manually at 0.8.5 on 2026-08-21, and handled from the
+next tag onward by `publish-pubdev-annotations` / `publish-pubdev-builder` in `release-cli.yml`.
+
+Everything above about OIDC, the tag-push-only gate, `setup-dart` adjacency, and the
+exits-0-on-authentication-failure verification gate applies to them unchanged — those jobs are
+deliberate copies of `publish-pubdev-cbor`'s shape, not a simplified variant. Two differences, both
+because these are **pure Dart** packages:
+
+- No `environment.flutter`, so `dart-lang/setup-dart` is the entire toolchain and `dart pub publish`
+  runs directly. There is no `FLUTTER_DART` indirection and no cratestack#633 version-solving trap.
+- Nothing is vendored, so there is no archive-*content* gate — the `cratestack_cbor` job's
+  "does the tarball actually contain the `.so`/wasm" check has no analogue. The version-served gate
+  still applies and is still the one that matters.
+
+**They are sequenced, not parallel.** `publish-pubdev-builder` declares
+`needs: [prepare, publish-pubdev-annotations]`. Today the order is not load-bearing —
+`cratestack_builder` depends on `cratestack_annotations: ^0.8.5`, already published, so it resolves
+either way — but on a release where the builder requires a version of the annotation package that
+the same run is publishing, parallel jobs would race and the builder's publish would fail version
+solving.
+
+### Outstanding: Automated publishing is not yet enabled on either package
+
+Same bootstrap constraint described in "First publish" above: pub.dev can only automate publishing
+for a package that already exists, so both were first published by hand. Until a maintainer enables
+**Admin → Automated publishing** on each package (repository `cratestack/cratestack`, tag pattern
+`v{{version}}`), both jobs will fail on every tag push exactly as `publish-pubdev-cbor` did before
+its own setup was completed.
+
+### The inter-package constraint is not covered by `just bump`
+
+`cratestack_builder`'s dependency is written `cratestack_annotations: ^0.8.5`. `just bump` rewrites
+Dart pubspecs with
+
+```
+perl -i -pe "s/^version: \Q$current\E\$/version: {{NEW}}/" dart-packages/*/pubspec.yaml
+```
+
+which is anchored to a line starting `version:`. The dependency line is indented and keyed
+differently, so it is **not** rewritten. That is harmless while both packages stay in the 0.8.x
+range, and becomes wrong at the first minor bump: `cratestack_builder` 0.9.0 would still permit
+`cratestack_annotations` 0.8.x, which the lockstep convention is supposed to rule out. Decide
+whether the constraint should be pinned exactly, or taught to `bump`, before cutting 0.9.0.
 
 ## See also
 
