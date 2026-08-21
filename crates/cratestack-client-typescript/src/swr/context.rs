@@ -285,6 +285,7 @@ pub(crate) fn build_model_file_contexts(
                 imports,
                 is_paged,
                 list_fn: fns.list,
+                get_with_response_fn: format!("{}WithResponse", fns.get),
                 get_fn: fns.get,
                 create_fn: fns.create,
                 update_fn: fns.update,

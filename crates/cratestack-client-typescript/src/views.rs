@@ -4,7 +4,7 @@ use cratestack_core::route_naming;
 use cratestack_core::{EnumDecl, Field, Model, TypeArity};
 use serde::Serialize;
 
-use crate::naming::{escape_ts_string, pluralize, to_camel_case, ts_identifier};
+use crate::naming::{escape_ts_string, pluralize, to_camel_case, to_kebab_case, ts_identifier};
 use crate::types::{is_paged_model, model_allows_create, primary_key_field, ts_type};
 
 #[derive(Debug, Clone, Serialize)]
@@ -34,6 +34,13 @@ pub(crate) struct ModelApiView {
     pub(crate) name: String,
     pub(crate) api_name: String,
     pub(crate) accessor: String,
+    /// Issue #610: `README.md.j2`'s `--swr` section needs this model's
+    /// `swr` per-model file path (`{{ package_name }}/swr/models/{{
+    /// file_stem }}`) for its optimistic-concurrency example — the same
+    /// `to_kebab_case(&model.name)` `crate::swr::context` uses to name
+    /// that file, kept in sync by sharing the helper rather than
+    /// duplicating the transform.
+    pub(crate) file_stem: String,
     pub(crate) route: String,
     pub(crate) primary_key_type: String,
     pub(crate) allows_create: bool,
@@ -131,6 +138,7 @@ pub(crate) fn build_model_api(model: &Model) -> ModelApiView {
         name: model.name.clone(),
         api_name: format!("{}Api", model.name),
         accessor,
+        file_stem: to_kebab_case(&model.name),
         route,
         primary_key_type: ts_type(&primary_key.ty, &BTreeSet::new()),
         allows_create: model_allows_create(model),

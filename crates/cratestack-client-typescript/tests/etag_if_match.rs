@@ -142,11 +142,103 @@ fn swr_preset_update_and_delete_functions_also_accept_if_match() {
     );
 }
 
+/// Review remediation (round 2): the WRITE half above landed in
+/// `swr/models-rest.ts.j2`, but the READ half (reaching the `ETag`) did
+/// not — a `--swr` consumer could send `If-Match` but had no per-model
+/// way to *obtain* it. Worse, the naive workaround (call
+/// `runtime.getWithResponse()` directly) skips this file's own
+/// `reviveDecimalFields(...)` call, silently handing back an unrevived
+/// `Decimal` field — exactly the kind of trap issue #610 itself records
+/// as the *original* reason a consumer rejected the generated client.
+/// This asserts both: the symbol exists, AND it's wired through the
+/// same revival `getLedger` uses — presence alone would pass even with
+/// the decimal bug still in place.
+#[test]
+fn swr_preset_get_with_response_exists_and_revives_decimals() {
+    let package = generate_for_swr("etag_versioned", "etag-versioned-swr-client");
+    let model_file = package_file(&package, "src/swr/models/ledger.ts");
+
+    assert!(
+        model_file.contains(
+            "export async function getLedgerWithResponse(\n  runtime: CratestackRuntime,\n  id: number,\n  options: CratestackQueryRequestConfig = {},\n): Promise<CratestackResponseEnvelope<Ledger>>"
+        ),
+        "swr must expose a per-model getLedgerWithResponse returning CratestackResponseEnvelope:\n{model_file}"
+    );
+    assert!(
+        model_file.contains("return runtime.getWithResponse<unknown>("),
+        "getLedgerWithResponse must call through to the runtime's response-preserving method:\n{model_file}"
+    );
+    assert!(
+        model_file.contains("response: result.response,"),
+        "getLedgerWithResponse must surface the raw Response object:\n{model_file}"
+    );
+    // The decisive assertion: getLedgerWithResponse's returned `value`
+    // must go through the exact same reviveDecimalFields(...) call
+    // getLedger uses — not the raw, unrevived runtime payload.
+    assert!(
+        model_file.contains(
+            "value: reviveDecimalFields(result.value, 'Ledger') as Ledger,\n    response: result.response,"
+        ),
+        "getLedgerWithResponse's value must be decimal-revived exactly like getLedger's is — \
+         reaching for runtime.getWithResponse() directly instead would skip reviveDecimalFields \
+         and hand back an unrevived (string) Decimal field:\n{model_file}"
+    );
+
+    assert!(
+        model_file.contains("import type { CratestackRuntime, CratestackResponseEnvelope } from \"../runtime.js\";"),
+        "swr's per-model file must import CratestackResponseEnvelope:\n{model_file}"
+    );
+}
+
+/// Review remediation (round 2): the shared `README.md.j2` "Optimistic
+/// concurrency" section documents `client.<accessor>.getWithResponse` —
+/// REST-only, `@version`-only API. It must render for a REST schema
+/// with a `@version` model, and must NOT render for an RPC schema (even
+/// one with the identical `@version` model) or a REST schema with no
+/// versioned model at all — otherwise the docs describe methods that
+/// don't exist on the generated output (a real, previously-shipped bug:
+/// the committed `examples/react-vite-swr/client` — REST, no `@version`
+/// model — had this section before this fix).
+#[test]
+fn readme_optimistic_concurrency_section_is_gated_on_rest_transport_and_a_versioned_model() {
+    let versioned_rest = generate_for("etag_versioned", "etag-versioned-client");
+    let readme = package_file(&versioned_rest, "README.md");
+    assert!(
+        readme.contains("### Optimistic concurrency"),
+        "a REST schema with a @version model must document the round trip:\n{readme}"
+    );
+    assert!(readme.contains("getWithResponse"));
+    assert!(readme.contains("ifMatch"));
+
+    let versioned_rpc = generate_for("etag_versioned_rpc", "etag-versioned-rpc-client");
+    let rpc_readme = package_file(&versioned_rpc, "README.md");
+    assert!(
+        !rpc_readme.contains("getWithResponse") && !rpc_readme.contains("ifMatch"),
+        "an RPC schema must never document getWithResponse/ifMatch — RPC has no per-route \
+         If-Match/ETag concept and rpc-client.ts.j2 doesn't generate either symbol:\n{rpc_readme}"
+    );
+    assert!(
+        !rpc_readme.contains("### Optimistic concurrency"),
+        "the whole section must be absent for RPC, not just silently wrong:\n{rpc_readme}"
+    );
+
+    let unversioned_rest = generate_for("tiny_rest", "tiny-rest-client");
+    let plain_readme = package_file(&unversioned_rest, "README.md");
+    assert!(
+        !plain_readme.contains("getWithResponse") && !plain_readme.contains("ifMatch"),
+        "a REST schema with no @version model has nothing to document here:\n{plain_readme}"
+    );
+}
+
 /// Real, Node-driven proof of the full round trip this issue is about:
 /// GET a versioned record through the generated client, read `ETag` off
 /// `getWithResponse`'s `response`, PATCH with that value as `ifMatch`,
-/// and confirm the raw HTTP request the generated client actually sent
-/// carried a real `If-Match` header with the right value.
+/// then DELETE with the *next* ETag as `ifMatch` too — and confirm the
+/// raw HTTP requests the generated client actually sent carried the
+/// real `If-Match` header with the right value at each step. DELETE is
+/// included, not just PATCH, because cratestack#519 made `If-Match`
+/// mandatory for DELETE on a `@version` model exactly like PATCH — a
+/// test that only covered PATCH would miss a regression there.
 #[test]
 fn etag_generated_output_round_trips_through_a_real_http_stub_server() {
     if !node_npm_npx_available() {
@@ -208,6 +300,12 @@ if (updated.balance !== 5) {{
   throw new Error("update did not round-trip the new balance");
 }}
 
+// DELETE too — cratestack#519 requires If-Match on DELETE for a
+// @version model exactly like PATCH. The stub server doesn't enforce
+// freshness, so reusing the same etag the GET returned is enough to
+// prove the header is actually sent with the right value.
+await client.ledgers.delete(4, {{ ifMatch: etag }});
+
 console.log("ETAG_IF_MATCH_CHECK_OK");
 "#
     )
@@ -252,6 +350,135 @@ console.log("ETAG_IF_MATCH_CHECK_OK");
         "the PATCH request must carry the If-Match header the client learned from the GET's \
          ETag — this is the exact round trip issue #610 says the generated client couldn't do"
     );
+    assert!(
+        captured
+            .delete_request_line
+            .starts_with("DELETE /api/ledgers/4"),
+        "expected a DELETE on the detail route third: {}",
+        captured.delete_request_line
+    );
+    assert_eq!(
+        captured.delete_if_match_header.as_deref(),
+        Some("\"7\""),
+        "the DELETE request must also carry the If-Match header (cratestack#519: DELETE on a \
+         @version model requires If-Match exactly like PATCH) — a stub that only checked PATCH \
+         would miss a regression here"
+    );
+}
+
+/// Real, Node-driven proof for the `--swr` preset specifically (review
+/// remediation round 2): `getLedgerWithResponse` must both reach the
+/// `ETag` AND hand back a real `Decimal` instance for the `amount`
+/// field, not the raw JSON string — proving `reviveDecimalFields` was
+/// actually applied on this path, not skipped the way calling
+/// `runtime.getWithResponse()` directly would. Then the learned `ETag`
+/// is sent back as `ifMatch` on `updateLedger`, same round trip as the
+/// default-preset test above, on the `--swr` plain-function surface
+/// this time.
+#[test]
+fn swr_get_with_response_round_trips_through_a_real_http_stub_server_with_decimal_revival() {
+    if !node_npm_npx_available() {
+        eprintln!(
+            "skipping swr_get_with_response_round_trips_through_a_real_http_stub_server_with_decimal_revival: \
+             `node`/`npm`/`npx` not on PATH (expected in this repo's Rust-only CI jobs)"
+        );
+        return;
+    }
+
+    let package = generate_for_swr("etag_versioned", "etag-versioned-swr-client");
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    for file in &package.files {
+        let path = dir.path().join(&file.file_name);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("create parent dir");
+        }
+        std::fs::write(&path, &file.contents).expect("write generated file");
+    }
+
+    let install = std::process::Command::new("npm")
+        .args(["install", "--no-audit", "--no-fund"])
+        .current_dir(dir.path())
+        .output()
+        .expect("run npm install");
+    assert!(
+        install.status.success(),
+        "npm install failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&install.stdout),
+        String::from_utf8_lossy(&install.stderr)
+    );
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind stub server");
+    let port = listener.local_addr().expect("local addr").port();
+    let server = std::thread::spawn(move || run_etag_stub_server(listener));
+
+    let script_path = dir.path().join("smoke.ts");
+    let mut script = std::fs::File::create(&script_path).expect("create smoke script");
+    write!(
+        script,
+        r#"
+import {{ CratestackRuntime }} from "./src/swr/runtime";
+import {{ getLedgerWithResponse, updateLedger, deleteLedger }} from "./src/swr/models/ledger";
+import {{ Decimal }} from "./src/swr/models/shared";
+
+const runtime = new CratestackRuntime("http://127.0.0.1:{port}", {{ basePath: "/api" }});
+
+const got = await getLedgerWithResponse(runtime, 4);
+const etag = got.response.headers.get("etag");
+if (etag === null) {{
+  throw new Error("no etag header reached the caller");
+}}
+if (!(got.value.amount instanceof Decimal)) {{
+  throw new Error(
+    "getLedgerWithResponse's amount field was not revived into a real Decimal — got: " +
+      JSON.stringify(got.value.amount),
+  );
+}}
+if (got.value.amount.toString() !== "12.34") {{
+  throw new Error("getLedgerWithResponse's amount field has the wrong value: " + got.value.amount.toString());
+}}
+
+const updated = await updateLedger(runtime, 4, {{ balance: 5 }}, {{ ifMatch: etag }});
+if (updated.balance !== 5) {{
+  throw new Error("updateLedger did not round-trip the new balance");
+}}
+
+// Completes the 3-request cycle run_etag_stub_server expects (GET,
+// PATCH, DELETE) — same shared stub server the default-preset test
+// above uses.
+await deleteLedger(runtime, 4, {{ ifMatch: etag }});
+
+console.log("SWR_ETAG_DECIMAL_CHECK_OK");
+"#
+    )
+    .expect("write smoke script");
+
+    let output = std::process::Command::new("npx")
+        .args(["--yes", "tsx", "smoke.ts"])
+        .current_dir(dir.path())
+        .output()
+        .expect("run npx tsx");
+
+    let captured = server.join().expect("stub server thread");
+
+    assert!(
+        output.status.success(),
+        "smoke script failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("SWR_ETAG_DECIMAL_CHECK_OK"),
+        "smoke script did not print its success marker (this includes the Decimal-revival \
+         assertion failing):\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        captured.patch_if_match_header.as_deref(),
+        Some("\"7\""),
+        "updateLedger must send the If-Match header learned from getLedgerWithResponse's ETag"
+    );
 }
 
 fn node_npm_npx_available() -> bool {
@@ -267,16 +494,20 @@ struct CapturedRequests {
     get_request_line: String,
     patch_request_line: String,
     patch_if_match_header: Option<String>,
+    delete_request_line: String,
+    delete_if_match_header: Option<String>,
 }
 
-/// Accepts exactly two HTTP connections: a GET (replies with a Ledger
-/// body and an `ETag: "7"` header) then a PATCH (records whatever
-/// `If-Match` header the client sent, replies with the updated Ledger).
+/// Accepts exactly three HTTP connections: a GET (replies with a Ledger
+/// body and an `ETag: "7"` header), a PATCH (records whatever
+/// `If-Match` header the client sent, replies with the updated Ledger),
+/// then a DELETE (records its own `If-Match` header too — cratestack#519
+/// requires it there exactly like PATCH).
 fn run_etag_stub_server(listener: std::net::TcpListener) -> CapturedRequests {
     use std::io::{BufRead, BufReader, Read, Write};
 
     let get_request_line = handle_one_request(&listener, |request_line, _headers| {
-        let body = r#"{"id":4,"label":"gl-4","balance":1,"version":7}"#;
+        let body = r#"{"id":4,"label":"gl-4","balance":1,"amount":"12.34","version":7}"#;
         (
             request_line,
             format!(
@@ -287,27 +518,43 @@ fn run_etag_stub_server(listener: std::net::TcpListener) -> CapturedRequests {
         )
     });
 
-    let (patch_request_line, if_match) = handle_one_request(&listener, |request_line, headers| {
-        let if_match = headers
-            .iter()
-            .find(|(name, _)| name.eq_ignore_ascii_case("if-match"))
-            .map(|(_, value)| value.clone());
-        let body = r#"{"id":4,"label":"gl-4","balance":5,"version":8}"#;
-        (
-            (request_line, if_match),
-            format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nETag: \"8\"\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                body.len(),
-                body
-            ),
-        )
-    });
+    let (patch_request_line, patch_if_match) =
+        handle_one_request(&listener, |request_line, headers| {
+            let if_match = if_match_header(&headers);
+            let body = r#"{"id":4,"label":"gl-4","balance":5,"amount":"12.34","version":8}"#;
+            (
+                (request_line, if_match),
+                format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nETag: \"8\"\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                ),
+            )
+        });
+
+    let (delete_request_line, delete_if_match) =
+        handle_one_request(&listener, |request_line, headers| {
+            let if_match = if_match_header(&headers);
+            (
+                (request_line, if_match),
+                "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n".to_owned(),
+            )
+        });
 
     return CapturedRequests {
         get_request_line,
         patch_request_line,
-        patch_if_match_header: if_match,
+        patch_if_match_header: patch_if_match,
+        delete_request_line,
+        delete_if_match_header: delete_if_match,
     };
+
+    fn if_match_header(headers: &[(String, String)]) -> Option<String> {
+        headers
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case("if-match"))
+            .map(|(_, value)| value.clone())
+    }
 
     fn handle_one_request<T>(
         listener: &std::net::TcpListener,

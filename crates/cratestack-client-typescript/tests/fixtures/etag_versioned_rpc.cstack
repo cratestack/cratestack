@@ -1,0 +1,20 @@
+// Same `@version` model as etag_versioned.cstack, but `transport rpc` —
+// proves the README's "Optimistic concurrency" section is gated on
+// transport, not just on the schema having a `@version` model (issue
+// #610 review remediation: RPC has no per-route If-Match/ETag concept,
+// so a versioned RPC schema must still NOT get that section).
+
+transport rpc
+
+model Ledger {
+  id Int @id
+  label String
+  balance Int
+  amount Decimal
+  version Int @version
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}

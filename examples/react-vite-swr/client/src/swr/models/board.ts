@@ -15,7 +15,7 @@
 // reference each other (a relation cycle) can never become a runtime
 // import cycle, only a type-only one, which TypeScript tolerates fine.
 
-import type { CratestackRuntime } from "../runtime.js";
+import type { CratestackRuntime, CratestackResponseEnvelope } from "../runtime.js";
 import {
   toSearchQuery,
   withIfMatchHeader,
@@ -91,6 +91,27 @@ export async function getBoard(
     query: toSearchQuery(options.query),
     signal: options.signal,
   }).then((value) => reviveDecimalFields(value, 'Board') as Board);
+}
+
+// Same call as `getBoard`, but returns the response alongside the
+// record (issue #610) — read `.response.headers.get("etag")` off the
+// result to get the value `updateBoard`/`deleteBoard`'s `ifMatch`
+// option needs. Applies the same decimal revival `getBoard` does —
+// reaching for the raw `runtime.getWithResponse()` instead would skip
+// it and hand back an unrevived (string, not `Decimal`) value.
+export async function getBoardWithResponse(
+  runtime: CratestackRuntime,
+  id: number,
+  options: CratestackQueryRequestConfig = {},
+): Promise<CratestackResponseEnvelope<Board>> {
+  return runtime.getWithResponse<unknown>(`/boards/${encodeURIComponent(String(id))}`, {
+    headers: options.headers,
+    query: toSearchQuery(options.query),
+    signal: options.signal,
+  }).then((result) => ({
+    value: reviveDecimalFields(result.value, 'Board') as Board,
+    response: result.response,
+  }));
 }
 
 export async function createBoard(

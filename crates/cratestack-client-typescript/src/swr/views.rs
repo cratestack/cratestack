@@ -134,6 +134,11 @@ pub(crate) struct SwrModelFileContext {
     pub(crate) is_paged: bool,
     pub(crate) list_fn: String,
     pub(crate) get_fn: String,
+    /// Issue #610, REST only: `swr-models-rpc.ts.j2` never references
+    /// this (RPC has no per-route `If-Match`/`ETag` concept — see
+    /// `rest-client.ts.j2`'s `getWithResponse` sibling and its own
+    /// doc), so this is simply unused, not gated, for an RPC schema.
+    pub(crate) get_with_response_fn: String,
     pub(crate) create_fn: String,
     pub(crate) update_fn: String,
     pub(crate) delete_fn: String,
