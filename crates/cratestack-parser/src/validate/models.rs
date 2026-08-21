@@ -14,6 +14,7 @@ use crate::validate::fields::{
 };
 use crate::validate::model_attributes::{validate_model_attributes, validate_model_version_field};
 use crate::validate::model_relation::validate_field_relation;
+use crate::validate::patch_touch_flag_collisions::validate_no_touch_flag_collision;
 use crate::validate::removed_attributes::validate_removed_field_attributes;
 use crate::validate::reserved_idents::validate_reserved_identifier;
 use crate::validate::route_collisions::validate_model_route_collisions;
@@ -69,6 +70,18 @@ pub(super) fn validate_models(
                 )
             }),
             "model",
+            &model.name,
+        )?;
+        validate_no_touch_flag_collision(
+            model.fields.iter().map(|field| {
+                let is_nullable_patch_field = matches!(field.ty.arity, TypeArity::Optional)
+                    && !model_names.contains(field.ty.name.as_str())
+                    && !field
+                        .attributes
+                        .iter()
+                        .any(|attribute| attribute.raw.starts_with("@id"));
+                (field.name.as_str(), field.span, is_nullable_patch_field)
+            }),
             &model.name,
         )?;
 

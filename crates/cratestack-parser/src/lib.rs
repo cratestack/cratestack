@@ -29,6 +29,7 @@ mod tests_model_attrs;
 mod tests_model_index;
 #[cfg(test)]
 mod tests_model_unique;
+mod tests_patch_touch_flag_collisions;
 #[cfg(test)]
 mod tests_procedures;
 #[cfg(test)]
