@@ -24,6 +24,18 @@ export interface CratestackRequestOptions {
   signal?: AbortSignal | undefined;
 }
 
+// Issue #610: `request()` decodes the body and discards the `Response`,
+// so no caller can ever reach a response header (`ETag`, most notably —
+// the generated server stamps it on every `@version` model's GET/detail
+// response, and requires it back as `If-Match` on PATCH/DELETE). This
+// envelope is what `requestWithResponse()`/`getWithResponse()` return
+// instead, so the header becomes reachable without changing `request()`'s
+// existing return shape for every other call site.
+export interface CratestackResponseEnvelope<T> {
+  value: T;
+  response: Response;
+}
+
 export class CratestackHttpError extends Error {
   readonly status: number;
   readonly response: Response;
@@ -64,6 +76,19 @@ export class CratestackRuntime {
     path: string,
     options: CratestackRequestOptions = {},
   ): Promise<T> {
+    const { value } = await this.requestWithResponse<T>(method, path, options);
+    return value;
+  }
+
+  // Same request as `request()`, but returns the `Response` alongside the
+  // decoded value (issue #610) instead of discarding it — `request()` is
+  // now a thin wrapper around this that keeps only `.value`, so every
+  // existing call site's return shape is unchanged.
+  async requestWithResponse<T>(
+    method: string,
+    path: string,
+    options: CratestackRequestOptions = {},
+  ): Promise<CratestackResponseEnvelope<T>> {
     const headers = new Headers(await resolveHeaders(this.defaultHeaders));
     if (SCHEMA_SHA256 !== "") {
       headers.set(SCHEMA_SHA_HEADER, SCHEMA_SHA256);
@@ -91,11 +116,21 @@ export class CratestackRuntime {
     if (!response.ok) {
       throw new CratestackHttpError(response, payload);
     }
-    return payload as T;
+    return { value: payload as T, response };
   }
 
   get<T>(path: string, options: Omit<CratestackRequestOptions, "body"> = {}): Promise<T> {
     return this.request<T>("GET", path, options);
+  }
+
+  // Issue #610: the READ half of the ETag/If-Match round trip — read
+  // `.response.headers.get("etag")` off the result, then pass that value
+  // as `ifMatch` to a generated model's `update`/`delete` method.
+  getWithResponse<T>(
+    path: string,
+    options: Omit<CratestackRequestOptions, "body"> = {},
+  ): Promise<CratestackResponseEnvelope<T>> {
+    return this.requestWithResponse<T>("GET", path, options);
   }
 
   post<T>(path: string, body: unknown, options: Omit<CratestackRequestOptions, "body"> = {}): Promise<T> {

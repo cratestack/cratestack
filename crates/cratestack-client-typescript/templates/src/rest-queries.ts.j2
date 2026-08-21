@@ -22,6 +22,35 @@ export interface CratestackQueryRequestConfig extends CratestackRequestConfig {
   query?: CratestackFetchQuery;
 }
 
+// Issue #610: the WRITE half of the ETag/If-Match round trip — an
+// optional `ifMatch` argument on generated `update`/`delete` methods,
+// mirroring the Rust server-side query builder's own `.if_match(version)`.
+// The generated server requires `If-Match` on PATCH (and, since
+// cratestack#519, DELETE) for any model with an `@version` field, and
+// rejects a stale or missing value with `412 Precondition Failed`. Read
+// the matching value off a prior read's `ETag` — e.g.
+// `(await client.<model>.getWithResponse(id)).response.headers.get("etag")`.
+export interface CratestackWriteRequestConfig extends CratestackRequestConfig {
+  ifMatch?: string;
+}
+
+// Merges `ifMatch` into `headers` as the `If-Match` request header when
+// present, otherwise returns `headers` unchanged — `undefined` in,
+// `undefined` out, so callers who never pass `ifMatch` see no behavior
+// change and `CratestackRequestOptions.headers` stays satisfied under
+// `exactOptionalPropertyTypes`.
+export function withIfMatchHeader(
+  headers: HeadersInit | undefined,
+  ifMatch: string | undefined,
+): HeadersInit | undefined {
+  if (ifMatch === undefined) {
+    return headers;
+  }
+  const merged = new Headers(headers);
+  merged.set("If-Match", ifMatch);
+  return merged;
+}
+
 export function toSearchQuery(query?: CratestackFetchQuery): Record<string, unknown> | undefined {
   if (!query) {
     return undefined;

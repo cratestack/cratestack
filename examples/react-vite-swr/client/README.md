@@ -70,6 +70,7 @@ const updated = await client.boards.update(created.id, patch, { headers });
 await client.boards.delete(updated.id, { headers });
 ```
 
+
 ## Procedures
 
 - `client.procedures.estimateFocusMinutes`

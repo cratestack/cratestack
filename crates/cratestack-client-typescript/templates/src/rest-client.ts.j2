@@ -1,4 +1,4 @@
-import { CratestackRuntime, type CratestackClientOptions } from "./runtime.js";
+import { CratestackRuntime, type CratestackClientOptions, type CratestackResponseEnvelope } from "./runtime.js";
 import { reviveDecimalFields, revivePagedDecimalFields, reviveDecimalScalar } from "./models.js";
 import type {
 {% for interface in interfaces %}
@@ -9,7 +9,13 @@ import type {
 {% endfor %}
   Page,
 } from "./models.js";
-import { toSearchQuery, type CratestackQueryRequestConfig, type CratestackRequestConfig } from "./queries.js";
+import {
+  toSearchQuery,
+  withIfMatchHeader,
+  type CratestackQueryRequestConfig,
+  type CratestackRequestConfig,
+  type CratestackWriteRequestConfig,
+} from "./queries.js";
 
 export class {{ client_class_name }} {
   readonly runtime: CratestackRuntime;
@@ -49,6 +55,23 @@ export class {{ model.api_name }} {
     }).then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model.name }});
   }
 
+  // Same call as `get`, but returns the response alongside the record
+  // (issue #610) — read `.response.headers.get("etag")` off the result
+  // to get the value `update`/`delete`'s `ifMatch` option needs.
+  getWithResponse(
+    id: {{ model.primary_key_type }},
+    options: CratestackQueryRequestConfig = {},
+  ): Promise<CratestackResponseEnvelope<{{ model.name }}>> {
+    return this.runtime.getWithResponse<unknown>(`{{ model.route }}/${encodeURIComponent(String(id))}`, {
+      headers: options.headers,
+      query: toSearchQuery(options.query),
+      signal: options.signal,
+    }).then((result) => ({
+      value: reviveDecimalFields(result.value, '{{ model.decimal_shape_name }}') as {{ model.name }},
+      response: result.response,
+    }));
+  }
+
 {% if model.allows_create %}
   create(input: {{ model.create_input_name }}, options: CratestackRequestConfig = {}): Promise<{{ model.name }}> {
     return this.runtime.post<unknown>("{{ model.route }}", input, options)
@@ -59,14 +82,20 @@ export class {{ model.api_name }} {
   update(
     id: {{ model.primary_key_type }},
     input: {{ model.update_input_name }},
-    options: CratestackRequestConfig = {},
+    options: CratestackWriteRequestConfig = {},
   ): Promise<{{ model.name }}> {
-    return this.runtime.patch<unknown>(`{{ model.route }}/${encodeURIComponent(String(id))}`, input, options)
+    return this.runtime.patch<unknown>(`{{ model.route }}/${encodeURIComponent(String(id))}`, input, {
+      headers: withIfMatchHeader(options.headers, options.ifMatch),
+      signal: options.signal,
+    })
       .then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model.name }});
   }
 
-  delete(id: {{ model.primary_key_type }}, options: CratestackRequestConfig = {}): Promise<void> {
-    return this.runtime.delete<void>(`{{ model.route }}/${encodeURIComponent(String(id))}`, options);
+  delete(id: {{ model.primary_key_type }}, options: CratestackWriteRequestConfig = {}): Promise<void> {
+    return this.runtime.delete<void>(`{{ model.route }}/${encodeURIComponent(String(id))}`, {
+      headers: withIfMatchHeader(options.headers, options.ifMatch),
+      signal: options.signal,
+    });
   }
 }
 

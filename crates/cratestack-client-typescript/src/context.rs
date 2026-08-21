@@ -14,7 +14,7 @@ use crate::procedure_views::{ProcedureView, build_procedure};
 use crate::refine::{RefineResourceView, build_refine_resources, refine_resource_map_type};
 use crate::types::{
     enum_name_set, is_generated_on_create, is_primary_key, model_allows_create, model_name_set,
-    scalar_model_fields, visible_model_fields,
+    scalar_model_fields, version_field, visible_model_fields,
 };
 use crate::views::{
     EnumView, InterfaceKind, InterfaceView, ModelApiView, build_enum_view, build_interface,
@@ -89,6 +89,20 @@ pub(crate) struct TemplateContext {
     /// Same shape and rationale as `peer_dependencies`, for
     /// `devDependencies` — see `crate::package_deps::dev_dependencies_for`.
     dev_dependencies: Vec<DependencyEntry>,
+    /// Issue #610: `README.md.j2`'s "Optimistic concurrency" section
+    /// documents `getWithResponse`/`ifMatch`, which only exist on REST
+    /// output (RPC has no per-route `If-Match`/`ETag` concept — see
+    /// `rest-client.ts.j2`'s doc comment on `getWithResponse` and
+    /// `crate::templates::specs`'s module doc on why `rpc-client.ts.j2`
+    /// was deliberately left untouched). `true` iff `schema.transport ==
+    /// TransportStyle::Rest`.
+    is_rest_transport: bool,
+    /// Issue #610: whether any model in the schema declares `@version` —
+    /// gates the same README section a second way, since the section's
+    /// own prose is scoped to "a model with an `@version` field". A
+    /// schema with no versioned model has no `If-Match`/`ETag`
+    /// requirement to document at all.
+    has_versioned_model: bool,
 }
 
 pub(crate) fn build_template_context(
@@ -244,5 +258,10 @@ pub(crate) fn build_template_context(
         tanstack: config.tanstack,
         peer_dependencies: peer_dependencies_for(config, &refine_version_requirement),
         dev_dependencies: dev_dependencies_for(config, &refine_version_requirement),
+        is_rest_transport: schema.transport == cratestack_core::TransportStyle::Rest,
+        has_versioned_model: schema
+            .models
+            .iter()
+            .any(|model| version_field(model).is_some()),
     })
 }

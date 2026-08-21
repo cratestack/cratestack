@@ -15,8 +15,14 @@
 // reference each other (a relation cycle) can never become a runtime
 // import cycle, only a type-only one, which TypeScript tolerates fine.
 
-import type { CratestackRuntime } from "../runtime.js";
-import { toSearchQuery, type CratestackQueryRequestConfig, type CratestackRequestConfig } from "../queries.js";
+import type { CratestackRuntime, CratestackResponseEnvelope } from "../runtime.js";
+import {
+  toSearchQuery,
+  withIfMatchHeader,
+  type CratestackQueryRequestConfig,
+  type CratestackRequestConfig,
+  type CratestackWriteRequestConfig,
+} from "../queries.js";
 // cratestack#498: every generated model file gets this import
 // unconditionally (like `../runtime.js`/`../queries.js` above), whether
 // or not this particular model has a `Decimal` field — the alternative
@@ -99,6 +105,27 @@ export async function {{ get_fn }}(
   }).then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model_interface.name }});
 }
 
+// Same call as `{{ get_fn }}`, but returns the response alongside the
+// record (issue #610) — read `.response.headers.get("etag")` off the
+// result to get the value `{{ update_fn }}`/`{{ delete_fn }}`'s `ifMatch`
+// option needs. Applies the same decimal revival `{{ get_fn }}` does —
+// reaching for the raw `runtime.getWithResponse()` instead would skip
+// it and hand back an unrevived (string, not `Decimal`) value.
+export async function {{ get_with_response_fn }}(
+  runtime: CratestackRuntime,
+  id: {{ model.primary_key_type }},
+  options: CratestackQueryRequestConfig = {},
+): Promise<CratestackResponseEnvelope<{{ model_interface.name }}>> {
+  return runtime.getWithResponse<unknown>(`{{ model.route }}/${encodeURIComponent(String(id))}`, {
+    headers: options.headers,
+    query: toSearchQuery(options.query),
+    signal: options.signal,
+  }).then((result) => ({
+    value: reviveDecimalFields(result.value, '{{ model.decimal_shape_name }}') as {{ model_interface.name }},
+    response: result.response,
+  }));
+}
+
 {% if create_input %}
 export async function {{ create_fn }}(
   runtime: CratestackRuntime,
@@ -114,16 +141,22 @@ export async function {{ update_fn }}(
   runtime: CratestackRuntime,
   id: {{ model.primary_key_type }},
   input: {{ update_input.name }},
-  options: CratestackRequestConfig = {},
+  options: CratestackWriteRequestConfig = {},
 ): Promise<{{ model_interface.name }}> {
-  return runtime.patch<unknown>(`{{ model.route }}/${encodeURIComponent(String(id))}`, input, options)
+  return runtime.patch<unknown>(`{{ model.route }}/${encodeURIComponent(String(id))}`, input, {
+    headers: withIfMatchHeader(options.headers, options.ifMatch),
+    signal: options.signal,
+  })
     .then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model_interface.name }});
 }
 
 export async function {{ delete_fn }}(
   runtime: CratestackRuntime,
   id: {{ model.primary_key_type }},
-  options: CratestackRequestConfig = {},
+  options: CratestackWriteRequestConfig = {},
 ): Promise<void> {
-  return runtime.delete<void>(`{{ model.route }}/${encodeURIComponent(String(id))}`, options);
+  return runtime.delete<void>(`{{ model.route }}/${encodeURIComponent(String(id))}`, {
+    headers: withIfMatchHeader(options.headers, options.ifMatch),
+    signal: options.signal,
+  });
 }

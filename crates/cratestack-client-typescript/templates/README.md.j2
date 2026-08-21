@@ -71,6 +71,22 @@ const created = await client.{{ models[0].accessor }}.create(input, { headers })
 const updated = await client.{{ models[0].accessor }}.update(created.id, patch, { headers });
 await client.{{ models[0].accessor }}.delete(updated.id, { headers });
 ```
+
+{% if is_rest_transport and has_versioned_model %}
+### Optimistic concurrency (`@version` models)
+
+For a model with an `@version` field, the server requires an `If-Match` header on
+`update`/`delete` and rejects a stale or missing one with `412 Precondition Failed`.
+Read the current `ETag` off `getWithResponse`, then pass it back as `ifMatch`:
+
+```ts
+const { value: item, response } = await client.{{ models[0].accessor }}.getWithResponse(id);
+const etag = response.headers.get("etag");
+
+await client.{{ models[0].accessor }}.update(id, patch, { ifMatch: etag ?? undefined });
+await client.{{ models[0].accessor }}.delete(id, { ifMatch: etag ?? undefined });
+```
+{% endif %}
 {% endif %}
 
 ## Procedures
@@ -186,6 +202,23 @@ Import exactly the functions/hooks you call. `swr`/React are only required if yo
 a `.hooks` module — plain functions (`{{ package_name }}/swr/models/<model>`) need
 nothing but the runtime. See `{{ package_name }}/swr`'s own module for the full model
 list, and `{{ package_name }}/swr/procedures`/`/swr/procedures.hooks` for procedures.
+{% if is_rest_transport and has_versioned_model %}
+
+This layout gets the same optimistic-concurrency round trip the root layout's
+`getWithResponse` documents above, as its own plain function per model —
+`get{{ models[0].name }}WithResponse` — with the same `Decimal` revival
+`get{{ models[0].name }}` applies (reaching for `runtime.getWithResponse()` directly
+skips that revival and hands back an unrevived value):
+
+```ts
+import { get{{ models[0].name }}WithResponse, update{{ models[0].name }} } from "{{ package_name }}/swr/models/{{ models[0].file_stem }}";
+
+const { value: item, response } = await get{{ models[0].name }}WithResponse(runtime, id);
+const etag = response.headers.get("etag");
+
+await update{{ models[0].name }}(runtime, id, patch, { ifMatch: etag ?? undefined });
+```
+{% endif %}
 
 **One `CratestackRuntime` per surface.** The root and `/swr` each construct their own
 `CratestackRuntime` class from the same template, so the two are structurally identical

@@ -69,6 +69,7 @@ const updated = await client.widgets.update(created.id, patch, { headers });
 await client.widgets.delete(updated.id, { headers });
 ```
 
+
 ## Procedures
 
 - `client.procedures.echoName`

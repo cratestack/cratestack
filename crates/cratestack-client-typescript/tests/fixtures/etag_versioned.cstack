@@ -1,0 +1,20 @@
+// REST schema with an `@version` model — exercises the generated
+// TS client's ETag/If-Match plumbing (issue #610). `Ledger` mirrors
+// `crates/cratestack-client/tests/fixtures/versioned.cstack`'s shape,
+// plus a `Decimal` field (`amount`) so the `--swr` preset's
+// `getLedgerWithResponse` can be proven to revive it, not just reach
+// the ETag (a consumer reaching for the ETag through a path that skips
+// decimal revival gets a silently wrong value, not an error).
+
+model Ledger {
+  id Int @id
+  label String
+  balance Int
+  amount Decimal
+  version Int @version
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}

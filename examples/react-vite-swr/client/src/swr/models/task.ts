@@ -15,8 +15,14 @@
 // reference each other (a relation cycle) can never become a runtime
 // import cycle, only a type-only one, which TypeScript tolerates fine.
 
-import type { CratestackRuntime } from "../runtime.js";
-import { toSearchQuery, type CratestackQueryRequestConfig, type CratestackRequestConfig } from "../queries.js";
+import type { CratestackRuntime, CratestackResponseEnvelope } from "../runtime.js";
+import {
+  toSearchQuery,
+  withIfMatchHeader,
+  type CratestackQueryRequestConfig,
+  type CratestackRequestConfig,
+  type CratestackWriteRequestConfig,
+} from "../queries.js";
 // cratestack#498: every generated model file gets this import
 // unconditionally (like `../runtime.js`/`../queries.js` above), whether
 // or not this particular model has a `Decimal` field — the alternative
@@ -99,6 +105,27 @@ export async function getTask(
   }).then((value) => reviveDecimalFields(value, 'Task') as Task);
 }
 
+// Same call as `getTask`, but returns the response alongside the
+// record (issue #610) — read `.response.headers.get("etag")` off the
+// result to get the value `updateTask`/`deleteTask`'s `ifMatch`
+// option needs. Applies the same decimal revival `getTask` does —
+// reaching for the raw `runtime.getWithResponse()` instead would skip
+// it and hand back an unrevived (string, not `Decimal`) value.
+export async function getTaskWithResponse(
+  runtime: CratestackRuntime,
+  id: number,
+  options: CratestackQueryRequestConfig = {},
+): Promise<CratestackResponseEnvelope<Task>> {
+  return runtime.getWithResponse<unknown>(`/tasks/${encodeURIComponent(String(id))}`, {
+    headers: options.headers,
+    query: toSearchQuery(options.query),
+    signal: options.signal,
+  }).then((result) => ({
+    value: reviveDecimalFields(result.value, 'Task') as Task,
+    response: result.response,
+  }));
+}
+
 export async function createTask(
   runtime: CratestackRuntime,
   input: CreateTaskInput,
@@ -112,16 +139,22 @@ export async function updateTask(
   runtime: CratestackRuntime,
   id: number,
   input: UpdateTaskInput,
-  options: CratestackRequestConfig = {},
+  options: CratestackWriteRequestConfig = {},
 ): Promise<Task> {
-  return runtime.patch<unknown>(`/tasks/${encodeURIComponent(String(id))}`, input, options)
+  return runtime.patch<unknown>(`/tasks/${encodeURIComponent(String(id))}`, input, {
+    headers: withIfMatchHeader(options.headers, options.ifMatch),
+    signal: options.signal,
+  })
     .then((value) => reviveDecimalFields(value, 'Task') as Task);
 }
 
 export async function deleteTask(
   runtime: CratestackRuntime,
   id: number,
-  options: CratestackRequestConfig = {},
+  options: CratestackWriteRequestConfig = {},
 ): Promise<void> {
-  return runtime.delete<void>(`/tasks/${encodeURIComponent(String(id))}`, options);
+  return runtime.delete<void>(`/tasks/${encodeURIComponent(String(id))}`, {
+    headers: withIfMatchHeader(options.headers, options.ifMatch),
+    signal: options.signal,
+  });
 }
