@@ -249,3 +249,186 @@ model User {
     )
     .expect("only `@pb` itself and `@pb(...)` were removed");
 }
+
+/// cratestack#679 (half 1 of 2 — see the module doc on
+/// `validate::removed_attributes` for why the typo-class half, e.g.
+/// `@raedonly` silently dropping `@readonly`, is deliberately out of scope
+/// here): field-level `@allow(...)` parses, is retained in the IR, and is
+/// never read by any codegen — a silent no-op that looks like access
+/// control and enforces nothing. It must be a hard parse error instead,
+/// naming the field and pointing at the real alternatives.
+#[test]
+fn allow_field_attribute_is_rejected() {
+    let err = parse_schema(
+        r#"
+model Asset {
+  id Int @id
+  bucket String @allow(auth().role == "system")
+}
+"#,
+    )
+    .expect_err("field-level `@allow` must not parse as a silent no-op");
+
+    assert!(err.to_string().contains("@allow"), "error: {err}");
+    assert!(err.to_string().contains("bucket"), "error: {err}");
+    assert!(
+        err.to_string().contains("@@allow"),
+        "error should point at the model-level alternative: {err}",
+    );
+}
+
+/// Same defect, `@deny` half.
+#[test]
+fn deny_field_attribute_is_rejected() {
+    let err = parse_schema(
+        r#"
+model Asset {
+  id Int @id
+  bucket String @deny(auth().role != "system")
+}
+"#,
+    )
+    .expect_err("field-level `@deny` must not parse as a silent no-op");
+
+    assert!(err.to_string().contains("@deny"), "error: {err}");
+    assert!(
+        err.to_string().contains("@@deny"),
+        "error should point at the model-level alternative: {err}",
+    );
+}
+
+/// Mirrors `pb_field_attribute_is_rejected_on_every_field_bearing_declaration`:
+/// field-level `@allow`/`@deny` must be rejected on all five field-bearing
+/// declaration kinds, not just `model`. A missed call site in
+/// `validate::removed_attributes` fails *silently* (the attribute goes back
+/// to being an inert no-op), so this is the guard against that.
+#[test]
+fn allow_and_deny_field_attributes_are_rejected_on_every_field_bearing_declaration() {
+    for attribute in ["@allow(auth() != null)", "@deny(auth() == null)"] {
+        for (kind, source) in [
+            (
+                "model",
+                format!(
+                    r#"
+model Asset {{
+  id Int @id
+  bucket String {attribute}
+}}
+"#
+                ),
+            ),
+            (
+                "mixin",
+                format!(
+                    r#"
+mixin Timestamps {{
+  created_at DateTime {attribute}
+}}
+"#
+                ),
+            ),
+            (
+                "type",
+                format!(
+                    r#"
+type Address {{
+  city String {attribute}
+}}
+"#
+                ),
+            ),
+            (
+                "view",
+                format!(
+                    r#"
+model Widget {{
+  id Int @id
+  name String
+}}
+
+view WidgetSummary from Widget {{
+  id Int @id
+  name String {attribute}
+  @@sql("SELECT id, name FROM widget")
+}}
+"#
+                ),
+            ),
+            (
+                "auth block",
+                format!(
+                    r#"
+auth User {{
+  id String @id {attribute}
+}}
+"#
+                ),
+            ),
+        ] {
+            let err = parse_schema(&source)
+                .expect_err(&format!("`{attribute}` must be rejected on {kind} fields"));
+            let name = if attribute.starts_with("@allow") {
+                "@allow"
+            } else {
+                "@deny"
+            };
+            assert!(err.to_string().contains(name), "{kind}: {err}");
+            assert!(
+                err.to_string().contains("not supported at field position"),
+                "{kind} must get field-policy guidance, not a bare unknown-attribute error: {err}",
+            );
+        }
+    }
+}
+
+/// Regression guard for cratestack#679's scope boundary: procedure-level
+/// `@allow`/`@deny` is real, supported policy
+/// (`cratestack-macros/src/policy/procedure.rs`) on a *procedure's*
+/// attribute list, not a field's — the field-position rejection added for
+/// #679 must not touch it.
+#[test]
+fn procedure_level_allow_still_parses() {
+    parse_schema(
+        r#"
+auth UserAuth {
+  id Int
+  role String
+}
+
+type PublishPostInput {
+  postId Int
+}
+
+mutation procedure publishPost(args: PublishPostInput): PublishPostInput
+  @allow(auth().role == "admin")
+"#,
+    )
+    .expect("procedure-level `@allow` must keep parsing — it is real, supported policy");
+}
+
+/// Regression guard for cratestack#679's scope boundary: model/view-level
+/// `@@allow`/`@@deny` (double-`@`) is real, supported policy
+/// (`cratestack-macros/src/policy/model.rs`) on the model/view's own
+/// attribute list, not a field's — the field-position rejection must match
+/// the bare single-`@` name precisely and not swallow the double-`@` form.
+#[test]
+fn model_level_double_at_allow_and_deny_still_parse() {
+    parse_schema(
+        r#"
+auth UserAuth {
+  id Int
+  role String
+}
+
+model User {
+  id Int @id
+  email String @unique
+  role String
+
+  @@allow("read", auth() != null)
+  @@deny("read", auth().role == "banned")
+}
+"#,
+    )
+    .expect("model-level `@@allow`/`@@deny` must keep parsing — they are real, supported policy");
+}

@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### Field-level `@allow`/`@deny` is rejected at parse time — breaking (#679)
+
+A field-level `@allow(...)` parsed, reported `schema OK`, was retained in the IR, and was then read by
+nothing. It is an annotation that reads as access control and enforces none: the field reached every
+caller the model-level read policy admitted, exactly as if the annotation were absent.
+
+It now fails to parse, on all five field-bearing declaration kinds — `model`, `view`, `mixin`, `type`
+and the `auth` block — naming the offending field and pointing at what does work: model/view-level
+`@@allow`/`@@deny` for row visibility, `@readonly` to keep a field out of generated inputs, and
+`@server_only` to keep it out of client responses.
+
+Breaking for any schema currently carrying one, though only in the sense that a line which never did
+anything now says so. Procedure-level `@allow`/`@deny` and model/view-level `@@allow`/`@@deny` are
+untouched — this targets the field-position, single-`@` case only.
+
+This is half of #679. The other half — that unknown field attributes are accepted generally, so a
+misspelled `@raedonly` silently drops `@readonly` and leaves a field writable — is deliberately not
+addressed, because catching it needs the generic unknown-attribute pass that
+`validate/removed_attributes.rs` documents as an intentional non-choice. #679 stays open for it.
+
 ## 0.8.6 (2026-08-21)
 
 ### `cratestack_annotations` + `cratestack_builder` Dart packages (#668, phase 1)
