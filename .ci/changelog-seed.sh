@@ -39,20 +39,92 @@ if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   exit 1
 fi
 
-# Overridable (absolute path) so tests can target a sandbox copy instead of
-# the real CHANGELOG.md, while git below still walks this repo's real history.
-CHANGELOG_FILE="${CHANGELOG_FILE:-CHANGELOG.md}"
+# Every changelog the release pipeline is responsible for is declared once,
+# centrally, in changelog-files.sh — see that file for why. Overridable
+# (absolute path) so the self-tests can point this script at an alternate
+# declaration file — e.g. a fixture with a deliberately empty set, to prove
+# the guard below actually guards — without touching the real, tracked one.
+CHANGELOG_FILES_SOURCE="${CHANGELOG_FILES_SOURCE:-$PROJECT_ROOT/.ci/changelog-files.sh}"
+# shellcheck source=.ci/changelog-files.sh
+source "$CHANGELOG_FILES_SOURCE"
 
-if [ ! -f "$CHANGELOG_FILE" ]; then
-  echo "error: $CHANGELOG_FILE not found" >&2
+# Overridable (absolute path) so tests can target a single sandbox copy
+# instead of the declared set above, while git further below still walks
+# this repo's real history. This is the degenerate single-file case: when
+# set, it replaces the whole declared set with just the one path. Existing
+# behavior, unchanged.
+#
+# CHANGELOG_FILES_OVERRIDE is the multi-file counterpart: a newline-separated
+# list of paths, used only by the self-tests to exercise the multi-file case
+# against sandbox copies without touching the real, tracked paths declared
+# in changelog-files.sh. CHANGELOG_FILE (singular) wins if both are set.
+if [ -n "${CHANGELOG_FILE:-}" ]; then
+  CHANGELOG_FILES=("$CHANGELOG_FILE")
+elif [ -n "${CHANGELOG_FILES_OVERRIDE:-}" ]; then
+  # A `while read` loop, not `mapfile ... <<<`: a here-string always appends
+  # a trailing newline, and an override string that itself ends in a
+  # newline (or contains a blank line) would otherwise produce an empty
+  # array element — which later fails as a bare, unhelpful "error:  not
+  # found" with no filename. Skipping blank lines here means a malformed
+  # override fails on a real (missing) path instead.
+  CHANGELOG_FILES=()
+  while IFS= read -r line; do
+    [ -n "$line" ] && CHANGELOG_FILES+=("$line")
+  done <<< "$CHANGELOG_FILES_OVERRIDE"
+else
+  CHANGELOG_FILES=("${CHANGELOG_FILES_DEFAULT[@]}")
+fi
+
+# Guard against a silently empty resolved set. Bash's `"${ARR[@]}"` on an
+# unset or empty array expands to zero elements under `set -u` — NOT an
+# error (this changed in bash 4.4; the pre-4.4 unbound-variable-error
+# behavior some people remember no longer applies, and GitHub runners ship
+# bash 5.x). So if CHANGELOG_FILES_DEFAULT in changelog-files.sh is ever
+# renamed, emptied, or typo'd, the for-loop below would silently iterate
+# zero times and this script would report success having seeded nothing —
+# and downstream, changelog-check.sh would report "no unedited seeds"
+# having checked nothing, and prepare-release.yml's `git add` would stage
+# zero changelogs, shipping a release with NO changelog update at all
+# (worse than the original #650 bug). Checked here on the FINAL resolved
+# CHANGELOG_FILES, not just CHANGELOG_FILES_DEFAULT, so this also catches a
+# CHANGELOG_FILES_OVERRIDE that resolves to nothing (e.g. blank lines only)
+# — not just a broken declared-set file.
+#
+# Deliberately guarded in each consumer rather than inside
+# changelog-files.sh itself: that file's own header says it "only declares
+# data" and is "meant to be sourced, not executed directly" — adding
+# control flow there would break that contract for all three consumers
+# (this script, changelog-check.sh, and prepare-release.yml's `git add`
+# step), which each need a differently-worded, differently-scoped error
+# anyway (this one talks about seeding; changelog-check.sh's about
+# checking; the workflow's about staging).
+if [ "${#CHANGELOG_FILES[@]}" -eq 0 ]; then
+  echo "error: the declared changelog set is empty — nothing to seed. Check CHANGELOG_FILES_DEFAULT in .ci/changelog-files.sh (or the CHANGELOG_FILE / CHANGELOG_FILES_OVERRIDE env override in effect, if any)." >&2
   exit 1
 fi
 
-# Refuse to write if a section for this version already exists
-if grep -q "^## $VERSION " "$CHANGELOG_FILE"; then
-  echo "error: CHANGELOG.md already contains a section for $VERSION" >&2
-  exit 1
-fi
+# Verify every changelog in the set exists, and that none of them already
+# has a section for this version, before writing to ANY of them. This makes
+# THIS validation pass atomic: a file that's missing or already has the
+# section is caught before any writes happen, for any file in the set. It
+# does NOT make the write loop below atomic against a failure mid-write
+# (e.g. a permissions error or a full disk on the second file) — a write
+# failure there can still leave some files seeded and others untouched. Making
+# the writes themselves atomic (stage every file to a temp path, then move
+# all of them) is more machinery than this script currently carries; a
+# release script that fails loudly and dirty on a write error is an
+# acceptable, honestly-documented limitation.
+for file in "${CHANGELOG_FILES[@]}"; do
+  if [ ! -f "$file" ]; then
+    echo "error: $file not found" >&2
+    exit 1
+  fi
+
+  if grep -q "^## $VERSION " "$file"; then
+    echo "error: $file already contains a section for $VERSION" >&2
+    exit 1
+  fi
+done
 
 # Compute the commit range since the last release tag.
 # Deliberately NOT `git describe --tags --abbrev=0` — some past release tags
@@ -186,6 +258,13 @@ if ! [ "$added_any" = "true" ]; then
 "
 fi
 
+# Write the section into every declared changelog. The commit range and the
+# grouped-by-type new_section computed above are shared across all of them —
+# they describe the same repo history regardless of which file is being
+# written — only the per-file "is there an '## Unreleased' section to carry
+# forward" decision below varies file to file.
+for CHANGELOG_FILE in "${CHANGELOG_FILES[@]}"; do
+
 # cratestack#531: if CHANGELOG.md already has a "## Unreleased" section (the
 # convention: individual PRs add narrative prose there as they land, between
 # releases), convert THAT section into the new dated release section instead
@@ -248,7 +327,7 @@ if [ -n "$unreleased_line" ] && [ "$has_prose_to_carry" = "true" ]; then
   } > "$tmp_file"
   mv "$tmp_file" "$CHANGELOG_FILE"
 
-  echo "converted existing '## Unreleased' section into '## $VERSION ($today)' — prose carried forward, no seed needed"
+  echo "$CHANGELOG_FILE: converted existing '## Unreleased' section into '## $VERSION ($today)' — prose carried forward, no seed needed"
   echo "  Last tag: ${last_tag:-none}"
   echo "  Commit range: $range"
   echo "  Computed from commit: $head_sha"
@@ -271,7 +350,7 @@ elif [ -n "$unreleased_line" ]; then
   } > "$tmp_file"
   mv "$tmp_file" "$CHANGELOG_FILE"
 
-  echo "seeded CHANGELOG.md with section for $VERSION (marker: $section_marker) — '## Unreleased' was present but empty, replaced in place"
+  echo "$CHANGELOG_FILE: seeded with section for $VERSION (marker: $section_marker) — '## Unreleased' was present but empty, replaced in place"
   echo "  Last tag: ${last_tag:-none}"
   echo "  Commit range: $range"
   echo "  Computed from commit: $head_sha"
@@ -303,9 +382,11 @@ else
   fi
   mv "$tmp_file" "$CHANGELOG_FILE"
 
-  echo "seeded CHANGELOG.md with section for $VERSION (marker: $section_marker)"
+  echo "$CHANGELOG_FILE: seeded with section for $VERSION (marker: $section_marker)"
   echo "  Last tag: ${last_tag:-none}"
   echo "  Commit range: $range"
   echo "  Computed from commit: $head_sha"
   echo "  Today's date: $today"
 fi
+
+done

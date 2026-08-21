@@ -20,6 +20,17 @@
 #    back to the seed, consumed in place (no stale empty heading left behind)
 # 9. (cratestack#531) no "## Unreleased" section at all still falls back to
 #    the original "insert above the current newest entry" behavior
+# 10-12. (cratestack#531) numbered variants of 7-9 above against different
+#    fixtures — see each test's own header.
+# 13-16. (cratestack#650) the changelog set is a declared LIST, not a single
+#    hardcoded path: changelog-seed seeds every file in the set, refuses
+#    atomically (no partial seed) if any file already has the version, and
+#    changelog-check names exactly which file(s) in the set are unedited.
+# 17. (cratestack#650 — the ticket's named risk) the pre-existing single-file
+#    CHANGELOG_FILE override still works unchanged and takes precedence —
+#    the multi-file mechanism must not change what that override means.
+# 18. (cratestack#650) the production declared set in changelog-files.sh
+#    actually lists both the root changelog and cratestack_cbor's.
 #
 # Tests 1, 3, and 8 (original numbering) deliberately do NOT run against a
 # copy of the real, tracked CHANGELOG.md — its top section is "## Unreleased"
@@ -81,6 +92,31 @@ run_capture() {
   REPLY_OUT=$(CHANGELOG_FILE="$SANDBOX_CHANGELOG" "$@" 2>&1) || REPLY_STATUS=$?
 }
 
+# Same as run_capture, but exercises the multi-file path via
+# CHANGELOG_FILES_OVERRIDE (a newline-separated list of sandbox paths)
+# instead of the single-file CHANGELOG_FILE override — for the multi-file
+# test cases below. $1 is the newline-separated list, the rest is the
+# command to run.
+run_capture_multi() {
+  local override="$1"
+  shift
+  REPLY_STATUS=0
+  REPLY_OUT=$(CHANGELOG_FILES_OVERRIDE="$override" "$@" 2>&1) || REPLY_STATUS=$?
+}
+
+# Runs $@ with CHANGELOG_FILES_SOURCE pointed at an alternate
+# changelog-files.sh declaration file — used to exercise the
+# empty-declared-set guard against a fixture (e.g. a renamed/emptied
+# CHANGELOG_FILES_DEFAULT) without touching the real, tracked
+# .ci/changelog-files.sh. $1 is the path to the fixture file, the rest is
+# the command to run.
+run_capture_with_source() {
+  local source_file="$1"
+  shift
+  REPLY_STATUS=0
+  REPLY_OUT=$(CHANGELOG_FILES_SOURCE="$source_file" "$@" 2>&1) || REPLY_STATUS=$?
+}
+
 setup_test() {
   TEST_DIR=$(mktemp -d)
   SANDBOX_CHANGELOG="$TEST_DIR/CHANGELOG.md"
@@ -112,7 +148,7 @@ test_header "Test 1: changelog-seed creates a new section"
 setup_test_no_unreleased
 
 run_capture "$SEED_SCRIPT" 0.9.9
-if [ "$REPLY_STATUS" -eq 0 ] && echo "$REPLY_OUT" | grep -q "seeded CHANGELOG.md"; then
+if [ "$REPLY_STATUS" -eq 0 ] && echo "$REPLY_OUT" | grep -q "seeded with section for 0.9.9"; then
   if grep -q "^## 0.9.9 (" "$SANDBOX_CHANGELOG"; then
     test_pass "New section added with correct heading format"
   else
@@ -172,7 +208,7 @@ setup_test_no_unreleased
 run_capture "$SEED_SCRIPT" 0.9.9
 
 run_capture "$CHECK_SCRIPT"
-if [ "$REPLY_STATUS" -ne 0 ] && echo "$REPLY_OUT" | grep -q "contains unedited seed"; then
+if [ "$REPLY_STATUS" -ne 0 ] && echo "$REPLY_OUT" | grep -q "contain unedited seed"; then
   test_pass "changelog-check correctly detected unedited seed"
 else
   test_fail "changelog-check should have detected unedited seed"
@@ -419,15 +455,351 @@ rm -rf "$TEST_DIR"
 TEST_DIR=""
 SANDBOX_CHANGELOG=""
 
-# Test 9: none of the above ever touches the real, tracked CHANGELOG.md.
+# Test 13 (cratestack#650): changelog-seed seeds EVERY file in a multi-file
+# set, not just one. Two independent sandbox fixtures, neither touching the
+# real, tracked changelogs, wired together via CHANGELOG_FILES_OVERRIDE.
+test_header "Test 13 (cratestack#650): changelog-seed seeds every file in a multi-file set"
+TEST_DIR=$(mktemp -d)
+ROOT_FIXTURE="$TEST_DIR/root/CHANGELOG.md"
+PKG_FIXTURE="$TEST_DIR/pkg/CHANGELOG.md"
+mkdir -p "$TEST_DIR/root" "$TEST_DIR/pkg"
+cat > "$ROOT_FIXTURE" <<'FIXTURE'
+# Changelog
+
+## 0.7.8 (2026-08-08)
+
+Some previously released, already-edited prose.
+FIXTURE
+cat > "$PKG_FIXTURE" <<'FIXTURE'
+## 0.8.3
+
+Some previously released, already-edited prose.
+FIXTURE
+
+run_capture_multi "$ROOT_FIXTURE"$'\n'"$PKG_FIXTURE" "$SEED_SCRIPT" 0.9.9
+if [ "$REPLY_STATUS" -eq 0 ]; then
+  if grep -q "^## 0.9.9 (" "$ROOT_FIXTURE" && grep -q "TODO: edit this section from the seed below" "$ROOT_FIXTURE"; then
+    test_pass "First declared file (root fixture) received a seeded section"
+  else
+    test_fail "First declared file (root fixture) did not receive a seeded section"
+  fi
+
+  if grep -q "^## 0.9.9 (" "$PKG_FIXTURE" && grep -q "TODO: edit this section from the seed below" "$PKG_FIXTURE"; then
+    test_pass "Second declared file (package fixture) received a seeded section"
+  else
+    test_fail "Second declared file (package fixture) did not receive a seeded section"
+  fi
+else
+  test_fail "changelog-seed failed on the multi-file set: $REPLY_OUT"
+fi
+
+rm -rf "$TEST_DIR"
+TEST_DIR=""
+
+# Test 14 (cratestack#650): multi-file seeding is atomic — if ANY declared
+# file already has a section for the version, changelog-seed must refuse
+# before writing to ANY of them, not seed the first file(s) and then fail
+# partway through the set.
+test_header "Test 14 (cratestack#650): changelog-seed refuses atomically across a multi-file set"
+TEST_DIR=$(mktemp -d)
+ROOT_FIXTURE="$TEST_DIR/root/CHANGELOG.md"
+PKG_FIXTURE="$TEST_DIR/pkg/CHANGELOG.md"
+mkdir -p "$TEST_DIR/root" "$TEST_DIR/pkg"
+cat > "$ROOT_FIXTURE" <<'FIXTURE'
+# Changelog
+
+## 0.7.8 (2026-08-08)
+
+Some previously released, already-edited prose.
+FIXTURE
+# The second file already has a section for the version being seeded
+# (heading format mirrors the real seeded/edited style — a trailing space
+# and date parenthetical after the version, matching the `^## $VERSION `
+# pattern both scripts grep for).
+cat > "$PKG_FIXTURE" <<'FIXTURE'
+## 0.9.9 (2020-01-01)
+
+Already released by hand.
+FIXTURE
+
+run_capture_multi "$ROOT_FIXTURE"$'\n'"$PKG_FIXTURE" "$SEED_SCRIPT" 0.9.9
+if [ "$REPLY_STATUS" -ne 0 ] && echo "$REPLY_OUT" | grep -q "already contains a section"; then
+  test_pass "changelog-seed correctly refused when the second file already had the section"
+else
+  test_fail "changelog-seed should have refused: status=$REPLY_STATUS out=$REPLY_OUT"
+fi
+
+if grep -q "^## 0.9.9 (" "$ROOT_FIXTURE"; then
+  test_fail "First file was seeded even though the set was refused — not atomic"
+else
+  test_pass "First file was left untouched — refusal is atomic across the set"
+fi
+
+rm -rf "$TEST_DIR"
+TEST_DIR=""
+
+# Test 15 (cratestack#650): changelog-check, given a multi-file set, exits
+# non-zero and names the SPECIFIC file(s) still holding the unedited seed
+# marker — not just "something is wrong", and not the edited file too.
+test_header "Test 15 (cratestack#650): changelog-check names which file is unedited"
+TEST_DIR=$(mktemp -d)
+ROOT_FIXTURE="$TEST_DIR/root/CHANGELOG.md"
+PKG_FIXTURE="$TEST_DIR/pkg/CHANGELOG.md"
+mkdir -p "$TEST_DIR/root" "$TEST_DIR/pkg"
+cat > "$ROOT_FIXTURE" <<'FIXTURE'
+# Changelog
+
+## 0.9.9 (2026-08-21)
+
+Already edited, narrative prose. No seed marker here.
+FIXTURE
+cat > "$PKG_FIXTURE" <<'FIXTURE'
+## 0.9.9 (2026-08-21)
+
+<!-- TODO: edit this section from the seed below -->
+<!-- seeded from HEAD..HEAD at 0000000 -->
+
+This is an auto-generated seed. Please rewrite into narrative prose.
+FIXTURE
+
+run_capture_multi "$ROOT_FIXTURE"$'\n'"$PKG_FIXTURE" "$CHECK_SCRIPT"
+if [ "$REPLY_STATUS" -ne 0 ] && echo "$REPLY_OUT" | grep -q "contain unedited seed"; then
+  test_pass "changelog-check correctly failed with an unedited seed in the set"
+else
+  test_fail "changelog-check should have failed: status=$REPLY_STATUS out=$REPLY_OUT"
+fi
+
+if echo "$REPLY_OUT" | grep -qF "$PKG_FIXTURE"; then
+  test_pass "changelog-check named the specific unedited file (package fixture)"
+else
+  test_fail "changelog-check did not name the unedited file in its output"
+fi
+
+if echo "$REPLY_OUT" | grep -qF "$ROOT_FIXTURE"; then
+  test_fail "changelog-check incorrectly named the already-edited file too"
+else
+  test_pass "changelog-check did not name the already-edited file"
+fi
+
+rm -rf "$TEST_DIR"
+TEST_DIR=""
+
+# Test 16 (cratestack#650): changelog-check passes when every file in a
+# multi-file set is edited (no unedited seed markers anywhere in the set).
+test_header "Test 16 (cratestack#650): changelog-check passes when the whole multi-file set is edited"
+TEST_DIR=$(mktemp -d)
+ROOT_FIXTURE="$TEST_DIR/root/CHANGELOG.md"
+PKG_FIXTURE="$TEST_DIR/pkg/CHANGELOG.md"
+mkdir -p "$TEST_DIR/root" "$TEST_DIR/pkg"
+cat > "$ROOT_FIXTURE" <<'FIXTURE'
+# Changelog
+
+## 0.9.9 (2026-08-21)
+
+Already edited, narrative prose.
+FIXTURE
+cat > "$PKG_FIXTURE" <<'FIXTURE'
+## 0.9.9 (2026-08-21)
+
+Already edited, narrative prose too.
+FIXTURE
+
+run_capture_multi "$ROOT_FIXTURE"$'\n'"$PKG_FIXTURE" "$CHECK_SCRIPT"
+if [ "$REPLY_STATUS" -eq 0 ]; then
+  test_pass "changelog-check passes when every file in the set is edited"
+else
+  test_fail "changelog-check should pass when the whole set is edited: $REPLY_OUT"
+fi
+
+rm -rf "$TEST_DIR"
+TEST_DIR=""
+
+# Test 17 (cratestack#650 — THE degenerate-case guard from the ticket's named
+# risk): the pre-existing single-file CHANGELOG_FILE override must keep
+# working exactly as before, even now that a multi-file mechanism exists —
+# it must win over CHANGELOG_FILES_OVERRIDE if both are somehow set, and
+# operate on exactly one file. This is what stops "convert to a list" from
+# silently changing what changelog-seed-test itself was exercising all
+# along (Tests 1-12 above all rely on this single-file override).
+test_header "Test 17 (cratestack#650): single-file CHANGELOG_FILE override remains the degenerate case"
+setup_test_no_unreleased
+
+REPLY_STATUS=0
+REPLY_OUT=$(CHANGELOG_FILE="$SANDBOX_CHANGELOG" CHANGELOG_FILES_OVERRIDE="/nonexistent/a.md"$'\n'"/nonexistent/b.md" "$SEED_SCRIPT" 0.9.9 2>&1) || REPLY_STATUS=$?
+
+if [ "$REPLY_STATUS" -eq 0 ] && grep -q "^## 0.9.9 (" "$SANDBOX_CHANGELOG"; then
+  test_pass "CHANGELOG_FILE wins over CHANGELOG_FILES_OVERRIDE and seeds exactly the one sandbox file"
+else
+  test_fail "Single-file CHANGELOG_FILE override did not take precedence: status=$REPLY_STATUS out=$REPLY_OUT"
+fi
+
+cleanup_test
+
+# Test 18 (cratestack#650): the declared set in changelog-files.sh is the
+# single source of truth, and it must actually list both the root changelog
+# and dart-packages/cratestack_cbor's — a static assertion (no mutation of
+# any tracked file) that the production wiring matches the acceptance
+# criterion, independent of the sandbox-only tests above.
+test_header "Test 18 (cratestack#650): the declared set includes the root and cratestack_cbor changelogs"
+CHANGELOG_FILES_DEFAULT=()
+# shellcheck source=/dev/null
+source "$REPO_ROOT/.ci/changelog-files.sh"
+
+has_root=false
+has_cbor=false
+for f in "${CHANGELOG_FILES_DEFAULT[@]}"; do
+  [ "$f" = "CHANGELOG.md" ] && has_root=true
+  [ "$f" = "dart-packages/cratestack_cbor/CHANGELOG.md" ] && has_cbor=true
+done
+
+if [ "$has_root" = "true" ]; then
+  test_pass "Declared set includes the root CHANGELOG.md"
+else
+  test_fail "Declared set is missing the root CHANGELOG.md"
+fi
+
+if [ "$has_cbor" = "true" ]; then
+  test_pass "Declared set includes dart-packages/cratestack_cbor/CHANGELOG.md"
+else
+  test_fail "Declared set is missing dart-packages/cratestack_cbor/CHANGELOG.md"
+fi
+
+# Test 19 (cratestack#650 — reviewer-caught footgun): CHANGELOG_FILES_OVERRIDE
+# strings with a trailing newline or an embedded blank line must not produce
+# a bogus empty-path array element. Before the fix this surfaced as a bare
+# "error:  not found" with no filename; both scripts now skip blank lines
+# when splitting the override instead of using `mapfile ... <<<` directly
+# (a here-string always appends its own trailing newline).
+test_header "Test 19 (cratestack#650): a trailing/blank line in CHANGELOG_FILES_OVERRIDE is skipped, not a bogus empty path"
+TEST_DIR=$(mktemp -d)
+ROOT_FIXTURE="$TEST_DIR/root/CHANGELOG.md"
+PKG_FIXTURE="$TEST_DIR/pkg/CHANGELOG.md"
+mkdir -p "$TEST_DIR/root" "$TEST_DIR/pkg"
+cat > "$ROOT_FIXTURE" <<'FIXTURE'
+# Changelog
+
+## 0.7.8 (2026-08-08)
+
+Some previously released, already-edited prose.
+FIXTURE
+cat > "$PKG_FIXTURE" <<'FIXTURE'
+## 0.8.3
+
+Some previously released, already-edited prose.
+FIXTURE
+
+# A trailing newline AND an embedded blank line, deliberately, to cover both
+# shapes an override string could take.
+run_capture_multi "$ROOT_FIXTURE"$'\n\n'"$PKG_FIXTURE"$'\n' "$SEED_SCRIPT" 0.9.9
+if [ "$REPLY_STATUS" -eq 0 ]; then
+  test_pass "changelog-seed succeeded despite blank lines in the override"
+else
+  test_fail "changelog-seed failed on an override with blank lines: $REPLY_OUT"
+fi
+
+if echo "$REPLY_OUT" | grep -qE "^error: +not found"; then
+  test_fail "Bogus empty-path error resurfaced ('error:  not found' with no filename)"
+else
+  test_pass "No bogus empty-path error"
+fi
+
+if grep -q "^## 0.9.9 (" "$ROOT_FIXTURE" && grep -q "^## 0.9.9 (" "$PKG_FIXTURE"; then
+  test_pass "Both real paths in the override were still seeded correctly"
+else
+  test_fail "One or both real paths in the override were not seeded"
+fi
+
+rm -rf "$TEST_DIR"
+TEST_DIR=""
+
+# Test 20 (cratestack#650 — reviewer-caught silent-degradation risk): a
+# renamed, emptied, or typo'd CHANGELOG_FILES_DEFAULT must not make
+# changelog-check.sh pass vacuously. Bash's `"${ARR[@]}"` on an unset/empty
+# array expands to zero elements under `set -u` — NOT an error (bash 4.4+,
+# what GitHub runners ship) — so without an explicit guard, an empty
+# declared set makes the check loop zero times and report "no unedited
+# seeds" having checked nothing. THIS is the decisive test: it fails if the
+# guard in changelog-check.sh is ever removed, because without it this
+# scenario would exit 0, not the non-zero + named error asserted below.
+test_header "Test 20 (cratestack#650): changelog-check refuses (not vacuously passes) when the declared set is empty"
+TEST_DIR=$(mktemp -d)
+EMPTY_SET_FIXTURE="$TEST_DIR/changelog-files-empty.sh"
+cat > "$EMPTY_SET_FIXTURE" <<'FIXTURE'
+CHANGELOG_FILES_DEFAULT=()
+FIXTURE
+
+run_capture_with_source "$EMPTY_SET_FIXTURE" "$CHECK_SCRIPT"
+if [ "$REPLY_STATUS" -ne 0 ]; then
+  test_pass "changelog-check exited non-zero on an empty declared set (did not pass vacuously)"
+else
+  test_fail "changelog-check exited 0 on an empty declared set — vacuous pass, checked nothing"
+fi
+
+if echo "$REPLY_OUT" | grep -qi "empty"; then
+  test_pass "changelog-check named the problem (empty declared set) rather than failing silently/generically"
+else
+  test_fail "changelog-check's error output did not explain the empty-set problem: $REPLY_OUT"
+fi
+
+rm -rf "$TEST_DIR"
+TEST_DIR=""
+
+# Test 21 (cratestack#650): the same guard, in changelog-seed.sh — an empty
+# declared set must refuse to seed rather than silently seeding zero files
+# and reporting success.
+test_header "Test 21 (cratestack#650): changelog-seed refuses (not vacuously succeeds) when the declared set is empty"
+TEST_DIR=$(mktemp -d)
+EMPTY_SET_FIXTURE="$TEST_DIR/changelog-files-empty.sh"
+cat > "$EMPTY_SET_FIXTURE" <<'FIXTURE'
+CHANGELOG_FILES_DEFAULT=()
+FIXTURE
+
+run_capture_with_source "$EMPTY_SET_FIXTURE" "$SEED_SCRIPT" 0.9.9
+if [ "$REPLY_STATUS" -ne 0 ]; then
+  test_pass "changelog-seed exited non-zero on an empty declared set (did not silently succeed)"
+else
+  test_fail "changelog-seed exited 0 on an empty declared set — silently seeded nothing and called it success"
+fi
+
+if echo "$REPLY_OUT" | grep -qi "empty"; then
+  test_pass "changelog-seed named the problem (empty declared set) rather than failing silently/generically"
+else
+  test_fail "changelog-seed's error output did not explain the empty-set problem: $REPLY_OUT"
+fi
+
+rm -rf "$TEST_DIR"
+TEST_DIR=""
+
+# Test 22 (cratestack#650): the same guard also catches a
+# CHANGELOG_FILES_OVERRIDE that resolves to zero files (e.g. blank lines
+# only) — not just a broken CHANGELOG_FILES_DEFAULT. This is the path
+# introduced by Test 19's fix (skipping blank lines when splitting the
+# override) — proving that fix didn't just trade one silent-empty-set path
+# for another.
+test_header "Test 22 (cratestack#650): an all-blank-lines CHANGELOG_FILES_OVERRIDE is also caught by the empty-set guard"
+run_capture_multi $'\n\n' "$CHECK_SCRIPT"
+if [ "$REPLY_STATUS" -ne 0 ] && echo "$REPLY_OUT" | grep -qi "empty"; then
+  test_pass "changelog-check refused and named the empty-set problem for an all-blank-lines override"
+else
+  test_fail "changelog-check should have refused with a named empty-set error: status=$REPLY_STATUS out=$REPLY_OUT"
+fi
+
+# Test 9: none of the above ever touches the real, tracked changelogs.
 # This guards the sandbox-escape regression directly: every test above must
-# operate purely on $SANDBOX_CHANGELOG via the CHANGELOG_FILE override.
-test_header "Test 9: the real CHANGELOG.md is never modified"
+# operate purely on sandbox copies via the CHANGELOG_FILE /
+# CHANGELOG_FILES_OVERRIDE overrides — never the real, tracked files.
+test_header "Test 9: no real, tracked changelog is ever modified"
 
 if git -C "$REPO_ROOT" diff --quiet -- CHANGELOG.md 2>/dev/null; then
   test_pass "Real CHANGELOG.md has no working-tree changes after running the suite"
 else
   test_fail "Real CHANGELOG.md was modified by the test suite — sandbox isolation broken"
+fi
+
+if git -C "$REPO_ROOT" diff --quiet -- dart-packages/cratestack_cbor/CHANGELOG.md 2>/dev/null; then
+  test_pass "Real dart-packages/cratestack_cbor/CHANGELOG.md has no working-tree changes after running the suite"
+else
+  test_fail "Real dart-packages/cratestack_cbor/CHANGELOG.md was modified by the test suite — sandbox isolation broken"
 fi
 
 # Summary
