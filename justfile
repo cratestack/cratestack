@@ -1118,7 +1118,22 @@ frb-verify-client-flutter:
 #
 # The codegen itself is platform-independent (frb introspects Rust source,
 # not a target triple), but that does NOT make this a run-once step: every
-# platform's runner needs the Rust half locally before it can build.
+# platform's runner needs the Rust half present locally before it can build.
+#
+# DOES NOT RUN ON WINDOWS. flutter_rust_bridge_codegen 2.12.0 fails here:
+#
+#   When compute_mod_from_rust_path(
+#     code_path="D:\a\...\cratestack-client-flutter\src/frb_generated.rs",
+#     base_dir="\\?\D:\a\...\cratestack-client-flutter\src")
+#       prefix not found
+#
+# It builds `code_path` with mixed separators and compares it against a
+# canonicalized UNC (`\\?\`) base dir, so the prefix strip fails. That is
+# inside the pinned upstream tool, not something this recipe can work around
+# by passing different paths. CI therefore runs this recipe ONLY on Linux
+# (`cbor-glue` in ci.yml, `build-cbor-glue` in release-cli.yml) and ships the
+# result to the macOS/Windows legs as an artifact. If you are adding a new
+# platform leg, download that artifact — do not call this recipe there.
 #
 # Requires: `flutter_rust_bridge_codegen` (=2.12.0, matching
 # crates/cratestack-client-flutter/Cargo.toml).

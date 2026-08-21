@@ -1061,9 +1061,79 @@ jobs:
   #     recipe's comment): a standard Windows Python install typically
   #     provides `python`/`py`, not a bare `python3` shim — also
   #     unconfirmed from this Linux dev machine.
+  # ---- shared flutter_rust_bridge glue (cratestack#563) --------------------
+  # Generates the frb glue ONCE, on Linux, and hands it to the per-platform
+  # jobs as an artifact. Two independent reasons, either of which alone
+  # justifies this:
+  #
+  # 1. `flutter_rust_bridge_codegen` 2.12.0 CANNOT RUN ON WINDOWS in this
+  #    repo's layout. Observed on PR #685:
+  #
+  #      When compute_mod_from_rust_path(
+  #        code_path="D:\a\...\cratestack-client-flutter\src/frb_generated.rs",
+  #        base_dir="\\?\D:\a\...\cratestack-client-flutter\src")
+  #          prefix not found
+  #
+  #    It builds `code_path` with mixed separators and compares it against a
+  #    canonicalized UNC (`\\?\`) base dir; the prefix strip fails. That is
+  #    inside the pinned upstream tool, not something this repo can pass
+  #    around, so the Windows runner cannot produce its own glue at all.
+  #
+  # 2. Even where codegen DOES work (Linux, macOS), running it per-platform
+  #    means `cargo install --locked flutter_rust_bridge_codegen` — a
+  #    multi-minute from-source build — on every leg, to produce output that
+  #    is platform-independent by construction (frb introspects Rust source,
+  #    not a target triple).
+  #
+  # Generating once also sidesteps the cross-platform determinism question
+  # entirely rather than asserting it: there is exactly one set of generated
+  # bytes, so nothing can diverge between runners. Note the tempting
+  # assertion here — `git diff --exit-code` over the glue — is a check that
+  # CANNOT FAIL, because neither half of the glue is tracked by git (see the
+  # justfile's `cbor-vendor-glue` block comment).
+  #
+  # Deliberately NOT wired into `cratestack-cbor-example`/`-android`/
+  # `-package`: those jobs are proven and run codegen inline today, and
+  # rewiring them is blast radius this slice does not need. They can adopt
+  # this artifact later if the CI-minute saving is judged worth it.
+  cbor-glue:
+    name: flutter (cratestack_cbor frb glue — generated once, Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: Install flutter_rust_bridge_codegen (pinned =2.12.0)
+        run: cargo install --locked flutter_rust_bridge_codegen --version 2.12.0
+      - name: Vendor flutter_rust_bridge glue (both halves)
+        run: just cbor-vendor-glue
+      # Both halves ship: the Rust side is what makes
+      # `cargo build --features frb-glue` compile at all (without it,
+      # `crates/cratestack-client-flutter/src/lib.rs`'s `mod frb_generated;`
+      # fails E0583), and the Dart side is what the package's own analyzer /
+      # `flutter build` step needs. Neither is committed — both are
+      # gitignored build output — so a fresh checkout on the consuming jobs
+      # has neither until this artifact lands.
+      #
+      # Two paths whose least-common-ancestor is the workspace root, so the
+      # artifact preserves `crates/…` and `dart-packages/…` and the consumers
+      # can restore it with `path: .`.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cbor-frb-glue
+          path: |
+            crates/cratestack-client-flutter/src/frb_generated.rs
+            dart-packages/cratestack_cbor/lib/src/native/rust
+          if-no-files-found: error
+          retention-days: 1
+
   cratestack-cbor-windows:
     name: flutter (cratestack_cbor windows — real build, DLL + round-trip proof)
     runs-on: windows-latest
+    needs: cbor-glue
     steps:
       - uses: actions/checkout@v6
       # wasm32-unknown-unknown is installed by rustup from
@@ -1084,8 +1154,30 @@ jobs:
         with:
           channel: stable
           cache: true
-      - name: Install flutter_rust_bridge_codegen (pinned =2.12.0)
-        run: cargo install --locked flutter_rust_bridge_codegen --version 2.12.0
+      # NO `cargo install flutter_rust_bridge_codegen` here, and no
+      # `just cbor-vendor-glue` below: frb codegen 2.12.0 cannot run on
+      # Windows in this layout (mixed separators vs a canonicalized UNC base
+      # dir — see the `cbor-glue` job header for the exact error). The glue
+      # arrives prebuilt from that job instead.
+      - name: Restore frb glue (generated once on Linux by `cbor-glue`)
+        uses: actions/download-artifact@v4
+        with:
+          name: cbor-frb-glue
+          path: .
+      # Prove the artifact actually landed where the build expects it. Without
+      # this, a silently-empty download surfaces later as a bare E0583 from
+      # `mod frb_generated;`, which reads as a source bug rather than a
+      # missing-artifact problem — that misdiagnosis already cost one CI round
+      # trip on this ticket.
+      - name: Assert the glue is present
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f crates/cratestack-client-flutter/src/frb_generated.rs \
+            || { echo "::error::frb_generated.rs missing after download-artifact — the cbor-frb-glue artifact did not restore. cargo build --features frb-glue would fail with E0583." >&2; exit 1; }
+          test -d dart-packages/cratestack_cbor/lib/src/native/rust \
+            || { echo "::error::Dart glue directory missing after download-artifact." >&2; exit 1; }
+          echo "✓ frb glue restored"
       # Same reason as every other cbor job's identical step: wasm-pack
       # downloads its own binaryen (hardcoded version) mid-build unless a
       # `wasm-opt` is already on PATH. Windows asset name and archive
@@ -1107,9 +1199,8 @@ jobs:
           echo "$PWD/binaryen-version_130/bin" >> "$GITHUB_PATH"
           rm binaryen.tar.gz
       # NOT `just cbor-vendor-native` — see the job header comment for why
-      # (it hardcodes a Linux-target build that cannot link here).
-      - name: Vendor flutter_rust_bridge glue (platform-independent codegen)
-        run: just cbor-vendor-glue
+      # (it hardcodes a Linux-target build that cannot link here). The glue
+      # half was restored from the `cbor-glue` artifact above.
       - name: Vendor Windows native artifact (release build + copy)
         run: just cbor-vendor-lib windows-x64
       - name: Vendor web artifact (required by the pubspec asset list — see job header comment)
@@ -1182,6 +1273,7 @@ jobs:
   cratestack-cbor-macos:
     name: flutter (cratestack_cbor macos — real build, xcframework + round-trip proof)
     runs-on: macos-latest
+    needs: cbor-glue
     steps:
       - uses: actions/checkout@v6
       # rust-toolchain.toml pins the channel; add BOTH Darwin targets to
@@ -1213,8 +1305,24 @@ jobs:
         with:
           channel: stable
           cache: true
-      - name: Install flutter_rust_bridge_codegen (pinned =2.12.0)
-        run: cargo install --locked flutter_rust_bridge_codegen --version 2.12.0
+      # frb codegen DOES work on macOS (unlike Windows), but this job takes
+      # the shared artifact anyway: it drops a multi-minute
+      # `cargo install --locked flutter_rust_bridge_codegen` from the leg,
+      # and it means macOS and Windows consume byte-identical glue rather
+      # than two independently-generated copies that merely ought to match.
+      - name: Restore frb glue (generated once on Linux by `cbor-glue`)
+        uses: actions/download-artifact@v4
+        with:
+          name: cbor-frb-glue
+          path: .
+      - name: Assert the glue is present
+        run: |
+          set -euo pipefail
+          test -f crates/cratestack-client-flutter/src/frb_generated.rs \
+            || { echo "::error::frb_generated.rs missing after download-artifact — the cbor-frb-glue artifact did not restore. cargo build --features frb-glue would fail with E0583." >&2; exit 1; }
+          test -d dart-packages/cratestack_cbor/lib/src/native/rust \
+            || { echo "::error::Dart glue directory missing after download-artifact." >&2; exit 1; }
+          echo "✓ frb glue restored"
       # Same reason as every other cbor job's identical step — see the job
       # header comment above for what is and is not verified about this
       # specific asset name on macOS.
@@ -1227,9 +1335,8 @@ jobs:
           echo "$PWD/binaryen-version_130/bin" >> "$GITHUB_PATH"
           rm binaryen.tar.gz
       # NOT `just cbor-vendor-native` — see the job header comment for why
-      # (it hardcodes a Linux-target build that cannot link here).
-      - name: Vendor flutter_rust_bridge glue (platform-independent codegen)
-        run: just cbor-vendor-glue
+      # (it hardcodes a Linux-target build that cannot link here). The glue
+      # half was restored from the `cbor-glue` artifact above.
       - name: Vendor macOS native artifact (both Darwin arches, lipo, xcframework)
         run: just cbor-vendor-macos
       - name: Vendor web artifact (required by the pubspec asset list — see job header comment)

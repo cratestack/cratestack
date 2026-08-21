@@ -922,9 +922,54 @@ jobs:
   # of silently dropping or mis-resolving them is unconfirmed — see the
   # publish job's archive-verification gate for the load-bearing assertions
   # this uncertainty leaves there.
+  # ---- shared flutter_rust_bridge glue for the release platform legs ------
+  # Mirrors ci.yml's `cbor-glue` job — read that one's header for the full
+  # reasoning. Short version: frb codegen 2.12.0 CANNOT run on Windows in
+  # this repo's layout (it compares a mixed-separator path against a
+  # canonicalized UNC base dir and fails "prefix not found"), and running it
+  # per-platform elsewhere means a multi-minute `cargo install` per leg to
+  # produce output that is platform-independent by construction. Generate
+  # once, here, and ship it to the platform legs as an artifact.
+  #
+  # `publish-pubdev-cbor` below deliberately still runs its own
+  # `just cbor-vendor-native` (glue + linux-x64) inline: it is on
+  # ubuntu-latest where codegen works, and it needs the glue anyway for the
+  # Linux/Android/web artifacts it builds itself.
+  build-cbor-glue:
+    name: build cratestack_cbor frb glue (generated once, Linux)
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-pubdev-cbor-glue
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: Install flutter_rust_bridge_codegen (pinned =2.12.0)
+        run: cargo install --locked flutter_rust_bridge_codegen --version 2.12.0
+      - name: Vendor flutter_rust_bridge glue (both halves)
+        run: just cbor-vendor-glue
+      # Two paths whose least-common-ancestor is the workspace root, so the
+      # artifact preserves `crates/…` and `dart-packages/…` and consumers can
+      # restore with `path: .`.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cbor-frb-glue-release
+          path: |
+            crates/cratestack-client-flutter/src/frb_generated.rs
+            dart-packages/cratestack_cbor/lib/src/native/rust
+          if-no-files-found: error
+          retention-days: 1
+
   build-cbor-macos:
     name: build cratestack_cbor native library (macos)
-    needs: prepare
+    needs: [prepare, build-cbor-glue]
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -944,10 +989,20 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: just
-      - name: Install flutter_rust_bridge_codegen (pinned =2.12.0)
-        run: cargo install --locked flutter_rust_bridge_codegen --version 2.12.0
-      - name: Vendor flutter_rust_bridge glue (platform-independent codegen)
-        run: just cbor-vendor-glue
+      # Takes the shared artifact rather than running codegen locally —
+      # drops a multi-minute `cargo install` and guarantees macOS and Windows
+      # consume byte-identical glue. See `build-cbor-glue` above.
+      - name: Restore frb glue (generated once on Linux by `build-cbor-glue`)
+        uses: actions/download-artifact@v4
+        with:
+          name: cbor-frb-glue-release
+          path: .
+      - name: Assert the glue is present
+        run: |
+          set -euo pipefail
+          test -f crates/cratestack-client-flutter/src/frb_generated.rs \
+            || { echo "::error::frb_generated.rs missing after download-artifact — cargo build --features frb-glue would fail with E0583." >&2; exit 1; }
+          echo "✓ frb glue restored"
       - name: Vendor macOS xcframework (arm64 + x86_64, lipo'd, via cbor-vendor-macos)
         run: just cbor-vendor-macos
       - uses: actions/upload-artifact@v4
@@ -973,7 +1028,7 @@ jobs:
   # run.
   build-cbor-windows:
     name: build cratestack_cbor native library (windows-x64)
-    needs: prepare
+    needs: [prepare, build-cbor-glue]
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -987,10 +1042,20 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: just
-      - name: Install flutter_rust_bridge_codegen (pinned =2.12.0)
-        run: cargo install --locked flutter_rust_bridge_codegen --version 2.12.0
-      - name: Vendor flutter_rust_bridge glue (platform-independent codegen)
-        run: just cbor-vendor-glue
+      # No frb codegen on this runner — it cannot work here. See
+      # `build-cbor-glue`'s header for the upstream Windows path bug.
+      - name: Restore frb glue (generated once on Linux by `build-cbor-glue`)
+        uses: actions/download-artifact@v4
+        with:
+          name: cbor-frb-glue-release
+          path: .
+      - name: Assert the glue is present
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f crates/cratestack-client-flutter/src/frb_generated.rs \
+            || { echo "::error::frb_generated.rs missing after download-artifact — cargo build --features frb-glue would fail with E0583." >&2; exit 1; }
+          echo "✓ frb glue restored"
       - name: Vendor Windows native artifact (release build + copy)
         run: just cbor-vendor-lib windows-x64
       - uses: actions/upload-artifact@v4
