@@ -76,6 +76,40 @@ fn refine_flag_emits_the_resource_map_with_the_schemas_own_facts() {
     );
 }
 
+/// Regression test for a real incident: `refine.ts.j2` used to render
+/// `paged: {{ resource.paged }}` — a bare interpolation of the Rust
+/// `bool` `RefineResourceView::paged`. minijinja's `Display` for
+/// `Value::Bool` follows Jinja2/Python's `str(bool)` convention
+/// ("True"/"False", capitalized), not Rust's or JS's lowercase
+/// "true"/"false" — confirmed to differ between minijinja 2.20 (renders
+/// lowercase, via `bool::fmt`) and 2.24 (renders "True"/"False"
+/// explicitly). `minijinja = "2"` in this workspace's `Cargo.toml` is an
+/// unpinned floating range, so a routine in-range dependency bump
+/// silently flipped which behavior a build got, and the emitted
+/// `src/refine.ts` stopped being valid TypeScript
+/// (`TS2304: Cannot find name 'True'`) with no schema or generator-flag
+/// change at all — reported downstream in `vaam-store/frontends`.
+///
+/// This assertion is deliberately independent of the *other* assertions
+/// in this file (which already pin the exact lowercase literal, but only
+/// catch a regression if the currently-locked minijinja version happens
+/// to render it wrong): it greps the whole file for the Python-style
+/// literal regardless of which field produced it, so a *different* field
+/// hitting the same trap in the future still fails this test even before
+/// anyone bumps minijinja far enough to observe it locally.
+#[test]
+fn emitted_output_never_contains_a_python_style_bool_literal() {
+    let package = generate(REFINE_SCHEMA, true);
+    let refine = file(&package, "src/refine.ts");
+    assert!(
+        !refine.contains("True") && !refine.contains("False"),
+        "src/refine.ts must never contain minijinja's Python-style bool \
+         Display output — every bool must be rendered through an \
+         explicit {{% if %}}true{{% else %}}false{{% endif %}}, not a bare \
+         {{{{ some_bool }}}}:\n{refine}"
+    );
+}
+
 /// `versionField` must be *absent*, not `undefined`. `ResourceConfig` is
 /// consumed under `exactOptionalPropertyTypes`, where an explicit
 /// `versionField: undefined` is a type error rather than an omission.
