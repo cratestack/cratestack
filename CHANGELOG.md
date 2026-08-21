@@ -256,6 +256,26 @@ step never added it, which would have left the fix inert in production while eve
 An empty or renamed declared set is rejected with a named error in all three consumers instead of
 passing vacuously.
 
+### `invoke_with_db`'s generated doc example can no longer be force-compiled (#611)
+
+The illustrative example in every procedure's generated `invoke_with_db` doc comment was fenced
+```` ```ignore ````. That is correct for plain `cargo test`, which skips it — but `cargo test --
+--ignored` force-runs doctests in the ignored bucket, and this example was never meant to compile:
+it references a `procedures::` module, free `db`/`registry` variables and an `await` outside an async
+context. Any consumer whose CI runs `-- --ignored` in the crate hosting `include_server_schema!` got
+one hard failure per procedure, unfixable from their side because the failing code is generated. One
+downstream project worked around it with `[lib] doctest = false`.
+
+The example is now fenced ```` ```text ````. Rustdoc only schedules a fenced block as a doctest when
+it believes the block is Rust, so a `text` block is never a candidate in any mode and no flag can
+force it. The example still renders verbatim.
+
+Note the symptom was edition-dependent, which is worth knowing if you tried to reproduce it and
+could not. On edition 2024 with merged doctests — the default on recent toolchains — `--ignored`
+doctests are reported as passing *without being compiled at all*, so the failure never surfaced.
+Edition 2021 consumers, including the original reporter, did hit it. The fix does not depend on
+which mode is active.
+
 ## 0.8.4 (2026-08-18)
 
 ### `/rpc/batch` authenticates the envelope once, not once per frame
