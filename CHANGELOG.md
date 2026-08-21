@@ -1,51 +1,175 @@
 # Changelog
 
+## Unreleased
+
+### Field-level `@allow`/`@deny` is rejected at parse time — breaking (#679)
+
+A field-level `@allow(...)` parsed, reported `schema OK`, was retained in the IR, and was then read by
+nothing. It is an annotation that reads as access control and enforces none: the field reached every
+caller the model-level read policy admitted, exactly as if the annotation were absent.
+
+It now fails to parse, on all five field-bearing declaration kinds — `model`, `view`, `mixin`, `type`
+and the `auth` block — naming the offending field and pointing at what does work: model/view-level
+`@@allow`/`@@deny` for row visibility, `@readonly` to keep a field out of generated inputs, and
+`@server_only` to keep it out of client responses.
+
+Breaking for any schema currently carrying one, though only in the sense that a line which never did
+anything now says so. Procedure-level `@allow`/`@deny` and model/view-level `@@allow`/`@@deny` are
+untouched — this targets the field-position, single-`@` case only.
+
+This is half of #679. The other half — that unknown field attributes are accepted generally, so a
+misspelled `@raedonly` silently drops `@readonly` and leaves a field writable — is deliberately not
+addressed, because catching it needs the generic unknown-attribute pass that
+`validate/removed_attributes.rs` documents as an intentional non-choice. #679 stays open for it.
+
 ## 0.8.6 (2026-08-21)
 
-<!-- TODO: edit this section from the seed below -->
-<!-- seeded from v0.8.5..HEAD at c5de7571f769d3c8345567ad4e378183c8be6e88 -->
+### `cratestack_annotations` + `cratestack_builder` Dart packages (#668, phase 1)
 
-This is an auto-generated seed. Please rewrite into narrative prose describing
-the changes in this release, grouped by concern. Refer to existing entries in
-this file for the house prose style. Do not commit with this placeholder text.
+Two new hand-written Dart packages, groundwork for moving builder emission out of the Rust generator
+and into the Dart ecosystem. Nothing generated changes yet — no `.cstack` schema, generated client,
+or example is affected, and the Rust generator still emits builder classes inline.
 
-### Changes
+`cratestack_annotations` carries `@CratestackBuilder` and has **no dependencies at all**.
+`cratestack_builder` is the `source_gen`/`build_runner` generator that turns an annotated class into
+a `part '<file>.builder.dart'`, and is a **dev** dependency. The split is deliberate: a generated
+client lists the annotation package under `dependencies:`, and pub resolves a package's own
+dependencies transitively into the consumer's graph — folding the two together would put `analyzer`,
+`build` and `source_gen` into the runtime graph of every Flutter app consuming a generated client.
+Same split as `json_annotation`/`json_serializable`.
 
-#### Features
+Emitted builders match today's inline ones: required-field `StateError` (with required-ness read from
+`isRequiredNamed`, so a required *nullable* field is still enforced), the `build` -> `setBuild` shim,
+a copy-not-mutate `add{Field}` append setter, and no static `Class.builder()` factory.
 
-- thread If-Match through generated update/delete, surface ETag on reads (#610) (#671)
-- support required-enum-field literal comparisons in read policies (#666) (#676)
-- add cratestack_annotations + cratestack_builder packages (#668 phase 1) (#672)
+`@CratestackBuilder(listDefaults: false)` is the one piece of information the generator cannot derive
+for itself. A projection model's list field and a patch input's list field emit byte-identical Dart,
+yet must build differently — `[]` versus `null` — so the distinction has to be supplied by whoever
+applies the annotation. Inferring it from nullability, the obvious shortcut, produces builders that
+are self-consistent and quietly disagree with the schema.
 
-#### Fixes
+`cratestack_builder` pins `analyzer >=12.0.0 <13.0.0`. The upper bound is load-bearing rather than
+defensive: under the riverpod preset this builder will share a `build_runner` pass with
+`riverpod_generator`, whose own constraint is `analyzer ^12.0.0`, and allowing 13.x makes `pub get`
+fail there before codegen is reached.
 
-- **breaking:** reject field-level `@allow(...)`/`@deny(...)` at parse time, on all five
-  field-bearing declaration kinds (`model`, `view`, `mixin`, `type`, `auth`). It used to parse,
-  report `schema OK`, and be silently ignored by every codegen path — an annotation that reads as
-  row-level access control and enforces none. A schema carrying it now fails to parse, naming the
-  field and pointing at the real alternatives: model/view-level `@@allow`/`@@deny` for row
-  visibility, or `@readonly`/`@server_only` to keep a field out of inputs or responses.
-  Procedure-level `@allow`/`@deny` and model/view-level `@@allow`/`@@deny` are unaffected — this
-  targets only the field-position, single-`@` no-op. Fixes half of #679; the unknown-attribute/typo
-  half (e.g. a misspelled `@raedonly` silently dropping `@readonly`) is a separate, deliberately
-  out-of-scope decision (#679) (#686)
-- seed and check changelogs from a declared list, not a hardcoded path (#669)
-- encode serde_json::Value::Null as CBOR null on POST /rpc/batch (#657) (#675)
-- re-fence invoke_with_db's illustrative doc example so `-- --ignored` can't force-compile it (#611) (#681)
-- omit untouched update-input fields from the wire, every arity, both clients (#663) (#673)
-- bring the two new Dart packages into version lockstep at 0.8.5 (#674)
+Verified on Dart 3.12.1 and 3.13.1 — testing a single SDK is exactly what let the previously
+evaluated `lean_builder` through (it passes on 3.12.1 and dies on 3.13.1; see
+https://github.com/Milad-Akarie/lean_builder/issues/25).
 
-#### Documentation
+Three follow-ups landed alongside: both packages were brought into version lockstep with the rest of
+the workspace (#674), `cratestack_builder` now resolves against the published `cratestack_annotations`
+rather than a path dependency (#678), and the release workflow publishes both to pub.dev on tag push
+(#682).
 
-- consolidated 0.8.5 entries for today's merged batch (#680)
+### Untouched update-input fields no longer reach the wire, at any arity — breaking for Dart consumers (#663)
 
-#### Chores
+An update input built without touching a field used to serialize that field as an explicit `null` for
+`Required`-arity (non-nullable-column) fields, because only the `Optional` arity carried
+`skip_serializing_if`. A server cannot distinguish that from a deliberate write, so an untouched field
+silently clobbered its column. `PATCH {"name": "x"}` against a model with a second non-nullable field
+wrote `null` over it.
 
-- resolve cratestack_builder against the published annotations package (#678)
+Both clients now omit an untouched field at every arity. The Rust side gains the missing
+`TypeArity::Required` arm in `struct_only.rs`.
 
-#### CI
+**Dart consumers: the generated API changed.** Dart data classes are flat, with no analogue of Rust's
+`Option<Option<T>>`, so a nullable-column patch field now carries a sibling boolean —
+`weight` gains `weightIsSet` as a constructor parameter, public field, and builder flag. `false`
+means untouched (omitted), `true` with a null value means an explicit clear (serialized as `null`),
+and a non-null value is always sent. Existing named-argument call sites still compile, since the new
+parameter is optional with a default.
 
-- publish cratestack_annotations + cratestack_builder on tag push (#682)
+The explicit-clear guarantee from 0.7.x is unchanged: clearing a nullable column still puts `null`
+on the wire, verified at the raw CBOR byte level rather than through decoded values.
+
+A schema that declares both a nullable `foo` and a field literally named `fooIsSet` would generate
+uncompilable Dart, so that collision is now rejected at parse time with a specific error, alongside
+the existing `build`/`set_build` and `add_{field}` guards. A schema with `fooIsSet` and no nullable
+`foo` still parses.
+
+TypeScript is unaffected — its plain object-literal model never had this bug.
+
+### `POST /rpc/batch` encodes `null` as CBOR null, not an empty array — wire-format change (#657)
+
+Every `null` crossing `/rpc/batch` was silently corrupted into the CBOR empty-array marker (`0x80`)
+instead of RFC 8949 null (`0xf6`), in both directions and for every type, whenever the CBOR codec was
+in use. A server decoding the corresponding `Option<T>` failed with "expected text, got array".
+
+The cause is that batch envelope frames are deliberately opaque `serde_json::Value`, and
+`serde_json::Value::Null` serializes through `serialize_unit()` rather than `serialize_none()` —
+which `minicbor-serde` encoded as an empty array. `CborCodec::encode` now enables
+`serialize_unit_as_null`, fixing every shape at once rather than per-call-site.
+
+Bytes on this path change. Decoders were never the broken half — `0xf6` always decoded correctly
+across the Rust, napi, wasm and JS paths — so old-client/new-server and new-client/old-server both
+remain safe. `cratestack-client-rust`'s batch path still strips nulls before the codec, a workaround
+predating this fix, so the Rust batch client does not yet exercise the corrected encoding; removing
+that strip is tracked in #677.
+
+### Read policies can compare a required enum field against a literal variant (#666)
+
+`@@allow`/`@@deny` literal comparisons were limited to required `Boolean`, `Int` and `String` fields,
+so a model discriminated by an enum column — the common shape where a table mixes public and
+sensitive rows — could not express its own visibility rule declaratively. The two workarounds were a
+parallel boolean discriminator that can drift out of sync, or moving the rule into hand-written Rust
+and giving up the generic CRUD surface entirely.
+
+A required enum field can now appear in a literal comparison on both model and view descriptors. The
+variant name is validated against the declared enum and lowers to the existing `PolicyLiteral::String`
+(enum columns are stored as `TEXT`). Optional- and list-arity enum fields are rejected with a specific
+error rather than mis-compiling.
+
+`in` against a set of variants is not implemented; `purpose == a || purpose == b` expresses the same
+policy through the existing `Or` path. Field-level `@allow` remains a no-op — see #679.
+
+### Typed TypeScript clients can read `ETag` and send `If-Match` (#610)
+
+Generated TypeScript model methods gained `getWithResponse`, returning both the decoded value and the
+`Response` so callers can read `ETag`, plus an optional `ifMatch` on `update` and `delete`. Previously
+the runtime's `request()` discarded the `Response`, making the ETag unreachable from generated code
+even though the server had been emitting it since 0.7.x.
+
+Additive: `ifMatch` is an optional field on the existing options object, not a positional parameter,
+so existing call sites keep compiling. Both the default and `--swr` presets are covered, and the swr
+variant routes through the same decimal revival as its `get`, so a `Decimal` field comes back as a
+`Decimal` rather than a string.
+
+REST transport only. RPC has no per-route `If-Match` concept, and the generated README documents the
+round trip only for REST schemas that actually declare a `@version` model.
+
+### Release changelog seeding covers every declared changelog (#650)
+
+`prepare-release.yml` seeded and verified only the root `CHANGELOG.md`, so the Dart package changelog
+was silently skipped — a release could ship with it unseeded and no gate would notice. Both files are
+now declared in one list, `.ci/changelog-files.sh`, consumed by the seed script, the check script and
+the workflow, so the three cannot drift apart.
+
+The workflow also now stages both files. Previously the seed wrote the second changelog and the commit
+step never added it, which would have left the fix inert in production while every local test passed.
+An empty or renamed declared set is rejected with a named error in all three consumers instead of
+passing vacuously.
+
+### `invoke_with_db`'s generated doc example can no longer be force-compiled (#611)
+
+The illustrative example in every procedure's generated `invoke_with_db` doc comment was fenced
+```` ```ignore ````. That is correct for plain `cargo test`, which skips it — but `cargo test --
+--ignored` force-runs doctests in the ignored bucket, and this example was never meant to compile:
+it references a `procedures::` module, free `db`/`registry` variables and an `await` outside an async
+context. Any consumer whose CI runs `-- --ignored` in the crate hosting `include_server_schema!` got
+one hard failure per procedure, unfixable from their side because the failing code is generated. One
+downstream project worked around it with `[lib] doctest = false`.
+
+The example is now fenced ```` ```text ````. Rustdoc only schedules a fenced block as a doctest when
+it believes the block is Rust, so a `text` block is never a candidate in any mode and no flag can
+force it. The example still renders verbatim.
+
+Note the symptom was edition-dependent, which is worth knowing if you tried to reproduce it and
+could not. On edition 2024 with merged doctests — the default on recent toolchains — `--ignored`
+doctests are reported as passing *without being compiled at all*, so the failure never surfaced.
+Edition 2021 consumers, including the original reporter, did hit it. The fix does not depend on
+which mode is active.
+
 
 ## 0.8.5 (2026-08-21)
 
@@ -181,147 +305,6 @@ Also fixed in passing, surfaced by the same scalar-list-field builder work: a ge
 struct no longer offers `.contains()`/`.starts_with()` on a `String[]`/`Cuid[]` field — those two
 `FieldRef` methods were never implemented for `Vec<String>`, so a schema with a filterable scalar
 list field failed to compile. `.equals()`/ordering ops are unaffected.
-
-### `cratestack_annotations` + `cratestack_builder` Dart packages (#668, phase 1)
-
-Two new hand-written Dart packages, groundwork for moving builder emission out of the Rust generator
-and into the Dart ecosystem. Nothing generated changes yet — no `.cstack` schema, generated client,
-or example is affected, and the Rust generator still emits builder classes inline.
-
-`cratestack_annotations` carries `@CratestackBuilder` and has **no dependencies at all**.
-`cratestack_builder` is the `source_gen`/`build_runner` generator that turns an annotated class into
-a `part '<file>.builder.dart'`, and is a **dev** dependency. The split is deliberate: a generated
-client lists the annotation package under `dependencies:`, and pub resolves a package's own
-dependencies transitively into the consumer's graph — folding the two together would put `analyzer`,
-`build` and `source_gen` into the runtime graph of every Flutter app consuming a generated client.
-Same split as `json_annotation`/`json_serializable`.
-
-Emitted builders match today's inline ones: required-field `StateError` (with required-ness read from
-`isRequiredNamed`, so a required *nullable* field is still enforced), the `build` -> `setBuild` shim,
-a copy-not-mutate `add{Field}` append setter, and no static `Class.builder()` factory.
-
-`@CratestackBuilder(listDefaults: false)` is the one piece of information the generator cannot derive
-for itself. A projection model's list field and a patch input's list field emit byte-identical Dart,
-yet must build differently — `[]` versus `null` — so the distinction has to be supplied by whoever
-applies the annotation. Inferring it from nullability, the obvious shortcut, produces builders that
-are self-consistent and quietly disagree with the schema.
-
-`cratestack_builder` pins `analyzer >=12.0.0 <13.0.0`. The upper bound is load-bearing rather than
-defensive: under the riverpod preset this builder will share a `build_runner` pass with
-`riverpod_generator`, whose own constraint is `analyzer ^12.0.0`, and allowing 13.x makes `pub get`
-fail there before codegen is reached.
-
-Verified on Dart 3.12.1 and 3.13.1 — testing a single SDK is exactly what let the previously
-evaluated `lean_builder` through (it passes on 3.12.1 and dies on 3.13.1; see
-https://github.com/Milad-Akarie/lean_builder/issues/25).
-
-### Untouched update-input fields no longer reach the wire, at any arity — breaking for Dart consumers (#663)
-
-An update input built without touching a field used to serialize that field as an explicit `null` for
-`Required`-arity (non-nullable-column) fields, because only the `Optional` arity carried
-`skip_serializing_if`. A server cannot distinguish that from a deliberate write, so an untouched field
-silently clobbered its column. `PATCH {"name": "x"}` against a model with a second non-nullable field
-wrote `null` over it.
-
-Both clients now omit an untouched field at every arity. The Rust side gains the missing
-`TypeArity::Required` arm in `struct_only.rs`.
-
-**Dart consumers: the generated API changed.** Dart data classes are flat, with no analogue of Rust's
-`Option<Option<T>>`, so a nullable-column patch field now carries a sibling boolean —
-`weight` gains `weightIsSet` as a constructor parameter, public field, and builder flag. `false`
-means untouched (omitted), `true` with a null value means an explicit clear (serialized as `null`),
-and a non-null value is always sent. Existing named-argument call sites still compile, since the new
-parameter is optional with a default.
-
-The explicit-clear guarantee from 0.7.x is unchanged: clearing a nullable column still puts `null`
-on the wire, verified at the raw CBOR byte level rather than through decoded values.
-
-A schema that declares both a nullable `foo` and a field literally named `fooIsSet` would generate
-uncompilable Dart, so that collision is now rejected at parse time with a specific error, alongside
-the existing `build`/`set_build` and `add_{field}` guards. A schema with `fooIsSet` and no nullable
-`foo` still parses.
-
-TypeScript is unaffected — its plain object-literal model never had this bug.
-
-### `POST /rpc/batch` encodes `null` as CBOR null, not an empty array — wire-format change (#657)
-
-Every `null` crossing `/rpc/batch` was silently corrupted into the CBOR empty-array marker (`0x80`)
-instead of RFC 8949 null (`0xf6`), in both directions and for every type, whenever the CBOR codec was
-in use. A server decoding the corresponding `Option<T>` failed with "expected text, got array".
-
-The cause is that batch envelope frames are deliberately opaque `serde_json::Value`, and
-`serde_json::Value::Null` serializes through `serialize_unit()` rather than `serialize_none()` —
-which `minicbor-serde` encoded as an empty array. `CborCodec::encode` now enables
-`serialize_unit_as_null`, fixing every shape at once rather than per-call-site.
-
-Bytes on this path change. Decoders were never the broken half — `0xf6` always decoded correctly
-across the Rust, napi, wasm and JS paths — so old-client/new-server and new-client/old-server both
-remain safe. `cratestack-client-rust`'s batch path still strips nulls before the codec, a workaround
-predating this fix, so the Rust batch client does not yet exercise the corrected encoding; removing
-that strip is tracked in #677.
-
-### Read policies can compare a required enum field against a literal variant (#666)
-
-`@@allow`/`@@deny` literal comparisons were limited to required `Boolean`, `Int` and `String` fields,
-so a model discriminated by an enum column — the common shape where a table mixes public and
-sensitive rows — could not express its own visibility rule declaratively. The two workarounds were a
-parallel boolean discriminator that can drift out of sync, or moving the rule into hand-written Rust
-and giving up the generic CRUD surface entirely.
-
-A required enum field can now appear in a literal comparison on both model and view descriptors. The
-variant name is validated against the declared enum and lowers to the existing `PolicyLiteral::String`
-(enum columns are stored as `TEXT`). Optional- and list-arity enum fields are rejected with a specific
-error rather than mis-compiling.
-
-`in` against a set of variants is not implemented; `purpose == a || purpose == b` expresses the same
-policy through the existing `Or` path. Field-level `@allow` remains a no-op — see #679.
-
-### Typed TypeScript clients can read `ETag` and send `If-Match` (#610)
-
-Generated TypeScript model methods gained `getWithResponse`, returning both the decoded value and the
-`Response` so callers can read `ETag`, plus an optional `ifMatch` on `update` and `delete`. Previously
-the runtime's `request()` discarded the `Response`, making the ETag unreachable from generated code
-even though the server had been emitting it since 0.7.x.
-
-Additive: `ifMatch` is an optional field on the existing options object, not a positional parameter,
-so existing call sites keep compiling. Both the default and `--swr` presets are covered, and the swr
-variant routes through the same decimal revival as its `get`, so a `Decimal` field comes back as a
-`Decimal` rather than a string.
-
-REST transport only. RPC has no per-route `If-Match` concept, and the generated README documents the
-round trip only for REST schemas that actually declare a `@version` model.
-
-### Release changelog seeding covers every declared changelog (#650)
-
-`prepare-release.yml` seeded and verified only the root `CHANGELOG.md`, so the Dart package changelog
-was silently skipped — a release could ship with it unseeded and no gate would notice. Both files are
-now declared in one list, `.ci/changelog-files.sh`, consumed by the seed script, the check script and
-the workflow, so the three cannot drift apart.
-
-The workflow also now stages both files. Previously the seed wrote the second changelog and the commit
-step never added it, which would have left the fix inert in production while every local test passed.
-An empty or renamed declared set is rejected with a named error in all three consumers instead of
-passing vacuously.
-
-### `invoke_with_db`'s generated doc example can no longer be force-compiled (#611)
-
-The illustrative example in every procedure's generated `invoke_with_db` doc comment was fenced
-```` ```ignore ````. That is correct for plain `cargo test`, which skips it — but `cargo test --
---ignored` force-runs doctests in the ignored bucket, and this example was never meant to compile:
-it references a `procedures::` module, free `db`/`registry` variables and an `await` outside an async
-context. Any consumer whose CI runs `-- --ignored` in the crate hosting `include_server_schema!` got
-one hard failure per procedure, unfixable from their side because the failing code is generated. One
-downstream project worked around it with `[lib] doctest = false`.
-
-The example is now fenced ```` ```text ````. Rustdoc only schedules a fenced block as a doctest when
-it believes the block is Rust, so a `text` block is never a candidate in any mode and no flag can
-force it. The example still renders verbatim.
-
-Note the symptom was edition-dependent, which is worth knowing if you tried to reproduce it and
-could not. On edition 2024 with merged doctests — the default on recent toolchains — `--ignored`
-doctests are reported as passing *without being compiled at all*, so the failure never surfaced.
-Edition 2021 consumers, including the original reporter, did hit it. The fix does not depend on
-which mode is active.
 
 ## 0.8.4 (2026-08-18)
 
