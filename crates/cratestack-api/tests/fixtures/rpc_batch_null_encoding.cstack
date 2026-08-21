@@ -1,0 +1,24 @@
+// cratestack#657 regression fixture: a single nullable-field procedure,
+// dedicated to the `/rpc/batch` CBOR-null-encoding test
+// (`tests/rpc_batch_null_encoding.rs`). Kept separate from
+// `rpc_batch_no_database.cstack` on purpose — that fixture's
+// `ProcedureRegistry` impl is shared by `rpc_batch_frame_cap.rs` and
+// `rpc_batch_envelope_identity.rs`, and adding a procedure to it would
+// force an unrelated `ProcedureRegistry::echoNote` stub into both.
+
+transport rpc
+
+datasource db {
+  provider = "none"
+}
+
+type EchoArgs {
+  note String?
+}
+
+type EchoReply {
+  note String?
+}
+
+procedure echoNote(args: EchoArgs): EchoReply
+  @allow(auth() != null)
