@@ -36,6 +36,7 @@ fn lower(schema: &str) -> Result<Vec<proc_macro2::TokenStream>, String> {
         model,
         &parsed.models,
         &parsed.types,
+        &parsed.enums,
         parsed.auth.as_ref(),
         "update",
     )

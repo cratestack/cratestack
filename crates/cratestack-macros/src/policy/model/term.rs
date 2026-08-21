@@ -3,7 +3,7 @@
 //! nullity, `auth() == relation`) and defers comparison-style terms
 //! to [`super::comparison`].
 
-use cratestack_core::{Model, TypeArity, TypeDecl};
+use cratestack_core::{EnumDecl, Model, TypeArity, TypeDecl};
 use quote::quote;
 
 use crate::policy::auth::parse_builtin_policy_call;
@@ -21,6 +21,7 @@ pub(super) fn parse_policy_term(
     model: &Model,
     models: &[Model],
     types: &[TypeDecl],
+    enums: &[EnumDecl],
     auth: Option<&cratestack_core::AuthBlock>,
     _action: &str,
 ) -> Result<proc_macro2::TokenStream, String> {
@@ -56,11 +57,29 @@ pub(super) fn parse_policy_term(
     }
 
     if let Some((field, rhs)) = term.split_once("==") {
-        return parse_model_comparison(field.trim(), rhs.trim(), model, models, types, auth, false);
+        return parse_model_comparison(
+            field.trim(),
+            rhs.trim(),
+            model,
+            models,
+            types,
+            enums,
+            auth,
+            false,
+        );
     }
 
     if let Some((field, rhs)) = term.split_once("!=") {
-        return parse_model_comparison(field.trim(), rhs.trim(), model, models, types, auth, true);
+        return parse_model_comparison(
+            field.trim(),
+            rhs.trim(),
+            model,
+            models,
+            types,
+            enums,
+            auth,
+            true,
+        );
     }
 
     if let Some(relation_field) = resolve_relation_policy_field(model, models, term)? {

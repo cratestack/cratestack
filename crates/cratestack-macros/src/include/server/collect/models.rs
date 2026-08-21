@@ -62,7 +62,9 @@ pub(super) fn collect_models(
     let descriptors = schema
         .models
         .iter()
-        .map(|model| generate_model_descriptor(model, &schema.models, &schema.types, auth))
+        .map(|model| {
+            generate_model_descriptor(model, &schema.models, &schema.types, &schema.enums, auth)
+        })
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| compile_error(schema_path, e))?;
     let field_modules = schema

@@ -1,0 +1,16 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+enum AssetPurpose {
+  product_image
+  kyc_document_front
+}
+
+model Asset {
+  id Int @id
+  purpose AssetPurpose?
+
+  @@allow("read", purpose == product_image)
+}

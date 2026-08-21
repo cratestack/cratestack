@@ -3,7 +3,7 @@
 //! the rhs may be an auth field, a model field, or a literal. Each
 //! combination dispatches to the appropriate `ReadPredicate` variant.
 
-use cratestack_core::{Model, TypeDecl};
+use cratestack_core::{EnumDecl, Model, TypeDecl};
 use quote::quote;
 
 use super::predicates::{
@@ -14,17 +14,19 @@ use super::predicates::{
 use super::relation_path::{RelationPolicyField, resolve_relation_policy_field};
 use crate::shared::to_snake_case;
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn parse_model_comparison(
     field: &str,
     rhs: &str,
     model: &Model,
     models: &[Model],
     types: &[TypeDecl],
+    enums: &[EnumDecl],
     auth: Option<&cratestack_core::AuthBlock>,
     negate: bool,
 ) -> Result<proc_macro2::TokenStream, String> {
     if let Some(relation_field) = resolve_relation_policy_field(model, models, field)? {
-        return parse_relation_comparison(field, rhs, &relation_field, types, auth, negate);
+        return parse_relation_comparison(field, rhs, &relation_field, types, enums, auth, negate);
     }
 
     if let Some(auth_field) = field.strip_prefix("auth().") {
@@ -34,6 +36,7 @@ pub(super) fn parse_model_comparison(
             model,
             models,
             types,
+            enums,
             auth,
             negate,
         );
@@ -64,7 +67,7 @@ pub(super) fn parse_model_comparison(
         });
     }
 
-    let literal = parse_policy_literal(rhs, field_decl)?;
+    let literal = parse_policy_literal(rhs, field_decl, enums)?;
     Ok(if negate {
         quote! {
             ::cratestack::ReadPredicate::FieldNeLiteral {
@@ -87,6 +90,7 @@ fn parse_relation_comparison(
     rhs: &str,
     relation_field: &RelationPolicyField<'_>,
     types: &[TypeDecl],
+    enums: &[EnumDecl],
     auth: Option<&cratestack_core::AuthBlock>,
     negate: bool,
 ) -> Result<proc_macro2::TokenStream, String> {
@@ -110,19 +114,21 @@ fn parse_relation_comparison(
         ));
     }
 
-    let literal = parse_policy_literal(rhs, relation_field.target_field)?;
+    let literal = parse_policy_literal(rhs, relation_field.target_field, enums)?;
     Ok(wrap_relation_predicate(
         relation_field,
         generate_scalar_literal_predicate(relation_field.target_column.as_str(), literal, negate),
     ))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn parse_auth_side_model_comparison(
     auth_field: &str,
     rhs: &str,
     model: &Model,
     models: &[Model],
     types: &[TypeDecl],
+    enums: &[EnumDecl],
     auth: Option<&cratestack_core::AuthBlock>,
     negate: bool,
 ) -> Result<proc_macro2::TokenStream, String> {
@@ -167,7 +173,7 @@ fn parse_auth_side_model_comparison(
     }
 
     let auth_field_decl = crate::policy::auth::find_auth_field(auth, types, auth_field)?;
-    let literal = parse_policy_literal(rhs, auth_field_decl)?;
+    let literal = parse_policy_literal(rhs, auth_field_decl, enums)?;
     Ok(if negate {
         quote! {
             ::cratestack::ReadPredicate::AuthFieldNeLiteral {
