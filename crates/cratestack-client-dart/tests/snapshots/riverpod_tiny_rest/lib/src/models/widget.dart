@@ -226,9 +226,13 @@ this.weight,
   // `weight`'s own value (the inner "new value, or `null`
   // to clear") — the Dart analogue of the generated Rust client's
   // `Option<Option<T>>` for this nullable-column field (cratestack#663).
-  // `false`/omitted means untouched (`weight` stays off the
-  // wire); `true` with `weight == null` means an explicit
-  // clear (serializes as `null`); `true` with a non-null value means set.
+  // Only meaningful when `weight == null`: `false` there
+  // means untouched (stays off the wire), `true` means an explicit clear
+  // (serializes as `null`). A non-null `weight` always
+  // serializes regardless of this flag — the plain `const` constructor is
+  // public, so `UpdateWidgetInput(weight: value)`
+  // (bypassing the builder, which is the only thing that otherwise sets
+  // this flag) must still put a caller-supplied value on the wire.
   final bool weightIsSet;
 
   factory UpdateWidgetInput.fromWire(CratestackValueMap value) {
@@ -242,7 +246,7 @@ this.weight,
   CratestackValueMap toWire() {
     return <String, Object?>{
       if (name != null) 'name': name,
-      if (weightIsSet) 'weight': weight,
+      if (weightIsSet || weight != null) 'weight': weight,
     };
   }
 }
