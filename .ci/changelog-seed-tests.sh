@@ -104,6 +104,19 @@ run_capture_multi() {
   REPLY_OUT=$(CHANGELOG_FILES_OVERRIDE="$override" "$@" 2>&1) || REPLY_STATUS=$?
 }
 
+# Runs $@ with CHANGELOG_FILES_SOURCE pointed at an alternate
+# changelog-files.sh declaration file — used to exercise the
+# empty-declared-set guard against a fixture (e.g. a renamed/emptied
+# CHANGELOG_FILES_DEFAULT) without touching the real, tracked
+# .ci/changelog-files.sh. $1 is the path to the fixture file, the rest is
+# the command to run.
+run_capture_with_source() {
+  local source_file="$1"
+  shift
+  REPLY_STATUS=0
+  REPLY_OUT=$(CHANGELOG_FILES_SOURCE="$source_file" "$@" 2>&1) || REPLY_STATUS=$?
+}
+
 setup_test() {
   TEST_DIR=$(mktemp -d)
   SANDBOX_CHANGELOG="$TEST_DIR/CHANGELOG.md"
@@ -698,6 +711,78 @@ fi
 
 rm -rf "$TEST_DIR"
 TEST_DIR=""
+
+# Test 20 (cratestack#650 — reviewer-caught silent-degradation risk): a
+# renamed, emptied, or typo'd CHANGELOG_FILES_DEFAULT must not make
+# changelog-check.sh pass vacuously. Bash's `"${ARR[@]}"` on an unset/empty
+# array expands to zero elements under `set -u` — NOT an error (bash 4.4+,
+# what GitHub runners ship) — so without an explicit guard, an empty
+# declared set makes the check loop zero times and report "no unedited
+# seeds" having checked nothing. THIS is the decisive test: it fails if the
+# guard in changelog-check.sh is ever removed, because without it this
+# scenario would exit 0, not the non-zero + named error asserted below.
+test_header "Test 20 (cratestack#650): changelog-check refuses (not vacuously passes) when the declared set is empty"
+TEST_DIR=$(mktemp -d)
+EMPTY_SET_FIXTURE="$TEST_DIR/changelog-files-empty.sh"
+cat > "$EMPTY_SET_FIXTURE" <<'FIXTURE'
+CHANGELOG_FILES_DEFAULT=()
+FIXTURE
+
+run_capture_with_source "$EMPTY_SET_FIXTURE" "$CHECK_SCRIPT"
+if [ "$REPLY_STATUS" -ne 0 ]; then
+  test_pass "changelog-check exited non-zero on an empty declared set (did not pass vacuously)"
+else
+  test_fail "changelog-check exited 0 on an empty declared set — vacuous pass, checked nothing"
+fi
+
+if echo "$REPLY_OUT" | grep -qi "empty"; then
+  test_pass "changelog-check named the problem (empty declared set) rather than failing silently/generically"
+else
+  test_fail "changelog-check's error output did not explain the empty-set problem: $REPLY_OUT"
+fi
+
+rm -rf "$TEST_DIR"
+TEST_DIR=""
+
+# Test 21 (cratestack#650): the same guard, in changelog-seed.sh — an empty
+# declared set must refuse to seed rather than silently seeding zero files
+# and reporting success.
+test_header "Test 21 (cratestack#650): changelog-seed refuses (not vacuously succeeds) when the declared set is empty"
+TEST_DIR=$(mktemp -d)
+EMPTY_SET_FIXTURE="$TEST_DIR/changelog-files-empty.sh"
+cat > "$EMPTY_SET_FIXTURE" <<'FIXTURE'
+CHANGELOG_FILES_DEFAULT=()
+FIXTURE
+
+run_capture_with_source "$EMPTY_SET_FIXTURE" "$SEED_SCRIPT" 0.9.9
+if [ "$REPLY_STATUS" -ne 0 ]; then
+  test_pass "changelog-seed exited non-zero on an empty declared set (did not silently succeed)"
+else
+  test_fail "changelog-seed exited 0 on an empty declared set — silently seeded nothing and called it success"
+fi
+
+if echo "$REPLY_OUT" | grep -qi "empty"; then
+  test_pass "changelog-seed named the problem (empty declared set) rather than failing silently/generically"
+else
+  test_fail "changelog-seed's error output did not explain the empty-set problem: $REPLY_OUT"
+fi
+
+rm -rf "$TEST_DIR"
+TEST_DIR=""
+
+# Test 22 (cratestack#650): the same guard also catches a
+# CHANGELOG_FILES_OVERRIDE that resolves to zero files (e.g. blank lines
+# only) — not just a broken CHANGELOG_FILES_DEFAULT. This is the path
+# introduced by Test 19's fix (skipping blank lines when splitting the
+# override) — proving that fix didn't just trade one silent-empty-set path
+# for another.
+test_header "Test 22 (cratestack#650): an all-blank-lines CHANGELOG_FILES_OVERRIDE is also caught by the empty-set guard"
+run_capture_multi $'\n\n' "$CHECK_SCRIPT"
+if [ "$REPLY_STATUS" -ne 0 ] && echo "$REPLY_OUT" | grep -qi "empty"; then
+  test_pass "changelog-check refused and named the empty-set problem for an all-blank-lines override"
+else
+  test_fail "changelog-check should have refused with a named empty-set error: status=$REPLY_STATUS out=$REPLY_OUT"
+fi
 
 # Test 9: none of the above ever touches the real, tracked changelogs.
 # This guards the sandbox-escape regression directly: every test above must

@@ -40,9 +40,13 @@ if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 fi
 
 # Every changelog the release pipeline is responsible for is declared once,
-# centrally, in changelog-files.sh — see that file for why.
+# centrally, in changelog-files.sh — see that file for why. Overridable
+# (absolute path) so the self-tests can point this script at an alternate
+# declaration file — e.g. a fixture with a deliberately empty set, to prove
+# the guard below actually guards — without touching the real, tracked one.
+CHANGELOG_FILES_SOURCE="${CHANGELOG_FILES_SOURCE:-$PROJECT_ROOT/.ci/changelog-files.sh}"
 # shellcheck source=.ci/changelog-files.sh
-source "$PROJECT_ROOT/.ci/changelog-files.sh"
+source "$CHANGELOG_FILES_SOURCE"
 
 # Overridable (absolute path) so tests can target a single sandbox copy
 # instead of the declared set above, while git further below still walks
@@ -69,6 +73,34 @@ elif [ -n "${CHANGELOG_FILES_OVERRIDE:-}" ]; then
   done <<< "$CHANGELOG_FILES_OVERRIDE"
 else
   CHANGELOG_FILES=("${CHANGELOG_FILES_DEFAULT[@]}")
+fi
+
+# Guard against a silently empty resolved set. Bash's `"${ARR[@]}"` on an
+# unset or empty array expands to zero elements under `set -u` — NOT an
+# error (this changed in bash 4.4; the pre-4.4 unbound-variable-error
+# behavior some people remember no longer applies, and GitHub runners ship
+# bash 5.x). So if CHANGELOG_FILES_DEFAULT in changelog-files.sh is ever
+# renamed, emptied, or typo'd, the for-loop below would silently iterate
+# zero times and this script would report success having seeded nothing —
+# and downstream, changelog-check.sh would report "no unedited seeds"
+# having checked nothing, and prepare-release.yml's `git add` would stage
+# zero changelogs, shipping a release with NO changelog update at all
+# (worse than the original #650 bug). Checked here on the FINAL resolved
+# CHANGELOG_FILES, not just CHANGELOG_FILES_DEFAULT, so this also catches a
+# CHANGELOG_FILES_OVERRIDE that resolves to nothing (e.g. blank lines only)
+# — not just a broken declared-set file.
+#
+# Deliberately guarded in each consumer rather than inside
+# changelog-files.sh itself: that file's own header says it "only declares
+# data" and is "meant to be sourced, not executed directly" — adding
+# control flow there would break that contract for all three consumers
+# (this script, changelog-check.sh, and prepare-release.yml's `git add`
+# step), which each need a differently-worded, differently-scoped error
+# anyway (this one talks about seeding; changelog-check.sh's about
+# checking; the workflow's about staging).
+if [ "${#CHANGELOG_FILES[@]}" -eq 0 ]; then
+  echo "error: the declared changelog set is empty — nothing to seed. Check CHANGELOG_FILES_DEFAULT in .ci/changelog-files.sh (or the CHANGELOG_FILE / CHANGELOG_FILES_OVERRIDE env override in effect, if any)." >&2
+  exit 1
 fi
 
 # Verify every changelog in the set exists, and that none of them already

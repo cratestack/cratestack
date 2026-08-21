@@ -18,9 +18,13 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
 # Every changelog the release pipeline is responsible for is declared once,
-# centrally, in changelog-files.sh — see that file for why.
+# centrally, in changelog-files.sh — see that file for why. Overridable
+# (absolute path) so the self-tests can point this script at an alternate
+# declaration file — e.g. a fixture with a deliberately empty set, to prove
+# the guard below actually guards — without touching the real, tracked one.
+CHANGELOG_FILES_SOURCE="${CHANGELOG_FILES_SOURCE:-$PROJECT_ROOT/.ci/changelog-files.sh}"
 # shellcheck source=.ci/changelog-files.sh
-source "$PROJECT_ROOT/.ci/changelog-files.sh"
+source "$CHANGELOG_FILES_SOURCE"
 
 # May be overridden (absolute path) so the test suite can point this script
 # at a single isolated sandbox copy instead of the declared set above. This
@@ -46,6 +50,29 @@ elif [ -n "${CHANGELOG_FILES_OVERRIDE:-}" ]; then
   done <<< "$CHANGELOG_FILES_OVERRIDE"
 else
   CHANGELOG_FILES=("${CHANGELOG_FILES_DEFAULT[@]}")
+fi
+
+# Guard against a silently empty resolved set. Bash's `"${ARR[@]}"` on an
+# unset or empty array expands to zero elements under `set -u` — NOT an
+# error (this changed in bash 4.4; the pre-4.4 unbound-variable-error
+# behavior some people remember no longer applies, and GitHub runners ship
+# bash 5.x). So if CHANGELOG_FILES_DEFAULT in changelog-files.sh is ever
+# renamed, emptied, or typo'd, the for-loop below would silently iterate
+# zero times and this script would report "no unedited seeds" and exit 0
+# having checked NOTHING — a vacuous pass, exactly the "a check that cannot
+# fail is not verification" failure this whole ticket exists to prevent.
+# Checked here on the FINAL resolved CHANGELOG_FILES, not just
+# CHANGELOG_FILES_DEFAULT, so this also catches a CHANGELOG_FILES_OVERRIDE
+# that resolves to nothing (e.g. blank lines only) — not just a broken
+# declared-set file.
+#
+# Deliberately guarded in each consumer rather than inside
+# changelog-files.sh itself — see changelog-seed.sh's identical guard for
+# the full rationale (that file's own header promises it "only declares
+# data" and is "meant to be sourced, not executed directly").
+if [ "${#CHANGELOG_FILES[@]}" -eq 0 ]; then
+  echo "error: the declared changelog set is empty — nothing to check. Check CHANGELOG_FILES_DEFAULT in .ci/changelog-files.sh (or the CHANGELOG_FILE / CHANGELOG_FILES_OVERRIDE env override in effect, if any)." >&2
+  exit 2
 fi
 
 # The marker that changelog-seed.sh leaves to indicate an unedited section
