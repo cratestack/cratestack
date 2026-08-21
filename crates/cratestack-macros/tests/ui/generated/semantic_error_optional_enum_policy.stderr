@@ -1,0 +1,5 @@
+error: literal read policy support for enum field `purpose` requires the field to be required; optional/list enum fields are not supported
+ --> tests/ui/generated/semantic_error_optional_enum_policy.rs
+  |
+  | cratestack_macros::include_embedded_schema!("/tmp/cratestack-macros-ui-semantic-420/semantic_error_optional_enum_policy.cstack");
+  |                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

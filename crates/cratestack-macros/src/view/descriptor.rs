@@ -13,7 +13,7 @@
 //! any non-`"read"` action on a view, so the lowerer is fed a known-
 //! good action set.
 
-use cratestack_core::{Model, TypeDecl, View};
+use cratestack_core::{EnumDecl, Model, TypeDecl, View};
 use quote::quote;
 
 use crate::policy::{generate_denies_for_actions, generate_policies_for_actions};
@@ -23,6 +23,7 @@ pub(crate) fn generate_view_descriptor(
     view: &View,
     models: &[Model],
     types: &[TypeDecl],
+    enums: &[EnumDecl],
     auth: Option<&cratestack_core::AuthBlock>,
 ) -> Result<proc_macro2::TokenStream, String> {
     let view_ident = ident(&view.name);
@@ -118,8 +119,9 @@ pub(crate) fn generate_view_descriptor(
     // Views only support the `"read"` action (validator-enforced), so
     // detail policies are the same set as read policies.
     let synthetic = view_as_model(view);
-    let read_allow = generate_policies_for_actions(&synthetic, models, types, auth, &["read"])?;
-    let read_deny = generate_denies_for_actions(&synthetic, models, types, auth, &["read"])?;
+    let read_allow =
+        generate_policies_for_actions(&synthetic, models, types, enums, auth, &["read"])?;
+    let read_deny = generate_denies_for_actions(&synthetic, models, types, enums, auth, &["read"])?;
     let detail_allow = read_allow.clone();
     let detail_deny = read_deny.clone();
 

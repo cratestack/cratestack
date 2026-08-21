@@ -120,6 +120,22 @@ fn semantic_error_compile_fail() {
         "tests/fixtures/semantic_error_status_under_rpc_transport.cstack",
     );
     t.compile_fail(generated_dir.join("semantic_error_status_under_rpc_transport.rs"));
+
+    // Test 7 (cratestack#666): a literal `@@allow`/`@@deny` comparison
+    // against an enum-typed field is only supported when the field is
+    // required — an OPTIONAL enum field must still be a clean
+    // compile-time error, not a silently permissive/degraded policy.
+    // Routed through `include_embedded_schema!` for the same reason as
+    // test 4 (policy codegen isn't masked by the postgres-feature gate
+    // there — see the module doc above).
+    write_embedded_fixture(
+        &manifest_dir,
+        staging_dir,
+        &generated_dir,
+        "semantic_error_optional_enum_policy.rs",
+        "tests/fixtures/semantic_error_optional_enum_policy.cstack",
+    );
+    t.compile_fail(generated_dir.join("semantic_error_optional_enum_policy.rs"));
 }
 
 fn stage_fixture(manifest_dir: &Path, staging_dir: &Path, relative_schema_path: &str) -> PathBuf {

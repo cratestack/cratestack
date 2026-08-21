@@ -1,0 +1,25 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+// Regression fixture for cratestack#666: a required enum field must be
+// usable in a literal `@@allow`/`@@deny` read-policy comparison. Mirrors
+// the real-world shape from the issue (an `Asset` model discriminated by
+// a `purpose` enum, where only some purposes are publicly readable) —
+// see `crates/cratestack-pg/tests/policy_db_enum_literal.rs`, which
+// asserts the generated SQL predicate actually filters by variant, not
+// just that this schema compiles.
+enum AssetPurpose {
+  product_image
+  product_thumbnail
+  kyc_document_front
+}
+
+model EnumPolicyAsset {
+  id Int @id
+  purpose AssetPurpose
+  label String
+
+  @@allow("read", purpose == product_image || purpose == product_thumbnail)
+}

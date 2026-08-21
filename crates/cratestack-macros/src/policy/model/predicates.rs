@@ -6,11 +6,12 @@
 //! [`term`]: super::term
 //! [`comparison`]: super::comparison
 
-use cratestack_core::{Field, TypeArity, TypeDecl};
+use cratestack_core::{EnumDecl, Field, TypeArity, TypeDecl};
 use quote::quote;
 
 use crate::policy::auth::{find_auth_field, parse_string_literal};
 
+use super::enum_literal::parse_enum_policy_literal;
 use super::relation_path::RelationPolicyField;
 
 pub(super) fn generate_scalar_bool_predicate(column: &str) -> proc_macro2::TokenStream {
@@ -139,6 +140,7 @@ pub(super) fn validate_auth_field_matches_model_field(
 pub(super) fn parse_policy_literal(
     rhs: &str,
     field: &Field,
+    enums: &[EnumDecl],
 ) -> Result<proc_macro2::TokenStream, String> {
     match field.ty.name.as_str() {
         "Boolean" if field.ty.arity == TypeArity::Required => match rhs {
@@ -158,8 +160,11 @@ pub(super) fn parse_policy_literal(
                 .ok_or_else(|| format!("expected string literal for field `{}`", field.name))?;
             Ok(quote! { ::cratestack::PolicyLiteral::String(#value) })
         }
+        type_name if enums.iter().any(|enum_decl| enum_decl.name == type_name) => {
+            parse_enum_policy_literal(rhs, field, enums)
+        }
         _ => Err(format!(
-            "literal read policy support is currently limited to required Boolean, Int, and String fields; `{}` is unsupported",
+            "literal read policy support is currently limited to required Boolean, Int, String, and required Enum fields; `{}` is unsupported",
             field.name
         )),
     }

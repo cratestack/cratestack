@@ -3,9 +3,12 @@
 //! Parses the expression AST and emits per-action
 //! `cratestack::ReadPolicy` values consumed at query time.
 //!
-//! Four submodules carve up the work:
+//! Five submodules carve up the work:
 //! - [`predicates`]: scalar `ReadPredicate` emitters + relation
 //!   wrapping + shared field/literal helpers.
+//! - [`enum_literal`]: the required-enum-field arm of
+//!   [`predicates::parse_policy_literal`] (issue #666), split out to
+//!   keep `predicates.rs` under this crate's 200-LoC file convention.
 //! - [`relation_path`]: `a.b.c` path resolution through relations,
 //!   producing the segments [`predicates::wrap_relation_predicate`]
 //!   later folds into nested `ReadPredicate::Relation`.
@@ -15,14 +18,17 @@
 //!   literal) on either side of `==`/`!=`.
 
 mod comparison;
+mod enum_literal;
 mod predicates;
 mod relation_path;
 mod term;
 
 #[cfg(test)]
+mod tests_enum_literal;
+#[cfg(test)]
 mod tests_system_principal;
 
-use cratestack_core::{Model, TypeDecl};
+use cratestack_core::{EnumDecl, Model, TypeDecl};
 use quote::quote;
 
 use super::ast::{generate_policy_ast_tokens, parse_policy_ast};
@@ -33,46 +39,51 @@ pub(crate) fn generate_policies_for_action(
     model: &Model,
     models: &[Model],
     types: &[TypeDecl],
+    enums: &[EnumDecl],
     auth: Option<&cratestack_core::AuthBlock>,
     action: &str,
 ) -> Result<Vec<proc_macro2::TokenStream>, String> {
-    generate_policies_for_actions(model, models, types, auth, &[action])
+    generate_policies_for_actions(model, models, types, enums, auth, &[action])
 }
 
 pub(crate) fn generate_policies_for_actions(
     model: &Model,
     models: &[Model],
     types: &[TypeDecl],
+    enums: &[EnumDecl],
     auth: Option<&cratestack_core::AuthBlock>,
     actions: &[&str],
 ) -> Result<Vec<proc_macro2::TokenStream>, String> {
-    generate_policy_rules_for_actions(model, models, types, auth, actions, "@@allow")
+    generate_policy_rules_for_actions(model, models, types, enums, auth, actions, "@@allow")
 }
 
 pub(crate) fn generate_denies_for_action(
     model: &Model,
     models: &[Model],
     types: &[TypeDecl],
+    enums: &[EnumDecl],
     auth: Option<&cratestack_core::AuthBlock>,
     action: &str,
 ) -> Result<Vec<proc_macro2::TokenStream>, String> {
-    generate_denies_for_actions(model, models, types, auth, &[action])
+    generate_denies_for_actions(model, models, types, enums, auth, &[action])
 }
 
 pub(crate) fn generate_denies_for_actions(
     model: &Model,
     models: &[Model],
     types: &[TypeDecl],
+    enums: &[EnumDecl],
     auth: Option<&cratestack_core::AuthBlock>,
     actions: &[&str],
 ) -> Result<Vec<proc_macro2::TokenStream>, String> {
-    generate_policy_rules_for_actions(model, models, types, auth, actions, "@@deny")
+    generate_policy_rules_for_actions(model, models, types, enums, auth, actions, "@@deny")
 }
 
 fn generate_policy_rules_for_actions(
     model: &Model,
     models: &[Model],
     types: &[TypeDecl],
+    enums: &[EnumDecl],
     auth: Option<&cratestack_core::AuthBlock>,
     actions: &[&str],
     directive: &str,
@@ -86,6 +97,7 @@ fn generate_policy_rules_for_actions(
                 model,
                 models,
                 types,
+                enums,
                 auth,
                 primary_action,
             )?);
@@ -143,6 +155,7 @@ fn generate_read_policy(
     model: &Model,
     models: &[Model],
     types: &[TypeDecl],
+    enums: &[EnumDecl],
     auth: Option<&cratestack_core::AuthBlock>,
     action: &str,
 ) -> Result<proc_macro2::TokenStream, String> {
@@ -150,7 +163,7 @@ fn generate_read_policy(
     let expr = generate_policy_ast_tokens(
         &ast,
         &|term| {
-            parse_policy_term(term, model, models, types, auth, action)
+            parse_policy_term(term, model, models, types, enums, auth, action)
                 .map(|predicate| quote! { ::cratestack::PolicyExpr::Predicate(#predicate) })
         },
         quote! { ::cratestack::PolicyExpr::And },

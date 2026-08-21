@@ -208,9 +208,14 @@ pub(super) fn collect_server_schema(
             continue;
         }
         view_structs.push(crate::view::generate_view_struct_only(view, &enum_name_set));
-        let descriptor =
-            crate::view::generate_view_descriptor(view, &schema.models, &schema.types, auth)
-                .map_err(|e| compile_error(schema_path, e))?;
+        let descriptor = crate::view::generate_view_descriptor(
+            view,
+            &schema.models,
+            &schema.types,
+            &schema.enums,
+            auth,
+        )
+        .map_err(|e| compile_error(schema_path, e))?;
         view_descriptors.push(descriptor);
         view_pg_from_row_impls.push(crate::view::generate_view_pg_from_row_impl(
             view,

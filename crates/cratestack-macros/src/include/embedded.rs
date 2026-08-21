@@ -95,7 +95,9 @@ pub(super) fn compose_embedded_schema(
         let model_descriptors = match schema
             .models
             .iter()
-            .map(|model| generate_model_descriptor(model, &schema.models, &schema.types, auth))
+            .map(|model| {
+                generate_model_descriptor(model, &schema.models, &schema.types, &schema.enums, auth)
+            })
             .collect::<Result<Vec<_>, String>>()
         {
             Ok(descriptors) => descriptors,
@@ -169,7 +171,13 @@ pub(super) fn compose_embedded_schema(
             .iter()
             .filter(|view| view.embedded_sql().is_some())
             .map(|view| {
-                crate::view::generate_view_descriptor(view, &schema.models, &schema.types, auth)
+                crate::view::generate_view_descriptor(
+                    view,
+                    &schema.models,
+                    &schema.types,
+                    &schema.enums,
+                    auth,
+                )
             })
             .collect::<Result<Vec<_>, String>>()
         {

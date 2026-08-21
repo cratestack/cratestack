@@ -7,7 +7,7 @@
 mod columns;
 mod defaults;
 
-use cratestack_core::{Field, Model, TypeDecl};
+use cratestack_core::{EnumDecl, Field, Model, TypeDecl};
 use quote::quote;
 
 use crate::event::model_emitted_events;
@@ -24,6 +24,7 @@ pub(crate) fn generate_model_descriptor(
     model: &Model,
     models: &[Model],
     types: &[TypeDecl],
+    enums: &[EnumDecl],
     auth: Option<&cratestack_core::AuthBlock>,
 ) -> Result<proc_macro2::TokenStream, String> {
     let model_ident = ident(&model.name);
@@ -41,19 +42,25 @@ pub(crate) fn generate_model_descriptor(
     let primary_key_sql = to_snake_case(&primary_key.name);
 
     let read_policies =
-        generate_policies_for_actions(model, models, types, auth, &["list", "read"])?;
+        generate_policies_for_actions(model, models, types, enums, auth, &["list", "read"])?;
     let detail_policies =
-        generate_policies_for_actions(model, models, types, auth, &["detail", "read"])?;
-    let create_policies = generate_policies_for_action(model, models, types, auth, "create")?;
-    let create_deny_policies = generate_denies_for_action(model, models, types, auth, "create")?;
-    let update_policies = generate_policies_for_action(model, models, types, auth, "update")?;
-    let update_deny_policies = generate_denies_for_action(model, models, types, auth, "update")?;
-    let delete_policies = generate_policies_for_action(model, models, types, auth, "delete")?;
-    let delete_deny_policies = generate_denies_for_action(model, models, types, auth, "delete")?;
+        generate_policies_for_actions(model, models, types, enums, auth, &["detail", "read"])?;
+    let create_policies =
+        generate_policies_for_action(model, models, types, enums, auth, "create")?;
+    let create_deny_policies =
+        generate_denies_for_action(model, models, types, enums, auth, "create")?;
+    let update_policies =
+        generate_policies_for_action(model, models, types, enums, auth, "update")?;
+    let update_deny_policies =
+        generate_denies_for_action(model, models, types, enums, auth, "update")?;
+    let delete_policies =
+        generate_policies_for_action(model, models, types, enums, auth, "delete")?;
+    let delete_deny_policies =
+        generate_denies_for_action(model, models, types, enums, auth, "delete")?;
     let read_deny_policies =
-        generate_denies_for_actions(model, models, types, auth, &["list", "read"])?;
+        generate_denies_for_actions(model, models, types, enums, auth, &["list", "read"])?;
     let detail_deny_policies =
-        generate_denies_for_actions(model, models, types, auth, &["detail", "read"])?;
+        generate_denies_for_actions(model, models, types, enums, auth, &["detail", "read"])?;
 
     let create_defaults = collect_create_defaults(model, models, types, auth)?;
     let emitted_events = emitted_event_tokens(model)?;
