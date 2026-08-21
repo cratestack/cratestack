@@ -71,6 +71,7 @@ pub(crate) fn build_where_data_class(
                 false,
                 false,
                 false,
+                false,
                 format!(
                     "value['{wire}'] == null ? null : {filter_type}.fromWire(cratestackAsValueMap(value['{wire}']))",
                     wire = field.name
@@ -118,6 +119,7 @@ pub(crate) fn build_order_by_clause_data_class(model: &Model) -> DataClassView {
             true,
             false,
             false,
+            false,
             format!(
                 "{sort_field_name}.fromWire(cratestackRequireWireValue('{order_by_name}', 'field', value['field']))"
             ),
@@ -128,6 +130,7 @@ pub(crate) fn build_order_by_clause_data_class(model: &Model) -> DataClassView {
             "direction".to_owned(),
             "SortDirection".to_owned(),
             true,
+            false,
             false,
             false,
             format!(
@@ -160,6 +163,7 @@ pub(crate) fn build_find_many_data_class(model: &Model, has_where: bool) -> Data
             false,
             false,
             false,
+            false,
             format!(
                 "value['where'] == null ? null : {where_name}.fromWire(cratestackAsValueMap(value['where']))"
             ),
@@ -177,6 +181,7 @@ pub(crate) fn build_find_many_data_class(model: &Model, has_where: bool) -> Data
         "orderBy".to_owned(),
         "orderBy".to_owned(),
         format!("List<{order_by_name}>?"),
+        false,
         false,
         false,
         false,

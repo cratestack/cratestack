@@ -99,6 +99,22 @@ pub(crate) fn struct_field_definition(
         quote! {
             #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         }
+    } else if wrap_for_patch && matches!(field.ty.arity, TypeArity::Required) {
+        // A required-arity column on an update input is `Option<T>` — the
+        // sole `Option` layer is patch-wrapping's own "did the caller touch
+        // this field" marker; there's no nullable-column inner layer to
+        // recurse into (that's the `Optional`-arity branch above), so
+        // serde-derive's blanket `Option<T>: Deserialize` (missing key ->
+        // `None`) is already correct and no custom `deserialize_with` is
+        // needed. `skip_serializing_if` is still required on the outbound
+        // side, for the same reason as the `Optional`/`List` branches
+        // above: every generated client builds a full input struct with
+        // `..Default::default()` and serializes the whole thing, so
+        // without this an untouched required-arity field serialized as
+        // `null` — the one arity #567/#662 didn't cover (cratestack#663).
+        quote! {
+            #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        }
     } else if matches!(field.ty.arity, TypeArity::Optional) && !wrap_for_patch {
         // Generated model structs declare Optional fields as `Option<T>`,
         // but the wire projection strips `null` map entries before the

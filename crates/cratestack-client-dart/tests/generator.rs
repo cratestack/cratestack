@@ -662,7 +662,7 @@ fn list_field_builder_defaults_to_empty_list_and_gains_an_append_setter() {
         "UpdateGadgetInput's builder must also get `addTags`, got:\n{models}"
     );
     assert!(
-        models.contains("UpdateGadgetInput build() {\n    return UpdateGadgetInput(\n      builder: _builder,\n      newBuilder: _newBuilder,\n      build: _build,\n      meta: _meta,\n      tags: _tags,\n    );"),
+        models.contains("UpdateGadgetInput build() {\n    return UpdateGadgetInput(\n      builder: _builder,\n      newBuilder: _newBuilder,\n      build: _build,\n      meta: _meta,\n      tags: _tags,\n      note: _note,\n      noteIsSet: _noteSet,\n    );"),
         "an untouched UpdateGadgetInput.tags must stay `null` (the existing \
          untouched-field representation), not default to `[]`, got:\n{models}"
     );

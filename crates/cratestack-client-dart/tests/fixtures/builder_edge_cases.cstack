@@ -33,6 +33,15 @@
 //   it deliberately carries no `datasource` block — a database-backed
 //   model has no SQL bind representation for a list-valued scalar field
 //   and would reject `tags String[]` at parse time.
+// - cratestack#663: `note String?` is a nullable (`Optional`-arity)
+//   column. On `UpdateGadgetInput`, `null` is genuinely ambiguous between
+//   "the caller never touched `note`" and "the caller explicitly cleared
+//   it" — the one arity where a plain `!= null` check on the field's own
+//   value can't tell the two apart. See `builder_edge_cases_patch_test
+//   .dart` for the running proof (a real `flutter test`, not just a
+//   generated-source text assertion) that the generated `UpdateGadgetInput`
+//   /`UpdateGadgetInputBuilder` distinguish all three states over
+//   `toWire()`.
 model Gadget {
   id Int @id
   builder String
@@ -40,4 +49,5 @@ model Gadget {
   build String
   meta Json
   tags String[]
+  note String?
 }

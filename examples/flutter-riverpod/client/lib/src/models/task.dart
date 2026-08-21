@@ -274,9 +274,9 @@ this.boardId,
 
   CratestackValueMap toWire() {
     return <String, Object?>{
-      'title': title,
-      'done': done,
-      'boardId': boardId,
+      if (title != null) 'title': title,
+      if (done != null) 'done': done,
+      if (boardId != null) 'boardId': boardId,
     };
   }
 }

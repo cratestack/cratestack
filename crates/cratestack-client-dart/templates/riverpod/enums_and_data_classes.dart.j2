@@ -52,12 +52,25 @@ class {{ data_class.name }} with {{ data_class.name }}Mappable {
   const {{ data_class.name }}({
 {% for field in data_class.fields %}
     {% if field.required %}required {% endif %}this.{{ field.identifier }},
+{% if field.is_nullable_patch_field %}
+    this.{{ field.touch_flag_identifier }} = false,
+{% endif %}
 {% endfor %}
   });
 {% endif %}
 
 {% for field in data_class.fields %}
   final {{ field.dart_type }} {{ field.identifier }};
+{% if field.is_nullable_patch_field %}
+  // Outer "did the caller touch this field" flag, alongside
+  // `{{ field.identifier }}`'s own value (the inner "new value, or `null`
+  // to clear") — the Dart analogue of the generated Rust client's
+  // `Option<Option<T>>` for this nullable-column field (cratestack#663).
+  // `false`/omitted means untouched (`{{ field.identifier }}` stays off the
+  // wire); `true` with `{{ field.identifier }} == null` means an explicit
+  // clear (serializes as `null`); `true` with a non-null value means set.
+  final bool {{ field.touch_flag_identifier }};
+{% endif %}
 {% endfor %}
 {% if data_class.has_fields %}
 
@@ -66,6 +79,9 @@ class {{ data_class.name }} with {{ data_class.name }}Mappable {
     return {{ data_class.name }}(
 {% for field in data_class.fields %}
       {{ field.identifier }}: {{ field.from_wire_expr }},
+{% if field.is_nullable_patch_field %}
+      {{ field.touch_flag_identifier }}: value.containsKey('{{ field.wire_name }}'),
+{% endif %}
 {% endfor %}
     );
   }
@@ -73,7 +89,11 @@ class {{ data_class.name }} with {{ data_class.name }}Mappable {
   CratestackValueMap toWire() {
     return <String, Object?>{
 {% for field in data_class.fields %}
+{% if field.wire_write_condition %}
+      if ({{ field.wire_write_condition }}) '{{ field.wire_name }}': {{ field.to_wire_expr }},
+{% else %}
       '{{ field.wire_name }}': {{ field.to_wire_expr }},
+{% endif %}
 {% endfor %}
     };
   }

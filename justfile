@@ -589,6 +589,13 @@ verify-dart:
 	    cp "crates/cratestack-client-dart/tests/fixtures/builder_edge_cases_list_test.dart" "$pkg/test/builder_edge_cases_list_test.dart"
 	    echo "=== flutter test (list-field builder proof): $pkg ==="
 	    (cd "$pkg" && flutter test test/builder_edge_cases_list_test.dart)
+	    # cratestack#663: a real, running proof that an untouched
+	    # `Update{Model}Input` field (every arity) is absent from the wire,
+	    # while a nullable field explicitly cleared still serializes as an
+	    # explicit `null` — see the copied file's own module doc.
+	    cp "crates/cratestack-client-dart/tests/fixtures/builder_edge_cases_patch_test.dart" "$pkg/test/builder_edge_cases_patch_test.dart"
+	    echo "=== flutter test (untouched-vs-cleared patch field proof): $pkg ==="
+	    (cd "$pkg" && flutter test test/builder_edge_cases_patch_test.dart)
 	  fi
 	done
 
