@@ -57,14 +57,31 @@ source "$PROJECT_ROOT/.ci/changelog-files.sh"
 if [ -n "${CHANGELOG_FILE:-}" ]; then
   CHANGELOG_FILES=("$CHANGELOG_FILE")
 elif [ -n "${CHANGELOG_FILES_OVERRIDE:-}" ]; then
-  mapfile -t CHANGELOG_FILES <<< "$CHANGELOG_FILES_OVERRIDE"
+  # A `while read` loop, not `mapfile ... <<<`: a here-string always appends
+  # a trailing newline, and an override string that itself ends in a
+  # newline (or contains a blank line) would otherwise produce an empty
+  # array element — which later fails as a bare, unhelpful "error:  not
+  # found" with no filename. Skipping blank lines here means a malformed
+  # override fails on a real (missing) path instead.
+  CHANGELOG_FILES=()
+  while IFS= read -r line; do
+    [ -n "$line" ] && CHANGELOG_FILES+=("$line")
+  done <<< "$CHANGELOG_FILES_OVERRIDE"
 else
   CHANGELOG_FILES=("${CHANGELOG_FILES_DEFAULT[@]}")
 fi
 
 # Verify every changelog in the set exists, and that none of them already
-# has a section for this version, before writing to ANY of them — a mid-loop
-# failure must not leave some changelogs seeded and others untouched.
+# has a section for this version, before writing to ANY of them. This makes
+# THIS validation pass atomic: a file that's missing or already has the
+# section is caught before any writes happen, for any file in the set. It
+# does NOT make the write loop below atomic against a failure mid-write
+# (e.g. a permissions error or a full disk on the second file) — a write
+# failure there can still leave some files seeded and others untouched. Making
+# the writes themselves atomic (stage every file to a temp path, then move
+# all of them) is more machinery than this script currently carries; a
+# release script that fails loudly and dirty on a write error is an
+# acceptable, honestly-documented limitation.
 for file in "${CHANGELOG_FILES[@]}"; do
   if [ ! -f "$file" ]; then
     echo "error: $file not found" >&2

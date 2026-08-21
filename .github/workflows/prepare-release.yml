@@ -154,7 +154,7 @@ jobs:
       - name: Bump workspace version
         run: just bump ${{ inputs.version }}
 
-      - name: Seed CHANGELOG.md section
+      - name: Seed changelog sections
         run: just changelog-seed ${{ inputs.version }}
 
       - name: Validate (cargo check + tests)
@@ -272,7 +272,26 @@ jobs:
           # that bump from the release commit — same failure shape this
           # comment already describes for `packages/*/package.json`, just a
           # third registry away from being noticed.
-          git add CHANGELOG.md ':(glob)**/Cargo.toml' ':(glob)**/Cargo.lock' pnpm-lock.yaml \
+          #
+          # The changelog paths are NOT hand-enumerated here (cratestack#650):
+          # `just changelog-seed` above writes every file declared in
+          # `.ci/changelog-files.sh`'s `CHANGELOG_FILES_DEFAULT` — currently
+          # the root `CHANGELOG.md` and
+          # `dart-packages/cratestack_cbor/CHANGELOG.md` — and this step
+          # sources that exact same array so the staged set can never drift
+          # from the seeded set. A second hardcoded path/glob here would
+          # recreate precisely the class of drift this comment block already
+          # describes twice above for package.json and pubspec.yaml: `just
+          # changelog-seed` would keep writing a newly-added package's
+          # CHANGELOG.md into the runner's working tree, `changelog-check.sh`
+          # would keep passing (the file it checks is a tracked file that was
+          # simply never staged, so no marker is ever seen), and the release
+          # commit would silently ship that package's changelog un-updated —
+          # issue #650's exact failure shape, one layer further up the
+          # pipeline than the bug #650 itself fixed.
+          # shellcheck source=.ci/changelog-files.sh
+          source .ci/changelog-files.sh
+          git add "${CHANGELOG_FILES_DEFAULT[@]}" ':(glob)**/Cargo.toml' ':(glob)**/Cargo.lock' pnpm-lock.yaml \
             ':(glob)packages/*/package.json' ':(glob)dart-packages/*/pubspec.yaml'
           git commit -m "chore: bump workspace to v${version} and seed CHANGELOG section"
           git push origin "$branch"

@@ -34,7 +34,16 @@ source "$PROJECT_ROOT/.ci/changelog-files.sh"
 if [ -n "${CHANGELOG_FILE:-}" ]; then
   CHANGELOG_FILES=("$CHANGELOG_FILE")
 elif [ -n "${CHANGELOG_FILES_OVERRIDE:-}" ]; then
-  mapfile -t CHANGELOG_FILES <<< "$CHANGELOG_FILES_OVERRIDE"
+  # A `while read` loop, not `mapfile ... <<<`: a here-string always appends
+  # a trailing newline, and an override string that itself ends in a
+  # newline (or contains a blank line) would otherwise produce an empty
+  # array element — which later fails as a bare, unhelpful "error:  not
+  # found" with no filename. Skipping blank lines here means a malformed
+  # override fails on a real (missing) path instead.
+  CHANGELOG_FILES=()
+  while IFS= read -r line; do
+    [ -n "$line" ] && CHANGELOG_FILES+=("$line")
+  done <<< "$CHANGELOG_FILES_OVERRIDE"
 else
   CHANGELOG_FILES=("${CHANGELOG_FILES_DEFAULT[@]}")
 fi

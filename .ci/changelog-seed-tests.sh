@@ -651,6 +651,54 @@ else
   test_fail "Declared set is missing dart-packages/cratestack_cbor/CHANGELOG.md"
 fi
 
+# Test 19 (cratestack#650 — reviewer-caught footgun): CHANGELOG_FILES_OVERRIDE
+# strings with a trailing newline or an embedded blank line must not produce
+# a bogus empty-path array element. Before the fix this surfaced as a bare
+# "error:  not found" with no filename; both scripts now skip blank lines
+# when splitting the override instead of using `mapfile ... <<<` directly
+# (a here-string always appends its own trailing newline).
+test_header "Test 19 (cratestack#650): a trailing/blank line in CHANGELOG_FILES_OVERRIDE is skipped, not a bogus empty path"
+TEST_DIR=$(mktemp -d)
+ROOT_FIXTURE="$TEST_DIR/root/CHANGELOG.md"
+PKG_FIXTURE="$TEST_DIR/pkg/CHANGELOG.md"
+mkdir -p "$TEST_DIR/root" "$TEST_DIR/pkg"
+cat > "$ROOT_FIXTURE" <<'FIXTURE'
+# Changelog
+
+## 0.7.8 (2026-08-08)
+
+Some previously released, already-edited prose.
+FIXTURE
+cat > "$PKG_FIXTURE" <<'FIXTURE'
+## 0.8.3
+
+Some previously released, already-edited prose.
+FIXTURE
+
+# A trailing newline AND an embedded blank line, deliberately, to cover both
+# shapes an override string could take.
+run_capture_multi "$ROOT_FIXTURE"$'\n\n'"$PKG_FIXTURE"$'\n' "$SEED_SCRIPT" 0.9.9
+if [ "$REPLY_STATUS" -eq 0 ]; then
+  test_pass "changelog-seed succeeded despite blank lines in the override"
+else
+  test_fail "changelog-seed failed on an override with blank lines: $REPLY_OUT"
+fi
+
+if echo "$REPLY_OUT" | grep -qE "^error: +not found"; then
+  test_fail "Bogus empty-path error resurfaced ('error:  not found' with no filename)"
+else
+  test_pass "No bogus empty-path error"
+fi
+
+if grep -q "^## 0.9.9 (" "$ROOT_FIXTURE" && grep -q "^## 0.9.9 (" "$PKG_FIXTURE"; then
+  test_pass "Both real paths in the override were still seeded correctly"
+else
+  test_fail "One or both real paths in the override were not seeded"
+fi
+
+rm -rf "$TEST_DIR"
+TEST_DIR=""
+
 # Test 9: none of the above ever touches the real, tracked changelogs.
 # This guards the sandbox-escape regression directly: every test above must
 # operate purely on sandbox copies via the CHANGELOG_FILE /
