@@ -19,6 +19,16 @@ this file for the house prose style. Do not commit with this placeholder text.
 
 #### Fixes
 
+- **breaking:** reject field-level `@allow(...)`/`@deny(...)` at parse time, on all five
+  field-bearing declaration kinds (`model`, `view`, `mixin`, `type`, `auth`). It used to parse,
+  report `schema OK`, and be silently ignored by every codegen path — an annotation that reads as
+  row-level access control and enforces none. A schema carrying it now fails to parse, naming the
+  field and pointing at the real alternatives: model/view-level `@@allow`/`@@deny` for row
+  visibility, or `@readonly`/`@server_only` to keep a field out of inputs or responses.
+  Procedure-level `@allow`/`@deny` and model/view-level `@@allow`/`@@deny` are unaffected — this
+  targets only the field-position, single-`@` no-op. Fixes half of #679; the unknown-attribute/typo
+  half (e.g. a misspelled `@raedonly` silently dropping `@readonly`) is a separate, deliberately
+  out-of-scope decision (#679)
 - seed and check changelogs from a declared list, not a hardcoded path (#669)
 - encode serde_json::Value::Null as CBOR null on POST /rpc/batch (#657) (#675)
 - re-fence invoke_with_db's illustrative doc example so `-- --ignored` can't force-compile it (#611) (#681)
