@@ -1,4 +1,4 @@
-import { CratestackRuntime, type CratestackClientOptions } from "./runtime.js";
+import { CratestackRuntime, type CratestackClientOptions, type CratestackResponseEnvelope } from "./runtime.js";
 import { reviveDecimalFields, revivePagedDecimalFields, reviveDecimalScalar } from "./models.js";
 import type {
   FocusEstimateArgs,
@@ -20,7 +20,13 @@ import type {
   TaskSortField,
   Page,
 } from "./models.js";
-import { toSearchQuery, type CratestackQueryRequestConfig, type CratestackRequestConfig } from "./queries.js";
+import {
+  toSearchQuery,
+  withIfMatchHeader,
+  type CratestackQueryRequestConfig,
+  type CratestackRequestConfig,
+  type CratestackWriteRequestConfig,
+} from "./queries.js";
 
 export class ReactViteSwrClientClient {
   readonly runtime: CratestackRuntime;
@@ -57,6 +63,23 @@ export class BoardApi {
     }).then((value) => reviveDecimalFields(value, 'Board') as Board);
   }
 
+  // Same call as `get`, but returns the response alongside the record
+  // (issue #610) — read `.response.headers.get("etag")` off the result
+  // to get the value `update`/`delete`'s `ifMatch` option needs.
+  getWithResponse(
+    id: number,
+    options: CratestackQueryRequestConfig = {},
+  ): Promise<CratestackResponseEnvelope<Board>> {
+    return this.runtime.getWithResponse<unknown>(`/boards/${encodeURIComponent(String(id))}`, {
+      headers: options.headers,
+      query: toSearchQuery(options.query),
+      signal: options.signal,
+    }).then((result) => ({
+      value: reviveDecimalFields(result.value, 'Board') as Board,
+      response: result.response,
+    }));
+  }
+
   create(input: CreateBoardInput, options: CratestackRequestConfig = {}): Promise<Board> {
     return this.runtime.post<unknown>("/boards", input, options)
       .then((value) => reviveDecimalFields(value, 'Board') as Board);
@@ -65,14 +88,20 @@ export class BoardApi {
   update(
     id: number,
     input: UpdateBoardInput,
-    options: CratestackRequestConfig = {},
+    options: CratestackWriteRequestConfig = {},
   ): Promise<Board> {
-    return this.runtime.patch<unknown>(`/boards/${encodeURIComponent(String(id))}`, input, options)
+    return this.runtime.patch<unknown>(`/boards/${encodeURIComponent(String(id))}`, input, {
+      headers: withIfMatchHeader(options.headers, options.ifMatch),
+      signal: options.signal,
+    })
       .then((value) => reviveDecimalFields(value, 'Board') as Board);
   }
 
-  delete(id: number, options: CratestackRequestConfig = {}): Promise<void> {
-    return this.runtime.delete<void>(`/boards/${encodeURIComponent(String(id))}`, options);
+  delete(id: number, options: CratestackWriteRequestConfig = {}): Promise<void> {
+    return this.runtime.delete<void>(`/boards/${encodeURIComponent(String(id))}`, {
+      headers: withIfMatchHeader(options.headers, options.ifMatch),
+      signal: options.signal,
+    });
   }
 }
 
@@ -95,6 +124,23 @@ export class TaskApi {
     }).then((value) => reviveDecimalFields(value, 'Task') as Task);
   }
 
+  // Same call as `get`, but returns the response alongside the record
+  // (issue #610) — read `.response.headers.get("etag")` off the result
+  // to get the value `update`/`delete`'s `ifMatch` option needs.
+  getWithResponse(
+    id: number,
+    options: CratestackQueryRequestConfig = {},
+  ): Promise<CratestackResponseEnvelope<Task>> {
+    return this.runtime.getWithResponse<unknown>(`/tasks/${encodeURIComponent(String(id))}`, {
+      headers: options.headers,
+      query: toSearchQuery(options.query),
+      signal: options.signal,
+    }).then((result) => ({
+      value: reviveDecimalFields(result.value, 'Task') as Task,
+      response: result.response,
+    }));
+  }
+
   create(input: CreateTaskInput, options: CratestackRequestConfig = {}): Promise<Task> {
     return this.runtime.post<unknown>("/tasks", input, options)
       .then((value) => reviveDecimalFields(value, 'Task') as Task);
@@ -103,14 +149,20 @@ export class TaskApi {
   update(
     id: number,
     input: UpdateTaskInput,
-    options: CratestackRequestConfig = {},
+    options: CratestackWriteRequestConfig = {},
   ): Promise<Task> {
-    return this.runtime.patch<unknown>(`/tasks/${encodeURIComponent(String(id))}`, input, options)
+    return this.runtime.patch<unknown>(`/tasks/${encodeURIComponent(String(id))}`, input, {
+      headers: withIfMatchHeader(options.headers, options.ifMatch),
+      signal: options.signal,
+    })
       .then((value) => reviveDecimalFields(value, 'Task') as Task);
   }
 
-  delete(id: number, options: CratestackRequestConfig = {}): Promise<void> {
-    return this.runtime.delete<void>(`/tasks/${encodeURIComponent(String(id))}`, options);
+  delete(id: number, options: CratestackWriteRequestConfig = {}): Promise<void> {
+    return this.runtime.delete<void>(`/tasks/${encodeURIComponent(String(id))}`, {
+      headers: withIfMatchHeader(options.headers, options.ifMatch),
+      signal: options.signal,
+    });
   }
 }
 

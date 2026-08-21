@@ -16,7 +16,13 @@
 // import cycle, only a type-only one, which TypeScript tolerates fine.
 
 import type { CratestackRuntime } from "../runtime.js";
-import { toSearchQuery, type CratestackQueryRequestConfig, type CratestackRequestConfig } from "../queries.js";
+import {
+  toSearchQuery,
+  withIfMatchHeader,
+  type CratestackQueryRequestConfig,
+  type CratestackRequestConfig,
+  type CratestackWriteRequestConfig,
+} from "../queries.js";
 // cratestack#498: every generated model file gets this import
 // unconditionally (like `../runtime.js`/`../queries.js` above), whether
 // or not this particular model has a `Decimal` field — the alternative
@@ -112,16 +118,22 @@ export async function updateTask(
   runtime: CratestackRuntime,
   id: number,
   input: UpdateTaskInput,
-  options: CratestackRequestConfig = {},
+  options: CratestackWriteRequestConfig = {},
 ): Promise<Task> {
-  return runtime.patch<unknown>(`/tasks/${encodeURIComponent(String(id))}`, input, options)
+  return runtime.patch<unknown>(`/tasks/${encodeURIComponent(String(id))}`, input, {
+    headers: withIfMatchHeader(options.headers, options.ifMatch),
+    signal: options.signal,
+  })
     .then((value) => reviveDecimalFields(value, 'Task') as Task);
 }
 
 export async function deleteTask(
   runtime: CratestackRuntime,
   id: number,
-  options: CratestackRequestConfig = {},
+  options: CratestackWriteRequestConfig = {},
 ): Promise<void> {
-  return runtime.delete<void>(`/tasks/${encodeURIComponent(String(id))}`, options);
+  return runtime.delete<void>(`/tasks/${encodeURIComponent(String(id))}`, {
+    headers: withIfMatchHeader(options.headers, options.ifMatch),
+    signal: options.signal,
+  });
 }

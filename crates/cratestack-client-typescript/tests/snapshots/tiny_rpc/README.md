@@ -69,6 +69,20 @@ const updated = await client.widgets.update(created.id, patch, { headers });
 await client.widgets.delete(updated.id, { headers });
 ```
 
+### Optimistic concurrency (`@version` models)
+
+For a model with an `@version` field, the server requires an `If-Match` header on
+`update`/`delete` and rejects a stale or missing one with `412 Precondition Failed`.
+Read the current `ETag` off `getWithResponse`, then pass it back as `ifMatch`:
+
+```ts
+const { value: item, response } = await client.widgets.getWithResponse(id);
+const etag = response.headers.get("etag");
+
+await client.widgets.update(id, patch, { ifMatch: etag ?? undefined });
+await client.widgets.delete(id, { ifMatch: etag ?? undefined });
+```
+
 ## Procedures
 
 - `client.procedures.echoName`

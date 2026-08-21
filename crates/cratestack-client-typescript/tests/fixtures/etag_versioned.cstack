@@ -1,0 +1,15 @@
+// REST schema with an `@version` model — exercises the generated
+// TS client's ETag/If-Match plumbing (issue #610). `Ledger` mirrors
+// `crates/cratestack-client/tests/fixtures/versioned.cstack`'s shape.
+
+model Ledger {
+  id Int @id
+  label String
+  balance Int
+  version Int @version
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
