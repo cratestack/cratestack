@@ -28,7 +28,7 @@ this file for the house prose style. Do not commit with this placeholder text.
   Procedure-level `@allow`/`@deny` and model/view-level `@@allow`/`@@deny` are unaffected — this
   targets only the field-position, single-`@` no-op. Fixes half of #679; the unknown-attribute/typo
   half (e.g. a misspelled `@raedonly` silently dropping `@readonly`) is a separate, deliberately
-  out-of-scope decision (#679)
+  out-of-scope decision (#679) (#686)
 - seed and check changelogs from a declared list, not a hardcoded path (#669)
 - encode serde_json::Value::Null as CBOR null on POST /rpc/batch (#657) (#675)
 - re-fence invoke_with_db's illustrative doc example so `-- --ignored` can't force-compile it (#611) (#681)
