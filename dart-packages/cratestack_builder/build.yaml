@@ -1,0 +1,7 @@
+builders:
+  cratestack_builder:
+    import: "package:cratestack_builder/builder.dart"
+    builder_factories: ["cratestackBuilder"]
+    build_extensions: {".dart": [".builder.dart"]}
+    auto_apply: dependents
+    build_to: source

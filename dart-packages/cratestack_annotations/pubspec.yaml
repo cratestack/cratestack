@@ -1,0 +1,36 @@
+name: cratestack_annotations
+# Kept inside pub.dev's recommended 60-180 char range (pana flags longer
+# descriptions as truncated in search results) — see README.md.
+description: >-
+  Annotations consumed by CrateStack's Dart code generators. Runtime-only
+  and dependency-free, so consuming an annotated class costs nothing
+  beyond this package.
+version: 0.8.4
+homepage: https://cratestack.dev
+repository: https://github.com/cratestack/cratestack
+issue_tracker: https://github.com/cratestack/cratestack/issues
+topics:
+  - annotations
+  - codegen
+
+environment:
+  sdk: ^3.5.0
+
+# DELIBERATELY EMPTY. This package exists as a separate artifact from
+# `cratestack_builder` for exactly one reason: a generated CrateStack client
+# lists the annotation package under `dependencies:` (the annotation is
+# referenced by the emitted source), and pub resolves a package's own
+# `dependencies:` transitively into the consumer's runtime graph. Merging
+# the annotation into the generator package would therefore put `analyzer`,
+# `build` and `source_gen` into the runtime graph of every Flutter app that
+# consumes a generated client — and would drag that app into the same
+# analyzer-version negotiation the codegen toolchain has to do.
+#
+# This is the same split the ecosystem uses for `json_annotation` vs
+# `json_serializable`, and that the riverpod preset's generated pubspec
+# already relies on for `dart_mappable` vs `dart_mappable_builder`.
+dependencies:
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.0

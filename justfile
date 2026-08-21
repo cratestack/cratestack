@@ -460,6 +460,29 @@ test-ci-ignored-report *args='':
 # `pubspec.yaml` depends on `sdk: flutter` (the `flutter`/`flutter_test`
 # packages) and `flutter_riverpod` — a standalone Dart SDK install has no
 # Flutter pub cache to resolve those against (verified empirically before
+# ---- dart-packages/{cratestack_annotations,cratestack_builder} -----------
+# Analyze + test the two hand-written Dart packages that back the generated
+# clients' builder surface (cratestack#668 phase 1). Pure Dart, so this uses
+# the Dart SDK directly rather than Flutter — neither package depends on
+# `sdk: flutter`, and `cratestack_annotations` deliberately has no
+# dependencies at all.
+#
+# `cratestack_builder` currently carries a `dependency_overrides` entry
+# pointing at its in-repo sibling, because `cratestack_annotations` is not on
+# pub.dev yet. That override is also what stops it publishing by accident:
+# `dart pub publish` refuses a package that has one.
+verify-dart-packages:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	for pkg in dart-packages/cratestack_annotations dart-packages/cratestack_builder; do
+	  echo "=== dart pub get: $pkg ==="
+	  (cd "$pkg" && dart pub get)
+	  echo "=== dart analyze --fatal-infos: $pkg ==="
+	  (cd "$pkg" && dart analyze --fatal-infos)
+	  echo "=== dart test: $pkg ==="
+	  (cd "$pkg" && dart test)
+	done
+
 # choosing this over `dart-lang/setup-dart`).
 verify-dart:
 	#!/usr/bin/env bash

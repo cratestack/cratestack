@@ -1,0 +1,48 @@
+name: cratestack_builder
+# Kept inside pub.dev's recommended 60-180 char range (pana flags longer
+# descriptions as truncated in search results) — see README.md.
+description: >-
+  build_runner generator producing fluent builders for classes annotated
+  with CrateStack's @CratestackBuilder. A dev dependency — the annotation
+  itself lives in cratestack_annotations.
+version: 0.8.4
+homepage: https://cratestack.dev
+repository: https://github.com/cratestack/cratestack
+issue_tracker: https://github.com/cratestack/cratestack/issues
+topics:
+  - codegen
+  - build-runner
+  - builder
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  # UPPER BOUND IS LOAD-BEARING, not defensive rounding. A generated client
+  # under the riverpod preset runs this builder in the same `build_runner`
+  # pass as `riverpod_generator`, whose own constraint is `analyzer ^12.0.0`.
+  # Allowing 13.x here makes `pub get` hard-fail in that package before any
+  # codegen is reached. Raise the ceiling only alongside riverpod_generator.
+  #
+  # The floor is deliberately well above the minimum that compiles: at
+  # `^8.x` the analyzer reports a language version older than the SDK
+  # ("SDK language version 3.13.0 is newer than `analyzer` language version
+  # 3.11.0"), i.e. it parses newer syntax with older rules.
+  analyzer: '>=12.0.0 <13.0.0'
+  build: ^4.0.7
+  cratestack_annotations: ^0.8.4
+  source_gen: ^4.0.0
+
+dev_dependencies:
+  build_runner: ^2.15.0
+  build_test: ^3.0.0
+  lints: ^6.0.0
+  test: ^1.25.0
+
+# TEMPORARY — remove before publishing. `cratestack_annotations` 0.8.4 is not
+# on pub.dev yet, so this resolves the sibling in-repo. `dart pub publish`
+# rejects a package with dependency_overrides, which is the failure mode we
+# want: it cannot ship by accident.
+dependency_overrides:
+  cratestack_annotations:
+    path: ../cratestack_annotations
