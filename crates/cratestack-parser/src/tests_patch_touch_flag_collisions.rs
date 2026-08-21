@@ -20,7 +20,8 @@
 use super::parse_schema;
 
 fn expect_rejected(schema: &str, expected_name: &str) {
-    let err = parse_schema(schema).expect_err("touch-flag collision must be rejected at parse time");
+    let err =
+        parse_schema(schema).expect_err("touch-flag collision must be rejected at parse time");
     let message = err.to_string();
     assert!(
         message.contains("generated identifier"),

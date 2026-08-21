@@ -147,14 +147,20 @@ fn update_input_builder_clear_state_serializes_identically_to_the_struct_literal
 }
 
 #[test]
-fn update_input_builder_untouched_nullable_field_omits_it_on_the_wire() {
-    // Only the *nullable* field (`note`) carries `skip_serializing_if` —
-    // see `struct_only.rs::struct_field_definition`'s serde-attr match:
-    // a non-nullable patch field (`priority`) has no third state to hide
-    // and legitimately serializes as `null` when untouched, matching the
-    // existing struct-literal behaviour asserted below. This test isolates
-    // the nullable field so the builder's parity with that design is
-    // unambiguous either way.
+fn update_input_builder_untouched_fields_are_omitted_from_the_wire() {
+    // Both arities now carry `skip_serializing_if` — see
+    // `struct_only.rs::struct_field_definition`'s serde-attr match. Until
+    // cratestack#663 only the *nullable* field (`note`) did; a non-nullable
+    // patch field (`priority`) had no `Required` arm and so serialized as
+    // `null` when untouched, which the server could not distinguish from
+    // an explicit write. That is the bug #663 fixed, so this test now
+    // asserts the opposite of what it originally did for `priority`:
+    // untouched means absent, for *every* arity.
+    //
+    // `note` (nullable) keeps its third state: an explicit clear still
+    // sends `"note":null`, asserted by
+    // `update_input_builder_explicit_clear_state_matches_struct_literal`
+    // above. Omission here means untouched, not cleared.
     let built = UpdateBuilderWidgetInput::builder().name("Renamed").build();
     let literal = UpdateBuilderWidgetInput {
         name: Some("Renamed".to_owned()),
@@ -169,10 +175,14 @@ fn update_input_builder_untouched_nullable_field_omits_it_on_the_wire() {
         "an untouched nullable field must be omitted from the wire, not sent as null: {built_json}"
     );
     assert!(
-        built_json.contains("\"priority\":null"),
-        "an untouched non-nullable patch field has no skip_serializing_if and legitimately \
-         serializes as null by existing design (struct_only.rs); the builder must match that, \
-         not silently diverge: {built_json}"
+        !built_json.contains("priority"),
+        "cratestack#663: an untouched non-nullable patch field must also be omitted, not sent \
+         as null — a null here is indistinguishable from an explicit write and clobbers the \
+         column server-side: {built_json}"
+    );
+    assert_eq!(
+        built_json, r#"{"name":"Renamed"}"#,
+        "only the field the caller actually touched may reach the wire: {built_json}"
     );
 }
 
