@@ -581,6 +581,30 @@ jobs:
       - name: Generate + flutter analyze/test (default + riverpod presets, REST + RPC, incl. --native-cbor)
         run: just verify-dart
 
+  # ---- dart-packages/{cratestack_annotations,cratestack_builder} --------
+  # Blocking. Covers the two hand-written Dart packages behind the generated
+  # clients' builder surface (cratestack#668 phase 1). Uses the Dart SDK
+  # directly, not Flutter: neither package depends on `sdk: flutter`, and
+  # `cratestack_annotations` has no dependencies at all — pulling in the
+  # Flutter SDK here would only slow the job and hide that fact.
+  #
+  # `--fatal-infos`, stricter than the `--fatal-warnings` the generated-client
+  # jobs use: these are published packages, and pub.dev's own scoring treats
+  # analyzer infos as defects.
+  dart-packages-verify:
+    name: dart (cratestack_annotations + cratestack_builder)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - name: dart analyze --fatal-infos + dart test
+        run: just verify-dart-packages
+
   # ---- flutter_rust_bridge glue verification (cratestack#563) -----------
   # Blocking. Closes a gap the ticket itself found: before this job,
   # `grep -rn "frb-generate|flutter_rust_bridge_codegen|frb_generated"

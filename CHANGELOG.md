@@ -135,6 +135,39 @@ struct no longer offers `.contains()`/`.starts_with()` on a `String[]`/`Cuid[]` 
 `FieldRef` methods were never implemented for `Vec<String>`, so a schema with a filterable scalar
 list field failed to compile. `.equals()`/ordering ops are unaffected.
 
+### `cratestack_annotations` + `cratestack_builder` Dart packages (#668, phase 1)
+
+Two new hand-written Dart packages, groundwork for moving builder emission out of the Rust generator
+and into the Dart ecosystem. Nothing generated changes yet — no `.cstack` schema, generated client,
+or example is affected, and the Rust generator still emits builder classes inline.
+
+`cratestack_annotations` carries `@CratestackBuilder` and has **no dependencies at all**.
+`cratestack_builder` is the `source_gen`/`build_runner` generator that turns an annotated class into
+a `part '<file>.builder.dart'`, and is a **dev** dependency. The split is deliberate: a generated
+client lists the annotation package under `dependencies:`, and pub resolves a package's own
+dependencies transitively into the consumer's graph — folding the two together would put `analyzer`,
+`build` and `source_gen` into the runtime graph of every Flutter app consuming a generated client.
+Same split as `json_annotation`/`json_serializable`.
+
+Emitted builders match today's inline ones: required-field `StateError` (with required-ness read from
+`isRequiredNamed`, so a required *nullable* field is still enforced), the `build` -> `setBuild` shim,
+a copy-not-mutate `add{Field}` append setter, and no static `Class.builder()` factory.
+
+`@CratestackBuilder(listDefaults: false)` is the one piece of information the generator cannot derive
+for itself. A projection model's list field and a patch input's list field emit byte-identical Dart,
+yet must build differently — `[]` versus `null` — so the distinction has to be supplied by whoever
+applies the annotation. Inferring it from nullability, the obvious shortcut, produces builders that
+are self-consistent and quietly disagree with the schema.
+
+`cratestack_builder` pins `analyzer >=12.0.0 <13.0.0`. The upper bound is load-bearing rather than
+defensive: under the riverpod preset this builder will share a `build_runner` pass with
+`riverpod_generator`, whose own constraint is `analyzer ^12.0.0`, and allowing 13.x makes `pub get`
+fail there before codegen is reached.
+
+Verified on Dart 3.12.1 and 3.13.1 — testing a single SDK is exactly what let the previously
+evaluated `lean_builder` through (it passes on 3.12.1 and dies on 3.13.1; see
+https://github.com/Milad-Akarie/lean_builder/issues/25).
+
 ## 0.8.4 (2026-08-18)
 
 ### `/rpc/batch` authenticates the envelope once, not once per frame
