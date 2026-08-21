@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Verify that the CHANGELOG.md contains no unedited seeds.
+# Verify that no declared changelog contains an unedited seed.
 #
 # An unedited seed contains a TODO marker comment that indicates a human
 # has not yet rewritten the auto-generated content into narrative prose.
@@ -9,28 +9,57 @@
 #
 # Usage: changelog-check.sh
 #
-# Exits 0 if all sections are edited (no TODO markers), 1 if unedited seeds
-# are found, 2 on error.
+# Exits 0 if every declared changelog is edited (no TODO markers), 1 if any
+# contain unedited seeds (naming which ones), 2 on error.
 
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
-# May be overridden (absolute path) so the test suite can point this script
-# at an isolated sandbox copy instead of the real, tracked CHANGELOG.md.
-CHANGELOG_FILE="${CHANGELOG_FILE:-CHANGELOG.md}"
+# Every changelog the release pipeline is responsible for is declared once,
+# centrally, in changelog-files.sh — see that file for why.
+# shellcheck source=.ci/changelog-files.sh
+source "$PROJECT_ROOT/.ci/changelog-files.sh"
 
-if [ ! -f "$CHANGELOG_FILE" ]; then
-  echo "error: $CHANGELOG_FILE not found" >&2
-  exit 2
+# May be overridden (absolute path) so the test suite can point this script
+# at a single isolated sandbox copy instead of the declared set above. This
+# is the degenerate single-file case: when set, it replaces the whole
+# declared set with just the one path. Existing behavior, unchanged.
+#
+# CHANGELOG_FILES_OVERRIDE is the multi-file counterpart: a newline-separated
+# list of paths, used only by the self-tests to exercise the multi-file case
+# against sandbox copies without touching the real, tracked paths declared
+# in changelog-files.sh. CHANGELOG_FILE (singular) wins if both are set.
+if [ -n "${CHANGELOG_FILE:-}" ]; then
+  CHANGELOG_FILES=("$CHANGELOG_FILE")
+elif [ -n "${CHANGELOG_FILES_OVERRIDE:-}" ]; then
+  mapfile -t CHANGELOG_FILES <<< "$CHANGELOG_FILES_OVERRIDE"
+else
+  CHANGELOG_FILES=("${CHANGELOG_FILES_DEFAULT[@]}")
 fi
 
 # The marker that changelog-seed.sh leaves to indicate an unedited section
 UNEDITED_MARKER="TODO: edit this section from the seed below"
 
-if grep -q "$UNEDITED_MARKER" "$CHANGELOG_FILE"; then
-  echo "error: CHANGELOG.md contains unedited seed(s) — rewrite into narrative prose before merging" >&2
+unedited_files=()
+
+for file in "${CHANGELOG_FILES[@]}"; do
+  if [ ! -f "$file" ]; then
+    echo "error: $file not found" >&2
+    exit 2
+  fi
+
+  if grep -q "$UNEDITED_MARKER" "$file"; then
+    unedited_files+=("$file")
+  fi
+done
+
+if [ "${#unedited_files[@]}" -gt 0 ]; then
+  echo "error: the following changelog(s) contain unedited seed(s) — rewrite into narrative prose before merging:" >&2
+  for file in "${unedited_files[@]}"; do
+    echo "  - $file" >&2
+  done
   echo "  Marker: $UNEDITED_MARKER" >&2
   exit 1
 fi

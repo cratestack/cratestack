@@ -39,20 +39,43 @@ if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   exit 1
 fi
 
-# Overridable (absolute path) so tests can target a sandbox copy instead of
-# the real CHANGELOG.md, while git below still walks this repo's real history.
-CHANGELOG_FILE="${CHANGELOG_FILE:-CHANGELOG.md}"
+# Every changelog the release pipeline is responsible for is declared once,
+# centrally, in changelog-files.sh — see that file for why.
+# shellcheck source=.ci/changelog-files.sh
+source "$PROJECT_ROOT/.ci/changelog-files.sh"
 
-if [ ! -f "$CHANGELOG_FILE" ]; then
-  echo "error: $CHANGELOG_FILE not found" >&2
-  exit 1
+# Overridable (absolute path) so tests can target a single sandbox copy
+# instead of the declared set above, while git further below still walks
+# this repo's real history. This is the degenerate single-file case: when
+# set, it replaces the whole declared set with just the one path. Existing
+# behavior, unchanged.
+#
+# CHANGELOG_FILES_OVERRIDE is the multi-file counterpart: a newline-separated
+# list of paths, used only by the self-tests to exercise the multi-file case
+# against sandbox copies without touching the real, tracked paths declared
+# in changelog-files.sh. CHANGELOG_FILE (singular) wins if both are set.
+if [ -n "${CHANGELOG_FILE:-}" ]; then
+  CHANGELOG_FILES=("$CHANGELOG_FILE")
+elif [ -n "${CHANGELOG_FILES_OVERRIDE:-}" ]; then
+  mapfile -t CHANGELOG_FILES <<< "$CHANGELOG_FILES_OVERRIDE"
+else
+  CHANGELOG_FILES=("${CHANGELOG_FILES_DEFAULT[@]}")
 fi
 
-# Refuse to write if a section for this version already exists
-if grep -q "^## $VERSION " "$CHANGELOG_FILE"; then
-  echo "error: CHANGELOG.md already contains a section for $VERSION" >&2
-  exit 1
-fi
+# Verify every changelog in the set exists, and that none of them already
+# has a section for this version, before writing to ANY of them — a mid-loop
+# failure must not leave some changelogs seeded and others untouched.
+for file in "${CHANGELOG_FILES[@]}"; do
+  if [ ! -f "$file" ]; then
+    echo "error: $file not found" >&2
+    exit 1
+  fi
+
+  if grep -q "^## $VERSION " "$file"; then
+    echo "error: $file already contains a section for $VERSION" >&2
+    exit 1
+  fi
+done
 
 # Compute the commit range since the last release tag.
 # Deliberately NOT `git describe --tags --abbrev=0` — some past release tags
@@ -186,6 +209,13 @@ if ! [ "$added_any" = "true" ]; then
 "
 fi
 
+# Write the section into every declared changelog. The commit range and the
+# grouped-by-type new_section computed above are shared across all of them —
+# they describe the same repo history regardless of which file is being
+# written — only the per-file "is there an '## Unreleased' section to carry
+# forward" decision below varies file to file.
+for CHANGELOG_FILE in "${CHANGELOG_FILES[@]}"; do
+
 # cratestack#531: if CHANGELOG.md already has a "## Unreleased" section (the
 # convention: individual PRs add narrative prose there as they land, between
 # releases), convert THAT section into the new dated release section instead
@@ -248,7 +278,7 @@ if [ -n "$unreleased_line" ] && [ "$has_prose_to_carry" = "true" ]; then
   } > "$tmp_file"
   mv "$tmp_file" "$CHANGELOG_FILE"
 
-  echo "converted existing '## Unreleased' section into '## $VERSION ($today)' — prose carried forward, no seed needed"
+  echo "$CHANGELOG_FILE: converted existing '## Unreleased' section into '## $VERSION ($today)' — prose carried forward, no seed needed"
   echo "  Last tag: ${last_tag:-none}"
   echo "  Commit range: $range"
   echo "  Computed from commit: $head_sha"
@@ -271,7 +301,7 @@ elif [ -n "$unreleased_line" ]; then
   } > "$tmp_file"
   mv "$tmp_file" "$CHANGELOG_FILE"
 
-  echo "seeded CHANGELOG.md with section for $VERSION (marker: $section_marker) — '## Unreleased' was present but empty, replaced in place"
+  echo "$CHANGELOG_FILE: seeded with section for $VERSION (marker: $section_marker) — '## Unreleased' was present but empty, replaced in place"
   echo "  Last tag: ${last_tag:-none}"
   echo "  Commit range: $range"
   echo "  Computed from commit: $head_sha"
@@ -303,9 +333,11 @@ else
   fi
   mv "$tmp_file" "$CHANGELOG_FILE"
 
-  echo "seeded CHANGELOG.md with section for $VERSION (marker: $section_marker)"
+  echo "$CHANGELOG_FILE: seeded with section for $VERSION (marker: $section_marker)"
   echo "  Last tag: ${last_tag:-none}"
   echo "  Commit range: $range"
   echo "  Computed from commit: $head_sha"
   echo "  Today's date: $today"
 fi
+
+done
