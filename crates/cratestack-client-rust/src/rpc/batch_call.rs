@@ -220,16 +220,38 @@ mod null_strip_tests {
         assert_eq!(decoded, req);
     }
 
-    /// Regression guard: WITHOUT the strip, a `serde_json::Value::Null` optional
-    /// mis-encodes as the CBOR empty-array marker and the typed `Option<String>`
-    /// decode fails ("expected text, got array") — the exact cross-service bug.
+    /// cratestack#657 **inverted** this guard, and the inversion is the point.
+    ///
+    /// It used to assert that WITHOUT the strip, a `serde_json::Value::Null`
+    /// optional mis-encoded as the CBOR empty-array marker (`0x80`) and the
+    /// typed `Option<String>` decode failed with "expected text, got array" —
+    /// the cross-service bug that motivated `strip_json_null_entries`.
+    ///
+    /// `CborCodec::encode` now enables `serialize_unit_as_null`, so a bare
+    /// `Value::Null` encodes as RFC 8949 null (`0xf6`) and decodes cleanly as
+    /// `None`. The strip is no longer load-bearing for *decodability*.
+    ///
+    /// It is still applied on the production path (`BatchableCall::new`), which
+    /// means this codec fix does not yet change what the Rust batch client puts
+    /// on the wire — and, because the strip recurses into nested objects, an
+    /// explicit `null` meaning "clear this column" is still dropped before it
+    /// gets here. Removing the strip is tracked separately; this test only
+    /// pins that the codec no longer *requires* it.
     #[test]
-    fn unstripped_null_breaks_typed_decode() {
+    fn unstripped_null_now_decodes_as_none() {
         let value = serde_json::json!({ "required": "x", "optional": null });
         let bytes = CborCodec.encode(&value).expect("encode");
         assert!(
-            CborCodec.decode::<Req>(&bytes).is_err(),
-            "unstripped Value::Null must break the typed decode"
+            bytes.contains(&0xf6),
+            "the optional's null must reach the wire as RFC 8949 null (0xf6): {bytes:02x?}"
+        );
+        let decoded: Req = CborCodec
+            .decode(&bytes)
+            .expect("an unstripped null must now decode, not error");
+        assert_eq!(decoded.required, "x");
+        assert_eq!(
+            decoded.optional, None,
+            "an explicit null must decode to None, not fail"
         );
     }
 }
