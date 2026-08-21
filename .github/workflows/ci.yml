@@ -1106,6 +1106,16 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: just
+      # REQUIRED, and not obvious: frb codegen is a Rust binary, but it
+      # shells out to `dart` (`dart --version` as a toolchain probe, and the
+      # Dart half of its output). Without this the job dies with
+      # "Error: Dart/Flutter toolchain not available … dart: not found".
+      # Every other cbor job happens to have Flutter for its own reasons;
+      # this one needs it solely for codegen.
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
       - name: Install flutter_rust_bridge_codegen (pinned =2.12.0)
         run: cargo install --locked flutter_rust_bridge_codegen --version 2.12.0
       - name: Vendor flutter_rust_bridge glue (both halves)
