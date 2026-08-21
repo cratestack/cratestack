@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.5 (2026-08-21)
 
 ### Protobuf/gRPC support removed — breaking (ADR 0017)
 
