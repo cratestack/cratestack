@@ -168,6 +168,94 @@ Verified on Dart 3.12.1 and 3.13.1 — testing a single SDK is exactly what let 
 evaluated `lean_builder` through (it passes on 3.12.1 and dies on 3.13.1; see
 https://github.com/Milad-Akarie/lean_builder/issues/25).
 
+### Untouched update-input fields no longer reach the wire, at any arity — breaking for Dart consumers (#663)
+
+An update input built without touching a field used to serialize that field as an explicit `null` for
+`Required`-arity (non-nullable-column) fields, because only the `Optional` arity carried
+`skip_serializing_if`. A server cannot distinguish that from a deliberate write, so an untouched field
+silently clobbered its column. `PATCH {"name": "x"}` against a model with a second non-nullable field
+wrote `null` over it.
+
+Both clients now omit an untouched field at every arity. The Rust side gains the missing
+`TypeArity::Required` arm in `struct_only.rs`.
+
+**Dart consumers: the generated API changed.** Dart data classes are flat, with no analogue of Rust's
+`Option<Option<T>>`, so a nullable-column patch field now carries a sibling boolean —
+`weight` gains `weightIsSet` as a constructor parameter, public field, and builder flag. `false`
+means untouched (omitted), `true` with a null value means an explicit clear (serialized as `null`),
+and a non-null value is always sent. Existing named-argument call sites still compile, since the new
+parameter is optional with a default.
+
+The explicit-clear guarantee from 0.7.x is unchanged: clearing a nullable column still puts `null`
+on the wire, verified at the raw CBOR byte level rather than through decoded values.
+
+A schema that declares both a nullable `foo` and a field literally named `fooIsSet` would generate
+uncompilable Dart, so that collision is now rejected at parse time with a specific error, alongside
+the existing `build`/`set_build` and `add_{field}` guards. A schema with `fooIsSet` and no nullable
+`foo` still parses.
+
+TypeScript is unaffected — its plain object-literal model never had this bug.
+
+### `POST /rpc/batch` encodes `null` as CBOR null, not an empty array — wire-format change (#657)
+
+Every `null` crossing `/rpc/batch` was silently corrupted into the CBOR empty-array marker (`0x80`)
+instead of RFC 8949 null (`0xf6`), in both directions and for every type, whenever the CBOR codec was
+in use. A server decoding the corresponding `Option<T>` failed with "expected text, got array".
+
+The cause is that batch envelope frames are deliberately opaque `serde_json::Value`, and
+`serde_json::Value::Null` serializes through `serialize_unit()` rather than `serialize_none()` —
+which `minicbor-serde` encoded as an empty array. `CborCodec::encode` now enables
+`serialize_unit_as_null`, fixing every shape at once rather than per-call-site.
+
+Bytes on this path change. Decoders were never the broken half — `0xf6` always decoded correctly
+across the Rust, napi, wasm and JS paths — so old-client/new-server and new-client/old-server both
+remain safe. `cratestack-client-rust`'s batch path still strips nulls before the codec, a workaround
+predating this fix, so the Rust batch client does not yet exercise the corrected encoding; removing
+that strip is tracked in #677.
+
+### Read policies can compare a required enum field against a literal variant (#666)
+
+`@@allow`/`@@deny` literal comparisons were limited to required `Boolean`, `Int` and `String` fields,
+so a model discriminated by an enum column — the common shape where a table mixes public and
+sensitive rows — could not express its own visibility rule declaratively. The two workarounds were a
+parallel boolean discriminator that can drift out of sync, or moving the rule into hand-written Rust
+and giving up the generic CRUD surface entirely.
+
+A required enum field can now appear in a literal comparison on both model and view descriptors. The
+variant name is validated against the declared enum and lowers to the existing `PolicyLiteral::String`
+(enum columns are stored as `TEXT`). Optional- and list-arity enum fields are rejected with a specific
+error rather than mis-compiling.
+
+`in` against a set of variants is not implemented; `purpose == a || purpose == b` expresses the same
+policy through the existing `Or` path. Field-level `@allow` remains a no-op — see #679.
+
+### Typed TypeScript clients can read `ETag` and send `If-Match` (#610)
+
+Generated TypeScript model methods gained `getWithResponse`, returning both the decoded value and the
+`Response` so callers can read `ETag`, plus an optional `ifMatch` on `update` and `delete`. Previously
+the runtime's `request()` discarded the `Response`, making the ETag unreachable from generated code
+even though the server had been emitting it since 0.7.x.
+
+Additive: `ifMatch` is an optional field on the existing options object, not a positional parameter,
+so existing call sites keep compiling. Both the default and `--swr` presets are covered, and the swr
+variant routes through the same decimal revival as its `get`, so a `Decimal` field comes back as a
+`Decimal` rather than a string.
+
+REST transport only. RPC has no per-route `If-Match` concept, and the generated README documents the
+round trip only for REST schemas that actually declare a `@version` model.
+
+### Release changelog seeding covers every declared changelog (#650)
+
+`prepare-release.yml` seeded and verified only the root `CHANGELOG.md`, so the Dart package changelog
+was silently skipped — a release could ship with it unseeded and no gate would notice. Both files are
+now declared in one list, `.ci/changelog-files.sh`, consumed by the seed script, the check script and
+the workflow, so the three cannot drift apart.
+
+The workflow also now stages both files. Previously the seed wrote the second changelog and the commit
+step never added it, which would have left the fix inert in production while every local test passed.
+An empty or renamed declared set is rejected with a named error in all three consumers instead of
+passing vacuously.
+
 ## 0.8.4 (2026-08-18)
 
 ### `/rpc/batch` authenticates the envelope once, not once per frame
