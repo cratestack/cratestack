@@ -723,6 +723,143 @@ jobs:
       - name: Publish @cratestack/refine
         run: .github/scripts/npm-publish.sh packages/cratestack-refine --access public --provenance
 
+  # ---- dart-packages/{cratestack_annotations,cratestack_builder} ---------
+  # cratestack#668 phase 1. Same OIDC/tag-push shape as `publish-pubdev-cbor`
+  # above, and the two failures that job encodes apply here verbatim — read
+  # its comments before touching these.
+  #
+  # Two differences from cbor, both simplifications: these are PURE DART
+  # packages (no `environment.flutter`, no vendored native artifacts), so
+  # `dart-lang/setup-dart` alone is the whole toolchain and `dart pub publish`
+  # needs no FLUTTER_DART indirection.
+  #
+  # Sequenced annotations -> builder rather than run in parallel. Today the
+  # order is not load-bearing (`cratestack_builder` depends on
+  # `cratestack_annotations: ^0.8.5`, already published, so it resolves either
+  # way), but on any release where the builder starts requiring a version of
+  # the annotation package that this same run is publishing, parallel jobs
+  # would race and the builder's publish would fail version solving.
+  #
+  # Neither job can bootstrap its package — see `publish-pubdev-cbor`'s note.
+  # Both were first published manually at 0.8.5; these jobs handle every
+  # release after that, and only once Automated publishing is enabled on each
+  # package's pub.dev Admin tab (repository `cratestack/cratestack`, tag
+  # pattern `v{{version}}`).
+  publish-pubdev-annotations:
+    name: publish pub.dev package (cratestack_annotations)
+    if: github.event_name == 'push'
+    needs: [prepare]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - name: Assert the OIDC token endpoint is available
+        run: |
+          set -euo pipefail
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
+            echo "::error::OIDC token endpoint unavailable — the job is missing 'permissions: id-token: write'. dart pub publish would fall back to interactive OAuth and hang." >&2
+            exit 1
+          fi
+          echo "✓ OIDC token endpoint present"
+      # Adjacent to the publish on purpose: setup-dart mints a short-lived
+      # OIDC token, and v0.8.2 failed because 9 minutes of other work ran in
+      # between and pub.dev rejected the expired credential. Nothing slow
+      # belongs between these two steps.
+      - uses: dart-lang/setup-dart@v1
+      - name: Publish cratestack_annotations to pub.dev
+        working-directory: dart-packages/cratestack_annotations
+        # `timeout`, not stdin redirection: pub's OAuth fallback waits on a
+        # local HTTP redirect, not stdin, so closing stdin would not unblock
+        # it. See `publish-pubdev-cbor` for the full reasoning.
+        run: |
+          set -euo pipefail
+          if ! timeout 600 dart pub publish --force; then
+            status=$?
+            if [ "$status" -eq 124 ]; then
+              echo "::error::dart pub publish timed out after 10 minutes — it fell back to interactive OAuth, meaning no OIDC credential was configured. Check IN THIS ORDER: (1) the 'dart-lang/setup-dart' step immediately above is still present and still adjacent to this step; (2) 'permissions: id-token: write' on this job; (3) pub.dev -> cratestack_annotations -> Admin -> Automated publishing, repository '${{ github.repository }}', tag pattern matching '${{ github.ref_name }}'." >&2
+            fi
+            exit "$status"
+          fi
+      # `dart pub publish` EXITS 0 ON AUTHENTICATION FAILURE — observed on
+      # v0.8.2, where it printed "Authentication failed!", published nothing,
+      # and reported success. Ask pub.dev what it serves instead of trusting
+      # the exit code.
+      - name: Verify pub.dev actually received the version
+        run: |
+          set -euo pipefail
+          want="$(grep -m1 '^version:' dart-packages/cratestack_annotations/pubspec.yaml | awk '{print $2}')"
+          echo "expecting cratestack_annotations ${want} on pub.dev"
+          for attempt in $(seq 1 20); do
+            got="$(curl -fsSL "https://pub.dev/api/packages/cratestack_annotations" 2>/dev/null \
+                   | python3 -c 'import json,sys; print(json.load(sys.stdin)["latest"]["version"])' 2>/dev/null || true)"
+            if [ "$got" = "$want" ]; then
+              echo "✓ pub.dev serves cratestack_annotations ${got}"
+              exit 0
+            fi
+            echo "  attempt ${attempt}/20: pub.dev latest is '${got:-unknown}', waiting..."
+            sleep 30
+          done
+          echo "::error::pub.dev does not serve cratestack_annotations ${want} after 10 minutes. The publish step exited 0, but that proves nothing — dart pub publish exits 0 even when authentication fails (observed on v0.8.2). Read the publish step's output for 'Authentication failed!' or 'Invalid JWT token'." >&2
+          exit 1
+
+  publish-pubdev-builder:
+    name: publish pub.dev package (cratestack_builder)
+    if: github.event_name == 'push'
+    # Depends on the annotations publish, not just `prepare` — see the block
+    # comment above for why the order matters on a version-bumping release.
+    needs: [prepare, publish-pubdev-annotations]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - name: Assert the OIDC token endpoint is available
+        run: |
+          set -euo pipefail
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
+            echo "::error::OIDC token endpoint unavailable — the job is missing 'permissions: id-token: write'. dart pub publish would fall back to interactive OAuth and hang." >&2
+            exit 1
+          fi
+          echo "✓ OIDC token endpoint present"
+      - uses: dart-lang/setup-dart@v1
+      - name: Publish cratestack_builder to pub.dev
+        working-directory: dart-packages/cratestack_builder
+        run: |
+          set -euo pipefail
+          if ! timeout 600 dart pub publish --force; then
+            status=$?
+            if [ "$status" -eq 124 ]; then
+              echo "::error::dart pub publish timed out after 10 minutes — it fell back to interactive OAuth, meaning no OIDC credential was configured. Check IN THIS ORDER: (1) the 'dart-lang/setup-dart' step immediately above is still present and still adjacent to this step; (2) 'permissions: id-token: write' on this job; (3) pub.dev -> cratestack_builder -> Admin -> Automated publishing, repository '${{ github.repository }}', tag pattern matching '${{ github.ref_name }}'." >&2
+            fi
+            exit "$status"
+          fi
+      - name: Verify pub.dev actually received the version
+        run: |
+          set -euo pipefail
+          want="$(grep -m1 '^version:' dart-packages/cratestack_builder/pubspec.yaml | awk '{print $2}')"
+          echo "expecting cratestack_builder ${want} on pub.dev"
+          for attempt in $(seq 1 20); do
+            got="$(curl -fsSL "https://pub.dev/api/packages/cratestack_builder" 2>/dev/null \
+                   | python3 -c 'import json,sys; print(json.load(sys.stdin)["latest"]["version"])' 2>/dev/null || true)"
+            if [ "$got" = "$want" ]; then
+              echo "✓ pub.dev serves cratestack_builder ${got}"
+              exit 0
+            fi
+            echo "  attempt ${attempt}/20: pub.dev latest is '${got:-unknown}', waiting..."
+            sleep 30
+          done
+          echo "::error::pub.dev does not serve cratestack_builder ${want} after 10 minutes. The publish step exited 0, but that proves nothing — dart pub publish exits 0 even when authentication fails (observed on v0.8.2). Read the publish step's output for 'Authentication failed!' or 'Invalid JWT token'." >&2
+          exit 1
+
   # ---- cratestack_cbor (pub.dev, cratestack#563) --------------------------
   # The third registry this workflow publishes to, after crates.io and npm.
   # `dart-packages/cratestack_cbor` vendors prebuilt native/wasm binaries
