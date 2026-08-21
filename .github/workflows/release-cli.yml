@@ -932,8 +932,12 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.tag }}
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      # Same reason as ci.yml's `cratestack-cbor-macos` job — see that step's
+      # comment. `with: targets:` on the action targets `stable`, but
+      # rust-toolchain.toml pins 1.95.0, so the cross-target must be added by
+      # a RUN step inside the checkout or the x86_64 leg fails E0463.
+      - name: Add both Darwin targets (to the pinned toolchain, not stable)
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: release-pubdev-cbor-macos

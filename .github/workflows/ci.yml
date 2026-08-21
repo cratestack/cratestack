@@ -1190,8 +1190,17 @@ jobs:
       # turn via two `cbor-vendor-lib` calls, both against this same
       # toolchain.
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      # NOTE: deliberately NOT `with: targets: …` on the action above. That
+      # input installs targets for the toolchain the ACTION resolves
+      # (`stable`), but this repo's `rust-toolchain.toml` pins the channel to
+      # 1.95.0 — so every `cargo build` here runs under 1.95.0, which would
+      # still have no Darwin cross-target and fails with
+      # `error[E0463]: can't find crate for 'core'` on the x86_64 leg.
+      # Observed for real on PR #685's first run. `rustup target add` as a
+      # RUN step executes inside the checkout, where the toolchain file
+      # applies, so it adds to 1.95.0 — which is the toolchain that matters.
+      - name: Add both Darwin targets (to the pinned toolchain, not stable)
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
