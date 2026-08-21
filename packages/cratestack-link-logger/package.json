@@ -1,6 +1,6 @@
 {
   "name": "@cratestack/link-logger",
-  "version": "0.8.5",
+  "version": "0.8.6",
   "description": "A small reference RpcLink for CrateStack's generated TypeScript RPC client that logs each call's op id, outcome, and duration.",
   "license": "MIT",
   "repository": {
@@ -38,7 +38,7 @@
     "lint": "biome check ."
   },
   "dependencies": {
-    "@cratestack/ts-types": "0.8.5"
+    "@cratestack/ts-types": "0.8.6"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

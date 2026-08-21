@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.8.6 (2026-08-21)
+
+<!-- TODO: edit this section from the seed below -->
+<!-- seeded from v0.8.5..HEAD at c5de7571f769d3c8345567ad4e378183c8be6e88 -->
+
+This is an auto-generated seed. Please rewrite into narrative prose describing
+the changes in this release, grouped by concern. Refer to existing entries in
+this file for the house prose style. Do not commit with this placeholder text.
+
+### Changes
+
+#### Features
+
+- thread If-Match through generated update/delete, surface ETag on reads (#610) (#671)
+- support required-enum-field literal comparisons in read policies (#666) (#676)
+- add cratestack_annotations + cratestack_builder packages (#668 phase 1) (#672)
+
+#### Fixes
+
+- seed and check changelogs from a declared list, not a hardcoded path (#669)
+- encode serde_json::Value::Null as CBOR null on POST /rpc/batch (#657) (#675)
+- re-fence invoke_with_db's illustrative doc example so `-- --ignored` can't force-compile it (#611) (#681)
+- omit untouched update-input fields from the wire, every arity, both clients (#663) (#673)
+- bring the two new Dart packages into version lockstep at 0.8.5 (#674)
+
+#### Documentation
+
+- consolidated 0.8.5 entries for today's merged batch (#680)
+
+#### Chores
+
+- resolve cratestack_builder against the published annotations package (#678)
+
+#### CI
+
+- publish cratestack_annotations + cratestack_builder on tag push (#682)
+
 ## 0.8.5 (2026-08-21)
 
 ### Protobuf/gRPC support removed — breaking (ADR 0017)
