@@ -6,6 +6,8 @@
 
 use serde::Serialize;
 
+use crate::patch_touch::patch_touch_fields;
+
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct FieldView {
     pub(crate) identifier: String,
@@ -87,9 +89,21 @@ pub(crate) struct FieldView {
     /// builder-name-collision check), so this name can never collide with
     /// another generated member.
     pub(crate) add_setter: String,
+    /// Whether this field is a `Patch`-kind field on a nullable
+    /// (`TypeArity::Optional`) column — the one case where a `null` on the
+    /// wire is genuinely ambiguous between "untouched" and "explicitly
+    /// cleared" (cratestack#663). See `crate::patch_touch`'s module doc for
+    /// the full rationale.
+    pub(crate) is_nullable_patch_field: bool,
+    /// `{identifier}IsSet` — see `crate::patch_touch`.
+    pub(crate) touch_flag_identifier: String,
+    /// The `toWire()` map-literal guard for this field — see
+    /// `crate::patch_touch`.
+    pub(crate) wire_write_condition: Option<String>,
 }
 
 impl FieldView {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         identifier: String,
         wire_name: String,
@@ -97,6 +111,7 @@ impl FieldView {
         required: bool,
         is_list: bool,
         is_patch: bool,
+        is_optional: bool,
         from_wire_expr: String,
         to_wire_expr: String,
     ) -> Self {
@@ -123,6 +138,7 @@ impl FieldView {
         } else {
             String::new()
         };
+        let patch_touch = patch_touch_fields(&identifier, is_patch, is_optional);
         FieldView {
             identifier,
             wire_name,
@@ -138,6 +154,9 @@ impl FieldView {
             list_needs_default,
             list_elem_type,
             add_setter,
+            is_nullable_patch_field: patch_touch.is_nullable_patch_field,
+            touch_flag_identifier: patch_touch.touch_flag_identifier,
+            wire_write_condition: patch_touch.wire_write_condition,
         }
     }
 }

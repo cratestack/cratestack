@@ -29,6 +29,17 @@
 //! `client_update_omits_untouched_nullable_field_on_the_wire` below
 //! proves that half directly.
 //!
+//! cratestack#663 closes the one arity that fix missed: `struct_field_
+//! definition`'s match had arms for `TypeArity::Optional` (above) and
+//! `TypeArity::List` (#662), but `TypeArity::Required` fell through to the
+//! empty `else` — no `skip_serializing_if` at all — so an untouched
+//! `Required`-arity field (`name` in this fixture) still serialized as
+//! `"name":null`. `client_update_omits_untouched_required_arity_field_on_
+//! the_wire` proves that's fixed; unlike `note`, `name` has no inner
+//! "clear" state to preserve (a `NOT NULL` column can't be explicitly
+//! cleared), so its fix is a plain `skip_serializing_if`, no double-`Option`
+//! needed.
+//!
 //! Skips quietly when neither `CRATESTACK_TEST_DATABASE_URL` nor
 //! `CRATESTACK_USE_TESTCONTAINERS` is set (see `tests/support/pg.rs`).
 
@@ -354,5 +365,30 @@ fn client_update_omits_untouched_nullable_field_on_the_wire() {
     assert!(
         json.contains("\"note\":\"hi\""),
         "a genuine new value must serialize as that value: {json}"
+    );
+}
+
+// ───── #6 cratestack#663: an untouched `Required`-arity field is ALSO
+// omitted from the wire, not just `Optional`-arity ones ────────────────────
+
+#[test]
+fn client_update_omits_untouched_required_arity_field_on_the_wire() {
+    // `name` is `Required` arity (a `NOT NULL` column, single-layer
+    // `Option<T>` on the patch struct — no inner "clear" state at all).
+    // Before cratestack#663's fix, `struct_field_definition`'s match had no
+    // arm for `TypeArity::Required` at all — it fell through to the empty
+    // `else`, carrying no `skip_serializing_if` — so an untouched `name`
+    // serialized as `"name":null`, the same shape #567 fixed for
+    // `Optional`-arity fields. `note` here is genuinely touched (set to a
+    // real value) so the request isn't vacuous.
+    let input = UpdatePatchClearTargetInput {
+        name: None,
+        note: Some(Some("hi".to_owned())),
+    };
+    let json = serde_json::to_string(&input).expect("serialize update input");
+    assert!(
+        !json.contains("name"),
+        "an untouched Required-arity field must be omitted from the wire, \
+         not sent as `null`, matching Optional-arity fields: {json}"
     );
 }

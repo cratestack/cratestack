@@ -1,7 +1,7 @@
 class {{ data_class.name }}Builder {
 {% for field in data_class.fields %}
   {{ field.builder_backing_type }} _{{ field.identifier }};
-{% if field.builder_required %}
+{% if field.builder_required or field.is_nullable_patch_field %}
   bool _{{ field.identifier }}Set = false;
 {% endif %}
 {% endfor %}
@@ -9,7 +9,7 @@ class {{ data_class.name }}Builder {
 {% for field in data_class.fields %}
   {{ data_class.name }}Builder {{ field.builder_setter }}({{ field.dart_type }} value) {
     _{{ field.identifier }} = value;
-{% if field.builder_required %}
+{% if field.builder_required or field.is_nullable_patch_field %}
     _{{ field.identifier }}Set = true;
 {% endif %}
     return this;
@@ -27,6 +27,9 @@ class {{ data_class.name }}Builder {
     return {{ data_class.name }}(
 {% for field in data_class.fields %}
       {{ field.identifier }}: {% if field.builder_required %}_{{ field.identifier }}Set ? {% if field.builder_cast_needed %}(_{{ field.identifier }} as {{ field.dart_type }}){% else %}_{{ field.identifier }}{% endif %} : (throw StateError('{{ data_class.name }}.{{ field.identifier }} is required but was not set')){% elif field.list_needs_default %}_{{ field.identifier }} ?? <{{ field.list_elem_type }}>[]{% else %}_{{ field.identifier }}{% endif %},
+{% if field.is_nullable_patch_field %}
+      {{ field.touch_flag_identifier }}: _{{ field.identifier }}Set,
+{% endif %}
 {% endfor %}
     );
   }

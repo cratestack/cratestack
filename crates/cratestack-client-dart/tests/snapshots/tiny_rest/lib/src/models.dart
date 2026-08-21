@@ -528,22 +528,36 @@ class UpdateWidgetInput {
   const UpdateWidgetInput({
 this.name,
 this.weight,
+    this.weightIsSet = false,
   });
 
   final String? name;
   final int? weight;
+  // Outer "did the caller touch this field" flag, alongside
+  // `weight`'s own value (the inner "new value, or `null`
+  // to clear") — the Dart analogue of the generated Rust client's
+  // `Option<Option<T>>` for this nullable-column field (cratestack#663).
+  // Only meaningful when `weight == null`: `false` there
+  // means untouched (stays off the wire), `true` means an explicit clear
+  // (serializes as `null`). A non-null `weight` always
+  // serializes regardless of this flag — the plain `const` constructor is
+  // public, so `UpdateWidgetInput(weight: value)`
+  // (bypassing the builder, which is the only thing that otherwise sets
+  // this flag) must still put a caller-supplied value on the wire.
+  final bool weightIsSet;
 
   factory UpdateWidgetInput.fromWire(CratestackValueMap value) {
     return UpdateWidgetInput(
       name: value['name'] == null ? null : value['name'] as String,
       weight: value['weight'] == null ? null : (value['weight'] as num).toInt(),
+      weightIsSet: value.containsKey('weight'),
     );
   }
 
   CratestackValueMap toWire() {
     return <String, Object?>{
-      'name': name,
-      'weight': weight,
+      if (name != null) 'name': name,
+      if (weightIsSet || weight != null) 'weight': weight,
     };
   }
 }
@@ -551,6 +565,7 @@ this.weight,
 class UpdateWidgetInputBuilder {
   String? _name;
   int? _weight;
+  bool _weightSet = false;
 
   UpdateWidgetInputBuilder name(String? value) {
     _name = value;
@@ -559,6 +574,7 @@ class UpdateWidgetInputBuilder {
 
   UpdateWidgetInputBuilder weight(int? value) {
     _weight = value;
+    _weightSet = true;
     return this;
   }
 
@@ -566,6 +582,7 @@ class UpdateWidgetInputBuilder {
     return UpdateWidgetInput(
       name: _name,
       weight: _weight,
+      weightIsSet: _weightSet,
     );
   }
 }

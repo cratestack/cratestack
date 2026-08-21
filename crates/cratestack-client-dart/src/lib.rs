@@ -8,6 +8,7 @@ mod find_many_views;
 mod generator;
 mod idents;
 mod naming;
+mod patch_touch;
 mod riverpod;
 mod templates;
 mod templates_fragments;

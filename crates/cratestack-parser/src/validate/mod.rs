@@ -7,6 +7,7 @@ mod mixins_types;
 mod model_attributes;
 mod model_relation;
 mod models;
+mod patch_touch_flag_collisions;
 mod procedure_idents;
 mod procedures;
 mod removed_attributes;

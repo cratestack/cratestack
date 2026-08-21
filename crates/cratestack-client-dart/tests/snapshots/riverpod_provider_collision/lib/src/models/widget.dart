@@ -204,7 +204,7 @@ this.name,
 
   CratestackValueMap toWire() {
     return <String, Object?>{
-      'name': name,
+      if (name != null) 'name': name,
     };
   }
 }

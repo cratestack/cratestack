@@ -204,7 +204,7 @@ this.label,
 
   CratestackValueMap toWire() {
     return <String, Object?>{
-      'label': label,
+      if (label != null) 'label': label,
     };
   }
 }

@@ -14,6 +14,12 @@
 //! `cratestack_macros::model::inputs` functions the server schema does
 //! (see `include/server/collect/models.rs` and `include/embedded.rs`), so
 //! this is independent proof the fix isn't `include_server_schema!`-only.
+//!
+//! cratestack#663 closes the one arity #567 missed: an untouched
+//! `Required`-arity field (`name`) had no `skip_serializing_if` at all and
+//! still serialized as `"name":null` — see
+//! `client_update_omits_untouched_required_arity_field_on_the_wire` below,
+//! and the PG counterpart's module doc for the full write-up.
 
 use cratestack::RusqliteRuntime;
 use cratestack::include_embedded_schema;
@@ -178,5 +184,30 @@ fn client_update_omits_untouched_nullable_field_on_the_wire() {
     assert!(
         !json.contains("note"),
         "an untouched nullable field must be omitted from the wire, not sent as null: {json}"
+    );
+}
+
+// ───── #6 cratestack#663: an untouched `Required`-arity field is ALSO
+// omitted from the wire, not just `Optional`-arity ones ────────────────────
+
+#[test]
+fn client_update_omits_untouched_required_arity_field_on_the_wire() {
+    // `name` is `Required` arity (a `NOT NULL` column, single-layer
+    // `Option<T>` on the patch struct — no inner "clear" state at all).
+    // Before cratestack#663's fix, `struct_field_definition`'s match had no
+    // arm for `TypeArity::Required` at all — it fell through to the empty
+    // `else`, carrying no `skip_serializing_if` — so an untouched `name`
+    // serialized as `"name":null`, the same shape #567 fixed for
+    // `Optional`-arity fields. `note` here is genuinely touched (set to a
+    // real value) so the request isn't vacuous.
+    let input = UpdatePatchClearTargetInput {
+        name: None,
+        note: Some(Some("hi".to_owned())),
+    };
+    let json = serde_json::to_string(&input).expect("serialize update input");
+    assert!(
+        !json.contains("name"),
+        "an untouched Required-arity field must be omitted from the wire, \
+         not sent as `null`, matching Optional-arity fields: {json}"
     );
 }

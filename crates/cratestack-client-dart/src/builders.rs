@@ -61,6 +61,7 @@ pub(crate) fn build_data_class(
                     && matches!(field.ty.arity, TypeArity::Required | TypeArity::List),
                 emits_append_setter(field, kind, model_names),
                 matches!(kind, DataClassKind::Patch),
+                matches!(field.ty.arity, TypeArity::Optional),
                 decode_value_expr(
                     &format!("value['{}']", field.name),
                     &field.ty,

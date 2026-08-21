@@ -417,12 +417,29 @@ class {{ data_class.name }} {
   const {{ data_class.name }}({
 {% for field in data_class.fields %}
     {% if field.required %}required {% endif %}this.{{ field.identifier }},
+{% if field.is_nullable_patch_field %}
+    this.{{ field.touch_flag_identifier }} = false,
+{% endif %}
 {% endfor %}
   });
 {% endif %}
 
 {% for field in data_class.fields %}
   final {{ field.dart_type }} {{ field.identifier }};
+{% if field.is_nullable_patch_field %}
+  // Outer "did the caller touch this field" flag, alongside
+  // `{{ field.identifier }}`'s own value (the inner "new value, or `null`
+  // to clear") — the Dart analogue of the generated Rust client's
+  // `Option<Option<T>>` for this nullable-column field (cratestack#663).
+  // Only meaningful when `{{ field.identifier }} == null`: `false` there
+  // means untouched (stays off the wire), `true` means an explicit clear
+  // (serializes as `null`). A non-null `{{ field.identifier }}` always
+  // serializes regardless of this flag — the plain `const` constructor is
+  // public, so `{{ data_class.name }}({{ field.identifier }}: value)`
+  // (bypassing the builder, which is the only thing that otherwise sets
+  // this flag) must still put a caller-supplied value on the wire.
+  final bool {{ field.touch_flag_identifier }};
+{% endif %}
 {% endfor %}
 {% if data_class.has_fields %}
 
@@ -431,6 +448,9 @@ class {{ data_class.name }} {
     return {{ data_class.name }}(
 {% for field in data_class.fields %}
       {{ field.identifier }}: {{ field.from_wire_expr }},
+{% if field.is_nullable_patch_field %}
+      {{ field.touch_flag_identifier }}: value.containsKey('{{ field.wire_name }}'),
+{% endif %}
 {% endfor %}
     );
   }
@@ -438,7 +458,11 @@ class {{ data_class.name }} {
   CratestackValueMap toWire() {
     return <String, Object?>{
 {% for field in data_class.fields %}
+{% if field.wire_write_condition %}
+      if ({{ field.wire_write_condition }}) '{{ field.wire_name }}': {{ field.to_wire_expr }},
+{% else %}
       '{{ field.wire_name }}': {{ field.to_wire_expr }},
+{% endif %}
 {% endfor %}
     };
   }
