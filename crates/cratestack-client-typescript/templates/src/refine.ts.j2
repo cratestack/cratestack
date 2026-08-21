@@ -36,7 +36,21 @@ export function cratestackRefineResources(client: {{ client_class_name }}): {{ r
     "{{ resource.accessor }}": {
       api: client.{{ resource.accessor }},
       primaryKey: "{{ resource.primary_key }}",
-      paged: {{ resource.paged }},
+{# `resource.paged` is a Rust `bool`; minijinja's `{{ }}` renders a bare
+   `Value::Bool` via Jinja2/Python's own str(bool) convention ("True"/
+   "False", capitalized — confirmed in minijinja's own `Display` impl for
+   `ValueRepr::Bool`), NOT Rust's/JS's lowercase "true"/"false". That is a
+   real behavioral difference between minijinja 2.20 (lowercase, matching
+   Rust's native `bool::fmt`) and 2.24 (capitalized, Python-style) — this
+   workspace's `Cargo.toml` pins `minijinja = "2"` (an unpinned floating
+   range), so a routine in-range dependency bump silently flips which one
+   a build gets. A bare `{{ resource.paged }}` here emitted invalid
+   TypeScript (`Cannot find name 'True'/'False'`) the moment that
+   happened. Render the literal explicitly instead of trusting minijinja's
+   `Display` for a bool in a JS/TS literal position — a real, permanent
+   fix, not just a version pin, since nothing else in this template family
+   should assume Display's exact string form for a bool either. #}
+      paged: {% if resource.paged %}true{% else %}false{% endif %},
 {% if resource.version_field %}
       versionField: "{{ resource.version_field }}",
 {% endif %}
