@@ -23,6 +23,19 @@
 //! `TypeArity::List` arm in `crates/cratestack-macros/src/model/
 //! struct_only/field_definition.rs`), so a plain `{identifier} != null`
 //! wire-write condition is already correct for them.
+//!
+//! A nullable-column field's own `wire_write_condition` is **not** just
+//! `{identifier}IsSet`, even though that flag alone looks sufficient: the
+//! generated constructor is a plain, public, non-builder-only `const`
+//! constructor, so `UpdateWidgetInput(weight: 5)` — direct construction,
+//! bypassing the builder entirely — is ordinary, idiomatic Dart, and it
+//! leaves `weightIsSet` at its default `false`. Guarding on `weightIsSet`
+//! alone would silently drop that caller-supplied value off the wire
+//! (cratestack#663 review). The condition is `{identifier}IsSet ||
+//! {identifier} != null`: a non-null value can only mean "write this",
+//! regardless of which constructor path set it, and "untouched" is by
+//! definition `{identifier} == null`, so the added disjunct can never
+//! misfire for the untouched case.
 
 /// The three [`crate::field_view::FieldView`] fields this module computes,
 /// bundled so [`crate::field_view::FieldView::new`] can destructure the
@@ -54,7 +67,19 @@ pub(crate) fn patch_touch_fields(
     let wire_write_condition = if !is_patch {
         None
     } else if is_nullable_patch_field {
-        Some(touch_flag_identifier.clone())
+        // `{field}IsSet` alone isn't enough: `Update{Model}Input`'s
+        // constructor is public and plain (not builder-only), so
+        // `UpdateWidgetInput(weight: 5)` — direct construction, no builder
+        // involved — is a legitimate, idiomatic way to build one, and it
+        // leaves `weightIsSet` at its default `false`. A guard of just
+        // `weightIsSet` would silently drop that caller-supplied value off
+        // the wire. `weight != null` closes that gap: a non-null value can
+        // only mean "the caller wants this written", regardless of which
+        // constructor path produced it, and it can never fire for the
+        // "untouched" state (untouched is defined as `weight == null`), so
+        // it can't resurrect the "untouched sent as null" bug this whole
+        // feature exists to fix.
+        Some(format!("{touch_flag_identifier} || {identifier} != null"))
     } else {
         Some(format!("{identifier} != null"))
     };

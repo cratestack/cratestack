@@ -19,6 +19,12 @@
 //   5. `UpdateGadgetInput.fromWire` round-trips all three states back
 //      through `noteIsSet`/`note`, so a decoded "untouched" input
 //      re-encodes to the same absent-key wire shape (not a `null`).
+//   6. a nullable field set to a real value via DIRECT construction
+//      (`UpdateGadgetInput(note: 'x')`, not the builder) still puts it
+//      on the wire, even though `noteIsSet` defaults to `false` — the
+//      constructor is public and plain, so this is not a builder-only
+//      guarantee (cratestack#663 review round: `noteIsSet` alone was an
+//      insufficient wire-write guard and silently dropped this case).
 //
 // `just verify-dart` copies this into the `builder_edge_cases` fixture's
 // generated `default`-preset package (library name `dart_verify_
@@ -63,6 +69,24 @@ void main() {
     expect(patch.noteIsSet, isFalse);
     expect(patch.toWire().containsKey('note'), isFalse);
   });
+
+  test(
+    'calling the direct constructor WITH a non-null note value still puts it on the wire, '
+    'even though noteIsSet defaults to false (cratestack#663 review fix — the plain public '
+    'const constructor is a legitimate way to build this class, not just the builder, and a '
+    'caller-supplied value must never be silently dropped)',
+    () {
+      const patch = UpdateGadgetInput(builder: 'renamed', note: 'set directly');
+      // The bug this test guards: before the fix, `toWire()` guarded on
+      // `noteIsSet` alone, which only the builder or `fromWire` ever set —
+      // a direct-construction caller who passed a real value here had it
+      // silently dropped, with no error.
+      expect(patch.noteIsSet, isFalse);
+      final wire = patch.toWire();
+      expect(wire.containsKey('note'), isTrue);
+      expect(wire['note'], 'set directly');
+    },
+  );
 
   test('fromWire round-trips "untouched" back to an absent key', () {
     final decoded = UpdateGadgetInput.fromWire(<String, Object?>{'builder': 'renamed'});
