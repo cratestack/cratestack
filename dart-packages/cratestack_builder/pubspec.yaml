@@ -5,7 +5,7 @@ description: >-
   build_runner generator producing fluent builders for classes annotated
   with CrateStack's @CratestackBuilder. A dev dependency — the annotation
   itself lives in cratestack_annotations.
-version: 0.8.4
+version: 0.8.5
 homepage: https://cratestack.dev
 repository: https://github.com/cratestack/cratestack
 issue_tracker: https://github.com/cratestack/cratestack/issues
@@ -30,7 +30,7 @@ dependencies:
   # 3.11.0"), i.e. it parses newer syntax with older rules.
   analyzer: '>=12.0.0 <13.0.0'
   build: ^4.0.7
-  cratestack_annotations: ^0.8.4
+  cratestack_annotations: ^0.8.5
   source_gen: ^4.0.0
 
 dev_dependencies:
