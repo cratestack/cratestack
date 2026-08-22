@@ -1333,6 +1333,25 @@ jobs:
   # `pubspec.yaml`'s `flutter: assets:` declaration is unconditional, and
   # Flutter has no per-platform asset conditionals, so a missing wasm pair
   # fails an iOS build too.
+  #
+  # THE SIMULATOR RUN IS A BLOCKING GATE — a maintainer decision, recorded
+  # here because it is the obvious thing to weaken the first time it flakes.
+  # It boots a simulator, installs, launches, and reads the marker back out
+  # of the device log, which is more moving parts than any other platform's
+  # verification (the desktop jobs just grep a process's stdout). It was
+  # nonetheless kept blocking because every platform on cratestack#563 has
+  # met the same bar — the artifact is INSIDE the built bundle AND a real
+  # running app round-trips the shared fixture — and iOS shipping on a
+  # weaker bar than Linux, Android, Windows and macOS would make the
+  # platform claim mean something different from the others.
+  #
+  # Contrast `cbor-example-verify-android-emulator`, which is deliberately
+  # local-only: that recipe was excluded from CI on cost/flake grounds, and
+  # the Android job asserts APK contents instead. If the simulator turns out
+  # to be flaky in the same way, THAT is the shape to fall back to — assert
+  # bundle contents in CI, move the run to a local recipe — and it should be
+  # a deliberate change with the same reasoning written down, not a quiet
+  # `continue-on-error:` added to this step.
   cratestack-cbor-ios:
     name: flutter (cratestack_cbor ios — real build, xcframework + round-trip proof)
     runs-on: macos-latest
