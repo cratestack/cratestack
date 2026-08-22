@@ -353,9 +353,12 @@ Five jobs in `.github/workflows/ci.yml`:
   `binaryen`, then `just cbor-vendor-glue` + `just cbor-vendor-macos` (builds both Darwin arches,
   `lipo`s them into one universal binary, assembles a versioned `.framework`, then an `.xcframework` —
   see that recipe's own comment) + `just cbor-vendor-web`, followed by `just cbor-example-verify-macos`
-  — a real `flutter build macos`, an assertion the vendored xcframework landed inside the built `.app`'s
-  `Contents/Frameworks/`, a `lipo -info` check that both arches are actually present in the embedded
-  binary, and a round-trip proof from the running app's captured stdout. Also this repo's toolchain's
+  — which first **deletes the unpacked xcframework**, so the build is forced through the same
+  `prepare_command`-unpacks-the-zip path a pub.dev consumer takes (see "The macOS framework ships
+  zipped" in `dart-publishing.md`), then a real `flutter build macos`, an assertion the vendored
+  xcframework landed inside the built `.app`'s `Contents/Frameworks/`, an assertion the reconstructed
+  framework still has its symlinks, a `lipo -info` check that both arches are actually present in the
+  embedded binary, and a round-trip proof from the running app's captured stdout. Also this repo's toolchain's
   first-ever real execution of anything macOS-targeted; the exact command sequence was validated once
   already, on a throwaway spike branch (`spike/cbor-macos-xcframework`,
   `.github/workflows/spike-cbor-macos.yml`) kept around for reference, before being turned into the real
@@ -400,8 +403,12 @@ dart-packages/cratestack_cbor/
 │   └── CMakeLists.txt      # Flutter FFI-plugin build file — bundles the vendored .dll
 ├── macos/
 │   ├── cratestack_cbor.podspec   # Flutter FFI-plugin build file — CocoaPods vendored_frameworks
+│   │                               # + prepare_command, which unpacks the zip below at pod-install time
 │   └── Frameworks/               # GENERATED universal xcframework (gitignored, NOT under blobs/ —
-│                                   # see the podspec's own header comment for why)
+│                                   # see the podspec's own header comment for why), plus the
+│                                   # .xcframework.zip that is what ACTUALLY ships: pub dereferences
+│                                   # symlinks and a symlink-less macOS framework fails codesign, so
+│                                   # .pubignore excludes the directory and ships the zip instead
 ├── android/
 │   ├── build.gradle        # Flutter FFI-plugin build file — packages blobs/android/<abi>/*.so via jniLibs
 │   └── src/main/AndroidManifest.xml

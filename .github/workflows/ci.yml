@@ -966,101 +966,6 @@ jobs:
       - name: flutter build apk + assert vendored library present per ABI
         run: just cbor-example-verify-android
 
-  # ---- cratestack_cbor Windows platform (cratestack#563 platform-matrix
-  # slice) ------------------------------------------------------------------
-  # Blocking, but this is the FIRST run of this job — this repo's own dev
-  # toolchain is Linux-only (see CLAUDE.md's Linux prerequisite note), so
-  # none of `cargo build --target x86_64-pc-windows-msvc`, `flutter build
-  # windows`, or "does `just` actually resolve `bash` on `windows-latest`"
-  # could be exercised before this landed. Treat a first red run here as
-  # expected troubleshooting, not a surprise.
-  #
-  # NOT `just cbor-vendor-native`: that recipe hardcodes a
-  # `x86_64-unknown-linux-gnu` build as half of what it does (glue, then the
-  # Linux library), which cannot link on a Windows host. This job instead
-  # calls `cbor-vendor-glue` directly, then `cbor-vendor-lib windows-x64` —
-  # the same two-recipe composition `cbor-vendor-native` itself is built
-  # from, just paired with the Windows half instead of the Linux one.
-  #
-  # `cbor-vendor-glue` IS REQUIRED here, and running it is NOT optional —
-  # verified directly, not assumed: `crates/cratestack-client-flutter/
-  # .gitignore` excludes `src/frb_generated.rs` from git (confirmed via
-  # `git check-ignore -v` and `git ls-files`), and that file backs an
-  # unconditional `mod frb_generated;` (gated `#[cfg(feature =
-  # "frb-glue")]`, but this job builds with exactly that feature). A fresh
-  # checkout does not have it, so `cbor-vendor-lib windows-x64`'s `cargo
-  # build --features frb-glue` fails outright without it — confirmed
-  # against a real E0583 on a sibling macOS CI spike hitting the identical
-  # gap, not platform-specific to that OS. (The DART half of the glue,
-  # `dart-packages/cratestack_cbor/lib/src/native/rust/`, is ALSO
-  # gitignored and ALSO not present on a fresh checkout — both halves come
-  # out of the one `flutter_rust_bridge_codegen generate` invocation
-  # `cbor-vendor-glue` wraps, so there was never a way to get the Rust half
-  # here without also regenerating the Dart half.)
-  #
-  # TENSION, flagged rather than resolved here — a maintainer decision, not
-  # picked unilaterally: `cbor-vendor-glue`'s own doc comment states "the
-  # frb codegen half. Linux-only, run once" and frames `cbor-vendor-native`
-  # as what keeps three OSes from each "regenerating and overwriting the
-  # same committed glue with potentially divergent codegen output." That
-  # framing does not hold once a second/third platform each need the RUST
-  # half of that same glue to build their own native library — as this job
-  # and the (still-pending) macOS job both do. In CI nothing is actually
-  # git-committed (both halves are gitignored, verified above), so running
-  # `cbor-vendor-glue` redundantly per-OS is harmless *today* — each job's
-  # own regenerated copy only has to agree with what that same job's own
-  # subsequent build/test steps use, not with any other job's copy. But it
-  # does mean "run once" is aspirational, not actually achievable as
-  # currently phrased, the moment more than one platform builds the native
-  # library. Options, not chosen here:
-  #   (a) keep regenerating per-OS everywhere (what this job does) and add
-  #       a determinism gate — e.g. a `git diff --exit-code` style check
-  #       comparing the Dart glue this job regenerates against what the
-  #       Linux job (`cratestack-cbor-package`) regenerates, to at least
-  #       catch codegen output actually diverging by OS, which today
-  #       nothing asserts;
-  #   (b) split `cbor-vendor-glue` further into a Rust-only half (needed by
-  #       every platform-library job) and a Dart-only half (needed once,
-  #       by whichever job's output actually gets used/committed/shipped);
-  #   (c) commit `frb_generated.rs` (and/or the Dart glue) for real, ending
-  #       the "generated in CI, not committed" decision this ticket
-  #       inherited rather than reopening it here.
-  # Not resolved in this slice — flagged for a maintainer call.
-  #
-  # Also vendors the web artifact for the same reason `cratestack-cbor-
-  # android` does (see that job's own comment): `pubspec.yaml`'s `flutter:
-  # assets:` declaration is unconditional, and Flutter has no per-platform
-  # asset conditionals, so a missing wasm pair fails a Windows build too.
-  #
-  # UNVERIFIED FROM THIS (Linux) DEV MACHINE, flagged rather than assumed —
-  # first real test is this job actually running on `windows-latest`:
-  #   - Whether `cbor-vendor-glue` itself runs cleanly here at all: its
-  #     `#!/usr/bin/env bash` shebang recipe body (i) needs `bash` (see
-  #     below), (ii) shells out to `flutter_rust_bridge_codegen` (a
-  #     prebuilt-per-platform Rust binary — presumed to have a Windows
-  #     build since `cargo install` is what fetches/builds it, but not
-  #     independently confirmed here), and (iii) best-effort formats the
-  #     freshly generated Dart output with `dart format` if `dart` is on
-  #     PATH — `dart` should be, from `subosito/flutter-action` earlier in
-  #     this job, but that ordering has not been exercised on Windows
-  #     either.
-  #   - `bash` resolving at all: this job's `just <recipe>` steps below
-  #     have no bash-specific syntax in the YAML `run:` block itself (a
-  #     single command, executed fine under the runner's default `pwsh`),
-  #     but `just` then shells into `bash` internally for every recipe body
-  #     per this justfile's global `set shell := ["bash", ...]` — so `bash`
-  #     resolving via Git for Windows' bundled MSYS environment (which
-  #     `windows-latest` is documented to preinstall on PATH) is a hard
-  #     dependency for this entire job succeeding at all, not just one
-  #     step. Steps below with actual bash syntax in their own `run:` block
-  #     (the binaryen install) set `shell: bash` explicitly, mirroring this
-  #     repo's own existing Windows jobs (`install-cratestack-cli-smoke-
-  #     test`, `release-cli.yml`'s `build` job).
-  #   - `cbor-vendor-lib windows-x64`'s own `cargo metadata` parse
-  #     deliberately avoids `python3` (grep/sed instead — see that
-  #     recipe's comment): a standard Windows Python install typically
-  #     provides `python`/`py`, not a bare `python3` shim — also
-  #     unconfirmed from this Linux dev machine.
   # ---- shared flutter_rust_bridge glue (cratestack#563) --------------------
   # Generates the frb glue ONCE, on Linux, and hands it to the per-platform
   # jobs as an artifact. Two independent reasons, either of which alone
@@ -1139,6 +1044,48 @@ jobs:
             dart-packages/cratestack_cbor/lib/src/native/rust
           if-no-files-found: error
           retention-days: 1
+
+  # ---- cratestack_cbor Windows platform (cratestack#563 platform-matrix
+  # slice) ------------------------------------------------------------------
+  # Proves the Windows leg the same way `cratestack-cbor-android`/`-macos` do,
+  # and to the same bar: a real `flutter build windows`, an assertion that the
+  # vendored DLL is actually inside the built output, and then RUNNING the
+  # built `.exe` and matching the shared `CRATESTACK_CBOR_EXAMPLE_RESULT: OK
+  # <hex>` fixture. A build that merely compiles proves nothing — that is the
+  # failure mode this ticket exists to catch.
+  #
+  # NO frb codegen on this runner. `flutter_rust_bridge_codegen` 2.12.0 cannot
+  # run on Windows in this repo's layout at all (mixed separators compared
+  # against a canonicalized UNC base dir — see the `cbor-glue` job header for
+  # the verbatim error), so the glue arrives prebuilt from `cbor-glue` as an
+  # artifact and this job asserts it restored before building. Do not "fix"
+  # this by adding a `just cbor-vendor-glue` step here; it cannot work.
+  #
+  # NOT `just cbor-vendor-native` either: that recipe hardcodes a
+  # `x86_64-unknown-linux-gnu` build as half of what it does, which cannot
+  # link on a Windows host. This job calls `cbor-vendor-lib windows-x64`
+  # directly — the same per-platform half `cbor-vendor-native` composes with
+  # the Linux one.
+  #
+  # Also vendors the web artifact for the same reason `cratestack-cbor-
+  # android`/`-macos` do (see those jobs' comments): `pubspec.yaml`'s
+  # `flutter: assets:` declaration is unconditional and Flutter has no
+  # per-platform asset conditionals, so a missing wasm pair fails a Windows
+  # build too.
+  #
+  # VERIFIED by real green runs — these all started as flagged guesses from a
+  # Linux-only dev machine and are now settled. Do NOT re-flag them as
+  # unknowns:
+  #   - `bash` resolves on `windows-latest` (Git for Windows' bundled MSYS),
+  #     which this justfile's global `set shell := ["bash", ...]` needs for
+  #     EVERY recipe body, not just this job's.
+  #   - `cbor-vendor-lib windows-x64`'s `cargo metadata` parse works without
+  #     `python3` (grep/sed, incl. the JSON `\\` -> `\` un-escaping for real
+  #     Windows paths — see that recipe's comment).
+  #   - `timeout` is available for `cbor-example-verify-windows`'s bounded run
+  #     of the built GUI app.
+  # Steps whose own `run:` block contains bash syntax set `shell: bash`
+  # explicitly, mirroring this repo's existing Windows jobs.
 
   cratestack-cbor-windows:
     name: flutter (cratestack_cbor windows — real build, DLL + round-trip proof)

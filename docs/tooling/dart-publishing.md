@@ -187,13 +187,14 @@ correctly-vendored package and a completely broken one can both exit 65 with "Pa
 The gate instead **counts the archive listing's own content**: `dart pub publish --dry-run`'s tree
 output must contain exactly 4 occurrences of `libcratestack_client_flutter.so` (linux-x64 +
 arm64-v8a + x86_64 + armeabi-v7a), exactly 2 of `cratestack_cbor_wasm` (`.js` + `_bg.wasm`), exactly 1
-of `cratestack_client_flutter.dll` (windows-x64), exactly 1 `CratestackCborNative.xcframework/Info.plist`
-(the manifest `xcodebuild -create-xcframework` always emits once), and at least 3 total entries under
-`CratestackCborNative.xcframework/` (its own Info.plist + the wrapped framework bundle's own
-Resources/Info.plist + the lipo'd universal binary — the macOS xcframework is a directory tree, not one
-file, so this is a structural floor rather than an exact count; see `release-cli.yml`'s own comment on
-this check for why, and its explicit note that this floor is unverified against a real
-`dart pub publish --dry-run` run and may need retargeting once one exists). Fewer than any of these
+of `cratestack_client_flutter.dll` (windows-x64), exactly 1 of
+`CratestackCborNative.xcframework.zip` (macOS), and **exactly 0** entries under
+`CratestackCborNative.xcframework/`. That last assertion is the load-bearing one: macOS ships as a
+*zip*, not as the unpacked framework, because `dart pub publish` dereferences symlinks and a macOS
+framework stripped of its symlinks fails `codesign` outright — see "The macOS framework ships zipped"
+below. An earlier version of this gate counted entries under the unpacked directory and floored at 3,
+which could never have caught the problem: dereferencing *adds* entries rather than removing them, so
+the broken shape passed a floor by definition. Fewer than any of these
 fails the job before the publish step ever runs.
 
 ### Proof the archive-verification gate can fail (and that it must exist at all)
@@ -331,18 +332,31 @@ sequenced strictly after the first real publish.
   before a real tag push is whether pub.dev's OIDC trust check itself behaves as documented once
   configured — this matches the same category of unverified step `npm-publishing.md` flags for a
   brand-new npm Trusted Publisher entry before its first real CI-triggered publish.
+- **The macOS framework ships zipped, and that is not a packaging preference.** `dart pub publish`
+  dereferences symlinks when it builds its archive. A macOS framework is a *versioned* bundle whose
+  three symlinks (`Versions/Current`, the top-level binary, `Resources`) are structural, so the
+  dereferenced result is not merely untidy — it is invalid. Measured end to end on a real Mac:
+  `dart pub publish --dry-run` lists the binary three times; `codesign` on that shape fails with
+  `bundle format is ambiguous (could be app or framework)` while the symlinked original signs and
+  verifies cleanly; and a real `flutter build macos` against it dies with
+  `Command CodeSign failed with a nonzero exit code`. No symlink-free layout escapes this — the
+  alternatives were tried and each fails somewhere else (`unsealed contents present in the root
+  directory`, `did not contain an Info.plist`, `does not use shallow bundles`). So `just
+  cbor-vendor-macos` also emits `CratestackCborNative.xcframework.zip` (zips store symlinks), the
+  package's `.pubignore` keeps the unpacked directory out of the archive, and the podspec's
+  `prepare_command` unpacks it at `pod install` time. `just cbor-example-verify-macos` deletes the
+  unpacked directory before building so every CI run proves that reconstruction path rather than the
+  directory that only ever exists on a build machine — the original defect passed a fully green CI run
+  precisely because nothing tested the published shape.
+
 - **iOS, Linux arm64** are not vendored by this job and are not claimed by the package — nothing to
   verify here; see "Platform status" above.
 - **The macOS and Windows legs (`build-cbor-macos`, `build-cbor-windows`) have not run on a real
   `macos-latest`/`windows-latest` GitHub-hosted runner as part of THIS release job** — their steps were
-  written by reading the landed `just cbor-vendor-macos`/`cbor-vendor-lib windows-x64` recipe source and
-  `ci.yml`'s existing `cratestack-cbor-windows` job, not by executing them here. In particular: whether
-  `dart pub publish`'s archiving preserves the macOS xcframework's internal symlinks
-  (`Versions/Current`, and the top-level `CratestackCborNative`/`Resources` symlinks
-  `cbor-vendor-macos` creates) is unconfirmed, and the archive-verification gate's macOS assertion
-  deliberately floors only on the 3 real (non-symlink) files it can be confident about — see that gate's
-  own comment in `release-cli.yml`. The first real test of both legs, and of whether the gate's exact
-  counts hold, is this workflow actually running on a tag push.
+  written against the landed `just cbor-vendor-macos`/`cbor-vendor-lib windows-x64` recipes and
+  `ci.yml`'s equivalent jobs, both of which do run green on real runners. The first real test of the
+  *release* legs specifically is this workflow running on a tag push. The symlink question that used to
+  sit here is no longer open — it was measured and fixed; see the next bullet.
 - **`pana`** (pub.dev's own scoring tool), if run, scores the package as it exists in this branch, not
   as pub.dev will score it after the package is live with real download/dependency history — some
   pana checks (e.g. popularity-derived signals) only stabilize post-publish.

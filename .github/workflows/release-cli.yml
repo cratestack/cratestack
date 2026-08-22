@@ -914,14 +914,21 @@ jobs:
   # podspec's header comment (collides with the `<pod_name>.framework`
   # CocoaPods itself generates under `use_frameworks!` otherwise).
   #
-  # STILL UNVERIFIED: this recipe has not actually been run on a real
-  # `macos-latest` runner as part of THIS job — only its source was read.
-  # In particular, whether `dart pub publish`'s archiving preserves the
-  # xcframework's internal symlinks (`Versions/Current`, the top-level
-  # `CratestackCborNative`/`Resources` symlinks the recipe creates) instead
-  # of silently dropping or mis-resolving them is unconfirmed — see the
-  # publish job's archive-verification gate for the load-bearing assertions
-  # this uncertainty leaves there.
+  # SETTLED, and it is why this job uploads a ZIP rather than the tree:
+  # `dart pub publish` DEREFERENCES symlinks, and a macOS framework without
+  # its symlinks fails `codesign`, taking a consumer's `flutter build macos`
+  # down with "Command CodeSign failed with a nonzero exit code". Measured
+  # on a real Mac, not inferred — see `just cbor-vendor-macos`'s header for
+  # the full set of measurements and the layouts that were ruled out.
+  #
+  # `just cbor-vendor-macos` therefore also emits
+  # `CratestackCborNative.xcframework.zip` (zips store symlinks), the
+  # package's `.pubignore` keeps the unpacked directory OUT of the archive,
+  # and the podspec's `prepare_command` unpacks the zip at pod-install time.
+  # Uploading that single zip here rather than the directory tree closes the
+  # same hole one step earlier: `actions/upload-artifact` follows symlinks,
+  # so uploading the tree would hand the publish job an already-dereferenced
+  # framework before `dart pub publish` was ever reached.
   # ---- shared flutter_rust_bridge glue for the release platform legs ------
   # Mirrors ci.yml's `cbor-glue` job — read that one's header for the full
   # reasoning. Short version: frb codegen 2.12.0 CANNOT run on Windows in
@@ -1012,10 +1019,14 @@ jobs:
           echo "✓ frb glue restored"
       - name: Vendor macOS xcframework (arm64 + x86_64, lipo'd, via cbor-vendor-macos)
         run: just cbor-vendor-macos
+      # The ZIP ONLY — not the directory beside it. See this job's header:
+      # upload-artifact follows symlinks, so uploading the unpacked
+      # xcframework would dereference it in transit. One file, nothing to
+      # dereference.
       - uses: actions/upload-artifact@v4
         with:
           name: cbor-native-macos
-          path: dart-packages/cratestack_cbor/macos/Frameworks
+          path: dart-packages/cratestack_cbor/macos/Frameworks/CratestackCborNative.xcframework.zip
           if-no-files-found: error
 
   # ---- cratestack_cbor Windows native library (cratestack#563
@@ -1280,7 +1291,7 @@ jobs:
           path: dart-packages/cratestack_cbor/blobs/windows-x64
       - name: List downloaded cross-host artifacts
         run: |
-          find dart-packages/cratestack_cbor/macos/Frameworks -type f -o -type l
+          find dart-packages/cratestack_cbor/macos/Frameworks -type f
           find dart-packages/cratestack_cbor/blobs/windows-x64 -type f
       # THE GATE (cratestack#563's explicit requirement): prove the archive
       # actually contains what was just vendored, BEFORE publishing, rather
@@ -1320,37 +1331,24 @@ jobs:
           # `build-cbor-windows` uploaded and this job downloaded into
           # blobs/windows-x64/ above.
           dll_count=$(grep -c 'cratestack_client_flutter\.dll' <<<"$dry_run_output" || true)
-          # macOS ships a `CratestackCborNative.xcframework` DIRECTORY TREE
-          # (deliberately different name from the vendored library on every
-          # other platform — see build-cbor-macos's job comment), not one
-          # bare library file, so this can't be a single exact count the
-          # way the .so/.dll checks are. Two independent, named-path
-          # assertions instead:
-          #   - the xcframework's own top-level Info.plist manifest, which
-          #     `xcodebuild -create-xcframework` always emits exactly once
-          #     regardless of how many platform slices/architectures it
-          #     wraps (a stable Apple tool convention, not specific to
-          #     however `just cbor-vendor-macos` composes it);
-          #   - at least 3 total archive entries under the xcframework path
-          #     — the justified structural floor per `cbor-vendor-macos`'s
-          #     own recipe (read, not guessed): its own top Info.plist, the
-          #     wrapped CratestackCborNative.framework bundle's own
-          #     Resources/Info.plist, and the lipo'd universal binary
-          #     itself (`Versions/A/CratestackCborNative`) — 3 real files,
-          #     plus 3 more symlinks (`Versions/Current`,
-          #     `CratestackCborNative`, `Resources`) the recipe also
-          #     creates. UNVERIFIED: whether `dart pub publish`'s archiving
-          #     preserves those symlinks as distinct listed entries, drops
-          #     them, or resolves them to their targets could not be
-          #     confirmed without running this on a real macos-latest
-          #     runner — so this assertion only floors on the 3 REAL files,
-          #     not the symlinks, to avoid a false failure either way. If a
-          #     real release run trips either check below despite a
-          #     genuinely correct vendor, retarget against the ACTUAL
-          #     `dart pub publish --dry-run` output first, rather than
-          #     deleting the gate.
-          macos_manifest_count=$(grep -c 'CratestackCborNative\.xcframework/Info\.plist' <<<"$dry_run_output" || true)
-          macos_entry_count=$(grep -c 'CratestackCborNative\.xcframework/' <<<"$dry_run_output" || true)
+          # macOS ships ONE FILE: the symlink-preserving
+          # `CratestackCborNative.xcframework.zip`. The unpacked directory
+          # is deliberately excluded by the package's `.pubignore`, because
+          # `dart pub publish` dereferences symlinks and a macOS framework
+          # stripped of its symlinks fails `codesign` — a consumer's
+          # `flutter build macos` then dies with "Command CodeSign failed".
+          # Measured on a real Mac; see `just cbor-vendor-macos`'s header.
+          #
+          # So there are two assertions here, and the NEGATIVE one is the
+          # load-bearing one. The previous version of this gate counted
+          # entries under the unpacked directory and floored at 3 — which
+          # passed happily on the broken shape, since dereferencing ADDS
+          # entries rather than removing them. Counting more is exactly what
+          # being broken looks like, so a floor could never have caught it.
+          macos_zip_count=$(grep -c 'CratestackCborNative\.xcframework\.zip' <<<"$dry_run_output" || true)
+          # Anything under `…xcframework/` means .pubignore stopped working
+          # and the raw tree is being shipped (and thus dereferenced).
+          macos_raw_count=$(grep -c 'CratestackCborNative\.xcframework/' <<<"$dry_run_output" || true)
 
           fail=0
           if [ "$so_count" -ne 4 ]; then
@@ -1365,18 +1363,18 @@ jobs:
             echo "::error::expected 1 vendored cratestack_client_flutter.dll entry in the pub.dev archive (windows-x64), found $dll_count. The build-cbor-windows -> download-artifact step above did not populate blobs/windows-x64/ — DO NOT PUBLISH." >&2
             fail=1
           fi
-          if [ "$macos_manifest_count" -ne 1 ]; then
-            echo "::error::expected exactly 1 CratestackCborNative.xcframework/Info.plist entry in the pub.dev archive, found $macos_manifest_count. The build-cbor-macos -> download-artifact step above did not populate macos/Frameworks/ — DO NOT PUBLISH." >&2
+          if [ "$macos_zip_count" -ne 1 ]; then
+            echo "::error::expected exactly 1 CratestackCborNative.xcframework.zip entry in the pub.dev archive, found $macos_zip_count. The build-cbor-macos -> download-artifact step above did not populate macos/Frameworks/ — DO NOT PUBLISH." >&2
             fail=1
           fi
-          if [ "$macos_entry_count" -lt 3 ]; then
-            echo "::error::expected at least 3 archive entries under CratestackCborNative.xcframework/ (its own Info.plist + the wrapped .framework's Resources/Info.plist + the lipo'd universal binary), found $macos_entry_count. macos/Frameworks/ looks incomplete — DO NOT PUBLISH." >&2
+          if [ "$macos_raw_count" -ne 0 ]; then
+            echo "::error::found $macos_raw_count archive entries under CratestackCborNative.xcframework/ — the UNPACKED framework is being shipped. dart pub publish dereferences symlinks, so what a consumer extracts would fail codesign and break their 'flutter build macos'. Check dart-packages/cratestack_cbor/.pubignore — DO NOT PUBLISH." >&2
             fail=1
           fi
           if [ "$fail" -ne 0 ]; then
             exit 1
           fi
-          echo "✓ archive contains all vendored artifacts: 4 Linux/Android .so + 2 wasm files + 1 Windows .dll + macOS .xcframework ($macos_entry_count entries)"
+          echo "✓ archive contains all vendored artifacts: 4 Linux/Android .so + 2 wasm files + 1 Windows .dll + 1 macOS .xcframework.zip (and 0 unpacked-framework entries)"
       # Assert OIDC is actually usable BEFORE publishing. `--force` skips the
       # confirmation prompt, not authentication: if pub cannot authenticate
       # via OIDC it falls back to interactive OAuth, prints a Google consent

@@ -61,7 +61,7 @@
 # binary).
 Pod::Spec.new do |s|
   s.name             = 'cratestack_cbor'
-  s.version          = '0.8.5'
+  s.version          = '0.8.6'
   s.summary          = 'Native CBOR codec for CrateStack Dart/Flutter clients (macOS).'
   s.description      = <<-DESC
 Vendors a prebuilt universal (arm64 + x86_64) xcframework wrapping
@@ -78,6 +78,42 @@ README and docs/tooling/cratestack-cbor-development.md.
   # file header above for why `vendored_frameworks` points inside this
   # directory rather than at `../blobs/macos/`.
   s.vendored_frameworks = 'Frameworks/CratestackCborNative.xcframework'
+
+  # WHAT SHIPS IS THE ZIP, NOT THE DIRECTORY ABOVE — and this command is
+  # what turns one into the other on the consumer's machine.
+  #
+  # macOS frameworks are VERSIONED bundles: `Versions/A/...` plus three
+  # symlinks (`Versions/Current`, the top-level binary, `Resources`). Those
+  # symlinks are mandatory — measured on a real Mac, every symlink-free
+  # layout fails, either at `codesign` ("bundle format is ambiguous") or at
+  # build time ("did not contain an Info.plist" / "does not use shallow
+  # bundles"). But `dart pub publish` DEREFERENCES symlinks when it builds
+  # its archive, so a framework directory placed in the archive reaches the
+  # consumer as exactly that broken shape, and their `flutter build macos`
+  # dies with "Command CodeSign failed with a nonzero exit code".
+  #
+  # A zip stores symlinks, so the archive carries
+  # `Frameworks/CratestackCborNative.xcframework.zip` (built by `just
+  # cbor-vendor-macos`) and this `prepare_command` unpacks it here at
+  # `pod install` time, restoring the symlinks before CocoaPods ever reads
+  # `vendored_frameworks` above. `prepare_command` running for a `:path`
+  # pod — the only way Flutter ever integrates a plugin — was verified
+  # directly, not assumed.
+  #
+  # Idempotent by design: `pod install` runs on every build, and the
+  # unpacked directory is the normal state on a machine that just ran
+  # `just cbor-vendor-macos`. The zip is absent in exactly that case for a
+  # source checkout, hence both guards rather than an unconditional unzip.
+  # `ditto -x -k` mirrors the `ditto -c -k` that wrote it; `unzip` is NOT
+  # equivalent here (it is not guaranteed present, and Apple's archiver is
+  # what preserves the bundle faithfully).
+  s.prepare_command = <<-CMD
+    set -e
+    fw="Frameworks/CratestackCborNative.xcframework"
+    if [ ! -d "$fw" ] && [ -f "$fw.zip" ]; then
+      ditto -x -k "$fw.zip" Frameworks/
+    fi
+  CMD
 
   s.dependency 'FlutterMacOS'
 
