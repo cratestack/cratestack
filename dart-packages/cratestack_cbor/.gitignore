@@ -14,3 +14,19 @@ pubspec.lock
 blobs/
 lib/src/web/wasm-pkg/
 lib/src/native/rust/
+
+# The assembled macOS xcframework (`just cbor-vendor-macos`) — NOT under
+# `blobs/`, unlike every other platform's build output, because CocoaPods
+# resolves a podspec's `vendored_frameworks` relative to the podspec's own
+# directory (see `macos/cratestack_cbor.podspec`'s header comment for why
+# `..` escapes out of `macos/` aren't reliable). Still gitignored-but-
+# published: `.pubignore` above covers this path too, same as `blobs/`.
+macos/Frameworks/
+
+# The assembled iOS xcframework (`just cbor-vendor-ios`) — same
+# podspec-relative-`vendored_frameworks` reasoning as `macos/Frameworks/`
+# above, see `ios/cratestack_cbor.podspec`'s header comment. Unlike macOS's
+# xcframework, this one ships UNPACKED (no `.zip`, no `.pubignore` entry) —
+# iOS frameworks are flat/shallow bundles with no symlinks for `dart pub
+# publish` to dereference; see that podspec's header comment for why.
+ios/Frameworks/

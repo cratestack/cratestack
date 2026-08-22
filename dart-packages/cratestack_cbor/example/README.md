@@ -15,10 +15,27 @@ web bundle has no interactive console to read, so verification greps for
 it (`../README.md` and this repo's `just cbor-example-verify`) instead of
 trying to screenshot a GUI.
 
-Supported platforms: **Linux desktop, Android, and web**, matching the
-parent package's current platform support. iOS, macOS, and Windows platform
-folders were deliberately not generated here — out of scope for
-cratestack#563's current slice (see the parent package's README).
+Supported platforms: **Linux desktop, Android, Windows desktop, macOS
+desktop, iOS, and web**, matching the parent package's current platform
+support. Linux arm64 is the one remaining platform folder deliberately not
+generated here — out of scope for cratestack#563's current slice (see the
+parent package's README).
+
+`macos/` and `ios/` here are Flutter's own generated Xcode project
+scaffolding only (`flutter create --platforms=macos .` /
+`flutter create --platforms=ios .`) — neither includes a committed
+`Podfile`. Generating one requires Xcode's project interpreter
+(`_xcodeProjectInterpreter.isInstalled` gates `setupPodfile` in the Flutter
+SDK's own `flutter_tools`), which this repo's own Linux-only dev toolchain
+does not have — see `docs/tooling/cratestack-cbor-development.md` (repo
+root) and `../macos/cratestack_cbor.podspec`'s/`../ios/cratestack_cbor
+.podspec`'s header comments. A real macOS host running `flutter pub get`/
+`flutter build macos`/`flutter build ios` generates the Podfile fresh from a
+Flutter SDK template the first time it needs it — confirmed for `ios/` the
+same way it was for `macos/`: `flutter create --platforms=ios .` ran
+cleanly on this repo's Linux dev machine (Xcode-gated steps no-op instead of
+failing) and produced a real `Runner.xcodeproj`/`Runner.xcworkspace`, just
+no `Podfile`.
 
 ## Why this lives under `example/` inside the package
 
@@ -37,12 +54,15 @@ From `dart-packages/cratestack_cbor/` (the parent package), vendor the
 artifacts for the platform(s) you want first — see that package's README:
 
 ```bash
-just cbor-vendor-native   # Linux + the flutter_rust_bridge Dart glue (needed by Android too)
+just cbor-vendor-native   # Linux + the flutter_rust_bridge Dart glue (needed by every other platform too)
 just cbor-vendor-web
 just cbor-vendor-android  # only if you're going to build for Android
+just cbor-vendor-lib windows-x64   # only on Windows, only if you're going to build for Windows
+just cbor-vendor-macos             # only on macOS, only if you're going to build for macOS
+just cbor-vendor-ios               # only on macOS, only if you're going to build for iOS
 cd example
 flutter pub get
-flutter run -d linux   # or: flutter run -d chrome / flutter run -d <android-device-id>
+flutter run -d linux   # or: flutter run -d chrome / flutter run -d <android-device-id> / -d windows / -d macos / -d <ios-simulator-id>
 ```
 
 ## Real-build verification (not `flutter run`)
@@ -50,6 +70,9 @@ flutter run -d linux   # or: flutter run -d chrome / flutter run -d <android-dev
 ```bash
 just cbor-example-verify           # Linux desktop + web, from the repo root
 just cbor-example-verify-android   # Android APK build + per-ABI presence proof
+just cbor-example-verify-windows   # Windows .exe build + DLL presence proof (must run ON Windows)
+just cbor-example-verify-macos     # macOS .app build + universal xcframework presence proof (must run ON macOS)
+just cbor-example-verify-ios       # iOS simulator .app build + xcframework presence proof (must run ON macOS)
 ```
 
 `cbor-example-verify` builds this example for Linux desktop and web in

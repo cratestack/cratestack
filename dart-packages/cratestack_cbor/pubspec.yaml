@@ -24,21 +24,29 @@ environment:
   # entry in `dependencies:` below — see that section's comment for why
   # this package deliberately has none.
   #
-  # >=1.20.0, NOT the >=1.10.0 that `plugin.platforms` alone needs. This
-  # package supports Linux, web and Android but deliberately ships no `ios/`
-  # folder, and Flutter only allows a plugin to omit platform folders from
-  # 1.20 onward. pub.dev enforces that SERVER-SIDE and rejects the upload:
+  # STILL >=1.20.0 even though `ios/` now exists (cratestack#563's iOS
+  # slice) — but the RATIONALE changed, so this comment is rewritten rather
+  # than left in place. The original reason no longer applies: this
+  # constraint used to exist *solely* to clear pub.dev's server-side
+  # rejection of a plugin that omits an `ios/` folder before Flutter 1.20
+  # ("pubspec.yaml allows Flutter SDK version prior to 1.20.0, which does
+  # not support having no `ios/` folder" — `dart pub publish --dry-run` did
+  # NOT catch this locally; only the real pub.dev server did). Now that
+  # `ios/` is present, that specific rejection is void.
   #
-  #   pubspec.yaml allows Flutter SDK version prior to 1.20.0, which does not
-  #   support having no `ios/` folder.
-  #
-  # `dart pub publish --dry-run` does NOT catch this — it passed cleanly on a
-  # pubspec the server then refused. See docs/tooling/dart-publishing.md.
-  #
-  # The number looks implausibly low next to `sdk: ^3.5.0`, and that is fine:
-  # the Dart constraint is the real floor (nothing shipping Dart 3.5 is on
-  # Flutter 1.x), and pub resolves against both. This line exists to clear
-  # the no-`ios/`-folder rule, not to describe the minimum usable Flutter.
+  # The floor stays >=1.20.0 anyway, on an independent and still-current
+  # ground: `flutter.plugin.platforms` itself (used by every platform key
+  # below, `ios` included) is a Flutter-plugin pubspec key with no meaning
+  # before Flutter's own plugin-platforms format existed, and 1.20.0 is
+  # comfortably below every platform actually supported here (this repo
+  # pins Flutter 3.44.1 — see docs/tooling/cratestack-cbor-development.md).
+  # Nothing shipping Dart 3.5 (`sdk: ^3.5.0` above, the real floor) is on a
+  # Flutter this old, so raising this number further would not change what
+  # anyone can actually install; lowering it would risk reopening the
+  # no-`ios/`-folder-style server-side surprise for some other unforeseen
+  # plugin-platforms edge case. Left as-is deliberately, not re-derived from
+  # scratch, since a maintainer picked this figure with the fuller history
+  # docs/tooling/dart-publishing.md still records.
   flutter: ">=1.20.0"
 
 dependencies:
@@ -83,6 +91,42 @@ dev_dependencies:
 #    SONAME from the app's native library directory, so
 #    `native_cbor_codec.dart`'s Android branch needs no path computation
 #    at all (contrast the two Linux strategies just above).
+# 1c. `plugin.platforms.windows.ffiPlugin: true` is the Windows analogue —
+#    see `windows/CMakeLists.txt`, which hands the vendored
+#    `blobs/windows-x64/cratestack_client_flutter.dll` (produced by `just
+#    cbor-vendor-lib windows-x64`) to the SAME `<plugin>_bundled_libraries`
+#    mechanism Linux uses (one shared Flutter-SDK template renders both).
+#    The install destination differs, though (see that file's header
+#    comment), which is why `native_cbor_codec.dart`'s Windows branch
+#    looks for the `.dll` right next to the built `.exe` rather than in a
+#    `lib/` subdirectory.
+# 1d. `plugin.platforms.macos.ffiPlugin: true` is the macOS analogue — but
+#    a genuinely different MECHANISM from the other three, not a relocated
+#    copy: see `macos/cratestack_cbor.podspec`, which hands the vendored
+#    universal `macos/Frameworks/CratestackCborNative.xcframework`
+#    (produced by `just cbor-vendor-macos`) to CocoaPods'
+#    `vendored_frameworks`, not Flutter's `<plugin>_bundled_libraries`
+#    CMake mechanism the other desktop platforms share. `flutter build
+#    macos` LINKS (not merely copies) the vendored framework via CocoaPods,
+#    which is what lets `native_cbor_codec.dart`'s macOS branch resolve it
+#    with a fixed relative string and no path computation at all — see
+#    that file's doc comment and the podspec's own header comment for the
+#    full mechanism, verified on a real `macos-latest` runner
+#    (`spike/cbor-macos-xcframework`).
+# 1e. `plugin.platforms.ios.ffiPlugin: true` is the iOS analogue
+#    (cratestack#563's iOS slice) — the SAME CocoaPods `vendored_frameworks`
+#    mechanism macOS uses (`ios/cratestack_cbor.podspec`, hands the vendored
+#    `ios/Frameworks/CratestackCborNative.xcframework` — produced by `just
+#    cbor-vendor-ios` — to CocoaPods, which LINKS it the same way), so
+#    `native_cbor_codec.dart`'s iOS branch resolves it with the exact same
+#    fixed relative string macOS uses. The one genuine difference is the
+#    xcframework's own internal shape, not the Dart-/Pod-side mechanism: an
+#    iOS xcframework wraps FLAT ("shallow") frameworks — device arm64 plus
+#    a universal (`lipo`'d) simulator arm64+x86_64 slice — with no
+#    `Versions/A/...` indirection and no symlinks, unlike macOS's versioned
+#    bundle; see `ios/cratestack_cbor.podspec`'s and `just
+#    cbor-vendor-ios`'s own header comments for why that also means iOS
+#    ships its xcframework UNPACKED rather than zipped.
 # 2. `assets` vendors the wasm-web artifact
 #    (`lib/src/web/wasm-pkg/cratestack_cbor_wasm{,_bg}.{js,wasm}`) so a
 #    release `flutter build web` actually copies them into
@@ -106,7 +150,13 @@ flutter:
     platforms:
       android:
         ffiPlugin: true
+      ios:
+        ffiPlugin: true
       linux:
+        ffiPlugin: true
+      macos:
+        ffiPlugin: true
+      windows:
         ffiPlugin: true
   assets:
     - lib/src/web/wasm-pkg/cratestack_cbor_wasm.js

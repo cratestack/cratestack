@@ -5,9 +5,11 @@
 /// shape for JavaScript (`packages/cratestack-cbor`):
 ///
 /// - **Native** (`dart.library.io`): flutter_rust_bridge over a vendored
-///   prebuilt native library. This release vendors Linux x86_64 only — a
-///   deliberate one-platform spike (cratestack#563); the full platform
-///   matrix is follow-up work.
+///   prebuilt native library. This release vendors Linux x86_64, Android
+///   (arm64-v8a, x86_64, armeabi-v7a), Windows x86_64, macOS (arm64 +
+///   x86_64, as one universal xcframework), and iOS (device arm64 +
+///   universal simulator arm64/x86_64, as one xcframework) — Linux arm64
+///   remains follow-up work (cratestack#563).
 /// - **Web** (`dart.library.js_interop`): the existing
 ///   `cratestack-cbor-wasm` wasm-bindgen artifact (already shipped to npm
 ///   as `@cratestack/cbor-web`), vendored and loaded via `dart:js_interop`
