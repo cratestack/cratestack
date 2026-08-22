@@ -548,15 +548,16 @@ verify-dart:
 	# strategies. This resolves it to the exact library `flutter pub get`
 	# already fetched from pub.dev for this package, via
 	# `.dart_tool/package_config.json` (the same "ask the tool that
-	# already knows" discipline `cbor-vendor-native`'s `cargo metadata`
-	# parse uses), rather than hardcoding a pub-cache path or a version
+	# already knows" discipline `cbor-vendor-lib`'s `cargo metadata` parse
+	# uses — grep/sed there now, not `python3`, since that recipe also runs
+	# on `windows-latest`; this recipe is Linux-only, so `python3` staying
+	# here is fine), rather than hardcoding a pub-cache path or a version
 	# number that would drift from `cratestack_cbor_version_requirement`.
-	# One physical line, like `cbor-vendor-native`'s own `python3 -c`
-	# invocation: `just` recipe bodies are collected per-LINE by leading
-	# indentation, with no understanding of the shell quoting inside them
-	# — an unindented line inside a multi-line Python string here would
-	# read to `just` itself as a new (invalid) top-level justfile item,
-	# not as part of this recipe's shell script.
+	# One physical line: `just` recipe bodies are collected per-LINE by
+	# leading indentation, with no understanding of the shell quoting
+	# inside them — an unindented line inside a multi-line Python string
+	# here would read to `just` itself as a new (invalid) top-level
+	# justfile item, not as part of this recipe's shell script.
 	native_cbor_vendored_lib_for() {
 	  local pkg="$1"
 	  python3 -c "import json,sys; config = json.load(open('$pkg/.dart_tool/package_config.json')); entries = [e for e in config['packages'] if e['name'] == 'cratestack_cbor']; sys.exit('cratestack_cbor not found in $pkg/.dart_tool/package_config.json — was flutter pub get run?') if not entries else print(entries[0]['rootUri'].removeprefix('file://') + '/blobs/linux-x64/libcratestack_client_flutter.so')"
@@ -1062,21 +1063,102 @@ frb-verify-client-flutter:
 	echo "✓ flutter_rust_bridge glue for cratestack-client-flutter regenerated, compiled, and round-tripped from Dart"
 
 # ---- dart-packages/cratestack_cbor (cratestack#563) ----------------------
-# Regenerates the package's vendored NATIVE artifacts: the
-# flutter_rust_bridge Dart glue (committed inside the package — unlike
-# crates/cratestack-client-flutter's own gitignored verification-harness
-# glue, this IS the shipped product; a pub.dev consumer has no
-# flutter_rust_bridge_codegen to run themselves) and a stripped release
-# build of the vendored native library (`blobs/linux-x64/`, Linux x86_64
-# only — a deliberate one-platform spike, see the package's README).
+# NATIVE vendoring used to be one recipe (`cbor-vendor-native`) doing two
+# separable jobs: regenerate the flutter_rust_bridge glue, and build+strip
+# a platform's native library. That coupling stopped working once a second
+# platform showed up (cratestack#563's macOS/Windows slices), because the
+# library build must run once PER platform, on that platform's own runner
+# — you cannot cross-compile a macOS `.dylib` or an MSVC `.dll` from
+# Linux — while the codegen is platform-independent. Split in two:
+#
+#   * `cbor-vendor-glue` — the frb codegen half.
+#   * `cbor-vendor-lib PLATFORM` — the build/copy/strip half, data-driven
+#     per platform so adding a new one is a table entry, not a rewrite.
+#
+# NOTE, because an earlier version of this comment claimed otherwise and
+# the wrong version is easy to re-derive: NEITHER half of the glue is
+# committed to git. `crates/cratestack-client-flutter/src/frb_generated.rs`
+# is excluded by that crate's `.gitignore`, and the Dart half
+# (`dart-packages/cratestack_cbor/lib/src/native/rust/`) by that package's
+# `.gitignore:16` — `git ls-files` reports zero tracked files under it.
+# Both are *shipped* (the package's deliberately-empty `.pubignore` is what
+# lets gitignored build output into the pub.dev archive), which is not the
+# same as *committed*.
+#
+# Two consequences worth stating plainly:
+#
+#   1. EVERY platform runner must run `cbor-vendor-glue` before
+#      `cbor-vendor-lib`, not just a designated Linux one. A fresh checkout
+#      has no `frb_generated.rs`, so `cargo build --features frb-glue`
+#      fails with E0583. This is not theoretical — it failed a real CI run.
+#   2. There is correspondingly NO "three runners overwrite the same
+#      committed file with divergent codegen" hazard, because there is no
+#      committed file. Each runner regenerates both halves locally and
+#      nothing is compared across runners.
+#
+# Corollary for anyone adding a determinism check here: asserting
+# `git diff --exit-code` over `lib/src/native/rust/` is a check that CANNOT
+# FAIL — git reports no diff for untracked paths, so it passes whether or
+# not codegen is reproducible. Comparing recorded hashes would be a real
+# check; that one is not.
+#
+# `cbor-vendor-native` remains as a thin alias (glue, then linux-x64) so
+# every existing caller — CI's `cratestack-cbor-*` jobs, `release-cli.yml`'s
+# `publish-pubdev-cbor`, and the `cbor-vendor-android`/`cbor-example-verify*`
+# comments below that reference it by name — keeps working unmodified.
+
+# Regenerates ONLY the flutter_rust_bridge glue — BOTH halves, which one
+# codegen invocation emits together: the Rust side
+# (`crates/cratestack-client-flutter/src/frb_generated.rs`, without which
+# that crate does not compile under `--features frb-glue`) and the Dart
+# side (`dart-packages/cratestack_cbor/lib/src/native/rust/`, which a
+# pub.dev consumer receives in the archive since they have no
+# flutter_rust_bridge_codegen to run themselves). Neither is committed —
+# see the block comment above for why that matters and what it rules out.
+#
+# The codegen itself is platform-independent (frb introspects Rust source,
+# not a target triple), but that does NOT make this a run-once step: every
+# platform's runner needs the Rust half present locally before it can build.
+#
+# DOES NOT RUN ON WINDOWS. flutter_rust_bridge_codegen 2.12.0 fails here:
+#
+#   When compute_mod_from_rust_path(
+#     code_path="D:\a\...\cratestack-client-flutter\src/frb_generated.rs",
+#     base_dir="\\?\D:\a\...\cratestack-client-flutter\src")
+#       prefix not found
+#
+# It builds `code_path` with mixed separators and compares it against a
+# canonicalized UNC (`\\?\`) base dir, so the prefix strip fails. That is
+# inside the pinned upstream tool, not something this recipe can work around
+# by passing different paths. CI therefore runs this recipe ONLY on Linux
+# (`cbor-glue` in ci.yml, `build-cbor-glue` in release-cli.yml) and ships the
+# result to the macOS/Windows legs as an artifact. If you are adding a new
+# platform leg, download that artifact — do not call this recipe there.
 #
 # Requires: `flutter_rust_bridge_codegen` (=2.12.0, matching
-# crates/cratestack-client-flutter/Cargo.toml) and `strip` on PATH.
-cbor-vendor-native:
+# crates/cratestack-client-flutter/Cargo.toml).
+cbor-vendor-glue:
 	#!/usr/bin/env bash
 	set -euo pipefail
+	frb_required=2.12.0
 	if ! command -v flutter_rust_bridge_codegen >/dev/null; then
-	  echo "flutter_rust_bridge_codegen not found. Run: cargo install --locked flutter_rust_bridge_codegen --version 2.12.0" >&2
+	  echo "flutter_rust_bridge_codegen not found. Run: cargo install --locked flutter_rust_bridge_codegen --version $frb_required" >&2
+	  exit 1
+	fi
+	# The VERSION is checked, not just the presence of the binary. This
+	# codegen's output is pinned from both sides — `flutter_rust_bridge =
+	# "=2.12.0"` in crates/cratestack-client-flutter/Cargo.toml and
+	# `flutter_rust_bridge: 2.12.0` (exact, unranged) in the package's
+	# pubspec.yaml — and glue generated by any other version is not
+	# compatible with either. Presence-only was the original guard and it
+	# is not enough: a developer with a different version already installed
+	# (2.13.0-beta.6, in the case that prompted this) sails past it and
+	# gets mismatched glue, surfacing much later as analyzer or compile
+	# errors that point at generated code rather than at the real cause.
+	frb_actual="$(flutter_rust_bridge_codegen --version | awk '{print $NF}')"
+	if [ "$frb_actual" != "$frb_required" ]; then
+	  echo "flutter_rust_bridge_codegen $frb_actual found, but this repo pins =$frb_required (crates/cratestack-client-flutter/Cargo.toml and dart-packages/cratestack_cbor/pubspec.yaml both pin it exactly). Generated glue is not compatible across versions." >&2
+	  echo "Run: cargo install --locked flutter_rust_bridge_codegen --version $frb_required --force" >&2
 	  exit 1
 	fi
 	pkg=dart-packages/cratestack_cbor
@@ -1102,13 +1184,273 @@ cbor-vendor-native:
 	if command -v dart >/dev/null; then
 	  dart format "$pkg/lib/src/native/rust" >/dev/null
 	fi
-	echo "=== cargo build --release --features frb-glue: cratestack-client-flutter ==="
-	cargo build -p cratestack-client-flutter --features frb-glue --release
-	target_dir="$(cargo metadata --no-deps --format-version=1 | python3 -c "import json,sys;print(json.load(sys.stdin)['target_directory'])")"
-	mkdir -p "$pkg/blobs/linux-x64"
-	cp "$target_dir/release/libcratestack_client_flutter.so" "$pkg/blobs/linux-x64/libcratestack_client_flutter.so"
-	strip --strip-unneeded "$pkg/blobs/linux-x64/libcratestack_client_flutter.so"
-	echo "✓ vendored $(du -h "$pkg/blobs/linux-x64/libcratestack_client_flutter.so" | cut -f1) native library + Dart glue at $pkg/lib/src/native/"
+	echo "✓ regenerated Dart glue at $pkg/lib/src/native/"
+
+# Builds and vendors the release native library for ONE platform into
+# `blobs/PLATFORM/`. `--target <triple>` is explicit (rather than relying
+# on the host's implicit default) so a CI runner can name exactly the
+# target it's building for — the only shape that also works for
+# cross-arch macOS builds (`macos-arm64` on an Apple Silicon runner still
+# wants an explicit triple, not "whatever this host happens to be").
+#
+# Per-platform library filename and stripping differ and are the whole
+# reason this is a table, not a single command: `strip --strip-unneeded`
+# works for ELF (Linux); Darwin's `strip` needs `-x` (strip local symbols
+# only, drop nothing `-strip-unneeded` would need ELF section semantics
+# for); MSVC-built PE `.dll`s have no `strip` equivalent at all — debug
+# info lives in a separate `.pdb` that this recipe simply never copies, so
+# there is nothing to strip.
+#
+# Requires: `strip` on PATH (linux-x64, macos-*) — not required/used for
+# windows-x64.
+cbor-vendor-lib PLATFORM:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	pkg=dart-packages/cratestack_cbor
+	platform="{{PLATFORM}}"
+	case "$platform" in
+	  linux-x64)
+	    target=x86_64-unknown-linux-gnu
+	    lib_name=libcratestack_client_flutter.so
+	    strip_cmd="strip --strip-unneeded"
+	    ;;
+	  macos-arm64)
+	    target=aarch64-apple-darwin
+	    lib_name=libcratestack_client_flutter.dylib
+	    strip_cmd="strip -x"
+	    ;;
+	  macos-x64)
+	    target=x86_64-apple-darwin
+	    lib_name=libcratestack_client_flutter.dylib
+	    strip_cmd="strip -x"
+	    ;;
+	  windows-x64)
+	    target=x86_64-pc-windows-msvc
+	    lib_name=cratestack_client_flutter.dll
+	    strip_cmd=""
+	    ;;
+	  *)
+	    echo "unknown platform '$platform' (expected one of: linux-x64, macos-arm64, macos-x64, windows-x64)" >&2
+	    exit 1
+	    ;;
+	esac
+	echo "=== cargo build --release --target $target --features frb-glue: cratestack-client-flutter ($platform) ==="
+	cargo build -p cratestack-client-flutter --features frb-glue --release --target "$target"
+	# `python3` is NOT assumed present here (unlike this repo's other
+	# `cargo metadata`-parsing recipes) — this recipe is the one that also
+	# runs on `windows-latest` (`just cbor-vendor-lib windows-x64`, see
+	# `cratestack-cbor-windows` in ci.yml), and a standard GitHub-hosted
+	# Windows runner is not guaranteed to expose a bare `python3` on PATH
+	# the way its Linux/macOS images do (their Python install typically
+	# provides only `python`/`py`, not a `python3` shim) — unconfirmed from
+	# this Linux dev machine, flagged as a first-CI-run risk either way.
+	# `grep`+`sed` sidestep the question entirely: both ship in every
+	# environment this justfile's global `set shell := ["bash", ...]`
+	# already depends on for EVERY recipe (Git for Windows' bundled MSYS
+	# environment on Windows), and `cargo metadata`'s single-line JSON makes
+	# a small anchored regex reliable without a real JSON parser.
+	# The trailing `s/\\\\/\\/g` un-escapes JSON's `\\` -> `\` — load-bearing
+	# on Windows, where `target_directory` is a real filesystem path
+	# containing backslashes (e.g. `C:\\Users\\...\\target` in the raw JSON);
+	# without it the value fed to `cp` below would carry doubled
+	# backslashes verbatim. Verified against a synthetic Windows-shaped
+	# metadata line locally; not against a real Windows `cargo metadata`
+	# run (this dev machine has no Windows toolchain).
+	target_dir="$(cargo metadata --no-deps --format-version=1 \
+	  | grep -o '"target_directory":"[^"]*"' \
+	  | sed 's/^"target_directory":"//; s/"$//; s/\\\\/\\/g')"
+	if [ -z "$target_dir" ]; then
+	  echo "cbor-vendor-lib: could not extract target_directory from 'cargo metadata' output" >&2
+	  exit 1
+	fi
+	mkdir -p "$pkg/blobs/$platform"
+	cp "$target_dir/$target/release/$lib_name" "$pkg/blobs/$platform/$lib_name"
+	if [ -n "$strip_cmd" ]; then
+	  $strip_cmd "$pkg/blobs/$platform/$lib_name"
+	fi
+	echo "✓ vendored $(du -h "$pkg/blobs/$platform/$lib_name" | cut -f1) native library at $pkg/blobs/$platform/"
+
+# Composes `cbor-vendor-lib macos-arm64` + `cbor-vendor-lib macos-x64` into
+# ONE universal (arm64+x86_64) `.xcframework`, ready for `macos/
+# cratestack_cbor.podspec`'s `vendored_frameworks` (cratestack#563 macOS
+# slice). `cbor-vendor-lib` alone stops at per-arch `.dylib`s in
+# `blobs/macos-{arm64,x64}/` — CocoaPods' `vendored_frameworks` wants a
+# single xcframework, not two loose dylibs, so this recipe is the assembly
+# step on top, mirroring how `cbor-vendor-native` composes
+# `cbor-vendor-glue` + `cbor-vendor-lib linux-x64` for the same reason (one
+# platform needs more than the shared per-arch build/copy/strip table
+# entry provides).
+#
+# Every step here matches `spike/cbor-macos-xcframework`
+# (.github/workflows/spike-cbor-macos.yml, cratestack#563), which ran this
+# exact sequence on a real `macos-latest` runner and verified the result
+# end to end (framework embedded in the built `.app`, universal, linked —
+# not merely copied — and round-tripping CBOR through a running app). See
+# that spike's own comments for the reasoning this recipe deliberately does
+# not repeat inline:
+#
+#   - macOS frameworks are VERSIONED bundles (`Versions/A/...` +
+#     `Versions/Current` symlinks), unlike iOS's flat ones — both Apple
+#     platforms use ".framework" but the internal layout genuinely differs.
+#   - `install_name_tool -id @rpath/...` is load-bearing: without an
+#     @rpath-relative install name, a vendored dylib would embed whatever
+#     absolute build-machine path it happened to have, and the consuming
+#     app would link against that instead of its own bundled copy.
+#   - The framework name is `CratestackCborNative`, deliberately different
+#     from the pod name `cratestack_cbor` — see the podspec's own header
+#     comment for why (a same-named vendored framework collides with the
+#     `<pod_name>.framework` CocoaPods generates under `use_frameworks!`).
+#
+# The OUTPUT LOCATION is `macos/Frameworks/`, not `blobs/macos/` — this is
+# the one platform where the vendored artifact is NOT a peer of the other
+# `blobs/<platform>/` entries. CocoaPods resolves a podspec's
+# `vendored_frameworks` relative to the podspec's OWN directory and does
+# not reliably accept `../` escapes out of it (verified on the spike
+# branch), so the xcframework must sit inside `macos/`, where the podspec
+# already lives, not alongside Linux/Windows/Android's blobs. `macos/
+# Frameworks/` is gitignored (see this package's `.gitignore`) the same way
+# `blobs/` is — this is still build output, just not placed under `blobs/`.
+#
+# VERSIONED, AND IT CANNOT BE FLAT — do not "simplify" this into a flat
+# bundle. That was tried deliberately (to solve the archive problem below)
+# and Xcode rejects it outright:
+#
+#   error: Framework …/CratestackCborNative.framework contains Info.plist,
+#   expected Versions/Current/Resources/Info.plist since the platform does
+#   not use shallow bundles (in target 'Runner' from project 'Runner')
+#
+# macOS does not use shallow bundles; iOS does. That is exactly why iOS
+# frameworks are flat and macOS ones are versioned — it is enforced by the
+# build system, not a convention. So the `Versions/A/…` layout plus the
+# three symlinks below are mandatory here.
+#
+# WHY A ZIP IS ALSO EMITTED, AND WHY THE ZIP IS WHAT SHIPS:
+# `dart pub publish` DEREFERENCES symlinks when building its archive, and
+# that is fatal, not cosmetic. Measured end to end on a real Mac rather
+# than inferred:
+#
+#   1. `dart pub publish --dry-run` over this exact layout lists the
+#      binary THREE times (top level + Versions/A + Versions/Current), so
+#      a consumer extracts zero symlinks and `Versions/Current` as a real
+#      directory.
+#   2. `codesign` on that dereferenced shape fails — "bundle format is
+#      ambiguous (could be app or framework)", exit 1 — while the same
+#      framework with its symlinks intact signs and verifies cleanly.
+#   3. A real `flutter build macos` against the dereferenced framework
+#      fails outright: "Command CodeSign failed with a nonzero exit code",
+#      ** BUILD FAILED **.
+#
+# There is no symlink-free framework layout that escapes this. Every
+# candidate was tried on a real Mac: fully-materialised (pub's own shape)
+# -> "bundle format is ambiguous"; `Versions/A` + a real `Versions/Current`
+# -> "unsealed contents present in the root directory"; `Versions/A` +
+# a real top-level binary -> codesign accepts it but Xcode then fails the
+# build with "did not contain an Info.plist"; a flat/shallow bundle ->
+# "expected Versions/Current/Resources/Info.plist since the platform does
+# not use shallow bundles". macOS requires the symlinks; pub.dev's archive
+# cannot carry them.
+#
+# So the archive carries a ZIP (zips DO store symlinks) and the podspec's
+# `prepare_command` unpacks it at `pod install` time — verified to run for
+# a Flutter `:path` pod, which is how Flutter always integrates plugins.
+# Round-trip proof: 3 symlinks in -> dereferencing tar -> unzip -> 3
+# symlinks out, byte-identical.
+#
+# `macos/Frameworks/*.xcframework/` is therefore EXCLUDED by this package's
+# `.pubignore` while the `.zip` beside it ships. Shipping both would defeat
+# the point — pub would dereference the raw directory right back into the
+# broken shape. Uploading the zip (one file) instead of the tree also
+# sidesteps `actions/upload-artifact` following symlinks on the release leg.
+#
+# CI proves the CONSUMER path, not just the built one: `just
+# cbor-example-verify-macos` deletes the unpacked xcframework before
+# building, so every run forces `prepare_command` to reconstruct it from
+# the zip. Without that the whole mechanism would be untested by
+# construction — the exact blind spot that let the original defect through.
+#
+# Requires: `lipo`, `install_name_tool`, and `xcodebuild` (Xcode command
+# line tools) — macOS-only, so this recipe only ever runs on a
+# `macos-latest`/local macOS host, same constraint `cbor-vendor-lib
+# macos-arm64`/`macos-x64` already have via their `strip -x` step.
+cbor-vendor-macos:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	for tool in lipo install_name_tool xcodebuild; do
+	  if ! command -v "$tool" >/dev/null; then
+	    echo "cbor-vendor-macos: '$tool' not found — this recipe only runs on macOS with Xcode command line tools installed" >&2
+	    exit 1
+	  fi
+	done
+	pkg=dart-packages/cratestack_cbor
+	framework=CratestackCborNative
+	just cbor-vendor-lib macos-arm64
+	just cbor-vendor-lib macos-x64
+	version="$(awk -F': ' '/^version:/{print $2; exit}' "$pkg/pubspec.yaml")"
+	if [ -z "$version" ]; then
+	  echo "cbor-vendor-macos: could not read 'version:' from $pkg/pubspec.yaml" >&2
+	  exit 1
+	fi
+	work="$(mktemp -d)"
+	trap 'rm -rf "$work"' EXIT
+	fw="$work/$framework.framework"
+	mkdir -p "$fw/Versions/A/Resources"
+	echo "=== lipo -create: macos-arm64 + macos-x64 -> universal $framework ==="
+	lipo -create \
+	  -output "$fw/Versions/A/$framework" \
+	  "$pkg/blobs/macos-arm64/libcratestack_client_flutter.dylib" \
+	  "$pkg/blobs/macos-x64/libcratestack_client_flutter.dylib"
+	lipo -info "$fw/Versions/A/$framework"
+	# A vendored dynamic library must advertise an @rpath-relative install
+	# name — see this recipe's header comment.
+	install_name_tool -id \
+	  "@rpath/$framework.framework/Versions/A/$framework" \
+	  "$fw/Versions/A/$framework"
+	cat > "$fw/Versions/A/Resources/Info.plist" <<PLIST
+	<?xml version="1.0" encoding="UTF-8"?>
+	<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+	<plist version="1.0">
+	<dict>
+	  <key>CFBundleExecutable</key><string>$framework</string>
+	  <key>CFBundleIdentifier</key><string>dev.cratestack.$framework</string>
+	  <key>CFBundleName</key><string>$framework</string>
+	  <key>CFBundlePackageType</key><string>FMWK</string>
+	  <key>CFBundleShortVersionString</key><string>$version</string>
+	  <key>CFBundleVersion</key><string>$version</string>
+	  <key>LSMinimumSystemVersion</key><string>10.15</string>
+	</dict>
+	</plist>
+	PLIST
+	# Versioned bundle layout — see this recipe's header comment.
+	ln -s A "$fw/Versions/Current"
+	ln -s "Versions/Current/$framework" "$fw/$framework"
+	ln -s Versions/Current/Resources "$fw/Resources"
+	echo "=== xcodebuild -create-xcframework: universal $framework.framework -> $framework.xcframework ==="
+	rm -rf "$pkg/macos/Frameworks/$framework.xcframework"
+	mkdir -p "$pkg/macos/Frameworks"
+	xcodebuild -create-xcframework \
+	  -framework "$fw" \
+	  -output "$pkg/macos/Frameworks/$framework.xcframework"
+	# The SHIPPED artifact — see this recipe's header for why the archive
+	# carries this zip rather than the directory beside it. `ditto -c -k`
+	# (not `zip`) because it is the Apple-native archiver and stores
+	# symlinks as symlinks; `--keepParent` puts `$framework.framework` at
+	# the zip root, which is what `prepare_command` expects to unpack.
+	echo "=== ditto -c -k: $framework.xcframework -> $framework.xcframework.zip (symlink-preserving) ==="
+	rm -f "$pkg/macos/Frameworks/$framework.xcframework.zip"
+	ditto -c -k --sequesterRsrc --keepParent \
+	  "$pkg/macos/Frameworks/$framework.xcframework" \
+	  "$pkg/macos/Frameworks/$framework.xcframework.zip"
+	echo "✓ vendored $(du -sh "$pkg/macos/Frameworks/$framework.xcframework" | cut -f1) universal macOS xcframework at $pkg/macos/Frameworks/$framework.xcframework"
+	echo "✓ shipped $(du -h "$pkg/macos/Frameworks/$framework.xcframework.zip" | cut -f1) symlink-preserving zip at $pkg/macos/Frameworks/$framework.xcframework.zip"
+
+# Alias kept for every existing caller of the old combined recipe (CI's
+# `cratestack-cbor-*` jobs, `release-cli.yml`'s `publish-pubdev-cbor`, and
+# comments elsewhere in this file): glue once, then the linux-x64 library
+# — exactly what the old single recipe did, just composed from the two
+# halves above instead of duplicating their bodies.
+cbor-vendor-native:
+	just cbor-vendor-glue
+	just cbor-vendor-lib linux-x64
 
 # Regenerates the package's vendored WEB artifact: a `wasm-pack --target
 # web` build of the EXISTING crates/cratestack-cbor-wasm crate (the same
@@ -1577,6 +1919,240 @@ cbor-example-verify-android-emulator:
 	echo ""
 	echo "✓ cratestack_cbor example: real flutter build apk, installed and run on a real Android device/emulator, round-tripped CBOR"
 
+# Real Flutter-app proof for cratestack_cbor's Windows platform
+# (cratestack#563 platform-matrix slice). Mirrors
+# `cbor-example-verify-android`'s shape: a real `flutter build windows`,
+# then an assertion that the vendored DLL actually landed in the built
+# output — a build that merely COMPILES proves nothing (that is the exact
+# failure mode this ticket exists to catch, per its own acceptance bar) —
+# then running the built `.exe` and grepping its captured stdout for the
+# same `CRATESTACK_CBOR_EXAMPLE_RESULT: OK <hex>` marker Linux/web/Android
+# already assert (`expected_hex` below matches `cbor-example-verify`'s).
+#
+# Unlike Linux, no `xvfb-run`/headless wrapper is needed here: GitHub's
+# `windows-latest` hosted runners provide a real interactive desktop
+# session, so the built GUI app can just be launched directly and its
+# stdout redirected to a file the same way any other process's would be.
+#
+# Does NOT regenerate the vendored artifacts itself — run
+# `just cbor-vendor-glue` (the platform-independent codegen half — NOT
+# `just cbor-vendor-native`, which also builds a `linux-x64` library that
+# cannot link on a Windows host) then `just cbor-vendor-lib windows-x64`
+# first (or rely on what's already vendored, as CI does — see
+# `cratestack-cbor-windows` in ci.yml for the exact same two-step order).
+#
+# UNVERIFIED ASSUMPTIONS, flagged rather than silently relied on (this repo's
+# dev toolchain is Linux-only — no Windows host to actually run this
+# recipe against before it lands in CI):
+#   - `timeout` (used below to bound how long the app runs before being
+#     killed so its captured stdout can be grepped, the same idiom
+#     `cbor-example-verify`'s Linux half uses via `timeout 15 xvfb-run -a
+#     "$bin"`) is believed to be present in Git for Windows' bundled MSYS
+#     environment (a GNU coreutils build) — which this justfile's global
+#     `set shell := ["bash", ...]` already depends on for EVERY recipe on
+#     Windows, not just this one — but this could not be confirmed from a
+#     Linux dev machine.
+#   - A `cdylib` built for `x86_64-pc-windows-msvc` links the VC++ runtime
+#     (`vcruntime140.dll` and friends) unless built with `+crt-static`;
+#     neither `cbor-vendor-lib windows-x64` nor Flutter's own tooling
+#     bundles those. `windows-latest` GitHub runner images ship the VC++
+#     Redistributable preinstalled (it's part of the Visual Studio Build
+#     Tools those images carry for `flutter build windows` itself), so
+#     this is expected to be a non-issue there specifically — but it is a
+#     plausible first-failure mode on a clean end-user machine, flagged
+#     per the ticket rather than silently assumed away.
+#
+# Requires: Flutter SDK (3.44.1 pinned — see the package README) with the
+# Windows desktop toolchain configured (`flutter doctor` reporting "Visual
+# Studio" as OK — CMake + MSVC via the "Desktop development with C++"
+# workload).
+cbor-example-verify-windows:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if ! command -v flutter >/dev/null; then
+	  echo "flutter not found on PATH — install the Flutter SDK: https://docs.flutter.dev/get-started/install" >&2
+	  exit 1
+	fi
+	example=dart-packages/cratestack_cbor/example
+	expected_hex="a36a6372617465737461636b8264636f6f6c65737461636b616e182a626f6bf5"
+	marker="CRATESTACK_CBOR_EXAMPLE_RESULT:"
+
+	echo "=== flutter clean: $example ==="
+	(cd "$example" && flutter clean)
+
+	echo "=== flutter pub get: $example ==="
+	(cd "$example" && flutter pub get)
+
+	echo "=== flutter analyze: $example ==="
+	(cd "$example" && flutter analyze --fatal-warnings --no-fatal-infos)
+
+	echo "=== flutter build windows (release): $example ==="
+	(cd "$example" && flutter build windows)
+	bin="$example/build/windows/x64/runner/Release/cratestack_cbor_example.exe"
+	lib="$example/build/windows/x64/runner/Release/cratestack_client_flutter.dll"
+	if [ ! -f "$bin" ]; then
+	  echo "FAIL: expected built executable not found at $bin" >&2
+	  exit 1
+	fi
+	if [ ! -f "$lib" ]; then
+	  echo "FAIL: vendored library not found beside the built executable at $lib — the Windows plugin scaffolding (windows/CMakeLists.txt) did not bundle it." >&2
+	  exit 1
+	fi
+	echo "✓ vendored library present beside the built executable: $lib"
+
+	echo "=== running the built Windows executable ==="
+	win_log="$(mktemp)"
+	timeout 20 "$bin" > "$win_log" 2>&1 || true
+	if ! grep -q "$marker OK $expected_hex" "$win_log"; then
+	  echo "FAIL: built Windows executable did not print the expected round-trip marker. Captured output:" >&2
+	  cat "$win_log" >&2
+	  rm -f "$win_log"
+	  exit 1
+	fi
+	echo "✓ Windows executable round-tripped CBOR: $(grep "$marker" "$win_log")"
+	rm -f "$win_log"
+
+	echo ""
+	echo "✓ cratestack_cbor example: real flutter build windows round-trips CBOR in a running app"
+
+# Real Flutter-app proof for cratestack_cbor's macOS platform (cratestack#563
+# platform-matrix slice). Same shape as `cbor-example-verify-windows`: a real
+# `flutter build macos`, an assertion that the vendored xcframework actually
+# landed inside the built `.app` (a build that merely COMPILES proves
+# nothing — the exact failure mode this ticket exists to catch), a `lipo
+# -info` check that BOTH arches are present in the embedded binary (a
+# universal xcframework that silently lost an arch during assembly would
+# still embed and still launch on the build host's own arch), then running
+# the built app and grepping its captured stdout for the same
+# `CRATESTACK_CBOR_EXAMPLE_RESULT: OK <hex>` marker every other platform
+# asserts.
+#
+# `timeout` does NOT exist on macOS (GNU coreutils only — verified by the
+# spike, `spike/cbor-macos-xcframework`/.github/workflows/spike-cbor-macos.yml,
+# which hit exactly this and used background+poll+kill instead); Linux's
+# `cbor-example-verify` and Windows' `cbor-example-verify-windows` both rely
+# on a real `timeout`/`xvfb-run` combo or a bare `timeout`, neither of which
+# transfers here.
+#
+# Does NOT regenerate the vendored artifacts itself — run
+# `just cbor-vendor-glue` (platform-independent codegen half) then
+# `just cbor-vendor-macos` (builds both Darwin arches and assembles the
+# universal xcframework — see that recipe's own comment) first, or rely on
+# what's already vendored, as CI does (see `cratestack-cbor-macos` in
+# ci.yml for the exact order).
+#
+# UNVERIFIED FROM THIS (Linux) DEV MACHINE — this repo's toolchain has no
+# Xcode, no `lipo`/`xcodebuild`, and cannot cross-compile
+# `*-apple-darwin`, so this recipe has never actually been RUN, only
+# written against Flutter's own plugin_ffi macOS template and the spike
+# branch's verified findings. Its first real execution is
+# `cratestack-cbor-macos` in `.github/workflows/ci.yml`, on `macos-latest`.
+#
+# Requires: Flutter SDK (3.44.1 pinned — see the package README) with the
+# macOS desktop toolchain configured (`flutter doctor` reporting "Xcode" as
+# OK) and CocoaPods installed (`pod --version`).
+cbor-example-verify-macos:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if ! command -v flutter >/dev/null; then
+	  echo "flutter not found on PATH — install the Flutter SDK: https://docs.flutter.dev/get-started/install" >&2
+	  exit 1
+	fi
+	example=dart-packages/cratestack_cbor/example
+	expected_hex="a36a6372617465737461636b8264636f6f6c65737461636b616e182a626f6bf5"
+	marker="CRATESTACK_CBOR_EXAMPLE_RESULT:"
+	framework=CratestackCborNative
+
+	echo "=== flutter clean: $example ==="
+	(cd "$example" && flutter clean)
+
+	# Force the CONSUMER shape. A pub.dev consumer never receives the
+	# unpacked xcframework — `.pubignore` excludes it and only the
+	# symlink-preserving `.zip` ships (see `cbor-vendor-macos`'s header for
+	# the measurements behind that). Deleting it here means every run of
+	# this recipe proves the podspec's `prepare_command` actually
+	# reconstructs a working framework from the zip, instead of silently
+	# testing the directory that only ever exists on a build machine.
+	# THAT blind spot — CI validating the framework as built, never as
+	# published — is what let a completely broken macOS artifact pass a
+	# fully green CI run.
+	pkg=dart-packages/cratestack_cbor
+	if [ ! -f "$pkg/macos/Frameworks/$framework.xcframework.zip" ]; then
+	  echo "FAIL: $pkg/macos/Frameworks/$framework.xcframework.zip is missing — run 'just cbor-vendor-macos' first." >&2
+	  exit 1
+	fi
+	echo "=== removing the unpacked xcframework: prepare_command must rebuild it from the zip ==="
+	rm -rf "$pkg/macos/Frameworks/$framework.xcframework"
+
+	echo "=== flutter pub get: $example ==="
+	(cd "$example" && flutter pub get)
+
+	echo "=== flutter analyze: $example ==="
+	(cd "$example" && flutter analyze --fatal-warnings --no-fatal-infos)
+
+	echo "=== flutter build macos (release): $example ==="
+	(cd "$example" && flutter build macos)
+	app="$(find "$example/build/macos/Build/Products/Release" -maxdepth 1 -name '*.app' | head -1)"
+	if [ -z "$app" ]; then
+	  echo "FAIL: no built .app found under $example/build/macos/Build/Products/Release" >&2
+	  exit 1
+	fi
+	lib="$app/Contents/Frameworks/$framework.framework/$framework"
+	if [ ! -f "$lib" ]; then
+	  echo "FAIL: vendored framework not found inside the built app at $lib — the macOS plugin scaffolding (macos/cratestack_cbor.podspec) did not bundle it." >&2
+	  exit 1
+	fi
+	echo "✓ vendored framework present in the built app: $lib"
+	if [ ! -d "$pkg/macos/Frameworks/$framework.xcframework" ]; then
+	  echo "FAIL: the podspec's prepare_command did not unpack $framework.xcframework from the zip." >&2
+	  exit 1
+	fi
+	symlink_count="$(find "$pkg/macos/Frameworks/$framework.xcframework" -type l | wc -l | tr -d ' ')"
+	if [ "$symlink_count" -lt 3 ]; then
+	  echo "FAIL: the reconstructed xcframework has $symlink_count symlinks, expected at least 3 (Versions/Current, the top-level binary, Resources). A symlink-free framework fails codesign — see cbor-vendor-macos's header comment." >&2
+	  exit 1
+	fi
+	echo "✓ prepare_command reconstructed the xcframework from the zip with its $symlink_count symlinks intact"
+
+	echo "=== lipo -info: asserting both arches are present ==="
+	arches="$(lipo -info "$lib")"
+	echo "$arches"
+	if [[ "$arches" != *"x86_64"* ]] || [[ "$arches" != *"arm64"* ]]; then
+	  echo "FAIL: embedded framework is not a universal (arm64 + x86_64) binary: $arches" >&2
+	  exit 1
+	fi
+	echo "✓ embedded framework is universal (arm64 + x86_64)"
+
+	echo "=== running the built macOS app (no 'timeout' on macOS — background+poll+kill) ==="
+	bin="$app/Contents/MacOS/$(basename "${app%.app}")"
+	if [ ! -f "$bin" ]; then
+	  echo "FAIL: expected built executable not found at $bin" >&2
+	  exit 1
+	fi
+	macos_log="$(mktemp)"
+	"$bin" > "$macos_log" 2>&1 &
+	bin_pid=$!
+	found=0
+	for _ in $(seq 1 30); do
+	  if grep -q "$marker" "$macos_log"; then
+	    found=1
+	    break
+	  fi
+	  sleep 1
+	done
+	kill "$bin_pid" 2>/dev/null || true
+	if [ "$found" -ne 1 ] || ! grep -q "$marker OK $expected_hex" "$macos_log"; then
+	  echo "FAIL: built macOS app did not print the expected round-trip marker. Captured output:" >&2
+	  cat "$macos_log" >&2
+	  rm -f "$macos_log"
+	  exit 1
+	fi
+	echo "✓ macOS app round-tripped CBOR: $(grep "$marker" "$macos_log")"
+	rm -f "$macos_log"
+
+	echo ""
+	echo "✓ cratestack_cbor example: real flutter build macos round-trips CBOR in a running universal app"
+
 # Bundle the Studio UI for publishing: source tarball (for `studio
 # eject --with-ui`) and the Trunk-built wasm/JS dist (embedded into
 # the served binary so `cratestack studio run` ships a real admin app
@@ -1730,6 +2306,16 @@ bump NEW:
 	# scheme (see its own pubspec's comment), not a published package, and
 	# must NOT move in lockstep with the workspace version.
 	perl -i -pe "s/^version: \Q$current\E\$/version: {{NEW}}/" dart-packages/*/pubspec.yaml
+	# ...and the CocoaPods podspec beside it, which carries the SAME version
+	# in a third syntax again (`s.version = '0.8.6'`, single-quoted Ruby).
+	# Missed on the way in (cratestack#563's macOS slice) and caught in
+	# review while still one bump behind the workspace: `bump` reached
+	# Cargo.toml, packages/*/package.json and dart-packages/*/pubspec.yaml,
+	# but nothing taught it about a podspec. Same drift class the
+	# `packages/*/package.json` comment above warns about — a "these move in
+	# lockstep" list that lives in more places than the tool knows about.
+	# Globbed, not enumerated, for the reason that block gives.
+	perl -i -pe "s/^(\s*s\.version\s*=\s*)'\Q$current\E'/\${1}'{{NEW}}'/" dart-packages/*/macos/*.podspec
 	# Refresh Cargo.lock so all entries pick up the new version.
 	#
 	# `cargo metadata`, NOT `cargo check`. Refreshing the lock does not

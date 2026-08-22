@@ -1,3 +1,16 @@
-# Intentionally empty: pub consults .gitignore only when no .pubignore
-# exists here. These build outputs are gitignored (repo convention) but
-# MUST ship in the published archive (cratestack#563 vendoring decision).
+# Almost intentionally empty: pub consults .gitignore only when no
+# .pubignore exists, and this package's build output (blobs/, the wasm-pkg,
+# the frb glue) is gitignored but MUST ship. The one exception below is the
+# reason this file is no longer completely empty.
+
+# The unpacked macOS xcframework must NOT enter the archive. `dart pub
+# publish` dereferences symlinks, and a macOS framework without its
+# symlinks is not merely untidy — it fails `codesign` outright, so a
+# consumer's `flutter build macos` dies with "Command CodeSign failed".
+# Measured, not inferred; see `just cbor-vendor-macos`'s header comment.
+#
+# `macos/Frameworks/CratestackCborNative.xcframework.zip` ships INSTEAD
+# (zips store symlinks) and `macos/cratestack_cbor.podspec`'s
+# `prepare_command` unpacks it at pod-install time. Shipping both would
+# defeat the point, so the directory is excluded here and the zip is not.
+macos/Frameworks/*.xcframework/
