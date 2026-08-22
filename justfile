@@ -1294,33 +1294,34 @@ cbor-vendor-lib PLATFORM:
 # Frameworks/` is gitignored (see this package's `.gitignore`) the same way
 # `blobs/` is — this is still build output, just not placed under `blobs/`.
 #
-# FLAT, NOT VERSIONED — a deliberate maintainer decision, and the one
-# non-obvious thing in this recipe. macOS frameworks are conventionally
-# versioned bundles (`Versions/A/…` plus `Versions/Current`, top-level
-# binary and `Resources` SYMLINKS), and that is what this recipe built
-# originally. The problem is what happens downstream:
+# VERSIONED, AND IT CANNOT BE FLAT — do not "simplify" this into a flat
+# bundle. That was tried deliberately (to solve the archive problem below)
+# and Xcode rejects it outright:
 #
-#   `dart pub publish` DEREFERENCES symlinks when it builds the archive.
+#   error: Framework …/CratestackCborNative.framework contains Info.plist,
+#   expected Versions/Current/Resources/Info.plist since the platform does
+#   not use shallow bundles (in target 'Runner' from project 'Runner')
 #
-# Verified by hand against a fixture before changing anything: the archive
-# does not lose files, but `Versions/Current` arrives at the consumer as a
-# real DIRECTORY rather than a symlink, and the top-level binary as a real
-# FILE. That is a malformed framework bundle — `codesign` in a consuming
-# app's build can reject it — and it silently triples the shipped binary
-# (top level + `Versions/A` + `Versions/Current`).
+# macOS does not use shallow bundles; iOS does. That is exactly why iOS
+# frameworks are flat and macOS ones are versioned — it is enforced by the
+# build system, not a convention. So the `Versions/A/…` layout plus the
+# three symlinks below are mandatory here.
 #
-# CI could never have caught this: it validates the framework AS BUILT on
-# the runner, which is not what a pub.dev consumer extracts. A flat layout
-# has no symlinks at all, so what is published is byte-for-byte what was
-# built. Two knock-on details, both handled below:
+# THE UNSOLVED PROBLEM THIS CREATES (cratestack#563, open):
+# `dart pub publish` DEREFERENCES symlinks when building the archive.
+# Verified by hand against a fixture: nothing is lost, but a consumer
+# extracts `Versions/Current` as a real DIRECTORY rather than a symlink,
+# and the binary is tripled (top level + Versions/A + Versions/Current).
+# Whether `codesign` in a consuming app actually rejects that shape is
+# INFERRED, NOT MEASURED — worth establishing before assuming it must be
+# fixed. CI cannot see any of this: every job validates the framework AS
+# BUILT on the runner, never as extracted from an archive.
 #
-#   * `Info.plist` sits at the framework ROOT, not under `Resources/`.
-#   * The install name is `@rpath/<fw>.framework/<fw>` — NO `Versions/A/`
-#     segment. `lib/src/native/native_cbor_codec.dart` already returns
-#     exactly that relative string, so the Dart side needs no change.
-#
-# This also aligns macOS with iOS, whose frameworks are flat by definition
-# — relevant if the iOS slice lands, since both would share this shape.
+# Remaining options if it does need fixing: ship the xcframework zipped and
+# unpack it in the podspec's `prepare_command` (a zip preserves symlinks),
+# or ship a bare universal `.dylib` and assemble the versioned bundle in
+# `prepare_command`. Both move work to pod-install time; neither is
+# implemented.
 #
 # Requires: `lipo`, `install_name_tool`, and `xcodebuild` (Xcode command
 # line tools) — macOS-only, so this recipe only ever runs on a
@@ -1347,19 +1348,19 @@ cbor-vendor-macos:
 	work="$(mktemp -d)"
 	trap 'rm -rf "$work"' EXIT
 	fw="$work/$framework.framework"
-	mkdir -p "$fw"
+	mkdir -p "$fw/Versions/A/Resources"
 	echo "=== lipo -create: macos-arm64 + macos-x64 -> universal $framework ==="
 	lipo -create \
-	  -output "$fw/$framework" \
+	  -output "$fw/Versions/A/$framework" \
 	  "$pkg/blobs/macos-arm64/libcratestack_client_flutter.dylib" \
 	  "$pkg/blobs/macos-x64/libcratestack_client_flutter.dylib"
-	lipo -info "$fw/$framework"
+	lipo -info "$fw/Versions/A/$framework"
 	# A vendored dynamic library must advertise an @rpath-relative install
 	# name — see this recipe's header comment.
 	install_name_tool -id \
-	  "@rpath/$framework.framework/$framework" \
-	  "$fw/$framework"
-	cat > "$fw/Info.plist" <<PLIST
+	  "@rpath/$framework.framework/Versions/A/$framework" \
+	  "$fw/Versions/A/$framework"
+	cat > "$fw/Versions/A/Resources/Info.plist" <<PLIST
 	<?xml version="1.0" encoding="UTF-8"?>
 	<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 	<plist version="1.0">
@@ -1375,6 +1376,9 @@ cbor-vendor-macos:
 	</plist>
 	PLIST
 	# Versioned bundle layout — see this recipe's header comment.
+	ln -s A "$fw/Versions/Current"
+	ln -s "Versions/Current/$framework" "$fw/$framework"
+	ln -s Versions/Current/Resources "$fw/Resources"
 	echo "=== xcodebuild -create-xcframework: universal $framework.framework -> $framework.xcframework ==="
 	rm -rf "$pkg/macos/Frameworks/$framework.xcframework"
 	mkdir -p "$pkg/macos/Frameworks"
