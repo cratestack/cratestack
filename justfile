@@ -2480,27 +2480,54 @@ cbor-example-verify-ios:
 	xcrun simctl terminate "$udid" "$appId" >/dev/null 2>&1 || true
 	xcrun simctl install "$udid" "$app"
 
+	# TWO independent capture channels, deliberately. The first CI run of
+	# this recipe failed with a COMPLETELY EMPTY capture from
+	# `--console-pty` — not wrong output, none at all — so the single
+	# channel could not distinguish "app never started", "app started but
+	# printed nothing", and "app printed but the pty never delivered it".
+	# `simctl spawn … log stream` reads the simulator's unified log, which
+	# is a different path from the app's stdout, so the marker is found if
+	# EITHER works.
 	ios_log="$(mktemp)"
+	stream_log="$(mktemp)"
+	xcrun simctl spawn "$udid" log stream --level=debug --style=compact \
+	  --predicate 'processImagePath CONTAINS[c] "Runner"' > "$stream_log" 2>&1 &
+	stream_pid=$!
+	sleep 2
 	xcrun simctl launch --console-pty "$udid" "$appId" > "$ios_log" 2>&1 &
 	launch_pid=$!
+	# 90s, not 30s. A cold simulator plus a first Flutter engine start is
+	# comfortably slower than the desktop jobs this timeout was copied from,
+	# and a too-short window is indistinguishable from a real failure.
 	found=0
-	for _ in $(seq 1 30); do
-	  if grep -q "$marker" "$ios_log"; then
+	for _ in $(seq 1 90); do
+	  if grep -qs "$marker" "$ios_log" "$stream_log"; then
 	    found=1
 	    break
 	  fi
 	  sleep 1
 	done
-	kill "$launch_pid" 2>/dev/null || true
+	kill "$launch_pid" "$stream_pid" 2>/dev/null || true
 	xcrun simctl terminate "$udid" "$appId" >/dev/null 2>&1 || true
-	if [ "$found" -ne 1 ] || ! grep -q "$marker OK $expected_hex" "$ios_log"; then
-	  echo "FAIL: built iOS simulator app did not print the expected round-trip marker. Captured output:" >&2
+	if [ "$found" -ne 1 ] || ! grep -qs "$marker OK $expected_hex" "$ios_log" "$stream_log"; then
+	  echo "FAIL: built iOS simulator app did not print the expected round-trip marker." >&2
+	  # Diagnostics, because the first failure of this recipe produced an
+	  # empty log and therefore told us nothing about which half broke.
+	  # Everything below is about narrowing that down on the NEXT run
+	  # rather than guessing again.
+	  echo "--- device state ---" >&2
+	  xcrun simctl list devices | grep -F "$udid" >&2 || true
+	  echo "--- is the app installed? ---" >&2
+	  xcrun simctl get_app_container "$udid" "$appId" >&2 2>&1 || echo "(get_app_container failed — app not installed)" >&2
+	  echo "--- console-pty capture ($(wc -c < "$ios_log") bytes) ---" >&2
 	  cat "$ios_log" >&2
-	  rm -f "$ios_log"
+	  echo "--- unified log capture ($(wc -c < "$stream_log") bytes), last 50 lines ---" >&2
+	  tail -50 "$stream_log" >&2
+	  rm -f "$ios_log" "$stream_log"
 	  exit 1
 	fi
-	echo "✓ iOS simulator app round-tripped CBOR: $(grep "$marker" "$ios_log")"
-	rm -f "$ios_log"
+	echo "✓ iOS simulator app round-tripped CBOR: $(grep -hs "$marker" "$ios_log" "$stream_log" | head -1)"
+	rm -f "$ios_log" "$stream_log"
 
 	echo ""
 	echo "✓ cratestack_cbor example: real flutter build ios --simulator round-trips CBOR in a running simulator app"
