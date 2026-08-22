@@ -1346,9 +1346,27 @@ jobs:
           # entries rather than removing them. Counting more is exactly what
           # being broken looks like, so a floor could never have caught it.
           macos_zip_count=$(grep -c 'CratestackCborNative\.xcframework\.zip' <<<"$dry_run_output" || true)
-          # Anything under `…xcframework/` means .pubignore stopped working
-          # and the raw tree is being shipped (and thus dereferenced).
-          macos_raw_count=$(grep -c 'CratestackCborNative\.xcframework/' <<<"$dry_run_output" || true)
+          # The unpacked xcframework DIRECTORY appearing here means
+          # .pubignore stopped working and the raw tree is being shipped
+          # (and thus dereferenced, and thus unbuildable for a consumer).
+          #
+          # Matched against the tree renderer's own output shape, NOT by
+          # substring. The previous version of this line looked for
+          # `CratestackCborNative.xcframework/` — with a trailing slash —
+          # which `dart pub publish --dry-run` NEVER emits: it renders a
+          # tree, one path segment per line, so a directory appears as
+          # `└── CratestackCborNative.xcframework` with no slash and no
+          # children concatenated onto it. That check therefore returned 0
+          # whether or not the framework leaked: a check that could not
+          # fail, guarding the exact defect (a `codesign`-breaking
+          # published framework) that was already measured on a real Mac.
+          #
+          # Verified against real `--dry-run` output with a deliberately
+          # leaked framework: the old pattern reports 0, this one reports 1.
+          # The `$` anchor is load-bearing — the renderer appends a size to
+          # FILES (`… .xcframework.zip (1.5 MB)`) but not to directories, so
+          # anchoring is what keeps the zip from matching here.
+          macos_raw_count=$(grep -cE '(├── |└── )CratestackCborNative\.xcframework$' <<<"$dry_run_output" || true)
 
           fail=0
           if [ "$so_count" -ne 4 ]; then
