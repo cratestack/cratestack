@@ -1199,10 +1199,15 @@ cbor-vendor-glue:
 # only, drop nothing `-strip-unneeded` would need ELF section semantics
 # for); MSVC-built PE `.dll`s have no `strip` equivalent at all — debug
 # info lives in a separate `.pdb` that this recipe simply never copies, so
-# there is nothing to strip.
+# there is nothing to strip. `ios-*` rows share macOS's `.dylib` naming and
+# `strip -x` treatment (both are Mach-O, built by the same Apple `strip`) —
+# `just cbor-vendor-ios` (cratestack#563 iOS slice) composes three of these
+# calls (`ios-arm64`, `ios-sim-arm64`, `ios-sim-x64`) the same way
+# `cbor-vendor-macos` composes `macos-arm64` + `macos-x64`, before
+# assembling the flat frameworks and xcframework itself.
 #
-# Requires: `strip` on PATH (linux-x64, macos-*) — not required/used for
-# windows-x64.
+# Requires: `strip` on PATH (linux-x64, macos-*, ios-*) — not
+# required/used for windows-x64.
 cbor-vendor-lib PLATFORM:
 	#!/usr/bin/env bash
 	set -euo pipefail
@@ -1229,8 +1234,23 @@ cbor-vendor-lib PLATFORM:
 	    lib_name=cratestack_client_flutter.dll
 	    strip_cmd=""
 	    ;;
+	  ios-arm64)
+	    target=aarch64-apple-ios
+	    lib_name=libcratestack_client_flutter.dylib
+	    strip_cmd="strip -x"
+	    ;;
+	  ios-sim-arm64)
+	    target=aarch64-apple-ios-sim
+	    lib_name=libcratestack_client_flutter.dylib
+	    strip_cmd="strip -x"
+	    ;;
+	  ios-sim-x64)
+	    target=x86_64-apple-ios
+	    lib_name=libcratestack_client_flutter.dylib
+	    strip_cmd="strip -x"
+	    ;;
 	  *)
-	    echo "unknown platform '$platform' (expected one of: linux-x64, macos-arm64, macos-x64, windows-x64)" >&2
+	    echo "unknown platform '$platform' (expected one of: linux-x64, macos-arm64, macos-x64, windows-x64, ios-arm64, ios-sim-arm64, ios-sim-x64)" >&2
 	    exit 1
 	    ;;
 	esac
@@ -1442,6 +1462,165 @@ cbor-vendor-macos:
 	  "$pkg/macos/Frameworks/$framework.xcframework.zip"
 	echo "✓ vendored $(du -sh "$pkg/macos/Frameworks/$framework.xcframework" | cut -f1) universal macOS xcframework at $pkg/macos/Frameworks/$framework.xcframework"
 	echo "✓ shipped $(du -h "$pkg/macos/Frameworks/$framework.xcframework.zip" | cut -f1) symlink-preserving zip at $pkg/macos/Frameworks/$framework.xcframework.zip"
+
+# Composes `cbor-vendor-lib ios-arm64` + `cbor-vendor-lib ios-sim-arm64` +
+# `cbor-vendor-lib ios-sim-x64` into ONE xcframework with TWO slices — a
+# device slice (`ios-arm64`) and a universal simulator slice
+# (`ios-arm64_x86_64-simulator`, itself `lipo`'d from the two simulator
+# arches) — ready for `ios/cratestack_cbor.podspec`'s `vendored_frameworks`
+# (cratestack#563 iOS slice). Mirrors `cbor-vendor-macos` in shape (same
+# per-arch build → lipo → flat framework → `xcodebuild -create-xcframework`
+# pipeline), but the framework layout genuinely differs, not just the
+# triples — see the two load-bearing differences below.
+#
+# DIFFERENCE 1 — FLAT, NOT VERSIONED. macOS frameworks are versioned
+# bundles (`Versions/A/...` + three symlinks — see `cbor-vendor-macos`'s
+# header for why, and why that layout is mandatory there). iOS is the
+# opposite: it uses "shallow bundles" — Apple's own term, visible verbatim
+# in the macOS Xcode error this recipe deliberately does NOT try to
+# reproduce here ("expected Versions/Current/Resources/Info.plist since
+# the platform does not use shallow bundles" — the converse statement is
+# that iOS DOES use shallow bundles). A shallow/flat framework has no
+# `Versions/` indirection at all: the binary and `Info.plist` sit directly
+# at the framework root. This recipe authors that flat layout directly —
+# do NOT copy the macOS `Versions/A/…` + symlink construction here.
+#
+# DIFFERENCE 2 — NO SYMLINKS, THEREFORE NO ZIP. macOS ships
+# `CratestackCborNative.xcframework.zip` (not the raw directory) because
+# `dart pub publish` dereferences symlinks and a macOS framework stripped
+# of its mandatory symlinks fails `codesign` — see `cbor-vendor-macos`'s
+# header for the measurements. A flat iOS framework built by THIS recipe
+# has no symlinks anywhere in its construction (no `ln -s` appears below,
+# unlike the macOS recipe), so there is nothing for `dart pub publish` to
+# dereference and nothing the zip+`prepare_command` apparatus would buy —
+# `ios/Frameworks/CratestackCborNative.xcframework` ships UNPACKED, with no
+# corresponding `.pubignore` entry.
+#
+# THIS IS A REASONED CONCLUSION, NOT A MEASUREMENT — recorded explicitly
+# because the macOS symlink problem was originally missed the same way:
+# this repo's dev toolchain is Linux-only (no Xcode, no `xcodebuild`, no
+# `lipo`), so `just cbor-vendor-ios` has never actually run before its
+# first real execution in `cratestack-cbor-ios` in `ci.yml`, on
+# `macos-latest`. The symlink assertion immediately below is what turns
+# "reasoned conclusion" into a build-time guarantee: if `xcodebuild
+# -create-xcframework` ever DOES introduce a symlink into a shallow-bundle
+# slice (a future Xcode behavior change, not something this recipe can
+# rule out from a Linux dev machine), this recipe FAILS LOUDLY rather than
+# silently shipping a framework `dart pub publish` would dereference and
+# break — the exact blind spot that let the original macOS defect through
+# is closed here by construction, not by hoping the assumption holds.
+#
+# Two frameworks are assembled before the single `xcodebuild
+# -create-xcframework` call — one per slice, each with its own
+# `Info.plist` (`CFBundleSupportedPlatforms` differs: `iPhoneOS` for the
+# device slice, `iPhoneSimulator` for the simulator slice — the key iOS
+# uses in place of macOS's `LSMinimumSystemVersion`).
+#
+# `install_name_tool -id @rpath/CratestackCborNative.framework/
+# CratestackCborNative` — flat, no `Versions/A` segment (contrast
+# `cbor-vendor-macos`'s `@rpath/$framework.framework/Versions/A/$framework`)
+# — same @rpath-relative reasoning as macOS: without it a vendored dylib
+# would embed an absolute build-machine path instead of resolving against
+# its own bundled copy inside the consuming app.
+#
+# `13.0` matches Flutter's own `plugin_ffi` iOS template
+# (`templates/plugin_ffi/ios.tmpl/projectName.podspec.tmpl`'s `s.platform
+# = :ios, '13.0'`) and this repo's own `flutter create --platforms=ios`
+# output (`IPHONEOS_DEPLOYMENT_TARGET = 13.0` in the generated example
+# Runner project) — checked against this repo's pinned Flutter 3.44.1, not
+# guessed. Kept in lockstep with the podspec's own `s.platform` the same
+# way macOS's `10.15` is kept in lockstep with its Info.plist.
+#
+# Requires: `lipo`, `install_name_tool`, and `xcodebuild` (Xcode command
+# line tools) — macOS-only, so this recipe only ever runs on a
+# `macos-latest`/local macOS host, same constraint `cbor-vendor-macos` has.
+cbor-vendor-ios:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	for tool in lipo install_name_tool xcodebuild; do
+	  if ! command -v "$tool" >/dev/null; then
+	    echo "cbor-vendor-ios: '$tool' not found — this recipe only runs on macOS with Xcode command line tools installed" >&2
+	    exit 1
+	  fi
+	done
+	pkg=dart-packages/cratestack_cbor
+	framework=CratestackCborNative
+	min_ios_version=13.0
+	just cbor-vendor-lib ios-arm64
+	just cbor-vendor-lib ios-sim-arm64
+	just cbor-vendor-lib ios-sim-x64
+	version="$(awk -F': ' '/^version:/{print $2; exit}' "$pkg/pubspec.yaml")"
+	if [ -z "$version" ]; then
+	  echo "cbor-vendor-ios: could not read 'version:' from $pkg/pubspec.yaml" >&2
+	  exit 1
+	fi
+	work="$(mktemp -d)"
+	trap 'rm -rf "$work"' EXIT
+
+	make_flat_framework() {
+	  # $1 = output framework dir, $2 = source dylib, $3 = CFBundleSupportedPlatforms value
+	  local fw="$1" dylib="$2" supported_platform="$3"
+	  mkdir -p "$fw"
+	  cp "$dylib" "$fw/$framework"
+	  install_name_tool -id "@rpath/$framework.framework/$framework" "$fw/$framework"
+	  cat > "$fw/Info.plist" <<PLIST
+	<?xml version="1.0" encoding="UTF-8"?>
+	<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+	<plist version="1.0">
+	<dict>
+	  <key>CFBundleExecutable</key><string>$framework</string>
+	  <key>CFBundleIdentifier</key><string>dev.cratestack.$framework</string>
+	  <key>CFBundleName</key><string>$framework</string>
+	  <key>CFBundlePackageType</key><string>FMWK</string>
+	  <key>CFBundleShortVersionString</key><string>$version</string>
+	  <key>CFBundleVersion</key><string>$version</string>
+	  <key>MinimumOSVersion</key><string>$min_ios_version</string>
+	  <key>CFBundleSupportedPlatforms</key>
+	  <array><string>$supported_platform</string></array>
+	</dict>
+	</plist>
+	PLIST
+	}
+
+	echo "=== assembling device slice (ios-arm64) ==="
+	make_flat_framework "$work/device/$framework.framework" \
+	  "$pkg/blobs/ios-arm64/libcratestack_client_flutter.dylib" \
+	  iPhoneOS
+	lipo -info "$work/device/$framework.framework/$framework"
+
+	echo "=== lipo -create: ios-sim-arm64 + ios-sim-x64 -> universal simulator slice ==="
+	mkdir -p "$work/sim-dylib"
+	lipo -create \
+	  -output "$work/sim-dylib/libcratestack_client_flutter.dylib" \
+	  "$pkg/blobs/ios-sim-arm64/libcratestack_client_flutter.dylib" \
+	  "$pkg/blobs/ios-sim-x64/libcratestack_client_flutter.dylib"
+	make_flat_framework "$work/simulator/$framework.framework" \
+	  "$work/sim-dylib/libcratestack_client_flutter.dylib" \
+	  iPhoneSimulator
+	lipo -info "$work/simulator/$framework.framework/$framework"
+
+	echo "=== xcodebuild -create-xcframework: device + simulator slices -> $framework.xcframework ==="
+	out="$pkg/ios/Frameworks/$framework.xcframework"
+	rm -rf "$out"
+	mkdir -p "$pkg/ios/Frameworks"
+	xcodebuild -create-xcframework \
+	  -framework "$work/device/$framework.framework" \
+	  -framework "$work/simulator/$framework.framework" \
+	  -output "$out"
+
+	# THE CHECK cratestack#563's iOS slice explicitly requires — see this
+	# recipe's header comment for why zero is expected but not assumed.
+	symlink_count="$(find "$out" -type l | wc -l | tr -d ' ')"
+	echo "iOS xcframework symlink count: $symlink_count"
+	if [ "$symlink_count" -ne 0 ]; then
+	  echo "cbor-vendor-ios: FAIL — the assembled xcframework has $symlink_count symlink(s), expected 0." >&2
+	  echo "This recipe was written assuming iOS's shallow-bundle framework format never introduces symlinks (unlike macOS's versioned bundles — see this recipe's header comment), and ships the framework UNPACKED on that basis, with no zip/prepare_command mechanism." >&2
+	  echo "That assumption just broke. Do NOT silently publish this xcframework as-is — dart pub publish dereferences symlinks, and the macOS slice already proved once that a symlink-stripped Apple framework fails codesign outright." >&2
+	  echo "Mirror cbor-vendor-macos's zip mechanism for iOS instead: emit $out.zip (ditto -c -k --keepParent), add ios/cratestack_cbor.podspec's prepare_command to unpack it, and add macos/Frameworks/*.xcframework/-style exclusions for ios/Frameworks/*.xcframework/ to .pubignore." >&2
+	  find "$out" -type l >&2
+	  exit 1
+	fi
+	echo "✓ vendored $(du -sh "$out" | cut -f1) iOS xcframework (device + universal simulator) at $out, 0 symlinks — ships unpacked"
 
 # Alias kept for every existing caller of the old combined recipe (CI's
 # `cratestack-cbor-*` jobs, `release-cli.yml`'s `publish-pubdev-cbor`, and
@@ -2152,6 +2331,179 @@ cbor-example-verify-macos:
 
 	echo ""
 	echo "✓ cratestack_cbor example: real flutter build macos round-trips CBOR in a running universal app"
+
+# Real Flutter-app proof for cratestack_cbor's iOS platform (cratestack#563
+# iOS slice). Same bar as `cbor-example-verify-macos`/`-windows`: a real
+# `flutter build ios`, an assertion the vendored xcframework actually landed
+# inside the built `.app` (a build that merely COMPILES proves nothing —
+# see those recipes' own comments), a `lipo -info` check that the embedded
+# SIMULATOR slice is universal (arm64 + x86_64 — a slice that silently lost
+# an arch during `just cbor-vendor-ios`'s assembly would still embed and
+# still launch on the runner's own arch), then actually installing and
+# running the app on a booted simulator and grepping its captured console
+# output for the same `CRATESTACK_CBOR_EXAMPLE_RESULT: OK <hex>` marker
+# every other platform asserts (`expected_hex` below matches
+# `cbor-example-verify`'s).
+#
+# SIMULATOR ONLY, not a real device — `--simulator --no-codesign` sidesteps
+# the code-signing identity / provisioning profile a real-device build would
+# need, which a hosted CI runner has neither of. This proves the vendored
+# xcframework's SIMULATOR slice loads and links correctly; it does NOT prove
+# the DEVICE slice does (`ios-arm64`, the non-simulator half of the same
+# xcframework — see `just cbor-vendor-ios`) — that would need a real
+# provisioning profile and a physical or virtual device with a signing
+# identity, out of scope for an unattended CI gate. Same asymmetry
+# `cbor-example-verify-android`'s APK-presence proof has relative to
+# `cbor-example-verify-android-emulator`'s on-device round-trip proof: this
+# recipe is the CI-facing gate, and it is deliberately scoped to what an
+# unattended runner can actually prove.
+#
+# NO UNPACK-FROM-ZIP STEP, unlike `cbor-example-verify-macos` — and that is
+# not an oversight. macOS deletes its unpacked xcframework before building
+# specifically to force the podspec's `prepare_command` to reconstruct it
+# from the shipped zip, proving the CONSUMER path rather than just the
+# build-machine one (see that recipe's own comment for the blind spot this
+# closes). iOS has no zip and no `prepare_command` at all — `just
+# cbor-vendor-ios` ships the xcframework unpacked because a flat/shallow iOS
+# framework has no symlinks for `dart pub publish` to dereference (see that
+# recipe's and `ios/cratestack_cbor.podspec`'s own header comments) — so
+# what this recipe builds against IS already the consumer shape; there is no
+# separate packaged form to reconstruct. The symlink-count re-check below is
+# this recipe's equivalent insurance: if that "zero symlinks" premise were
+# ever violated by a stale vendored artifact, this catches it here too,
+# independently of the assertion `just cbor-vendor-ios` already makes at
+# vendor time.
+#
+# `timeout` does NOT exist on macOS — same reasoning and same
+# background+poll+kill idiom as `cbor-example-verify-macos` (see that
+# recipe's own comment). `xcrun simctl launch --console-pty` is what
+# streams the launched app's console output back to this process; it blocks
+# until killed, so it is run the same way the macOS `.app` binary is: in the
+# background, polled for the marker, then killed.
+#
+# UNVERIFIED FROM THIS (Linux) DEV MACHINE — same status every Apple-
+# platform recipe in this file had before its own first CI run: no Xcode,
+# no `xcodebuild`/`lipo`/`xcrun simctl`, no iOS simulator runtime, and
+# cannot cross-compile `*-apple-ios*`, so this recipe has never actually
+# been RUN, only written against Flutter's own plugin_ffi iOS template, the
+# already-proven macOS mechanism (`spike/cbor-macos-xcframework`), and
+# Apple's documented `simctl` command surface. Its first real execution is
+# `cratestack-cbor-ios` in `.github/workflows/ci.yml`, on `macos-latest`.
+#
+# Requires: Flutter SDK (3.44.1 pinned — see the package README) with the
+# iOS toolchain configured (`flutter doctor` reporting "Xcode" as OK) and at
+# least one iOS simulator runtime installed (`xcrun simctl list runtimes`) —
+# GitHub's `macos-latest` images ship several by default.
+cbor-example-verify-ios:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if ! command -v flutter >/dev/null; then
+	  echo "flutter not found on PATH — install the Flutter SDK: https://docs.flutter.dev/get-started/install" >&2
+	  exit 1
+	fi
+	example=dart-packages/cratestack_cbor/example
+	expected_hex="a36a6372617465737461636b8264636f6f6c65737461636b616e182a626f6bf5"
+	marker="CRATESTACK_CBOR_EXAMPLE_RESULT:"
+	framework=CratestackCborNative
+	# Derived by `flutter create --platforms=ios .` from this example's
+	# existing macOS/Android org+name convention (`dev.cratestack.examples.*`)
+	# — see ios/Runner.xcodeproj/project.pbxproj's PRODUCT_BUNDLE_IDENTIFIER,
+	# camelCased (no underscore) because bundle identifiers reject `_`,
+	# unlike Android's applicationId.
+	appId="dev.cratestack.examples.cratestackCborExample"
+
+	pkg=dart-packages/cratestack_cbor
+	fw="$pkg/ios/Frameworks/$framework.xcframework"
+	if [ ! -d "$fw" ]; then
+	  echo "FAIL: $fw is missing — run 'just cbor-vendor-ios' first." >&2
+	  exit 1
+	fi
+	# Insurance re-check, independent of the assertion `just cbor-vendor-ios`
+	# already makes at vendor time — see this recipe's own header comment for
+	# why there is no zip/prepare_command step to force a reconstruction
+	# through instead.
+	symlink_count="$(find "$fw" -type l | wc -l | tr -d ' ')"
+	if [ "$symlink_count" -ne 0 ]; then
+	  echo "FAIL: vendored iOS xcframework at $fw has $symlink_count symlink(s), expected 0 — see just cbor-vendor-ios's header comment for why this is treated as a hard failure rather than shipped as-is." >&2
+	  exit 1
+	fi
+
+	echo "=== flutter clean: $example ==="
+	(cd "$example" && flutter clean)
+
+	echo "=== flutter pub get: $example ==="
+	(cd "$example" && flutter pub get)
+
+	echo "=== flutter analyze: $example ==="
+	(cd "$example" && flutter analyze --fatal-warnings --no-fatal-infos)
+
+	echo "=== flutter build ios --simulator --no-codesign: $example ==="
+	(cd "$example" && flutter build ios --simulator --no-codesign)
+	app="$(find "$example/build/ios/iphonesimulator" -maxdepth 1 -name '*.app' | head -1)"
+	if [ -z "$app" ]; then
+	  echo "FAIL: no built .app found under $example/build/ios/iphonesimulator" >&2
+	  exit 1
+	fi
+	lib="$app/Frameworks/$framework.framework/$framework"
+	if [ ! -f "$lib" ]; then
+	  echo "FAIL: vendored framework not found inside the built app at $lib — the iOS plugin scaffolding (ios/cratestack_cbor.podspec) did not bundle it." >&2
+	  exit 1
+	fi
+	echo "✓ vendored framework present in the built app: $lib"
+
+	echo "=== lipo -info: asserting the simulator slice is universal ==="
+	arches="$(lipo -info "$lib")"
+	echo "$arches"
+	if [[ "$arches" != *"x86_64"* ]] || [[ "$arches" != *"arm64"* ]]; then
+	  echo "FAIL: embedded simulator framework is not universal (arm64 + x86_64): $arches" >&2
+	  exit 1
+	fi
+	echo "✓ embedded simulator framework is universal (arm64 + x86_64)"
+
+	echo "=== booting an iOS simulator ==="
+	# Pick the first available iPhone runtime rather than hardcoding a device
+	# name/iOS version — GitHub's macos-latest image's preinstalled simulator
+	# set changes with the Xcode version it ships, and this is a plain-text
+	# parse (no python3), matching every other Darwin recipe in this file
+	# (see `cbor-vendor-lib`'s own comment for why python3 is deliberately
+	# avoided here).
+	udid="$(xcrun simctl list devices available | awk -F'[()]' '/iPhone/ {print $2; exit}')"
+	if [ -z "$udid" ]; then
+	  echo "FAIL: no available iPhone simulator found (xcrun simctl list devices available)." >&2
+	  exit 1
+	fi
+	echo "using simulator $udid"
+	xcrun simctl boot "$udid" 2>/dev/null || true
+	xcrun simctl bootstatus "$udid" -b
+
+	echo "=== installing + launching $appId ==="
+	xcrun simctl terminate "$udid" "$appId" >/dev/null 2>&1 || true
+	xcrun simctl install "$udid" "$app"
+
+	ios_log="$(mktemp)"
+	xcrun simctl launch --console-pty "$udid" "$appId" > "$ios_log" 2>&1 &
+	launch_pid=$!
+	found=0
+	for _ in $(seq 1 30); do
+	  if grep -q "$marker" "$ios_log"; then
+	    found=1
+	    break
+	  fi
+	  sleep 1
+	done
+	kill "$launch_pid" 2>/dev/null || true
+	xcrun simctl terminate "$udid" "$appId" >/dev/null 2>&1 || true
+	if [ "$found" -ne 1 ] || ! grep -q "$marker OK $expected_hex" "$ios_log"; then
+	  echo "FAIL: built iOS simulator app did not print the expected round-trip marker. Captured output:" >&2
+	  cat "$ios_log" >&2
+	  rm -f "$ios_log"
+	  exit 1
+	fi
+	echo "✓ iOS simulator app round-tripped CBOR: $(grep "$marker" "$ios_log")"
+	rm -f "$ios_log"
+
+	echo ""
+	echo "✓ cratestack_cbor example: real flutter build ios --simulator round-trips CBOR in a running simulator app"
 
 # Bundle the Studio UI for publishing: source tarball (for `studio
 # eject --with-ui`) and the Trunk-built wasm/JS dist (embedded into
