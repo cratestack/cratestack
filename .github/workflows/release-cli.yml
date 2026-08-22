@@ -1029,6 +1029,77 @@ jobs:
           path: dart-packages/cratestack_cbor/macos/Frameworks/CratestackCborNative.xcframework.zip
           if-no-files-found: error
 
+  # ---- cratestack_cbor iOS native library (cratestack#563 iOS slice) --------
+  # Same cross-compile-is-impossible reasoning as `build-cbor-macos` above,
+  # for the three `*-apple-ios*` triples this time — see that job's header
+  # comment for the full "why a dedicated job, not another matrix leg"
+  # rationale, which applies unchanged here. `build-cbor-macos`'s Rust
+  # toolchain setup mirrors `cratestack-cbor-macos` in `ci.yml`; this job
+  # mirrors `cratestack-cbor-ios` there the same way.
+  #
+  # `just cbor-vendor-glue` MUST run before `just cbor-vendor-ios` on this
+  # fresh-checkout runner — identical E0583 reasoning as `build-cbor-macos`
+  # above.
+  #
+  # OUTPUT PATH IS `ios/Frameworks/`, not `blobs/ios/` — same
+  # podspec-relative-`vendored_frameworks` reasoning as `build-cbor-macos`'s
+  # job comment, see `ios/cratestack_cbor.podspec`'s own header comment.
+  #
+  # UPLOADS THE UNPACKED XCFRAMEWORK DIRECTORY, not a zip — the one genuine
+  # difference from `build-cbor-macos`'s upload step. iOS frameworks are
+  # flat/shallow bundles with no symlinks (unlike macOS's versioned bundles —
+  # see `just cbor-vendor-ios`'s and `ios/cratestack_cbor.podspec`'s header
+  # comments for the full reasoning and the build-time assertion that backs
+  # it), so there is nothing for `actions/upload-artifact`'s symlink-following
+  # behavior to corrupt in transit and nothing for `dart pub publish` to
+  # dereference later — the directory tree IS the published shape here, same
+  # as every other platform's `blobs/<platform>/` artifact.
+  build-cbor-ios:
+    name: build cratestack_cbor native library (ios)
+    needs: [prepare, build-cbor-glue]
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+      # Same reason as ci.yml's `cratestack-cbor-ios` job — see that step's
+      # comment. `with: targets:` on the action targets `stable`, but
+      # rust-toolchain.toml pins 1.95.0, so the cross-targets must be added
+      # by a RUN step inside the checkout or they fail E0463.
+      - name: Add all three iOS targets (to the pinned toolchain, not stable)
+        run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-pubdev-cbor-ios
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      # Takes the shared artifact rather than running codegen locally — same
+      # reason as `build-cbor-macos`'s identical step.
+      - name: Restore frb glue (generated once on Linux by `build-cbor-glue`)
+        uses: actions/download-artifact@v4
+        with:
+          name: cbor-frb-glue-release
+          path: .
+      - name: Assert the glue is present
+        run: |
+          set -euo pipefail
+          test -f crates/cratestack-client-flutter/src/frb_generated.rs \
+            || { echo "::error::frb_generated.rs missing after download-artifact — cargo build --features frb-glue would fail with E0583." >&2; exit 1; }
+          echo "✓ frb glue restored"
+      - name: Vendor iOS xcframework (all three triples, lipo'd simulator slice, via cbor-vendor-ios)
+        run: just cbor-vendor-ios
+      # THE DIRECTORY, not a zip — see this job's header comment for why
+      # there is nothing here for upload-artifact's symlink-following
+      # behavior to corrupt, unlike macOS's zip-only upload.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cbor-native-ios
+          path: dart-packages/cratestack_cbor/ios/Frameworks/CratestackCborNative.xcframework
+          if-no-files-found: error
+
   # ---- cratestack_cbor Windows native library (cratestack#563
   # platform-matrix release slice) --------------------------------------------
   # Same cross-compile-is-impossible reasoning as build-cbor-macos above,
@@ -1163,17 +1234,18 @@ jobs:
   publish-pubdev-cbor:
     name: publish pub.dev package (cratestack_cbor)
     if: github.event_name == 'push'
-    needs: [prepare, build-cbor-macos, build-cbor-windows]
+    needs: [prepare, build-cbor-macos, build-cbor-ios, build-cbor-windows]
     runs-on: ubuntu-latest
     # No job in this workflow set a timeout, so GitHub's 6-hour default
     # applied. On v0.8.1 that meant a publish blocked on an interactive OAuth
     # prompt would have held a runner all afternoon while reporting nothing.
     # This job's own real work (toolchain + Linux/Android/web vendor builds +
-    # downloading the macOS/Windows legs' artifacts + publish) runs in well
-    # under 20 minutes; anything past that is stuck, not slow. The
-    # `build-cbor-macos`/`build-cbor-windows` jobs it now waits on have their
-    # own separate `timeout-minutes: 30`, so a hang on either of THOSE hosts
-    # is bounded independently rather than eating into this job's own budget.
+    # downloading the macOS/iOS/Windows legs' artifacts + publish) runs in
+    # well under 20 minutes; anything past that is stuck, not slow. The
+    # `build-cbor-macos`/`build-cbor-ios`/`build-cbor-windows` jobs it now
+    # waits on have their own separate `timeout-minutes: 30`, so a hang on
+    # any of THOSE hosts is bounded independently rather than eating into
+    # this job's own budget.
     timeout-minutes: 30
     permissions:
       contents: read
@@ -1264,16 +1336,17 @@ jobs:
         run: just cbor-vendor-web
       - name: Vendor Android artifacts (cargo ndk cross-compile, 3 ABIs)
         run: just cbor-vendor-android
-      # These two CANNOT be built on this (ubuntu-latest) host — downloaded
-      # from `build-cbor-macos`/`build-cbor-windows` above instead of
-      # vendored inline, same "download what a cross-host job produced"
-      # shape as `publish-npm-cbor-node`'s download of `build-cbor-node`'s
-      # per-platform `.node` binaries. Explicit `name:` + `path:` (not
-      # `pattern:`) on each — unlike that job's 5-target fan-in, there are
-      # only two artifacts here and each has a known 1:1 destination
-      # directory, so there is no need for `pattern:`'s per-artifact-name
-      # subfolder + a follow-up "find and copy" step; the file(s) land
-      # directly where the gate and `dart pub publish` expect them.
+      # These three CANNOT be built on this (ubuntu-latest) host — downloaded
+      # from `build-cbor-macos`/`build-cbor-ios`/`build-cbor-windows` above
+      # instead of vendored inline, same "download what a cross-host job
+      # produced" shape as `publish-npm-cbor-node`'s download of
+      # `build-cbor-node`'s per-platform `.node` binaries. Explicit `name:` +
+      # `path:` (not `pattern:`) on each — unlike that job's 5-target fan-in,
+      # there are only three artifacts here and each has a known 1:1
+      # destination directory, so there is no need for `pattern:`'s
+      # per-artifact-name subfolder + a follow-up "find and copy" step; the
+      # file(s) land directly where the gate and `dart pub publish` expect
+      # them.
       # NOT blobs/macos/ — see build-cbor-macos's job comment: CocoaPods
       # resolves the podspec's `vendored_frameworks` relative to the
       # podspec's own directory, so `just cbor-vendor-macos` (that job)
@@ -1284,6 +1357,21 @@ jobs:
         with:
           name: cbor-native-macos
           path: dart-packages/cratestack_cbor/macos/Frameworks
+      # Same podspec-relative-path reasoning as the macOS download above,
+      # aimed at `ios/Frameworks/` instead — see `ios/cratestack_cbor
+      # .podspec`'s own header comment. UNLIKE the macOS download, this one
+      # restores a DIRECTORY TREE, not a single zip file: `build-cbor-ios`
+      # uploaded the unpacked xcframework directly (see that job's own
+      # comment for why iOS has no zip to begin with), so
+      # `download-artifact`'s `path:` here is the xcframework directory
+      # itself — its contents land directly inside it, the same shape
+      # `cbor-native-windows-x64`'s single-`.dll` download already uses for
+      # a directory-shaped artifact, just with more files inside.
+      - name: Download iOS xcframework (built on macos-latest — cannot cross-compile from this host)
+        uses: actions/download-artifact@v4
+        with:
+          name: cbor-native-ios
+          path: dart-packages/cratestack_cbor/ios/Frameworks/CratestackCborNative.xcframework
       - name: Download Windows native library (built on windows-latest — cannot cross-compile from this host)
         uses: actions/download-artifact@v4
         with:
@@ -1292,6 +1380,7 @@ jobs:
       - name: List downloaded cross-host artifacts
         run: |
           find dart-packages/cratestack_cbor/macos/Frameworks -type f
+          find dart-packages/cratestack_cbor/ios/Frameworks -type f
           find dart-packages/cratestack_cbor/blobs/windows-x64 -type f
       # THE GATE (cratestack#563's explicit requirement): prove the archive
       # actually contains what was just vendored, BEFORE publishing, rather
@@ -1345,28 +1434,103 @@ jobs:
           # passed happily on the broken shape, since dereferencing ADDS
           # entries rather than removing them. Counting more is exactly what
           # being broken looks like, so a floor could never have caught it.
-          macos_zip_count=$(grep -c 'CratestackCborNative\.xcframework\.zip' <<<"$dry_run_output" || true)
-          # The unpacked xcframework DIRECTORY appearing here means
-          # .pubignore stopped working and the raw tree is being shipped
-          # (and thus dereferenced, and thus unbuildable for a consumer).
+          # SCOPED to the `macos`/`ios` top-level archive entries' own
+          # lines, not flat whole-output greps — see below for why scoping
+          # is load-bearing here, not a style choice. `dart pub publish
+          # --dry-run`'s tree renderer never concatenates a parent directory
+          # and its child onto one line (verified against this repo's
+          # currently-resolved pub version — every nesting level gets its
+          # OWN line with a box-drawing prefix, e.g. `│   ├── `), so a line
+          # never contains a full path — only ONE path segment. That matters
+          # because `CratestackCborNative.framework` (the per-slice iOS
+          # directory name) and `CratestackCborNative.xcframework` (the
+          # macOS/iOS top-level directory name) can each appear under EITHER
+          # platform's archive entry with an identical-looking line, and a
+          # global grep cannot tell which platform's entry it came from.
+          macos_block="$(awk '
+            /^(├── |└── )macos$/ { capture=1 }
+            capture && !/^(├── |└── )macos$/ && /^(├── |└── )/ { capture=0 }
+            capture { print }
+          ' <<<"$dry_run_output")"
+          ios_block="$(awk '
+            /^(├── |└── )ios$/ { capture=1 }
+            capture && !/^(├── |└── )ios$/ && /^(├── |└── )/ { capture=0 }
+            capture { print }
+          ' <<<"$dry_run_output")"
+
+          # macOS ships ONE FILE: the symlink-preserving
+          # `CratestackCborNative.xcframework.zip`. The unpacked directory
+          # is deliberately excluded by the package's `.pubignore`, because
+          # `dart pub publish` dereferences symlinks and a macOS framework
+          # stripped of its symlinks fails `codesign` — a consumer's
+          # `flutter build macos` then dies with "Command CodeSign failed".
+          # Measured on a real Mac; see `just cbor-vendor-macos`'s header.
           #
-          # Matched against the tree renderer's own output shape, NOT by
-          # substring. The previous version of this line looked for
-          # `CratestackCborNative.xcframework/` — with a trailing slash —
-          # which `dart pub publish --dry-run` NEVER emits: it renders a
-          # tree, one path segment per line, so a directory appears as
-          # `└── CratestackCborNative.xcframework` with no slash and no
-          # children concatenated onto it. That check therefore returned 0
-          # whether or not the framework leaked: a check that could not
-          # fail, guarding the exact defect (a `codesign`-breaking
-          # published framework) that was already measured on a real Mac.
-          #
-          # Verified against real `--dry-run` output with a deliberately
-          # leaked framework: the old pattern reports 0, this one reports 1.
-          # The `$` anchor is load-bearing — the renderer appends a size to
-          # FILES (`… .xcframework.zip (1.5 MB)`) but not to directories, so
-          # anchoring is what keeps the zip from matching here.
-          macos_raw_count=$(grep -cE '(├── |└── )CratestackCborNative\.xcframework$' <<<"$dry_run_output" || true)
+          # So there are two assertions here, and the NEGATIVE one is the
+          # load-bearing one. The previous version of this gate counted
+          # entries under the unpacked directory and floored at 3 — which
+          # passed happily on the broken shape, since dereferencing ADDS
+          # entries rather than removing them. Counting more is exactly what
+          # being broken looks like, so a floor could never have caught it.
+          macos_zip_count=$(grep -c 'CratestackCborNative\.xcframework\.zip' <<<"$macos_block" || true)
+          # THIS NEGATIVE CHECK WAS DEAD CODE UNTIL THIS FIX (found while
+          # adding the analogous iOS checks below, cratestack#563's iOS
+          # slice — not a pre-existing intentional design, a real bug). The
+          # ORIGINAL pattern here was a flat, whole-output `grep -c
+          # 'CratestackCborNative\.xcframework/'` (trailing SLASH, intended
+          # to catch any archive line naming a path *under* the raw
+          # directory). Per the box-drawing-per-line renderer behavior
+          # explained above, that substring — parent directory name
+          # immediately followed by `/` — never appears ANYWHERE in real
+          # `dart pub publish --dry-run` output, leaked or not, so the old
+          # check always evaluated to 0 regardless of whether the framework
+          # had actually leaked unpacked into the archive. CONFIRMED, not
+          # theorized: constructed a real leaked-directory fixture locally
+          # (emptied `.pubignore`, ran a real `dart pub publish --dry-run`,
+          # restored `.pubignore`) and the old pattern reported 0 against
+          # it — a genuine "check that cannot fail," the exact anti-pattern
+          # this gate exists to avoid (see the same job's own "counting more
+          # is exactly what being broken looks like, so a floor could never
+          # have caught it" reasoning two paragraphs up — same blind spot,
+          # different mechanism). The replacement below — an anchored,
+          # `macos`-scoped bare-directory-line match — correctly reports 0
+          # against the healthy fixture and a real nonzero count against
+          # the same constructed leaked fixture; both measured.
+          macos_raw_count=$(grep -cE '(├── |└── )CratestackCborNative\.xcframework$' <<<"$macos_block" || true)
+
+          # iOS ships the OPPOSITE way from macOS: the unpacked xcframework
+          # directory tree IS the published shape (no zip, no
+          # prepare_command) — see `just cbor-vendor-ios`'s and
+          # `ios/cratestack_cbor.podspec`'s header comments for why a flat/
+          # shallow iOS framework has no symlinks for `dart pub publish` to
+          # dereference, so there is nothing the zip mechanism would buy
+          # here. Two flat frameworks are assembled into the one
+          # xcframework (device `ios-arm64` + universal simulator
+          # `ios-arm64_x86_64-simulator`), so the positive assertion counts
+          # exactly 2 `CratestackCborNative.framework` slice entries within
+          # the `ios`-scoped block — confirmed against a real `dart pub
+          # publish --dry-run` fixture to render as exactly 2 matching
+          # lines, and confirmed to correctly drop to 1/0 against fixtures
+          # missing one/both slices.
+          ios_framework_count=$(grep -cE '(├── |└── )CratestackCborNative\.framework$' <<<"$ios_block" || true)
+          # Negative check, mirroring macOS's intent — iOS is never expected
+          # to ship a zip at all; one appearing would mean a future change
+          # started zipping iOS's framework (mirroring macOS) without wiring
+          # the corresponding `prepare_command`/`.pubignore` half, so the
+          # zip would ship as dead weight nobody ever unpacks. MUST be
+          # scoped to `ios_block`, not global, for the identical reason
+          # `macos_raw_count` above must be scoped — an unscoped `grep -c
+          # 'CratestackCborNative\.xcframework\.zip'` here would also match
+          # macOS's own, entirely legitimate zip one entry up, silently
+          # passing this check even when it should fail (verified: a real
+          # fixture with a stray `ios/Frameworks/CratestackCborNative
+          # .xcframework.zip` present alongside the real macOS zip made an
+          # earlier, unscoped version of this check report 0, purely by
+          # accident of the OTHER (macos_zip_count) check happening to also
+          # fire — which would have silently stopped being true the moment
+          # someone scoped `macos_zip_count` for accuracy, the same fix this
+          # comment sits next to. Scoping both closes that coupling.
+          ios_zip_count=$(grep -c 'CratestackCborNative\.xcframework\.zip' <<<"$ios_block" || true)
 
           fail=0
           if [ "$so_count" -ne 4 ]; then
@@ -1386,13 +1550,21 @@ jobs:
             fail=1
           fi
           if [ "$macos_raw_count" -ne 0 ]; then
-            echo "::error::found $macos_raw_count archive entries under CratestackCborNative.xcframework/ — the UNPACKED framework is being shipped. dart pub publish dereferences symlinks, so what a consumer extracts would fail codesign and break their 'flutter build macos'. Check dart-packages/cratestack_cbor/.pubignore — DO NOT PUBLISH." >&2
+            echo "::error::found $macos_raw_count archive entries for the unpacked CratestackCborNative.xcframework directory under macos/Frameworks/ — the UNPACKED framework is being shipped. dart pub publish dereferences symlinks, so what a consumer extracts would fail codesign and break their 'flutter build macos'. Check dart-packages/cratestack_cbor/.pubignore — DO NOT PUBLISH." >&2
+            fail=1
+          fi
+          if [ "$ios_framework_count" -ne 2 ]; then
+            echo "::error::expected exactly 2 CratestackCborNative.framework slice entries in the pub.dev archive under ios/Frameworks/ (device ios-arm64 + universal simulator), found $ios_framework_count. The build-cbor-ios -> download-artifact step above did not populate ios/Frameworks/ correctly — DO NOT PUBLISH." >&2
+            fail=1
+          fi
+          if [ "$ios_zip_count" -ne 0 ]; then
+            echo "::error::found $ios_zip_count CratestackCborNative.xcframework.zip entries under ios/Frameworks/ — iOS ships its xcframework UNPACKED (flat/shallow frameworks have no symlinks to lose), so a zip here means something now zips it without the matching prepare_command/.pubignore wiring macOS has. Check just cbor-vendor-ios and ios/cratestack_cbor.podspec — DO NOT PUBLISH." >&2
             fail=1
           fi
           if [ "$fail" -ne 0 ]; then
             exit 1
           fi
-          echo "✓ archive contains all vendored artifacts: 4 Linux/Android .so + 2 wasm files + 1 Windows .dll + 1 macOS .xcframework.zip (and 0 unpacked-framework entries)"
+          echo "✓ archive contains all vendored artifacts: 4 Linux/Android .so + 2 wasm files + 1 Windows .dll + 1 macOS .xcframework.zip (0 unpacked macOS framework entries) + 2 iOS xcframework slices (0 iOS zip entries)"
       # Assert OIDC is actually usable BEFORE publishing. `--force` skips the
       # confirmation prompt, not authentication: if pub cannot authenticate
       # via OIDC it falls back to interactive OAuth, prints a Google consent

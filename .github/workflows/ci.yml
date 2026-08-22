@@ -1300,6 +1300,114 @@ jobs:
       - name: flutter build macos + assert vendored xcframework present (universal) + round-trip
         run: just cbor-example-verify-macos
 
+  # ---- cratestack_cbor iOS platform (cratestack#563 iOS slice) ----
+  # Mirrors `cratestack-cbor-macos` in every structural respect (same "real
+  # build + assert the artifact is actually bundled + round-trip" bar, same
+  # job shape), reusing the SAME underlying mechanism macOS already proved
+  # (CocoaPods LINKS a vendored xcframework rather than merely copying it —
+  # see `ios/cratestack_cbor.podspec`'s and `native_cbor_codec.dart`'s own
+  # comments) rather than a fourth one. What genuinely differs from the
+  # macOS job: three iOS rustup targets instead of two Darwin ones, `just
+  # cbor-vendor-ios` instead of `cbor-vendor-macos` (builds all three iOS
+  # triples, assembles a flat/shallow TWO-slice xcframework — device +
+  # universal simulator — and asserts it has zero symlinks; see that
+  # recipe's own header comment for the "why zero, and what to do if that
+  # assertion ever fires" reasoning), and `just cbor-example-verify-ios`
+  # builds `--simulator --no-codesign` and drives a booted `xcrun simctl`
+  # simulator rather than running a built binary directly (no code-signing
+  # identity exists on a hosted runner, so only the simulator slice is
+  # actually exercised in CI — see that recipe's own comment for why that
+  # asymmetry is accepted, the same way Android's CI-vs-local split is).
+  #
+  # NO SPIKE BRANCH preceded this job the way `spike/cbor-macos-xcframework`
+  # preceded `cratestack-cbor-macos` — it is written directly against
+  # Flutter's own `plugin_ffi` iOS template, the already-proven macOS
+  # mechanism, and Apple's documented `simctl` command surface. This job is
+  # therefore this repo's toolchain's first-ever real execution of anything
+  # iOS-targeted, in the same sense the macOS job originally was for
+  # anything macOS-targeted — treat the first few runs as verifying
+  # assumptions, not just as a regression gate.
+  #
+  # Also vendors the web artifact for the same reason `cratestack-cbor-
+  # windows`/`-macos`/`-android` do (see those jobs' own comments):
+  # `pubspec.yaml`'s `flutter: assets:` declaration is unconditional, and
+  # Flutter has no per-platform asset conditionals, so a missing wasm pair
+  # fails an iOS build too.
+  cratestack-cbor-ios:
+    name: flutter (cratestack_cbor ios — real build, xcframework + round-trip proof)
+    runs-on: macos-latest
+    needs: cbor-glue
+    steps:
+      - uses: actions/checkout@v6
+      # Present for the same reason every other Rust-using cbor job has it:
+      # it is what installs/normalises the toolchain rather than relying on
+      # whatever rustup the runner image happens to ship. Omitting it left
+      # this job the only Rust job in the workflow without a toolchain step
+      # — it might well have worked (macos-latest preinstalls Rust, and
+      # rust-toolchain.toml would pull 1.95.0 on first use), but "probably
+      # fine and unlike every sibling job" is not a property worth having in
+      # a job whose first real run is also its first test.
+      - uses: dtolnay/rust-toolchain@stable
+      # rust-toolchain.toml pins the channel; add all three iOS targets to
+      # that pinned toolchain (not to whatever `stable` resolves to
+      # separately) — same reasoning as `cratestack-cbor-macos`'s identical
+      # step (see that job's own comment for the E0463 failure this avoids).
+      # NOTE this must stay a RUN step, not the action's `targets:` input:
+      # that input installs against `stable`, not the pinned 1.95.0, which
+      # is exactly what caused a real E0463 on the macOS leg.
+      - name: Add all three iOS targets (to the pinned toolchain, not stable)
+        run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,wasm-pack
+      # The Flutter SDK — same reason as every other cbor job (see
+      # cratestack-cbor-package's comment): cratestack_cbor's
+      # `flutter.plugin.platforms` pubspec key requires the real Flutter
+      # SDK to resolve at all, not a standalone Dart SDK.
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      # frb codegen DOES work on macOS (unlike Windows), but this job takes
+      # the shared artifact anyway — same reasoning as `cratestack-cbor-
+      # macos`'s identical step: drops a multi-minute `cargo install` and
+      # guarantees every platform leg consumes byte-identical glue.
+      - name: Restore frb glue (generated once on Linux by `cbor-glue`)
+        uses: actions/download-artifact@v4
+        with:
+          name: cbor-frb-glue
+          path: .
+      - name: Assert the glue is present
+        run: |
+          set -euo pipefail
+          test -f crates/cratestack-client-flutter/src/frb_generated.rs \
+            || { echo "::error::frb_generated.rs missing after download-artifact — the cbor-frb-glue artifact did not restore. cargo build --features frb-glue would fail with E0583." >&2; exit 1; }
+          test -d dart-packages/cratestack_cbor/lib/src/native/rust \
+            || { echo "::error::Dart glue directory missing after download-artifact." >&2; exit 1; }
+          echo "✓ frb glue restored"
+      # Same reason as every other cbor job's identical step — see
+      # `cratestack-cbor-macos`'s job header comment for what is and is not
+      # verified about this specific asset name on macOS.
+      - name: Install binaryen (wasm-opt), pinned
+        run: |
+          set -euo pipefail
+          curl -fsSL -o binaryen.tar.gz \
+            "https://github.com/WebAssembly/binaryen/releases/download/version_130/binaryen-version_130-arm64-macos.tar.gz"
+          tar -xzf binaryen.tar.gz
+          echo "$PWD/binaryen-version_130/bin" >> "$GITHUB_PATH"
+          rm binaryen.tar.gz
+      # NOT `just cbor-vendor-native` — see `cratestack-cbor-macos`'s job
+      # header comment for why (it hardcodes a Linux-target build that
+      # cannot link here). The glue half was restored from the `cbor-glue`
+      # artifact above.
+      - name: Vendor iOS native artifact (all three triples, lipo, flat xcframework)
+        run: just cbor-vendor-ios
+      - name: Vendor web artifact (required by the pubspec asset list — see job header comment)
+        run: just cbor-vendor-web
+      - name: flutter build ios --simulator + assert vendored xcframework present (universal simulator slice) + round-trip on a booted simulator
+        run: just cbor-example-verify-ios
+
   # ---- TypeScript client verification (issue #419) --------------------------
   # Blocking. Proves the default TypeScript client layout typechecks for
   # both REST and RPC transports. While the `react-vite-swr-example` job

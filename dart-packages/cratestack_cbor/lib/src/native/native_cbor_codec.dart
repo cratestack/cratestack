@@ -8,12 +8,16 @@
 //
 // This slice vendors Linux x86_64 (`blobs/linux-x64/`), Android
 // arm64-v8a/x86_64/armeabi-v7a (`blobs/android/<abi>/`), Windows x86_64
-// (`blobs/windows-x64/`), and macOS arm64+x86_64 as a universal xcframework
+// (`blobs/windows-x64/`), macOS arm64+x86_64 as a universal xcframework
 // (`macos/Frameworks/CratestackCborNative.xcframework`, assembled by `just
-// cbor-vendor-macos` from per-arch builds under `blobs/macos-{arm64,x64}/`)
-// — the remaining platforms (iOS/Linux arm64) are still follow-up work. Any
-// other platform throws a clear, actionable [UnsupportedError] rather than
-// silently failing to find a library.
+// cbor-vendor-macos` from per-arch builds under `blobs/macos-{arm64,x64}/`),
+// and iOS device arm64 + universal simulator arm64/x86_64 as a second
+// xcframework (`ios/Frameworks/CratestackCborNative.xcframework`, assembled
+// by `just cbor-vendor-ios` from per-arch builds under
+// `blobs/ios-{arm64,sim-arm64,sim-x64}/`) — the remaining platform (Linux
+// arm64) is still follow-up work. Any other platform throws a clear,
+// actionable [UnsupportedError] rather than silently failing to find a
+// library.
 import 'dart:ffi' show Abi;
 import 'dart:io';
 import 'dart:isolate';
@@ -136,6 +140,32 @@ Future<CratestackCborCodec> createCborCodec() async {
 /// a real `macos-latest` runner, not assumed by analogy with the other two
 /// platforms: `spike/cbor-macos-xcframework`
 /// (`.github/workflows/spike-cbor-macos.yml`, cratestack#563).
+///
+/// iOS (cratestack#563's iOS slice) reuses macOS's exact mechanism —
+/// **not** a fourth one. It resolves to the identical fixed relative
+/// string `'CratestackCborNative.framework/CratestackCborNative'` (see
+/// [_resolveMacosLibraryPath], shared by both platforms rather than
+/// duplicated into an `_resolveIosLibraryPath`, since the underlying
+/// contract is the same: CocoaPods LINKS the vendored xcframework into the
+/// built app via `ios/cratestack_cbor.podspec`'s `vendored_frameworks`,
+/// exactly as `macos/cratestack_cbor.podspec` does, so dyld has already
+/// loaded the image by the time this runs and matches it by path suffix.
+/// Same "no dev-mode fallback" limitation too: `dart test`/`dart run`
+/// never produce a linked `.app`, so iOS — like macOS and Android — has no
+/// `dart test` story for the native backend; `example/` and `just
+/// cbor-example-verify-ios` are the only way to exercise it. The
+/// difference between the two platforms is entirely inside the
+/// xcframework `ios/cratestack_cbor.podspec` vendors (flat/shallow
+/// frameworks, no `Versions/A/...`, no symlinks, two slices for device +
+/// universal simulator — see that podspec's and `just cbor-vendor-ios`'s
+/// own header comments), not in how Dart resolves it. **Unverified by this
+/// repo's own CI/toolchain** in the same sense every other Apple-platform
+/// slice was before its own first CI run (Linux-only dev machine, no
+/// Xcode/`lipo`/`xcodebuild`/simulator); `cratestack-cbor-ios` in
+/// `.github/workflows/ci.yml` is this mechanism's first real execution for
+/// iOS specifically (the underlying CocoaPods-links-a-vendored-xcframework
+/// behavior itself was already proven for macOS by
+/// `spike/cbor-macos-xcframework`).
 Future<String> resolveVendoredLibraryPath() async {
   final override = Platform.environment[_libraryOverrideEnvVar];
   if (override != null && override.isNotEmpty) {
@@ -186,15 +216,31 @@ Future<String> resolveVendoredLibraryPath() async {
     return _resolveMacosLibraryPath();
   }
 
+  if (Platform.isIOS) {
+    if (Abi.current() != Abi.iosArm64 && Abi.current() != Abi.iosX64) {
+      throw UnsupportedError(
+        'cratestack_cbor only vendors a prebuilt native library for iOS '
+        'device arm64 and simulator arm64/x86_64 (as one xcframework) in '
+        'this release (${Abi.current()} detected). Set '
+        '$_libraryOverrideEnvVar to point at a self-built library to work '
+        'around this in the meantime.',
+      );
+    }
+    // Same fixed-string, no-path-computation mechanism as macOS — see the
+    // doc comment above for why this shares _resolveMacosLibraryPath
+    // rather than a separate _resolveIosLibraryPath.
+    return _resolveMacosLibraryPath();
+  }
+
   if (Abi.current() != Abi.linuxX64) {
     throw UnsupportedError(
       'cratestack_cbor only vendors a prebuilt native library for Linux '
-      'x86_64, Windows x86_64, macOS (arm64, x86_64), and Android '
-      '(arm64-v8a, x86_64, armeabi-v7a) in this release (${Abi.current()} '
-      'detected). The remaining platform matrix (iOS, Linux arm64) is '
-      'follow-up work (cratestack#563). Set $_libraryOverrideEnvVar to '
-      'point at a self-built library to work around this in the '
-      'meantime.',
+      'x86_64, Windows x86_64, macOS (arm64, x86_64), iOS (device arm64, '
+      'simulator arm64/x86_64), and Android (arm64-v8a, x86_64, '
+      'armeabi-v7a) in this release (${Abi.current()} detected). The '
+      'remaining platform matrix (Linux arm64) is follow-up work '
+      '(cratestack#563). Set $_libraryOverrideEnvVar to point at a '
+      'self-built library to work around this in the meantime.',
     );
   }
 
@@ -369,6 +415,22 @@ Future<String> _resolveWindowsLibraryPath() async {
 /// so, like Android, macOS has no `dart test` story for the native backend
 /// at all; `example/` (a real Flutter app) and `just
 /// cbor-example-verify-macos` are the only way to exercise this branch.
+///
+/// **Also iOS's resolution function**, not macOS-specific despite the
+/// name (kept rather than renamed to `_resolveApplePlatformLibraryPath` —
+/// the doc comment on [resolveVendoredLibraryPath] is what a reader
+/// following the iOS branch actually lands on first, and it explains the
+/// sharing there). The returned string is identical for both platforms,
+/// which is not a coincidence but two different bundle layouts converging
+/// on the same relative path: on macOS it matches the top-level
+/// `CratestackCborNative` symlink (one of the three mandatory symlinks —
+/// see `just cbor-vendor-macos`'s header comment — which itself resolves
+/// through `Versions/Current/` to the real binary); on iOS, a flat/shallow
+/// bundle, that same relative path names the real binary directly, with no
+/// symlink indirection at all (see `just cbor-vendor-ios`'s header
+/// comment). Both are `@rpath`-relative-linked into the built app by
+/// CocoaPods, so dyld's already-loaded-image matching works identically
+/// either way.
 Future<String> _resolveMacosLibraryPath() async {
   return 'CratestackCborNative.framework/CratestackCborNative';
 }
