@@ -1254,32 +1254,31 @@ jobs:
   # Flutter has no per-platform asset conditionals, so a missing wasm pair
   # fails a macOS build too.
   #
-  # UNVERIFIED FROM THIS (Linux) DEV MACHINE, flagged rather than assumed:
-  #   - The pinned binaryen release asset name below
-  #     (`binaryen-version_130-arm64-macos.tar.gz`) is a BEST-EFFORT guess
-  #     at binaryen's actual macOS release-asset naming convention,
-  #     extrapolated from the Linux/Windows jobs' own
-  #     `binaryen-version_130-x86_64-{linux,windows}.tar.gz` pattern — it
-  #     was NOT fetched and inspected the way the Windows job's own comment
-  #     says its `.exe`-suffixed asset was (this dev machine has no way to
-  #     download from a macOS-restricted mirror or verify GitHub's actual
-  #     release asset list without network access to confirm). `arm64`,
-  #     not `x86_64`, because GitHub's `macos-latest` label currently
-  #     resolves to an Apple Silicon runner — also not independently
-  #     re-confirmed here, just the documented current default. If this
-  #     step 404s, that is the first thing to check.
-  #   - Whether `just cbor-vendor-web` (wasm-pack + the above binaryen)
-  #     works on a macOS runner AT ALL is unverified — the spike
-  #     deliberately faked the wasm assets with placeholders specifically
-  #     to avoid this unrelated, already-understood Android-slice trap
-  #     masking the macOS-specific findings it existed to answer (see that
-  #     spike's own file header). This job is the first real test of the
-  #     actual wasm-pack build on macOS.
-  #   - `bash` resolving for every `just <recipe>` step's internal shell
-  #     (this justfile's global `set shell := ["bash", ...]`): macOS
-  #     runners ship a real `/bin/bash` (unlike Windows' Git-for-Windows
-  #     MSYS dependency), so this is expected to be a non-issue, but it
-  #     was not independently re-verified here either.
+  # VERIFIED (both items below started life as flagged guesses and have
+  # since been confirmed — do not re-flag them as unknowns):
+  #   - The pinned binaryen asset `binaryen-version_130-arm64-macos.tar.gz`
+  #     EXISTS: `curl -I` returns 200, and this job's `Install binaryen`
+  #     step succeeded on a real macos-latest run. An automated review
+  #     claimed binaryen ships Intel-only macOS assets and that this name
+  #     would 404, citing `version_122-x86_64-macos`; that is wrong —
+  #     `version_122-arm64-macos.tar.gz` also returns 200, so arm64 macOS
+  #     assets have been published for some time. `arm64` is correct here
+  #     because `macos-latest` resolves to Apple Silicon.
+  #   - `just cbor-vendor-web` (wasm-pack + the above binaryen) DOES work
+  #     on a macOS runner: `✓ vendored 144K wasm-bindgen build` on the same
+  #     green run. The spike had faked this with placeholder files, so it
+  #     was genuinely open until that run.
+  #
+  #   - `bash` for every `just <recipe>` step's internal shell (this
+  #     justfile's global `set shell := ["bash", ...]`): macOS runners ship
+  #     a real `/bin/bash`, and every `just` step in this job ran, so this
+  #     is settled too.
+  #
+  # Why the wasm item above was open at all: the macOS spike deliberately
+  # faked the wasm assets with placeholder files, so that this unrelated,
+  # already-understood Android-slice trap could not mask the macOS-specific
+  # findings the spike existed to answer. That made a real wasm-pack build
+  # on macOS genuinely untested until this job ran.
   cratestack-cbor-macos:
     name: flutter (cratestack_cbor macos — real build, xcframework + round-trip proof)
     runs-on: macos-latest
