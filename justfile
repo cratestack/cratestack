@@ -2610,13 +2610,35 @@ cbor-example-verify-ios:
 	# comfortably slower than the desktop jobs this timeout was copied from,
 	# and a too-short window is indistinguishable from a real failure.
 	found=0
-	for _ in $(seq 1 90); do
+	poll_budget=90
+	poll_started="$(date +%s)"
+	for _ in $(seq 1 "$poll_budget"); do
 	  if grep -qs "$marker" "$ios_log" "$stream_log"; then
 	    found=1
 	    break
 	  fi
 	  sleep 1
 	done
+	poll_waited=$(( $(date +%s) - poll_started ))
+
+	# LIVENESS IS SAMPLED BEFORE ANYTHING IS KILLED (cratestack#704).
+	# The previous version killed the app and the log stream first and
+	# diagnosed afterwards, so every failure looked identical whether the
+	# app had died on its own seconds after launch or was still running
+	# happily and merely slow. `signal 15` in the capture is OUR SIGTERM,
+	# which made it read like the app crashed when nothing of the sort had
+	# been established. Sample first, then tear down.
+	app_alive="unknown"
+	launch_alive="unknown"
+	if [ "$found" -ne 1 ]; then
+	  if kill -0 "$launch_pid" 2>/dev/null; then launch_alive="yes"; else launch_alive="no"; fi
+	  if xcrun simctl spawn "$udid" launchctl list 2>/dev/null | grep -qF "$appId"; then
+	    app_alive="yes"
+	  else
+	    app_alive="no"
+	  fi
+	fi
+
 	kill "$launch_pid" "$stream_pid" 2>/dev/null || true
 	xcrun simctl terminate "$udid" "$appId" >/dev/null 2>&1 || true
 	if [ "$found" -ne 1 ] || ! grep -qs "$marker OK $expected_hex" "$ios_log" "$stream_log"; then
@@ -2629,10 +2651,49 @@ cbor-example-verify-ios:
 	  xcrun simctl list devices | grep -F "$udid" >&2 || true
 	  echo "--- is the app installed? ---" >&2
 	  xcrun simctl get_app_container "$udid" "$appId" >&2 2>&1 || echo "(get_app_container failed — app not installed)" >&2
+	  # Say plainly that WE stopped it, and after how long. Without this the
+	  # reader sees "Child process terminated with signal 15" in the capture
+	  # and reasonably concludes the app crashed — it did not, we killed it.
+	  # TWO DIFFERENT FAILURES, said differently. Collapsing them is how the
+	  # last round of this got misread: a marker that arrived with the wrong
+	  # hex is a real round-trip failure and has nothing to do with timing,
+	  # while a marker that never arrived is a timing/liveness question.
+	  echo "--- harness ---" >&2
+	  if [ "$found" -eq 1 ]; then
+	    echo "the marker WAS captured, but its payload did not match — this is a genuine round-trip failure, not a timeout" >&2
+	    echo "expected: $marker OK $expected_hex" >&2
+	    echo "captured: $(grep -hs "$marker" "$ios_log" "$stream_log" | head -1)" >&2
+	  else
+	    echo "the marker never arrived; the app was TERMINATED BY THIS RECIPE after ${poll_waited}s (poll budget ${poll_budget} iterations) — it did not exit on its own, and the 'signal 15' below is that SIGTERM" >&2
+	    echo "launch process still alive when the budget expired: $launch_alive" >&2
+	    echo "app still registered with the simulator when the budget expired: $app_alive" >&2
+	  fi
+	  echo "--- device state ---" >&2
+	  xcrun simctl list devices | grep -F "$udid" >&2 || true
+	  echo "--- is the app installed? ---" >&2
+	  xcrun simctl get_app_container "$udid" "$appId" >&2 2>&1 || echo "(get_app_container failed — app not installed)" >&2
 	  echo "--- console-pty capture ($(wc -c < "$ios_log") bytes) ---" >&2
 	  cat "$ios_log" >&2
 	  echo "--- unified log capture ($(wc -c < "$stream_log") bytes), last 50 lines ---" >&2
 	  tail -50 "$stream_log" >&2
+	  # THE QUESTION THE STREAM CANNOT ANSWER: did the app print the marker
+	  # at all? The live `log stream` above is filtered to `process ==
+	  # "Runner"`, so a marker emitted under any other process attribution
+	  # is invisible to it — indistinguishable from never having been
+	  # printed. `log show` re-reads the window unfiltered by process and
+	  # searches for the marker text itself, which separates "our filter
+	  # missed it" from "the app never got there".
+	  echo "--- did the marker appear ANYWHERE in the unified log? (process-agnostic) ---" >&2
+	  xcrun simctl spawn "$udid" log show --style=compact --last 5m \
+	    --predicate "eventMessage CONTAINS \"$marker\"" 2>&1 | tail -10 >&2 \
+	    || echo "(log show failed)" >&2
+	  # And how much the app logged at all. A live Flutter app at
+	  # --level=debug is chatty; a count near zero over the whole budget
+	  # means the process was not running, not that it was slow.
+	  echo "--- total Runner-attributed log lines in the window ---" >&2
+	  xcrun simctl spawn "$udid" log show --style=compact --last 5m \
+	    --predicate 'process == "Runner"' 2>/dev/null | wc -l >&2 \
+	    || echo "(log show failed)" >&2
 	  rm -f "$ios_log" "$stream_log"
 	  exit 1
 	fi
