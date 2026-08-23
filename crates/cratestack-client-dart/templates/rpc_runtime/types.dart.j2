@@ -22,7 +22,7 @@ import 'package:dio/dio.dart';
 import 'constants.dart';
 {% if native_cbor %}
 
-// cratestack#563 --native-cbor: see `rest-runtime.dart.j2`'s identical
+// cratestack#563: see `rest-runtime.dart.j2`'s identical
 // comment — one cached codec `Future`, shared by every adapter in this
 // file (`CratestackRpcCborDioAdapter` in `dio_cbor.dart.j2`).
 Future<cratestack_cbor.CratestackCborCodec>? _cratestackCborCodecFuture;

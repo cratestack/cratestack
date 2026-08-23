@@ -75,7 +75,7 @@ mod tests {
                 check,
                 preset,
                 run_build_runner,
-                native_cbor,
+                no_native_cbor,
             } => {
                 assert_eq!(schema, PathBuf::from("schema.cstack"));
                 assert_eq!(out, PathBuf::from("out"));
@@ -89,9 +89,10 @@ mod tests {
                     "--run-build-runner must default to off (issue #303: opt-in, not default)"
                 );
                 assert!(
-                    !native_cbor,
-                    "--native-cbor must default to off (issue #563: opt-in, not default — \
-                     cratestack_cbor doesn't support every platform yet)"
+                    !no_native_cbor,
+                    "native cbor must default to ON (cratestack#563 follow-up: \
+                     cratestack_cbor 0.8.7 covers every platform but Linux arm64); \
+                     --no-native-cbor must be passed explicitly to turn it off"
                 );
             }
             _ => panic!("expected generate-dart command"),
@@ -99,7 +100,7 @@ mod tests {
     }
 
     #[test]
-    fn generate_dart_clap_accepts_native_cbor_flag() {
+    fn generate_dart_clap_accepts_no_native_cbor_flag() {
         let cli = Cli::parse_from([
             "cratestack",
             "generate-dart",
@@ -107,12 +108,12 @@ mod tests {
             "schema.cstack",
             "--out",
             "out",
-            "--native-cbor",
+            "--no-native-cbor",
         ]);
 
         match cli.command {
-            Command::GenerateDart { native_cbor, .. } => {
-                assert!(native_cbor);
+            Command::GenerateDart { no_native_cbor, .. } => {
+                assert!(no_native_cbor);
             }
             _ => panic!("expected generate-dart command"),
         }

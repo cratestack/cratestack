@@ -1,30 +1,20 @@
 use std::path::PathBuf;
 
-/// Whether a schema with no `--native-cbor`/`native_cbor: ...` given at all
-/// uses `package:cbor` (pure Dart) or `cratestack_cbor` (native, via
-/// flutter_rust_bridge/wasm — cratestack#563). The single place to flip
+/// Whether a schema with no `--no-native-cbor`/`native_cbor: ...` given at
+/// all uses `cratestack_cbor` (native, via flutter_rust_bridge/wasm —
+/// cratestack#563) or `package:cbor` (pure Dart). The single place to flip
 /// this decision later — see [`DartGeneratorConfig::native_cbor`]'s doc
 /// comment for the current reasoning.
 ///
-/// NOTE the original reason for `false` no longer holds. It was that
-/// `cratestack_cbor` supported only Linux x86_64, Android and web, so
-/// defaulting to it would crash every generated Flutter client on iOS,
-/// macOS and Windows. cratestack#563's platform-matrix slices landed
-/// Windows, macOS and iOS, leaving only Linux arm64 unsupported — so the
-/// precondition that doc named ("until the platform matrix is complete
-/// enough to reconsider") is now substantially met.
-///
-/// It nonetheless stays `false`, for a DIFFERENT and narrower reason: the
-/// published package lags the repo. pub.dev serves a `cratestack_cbor`
-/// that predates those slices, and this constant governs what generated
-/// clients *depend on*, not what this repo builds. Flipping it before a
-/// release carrying the new platforms would emit a dependency whose
-/// published version still throws `UnsupportedError` on three of them.
-///
-/// So: revisit after the next release, not before — and it remains a
-/// maintainer decision either way, not something to flip here because the
-/// blocking reason changed shape.
-pub const DEFAULT_NATIVE_CBOR: bool = false;
+/// Flipped to `true` (maintainer decision, cratestack#563 follow-up):
+/// `cratestack_cbor` 0.8.7 is published to pub.dev with Windows, macOS and
+/// iOS support verified there, so the platform-support gap and the
+/// published-package lag that used to justify defaulting to `false` are
+/// both closed. Linux arm64 is the one remaining unsupported target —
+/// `createCborCodec()` still throws `UnsupportedError` there, so a
+/// generated client built for that target needs `--no-native-cbor` (pure
+/// Dart, works everywhere) to avoid a runtime crash.
+pub const DEFAULT_NATIVE_CBOR: bool = true;
 
 /// Selects the generated package's file layout. See issue #301 — the
 /// `riverpod` preset is a strict superset of `default`'s content,
@@ -60,40 +50,35 @@ pub struct DartGeneratorConfig {
     /// used as a library directly, or in tests) — the generated client
     /// simply omits the header in that case.
     pub schema_sha256: String,
-    /// Issue #563's opt-in seam: use the published `cratestack_cbor`
-    /// package (flutter_rust_bridge natively, wasm-bindgen on web) instead
-    /// of pure-Dart `package:cbor` for the generated runtime's CBOR
-    /// codec — see `templates/rest-runtime.dart.j2` and
+    /// Issue #563's seam: use the published `cratestack_cbor` package
+    /// (flutter_rust_bridge natively, wasm-bindgen on web) instead of
+    /// pure-Dart `package:cbor` for the generated runtime's CBOR codec —
+    /// see `templates/rest-runtime.dart.j2` and
     /// `templates/rpc_runtime/{types,dio_cbor,dio_json}.dart.j2`.
     ///
-    /// Deliberately opt-in, not the default (`DEFAULT_NATIVE_CBOR` is
-    /// `false`) — this reverses this issue's original in-thread maintainer
-    /// note ("the generator will use the package. Not opt-in"), on a
-    /// concrete, verified platform-support gap that note didn't account
-    /// for: at the time, `cratestack_cbor` shipped prebuilt binaries for
+    /// **The default as of this doc (`DEFAULT_NATIVE_CBOR` is `true`).**
+    /// It was opt-in for a while, on a concrete, verified platform-support
+    /// gap: `cratestack_cbor` originally shipped prebuilt binaries for
     /// Linux x86_64, Android and web only, so defaulting to it would have
     /// made every generated Flutter client crash at runtime on iOS — the
     /// most common Flutter target — plus macOS and Windows.
     ///
-    /// **That gap is now closed in the repo.** cratestack#563's
-    /// platform-matrix slices added Windows x64, macOS (universal) and iOS
-    /// (device + simulator), each verified by a real running app
-    /// round-tripping the shared fixture. Only Linux arm64 remains
-    /// unsupported. `createCborCodec()` still throws `UnsupportedError`
-    /// there — see
+    /// **Both blockers are closed.** cratestack#563's platform-matrix
+    /// slices added Windows x64, macOS (universal) and iOS (device +
+    /// simulator), each verified by a real running app round-tripping the
+    /// shared fixture, and `cratestack_cbor` 0.8.7 — carrying that matrix —
+    /// is published on pub.dev, closing the published-package-lags-the-repo
+    /// gap that kept the default at `false` even after the platform work
+    /// landed. Only Linux arm64 remains unsupported: `createCborCodec()`
+    /// still throws `UnsupportedError` there — see
     /// `dart-packages/cratestack_cbor/lib/src/native/native_cbor_codec.dart`.
+    /// A client generated for that target needs `native_cbor: false`
+    /// (CLI: `--no-native-cbor`) to fall back to pure-Dart `package:cbor`,
+    /// which works everywhere.
     ///
-    /// It stays `false` anyway, but now for a narrower reason: this flag
-    /// decides what generated clients DEPEND ON, and the published package
-    /// lags the repo. Until a release ships those platforms to pub.dev,
-    /// defaulting to `true` would emit a dependency whose published version
-    /// still throws on iOS, macOS and Windows — the same crash, one level
-    /// removed. Revisit after the next release; still a maintainer
-    /// decision, not something to flip unilaterally here (see
-    /// `DEFAULT_NATIVE_CBOR`'s doc).
-    ///
-    /// Purely additive with respect to every other emitted file: `false`
-    /// leaves output byte-identical to before this flag existed (pinned by
+    /// Purely additive with respect to every other emitted file: this flag
+    /// leaves output byte-identical either way apart from the two files
+    /// that legitimately depend on the codec choice (pinned by
     /// `tests/native_cbor_generator.rs`'s dedicated regression test, on
     /// top of the pre-existing `tests/snapshot.rs` pins that never pass
     /// this field at all and so exercise `Default::default()`).

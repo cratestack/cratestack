@@ -11,7 +11,7 @@ import 'package:dio/dio.dart';
 import 'constants.dart';
 {% if native_cbor %}
 
-// cratestack#563 --native-cbor: `createCborCodec()` is async (it loads a
+// cratestack#563: `createCborCodec()` is async (it loads a
 // vendored native library / wasm module on first use), so the codec is
 // resolved once and cached here rather than per call — every
 // `_cratestackCborCodec()` caller after the first just awaits the same

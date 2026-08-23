@@ -15,6 +15,25 @@ the same wrong version as fact. ADR 0017 (the removal decision itself) keeps its
 v0.9" decision-time wording intact, with a short dated correction note added under Status pointing at
 the real 0.8.5 release — the decision record isn't rewritten, just annotated.
 
+### `generate-dart` defaults to the native `cratestack_cbor` codec; `--native-cbor` is replaced by `--no-native-cbor` — breaking (cratestack#563 follow-up)
+
+`cratestack_cbor` 0.8.7 is published on pub.dev with Windows, macOS and iOS support verified there, so
+the two reasons the codec choice was opt-in — a platform-support gap, and the published package lagging
+the repo — are both closed. Linux arm64 is the one remaining unsupported target.
+
+`generate-dart`'s `--native-cbor` flag is **removed**, not merely defaulted differently: a bare
+`bool` flag cannot express "on by default", so the flag is replaced by `--no-native-cbor`, which
+defaults to off (native on). **Any existing `--native-cbor` invocation — CLI, script, or CI job — is
+now an unknown-argument error**, not a no-op; update call sites to drop the flag (native is now the
+default) or, for Linux arm64 / any consumer that wants the dependency-free pure-Dart codec, to pass
+`--no-native-cbor` instead. `DartGeneratorConfig::DEFAULT_NATIVE_CBOR` (the library-level default for
+callers who construct `DartGeneratorConfig` directly rather than going through the CLI) flips from
+`false` to `true` for the same reason.
+
+Every other emitted file is unaffected — this only changes which of `pubspec.yaml`'s CBOR dependency
+and `lib/src/runtime.dart`'s codec import a freshly generated (or regenerated, unflagged) client picks
+by default.
+
 ## 0.8.7 (2026-08-23)
 
 ### `changelog-seed.sh` re-seeds a fresh `## Unreleased` heading after every release (#688)

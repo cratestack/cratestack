@@ -25,7 +25,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             check,
             preset,
             run_build_runner,
-            native_cbor,
+            no_native_cbor,
         } => handle_generate_dart(
             schema,
             out,
@@ -35,7 +35,10 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             check,
             preset,
             run_build_runner,
-            native_cbor,
+            // The CLI surface is inverted (`--no-native-cbor`, defaulting to
+            // off i.e. native-on) but the generator API stays in terms of
+            // `native_cbor` — only this boundary converts between the two.
+            !no_native_cbor,
         )?,
         Command::GenerateTypeScript {
             schema,

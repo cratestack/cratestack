@@ -56,28 +56,32 @@ pub(crate) enum Command {
         /// itself fails.
         #[arg(long)]
         run_build_runner: bool,
-        /// Also emit `pubspec.yaml`/runtime dependencies on the published
-        /// `cratestack_cbor` package (flutter_rust_bridge natively,
-        /// wasm-bindgen on web — issue #563) instead of pure-Dart
-        /// `package:cbor`.
+        /// Fall back to `pubspec.yaml`/runtime dependencies on pure-Dart
+        /// `package:cbor` instead of the published `cratestack_cbor`
+        /// package (flutter_rust_bridge natively, wasm-bindgen on web —
+        /// issue #563), which is now the default.
         ///
-        /// Opt-in, not the default. `cratestack_cbor` ships prebuilt
-        /// binaries for Linux x86_64, Windows x64, macOS (universal), iOS
-        /// (device + simulator), Android (3 ABIs) and web; only Linux
-        /// arm64 still throws `UnsupportedError` (see
-        /// `dart-packages/cratestack_cbor/lib/src/native/native_cbor_codec.dart`).
+        /// **Breaking change (maintainer decision, cratestack#563
+        /// follow-up):** this replaces the old opt-in `--native-cbor` flag
+        /// — an existing `--native-cbor` invocation is now an unknown-flag
+        /// error, not a no-op. `cratestack_cbor` 0.8.7 is published on
+        /// pub.dev with Linux x86_64, Windows x64, macOS (universal), iOS
+        /// (device + simulator), Android (3 ABIs) and web all verified
+        /// there; native is now the default because both reasons the old
+        /// flag was opt-in (a platform-support gap, and the published
+        /// package lagging the repo) are closed.
         ///
-        /// It remains opt-in because this flag decides what generated
-        /// clients DEPEND ON, and the published package lags the repo:
-        /// pub.dev still serves a version predating the Windows/macOS/iOS
-        /// support, so defaulting to it today would name a dependency that
-        /// throws on those platforms. `package:cbor` is pure Dart and
-        /// works everywhere. Revisit once a release ships the full matrix.
+        /// Pass `--no-native-cbor` when targeting Linux arm64, the one
+        /// remaining unsupported platform — `createCborCodec()` still
+        /// throws `UnsupportedError` there (see
+        /// `dart-packages/cratestack_cbor/lib/src/native/native_cbor_codec.dart`)
+        /// — or for any consumer that just wants the dependency-free
+        /// pure-Dart codec.
         ///
         /// Purely additive: every other emitted file is byte-identical
         /// with and without it.
         #[arg(long)]
-        native_cbor: bool,
+        no_native_cbor: bool,
     },
     #[command(name = "generate-typescript", alias = "generate-ts")]
     GenerateTypeScript {
