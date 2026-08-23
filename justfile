@@ -530,6 +530,30 @@ verify-dart:
 	add_cbor_dev_dependency_for_verification() {
 	  local pkg="$1"
 	  sed -i '/^dev_dependencies:/a\  cbor: ^6.5.1' "$pkg/pubspec.yaml"
+	  # ...and override the version-locked `cratestack_cbor` constraint, or
+	  # this harness is UNPASSABLE on a release PR.
+	  #
+	  # The generator version-locks the dependency to its own crate version
+	  # (`context.rs`: `format!("^{}", env!("CARGO_PKG_VERSION"))`), so a bump
+	  # PR emits `cratestack_cbor: ^<next version>` — a version that by
+	  # construction is not on pub.dev yet, because publishing it is what
+	  # merging that very PR sets in motion. v0.8.7's release PR failed here
+	  # with "depends on cratestack_cbor ^0.8.7 which doesn't match any
+	  # versions, version solving failed". Not a defect in the release: an
+	  # ordering deadlock that would block EVERY future release identically.
+	  #
+	  # `any` is safe because the property it appears to give up is asserted
+	  # elsewhere, and better: `native_cbor_generator.rs` (lines ~83 and ~210)
+	  # asserts the emitted pubspec literally contains
+	  # `cratestack_cbor: ^{CARGO_PKG_VERSION}`, as a string, so lockstep is
+	  # still pinned by a test that CAN fail on a bump PR. What this harness
+	  # actually verifies — that generated code analyzes, compiles, and
+	  # round-trips CBOR against the real native codec — needs *a* published
+	  # cratestack_cbor, not specifically today's unreleased one.
+	  #
+	  # Verification-only: appended to the generated package in this scratch
+	  # output directory, never to the generator's own emitted template.
+	  printf '\ndependency_overrides:\n  cratestack_cbor: any\n' >> "$pkg/pubspec.yaml"
 	}
 
 	# `cratestack_cbor`'s native backend resolves its vendored `.so` two
