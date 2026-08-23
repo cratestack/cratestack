@@ -9,7 +9,7 @@ ticket carries that once this is accepted or rejected.
 > surface, gRPC (`include/server/grpc/service.rs`), and cited its
 > existing `model_allows_create` presence-gate as the one live precedent
 > for declaration-gated absence (§5). `transport grpc` and that gate were
-> removed in v0.9 — see `docs/adr/0017-remove-grpc-protobuf.md`. This
+> removed in 0.8.5 — see `docs/adr/0017-remove-grpc-protobuf.md`. This
 > document has been narrowed to the three surfaces that remain (REST,
 > RPC, generated clients); the argument and structure for those three are
 > otherwise unchanged from the original spike. Where the gRPC precedent
@@ -49,7 +49,7 @@ is explicitly marked as such.
 | 1. Trigger | **Author declaration** (`@@internal("action", ...)`), not policy inference. Reintroduces PR #485's attribute design unchanged in shape (that PR's code is not on `main` — see note above); only its *effect* changes (§2, §3). |
 | 2. Surfaces | **All three, one shared source of truth.** A single `model_internal_actions(&Model) -> BTreeSet<String>` — PR #485 designed this exact function in `crates/cratestack-core/src/schema/internal_attribute.rs`, but that file does not exist on `main`; the implementation ticket reintroduces it — consulted at exactly one point per surface: REST route assembly, RPC dispatch-arm collection, and every client's per-action stub emission. A suppressed op sent to `/rpc/batch` gets a per-frame `CratestackError::NotFound` error frame at its index, in place, other frames unaffected — no new mechanism needed, since this reuses machinery that genuinely is on `main` today (§3.2). |
 | 3. Failure mode | Not a single status code — **each surface's own pre-existing "this dispatch key doesn't exist" fallback**, reused rather than reinvented, because suppression is implemented as *emitting nothing*, not as a new runtime branch. REST: 405 on a shared path, using axum's own default `MethodRouter` behavior once routes are restructured the way PR #485 restructured them (that restructuring is not on `main`; the underlying axum 405-for-unregistered-verb default is); or plain axum 404 if a model suppresses every action on a path. RPC: `CratestackError::NotFound` via the unknown-op-id arm that already exists on `main` today (`rpc_module.rs:116-133`) (§4). |
-| 4. Client-generation consequence | **Stub absent** — a compile error for the SDK consumer. One live precedent survives: the TypeScript REST/RPC client generator already gates its `create` stub and `Create<M>Input` interface on `model_allows_create` (`cratestack-client-typescript/src/types.rs:118`, used at `context.rs:136`, `views.rs:136`, `swr/context.rs:183`) — gRPC's copies of the same check were removed with `transport grpc` in v0.9 (see the scope note above), but this one was never gRPC-specific. Declaration-gated absence, applied to all three client languages, all three surfaces (§5). |
+| 4. Client-generation consequence | **Stub absent** — a compile error for the SDK consumer. One live precedent survives: the TypeScript REST/RPC client generator already gates its `create` stub and `Create<M>Input` interface on `model_allows_create` (`cratestack-client-typescript/src/types.rs:118`, used at `context.rs:136`, `views.rs:136`, `swr/context.rs:183`) — gRPC's copies of the same check were removed with `transport grpc` in 0.8.5 (see the scope note above), but this one was never gRPC-specific. Declaration-gated absence, applied to all three client languages, all three surfaces (§5). |
 | 5. Migration | **Breaking**, communicated the same way every other breaking codegen change is under this framework's pre-1.0 lockstep versioning: a minor version bump with a `CHANGELOG.md` entry naming the removed method, no deprecation window. `@@internal` is opt-in per action, so nothing breaks until an author adds it (§6). |
 
 Rejected alternatives: policy-derived (inferred) suppression (§7.1);
@@ -65,7 +65,7 @@ generator is the one exception** — it gates its `create` stub on
 gRPC's now-removed copy had (§1.4). (An earlier revision of this
 section also cited gRPC and its Dart/TypeScript-gRPC copies as having
 this same mechanism — those gRPC-specific copies were removed with
-`transport grpc` in v0.9, see the scope note above, but the TypeScript
+`transport grpc` in 0.8.5, see the scope note above, but the TypeScript
 REST/RPC copy was never part of gRPC and survives.) This section cites
 the exact call sites so the rest of the document can reason about one
 shared mechanism instead of the ones that exist today.
@@ -109,9 +109,9 @@ whatever the unary path does with no separate logic.
 > **§1.3 removed (2026-08-18).** This section documented gRPC's
 > `build_service`/`model_allows_create` presence-gate on `create` — one
 > of two existing exceptions to "fully unconditional" anywhere in the
-> pre-v0.9 graph, and a fact that partly motivated §5's original
+> pre-0.8.5 graph, and a fact that partly motivated §5's original
 > "matches an existing precedent" argument. `transport grpc` was removed
-> in v0.9 (see the scope note above), taking that gate and its
+> in 0.8.5 (see the scope note above), taking that gate and its
 > `Code::Unimplemented` fallback with it. The other exception —
 > TypeScript's own REST/RPC copy of `model_allows_create` — was never
 > gRPC-specific and survives; see §1.4 and §5. (This section's number is
@@ -147,7 +147,7 @@ client copies of `model_allows_create` — Rust-gRPC, Dart-gRPC,
 TS-gRPC — plus `cratestack-proto`'s own copy, as four of "five
 reimplementations of one presence predicate" that motivated §3.1's
 "one registry, not N independent checks" argument. All four were
-removed along with `transport grpc`/`cratestack-proto` in v0.9. The
+removed along with `transport grpc`/`cratestack-proto` in 0.8.5. The
 TypeScript REST-mode generator's own copy above is the fifth, and it
 remains — the argument for one shared registry does not depend on the
 exact count — see §3.1.)
@@ -203,7 +203,7 @@ as a raw string — `Attribute { raw: String }`,
 example schema exercised through `cratestack-macros`'s real
 policy-compilation path. (An earlier revision of this sentence also
 cited `cratestack-proto`/`grpc_pb` fixtures that checked attribute
-*presence* only; both were removed with `transport grpc` in v0.9 — see
+*presence* only; both were removed with `transport grpc` in 0.8.5 — see
 the scope note above — and are no longer part of this evidence.) So even the
 "decidable" half of the inference proposal would first require adding
 literal-boolean-term support to the model policy grammar — a
@@ -303,7 +303,7 @@ shaped presence checks were "already reimplemented four times by
 convention" at the time it was written, and an earlier revision of §1.4
 confirmed that to be five by the time this spike was written — four of
 those five copies (three gRPC client copies plus `cratestack-proto`'s
-own) were removed along with `transport grpc` in v0.9, leaving one
+own) were removed along with `transport grpc` in 0.8.5, leaving one
 (TypeScript's REST/RPC copy, §1.4) live today, but the argument does not
 depend on the exact number.
 Routing every surface through one public, core-crate function (rather
@@ -435,7 +435,7 @@ not a runtime `403`.
 > with a "precedent already exists" argument citing gRPC's Dart/
 > TypeScript-gRPC client copies of `model_allows_create`-gated
 > `create`/`Create<M>Input` generation. Those gRPC-specific copies were
-> removed along with `transport grpc` in v0.9 (see the scope note
+> removed along with `transport grpc` in 0.8.5 (see the scope note
 > above). A live precedent for "absent, not deprecated" does still
 > remain, though, and it was never gRPC-specific: the TypeScript
 > REST/RPC client generator (`cratestack-client-typescript/src/

@@ -119,7 +119,7 @@ against `include/server/grpc/service.rs`). Two router instances is a wiring prob
 not a layering one, and building L3 to solve it would be solving the wrong problem."
 
 **Note added 2026-08-18, prior to this ADR's acceptance or rejection:** `transport
-grpc` was removed in v0.9 (ADR 0017), and with it the only surface in this codebase
+grpc` was removed in 0.8.5 (ADR 0017), and with it the only surface in this codebase
 that ever exercised the corollary above — no other binding, past or currently
 planned, builds a second router instance whose handlers reuse the same generated
 dispatch functions. A substitute example was sought and not found: REST and RPC
@@ -153,7 +153,7 @@ each with a cheap answer:
 - *Is the eventual OpExecutor getting more expensive by waiting?* Settled by
   measuring: `860c08b` (gRPC) touched 121 files, +11,221/−58; `c0a76d1` (SSE #390)
   touched 34 files across seven crates. (`860c08b`'s binding, `transport grpc`, was
-  itself removed by ADR 0017 in v0.9 — the commit stats are unaffected, cited here
+  itself removed by ADR 0017 in 0.8.5 — the commit stats are unaffected, cited here
   only as a historical upper bound on how expensive adding a new transport binding
   can get, not as evidence gRPC still exists.) If a fourth binding is planned inside
   two cycles, the delay argument inverts and L3 should be built first.
@@ -164,7 +164,7 @@ each with a cheap answer:
 
 - No abstraction designed against one imagined caller. Both current dispatch
   paths — REST and RPC-over-HTTP — take an `http::Request`. (A third,
-  gRPC-over-axum, existed when this ADR was proposed and was removed in v0.9 —
+  gRPC-over-axum, existed when this ADR was proposed and was removed in 0.8.5 —
   ADR 0017; it took an `http::Request` too, so its removal does not change the
   count of *distinct* input shapes, only the count of bindings sharing one.) An
   executor factored today would be validated against exactly one input shape while

@@ -220,7 +220,7 @@ largest open design question here.
 
 ### 7.3 gRPC
 
-Out of scope — protobuf/gRPC is being removed in v0.9.
+Out of scope — protobuf/gRPC support was removed in 0.8.5.
 
 ## 8. The client-side payoff is smaller than it looks
 

@@ -4,6 +4,12 @@
 
 Accepted
 
+> **Correction (2026-08-23):** this ADR was written anticipating that the removal would
+> ship as v0.9. It in fact shipped in **0.8.5** (cratestack#655) — no v0.9 release was
+> ever cut. The "effective v0.9" language below is left as written, as a record of the
+> decision at the time it was made; treat "0.8.5" as the accurate release for any
+> reference elsewhere in the codebase (see cratestack#654).
+
 ## Date
 
 2026-08-13 (decision); 2026-08-18 (implementation, this PR)
