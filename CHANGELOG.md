@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.8.9 (2026-08-23)
+
 ### `changelog-seed-tests.sh` Test 5 now exercises a self-contained git fixture instead of the ambient repo's tags/HEAD (#670)
 
 Test 5 asserted "at least one `#### ` conventional-commit type grouping appears in the seed" against
@@ -49,8 +51,6 @@ real gap, tracked rather than silently converted or force-fixed.
 `ignore-doctest-fence` job) is the regression guard: a newly reintroduced `` ```ignore `` fence
 around illustrative content fails the check, with an explicit, maintained exception list for
 the one documented real-but-skipped case.
-
-## 0.8.9 (2026-08-23)
 
 ### `cratestack-client-rust`'s RPC batch client silently dropped explicit nullable-column clears (#677)
 
