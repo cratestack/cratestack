@@ -551,9 +551,31 @@ verify-dart:
 	  # round-trips CBOR against the real native codec — needs *a* published
 	  # cratestack_cbor, not specifically today's unreleased one.
 	  #
-	  # Verification-only: appended to the generated package in this scratch
-	  # output directory, never to the generator's own emitted template.
-	  printf '\ndependency_overrides:\n  cratestack_cbor: any\n' >> "$pkg/pubspec.yaml"
+	  # Verification-only: written beside the generated package in this
+	  # scratch output directory, never into the generator's own template.
+	  override_cratestack_cbor_for_verification "$pkg"
+	}
+
+	# Written as a SEPARATE `pubspec_overrides.yaml`, not appended to
+	# `pubspec.yaml`, and that choice is load-bearing in two ways.
+	#
+	# 1. It survives regeneration. The riverpod block below generates a
+	#    package, resolves it, then REGENERATES it with `--run-build-runner`
+	#    — which rewrites `pubspec.yaml` and would silently drop an appended
+	#    block, leaving the second half of that flow unresolvable again.
+	#    The generator never emits `pubspec_overrides.yaml`, so this file is
+	#    untouched by that rewrite.
+	# 2. It keeps the override visibly out of the artifact under test. The
+	#    generated `pubspec.yaml` stays byte-identical to what a real
+	#    consumer would get, which is the thing these packages exist to
+	#    verify.
+	#
+	# `pubspec_overrides.yaml` is a first-class pub feature (the same one
+	# melos uses for local workspace pinning), honoured by `flutter pub get`
+	# without any flag.
+	override_cratestack_cbor_for_verification() {
+	  local pkg="$1"
+	  printf 'dependency_overrides:\n  cratestack_cbor: any\n' > "$pkg/pubspec_overrides.yaml"
 	}
 
 	# `cratestack_cbor`'s native backend resolves its vendored `.so` two
@@ -789,6 +811,15 @@ verify-dart:
 	    --library-name "$library_name" \
 	    --preset riverpod \
 	    --native-cbor
+	  # The riverpod packages need the same override as the default-preset
+	  # ones above: they carry the identical version-locked `cratestack_cbor`
+	  # constraint, and on a release PR that version is not published yet.
+	  # They do NOT need the `cbor` dev dependency (no round-trip test file is
+	  # copied into them — this block only analyzes), hence the narrower
+	  # helper. Missing this is what left v0.8.7 red after the first fix:
+	  # the two default-preset packages resolved and the riverpod ones then
+	  # failed identically, one call site further on.
+	  override_cratestack_cbor_for_verification "$pkg"
 	  echo "=== flutter pub get: $pkg ==="
 	  (cd "$pkg" && flutter pub get)
 	  echo "=== generate-dart --preset riverpod --native-cbor --run-build-runner: $pkg ==="
@@ -2523,11 +2554,22 @@ cbor-example-verify-ios:
 	# race is lost on a slow runner — which is exactly how this failed,
 	# intermittently, while passing on other runs.
 	#
-	# `process == "Runner"` is an exact match, not a substring, and dropping
-	# `--level` leaves the default level, which is where Flutter's `print`
-	# output lands. Diagnostics on failure report the byte count of this
-	# capture precisely so a regression here is visible rather than guessed.
-	xcrun simctl spawn "$udid" log stream --style=compact \
+	# `process == "Runner"` is an exact match, not a substring — that alone
+	# is what kills the firehose, and it took the capture from 63,727,376
+	# bytes to 283.
+	#
+	# `--level=debug` MUST STAY. An earlier attempt dropped it together with
+	# the predicate fix, on the assumption that the default level would do.
+	# It does not: Flutter's `print` reaches the unified log at DEBUG level,
+	# which is visible in the line this recipe actually matches —
+	#
+	#   Df Runner[28903:15930] (Flutter) flutter: CRATESTACK_CBOR_EXAMPLE_...
+	#      ^^ Df = Debug
+	#
+	# Without it the capture is a well-behaved 283 bytes containing nothing
+	# from the app, and the marker never arrives. Two changes at once, one of
+	# them load-bearing: narrow the predicate, keep the level.
+	xcrun simctl spawn "$udid" log stream --level=debug --style=compact \
 	  --predicate 'process == "Runner"' > "$stream_log" 2>&1 &
 	stream_pid=$!
 	sleep 2
