@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### `changelog-seed.sh` re-seeds a fresh `## Unreleased` heading after every release (#688)
+
+`changelog-seed.sh`'s conversion branch turned `## Unreleased` into the new dated `## X.Y.Z (date)`
+section without leaving a fresh, empty `## Unreleased` behind. Every release therefore reset the file
+to a state with no obvious place for the next contributor to file an entry, and three PRs in one day
+(#672, #680, #686) ended up misfiled under an already-released section as a result — which in turn
+meant the following bump found nothing under `## Unreleased` and fell through to the placeholder-seed
+fallback, merged unedited into v0.8.6.
+
+The seed script now emits a fresh, empty `## Unreleased` heading immediately above the newest dated
+section on all three paths (prose present, present-but-empty, absent entirely), for every changelog in
+`.ci/changelog-files.sh`, not just the root one. See `CONTRIBUTING.md` for the contributor-facing
+convention this cements.
+
 ### Field-level `@allow`/`@deny` is rejected at parse time — breaking (#679)
 
 A field-level `@allow(...)` parsed, reported `schema OK`, was retained in the IR, and was then read by

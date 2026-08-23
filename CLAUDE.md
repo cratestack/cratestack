@@ -189,6 +189,10 @@ tarballs that `cargo publish` includes explicitly. `just publish-studio` re-bund
   When adding code, prefer extending the existing fine-grained module layout over growing a file past
   the threshold. Refactor PRs are scoped per-crate.
 - Don't commit generated build output, local DB state, or the studio tarballs (gitignored by design).
+- Changelog entries go under the `## Unreleased` heading at the top of each declared changelog
+  (`.ci/changelog-files.sh` — currently `CHANGELOG.md` and `dart-packages/cratestack_cbor/CHANGELOG.md`),
+  never under the newest dated section. A release bump promotes `## Unreleased` into a dated section and
+  re-seeds a fresh, empty one above it (`.ci/changelog-seed.sh`), so it's always there for the next PR.
 
 <!-- BEGIN: AI Governance stanza (managed by ADORSYS-GIS/ai-governance) -->
 ## AI Governance

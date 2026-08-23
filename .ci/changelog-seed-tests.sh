@@ -339,10 +339,19 @@ if [ "$REPLY_STATUS" -eq 0 ]; then
     test_fail "New dated heading not found"
   fi
 
-  if grep -q "^## Unreleased$" "$SANDBOX_CHANGELOG"; then
-    test_fail "Stale '## Unreleased' heading still present — prose was NOT converted in place"
+  # cratestack#688: the OLD assertion here was that no "## Unreleased"
+  # heading remained at all. That is no longer correct — a FRESH, empty one
+  # is now expected immediately above the new dated heading (see Test 23
+  # below for the dedicated, exact-content assertion of that invariant).
+  # What must still hold from the original #531 behavior is that there is
+  # exactly ONE "## Unreleased" heading (not a stale second one left behind
+  # from the original section), and it no longer has the carried-forward
+  # prose under it — the prose moved to the dated section, not duplicated.
+  unreleased_count=$(grep -c "^## Unreleased$" "$SANDBOX_CHANGELOG" || true)
+  if [ "$unreleased_count" -eq 1 ]; then
+    test_pass "Exactly one '## Unreleased' heading present (the freshly re-seeded one, not a stale leftover)"
   else
-    test_pass "No stale '## Unreleased' heading remains"
+    test_fail "Expected exactly one '## Unreleased' heading, found $unreleased_count"
   fi
 
   if grep -q "Real narrative prose landed by PR #900" "$SANDBOX_CHANGELOG"; then
@@ -400,10 +409,17 @@ if [ "$REPLY_STATUS" -eq 0 ]; then
     test_fail "Seed marker missing even though '## Unreleased' was empty"
   fi
 
-  if grep -q "^## Unreleased$" "$SANDBOX_CHANGELOG"; then
-    test_fail "Stale empty '## Unreleased' heading still present"
+  # cratestack#688: the OLD assertion here was that no "## Unreleased"
+  # heading remained at all — that was the bug this issue fixes. A fresh,
+  # empty one is now expected above the seeded section (Test 24 below
+  # asserts the exact content). What must still hold is that the ORIGINAL
+  # empty heading was consumed in place, not left stranded as a SECOND
+  # heading alongside the freshly re-seeded one.
+  unreleased_count=$(grep -c "^## Unreleased$" "$SANDBOX_CHANGELOG" || true)
+  if [ "$unreleased_count" -eq 1 ]; then
+    test_pass "Exactly one '## Unreleased' heading present (re-seeded, not a stale leftover of the consumed one)"
   else
-    test_pass "No stale '## Unreleased' heading remains"
+    test_fail "Expected exactly one '## Unreleased' heading, found $unreleased_count"
   fi
 
   if grep -q "^## 1.3.0 (" "$SANDBOX_CHANGELOG"; then
@@ -783,6 +799,281 @@ if [ "$REPLY_STATUS" -ne 0 ] && echo "$REPLY_OUT" | grep -qi "empty"; then
 else
   test_fail "changelog-check should have refused with a named empty-set error: status=$REPLY_STATUS out=$REPLY_OUT"
 fi
+
+# Tests 23-26 (cratestack#688): the invariant this issue exists to
+# implement — "after the seed script runs, every declared changelog file
+# has exactly one '## Unreleased' heading, empty, immediately above the
+# newest dated section" — on all three paths, plus the multi-file case.
+#
+# These assert on EXACT file content (whole-file diff, or exact line
+# ranges for the parts that are deterministic), not `grep` substring
+# presence, per the issue's own warning: the conversion branch streams its
+# body via `sed` specifically to avoid a `$(...)`-captured variable
+# silently eating a trailing blank line, and inserting a heading into that
+# same reconstruction is exactly where a heading-glued-to-content
+# regression would pass a substring `grep` and still be wrong. A `diff`
+# against literal expected content is the only assertion that class of bug
+# can't slip past.
+TODAY="$(date -u +"%Y-%m-%d")"
+
+# Test 23 (cratestack#688 — path 1: prose present): the WHOLE resulting
+# file is deterministic here (no commit-log-derived content is involved
+# when there's real prose to carry forward), so this asserts the exact,
+# complete file content — not just the presence of a heading.
+test_header "Test 23 (cratestack#688): fresh empty '## Unreleased' re-seeded above the dated section, prose-carry path — exact content"
+TEST_DIR=$(mktemp -d)
+SANDBOX_CHANGELOG="$TEST_DIR/CHANGELOG.md"
+cat > "$SANDBOX_CHANGELOG" <<'FIXTURE'
+# Changelog
+
+## Unreleased
+
+### Real content
+
+Prose body line.
+
+## 1.2.3 (2026-01-01)
+
+Older release notes here.
+FIXTURE
+
+EXPECTED_FILE="$TEST_DIR/expected.md"
+cat > "$EXPECTED_FILE" <<FIXTURE
+# Changelog
+
+## Unreleased
+
+## 9.9.9 ($TODAY)
+
+### Real content
+
+Prose body line.
+
+## 1.2.3 (2026-01-01)
+
+Older release notes here.
+FIXTURE
+
+run_capture "$SEED_SCRIPT" 9.9.9
+if [ "$REPLY_STATUS" -eq 0 ]; then
+  if diff -u "$EXPECTED_FILE" "$SANDBOX_CHANGELOG"; then
+    test_pass "Exact file content matches: one empty '## Unreleased' immediately above the new dated section, prose carried forward untouched"
+  else
+    test_fail "File content does not exactly match the expected reconstruction (see diff above)"
+  fi
+else
+  test_fail "changelog-seed script failed: $REPLY_OUT"
+fi
+
+rm -rf "$TEST_DIR"
+TEST_DIR=""
+
+# Test 24 (cratestack#688 — path 2: '## Unreleased' present but empty): the
+# seeded section's body is derived from this repo's actual commit log, so
+# it isn't reproducible as a static fixture — but the part at risk of the
+# whitespace bug (the fresh heading immediately followed by the dated
+# heading) is fully deterministic and asserted here as an exact multi-line
+# match, along with an exact match of the untouched tail below the seeded
+# section.
+test_header "Test 24 (cratestack#688): fresh empty '## Unreleased' re-seeded above the dated section, empty-Unreleased fallback path — exact content at the seam"
+TEST_DIR=$(mktemp -d)
+SANDBOX_CHANGELOG="$TEST_DIR/CHANGELOG.md"
+cat > "$SANDBOX_CHANGELOG" <<'FIXTURE'
+# Changelog
+
+## Unreleased
+
+## 1.2.3 (2026-01-01)
+
+Older release notes here.
+FIXTURE
+
+run_capture "$SEED_SCRIPT" 9.9.9
+if [ "$REPLY_STATUS" -eq 0 ]; then
+  head_actual=$(sed -n '1,5p' "$SANDBOX_CHANGELOG")
+  head_expected="# Changelog
+
+## Unreleased
+
+## 9.9.9 ($TODAY)"
+  if [ "$head_actual" = "$head_expected" ]; then
+    test_pass "Exact leading content: '# Changelog', blank, '## Unreleased', blank, '## 9.9.9 (date)' — no glued lines"
+  else
+    test_fail "Leading content does not exactly match. Expected:
+$head_expected
+Got:
+$head_actual"
+  fi
+
+  tail_actual=$(tail -n 3 "$SANDBOX_CHANGELOG")
+  tail_expected="## 1.2.3 (2026-01-01)
+
+Older release notes here."
+  if [ "$tail_actual" = "$tail_expected" ]; then
+    test_pass "Exact trailing content: the pre-existing older section is untouched, byte-for-byte"
+  else
+    test_fail "Trailing content does not exactly match. Expected:
+$tail_expected
+Got:
+$tail_actual"
+  fi
+
+  unreleased_count=$(grep -c "^## Unreleased$" "$SANDBOX_CHANGELOG" || true)
+  if [ "$unreleased_count" -eq 1 ]; then
+    test_pass "Exactly one '## Unreleased' heading in the file"
+  else
+    test_fail "Expected exactly one '## Unreleased' heading, found $unreleased_count"
+  fi
+else
+  test_fail "changelog-seed script failed: $REPLY_OUT"
+fi
+
+rm -rf "$TEST_DIR"
+TEST_DIR=""
+
+# Test 25 (cratestack#688 — path 3: no '## Unreleased' heading at all): same
+# seam-exactness approach as Test 24 — the commit-derived body isn't a
+# static fixture, but the heading insertion is.
+test_header "Test 25 (cratestack#688): '## Unreleased' heading now present after seeding, no-heading fallback path — exact content at the seam"
+TEST_DIR=$(mktemp -d)
+SANDBOX_CHANGELOG="$TEST_DIR/CHANGELOG.md"
+cat > "$SANDBOX_CHANGELOG" <<'FIXTURE'
+# Changelog
+
+## 1.2.3 (2026-01-01)
+
+Older release notes here.
+FIXTURE
+
+run_capture "$SEED_SCRIPT" 9.9.9
+if [ "$REPLY_STATUS" -eq 0 ]; then
+  head_actual=$(sed -n '1,5p' "$SANDBOX_CHANGELOG")
+  head_expected="# Changelog
+
+## Unreleased
+
+## 9.9.9 ($TODAY)"
+  if [ "$head_actual" = "$head_expected" ]; then
+    test_pass "Exact leading content: '# Changelog', blank, '## Unreleased', blank, '## 9.9.9 (date)' — no glued lines"
+  else
+    test_fail "Leading content does not exactly match. Expected:
+$head_expected
+Got:
+$head_actual"
+  fi
+
+  tail_actual=$(tail -n 3 "$SANDBOX_CHANGELOG")
+  tail_expected="## 1.2.3 (2026-01-01)
+
+Older release notes here."
+  if [ "$tail_actual" = "$tail_expected" ]; then
+    test_pass "Exact trailing content: the pre-existing older section is untouched, byte-for-byte"
+  else
+    test_fail "Trailing content does not exactly match. Expected:
+$tail_expected
+Got:
+$tail_actual"
+  fi
+
+  unreleased_count=$(grep -c "^## Unreleased$" "$SANDBOX_CHANGELOG" || true)
+  if [ "$unreleased_count" -eq 1 ]; then
+    test_pass "Exactly one '## Unreleased' heading in the file (previously there was none at all — the bug this issue fixes)"
+  else
+    test_fail "Expected exactly one '## Unreleased' heading, found $unreleased_count"
+  fi
+else
+  test_fail "changelog-seed script failed: $REPLY_OUT"
+fi
+
+rm -rf "$TEST_DIR"
+TEST_DIR=""
+
+# Test 26 (cratestack#688): the invariant holds on EVERY file in a
+# multi-file set, not just a single file — the acceptance criterion
+# explicitly calls out that the Dart package changelog goes through the
+# identical cycle. Two sandbox fixtures, both with prose to carry (fully
+# deterministic, so both get an exact whole-file diff), wired together via
+# CHANGELOG_FILES_OVERRIDE.
+test_header "Test 26 (cratestack#688): the fresh '## Unreleased' invariant holds across every file in a multi-file set"
+TEST_DIR=$(mktemp -d)
+ROOT_FIXTURE="$TEST_DIR/root/CHANGELOG.md"
+PKG_FIXTURE="$TEST_DIR/pkg/CHANGELOG.md"
+mkdir -p "$TEST_DIR/root" "$TEST_DIR/pkg"
+cat > "$ROOT_FIXTURE" <<'FIXTURE'
+# Changelog
+
+## Unreleased
+
+### Root package prose
+
+Root prose body.
+
+## 1.2.3 (2026-01-01)
+
+Older root release notes.
+FIXTURE
+cat > "$PKG_FIXTURE" <<'FIXTURE'
+## Unreleased
+
+### Dart package prose
+
+Dart package prose body.
+
+## 0.8.3 (2026-01-01)
+
+Older package release notes.
+FIXTURE
+
+EXPECTED_ROOT="$TEST_DIR/expected-root.md"
+cat > "$EXPECTED_ROOT" <<FIXTURE
+# Changelog
+
+## Unreleased
+
+## 9.9.9 ($TODAY)
+
+### Root package prose
+
+Root prose body.
+
+## 1.2.3 (2026-01-01)
+
+Older root release notes.
+FIXTURE
+EXPECTED_PKG="$TEST_DIR/expected-pkg.md"
+cat > "$EXPECTED_PKG" <<FIXTURE
+## Unreleased
+
+## 9.9.9 ($TODAY)
+
+### Dart package prose
+
+Dart package prose body.
+
+## 0.8.3 (2026-01-01)
+
+Older package release notes.
+FIXTURE
+
+run_capture_multi "$ROOT_FIXTURE"$'\n'"$PKG_FIXTURE" "$SEED_SCRIPT" 9.9.9
+if [ "$REPLY_STATUS" -eq 0 ]; then
+  if diff -u "$EXPECTED_ROOT" "$ROOT_FIXTURE"; then
+    test_pass "Root fixture: exact content matches, fresh '## Unreleased' present"
+  else
+    test_fail "Root fixture content does not exactly match the expected reconstruction (see diff above)"
+  fi
+
+  if diff -u "$EXPECTED_PKG" "$PKG_FIXTURE"; then
+    test_pass "Package fixture: exact content matches, fresh '## Unreleased' present (the Dart package changelog goes through the identical cycle)"
+  else
+    test_fail "Package fixture content does not exactly match the expected reconstruction (see diff above)"
+  fi
+else
+  test_fail "changelog-seed failed on the multi-file set: $REPLY_OUT"
+fi
+
+rm -rf "$TEST_DIR"
+TEST_DIR=""
 
 # Test 9: none of the above ever touches the real, tracked changelogs.
 # This guards the sandbox-escape regression directly: every test above must

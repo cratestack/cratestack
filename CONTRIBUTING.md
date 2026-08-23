@@ -13,6 +13,15 @@ Before opening a pull request:
 
 Do not commit generated build output, local database state, or registry tokens.
 
+## Changelog
+
+Every PR with a user-visible change adds an entry under the `## Unreleased` heading at the top of
+`CHANGELOG.md` (and `dart-packages/cratestack_cbor/CHANGELOG.md` if the change touches that package).
+Don't create the heading yourself and don't file entries under the newest dated (`## X.Y.Z`) section —
+that section belongs to an already-released version. A release bump promotes `## Unreleased` into a new
+dated section and re-seeds a fresh, empty `## Unreleased` above it (`.ci/changelog-seed.sh`), so the
+heading is always there for the next PR.
+
 ## AI Governance
 
 This repository follows the [ADORSYS-GIS AI Governance](https://adorsys-gis.github.io/ai-governance/) discipline:

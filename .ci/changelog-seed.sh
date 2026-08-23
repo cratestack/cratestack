@@ -306,18 +306,34 @@ trap "rm -f '$tmp_file'" EXIT
 
 if [ -n "$unreleased_line" ] && [ "$has_prose_to_carry" = "true" ]; then
   # Carry the existing prose forward under the new dated heading, in place.
-  # No seed marker/placeholder is written — there is real content already,
-  # and no "## Unreleased" heading remains anywhere in the file afterward.
+  # No seed marker/placeholder is written — there is real content already.
+  # cratestack#688: a stale "## Unreleased" heading no longer "remains"
+  # anywhere in the file afterward, but a FRESH, empty one is deliberately
+  # re-emitted immediately above the new dated heading, in the same
+  # reconstruction, below. Without this, every release consumes the
+  # heading and never puts it back — the next contributor finds no
+  # "## Unreleased" section to write under, so they either misfile their
+  # entry under the newest *released* section (#672, #680, #686) or, worse,
+  # the seed's placeholder-detection fallback fires again because nobody
+  # wrote real prose anywhere the tooling recognizes (precisely how v0.7.12
+  # and v0.8.6 shipped with the seed unedited). Re-seeding the heading here
+  # closes that loop.
   # The body is streamed straight from the file via `sed`, not through a
   # `$(...)`-captured variable — command substitution strips ALL trailing
   # newlines, which would silently eat a genuine trailing blank line
-  # separating the carried prose from whatever section follows it.
+  # separating the carried prose from whatever section follows it. The
+  # fresh "## Unreleased" heading below is emitted the same way, via
+  # `printf` straight into the same output stream, for the same reason:
+  # inserting it through a captured variable would risk the exact class of
+  # whitespace bug this comment already warns about, right where a heading
+  # would end up glued to the line after it.
   before_line=$((unreleased_line - 1))
   after_line=$((unreleased_end_line + 1))
   {
     if [ "$before_line" -gt 0 ]; then
       head -n "$before_line" "$CHANGELOG_FILE"
     fi
+    printf '## Unreleased\n\n'
     printf '## %s (%s)\n' "$VERSION" "$today"
     sed -n "${content_start_line},${unreleased_end_line}p" "$CHANGELOG_FILE"
     total_lines=$(wc -l < "$CHANGELOG_FILE")
@@ -327,21 +343,27 @@ if [ -n "$unreleased_line" ] && [ "$has_prose_to_carry" = "true" ]; then
   } > "$tmp_file"
   mv "$tmp_file" "$CHANGELOG_FILE"
 
-  echo "$CHANGELOG_FILE: converted existing '## Unreleased' section into '## $VERSION ($today)' — prose carried forward, no seed needed"
+  echo "$CHANGELOG_FILE: converted existing '## Unreleased' section into '## $VERSION ($today)' — prose carried forward, fresh empty '## Unreleased' re-seeded above it"
   echo "  Last tag: ${last_tag:-none}"
   echo "  Commit range: $range"
   echo "  Computed from commit: $head_sha"
 elif [ -n "$unreleased_line" ]; then
   # "## Unreleased" exists but is empty (nothing landed since the last
   # release yet) — replace the heading + its empty body with the full
-  # seeded section, rather than leaving a permanently empty "## Unreleased"
-  # heading stranded below every future release.
+  # seeded section. cratestack#688: a fresh, empty "## Unreleased" heading
+  # is re-emitted immediately above the seeded section in the same pass —
+  # this branch used to leave the file with NO "## Unreleased" heading at
+  # all afterward, which is the exact state that made #672/#680/#686
+  # misfile their entries under the newest released section instead. This
+  # is additive only: the seeded section itself (marker, placeholder,
+  # grouped commits) is unchanged from before.
   before_line=$((unreleased_line - 1))
   after_line=$((unreleased_end_line + 1))
   {
     if [ "$before_line" -gt 0 ]; then
       head -n "$before_line" "$CHANGELOG_FILE"
     fi
+    printf '## Unreleased\n\n'
     printf '%s' "$new_section"
     total_lines=$(wc -l < "$CHANGELOG_FILE")
     if [ "$after_line" -le "$total_lines" ]; then
@@ -350,7 +372,7 @@ elif [ -n "$unreleased_line" ]; then
   } > "$tmp_file"
   mv "$tmp_file" "$CHANGELOG_FILE"
 
-  echo "$CHANGELOG_FILE: seeded with section for $VERSION (marker: $section_marker) — '## Unreleased' was present but empty, replaced in place"
+  echo "$CHANGELOG_FILE: seeded with section for $VERSION (marker: $section_marker) — '## Unreleased' was present but empty, replaced in place, fresh empty '## Unreleased' re-seeded above it"
   echo "  Last tag: ${last_tag:-none}"
   echo "  Commit range: $range"
   echo "  Computed from commit: $head_sha"
@@ -361,6 +383,13 @@ else
   # H1 + blurb) — prepending at byte 0 would push that title out of the top
   # and bury it mid-file on every run. Insert right before the first
   # existing "## " heading instead, preserving everything above it untouched.
+  #
+  # cratestack#688: a fresh, empty "## Unreleased" heading is re-emitted
+  # immediately above the seeded section here too. This branch is the
+  # purest case of the bug this issue closes: a file with no
+  # "## Unreleased" heading at all is exactly the state every earlier
+  # release left behind, with nowhere obvious for the next contributor to
+  # write. The seeded section itself is otherwise unchanged.
   insert_line=$(grep -n '^## ' "$CHANGELOG_FILE" | head -1 | cut -d: -f1 || true)
 
   if [ -n "$insert_line" ]; then
@@ -369,6 +398,7 @@ else
       if [ "$before_line" -gt 0 ]; then
         head -n "$before_line" "$CHANGELOG_FILE"
       fi
+      printf '## Unreleased\n\n'
       printf '%s' "$new_section"
       tail -n "+${insert_line}" "$CHANGELOG_FILE"
     } > "$tmp_file"
@@ -377,12 +407,13 @@ else
     # append the new section after whatever front matter/content is there.
     {
       cat "$CHANGELOG_FILE"
+      printf '## Unreleased\n\n'
       printf '%s' "$new_section"
     } > "$tmp_file"
   fi
   mv "$tmp_file" "$CHANGELOG_FILE"
 
-  echo "$CHANGELOG_FILE: seeded with section for $VERSION (marker: $section_marker)"
+  echo "$CHANGELOG_FILE: seeded with section for $VERSION (marker: $section_marker), fresh empty '## Unreleased' re-seeded above it"
   echo "  Last tag: ${last_tag:-none}"
   echo "  Commit range: $range"
   echo "  Computed from commit: $head_sha"
