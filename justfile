@@ -1079,6 +1079,26 @@ verify-lints-optin:
 verify-changelog:
 	./.ci/changelog-check.sh
 
+# ```ignore-fence convention check (cratestack#683).
+#
+# `cargo test --doc -- --ignored` reports ```ignore-fenced doctests as
+# passing WITHOUT compiling them on edition-2024 crates (merged-doctests
+# mode) — so `test-ci-ignored-report`'s sweep is structurally blind to
+# anything fenced ```ignore. Rather than force-compiling every ```ignore
+# example (which would turn ~10 deliberately-illustrative, never-meant-to-
+# compile examples permanently red for zero real defects), this repo's
+# convention is: illustrative content is fenced ```text, never ```ignore
+# — ```text is never scheduled as a doctest under any flag, so there is
+# nothing left for the sweep to be blind about. See
+# `.ci/ignore-doctest-fence-check.sh` for the full rationale and the one
+# documented exception (a genuinely real, would-compile example that only
+# builds under `--target wasm32-unknown-unknown`).
+#
+# Blocking CI gate — a new ```ignore fence opened around illustrative
+# content silently recreates the exact vacuous-pass hole #683 reports.
+verify-ignore-doctest-fences:
+	./.ci/ignore-doctest-fence-check.sh
+
 # Test changelog-seed.sh and changelog-check.sh against an isolated sandbox
 # copy of CHANGELOG.md (never the real, tracked file). Wired into CI so the
 # test suite actually runs instead of silently rotting.

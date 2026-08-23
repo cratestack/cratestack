@@ -551,7 +551,7 @@ fn parse_trusted_keys_from_env_optional() -> Result<Vec<(String, VerifyingKey)>,
 ///
 /// Example:
 ///
-/// ```ignore
+/// ```text
 /// CRATESTACK_AUTH_SIGNATURE_TRUSTED_ISSUERS={
 ///   "vendor-service": "http://vendor-service:8082/jwks.json",
 ///   "order-service":  "http://order-service:8084/jwks.json"

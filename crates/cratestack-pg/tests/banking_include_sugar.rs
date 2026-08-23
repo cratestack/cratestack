@@ -7,13 +7,13 @@
 //! `RelationInclude` literal; this follow-up adds the typed
 //! accessor so call sites can write:
 //!
-//! ```ignore
+//! ```text
 //! .include(delivery::subscription().as_include())
 //! ```
 //!
 //! instead of:
 //!
-//! ```ignore
+//! ```text
 //! .include(RelationInclude {
 //!     parent_fk_extract: |d: &Delivery| d.subscriptionId,
 //!     related_descriptor: &models::SUBSCRIPTION_MODEL,

@@ -454,7 +454,7 @@ impl MultiIssuerJwksVerifier {
 ///
 /// Service binaries typically:
 ///
-/// ```ignore
+/// ```text
 /// let signing_key = ServiceSigningKey::from_env(
 ///     "vendor-service",
 ///     "vendor-service-v1",

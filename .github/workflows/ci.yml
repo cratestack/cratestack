@@ -448,6 +448,16 @@ jobs:
       - name: Workspace-lints opt-in check
         run: ./.ci/lints-workspace-check.sh
 
+  # ```ignore-fence convention check (cratestack#683). Grep-only — no
+  # toolchain component beyond `actions/checkout` is needed.
+  ignore-doctest-fence:
+    name: doctest fences (cratestack#683)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: '```ignore-fence convention check'
+        run: ./.ci/ignore-doctest-fence-check.sh
+
   # Changelog verification (issue #479). Detects unedited changelog seeds
   # that would silently degrade the changelog from prose to a commit list
   # (worse than an honest gap, because it looks maintained but isn't).

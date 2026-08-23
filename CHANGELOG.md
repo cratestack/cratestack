@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### `` ```ignore `` doctest fences converted to `` ```text ``; `tests-ignored-report`'s doctest blind spot documented and guarded (#683)
+
+On edition-2024 crates, `cargo test --doc -- --ignored` merges doctests and reports every
+`` ```ignore ``-fenced block as passing **without compiling it**, so `test-ci-ignored-report`
+(and the non-blocking `tests-ignored-report` CI job that runs it) was structurally blind to
+anything fenced `` ```ignore ``. #683 proposed forcing `--merge-doctests=no` to make them
+actually compile; that was rejected after triage — every `` ```ignore `` doctest in `crates/`
+(10 of them, across `cratestack-sql`, `cratestack-pg`'s test suite, `cratestack-api`,
+`cratestack-core`, `cratestack-axum` x2, `cratestack-auth` x2, and `cratestack-client`) turned
+out to be illustrative pseudocode never meant to compile — elided struct bodies, free variables
+with no scope, a JSON environment-variable value, a reference to a schema file that doesn't
+exist. Forcing compilation would make the job permanently red for zero real defects.
+
+Instead, every one of those 10 is now fenced `` ```text `` — rustdoc never schedules a `text`
+block as a doctest under any flag or merge mode, so the ignored-sweep has nothing left to be
+blind about for them. This generalizes #611's fix (`8fb373d`) for the single macro-generated
+`invoke_with_db` example to every hand-written one. One `` ```ignore `` fence remains, in
+`cratestack-rusqlite/src/opfs.rs`: it is genuine, would-compile Rust, but only under
+`--target wasm32-unknown-unknown`, which no doctest sweep in this repo's CI runs against — a
+real gap, tracked rather than silently converted or force-fixed.
+
+`.ci/ignore-doctest-fence-check.sh` (`just verify-ignore-doctest-fences`, wired as CI's
+`ignore-doctest-fence` job) is the regression guard: a newly reintroduced `` ```ignore `` fence
+around illustrative content fails the check, with an explicit, maintained exception list for
+the one documented real-but-skipped case.
+
 ### `cratestack-client-rust`'s RPC batch client silently dropped explicit nullable-column clears (#677)
 
 `BatchableCall::new` (the constructor every macro-generated batched CRUD/procedure call goes through)

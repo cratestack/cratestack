@@ -38,7 +38,7 @@
 //! cratestack = { package = "cratestack-api", version = "0.6" }
 //! ```
 //!
-//! ```ignore
+//! ```text
 //! cratestack::include_server_schema!("schema/foo.cstack", db = None);
 //! ```
 //!

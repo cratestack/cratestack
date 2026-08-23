@@ -82,7 +82,7 @@
 //! cratestack = { package = "cratestack-client", version = "0.7" }
 //! ```
 //!
-//! ```ignore
+//! ```text
 //! cratestack::include_client_schema!("schema/foo.cstack");
 //! ```
 //!

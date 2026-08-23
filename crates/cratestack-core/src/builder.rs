@@ -9,7 +9,7 @@
 //! carried in the type system by these two markers, one type parameter
 //! per required field:
 //!
-//! ```ignore
+//! ```text
 //! pub struct CreateBoardInputBuilder<S0 = Unset, S1 = Unset> { .. }
 //!
 //! impl<S0, S1> CreateBoardInputBuilder<S0, S1> {
