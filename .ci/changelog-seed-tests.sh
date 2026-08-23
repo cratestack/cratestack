@@ -9,7 +9,11 @@
 # 2. changelog-seed refuses to overwrite existing sections
 # 3. changelog-check detects unedited seeds
 # 4. changelog-check passes when seeds are edited
-# 5. the range/commit the seed was computed from is persisted, not just echoed
+# 5. commits are grouped by conventional-commit type, correctly scoped to the
+#    last-release-tag range — exercised against a disposable git fixture this
+#    test builds itself (cratestack#670), not the ambient repo's
+#    tags/history/HEAD position — and the range/commit the seed was computed
+#    from is persisted in the file, not just echoed
 # 6. the real, tracked CHANGELOG.md is never touched by any of the above —
 #    every scenario runs against an isolated sandbox copy via the
 #    CHANGELOG_FILE override both scripts respect
@@ -232,11 +236,57 @@ fi
 
 cleanup_test
 
-# Test 5: Seed includes commits grouped by type
-test_header "Test 5: changelog-seed groups commits by conventional-commit type"
+# Test 5 (cratestack#670): Seed includes commits grouped by type, exercised
+# against a self-contained, throwaway git fixture's own last-tag range — not
+# the ambient repo's tags/history/HEAD position.
+#
+# The old version of this test asserted "at least one #### grouping exists"
+# against a sandboxed CHANGELOG.md but the REAL, ambient git history (via
+# changelog-seed.sh's own `git log "${last_tag}..HEAD"`, computed against
+# whatever repo the test happened to run in). What that measured depended
+# entirely on the checkout:
+#   - Locally, on a full clone with HEAD exactly at the newest release tag
+#     (right after a release-bump merge), the range is empty, so no
+#     groupings are emitted and the assertion goes red.
+#   - In CI, a shallow/tagless `actions/checkout` finds no tags, so
+#     `last_tag` is empty and `range` silently degrades to plain `HEAD` —
+#     the assertion passes against a one-commit log for a reason that has
+#     nothing to do with the range logic being correct. It would keep
+#     passing even if that logic were completely broken.
+#
+# Fixed by building a disposable git repository right here — a known commit
+# BEFORE a known tag, and known commits AFTER it — and pointing
+# changelog-seed.sh's git calls at that fixture via GIT_DIR/GIT_WORK_TREE.
+# changelog-seed.sh always `cd`s to the real PROJECT_ROOT itself (see its
+# own PROJECT_ROOT computation), so the CHANGELOG_FILE seam alone cannot
+# relocate which repository `git log`/`git tag`/`git rev-parse` read from —
+# GIT_DIR/GIT_WORK_TREE is the seam that can, and git respects it
+# regardless of cwd. This makes the test deterministic on a full clone, a
+# shallow/tagless clone, and immediately after a release bump alike, since
+# none of those ambient properties are consulted at all.
+#
+# The decisive assertion is the negative one below: the pre-tag commit must
+# NOT appear in the seed. That is what actually exercises the
+# `last_tag`/range computation — a regression that computed the range from
+# the repo root instead of from the last tag (or pointed at the wrong ref)
+# would leak the pre-tag commit into the seed and this assertion would catch
+# it; "some grouping appeared" alone would not.
+test_header "Test 5 (cratestack#670): changelog-seed groups commits by conventional-commit type, from a self-contained git fixture's last-tag range"
 setup_test_no_unreleased
 
-run_capture "$SEED_SCRIPT" 0.9.9
+GIT_FIXTURE_DIR=$(mktemp -d)
+git init -q -b main "$GIT_FIXTURE_DIR"
+git -C "$GIT_FIXTURE_DIR" config user.email "changelog-seed-tests@example.invalid"
+git -C "$GIT_FIXTURE_DIR" config user.name "changelog-seed-tests"
+git -C "$GIT_FIXTURE_DIR" config commit.gpgsign false
+git -C "$GIT_FIXTURE_DIR" commit -q --allow-empty -m "feat: pre-tag commit that must not appear in the seed"
+git -C "$GIT_FIXTURE_DIR" tag v1.0.0
+git -C "$GIT_FIXTURE_DIR" commit -q --allow-empty -m "feat: post-tag feature commit"
+git -C "$GIT_FIXTURE_DIR" commit -q --allow-empty -m "fix: post-tag fix commit"
+
+REPLY_STATUS=0
+REPLY_OUT=$(CHANGELOG_FILE="$SANDBOX_CHANGELOG" GIT_DIR="$GIT_FIXTURE_DIR/.git" GIT_WORK_TREE="$GIT_FIXTURE_DIR" "$SEED_SCRIPT" 0.9.9 2>&1) || REPLY_STATUS=$?
+
 if [ "$REPLY_STATUS" -eq 0 ]; then
   type_sections=$(grep -c "^#### " "$SANDBOX_CHANGELOG" || true)
   if [ "$type_sections" -gt 0 ]; then
@@ -244,10 +294,29 @@ if [ "$REPLY_STATUS" -eq 0 ]; then
   else
     test_fail "No type groupings found in seed"
   fi
+
+  if grep -q "^#### Features$" "$SANDBOX_CHANGELOG" && grep -q "^#### Fixes$" "$SANDBOX_CHANGELOG"; then
+    test_pass "Both known post-tag commit types (feat, fix) are grouped"
+  else
+    test_fail "Expected '#### Features' and '#### Fixes' groupings from the fixture's post-tag commits"
+  fi
+
+  if grep -q "post-tag feature commit" "$SANDBOX_CHANGELOG" && grep -q "post-tag fix commit" "$SANDBOX_CHANGELOG"; then
+    test_pass "Both known post-tag commits are present in the seed"
+  else
+    test_fail "Expected post-tag commits missing from the seed"
+  fi
+
+  if grep -q "pre-tag commit that must not appear" "$SANDBOX_CHANGELOG"; then
+    test_fail "Pre-tag commit leaked into the seed — last_tag/range computation is not scoping to commits since the last release tag"
+  else
+    test_pass "Pre-tag commit correctly excluded — range computation is scoped to commits since the last release tag"
+  fi
 else
   test_fail "changelog-seed failed to run: $REPLY_OUT"
 fi
 
+rm -rf "$GIT_FIXTURE_DIR"
 cleanup_test
 
 # Test 6: Seed formats date correctly (YYYY-MM-DD)

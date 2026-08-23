@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### `changelog-seed-tests.sh` Test 5 now exercises a self-contained git fixture instead of the ambient repo's tags/HEAD (#670)
+
+Test 5 asserted "at least one `#### ` conventional-commit type grouping appears in the seed" against
+`changelog-seed.sh`'s real, ambient `git log "${last_tag}..HEAD"` range — so what it actually measured
+depended entirely on the checkout it ran in. Locally, on a full clone with `HEAD` exactly at the newest
+release tag (immediately after a release-bump merge), that range is empty, so the assertion went red. In
+CI, `actions/checkout`'s default shallow, tagless clone finds no tags at all, so `last_tag` resolves empty
+and `range` silently degrades to plain `HEAD` — the assertion passed against a one-commit log for a reason
+that had nothing to do with the range logic being correct, and would have kept passing even if that logic
+were completely broken. `.github/workflows/prepare-release.yml` deliberately checks out with
+`fetch-depth: 0` because the production seeder genuinely depends on the tag-range computation being right;
+this test is what is supposed to guard it, and in CI it guarded nothing.
+
+Test 5 now builds a disposable git repository of its own — a known commit before a known `v*` tag, and
+known commits after it — and points `changelog-seed.sh`'s git calls at that fixture via
+`GIT_DIR`/`GIT_WORK_TREE` (the script always `cd`s to the real project root itself, so the existing
+`CHANGELOG_FILE` sandbox seam alone can't relocate which repository `git log`/`git tag`/`git rev-parse`
+read from). The decisive assertion is negative: a commit made *before* the fixture's tag must not appear
+in the seed, which is what actually exercises the `last_tag`/range computation rather than merely "some
+grouping appeared." The test now passes deterministically regardless of the ambient repo's tags, history,
+clone depth, or `HEAD` position, and fails if the range computation regresses.
+
 ### `` ```ignore `` doctest fences converted to `` ```text ``; `tests-ignored-report`'s doctest blind spot documented and guarded (#683)
 
 On edition-2024 crates, `cargo test --doc -- --ignored` merges doctests and reports every
