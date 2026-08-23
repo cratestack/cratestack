@@ -932,11 +932,36 @@ verify-typescript:
 # unmodified checkout of `main` means the committed examples have already
 # drifted from their templates.
 regen-examples *args='':
+	# `--no-native-cbor` IS DELIBERATE — do not remove it to "use the default".
+	#
+	# The native codec is the default for generated clients, and this example
+	# is the one place that must NOT take it. The generator version-locks
+	# `cratestack_cbor` to its own crate version, and this client is
+	# COMMITTED, so a native example pins a version that:
+	#
+	#   1. drifts on every `just bump` — the committed pubspec still names the
+	#      old version while the generator emits the new one, so
+	#      `regen-examples --check` fails on every release PR (bump does not
+	#      regenerate examples), and
+	#   2. cannot resolve during the release window anyway — the version is
+	#      not on pub.dev until the release this PR is preparing publishes it,
+	#      so `flutter pub get` fails with "depends on cratestack_cbor
+	#      ^<next> which doesn't match any versions".
+	#
+	# Both were observed on the v0.8.9 release PR (#707), which is what sent
+	# this here. `package:cbor` is a third-party dependency that never moves
+	# with our version, so the committed artifact stays stable and resolvable
+	# on every branch at every point in the release cycle.
+	#
+	# The trade is real and accepted: this example demonstrates the FALLBACK
+	# codec, not the default one. `guides/dart-client-generation.md` documents
+	# the default; this directory exists to be buildable, not to showcase the
+	# codec choice.
 	cargo run -p cratestack-cli -- generate-dart \
 	  --schema examples/react-vite-swr/schema.cstack \
 	  --out examples/flutter-riverpod/client \
 	  --library-name flutter_riverpod_client \
-	  --preset riverpod {{args}}
+	  --preset riverpod --no-native-cbor {{args}}
 	cargo run -p cratestack-cli -- generate-typescript \
 	  --schema examples/react-vite-swr/schema.cstack \
 	  --out examples/react-vite-swr/client \
