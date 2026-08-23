@@ -1,0 +1,32 @@
+// cratestack#677 regression fixture — dedicated to
+// `rpc_batch_explicit_null_clear.rs`, which proves (or refutes) whether
+// `BatchableCall::new`'s obsolete `strip_json_null_entries` workaround
+// silently drops an explicit `null` meaning "clear this nullable
+// column" on a batched `model.<Model>.update`.
+//
+// Kept as its own fixture, separate from `transport_rpc.cstack`, so the
+// model shape can be pared down to exactly one nullable field and no
+// other `Option`-typed data anywhere in the `RpcRequest`/`RpcUpdateInput`
+// envelope — that way a raw `0xf6` (CBOR null) byte appearing anywhere
+// in the encoded wire body is unambiguous evidence of the `note` field,
+// not an unrelated optional slipping in from a shared fixture.
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Note {
+  id Int @id
+  note String?
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+}
