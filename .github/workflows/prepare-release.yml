@@ -306,7 +306,37 @@ jobs:
             exit 1
           fi
           git add "${CHANGELOG_FILES_DEFAULT[@]}" ':(glob)**/Cargo.toml' ':(glob)**/Cargo.lock' pnpm-lock.yaml \
-            ':(glob)packages/*/package.json' ':(glob)dart-packages/*/pubspec.yaml'
+            ':(glob)packages/*/package.json' ':(glob)dart-packages/*/pubspec.yaml' \
+            ':(glob)dart-packages/*/*/*.podspec'
+          # THE GUARD (cratestack#563 follow-up). Every pathspec above was
+          # added reactively, after a release shipped something stale:
+          #
+          #   * standalone Cargo.lock files (#636) — left five workspaces at
+          #     the old version and turned main red on facade-disjointness
+          #   * the Flutter plugin podspecs — `just bump` learned to rewrite
+          #     them (#693), but this list was never taught to stage them, so
+          #     v0.8.7's release PR silently carried podspecs pinned at 0.8.6
+          #
+          # Same failure shape both times, and the recipe's own comments
+          # already narrated it twice before it happened again: `bump`
+          # rewrites a file, this `git add` does not name it, and the change
+          # is discarded with no signal whatsoever. A green job, a merged
+          # release PR, and a stale version in the published artifact.
+          #
+          # So stop enumerating and start asserting. After the `git add`,
+          # NOTHING `just bump` touched may remain unstaged. `git status
+          # --porcelain` prints a two-column code per path; column 2 is the
+          # worktree state, so any line whose second character is not a
+          # space is either an unstaged modification or an untracked file.
+          # Either means the pathspec list above has drifted from what
+          # `bump` actually rewrites, and the next pathspec to add is named
+          # in the error rather than discovered a release later.
+          leftover="$(git status --porcelain | grep -E '^.[^ ]' || true)"
+          if [ -n "$leftover" ]; then
+            echo "::error::\`just bump\` modified files that the \`git add\` above does not stage — they would be silently dropped from the release commit. Add the missing pathspec(s) to that list. Unstaged after staging:" >&2
+            echo "$leftover" >&2
+            exit 1
+          fi
           git commit -m "chore: bump workspace to v${version} and seed CHANGELOG section"
           git push origin "$branch"
 
