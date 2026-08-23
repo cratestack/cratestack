@@ -1526,11 +1526,22 @@ jobs:
         run: |
           cd examples/flutter-riverpod/client && flutter pub get
           cd "$GITHUB_WORKSPACE"
+          # `--no-native-cbor` must match `just regen-examples` and the
+          # committed `client/` (cratestack#708). Native is the DEFAULT codec
+          # since the cratestack#563 follow-up, so without this flag the
+          # regeneration below overwrites the committed pubspec with
+          # `cratestack_cbor: ^<workspace version>` — which pub.dev does not
+          # have until *after* that version is published, so `flutter pub get`
+          # fails on every release-bump PR while passing on `main`. The native
+          # path has its own end-to-end coverage in the `native_cbor_*` block;
+          # this fixture is deliberately codec-orthogonal. See the justfile's
+          # `--no-native-cbor` comment for the full rationale.
           cargo run -p cratestack-cli -- generate-dart \
             --schema examples/react-vite-swr/schema.cstack \
             --out examples/flutter-riverpod/client \
             --library-name flutter_riverpod_client \
             --preset riverpod \
+            --no-native-cbor \
             --run-build-runner
       - name: flutter analyze (client)
         if: ${{ !cancelled() }}
