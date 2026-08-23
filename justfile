@@ -2693,8 +2693,24 @@ bump NEW:
 	# but nothing taught it about a podspec. Same drift class the
 	# `packages/*/package.json` comment above warns about — a "these move in
 	# lockstep" list that lives in more places than the tool knows about.
-	# Globbed, not enumerated, for the reason that block gives.
-	perl -i -pe "s/^(\s*s\.version\s*=\s*)'\Q$current\E'/\${1}'{{NEW}}'/" dart-packages/*/macos/*.podspec
+	# Globbed, not enumerated, for the reason that block gives — and globbed
+	# across the PLATFORM DIRECTORY too (`*/*/`), not just `macos/`. Scoping
+	# this to `macos/` was the original form and it was already too narrow by
+	# the time it landed: cratestack#563's iOS slice added
+	# `dart-packages/cratestack_cbor/ios/cratestack_cbor.podspec` days later,
+	# which the `macos/`-only glob silently skipped. A version-lockstep list
+	# that names one platform is the same "list that lives in more places than
+	# the tool knows about" failure this whole block exists to warn about, just
+	# one directory level down.
+	#
+	# `dart-packages/*/*/*.podspec` is exactly three segments deep
+	# (`<package>/<platform>/<file>.podspec`), which reaches every plugin
+	# platform directory and nothing else. It notably does NOT reach
+	# `cratestack_cbor/example/macos/Flutter/ephemeral/FlutterMacOS.podspec`
+	# — six segments deep, a Flutter-SDK artifact that is gitignored
+	# (`example/macos/.gitignore:2`, `**/Flutter/ephemeral/`) and regenerated
+	# per build, so rewriting its version would be both wrong and futile.
+	perl -i -pe "s/^(\s*s\.version\s*=\s*)'\Q$current\E'/\${1}'{{NEW}}'/" dart-packages/*/*/*.podspec
 	# Refresh Cargo.lock so all entries pick up the new version.
 	#
 	# `cargo metadata`, NOT `cargo check`. Refreshing the lock does not

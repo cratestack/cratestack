@@ -22,6 +22,38 @@ misspelled `@raedonly` silently drops `@readonly` and leaves a field writable �
 addressed, because catching it needs the generic unknown-attribute pass that
 `validate/removed_attributes.rs` documents as an intentional non-choice. #679 stays open for it.
 
+### `cratestack_cbor` gains macOS, Windows and iOS (#563, via #685 and #690)
+
+The pub.dev package shipped Linux x64, web and Android; it now also ships **macOS** (arm64 + x86_64
+as one universal xcframework), **Windows** x64, and **iOS** (device `ios-arm64` plus a universal
+simulator slice). Every one of them is a prebuilt vendored artifact — the maintainer decision that no
+consumer needs a Rust toolchain or a network fetch at build time still holds, and no consumer build
+invokes cargo or cargokit. CI builds a real app on each platform, asserts the artifact is inside the
+built bundle, and runs the binary: the same CBOR fixture now round-trips byte-identically on six
+targets. iOS and Linux arm64 were the remaining gap; only Linux arm64 is left.
+
+The macOS artifact ships **zipped**, and that is load-bearing rather than a packaging preference.
+`dart pub publish` dereferences symlinks when it builds its archive, and a macOS framework is a
+versioned bundle whose three symlinks are structural — so shipping the directory delivered a
+framework that failed `codesign` outright, taking a consumer's `flutter build macos` down with
+`Command CodeSign failed with a nonzero exit code`. That was measured on real hardware, not inferred,
+and no symlink-free layout avoids it (each alternative fails elsewhere: `bundle format is ambiguous`,
+`unsealed contents present in the root directory`, `did not contain an Info.plist`, `does not use
+shallow bundles`). So `just cbor-vendor-macos` also emits an `.xcframework.zip`, the package's
+`.pubignore` keeps the unpacked directory out of the archive, and the podspec's `prepare_command`
+unpacks it at pod-install time. No broken artifact was ever published — the defect was found and
+fixed before any release carried macOS at all.
+
+iOS needs none of that: shallow bundles have no symlinks to lose, so it ships unpacked. That is
+asserted rather than assumed — `just cbor-vendor-ios` counts symlinks and fails loudly, naming the
+macOS zip mechanism as the remedy, if the assumption ever breaks.
+
+The verification recipes now exercise the **published** shape, not the built one:
+`just cbor-example-verify-macos` deletes the unpacked xcframework before building, forcing
+`prepare_command` to reconstruct it. The original defect passed a fully green CI run precisely
+because nothing tested what a consumer actually receives.
+
+
 ## 0.8.6 (2026-08-21)
 
 ### `cratestack_annotations` + `cratestack_builder` Dart packages (#668, phase 1)

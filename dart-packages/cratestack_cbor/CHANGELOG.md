@@ -1,3 +1,26 @@
+## Unreleased
+
+- **Adds macOS, Windows and iOS.** The package previously supported Linux x64,
+  web and Android; it now also ships prebuilt binaries for **macOS**
+  (arm64 + x86_64, one universal xcframework), **Windows** x64, and **iOS**
+  (device `ios-arm64` plus a universal simulator slice). As with every other
+  platform here, these are vendored prebuilt artifacts: no Rust toolchain, no
+  cargokit, and no network fetch at your build time. The same CBOR fixture
+  round-trips byte-identically on all six targets, each verified by building
+  and running a real Flutter app rather than by compiling alone.
+- **Linux arm64 remains unsupported**, and is the only platform left in the
+  matrix. Every other platform the package claims now has a real prebuilt
+  binary and a real end-to-end test behind it.
+- The macOS xcframework is shipped as a `.zip` inside the archive and unpacked
+  by the plugin's CocoaPods `prepare_command` at pod-install time. This is
+  invisible if you just depend on the package, and is required because
+  `dart pub publish` dereferences symlinks: a macOS framework is a versioned
+  bundle whose symlinks are structural, and without them `codesign` rejects it
+  and `flutter build macos` fails. iOS frameworks are shallow bundles with no
+  symlinks, so iOS ships unpacked.
+- The archive grew accordingly — every consumer carries every platform's
+  payload, which is the cost of one package covering the whole matrix.
+
 ## 0.8.6 (2026-08-21)
 
 - No functional changes. Version kept in lockstep with the CrateStack
