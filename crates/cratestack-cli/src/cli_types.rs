@@ -61,14 +61,18 @@ pub(crate) enum Command {
         /// wasm-bindgen on web — issue #563) instead of pure-Dart
         /// `package:cbor`.
         ///
-        /// Opt-in, not the default: `cratestack_cbor` only ships prebuilt
-        /// binaries for Linux x86_64, Android and web today —
-        /// `createCborCodec()` throws `UnsupportedError` on iOS, macOS,
-        /// Windows and Linux arm64 (see
+        /// Opt-in, not the default. `cratestack_cbor` ships prebuilt
+        /// binaries for Linux x86_64, Windows x64, macOS (universal), iOS
+        /// (device + simulator), Android (3 ABIs) and web; only Linux
+        /// arm64 still throws `UnsupportedError` (see
         /// `dart-packages/cratestack_cbor/lib/src/native/native_cbor_codec.dart`).
-        /// Defaulting to it would crash every generated Flutter client on
-        /// iOS, the most common Flutter target. `package:cbor` is pure
-        /// Dart and works everywhere, so it stays the default.
+        ///
+        /// It remains opt-in because this flag decides what generated
+        /// clients DEPEND ON, and the published package lags the repo:
+        /// pub.dev still serves a version predating the Windows/macOS/iOS
+        /// support, so defaulting to it today would name a dependency that
+        /// throws on those platforms. `package:cbor` is pure Dart and
+        /// works everywhere. Revisit once a release ships the full matrix.
         ///
         /// Purely additive: every other emitted file is byte-identical
         /// with and without it.
