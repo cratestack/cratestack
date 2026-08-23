@@ -1,23 +1,23 @@
-//! `--native-cbor` (issue #563): gates whether the generated runtime uses
+//! `native_cbor` (issue #563): gates whether the generated runtime uses
 //! the published `cratestack_cbor` package (flutter_rust_bridge natively,
 //! wasm-bindgen on web) instead of pure-Dart `package:cbor`. Mirrors the
 //! shape of `cratestack-client-typescript`'s `--tanstack`/`--refine`/`--swr`
-//! tests: a byte-identical-without-the-flag guard, a presence/shape check
-//! with the flag, and an over-emission guard proving the flag only touches
-//! the two files that legitimately depend on the codec choice
-//! (`pubspec.yaml`, `lib/src/runtime.dart`).
+//! tests: a genuine reads-the-real-default guard, a presence/shape check
+//! with the flag off (CLI: `--no-native-cbor`), and an over-emission guard
+//! proving the flag only touches the two files that legitimately depend on
+//! the codec choice (`pubspec.yaml`, `lib/src/runtime.dart`).
 //!
-//! Deliberately opt-in, not the default — see
-//! `DartGeneratorConfig::native_cbor`'s doc comment for why. The original
-//! reason (`cratestack_cbor` supported only Linux x86_64/Android/web, so
-//! defaulting would crash generated clients on iOS) no longer applies:
-//! cratestack#563 landed Windows, macOS and iOS, leaving only Linux arm64.
-//! It stays opt-in because the PUBLISHED package still lags the repo, so
-//! defaulting would name a dependency version that throws on three of those
-//! platforms. This suite pins that
-//! default explicitly (`without_the_flag_...`), on top of the pre-existing
-//! `tests/snapshot.rs` golden files, which never pass `native_cbor` at all
-//! and so already exercise `Default::default()`.
+//! **Native is now the default** (`DartGeneratorConfig::DEFAULT_NATIVE_CBOR`
+//! is `true` — see its doc comment for the history). The original reason it
+//! was opt-in (`cratestack_cbor` supported only Linux x86_64/Android/web, so
+//! defaulting would crash generated clients on iOS) and the reason it
+//! stayed opt-in after that (the published package lagging the repo) are
+//! both closed: cratestack#563 landed Windows, macOS and iOS support, and
+//! `cratestack_cbor` 0.8.7 carrying that matrix is published on pub.dev.
+//! Only Linux arm64 remains unsupported, reached via `--no-native-cbor`.
+//! `default_config_uses_native_cbor` below reads `DartGeneratorConfig::
+//! default()` directly (not a hardcoded bool) so it fails if the constant
+//! is ever flipped back without updating this test.
 //!
 //! Structural coverage only (source-level assertions) — the real-compiler
 //! proof (`flutter pub get` + `flutter analyze` + a functional HTTP round
@@ -41,34 +41,83 @@ const REST_FIXTURE: &str = "tiny_rest";
 const RPC_FIXTURE: &str = "tiny_rpc";
 const TEST_SCHEMA_SHA256: &str = "13914fdc4b27216d09632c23cec2aa5ea971843166fec36df790de94f2fccccb";
 
+/// The check this replaces (`without_the_flag_output_matches_the_default_config_exactly`)
+/// compared `generate(fixture, DartPreset::Default, false)` against itself —
+/// both arguments hardcoded `false` — so it never actually constructed
+/// `DartGeneratorConfig::default()` and would pass regardless of what
+/// `DEFAULT_NATIVE_CBOR` was set to. This version reads the real default by
+/// constructing `DartGeneratorConfig::default()` and asserting on its
+/// `native_cbor` field and its generated output directly, so flipping
+/// `DEFAULT_NATIVE_CBOR` back to `false` fails this test.
 #[test]
-fn without_the_flag_output_matches_the_default_config_exactly() {
+fn default_config_uses_native_cbor() {
     for fixture in [REST_FIXTURE, RPC_FIXTURE] {
-        let explicit_false = generate(fixture, DartPreset::Default, false);
-        let default_config = generate(fixture, DartPreset::Default, false);
-        assert_eq!(
-            explicit_false, default_config,
-            "{fixture}: native_cbor: false must match DartGeneratorConfig::default()'s output"
+        let fixture_path = format!("tests/fixtures/{fixture}.cstack");
+        let schema = cratestack_parser::parse_schema_file(&fixture_path)
+            .unwrap_or_else(|error| panic!("fixture {fixture_path:?} should parse: {error}"));
+
+        let config = DartGeneratorConfig::default();
+        assert!(
+            config.native_cbor,
+            "{fixture}: DartGeneratorConfig::default().native_cbor must be true \
+             (DEFAULT_NATIVE_CBOR) now that cratestack_cbor 0.8.7 covers every platform but \
+             Linux arm64"
         );
 
-        let pubspec = file(&explicit_false, "pubspec.yaml");
+        let package = generate_package(&schema, &config)
+            .unwrap_or_else(|error| panic!("{fixture}: generation should succeed: {error}"));
+
+        let pubspec = file(&package, "pubspec.yaml");
+        assert!(
+            pubspec.contains(&format!("cratestack_cbor: ^{}", env!("CARGO_PKG_VERSION"))),
+            "{fixture}: DartGeneratorConfig::default()'s pubspec.yaml must depend on \
+             cratestack_cbor by default:\n{pubspec}"
+        );
+        assert!(
+            !pubspec.contains("cbor: ^6.5.1"),
+            "{fixture}: DartGeneratorConfig::default()'s pubspec.yaml must NOT depend on \
+             package:cbor by default:\n{pubspec}"
+        );
+
+        let runtime = file(&package, "lib/src/runtime.dart");
+        assert!(
+            runtime.contains(
+                "import 'package:cratestack_cbor/cratestack_cbor.dart' as cratestack_cbor;"
+            ),
+            "{fixture}: DartGeneratorConfig::default()'s runtime.dart must import \
+             cratestack_cbor:\n{runtime}"
+        );
+        assert!(
+            !runtime.contains("package:cbor/simple.dart"),
+            "{fixture}: DartGeneratorConfig::default()'s runtime.dart must NOT import \
+             package:cbor:\n{runtime}"
+        );
+    }
+}
+
+#[test]
+fn no_native_cbor_falls_back_to_package_cbor() {
+    for fixture in [REST_FIXTURE, RPC_FIXTURE] {
+        let plain = generate(fixture, DartPreset::Default, false);
+
+        let pubspec = file(&plain, "pubspec.yaml");
         assert!(
             pubspec.contains("cbor: ^6.5.1"),
-            "{fixture}: pubspec.yaml must still depend on package:cbor without the flag:\n{pubspec}"
+            "{fixture}: native_cbor: false pubspec.yaml must depend on package:cbor:\n{pubspec}"
         );
         assert!(
             !pubspec.contains("cratestack_cbor"),
-            "{fixture}: pubspec.yaml must not mention cratestack_cbor without the flag:\n{pubspec}"
+            "{fixture}: native_cbor: false pubspec.yaml must not mention cratestack_cbor:\n{pubspec}"
         );
 
-        let runtime = file(&explicit_false, "lib/src/runtime.dart");
+        let runtime = file(&plain, "lib/src/runtime.dart");
         assert!(
             runtime.contains("import 'package:cbor/simple.dart' as cbor;"),
-            "{fixture}: runtime.dart must still import package:cbor without the flag:\n{runtime}"
+            "{fixture}: native_cbor: false runtime.dart must import package:cbor:\n{runtime}"
         );
         assert!(
             !runtime.contains("cratestack_cbor"),
-            "{fixture}: runtime.dart must not mention cratestack_cbor without the flag:\n{runtime}"
+            "{fixture}: native_cbor: false runtime.dart must not mention cratestack_cbor:\n{runtime}"
         );
     }
 }
@@ -121,7 +170,7 @@ fn the_flag_is_additive_only_pubspec_and_runtime_differ() {
         assert_eq!(
             plain.files.len(),
             native.files.len(),
-            "{fixture}: --native-cbor must not add or remove files, only change contents"
+            "{fixture}: native_cbor must not add or remove files, only change contents"
         );
 
         for plain_file in &plain.files {
@@ -130,7 +179,10 @@ fn the_flag_is_additive_only_pubspec_and_runtime_differ() {
                 .iter()
                 .find(|candidate| candidate.file_name == plain_file.file_name)
                 .unwrap_or_else(|| {
-                    panic!("{fixture}: --native-cbor dropped {}", plain_file.file_name)
+                    panic!(
+                        "{fixture}: native_cbor: true dropped {}",
+                        plain_file.file_name
+                    )
                 });
             if matches!(
                 plain_file.file_name.as_str(),
@@ -138,14 +190,14 @@ fn the_flag_is_additive_only_pubspec_and_runtime_differ() {
             ) {
                 assert_ne!(
                     plain_file.contents, counterpart.contents,
-                    "{fixture}: {} was expected to differ under --native-cbor but didn't",
+                    "{fixture}: {} was expected to differ under native_cbor: true but didn't",
                     plain_file.file_name
                 );
                 continue;
             }
             assert_eq!(
                 plain_file.contents, counterpart.contents,
-                "{fixture}: --native-cbor changed {} — it must only touch pubspec.yaml and \
+                "{fixture}: native_cbor: true changed {} — it must only touch pubspec.yaml and \
                  lib/src/runtime.dart",
                 plain_file.file_name
             );
