@@ -29,6 +29,13 @@ pub(crate) struct ModelFileContext {
     /// class's `@MappableClass()` needs, run in the same `build_runner`
     /// pass as `part_file_name`'s `riverpod_generator` output above.
     pub(crate) mapper_part_file_name: String,
+    /// `part '<file_stem>.builder.dart';` target (issue #668 phase 2) —
+    /// the `package:cratestack_builder`-generated companion every
+    /// `@CratestackBuilder()`-annotated data class in this file needs, run
+    /// in the same `build_runner` pass as the two `part`s above.
+    /// Unconditional for the same reason `part_file_name`/
+    /// `mapper_part_file_name` are: `data_classes` is never empty here.
+    pub(crate) builder_part_file_name: String,
     pub(crate) enum_types: Vec<EnumView>,
     pub(crate) data_classes: Vec<DataClassView>,
     pub(crate) selection: SelectionModelView,
@@ -144,6 +151,18 @@ pub(crate) struct ProceduresFileContext {
     /// why an unconditional directive here would be a real
     /// `flutter analyze` failure on a schema with zero procedures.
     pub(crate) mapper_part_file_name: String,
+    /// `part 'procedures.builder.dart';` — see
+    /// `ModelFileContext::builder_part_file_name`'s doc. The *value* is
+    /// always `"procedures.builder.dart"`; like `mapper_part_file_name`
+    /// above (and unlike `part_file_name`), `rest_procedures.dart.j2`/
+    /// `rpc_procedures.dart.j2` only emit the directive itself when
+    /// `data_classes` is non-empty — `package:cratestack_builder`, like
+    /// `dart_mappable_builder`, writes no part file when its target has
+    /// zero annotated classes, so an unconditional directive here would be
+    /// a real `flutter analyze --fatal-warnings` `uri_has_not_been_generated`
+    /// failure on a schema with zero procedures and no procedure-owned
+    /// nested `type`s.
+    pub(crate) builder_part_file_name: String,
     pub(crate) enum_types: Vec<EnumView>,
     pub(crate) data_classes: Vec<DataClassView>,
     /// Issue #302: `procedures[i]` and `procedure_operations[i]` are the

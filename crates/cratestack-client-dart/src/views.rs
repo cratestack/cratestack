@@ -27,10 +27,11 @@ pub(crate) struct TemplateContext {
     /// `config.preset == DartPreset::Riverpod` (issue #303). `README.md.j2`
     /// is one of the files `crate::riverpod::generate_package` reuses
     /// verbatim from `generate_default_package` (see that module's doc),
-    /// so this flag is how the shared template gates the riverpod-only
-    /// `build_runner` section without forking the template — `false` for
-    /// every `DartPreset::Default` render, which is exactly what keeps
-    /// the default preset's output byte-identical (`tests/snapshot.rs`).
+    /// so this flag is how the shared template gates riverpod-only prose
+    /// (its own `@riverpod`/`dart_mappable` codegen reasons for needing
+    /// `build_runner`, on top of the `@CratestackBuilder(...)` reason every
+    /// preset shares as of issue #668 phase 2 — see `setup.md.j2`'s "Code
+    /// Generation" section) without forking the template.
     pub(crate) is_riverpod_preset: bool,
     /// `config.native_cbor` (issue #563) — gates whether the generated
     /// runtime imports `package:cbor` (sync, pure Dart) or
@@ -60,6 +61,21 @@ pub(crate) struct TemplateContext {
     /// `models.dart` is a single file for every model, so the import is
     /// gated on "does *any* model need it", not per-model.
     pub(crate) has_computed_params_class: bool,
+    /// `cratestack_annotations: {{ cratestack_annotations_version_requirement }}`
+    /// in `pubspec.yaml`'s `dependencies:` (issue #668 phase 2) —
+    /// `^{CARGO_PKG_VERSION}` of this crate, same lockstep convention as
+    /// `cratestack_cbor_version_requirement` above (`dart-packages/
+    /// cratestack_annotations`'s own version is bumped alongside the Cargo
+    /// workspace version by `just bump`'s `dart-packages/*/pubspec.yaml`
+    /// rewrite). Unlike `cratestack_cbor_version_requirement`, never empty
+    /// — every generated package now carries the `@CratestackBuilder`
+    /// annotation on every data class, unconditionally.
+    pub(crate) cratestack_annotations_version_requirement: String,
+    /// `cratestack_builder: {{ cratestack_builder_version_requirement }}`
+    /// in `pubspec.yaml`'s `dev_dependencies:`, alongside `build_runner` —
+    /// see `cratestack_annotations_version_requirement`'s doc for the
+    /// lockstep-versioning rationale, identical here.
+    pub(crate) cratestack_builder_version_requirement: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -78,6 +94,46 @@ pub(crate) struct EnumVariantView {
 pub(crate) struct DataClassView {
     pub(crate) name: String,
     pub(crate) has_fields: bool,
+    /// The exact text between `@CratestackBuilder(...)`'s parens (issue
+    /// #668 phase 2/3) — empty string for the fully-default case, so the
+    /// template can always write `@CratestackBuilder({{ builder_args }})`
+    /// unconditionally. Bundles the three pieces of builder-codegen
+    /// knowledge that aren't recoverable from the Dart source
+    /// `package:cratestack_builder` reads:
+    ///
+    /// - `listDefaults` — a projection model's list field and a patch
+    ///   input's list field emit byte-identical Dart (`this.tags` +
+    ///   `final List<String>? tags;`), yet must build differently: an
+    ///   unset list defaults to `[]` everywhere except a patch/
+    ///   `Update{Model}Input` class, where it must stay `null` so
+    ///   "untouched" stays distinguishable from "explicitly set to empty"
+    ///   (cratestack#661/#663).
+    /// - `touchFlagFields` — which fields carry a Rust-synthesized sibling
+    ///   `{field}IsSet` touch flag, so the generated setter can mark it
+    ///   touched too. Threaded explicitly rather than recovered from the
+    ///   `{field}`/`{field}IsSet` naming shape: a schema can legally
+    ///   declare an unrelated `bool` field that happens to end in `IsSet`
+    ///   (`cratestack-parser`'s `tests_patch_touch_flag_collisions.rs`),
+    ///   and a name-based heuristic can't tell the two apart.
+    /// - `nonDefaultingListFields` — a to-many *relation*-valued field on a
+    ///   model class (issue #661): Rust's own model builder drops relation
+    ///   fields entirely (`scalar_model_fields`), so defaulting an unset
+    ///   one to `[]`/giving it an `add{Field}` setter has no Rust
+    ///   counterpart and conflates "not included in the response" with
+    ///   "included and empty".
+    ///
+    /// See `crate::builders::build_data_class`'s `render_builder_args`, the
+    /// one place that computes this.
+    pub(crate) builder_args: String,
+    /// Whether this class gets `@CratestackBuilder(...)` at all (issue
+    /// #668 phase 2). `true` for every call site — including
+    /// `crate::riverpod::build_shared_types_file`: an orphan `type` block
+    /// can land in `lib/src/models/shared_types.dart` (defaults to
+    /// `Owner::Shared`, see `tests/fixtures/riverpod_shared_type_orphan
+    /// .cstack`), and origin/main's inline builder emission covered that
+    /// file too (`shared_types.dart` is not builder-free — see the fixture
+    /// above), so this file is not a deliberate exception.
+    pub(crate) emit_builder: bool,
     pub(crate) fields: Vec<FieldView>,
 }
 

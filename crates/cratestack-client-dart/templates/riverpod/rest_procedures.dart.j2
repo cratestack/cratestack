@@ -27,6 +27,11 @@ part '{{ part_file_name }}';
 // hit a real `uri_does_not_exist` `flutter analyze` error (confirmed
 // empirically — see `shared_types.dart.j2`'s identical guard).
 part '{{ mapper_part_file_name }}';
+// issue #668 phase 2: same gate as `mapper_part_file_name` above, for the
+// same reason — `package:cratestack_builder`'s `PartBuilder` writes no
+// output file when this source has zero `@CratestackBuilder()`-annotated
+// classes.
+part '{{ builder_part_file_name }}';
 {% endif %}
 
 {% include "riverpod/enums_and_data_classes.dart.j2" %}

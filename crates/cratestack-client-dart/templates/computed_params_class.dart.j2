@@ -18,6 +18,17 @@
 /// exact bug this class exists to avoid. `toWire()` builds its map in
 /// fixed declaration order, so the JSON encoding is deterministic for two
 /// structurally-equal instances.
+// Builder generation moved to `package:cratestack_builder` with the rest of
+// the data classes (issue #668 phase 2) — the inline
+// `computed_params_builder_class.dart.j2` this replaces was added by #729
+// and is deleted here, NOT dropped: without this annotation the class would
+// silently lose the builder that story shipped.
+//
+// Bare `@CratestackBuilder()`: not a patch class (every field is a plain
+// optional, and an unset one is omitted from `toWire()` rather than sent as
+// null — which is the class's own encoding concern, not the builder's), and
+// it carries no touch flags and no relation-valued or synthesized lists.
+@CratestackBuilder()
 class {{ model_api.computed_params_class_name }} {
   const {{ model_api.computed_params_class_name }}({
 {% for field in model_api.computed_params_fields %}

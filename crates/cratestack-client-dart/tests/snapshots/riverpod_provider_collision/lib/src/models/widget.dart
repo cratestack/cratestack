@@ -1,6 +1,7 @@
 import '../client.dart';
 import '../queries.dart';
 import '../runtime.dart';
+import 'package:cratestack_annotations/cratestack_annotations.dart';
 import 'package:dart_mappable/dart_mappable.dart';
 import 'package:fast_immutable_collections/fast_immutable_collections.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +10,7 @@ import 'shared_types.dart';
 
 part 'widget.g.dart';
 part 'widget.mapper.dart';
+part 'widget.builder.dart';
 
 enum WidgetSortField {
   id('id'),  name('name');
@@ -51,6 +53,7 @@ enum WidgetSortField {
 // (not `List.==`/identity) comparison automatically from
 // `dart_mappable`'s own list handling.
 @MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+@CratestackBuilder()
 class Widget with WidgetMappable {
   const Widget({
 this.id,
@@ -75,28 +78,6 @@ this.name,
   }
 }
 
-class WidgetBuilder {
-  int? _id;
-  String? _name;
-
-  WidgetBuilder id(int? value) {
-    _id = value;
-    return this;
-  }
-
-  WidgetBuilder name(String? value) {
-    _name = value;
-    return this;
-  }
-
-  Widget build() {
-    return Widget(
-      id: _id,
-      name: _name,
-    );
-  }
-}
-
 // issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
 // alongside `riverpod_generator` in the same `build_runner` pass) gives
 // this class real `operator ==`/`hashCode`/`copyWith` — every generated
@@ -118,6 +99,7 @@ class WidgetBuilder {
 // (not `List.==`/identity) comparison automatically from
 // `dart_mappable`'s own list handling.
 @MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+@CratestackBuilder()
 class CreateWidgetInput with CreateWidgetInputMappable {
   const CreateWidgetInput({
 required this.id,
@@ -142,32 +124,6 @@ required this.name,
   }
 }
 
-class CreateWidgetInputBuilder {
-  int? _id;
-  bool _idSet = false;
-  String? _name;
-  bool _nameSet = false;
-
-  CreateWidgetInputBuilder id(int value) {
-    _id = value;
-    _idSet = true;
-    return this;
-  }
-
-  CreateWidgetInputBuilder name(String value) {
-    _name = value;
-    _nameSet = true;
-    return this;
-  }
-
-  CreateWidgetInput build() {
-    return CreateWidgetInput(
-      id: _idSet ? (_id as int) : (throw StateError('CreateWidgetInput.id is required but was not set')),
-      name: _nameSet ? (_name as String) : (throw StateError('CreateWidgetInput.name is required but was not set')),
-    );
-  }
-}
-
 // issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
 // alongside `riverpod_generator` in the same `build_runner` pass) gives
 // this class real `operator ==`/`hashCode`/`copyWith` — every generated
@@ -189,6 +145,7 @@ class CreateWidgetInputBuilder {
 // (not `List.==`/identity) comparison automatically from
 // `dart_mappable`'s own list handling.
 @MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+@CratestackBuilder(listDefaults: false)
 class UpdateWidgetInput with UpdateWidgetInputMappable {
   const UpdateWidgetInput({
 this.name,
@@ -209,21 +166,6 @@ this.name,
   }
 }
 
-class UpdateWidgetInputBuilder {
-  String? _name;
-
-  UpdateWidgetInputBuilder name(String? value) {
-    _name = value;
-    return this;
-  }
-
-  UpdateWidgetInput build() {
-    return UpdateWidgetInput(
-      name: _name,
-    );
-  }
-}
-
 // issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
 // alongside `riverpod_generator` in the same `build_runner` pass) gives
 // this class real `operator ==`/`hashCode`/`copyWith` — every generated
@@ -245,6 +187,7 @@ class UpdateWidgetInputBuilder {
 // (not `List.==`/identity) comparison automatically from
 // `dart_mappable`'s own list handling.
 @MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+@CratestackBuilder()
 class WidgetWhere with WidgetWhereMappable {
   const WidgetWhere({
 this.id,
@@ -269,28 +212,6 @@ this.name,
   }
 }
 
-class WidgetWhereBuilder {
-  NumberFilter? _id;
-  StringFilter? _name;
-
-  WidgetWhereBuilder id(NumberFilter? value) {
-    _id = value;
-    return this;
-  }
-
-  WidgetWhereBuilder name(StringFilter? value) {
-    _name = value;
-    return this;
-  }
-
-  WidgetWhere build() {
-    return WidgetWhere(
-      id: _id,
-      name: _name,
-    );
-  }
-}
-
 // issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
 // alongside `riverpod_generator` in the same `build_runner` pass) gives
 // this class real `operator ==`/`hashCode`/`copyWith` — every generated
@@ -312,6 +233,7 @@ class WidgetWhereBuilder {
 // (not `List.==`/identity) comparison automatically from
 // `dart_mappable`'s own list handling.
 @MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+@CratestackBuilder()
 class WidgetOrderByClause with WidgetOrderByClauseMappable {
   const WidgetOrderByClause({
 required this.field,
@@ -336,32 +258,6 @@ required this.direction,
   }
 }
 
-class WidgetOrderByClauseBuilder {
-  WidgetSortField? _field;
-  bool _fieldSet = false;
-  SortDirection? _direction;
-  bool _directionSet = false;
-
-  WidgetOrderByClauseBuilder field(WidgetSortField value) {
-    _field = value;
-    _fieldSet = true;
-    return this;
-  }
-
-  WidgetOrderByClauseBuilder direction(SortDirection value) {
-    _direction = value;
-    _directionSet = true;
-    return this;
-  }
-
-  WidgetOrderByClause build() {
-    return WidgetOrderByClause(
-      field: _fieldSet ? (_field as WidgetSortField) : (throw StateError('WidgetOrderByClause.field is required but was not set')),
-      direction: _directionSet ? (_direction as SortDirection) : (throw StateError('WidgetOrderByClause.direction is required but was not set')),
-    );
-  }
-}
-
 // issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
 // alongside `riverpod_generator` in the same `build_runner` pass) gives
 // this class real `operator ==`/`hashCode`/`copyWith` — every generated
@@ -383,6 +279,7 @@ class WidgetOrderByClauseBuilder {
 // (not `List.==`/identity) comparison automatically from
 // `dart_mappable`'s own list handling.
 @MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+@CratestackBuilder()
 class WidgetFindMany with WidgetFindManyMappable {
   const WidgetFindMany({
 this.where,
@@ -404,28 +301,6 @@ this.orderBy,
       'where': where?.toWire(),
       'orderBy': orderBy?.map((item) => item.toWire()).toList(growable: false),
     };
-  }
-}
-
-class WidgetFindManyBuilder {
-  WidgetWhere? _where;
-  List<WidgetOrderByClause>? _orderBy;
-
-  WidgetFindManyBuilder where(WidgetWhere? value) {
-    _where = value;
-    return this;
-  }
-
-  WidgetFindManyBuilder orderBy(List<WidgetOrderByClause>? value) {
-    _orderBy = value;
-    return this;
-  }
-
-  WidgetFindMany build() {
-    return WidgetFindMany(
-      where: _where,
-      orderBy: _orderBy,
-    );
   }
 }
 

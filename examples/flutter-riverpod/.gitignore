@@ -19,6 +19,11 @@
 # pass) is the same kind of artifact for the same reason.
 client/**/*.g.dart
 client/**/*.mapper.dart
+# `part 'models.builder.dart';`/`part '<stem>.builder.dart';` (issue #668
+# phase 2) — expanded by `package:cratestack_builder` in the same
+# `build_runner` pass as the two patterns above, same "build artifact, not
+# generator output" reasoning.
+client/**/*.builder.dart
 client/.dart_tool/
 client/build/
 client/pubspec.lock

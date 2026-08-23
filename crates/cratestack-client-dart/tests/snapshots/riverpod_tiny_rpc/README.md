@@ -135,9 +135,12 @@ final container = ProviderContainer(
 
 ## Code Generation (`build_runner`)
 
-This package's per-operation `@riverpod` providers (one `Future` provider per read, one
-`AsyncNotifier` controller per write — see `lib/src/models/*.dart`) are annotations, not working
-code, until `build_runner` expands them. Without this step the package will not compile, let alone
+Every generated data class carries `@CratestackBuilder(...)` (issue #668) — an annotation, not
+working code, until `package:cratestack_builder` expands it into a `{Class}Builder` via
+`build_runner`. This package's per-operation `@riverpod` providers (one
+`Future` provider per read, one `AsyncNotifier` controller per write — see
+`lib/src/models/*.dart`) are annotations too, and so is `dart_mappable`'s `@MappableClass()`
+alongside them. Without this step the package will not compile, let alone
 `flutter analyze` clean.
 
 Run it after every regeneration:

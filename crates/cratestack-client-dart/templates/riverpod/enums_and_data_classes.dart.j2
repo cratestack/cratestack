@@ -45,6 +45,9 @@ enum {{ enum_type.name }} {
 // (not `List.==`/identity) comparison automatically from
 // `dart_mappable`'s own list handling.
 @MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+{% if data_class.emit_builder %}
+@CratestackBuilder({{ data_class.builder_args }})
+{% endif %}
 class {{ data_class.name }} with {{ data_class.name }}Mappable {
 {% if not data_class.has_fields %}
   const {{ data_class.name }}();
@@ -102,7 +105,5 @@ class {{ data_class.name }} with {{ data_class.name }}Mappable {
     };
   }
 }
-
-{% include "model_builder_class.dart.j2" %}
 
 {% endfor %}

@@ -209,6 +209,13 @@ pub(crate) fn build_template_context(
         String::new()
     };
 
+    // Issue #668 phase 2: unlike `cratestack_cbor_version_requirement`
+    // above, never gated — every generated package now depends on both
+    // unconditionally (see `TemplateContext::cratestack_annotations_version_requirement`'s
+    // doc for the lockstep-versioning rationale).
+    let cratestack_annotations_version_requirement = format!("^{}", env!("CARGO_PKG_VERSION"));
+    let cratestack_builder_version_requirement = format!("^{}", env!("CARGO_PKG_VERSION"));
+
     Ok(TemplateContext {
         package_name: config.library_name.clone(),
         client_class_name,
@@ -229,5 +236,7 @@ pub(crate) fn build_template_context(
         native_cbor: config.native_cbor,
         cratestack_cbor_version_requirement,
         has_computed_params_class,
+        cratestack_annotations_version_requirement,
+        cratestack_builder_version_requirement,
     })
 }

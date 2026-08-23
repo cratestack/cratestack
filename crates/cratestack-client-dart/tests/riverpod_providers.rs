@@ -212,9 +212,13 @@ fn shared_types_file_gets_the_mapper_part_directive_when_it_has_data_classes() {
         "shared_types.dart has a real @MappableClass() data class (Coordinates) in this fixture, \
          so the mapper part directive must be present:\n{shared_types}"
     );
+    // `shared_types.dart` gets a builder like every other `build_data_class`
+    // call site (issue #668 phase 2/3) — origin/main's inline emission
+    // covered this file too, so it is not a deliberate builder-free
+    // exception (see `crate::riverpod::build_shared_types_file`'s doc).
     assert!(
         shared_types.contains(
-            "@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)\nclass Coordinates with CoordinatesMappable {"
+            "@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)\n@CratestackBuilder()\nclass Coordinates with CoordinatesMappable {"
         ),
         "{shared_types}"
     );
@@ -350,7 +354,21 @@ fn default_preset_pubspec_stays_untouched_by_the_riverpod_only_additions() {
 
     assert!(!pubspec.contains("riverpod_annotation"), "{pubspec}");
     assert!(!pubspec.contains("riverpod_generator"), "{pubspec}");
-    assert!(!pubspec.contains("build_runner"), "{pubspec}");
+    // issue #668 phase 2: `build_runner` is now a genuinely shared
+    // addition, not riverpod-only — the default preset gained its own
+    // (unpinned) `build_runner: ^2.15.0` to expand `part
+    // 'models.builder.dart';`. What must stay absent is riverpod's own
+    // *pinned* range, which only exists because of the `riverpod_generator`/
+    // `dart_mappable_builder` analyzer-version wall this preset doesn't have.
+    assert!(
+        !pubspec.contains(r#"build_runner: ">=2.14.0 <2.15.2""#),
+        "the default preset must not pick up riverpod's pinned build_runner range:\n{pubspec}"
+    );
+    assert!(
+        pubspec.contains("build_runner: ^2.15.0"),
+        "the default preset must still gain its own build_runner dependency for \
+         cratestack_builder (issue #668 phase 2):\n{pubspec}"
+    );
     assert!(pubspec.contains("flutter_riverpod: ^3.3.1"), "{pubspec}");
 }
 
@@ -383,25 +401,34 @@ fn every_riverpod_data_class_gets_mappable_class_and_mixin() {
     // the procedure and no single model reach it exclusively), and a
     // procedure argument wrapper (`ListPostsArgs`) — every shape
     // `build_data_class` produces — must all carry the annotation and
-    // the generated mixin, not just models.
+    // the generated mixin, not just models. Issue #668 phase 2:
+    // `@CratestackBuilder(...)` now sits between `@MappableClass(...)` and
+    // the class declaration — `UpdatePostInput` (Patch-kind) gets
+    // `listDefaults: false`, every other kind gets the bare form.
     let post = package_file(&package, "lib/src/models/post.dart");
-    for name in ["Post", "CreatePostInput", "UpdatePostInput"] {
+    for (name, cratestack_builder) in [
+        ("Post", "@CratestackBuilder()"),
+        ("CreatePostInput", "@CratestackBuilder()"),
+        ("UpdatePostInput", "@CratestackBuilder(listDefaults: false)"),
+    ] {
         assert!(
             post.contains(&format!(
-                "@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)\nclass {name} with {name}Mappable {{"
+                "@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)\n{cratestack_builder}\nclass {name} with {name}Mappable {{"
             )),
-            "{name} should be annotated with @MappableClass() and carry the generated mixin:\n{post}"
+            "{name} should be annotated with @MappableClass()/@CratestackBuilder(...) and carry \
+             the generated mixin:\n{post}"
         );
     }
 
     let procedures = package_file(&package, "lib/src/procedures.dart");
     assert!(
         procedures.contains(
-            "@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)\nclass ListPostsArgs with ListPostsArgsMappable {"
+            "@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)\n@CratestackBuilder()\nclass ListPostsArgs with ListPostsArgsMappable {"
         ),
-        "the listPosts procedure's generated argument wrapper should be @MappableClass()-annotated \
-         (this is the exact shape issue #325's bug report reproduced against: a generated class used \
-         as a riverpod family provider's argument, e.g. `listPosts(Ref ref, ListPostsArgs args)`):\n{procedures}"
+        "the listPosts procedure's generated argument wrapper should be @MappableClass()/\
+         @CratestackBuilder()-annotated (this is the exact shape issue #325's bug report \
+         reproduced against: a generated class used as a riverpod family provider's argument, \
+         e.g. `listPosts(Ref ref, ListPostsArgs args)`):\n{procedures}"
     );
     // `PostStatusFilter` is reached only by the `listPosts` procedure (no
     // model references it), so the partition (`Owner::Procedures`) inlines
@@ -412,9 +439,9 @@ fn every_riverpod_data_class_gets_mappable_class_and_mixin() {
     // just the procedure's own top-level args wrapper.
     assert!(
         procedures.contains(
-            "@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)\nclass PostStatusFilter with PostStatusFilterMappable {"
+            "@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)\n@CratestackBuilder()\nclass PostStatusFilter with PostStatusFilterMappable {"
         ),
-        "a procedure-owned nested `type` must also get @MappableClass():\n{procedures}"
+        "a procedure-owned nested `type` must also get @MappableClass()/@CratestackBuilder():\n{procedures}"
     );
 }
 

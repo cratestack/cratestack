@@ -167,6 +167,15 @@ pub(crate) fn build_procedures_file(
     // `rpc_procedures.dart.j2` for the paired part-directive concern).
     if !data_classes.is_empty() {
         imports.insert("import 'package:dart_mappable/dart_mappable.dart';".to_owned());
+        // Issue #668 phase 2: same gate as `dart_mappable` above — this
+        // file's `@CratestackBuilder(...)` annotations (see
+        // `enums_and_data_classes.dart.j2`) only exist when `data_classes`
+        // is non-empty, and an unconditional import here was a confirmed
+        // `unused_import` `flutter analyze --fatal-warnings` failure on a
+        // schema with zero procedures and no procedure-owned nested `type`s.
+        imports.insert(
+            "import 'package:cratestack_annotations/cratestack_annotations.dart';".to_owned(),
+        );
     }
     // cratestack#628: `runtime.dart` supplies `CratestackCallOptions`/
     // `CratestackRpcCallOptions` (used by `ProceduresApi`'s per-procedure
@@ -270,6 +279,7 @@ pub(crate) fn build_procedures_file(
         imports: render_import_lines(imports),
         part_file_name: "procedures.g.dart".to_owned(),
         mapper_part_file_name: "procedures.mapper.dart".to_owned(),
+        builder_part_file_name: "procedures.builder.dart".to_owned(),
         enum_types,
         data_classes,
         procedures,

@@ -30,13 +30,26 @@ pub(crate) fn build_shared_types_file(
             continue;
         }
         let fields = ty.fields.iter().collect::<Vec<_>>();
-        data_classes.push(build_data_class(
+        // A `type` block can be genuinely `Owner::Shared` after all — not
+        // just via two-or-more-models sharing it (structurally impossible,
+        // see `tests/fixtures/riverpod_shared_ownership.cstack`'s doc), but
+        // via an ORPHAN `type` referenced by nothing at all: `Owner::
+        // owner_by_name` defaults an unreferenced name to `Owner::Shared`
+        // (see `tests/fixtures/riverpod_shared_type_orphan.cstack`).
+        // `shared_types.dart` gets a builder here like every other
+        // `build_data_class` call site — an earlier revision forced
+        // `emit_builder` back to `false` on the premise that this file
+        // "emits no builders", which origin/main's inline emission
+        // disproves (the orphan fixture's baseline `shared_types.dart`
+        // does declare `class CoordinatesBuilder`).
+        let data_class = build_data_class(
             &ty.name,
             &fields,
             DataClassKind::Plain,
             &enum_names,
             &model_names,
-        ));
+        );
+        data_classes.push(data_class);
         owned_type_decls.push(ty);
     }
     let referenced_models = owned_type_decl_model_refs(owned_type_decls, &model_names);

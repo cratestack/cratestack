@@ -1,4 +1,5 @@
 import 'client.dart';
+import 'package:cratestack_annotations/cratestack_annotations.dart';
 import 'package:dart_mappable/dart_mappable.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -13,6 +14,11 @@ part 'procedures.g.dart';
 // hit a real `uri_does_not_exist` `flutter analyze` error (confirmed
 // empirically — see `shared_types.dart.j2`'s identical guard).
 part 'procedures.mapper.dart';
+// issue #668 phase 2: same gate as `mapper_part_file_name` above, for the
+// same reason — `package:cratestack_builder`'s `PartBuilder` writes no
+// output file when this source has zero `@CratestackBuilder()`-annotated
+// classes.
+part 'procedures.builder.dart';
 
 // issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
 // alongside `riverpod_generator` in the same `build_runner` pass) gives
@@ -35,6 +41,7 @@ part 'procedures.mapper.dart';
 // (not `List.==`/identity) comparison automatically from
 // `dart_mappable`'s own list handling.
 @MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+@CratestackBuilder()
 class EchoNameArgs with EchoNameArgsMappable {
   const EchoNameArgs({
 required this.name,
@@ -52,23 +59,6 @@ required this.name,
     return <String, Object?>{
       'name': name,
     };
-  }
-}
-
-class EchoNameArgsBuilder {
-  String? _name;
-  bool _nameSet = false;
-
-  EchoNameArgsBuilder name(String value) {
-    _name = value;
-    _nameSet = true;
-    return this;
-  }
-
-  EchoNameArgs build() {
-    return EchoNameArgs(
-      name: _nameSet ? (_name as String) : (throw StateError('EchoNameArgs.name is required but was not set')),
-    );
   }
 }
 

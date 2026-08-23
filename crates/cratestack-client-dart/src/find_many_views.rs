@@ -75,7 +75,6 @@ pub(crate) fn build_where_data_class(
                 false,
                 false,
                 false,
-                false,
                 format!(
                     "value['{wire}'] == null ? null : {filter_type}.fromWire(cratestackAsValueMap(value['{wire}']))",
                     wire = field.name
@@ -87,6 +86,10 @@ pub(crate) fn build_where_data_class(
     Some(DataClassView {
         name: where_name,
         has_fields: true,
+        // Never `Patch`-kind, no touch flags, no relation-valued list
+        // fields — see `DataClassView::builder_args`'s doc.
+        builder_args: String::new(),
+        emit_builder: true,
         fields,
     })
 }
@@ -126,7 +129,6 @@ pub(crate) fn build_order_by_clause_data_class(model: &Model) -> DataClassView {
             true,
             false,
             false,
-            false,
             format!(
                 "{sort_field_name}.fromWire(cratestackRequireWireValue('{order_by_name}', 'field', value['field']))"
             ),
@@ -139,7 +141,6 @@ pub(crate) fn build_order_by_clause_data_class(model: &Model) -> DataClassView {
             true,
             false,
             false,
-            false,
             format!(
                 "SortDirection.fromWire(cratestackRequireWireValue('{order_by_name}', 'direction', value['direction']))"
             ),
@@ -149,6 +150,10 @@ pub(crate) fn build_order_by_clause_data_class(model: &Model) -> DataClassView {
     DataClassView {
         name: order_by_name.clone(),
         has_fields: true,
+        // Never `Patch`-kind, no touch flags, no relation-valued list
+        // fields — see `DataClassView::builder_args`'s doc.
+        builder_args: String::new(),
+        emit_builder: true,
         fields,
     }
 }
@@ -170,25 +175,32 @@ pub(crate) fn build_find_many_data_class(model: &Model, has_where: bool) -> Data
             false,
             false,
             false,
-            false,
             format!(
                 "value['where'] == null ? null : {where_name}.fromWire(cratestackAsValueMap(value['where']))"
             ),
             "where?.toWire()".to_owned(),
         ));
     }
-    // `is_list: false` here is deliberate, not an oversight: `orderBy` is a
-    // framework-synthesized `FindMany` collection field, not a schema-
-    // declared scalar list field — issue #661's default-empty-list /
-    // `add{Field}` builder behavior is scoped to real `Field`s with
-    // `TypeArity::List` (what `crate::builders::build_data_class` passes
-    // through from the schema), not to every `List<...>` -shaped Dart type
-    // this crate happens to emit.
+    // issue #668 phase 2: `orderBy`'s Dart type is `List<{order_by_name}>?`,
+    // same as any genuine schema list field — the old Rust-driven inline
+    // builder template used a separate `is_list: false` flag here to
+    // exclude this framework-synthesized `FindMany` field from issue
+    // #661's default-empty-list/`add{Field}` builder treatment (it has no
+    // Rust-side counterpart to keep parity with). `package:
+    // cratestack_builder` derives list-ness purely from the emitted Dart
+    // source (`DartType.isDartCoreList`) — it cannot see, and was never
+    // asked to preserve, that distinction — so `<Model>FindMany.orderBy`
+    // now gets an `addOrderBy` append setter and defaults to `[]` rather
+    // than `null` when unset, like every other list field on a
+    // non-`Patch` class — an accepted consequence of moving builder
+    // generation out of this crate (issue #668 phase 2). This file keeps
+    // asserting the field's own `dart_type`/wire codec (`tests/
+    // generator.rs`), not its builder behavior, which is no longer this
+    // crate's concern.
     fields.push(FieldView::new(
         "orderBy".to_owned(),
         "orderBy".to_owned(),
         format!("List<{order_by_name}>?"),
-        false,
         false,
         false,
         false,
@@ -201,6 +213,10 @@ pub(crate) fn build_find_many_data_class(model: &Model, has_where: bool) -> Data
     DataClassView {
         name: find_many_name,
         has_fields: true,
+        // Never `Patch`-kind, no touch flags, no relation-valued list
+        // fields — see `DataClassView::builder_args`'s doc.
+        builder_args: String::new(),
+        emit_builder: true,
         fields,
     }
 }

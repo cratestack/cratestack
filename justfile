@@ -467,13 +467,28 @@ test-ci-ignored-report *args='':
 # `sdk: flutter`, and `cratestack_annotations` deliberately has no
 # dependencies at all.
 #
-# Both resolve from pub.dev: `cratestack_annotations` 0.8.5 is published, so
-# `cratestack_builder` depends on it by version like any other consumer would.
-# It briefly carried a `dependency_overrides` pointing at the in-repo sibling
-# while the annotation package was unpublished; that is gone.
+# `cratestack_annotations` always resolves from pub.dev (it has no
+# dependencies at all, so there is nothing to override). `cratestack_builder`
+# depends on `cratestack_annotations` by version like any other consumer
+# would — EXCEPT right now: issue #668 phase 3 bumped both packages'
+# `pubspec.yaml` to 0.8.7 (the `touchFlagFields`/`nonDefaultingListFields`
+# annotation arguments this generator reads — see both packages' own
+# CHANGELOGs), but pub.dev's currently PUBLISHED latest is still 0.8.5/0.8.6
+# — verified against the live registry — for the same reason `verify-dart`
+# below overrides `cratestack_builder` for every package it generates. Same
+# bootstrapping mechanism here, one level up the dependency chain:
+# `pubspec_overrides.yaml` points `cratestack_builder`'s own `cratestack_
+# annotations` dependency at this repo's in-repo sibling until a 0.8.7
+# release reaches pub.dev. TODO(cratestack maintainer): delete this override
+# once that release is live — `dart pub get` will then fail loudly if the
+# plain hosted constraint (`^0.8.7` in `dart-packages/cratestack_builder/
+# pubspec.yaml`) is ever wrong, which is the point.
 verify-dart-packages:
 	#!/usr/bin/env bash
 	set -euo pipefail
+	repo_root="$(pwd)"
+	printf 'dependency_overrides:\n  cratestack_annotations:\n    path: %s/dart-packages/cratestack_annotations\n' \
+	  "$repo_root" > dart-packages/cratestack_builder/pubspec_overrides.yaml
 	for pkg in dart-packages/cratestack_annotations dart-packages/cratestack_builder; do
 	  echo "=== dart pub get: $pkg ==="
 	  (cd "$pkg" && dart pub get)
@@ -493,11 +508,66 @@ verify-dart:
 	fi
 	out=target/dart-verify
 	rm -rf "$out"
+	repo_root="$(pwd)"
+
+	# issue #668 phase 2/3 bootstrap gap: pub.dev's currently PUBLISHED
+	# `cratestack_builder`/`cratestack_annotations` (0.8.5 *and* 0.8.6 for
+	# both — verified against the live registry) do not contain the fixes
+	# recorded under each package's own CHANGELOG.md at 0.8.7 (the
+	# `needsDefaultValueFallback` fix, the `touchFlagFields`/
+	# `nonDefaultingListFields` annotation arguments that replaced a
+	# false-positive-prone by-name heuristic). Without them, every
+	# generated `Update{Model}Input` with at least one nullable field
+	# (`{field}IsSet: bool = false`, the patch touch-flag shape) produces a
+	# real `argument_type_not_assignable` at `flutter analyze` time —
+	# verified empirically: `builder_edge_cases` fails exactly this way
+	# against the plain hosted resolution. Until 0.8.7 releases of both are
+	# actually published, every generated verification package gets a
+	# `pubspec_overrides.yaml` pointing BOTH at this repo's own
+	# (already-fixed) source — `pubspec_overrides.yaml` is Dart's own
+	# sanctioned, non-shipped mechanism for exactly this "monorepo sibling
+	# not released yet" bootstrapping problem, the same shape
+	# `cratestack_builder`'s own pubspec briefly used for
+	# `cratestack_annotations` before that package was first published (see
+	# `verify-dart-packages` above). This does NOT change what ships to
+	# real consumers: the generated `pubspec.yaml` itself still declares
+	# plain hosted `cratestack_builder`/`cratestack_annotations` version
+	# requirements (`templates/pubspec.yaml.j2`'s
+	# cratestack_builder_version_requirement/
+	# cratestack_annotations_version_requirement interpolations) —
+	# `pubspec_overrides.yaml` is a separate,
+	# never-committed-by-consumers file that only affects local resolution
+	# for this verification run. TODO(cratestack maintainer): remove this
+	# override (and each package's CHANGELOG "Unreleased"/most-recent
+	# unpublished section it points at) once 0.8.7 releases of both are
+	# published to pub.dev — until then, this recipe proves the FIX is
+	# correct, not that today's real `flutter pub get` from a clean
+	# checkout gets it.
+	local_builder_override() {
+	  local pkg="$1"
+	  printf 'dependency_overrides:\n  cratestack_builder:\n    path: %s/dart-packages/cratestack_builder\n  cratestack_annotations:\n    path: %s/dart-packages/cratestack_annotations\n' "$repo_root" "$repo_root" > "$pkg/pubspec_overrides.yaml"
+	}
 
 	verify_pkg() {
 	  local pkg="$1"
+	  local_builder_override "$pkg"
 	  echo "=== flutter pub get: $pkg ==="
 	  (cd "$pkg" && flutter pub get)
+	  echo "=== dart run build_runner build: $pkg ==="
+	  # cratestack#668 phase 2/3: `models.dart`'s `part 'models.builder.dart';`
+	  # (every `@CratestackBuilder()`-annotated data class) needs
+	  # `package:cratestack_builder` to actually expand it before
+	  # `flutter analyze` runs — without this step every default-preset
+	  # package fails analysis with `uri_has_not_been_generated`, the same
+	  # gap `verify_riverpod_pkg` below already closed for the riverpod
+	  # preset's `part '<file>.g.dart'`/`part '<file>.mapper.dart'`. No
+	  # separate `flutter pub get` re-run needed afterward (unlike the
+	  # riverpod helper's two-pass `generate-dart` shape) — `dart run`
+	  # resolves against the `flutter pub get` above's already-populated
+	  # `.dart_tool/package_config.json` (see `cratestack-cli/src/
+	  # build_runner.rs`'s doc for why it deliberately never runs `pub get`
+	  # itself).
+	  (cd "$pkg" && dart run build_runner build --delete-conflicting-outputs)
 	  echo "=== flutter analyze: $pkg ==="
 	  # --fatal-warnings (Dart's own default): a warning-level finding
 	  # fails the build — unused imports, dead code, deprecated API use
@@ -637,6 +707,7 @@ verify-dart:
 	  local pkg="$1"
 	  local schema="$2"
 	  local library_name="$3"
+	  local_builder_override "$pkg"
 	  echo "=== flutter pub get: $pkg ==="
 	  (cd "$pkg" && flutter pub get)
 	  echo "=== generate-dart --preset riverpod --run-build-runner: $pkg ==="
@@ -729,6 +800,14 @@ verify-dart:
 	  --library-name "$status_library" \
 	  --no-native-cbor
 	(cd "$status_default_pkg" && flutter pub get)
+	# cratestack#668 phase 2/3: expand `part 'models.builder.dart';` before
+	# `flutter test` runs — see `verify_pkg`'s identical step above for why.
+	echo "=== generate-dart --preset default --run-build-runner: $status_default_pkg ==="
+	cargo run --quiet -p cratestack-cli -- generate-dart \
+	  --schema "$status_schema" \
+	  --out "$status_default_pkg" \
+	  --library-name "$status_library" \
+	  --run-build-runner
 	mkdir -p "$status_default_pkg/test"
 	cp "$status_test" "$status_default_pkg/test/status_202_test.dart"
 	echo "=== flutter test (real HTTP round trip, @status(202) proof): $status_default_pkg ==="

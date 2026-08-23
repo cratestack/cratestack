@@ -639,6 +639,28 @@ The seed script now emits a fresh, empty `## Unreleased` heading immediately abo
 section on all three paths (prose present, present-but-empty, absent entirely), for every changelog in
 `.ci/changelog-files.sh`, not just the root one. See `CONTRIBUTING.md` for the contributor-facing
 convention this cements.
+### Generated Dart builders move to `package:cratestack_builder` — breaking for build tooling (#668, phase 2/3)
+
+`cratestack-client-dart` no longer emits `{Class}Builder` classes inline. Every generated data class
+(models, `Create{Model}Input`, `Update{Model}Input`, `{Model}Where`/`{Model}OrderByClause`/
+`{Model}FindMany`, `type` blocks, per-procedure argument classes) instead carries a runtime-only
+`@CratestackBuilder(...)` annotation from `package:cratestack_annotations`, and its containing file
+gains a `part '<stem>.builder.dart';` directive that `package:cratestack_builder`'s `build_runner` step
+expands. #668 phase 1 (0.8.6) added the two packages without touching generated output; this closes
+that gap — supersedes the 0.8.6 entry below's "the Rust generator still emits builder classes inline".
+
+**Breaking for the build step, not the generated API surface**: `{Class}Builder`'s public shape
+(setters, `add{Field}`, `build()`) is unchanged, but every regenerated client now needs
+`dart run build_runner build` (or `cratestack generate-dart --run-build-runner`) before it analyzes —
+including the **default** preset, which previously needed no build step at all. The generated
+`pubspec.yaml` gains `cratestack_annotations` (`dependencies:`) and `cratestack_builder` +
+`build_runner` (`dev_dependencies:`) accordingly; the riverpod preset already depended on
+`build_runner` for its own `@riverpod`/`dart_mappable` codegen, so this is additive there.
+
+Builder generation exits `cratestack generate-dart --check`'s coverage (it only sees the annotation +
+`part` directive now, not the expanded builder itself) — replaced by `just verify-dart` running a real
+`build_runner build` + `flutter analyze --fatal-warnings` pass for both presets, plus
+`dart-packages/cratestack_builder`'s own generator-level test suite.
 
 ### Field-level `@allow`/`@deny` is rejected at parse time — breaking (#679)
 

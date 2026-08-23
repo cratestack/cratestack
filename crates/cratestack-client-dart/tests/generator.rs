@@ -835,20 +835,26 @@ fn decimal_scalar_maps_to_a_real_decimal_type() {
     );
 }
 
-/// Text-level proof (fast — no `flutter analyze` needed for this half; see
-/// `tests/fixtures/builder_edge_cases.cstack`'s module doc and
-/// `just verify-dart`'s `builder_edge_cases` fixture entry for the real
-/// analyzer-backed proof) that the generated fluent-builder template
-/// no longer has a static `{Class}.builder()` factory at all (maintainer
-/// decision: delete the entry point rather than keep guarding its
-/// fallback rename — round 1's `newBuilder` rename was itself unguarded,
-/// so a schema with BOTH a `builder` field and a `newBuilder` field
-/// reproduced the identical `conflicting_static_and_instance` collision).
-/// A required `Json` field's `build()` must still skip the same-type
-/// `as Object?` cast that `dart analyze --fatal-warnings` flags as
-/// `unnecessary_cast`.
+/// Text-level proof that `builder`/`newBuilder`/`build`-named fields (the
+/// round-1 static-`{Class}.builder()`-factory collision fixture — see
+/// `tests/fixtures/builder_edge_cases.cstack`'s module doc for the history)
+/// still come through as ordinary constructor fields, and that every data
+/// class carries `@CratestackBuilder()`.
+///
+/// Issue #668 phase 2: this crate no longer emits a `{Class}Builder` class
+/// at all (`package:cratestack_builder` does, from the annotation below),
+/// so the collision this test used to guard against — a static
+/// `{Class}.builder()` factory colliding with an instance field named
+/// `builder` — can no longer arise on this crate's side; there is no
+/// static factory left to collide. `dart-packages/cratestack_builder`'s
+/// own `test/builder_generator_test.dart` (`no static builder() factory
+/// is emitted`) covers that half now. The same is true of the required
+/// `Json` field's `unnecessary_cast` concern — whether `build()` needs a
+/// cast is now `dart-packages/cratestack_builder`'s own `castNeeded`
+/// computation, not this crate's `FieldView::builder_cast_needed` (deleted
+/// along with the rest of the builder-only derivation).
 #[test]
-fn builder_has_no_static_factory_and_avoids_json_cast_collision() {
+fn builder_edge_case_fields_survive_as_ordinary_constructor_fields() {
     let schema = cratestack_parser::parse_schema_file("tests/fixtures/builder_edge_cases.cstack")
         .expect("builder edge-case fixture should parse");
 
@@ -867,82 +873,83 @@ fn builder_has_no_static_factory_and_avoids_json_cast_collision() {
 
     let models = package_file(&package, "lib/src/models.dart");
 
-    // No static factory survives on any data class — neither the
-    // un-renamed `builder()` spelling nor round 1's `newBuilder()`
-    // fallback. Fields literally named `builder`/`newBuilder` are just
-    // ordinary fields/setters now; users construct `{T}Builder()` directly.
+    // No inline builder class survives at all — building a `Gadget`/
+    // `CreateGadgetInput` fluently is entirely `package:cratestack_builder`'s
+    // job now.
     assert!(
-        !models.contains("static GadgetBuilder builder() => GadgetBuilder();"),
-        "the static factory must be deleted entirely, not merely renamed, got:\n{models}"
-    );
-    assert!(
-        !models.contains("static GadgetBuilder newBuilder() => GadgetBuilder();"),
-        "the round-1 `newBuilder` fallback factory must also be gone, got:\n{models}"
-    );
-    assert!(
-        !models.contains(".builder()"),
-        "no generated class should retain a static `.builder()` factory call, got:\n{models}"
+        !models.contains("Builder {"),
+        "no inline `{{Class}}Builder` class should be emitted anymore, got:\n{models}"
     );
 
-    // The `builder` and `newBuilder` fields both survive as ordinary
-    // fluent setters, proving the defect class (both names colliding with
-    // a static factory) is structurally impossible now.
+    // The `builder`/`newBuilder`/`build` fields survive as ordinary
+    // constructor fields — proving the underlying defect class (a field
+    // name colliding with a *generated* member) is structurally
+    // impossible now that this crate generates no such member.
     assert!(
         models.contains("final String builder;") && models.contains("final String newBuilder;"),
         "expected `builder` and `newBuilder` to remain as ordinary Gadget fields, got:\n{models}"
     );
     assert!(
-        models.contains("CreateGadgetInputBuilder builder(String value) {")
-            && models.contains("CreateGadgetInputBuilder newBuilder(String value) {"),
-        "expected both `builder` and `newBuilder` to get ordinary fluent setters on the \
-         generated builder, got:\n{models}"
+        models.contains("required this.builder,") && models.contains("required this.newBuilder,"),
+        "expected `builder`/`newBuilder` as ordinary required constructor params on \
+         CreateGadgetInput, got:\n{models}"
+    );
+    assert!(
+        models.contains("required this.build,"),
+        "expected the `build`-named field as an ordinary required constructor param on \
+         CreateGadgetInput, got:\n{models}"
     );
 
-    // A field literally named `build` still gets its `setBuild` setter
-    // shim, independent of the (now-removed) `builder` factory.
-    assert!(
-        models.contains("CreateGadgetInputBuilder setBuild(String value) {"),
-        "expected the `build` field's setter to stay renamed to `setBuild`, got:\n{models}"
-    );
-
-    // The required `Json` field (`meta`, Dart type `Object?`) must not get
-    // a same-type `as Object?` cast in `build()`.
-    assert!(
-        models.contains(
-            "meta: _metaSet ? _meta : (throw StateError('CreateGadgetInput.meta is required but was not set')),"
-        ),
-        "expected no same-type `as Object?` cast on a required Json field's build(), got:\n{models}"
-    );
-    assert!(
-        !models.contains("_meta as Object?"),
-        "a same-type `as Object?` cast on a required Json field trips `unnecessary_cast` under \
-         `dart analyze --fatal-warnings`"
-    );
+    // Every data class this fixture produces carries the annotation —
+    // `package:cratestack_builder`'s entry point.
+    for class_name in [
+        "Gadget",
+        "CreateGadgetInput",
+        "UpdateGadgetInput",
+        "GadgetWhere",
+        "GadgetOrderByClause",
+        "GadgetFindMany",
+    ] {
+        let header = format!("\nclass {class_name} {{");
+        let class_start = models.find(&header).unwrap_or_else(|| {
+            panic!("generated output should declare `class {class_name}`, got:\n{models}")
+        });
+        let immediately_before = &models[..class_start];
+        let annotation_line = immediately_before.lines().last().unwrap_or_default().trim();
+        assert!(
+            annotation_line.starts_with("@CratestackBuilder"),
+            "expected `class {class_name}` to be immediately preceded by @CratestackBuilder(...), \
+             got line `{annotation_line}` in:\n{models}"
+        );
+    }
 }
 
-/// Text-level proof (fast — the real running proof, including `flutter
-/// analyze`, lives in `just verify-dart`'s `builder_edge_cases` fixture
-/// entry, which now also runs `tests/fixtures/builder_edge_cases_list_test
-/// .dart` against the generated package) of issue #661's Dart half:
+/// Text-level proof of what's left of issue #661's Dart half on THIS
+/// crate's side, now that `package:cratestack_builder` (not this crate)
+/// derives everything about a `tags`-style list field's builder from the
+/// emitted Dart source — the real running proof, including `flutter
+/// analyze` and `dart run build_runner build`, lives in `just
+/// verify-dart`'s `builder_edge_cases` fixture entry, which runs
+/// `tests/fixtures/builder_edge_cases_list_test.dart` against the
+/// generated-and-`build_runner`-expanded package (see `dart-packages/
+/// cratestack_builder/test/builder_generator_test.dart` for the
+/// generator's own unit coverage of the append-setter/default-empty-list
+/// logic itself):
 ///
 /// 1. `Gadget.tags`/`CreateGadgetInput.tags`/`UpdateGadgetInput.tags`'s
-///    generated **constructors** are untouched by the fix — `required
-///    this.tags` still appears verbatim on `CreateGadgetInput`, proving
-///    `FieldView.required` (shared with the constructor template) was not
-///    the flag that changed.
-/// 2. The **builder** for a list field no longer tracks a `_tagsSet` flag
-///    at all (list fields never throw, so there is nothing to track) and
-///    `build()` defaults an unset list to `<String>[]` rather than
-///    throwing `StateError`.
-/// 3. A fluent `addTags(String)` append setter exists beside the bulk
-///    `tags(List<String>)` setter, which still replaces.
-/// 4. `UpdateGadgetInput`'s builder gets the same `addTags` setter, and its
-///    `build()` still passes the backing field straight through (`tags:
-///    _tags,`) — an untouched field stays `null`, not `[]`, preserving the
-///    existing "never touched" wire representation every other Patch field
-///    already relies on.
+///    generated **constructors** are untouched — `required this.tags`
+///    still appears verbatim on `CreateGadgetInput`, its `dart_type` is
+///    still `List<String>`/`List<String>?` as before.
+/// 2. `CreateGadgetInput`/`Gadget` (never `Patch`-kind) get
+///    `@CratestackBuilder()` — `listDefaults` defaults to `true`, so an
+///    unset `tags` still builds as `[]` once `cratestack_builder` expands
+///    it.
+/// 3. `UpdateGadgetInput` (`Patch`-kind) gets
+///    `@CratestackBuilder(listDefaults: false)` instead — its unset `tags`
+///    stays `null` once expanded, preserving the existing "never touched"
+///    wire representation every other Patch field relies on.
 #[test]
-fn list_field_builder_defaults_to_empty_list_and_gains_an_append_setter() {
+fn list_field_constructor_and_annotation_are_unaffected_by_moving_the_builder_out() {
     let schema = cratestack_parser::parse_schema_file("tests/fixtures/builder_edge_cases.cstack")
         .expect("builder edge-case fixture should parse");
 
@@ -962,68 +969,37 @@ fn list_field_builder_defaults_to_empty_list_and_gains_an_append_setter() {
     let models = package_file(&package, "lib/src/models.dart");
 
     // (1) Constructors are byte-identical to what a `Required`/`List`-gated
-    // `required` flag always produced — the fix must not touch this.
+    // `required` flag always produced.
     assert!(
         models.contains("final List<String> tags;") && models.contains("required this.tags,"),
-        "CreateGadgetInput's constructor must keep requiring `tags` \
-         (unaffected by the builder-only fix), got:\n{models}"
+        "CreateGadgetInput's constructor must keep requiring `tags`, got:\n{models}"
     );
     assert!(
         models.contains("final List<String>? tags;"),
         "Gadget/UpdateGadgetInput's constructor `tags` field must stay \
-         nullable/optional, unaffected by the fix, got:\n{models}"
+         nullable/optional, got:\n{models}"
     );
 
-    // (2) No Set-tracking for a list field, and no throw in build().
+    // (2)/(3) `listDefaults` on the annotation, keyed off `DataClassKind`
+    // exactly as before the builder itself moved out.
     assert!(
-        !models.contains("_tagsSet"),
-        "a list field must never gain `_tagsSet` tracking — it's not \
-         builder-required — got:\n{models}"
+        models.contains("@CratestackBuilder()\nclass CreateGadgetInput {"),
+        "CreateGadgetInput (Plain-kind) must get the default `listDefaults: true` \
+         annotation, got:\n{models}"
     );
     assert!(
-        !models.contains("CreateGadgetInput.tags is required but was not set"),
-        "CreateGadgetInput.tags must never throw for being unset, got:\n{models}"
+        models.contains("@CratestackBuilder()\nclass Gadget {"),
+        "Gadget (ProjectionModel-kind) must get the default `listDefaults: true` \
+         annotation too — issue #661 AC1 doesn't carve out model classes, got:\n{models}"
     );
+    // `note String?` is a nullable Patch field, so `UpdateGadgetInput` also
+    // carries `touchFlagFields: {'note'}` — see `patch_touch.rs`.
     assert!(
-        models.contains("tags: _tags ?? <String>[],"),
-        "CreateGadgetInput.build() must default an unset `tags` to `[]`, \
-         got:\n{models}"
-    );
-
-    // (3) The append setter exists beside the still-replacing bulk setter.
-    assert!(
-        models.contains("CreateGadgetInputBuilder tags(List<String> value) {\n    _tags = value;\n    return this;\n  }"),
-        "the bulk `tags(...)` setter must still exist and still replace, got:\n{models}"
-    );
-    assert!(
-        models.contains("CreateGadgetInputBuilder addTags(String value) {\n    (_tags = <String>[...?_tags]).add(value);\n    return this;\n  }"),
-        "expected a fluent `addTags(String)` append setter that allocates \
-         the list on first use, got:\n{models}"
-    );
-
-    // (4) Update input: append setter exists too, and an untouched field
-    // still passes straight through as `null`, never defaulted to `[]`.
-    assert!(
-        models.contains("UpdateGadgetInputBuilder addTags(String value) {\n    (_tags = <String>[...?_tags]).add(value);\n    return this;\n  }"),
-        "UpdateGadgetInput's builder must also get `addTags`, got:\n{models}"
-    );
-    assert!(
-        models.contains("UpdateGadgetInput build() {\n    return UpdateGadgetInput(\n      builder: _builder,\n      newBuilder: _newBuilder,\n      build: _build,\n      meta: _meta,\n      tags: _tags,\n      note: _note,\n      noteIsSet: _noteSet,\n    );"),
-        "an untouched UpdateGadgetInput.tags must stay `null` (the existing \
-         untouched-field representation), not default to `[]`, got:\n{models}"
-    );
-
-    // (5) `Gadget` itself (the model/`ProjectionModel`-kind builder, not
-    // just the `Plain`-kind Create input) also defaults an unset `tags` to
-    // `[]` — `Gadget.tags`'s `dart_type` is nullable (`List<String>?`, same
-    // as `UpdateGadgetInput`'s) for an unrelated reason — every
-    // `ProjectionModel` field is forced nullable to represent "not
-    // selected" — so `list_needs_default` must not infer "stay null" from
-    // nullability alone the way it used to.
-    assert!(
-        models.contains("tags: _tags ?? <String>[]"),
-        "Gadget's model-class builder must also default an unset `tags` to \
-         `[]`, not `null`, got:\n{models}"
+        models.contains(
+            "@CratestackBuilder(listDefaults: false, touchFlagFields: {'note'})\nclass UpdateGadgetInput {"
+        ),
+        "UpdateGadgetInput (Patch-kind) must get `listDefaults: false` and `touchFlagFields: \
+         {{'note'}}`, got:\n{models}"
     );
 }
 
