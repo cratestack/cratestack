@@ -72,11 +72,16 @@ pub(crate) enum Command {
         /// package lagging the repo) are closed.
         ///
         /// Pass `--no-native-cbor` when targeting Linux arm64, the one
-        /// remaining unsupported platform — `createCborCodec()` still
-        /// throws `UnsupportedError` there (see
+        /// unsupported platform — `createCborCodec()` still throws
+        /// `UnsupportedError` there (see
         /// `dart-packages/cratestack_cbor/lib/src/native/native_cbor_codec.dart`)
         /// — or for any consumer that just wants the dependency-free
         /// pure-Dart codec.
+        ///
+        /// That gap is only reachable under plain `dart test`/`dart run`:
+        /// the Dart SDK ships arm64 Linux, Flutter does not, so a Flutter
+        /// app cannot be built for that host at all. Not pending work on
+        /// the Flutter side — blocked upstream; see the package README.
         ///
         /// Purely additive: every other emitted file is byte-identical
         /// with and without it.
