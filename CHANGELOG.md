@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.8.7 (2026-08-23)
+
 ### `changelog-seed.sh` re-seeds a fresh `## Unreleased` heading after every release (#688)
 
 `changelog-seed.sh`'s conversion branch turned `## Unreleased` into the new dated `## X.Y.Z (date)`
