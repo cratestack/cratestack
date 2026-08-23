@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+### `just bump` no longer silently skips a Dart package that has drifted
+
+The bump's `dart-packages/*/pubspec.yaml` rewrite was anchored to the *old* workspace version, so it
+only touched a package whose version already matched. Any package that had diverged was skipped
+without a word — and skipped again on every later bump, because the thing that was broken was the
+match itself.
+
+That is what broke the 0.8.9 release. `cratestack_annotations` and `cratestack_builder` were
+deliberately at 0.8.8 while the workspace was 0.8.7 (they needed an annotation-surface release of
+their own), so the 0.8.7 → 0.8.9 bump matched only `cratestack_cbor` and left the other two behind.
+pub.dev's automated publishing rejects a tag that disagrees with the pubspec:
+
+```
+this token has 'refs/tags/v0.8.9' ref for which publishing is not allowed.
+Expected tag 'v0.8.8'.
+```
+
+crates.io and npm had already published by that point, so the release was half-out and 0.8.9 could
+not be re-cut.
+
+The rewrite is now unconditional, and a post-condition asserts every `dart-packages/*/pubspec.yaml`
+ended at the new version, failing the bump loudly if one did not. A failed bump costs a re-run; a
+silent skip costs a burned version.
+
+`cratestack_annotations` and `cratestack_builder` are brought back to the workspace version here.
+`cratestack_builder`'s `cratestack_annotations: ^0.8.8` constraint is deliberately untouched — for
+`0.x` releases pub's caret already spans the whole `0.8.x` series, and that floor states an API
+requirement (the first release carrying `touchFlagFields`/`nonDefaultingListFields`), not a version
+relationship.
+
 ## 0.8.9 (2026-08-23)
 
 ### `changelog-seed-tests.sh` Test 5 now exercises a self-contained git fixture instead of the ambient repo's tags/HEAD (#670)
