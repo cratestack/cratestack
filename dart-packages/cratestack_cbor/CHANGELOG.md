@@ -1,5 +1,10 @@
 ## Unreleased
 
+## 0.8.9 (2026-08-23)
+
+- No functional changes. Version kept in lockstep with the CrateStack
+  workspace, which every published CrateStack artifact shares.
+
 ## 0.8.7 (2026-08-23)
 
 - **Adds macOS, Windows and iOS.** The package previously supported Linux x64,

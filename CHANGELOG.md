@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.8.9 (2026-08-23)
+
 ### `changelog-seed-tests.sh` Test 5 now exercises a self-contained git fixture instead of the ambient repo's tags/HEAD (#670)
 
 Test 5 asserted "at least one `#### ` conventional-commit type grouping appears in the seed" against
