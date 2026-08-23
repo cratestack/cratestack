@@ -2,28 +2,8 @@
 
 ## 0.8.9 (2026-08-23)
 
-<!-- TODO: edit this section from the seed below -->
-<!-- seeded from v0.8.7..HEAD at c23906db187d62a6f76136512c8b371e3bfc46f6 -->
-
-This is an auto-generated seed. Please rewrite into narrative prose describing
-the changes in this release, grouped by concern. Refer to existing entries in
-this file for the house prose style. Do not commit with this placeholder text.
-
-### Changes
-
-#### Features
-
-- native CBOR is the default; --native-cbor becomes --no-native-cbor (#702)
-- cratestack_builder 0.8.8 — annotation args the generator needs (#699)
-
-#### Fixes
-
-- remove obsolete null-strip in RPC batch client (#677) (#703)
-- correct protobuf/gRPC removal version wording from v0.9 to 0.8.5 (#701)
-
-#### Documentation
-
-- correct a non-bug I filed as a latent issue (#700)
+- No functional changes. Version kept in lockstep with the CrateStack
+  workspace, which every published CrateStack artifact shares.
 
 ## 0.8.7 (2026-08-23)
 
