@@ -47,7 +47,7 @@ impl<M, T> IntoColumnName for FieldRef<M, T> {
 /// method (`.lte`, `.eq`, `.is_null`, ...) to produce a [`FilterExpr`]
 /// the query builders can consume.
 ///
-/// ```ignore
+/// ```text
 /// .where_(coalesce([
 ///     task::next_attempt_at(),
 ///     task::scheduled_at(),

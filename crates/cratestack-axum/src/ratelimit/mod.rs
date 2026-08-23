@@ -14,7 +14,7 @@
 //! for tenant-id.
 //!
 //! Usage:
-//! ```ignore
+//! ```text
 //! use cratestack_axum::ratelimit::{InMemoryRateLimitStore, RateLimitConfig, RateLimitLayer};
 //! use std::net::SocketAddr;
 //! let store = std::sync::Arc::new(InMemoryRateLimitStore::default());

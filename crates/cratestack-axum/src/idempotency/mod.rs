@@ -8,7 +8,7 @@
 //! key (per the draft IETF spec).
 //!
 //! Usage:
-//! ```ignore
+//! ```text
 //! use cratestack_axum::idempotency::{IdempotencyLayer, SqlxIdempotencyStore};
 //! use std::net::SocketAddr;
 //! let store = std::sync::Arc::new(SqlxIdempotencyStore::new(pool.clone()));
