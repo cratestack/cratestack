@@ -14,10 +14,15 @@
 // and iOS device arm64 + universal simulator arm64/x86_64 as a second
 // xcframework (`ios/Frameworks/CratestackCborNative.xcframework`, assembled
 // by `just cbor-vendor-ios` from per-arch builds under
-// `blobs/ios-{arm64,sim-arm64,sim-x64}/`) — the remaining platform (Linux
-// arm64) is still follow-up work. Any other platform throws a clear,
-// actionable [UnsupportedError] rather than silently failing to find a
-// library.
+// `blobs/ios-{arm64,sim-arm64,sim-x64}/`). Linux arm64 is the one gap. For
+// Flutter it is blocked upstream, not deferred: Flutter ships no arm64 Linux
+// SDK on any channel, so `flutter build linux` cannot run on such a host —
+// see the package README for the release-manifest evidence. The Dart SDK
+// *does* ship arm64 Linux, so the dev-mode `Isolate.resolvePackageUri` path
+// below is reachable there under plain `dart test`/`dart run`; supporting
+// that narrower case is tracked on cratestack#563. Any other platform throws
+// a clear, actionable [UnsupportedError] rather than silently failing to
+// find a library.
 import 'dart:ffi' show Abi;
 import 'dart:io';
 import 'dart:isolate';
@@ -237,8 +242,10 @@ Future<String> resolveVendoredLibraryPath() async {
       'cratestack_cbor only vendors a prebuilt native library for Linux '
       'x86_64, Windows x86_64, macOS (arm64, x86_64), iOS (device arm64, '
       'simulator arm64/x86_64), and Android (arm64-v8a, x86_64, '
-      'armeabi-v7a) in this release (${Abi.current()} detected). The '
-      'remaining platform matrix (Linux arm64) is follow-up work '
+      'armeabi-v7a) in this release (${Abi.current()} detected). Linux '
+      'arm64 is the one gap: Flutter itself publishes no arm64 Linux SDK, '
+      'so it cannot be supported for `flutter build linux` at all, while '
+      'plain `dart test`/`dart run` on arm64 Linux is still open '
       '(cratestack#563). Set $_libraryOverrideEnvVar to point at a '
       'self-built library to work around this in the meantime.',
     );

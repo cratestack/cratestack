@@ -17,9 +17,11 @@ trying to screenshot a GUI.
 
 Supported platforms: **Linux desktop, Android, Windows desktop, macOS
 desktop, iOS, and web**, matching the parent package's current platform
-support. Linux arm64 is the one remaining platform folder deliberately not
-generated here — out of scope for cratestack#563's current slice (see the
-parent package's README).
+support. Linux arm64 has no folder here and cannot get one: this example is
+verified by building and running a real Flutter app, and Flutter publishes no
+arm64 Linux SDK on any channel, so there is no host on which
+`flutter build linux` could produce an arm64 build to verify (see the parent
+package's README for the release-manifest evidence).
 
 `macos/` and `ios/` here are Flutter's own generated Xcode project
 scaffolding only (`flutter create --platforms=macos .` /

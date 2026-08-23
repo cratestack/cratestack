@@ -43,28 +43,37 @@ never branch on platform** — one uniform `CratestackCborCodec` interface, see
 
 ## Scope of this release — read before depending on this in production
 
-This is a **partial platform matrix** (cratestack#563), not the full package:
+Every platform this package claims is backed by a real prebuilt binary and a
+real end-to-end test. The one gap left is **Linux arm64**, and it is not
+follow-up work — it is blocked upstream:
 
 - **Native platform matrix:** Linux x86_64, Android (arm64-v8a, x86_64,
   armeabi-v7a), Windows x86_64, macOS (arm64 + x86_64, universal), and iOS
-  (device arm64 + universal simulator arm64/x86_64) only.
-  `resolveVendoredLibraryPath()` throws a clear `UnsupportedError` on every
-  other platform (Linux arm64) rather than silently failing. The remaining
-  matrix is deliberate follow-up work, not an oversight.
-- **Not published to pub.dev yet.** The publish workflow (GitHub Actions
-  OIDC, verified publisher `cratestack.dev`) and version-locking to the
-  workspace version both exist — see
-  `docs/tooling/dart-publishing.md` — but pub.dev cannot automate a brand
-  new package's *first* publish (only subsequent versions). Until a
-  maintainer performs that one-time manual `dart pub publish` and enables
-  Automated publishing on pub.dev's Admin tab, this package stays
-  unpublished and `publish-pubdev-cbor` in `release-cli.yml` fails on every
-  tag push by design, rather than silently skipping.
-- **The Dart generator does not use this package yet.**
-  `crates/cratestack-client-dart/templates/pubspec.yaml.j2` still emits
-  `cbor: ^6.5.1` — flipping that seam before this package is published would
-  break `dart pub get` for every generated client (pub.dev returns 404 for
-  an unpublished package name).
+  (device arm64 + universal simulator arm64/x86_64).
+  `resolveVendoredLibraryPath()` throws a clear `UnsupportedError` on Linux
+  arm64 rather than silently failing.
+- **Linux arm64 (Flutter): blocked upstream, not deferred.** Flutter
+  publishes **no arm64 Linux SDK on any channel**. Checked directly against
+  the release manifest — of 732 entries in
+  `https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json`,
+  301 are tagged `dart_sdk_arch: x64` (through 2026-08-19) and the other 431
+  predate that field entirely (all dated 2018-02-27 → 2022-01-27, all x64
+  tarballs); **zero** archive paths contain `arm` or `aarch`. A throwaway
+  spike on a real `ubuntu-24.04-arm` runner confirmed the practical effect:
+  the host itself is fine (native `aarch64-unknown-linux-gnu` rustc, and
+  clang/cmake/ninja/GTK3/xvfb all install cleanly), but
+  `subosito/flutter-action` fails with `Unable to determine Flutter version
+  for channel: stable version: any architecture: arm64`, so `flutter build
+  linux` never runs. A user cannot reach this package's missing `.so` on
+  arm64 Linux without first running a Flutter SDK that does not exist for
+  their host. Revisit if Flutter ever publishes arm64 Linux archives.
+- **Linux arm64 (plain `dart`): open, and narrower than the above.** The
+  **Dart** SDK *does* ship `dartsdk-linux-arm64-release.zip`, so the
+  dev-mode `Isolate.resolvePackageUri` path — the one `dart test`/`dart run`
+  use, which needs no Flutter bundling at all — is genuinely reachable on
+  arm64 Linux today, and throws. Supporting just that case needs only a
+  vendored `blobs/linux-arm64/` library; it is tracked separately on
+  cratestack#563 and is not what the Flutter block above rules out.
 
 ## Flutter app integration — proven, not just `dart test`
 
@@ -202,8 +211,10 @@ booting an emulator on a hosted runner is substantially heavier and flakier
 than everything else this package's CI already does; see that recipe's own
 comment in the `justfile` for the full reasoning.
 
-Linux arm64 remains out of scope for this slice (deliberately — see the
-platform matrix note above).
+Linux arm64 has no entry here because it cannot have one: every platform
+above is proven by building and running a real Flutter app, and there is no
+arm64 Linux host that can run `flutter build linux` — see the platform matrix
+note above for the release-manifest evidence.
 
 ## Regenerating the vendored artifacts
 
