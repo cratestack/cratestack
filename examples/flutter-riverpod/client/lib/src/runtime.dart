@@ -1,21 +1,10 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:cratestack_cbor/cratestack_cbor.dart' as cratestack_cbor;
+import 'package:cbor/simple.dart' as cbor;
 import 'package:dio/dio.dart';
 
 import 'constants.dart';
-
-// cratestack#563: `createCborCodec()` is async (it loads a
-// vendored native library / wasm module on first use), so the codec is
-// resolved once and cached here rather than per call — every
-// `_cratestackCborCodec()` caller after the first just awaits the same
-// already-in-flight (or already-resolved) `Future`.
-Future<cratestack_cbor.CratestackCborCodec>? _cratestackCborCodecFuture;
-
-Future<cratestack_cbor.CratestackCborCodec> _cratestackCborCodec() {
-  return _cratestackCborCodecFuture ??= cratestack_cbor.createCborCodec();
-}
 
 Object cratestackRequireWireValue(String ownerName, String fieldName, Object? value) {
   if (value == null) {
@@ -176,10 +165,9 @@ class CratestackCborDioAdapter implements CratestackClientAdapter {
     CratestackRequest request, {
     CratestackCallOptions? options,
   }) async {
-    final encodedBody = await _encodeBody(request.body);
     final response = await _dio.request<List<int>>(
       request.path,
-      data: encodedBody,
+      data: _encodeBody(request.body),
       queryParameters: request.queryParameters,
       options: Options(
         method: request.method,
@@ -202,15 +190,7 @@ class CratestackCborDioAdapter implements CratestackClientAdapter {
 
     final contentType = response.headers.value(Headers.contentTypeHeader) ?? '';
     if (_isCborContentType(contentType)) {
-      final codec = await _cratestackCborCodec();
-      // `cratestack_cbor`'s wire boundary is JSON text (see
-      // `DartGeneratorConfig::native_cbor`'s doc comment), and every
-      // generated `toWire()`/`fromWire` already produces/expects
-      // JSON-plain values — `jsonDecode` alone gives the exact
-      // `Map<String, Object?>` shape `cratestackNormalizeWire` exists to
-      // reconstruct from the `cbor` package's `Map<Object?, Object?>`, so
-      // it isn't needed on this path.
-      return jsonDecode(codec.decodeJson(bytes));
+      return cratestackNormalizeWire(cbor.cbor.decode(Uint8List.fromList(bytes)));
     }
 
     if (_isJsonContentType(contentType)) {
@@ -223,7 +203,7 @@ class CratestackCborDioAdapter implements CratestackClientAdapter {
   }
 }
 
-Future<Object?> _encodeBody(Object? body) async {
+Object? _encodeBody(Object? body) {
   if (body == null) {
     return null;
   }
@@ -233,8 +213,7 @@ Future<Object?> _encodeBody(Object? body) async {
   if (body is List<int>) {
     return Uint8List.fromList(body);
   }
-  final codec = await _cratestackCborCodec();
-  return codec.encodeJson(jsonEncode(body));
+  return Uint8List.fromList(cbor.cbor.encode(body));
 }
 
 bool _isCborContentType(String contentType) {

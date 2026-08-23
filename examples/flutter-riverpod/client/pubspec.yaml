@@ -17,11 +17,7 @@ dependencies:
   # `build_runner`/`riverpod_generator` comment below for why these
   # three are pinned together as one unit.
   riverpod_annotation: 4.0.3
-  # cratestack#563: see the `default` preset's pubspec.yaml.j2 for the
-  # full comment — identical reasoning, this preset just carries its own
-  # copy of the dependency list (see this file's own header comment for
-  # why).
-  cratestack_cbor: ^0.8.7
+  cbor: ^6.5.1
   dio: ^5.8.0+1
   # issue #325: gives every generated data class real `operator ==`/
   # `hashCode`/`copyWith` via `@MappableClass()` (see
