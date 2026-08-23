@@ -50,6 +50,8 @@ real gap, tracked rather than silently converted or force-fixed.
 around illustrative content fails the check, with an explicit, maintained exception list for
 the one documented real-but-skipped case.
 
+## 0.8.9 (2026-08-23)
+
 ### `cratestack-client-rust`'s RPC batch client silently dropped explicit nullable-column clears (#677)
 
 `BatchableCall::new` (the constructor every macro-generated batched CRUD/procedure call goes through)
