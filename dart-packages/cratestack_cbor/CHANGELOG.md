@@ -1,5 +1,20 @@
 ## Unreleased
 
+## 0.8.10 (2026-08-23)
+
+<!-- TODO: edit this section from the seed below -->
+<!-- seeded from v0.8.9..HEAD at 33cc28ac7ab9f9958f2cf32bf7f162df3617c213 -->
+
+This is an auto-generated seed. Please rewrite into narrative prose describing
+the changes in this release, grouped by concern. Refer to existing entries in
+this file for the house prose style. Do not commit with this placeholder text.
+
+### Changes
+
+#### Fixes
+
+- rewrite every dart pubspec unconditionally, and assert it landed (#710)
+
 ## 0.8.9 (2026-08-23)
 
 - No functional changes. Version kept in lockstep with the CrateStack

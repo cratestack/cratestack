@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.8.10 (2026-08-23)
+
 ### `just bump` no longer silently skips a Dart package that has drifted
 
 The bump's `dart-packages/*/pubspec.yaml` rewrite was anchored to the *old* workspace version, so it
