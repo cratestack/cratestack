@@ -8,9 +8,13 @@
 //! (`pubspec.yaml`, `lib/src/runtime.dart`).
 //!
 //! Deliberately opt-in, not the default — see
-//! `DartGeneratorConfig::native_cbor`'s doc comment for why (`cratestack_cbor`
-//! only supports Linux x86_64/Android/web today; defaulting to it would
-//! crash every generated Flutter client on iOS). This suite pins that
+//! `DartGeneratorConfig::native_cbor`'s doc comment for why. The original
+//! reason (`cratestack_cbor` supported only Linux x86_64/Android/web, so
+//! defaulting would crash generated clients on iOS) no longer applies:
+//! cratestack#563 landed Windows, macOS and iOS, leaving only Linux arm64.
+//! It stays opt-in because the PUBLISHED package still lags the repo, so
+//! defaulting would name a dependency version that throws on three of those
+//! platforms. This suite pins that
 //! default explicitly (`without_the_flag_...`), on top of the pre-existing
 //! `tests/snapshot.rs` golden files, which never pass `native_cbor` at all
 //! and so already exercise `Default::default()`.
