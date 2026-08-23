@@ -320,7 +320,7 @@ required this.direction,
 // (not `List.==`/identity) comparison automatically from
 // `dart_mappable`'s own list handling.
 @MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
-@CratestackBuilder()
+@CratestackBuilder(nonDefaultingListFields: {'orderBy'})
 class TaskFindMany with TaskFindManyMappable {
   const TaskFindMany({
 this.where,

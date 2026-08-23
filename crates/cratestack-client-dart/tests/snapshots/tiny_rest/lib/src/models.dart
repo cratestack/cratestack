@@ -566,7 +566,7 @@ required this.direction,
   }
 }
 
-@CratestackBuilder()
+@CratestackBuilder(nonDefaultingListFields: {'orderBy'})
 class WidgetFindMany {
   const WidgetFindMany({
 this.where,

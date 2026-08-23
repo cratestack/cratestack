@@ -279,7 +279,7 @@ required this.direction,
 // (not `List.==`/identity) comparison automatically from
 // `dart_mappable`'s own list handling.
 @MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
-@CratestackBuilder()
+@CratestackBuilder(nonDefaultingListFields: {'orderBy'})
 class BoardFindMany with BoardFindManyMappable {
   const BoardFindMany({
 this.where,

@@ -181,22 +181,20 @@ pub(crate) fn build_find_many_data_class(model: &Model, has_where: bool) -> Data
             "where?.toWire()".to_owned(),
         ));
     }
-    // issue #668 phase 2: `orderBy`'s Dart type is `List<{order_by_name}>?`,
-    // same as any genuine schema list field — the old Rust-driven inline
-    // builder template used a separate `is_list: false` flag here to
-    // exclude this framework-synthesized `FindMany` field from issue
-    // #661's default-empty-list/`add{Field}` builder treatment (it has no
-    // Rust-side counterpart to keep parity with). `package:
-    // cratestack_builder` derives list-ness purely from the emitted Dart
-    // source (`DartType.isDartCoreList`) — it cannot see, and was never
-    // asked to preserve, that distinction — so `<Model>FindMany.orderBy`
-    // now gets an `addOrderBy` append setter and defaults to `[]` rather
-    // than `null` when unset, like every other list field on a
-    // non-`Patch` class — an accepted consequence of moving builder
-    // generation out of this crate (issue #668 phase 2). This file keeps
-    // asserting the field's own `dart_type`/wire codec (`tests/
-    // generator.rs`), not its builder behavior, which is no longer this
-    // crate's concern.
+    // `orderBy`'s Dart type is `List<{order_by_name}>?`, structurally
+    // identical to any genuine schema list field — but it is
+    // framework-synthesized and has no Rust-side counterpart, so it must
+    // NOT get issue #661's default-empty-list/`add{Field}` treatment. The
+    // old inline template excluded it with an `is_list: false` flag;
+    // `package:cratestack_builder` derives list-ness from the emitted Dart
+    // (`DartType.isDartCoreList`) and cannot see the distinction, so it is
+    // threaded through `nonDefaultingListFields` below instead.
+    //
+    // Not an acceptable loss, which an earlier revision of this comment
+    // claimed: leaving it defaulted changed `<Model>FindMany.orderBy` from
+    // `null` to `[]` when unset AND put it on the wire that way, a
+    // behaviour break measured at 14/16 against origin/main's 16/16 on an
+    // identical parity test.
     fields.push(FieldView::new(
         "orderBy".to_owned(),
         "orderBy".to_owned(),
@@ -213,9 +211,11 @@ pub(crate) fn build_find_many_data_class(model: &Model, has_where: bool) -> Data
     DataClassView {
         name: find_many_name,
         has_fields: true,
-        // Never `Patch`-kind, no touch flags, no relation-valued list
-        // fields — see `DataClassView::builder_args`'s doc.
-        builder_args: String::new(),
+        // Never `Patch`-kind and no touch flags, but `orderBy` is a
+        // synthesized list that must keep its `null`-when-unset semantics —
+        // see the comment above it. `where` is not list-typed, so it needs
+        // nothing here.
+        builder_args: "nonDefaultingListFields: {'orderBy'}".to_owned(),
         emit_builder: true,
         fields,
     }
