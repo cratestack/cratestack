@@ -1,2 +1,9 @@
 .dart_tool/
 pubspec.lock
+
+# Dart's own sanctioned local-resolution override — `just verify-dart-
+# packages` writes one here (pointing `cratestack_annotations` at this
+# repo's own in-repo sibling) while that package's fix-carrying release
+# hasn't reached pub.dev yet (issue #668 phase 3). Never committed by
+# design — see the justfile recipe's own comment.
+pubspec_overrides.yaml

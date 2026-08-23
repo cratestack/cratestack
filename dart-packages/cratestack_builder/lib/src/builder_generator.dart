@@ -15,9 +15,10 @@ import 'package:source_gen/source_gen.dart';
 /// which are lists, what the list element type is, whether a `build`
 /// collision shim is needed — is derived purely from the Dart
 /// `ClassElement`/`ConstructorElement`/`DartType` already present on the
-/// annotated class — with exactly ONE exception, `listDefaults`.
+/// annotated class — with three exceptions, all threaded through the
+/// annotation: `listDefaults`, `touchFlagFields`, `nonDefaultingListFields`.
 ///
-/// That exception is load-bearing and was found the hard way: a projection
+/// `listDefaults` is load-bearing and was found the hard way: a projection
 /// model's list field and a patch (`Update{Model}Input`) list field emit
 /// BYTE-IDENTICAL Dart — `this.tags` plus `final List<String>? tags;` in
 /// both cases. Patch-ness is therefore not recoverable from the generated
@@ -26,6 +27,12 @@ import 'package:source_gen/source_gen.dart';
 /// cratestack#661's own committed regression test. The Rust generator knows
 /// `is_patch` and is what emits this annotation, so it passes the answer in.
 ///
+/// `touchFlagFields` and `nonDefaultingListFields` are for the same reason:
+/// a `{field}`/`{field}IsSet` touch-flag pair and a to-many relation field
+/// on a model class are both structurally indistinguishable from an
+/// ordinary field/list field in the emitted Dart source — see each
+/// parameter's own doc on `CratestackBuilder` for the full rationale.
+///
 /// Required-ness, by contrast, IS recoverable (`param.isRequiredNamed`) and
 /// is never threaded through.
 ///
@@ -33,7 +40,8 @@ import 'package:source_gen/source_gen.dart';
 /// `part of` header: it is wrapped in [PartBuilder] (see `../builder.dart`),
 /// which emits the `part of '<file>.dart';` directive itself and validates
 /// that the input file actually declares the matching `part` directive.
-class CratestackBuilderGenerator extends GeneratorForAnnotation<CratestackBuilder> {
+class CratestackBuilderGenerator
+    extends GeneratorForAnnotation<CratestackBuilder> {
   const CratestackBuilderGenerator();
 
   @override
@@ -42,8 +50,18 @@ class CratestackBuilderGenerator extends GeneratorForAnnotation<CratestackBuilde
     ConstantReader annotation,
     BuildStep buildStep,
   ) {
-    // The one piece of schema knowledge the emitted Dart cannot carry.
+    // The pieces of schema knowledge the emitted Dart cannot carry.
     final listDefaults = annotation.read('listDefaults').boolValue;
+    final touchFlagFields = annotation
+        .read('touchFlagFields')
+        .setValue
+        .map((obj) => obj.toStringValue()!)
+        .toSet();
+    final nonDefaultingListFields = annotation
+        .read('nonDefaultingListFields')
+        .setValue
+        .map((obj) => obj.toStringValue()!)
+        .toSet();
 
     if (element is! ClassElement) {
       throw InvalidGenerationSourceError(
@@ -64,8 +82,43 @@ class CratestackBuilderGenerator extends GeneratorForAnnotation<CratestackBuilde
 
     final fields = <_BuilderField>[
       for (final param in ctor.formalParameters)
-        if (param.isNamed && param.isInitializingFormal) _BuilderField.from(param),
+        if (param.isNamed && param.isInitializingFormal)
+          _BuilderField.from(
+            param,
+            isList: !nonDefaultingListFields.contains(param.name),
+          ),
     ];
+
+    // `cratestack-client-dart`'s own generated `Update{Model}Input` classes
+    // pair a nullable field `foo` with a sibling `bool fooIsSet = false`
+    // touch flag (`patch_touch.rs`) — the wire needs to distinguish
+    // "untouched" from "explicitly cleared to null" for a nullable column,
+    // and a single `foo` field can't carry that by itself.
+    //
+    // The OLD inline `model_builder_class.dart.j2` template encoded the
+    // link by construction: `foo`'s own fluent setter flipped a shared
+    // `_fooSet` tracking bool that also fed `fooIsSet:` in `build()`. This
+    // generator instead treats every constructor parameter independently,
+    // so without recovering the link explicitly, `.foo(value)` alone left
+    // the sibling `_fooIsSet` backing field untouched and `build()`
+    // silently computed `fooIsSet: false` — a real regression of
+    // cratestack#663's "explicit clear" wire representation, caught by
+    // `builder_edge_cases_patch_test.dart`'s `an explicitly-cleared
+    // nullable field serializes as an explicit null`.
+    //
+    // `touchFlagFields` (read off the annotation above) names exactly the
+    // fields that carry a synthesized `{field}IsSet` sibling: `other`'s
+    // setter marks it touched too. An earlier revision of this generator
+    // recovered the link structurally instead — a `bool`-typed field named
+    // exactly `{other.identifier}IsSet` — which fires on any ordinary
+    // user-declared field shaped that way, not just a real touch flag
+    // (`cratestack-parser`'s `tests_patch_touch_flag_collisions.rs`
+    // deliberately accepts a non-nullable `weight` beside an unrelated
+    // `weightIsSet` field). Explicit annotation data avoids that false
+    // positive entirely.
+    final touchFlagIdentifierByField = <String, String>{
+      for (final target in touchFlagFields) target: '${target}IsSet',
+    };
 
     final b = StringBuffer();
     b.writeln('class ${className}Builder {');
@@ -81,10 +134,15 @@ class CratestackBuilderGenerator extends GeneratorForAnnotation<CratestackBuilde
 
     // Fluent setters (+ add<Field> for lists).
     for (final f in fields) {
-      b.writeln('  ${className}Builder ${f.setterName}(${f.dartTypeString} value) {');
+      b.writeln(
+          '  ${className}Builder ${f.setterName}(${f.dartTypeString} value) {');
       b.writeln('    _${f.identifier} = value;');
       if (f.builderRequired) {
         b.writeln('    _${f.identifier}Set = true;');
+      }
+      final touchFlagIdentifier = touchFlagIdentifierByField[f.identifier];
+      if (touchFlagIdentifier != null) {
+        b.writeln('    _$touchFlagIdentifier = true;');
       }
       b.writeln('    return this;');
       b.writeln('  }');
@@ -96,7 +154,8 @@ class CratestackBuilderGenerator extends GeneratorForAnnotation<CratestackBuilde
         // from `fromWire`'s `.toList(growable: false)`), and mutating that
         // in place with `.add` throws. Rebuilding a fresh growable list
         // via a spread on every append is the only correct shape here.
-        b.writeln('  ${className}Builder ${f.addSetterName}(${f.listElemType} value) {');
+        b.writeln(
+            '  ${className}Builder ${f.addSetterName}(${f.listElemType} value) {');
         b.writeln(
           '    (_${f.identifier} = <${f.listElemType}>[...?_${f.identifier}]).add(value);',
         );
@@ -112,11 +171,28 @@ class CratestackBuilderGenerator extends GeneratorForAnnotation<CratestackBuilde
     for (final f in fields) {
       final String valueExpr;
       if (f.builderRequired) {
-        final inner = f.castNeeded ? '(_${f.identifier} as ${f.dartTypeString})' : '_${f.identifier}';
+        final inner = f.castNeeded
+            ? '(_${f.identifier} as ${f.dartTypeString})'
+            : '_${f.identifier}';
         valueExpr =
             "_${f.identifier}Set ? $inner : (throw StateError('$className.${f.identifier} is required but was not set'))";
       } else if (f.listNeedsDefault(listDefaults)) {
         valueExpr = '_${f.identifier} ?? <${f.listElemType}>[]';
+      } else if (f.needsDefaultValueFallback) {
+        // An optional (non-`required`) named parameter whose OWN declared
+        // type is non-nullable can only be optional because it carries a
+        // default value (Dart wouldn't compile it otherwise) — e.g. this
+        // generator's own `{field}IsSet` touch-flag parameter
+        // (`cratestack-client-dart`'s `patch_touch.rs`), a `bool` with
+        // `= false`. The backing field is still `bool?` (every backing
+        // field is forced nullable — see `backingType`), so passing it
+        // straight through without a fallback is a real
+        // `argument_type_not_assignable` compile error whenever it's
+        // never explicitly set. Recovering the parameter's own default via
+        // `??` (rather than hardcoding a type-specific fallback) keeps
+        // this general enough to cover any future optional-with-default,
+        // non-nullable field, not just today's one instance of the shape.
+        valueExpr = '_${f.identifier} ?? ${f.defaultValueCode}';
       } else {
         valueExpr = '_${f.identifier}';
       }
@@ -140,20 +216,31 @@ class _BuilderField {
     required this.isList,
     required this.isRequiredParam,
     required this.listElemType,
+    required this.defaultValueCode,
   });
 
-  factory _BuilderField.from(FormalParameterElement param) {
+  /// [isList]: whether this field should be treated as a list for builder
+  /// purposes (`add{Field}` setter, `?? []` default) — structural list-ness
+  /// (`type.isDartCoreList`) ANDed with the caller's own
+  /// `nonDefaultingListFields` exclusion (issue #661/#668 phase 3): a
+  /// to-many relation field on a generated model class is still a `List<T>?`
+  /// in the Dart type system, but must NOT get either behavior, so the
+  /// caller passes `false` for those identifiers.
+  factory _BuilderField.from(FormalParameterElement param,
+      {required bool isList}) {
     final DartType type = param.type;
-    final isList = type.isDartCoreList;
+    final effectiveIsList = type.isDartCoreList && isList;
     String listElemType = '';
-    if (isList && type is InterfaceType && type.typeArguments.isNotEmpty) {
+    if (effectiveIsList &&
+        type is InterfaceType &&
+        type.typeArguments.isNotEmpty) {
       listElemType = type.typeArguments.first.getDisplayString();
     }
     return _BuilderField(
       identifier: param.name ?? '',
       dartTypeString: type.getDisplayString(),
       isNullable: type.nullabilitySuffix == NullabilitySuffix.question,
-      isList: isList,
+      isList: effectiveIsList,
       // `isRequiredNamed` recovered straight from the analyzer's element
       // model — never hardcoded, never threaded through the annotation.
       // This is the load-bearing property that lets the Rust generator stop
@@ -161,6 +248,10 @@ class _BuilderField {
       // the Dart source of the already-generated data class.
       isRequiredParam: param.isRequiredNamed,
       listElemType: listElemType,
+      // Also recovered straight from the analyzer — `null` when the
+      // parameter has no default at all (only possible when it's
+      // `required` or nullable-typed). See `needsDefaultValueFallback`.
+      defaultValueCode: param.defaultValueCode,
     );
   }
 
@@ -170,6 +261,7 @@ class _BuilderField {
   final bool isList;
   final bool isRequiredParam;
   final String listElemType;
+  final String? defaultValueCode;
 
   /// Mirrors `FieldView::builder_setter`: the one reserved collision is a
   /// field literally named `build`, which would shadow the builder's own
@@ -200,4 +292,16 @@ class _BuilderField {
   /// annotation, NOT off nullability: patch and projection-model list
   /// fields are indistinguishable in the emitted Dart.
   bool listNeedsDefault(bool listDefaults) => isList && listDefaults;
+
+  /// An optional (non-`required`, non-list) parameter whose declared type
+  /// is non-nullable can only be optional because the constructor gives it
+  /// a default value — Dart rejects an optional parameter with neither
+  /// `required` nor a default nor a nullable type at compile time. The
+  /// backing field is still forced nullable (`backingType`), so `build()`
+  /// must fall back to the parameter's own default rather than passing the
+  /// (possibly-null) backing field straight through — see `build()`'s use
+  /// of `defaultValueCode`. `builderRequired`/`isList` are checked first at
+  /// the call site, so this only fires for the remaining case.
+  bool get needsDefaultValueFallback =>
+      !isRequiredParam && !isList && !isNullable;
 }

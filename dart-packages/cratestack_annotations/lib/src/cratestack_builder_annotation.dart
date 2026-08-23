@@ -16,7 +16,7 @@
 /// required (`isRequiredNamed` on the constructor parameter), which are lists
 /// and what their element type is. None of that is threaded through here.
 ///
-/// [listDefaults] is the one exception, and it is not an oversight. A
+/// [listDefaults] was the original exception, and it is not an oversight. A
 /// projection model's list field and a patch input's list field emit
 /// *byte-identical* Dart:
 ///
@@ -32,6 +32,10 @@
 /// to be supplied by whoever emits the annotation. Inferring it from
 /// nullability — the obvious-looking shortcut — is wrong, and produces
 /// builders that are self-consistent and quietly disagree with the schema.
+///
+/// [touchFlagFields] and [nonDefaultingListFields] exist for the same
+/// reason: both name FIELDS (not the flags/setters derived from them),
+/// leaving the generator to work out the rest structurally.
 class CratestackBuilder {
   /// Whether an unset list field builds as an empty list rather than `null`.
   ///
@@ -39,5 +43,29 @@ class CratestackBuilder {
   /// which pass `false`.
   final bool listDefaults;
 
-  const CratestackBuilder({this.listDefaults = true});
+  /// Field identifiers that carry a sibling `{field}IsSet` touch-flag
+  /// field (a plain `bool`, defaulting to `false`) — that field's own
+  /// setter should also mark `{field}IsSet` touched.
+  ///
+  /// Deliberately explicit rather than recovered by matching `bool` fields
+  /// named `{other}IsSet`: a hand-written or generated class can legally
+  /// declare an unrelated `bool` field that happens to end in `IsSet`
+  /// without it being any kind of touch flag, and a name-based heuristic
+  /// can't tell the two apart from the source alone.
+  final Set<String> touchFlagFields;
+
+  /// List-typed field identifiers that should NOT get [listDefaults]'
+  /// `?? []` fallback or an `add{Field}` append setter, even though
+  /// [listDefaults] is `true` for the class as a whole — e.g. a to-many
+  /// relation field on a generated model class, where an unset value must
+  /// stay distinguishable from an explicitly-empty one, and there is no
+  /// append-setter counterpart to keep parity with on the other side of
+  /// the wire.
+  final Set<String> nonDefaultingListFields;
+
+  const CratestackBuilder({
+    this.listDefaults = true,
+    this.touchFlagFields = const {},
+    this.nonDefaultingListFields = const {},
+  });
 }

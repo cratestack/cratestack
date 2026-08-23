@@ -21,4 +21,19 @@ void main() {
     const annotation = CratestackBuilder(listDefaults: false);
     expect(annotation, isA<CratestackBuilder>());
   });
+
+  test('touchFlagFields and nonDefaultingListFields default to empty', () {
+    const annotation = CratestackBuilder();
+    expect(annotation.touchFlagFields, isEmpty);
+    expect(annotation.nonDefaultingListFields, isEmpty);
+  });
+
+  test('touchFlagFields and nonDefaultingListFields are settable', () {
+    const annotation = CratestackBuilder(
+      touchFlagFields: {'note'},
+      nonDefaultingListFields: {'posts'},
+    );
+    expect(annotation.touchFlagFields, {'note'});
+    expect(annotation.nonDefaultingListFields, {'posts'});
+  });
 }
