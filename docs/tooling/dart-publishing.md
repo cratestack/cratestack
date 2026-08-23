@@ -461,20 +461,34 @@ for a package that already exists, so both were first published by hand. Until a
 `v{{version}}`), both jobs will fail on every tag push exactly as `publish-pubdev-cbor` did before
 its own setup was completed.
 
-### The inter-package constraint is not covered by `just bump`
+### The inter-package constraint is deliberately not touched by `just bump`
 
-`cratestack_builder`'s dependency is written `cratestack_annotations: ^0.8.5`. `just bump` rewrites
-Dart pubspecs with
+**Corrected 2026-08-23.** An earlier revision of this section called this a latent bug and warned it
+would "become wrong at the first minor bump". That was wrong; the behaviour is correct and should be
+left alone.
 
-```
-perl -i -pe "s/^version: \Q$current\E\$/version: {{NEW}}/" dart-packages/*/pubspec.yaml
-```
+`cratestack_builder` declares `cratestack_annotations: ^0.8.8`, and `just bump`'s rewrite is anchored
+to a line starting `version:`, so this indented dependency line is never rewritten. Two reasons that
+is right:
 
-which is anchored to a line starting `version:`. The dependency line is indented and keyed
-differently, so it is **not** rewritten. That is harmless while both packages stay in the 0.8.x
-range, and becomes wrong at the first minor bump: `cratestack_builder` 0.9.0 would still permit
-`cratestack_annotations` 0.8.x, which the lockstep convention is supposed to rule out. Decide
-whether the constraint should be pinned exactly, or taught to `bump`, before cutting 0.9.0.
+**Caret already spans the whole 0.8.x series.** For `0.x` versions pub's caret pins the *second*
+component, not the third — `^0.8.5` means `>=0.8.5 <0.9.0`, not `>=0.8.5 <0.8.6`. Verified rather
+than assumed: a probe package constraining `^0.8.5` against a registry holding 0.8.5/0.8.6/0.8.7
+resolves to **0.8.7**. So the constraint does not need touching as patch versions land.
+
+**The lower bound states an API requirement, not a version relationship.** It should name the
+earliest version whose annotation surface the builder actually uses — `^0.8.8` because
+`touchFlagFields` and `nonDefaultingListFields` were added there. Bumping it in lockstep would
+destroy that meaning; leaving it at `any` or an older floor would let a consumer resolve an
+annotation package missing a field the generator emits, failing at codegen with
+`undefined_named_parameter` (observed, and the reason 0.8.8 exists at all).
+
+The rule, therefore:
+
+> Raise this constraint **only** when the builder begins using a newly-added annotation field.
+> Never as part of a routine version bump.
+
+Which leaves nothing for `just bump` to do here, and no reason to teach it otherwise.
 
 ## See also
 
