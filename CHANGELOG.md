@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### `transport grpc`/`@pb` rejection messages and docs now say 0.8.5, not v0.9 (#654)
+
+Protobuf/gRPC removal (#655) was planned as a v0.9 breaking change and every reference said so, but it
+actually shipped in 0.8.5 — there was never a v0.9 release, and the workspace has since moved past
+0.8.7. A schema author on a current release who writes `transport grpc` or `@pb(N)` was told the
+feature "was removed in v0.9", a version that does not exist.
+
+The two user-facing parser error strings (`transport grpc` rejection, `@pb` field-attribute rejection)
+now name 0.8.5, along with the tests that pin them and the internal comments/design docs that stated
+the same wrong version as fact. ADR 0017 (the removal decision itself) keeps its original "effective
+v0.9" decision-time wording intact, with a short dated correction note added under Status pointing at
+the real 0.8.5 release — the decision record isn't rewritten, just annotated.
+
 ## 0.8.7 (2026-08-23)
 
 ### `changelog-seed.sh` re-seeds a fresh `## Unreleased` heading after every release (#688)

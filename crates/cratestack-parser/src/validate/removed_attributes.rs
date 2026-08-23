@@ -9,9 +9,9 @@
 //! simply inert. That default is fine for an attribute that never existed,
 //! but it is the wrong answer here:
 //!
-//! - a schema carrying `@pb(3)` from v0.8 would keep parsing after the v0.9
-//!   protobuf removal while silently meaning nothing, and the author would
-//!   get no signal that the pins they wrote are now dead text.
+//! - a schema carrying `@pb(3)` from before 0.8.5 would keep parsing after
+//!   the 0.8.5 protobuf removal while silently meaning nothing, and the
+//!   author would get no signal that the pins they wrote are now dead text.
 //! - `@allow(...)` / `@deny(...)` at field position parse and look exactly
 //!   like the real, supported policy attributes of the same name at
 //!   *procedure* position (`cratestack-macros/src/policy/procedure.rs`) and
@@ -59,7 +59,7 @@ use crate::diagnostics::{SchemaError, span_error};
 const REJECTED_FIELD_ATTRIBUTES: &[(&str, &str)] = &[
     (
         "@pb",
-        "protobuf/gRPC support was removed in v0.9, so protobuf field numbers no \
+        "protobuf/gRPC support was removed in 0.8.5, so protobuf field numbers no \
          longer have any effect; delete the attribute (see docs/adr/0017-remove-grpc-protobuf.md)",
     ),
     (

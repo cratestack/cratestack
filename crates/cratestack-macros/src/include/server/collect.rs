@@ -88,11 +88,11 @@ pub(super) fn collect_server_schema(
     // boolean is enough to pick between the RPC op-registry surface and
     // the REST route-descriptor surface below; exactly one of
     // `ROUTE_TRANSPORTS`/`OPS` ends up non-empty for a given schema. (Up
-    // through v0.8 there was a third `TransportStyle::Grpc` variant, and a
+    // through 0.8.4 there was a third `TransportStyle::Grpc` variant, and a
     // third `is_grpc` boolean gated here so `Grpc` fell into neither the
     // RPC nor the REST branch — gRPC's own service methods were the active
     // binding in that case, built separately and spliced in by
-    // `compose_server_schema`. gRPC support was removed in v0.9; with only
+    // `compose_server_schema`. gRPC support was removed in 0.8.5; with only
     // two `TransportStyle` variants left, `is_rpc` alone is exhaustive —
     // reintroducing a third transport without a matching third branch here
     // would silently fall through into the REST branch instead of failing

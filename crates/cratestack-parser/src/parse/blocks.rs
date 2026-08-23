@@ -16,14 +16,14 @@ pub(super) fn parse_transport_directive(line: &Line<'_>) -> Result<TransportStyl
         "rest" => Ok(TransportStyle::Rest),
         "rpc" => Ok(TransportStyle::Rpc),
         // `grpc` is called out by name rather than falling into the generic
-        // arm below: it was a supported transport through v0.8, so a schema
+        // arm below: it was a supported transport through 0.8.4, so a schema
         // still declaring it is a migrating consumer, not a typo, and the
         // generic "unknown transport style" text would send them looking for
         // a spelling mistake. Mirrors the `@pb` treatment in
         // `validate::removed_attributes`.
         "grpc" => Err(SchemaError::new(
             "`transport grpc` is no longer supported: protobuf/gRPC support was removed in \
-             v0.9 (see docs/adr/0017-remove-grpc-protobuf.md). Migrate the schema to \
+             0.8.5 (see docs/adr/0017-remove-grpc-protobuf.md). Migrate the schema to \
              `transport rest` or `transport rpc` and regenerate its clients",
             line.start..line.start + line.raw.len(),
             line.number,

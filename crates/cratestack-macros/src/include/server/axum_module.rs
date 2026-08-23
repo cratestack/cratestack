@@ -72,13 +72,13 @@ pub(super) fn build_axum_module(c: &ServerCollected, db: ServerDb) -> proc_macro
             /// `_dispatch` fn takes one of these so signature verification and
             /// tracing share a single source of truth that matches the client
             /// byte-for-byte.
-            // `pub(super)` (not private): up through v0.8 a sibling gRPC
+            // `pub(super)` (not private): up through 0.8.4 a sibling gRPC
             // service module (`super::grpc`, emitted only for `transport
             // grpc` schemas) constructed `CanonicalRequest` and called the
             // `_dispatch` fns below directly, so gRPC method bodies
             // delegated to the exact same dispatch functions REST/RPC
             // already call — "no second dispatch path" (ticket #171 AC).
-            // gRPC support was removed in v0.9, so that caller is gone, but
+            // gRPC support was removed in 0.8.5, so that caller is gone, but
             // the visibility is left as-is rather than tightened to
             // private: nothing else in this module needs it narrower, and
             // `pub(super)` still keeps `CanonicalRequest` unreachable from

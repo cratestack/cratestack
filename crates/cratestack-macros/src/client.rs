@@ -14,7 +14,7 @@
 //! grpc` / `include::client::grpc`); this `match` had a third arm that
 //! emitted nothing for it, since a gRPC schema never built a
 //! `cratestack_schema::client::Client` at all. gRPC support (and that
-//! third arm) was removed in v0.9 — `TransportStyle` is Rest/Rpc only now,
+//! third arm) was removed in 0.8.5 — `TransportStyle` is Rest/Rpc only now,
 //! so this function's two arms are exhaustive without a wildcard.
 
 mod rest;
