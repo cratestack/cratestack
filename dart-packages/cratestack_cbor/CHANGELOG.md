@@ -1,5 +1,15 @@
 ## Unreleased
 
+- **Linux arm64 is now documented as blocked upstream rather than as pending
+  work.** Flutter publishes no arm64 Linux SDK on any channel (verified
+  against the release manifest: 732 entries, all x64, zero containing `arm`
+  or `aarch`), and a spike on a real `ubuntu-24.04-arm` runner confirmed
+  `flutter build linux` therefore cannot run on such a host. No behaviour
+  change — the platform already threw a clear `UnsupportedError`; the message
+  and the docs now say *why*, and distinguish the Flutter case (impossible)
+  from plain `dart test`/`dart run` on arm64 Linux (still open — the Dart
+  SDK, unlike Flutter's, does ship for that host).
+
 ## 0.8.10 (2026-08-23)
 
 - No functional changes. Version kept in lockstep with the CrateStack

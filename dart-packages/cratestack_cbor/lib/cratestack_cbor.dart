@@ -8,8 +8,12 @@
 ///   prebuilt native library. This release vendors Linux x86_64, Android
 ///   (arm64-v8a, x86_64, armeabi-v7a), Windows x86_64, macOS (arm64 +
 ///   x86_64, as one universal xcframework), and iOS (device arm64 +
-///   universal simulator arm64/x86_64, as one xcframework) — Linux arm64
-///   remains follow-up work (cratestack#563).
+///   universal simulator arm64/x86_64, as one xcframework). Linux arm64 is
+///   the one gap, and for Flutter it is blocked upstream rather than
+///   deferred — Flutter publishes no arm64 Linux SDK on any channel, so
+///   `flutter build linux` cannot run on such a host at all. Plain `dart`
+///   on arm64 Linux is a separate, still-open case (cratestack#563): the
+///   Dart SDK *does* ship there.
 /// - **Web** (`dart.library.js_interop`): the existing
 ///   `cratestack-cbor-wasm` wasm-bindgen artifact (already shipped to npm
 ///   as `@cratestack/cbor-web`), vendored and loaded via `dart:js_interop`
