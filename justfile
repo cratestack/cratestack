@@ -2554,11 +2554,22 @@ cbor-example-verify-ios:
 	# race is lost on a slow runner — which is exactly how this failed,
 	# intermittently, while passing on other runs.
 	#
-	# `process == "Runner"` is an exact match, not a substring, and dropping
-	# `--level` leaves the default level, which is where Flutter's `print`
-	# output lands. Diagnostics on failure report the byte count of this
-	# capture precisely so a regression here is visible rather than guessed.
-	xcrun simctl spawn "$udid" log stream --style=compact \
+	# `process == "Runner"` is an exact match, not a substring — that alone
+	# is what kills the firehose, and it took the capture from 63,727,376
+	# bytes to 283.
+	#
+	# `--level=debug` MUST STAY. An earlier attempt dropped it together with
+	# the predicate fix, on the assumption that the default level would do.
+	# It does not: Flutter's `print` reaches the unified log at DEBUG level,
+	# which is visible in the line this recipe actually matches —
+	#
+	#   Df Runner[28903:15930] (Flutter) flutter: CRATESTACK_CBOR_EXAMPLE_...
+	#      ^^ Df = Debug
+	#
+	# Without it the capture is a well-behaved 283 bytes containing nothing
+	# from the app, and the marker never arrives. Two changes at once, one of
+	# them load-bearing: narrow the predicate, keep the level.
+	xcrun simctl spawn "$udid" log stream --level=debug --style=compact \
 	  --predicate 'process == "Runner"' > "$stream_log" 2>&1 &
 	stream_pid=$!
 	sleep 2
