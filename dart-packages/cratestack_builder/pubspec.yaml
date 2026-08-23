@@ -5,7 +5,7 @@ description: >-
   build_runner generator producing fluent builders for classes annotated
   with CrateStack's @CratestackBuilder. A dev dependency — the annotation
   itself lives in cratestack_annotations.
-version: 0.8.7
+version: 0.8.8
 homepage: https://cratestack.dev
 repository: https://github.com/cratestack/cratestack
 issue_tracker: https://github.com/cratestack/cratestack/issues
@@ -30,7 +30,13 @@ dependencies:
   # 3.11.0"), i.e. it parses newer syntax with older rules.
   analyzer: '>=12.0.0 <13.0.0'
   build: ^4.0.7
-  cratestack_annotations: ^0.8.5
+  # issue #668 phase 3: 0.8.7 is the first `cratestack_annotations` release
+  # with the `touchFlagFields`/`nonDefaultingListFields` arguments this
+  # generator now reads off `@CratestackBuilder(...)` — an older resolved
+  # 0.8.5/0.8.6 has no such constant fields to read, and
+  # `ConstantReader.read(...)` on a missing field throws at generation time
+  # rather than at `pub get`.
+  cratestack_annotations: ^0.8.8
   source_gen: ^4.0.0
 
 dev_dependencies:
@@ -39,3 +45,17 @@ dev_dependencies:
   lints: ^6.0.0
   test: ^1.25.0
 
+
+# TEMPORARY, removed once cratestack_annotations 0.8.8 is on pub.dev — the
+# same bootstrap phase 1 used, for the same reason: this package's new
+# `touchFlagFields`/`nonDefaultingListFields` arguments only exist in the
+# unpublished annotation source, so `^0.8.8` cannot resolve from the registry
+# yet.
+#
+# NOT a publish guard, despite what a previous revision of this comment
+# claimed. `dart pub publish` reports an override as a HINT, not a refusal —
+# `--force` goes straight past it. It is a speed bump. The real guard is that
+# publishing must happen in order: annotations first, then this.
+dependency_overrides:
+  cratestack_annotations:
+    path: ../cratestack_annotations

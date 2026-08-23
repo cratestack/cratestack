@@ -37,6 +37,24 @@ There is deliberately no static `Class.builder()` factory: Dart puts static
 and instance members in one namespace, so it would collide with any field
 named `builder`. Construct `ClassBuilder()` directly.
 
+## `@CratestackBuilder(...)`'s three arguments
+
+Almost everything is recovered from the annotated class's Dart source itself.
+Three pieces of information genuinely aren't, because two different source
+shapes can be byte-identical yet need different generated behavior — so the
+annotation carries them explicitly:
+
+- `listDefaults` (`bool`, default `true`) — whether an unset list field
+  builds as `[]` (the default) or stays `null`.
+- `touchFlagFields` (`Set<String>`, default `{}`) — field identifiers that
+  carry a sibling `{field}IsSet` `bool` field; that field's own setter also
+  marks `{field}IsSet` touched.
+- `nonDefaultingListFields` (`Set<String>`, default `{}`) — list-typed field
+  identifiers to exclude from `listDefaults`'/`add{Field}` treatment even
+  though the class as a whole wants it — e.g. a to-many relation field where
+  "not included in the response" (`null`) must stay distinguishable from
+  "included and empty" (`[]`).
+
 ## Analyzer constraint
 
 The `analyzer` bound is `>=12.0.0 <13.0.0`, and the **upper bound is
