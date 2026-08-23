@@ -1,4 +1,4 @@
-## Unreleased
+## 0.8.7 (2026-08-23)
 
 - **Adds macOS, Windows and iOS.** The package previously supported Linux x64,
   web and Android; it now also ships prebuilt binaries for **macOS**

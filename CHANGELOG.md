@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.7 (2026-08-23)
 
 ### Field-level `@allow`/`@deny` is rejected at parse time — breaking (#679)
 
