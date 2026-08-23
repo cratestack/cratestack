@@ -2514,8 +2514,21 @@ cbor-example-verify-ios:
 	# EITHER works.
 	ios_log="$(mktemp)"
 	stream_log="$(mktemp)"
-	xcrun simctl spawn "$udid" log stream --level=debug --style=compact \
-	  --predicate 'processImagePath CONTAINS[c] "Runner"' > "$stream_log" 2>&1 &
+	# NARROW, and both narrowings are load-bearing. The first version of
+	# this used `--level=debug` with `processImagePath CONTAINS[c] "Runner"`
+	# and produced **63 MB of log in 90 seconds**: `CONTAINS "Runner"` also
+	# matches `BackgroundShortcutRunner` and friends, and `--level=debug`
+	# turns a whole-simulator subscription into a firehose. The poll loop
+	# below then re-greps that growing file once a second, so the marker
+	# race is lost on a slow runner — which is exactly how this failed,
+	# intermittently, while passing on other runs.
+	#
+	# `process == "Runner"` is an exact match, not a substring, and dropping
+	# `--level` leaves the default level, which is where Flutter's `print`
+	# output lands. Diagnostics on failure report the byte count of this
+	# capture precisely so a regression here is visible rather than guessed.
+	xcrun simctl spawn "$udid" log stream --style=compact \
+	  --predicate 'process == "Runner"' > "$stream_log" 2>&1 &
 	stream_pid=$!
 	sleep 2
 	xcrun simctl launch --console-pty "$udid" "$appId" > "$ios_log" 2>&1 &
