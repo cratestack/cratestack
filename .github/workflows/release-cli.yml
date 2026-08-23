@@ -860,6 +860,228 @@ jobs:
           echo "::error::pub.dev does not serve cratestack_builder ${want} after 10 minutes. The publish step exited 0, but that proves nothing — dart pub publish exits 0 even when authentication fails (observed on v0.8.2). Read the publish step's output for 'Authentication failed!' or 'Invalid JWT token'." >&2
           exit 1
 
+  # ---- cratestack_cbor macOS native library (cratestack#563 platform-matrix
+  # release slice) ------------------------------------------------------------
+  # Cross-compiling a macOS `.dylib`/xcframework from Linux is not possible,
+  # so — unlike Linux/Android/web below, which `publish-pubdev-cbor` still
+  # builds inline on its own `ubuntu-latest` host — this leg runs on
+  # `macos-latest` and uploads its output for the publish job to download.
+  # Mirrors `build-cbor-node`'s per-platform-leg -> single-publish-job shape
+  # (see that job's own comment), but as a dedicated job rather than another
+  # matrix leg: this platform's step sequence (two rustup targets, a
+  # `cbor-vendor-macos` call instead of `cbor-vendor-lib <target>`, a
+  # directory-tree artifact instead of one file) genuinely differs from
+  # Windows' below, not just its `--target` value — folding both into one
+  # matrix would hide that difference behind conditionals instead of making
+  # it auditable per job, the way `cratestack-cbor-windows` in ci.yml (and
+  # its eventual macOS counterpart) already read.
+  #
+  # `macos-latest` is an Apple Silicon (arm64) runner — building the
+  # `x86_64-apple-darwin` slice needs that target added explicitly
+  # (`dtolnay/rust-toolchain`'s `targets:` input, same mechanism `build`'s
+  # matrix above uses per-target). This mirrors the napi release matrix's
+  # choice to cross-build x86_64 on one arm64 runner rather than add a
+  # separate `macos-15-intel` leg (contrast `build-cbor-node`'s matrix,
+  # which DOES use a separate Intel leg) — defensible either way; picked
+  # here to keep this one job self-contained rather than adding a second
+  # macOS leg only to combine its output with this one via another
+  # upload/download round-trip before `cbor-vendor-macos` can lipo them
+  # together.
+  #
+  # `just cbor-vendor-glue` MUST run before `just cbor-vendor-macos` on this
+  # fresh-checkout runner: `crates/cratestack-client-flutter/
+  # src/frb_generated.rs` is gitignored, and building with `--features
+  # frb-glue` without it fails with E0583 — confirmed against a real CI run,
+  # not Windows-specific (see `cratestack-cbor-windows` in ci.yml for the
+  # identical gotcha on that other cross-host leg). `just cbor-vendor-macos`
+  # itself composes `cbor-vendor-lib macos-arm64` + `cbor-vendor-lib
+  # macos-x64` internally (lipo's the two into a universal binary, then
+  # `xcodebuild -create-xcframework`) — this job does not call either of
+  # those two sub-recipes directly.
+  #
+  # OUTPUT PATH IS NOT `blobs/macos/` — confirmed by reading `justfile`'s
+  # `cbor-vendor-macos` recipe and `macos/cratestack_cbor.podspec` (both
+  # landed by a parallel slice partway through this job being written; this
+  # comment was corrected against their real source, not left as the
+  # original guess). CocoaPods resolves a podspec's `vendored_frameworks`
+  # relative to the podspec's OWN directory and does not reliably accept
+  # `../` escapes out of it, so the assembled xcframework is written
+  # directly under `dart-packages/cratestack_cbor/macos/Frameworks/
+  # CratestackCborNative.xcframework` — sibling of the podspec, not a peer
+  # of `blobs/<platform>/` the way every other platform's artifact is. The
+  # framework's own name (`CratestackCborNative`) is deliberately different
+  # from the vendored library's filename on every other platform — see the
+  # podspec's header comment (collides with the `<pod_name>.framework`
+  # CocoaPods itself generates under `use_frameworks!` otherwise).
+  #
+  # SETTLED, and it is why this job uploads a ZIP rather than the tree:
+  # `dart pub publish` DEREFERENCES symlinks, and a macOS framework without
+  # its symlinks fails `codesign`, taking a consumer's `flutter build macos`
+  # down with "Command CodeSign failed with a nonzero exit code". Measured
+  # on a real Mac, not inferred — see `just cbor-vendor-macos`'s header for
+  # the full set of measurements and the layouts that were ruled out.
+  #
+  # `just cbor-vendor-macos` therefore also emits
+  # `CratestackCborNative.xcframework.zip` (zips store symlinks), the
+  # package's `.pubignore` keeps the unpacked directory OUT of the archive,
+  # and the podspec's `prepare_command` unpacks the zip at pod-install time.
+  # Uploading that single zip here rather than the directory tree closes the
+  # same hole one step earlier: `actions/upload-artifact` follows symlinks,
+  # so uploading the tree would hand the publish job an already-dereferenced
+  # framework before `dart pub publish` was ever reached.
+  # ---- shared flutter_rust_bridge glue for the release platform legs ------
+  # Mirrors ci.yml's `cbor-glue` job — read that one's header for the full
+  # reasoning. Short version: frb codegen 2.12.0 CANNOT run on Windows in
+  # this repo's layout (it compares a mixed-separator path against a
+  # canonicalized UNC base dir and fails "prefix not found"), and running it
+  # per-platform elsewhere means a multi-minute `cargo install` per leg to
+  # produce output that is platform-independent by construction. Generate
+  # once, here, and ship it to the platform legs as an artifact.
+  #
+  # `publish-pubdev-cbor` below deliberately still runs its own
+  # `just cbor-vendor-native` (glue + linux-x64) inline: it is on
+  # ubuntu-latest where codegen works, and it needs the glue anyway for the
+  # Linux/Android/web artifacts it builds itself.
+  build-cbor-glue:
+    name: build cratestack_cbor frb glue (generated once, Linux)
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-pubdev-cbor-glue
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      # REQUIRED — see ci.yml's `cbor-glue` job for the failure this
+      # prevents: frb codegen is a Rust binary but shells out to `dart`,
+      # and dies with "Dart/Flutter toolchain not available" without it.
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Install flutter_rust_bridge_codegen (pinned =2.12.0)
+        run: cargo install --locked flutter_rust_bridge_codegen --version 2.12.0
+      - name: Vendor flutter_rust_bridge glue (both halves)
+        run: just cbor-vendor-glue
+      # Two paths whose least-common-ancestor is the workspace root, so the
+      # artifact preserves `crates/…` and `dart-packages/…` and consumers can
+      # restore with `path: .`.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cbor-frb-glue-release
+          path: |
+            crates/cratestack-client-flutter/src/frb_generated.rs
+            dart-packages/cratestack_cbor/lib/src/native/rust
+          if-no-files-found: error
+          retention-days: 1
+
+  build-cbor-macos:
+    name: build cratestack_cbor native library (macos)
+    needs: [prepare, build-cbor-glue]
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+      # Same reason as ci.yml's `cratestack-cbor-macos` job — see that step's
+      # comment. `with: targets:` on the action targets `stable`, but
+      # rust-toolchain.toml pins 1.95.0, so the cross-target must be added by
+      # a RUN step inside the checkout or the x86_64 leg fails E0463.
+      - name: Add both Darwin targets (to the pinned toolchain, not stable)
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-pubdev-cbor-macos
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      # Takes the shared artifact rather than running codegen locally —
+      # drops a multi-minute `cargo install` and guarantees macOS and Windows
+      # consume byte-identical glue. See `build-cbor-glue` above.
+      - name: Restore frb glue (generated once on Linux by `build-cbor-glue`)
+        uses: actions/download-artifact@v4
+        with:
+          name: cbor-frb-glue-release
+          path: .
+      - name: Assert the glue is present
+        run: |
+          set -euo pipefail
+          test -f crates/cratestack-client-flutter/src/frb_generated.rs \
+            || { echo "::error::frb_generated.rs missing after download-artifact — cargo build --features frb-glue would fail with E0583." >&2; exit 1; }
+          echo "✓ frb glue restored"
+      - name: Vendor macOS xcframework (arm64 + x86_64, lipo'd, via cbor-vendor-macos)
+        run: just cbor-vendor-macos
+      # The ZIP ONLY — not the directory beside it. See this job's header:
+      # upload-artifact follows symlinks, so uploading the unpacked
+      # xcframework would dereference it in transit. One file, nothing to
+      # dereference.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cbor-native-macos
+          path: dart-packages/cratestack_cbor/macos/Frameworks/CratestackCborNative.xcframework.zip
+          if-no-files-found: error
+
+  # ---- cratestack_cbor Windows native library (cratestack#563
+  # platform-matrix release slice) --------------------------------------------
+  # Same cross-compile-is-impossible reasoning as build-cbor-macos above,
+  # for the MSVC `.dll` this time — see that job's comment for why this is a
+  # dedicated job (mirroring ci.yml's `cratestack-cbor-windows`) rather than
+  # another `build-cbor-node`-style matrix leg. `x86_64-pc-windows-msvc`
+  # needs no extra `targets:` entry: it is already `windows-latest`'s
+  # default host triple (same note as ci.yml's `cratestack-cbor-windows` and
+  # this workflow's own `build` job matrix, which pairs that target with
+  # `windows-latest` the same way).
+  #
+  # `just cbor-vendor-glue` before `just cbor-vendor-lib windows-x64` for the
+  # identical E0583 reason as build-cbor-macos above and ci.yml's
+  # `cratestack-cbor-windows` — not optional, confirmed against a real CI
+  # run.
+  build-cbor-windows:
+    name: build cratestack_cbor native library (windows-x64)
+    needs: [prepare, build-cbor-glue]
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-pubdev-cbor-windows
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      # No frb codegen on this runner — it cannot work here. See
+      # `build-cbor-glue`'s header for the upstream Windows path bug.
+      - name: Restore frb glue (generated once on Linux by `build-cbor-glue`)
+        uses: actions/download-artifact@v4
+        with:
+          name: cbor-frb-glue-release
+          path: .
+      - name: Assert the glue is present
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f crates/cratestack-client-flutter/src/frb_generated.rs \
+            || { echo "::error::frb_generated.rs missing after download-artifact — cargo build --features frb-glue would fail with E0583." >&2; exit 1; }
+          echo "✓ frb glue restored"
+      - name: Vendor Windows native artifact (release build + copy)
+        run: just cbor-vendor-lib windows-x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cbor-native-windows-x64
+          path: dart-packages/cratestack_cbor/blobs/windows-x64
+          if-no-files-found: error
+
   # ---- cratestack_cbor (pub.dev, cratestack#563) --------------------------
   # The third registry this workflow publishes to, after crates.io and npm.
   # `dart-packages/cratestack_cbor` vendors prebuilt native/wasm binaries
@@ -871,6 +1093,23 @@ jobs:
   # pub.dev has no per-platform optionalDependencies mechanism, so every
   # platform's binary ships in the ONE archive instead of one subpackage
   # per platform.
+  #
+  # SPLIT ACROSS THREE JOBS (cratestack#563 macOS/Windows platform-matrix
+  # slice), not one, for the same reason `build-cbor-node` is a matrix
+  # feeding a single `publish-npm-cbor-node`: you cannot cross-build a
+  # macOS `.dylib`/xcframework or an MSVC `.dll` from Linux, so those two
+  # platforms' native libraries have to come from `macos-latest`/
+  # `windows-latest` runners and get carried into this job as
+  # `actions/upload-artifact`/`actions/download-artifact` payloads, exactly
+  # like `build-cbor-node`'s per-platform `.node` binaries do for
+  # `publish-npm-cbor-node` below. Linux x86_64, the 3 Android ABIs, and web
+  # deliberately STAY inline in this job rather than becoming their own
+  # legs: `ubuntu-latest` can already build all three natively (Android via
+  # `cargo-ndk` cross-compilation, no separate host needed), so splitting
+  # them out would only add upload/download round-trips for artifacts that
+  # already build on this exact host — see `build-cbor-macos` and
+  # `build-cbor-windows` above this job for the two platforms that
+  # genuinely can't.
   #
   # Auth is pub.dev's own GitHub Actions OIDC ("Automated publishing" —
   # https://dart.dev/tools/pub/automated-publishing), configured on the
@@ -896,10 +1135,13 @@ jobs:
   # package's pubspec declares `flutter.plugin.platforms`, which obliges
   # `environment.flutter` and makes it unresolvable by a standalone Dart
   # SDK. Every toolchain-install step below mirrors those three ci.yml
-  # jobs exactly (same pins, same reasoning) because this job vendors all
-  # three artifact sets those jobs vendor separately — see each ci.yml
-  # job's own comments for the individual "why" of each step; not
-  # repeated here.
+  # jobs exactly (same pins, same reasoning) because this job vendors the
+  # Linux/Android/web artifact sets those jobs vendor separately — see each
+  # ci.yml job's own comments for the individual "why" of each step; not
+  # repeated here. The macOS and Windows native libraries are NOT built
+  # here — they are downloaded below from `build-cbor-macos`/
+  # `build-cbor-windows` above, which run on hosts that can actually
+  # produce them.
   # NOTE — do not try to build a workflow_dispatch "verify credentials"
   # variant of this job. One was added (cratestack#640) and removed again,
   # because pub.dev's own documentation is explicit:
@@ -921,13 +1163,17 @@ jobs:
   publish-pubdev-cbor:
     name: publish pub.dev package (cratestack_cbor)
     if: github.event_name == 'push'
-    needs: [prepare]
+    needs: [prepare, build-cbor-macos, build-cbor-windows]
     runs-on: ubuntu-latest
     # No job in this workflow set a timeout, so GitHub's 6-hour default
     # applied. On v0.8.1 that meant a publish blocked on an interactive OAuth
     # prompt would have held a runner all afternoon while reporting nothing.
-    # This job's real work (toolchain + three vendor builds + publish) runs in
-    # well under 20 minutes; anything past that is stuck, not slow.
+    # This job's own real work (toolchain + Linux/Android/web vendor builds +
+    # downloading the macOS/Windows legs' artifacts + publish) runs in well
+    # under 20 minutes; anything past that is stuck, not slow. The
+    # `build-cbor-macos`/`build-cbor-windows` jobs it now waits on have their
+    # own separate `timeout-minutes: 30`, so a hang on either of THOSE hosts
+    # is bounded independently rather than eating into this job's own budget.
     timeout-minutes: 30
     permissions:
       contents: read
@@ -1018,6 +1264,35 @@ jobs:
         run: just cbor-vendor-web
       - name: Vendor Android artifacts (cargo ndk cross-compile, 3 ABIs)
         run: just cbor-vendor-android
+      # These two CANNOT be built on this (ubuntu-latest) host — downloaded
+      # from `build-cbor-macos`/`build-cbor-windows` above instead of
+      # vendored inline, same "download what a cross-host job produced"
+      # shape as `publish-npm-cbor-node`'s download of `build-cbor-node`'s
+      # per-platform `.node` binaries. Explicit `name:` + `path:` (not
+      # `pattern:`) on each — unlike that job's 5-target fan-in, there are
+      # only two artifacts here and each has a known 1:1 destination
+      # directory, so there is no need for `pattern:`'s per-artifact-name
+      # subfolder + a follow-up "find and copy" step; the file(s) land
+      # directly where the gate and `dart pub publish` expect them.
+      # NOT blobs/macos/ — see build-cbor-macos's job comment: CocoaPods
+      # resolves the podspec's `vendored_frameworks` relative to the
+      # podspec's own directory, so `just cbor-vendor-macos` (that job)
+      # writes the assembled xcframework under `macos/Frameworks/` instead,
+      # sibling of `macos/cratestack_cbor.podspec`.
+      - name: Download macOS xcframework (built on macos-latest — cannot cross-compile from this host)
+        uses: actions/download-artifact@v4
+        with:
+          name: cbor-native-macos
+          path: dart-packages/cratestack_cbor/macos/Frameworks
+      - name: Download Windows native library (built on windows-latest — cannot cross-compile from this host)
+        uses: actions/download-artifact@v4
+        with:
+          name: cbor-native-windows-x64
+          path: dart-packages/cratestack_cbor/blobs/windows-x64
+      - name: List downloaded cross-host artifacts
+        run: |
+          find dart-packages/cratestack_cbor/macos/Frameworks -type f
+          find dart-packages/cratestack_cbor/blobs/windows-x64 -type f
       # THE GATE (cratestack#563's explicit requirement): prove the archive
       # actually contains what was just vendored, BEFORE publishing, rather
       # than trusting the vendor steps above to have worked. This is not
@@ -1052,6 +1327,46 @@ jobs:
           # Exactly 2 vendored web artifacts: cratestack_cbor_wasm.js and
           # cratestack_cbor_wasm_bg.wasm.
           wasm_count=$(grep -c 'cratestack_cbor_wasm' <<<"$dry_run_output" || true)
+          # Exactly 1 vendored Windows native library — the one file
+          # `build-cbor-windows` uploaded and this job downloaded into
+          # blobs/windows-x64/ above.
+          dll_count=$(grep -c 'cratestack_client_flutter\.dll' <<<"$dry_run_output" || true)
+          # macOS ships ONE FILE: the symlink-preserving
+          # `CratestackCborNative.xcframework.zip`. The unpacked directory
+          # is deliberately excluded by the package's `.pubignore`, because
+          # `dart pub publish` dereferences symlinks and a macOS framework
+          # stripped of its symlinks fails `codesign` — a consumer's
+          # `flutter build macos` then dies with "Command CodeSign failed".
+          # Measured on a real Mac; see `just cbor-vendor-macos`'s header.
+          #
+          # So there are two assertions here, and the NEGATIVE one is the
+          # load-bearing one. The previous version of this gate counted
+          # entries under the unpacked directory and floored at 3 — which
+          # passed happily on the broken shape, since dereferencing ADDS
+          # entries rather than removing them. Counting more is exactly what
+          # being broken looks like, so a floor could never have caught it.
+          macos_zip_count=$(grep -c 'CratestackCborNative\.xcframework\.zip' <<<"$dry_run_output" || true)
+          # The unpacked xcframework DIRECTORY appearing here means
+          # .pubignore stopped working and the raw tree is being shipped
+          # (and thus dereferenced, and thus unbuildable for a consumer).
+          #
+          # Matched against the tree renderer's own output shape, NOT by
+          # substring. The previous version of this line looked for
+          # `CratestackCborNative.xcframework/` — with a trailing slash —
+          # which `dart pub publish --dry-run` NEVER emits: it renders a
+          # tree, one path segment per line, so a directory appears as
+          # `└── CratestackCborNative.xcframework` with no slash and no
+          # children concatenated onto it. That check therefore returned 0
+          # whether or not the framework leaked: a check that could not
+          # fail, guarding the exact defect (a `codesign`-breaking
+          # published framework) that was already measured on a real Mac.
+          #
+          # Verified against real `--dry-run` output with a deliberately
+          # leaked framework: the old pattern reports 0, this one reports 1.
+          # The `$` anchor is load-bearing — the renderer appends a size to
+          # FILES (`… .xcframework.zip (1.5 MB)`) but not to directories, so
+          # anchoring is what keeps the zip from matching here.
+          macos_raw_count=$(grep -cE '(├── |└── )CratestackCborNative\.xcframework$' <<<"$dry_run_output" || true)
 
           fail=0
           if [ "$so_count" -ne 4 ]; then
@@ -1062,10 +1377,22 @@ jobs:
             echo "::error::expected 2 vendored cratestack_cbor_wasm entries in the pub.dev archive (.js + _bg.wasm), found $wasm_count. cbor-vendor-web did not populate the archive — DO NOT PUBLISH." >&2
             fail=1
           fi
+          if [ "$dll_count" -ne 1 ]; then
+            echo "::error::expected 1 vendored cratestack_client_flutter.dll entry in the pub.dev archive (windows-x64), found $dll_count. The build-cbor-windows -> download-artifact step above did not populate blobs/windows-x64/ — DO NOT PUBLISH." >&2
+            fail=1
+          fi
+          if [ "$macos_zip_count" -ne 1 ]; then
+            echo "::error::expected exactly 1 CratestackCborNative.xcframework.zip entry in the pub.dev archive, found $macos_zip_count. The build-cbor-macos -> download-artifact step above did not populate macos/Frameworks/ — DO NOT PUBLISH." >&2
+            fail=1
+          fi
+          if [ "$macos_raw_count" -ne 0 ]; then
+            echo "::error::found $macos_raw_count archive entries under CratestackCborNative.xcframework/ — the UNPACKED framework is being shipped. dart pub publish dereferences symlinks, so what a consumer extracts would fail codesign and break their 'flutter build macos'. Check dart-packages/cratestack_cbor/.pubignore — DO NOT PUBLISH." >&2
+            fail=1
+          fi
           if [ "$fail" -ne 0 ]; then
             exit 1
           fi
-          echo "✓ archive contains all vendored artifacts: 4 native libraries + 2 wasm files"
+          echo "✓ archive contains all vendored artifacts: 4 Linux/Android .so + 2 wasm files + 1 Windows .dll + 1 macOS .xcframework.zip (and 0 unpacked-framework entries)"
       # Assert OIDC is actually usable BEFORE publishing. `--force` skips the
       # confirmation prompt, not authentication: if pub cannot authenticate
       # via OIDC it falls back to interactive OAuth, prints a Google consent

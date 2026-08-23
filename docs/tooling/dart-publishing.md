@@ -14,19 +14,27 @@ The vendored native/wasm binaries (`blobs/`, `lib/src/web/wasm-pkg/`, `lib/src/n
 gitignored build output — never in the repository (maintainer decision, cratestack#563: generated in
 CI, not committed). `.pubignore` is what lets `dart pub publish` ship them anyway despite being
 gitignored (pub consults `.pubignore` instead of `.gitignore` when present — see the development doc's
-gotcha 1). **This means any publish workflow MUST vendor all three artifact sets itself, immediately
-before publishing, in the same job** — there is no committed fallback, and pub.dev gives **no signal**
-if a vendoring step is skipped or fails partway (see "Proof the archive-verification gate can fail"
-below). `publish-pubdev-cbor` in `release-cli.yml` does exactly this: install toolchain → vendor all
-three → verify the archive → publish, in one job, every release, unconditionally.
+gotcha 1). **This means any publish workflow MUST vendor every artifact set itself, immediately
+before publishing** — there is no committed fallback, and pub.dev gives **no signal** if a vendoring
+step is skipped or fails partway (see "Proof the archive-verification gate can fail" below).
+`release-cli.yml` does this across **three jobs**, not one, since the macOS/Windows platform-matrix
+slice landed: `publish-pubdev-cbor` itself installs toolchain → vendors the Linux/Android/web artifact
+sets (the ones `ubuntu-latest` can build without cross-compiling) → downloads the macOS xcframework and
+Windows `.dll` built by the separate `build-cbor-macos`/`build-cbor-windows` jobs (which run on
+`macos-latest`/`windows-latest`, the only hosts that can produce them) → verifies the archive → publishes,
+every release, unconditionally. See those two jobs' and `publish-pubdev-cbor`'s own comments in
+`release-cli.yml` for the full per-step reasoning; not repeated here.
 
 ## Platform status at time of writing
 
-Linux x86_64, Android (arm64-v8a, x86_64, armeabi-v7a), and web. iOS, macOS, Windows, and Linux arm64
-are **not** in the vendored archive — every other platform throws `UnsupportedError` at runtime. This
-mirrors what the package's own `pubspec.yaml` and README already say; it is not something this
-publishing setup changes or should change (iOS/macOS/Windows are a deliberate maintainer hold, not
-in scope here — see the ticket).
+Linux x86_64, Android (arm64-v8a, x86_64, armeabi-v7a), Windows x86_64, and web are vendored into the
+published archive; macOS (arm64+x86_64, as one universal xcframework) landed in the same platform-matrix
+slice and is wired into the release job below. iOS and Linux arm64 are **not** in the vendored archive —
+every other platform throws `UnsupportedError` at runtime. This mirrors what the package's own
+`pubspec.yaml` and README already say — see
+[`docs/tooling/cratestack-cbor-development.md`](cratestack-cbor-development.md)'s own "Status" line for
+the authoritative, more frequently updated statement of which platforms are actually done, since that
+detail changes faster than this document does.
 
 ## Version locking
 
@@ -111,22 +119,37 @@ configuration fails loudly instead of quietly no-op'ing.
 
 ## What the CI job actually does
 
-`publish-pubdev-cbor` (`.github/workflows/release-cli.yml`), tag-push-triggered only (never
+Three jobs in `.github/workflows/release-cli.yml`, all tag-push-triggered only (never
 `workflow_dispatch` — see below):
 
-1. Installs the full toolchain: Rust (`dtolnay/rust-toolchain@stable`), `just`/`wasm-pack`
-   (`taiki-e/install-action`), Flutter (`subosito/flutter-action` — **not** `dart-lang/setup-dart`,
-   for the same reason `ci.yml`'s three `cratestack-cbor-*` jobs use Flutter: this package's
-   `flutter.plugin.platforms` pubspec key obliges an `environment.flutter` constraint a standalone
-   Dart SDK can't satisfy), `flutter_rust_bridge_codegen` pinned `=2.12.0`, pinned `binaryen`
-   (`wasm-opt`, avoids an unpinned mid-build download that has failed a real release before — see
-   `release-cli.yml`'s `publish-npm-cbor-web` job for the identical incident), `cargo-ndk` pinned
-   `=4.1.2`, the three Android rustup targets, and resolves an installed Android NDK (prefers
-   `28.2.13676358`, matching Flutter's own default; falls back to the runner's newest preinstalled
-   NDK; fails loudly with directory listings if none exists — never silently).
-2. **Vendors all three artifact sets, unconditionally, every run:** `just cbor-vendor-native`,
-   `cbor-vendor-web`, `cbor-vendor-android`. No "already vendored, skip" shortcut — a fresh tag
-   checkout never has them, by design (they're gitignored).
+0. **`build-cbor-macos` / `build-cbor-windows`** (each `needs: prepare` only, run in parallel with each
+   other and with `publish-pubdev-cbor`'s own toolchain setup): each checks out the tag, installs a Rust
+   toolchain targeting that platform (`macos-latest` additionally adds `x86_64-apple-darwin` — the
+   runner's host arch is arm64 — via `dtolnay/rust-toolchain`'s `targets:` input), installs `just` and
+   the pinned `flutter_rust_bridge_codegen`, runs `just cbor-vendor-glue` (required on both — the
+   generated `frb_generated.rs` is gitignored, not committed, so a fresh checkout needs it regenerated
+   before any `--features frb-glue` build, on every platform independently), then the
+   platform-specific build (`just cbor-vendor-macos` — lipo + `xcodebuild -create-xcframework` — or
+   `just cbor-vendor-lib windows-x64`), and uploads the result as a named artifact
+   (`cbor-native-macos`, `cbor-native-windows-x64`) for the publish job to download. Neither of these
+   two artifact sets can be built on `publish-pubdev-cbor`'s own `ubuntu-latest` host — you cannot
+   cross-compile a macOS `.dylib`/xcframework or an MSVC `.dll` from Linux.
+1. **`publish-pubdev-cbor`** (`needs: [prepare, build-cbor-macos, build-cbor-windows]`) installs its own
+   toolchain: Rust (`dtolnay/rust-toolchain@stable`), `just`/`wasm-pack` (`taiki-e/install-action`),
+   Flutter (`subosito/flutter-action` — **not** `dart-lang/setup-dart`, for the same reason `ci.yml`'s
+   `cratestack-cbor-*` jobs use Flutter: this package's `flutter.plugin.platforms` pubspec key obliges
+   an `environment.flutter` constraint a standalone Dart SDK can't satisfy), `flutter_rust_bridge_codegen`
+   pinned `=2.12.0`, pinned `binaryen` (`wasm-opt`, avoids an unpinned mid-build download that has
+   failed a real release before — see `release-cli.yml`'s `publish-npm-cbor-web` job for the identical
+   incident), `cargo-ndk` pinned `=4.1.2`, the three Android rustup targets, and resolves an installed
+   Android NDK (prefers `28.2.13676358`, matching Flutter's own default; falls back to the runner's
+   newest preinstalled NDK; fails loudly with directory listings if none exists — never silently).
+2. **Vendors the Linux/Android/web artifact sets inline, unconditionally, every run:** `just
+   cbor-vendor-native`, `cbor-vendor-web`, `cbor-vendor-android`. No "already vendored, skip" shortcut —
+   a fresh tag checkout never has them, by design (they're gitignored). Then **downloads** the macOS
+   xcframework and Windows `.dll` the two jobs above built, via `actions/download-artifact@v4` with an
+   explicit `name:` per artifact (not `pattern:` — there are only two, each with a known 1:1
+   destination directory, so no per-artifact-name subfolder juggling is needed).
 3. **Verifies the archive**, described in detail below. This is a hard gate: the job exits non-zero
    and never reaches the publish step if any artifact is missing from what `dart pub publish
    --dry-run` reports it would ship.
@@ -163,8 +186,16 @@ Package has 1 warning.
 correctly-vendored package and a completely broken one can both exit 65 with "Package has N warnings."
 The gate instead **counts the archive listing's own content**: `dart pub publish --dry-run`'s tree
 output must contain exactly 4 occurrences of `libcratestack_client_flutter.so` (linux-x64 +
-arm64-v8a + x86_64 + armeabi-v7a) and exactly 2 of `cratestack_cbor_wasm` (`.js` + `_bg.wasm`). Fewer
-than that fails the job before the publish step ever runs.
+arm64-v8a + x86_64 + armeabi-v7a), exactly 2 of `cratestack_cbor_wasm` (`.js` + `_bg.wasm`), exactly 1
+of `cratestack_client_flutter.dll` (windows-x64), exactly 1 of
+`CratestackCborNative.xcframework.zip` (macOS), and **exactly 0** entries under
+`CratestackCborNative.xcframework/`. That last assertion is the load-bearing one: macOS ships as a
+*zip*, not as the unpacked framework, because `dart pub publish` dereferences symlinks and a macOS
+framework stripped of its symlinks fails `codesign` outright — see "The macOS framework ships zipped"
+below. An earlier version of this gate counted entries under the unpacked directory and floored at 3,
+which could never have caught the problem: dereferencing *adds* entries rather than removing them, so
+the broken shape passed a floor by definition. Fewer than any of these
+fails the job before the publish step ever runs.
 
 ### Proof the archive-verification gate can fail (and that it must exist at all)
 
@@ -301,8 +332,31 @@ sequenced strictly after the first real publish.
   before a real tag push is whether pub.dev's OIDC trust check itself behaves as documented once
   configured — this matches the same category of unverified step `npm-publishing.md` flags for a
   brand-new npm Trusted Publisher entry before its first real CI-triggered publish.
-- **iOS, macOS, Windows, Linux arm64** are not vendored by this job and are not claimed by the
-  package — nothing to verify here; see "Platform status" above.
+- **The macOS framework ships zipped, and that is not a packaging preference.** `dart pub publish`
+  dereferences symlinks when it builds its archive. A macOS framework is a *versioned* bundle whose
+  three symlinks (`Versions/Current`, the top-level binary, `Resources`) are structural, so the
+  dereferenced result is not merely untidy — it is invalid. Measured end to end on a real Mac:
+  `dart pub publish --dry-run` lists the binary three times; `codesign` on that shape fails with
+  `bundle format is ambiguous (could be app or framework)` while the symlinked original signs and
+  verifies cleanly; and a real `flutter build macos` against it dies with
+  `Command CodeSign failed with a nonzero exit code`. No symlink-free layout escapes this — the
+  alternatives were tried and each fails somewhere else (`unsealed contents present in the root
+  directory`, `did not contain an Info.plist`, `does not use shallow bundles`). So `just
+  cbor-vendor-macos` also emits `CratestackCborNative.xcframework.zip` (zips store symlinks), the
+  package's `.pubignore` keeps the unpacked directory out of the archive, and the podspec's
+  `prepare_command` unpacks it at `pod install` time. `just cbor-example-verify-macos` deletes the
+  unpacked directory before building so every CI run proves that reconstruction path rather than the
+  directory that only ever exists on a build machine — the original defect passed a fully green CI run
+  precisely because nothing tested the published shape.
+
+- **iOS, Linux arm64** are not vendored by this job and are not claimed by the package — nothing to
+  verify here; see "Platform status" above.
+- **The macOS and Windows legs (`build-cbor-macos`, `build-cbor-windows`) have not run on a real
+  `macos-latest`/`windows-latest` GitHub-hosted runner as part of THIS release job** — their steps were
+  written against the landed `just cbor-vendor-macos`/`cbor-vendor-lib windows-x64` recipes and
+  `ci.yml`'s equivalent jobs, both of which do run green on real runners. The first real test of the
+  *release* legs specifically is this workflow running on a tag push. The symlink question that used to
+  sit here is no longer open — it was measured and fixed; see the next bullet.
 - **`pana`** (pub.dev's own scoring tool), if run, scores the package as it exists in this branch, not
   as pub.dev will score it after the package is live with real download/dependency history — some
   pana checks (e.g. popularity-derived signals) only stabilize post-publish.
