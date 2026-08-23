@@ -102,9 +102,9 @@ model Widget {
     assert_eq!(schema.transport, TransportStyle::Rest);
 }
 
-/// gRPC support was removed (v0.9 breaking change): `transport grpc` must
-/// no longer parse at all. This is the decisive regression guard — it
-/// fails the moment `"grpc"` is re-added to
+/// gRPC support was removed (a breaking change that shipped in 0.8.5):
+/// `transport grpc` must no longer parse at all. This is the decisive
+/// regression guard — it fails the moment `"grpc"` is re-added to
 /// `parse_transport_directive`'s match arms.
 #[test]
 fn transport_directive_rejects_grpc() {
@@ -125,7 +125,7 @@ model Widget {
          unrecognised, got: {message}",
     );
     assert!(
-        message.contains("removed in v0.9"),
+        message.contains("removed in 0.8.5"),
         "error should name the release that removed it, got: {message}",
     );
     assert!(
@@ -137,7 +137,7 @@ model Widget {
 
 /// The removal message is reserved for `grpc` specifically — an actual typo
 /// or an unimplemented transport must still get the generic
-/// unknown-style error, not a misleading "was removed in v0.9" claim about
+/// unknown-style error, not a misleading "was removed in 0.8.5" claim about
 /// something that never existed.
 #[test]
 fn transport_directive_rejects_grpc_distinctly_from_a_typo() {
@@ -158,7 +158,7 @@ model Widget {
         "got: {typo}",
     );
     assert!(
-        !typo.contains("removed in v0.9"),
+        !typo.contains("removed in 0.8.5"),
         "a transport that never existed must not be described as removed, got: {typo}",
     );
 }

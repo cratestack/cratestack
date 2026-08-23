@@ -140,9 +140,9 @@ model Customer {
     assert!(fields[2].attributes.iter().any(|a| a.raw == "@sensitive"));
 }
 
-/// gRPC/protobuf support was removed (v0.9 breaking change), and with it
-/// the `@pb(N)` shape validator (duplicate check, non-negative-integer
-/// check, reserved-range check).
+/// gRPC/protobuf support was removed (a breaking change that shipped in
+/// 0.8.5), and with it the `@pb(N)` shape validator (duplicate check,
+/// non-negative-integer check, reserved-range check).
 ///
 /// Deleting that validator alone would have made `@pb(N)` *inert* rather
 /// than invalid: `.cstack` attributes parse generically into opaque
@@ -150,8 +150,8 @@ model Customer {
 /// blanket "reject unknown attribute" pass, so an unrecognised name just
 /// falls through (see `validate_validator_attributes`'s `_ => {}` arm).
 /// That is the right default for an attribute that never existed and the
-/// wrong one for an attribute that did — a v0.8 schema full of `@pb` pins
-/// would keep parsing while silently meaning nothing.
+/// wrong one for an attribute that did — a pre-0.8.5 schema full of `@pb`
+/// pins would keep parsing while silently meaning nothing.
 ///
 /// So `@pb` is rejected by name in `validate::removed_attributes`. This
 /// pins the user-visible half of that: the attribute is a hard error, and
@@ -166,15 +166,16 @@ model User {
 }
 "#,
     )
-    .expect_err("`@pb` was removed in v0.9 and must not parse as a silent no-op");
+    .expect_err("`@pb` was removed in 0.8.5 and must not parse as a silent no-op");
 
     assert!(err.to_string().contains("@pb"), "error: {err}");
-    assert!(err.to_string().contains("removed in v0.9"), "error: {err}");
+    assert!(err.to_string().contains("removed in 0.8.5"), "error: {err}");
 }
 
 /// The rejection is wired at *every* field-bearing declaration, not just on
 /// models — a `@pb` pin was equally writable on a mixin, a type, a view, or
-/// the auth block in v0.8, and must fail equally loudly on all of them now.
+/// the auth block before 0.8.5, and must fail equally loudly on all of them
+/// now.
 ///
 /// This covers all five call sites deliberately. An earlier revision wired
 /// only three (model/mixin/type) and left `view` and `auth` silently
@@ -227,7 +228,7 @@ auth User {
             parse_schema(source).expect_err(&format!("`@pb` must be rejected on {kind} fields"));
         assert!(err.to_string().contains("@pb"), "{kind}: {err}");
         assert!(
-            err.to_string().contains("removed in v0.9"),
+            err.to_string().contains("removed in 0.8.5"),
             "{kind} must get the same removal guidance models get, not a bare \
              unknown-attribute error: {err}",
         );
