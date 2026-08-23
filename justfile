@@ -2900,7 +2900,47 @@ bump NEW:
 	# application target with its own independent `1.0.0+1` build-number
 	# scheme (see its own pubspec's comment), not a published package, and
 	# must NOT move in lockstep with the workspace version.
-	perl -i -pe "s/^version: \Q$current\E\$/version: {{NEW}}/" dart-packages/*/pubspec.yaml
+	# UNCONDITIONAL, not anchored to `$current` — and that difference is the
+	# whole point. The old form only rewrote a pubspec whose version already
+	# equalled the OLD workspace version, so a package that had diverged for
+	# any reason was silently skipped, and skipped again on every subsequent
+	# bump: the drift was self-perpetuating and perl reported nothing.
+	#
+	# That is not hypothetical. cratestack#699 deliberately shipped
+	# `cratestack_annotations`/`cratestack_builder` at 0.8.8 while the
+	# workspace was still 0.8.7 (they needed an annotation-surface release of
+	# their own). The 0.8.7 -> 0.8.9 bump then matched only
+	# `cratestack_cbor`, left the other two at 0.8.8, and `v0.8.9` reached
+	# pub.dev's automated publishing — which rejects a tag that disagrees
+	# with the pubspec:
+	#
+	#   publishing is configured to only be allowed from actions with
+	#   specific ref pattern, this token has 'refs/tags/v0.8.9' ... Expected
+	#   tag 'v0.8.8'.
+	#
+	# crates.io and npm had already published by then, so the release was
+	# half-out and 0.8.9 was unrecoverable. A loud failure at bump time costs
+	# a re-run; a silent skip costs a burned version.
+	# `^version:` is anchored at column 0, and a pubspec's dependency
+	# constraints are all indented, so this cannot touch
+	# `  cratestack_annotations: ^0.8.8` — which must NOT move in lockstep.
+	# That floor states an API requirement (the first release carrying
+	# `touchFlagFields`/`nonDefaultingListFields`), not a version
+	# relationship; see docs/tooling/dart-publishing.md's "Corrected
+	# 2026-08-23" section for why bumping it would destroy that meaning.
+	perl -i -pe "s/^version: .*\$/version: {{NEW}}/" dart-packages/*/pubspec.yaml
+	# Post-condition, because the rewrite above can still miss a file the
+	# glob doesn't reach (a new dart-packages/ layout, a nested pubspec) and
+	# a `version:` key that isn't where we expect is exactly the failure this
+	# block exists to prevent. Assert rather than trust.
+	for pubspec in dart-packages/*/pubspec.yaml; do
+	  got=$(awk '/^version:/{print $2; exit}' "$pubspec")
+	  if [ "$got" != "{{NEW}}" ]; then
+	    echo "bump: $pubspec is at '$got', expected '{{NEW}}' — the version rewrite did not reach it" >&2
+	    echo "      (publishing a tag that disagrees with a pubspec is rejected by pub.dev; see cratestack#699/#707)" >&2
+	    exit 1
+	  fi
+	done
 	# ...and the CocoaPods podspec beside it, which carries the SAME version
 	# in a third syntax again (`s.version = '0.8.6'`, single-quoted Ruby).
 	# Missed on the way in (cratestack#563's macOS slice) and caught in
