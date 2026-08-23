@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### `cratestack-client-rust`'s RPC batch client silently dropped explicit nullable-column clears (#677)
+
+`BatchableCall::new` (the constructor every macro-generated batched CRUD/procedure call goes through)
+stripped `null`-valued object entries out of the input before handing it to the codec, recursing into
+nested objects. That strip was a workaround for a CBOR mis-encoding bug fixed at the root by #657/#675
+(`CborCodec::encode` now sets `serialize_unit_as_null`, so `serde_json::Value::Null` correctly encodes
+as RFC 8949 CBOR null `0xf6` instead of the empty-array marker `0x80`).
+
+While the strip remained, it recursed into a batched `model.<Model>.update`'s nested `patch` object and
+removed an explicit `null` there exactly like an untouched field — indistinguishable from "the caller
+never mentioned this field" by the time the server decoded it. Since absent means "leave the column
+alone" and explicit null means "clear it" for nullable-column patch inputs, **a batched update that
+explicitly cleared a nullable column silently left it unchanged**, with no error surfaced anywhere.
+Non-batched (`.await`ed) RPC calls and the REST client were never affected — only calls queued via
+`.queue(&mut batch)` went through this code path.
+
+The strip is removed; the Rust batch client now puts explicit `null` on the wire as CBOR null (`0xf6`),
+matching every other client (Dart, TypeScript, the server's own encoder) and the root-cause codec fix.
+An untouched field continues to stay off the wire entirely (`skip_serializing_if`, #663) — that contract
+is unaffected and is covered by a decode-level regression test asserting on raw encoded bytes, not
+decoded values, decisive against a re-introduced strip.
+
 ### `transport grpc`/`@pb` rejection messages and docs now say 0.8.5, not v0.9 (#654)
 
 Protobuf/gRPC removal (#655) was planned as a v0.9 breaking change and every reference said so, but it
