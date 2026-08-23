@@ -12,10 +12,12 @@ dependencies:
   flutter_riverpod: ^3.3.1
 {% if native_cbor %}
   # cratestack#563 --native-cbor: flutter_rust_bridge/wasm-bindgen codec,
-  # vendored prebuilt binaries for Linux x86_64/Android/web (see
-  # dart-packages/cratestack_cbor's own pubspec.yaml for why it's absent
-  # elsewhere). Version-locked to this generator's own crate version, the
-  # same lockstep convention `just bump` already applies to
+  # vendored prebuilt binaries for Linux x86_64, Windows x64, macOS
+  # (universal), iOS (device + simulator), Android (3 ABIs) and web. Linux
+  # arm64 is the only target still unsupported — see
+  # dart-packages/cratestack_cbor/lib/src/native/native_cbor_codec.dart's
+  # `Abi.current()` checks. Version-locked to this generator's own crate
+  # version, the same lockstep convention `just bump` already applies to
   # dart-packages/*/pubspec.yaml.
   cratestack_cbor: {{ cratestack_cbor_version_requirement }}
 {% else %}
