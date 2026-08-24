@@ -196,7 +196,7 @@ On the wire the frame is *unwrapped*:
 - `Content-Type` / `Accept` negotiate codec the same way the REST binding
   does today via `validate_codec_request_headers`.
 
-#### 3.1a `computedParams` on model CRUD ops (`@computed`, cratestack#…)
+#### 3.1a `computedParams` on model CRUD ops (`@computed`, cratestack#719)
 
 `model.<X>.list` decodes into `RpcListInput`, which — mirroring the REST list
 query 1:1 — carries an optional `computedParams` field alongside `limit`,

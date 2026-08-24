@@ -50,16 +50,37 @@ pointing at `@computed` as the replacement.
 
 Downstream generators: `cratestack-migrate` excludes computed fields from DDL/diff; the wiremock
 generator fabricates them like ordinary response fields; the LSP adds `@computed` to attribute
-completion; the Dart and TypeScript client generators emit computed fields in response classes only
-(excluded from create/update inputs, filters, and sorts) and add an untyped `computedParams` escape
-hatch to `get`/`list` (Dart gates it per model, offered only when the model has a *parameterized*
-computed field; TypeScript's lives on one shared query type used by every model). The generated Rust
-client (`include_client_schema!` and the server's own embedded self-client) gets a **typed**
-`computedParams` surface instead of an escape hatch: one `<Model>ComputedParams` struct per model with
-a parameterized field, gated the same way Dart's parameter is, with a `to_query_value()` helper that
-encodes it for both transports; gated `get`/`list` take an extra `computed_params:
-Option<&<Model>ComputedParams>` argument (RPC `get` switches to a new `RpcGetInput`, `list` overwrites
-its `RpcListInput`'s `computed_params` field), and an ungated model's `get`/`list` tokens are unchanged.
+completion. All three generated clients (Rust, Dart, TypeScript) emit computed fields in response
+classes only (excluded from create/update inputs, filters, and sorts) and, over both REST and RPC, a
+**typed** per-model `<Model>ComputedParams` surface on `get`/`list`, gated the same way in every
+language: offered only when the model has at least one *parameterized* `@computed(params: <Type>?)`
+field, never for a bare-`@computed`-only model. Rust's `<Model>ComputedParams` struct
+(`include_client_schema!` and the server's own embedded self-client) is new — there was no
+`computedParams` surface at all before this feature.
+
+**BREAKING vs. `main`:** Dart's and TypeScript's `computedParams` parameters were already present as
+untyped v1 escape hatches and are now typed, which is a breaking shape change for existing callers.
+Dart's untyped `Map<String, Object?>?` parameter is now a generated `<Model>ComputedParams` class
+(const constructor, one declared-type field per parameterized computed field, `toWire()`, value
+`==`/`hashCode` for riverpod family-provider cache safety). TypeScript's untyped
+`Record<string, unknown>` is now a generic `CratestackFetchQuery<TComputedParams = never>` /
+`CratestackRpcListQuery<TComputedParams = never>`, with a generated `<Model>ComputedParams` interface
+substituted in on a gated model and `never` (unassignable, `tsc`-enforced) everywhere else.
+
+TypeScript's swr RPC `get` cache keys now incorporate `computedParams` too, fixing a collision where
+two reads of the same id with different resolver params shared one cache entry; known pre-existing
+limitation, unchanged by this fix: `update`/`delete` invalidation still only targets the params-less
+`get` cache key (mirrors REST's own `get`-invalidation behavior, which has never threaded
+`computedParams` through either).
+
+Two bugs surfaced and fixed alongside this feature: the parser silently dropped a
+parenthesized/bracketed attribute-argument group separated from its attribute by whitespace — so
+`@computed (params: ProxyParams?)` parsed as bare `@computed` with no diagnostic — and now raises a
+spanned parse error naming the attribute instead. And the server's own embedded self/peer-calling
+client used to decode model and procedure responses into the server-side struct shape (computed fields
+excluded by design), so a server calling its own or a peer's API silently lost every resolved computed
+value; it now decodes computed-bearing responses into a dedicated wire-shape struct set instead, so
+computed fields are visible there too.
 
 ### `just cbor-example-verify-ios` no longer fails when the live log capture drops the marker
 
