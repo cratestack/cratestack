@@ -14,6 +14,75 @@ final bytes = codec.encodeJson('{"hello":"world"}');
 final json = codec.decodeJson(bytes);
 ```
 
+## The `flutter_rust_bridge` pin — read this before `pub add`
+
+This package depends on **`flutter_rust_bridge: 2.12.0`**, and in pub's
+grammar a bare version is an *exact* pin, not a range. The practical
+consequence is blunt:
+
+> **If your app (or any other package in your dependency graph) already
+> depends on a different `flutter_rust_bridge` version, you cannot add
+> `cratestack_cbor` at all.** `pub get` fails during version solving,
+> before any code runs.
+
+```
+Because your_app depends on flutter_rust_bridge 2.13.0 and every version of
+cratestack_cbor depends on flutter_rust_bridge 2.12.0, cratestack_cbor is
+forbidden.
+```
+
+**This is not a constraint CrateStack chose, and it is not one CrateStack can
+relax.** flutter_rust_bridge requires that its codegen, its Dart runtime
+package, and its Rust runtime crate all be *exactly* the same version — see
+[upstream's compatibility page](https://cjycode.com/flutter_rust_bridge/guides/miscellaneous/compatibility),
+which states that all flutter_rust_bridge packages "will need to have exactly
+the same version". It is enforced in the generated code, not merely
+recommended: the glue this package ships carries `String get codegenVersion =>
+'2.12.0'`, and flutter_rust_bridge's `BaseEntrypoint.initImpl` compares that
+against its own runtime constant with `==` on a plain `String` and throws a
+`StateError` on any difference. flutter_rust_bridge's own project scaffolding
+emits the same exact pins it demands of us (`flutter_rust_bridge = "=X.Y.Z"`
+in `Cargo.toml`, bare `flutter_rust_bridge: X.Y.Z` in `pubspec.yaml`), and its
+codegen actively *rejects* a ranged constraint with "unexpected version range
+for flutter_rust_bridge". Upstream
+[issue #2694](https://github.com/fzyzcjy/flutter_rust_bridge/issues/2694)
+asked for cross-minor-version compatibility for exactly this reason and was
+closed without it.
+
+**`dependency_overrides` is not a workaround — it is a worse failure.** It
+gets you past `pub get`, and then the version check above throws at
+`createCborCodec()` instead. You have converted an install-time error into a
+runtime one. Upstream's own bypass for that check
+(`forceSameCodegenVersion: false`) is not reachable either — it is a parameter
+on the generated entrypoint's `init`, which this package calls internally
+(`lib/src/native/native_cbor_codec.dart`) and does not expose. And even if it
+were, the vendored native library here was *compiled* against
+flutter_rust_bridge 2.12.0's Rust runtime; nothing on the Dart side changes
+that half of the pair.
+
+**What to do instead**, in the order you should consider them:
+
+1. **Converge on 2.12.0** if the other package in your graph can move. The
+   mechanical part is cheaper than it looks — install
+   `flutter_rust_bridge_codegen` 2.12.0 and re-run `generate`, which rewrites
+   the Dart *and* Rust dependency for you. The cost is the re-validation:
+   this regenerates that package's bridge glue, so budget for re-testing its
+   native surface, not just for the version edit.
+2. **Use the pure-Dart CBOR codec**, which has no flutter_rust_bridge
+   dependency at all: pass `--no-native-cbor` to `cratestack generate-dart`.
+   You give up the native codec's throughput, not correctness — the pure-Dart
+   path round-trips the same wire bytes.
+3. **Tell us which version you need.** The pin is a maintainer decision that
+   tracks one flutter_rust_bridge release at a time; if adoption is
+   concentrating on a newer one, that is worth knowing. Open an issue on
+   [the tracker](https://github.com/cratestack/cratestack/issues).
+
+One wrinkle worth naming, because it surprises people: **web-only apps pay
+this pin too.** The web backend is wasm-bindgen and imports no
+flutter_rust_bridge whatsoever, but pub has no conditional-dependency
+mechanism, so the pin sits in `pubspec.yaml` unconditionally and constrains
+every consumer regardless of which backend they actually compile to.
+
 ## Backends
 
 | Platform | Backend | Artifact |

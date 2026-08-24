@@ -336,9 +336,16 @@ support having no `ios/` folder. Please consider increasing the Flutter SDK requ
 ```
 
 The cause was `environment.flutter: ">=1.10.0"` — enough for pub's *local* check of
-`plugin.platforms`, but this package deliberately ships no `ios/` folder, and Flutter only permits
+`plugin.platforms`, but at 0.8.0 this package shipped no `ios/` folder, and Flutter only permits
 omitting platform folders from 1.20 onward. Fixed by raising the constraint (see the pubspec's own
 comment for why the number looks low next to `sdk: ^3.5.0`).
+
+**That specific rejection is void as of 0.8.7** — cratestack#563's iOS slice added a real `ios/`
+folder and an `ios: ffiPlugin: true` platform entry, so there is no longer an omitted platform
+folder for pub.dev to object to. The `>=1.20.0` floor stays anyway on independent grounds, spelled
+out in the pubspec's own comment. The episode is kept here because the *lesson* — pub.dev validates
+again server-side, with rules `--dry-run` does not run — outlived its trigger; do not read it as a
+current description of the package's platform matrix.
 
 Two things worth carrying forward:
 

@@ -1,5 +1,28 @@
 ## Unreleased
 
+- **The `flutter_rust_bridge: 2.12.0` pin is now documented as an
+  install-blocking constraint**, in a README section placed ahead of the
+  quickstart rather than left implicit in a dependency line. A bare version is
+  an exact pin in pub's grammar, so any app already depending on a different
+  flutter_rust_bridge version cannot add this package at all — `pub get` fails
+  during version solving. No behaviour change; the pin is unmoved.
+
+  The pin cannot be relaxed from this end, and the docs now say why rather
+  than leaving the next person to re-derive it: flutter_rust_bridge requires
+  its codegen, Dart runtime, and Rust runtime to be exactly equal (stated
+  upstream policy), enforces it with `==` on a `String` in
+  `BaseEntrypoint.initImpl`, rejects a ranged constraint in its own codegen,
+  and declined to make minor versions compatible
+  (fzyzcjy/flutter_rust_bridge#2694). Widening the constraint would only move
+  the failure from `pub get` to `createCborCodec()`, since the vendored native
+  library is already compiled against 2.12.0's Rust runtime.
+
+  The README now also documents the workaround an affected app actually has
+  today — `cratestack generate-dart --no-native-cbor`, the pure-Dart codec,
+  which has no flutter_rust_bridge dependency — and notes that web-only apps
+  are constrained by the pin too, since pub has no conditional dependencies
+  and the web backend imports no flutter_rust_bridge at all.
+
 - **Linux arm64 is now documented as blocked upstream rather than as pending
   work.** Flutter publishes no arm64 Linux SDK on any channel (verified
   against the release manifest: 732 entries, all x64, zero containing `arm`

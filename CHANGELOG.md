@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### `cratestack_cbor`'s flutter_rust_bridge pin is documented as install-blocking
+
+`dart-packages/cratestack_cbor` depends on `flutter_rust_bridge: 2.12.0`, which in pub's grammar is
+an exact pin. Any Flutter app that already depends on a different flutter_rust_bridge version — for
+unrelated native functionality of its own — therefore cannot add `cratestack_cbor` at all; `pub get`
+fails during version solving. Since #702 made native CBOR the `generate-dart` default, an app hits
+this simply by upgrading the CLI and regenerating.
+
+Nothing about the pin changed. What changed is that it is now stated where someone hits it: a README
+section ahead of the quickstart, and a pubspec comment aimed at the next maintainer tempted to widen
+it. The short version is that the constraint is upstream's rather than ours — flutter_rust_bridge
+requires codegen, Dart runtime, and Rust runtime to be exactly equal, enforces that with `==` on a
+`String` in generated code, rejects ranged constraints in its own codegen, and closed
+[the request to make minor versions compatible](https://github.com/fzyzcjy/flutter_rust_bridge/issues/2694)
+without acting on it. Widening our end would move the failure from `pub get` to `createCborCodec()`,
+because the vendored native library is already compiled against 2.12.0's Rust runtime.
+
+An affected app's real option today is `cratestack generate-dart --no-native-cbor`, which selects the
+pure-Dart codec and drops the flutter_rust_bridge dependency entirely. Reported as #716.
+
+Also fixed a stale claim in `docs/tooling/dart-publishing.md`, spotted in the same report: a
+narrative about the 0.8.0 first-publish rejection described the package as shipping no `ios/` folder
+in the present tense. It has shipped one since 0.8.7.
+
 ## 0.8.10 (2026-08-23)
 
 ### `just bump` no longer silently skips a Dart package that has drifted
