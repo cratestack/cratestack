@@ -2611,16 +2611,35 @@ cbor-example-verify-ios:
 	xcrun simctl terminate "$udid" "$appId" >/dev/null 2>&1 || true
 	xcrun simctl install "$udid" "$app"
 
-	# TWO independent capture channels, deliberately. The first CI run of
-	# this recipe failed with a COMPLETELY EMPTY capture from
-	# `--console-pty` — not wrong output, none at all — so the single
-	# channel could not distinguish "app never started", "app started but
-	# printed nothing", and "app printed but the pty never delivered it".
-	# `simctl spawn … log stream` reads the simulator's unified log, which
-	# is a different path from the app's stdout, so the marker is found if
-	# EITHER works.
+	# TWO CAPTURES, ONE OF WHICH CAN CARRY THE MARKER. This used to say they
+	# were two independent channels and that the marker would be found if
+	# EITHER worked. That was wrong, and it mattered: it is the reason
+	# cratestack#704 was read for a day as "the app printed nothing", on the
+	# strength of the marker being absent from "both" channels.
+	#
+	# `--console-pty` carries the app's stdout/stderr. Flutter's `print`
+	# never reaches fd 1. It goes to `Logger_PrintString`
+	# (engine/src/flutter/lib/ui/dart_runtime_hooks.cc), then
+	# `UIDartState::LogMessage`, and on iOS out through `syslog(LOG_ALERT)`
+	# (fml/logging.cc) into the unified log — hence the `(Flutter) flutter:`
+	# line this recipe matches. The one branch of that function named
+	# "Stdout" sends a VM-service event for DevTools and `flutter run`, not
+	# a write to the file descriptor. Confirmed on a real simulator with a
+	# probe app emitting the same string four ways: `print` reached the
+	# unified log ONLY, `stdout.writeln`/`stderr.writeln` reached the pty
+	# ONLY, `developer.log` reached neither.
+	#
+	# So the pty is not greppable for the marker and never was — the first
+	# CI run's "completely empty" pty capture had a fourth explanation that
+	# was not on the list. It is still captured, because it carries what the
+	# unified log does not: native `NSLog`, dyld and crash output, and
+	# anything the app writes to stderr on its way down. It is diagnostics,
+	# not detection, and the greps below no longer pretend otherwise.
 	ios_log="$(mktemp)"
 	stream_log="$(mktemp)"
+	# A THIRD file, filled only if the live capture comes up empty — see the
+	# retrospective fallback after the poll loop.
+	store_log="$(mktemp)"
 	# NARROW, and both narrowings are load-bearing. The first version of
 	# this used `--level=debug` with `processImagePath CONTAINS[c] "Runner"`
 	# and produced **63 MB of log in 90 seconds**: `CONTAINS "Runner"` also
@@ -2658,7 +2677,7 @@ cbor-example-verify-ios:
 	poll_budget=90
 	poll_started="$(date +%s)"
 	for _ in $(seq 1 "$poll_budget"); do
-	  if grep -qs "$marker" "$ios_log" "$stream_log"; then
+	  if grep -qs "$marker" "$stream_log"; then
 	    found=1
 	    break
 	  fi
@@ -2686,7 +2705,64 @@ cbor-example-verify-ios:
 
 	kill "$launch_pid" "$stream_pid" 2>/dev/null || true
 	xcrun simctl terminate "$udid" "$appId" >/dev/null 2>&1 || true
-	if [ "$found" -ne 1 ] || ! grep -qs "$marker OK $expected_hex" "$ios_log" "$stream_log"; then
+
+	# RETROSPECTIVE FALLBACK: ASK THE LOG STORE, NOT THE SUBSCRIPTION.
+	#
+	# Everything above depends on a LIVE `log stream` subscription having
+	# been listening at the moment the app printed. cratestack#704 produced
+	# a run where that assumption failed: job 97199199670 captured 13
+	# Runner-attributed lines, and every one of them maps to the last ~15%
+	# of a normal launch (`nw_activity` at line 899 of 1069 in a healthy
+	# capture, `BSBlockSentinel:FBSScene` at 911, `KeyboardArbiter` at 927,
+	# `UIKit:KeyboardArbiterClientLog` at 1039). It captured the TAIL of a
+	# launch and none of the ~900 lines before it — the shape of a
+	# subscription that started delivering late, not of an app that failed
+	# to start, which would have produced the EARLY lines and stopped.
+	#
+	# `log show` reads the log STORE. It does not care whether anything was
+	# subscribed at the time, so it answers the question the stream cannot:
+	# did the app print the marker at all?
+	#
+	# The other channel cannot help here and never could. `--console-pty`
+	# carries the process's stdout/stderr, and Flutter's `print` never
+	# reaches fd 1: it goes to `Logger_PrintString`
+	# (engine/src/flutter/lib/ui/dart_runtime_hooks.cc), then
+	# `UIDartState::LogMessage`, and on iOS out through `syslog(LOG_ALERT)`
+	# (fml/logging.cc) into the unified log — which is why the line we match
+	# looks like `Df Runner[…] (Flutter) flutter: …`. The one branch in that
+	# function named "Stdout" emits a VM-service event for DevTools, not a
+	# write to the file descriptor. Verified on a real simulator with a probe
+	# app printing the same string four ways: `print` reached the unified log
+	# only, `stdout.writeln`/`stderr.writeln` reached the pty only.
+	stream_missed=0
+	store_queried=0
+	if [ "$found" -ne 1 ]; then
+	  store_queried=1
+	  echo "poll: the live capture never delivered the marker — asking the log store directly before calling this a failure" >&2
+	  # `AND process != "log"` IS LOAD-BEARING, and this was caught by running
+	  # it rather than reasoning about it. `log show` logs its own invocation,
+	  # command line included — and the command line contains the marker,
+	  # because the marker is in the predicate. So the query MATCHES ITSELF:
+	  # asked for a string no app has ever printed, it still returns one row,
+	  #
+	  #   Df log[39627:0] [com.apple.log:] log run noninteractively, …
+	  #     args: 'log' 'show' … 'eventMessage CONTAINS "<marker>"'
+	  #
+	  # which `grep -qs "$marker"` below would accept as a recovered marker.
+	  # `found` would flip to 1, the payload check would then fail, and the
+	  # recipe would report "the marker WAS captured, but its payload did not
+	  # match — a genuine round-trip failure" about an app that printed
+	  # nothing at all. Excluding the `log` process removes the self-match and
+	  # still finds the real line (verified both ways on a real simulator).
+	  xcrun simctl spawn "$udid" log show --style=compact --last 5m \
+	    --predicate "eventMessage CONTAINS \"$marker\" AND process != \"log\"" > "$store_log" 2>&1 || true
+	  if grep -qs "$marker" "$store_log"; then
+	    found=1
+	    stream_missed=1
+	  fi
+	fi
+
+	if [ "$found" -ne 1 ] || ! grep -qs "$marker OK $expected_hex" "$stream_log" "$store_log"; then
 	  echo "FAIL: built iOS simulator app did not print the expected round-trip marker." >&2
 	  # Diagnostics, because the first failure of this recipe produced an
 	  # empty log and therefore told us nothing about which half broke.
@@ -2707,7 +2783,10 @@ cbor-example-verify-ios:
 	  if [ "$found" -eq 1 ]; then
 	    echo "the marker WAS captured, but its payload did not match — this is a genuine round-trip failure, not a timeout" >&2
 	    echo "expected: $marker OK $expected_hex" >&2
-	    echo "captured: $(grep -hs "$marker" "$ios_log" "$stream_log" | head -1)" >&2
+	    echo "captured: $(grep -hs "$marker" "$stream_log" "$store_log" | head -1)" >&2
+	    if [ "$stream_missed" -eq 1 ]; then
+	      echo "(recovered from the log store, not the live capture — see the fallback above)" >&2
+	    fi
 	  else
 	    echo "the marker never arrived; the app was TERMINATED BY THIS RECIPE after ${poll_waited}s (poll budget ${poll_budget} iterations) — it did not exit on its own, and the 'signal 15' below is that SIGTERM" >&2
 	    echo "launch process still alive when the budget expired: $launch_alive" >&2
@@ -2717,7 +2796,7 @@ cbor-example-verify-ios:
 	  xcrun simctl list devices | grep -F "$udid" >&2 || true
 	  echo "--- is the app installed? ---" >&2
 	  xcrun simctl get_app_container "$udid" "$appId" >&2 2>&1 || echo "(get_app_container failed — app not installed)" >&2
-	  echo "--- console-pty capture ($(wc -c < "$ios_log") bytes) ---" >&2
+	  echo "--- console-pty capture ($(wc -c < "$ios_log") bytes) — stdout/stderr only, the marker CANNOT appear here ---" >&2
 	  cat "$ios_log" >&2
 	  echo "--- unified log capture ($(wc -c < "$stream_log") bytes), last 50 lines ---" >&2
 	  tail -50 "$stream_log" >&2
@@ -2725,13 +2804,19 @@ cbor-example-verify-ios:
 	  # at all? The live `log stream` above is filtered to `process ==
 	  # "Runner"`, so a marker emitted under any other process attribution
 	  # is invisible to it — indistinguishable from never having been
-	  # printed. `log show` re-reads the window unfiltered by process and
-	  # searches for the marker text itself, which separates "our filter
-	  # missed it" from "the app never got there".
-	  echo "--- did the marker appear ANYWHERE in the unified log? (process-agnostic) ---" >&2
-	  xcrun simctl spawn "$udid" log show --style=compact --last 5m \
-	    --predicate "eventMessage CONTAINS \"$marker\"" 2>&1 | tail -10 >&2 \
-	    || echo "(log show failed)" >&2
+	  # printed. That question is now asked BEFORE the failure is declared
+	  # (the retrospective fallback above), because its answer decides
+	  # pass/fail rather than merely annotating a failure. What is left here
+	  # is to show what it returned; running `log show` a second time would
+	  # cost another simctl round trip to reprint the same bytes.
+	  echo "--- did the marker appear ANYWHERE in the unified log? (process-agnostic, from the fallback) ---" >&2
+	  if [ "$store_queried" -ne 1 ]; then
+	    echo "(not asked — the live capture already had the marker, so this path never ran)" >&2
+	  elif [ -s "$store_log" ]; then
+	    tail -10 "$store_log" >&2
+	  else
+	    echo "(asked, and the log store returned nothing for this marker)" >&2
+	  fi
 	  # And how much the app logged at all. A live Flutter app at
 	  # --level=debug is chatty; a count near zero over the whole budget
 	  # means the process was not running, not that it was slow.
@@ -2739,11 +2824,20 @@ cbor-example-verify-ios:
 	  xcrun simctl spawn "$udid" log show --style=compact --last 5m \
 	    --predicate 'process == "Runner"' 2>/dev/null | wc -l >&2 \
 	    || echo "(log show failed)" >&2
-	  rm -f "$ios_log" "$stream_log"
+	  rm -f "$ios_log" "$stream_log" "$store_log"
 	  exit 1
 	fi
-	echo "✓ iOS simulator app round-tripped CBOR: $(grep -hs "$marker" "$ios_log" "$stream_log" | head -1)"
-	rm -f "$ios_log" "$stream_log"
+	# PASSING BECAUSE THE APP WAS RIGHT, NOT BECAUSE THE HARNESS GAVE UP.
+	# A recovered marker means the round trip succeeded and the live capture
+	# missed it. That is a green build and a real defect at the same time,
+	# so it is stated at the top of the output rather than folded silently
+	# into the tick — a flake that stops failing but is never counted is
+	# indistinguishable from one that was fixed.
+	if [ "$stream_missed" -eq 1 ]; then
+	  echo "WARNING: the live log capture never delivered the marker; it was recovered from the log store (cratestack#704 capture defect — the round trip itself is fine)"
+	fi
+	echo "✓ iOS simulator app round-tripped CBOR: $(grep -hs "$marker" "$stream_log" "$store_log" | head -1)"
+	rm -f "$ios_log" "$stream_log" "$store_log"
 
 	echo ""
 	echo "✓ cratestack_cbor example: real flutter build ios --simulator round-trips CBOR in a running simulator app"
