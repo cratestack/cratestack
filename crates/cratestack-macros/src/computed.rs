@@ -8,8 +8,22 @@
 //! Replaces the pre-existing `@custom` attribute's `CustomFieldResolver`
 //! generation (`type`-only, and nothing ever invoked the generated
 //! trait's methods) — `@computed` fields are resolved at response-
-//! composition time by a later stage; this module only emits the
-//! metadata and the trait shape implementors fill in.
+//! composition time.
+//!
+//! This file only emits the metadata/trait shape; the two submodules
+//! cover the rest of response composition:
+//! [`bearing`] re-derives which owners are "computed-bearing" (needed
+//! by both this crate and `crate::axum::procedure`'s dispatch codegen)
+//! and [`compose`] emits the `compose_<owner>_value` fns that walk a
+//! bearing owner's value into a `::cratestack::ProjectedValue`, invoked
+//! from generated procedure dispatch when a procedure's output reaches
+//! one. Model GET/list/create/update/delete composition is a separate,
+//! earlier-landed path (`crate::axum::model::serializers::computed_
+//! fields`) that doesn't reuse these — it walks `?fields=`/`?computed
+//! Params=` selection state these owner-level compose fns don't need.
+
+mod bearing;
+mod compose;
 
 use cratestack_core::{Field, Model, TypeDecl, computed_params_type_name};
 use quote::quote;
@@ -18,6 +32,12 @@ use crate::shared::{
     computed_model_fields, computed_type_fields, ident, rust_type_tokens_with_scope, schema_lit,
     to_snake_case,
 };
+
+pub(crate) use bearing::{
+    ProcedureOutputComposition, compose_fn_ident, computed_bearing_names,
+    procedure_output_composition,
+};
+pub(crate) use compose::generate_compose_helpers;
 
 fn resolver_method_name(owner_name: &str, field_name: &str) -> String {
     format!(

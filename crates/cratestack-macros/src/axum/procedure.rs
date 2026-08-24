@@ -8,6 +8,8 @@ mod route_attrs;
 #[cfg(test)]
 mod tests;
 
+use std::collections::BTreeSet;
+
 use cratestack_core::{Procedure, TypeArity};
 use quote::quote;
 
@@ -22,6 +24,7 @@ use route_attrs::{
 
 pub(crate) fn generate_procedure_axum_handler(
     procedure: &Procedure,
+    bearing: &BTreeSet<String>,
 ) -> Result<proc_macro2::TokenStream, String> {
     let handler_ident = ident(&format!("handle_{}", to_snake_case(&procedure.name)));
     let dispatch_ident = ident(&format!(
@@ -47,6 +50,7 @@ pub(crate) fn generate_procedure_axum_handler(
         &success_status,
         &result_encoder,
         &deprecation_header,
+        bearing,
     );
 
     Ok(quote! {

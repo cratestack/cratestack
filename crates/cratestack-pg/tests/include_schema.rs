@@ -1948,20 +1948,90 @@ mod computed_fields_schema {
         assert_ne!(without_params, with_params);
     }
 
-    // No `procedure` declarations in this fixture, so `ProcedureRegistry`
-    // has zero required methods — still needs a real (non-`()`) impl,
-    // since the macro only special-cases the *computed*-resolver trait
-    // for a unit fallback (docs/design/computed-fields.md decision 4),
-    // not every zero-method generated trait.
+    // Every procedure below just echoes its `storageKey` argument back
+    // into a fresh server-side value — none of them touch the DB, so
+    // these tests never need a real Postgres connection (same as every
+    // other DB-less router test in this file: `test_procedure_router`
+    // above only ever `connect_lazy`s).
     #[derive(Clone)]
-    struct NoProcedures;
+    struct TestImageProcedures;
 
-    impl cratestack_schema::procedures::ProcedureRegistry for NoProcedures {}
+    impl cratestack_schema::procedures::ProcedureRegistry for TestImageProcedures {
+        async fn get_image(
+            &self,
+            _db: &cratestack_schema::Cratestack,
+            _ctx: &CratestackContext,
+            args: cratestack_schema::procedures::get_image::Args,
+            _authorized: cratestack_schema::procedures::get_image::Authorized,
+        ) -> Result<cratestack_schema::procedures::get_image::Output, cratestack::CratestackError>
+        {
+            Ok(cratestack_schema::Image {
+                storageKey: args.storageKey,
+            })
+        }
 
-    // `Image`/`ProxyParams` are `type`s, not `model`s, so this schema has
-    // zero models — `model_router`/`procedure_router`/`router` still
-    // compile and build (empty) routers with a real, non-`()` resolver.
-    // `router()`'s new resolver parameter is unconditional
+        async fn get_images(
+            &self,
+            _db: &cratestack_schema::Cratestack,
+            _ctx: &CratestackContext,
+            args: cratestack_schema::procedures::get_images::Args,
+            _authorized: cratestack_schema::procedures::get_images::Authorized,
+        ) -> Result<cratestack_schema::procedures::get_images::Output, cratestack::CratestackError>
+        {
+            Ok(vec![
+                cratestack_schema::Image {
+                    storageKey: args.storageKey.clone(),
+                },
+                cratestack_schema::Image {
+                    storageKey: format!("{}-2", args.storageKey),
+                },
+            ])
+        }
+
+        async fn get_image_page(
+            &self,
+            _db: &cratestack_schema::Cratestack,
+            _ctx: &CratestackContext,
+            args: cratestack_schema::procedures::get_image_page::Args,
+            _authorized: cratestack_schema::procedures::get_image_page::Authorized,
+        ) -> Result<
+            cratestack_schema::procedures::get_image_page::Output,
+            cratestack::CratestackError,
+        > {
+            Ok(cratestack::Page::new(
+                vec![cratestack_schema::Image {
+                    storageKey: args.storageKey,
+                }],
+                cratestack::PageInfo {
+                    limit: Some(1),
+                    offset: Some(0),
+                    has_next_page: false,
+                    has_previous_page: false,
+                },
+            )
+            .with_total_count(Some(1)))
+        }
+
+        async fn get_card(
+            &self,
+            _db: &cratestack_schema::Cratestack,
+            _ctx: &CratestackContext,
+            args: cratestack_schema::procedures::get_card::Args,
+            _authorized: cratestack_schema::procedures::get_card::Authorized,
+        ) -> Result<cratestack_schema::procedures::get_card::Output, cratestack::CratestackError>
+        {
+            Ok(cratestack_schema::Card {
+                cover: cratestack_schema::Image {
+                    storageKey: args.storageKey,
+                },
+            })
+        }
+    }
+
+    // `Image`/`ProxyParams`/`Card` are `type`s, not `model`s, so this
+    // schema has zero models — `model_router`/`procedure_router`/`router`
+    // still compile and build (empty model surface) routers with a real,
+    // non-`()` resolver. `router()`'s resolver parameter is unconditional
     // (docs/design/computed-fields.md decision 4), independent of
     // whether the schema has any *model* computed fields to serve over
     // HTTP.
@@ -1970,11 +2040,272 @@ mod computed_fields_schema {
         let db = computed_fields_test_db();
         let _router = cratestack_schema::axum::router(
             db,
-            NoProcedures,
+            TestImageProcedures,
             TestComputedFieldResolver,
             CborCodec,
             TestAuthProvider,
             cratestack::DEFAULT_BODY_LIMIT_BYTES,
+        );
+    }
+
+    fn test_computed_procedure_router(codec: CborCodec) -> cratestack::axum::Router {
+        cratestack_schema::axum::procedure_router(
+            computed_fields_test_db(),
+            TestImageProcedures,
+            TestComputedFieldResolver,
+            codec,
+            TestAuthProvider,
+        )
+    }
+
+    fn assert_resolved_image(value: &cratestack::serde_json::Value, storage_key: &str) {
+        assert_eq!(
+            value.get("storageKey"),
+            Some(&cratestack::serde_json::Value::from(storage_key)),
+        );
+        assert_eq!(
+            value.get("thumbnailUrl"),
+            Some(&cratestack::serde_json::Value::from(format!(
+                "https://imgproxy.example/{storage_key}"
+            ))),
+            "unary/list/page/nested composition must resolve the bare @computed field"
+        );
+        assert_eq!(
+            value.get("proxyUrl"),
+            Some(&cratestack::serde_json::Value::from(format!(
+                "https://imgproxy.example/{storage_key}"
+            ))),
+            "the params: None v1 procedure-context resolution must still resolve @computed(params: ...)"
+        );
+    }
+
+    /// A procedure returning a bare computed-bearing `type` composes the
+    /// resolved fields into the response body — the wire break this stage
+    /// closes (docs/design/computed-fields.md's "Procedure outputs"
+    /// section): before this stage, `Image`'s server struct only carries
+    /// `storageKey`, so an un-composed response would be missing
+    /// `thumbnailUrl`/`proxyUrl` entirely.
+    #[tokio::test]
+    async fn procedure_route_composes_computed_fields_on_unary_output() {
+        let codec = CborCodec;
+        let router = test_computed_procedure_router(codec.clone());
+        let body = codec
+            .encode(&cratestack_schema::procedures::get_image::Args {
+                storageKey: "media/original.png".to_owned(),
+            })
+            .expect("request body should encode");
+
+        let response = router
+            .oneshot(
+                Request::post("/$procs/getImage")
+                    .header("content-type", CborCodec::CONTENT_TYPE)
+                    .header("x-auth-id", "9")
+                    .body(Body::from(body))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should succeed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body should read");
+        let value: cratestack::serde_json::Value =
+            codec.decode(&bytes).expect("response should decode");
+        assert_resolved_image(&value, "media/original.png");
+    }
+
+    /// Same proof for a `T[]`-returning procedure: each element is
+    /// composed independently.
+    #[tokio::test]
+    async fn procedure_route_composes_computed_fields_on_list_output() {
+        let codec = CborCodec;
+        let router = test_computed_procedure_router(codec.clone());
+        let body = codec
+            .encode(&cratestack_schema::procedures::get_images::Args {
+                storageKey: "media/original.png".to_owned(),
+            })
+            .expect("request body should encode");
+
+        let response = router
+            .oneshot(
+                Request::post("/$procs/getImages")
+                    .header("content-type", CborCodec::CONTENT_TYPE)
+                    .header("accept", CborCodec::CONTENT_TYPE)
+                    .header("x-auth-id", "9")
+                    .body(Body::from(body))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should succeed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body should read");
+        let values: Vec<cratestack::serde_json::Value> =
+            codec.decode(&bytes).expect("response should decode");
+        assert_eq!(values.len(), 2);
+        assert_resolved_image(&values[0], "media/original.png");
+        assert_resolved_image(&values[1], "media/original.png-2");
+    }
+
+    /// `Page<T>` keeps its own envelope shape (`items`/`totalCount`/
+    /// `pageInfo`, matching `cratestack_core::Page<T>`'s own
+    /// `#[serde(rename_all = "camelCase")]`) while composing each item.
+    #[tokio::test]
+    async fn procedure_route_composes_computed_fields_on_page_output() {
+        let codec = CborCodec;
+        let router = test_computed_procedure_router(codec.clone());
+        let body = codec
+            .encode(&cratestack_schema::procedures::get_image_page::Args {
+                storageKey: "media/original.png".to_owned(),
+            })
+            .expect("request body should encode");
+
+        let response = router
+            .oneshot(
+                Request::post("/$procs/getImagePage")
+                    .header("content-type", CborCodec::CONTENT_TYPE)
+                    .header("x-auth-id", "9")
+                    .body(Body::from(body))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should succeed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body should read");
+        let value: cratestack::serde_json::Value =
+            codec.decode(&bytes).expect("response should decode");
+        assert_eq!(
+            value.get("totalCount"),
+            Some(&cratestack::serde_json::Value::from(1))
+        );
+        assert_eq!(
+            value["pageInfo"].get("limit"),
+            Some(&cratestack::serde_json::Value::from(1))
+        );
+        let items = value
+            .get("items")
+            .and_then(|value| value.as_array())
+            .expect("page response should carry an items array");
+        assert_eq!(items.len(), 1);
+        assert_resolved_image(&items[0], "media/original.png");
+    }
+
+    /// `type Card { cover Image }`: `Card` doesn't declare a `@computed`
+    /// field itself, but nests a computed-bearing `type` through a plain
+    /// field — the compose helper must recurse into `Image`'s own compose
+    /// fn rather than leaving `cover` as an un-composed leaf.
+    #[tokio::test]
+    async fn procedure_route_composes_nested_computed_bearing_type() {
+        let codec = CborCodec;
+        let router = test_computed_procedure_router(codec.clone());
+        let body = codec
+            .encode(&cratestack_schema::procedures::get_card::Args {
+                storageKey: "media/cover.png".to_owned(),
+            })
+            .expect("request body should encode");
+
+        let response = router
+            .oneshot(
+                Request::post("/$procs/getCard")
+                    .header("content-type", CborCodec::CONTENT_TYPE)
+                    .header("x-auth-id", "9")
+                    .body(Body::from(body))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should succeed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body should read");
+        let value: cratestack::serde_json::Value =
+            codec.decode(&bytes).expect("response should decode");
+        let cover = value
+            .get("cover")
+            .expect("Card response should carry a composed `cover`");
+        assert_resolved_image(cover, "media/cover.png");
+    }
+
+    /// A resolver failure must flow through the same error-encoding path
+    /// as any other procedure error (mapped status, not a 200 with a
+    /// half-composed body).
+    #[derive(Clone)]
+    struct FailingComputedFieldResolver;
+
+    impl cratestack_schema::ComputedFieldResolver for FailingComputedFieldResolver {
+        fn resolve_image_thumbnail_url(
+            &self,
+            _db: &cratestack_schema::Cratestack,
+            _source: &cratestack_schema::Image,
+            _ctx: &CratestackContext,
+        ) -> impl core::future::Future<Output = Result<String, cratestack::CratestackError>> + Send
+        {
+            async move {
+                Err(cratestack::CratestackError::Internal(
+                    "thumbnail resolver deliberately failed".to_owned(),
+                ))
+            }
+        }
+
+        fn resolve_image_proxy_url(
+            &self,
+            _db: &cratestack_schema::Cratestack,
+            _source: &cratestack_schema::Image,
+            _params: Option<&cratestack_schema::ProxyParams>,
+            _ctx: &CratestackContext,
+        ) -> impl core::future::Future<Output = Result<String, cratestack::CratestackError>> + Send
+        {
+            async move {
+                Err(cratestack::CratestackError::Internal(
+                    "proxy resolver deliberately failed".to_owned(),
+                ))
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn procedure_route_maps_a_compose_time_resolver_failure_to_an_error_response() {
+        let codec = CborCodec;
+        let router = cratestack_schema::axum::procedure_router(
+            computed_fields_test_db(),
+            TestImageProcedures,
+            FailingComputedFieldResolver,
+            codec.clone(),
+            TestAuthProvider,
+        );
+        let body = codec
+            .encode(&cratestack_schema::procedures::get_image::Args {
+                storageKey: "media/original.png".to_owned(),
+            })
+            .expect("request body should encode");
+
+        let response = router
+            .oneshot(
+                Request::post("/$procs/getImage")
+                    .header("content-type", CborCodec::CONTENT_TYPE)
+                    .header("x-auth-id", "9")
+                    .body(Body::from(body))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should succeed");
+
+        assert_ne!(
+            response.status(),
+            StatusCode::OK,
+            "a resolver failure during compose must not be reported as a 200"
+        );
+        assert_eq!(
+            response.status(),
+            cratestack::CratestackError::Internal(String::new()).status_code(),
+            "must use the same status mapping as any other procedure error"
         );
     }
 }

@@ -1,0 +1,16 @@
+// `transport rpc` counterpart to `computed_fields.cstack` — proves
+// procedure-output `@computed`-field composition
+// (docs/design/computed-fields.md's "Procedure outputs" section) reaches
+// the RPC unary dispatch path too. No `model`s (so no DB access is ever
+// needed to exercise this), matching `computed_fields.cstack`'s own
+// DB-less shape.
+
+transport rpc
+
+type Image {
+  storageKey String
+  thumbnailUrl String @computed
+}
+
+procedure getImage(storageKey: String): Image
+  @allow(auth() != null)

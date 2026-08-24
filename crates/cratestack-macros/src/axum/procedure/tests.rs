@@ -11,6 +11,8 @@
 //! ticket's acceptance criteria ask for (mirrors `crate::procedure::tests`,
 //! the analogous guard for cratestack#282's trait-method change).
 
+use std::collections::BTreeSet;
+
 use super::generate_procedure_axum_handler;
 
 const LIST_RETURNING_SCHEMA: &str = r#"
@@ -85,7 +87,7 @@ const PINNED_NON_STREAM_DISPATCH: &str = "async fn handle_ticks < R , CR , C , A
 #[test]
 fn non_stream_list_procedure_dispatch_is_unchanged() {
     let procedure = parse_first_procedure(LIST_RETURNING_SCHEMA);
-    let generated = generate_procedure_axum_handler(&procedure)
+    let generated = generate_procedure_axum_handler(&procedure, &BTreeSet::new())
         .expect("codegen should succeed")
         .to_string();
     assert_eq!(
@@ -102,7 +104,7 @@ fn non_stream_list_procedure_dispatch_is_unchanged() {
 #[test]
 fn stream_list_procedure_dispatch_differs_from_buffered_baseline() {
     let procedure = parse_first_procedure(STREAM_SCHEMA);
-    let generated = generate_procedure_axum_handler(&procedure)
+    let generated = generate_procedure_axum_handler(&procedure, &BTreeSet::new())
         .expect("codegen should succeed")
         .to_string();
     assert_ne!(generated, PINNED_NON_STREAM_DISPATCH);
@@ -129,7 +131,7 @@ mutation procedure submit(args: PingArgs): Pong
   @status(202)
 "#,
     );
-    let generated = generate_procedure_axum_handler(&procedure)
+    let generated = generate_procedure_axum_handler(&procedure, &BTreeSet::new())
         .expect("codegen should succeed")
         .to_string();
     assert!(
@@ -161,7 +163,7 @@ procedure ticks(args: TickerArgs): Tick[]
   @status(201)
 "#,
     );
-    let generated = generate_procedure_axum_handler(&procedure)
+    let generated = generate_procedure_axum_handler(&procedure, &BTreeSet::new())
         .expect("codegen should succeed")
         .to_string();
     assert!(
@@ -191,7 +193,7 @@ type Pong {
 procedure ping(args: PingArgs): Pong
 "#,
     );
-    let generated = generate_procedure_axum_handler(&procedure)
+    let generated = generate_procedure_axum_handler(&procedure, &BTreeSet::new())
         .expect("codegen should succeed")
         .to_string();
     assert!(
@@ -224,7 +226,7 @@ procedure ticks(args: TickerArgs): Tick[]
   @status(202)
 "#,
     );
-    let generated = generate_procedure_axum_handler(&procedure)
+    let generated = generate_procedure_axum_handler(&procedure, &BTreeSet::new())
         .expect("codegen should succeed")
         .to_string();
     assert!(
@@ -267,7 +269,7 @@ procedure ticks(args: TickerArgs): Tick[]
   @stream
 "#,
     );
-    let generated = generate_procedure_axum_handler(&procedure)
+    let generated = generate_procedure_axum_handler(&procedure, &BTreeSet::new())
         .expect("codegen should succeed")
         .to_string();
     assert!(

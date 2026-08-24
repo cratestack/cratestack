@@ -1,0 +1,17 @@
+// `db = None` computed-bearing procedure output fixture. Mirrors
+// `crates/cratestack-pg/tests/fixtures/computed_fields.cstack`'s `Image`
+// shape, minimal — proves procedure-output composition (docs/design/
+// computed-fields.md's "Procedure outputs" section) also reaches the
+// no-database facade, not just `db = Postgres`.
+
+datasource db {
+  provider = "none"
+}
+
+type Widget {
+  label String
+  slug String @computed
+}
+
+procedure getWidget(label: String): Widget
+  @allow(auth() != null)

@@ -1,3 +1,7 @@
+auth Viewer {
+  id Int
+}
+
 type Image {
   storageKey String
   thumbnailUrl String @computed
@@ -8,3 +12,24 @@ type ProxyParams {
   width Int?
   height Int?
 }
+
+// Nests a computed-bearing `type` through a plain field (not a relation —
+// `type` fields CAN reference another `type`/`model` directly as a value;
+// see `crate::types::generate_type_struct`'s doc). Exercises the compose
+// helper's recursion case for procedure outputs
+// (docs/design/computed-fields.md's "Procedure outputs" section).
+type Card {
+  cover Image
+}
+
+procedure getImage(storageKey: String): Image
+  @allow(auth() != null)
+
+procedure getImages(storageKey: String): Image[]
+  @allow(auth() != null)
+
+procedure getImagePage(storageKey: String): Page<Image>
+  @allow(auth() != null)
+
+procedure getCard(storageKey: String): Card
+  @allow(auth() != null)

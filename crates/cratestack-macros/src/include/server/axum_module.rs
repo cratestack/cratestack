@@ -22,6 +22,7 @@ pub(super) fn build_axum_module(c: &ServerCollected, db: ServerDb) -> proc_macro
     let op_descriptor_entries = &c.op_descriptor_entries;
     let procedure_axum_handler_defs = &c.procedure_axum_handler_defs;
     let model_axum_handler_defs = &c.model_axum_handler_defs;
+    let compose_helpers = &c.compose_helpers;
     let procedure_axum_routes = &c.procedure_axum_routes;
     let axum_shared_support = generate_axum_shared_support();
     let rpc_module = super::rpc_module::build_rpc_module(
@@ -128,6 +129,7 @@ pub(super) fn build_axum_module(c: &ServerCollected, db: ServerDb) -> proc_macro
                 #(#op_descriptor_entries,)*
             ];
 
+            #(#compose_helpers)*
             #(#procedure_axum_handler_defs)*
             #(#model_axum_handler_defs)*
 
