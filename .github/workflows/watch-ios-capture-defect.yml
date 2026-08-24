@@ -1,0 +1,218 @@
+# Nothing greps for the iOS capture defect, so it can now happen silently.
+#
+# cratestack#718 made a dropped `log stream` subscription survivable: the marker is
+# recovered from the log store and the build goes green with a WARNING. That is the
+# right outcome for the build and the wrong one for visibility — the defect stops
+# producing a red job, and the WARNING exists only to be searched for by someone who
+# already knows to look. cratestack#720 added a second signal with the same property:
+# a readiness probe whose tag-bearing line count discriminates two causes, reported on
+# every run whether or not anything is wrong.
+#
+# This job does the searching. It reads recent completed iOS jobs and reports to
+# cratestack#723 when a run carries one of three signals. It changes nothing about CI —
+# it only makes an already-emitted line reach a human.
+#
+# Source of truth: https://github.com/cratestack/cratestack/issues/723
+name: Watch iOS capture defect
+
+on:
+  schedule:
+    # Daily. The lookback window below is wider than the interval on purpose, so a
+    # skipped or delayed run does not create a blind spot.
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+    inputs:
+      lookback_hours:
+        description: "How far back to scan (default 30)"
+        required: false
+        default: "30"
+      dry_run:
+        description: "Scan and print, but do not comment on the issue"
+        required: false
+        default: "false"
+
+permissions:
+  # `contents: read` is for the checkout the staleness assertion below needs —
+  # an explicit `permissions:` block sets every unlisted scope to none, so
+  # omitting it makes `actions/checkout` 403 rather than fall back to a default.
+  contents: read
+  actions: read
+  issues: write
+
+concurrency:
+  group: watch-ios-capture-defect
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      # Needed only by the signal-literal assertion, which reads `justfile`.
+      - uses: actions/checkout@v6
+      - name: Scan recent iOS jobs for capture-defect signals
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE: "723"
+          LOOKBACK_HOURS: ${{ inputs.lookback_hours || '30' }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+
+          # Signals, in the order they discriminate.
+          #   1. WARNING  — the marker was recovered from the log store. The capture
+          #                 defect HAPPENED and the build went green anyway. This is
+          #                 the one that would otherwise be invisible.
+          #   2. red job  — a genuine failure; its output now says whether the log
+          #                 store held the marker, which separates harness from app.
+          #   3. unproven — cratestack#720's probe did not round-trip. The delivered
+          #                 record count on that line is what tells a fixable
+          #                 emitter/nonce bug (above zero) from a mechanism that needs
+          #                 replacing (zero). Reported only when the count is zero, so
+          #                 a merely-slow probe does not generate daily noise.
+          WARN='WARNING: the live log capture never delivered the marker'
+          UNPROVEN='stream: readiness unproven'
+          # `[^0-9]` so this does not also match "10 probe record(s)".
+          PROBE_ZERO='readiness unproven[^\n]*[^0-9]0 probe record'
+
+          # ASSERT THE LITERALS STILL EXIST, AND FAIL THIS JOB IF THEY DO NOT.
+          #
+          # Every signal above is a string this workflow does not own — they are
+          # produced by `cbor-example-verify-ios`. Reword one there and this watch
+          # goes quiet, which is indistinguishable from "nothing happened". That is
+          # not hypothetical: the first version of this file matched `0 tag-bearing`,
+          # and cratestack#722 had already reworded that line to `0 probe record(s)
+          # delivered` before this workflow ever ran. A third of the coverage was
+          # gone on arrival and nothing said so.
+          #
+          # This check fails THIS JOB, not CI. No build is gated, no merge is blocked
+          # — a monitoring job goes red when the thing it monitors has moved, which is
+          # the only way a watch like this can be trusted to still be watching.
+          missing=0
+          for probe_literal in \
+            "WARNING: the live log capture never delivered the marker" \
+            "stream: readiness unproven" \
+            "probe record(s) delivered"
+          do
+            if ! grep -qF -- "$probe_literal" justfile; then
+              echo "::error::watch is stale — justfile no longer emits: $probe_literal" >&2
+              missing=$((missing + 1))
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "$missing signal literal(s) missing from justfile. Update this workflow to match cbor-example-verify-ios's current output." >&2
+            exit 1
+          fi
+          echo "signal literals: all present in justfile"
+
+          cutoff="$(python3 -c "
+          import datetime, os
+          h = int(os.environ['LOOKBACK_HOURS'])
+          print((datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=h)).isoformat())
+          ")"
+          export CUTOFF="$cutoff"
+          echo "scanning CI runs completed since $cutoff"
+
+          # Cap the scan. A busy day is well under 60 CI runs, and an unbounded list
+          # would silently grow into a rate-limit problem rather than failing loudly.
+          gh run list -R "$REPO" --workflow CI -L 60 \
+            --json databaseId,createdAt,status,headBranch,url > runs.json
+
+          python3 -c "
+          import json, os
+          cutoff = os.environ['CUTOFF']
+          runs = json.load(open('runs.json'))
+          for r in runs:
+              if r['status'] == 'completed' and r['createdAt'] >= cutoff:
+                  print(r['databaseId'], r['headBranch'], r['url'])
+          " > candidates.txt
+          echo "candidate runs: $(wc -l < candidates.txt)"
+
+          # Already-reported jobs, so a hit is announced once and not once per day.
+          gh issue view "$ISSUE" -R "$REPO" --json comments \
+            --jq '[.comments[].body] | join("\n")' > reported.txt || : > reported.txt
+
+          hits=0
+          # `< /dev/null` on every `gh` in this loop: the loop's stdin IS
+          # candidates.txt, and a child that reads stdin eats the remaining runs,
+          # silently shortening the scan.
+          while read -r run_id branch run_url; do
+            [ -z "${run_id:-}" ] && continue
+            job=$(gh api "repos/$REPO/actions/runs/$run_id/jobs" --paginate \
+              --jq '.jobs[] | select(.name | test("cratestack_cbor ios")) | [.id, .conclusion, .html_url] | @tsv' < /dev/null || true)
+            [ -z "$job" ] && continue
+            # `head -1` because more than one matching job collapses `cut -f1` into a
+            # multi-line id, which makes `gh run view --job` fail, which `|| true`
+            # turns into an empty log and a silent `continue`. Failing quiet in the
+            # one place quiet is expensive.
+            job_id=$(printf '%s\n' "$job" | head -1 | cut -f1)
+            job_concl=$(printf '%s\n' "$job" | head -1 | cut -f2)
+            job_url=$(printf '%s\n' "$job" | head -1 | cut -f3)
+
+            grep -qF "job $job_id" reported.txt && continue
+
+            log=$(gh run view -R "$REPO" "$run_id" --log --job "$job_id" < /dev/null 2>/dev/null || true)
+            [ -z "$log" ] && continue
+
+            signal=""
+            if printf '%s' "$log" | grep -qF "$WARN"; then
+              signal="RECOVERED — the marker was missed live and recovered from the log store"
+            # `= failure`, NOT `!= success`. This repo's CI concurrency group cancels
+            # superseded runs constantly — 2 cancelled against 4 successful iOS jobs
+            # across the last 30 CI runs at the time of writing — and `!= success`
+            # reports every one of them as "the iOS job failed (cancelled)". That is
+            # a daily false signal on a ticket whose whole value is that a comment on
+            # it means something. A `null` conclusion rendered as "failed ()" for the
+            # same reason.
+            elif [ "$job_concl" = "failure" ]; then
+              signal="RED — the iOS job failed"
+            elif printf '%s' "$log" | grep -qF "$UNPROVEN" \
+                 && printf '%s' "$log" | grep -qE "$PROBE_ZERO"; then
+              signal="PROBE DEAD — readiness unproven with ZERO probe records delivered"
+            fi
+            [ -z "$signal" ] && continue
+
+            hits=$((hits + 1))
+            {
+              echo "## iOS capture-defect signal — job $job_id"
+              echo
+              echo "**$signal**"
+              echo
+              echo "- run: $run_url (branch \`$branch\`)"
+              echo "- job: $job_url"
+              echo
+              echo "Reported lines from that job:"
+              echo '```text'
+              # `cut -f3-` strips gh's "<job name>\t<step>\t" prefix. Portable, unlike
+              # sed's \t, which BSD sed does not understand — the difference is
+              # invisible on the runner and silently wrong when testing on macOS.
+              #
+              # The leading space in the alternation is load-bearing: an unanchored
+              # `launch:` also matches `app_launch:` in com.apple.network rows, which
+              # is what this grep returned on its first test — two irrelevant network
+              # lines and none of the reported ones.
+              printf '%s' "$log" | cut -f3- \
+                | grep -E ' (poll|launch|capture|stream): |WARNING: the live log capture|FAIL: built iOS|the marker (WAS captured|never arrived)' \
+                | cut -c1-200 | head -20 || echo "(none of the reported lines are present — the job predates the instrumentation, or failed before it)"
+              echo '```'
+              echo
+              echo "Baseline for comparison: **1050 Runner-attributed lines / 270,521 bytes, marker at 13s"
+              echo "into a 90-iteration budget** (job 97378371910). The failing sample this watch exists for"
+              echo "was 13 lines / 2,335 bytes (job 97199199670)."
+              echo
+              echo "<sub>Posted by the \`Watch iOS capture defect\` workflow. It reports each job once.</sub>"
+            } > comment.md
+
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "--- DRY RUN, would comment: ---"; cat comment.md
+            else
+              # A hit is exactly the signal this ticket was waiting for, so bring it
+              # back if it was closed as not-reproducing.
+              state=$(gh issue view "$ISSUE" -R "$REPO" --json state --jq .state < /dev/null)
+              [ "$state" = "CLOSED" ] && gh issue reopen "$ISSUE" -R "$REPO" \
+                --comment "Reopening: a capture-defect signal appeared in job $job_id."
+              gh issue comment "$ISSUE" -R "$REPO" --body-file comment.md < /dev/null
+            fi
+          done < candidates.txt
+
+          echo "signals found: $hits"

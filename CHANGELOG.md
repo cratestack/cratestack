@@ -53,6 +53,29 @@ An unproven probe still degrades to the same fixed wait and never fails the job.
 
 Part of cratestack#704, which stays open.
 
+### A scheduled job now watches for the iOS capture defect, which no longer fails a build
+
+Review found the watch had already gone stale before it ran once: its `PROBE DEAD` signal matched the
+literal `0 tag-bearing`, and cratestack#722 had reworded that line to `0 probe record(s) delivered`
+hours earlier. So the workflow now **asserts its own signal literals against `justfile` and fails its
+own job** when one has moved — a monitoring job going red, never a build gate. Cancelled jobs are also
+no longer reported as failures (`= failure`, not `!= success`); this repo's concurrency group cancels
+superseded runs constantly, which would have put a false red on the ticket most days.
+
+
+`cratestack#718` made a dropped `log stream` subscription survivable — the marker is recovered from
+the log store and the run goes green with a `WARNING`. Right for the build, wrong for visibility: the
+defect stopped producing a red job, and the WARNING existed only to be found by someone who already
+knew to look. `cratestack#720`'s readiness probe has the same property, reporting a tag-bearing line
+count on every run whether or not anything is wrong.
+
+`.github/workflows/watch-ios-capture-defect.yml` runs daily and reports to `cratestack#723` when a
+recent iOS job carries one of three signals: the marker was recovered from the store, the job went
+red, or the readiness probe delivered zero tag-bearing lines. It reports each job once, reopens the
+ticket if a signal arrives after it was closed, and changes nothing about CI itself — it only makes an
+already-emitted line reach a human.
+
+
 ### flutter_rust_bridge moves to 2.13.0 (breaking for consumers on 2.12.0)
 
 Every flutter_rust_bridge pin in the workspace moves from `2.12.0` to `2.13.0`:
