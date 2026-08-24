@@ -126,10 +126,10 @@ Investigated for cratestack#704 but out of scope for that issue: it does not add
 No test on this repo's Linux-only toolchain could be made to discriminate that failure mode — see
 cratestack#715 for the attempts and why they were discarded rather than shipped green.
 
-### `cratestack_cbor`'s changelog seeder writes its own "no functional changes" no-op (cratestack#713)
+### The changelog seeder writes its own "no functional changes" no-op for Dart packages (cratestack#713)
 
-Three of the last four releases needed a hand-written, byte-identical two-line entry in
-`dart-packages/cratestack_cbor/CHANGELOG.md` — `changelog-seed.sh` correctly fell back to its
+Three of the last four `cratestack_cbor` releases needed a hand-written, byte-identical two-line entry
+in `dart-packages/cratestack_cbor/CHANGELOG.md` — `changelog-seed.sh` correctly fell back to its
 placeholder (nothing under that package's own `## Unreleased` to carry forward), the
 `changelog (no unedited seeds)` gate correctly failed on the release PR, and a human rewrote it into
 the same wording every time. The seeder wasn't wrong; for this package "nothing to carry" is the normal
@@ -141,23 +141,44 @@ the marker+commit-list placeholder, whenever a declared package's no-op scope (`
 new `CHANGELOG_NOOP_SCOPES`) has zero non-bump commits since the last release tag. No manual edit is
 needed, and the gate passes without a human ever touching the file.
 
-The scope checked is deliberately **not** just `dart-packages/cratestack_cbor/`. That package vendors
-prebuilt binaries built at release time from Rust crates that live outside its own directory
-(`crates/cratestack-client-flutter`, `crates/cratestack-cbor-wasm`) — and v0.8.6 is the load-bearing proof
-that scoping to the package directory alone is unsafe: it shipped a real CBOR-encoding fix
-(cratestack#675, in `crates/cratestack-codec-cbor`, depended on directly by both vendoring crates) baked
-into its vendored binaries, while `dart-packages/cratestack_cbor/` itself carried zero commits and the
-hand-written changelog entry claimed "No functional changes" anyway. The declared scope now also covers
-`crates/cratestack-client-flutter`, `crates/cratestack-cbor-wasm`, and `crates/cratestack-codec-cbor` —
-verified against all four of the last four releases' real history, including that v0.8.6 case, which the
-widened scope now correctly flags as needing a real entry rather than auto-filling one.
+The scope checked for `cratestack_cbor` is deliberately **not** just `dart-packages/cratestack_cbor/`.
+That package vendors prebuilt binaries built at release time from Rust crates that live outside its own
+directory (`crates/cratestack-client-flutter`, `crates/cratestack-cbor-wasm`) — and v0.8.6 is the
+load-bearing proof that scoping to the package directory alone is unsafe: `crates/cratestack-codec-cbor`
+(depended on directly by both vendoring crates) carried a real CBOR-encoding fix (cratestack#675) in
+that release's commit range, confirmed shipped in its vendored binaries (`git merge-base
+--is-ancestor` says the fix commit is an ancestor of the `v0.8.6` tag), while
+`dart-packages/cratestack_cbor/` itself carried zero commits in that same range. What `v0.8.6` actually
+shipped to pub.dev was the raw, unedited seed placeholder — TODO marker and all — because `main` had no
+required status checks to block the merge; the "No functional changes" wording seen for that section
+today was written afterward, in cratestack#687, using exactly the directory-only proxy this scope
+replaces, and per the finding above that retroactive claim is itself wrong. The declared scope now also
+covers `crates/cratestack-client-flutter`, `crates/cratestack-cbor-wasm`, and
+`crates/cratestack-codec-cbor` — verified against all four of the last four releases' real history,
+including the v0.8.6 case, which the widened scope now correctly flags as needing a real entry rather
+than auto-filling one.
 
-A package that genuinely changed is still caught: any non-bump commit anywhere in the declared scope
-still writes the ordinary placeholder, and the gate still fails until a human writes prose — unchanged,
-and covered by a new decisive test (`.ci/changelog-seed-tests.sh` Test 28) that seeds a range with a real
-change reaching the scope only through one of the extra directories, never the package's own, and asserts
-the gate still goes red. The root `CHANGELOG.md` is unaffected — it is never a key in
-`CHANGELOG_NOOP_SCOPES` and always takes the existing "carry forward `## Unreleased` prose" path.
+`dart-packages/cratestack_annotations` and `dart-packages/cratestack_builder` are covered too, scoped to
+their own directory each — checked, not assumed: `release-cli.yml`'s publish jobs for both are pure
+`dart pub publish` from each package's own checkout with no build step and nothing vendored, and neither
+directory contains any binary artifact, so unlike `cratestack_cbor` their own directory is the complete
+scope. Both have genuine non-bump history in-directory too (cratestack#699, cratestack#710), so the
+inverse (placeholder still fires) matters for them exactly as much as it does for `cratestack_cbor`.
+
+A package that genuinely changed is still caught: any non-bump commit anywhere in a declared scope still
+writes the ordinary placeholder, and the gate still fails until a human writes prose — unchanged, and
+covered by a decisive test (`.ci/changelog-seed-tests.sh` Test 28) that seeds a range with a real change
+reaching the scope only through one of the extra directories, never the package's own, and asserts the
+gate still goes red. The root `CHANGELOG.md` is unaffected — it's named in the new
+`CHANGELOG_NOOP_EXEMPT` list rather than given a scope, and always takes the existing "carry forward
+`## Unreleased` prose" path.
+
+`changelog-seed.sh` now also refuses to run (before writing anything) if any file declared in
+`CHANGELOG_FILES_DEFAULT` has neither a `CHANGELOG_NOOP_SCOPES` entry nor a `CHANGELOG_NOOP_EXEMPT` name
+— the coverage gap that silently affected `cratestack_annotations` and `cratestack_builder` after they
+were added to the declared set in cratestack#714 (no failure, just no benefit from this mechanism until
+someone noticed). Proven by a decisive test (Test 31) that adds an uncovered fourth fixture file, confirms
+the guard refuses and names it, then confirms the same declaration with the gap closed does not.
 
 ## 0.8.10 (2026-08-23)
 

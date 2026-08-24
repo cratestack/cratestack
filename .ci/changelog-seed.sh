@@ -56,6 +56,53 @@ source "$CHANGELOG_FILES_SOURCE"
 # future one that isn't exercising this feature specifically).
 declare -A CHANGELOG_NOOP_SCOPES
 
+# cratestack#713 (coverage guard): every file in CHANGELOG_FILES_DEFAULT
+# must be accounted for by the no-op mechanism — either it has a
+# CHANGELOG_NOOP_SCOPES entry, or it's named in CHANGELOG_NOOP_EXEMPT
+# (declared or not; "${CHANGELOG_NOOP_EXEMPT[@]}" on a wholly unset array
+# expands to zero elements under `set -u`, same as CHANGELOG_FILES_DEFAULT
+# elsewhere in this script — no defensive re-declare needed the way the
+# associative CHANGELOG_NOOP_SCOPES above needs one). A file with neither
+# used to fail silently: it just never benefited from the no-op mechanism
+# and kept needing the identical hand-edit on every release forever —
+# exactly what happened to dart-packages/cratestack_annotations and
+# dart-packages/cratestack_builder, added to CHANGELOG_FILES_DEFAULT in
+# #714 with no CHANGELOG_NOOP_SCOPES entry of their own. This makes that
+# omission fail loudly instead, the next time a changelog is declared here.
+#
+# Deliberately checked against CHANGELOG_FILES_DEFAULT itself — the array
+# actually sourced from CHANGELOG_FILES_SOURCE — not the resolved
+# CHANGELOG_FILES below. That keeps this guard about the DECLARED set
+# (what changelog-files.sh says the release pipeline owns), independent of
+# a test using CHANGELOG_FILE/CHANGELOG_FILES_OVERRIDE to redirect what
+# gets WRITTEN for an unrelated scenario — Tests 1-26 in
+# changelog-seed-tests.sh do exactly that against arbitrary sandbox paths
+# with no scope or exemption of their own, and must not trip this guard on
+# the production declared set's behalf. A test exercising THIS guard
+# instead points CHANGELOG_FILES_SOURCE at its own fixture, so both
+# CHANGELOG_FILES_DEFAULT and CHANGELOG_NOOP_SCOPES/CHANGELOG_NOOP_EXEMPT
+# come from that fixture together.
+uncovered_changelogs=()
+for declared_file in "${CHANGELOG_FILES_DEFAULT[@]}"; do
+  is_exempt=false
+  for exempt_file in "${CHANGELOG_NOOP_EXEMPT[@]}"; do
+    if [ "$exempt_file" = "$declared_file" ]; then
+      is_exempt=true
+      break
+    fi
+  done
+  if [ "$is_exempt" = "false" ] && [ -z "${CHANGELOG_NOOP_SCOPES[$declared_file]:-}" ]; then
+    uncovered_changelogs+=("$declared_file")
+  fi
+done
+if [ "${#uncovered_changelogs[@]}" -gt 0 ]; then
+  echo "error: the following declared changelog(s) have no CHANGELOG_NOOP_SCOPES entry and are not named in CHANGELOG_NOOP_EXEMPT — add one or the other in .ci/changelog-files.sh (cratestack#713):" >&2
+  for declared_file in "${uncovered_changelogs[@]}"; do
+    echo "  - $declared_file" >&2
+  done
+  exit 1
+fi
+
 # Overridable (absolute path) so tests can target a single sandbox copy
 # instead of the declared set above, while git further below still walks
 # this repo's real history. This is the degenerate single-file case: when
