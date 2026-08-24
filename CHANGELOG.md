@@ -53,6 +53,36 @@ Also fixed a stale claim in `docs/tooling/dart-publishing.md`, spotted in the sa
 narrative about the 0.8.0 first-publish rejection described the package as shipping no `ios/` folder
 in the present tense. It has shipped one since 0.8.7.
 
+### The iOS CBOR job can finish its pre-launch wait early, and reports what its log subscription did
+
+`just cbor-example-verify-ios` attached a `log stream` subscription, slept 2 seconds, then launched the
+app. Spawning `log stream` returns as soon as the *process* exists; delivery begins some unbounded time
+later. On a contended runner that gap exceeds two seconds, and the app prints its marker into a window
+nothing is listening to — which is what job `97199199670` recorded: 13 captured lines, every one of
+them from the last ~15% of a launch, and none of the ~900 before them.
+
+The sleep becomes an 8-second ceiling that ends early if a probe proves delivery. `log show` writes its
+own invocation — command line included — into the unified log, so invoking it with the probe string as
+its predicate both emits the probe and needs no extra binary in the simulator runtime. When that
+message comes back out of the live capture, the subscription is demonstrably delivering.
+
+The stream's predicate carries only a fixed *tag* while readiness requires tag + pid + timestamp. That
+split is the whole trick: `log stream` logs its own invocation too, and its command line contains this
+recipe's predicate verbatim, so a probe that greps for the same string the predicate contains reports
+"live" instantly while delivering nothing. Verified by running both forms against a capture holding
+only the stream's self-record — the shipped form rejects it, the naive form accepts it.
+
+**The probe does not yet work on a real runner, and this is deliberately shipped anyway.** On job
+`97423719675` it never round-tripped in 20 seconds, and the capture then took 1044 Runner-attributed
+lines normally. So the ceiling is 8 seconds rather than 20 — a fixed wait with a chance of finishing
+early, not a guarantee — and both paths now report how many tag-bearing lines reached the capture. That
+count separates the two possible causes: above zero means the stream delivers such records and the
+emitter or nonce is at fault; zero means nothing from that predicate clause ever arrived and the
+mechanism needs replacing rather than tuning. A failed probe never fails the job, and cratestack#718's
+log-store fallback still covers a marker the live capture misses.
+
+Part of cratestack#704, which stays open.
+
 ### `@computed` — resolver-backed response-time fields, replacing `@custom` (`docs/design/computed-fields.md`)
 
 A schema author can now declare a field that is derived at response time by hand-written Rust rather

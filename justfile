@@ -2703,10 +2703,100 @@ cbor-example-verify-ios:
 	# Without it the capture is a well-behaved 283 bytes containing nothing
 	# from the app, and the marker never arrives. Two changes at once, one of
 	# them load-bearing: narrow the predicate, keep the level.
+	#
+	# The predicate also admits a PROBE, which is how the wait below proves
+	# the subscription is live. See that block for why the tag and the nonce
+	# are two different strings.
+	stream_probe_tag="CSTACK_STREAM_PROBE"
+	stream_probe="${stream_probe_tag}_$$_$(date +%s)"
 	xcrun simctl spawn "$udid" log stream --level=debug --style=compact \
-	  --predicate 'process == "Runner"' > "$stream_log" 2>&1 &
+	  --predicate "process == \"Runner\" OR eventMessage CONTAINS \"$stream_probe_tag\"" > "$stream_log" 2>&1 &
 	stream_pid=$!
-	sleep 2
+
+	# WAIT FOR THE SUBSCRIPTION TO BE PROVABLY LIVE, NOT FOR TWO SECONDS
+	# (cratestack#704).
+	#
+	# This was `sleep 2`, and that is the race that produced job
+	# 97199199670: the stream captured 13 Runner-attributed lines, all from
+	# the last ~15% of a launch, and none of the ~900 before them. Spawning
+	# `log stream` returns as soon as the PROCESS exists; delivery starts
+	# some unbounded time later, and on a contended runner that is longer
+	# than two seconds. The app then prints the marker into a window nothing
+	# is listening to.
+	#
+	# The header lines (`Filtering the log data using …`) are NOT a
+	# readiness signal — job 97199199670 has all three of them and still
+	# missed the first 900 lines. They are printed at process start, before
+	# delivery begins. The only trustworthy signal is a message that made
+	# the whole round trip: emitted after the subscription existed, and
+	# actually delivered into the capture.
+	#
+	# THE EMITTER IS `log show` ITSELF, and needs no extra binary in the
+	# simulator runtime. `log show` writes its own invocation — command line
+	# included — into the unified log, which is the same self-match
+	# cratestack#718 had to exclude when reading the marker back. Here that
+	# behaviour is the mechanism rather than the hazard: the command line
+	# contains the probe string because the probe string IS the predicate.
+	#
+	# TAG AND NONCE ARE DELIBERATELY DIFFERENT STRINGS, and this is the
+	# trap in the idea. The stream's own `log stream` invocation is logged
+	# the same way, so its command line — which contains this recipe's
+	# predicate verbatim — would satisfy a naive probe grep instantly and
+	# report "live" while delivering nothing. So the stream's PREDICATE
+	# carries only `$stream_probe_tag`, while readiness requires the full
+	# `$stream_probe` (tag + pid + timestamp), which appears only in an
+	# emitter invocation this loop actually made. The stream's self-record
+	# still shows up in the capture, matching the tag; it just cannot be
+	# mistaken for delivery.
+	#
+	# A FAILED PROBE DOES NOT FAIL THE JOB, and the ceiling is deliberately
+	# small. Trading a missed-capture flake for a probe-timeout flake would
+	# be no trade at all, so if readiness cannot be proven this says so and
+	# launches anyway — with cratestack#718's log-store fallback still
+	# covering a marker the stream misses.
+	#
+	# 8s, NOT 20s, AND THE FIRST RUN IS WHY. On job 97423719675 the probe
+	# never round-tripped in 20 seconds, and the capture then took 1044
+	# Runner-attributed lines normally — so 20s of waiting bought nothing
+	# and cost 20s on every run. Until the probe is known to work on a real
+	# runner this must not be more expensive than the `sleep 2` it replaces
+	# by more than a few seconds. It is a fixed wait with a chance of
+	# finishing early, not yet a guarantee.
+	stream_ready=0
+	stream_probe_deadline=$(( $(date +%s) + 8 ))
+	stream_probe_started="$(date +%s)"
+	while [ "$(date +%s)" -lt "$stream_probe_deadline" ]; do
+	  xcrun simctl spawn "$udid" log show --last 1s \
+	    --predicate "eventMessage CONTAINS \"$stream_probe\"" >/dev/null 2>&1 || true
+	  if grep -qs "$stream_probe" "$stream_log"; then
+	    stream_ready=1
+	    break
+	  fi
+	  sleep 1
+	done
+	stream_ready_secs=$(( $(date +%s) - stream_probe_started ))
+	# WHICH OF THE TWO FAILURES IS IT? Job 97423719675 could not say, and
+	# that is the only reason this counter exists. A probe that never
+	# arrives has two very different causes:
+	#
+	#   tag-bearing lines > 0 — the stream DOES deliver `log`-process
+	#     records, so delivery was live and it is the emitter or the nonce
+	#     that is wrong. Fixable.
+	#   tag-bearing lines = 0 — nothing from this predicate's second clause
+	#     ever arrived. Either the subscription really was not delivering,
+	#     or `log show`'s self-record does not reach a stream at all, and
+	#     the mechanism needs replacing rather than tuning.
+	#
+	# Counts the TAG, not the nonce: the nonce is by construction absent
+	# whenever the probe failed, so counting it would only restate that.
+	# `|| true` for `grep -c`'s exit 1 on zero matches under `set -e`.
+	stream_probe_records="$(grep -c "$stream_probe_tag" "$stream_log" || true)"
+	if [ "$stream_ready" -eq 1 ]; then
+	  echo "stream: subscription proved live after ${stream_ready_secs}s (probe emitted and delivered)"
+	else
+	  echo "stream: readiness unproven after ${stream_ready_secs}s — ${stream_probe_records} tag-bearing line(s) reached the capture. Treated as a fixed wait and launching anyway; a marker the live capture misses is still recoverable from the log store (cratestack#718, cratestack#704)."
+	fi
+
 	xcrun simctl launch --console-pty "$udid" "$appId" > "$ios_log" 2>&1 &
 	launch_pid=$!
 	launch_at_utc="$(date -u +%H:%M:%SZ)"
@@ -2744,6 +2834,15 @@ cbor-example-verify-ios:
 	runner_lines="$(grep -c 'Runner\[' "$stream_log" || true)"
 	capture_summary="capture: unified log $(wc -c < "$stream_log" | tr -d ' ') bytes / ${runner_lines} Runner-attributed lines, console-pty $(wc -c < "$ios_log" | tr -d ' ') bytes"
 	timing_summary="launch: app launched at ${launch_at_utc} after a ${install_secs}s install"
+	# Carried into BOTH summaries for the same reason the other two are: a
+	# red run whose subscription was never proved live is a different bug
+	# from a red run whose subscription was live and delivered nothing, and
+	# job 97199199670 could not be told apart from either.
+	if [ "$stream_ready" -eq 1 ]; then
+	  stream_summary="stream: subscription live after ${stream_ready_secs}s"
+	else
+	  stream_summary="stream: readiness unproven (waited ${stream_ready_secs}s, ${stream_probe_records} tag-bearing line(s) captured) — treat a missing marker here as a capture defect first"
+	fi
 
 	# LIVENESS IS SAMPLED BEFORE ANYTHING IS KILLED (cratestack#704).
 	# The previous version killed the app and the log stream first and
@@ -2854,6 +2953,7 @@ cbor-example-verify-ios:
 	    echo "app still registered with the simulator when the budget expired: $app_alive" >&2
 	  fi
 	  echo "$timing_summary" >&2
+	  echo "$stream_summary" >&2
 	  echo "$capture_summary" >&2
 	  echo "--- device state ---" >&2
 	  xcrun simctl list devices | grep -F "$udid" >&2 || true
@@ -2907,6 +3007,7 @@ cbor-example-verify-ios:
 	# in 2335 bytes" had no baseline to be judged against.
 	echo "poll: marker arrived ${poll_waited}s after launch, into a ${poll_budget}-iteration budget ($(( poll_budget - poll_waited ))s of margin)"
 	echo "$timing_summary"
+	echo "$stream_summary"
 	echo "$capture_summary"
 	# PASSING BECAUSE THE APP WAS RIGHT, NOT BECAUSE THE HARNESS GAVE UP.
 	# A recovered marker means the round trip succeeded and the live capture
