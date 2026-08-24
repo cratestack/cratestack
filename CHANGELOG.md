@@ -28,6 +28,14 @@ including its command line, and the command line contains the marker, so the que
 Without the exclusion, a run where the app printed nothing would recover that self-match, fail the
 payload check, and report a "genuine round-trip failure" about an app that never printed at all.
 
+The `--console-pty` capture is no longer searched for the marker. It is still captured and still
+printed on failure — it carries native `NSLog`, dyld and crash output, and anything the app writes to
+stderr on its way down, none of which the unified log shows — but it is labelled as diagnostics, and
+the recipe no longer implies a marker could appear there. The comment claiming two independent
+channels "so the marker is found if EITHER works" is corrected in place: that claim is what made the
+cratestack#704 failure read as "the app printed nothing" on the strength of the marker being absent
+from "both".
+
 ## 0.8.10 (2026-08-23)
 
 ### `just bump` no longer silently skips a Dart package that has drifted
