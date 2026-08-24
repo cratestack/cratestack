@@ -120,6 +120,12 @@ pub(crate) struct ModelApiView {
     pub(crate) is_paged: bool,
     pub(crate) list_return_type: String,
     pub(crate) list_decode_expr: String,
+    /// Whether the model declares at least one `@computed` field
+    /// (`docs/design/computed-fields.md`). Gates whether `get`/`list`
+    /// render the optional `computedParams` parameter — a model with no
+    /// computed fields has no resolver to parameterize, so the parameter
+    /// is omitted entirely rather than emitted-but-always-unused.
+    pub(crate) has_computed_fields: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

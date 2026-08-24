@@ -102,6 +102,17 @@ pub(super) fn is_relation_field(field: &Field) -> bool {
         .any(|attribute| attribute.raw.starts_with("@relation("))
 }
 
+/// `@computed` / `@computed(params: <Type>?)` fields are resolved at
+/// response time and never stored — see `docs/design/computed-fields.md`.
+/// They must never produce a column or participate in DDL diffing, the
+/// same way relation virtual fields don't (mirrors [`is_relation_field`]).
+pub(super) fn is_computed_field(field: &Field) -> bool {
+    field
+        .attributes
+        .iter()
+        .any(|attribute| attribute.raw.starts_with("@computed"))
+}
+
 fn field_default(field: &Field) -> Option<ColumnDefault> {
     let raw = field
         .attributes

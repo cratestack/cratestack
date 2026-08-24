@@ -111,6 +111,21 @@ fn is_server_only_field(field: &Field) -> bool {
         .any(|attribute| attribute.raw == "@server_only")
 }
 
+/// Field carries `@computed`/`@computed(params: <Type>?)`
+/// (`docs/design/computed-fields.md`) — resolved at response time, never
+/// stored. Unlike a relation or `@server_only` field, a computed field
+/// IS part of the default model projection (`scalar_model_fields`/
+/// `visible_model_fields` deliberately do NOT exclude it — a computed
+/// field is exactly as "scalar" as any other leaf field from the wire's
+/// point of view), so call sites that need to exclude it (create/update
+/// inputs, `Where`/`SortField` builders) check this explicitly.
+pub(crate) fn is_computed_field(field: &Field) -> bool {
+    field
+        .attributes
+        .iter()
+        .any(|attribute| attribute.raw.starts_with("@computed"))
+}
+
 /// Model has at least one `@@allow("create", ...)` or
 /// `@@allow("all", ...)` rule. Mirrors the create verb's policy gate —
 /// a model without one fail-closes on the server, so the generated

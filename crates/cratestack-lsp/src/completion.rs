@@ -23,7 +23,14 @@ pub(crate) fn completion_items(schema: Option<&Schema>) -> Vec<CompletionItem> {
         "@default",
         "@relation",
         "@allow",
-        "@custom",
+        // `@custom` was removed in favor of `@computed`
+        // (`docs/design/computed-fields.md`) — one concept, resolver-
+        // backed response-time fields. `@computed(params: <Type>?)` is
+        // the parameterized form; this flat keyword list has no snippet-
+        // completion mechanism (no other entry here carries an
+        // insert-text placeholder either), so only the bare marker is
+        // offered.
+        "@computed",
         "@@allow",
         "@@id",
         "@@unique",
@@ -214,6 +221,28 @@ mod tests {
             labels, expected,
             "completion list must track cratestack_parser::builtin_type_names() \
              (minus `Page`) — see cratestack#232",
+        );
+    }
+
+    /// `@custom` was removed in favor of `@computed`
+    /// (`docs/design/computed-fields.md`) — the completion list must
+    /// offer the new attribute and never suggest the removed one, which
+    /// is now a parse error everywhere it's spelled.
+    #[test]
+    fn computed_attribute_is_offered_and_custom_is_gone() {
+        let labels: std::collections::BTreeSet<String> = completion_items(None)
+            .into_iter()
+            .filter(|item| item.kind == Some(CompletionItemKind::KEYWORD))
+            .map(|item| item.label)
+            .collect();
+
+        assert!(
+            labels.contains("@computed"),
+            "completion list must offer @computed: {labels:?}"
+        );
+        assert!(
+            !labels.contains("@custom"),
+            "completion list must never suggest the removed @custom attribute: {labels:?}"
         );
     }
 

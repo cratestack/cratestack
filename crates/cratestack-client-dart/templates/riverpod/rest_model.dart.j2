@@ -43,12 +43,19 @@ class {{ model_api.api_class_name }} {
 
   Future<{{ model_api.list_return_type }}> list({
     CratestackListQuery? query,
+{% if model_api.has_computed_fields %}
+    Map<String, Object?>? computedParams,
+{% endif %}
     CratestackCallOptions? options,
   }) async {
     final body = await _client.execute(
       'GET',
       '{{ model_api.route }}',
+{% if model_api.has_computed_fields %}
+      queryParameters: cratestackWithComputedParams(query?.toQueryParameters(), computedParams),
+{% else %}
       queryParameters: query?.toQueryParameters(),
+{% endif %}
       options: options,
     );
     return {{ model_api.list_decode_expr }};
@@ -79,12 +86,19 @@ class {{ model_api.api_class_name }} {
 
   Future<{{ model_api.model_name }}> get({{ model_api.primary_key_type }} id, {
     CratestackFetchQuery? query,
+{% if model_api.has_computed_fields %}
+    Map<String, Object?>? computedParams,
+{% endif %}
     CratestackCallOptions? options,
   }) async {
     final body = await _client.execute(
       'GET',
       '{{ model_api.detail_route }}',
+{% if model_api.has_computed_fields %}
+      queryParameters: cratestackWithComputedParams(query?.toQueryParameters(), computedParams),
+{% else %}
       queryParameters: query?.toQueryParameters(),
+{% endif %}
       options: options,
     );
     return {{ model_api.model_name }}.fromWire(cratestackAsValueMap(body));

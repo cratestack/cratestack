@@ -6,8 +6,8 @@ use cratestack_core::{Model, Procedure, TypeArity};
 use crate::dart_types::dart_type;
 use crate::idents::{dart_identifier, pluralize, to_camel_case};
 use crate::naming::{
-    is_paged_model, is_relation_field, primary_key_field, procedure_wrapper_name,
-    scalar_model_fields,
+    is_computed_field, is_paged_model, is_relation_field, primary_key_field,
+    procedure_wrapper_name, scalar_model_fields,
 };
 use crate::views::{
     ConstantView, ModelAccessorView, ModelApiView, ProcedureView, SelectedFieldAccessorView,
@@ -142,6 +142,7 @@ pub(crate) fn build_model_api(model: &Model) -> ModelApiView {
                 model.name
             )
         },
+        has_computed_fields: model.fields.iter().any(is_computed_field),
     }
 }
 
