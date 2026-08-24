@@ -114,13 +114,20 @@ console.log("SWR_RUNTIME_CHECK_OK");
     .expect("write smoke script");
 
     let output = Command::new("npx")
-        .args(["--yes", "tsx", "smoke.ts"])
+        .args(["--yes", TSX_PIN, "smoke.ts"])
         .current_dir(dir.path())
         .output()
         .expect("run npx tsx");
 
-    server.join().expect("stub server thread");
-
+    // THE STATUS CHECK COMES BEFORE THE JOIN, AND THAT ORDER IS THE WHOLE
+    // POINT. The stub server thread is parked in `accept()`; if the smoke
+    // script died before issuing its request, nothing ever connects and this
+    // `join()` never returns. Asserting afterwards leaves the stderr that says
+    // WHY it died sitting unread in `output` while the test hangs.
+    // Three CI runs sat exactly like that for over three hours each on
+    // 2026-08-24 (main `afdcd9ce`, jobs 97452966528 and 97485030107) before
+    // being cancelled by hand, and the trigger is STILL unknown because the
+    // message was never printed. Assert first, then join.
     assert!(
         output.status.success(),
         "generated plain function failed to run under plain Node (tsx, no React/hooks \
@@ -128,6 +135,8 @@ console.log("SWR_RUNTIME_CHECK_OK");
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+
+    server.join().expect("stub server thread");
     assert!(
         String::from_utf8_lossy(&output.stdout).contains("SWR_RUNTIME_CHECK_OK"),
         "smoke script did not print its success marker:\nstdout: {}\nstderr: {}",
@@ -154,7 +163,7 @@ fn node_and_npx_available() -> bool {
 fn serve_one_widget_request(listener: TcpListener) {
     use std::io::{BufRead, BufReader, Write};
 
-    let (stream, _) = listener.accept().expect("accept stub connection");
+    let stream = accept_within(&listener, STUB_ACCEPT_TIMEOUT);
     let mut reader = BufReader::new(stream.try_clone().expect("clone stream"));
     // Drain the request line + headers; the response is the same
     // regardless of path/method for this single-shot stub.
@@ -179,3 +188,55 @@ fn serve_one_widget_request(listener: TcpListener) {
         .expect("write stub response");
     stream.flush().expect("flush stub response");
 }
+
+/// Generous next to a healthy run (these round trips take ~5s end to end) and
+/// tiny next to the six hours an unbounded `accept()` costs.
+const STUB_ACCEPT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// `accept()` with a deadline, because a blocking one turns "the client never
+/// connected" into a hang with no output at all.
+///
+/// The status assert above catches the common case — the smoke script failed
+/// and said why. This covers the rest: a script that exits 0 without issuing a
+/// request, or a runtime that never starts. Neither should cost a CI runner six
+/// hours, which is the default job timeout a hang runs into.
+fn accept_within(
+    listener: &std::net::TcpListener,
+    timeout: std::time::Duration,
+) -> std::net::TcpStream {
+    let deadline = std::time::Instant::now() + timeout;
+    listener
+        .set_nonblocking(true)
+        .expect("set listener nonblocking");
+    loop {
+        match listener.accept() {
+            Ok((stream, _)) => {
+                // An accepted stream can inherit the listener's nonblocking
+                // flag, and every reader below this is blocking — so clear it
+                // explicitly rather than relying on platform behaviour.
+                stream
+                    .set_nonblocking(false)
+                    .expect("clear stream nonblocking");
+                listener
+                    .set_nonblocking(false)
+                    .expect("restore listener blocking");
+                return stream;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "no client connected to the stub server within {timeout:?} — the smoke \
+                     script almost certainly failed or exited before issuing its request"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            Err(e) => panic!("accept stub connection: {e}"),
+        }
+    }
+}
+
+/// Pinned, not `tsx@latest`. An unpinned tool inside CI is a dependency whose
+/// version changes without a commit here, and the failure it produces lands in
+/// a test whose diagnostics are printed only if everything else goes right.
+/// 4.23.12 is the latest release as of 2026-08-24.
+const TSX_PIN: &str = "tsx@4.23.12";

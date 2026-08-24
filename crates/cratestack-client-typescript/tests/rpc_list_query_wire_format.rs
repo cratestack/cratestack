@@ -116,7 +116,7 @@ console.log(JSON.stringify(input));
     .expect("write smoke script");
 
     let output = Command::new("npx")
-        .args(["--yes", "tsx", "smoke.ts"])
+        .args(["--yes", TSX_PIN, "smoke.ts"])
         .current_dir(dir.path())
         .output()
         .expect("run npx tsx");
@@ -177,3 +177,9 @@ fn node_and_npx_available() -> bool {
             .output()
             .is_ok_and(|output| output.status.success())
 }
+
+/// Pinned, not `tsx@latest`. An unpinned tool inside CI is a dependency whose
+/// version changes without a commit here, and the failure it produces lands in
+/// a test whose diagnostics are printed only if everything else goes right.
+/// 4.23.12 is the latest release as of 2026-08-24.
+const TSX_PIN: &str = "tsx@4.23.12";

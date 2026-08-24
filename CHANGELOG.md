@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+### A failing TypeScript smoke test now fails in a second instead of hanging for hours
+
+Four tests in `cratestack-client-typescript` run generated client code under `npx tsx` against a real
+TCP stub server. Each asserted the script's exit status **after** joining the server thread — and that
+thread parks in a blocking `accept()`. So when the script died before issuing its request, nothing
+ever connected, `join()` never returned, and the stderr saying why sat unread in `output`.
+
+On 2026-08-24 three CI runs sat in exactly that state for over three hours each (main `afdcd9ce`,
+jobs `97452966528` and `97485030107`) before being cancelled by hand, consuming roughly seven runner
+hours between them. The trigger is still unknown, because the message that would have named it was
+never printed: the same test binary (`etag_if_match-2c9818e999eb07df`) passed in five seconds at
+12:12 and hung at 13:44 with no code change in between, and the tests pass locally.
+
+Four changes, none of which alters what the tests assert:
+
+- The status assert moves **above** the join, at all four sites. A broken client now fails in ~1s with
+  its stderr, verified by pointing the runner at a nonexistent version.
+- `accept()` is bounded (120s) rather than blocking forever, so a script that exits 0 without
+  connecting also cannot hang.
+- `npx --yes tsx` is pinned to `tsx@4.23.12`. An unpinned tool inside CI changes version without a
+  commit here.
+- Every job in `ci.yml` gains `timeout-minutes: 45`. There were none, so a hang ran to GitHub's 6h
+  default.
+
+
 ### flutter_rust_bridge moves to 2.13.0 (breaking for consumers on 2.12.0)
 
 Every flutter_rust_bridge pin in the workspace moves from `2.12.0` to `2.13.0`:
