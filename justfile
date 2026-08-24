@@ -2001,6 +2001,32 @@ cbor-example-verify:
 	echo "=== flutter analyze: $example ==="
 	(cd "$example" && flutter analyze --fatal-warnings --no-fatal-infos)
 
+	# `flutter test` (the Dart-VM-hosted widget test, NOT a built app bundle
+	# — see test/widget_test.dart's own header comment) against the real
+	# native backend. Left unwired into CI for a long time (cratestack#704's
+	# investigation): under `flutter test`'s harness,
+	# `Isolate.resolvePackageUri` — the dev-mode fallback
+	# `resolveVendoredLibraryPath` (lib/src/native/native_cbor_codec.dart)
+	# tries when no built app bundle is on disk yet at this point in the
+	# recipe — throws `Unsupported operation: Isolate.resolvePackageUriSync`
+	# rather than returning a URI, because `flutter test` runs on a special
+	# test VM that does not support synchronous package URI resolution. The
+	# override env var `CRATESTACK_CBOR_NATIVE_LIB` (documented on that same
+	# function, and pre-existing for exactly this kind of "point at a
+	# specific library" need) sidesteps the whole resolution chain — checked
+	# FIRST, before either fallback strategy runs. This asserts the vendored
+	# Linux blob directly (not yet inside a built bundle — that assertion is
+	# the `flutter build linux` step just below), so it must run before
+	# `flutter clean` would remove any prior build, which is already the
+	# case here.
+	native_lib="$(pwd)/dart-packages/cratestack_cbor/blobs/linux-x64/libcratestack_client_flutter.so"
+	if [ ! -f "$native_lib" ]; then
+	  echo "FAIL: vendored native library not found at $native_lib — run 'just cbor-vendor-native' first." >&2
+	  exit 1
+	fi
+	echo "=== flutter test: $example ==="
+	(cd "$example" && CRATESTACK_CBOR_NATIVE_LIB="$native_lib" flutter test)
+
 	echo "=== flutter build linux (release): $example ==="
 	(cd "$example" && flutter build linux)
 	bin="$example/build/linux/x64/release/bundle/cratestack_cbor_example"

@@ -57,6 +57,21 @@ the app installed? ---` twice (cratestack#705 added a second copy rather than mo
 passing run now reports how much of the poll budget was left, which is what cratestack#704's Test Plan
 asked for and what a green run still could not tell you.
 
+### `just cbor-example-verify` now runs the example's `flutter test`
+
+`dart-packages/cratestack_cbor/example/test/widget_test.dart` existed but ran nowhere in CI and failed
+on a clean checkout with `Unsupported operation: Isolate.resolvePackageUriSync` — `flutter test`'s test
+VM does not support the synchronous package-URI resolution the native backend's dev-mode fallback
+tries when no built app bundle exists yet at that point in the recipe. The pre-existing
+`CRATESTACK_CBOR_NATIVE_LIB` override (checked before either resolution strategy) sidesteps this
+entirely by pointing straight at the vendored Linux blob, so the recipe now runs the test with that set
+rather than leaving it permanently unexercised.
+
+Investigated for cratestack#704 but out of scope for that issue: does not address the iOS flake itself
+(the underlying `flutter_test` binding builds the widget tree eagerly regardless of whether a frame is
+ever rendered — see that issue and cratestack#715 for why no test on this repo's Linux-only toolchain
+could be made to discriminate the iOS failure mode).
+
 ## 0.8.10 (2026-08-23)
 
 ### `just bump` no longer silently skips a Dart package that has drifted
