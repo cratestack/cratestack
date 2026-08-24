@@ -35,6 +35,31 @@
 #    the multi-file mechanism must not change what that override means.
 # 18. (cratestack#650) the production declared set in changelog-files.sh
 #    actually lists both the root changelog and cratestack_cbor's.
+# 19-26. (cratestack#688) after the seed script runs, every declared
+#    changelog file ends with exactly one fresh, empty '## Unreleased'
+#    heading immediately above the newest dated section, on all three
+#    per-file branches and in the multi-file case — asserted by exact
+#    whole-file diff, not substring grep, where the result is deterministic.
+# 27-31. (cratestack#713) a declared package whose no-op scope (its own
+#    directory PLUS the extra directories that can change what it ships
+#    without touching that directory — see changelog-files.sh's
+#    CHANGELOG_NOOP_SCOPES comment for why cratestack_cbor's scope reaches
+#    into specific Rust crate directories) has zero non-bump commits in
+#    range gets the standard "No functional changes" wording instead of the
+#    placeholder — no manual edit, gate passes (27). The decisive
+#    counterpart (28): a real change reaching the scope ONLY through one of
+#    those extra directories, never the package's own, still writes the
+#    placeholder and still fails the gate — proving the widened scope, not
+#    just the package directory, is what's actually checked. A file
+#    explicitly named in CHANGELOG_NOOP_EXEMPT (the root CHANGELOG.md, in
+#    production) never takes this fallback (29). The production
+#    CHANGELOG_NOOP_SCOPES/CHANGELOG_NOOP_EXEMPT are asserted directly (30),
+#    mirroring Test 18 — now covering all three Dart packages, not just
+#    cratestack_cbor. Test 31 is the coverage guard's own decisive test: a
+#    declared changelog with neither a scope nor an exemption must fail
+#    loudly (the omission that silently affected cratestack_annotations and
+#    cratestack_builder after #714, until this PR's follow-up), and the
+#    same declaration with the gap closed must not.
 #
 # Tests 1, 3, and 8 (original numbering) deliberately do NOT run against a
 # copy of the real, tracked CHANGELOG.md — its top section is "## Unreleased"
@@ -1139,6 +1164,390 @@ if [ "$REPLY_STATUS" -eq 0 ]; then
   fi
 else
   test_fail "changelog-seed failed on the multi-file set: $REPLY_OUT"
+fi
+
+rm -rf "$TEST_DIR"
+TEST_DIR=""
+
+# Helper for Tests 27-29 (cratestack#713): a disposable git fixture repo
+# shaped like the piece of the real repo's layout this feature cares about —
+# a package directory ("pkg"), two directories standing in for the extra
+# Rust crates a widened no-op scope reaches into ("vendor-a", "vendor-b" —
+# analogous to crates/cratestack-client-flutter and crates/cratestack-cbor-
+# wasm/crates/cratestack-codec-cbor in production), and one directory that
+# is deliberately OUTSIDE any declared scope ("unrelated" — analogous to
+# crates/cratestack-core, excluded per changelog-files.sh's comment). Tagged
+# at v1.0.0 with zero post-tag commits; callers add their own post-tag
+# commit(s) to exercise a specific scenario, same GIT_DIR/GIT_WORK_TREE seam
+# Test 5 (cratestack#670) uses.
+setup_noop_fixture_repo() {
+  NOOP_GIT_DIR=$(mktemp -d)
+  git init -q -b main "$NOOP_GIT_DIR"
+  git -C "$NOOP_GIT_DIR" config user.email "changelog-seed-tests@example.invalid"
+  git -C "$NOOP_GIT_DIR" config user.name "changelog-seed-tests"
+  git -C "$NOOP_GIT_DIR" config commit.gpgsign false
+  mkdir -p "$NOOP_GIT_DIR/pkg" "$NOOP_GIT_DIR/vendor-a" "$NOOP_GIT_DIR/vendor-b" "$NOOP_GIT_DIR/unrelated"
+  echo init > "$NOOP_GIT_DIR/pkg/f.txt"
+  echo init > "$NOOP_GIT_DIR/vendor-a/f.txt"
+  echo init > "$NOOP_GIT_DIR/vendor-b/f.txt"
+  echo init > "$NOOP_GIT_DIR/unrelated/f.txt"
+  git -C "$NOOP_GIT_DIR" add -A
+  git -C "$NOOP_GIT_DIR" commit -q -m "feat: pre-tag commit that must not appear in the seed"
+  git -C "$NOOP_GIT_DIR" tag v1.0.0
+}
+
+cleanup_noop_fixture_repo() {
+  rm -rf "$NOOP_GIT_DIR"
+  NOOP_GIT_DIR=""
+}
+
+# Test 27 (cratestack#713): zero non-bump commits anywhere in the declared
+# no-op scope (package directory + the extra vendoring directories) writes
+# the standard, stable "No functional changes" wording instead of the
+# marker+commit-list placeholder — no manual edit needed, and the
+# `changelog (no unedited seeds)` gate passes immediately. This is
+# Acceptance Criterion 1.
+test_header "Test 27 (cratestack#713): zero commits in the declared no-op scope writes the standard no-op wording, no manual edit needed, gate passes"
+setup_noop_fixture_repo
+TEST_DIR=$(mktemp -d)
+SANDBOX_CHANGELOG="$TEST_DIR/CHANGELOG.md"
+cat > "$SANDBOX_CHANGELOG" <<'FIXTURE'
+# Changelog
+
+## 0.7.8 (2026-08-08)
+
+Some previously released, already-edited prose.
+FIXTURE
+
+NOOP_SOURCE="$TEST_DIR/changelog-files-noop.sh"
+cat > "$NOOP_SOURCE" <<EOF
+CHANGELOG_FILES_DEFAULT=("$SANDBOX_CHANGELOG")
+declare -A CHANGELOG_NOOP_SCOPES=(
+  ["$SANDBOX_CHANGELOG"]="$NOOP_GIT_DIR/pkg $NOOP_GIT_DIR/vendor-a $NOOP_GIT_DIR/vendor-b"
+)
+EOF
+
+REPLY_STATUS=0
+REPLY_OUT=$(CHANGELOG_FILES_SOURCE="$NOOP_SOURCE" CHANGELOG_FILE="$SANDBOX_CHANGELOG" GIT_DIR="$NOOP_GIT_DIR/.git" GIT_WORK_TREE="$NOOP_GIT_DIR" "$SEED_SCRIPT" 0.9.9 2>&1) || REPLY_STATUS=$?
+
+if [ "$REPLY_STATUS" -eq 0 ]; then
+  if grep -q "TODO: edit this section from the seed below" "$SANDBOX_CHANGELOG"; then
+    test_fail "Placeholder marker written even though the declared no-op scope had zero non-bump commits"
+  else
+    test_pass "No placeholder marker written — no-op scope was empty"
+  fi
+
+  if grep -q "^- No functional changes. Version kept in lockstep with the CrateStack$" "$SANDBOX_CHANGELOG" \
+    && grep -q "^  workspace, which every published CrateStack artifact shares.$" "$SANDBOX_CHANGELOG"; then
+    test_pass "Standard 'No functional changes' wording present, byte-matching the convention stable across 0.8.3/0.8.6/0.8.9/0.8.10"
+  else
+    test_fail "Standard no-op wording missing (or not byte-matching) from the seeded section"
+  fi
+
+  REPLY_STATUS=0
+  REPLY_OUT=$(CHANGELOG_FILE="$SANDBOX_CHANGELOG" "$CHECK_SCRIPT" 2>&1) || REPLY_STATUS=$?
+  if [ "$REPLY_STATUS" -eq 0 ]; then
+    test_pass "changelog-check passes immediately, with no manual edit (Acceptance Criterion 1)"
+  else
+    test_fail "changelog-check should have passed without a manual edit: $REPLY_OUT"
+  fi
+else
+  test_fail "changelog-seed failed to run: $REPLY_OUT"
+fi
+
+rm -rf "$TEST_DIR"
+cleanup_noop_fixture_repo
+
+# Test 28 (cratestack#713 — THE DECISIVE TEST, Acceptance Criterion 2): a
+# real, non-bump commit reaching the no-op scope ONLY through one of the
+# EXTRA directories — never the package's own directory — still writes the
+# placeholder, and the gate still fails until a human writes prose. This is
+# the concrete scenario the widened scope exists for: v0.8.6 shipped a real
+# cratestack-codec-cbor fix baked into cratestack_cbor's vendored binaries
+# while dart-packages/cratestack_cbor/ itself carried zero commits. If this
+# test instead put the commit under "pkg/", it would prove nothing new —
+# the pre-#713, package-directory-only proxy already caught that case.
+test_header "Test 28 (cratestack#713 — DECISIVE): a change reaching only an extra scope directory (not the package's own) still blocks the gate"
+setup_noop_fixture_repo
+echo changed > "$NOOP_GIT_DIR/vendor-a/f.txt"
+git -C "$NOOP_GIT_DIR" add -A
+git -C "$NOOP_GIT_DIR" commit -q -m "fix: a real change reaching the vendored artifact, not the package directory"
+
+TEST_DIR=$(mktemp -d)
+SANDBOX_CHANGELOG="$TEST_DIR/CHANGELOG.md"
+cat > "$SANDBOX_CHANGELOG" <<'FIXTURE'
+# Changelog
+
+## 0.7.8 (2026-08-08)
+
+Some previously released, already-edited prose.
+FIXTURE
+
+NOOP_SOURCE="$TEST_DIR/changelog-files-noop.sh"
+cat > "$NOOP_SOURCE" <<EOF
+CHANGELOG_FILES_DEFAULT=("$SANDBOX_CHANGELOG")
+declare -A CHANGELOG_NOOP_SCOPES=(
+  ["$SANDBOX_CHANGELOG"]="$NOOP_GIT_DIR/pkg $NOOP_GIT_DIR/vendor-a $NOOP_GIT_DIR/vendor-b"
+)
+EOF
+
+REPLY_STATUS=0
+REPLY_OUT=$(CHANGELOG_FILES_SOURCE="$NOOP_SOURCE" CHANGELOG_FILE="$SANDBOX_CHANGELOG" GIT_DIR="$NOOP_GIT_DIR/.git" GIT_WORK_TREE="$NOOP_GIT_DIR" "$SEED_SCRIPT" 0.9.9 2>&1) || REPLY_STATUS=$?
+
+if [ "$REPLY_STATUS" -eq 0 ]; then
+  if grep -q "TODO: edit this section from the seed below" "$SANDBOX_CHANGELOG"; then
+    test_pass "Placeholder correctly written — the change reached the widened scope even though it never touched the package's own directory"
+  else
+    test_fail "No placeholder written — a real change in the widened scope was missed (exactly the gap #713's widened scope exists to close)"
+  fi
+
+  if grep -q "No functional changes. Version kept in lockstep" "$SANDBOX_CHANGELOG"; then
+    test_fail "No-op wording incorrectly written for a range with a real change in scope — this would hide a real change"
+  else
+    test_pass "No-op wording correctly withheld"
+  fi
+
+  REPLY_STATUS=0
+  REPLY_OUT=$(CHANGELOG_FILE="$SANDBOX_CHANGELOG" "$CHECK_SCRIPT" 2>&1) || REPLY_STATUS=$?
+  if [ "$REPLY_STATUS" -ne 0 ] && echo "$REPLY_OUT" | grep -q "contain unedited seed"; then
+    test_pass "changelog-check still fails until a human writes prose (Acceptance Criterion 2 — the decisive one)"
+  else
+    test_fail "changelog-check should have failed on the unedited placeholder: status=$REPLY_STATUS out=$REPLY_OUT"
+  fi
+else
+  test_fail "changelog-seed failed to run: $REPLY_OUT"
+fi
+
+rm -rf "$TEST_DIR"
+cleanup_noop_fixture_repo
+
+# Test 29 (cratestack#713): a changelog file that is explicitly named in
+# CHANGELOG_NOOP_EXEMPT — standing in for the root CHANGELOG.md, the only
+# file exempted there in production — never takes the no-op fallback, even
+# with zero commits anywhere. This is Acceptance Criterion 3 ("the root
+# CHANGELOG.md path is unaffected"), exercised structurally rather than by
+# trusting the production declaration alone. Deliberately uses the
+# EXEMPT list, not an omitted CHANGELOG_NOOP_SCOPES entry with no
+# exemption either — that latter shape is what Test 31 below exists to
+# catch (the coverage guard), and would fail before reaching the seed
+# logic this test wants to exercise.
+test_header "Test 29 (cratestack#713): an exempted file (standing in for the root CHANGELOG.md) never takes the no-op fallback"
+setup_noop_fixture_repo
+TEST_DIR=$(mktemp -d)
+SANDBOX_CHANGELOG="$TEST_DIR/CHANGELOG.md"
+cat > "$SANDBOX_CHANGELOG" <<'FIXTURE'
+# Changelog
+
+## 0.7.8 (2026-08-08)
+
+Some previously released, already-edited prose.
+FIXTURE
+
+NOOP_SOURCE="$TEST_DIR/changelog-files-noop.sh"
+cat > "$NOOP_SOURCE" <<EOF
+CHANGELOG_FILES_DEFAULT=("$SANDBOX_CHANGELOG")
+declare -A CHANGELOG_NOOP_SCOPES=()
+CHANGELOG_NOOP_EXEMPT=("$SANDBOX_CHANGELOG")
+EOF
+
+REPLY_STATUS=0
+REPLY_OUT=$(CHANGELOG_FILES_SOURCE="$NOOP_SOURCE" CHANGELOG_FILE="$SANDBOX_CHANGELOG" GIT_DIR="$NOOP_GIT_DIR/.git" GIT_WORK_TREE="$NOOP_GIT_DIR" "$SEED_SCRIPT" 0.9.9 2>&1) || REPLY_STATUS=$?
+
+if [ "$REPLY_STATUS" -eq 0 ]; then
+  if grep -q "TODO: edit this section from the seed below" "$SANDBOX_CHANGELOG"; then
+    test_pass "Exempted file still takes the ordinary placeholder path — the no-op fallback never fires for a file named in CHANGELOG_NOOP_EXEMPT"
+  else
+    test_fail "Exempted file unexpectedly took the no-op fallback"
+  fi
+else
+  test_fail "changelog-seed failed to run: $REPLY_OUT"
+fi
+
+rm -rf "$TEST_DIR"
+cleanup_noop_fixture_repo
+
+# Test 30 (cratestack#713, mirrors Test 18): the PRODUCTION
+# CHANGELOG_NOOP_SCOPES actually declares cratestack_cbor's widened scope —
+# its own package directory plus every Rust crate directory that produces
+# its vendored binaries — and never declares one for the root CHANGELOG.md.
+# Also (coordinator follow-up): dart-packages/cratestack_annotations and
+# dart-packages/cratestack_builder are declared too, and EVERY file in the
+# production CHANGELOG_FILES_DEFAULT is covered by either a scope or
+# CHANGELOG_NOOP_EXEMPT — the same invariant the coverage guard in
+# changelog-seed.sh enforces at runtime, asserted here directly against the
+# declared data. A static assertion against the real, tracked
+# changelog-files.sh, no mutation of any tracked file.
+test_header "Test 30 (cratestack#713): the production CHANGELOG_NOOP_SCOPES covers all three Dart packages, never the root changelog, and leaves nothing uncovered"
+declare -A CHANGELOG_NOOP_SCOPES=()
+CHANGELOG_NOOP_EXEMPT=()
+# shellcheck source=/dev/null
+source "$REPO_ROOT/.ci/changelog-files.sh"
+
+cbor_scope="${CHANGELOG_NOOP_SCOPES["dart-packages/cratestack_cbor/CHANGELOG.md"]:-}"
+if [ -n "$cbor_scope" ]; then
+  test_pass "cratestack_cbor's changelog is declared in CHANGELOG_NOOP_SCOPES"
+else
+  test_fail "cratestack_cbor's changelog is missing from CHANGELOG_NOOP_SCOPES"
+fi
+
+all_present=true
+for expected in "dart-packages/cratestack_cbor" "crates/cratestack-client-flutter" "crates/cratestack-cbor-wasm" "crates/cratestack-codec-cbor"; do
+  case " $cbor_scope " in
+    *" $expected "*) ;;
+    *)
+      all_present=false
+      echo "  missing from declared scope: $expected"
+      ;;
+  esac
+done
+if [ "$all_present" = "true" ]; then
+  test_pass "Scope includes the package directory and every Rust crate directory that produces its vendored binaries"
+else
+  test_fail "Scope is missing one or more expected directories (see above)"
+fi
+
+if [ -z "${CHANGELOG_NOOP_SCOPES["CHANGELOG.md"]:-}" ]; then
+  test_pass "Root CHANGELOG.md is never a key in CHANGELOG_NOOP_SCOPES (Acceptance Criterion 3: unaffected)"
+else
+  test_fail "Root CHANGELOG.md unexpectedly has a declared no-op scope"
+fi
+
+annotations_scope="${CHANGELOG_NOOP_SCOPES["dart-packages/cratestack_annotations/CHANGELOG.md"]:-}"
+if [ -n "$annotations_scope" ] && case " $annotations_scope " in *" dart-packages/cratestack_annotations "*) true ;; *) false ;; esac; then
+  test_pass "cratestack_annotations's changelog is declared in CHANGELOG_NOOP_SCOPES, scoped to its own directory"
+else
+  test_fail "cratestack_annotations's changelog is missing from CHANGELOG_NOOP_SCOPES, or missing its own directory from the scope"
+fi
+
+builder_scope="${CHANGELOG_NOOP_SCOPES["dart-packages/cratestack_builder/CHANGELOG.md"]:-}"
+if [ -n "$builder_scope" ] && case " $builder_scope " in *" dart-packages/cratestack_builder "*) true ;; *) false ;; esac; then
+  test_pass "cratestack_builder's changelog is declared in CHANGELOG_NOOP_SCOPES, scoped to its own directory"
+else
+  test_fail "cratestack_builder's changelog is missing from CHANGELOG_NOOP_SCOPES, or missing its own directory from the scope"
+fi
+
+# The coverage invariant itself: every file actually declared in
+# CHANGELOG_FILES_DEFAULT has either a scope or an exemption. This is the
+# same check changelog-seed.sh's guard performs at runtime; asserted here
+# too so a broken declaration is visible from this test alone, not only
+# when the seed script happens to run.
+fully_covered=true
+for declared_file in "${CHANGELOG_FILES_DEFAULT[@]}"; do
+  is_exempt=false
+  for exempt_file in "${CHANGELOG_NOOP_EXEMPT[@]}"; do
+    [ "$exempt_file" = "$declared_file" ] && is_exempt=true && break
+  done
+  if [ "$is_exempt" = "false" ] && [ -z "${CHANGELOG_NOOP_SCOPES[$declared_file]:-}" ]; then
+    fully_covered=false
+    echo "  uncovered: $declared_file"
+  fi
+done
+if [ "$fully_covered" = "true" ]; then
+  test_pass "Every file in the production CHANGELOG_FILES_DEFAULT has either a CHANGELOG_NOOP_SCOPES entry or a CHANGELOG_NOOP_EXEMPT name"
+else
+  test_fail "One or more declared changelogs are neither scoped nor exempted (see above) — changelog-seed.sh's coverage guard would refuse to run"
+fi
+
+# And the guard itself, exercised end to end against the REAL production
+# CHANGELOG_FILES_SOURCE (unset here, so it defaults to the real, tracked
+# .ci/changelog-files.sh) — but with CHANGELOG_FILE pointed at a throwaway
+# sandbox path, so nothing real is ever written. The coverage guard checks
+# CHANGELOG_FILES_DEFAULT from CHANGELOG_FILES_SOURCE, not the CHANGELOG_FILE
+# override, so this exercises the real declared data's coverage without
+# touching any tracked file — a stronger check than the hand-rolled
+# `fully_covered` loop above, because it runs the actual guard code path in
+# changelog-seed.sh, not a re-derivation of its logic that could itself
+# drift out of sync with the real implementation.
+GUARD_PROBE_DIR=$(mktemp -d)
+GUARD_PROBE_FILE="$GUARD_PROBE_DIR/throwaway.md"
+printf '# Changelog\n' > "$GUARD_PROBE_FILE"
+REPLY_STATUS=0
+REPLY_OUT=$(CHANGELOG_FILE="$GUARD_PROBE_FILE" "$SEED_SCRIPT" 0.9.9 2>&1) || REPLY_STATUS=$?
+if echo "$REPLY_OUT" | grep -q "no CHANGELOG_NOOP_SCOPES entry"; then
+  test_fail "The real, production declared set trips the coverage guard: $REPLY_OUT"
+else
+  test_pass "The real, production declared set does not trip the coverage guard (exercised via the real guard code path, sandboxed write target)"
+fi
+rm -rf "$GUARD_PROBE_DIR"
+
+# Test 31 (cratestack#713 — coordinator follow-up, DECISIVE for the
+# coverage guard): a declared changelog with NEITHER a CHANGELOG_NOOP_SCOPES
+# entry NOR a CHANGELOG_NOOP_EXEMPT name must fail loudly, not silently
+# revert to "just never benefits from the no-op mechanism" — which is
+# exactly what happened to dart-packages/cratestack_annotations and
+# dart-packages/cratestack_builder when they were added to
+# CHANGELOG_FILES_DEFAULT in #714 with no scope of their own. A fourth
+# fixture file, deliberately given neither, proves the guard actually
+# guards; a fifth, otherwise-identical fixture with the same file properly
+# exempted proves the guard doesn't false-positive on a fully-covered set.
+test_header "Test 31 (cratestack#713 — DECISIVE): a declared changelog with no scope and no exemption fails loudly, not silently"
+TEST_DIR=$(mktemp -d)
+COVERED_FIXTURE="$TEST_DIR/covered/CHANGELOG.md"
+UNCOVERED_FIXTURE="$TEST_DIR/uncovered/CHANGELOG.md"
+mkdir -p "$TEST_DIR/covered" "$TEST_DIR/uncovered"
+cat > "$COVERED_FIXTURE" <<'FIXTURE'
+# Changelog
+
+## 0.7.8 (2026-08-08)
+
+Some previously released, already-edited prose.
+FIXTURE
+cp "$COVERED_FIXTURE" "$UNCOVERED_FIXTURE"
+
+# The uncovered fixture is declared, but has neither a CHANGELOG_NOOP_SCOPES
+# entry nor a CHANGELOG_NOOP_EXEMPT name — the omission this guard exists to
+# catch.
+UNCOVERED_SOURCE="$TEST_DIR/changelog-files-uncovered.sh"
+cat > "$UNCOVERED_SOURCE" <<EOF
+CHANGELOG_FILES_DEFAULT=("$COVERED_FIXTURE" "$UNCOVERED_FIXTURE")
+declare -A CHANGELOG_NOOP_SCOPES=(
+  ["$COVERED_FIXTURE"]="$COVERED_FIXTURE"
+)
+CHANGELOG_NOOP_EXEMPT=()
+EOF
+
+REPLY_STATUS=0
+REPLY_OUT=$(CHANGELOG_FILES_SOURCE="$UNCOVERED_SOURCE" "$SEED_SCRIPT" 0.9.9 2>&1) || REPLY_STATUS=$?
+
+if [ "$REPLY_STATUS" -ne 0 ] && echo "$REPLY_OUT" | grep -q "no CHANGELOG_NOOP_SCOPES entry"; then
+  test_pass "changelog-seed refused (RED) — an omitted scope/exemption is caught before any file is written"
+else
+  test_fail "changelog-seed should have refused with a named coverage error: status=$REPLY_STATUS out=$REPLY_OUT"
+fi
+
+if echo "$REPLY_OUT" | grep -qF "$UNCOVERED_FIXTURE"; then
+  test_pass "The error names the specific uncovered file"
+else
+  test_fail "The error did not name the uncovered file: $REPLY_OUT"
+fi
+
+if grep -q "^## 0.9.9 (" "$COVERED_FIXTURE"; then
+  test_fail "The covered fixture was written even though the set as a whole was refused — not atomic"
+else
+  test_pass "Nothing was written — the coverage guard runs before any file is touched"
+fi
+
+# Now the inverse — the SAME two files, but the previously-uncovered one is
+# properly exempted (mirroring how CHANGELOG.md is exempted in production).
+# This must NOT trip the coverage guard (it may still fail later for
+# unrelated reasons, so this only asserts the coverage-guard error text is
+# absent, not that the whole run succeeds).
+COVERED_SOURCE="$TEST_DIR/changelog-files-covered.sh"
+cat > "$COVERED_SOURCE" <<EOF
+CHANGELOG_FILES_DEFAULT=("$COVERED_FIXTURE" "$UNCOVERED_FIXTURE")
+declare -A CHANGELOG_NOOP_SCOPES=(
+  ["$COVERED_FIXTURE"]="$COVERED_FIXTURE"
+)
+CHANGELOG_NOOP_EXEMPT=("$UNCOVERED_FIXTURE")
+EOF
+
+REPLY_STATUS=0
+REPLY_OUT=$(CHANGELOG_FILES_SOURCE="$COVERED_SOURCE" "$SEED_SCRIPT" 0.9.9 2>&1) || REPLY_STATUS=$?
+
+if echo "$REPLY_OUT" | grep -q "no CHANGELOG_NOOP_SCOPES entry"; then
+  test_fail "Coverage guard fired even though the previously-uncovered file is now exempted: $REPLY_OUT"
+else
+  test_pass "Coverage guard does not false-positive once every declared file is scoped or exempted (GREEN)"
 fi
 
 rm -rf "$TEST_DIR"
