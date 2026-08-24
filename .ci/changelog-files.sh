@@ -13,4 +13,6 @@
 CHANGELOG_FILES_DEFAULT=(
   "CHANGELOG.md"
   "dart-packages/cratestack_cbor/CHANGELOG.md"
+  "dart-packages/cratestack_annotations/CHANGELOG.md"
+  "dart-packages/cratestack_builder/CHANGELOG.md"
 )

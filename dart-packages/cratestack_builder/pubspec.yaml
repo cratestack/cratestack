@@ -46,16 +46,3 @@ dev_dependencies:
   test: ^1.25.0
 
 
-# TEMPORARY, removed once cratestack_annotations 0.8.8 is on pub.dev — the
-# same bootstrap phase 1 used, for the same reason: this package's new
-# `touchFlagFields`/`nonDefaultingListFields` arguments only exist in the
-# unpublished annotation source, so `^0.8.8` cannot resolve from the registry
-# yet.
-#
-# NOT a publish guard, despite what a previous revision of this comment
-# claimed. `dart pub publish` reports an override as a HINT, not a refusal —
-# `--force` goes straight past it. It is a speed bump. The real guard is that
-# publishing must happen in order: annotations first, then this.
-dependency_overrides:
-  cratestack_annotations:
-    path: ../cratestack_annotations
