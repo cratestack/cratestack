@@ -102,6 +102,12 @@ Use `just bump NEW_VERSION` — it rewrites every `Cargo.toml` in the repo and r
 - Files: `kebab-case` (Rust: `snake_case` per `rustfmt`)
 - Public types: `PascalCase`
 - `Cargo.toml` edition: `2024`
+- **Transport parity: REST and RPC ship together, never REST first.** Any request/response-surface
+  feature (query params, projections, per-request arguments, client call surfaces) lands on both
+  transports in the same PR — server dispatch, RPC frame slots, and every generated client. RPC
+  dispatch re-enters the REST parse/validate path via query synthesis
+  (`cratestack-axum/src/rpc/synthesize.rs`), so server-side parity is usually one frame field + one
+  `pairs.push`. A genuinely excluded transport is a documented decision, not an omission.
 
 ## Schema Macros
 

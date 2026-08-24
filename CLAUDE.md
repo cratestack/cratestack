@@ -183,6 +183,16 @@ tarballs that `cargo publish` includes explicitly. `just publish-studio` re-bund
   clean under the forbid. Standalone example/vitrine workspaces excluded from the root `[workspace] members`
   list (`cratestack-studio-ui`, the `no-database-verification*` crates, `client-only-verification`) declare
   the same `forbid` locally, since the root table can't reach a disjoint workspace.
+- **Transport parity — REST and RPC ship together, never REST first.** Any feature that touches the
+  request/response surface (query parameters, projections, per-request arguments, new response shapes,
+  client call surfaces) must land on BOTH transports in the same PR — server dispatch, `RpcListInput`/
+  `RpcGetInput` frame slots, AND every generated client (Rust/Dart/TS, plus swr/riverpod layers where
+  they exist). The mechanism that makes this cheap: RPC dispatch synthesizes a real URL query string
+  and re-enters the REST parsing/validation path (`cratestack-axum/src/rpc/synthesize.rs`), so the
+  server side is usually one frame field + one `pairs.push`. History says this rule is needed: the
+  `@computed` params surface shipped REST-only in v1 and closing the gap took three follow-up PRs
+  (cratestack#724 and kin). If a transport is genuinely excluded, that is a design-doc'd,
+  changelog'd decision — not an omission.
 - Rust source uses `snake_case` filenames (rustfmt convention); all other files are `kebab-case`.
 - **200-LoC file ceiling:** there is an active, validated convention of keeping each source file under
   ~200 lines, splitting larger files by concern (this is why `macros/` and `axum/` are deeply nested).
