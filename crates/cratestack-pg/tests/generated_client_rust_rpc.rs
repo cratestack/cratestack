@@ -16,6 +16,7 @@
 
 use std::convert::Infallible;
 use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use axum::Router;
@@ -30,7 +31,7 @@ include_client_schema!("tests/fixtures/transport_rpc.cstack");
 
 #[tokio::test]
 async fn rpc_client_widget_list_get_create_update_delete_round_trip() {
-    let (base_url, _server) = spawn_server().await;
+    let (base_url, _server, _captured) = spawn_server().await;
     let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec);
     let client = cratestack_schema::client::Client::new(runtime);
 
@@ -89,7 +90,7 @@ async fn rpc_client_widget_list_get_create_update_delete_round_trip() {
 
 #[tokio::test]
 async fn rpc_client_unary_procedure_round_trip() {
-    let (base_url, _server) = spawn_server().await;
+    let (base_url, _server, _captured) = spawn_server().await;
     let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec);
     let client = cratestack_schema::client::Client::new(runtime);
 
@@ -119,7 +120,7 @@ async fn rpc_client_unary_procedure_round_trip() {
 
 #[tokio::test]
 async fn rpc_client_sequence_procedure_streams_each_item() {
-    let (base_url, _server) = spawn_server().await;
+    let (base_url, _server, _captured) = spawn_server().await;
     let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec);
     let client = cratestack_schema::client::Client::new(runtime);
 
@@ -237,16 +238,112 @@ async fn rpc_client_batch_per_frame_error_does_not_poison_other_frames() {
     assert_eq!(echoed.nonce, "after-error");
 }
 
+#[tokio::test]
+async fn rpc_client_get_view_puts_selection_on_the_wire() {
+    let (base_url, _server, captured) = spawn_server().await;
+    let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec);
+    let client = cratestack_schema::client::Client::new(runtime);
+
+    // `get_view` sends a projection (SelectionQuery carries fields/include/includeFields).
+    let selection = cratestack::SelectionQuery {
+        fields: vec!["id".to_owned()],
+        includes: vec![],
+        include_fields: std::collections::BTreeMap::new(),
+    };
+    let result = client
+        .widgets()
+        .get_view(&1, &selection)
+        .await
+        .expect("get_view should succeed");
+    // SelectionQuery's Output is serde_json::Value, so check it as JSON.
+    assert!(
+        result.get("id").is_some(),
+        "result should contain the id field"
+    );
+
+    // The decisive assertion: inspect the CAPTURED request body the mock
+    // server actually decoded off the wire, not just the response. A
+    // client that silently stops sending `fields` would still make the
+    // response-only assertion above pass — this is the part of the test
+    // that catches that regression.
+    {
+        let requests = captured
+            .lock()
+            .expect("capture lock should not be poisoned");
+        assert_eq!(
+            requests.len(),
+            1,
+            "get_view should have sent exactly one request so far, got {requests:?}"
+        );
+        let body = &requests[0];
+        assert_eq!(
+            body.get("fields"),
+            Some(&serde_json::json!(["id"])),
+            "get_view must put the projection's selected fields on the wire, got {body:?}"
+        );
+        assert!(
+            body.get("include").is_none(),
+            "get_view sent no `include`s — the key should be entirely absent \
+             (skip_serializing_if), got {body:?}"
+        );
+        assert!(
+            body.get("include_fields").is_none(),
+            "get_view sent no `includeFields` — the key should be entirely absent \
+             (skip_serializing_if), got {body:?}"
+        );
+        assert!(
+            body.get("computedParams").is_none(),
+            "get_view carries no computedParams — the key should be entirely absent \
+             (skip_serializing_if), got {body:?}"
+        );
+    }
+
+    // Also verify that plain `get(&...)` continues to send no fields key
+    // on the wire — RpcPkInput-shaped, not RpcGetInput. Byte-compat guard:
+    // the plain-get path must not regress into always sending `fields`.
+    let widget = client.widgets().get(&1).await.expect("get should succeed");
+    assert_eq!(widget.id, 1);
+
+    {
+        let requests = captured
+            .lock()
+            .expect("capture lock should not be poisoned");
+        assert_eq!(
+            requests.len(),
+            2,
+            "plain get() should have sent a second request, got {requests:?}"
+        );
+        let body = &requests[1];
+        assert_eq!(body.get("id"), Some(&serde_json::json!(1)));
+        assert!(
+            body.get("fields").is_none(),
+            "plain get() must not send a `fields` key (RpcPkInput-shaped), got {body:?}"
+        );
+    }
+}
+
 // -----------------------------------------------------------------------------
 // Mock server — canned `/rpc/...` responses for each op.
 // -----------------------------------------------------------------------------
 
 const CBOR_SEQ: &str = "application/cbor-seq";
 
-async fn spawn_server() -> (url::Url, tokio::task::JoinHandle<()>) {
+/// Request bodies the mock server actually decoded off the wire, in
+/// arrival order. `handle_widget_get` pushes into this so tests can
+/// assert on what the client *sent*, not just what it received back —
+/// a response-only assertion can't distinguish "the client sent the
+/// projection" from "the client sent nothing and the server ignored it".
+type CapturedBodies = Arc<Mutex<Vec<serde_json::Value>>>;
+
+async fn spawn_server() -> (url::Url, tokio::task::JoinHandle<()>, CapturedBodies) {
+    let captured: CapturedBodies = Arc::new(Mutex::new(Vec::new()));
+    let captured_for_get = captured.clone();
     let app = Router::new()
         .route("/rpc/model.Widget.list", post(handle_widget_list))
-        .route("/rpc/model.Widget.get", post(handle_widget_get))
+        .route(
+            "/rpc/model.Widget.get",
+            post(move |body: Bytes| handle_widget_get(body, captured_for_get.clone())),
+        )
         .route("/rpc/model.Widget.create", post(handle_widget_create))
         .route("/rpc/model.Widget.update", post(handle_widget_update))
         .route("/rpc/model.Widget.delete", post(handle_widget_delete))
@@ -264,6 +361,7 @@ async fn spawn_server() -> (url::Url, tokio::task::JoinHandle<()>) {
     (
         url::Url::parse(&format!("http://{addr}")).expect("base url parses"),
         handle,
+        captured,
     )
 }
 
@@ -293,11 +391,32 @@ async fn handle_widget_list(_body: Bytes) -> Response<Body> {
     cbor_response(StatusCode::OK, &vec![widget(1, "Alpha"), widget(2, "Beta")])
 }
 
-async fn handle_widget_get(body: Bytes) -> Response<Body> {
-    // Decode the RpcPkInput wrapper to verify the client sent the right shape.
-    let input: cratestack::rpc::RpcPkInput<i64> =
-        CborCodec.decode(&body).expect("decode RpcPkInput");
-    assert_eq!(input.id, 1, "client should have wrapped id in RpcPkInput");
+async fn handle_widget_get(body: Bytes, captured: CapturedBodies) -> Response<Body> {
+    // Capture the raw decoded body BEFORE anything else, so tests can
+    // assert on exactly what was on the wire (which keys were present,
+    // not just whether decoding into a superset type happened to work).
+    let raw: serde_json::Value = CborCodec.decode(&body).expect("decode body as JSON value");
+    captured
+        .lock()
+        .expect("capture lock should not be poisoned")
+        .push(raw);
+
+    widget_get_response(&body)
+}
+
+/// The actual `model.Widget.get` response logic, with no capture sink —
+/// shared by [`handle_widget_get`] (used where tests inspect what was
+/// sent) and [`spawn_batch_server`]'s per-op route (present only so a
+/// misrouted batch payload 404s visibly; nothing ever reads a capture
+/// there, so it gets none instead of a `CapturedBodies` built and
+/// immediately discarded).
+fn widget_get_response(body: &Bytes) -> Response<Body> {
+    // The get op can receive either RpcPkInput (from ungated `get(&id)`)
+    // or RpcGetInput (from `get_view(&id, &projection)`). Decoding as
+    // RpcGetInput works for both: every field but `id` is `#[serde(default)]`.
+    let input: cratestack::rpc::RpcGetInput<i64> =
+        CborCodec.decode(body).expect("decode RpcGetInput");
+    assert_eq!(input.id, 1, "client should have sent id=1");
     cbor_response(StatusCode::OK, &widget(1, "Alpha"))
 }
 
@@ -388,11 +507,18 @@ async fn handle_proc_many_pings(headers: HeaderMap, body: Bytes) -> Response<Bod
 // -----------------------------------------------------------------------------
 
 async fn spawn_batch_server() -> (url::Url, tokio::task::JoinHandle<()>) {
+    // Per-op `/rpc/model.Widget.get` route below is present so a misrouted
+    // batch payload still 404s visibly rather than mysteriously hanging —
+    // the batch route (`handle_batch`) is what actually serves `.get(...)`
+    // calls queued through `client.batch()`, not this per-op route. It uses
+    // the non-capturing `widget_get_response` directly: no test here
+    // inspects what was sent, so no `CapturedBodies` sink is built.
     let app = Router::new()
-        // Per-op routes — present so a misrouted batch payload still 404s
-        // visibly rather than mysteriously hanging.
         .route("/rpc/model.Widget.list", post(handle_widget_list))
-        .route("/rpc/model.Widget.get", post(handle_widget_get))
+        .route(
+            "/rpc/model.Widget.get",
+            post(|body: Bytes| async move { widget_get_response(&body) }),
+        )
         .route("/rpc/model.Widget.create", post(handle_widget_create))
         .route("/rpc/model.Widget.update", post(handle_widget_update))
         .route("/rpc/model.Widget.delete", post(handle_widget_delete))
@@ -426,8 +552,8 @@ fn dispatch_frame(req: cratestack::rpc::RpcRequest) -> cratestack::rpc::RpcRespo
 
     match req.op.as_str() {
         "model.Widget.get" => {
-            let input: cratestack::rpc::RpcPkInput<i64> =
-                serde_json::from_value(req.input).expect("decode RpcPkInput");
+            let input: cratestack::rpc::RpcGetInput<i64> =
+                serde_json::from_value(req.input).expect("decode RpcGetInput");
             if input.id == 1 {
                 let value = serde_json::to_value(widget(1, "Alpha")).expect("encode widget");
                 RpcResponseFrame {

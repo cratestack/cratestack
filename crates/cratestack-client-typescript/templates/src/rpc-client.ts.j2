@@ -34,17 +34,15 @@ export class {{ client_class_name }} {
 }
 
 {% for model in models %}
-{% if model.computed_params_interface %}
-/** Extends {@link CratestackRpcCallOptions} with the typed `computedParams`
- *  option for `{{ model.api_name }}.get` (`docs/design/computed-fields.md`)
- *  — {{ model.name }} declares at least one parameterized
- *  `@computed(params: <Type>?)` field, so (unlike a model with none) it
- *  gets this option, rather than the bare `CratestackRpcCallOptions`. */
 export interface {{ model.api_name }}GetOptions extends CratestackRpcCallOptions {
+  fields?: string[];
+  include?: string[];
+  includeFields?: Record<string, string[]>;
+{% if model.computed_params_interface %}
   computedParams?: {{ model.computed_params_interface }};
+{% endif %}
 }
 
-{% endif %}
 export class {{ model.api_name }} {
   constructor(private readonly runtime: CratestackRpcRuntime) {}
 
@@ -56,25 +54,30 @@ export class {{ model.api_name }} {
     ).then((value) => {% if model.is_paged %}revivePagedDecimalFields{% else %}reviveDecimalFields{% endif %}(value, '{{ model.decimal_shape_name }}') as {{ model.list_return_type }});
   }
 
-{% if model.computed_params_interface %}
   get(id: {{ model.primary_key_type }}, options: {{ model.api_name }}GetOptions = {}): Promise<{{ model.name }}> {
+    const input: Record<string, unknown> = { id };
+    if (options.fields?.length) {
+      input.fields = options.fields;
+    }
+    if (options.include?.length) {
+      input.include = options.include;
+    }
+    if (options.includeFields && Object.keys(options.includeFields).length > 0) {
+      // snake_case on purpose: mirrors toRpcListInput and RpcGetInput.include_fields,
+      // which carry no camelCase rename on the wire.
+      input.include_fields = options.includeFields;
+    }
+{% if model.computed_params_interface %}
+    if (options.computedParams && Object.keys(options.computedParams as Record<string, unknown>).length > 0) {
+      input.computedParams = JSON.stringify(options.computedParams);
+    }
+{% endif %}
     return this.runtime.call<Record<string, unknown>, unknown>(
       "model.{{ model.name }}.get",
-      options.computedParams && Object.keys(options.computedParams as Record<string, unknown>).length > 0
-        ? { id, computedParams: JSON.stringify(options.computedParams) }
-        : { id },
+      input,
       options,
     ).then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model.name }});
   }
-{% else %}
-  get(id: {{ model.primary_key_type }}, options: CratestackRpcCallOptions = {}): Promise<{{ model.name }}> {
-    return this.runtime.call<{ id: {{ model.primary_key_type }} }, unknown>(
-      "model.{{ model.name }}.get",
-      { id },
-      options,
-    ).then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model.name }});
-  }
-{% endif %}
 
 {% if model.allows_create %}
   create(input: {{ model.create_input_name }}, options: CratestackRpcCallOptions = {}): Promise<{{ model.name }}> {

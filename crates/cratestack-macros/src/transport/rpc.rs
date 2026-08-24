@@ -153,7 +153,7 @@ pub(crate) fn generate_model_rpc_dispatch_arms(model: &Model) -> Vec<proc_macro2
                     Ok(input) => input,
                     Err(error) => return rpc_dispatch_error(&state, &headers, error),
                 };
-                let raw_query = ::cratestack::rpc::synthesize_get_query(input.computed_params.as_deref());
+                let raw_query = ::cratestack::rpc::synthesize_get_query(&input);
                 #get_dispatch(
                     model_state,
                     CanonicalRequest {

@@ -32,18 +32,38 @@ pub struct RpcPkInput<Pk> {
 
 /// RPC input for `model.<X>.get`. Deliberately its own struct rather than
 /// reusing [`RpcPkInput`] for both get and delete: `delete` also decodes
-/// `RpcPkInput`, and adding `computedParams` there would be a silently-
-/// ignored field on a verb that has no response body to carry resolved
-/// values into.
+/// `RpcPkInput`, and adding selection fields there would be a silently-
+/// ignored surface on a verb that has no response body to carry projections into.
+/// Carries the same selection surface as REST `GET /<plural>/{id}` — `fields`,
+/// `include`, and `includeFields` (line-for-line parity; on `transport rpc` the
+/// RPC dispatcher synthesizes a URL query string from these fields and runs the
+/// macro-generated `parse_model_fetch_query` parser to enforce selection validation
+/// and projection in one path).
 ///
-/// An old `{"id": 1}` frame (no `computedParams` key) decodes unchanged
-/// under `#[serde(default)]`, and a new client that leaves
-/// `computed_params` unset emits a byte-identical frame — this is the
-/// additive-`#[serde(default)]` shape `docs/design/rpc-transport.md` §7
-/// blesses as not requiring a snapshot-format-version bump.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// All optional fields are additive with `#[serde(default)]` — an old `{"id": 1}`
+/// frame still decodes unchanged; a new client leaving all four unset emits a
+/// byte-identical frame; no snapshot-format-version bump. The type's
+/// `#[derive(Default)]` generates `impl<Pk: Default> Default`, so the bound lands
+/// on the impl and non-`Default` PK types are unaffected.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RpcGetInput<Pk> {
     pub id: Pk,
+    /// Selection fields (`?fields=a,b,c`). Same field, same wire name,
+    /// same semantics as [`RpcListInput::fields`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fields: Option<Vec<String>>,
+    /// Included relations (`?include=author,comments`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include: Option<Vec<String>>,
+    /// Fields per included relation (`?includeFields[author]=id,name`).
+    /// Wire key is the snake_case `include_fields`, NOT `includeFields`
+    /// — matching [`RpcListInput::include_fields`], which carries no
+    /// `rename` either. Deliberate: the TypeScript client already emits
+    /// `include_fields` for the list frame
+    /// (`rpc-queries.ts.j2`'s `toRpcListInput`), so renaming here would
+    /// make get and list disagree.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub include_fields: std::collections::BTreeMap<String, Vec<String>>,
     /// Raw JSON-object text, same field and semantics as
     /// [`RpcListInput::computed_params`] — see that field's doc comment
     /// for why this carries a `String` rather than `serde_json::Value`.

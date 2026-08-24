@@ -22,10 +22,8 @@
 use cratestack_core::{Field, Model, computed_params_type_name};
 use quote::quote;
 
+use crate::builder::{BuilderField, generate_builder};
 use crate::shared::ident;
-
-#[cfg(test)]
-mod tests;
 
 /// A model's `@computed(params: <Type>?)` fields, declaration order.
 /// Strictly narrower than `crate::shared::computed_model_fields` (which
@@ -85,6 +83,24 @@ pub(super) fn generate_model_computed_params_struct(
         })
         .collect();
 
+    // Every field is `Option<super::types::<P>>`, so no field is
+    // required and the emitted builder is non-generic — the same shape
+    // `{Model}Where` gets (`crate::model::find_many_where`). This is the
+    // one generated object that shipped without the builder every other
+    // generated object has had since #656.
+    let builder_fields: Vec<BuilderField> = field_idents
+        .iter()
+        .zip(params_type_idents.iter())
+        .map(|(field_ident, params_type_ident)| {
+            BuilderField::new(
+                field_ident.clone(),
+                quote! { ::core::option::Option<super::types::#params_type_ident> },
+                false,
+            )
+        })
+        .collect();
+    let builder = generate_builder(&struct_ident, &builder_fields);
+
     Some(quote! {
         /// Typed `?computedParams=` (REST) / RPC `computedParams` payload
         /// for this model's parameterized `@computed` fields — one
@@ -118,5 +134,12 @@ pub(super) fn generate_model_computed_params_struct(
                 )
             }
         }
+
+        #builder
     })
 }
+
+#[cfg(test)]
+mod builder_tests;
+#[cfg(test)]
+mod tests;

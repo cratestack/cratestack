@@ -125,10 +125,19 @@ pub(crate) fn build_model_api(model: &Model) -> ModelApiView {
         .fields
         .iter()
         .filter_map(|field| {
-            computed_params_type_name(field).map(|params_type| ComputedParamsFieldView {
-                identifier: dart_identifier(&field.name),
-                wire_name: field.name.clone(),
-                params_type: params_type.to_owned(),
+            computed_params_type_name(field).map(|params_type| {
+                let identifier = dart_identifier(&field.name);
+                let builder_setter = if identifier == "build" {
+                    "setBuild".to_owned()
+                } else {
+                    identifier.clone()
+                };
+                ComputedParamsFieldView {
+                    identifier,
+                    wire_name: field.name.clone(),
+                    params_type: params_type.to_owned(),
+                    builder_setter,
+                }
             })
         })
         .collect();

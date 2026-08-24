@@ -1,7 +1,7 @@
-//! Reverse mapping: `RpcListInput` / `computedParams` → URL query string
+//! Reverse mapping: `RpcListInput` / `RpcGetInput` → URL query string
 //! for the existing list/fetch handlers' parsers.
 
-use cratestack_core::rpc::RpcListInput;
+use cratestack_core::rpc::{RpcGetInput, RpcListInput};
 
 /// Synthesize a URL query string from an [`RpcListInput`] in exactly the
 /// shape the macro-generated `parse_model_list_query` parses. Returns
@@ -51,20 +51,33 @@ pub fn synthesize_list_query(input: &RpcListInput) -> Option<String> {
     )
 }
 
-/// Synthesize a URL query string carrying only `computedParams=<...>` for
-/// `model.<X>.get` RPC dispatch, in the shape the macro-generated
-/// `parse_model_fetch_query` parses. Unlike [`synthesize_list_query`] this
-/// must emit *nothing else* — `parse_model_fetch_query` hard-rejects any
-/// key it doesn't recognize
-/// (`crates/cratestack-macros/src/axum/shared_support.rs`), and `get`'s
-/// RPC input (`RpcGetInput`) carries no other query-shaped fields (no
-/// `fields`/`include` — see `docs/design/rpc-transport.md` §3.1a for why
-/// that's a deliberate scope limit, not an oversight).
-pub fn synthesize_get_query(computed_params: Option<&str>) -> Option<String> {
-    let computed_params = computed_params?;
+/// Synthesize a URL query string from an [`RpcGetInput`] in exactly the
+/// shape the macro-generated `parse_model_fetch_query` parses — the
+/// direct `get` counterpart to [`synthesize_list_query`], so RPC `get`
+/// and REST `GET /<plural>/{id}` run one and the same validation and
+/// projection path. Returns `None` when no field is set.
+pub fn synthesize_get_query<Pk>(input: &RpcGetInput<Pk>) -> Option<String> {
+    let mut pairs: Vec<(String, String)> = Vec::new();
+    if let Some(fields) = &input.fields {
+        pairs.push(("fields".to_owned(), fields.join(",")));
+    }
+    if let Some(include) = &input.include {
+        pairs.push(("include".to_owned(), include.join(",")));
+    }
+    for (relation, fields) in &input.include_fields {
+        pairs.push((format!("includeFields[{relation}]"), fields.join(",")));
+    }
+    if let Some(computed_params) = &input.computed_params {
+        pairs.push(("computedParams".to_owned(), computed_params.clone()));
+    }
+
+    if pairs.is_empty() {
+        return None;
+    }
+
     Some(
         url::form_urlencoded::Serializer::new(String::new())
-            .append_pair("computedParams", computed_params)
+            .extend_pairs(pairs.iter().map(|(k, v)| (k.as_str(), v.as_str())))
             .finish(),
     )
 }

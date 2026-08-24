@@ -1,7 +1,8 @@
-//! `computedParams` over the RPC transport for model reads
+//! `computedParams` and full selection surface (`fields`, `include`,
+//! `includeFields`) over the RPC transport for model reads
 //! (`model.<X>.get`/`model.<X>.list`), and per-frame over `/rpc/batch` —
 //! Stage 1 of the plan in `docs/design/rpc-transport.md`'s `RpcGetInput`/
-//! `RpcListInput.computedParams` section.
+//! `RpcListInput` sections.
 //!
 //! `computed_fields_rpc.cstack`/`computed_fields_rpc.rs` already proves RPC
 //! composes computed fields on *procedure* outputs; this fixture is the
@@ -168,6 +169,7 @@ async fn rpc_get_with_computed_params_reflects_width() {
     let input = RpcGetInput {
         id: 1i64,
         computed_params: Some(r#"{"proxyUrl":{"width":800}}"#.to_owned()),
+        ..Default::default()
     };
     let body = JsonCodec.encode(&input).expect("get input should encode");
 
@@ -195,6 +197,7 @@ async fn rpc_get_without_computed_params_uses_default() {
     let input = RpcGetInput {
         id: 1i64,
         computed_params: None,
+        ..Default::default()
     };
     let body = JsonCodec.encode(&input).expect("get input should encode");
 
@@ -263,6 +266,7 @@ async fn rpc_get_rejects_computed_params_naming_a_bare_field() {
     let input = RpcGetInput {
         id: 1i64,
         computed_params: Some(r#"{"thumbnailUrl":{}}"#.to_owned()),
+        ..Default::default()
     };
     let body = JsonCodec.encode(&input).expect("get input should encode");
 
@@ -289,6 +293,7 @@ async fn rpc_get_rejects_malformed_computed_params_json() {
     let input = RpcGetInput {
         id: 1i64,
         computed_params: Some("not-json".to_owned()),
+        ..Default::default()
     };
     let body = JsonCodec.encode(&input).expect("get input should encode");
 

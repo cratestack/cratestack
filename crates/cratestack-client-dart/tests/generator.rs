@@ -418,6 +418,68 @@ model Image {
         computed_params_class.contains("int get hashCode"),
         "ImageComputedParams must carry a matching hashCode: {computed_params_class}"
     );
+
+    // The generated `ImageComputedParamsBuilder` fluent builder: every
+    // other generated data class gets the same builder pattern, so
+    // computed params should too.
+    assert!(
+        models.contains("class ImageComputedParamsBuilder {"),
+        "ImageComputedParams must get the same fluent builder every other generated \
+         data class gets: {models}"
+    );
+    assert!(
+        models.contains("ImageComputedParamsBuilder proxyUrl(ProxyParams? value) {"),
+        "the builder needs one setter per parameterized computed field: {models}"
+    );
+    assert!(
+        models.contains("ImageComputedParams build() {"),
+        "the builder needs its terminal build(): {models}"
+    );
+}
+
+/// Two *distinct* parameterized `@computed` fields on the same model — the
+/// N>1 case the single-field fixture above can't exercise. Both fields must
+/// get their own `ImageComputedParamsBuilder` setter, typed with their own
+/// declared params type.
+#[test]
+fn computed_params_builder_gets_a_setter_per_parameterized_field() {
+    let schema = parse_schema(
+        r#"
+type ProxyParams {
+  width Int?
+}
+
+type CaptionParams {
+  locale String?
+}
+
+model Image {
+  id Int @id
+  storageKey String
+  proxyUrl String @computed(params: ProxyParams?)
+  captionUrl String @computed(params: CaptionParams?)
+}
+"#,
+    )
+    .expect("two-parameterized-field model schema should parse");
+
+    let package = generate_package(&schema, &DartGeneratorConfig::default())
+        .expect("default template should render");
+
+    let models = package_file(&package, "lib/src/models.dart");
+
+    assert!(
+        models.contains("class ImageComputedParamsBuilder {"),
+        "ImageComputedParams must get the fluent builder: {models}"
+    );
+    assert!(
+        models.contains("ImageComputedParamsBuilder proxyUrl(ProxyParams? value) {"),
+        "the builder needs a proxyUrl setter: {models}"
+    );
+    assert!(
+        models.contains("ImageComputedParamsBuilder captionUrl(CaptionParams? value) {"),
+        "the builder needs a captionUrl setter: {models}"
+    );
 }
 
 /// Negative counterpart to

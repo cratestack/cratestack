@@ -88,6 +88,14 @@ void main() {{
     final unset = ImageComputedParams();
     expect(first, isNot(equals(unset)));
   }});
+
+  test('ImageComputedParamsBuilder builds a wire-equal instance', () {{
+    final built = ImageComputedParamsBuilder()
+        .proxyUrl(ProxyParams(width: 800))
+        .build();
+    expect(built, equals(ImageComputedParams(proxyUrl: ProxyParams(width: 800))));
+    expect(ImageComputedParamsBuilder().build(), equals(ImageComputedParams()));
+  }});
 }}
 "#
     )

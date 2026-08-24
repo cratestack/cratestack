@@ -34,6 +34,10 @@ const TEMPLATE_SOURCES: &[(&str, &str)] = &[
         include_str!("../../templates/model_builder_class.dart.j2"),
     ),
     (
+        "computed_params_builder_class.dart.j2",
+        include_str!("../../templates/computed_params_builder_class.dart.j2"),
+    ),
+    (
         "computed_params_class.dart.j2",
         include_str!("../../templates/computed_params_class.dart.j2"),
     ),
