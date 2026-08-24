@@ -218,10 +218,16 @@ fn omits_schema_sha_header_wiring_when_config_has_no_hash() {
     assert!(runtime.contains("if (cratestackSchemaSha256 != null)"));
 }
 
+/// `@custom` was removed in favor of `@computed`
+/// (`docs/design/computed-fields.md`) — a computed field on a `type`
+/// block is client-wire-visible like any other field (it's never a
+/// create/update input on its own, since a computed-bearing `type` is
+/// rejected as a procedure argument type at parse time), so it needs no
+/// special-casing in the generated Dart class at all.
 #[test]
-fn preserves_custom_fields_on_generated_types() {
+fn preserves_computed_fields_on_generated_types() {
     let schema = cratestack_parser::parse_schema_file(
-        "../cratestack-pg/tests/fixtures/custom_fields.cstack",
+        "../cratestack-pg/tests/fixtures/computed_fields.cstack",
     )
     .expect("fixture schema should parse");
 
@@ -233,6 +239,155 @@ fn preserves_custom_fields_on_generated_types() {
     assert!(models.contains("required this.thumbnailUrl,"));
     assert!(models.contains("final String thumbnailUrl;"));
     assert!(models.contains("'thumbnailUrl': thumbnailUrl,"));
+    // The parameterized computed field (`proxyUrl String @computed(params:
+    // ProxyParams?)`) is exactly as ordinary a field as `thumbnailUrl` on
+    // the wire — its params type only affects the server-side resolver
+    // signature and the `computedParams` query parameter on model
+    // get/list calls, neither of which a bare `type` class has.
+    assert!(models.contains("required this.proxyUrl,"));
+    assert!(models.contains("final String proxyUrl;"));
+    assert!(models.contains("'proxyUrl': proxyUrl,"));
+}
+
+/// A `model` computed field (`docs/design/computed-fields.md`) is part of
+/// the response shape but is never a create/update input, filter, or sort
+/// key — and a *parameterized* computed field's presence unlocks the
+/// optional `computedParams` parameter on `get`/`list`. Bare `@computed`
+/// (no params type) does NOT unlock it — the server 422s a `computedParams`
+/// key that doesn't name a parameterized field, so a model with only bare
+/// computed fields must never be offered the parameter in the first place
+/// (see [`bare_computed_field_does_not_unlock_computed_params_on_reads`]
+/// for that negative case).
+#[test]
+fn model_computed_field_is_response_only_and_unlocks_computed_params_on_reads() {
+    let schema = parse_schema(
+        r#"
+type ProxyParams {
+  width Int?
+}
+
+model Image {
+  id Int @id
+  storageKey String
+  proxyUrl String @computed(params: ProxyParams?)
+}
+"#,
+    )
+    .expect("computed-field model schema should parse");
+
+    let package = generate_package(&schema, &DartGeneratorConfig::default())
+        .expect("default template should render");
+
+    let models = package_file(&package, "lib/src/models.dart");
+    let apis = package_file(&package, "lib/src/apis.dart");
+
+    // Response class: computed field present exactly like any other
+    // field (`ProjectionModel` kind forces every field nullable).
+    assert!(models.contains("class Image {"), "models.dart:\n{models}");
+    assert!(
+        models.contains("String? get proxyUrl") || models.contains("final String? proxyUrl;"),
+        "Image response class must carry proxyUrl: {models}"
+    );
+
+    // Create input: computed field excluded entirely.
+    let create_start = models
+        .find("class CreateImageInput ")
+        .expect("CreateImageInput class should exist");
+    let create_end = models[create_start..]
+        .find("\nclass CreateImageInputBuilder")
+        .map(|offset| create_start + offset)
+        .unwrap_or(models.len());
+    let create_class = &models[create_start..create_end];
+    assert!(
+        create_class.contains("storageKey"),
+        "CreateImageInput must keep the ordinary field: {create_class}"
+    );
+    assert!(
+        !create_class.contains("proxyUrl"),
+        "CreateImageInput must never carry a computed field: {create_class}"
+    );
+
+    // Update input: same exclusion.
+    let update_start = models
+        .find("class UpdateImageInput ")
+        .expect("UpdateImageInput class should exist");
+    let update_end = models[update_start..]
+        .find("\nclass UpdateImageInputBuilder")
+        .map(|offset| update_start + offset)
+        .unwrap_or(models.len());
+    let update_class = &models[update_start..update_end];
+    assert!(
+        !update_class.contains("proxyUrl"),
+        "UpdateImageInput must never carry a computed field: {update_class}"
+    );
+
+    // Where/sort: computed field excluded — `ImageWhere` still exists
+    // (storageKey is filterable), but never mentions proxyUrl; the sort
+    // field enum never carries a proxyUrl variant either.
+    assert!(
+        models.contains("class ImageWhere "),
+        "ImageWhere should still exist for the ordinary filterable field: {models}"
+    );
+    let where_start = models.find("class ImageWhere ").unwrap();
+    let where_end = models[where_start..]
+        .find("\nclass ImageWhereBuilder")
+        .map(|offset| where_start + offset)
+        .unwrap_or(models.len());
+    assert!(
+        !models[where_start..where_end].contains("proxyUrl"),
+        "ImageWhere must never carry a computed field: {}",
+        &models[where_start..where_end]
+    );
+    assert!(
+        !models.contains("proxyUrl('proxyUrl')"),
+        "ImageSortField must never carry a computed field variant: {models}"
+    );
+
+    // `get`/`list` both accept the escape-hatch `computedParams` map and
+    // fold it into the request's query parameters via the shared runtime
+    // helper — see `rest-runtime.dart.j2`'s `cratestackWithComputedParams`.
+    assert!(
+        apis.contains("Map<String, Object?>? computedParams,"),
+        "ImageApi.get/list must accept computedParams: {apis}"
+    );
+    assert!(
+        apis.contains(
+            "queryParameters: cratestackWithComputedParams(query?.toQueryParameters(), computedParams),"
+        ),
+        "ImageApi.get/list must fold computedParams into the request's query parameters: {apis}"
+    );
+}
+
+/// Negative counterpart to
+/// [`model_computed_field_is_response_only_and_unlocks_computed_params_on_reads`]:
+/// a model whose only computed field is bare `@computed` (no params type)
+/// must NOT be offered the `computedParams` parameter at all — the server
+/// 422s a `computedParams` key naming a field with no params type, so
+/// accepting the parameter here would only ever produce a request that
+/// fails.
+#[test]
+fn bare_computed_field_does_not_unlock_computed_params_on_reads() {
+    let schema = parse_schema(
+        r#"
+model Image {
+  id Int @id
+  storageKey String
+  label String @computed
+}
+"#,
+    )
+    .expect("bare computed-field model schema should parse");
+
+    let package = generate_package(&schema, &DartGeneratorConfig::default())
+        .expect("default template should render");
+
+    let apis = package_file(&package, "lib/src/apis.dart");
+
+    assert!(
+        !apis.contains("computedParams"),
+        "ImageApi.get/list must not accept computedParams for a model with only bare \
+         `@computed` fields: {apis}"
+    );
 }
 
 /// Regression test for issue #137 — a `type` block field referencing a

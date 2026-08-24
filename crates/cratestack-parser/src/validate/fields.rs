@@ -5,56 +5,9 @@ use cratestack_core::{Field, TypeArity};
 use crate::diagnostics::{SchemaError, span_error};
 use crate::validate::reserved_idents::validate_reserved_identifier;
 
-#[derive(Clone, Copy)]
-pub(super) enum CustomFieldSupport {
-    Rejected,
-    TypeOnly,
-}
-
-pub(super) fn validate_custom_field_attribute(
-    field: &Field,
-    owner_kind: &str,
-    owner_name: &str,
-    support: CustomFieldSupport,
-) -> Result<(), SchemaError> {
-    let mut custom_count = 0usize;
-    for attribute in &field.attributes {
-        if !attribute.raw.starts_with("@custom") {
-            continue;
-        }
-        custom_count += 1;
-        if attribute.raw != "@custom" {
-            return Err(span_error(
-                format!(
-                    "field `{}` on {} `{}` uses unsupported custom field directive `{}`; use bare `@custom` in this slice",
-                    field.name, owner_kind, owner_name, attribute.raw,
-                ),
-                field.span,
-            ));
-        }
-        if matches!(support, CustomFieldSupport::Rejected) {
-            return Err(span_error(
-                format!(
-                    "field `{}` on {} `{}` cannot use `@custom`; resolver-backed custom fields are currently only supported on `type` declarations",
-                    field.name, owner_kind, owner_name,
-                ),
-                field.span,
-            ));
-        }
-    }
-
-    if custom_count > 1 {
-        return Err(span_error(
-            format!(
-                "field `{}` on {} `{}` declares `@custom` more than once",
-                field.name, owner_kind, owner_name,
-            ),
-            field.span,
-        ));
-    }
-
-    Ok(())
-}
+// `ComputedFieldSupport`/`validate_computed_field_attribute` moved to
+// `super::computed_attribute` (200-LoC file-ceiling split) — call sites
+// (`models`, `mixins_types`, `views`) import from there directly now.
 
 /// Reject `@readonly` / `@server_only` declared on the primary-key field —
 /// PKs are server-controlled anyway and the combination is a likely typo.

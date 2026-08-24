@@ -8,6 +8,8 @@ mod route_attrs;
 #[cfg(test)]
 mod tests;
 
+use std::collections::BTreeSet;
+
 use cratestack_core::{Procedure, TypeArity};
 use quote::quote;
 
@@ -22,6 +24,7 @@ use route_attrs::{
 
 pub(crate) fn generate_procedure_axum_handler(
     procedure: &Procedure,
+    bearing: &BTreeSet<String>,
 ) -> Result<proc_macro2::TokenStream, String> {
     let handler_ident = ident(&format!("handle_{}", to_snake_case(&procedure.name)));
     let dispatch_ident = ident(&format!(
@@ -47,19 +50,21 @@ pub(crate) fn generate_procedure_axum_handler(
         &success_status,
         &result_encoder,
         &deprecation_header,
+        bearing,
     );
 
     Ok(quote! {
         // REST mount (`transport rest` / the `/$procs/<name>` route): the
         // canonical request identity IS the REST route path.
-        async fn #handler_ident<R, C, Auth>(
-            State(state): State<ProcedureRouterState<R, C, Auth>>,
+        async fn #handler_ident<R, CR, C, Auth>(
+            State(state): State<ProcedureRouterState<R, CR, C, Auth>>,
             headers: HeaderMap,
             client_ip_ctx: ClientIpContext,
             body: Bytes,
         ) -> Response
         where
             R: super::procedures::ProcedureRegistry,
+            CR: super::computed::ComputedFieldResolver,
             C: HttpTransport,
             Auth: ::cratestack::AuthProvider,
         {
@@ -85,8 +90,8 @@ pub(crate) fn generate_procedure_axum_handler(
         // passes `POST /rpc/procedure.<name>` with the raw frame bytes so on
         // `transport rpc` the actual rpc request is the single canonical for
         // url, dispatch, signing, and logs — `/$procs/*` never appears.
-        pub(super) async fn #dispatch_ident<R, C, Auth>(
-            state: ProcedureRouterState<R, C, Auth>,
+        pub(super) async fn #dispatch_ident<R, CR, C, Auth>(
+            state: ProcedureRouterState<R, CR, C, Auth>,
             canonical: CanonicalRequest<'_>,
             headers: HeaderMap,
             client_ip_ctx: ClientIpContext,
@@ -94,6 +99,7 @@ pub(crate) fn generate_procedure_axum_handler(
         ) -> Response
         where
             R: super::procedures::ProcedureRegistry,
+            CR: super::computed::ComputedFieldResolver,
             C: HttpTransport,
             Auth: ::cratestack::AuthProvider,
         {

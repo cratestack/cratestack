@@ -15,7 +15,7 @@ use cratestack_core::Field;
 use cratestack_core::Model;
 
 use crate::idents::dart_identifier;
-use crate::naming::scalar_model_fields;
+use crate::naming::{is_computed_field, scalar_model_fields};
 use crate::views::{DataClassView, EnumVariantView, EnumView, FieldView};
 
 /// Same 8 types `cratestack-macros`'s `find_many_where.rs` (and its
@@ -53,6 +53,10 @@ pub(crate) fn build_where_data_class(
 ) -> Option<DataClassView> {
     let fields = scalar_model_fields(model, model_names)
         .into_iter()
+        // `@computed` fields are never filterable — resolved at response
+        // time, they never live in a column the server's `?where=` route
+        // can query (`docs/design/computed-fields.md`).
+        .filter(|field| !is_computed_field(field))
         .filter(|field| is_filterable_scalar(field))
         .collect::<Vec<_>>();
     if fields.is_empty() {
@@ -96,6 +100,9 @@ pub(crate) fn build_sort_field_enum(model: &Model, model_names: &BTreeSet<&str>)
         name: format!("{}SortField", model.name),
         variants: scalar_model_fields(model, model_names)
             .into_iter()
+            // `@computed` fields are never sortable, same reasoning as
+            // `build_where_data_class` above.
+            .filter(|field| !is_computed_field(field))
             .map(|field| EnumVariantView {
                 identifier: dart_identifier(&field.name),
                 wire_name: field.name.clone(),

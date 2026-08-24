@@ -20,18 +20,20 @@ pub(super) fn build_update_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenSt
     let update_if_match_apply = &p.update_if_match_apply;
     let update_etag_extract = &p.update_etag_extract;
     let update_etag_apply = &p.update_etag_apply;
+    let update_response_encode = build_update_response_encode(p);
 
     quote! {
         // REST mount (`PATCH /<plural>/{id}`): canonical request identity is the REST
         // route path `/<plural>/<id>`.
-        async fn #update_handler_ident<C, Auth>(
-            State(state): State<ModelRouterState<C, Auth>>,
+        async fn #update_handler_ident<CR, C, Auth>(
+            State(state): State<ModelRouterState<CR, C, Auth>>,
             headers: HeaderMap,
             Path(id): Path<#primary_key_type>,
             client_ip_ctx: ClientIpContext,
             body: Bytes,
         ) -> Response
         where
+            CR: super::computed::ComputedFieldResolver,
             C: HttpTransport,
             Auth: ::cratestack::AuthProvider,
         {
@@ -60,8 +62,8 @@ pub(super) fn build_update_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenSt
         // carries the codec-encoded patch the update logic consumes; on RPC that
         // is the re-encoded `patch` while `canonical.body` is the full frame.
         // `id` is still used for the update.
-        pub(super) async fn #update_dispatch_ident<C, Auth>(
-            state: ModelRouterState<C, Auth>,
+        pub(super) async fn #update_dispatch_ident<CR, C, Auth>(
+            state: ModelRouterState<CR, C, Auth>,
             canonical: CanonicalRequest<'_>,
             headers: HeaderMap,
             client_ip_ctx: ClientIpContext,
@@ -69,6 +71,7 @@ pub(super) fn build_update_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenSt
             body: Bytes,
         ) -> Response
         where
+            CR: super::computed::ComputedFieldResolver,
             C: HttpTransport,
             Auth: ::cratestack::AuthProvider,
         {
@@ -96,10 +99,45 @@ pub(super) fn build_update_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenSt
 
             let result = state.db.#accessor_ident().update(id).set(input)#update_if_match_apply.run(&ctx).await;
 
+            // Etag capture reads the un-projected `record` (it needs the
+            // `@version` column, which `serialize_..._model_value` never
+            // sees), so it must happen before the models-with-computed-
+            // fields branch below consumes `result` into a
+            // `Result<ProjectedValue, _>`.
             #update_etag_extract
-            let mut response = ::cratestack::encode_transport_result_with_status_for(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, result);
+            #update_response_encode
             #update_etag_apply
             response
+        }
+    }
+}
+
+/// `update`'s success-path response encoding. Mirrors
+/// `handlers_crud::build_projected_response_tail` but can't reuse it
+/// directly: the `@version` ETag extraction above must run against the
+/// un-projected `Result<Model, _>` first, so this produces a `let mut
+/// response = ...;` statement rather than a final tail expression.
+fn build_update_response_encode(p: &ModelHandlerPrep) -> proc_macro2::TokenStream {
+    let serialize_model_value_ident = &p.serialize_model_value_ident;
+
+    if p.has_computed_fields {
+        quote! {
+            let result = match result {
+                Ok(record) => #serialize_model_value_ident(
+                    &state.db,
+                    &state.resolvers,
+                    &ctx,
+                    &record,
+                    &ModelSelectionQuery::default(),
+                    None,
+                ).await,
+                Err(error) => Err(error),
+            };
+            let mut response = ::cratestack::encode_transport_result_with_status_for(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, result);
+        }
+    } else {
+        quote! {
+            let mut response = ::cratestack::encode_transport_result_with_status_for(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, result);
         }
     }
 }

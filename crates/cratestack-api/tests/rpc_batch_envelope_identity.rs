@@ -105,6 +105,7 @@ fn build_router(auth: RecordingAuthProvider) -> cratestack::axum::Router {
     cratestack_schema::axum::rpc_router(
         db,
         Procedures,
+        (),
         CborCodec,
         auth,
         cratestack::DEFAULT_BODY_LIMIT_BYTES,

@@ -23,7 +23,7 @@ use crate::ir::{AddCheck, AddForeignKey, AddIndex, CheckKind, Column, ColumnArit
 use crate::naming::{check_name, column_name, index_name_unique, table_name};
 
 use checks::{check_kind_slug, collect_check_kinds, field_has_db_enforce};
-use fields::{field_has_unique, field_to_column, is_relation_field};
+use fields::{field_has_unique, field_to_column, is_computed_field, is_relation_field};
 use indexes::model_index_indexes;
 use relations::relation_foreign_key;
 use renames::{field_rename_from, model_rename_from};
@@ -118,6 +118,17 @@ pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
             if let Some(fk) = relation_foreign_key(field, schema, &table) {
                 foreign_keys.push(fk);
             }
+            continue;
+        }
+
+        if is_computed_field(field) {
+            // `@computed` fields are resolver-backed and response-time
+            // only (docs/design/computed-fields.md) — never stored, so
+            // they must never become a column. An existing DB column
+            // that happens to share a computed field's name is simply
+            // unrelated as far as diffing is concerned (normal
+            // dropped-from-schema semantics apply, same as any other
+            // column absent from the current projection).
             continue;
         }
 

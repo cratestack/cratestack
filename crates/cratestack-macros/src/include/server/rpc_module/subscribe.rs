@@ -8,9 +8,9 @@ use quote::quote;
 
 pub(super) fn build_subscribe_block(arms: &[proc_macro2::TokenStream]) -> proc_macro2::TokenStream {
     quote! {
-        async fn rpc_subscribe_dispatch<R, C, Auth>(
+        async fn rpc_subscribe_dispatch<R, CR, C, Auth>(
             ::cratestack::axum::extract::State(state):
-                ::cratestack::axum::extract::State<RpcRouterState<R, C, Auth>>,
+                ::cratestack::axum::extract::State<RpcRouterState<R, CR, C, Auth>>,
             ::cratestack::axum::extract::Path(op_id):
                 ::cratestack::axum::extract::Path<String>,
             headers: ::cratestack::axum::http::HeaderMap,
@@ -18,6 +18,7 @@ pub(super) fn build_subscribe_block(arms: &[proc_macro2::TokenStream]) -> proc_m
         ) -> ::cratestack::axum::response::Response
         where
             R: super::procedures::ProcedureRegistry,
+            CR: super::computed::ComputedFieldResolver,
             C: HttpTransport,
             Auth: ::cratestack::AuthProvider,
         {

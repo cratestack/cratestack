@@ -22,6 +22,7 @@ pub(super) fn build_axum_module(c: &ServerCollected, db: ServerDb) -> proc_macro
     let op_descriptor_entries = &c.op_descriptor_entries;
     let procedure_axum_handler_defs = &c.procedure_axum_handler_defs;
     let model_axum_handler_defs = &c.model_axum_handler_defs;
+    let compose_helpers = &c.compose_helpers;
     let procedure_axum_routes = &c.procedure_axum_routes;
     let axum_shared_support = generate_axum_shared_support();
     let rpc_module = super::rpc_module::build_rpc_module(
@@ -56,9 +57,10 @@ pub(super) fn build_axum_module(c: &ServerCollected, db: ServerDb) -> proc_macro
             use ::cratestack::axum::response::Response;
 
             #[derive(Clone)]
-            pub struct ProcedureRouterState<R, C, Auth> {
+            pub struct ProcedureRouterState<R, CR, C, Auth> {
                 pub db: super::Cratestack,
                 pub registry: R,
+                pub resolvers: CR,
                 pub codec: C,
                 pub auth_provider: Auth,
             }
@@ -127,25 +129,29 @@ pub(super) fn build_axum_module(c: &ServerCollected, db: ServerDb) -> proc_macro
                 #(#op_descriptor_entries,)*
             ];
 
+            #(#compose_helpers)*
             #(#procedure_axum_handler_defs)*
             #(#model_axum_handler_defs)*
 
             #model_router_fn
 
-            pub fn procedure_router<R, C, Auth>(
+            pub fn procedure_router<R, CR, C, Auth>(
                 db: super::Cratestack,
                 registry: R,
+                resolvers: CR,
                 codec: C,
                 auth_provider: Auth,
             ) -> axum::Router
             where
                 R: super::procedures::ProcedureRegistry,
+                CR: super::computed::ComputedFieldResolver,
                 C: HttpTransport,
                 Auth: AuthProvider,
             {
                 let state = ProcedureRouterState {
                     db,
                     registry,
+                    resolvers,
                     codec,
                     auth_provider,
                 };

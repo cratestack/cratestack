@@ -269,7 +269,8 @@ async fn db_backed_advanced_policy_enforcement() {
         cratestack::CratestackError::Forbidden(_)
     ));
 
-    let router = cratestack_schema::axum::model_router(cool, CborCodec, AdvancedPolicyAuthProvider);
+    let router =
+        cratestack_schema::axum::model_router(cool, (), CborCodec, AdvancedPolicyAuthProvider);
     let codec = CborCodec;
     let body = codec
         .encode(&cratestack_schema::UpdateAdvancedPostInput {

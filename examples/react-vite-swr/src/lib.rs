@@ -111,6 +111,7 @@ pub fn build_router(db: cratestack_schema::Cratestack) -> Router {
     let inner = cratestack_schema::axum::router(
         db,
         Procedures,
+        (),
         JsonCodec,
         HeaderAuthProvider,
         cratestack::DEFAULT_BODY_LIMIT_BYTES,

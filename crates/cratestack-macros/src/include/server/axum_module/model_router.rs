@@ -16,8 +16,9 @@ pub(super) fn build_state(db: ServerDb) -> Ts {
     match db {
         ServerDb::Postgres => quote! {
             #[derive(Clone)]
-            pub struct ModelRouterState<C, Auth> {
+            pub struct ModelRouterState<CR, C, Auth> {
                 pub db: super::Cratestack,
+                pub resolvers: CR,
                 pub codec: C,
                 pub auth_provider: Auth,
             }
@@ -29,17 +30,20 @@ pub(super) fn build_state(db: ServerDb) -> Ts {
 pub(super) fn build_fn(db: ServerDb, model_axum_routes: &[Ts]) -> Ts {
     match db {
         ServerDb::Postgres => quote! {
-            pub fn model_router<C, Auth>(
+            pub fn model_router<CR, C, Auth>(
                 db: super::Cratestack,
+                resolvers: CR,
                 codec: C,
                 auth_provider: Auth,
             ) -> axum::Router
             where
+                CR: super::computed::ComputedFieldResolver,
                 C: HttpTransport,
                 Auth: AuthProvider,
             {
                 let state = ModelRouterState {
                     db,
+                    resolvers,
                     codec,
                     auth_provider,
                 };

@@ -286,6 +286,73 @@ model AccountMembership {
     assert!(!migration.up.contains("PRIMARY KEY (subject)"));
 }
 
+/// `@computed` fields are resolver-backed and response-time only
+/// (`docs/design/computed-fields.md`) — they must never surface as a
+/// column in emitted DDL, the same way `@relation` virtual fields
+/// don't.
+#[test]
+fn computed_field_is_excluded_from_ddl() {
+    let prev = schema(&with_models(""));
+    let next = schema(&with_models(
+        r#"
+model Image {
+  id Int @id
+  storageKey String
+  proxyUrl String @computed
+}
+"#,
+    ));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
+    assert!(
+        migration.up.contains("CREATE TABLE images"),
+        "up was: {}",
+        migration.up
+    );
+    assert!(migration.up.contains("storage_key TEXT NOT NULL"));
+    assert!(
+        !migration.up.contains("proxy_url"),
+        "computed field must not become a column: {}",
+        migration.up
+    );
+}
+
+/// A pre-existing DB column that happens to share a computed field's
+/// name is unrelated to the schema's `@computed` field (which never
+/// produces a column) — normal "dropped from schema" diff semantics
+/// apply, since the diff engine's previous-schema side has no way to
+/// know that `proxy_url` was ever anything but an ordinary stored
+/// column.
+#[test]
+fn preexisting_column_matching_computed_field_name_is_dropped() {
+    let prev = schema(&with_models(
+        r#"
+model Image {
+  id Int @id
+  storageKey String
+  proxyUrl String
+}
+"#,
+    ));
+    let next = schema(&with_models(
+        r#"
+model Image {
+  id Int @id
+  storageKey String
+  proxyUrl String @computed
+}
+"#,
+    ));
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
+    assert!(migration.has_lossy);
+    assert!(
+        migration
+            .up
+            .contains("ALTER TABLE images DROP COLUMN proxy_url;"),
+        "up was: {}",
+        migration.up
+    );
+}
+
 #[test]
 fn empty_diff_produces_empty_migration() {
     let s = schema(&with_models(

@@ -24,9 +24,16 @@
 //!   (mid-stream failure, client disconnect), which this dispatch fn has
 //!   no way to observe since it returns as soon as the `Body` is built.
 
+mod compose_tail;
+
+use std::collections::BTreeSet;
+
 use cratestack_core::Procedure;
 use quote::quote;
 
+use compose_tail::compose_tail_tokens;
+
+use crate::computed::procedure_output_composition;
 use crate::shared::is_stream_procedure;
 
 pub(super) fn procedure_dispatch_tail_tokens(
@@ -35,8 +42,15 @@ pub(super) fn procedure_dispatch_tail_tokens(
     success_status: &proc_macro2::TokenStream,
     result_encoder: &proc_macro2::TokenStream,
     deprecation_header: &proc_macro2::TokenStream,
+    bearing: &BTreeSet<String>,
 ) -> proc_macro2::TokenStream {
     if is_stream_procedure(procedure) {
+        // `cratestack-parser` rejects a `@stream` procedure whose item
+        // type is computed-bearing (`docs/design/computed-fields.md`'s
+        // "Exclusions" section) — item-wise resolution inside the
+        // incremental encoder isn't implemented, so a schema that made
+        // it past validation can never reach this branch with a
+        // composable output. Nothing to fork on here.
         let tracing_tail =
             result_tracing_tokens(procedure_name, "cratestack procedure stream dispatched");
         quote! {
@@ -52,9 +66,14 @@ pub(super) fn procedure_dispatch_tail_tokens(
             response
         }
     } else {
+        let compose_tail = compose_tail_tokens(procedure_output_composition(
+            &procedure.return_type,
+            bearing,
+        ));
         let tracing_tail =
             result_tracing_tokens(procedure_name, "cratestack procedure route completed");
         quote! {
+            #compose_tail
             #tracing_tail
             let mut response = #result_encoder;
             #deprecation_header

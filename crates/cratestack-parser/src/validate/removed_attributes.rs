@@ -58,6 +58,13 @@ use crate::diagnostics::{SchemaError, span_error};
 /// attributes on a different declaration's attribute list.
 const REJECTED_FIELD_ATTRIBUTES: &[(&str, &str)] = &[
     (
+        "@custom",
+        "`@custom` was replaced by `@computed` — the old attribute only ever generated an \
+         inert resolver trait that nothing invoked; `@computed` (on `type` and `model` \
+         fields) generates a resolver the framework actually calls when composing the \
+         response. Rename the attribute to `@computed`",
+    ),
+    (
         "@pb",
         "protobuf/gRPC support was removed in 0.8.5, so protobuf field numbers no \
          longer have any effect; delete the attribute (see docs/adr/0017-remove-grpc-protobuf.md)",

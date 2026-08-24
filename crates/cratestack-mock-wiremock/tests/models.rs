@@ -342,6 +342,50 @@ model Widget {{
 }
 
 #[test]
+fn computed_field_is_fabricated_in_every_response_but_never_echoed_from_input() {
+    let schema = schema(&format!(
+        "{PG_DATASOURCE}
+model Image {{
+  id Int @id
+  storageKey String
+  proxyUrl String @computed
+}}
+"
+    ));
+
+    let package = generate_package(&schema, &WireMockGeneratorConfig::default()).unwrap();
+
+    for verb in ["create", "get", "update", "delete", "list"] {
+        let body = body(&mapping(
+            &package,
+            &format!("mappings/model.Image.{verb}.json"),
+        ));
+        assert!(
+            body.contains("\"proxyUrl\""),
+            "{verb}: computed field must be fabricated in the response like any other field: \
+             {body}"
+        );
+        assert!(
+            body.contains("\"proxyUrl\": \"string\""),
+            "{verb}: computed field must be a frozen literal, not echoed/templated from request \
+             input: {body}"
+        );
+    }
+
+    let create_body = body(&mapping(&package, "mappings/model.Image.create.json"));
+    assert!(
+        !create_body.contains("jsonPath request.body '$.proxyUrl'"),
+        "create must never read a computed field out of the request body — the wire input \
+         never carries it: {create_body}"
+    );
+    let update_body = body(&mapping(&package, "mappings/model.Image.update.json"));
+    assert!(
+        !update_body.contains("jsonPath request.body '$.proxyUrl'"),
+        "update must never read a computed field out of the request body either: {update_body}"
+    );
+}
+
+#[test]
 fn unsupported_field_types_fall_back_to_a_frozen_static_value_not_a_template() {
     let schema = schema(&format!(
         "{PG_DATASOURCE}

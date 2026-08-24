@@ -15,7 +15,7 @@ use quote::quote;
 use syn::LitStr;
 
 pub(crate) use attrs::{
-    auth_default_field, is_custom_field, is_generated_on_create, is_paged_model, is_pii_field,
+    auth_default_field, is_computed_field, is_generated_on_create, is_paged_model, is_pii_field,
     is_primary_key, is_readonly_field, is_sensitive_field, is_server_only_field, is_version_field,
     supports_comparison,
 };
@@ -79,7 +79,47 @@ pub(crate) fn enum_name_set(enums: &[EnumDecl]) -> BTreeSet<&str> {
         .collect()
 }
 
+/// Stored scalar fields: excludes relations AND computed fields. This is
+/// the default field set for every persistence-facing consumer — SQL
+/// columns, row mappers, create/update inputs, filters, sorts, ORM
+/// accessors, builders, migrations-side descriptors — since `@computed`
+/// fields are never stored, fetched, or hand-constructed (they're resolved
+/// at response-composition time; see `docs/design/computed-fields.md`).
+/// Wire-facing consumers that need computed fields back in the field set
+/// (client structs, `?fields=` selection) use [`wire_model_fields`] or
+/// [`computed_model_fields`] instead.
 pub(crate) fn scalar_model_fields<'a>(
+    model: &'a Model,
+    model_names: &BTreeSet<&str>,
+) -> Vec<&'a Field> {
+    model
+        .fields
+        .iter()
+        .filter(|field| !is_relation_field(model_names, field) && !is_computed_field(field))
+        .collect()
+}
+
+/// A model's `@computed` fields, declaration order.
+pub(crate) fn computed_model_fields(model: &Model) -> Vec<&Field> {
+    model
+        .fields
+        .iter()
+        .filter(|field| is_computed_field(field))
+        .collect()
+}
+
+/// A `type` declaration's `@computed` fields, declaration order.
+pub(crate) fn computed_type_fields(ty: &cratestack_core::TypeDecl) -> Vec<&Field> {
+    ty.fields
+        .iter()
+        .filter(|field| is_computed_field(field))
+        .collect()
+}
+
+/// Stored scalars plus computed fields, in declaration order — the wire
+/// shape client-side struct generators emit (computed fields are part of
+/// the response, even though the server-side struct excludes them).
+pub(crate) fn wire_model_fields<'a>(
     model: &'a Model,
     model_names: &BTreeSet<&str>,
 ) -> Vec<&'a Field> {

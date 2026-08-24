@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use cratestack_core::route_naming;
-use cratestack_core::{Model, Procedure, TypeArity};
+use cratestack_core::{Model, Procedure, TypeArity, computed_params_type_name};
 
 use crate::dart_types::dart_type;
 use crate::idents::{dart_identifier, pluralize, to_camel_case};
@@ -142,6 +142,10 @@ pub(crate) fn build_model_api(model: &Model) -> ModelApiView {
                 model.name
             )
         },
+        has_parameterized_computed_fields: model
+            .fields
+            .iter()
+            .any(|field| computed_params_type_name(field).is_some()),
     }
 }
 

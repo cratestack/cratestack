@@ -9,7 +9,7 @@ use crate::relation::collect_allowed_sort_keys;
 use crate::shared::{
     is_generated_on_create, is_pii_field, is_primary_key, is_readonly_field, is_sensitive_field,
     is_server_only_field, is_version_field, model_name_set, relation_model_fields,
-    scalar_model_fields, to_snake_case,
+    scalar_model_fields, to_snake_case, wire_model_fields,
 };
 
 pub(super) struct ColumnLists {
@@ -37,7 +37,13 @@ pub(super) fn collect_column_lists(model: &Model, models: &[Model]) -> Result<Co
             }
         })
         .collect();
-    let allowed_fields = scalar_model_fields(model, &model_names)
+    // `?fields=` selection accepts computed field names too — they're
+    // resolved at response-composition time, not fetched from a column,
+    // but they're still a legal `?fields=` entry (never a sort/filter
+    // key; see `docs/design/computed-fields.md`). `wire_model_fields`
+    // (stored scalars + computed) is the right source here, not
+    // `scalar_model_fields`.
+    let allowed_fields = wire_model_fields(model, &model_names)
         .into_iter()
         .filter(|field| !is_server_only_field(field))
         .map(|field| {

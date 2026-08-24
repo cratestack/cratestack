@@ -14,6 +14,11 @@ use proc_macro::TokenStream;
 use syn::LitStr;
 
 use crate::client::generate_client_module;
+use crate::computed::{
+    computed_bearing_names, generate_compose_helpers, generate_model_computed_field_descriptors,
+    generate_model_computed_field_resolver_methods, generate_type_computed_field_descriptors,
+    generate_type_computed_field_resolver_methods,
+};
 use crate::event::generate_event_module;
 use crate::shared::schema_lit;
 use crate::transport::{
@@ -21,10 +26,7 @@ use crate::transport::{
     generate_model_subscribe_dispatch_arm, generate_model_subscribe_op_descriptor,
     generate_procedure_op_descriptor, generate_procedure_rpc_dispatch_arm,
 };
-use crate::types::{
-    generate_custom_field_descriptors, generate_custom_field_resolver_methods, generate_enum_type,
-    generate_type_struct,
-};
+use crate::types::{generate_enum_type, generate_type_struct};
 
 pub(super) type Ts = proc_macro2::TokenStream;
 
@@ -39,8 +41,9 @@ pub(super) struct ServerCollected {
     pub(super) view_names: Vec<syn::LitStr>,
     pub(super) type_structs: Vec<Ts>,
     pub(super) enum_types: Vec<Ts>,
-    pub(super) custom_field_descriptors: Vec<Ts>,
-    pub(super) custom_field_resolver_methods: Vec<Ts>,
+    pub(super) computed_field_descriptors: Vec<Ts>,
+    pub(super) computed_field_resolver_methods: Vec<Ts>,
+    pub(super) compose_helpers: Vec<Ts>,
     pub(super) model_structs: Vec<Ts>,
     pub(super) pg_from_row_impls: Vec<Ts>,
     pub(super) primary_key_accessor_impls: Vec<Ts>,
@@ -116,19 +119,40 @@ pub(super) fn collect_server_schema(
         .map(|ty| generate_type_struct(ty, &enum_name_set))
         .collect();
     let enum_types = schema.enums.iter().map(generate_enum_type).collect();
-    let custom_field_descriptors = schema
+    // `@computed` fields exist on both `type` and `model` declarations
+    // (docs/design/computed-fields.md) — collect descriptors/resolver
+    // methods from both.
+    let computed_field_descriptors = schema
         .types
         .iter()
-        .flat_map(|ty| generate_custom_field_descriptors(ty).into_iter())
+        .flat_map(|ty| generate_type_computed_field_descriptors(ty).into_iter())
+        .chain(
+            schema
+                .models
+                .iter()
+                .flat_map(|model| generate_model_computed_field_descriptors(model).into_iter()),
+        )
         .collect();
-    let custom_field_resolver_methods = schema
-        .types
-        .iter()
-        .flat_map(|ty| generate_custom_field_resolver_methods(ty).into_iter())
-        .collect();
+    let computed_field_resolver_methods =
+        schema
+            .types
+            .iter()
+            .flat_map(|ty| generate_type_computed_field_resolver_methods(ty).into_iter())
+            .chain(schema.models.iter().flat_map(|model| {
+                generate_model_computed_field_resolver_methods(model).into_iter()
+            }))
+            .collect();
+
+    // Which owners a procedure output needs composed before encoding
+    // (docs/design/computed-fields.md's "Procedure outputs" section) —
+    // computed once and threaded into both the compose-fn emission below
+    // and `procedures::collect_procedures`, which needs it per-procedure
+    // to decide whether a given dispatch fn's tail composes at all.
+    let bearing = computed_bearing_names(schema);
+    let compose_helpers = generate_compose_helpers(schema, &model_name_set, &bearing);
 
     let mc = models::collect_models(schema, schema_path, &model_name_set, &enum_name_set, auth)?;
-    let pc = procedures::collect_procedures(schema, schema_path, &enum_name_set, auth)?;
+    let pc = procedures::collect_procedures(schema, schema_path, &enum_name_set, auth, &bearing)?;
 
     // RPC op descriptors + dispatch arms — see docs/design/rpc-transport.md.
     // Both `OPS` and `ROUTE_TRANSPORTS` consts are always emitted (for uniform
@@ -235,8 +259,9 @@ pub(super) fn collect_server_schema(
         view_names,
         type_structs,
         enum_types,
-        custom_field_descriptors,
-        custom_field_resolver_methods,
+        computed_field_descriptors,
+        computed_field_resolver_methods,
+        compose_helpers,
         model_structs: mc.structs,
         pg_from_row_impls: mc.pg_from_row_impls,
         primary_key_accessor_impls: mc.primary_key_accessor_impls,

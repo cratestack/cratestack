@@ -3,8 +3,39 @@
 use super::parse_schema;
 
 #[test]
-fn accepts_custom_fields_on_types() {
+fn accepts_computed_fields_on_types() {
     let schema = parse_schema(
+        r#"
+type Image {
+  storageKey String
+  thumbnailUrl String @computed
+}
+"#,
+    )
+    .expect("type computed fields should parse");
+
+    assert_eq!(schema.types[0].fields[1].attributes[0].raw, "@computed");
+}
+
+#[test]
+fn accepts_computed_fields_on_models() {
+    let schema = parse_schema(
+        r#"
+model Image {
+  id Int @id
+  storageKey String
+  proxyUrl String @computed
+}
+"#,
+    )
+    .expect("model computed fields should parse");
+
+    assert_eq!(schema.models[0].fields[2].attributes[0].raw, "@computed");
+}
+
+#[test]
+fn rejects_removed_custom_field_attribute() {
+    let error = parse_schema(
         r#"
 type Image {
   storageKey String
@@ -12,27 +43,13 @@ type Image {
 }
 "#,
     )
-    .expect("type custom fields should parse");
+    .expect_err("the removed @custom attribute should fail validation");
 
-    assert_eq!(schema.types[0].fields[1].attributes[0].raw, "@custom");
-}
-
-#[test]
-fn rejects_custom_fields_on_models() {
-    let error = parse_schema(
-        r#"
-model Image {
-  id Int @id
-  storageKey String
-  thumbnailUrl String @custom
-}
-"#,
-    )
-    .expect_err("model custom fields should fail validation");
-
-    assert!(error.to_string().contains(
-        "resolver-backed custom fields are currently only supported on `type` declarations"
-    ));
+    let message = error.to_string();
+    assert!(
+        message.contains("replaced by `@computed`"),
+        "error should point at @computed: {message}"
+    );
 }
 
 #[test]

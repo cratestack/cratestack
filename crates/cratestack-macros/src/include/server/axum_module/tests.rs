@@ -19,8 +19,9 @@ fn empty_collected() -> ServerCollected {
         view_names: Vec::new(),
         type_structs: Vec::new(),
         enum_types: Vec::new(),
-        custom_field_descriptors: Vec::new(),
-        custom_field_resolver_methods: Vec::new(),
+        computed_field_descriptors: Vec::new(),
+        computed_field_resolver_methods: Vec::new(),
+        compose_helpers: Vec::new(),
         model_structs: Vec::new(),
         pg_from_row_impls: Vec::new(),
         primary_key_accessor_impls: Vec::new(),
@@ -82,7 +83,9 @@ fn none_axum_module_router_fn_aliases_procedure_router_directly() {
     let generated = build_axum_module(&empty_collected(), ServerDb::None).to_string();
 
     assert!(generated.contains("fn router"));
-    assert!(generated.contains("procedure_router (db , registry , codec , auth_provider)"));
+    assert!(
+        generated.contains("procedure_router (db , registry , resolvers , codec , auth_provider)")
+    );
     assert!(!generated.contains(". merge ("));
 }
 
@@ -96,7 +99,7 @@ fn both_variants_keep_the_same_procedure_router_state_field() {
     // changes (see `runtime::none`'s module doc), not this struct's
     // shape. This is the story's documented design resolution: a
     // genuinely different `Cratestack` type, not an optional pool field.
-    let expected = "pub struct ProcedureRouterState < R , C , Auth > { pub db : super :: Cratestack , pub registry : R , pub codec : C , pub auth_provider : Auth , }";
+    let expected = "pub struct ProcedureRouterState < R , CR , C , Auth > { pub db : super :: Cratestack , pub registry : R , pub resolvers : CR , pub codec : C , pub auth_provider : Auth , }";
     assert!(postgres.contains(expected));
     assert!(none.contains(expected));
 }

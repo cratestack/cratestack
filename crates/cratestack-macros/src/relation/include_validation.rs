@@ -5,7 +5,7 @@
 use cratestack_core::{Field, Model};
 use quote::quote;
 
-use crate::shared::{find_model, ident, model_name_set, scalar_model_fields, to_snake_case};
+use crate::shared::{find_model, ident, model_name_set, to_snake_case, wire_model_fields};
 
 pub(crate) fn generate_relation_include_path_validation_arm(
     relation_field: &Field,
@@ -47,7 +47,10 @@ pub(crate) fn generate_relation_include_fields_validation_arm(
         )
     })?;
     let model_names = model_name_set(models);
-    let allowed_fields = scalar_model_fields(target_model, &model_names)
+    // `includeFields[...]` selection on an included relation accepts
+    // computed field names too, same as the root model's `?fields=`
+    // (`model/descriptor/columns.rs`'s `allowed_fields`).
+    let allowed_fields = wire_model_fields(target_model, &model_names)
         .into_iter()
         .map(|field| {
             let name = &field.name;

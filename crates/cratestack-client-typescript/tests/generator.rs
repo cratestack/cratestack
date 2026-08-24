@@ -285,6 +285,104 @@ fn create_is_gated_on_allow_create_policy() {
     assert!(models.contains("export interface CreateWidgetArgs {\n  args: CreateWidgetInput;\n}"));
 }
 
+/// A `model` computed field (`docs/design/computed-fields.md`) is part of
+/// the response interface but is never a create/update input, filter, or
+/// sort key — and `get`/`list` accept the escape-hatch `computedParams`
+/// query parameter (`CratestackFetchQuery.computedParams`, a
+/// `Record<string, unknown>` keyed by computed field name — v1, untyped
+/// per model; see this crate's report on why).
+#[test]
+fn model_computed_field_is_response_only_and_computed_params_is_available_on_reads() {
+    let schema = cratestack_parser::parse_schema(
+        r#"
+model Image {
+  id Int @id
+  storageKey String
+  proxyUrl String @computed
+
+  @@allow("create", true)
+}
+"#,
+    )
+    .expect("computed-field model schema should parse");
+
+    let package = generate_package(&schema, &TypeScriptGeneratorConfig::default())
+        .expect("default template should render");
+
+    let models = package_file(&package, "src/models.ts");
+    let queries = package_file(&package, "src/queries.ts");
+
+    // Response interface: computed field present exactly like any other
+    // field.
+    let image_start = models.find("export interface Image ").unwrap();
+    let image_end = models[image_start..]
+        .find("\nexport interface")
+        .map(|offset| image_start + offset)
+        .unwrap_or(models.len());
+    let image_interface = &models[image_start..image_end];
+    assert!(
+        image_interface.contains("proxyUrl"),
+        "Image response interface must carry proxyUrl: {image_interface}"
+    );
+
+    // Create input: computed field excluded entirely.
+    let create_start = models.find("export interface CreateImageInput ").unwrap();
+    let create_end = models[create_start..]
+        .find("\nexport interface")
+        .map(|offset| create_start + offset)
+        .unwrap_or(models.len());
+    let create_interface = &models[create_start..create_end];
+    assert!(
+        create_interface.contains("storageKey"),
+        "CreateImageInput must keep the ordinary field: {create_interface}"
+    );
+    assert!(
+        !create_interface.contains("proxyUrl"),
+        "CreateImageInput must never carry a computed field: {create_interface}"
+    );
+
+    // Update input: same exclusion.
+    let update_start = models.find("export interface UpdateImageInput ").unwrap();
+    let update_end = models[update_start..]
+        .find("\nexport interface")
+        .map(|offset| update_start + offset)
+        .unwrap_or(models.len());
+    let update_interface = &models[update_start..update_end];
+    assert!(
+        !update_interface.contains("proxyUrl"),
+        "UpdateImageInput must never carry a computed field: {update_interface}"
+    );
+
+    // Where/sort: `ImageWhere` still exists (storageKey is filterable),
+    // but never mentions proxyUrl; the sort field union never carries a
+    // proxyUrl variant either.
+    let where_start = models.find("export interface ImageWhere ").unwrap();
+    let where_end = models[where_start..]
+        .find("\nexport interface")
+        .map(|offset| where_start + offset)
+        .unwrap_or(models.len());
+    assert!(
+        !models[where_start..where_end].contains("proxyUrl"),
+        "ImageWhere must never carry a computed field: {}",
+        &models[where_start..where_end]
+    );
+    assert!(
+        !models.contains("'proxyUrl'"),
+        "ImageSortField union must never carry a computed field variant: {models}"
+    );
+
+    // The shared query type carries the escape-hatch computedParams
+    // field, folded into the query-parameter object by `toSearchQuery`.
+    assert!(
+        queries.contains("computedParams?: Record<string, unknown>;"),
+        "CratestackFetchQuery must carry computedParams: {queries}"
+    );
+    assert!(
+        queries.contains("output.computedParams = query.computedParams;"),
+        "toSearchQuery must fold computedParams into the request's query parameters: {queries}"
+    );
+}
+
 fn package_file<'a>(
     package: &'a cratestack_client_typescript::GeneratedTypeScriptPackage,
     file_name: &str,

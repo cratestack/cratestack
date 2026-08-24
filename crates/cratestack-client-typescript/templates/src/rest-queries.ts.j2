@@ -11,6 +11,20 @@ export interface CratestackFetchQuery {
   or?: string;
   /** Arbitrary `key=value` predicates spread as individual query params, e.g. `{ published: "true" }` → `?published=true`. */
   filters?: Record<string, string>;
+  /**
+   * Params for `@computed(params: <Type>?)` resolver fields
+   * (`docs/design/computed-fields.md`), keyed by computed field name —
+   * e.g. `{ proxyUrl: { width: 800 } }`. Serialized as a single JSON-
+   * encoded `computedParams` query parameter
+   * (`appendQueryValue`'s object branch in `runtime.ts` already
+   * `JSON.stringify`s any object-valued query entry, so no extra
+   * encoding step is needed here). Untyped (`Record<string, unknown>`)
+   * rather than a generated per-model params type — v1 escape hatch,
+   * see `docs/design/computed-fields.md`'s "Downstream" section. Applies
+   * to `get`/`list` only, same as the server's own `?computedParams=`
+   * support (root model, read paths only).
+   */
+  computedParams?: Record<string, unknown>;
 }
 
 export interface CratestackRequestConfig {
@@ -80,6 +94,9 @@ export function toSearchQuery(query?: CratestackFetchQuery): Record<string, unkn
   }
   if (query.or) {
     output.or = query.or;
+  }
+  if (query.computedParams && Object.keys(query.computedParams).length > 0) {
+    output.computedParams = query.computedParams;
   }
 
   for (const [path, fields] of Object.entries(query.includeFields ?? {})) {

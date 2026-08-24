@@ -128,6 +128,20 @@ fn extension_feature_gate_compile_fail() {
         "tests/fixtures/pgvector_extension_embedded.cstack",
     );
     t.compile_fail(generated_dir.join("pgvector_rejected_on_embedded.rs"));
+
+    // Distinct scenario again (cratestack computed-fields feature,
+    // docs/design/computed-fields.md decision 3): `@computed` fields are
+    // response-composition resolvers, and `include_embedded_schema!` has
+    // no response boundary to resolve one against — rejected
+    // unconditionally, same shape as the pgvector-on-embedded case above.
+    write_embedded_computed_field_fixture(
+        &manifest_dir,
+        staging_dir,
+        &generated_dir,
+        "computed_field_rejected_on_embedded.rs",
+        "tests/fixtures/computed_field_embedded_rejected.cstack",
+    );
+    t.compile_fail(generated_dir.join("computed_field_rejected_on_embedded.rs"));
 }
 
 /// Copies `relative_schema_path` (resolved against *this* crate's own,
@@ -180,6 +194,26 @@ fn write_fixture(
 /// embedded backend" `compile_error!`, distinct from the ordinary
 /// missing-feature message the other two fixtures exercise.
 fn write_embedded_pgvector_fixture(
+    manifest_dir: &Path,
+    staging_dir: &Path,
+    generated_dir: &Path,
+    file_name: &str,
+    relative_schema_path: &str,
+) {
+    let staged = stage_fixture(manifest_dir, staging_dir, relative_schema_path);
+    let staged = staged
+        .to_str()
+        .expect("fixture staging path should be valid UTF-8");
+    let source =
+        format!("cratestack_macros::include_embedded_schema!({staged:?});\n\nfn main() {{}}\n");
+    fs::write(generated_dir.join(file_name), source).expect("write generated trybuild fixture");
+}
+
+/// Same idea as [`write_embedded_pgvector_fixture`], but for a schema
+/// declaring an `@computed` field — expected to fail with
+/// `include::embedded::computed_guard`'s dedicated "no response boundary"
+/// `compile_error!` (docs/design/computed-fields.md decision 3).
+fn write_embedded_computed_field_fixture(
     manifest_dir: &Path,
     staging_dir: &Path,
     generated_dir: &Path,

@@ -13,8 +13,8 @@ use crate::package_deps::{DependencyEntry, dev_dependencies_for, peer_dependenci
 use crate::procedure_views::{ProcedureView, build_procedure};
 use crate::refine::{RefineResourceView, build_refine_resources, refine_resource_map_type};
 use crate::types::{
-    enum_name_set, is_generated_on_create, is_primary_key, model_allows_create, model_name_set,
-    scalar_model_fields, version_field, visible_model_fields,
+    enum_name_set, is_computed_field, is_generated_on_create, is_primary_key, model_allows_create,
+    model_name_set, scalar_model_fields, version_field, visible_model_fields,
 };
 use crate::views::{
     EnumView, InterfaceKind, InterfaceView, ModelApiView, build_enum_view, build_interface,
@@ -153,6 +153,11 @@ pub(crate) fn build_template_context(
                 &scalar_fields
                     .iter()
                     .copied()
+                    // `@computed` fields are resolver-backed and
+                    // response-time only — never part of a create input,
+                    // since the server struct never carries them either
+                    // (`docs/design/computed-fields.md`).
+                    .filter(|field| !is_computed_field(field))
                     .filter(|field| !is_generated_on_create(field))
                     .collect::<Vec<_>>(),
                 InterfaceKind::Plain,
@@ -165,6 +170,9 @@ pub(crate) fn build_template_context(
                 .iter()
                 .copied()
                 .filter(|field| !is_primary_key(field))
+                // `@computed` fields are never part of an update input
+                // either — same reasoning as the create input above.
+                .filter(|field| !is_computed_field(field))
                 .collect::<Vec<_>>(),
             InterfaceKind::Patch,
             &enum_names,
